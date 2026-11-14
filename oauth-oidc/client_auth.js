@@ -86,8 +86,6 @@
 // is a replayed credential, and RFC 7523 section 3 says so.
 // ===========================================================================
 
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
@@ -335,9 +333,8 @@ async function verifyAssertion(opts) {
   // A plain three-part JWS comes back untouched, so every client that
   // authenticated with one before this existed is on exactly the path it was.
   // ---------------------------------------------------------------------
-  const unwrapped = assertionGrant.unwrapAssertion(opts.assertion,
-                                                   { secret:
-                                                       opts.clientSecret });
+  const unwrapped = await assertionGrant.unwrapAssertion(
+    opts.assertion, { secret: opts.clientSecret });
   if (!unwrapped.ok) {
     log.debug("Leaving verifyAssertion(). It would not decrypt.");
     return { ok: false, errorCode: unwrapped.errorCode,
@@ -458,7 +455,7 @@ async function verifyAssertion(opts) {
     const fromChain = await assertionGrant.keyFromChain(header);
     if (fromChain && fromChain.key) {
       found.push({ kid: header.kid ? String(header.kid) : '',
-                   key: fromChain.key });
+                   key: fromChain.key, chain: fromChain });
     } else if (fromChain && fromChain.error && !found.length) {
       log.debug("Leaving verifyAssertion(). The x5c does not chain here.");
       return { ok: false, errorCode: fromChain.errorCode,
@@ -556,6 +553,14 @@ async function verifyAssertion(opts) {
                               'or ') + ' ' +
                           'as `aud`, and be unexpired.' };
   }
+  // WHOSE CERTIFICATE IT IS (#1488, ASVS 5.0.0 9.1.3): chaining to this realm's
+  // authority says nothing about which client it was issued to.
+  if (usedEntry && usedEntry.chain && !assertionGrant.certificateNamesParty(
+    usedEntry.chain, clientId || claims.iss)) {
+    log.debug("Leaving verifyAssertion(). Another party's certificate.");
+    return { ok: false, errorCode: 'STS-OAUTH-1000', description: 'the certificate in ' +
+             'x5c was not issued to this client.' };
+  }
   // THE ISSUER AS THE SOLE AUDIENCE, where the caller asks for it (OAuth 2.1
   // mode, 2026-09-13). OAuth 2.1 section 2.4 makes
   // draft-ietf-oauth-rfc7523bis-11 mandatory, and for CLIENT AUTHENTICATION
@@ -605,7 +610,8 @@ async function verifyAssertion(opts) {
   // cannot disagree about what a registered certificate is worth.
   if (usedEntry && usedEntry.jwk && Array.isArray(usedEntry.jwk.x5c) &&
       usedEntry.jwk.x5c.length) {
-    const keyChain = await pki.verifySignerChain(undefined, {
+    const keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
       certificate: usedEntry.jwk.x5c[0], chain: usedEntry.jwk.x5c.slice(1),
       key: usedEntry.jwk,
       source: 'the key "' + (usedEntry.kid || '(no kid)') +
@@ -660,10 +666,13 @@ async function verifyAssertion(opts) {
     return { ok: false, errorCode: 'STS-OAUTH-0008', description: 'RFC 7523 ' +
                                      'section 3: a client assertion names ' +
                                      'the client as both `iss` and `sub`. ' +
-                                     'This one has sub="' +
-                                     (claims.sub || '') + '" where the ' +
-                                         'client is "' + clientId +
-                                     '" — an assertion a client made ABOUT ' +
+                                     (claims.sub
+                                       ? 'This one has sub="' + claims.sub +
+                                         '" where the client is "' +
+                                         clientId + '"'
+                                       : 'This one names no sub, and the ' +
+                                         'client is "' + clientId + '"') +
+                                     ' — an assertion a client made ABOUT ' +
                                      'somebody else is not that somebody ' +
                                      'authenticating.' };
   }
@@ -811,7 +820,8 @@ async function verifyAssertion(opts) {
 // `_san_dns`, `_san_uri`, `_san_ip`, `_san_email`, compared by
 // `common/certificate_subject.js` as a name rather than a string — and it is
 // what an application holding a certificate from somebody else's authority
-// uses, that authority's root installed at /tls/trust. The IMPLICIT one is
+// uses, that authority's root installed at /admin-api/tls/trust. The
+// IMPLICIT one is
 // this service's certificate-to-identity mapping, the one a person's TLS
 // client certificate signs them in by, pointed at an application:
 // `common/tls_client_certificates.js`'s `identityOf()` names the application a
@@ -852,7 +862,7 @@ function subjectRfc4514(cert) {
   let text = '';
   try {
     text = certificateSubject.subjectOf(
-      new crypto.X509Certificate(cert.raw)).text;
+      stsCrypto.parseCertificate(cert.raw)).text;
   } catch (e) {
     log.debug("Caught in subjectRfc4514(): " + ((e && e.message) || e));
     text = '';
@@ -957,6 +967,17 @@ function verifyCertificate(opts) {
                                           registered
                                         : 'a registered thumbprint') + '.' };
     }
+    // THE EQUALITY IS THE METHOD AND NOT A PASS (#1360): under paranoid PKI mode
+    // the registered certificate is still within its validity, may still sign,
+    // and is not revoked. Off, this asks what it asked before: nothing.
+    const held = require('../common/certificate_trust').assessSync(
+      'tls-client-self-signed', { leaf: Buffer.from(cert.raw), pinned: true });
+    if (!held.ok) {
+      log.debug("Leaving verifyCertificate(). Paranoid: " + held.code);
+      return { ok: false, errorCode: held.code,
+               description: 'RFC 8705 section 2.2: the registered certificate ' +
+                            'is refused: ' + held.why + '.' };
+    }
     log.debug("Leaving verifyCertificate(). The registered certificate.");
     return { ok: true, subject: subjectRfc4514(cert),
              thumbprint: presentedThumbprint,
@@ -989,7 +1010,7 @@ function verifyCertificate(opts) {
                           'did not verify' +
                           (peer.error ? ' (' + peer.error + ')' : '') + '. ' +
                           'Install the issuing authority\'s root at ' +
-                          '/tls/trust, send the intermediates with the ' +
+                          '/admin/tls/trust, send the intermediates with the ' +
                           'certificate, or register the client for ' +
                           'self_signed_tls_client_auth instead.' };
   }
@@ -1100,8 +1121,7 @@ function verifiedOnce(request, parts, run) {
     held = new Map();
     request[VERIFIED_ON_REQUEST] = held;
   }
-  const key = crypto.createHash('sha256').update(parts.join('\n'))
-    .digest('base64url');
+  const key = stsCrypto.digest('sha256', parts.join('\n'), 'base64url');
   if (held.has(key)) {
     log.debug("Leaving verifiedOnce(). Answered already on this request.");
     return held.get(key);
@@ -1259,9 +1279,11 @@ async function verify(opts) {
       return { ok: false, errorCode: 'STS-OAUTH-0022',
                description: 'client_assertion_type ' +
           'must be "' + ASSERTION_TYPE +
-                                       '" (RFC 7523 section 2.2). This ' +
-                                       'request says "' +
-                                       (info.assertionType || '') + '".' };
+                                       '" (RFC 7523 section 2.2). ' +
+                                       (info.assertionType
+                                         ? 'This request says "' +
+                                           info.assertionType + '".'
+                                         : 'This request names none.') };
     }
     // The AUDIENCE POLICY is part of the key (2026-09-13): two callers asking
     // about one document with two policies must not have the first answer
@@ -1563,7 +1585,8 @@ function methodFor(registered, presented) {
   } else if (p.assertion && assertionType === ASSERTION_TYPE) {
     let alg = '';
     try {
-      const decoded = jwt.decode(String(p.assertion), { complete: true });
+      const decoded = stsCrypto.decodeJws(String(p.assertion),
+                                          { complete: true });
       alg = String((decoded && decoded.header && decoded.header.alg) || '');
     } catch (e) {
       log.debug("Caught in methodFor(): " + ((e && e.message) || e));

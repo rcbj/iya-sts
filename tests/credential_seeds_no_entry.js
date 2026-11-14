@@ -20,7 +20,8 @@
 //
 //   A. `GET /tls/sign-in`, over a real handshake, with a client certificate
 //      from a CA in the client truststore that this service did not build —
-//      its common name is the identity;
+//      since #1061 it is an identity only as the one entry storing it, so in
+//      BOTH modes it signs nobody in and seeds nothing;
 //   B. an OpenID4VP presentation at `/authn/wallet` of an SD-JWT VC from a
 //      trusted foreign issuer (`oid4vp.trustedIssuerCertificates`) whose `sub`
 //      names somebody — it verifies and signs nobody in (STS-VC-0058) in both
@@ -37,8 +38,9 @@
 // in PRODUCT, the same doors: the certificate signs nobody in (the session
 // refused STS-AUTHN-0180, no entry to be the subject of), the presentation
 // signs nobody in, the SVID's caller is authenticated and its session is a
-// record naming no subject — and NO entry appears for any of the three, the
-// directory holding exactly as many entries as before.
+// record naming no subject — and NO entry appears for any of the three: no
+// entry added while it ran names the subject (not a count of the whole
+// directory, which other writes in this process move; 2026-11-11).
 // ===========================================================================
 
 const fs = require('fs');
@@ -141,9 +143,9 @@ function childMain() {
         m.stsCrypto.certificateThumbprint(partner.certPem,
                                           { format: 'hex' }));
     });
-    const aud = w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const aud = await w.signInAudience();
     const partnerSigner = { privateKey:
       nodeCrypto.createPrivateKey(partner.privateKeyPem) };
     const presentAs = async function (sub) {
@@ -163,7 +165,7 @@ function childMain() {
                                            one.requestObject.nonce, aud);
       const answered = await w.respond(one, presentation,
                                        { format: 'dc+sd-jwt' });
-      const page = await w.request('GET', one.waitPath, { browser: who });
+      const page = await w.collect(who, one);
       return { ok: page.status === 303, code: page.code, page: page,
                answered: answered, session: w.sessionOf(who) };
     };
@@ -183,9 +185,40 @@ function childMain() {
         }
       };
     };
+    // THE ENTRIES, NOT THEIR COUNT (2026-11-11). Run 16's cluster mode read
+    // 85 where 84 had been: the realm's whole directory, groups and
+    // applications too, is counted, and anything this process writes in the
+    // background between the two reads moved it. What each check means is
+    // that the sign-in made no entry FOR ITS NAME, so the entries added are
+    // compared, and one counts against the sign-in only when its DN or a
+    // value names the subject. The added DNs are in the detail either way.
     const entryCount = function () {
       return w.inRealm(function () {
-        return m.ldap.entries.size;
+        return new Set(Array.from(m.ldap.entries.keys()));
+      });
+    };
+    const addedFor = function (before, name) {
+      const wanted = String(name).toLowerCase();
+      return w.inRealm(function () {
+        const out = [];
+        m.ldap.entries.forEach(function (entry, dn) {
+          if (before.has(dn)) {
+            return;
+          }
+          const text = (dn + ' ' + JSON.stringify((entry &&
+            entry.attributes) || {})).toLowerCase();
+          if (text.indexOf(wanted) >= 0) {
+            out.push(dn);
+          }
+        });
+        return out;
+      });
+    };
+    const added = function (before) {
+      return w.inRealm(function () {
+        return Array.from(m.ldap.entries.keys()).filter(function (dn) {
+          return !before.has(dn);
+        });
       });
     };
     const holds = function (name) {
@@ -225,26 +258,26 @@ function childMain() {
         note(cert.presented === true && cert.verified === true,
              'A0. ' + label + ': the foreign certificate naming ' + certName +
              ' is presented and verifies', JSON.stringify(cert));
-        if (!PRODUCT) {
-          note(signed.body.signedIn === true && session.started === true &&
-               holds(certName) && entryCount() > before,
-               'A1. ' + label + ': GET /tls/sign-in signs its holder in, and ' +
-               'an entry for ' + certName + ' is made (the control)',
-               JSON.stringify({ status: signed.status, session: session }));
-        } else {
-          note(signed.status === 200 && signed.body.signedIn === false &&
-               session.started !== true,
-               'A1. ' + label + ': GET /tls/sign-in signs nobody in',
-               JSON.stringify({ status: signed.status, session: session }));
-          note(refusedForNoEntry(certName),
-               'A2. ' + label + ': the session was refused because the ' +
-               'directory holds no entry for ' + certName +
-               ' (STS-AUTHN-0180)');
-          note(!holds(certName) && entryCount() === before,
-               'A3. ' + label + ': and no entry was made — the directory ' +
-               'holds as many entries as before', entryCount() + ' / ' +
-               before);
-        }
+        // IN BOTH MODES SINCE #1061 (rcbj, 2026-10-27): a certificate from
+        // an outside authority is the one entry storing it in
+        // userCertificate, and its common name is never read as a name. It
+        // was the development control here — it signed its CN in and made
+        // an entry — until then; now it signs nobody in, refused for being
+        // stored on no entry before a session is asked for, and no entry
+        // appears in either mode.
+        note(signed.status === 200 && signed.body.signedIn === false &&
+             session.started !== true &&
+             session.refusedAsStored === 'NOT_STORED',
+             'A1. ' + label + ': GET /tls/sign-in signs nobody in — the ' +
+             'certificate is stored on no entry, and its CN ' + certName +
+             ' is not a name (#1061)',
+             JSON.stringify({ status: signed.status, session: session }));
+        note(!refusedForNoEntry(certName),
+             'A2. ' + label + ': no session was even asked for ' + certName +
+             ' (no STS-AUTHN-0180): the certificate names nobody');
+        note(!holds(certName) && addedFor(before, certName).length === 0,
+             'A3. ' + label + ': and no entry was made for ' + certName,
+             JSON.stringify(added(before)));
 
         // --- B. the wallet presentation ----------------------------------
         const walletName = 'cs-wallet-' + mode.slice(0, 4) + '-' + M.stamp;
@@ -258,15 +291,15 @@ function childMain() {
              (presented.page.status || '') + ' ' +
              JSON.stringify(presented.answered && presented.answered.json));
         if (!PRODUCT) {
-          note(holds(walletName) && entryCount() > before,
+          note(holds(walletName) && addedFor(before, walletName).length > 0,
                'B2. ' + label + ': and the identity it carries is recorded, ' +
                'which makes an entry for ' + walletName + ' (the control)',
-               entryCount() + ' / ' + before);
+               JSON.stringify(added(before)));
         } else {
-          note(!holds(walletName) && entryCount() === before,
-               'B2. ' + label + ': and no entry is made for ' + walletName +
-               ' — the directory holds as many entries as before',
-               entryCount() + ' / ' + before);
+          note(!holds(walletName) &&
+               addedFor(before, walletName).length === 0,
+               'B2. ' + label + ': and no entry is made for ' + walletName,
+               JSON.stringify(added(before)));
         }
 
         // --- C. the SVID -------------------------------------------------
@@ -300,15 +333,14 @@ function childMain() {
              JSON.stringify({ id: caller.spiffeId, refusal: caller.refusal,
                               policy: refused }));
         if (!PRODUCT) {
-          note(holds(svidId) && entryCount() > before,
+          note(holds(svidId) && added(before).length > 0,
                'C2. ' + label + ': and the caller is recorded, which makes ' +
                'an entry for ' + svidId + ' (the control)',
-               entryCount() + ' / ' + before);
+               JSON.stringify(added(before)));
         } else {
-          note(!holds(svidId) && entryCount() === before,
-               'C2. ' + label + ': and no entry is made for ' + svidId +
-               ' — the directory holds as many entries as before',
-               entryCount() + ' / ' + before);
+          note(!holds(svidId) && addedFor(before, svidId).length === 0,
+               'C2. ' + label + ': and no entry is made for ' + svidId,
+               JSON.stringify(added(before)));
           note(!svidSession || !(svidSession.user && svidSession.user.sub),
                'C3. ' + label + ': its session is a record of the call and ' +
                'names no subject — nobody is signed in as a person',

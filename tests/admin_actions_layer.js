@@ -5,8 +5,7 @@
 //
 // File: admin_actions_layer.js
 //
-// ===========================================================================
-// THE LAYER THE CONSOLE AND THE MANAGEMENT API SHARE, AND THE FOUR WAYS IT
+// ====================================================================// THE LAYER THE CONSOLE AND THE MANAGEMENT API SHARE, AND THE FOUR WAYS IT
 // STOPS BEING ONE.
 //
 // Until 2026-09-12 every decision both admin surfaces make lived in
@@ -47,7 +46,7 @@
 // WHY IN PROCESS. Every claim is a comparison between FILES, which is
 // `teardown_bounds.js`'s shape and `admin_api_token_wiring.js`'s before it. The
 // one thing this cannot check is whether the actions still WORK, and nothing
-// here pretends to: that is `tests/vendored/sts_admin_api_operations.js`
+// here pretends to: that is `tests/protocol/sts_admin_api_operations.js`
 // driving every operation and `sts_admin_console.js` driving the pages.
 // **Both of those matter more than this file** — the first run of the moved
 // layer failed in one of them with `numberWord is not defined`, on the single
@@ -179,7 +178,15 @@ function checkOneLayerIsALibrary(t, layer) {
   // the request (headers, cookies, the body, a session) is the console's.
   const reads = (code.match(/(?:^|[^.\w$])req\.[a-zA-Z]+/g) || [])
     .map(function (r) { return r.trim(); });
-  const illegal = reads.filter(function (r) { return !/req\.query$/.test(r); });
+  // ONE MORE SINCE THE CUTOVER (#446): `req.adminApiCaller`, the caller
+  // `/admin-api`'s gate verified and left on the request. It is not a header
+  // or a cookie: it is the gate's answer to "who is asking", which the
+  // views' `gateStateFor()` reads so a realm administrator's token is drawn
+  // the realm administrator's view — the static console has no session to
+  // read instead.
+  const illegal = reads.filter(function (r) {
+    return !/req\.(query|adminApiCaller)$/.test(r);
+  });
   if (/admin_actions/.test(layer)) {
     t.check(reads.length === 0,
             'and it never touches req either — an action takes a parsed body',
@@ -284,7 +291,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // (4) THE FORWARDS (`FORWARDED` above). One statement, one writer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// AND THE FOUR THAT STAY. This is the finish line, written down.
+// AND THE FEW THAT STAY. This is the finish line, written down.
 //
 // The management API calls exactly these on the console module and nothing
 // else. Three of them are the console describing ITSELF — which pages it has,
@@ -301,9 +308,20 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // 2026-09-30 (#361): it is the same answer after the row's `prepare` step
 // (a page whose settings read the cell's own state first), and it calls
 // `protocolSettingsJsonFor()` itself. Still the console describing itself.
+//
+// `dashboardJson` JOINED IT ON 2026-10-05 (#446): `GET /admin-api/status` is
+// what the console index is drawn from, and the index's guide is the
+// sidebar's SECTIONS filtered by the gate — the console describing which of
+// its own pages this reader may see. `consoleJson()`'s totals are inside it.
+// `shellJson` with it, for `GET /admin-api/console`: the console's frame —
+// its sections, its labels, its banners — for the caller.
 // ---------------------------------------------------------------------------
-const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
-  'preparedSettingsJsonFor', 'listField'];
+// `consolePages` and `dashboardJsonAsync` since 2026-10-21: /me wanted only
+// the page list of `consoleJson()`, and /status the dashboard's totals asked
+// asynchronously — the same two pieces of the console's knowledge, without
+// the synchronous snapshot either one built.
+const MAY_STAY_ON_THE_CONSOLE = ['consolePages', 'configJson',
+  'preparedSettingsJsonFor', 'listField', 'dashboardJsonAsync', 'shellJson'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
   log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");
@@ -319,7 +337,7 @@ function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
           'it calls only the console\'s own knowledge (' + called.join(', ') +
           ')',
           'everything else it needs comes from admin-core/. A name here that ' +
-          'is not one of the four is the API reading through the console ' +
+          'is not on that list is the API reading through the console ' +
           'again, which is the coupling this directory exists to remove: ' +
           'found ' + (unexpected.join(', ') || 'none'));
 
@@ -501,6 +519,28 @@ function checkNothingRequiresItEarly(t) {
                    // only — who moved a person's home — required LAZILY in
                    // the request; the page is 18k-ii, after the console.
                    'admin-ui/cells_admin.ts',
+                   // The /admin-api operations of Grants, Claims Providers,
+                   // Provider Commands and Outbound deliveries (#313's
+                   // sweep, 2026-10-12), for `adminViews`' paging only —
+                   // required LAZILY in the request; the management API
+                   // requires them at 19, after the console.
+                   'oauth-oidc/grant_management_api.ts',
+                   'oauth-oidc/claims_providers_api.ts',
+                   'oauth-oidc/provider_commands_api.ts',
+                   // The secret destinations' operation (#313, 2026-10-12),
+                   // for `adminViews`' paging only — the register's one
+                   // list — required LAZILY in the request; the module is
+                   // built with the other API modules, after the console.
+                   'mgmt-api/secret_destinations_api.ts',
+                   // The partners' Shared Signals operation (#313's sweep,
+                   // 2026-10-12), for `adminViews`' paging only — required
+                   // LAZILY in the request, after the console is built.
+                   'ssf/ssf_transmitters_api.ts',
+                   // UMA's console views (#1195), for `adminViews`' paging
+                   // and settings block: built at 23d-ii in
+                   // `common/protocol_stack.ts`, after 18 and 19, so the
+                   // require is a cache hit and moves no route.
+                   'uma/uma_console.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

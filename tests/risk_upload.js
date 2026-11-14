@@ -14,7 +14,7 @@
 // doors are driven here with synthetic request streams — the API's (the body
 // is the file, the fields a query) and the console's (multipart, the fields
 // before the file) — and the console's route with a fake app, for its role
-// check. `tests/vendored/sts_admin_risk_upload.js` drives both over HTTP
+// check. `tests/protocol/sts_admin_risk_upload.js` drives both over HTTP
 // against a running service, the body-parser exemption and the gate
 // included. What this file holds:
 //
@@ -60,7 +60,7 @@ const riskDatasets = require('../risk/risk_datasets');
 const riskUpload = require('../risk/risk_upload');
 const riskTerms = require('../risk/risk_terms');
 const websecurity = require('../common/websecurity');
-const zipWriter = require('./vendored/zip_writer');
+const zipWriter = require('./protocol/zip_writer');
 
 const log = require('bunyan').createLogger({ name: 'risk_upload',
   level: process.env.LOG_LEVEL || 'info' });
@@ -201,6 +201,52 @@ async function drained() {
   }
   log.debug("Leaving drained().");
   return filesIn();
+}
+
+// A FILE'S NAME AGAINST ITS FORMAT (#1480, ASVS 5.0.0 5.2.2).
+function nameChecks(t) {
+  log.debug("Entering nameChecks().");
+  const refused = riskUpload.RiskUpload.nameRefusal;
+  const bad = refused('dbip-city-csv', 'dataset.exe');
+  t.check(bad && bad.status === 400, 'a name that does not fit is refused',
+          JSON.stringify(bad));
+  t.check(refused('dbip-city-csv', 'cities.csv') === null,
+          'one that does is not');
+  t.check(refused('dbip-city-csv', 'cities.csv.gz') === null,
+          'a compression suffix is set aside');
+  t.check(!!refused('dbip-city-csv', 'cities.gz'),
+          'and a compressed file still needs the format\'s own name');
+  t.check(refused('ip-list', 'torbulkexitlist') === null,
+          'a list published with no extension may have none');
+  t.check(!!refused('dbip-city-csv', 'noextension'),
+          'a CSV format may not');
+  t.check(refused('dbip-city-csv', '') === null,
+          'the API door has no name to compare');
+  log.debug("Leaving nameChecks().");
+}
+
+// THE MALWARE SCAN COMES FIRST (#1501): a flagged upload is refused and gone.
+async function scanChecks(t) {
+  log.debug("Entering scanChecks().");
+  const MalwareScan = require('../common/malware_scan');
+  const real = MalwareScan.fileRefusal;
+  MalwareScan.fileRefusal = function () {
+    return Promise.resolve({ status: 422, code: 'STS-CORE-0168',
+                             error: 'flagged.' });
+  };
+  try {
+    const flagged = await riskUpload.receiveRaw(apiRequest(
+      Buffer.from('192.0.2.1\\n'), { dataset: 'iplist.operator-deny',
+                                     format: 'ip-list', realm: 'default' },
+      'application/octet-stream'), apiDoor());
+    t.check(flagged.status === 422 && flagged.code === 'STS-CORE-0168' &&
+            filesIn().length === 0,
+            'a dataset the scanner flags is refused and not kept',
+            JSON.stringify(flagged));
+  } finally {
+    MalwareScan.fileRefusal = real;
+  }
+  log.debug("Leaving scanChecks().");
 }
 
 async function partA(t) {
@@ -384,58 +430,10 @@ async function partD(t) {
           (await drained()).length === 0,
           'D3. a provider whose terms nobody accepted is refused before the ' +
           'file is written', JSON.stringify(noTerms.body));
-  // THE ROUTE: a session that may read and not write is refused before the
-  // upload reads anything.
-  const admin = require('../admin-ui/admin');
-  const riskAdmin = require('../admin-ui/risk_admin');
-  const routes = {};
-  riskAdmin.registerRoutes({
-    get: function () {},
-    post: function (p, fn) {
-      routes[p] = fn;
-    }
-  });
-  const saved = admin.mayWrite;
-  admin.mayWrite = function () {
-    return false;
-  };
-  const req = multipart(denyFields([file]));
-  const res = { headers: {}, statusCode: 0, location: '', marked: [] };
-  const answered = new Promise(function (resolve) {
-    res.set = function (k, v) {
-      res.headers[k] = v;
-      return res;
-    };
-    res.status = function (n) {
-      res.statusCode = n;
-      return res;
-    };
-    res.type = function () {
-      return res;
-    };
-    res.send = function (b) {
-      res.body = b;
-      resolve();
-      return res;
-    };
-    res.redirect = function (n, where) {
-      res.statusCode = n;
-      res.location = where;
-      resolve();
-      return res;
-    };
-  });
-  try {
-    routes[riskAdmin.UPLOAD](req, res);
-    await answered;
-  } finally {
-    admin.mayWrite = saved;
-  }
-  t.check(res.statusCode === 303 && /error=/.test(res.location) &&
-          res.headers.Connection === 'close' &&
-          req.readableFlowing === null && filesIn().length === 0,
-          'D4. the console route refuses a session without Admin Write ' +
-          'before the upload reads a byte', JSON.stringify(res));
+  // D4 WAS THE CONSOLE'S UPLOAD ROUTE refusing a session without Admin
+  // Write before reading a byte. The console posts nothing since the
+  // cutover (#446): its upload is `POST /admin-api/risk/upload`, whose
+  // gate refuses a token without `admin:write` before the handler runs.
   log.debug("Leaving partD().");
 }
 
@@ -573,6 +571,8 @@ async function run(t) {
   riskStore.reset();
   riskDatasets.forget();
   try {
+    nameChecks(t);
+    await scanChecks(t);
     await partA(t);
     await partB(t);
     await partC(t);

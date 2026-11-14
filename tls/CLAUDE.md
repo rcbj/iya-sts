@@ -22,8 +22,10 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   their order in `common/protocol_stack.ts` (rule 6); the other two need no
   require order, because `server.js` and `debugger_server.js` already have this
   module in hand by the time they listen. The private key crosses a module boundary and no
-  network one: it is generated per start, held in memory, and
-  `GET /tls/server-certificate` publishes the certificate alone.
+  network one: it is held in memory, written down only as this node's sealed
+  row of `tls.listenerKeys` where minted state persists (*THE LISTENER KEY IS
+  KEPT PER NODE*, below), and `GET /tls/server-certificate` publishes the
+  certificate alone.
 * **The client truststore.** The anchors every listener in this process verifies
   a CLIENT certificate against — one array, applied to whatever registered
   through `trustClientCertificatesOn()`. It starts EMPTY, and every section
@@ -39,14 +41,17 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   so every reader of `socket.authorized` — sign-in, RFC 8705, the XACML gate,
   SCIM, the request pool's forwarded flag — sees the answer. A demoted
   certificate still binds a token, as any unverified one does (RFC 8705 section
-  3).
+  3). **Since #1360 it asks the door's `holdPeer('tls-client', …)`** with the
+  DEFAULT realm's rows, which out of force is the path rules alone; under
+  paranoid PKI mode the hold adds the leaf's fields and the resumed verdict, and
+  a throw inside it demotes rather than leaving OpenSSL's answer.
+  `common/CLAUDE.md` (3dd, *Phase 1*) has the hold's shapes on each listener.
 * **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
   FINGERPRINT*, below.
-* **Six routes**, all on the main app and all visible to
-  `GET /admin/sts-metadata`: `GET /tls` (what this service presents, what it
-  trusts and what it does with a client certificate), `GET /tls/sign-in`,
-  `GET /tls/server-certificate`, `GET /tls/forwarded`, and the two test
-  controls `POST /tls/trust` and `POST /tls/trust/clear`.
+* **Two routes**, both on the main app and visible to
+  `GET /admin/sts-metadata`: `GET /tls/sign-in` and
+  `GET /tls/server-certificate`. The other four went with #597 (below), and
+  `connectionView()` is Monitoring → TLS connection's view.
 * **`listen()` and `close()` are KEPT.** `server.js` and three tests call them,
   and a socket owner that stops owning a socket should not change the shape of
   its module on the same day. `close()` is a no-op. `listen()` binds nothing and
@@ -133,8 +138,10 @@ leaf.
 
 ## The truststore reaches the MAIN listener too, since 2026-09-06
 
-`POST /tls/trust` filled the client truststore for 8443 and 9443. It fills it
-for the main HTTPS port as well since that day, and that is one function
+The runtime truststore door (`POST /tls/trust` then; `POST
+/admin-api/tls/trust/add` and `/admin/tls/trust` since #597) filled the client
+truststore for 8443 and 9443. It fills it for the main HTTPS port as well since
+that day, and that is one function
 (`trustClientCertificatesOn()`) plus one registration in `server.js`. **Since
 2026-09-16 the main port is the only listener that reads it that anybody
 presents a client certificate to**, the two it was written for having been
@@ -162,7 +169,7 @@ is that a certificate which DOES chain is now known to, and
 carrying node's own `authorizationError` out whole, because that string is what
 tells somebody which of a dozen things went wrong.
 
-Every registered listener shares one anchor list, so a single `POST /tls/trust`
+Every registered listener shares one anchor list, so a single truststore add
 covers all of them and `clearAnchors()` empties all of them. A listener created
 outside this module registers rather than being required, for the ordinary
 reason: `server.js` requires this module, so this module cannot require it back.
@@ -172,13 +179,14 @@ is why that function is not a convenience.
 
 ## The serial number is random, and a constant one was a browser-only bug
 
-The self-signed certificate this module mints is regenerated at every start,
-its subject never varies (`CN=localhost, O=sts`), and it is the one a
-PERSON is asked to trust in a browser. Its serial was the constant `'03'` until
-2026-09-01 — chosen so that two of this service's certificates could be told
-apart in a packet capture — and NSS files a certificate under **(issuer,
-serial)**. So the second start of this service produced a different key under a
-pair Firefox had already seen, and Firefox refused the port outright:
+The self-signed certificate this module mints is regenerated at every start, its
+subject never varies (`CN=localhost, O=iya-sts`; `O=sts` before #1294), and it
+is the one a PERSON is asked to trust in a browser. Its serial was the constant
+`'03'` until 2026-09-01 — chosen so that two of this service's certificates
+could be told apart in a packet capture — and NSS files a certificate under
+**(issuer, serial)**. So the second start of this service produced a different
+key under a pair Firefox had already seen, and Firefox refused the port
+outright:
 
 ```
 SEC_ERROR_REUSED_ISSUER_AND_SERIAL
@@ -194,7 +202,7 @@ stack — collide the same way with no restart at all.
 The serial is now 128 bits of randomness with the caller's byte in FRONT of it,
 so `03…` still says which of this service's certificates a capture is looking
 at. `certificateSerial()` in `common/crypto.js` is where that is argued, and it
-is the same 128-bit serial `common/vendored/x509.js` has always minted for a
+is the same 128-bit serial `common/crypto_impl/x509.js` has always minted for a
 SPIFFE SVID. The signing key's certificate (`'02'`, `common/helpers.js`) and
 the ML-DSA one (`'04'`, below) were changed with it — neither is met in a
 browser, so neither showed the failure, and leaving them constant would have
@@ -240,16 +248,17 @@ have to account for.
 
 **One thing that arrangement costs, and it is stated on the page rather than left to
 be met as a handshake failure**: with the main port TLS there is no plain listener in
-this process, so `POST /tls/trust` and `GET /tls/server-certificate` — which exist to
-be reachable BEFORE anything is trusted — have to be called the first time with
-verification off.
+this process, so `GET /tls/server-certificate` — which exists to be reachable
+BEFORE anything is trusted — has to be called the first time with verification
+off (and so did the open `POST /tls/trust`, until #597 deleted it).
 
 Its truststore
 for CLIENT certificates is empty at startup and is filled at runtime through
-`POST /tls/trust`, because the CA it verifies is generated in somebody's browser
-minutes before the connection; that endpoint is on the MAIN port on purpose, since
-that is normally the one reachable before anything is trusted — **and since
-2026-09-16 there is no other port it could be on**. `global.https` —
+`POST /admin-api/tls/trust/add` (the open `POST /tls/trust` until #597), because
+the CA it verifies is generated in somebody's browser minutes before the
+connection; that door is on the MAIN port, since that is normally the one
+reachable before anything is trusted — **and since 2026-09-16 there is no other
+port it could be on**. `global.https` —
 which `oauth2.rfc9700` turns on — takes that property away by making the main port
 TLS as well, so the first fetch of the certificate and the first POST of an anchor
 then have to be made with verification off. Every sentence in that module which
@@ -310,7 +319,8 @@ protected is how to avoid losing that.
 
 * **A verified client certificate on the TLS listeners is not a login**, and no
   revocation is checked there. Verification means one thing exactly: OpenSSL built a
-  chain from what the client sent to an anchor somebody POSTed to `/tls/trust`. No
+  chain from what the client sent to an anchor somebody added through
+  `/admin-api/tls/trust`. No
   session starts, no token is issued, no endpoint will let its holder do anything an
   anonymous caller cannot, and a revoked certificate verifies here and would not
   verify anywhere that matters. All of that is stated in the report itself rather
@@ -384,7 +394,8 @@ restart-only, on by default. Four things are this directory's:
   wraps `startCertificateSessionIn()` and the authentication recording in
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
   username is the leaf's `urn:sts:person:` name. A certificate from an anchor
-  somebody installed is unchanged: default realm, common name.
+  somebody installed signs in, since #1061, in the REQUEST's realm as the
+  entry storing it (below); it was default realm and common name until then.
 * **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener
   is created before the certificate authority starts, so the Root was not there
   to add; `onCertified` calls `applyAnchors()`, which re-applies it to every
@@ -490,7 +501,7 @@ the same argument at greater length.
 
 **IT NEEDS NODE 24, AND ASKING FOR IT ON AN OLDER ONE NO LONGER STOPS THE
 SERVICE.** ML-DSA reaches node with OpenSSL 3.5, which is node 24 — the version
-the Dockerfile pins (24.16.0). On node 22 `generateKeyPairSync('ml-dsa-65')`
+the Dockerfile pins (24.22.1). On node 22 `generateKeyPairSync('ml-dsa-65')`
 throws `ERR_INVALID_ARG_VALUE`, and until 2026-09-01 that throw came out of the
 certificate block at this module's TOP LEVEL: a `require` that throws takes the
 whole process down where a route could not, so a developer on node 22 who set
@@ -553,7 +564,7 @@ rebuilt Root strands an ML-DSA leaf exactly as it strands the RSA one.
 It was SELF-SIGNED for this module's whole life, and that shaped everything
 around it: anybody who wanted to verify this service had to fetch that exact
 certificate and trust it, a restart invalidated what they had trusted, and
-`POST /tls/trust` exists partly because of it.
+the open `POST /tls/trust` (deleted by #597) existed partly because of it.
 
 Now `common/pki.js` builds a Root for the service at startup and this
 certificate's key is a leaf of it — under a **process** Intermediate rather than
@@ -579,7 +590,7 @@ Four things about how it is wired are worth knowing before changing any of it:
 * **THE LISTENERS HAVE TO BE TOLD.** A TLS server evaluates its secure context
   when it is CREATED, so mutating the certificate record is invisible to one
   already made. `onCertified` calls `applyAnchors()` — the rebuild path
-  `POST /tls/trust` already uses, and which reaches every registered listener —
+  a truststore add already uses, and which reaches every registered listener —
   and without that line the certificate is issued, recorded, reported on every
   page and **not served**, which is the most convincing way for this to look
   finished and be wrong.
@@ -617,9 +628,10 @@ it **refuses every connection**, which is worse than no pin because it reads as
 a broken server.
 
 **`serverCertificate()` ANSWERS BOTH QUESTIONS NOW.** `chainPem` is what the
-certificate TRAVELS WITH (the Issuing CA and the Intermediate, leaf-first and
-without the Root, as RFC 5246 section 7.4.2 asks); `trustAnchorPem` is what a
-caller VERIFIES it against. `trustAnchorPems()` answers the Root when this
+certificate is STORED with (the Issuing CA and the Intermediate, leaf-first and
+without the Root); `trustAnchorPem` is what a caller VERIFIES it against. What
+a socket SENDS is neither of them since #1064 — see *Every listener presents
+the Root*, below. `trustAnchorPems()` answers the Root when this
 service has one and the self-signed certificate when it does not — which is
 what `tls.certificateFile` and any process that never runs `pki.start()`
 (`npm test`, every in-process job) leave behind. **The invariant is that the
@@ -647,6 +659,51 @@ about. It re-reads the record and calls `setSecureContext()` on the way into
 `tests/tls_trust_anchor.js` pins all of it, and pins it as a HANDSHAKE: every
 version of that test which compared subjects and issuers passed on a truststore
 OpenSSL would refuse, which is precisely the state this service was in.
+
+## Every listener presents the Root (#1064, 2026-10-27)
+
+**Every TLS listener this service owns sends four certificates: leaf, Issuing
+CA, Intermediate, Root.** Until #1064 it sent three. RFC 8446 section 4.4.2
+(RFC 5246 section 7.4.2 before it) allows either, and leaving the Root out was
+the old reading of "it is the anchor; relying on it having been sent is the
+mistake". What that reading missed is what a client SHOWS. Every Root this
+service builds is `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts`
+before #1294), and a fresh install builds a new one. So a client never
+handed the current Root completed the path from the Intermediate's issuer
+NAME against whatever same-named Root it already held.
+A Windows user reported it as "the Issuing CA and the Intermediate differ
+between installs but the Root is the same". Six fresh installs on two machines
+each had a Root of their own; the name was the only thing shared.
+
+**Sending the Root trusts nothing** (RFC 5280 section 6.1: the anchor is the
+relying party's input), so this changes what a client can display and nothing
+it accepts.
+
+* **One function builds every socket's bundle: `presentedBundlePem()`**
+  (`tls_server.js`). It is used by `secureContextOptions()` (the main port and
+  the debugger), `server.js` at the main port's creation, `tls/listeners.js`
+  (custom and realm listeners), `ldap/ldap_server.js` (LDAPS: ldapjs passes
+  `certificate` to `tls.createServer()` as `cert` unchanged, so the fork needs
+  nothing), `common/cell_channel.ts` (the channel between cells, server side)
+  and `spiffe/spiffe_grpc.ts` (`presentedChainPem()`, both of its contexts).
+  A new listener takes its bundle from there, never from
+  `[cert].concat(chainPem)`.
+* **The chain in it comes from `common/pki.js` `chainThroughRoot()`**, the one
+  place any reported chain is completed (`common/CLAUDE.md`). Its candidates
+  are the service Root and `trustAnchorPems()`, so a supplied
+  `tls.certificateFile` whose file carried its Root now SENDS that Root
+  (`splitSuppliedBundle()` used to keep it out of `chainPem`, and still does).
+  A file with no Root in it is sent as it is.
+* **`chainPem` is unchanged.** It is what a certificate is stored with, and the
+  workers' pin, `anchorSigns()` and every "an empty chain means self-signed"
+  check here read it.
+* **Not changed:** a CLIENT certificate this service presents when it dials
+  out (the inter-cell client side, the SCIM client's mutual TLS). Those are
+  not listeners.
+
+`tests/tls_presented_root.js` holds it as a handshake: four certificates
+arrive, the last one this process's Root by fingerprint, and a client trusting
+that Root alone verifies.
 
 ## THE PUBLISHED ANCHOR MUST SIGN THE PUBLISHED CHAIN (2026-09-11)
 
@@ -845,7 +902,7 @@ same reason `tests/tls_trust_anchor.js`'s first section forks.
 
 The protocol half pinned the service's certificate ONCE, at run start, which was
 right for as long as this certificate could only change when the process did.
-`tests/vendored/sts_admin_api_operations.js` drives every declared operation of
+`tests/protocol/sts_admin_api_operations.js` drives every declared operation of
 the management API, `build-root` among them, so **every job after it lost its
 anchor**: twenty-nine failures per mode in `memory` and `postgres`, each naming
 a certificate and none naming a cause, on a service that was answering
@@ -854,14 +911,15 @@ protocol job now; `tests/CLAUDE.md` carries that half.
 
 ## "STILL CHAINS TO THE ROOT" WAS NOT CURRENT, AND THE FRONT PROCESS BUILT A BRANCH BESIDE A WORKER (2026-09-13)
 
-`tests/vendored/sts_pki_distribution_points.js` failed in `dispatch` mode only:
+`tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode only:
 *`…/pki/crl/process/intermediate.crl` is named by certificates of two different
 authorities — CN=sts Intermediate CA (Process), O=sts and CN=sts Intermediate CA
-(Process), O=sts*. Read off the kept stack, not guessed: the handshake and
-`GET /tls/server-certificate` chained to a process Intermediate built at
-14:53:56 **by the front process**, while `/pki/ca/process/intermediate.cer`
-(served by the front process) and every worker's `/admin-api/pki` held one
-built at 14:53:57 **by worker 33**. Same subject, same Root, different keys.
+(Process), O=sts* (the names before #1294). Read off the kept stack, not
+guessed: the handshake and `GET /tls/server-certificate` chained to a process
+Intermediate built at 14:53:56 **by the front process**, while
+`/pki/ca/process/intermediate.cer` (served by the front process) and every
+worker's `/admin-api/pki` held one built at 14:53:57 **by worker 33**. Same
+subject, same Root, different keys.
 
 The log gave the sequence, a `build-root` from `sts_admin_api_operations` on
 worker 33:
@@ -918,9 +976,12 @@ that arrived a moment ahead of its branch logged `STS-PKI-0046` and
 `STS-TLS-0026` about a leaf re-issued correctly one row later). Each node still
 presents a leaf over its OWN listener key; what the cluster agrees is the
 hierarchy it chains to. The `tls:server` certificate slot therefore holds one
-node's record at a time, and only a CONCURRENT displacement is kept in the
-issued register (`common/pki_merge.js`) — a node's listener serial written over
-sequentially is not, which is a slot-per-node question this work did not take.
+node's record at a time. A CONCURRENT displacement is kept in the issued
+register by the merge (`common/pki_merge.js`), and since #185 (2026-09-23) a
+sequential one is too (`certify()` keeps the serial it displaces), so the
+responder knows every node's listener. What a node presents again after a
+restart is therefore read from its OWN row of `tls.listenerKeys`, never off
+the slot (*THE LISTENER KEY IS KEPT PER NODE*, below).
 
 ## THE SOCKETS THIS MODULE DOES NOT HOLD ARE TOLD TOO (2026-09-21)
 
@@ -929,7 +990,7 @@ behind.** `applyAnchors()` reaches only the listeners registered through
 `trustClientCertificatesOn()`. LDAPS 636 (`ldap/ldap_server.js`) and every
 realm's SPIRE Server API (`spiffe/spiffe_server.ts`) set their context ONCE,
 when they bound, so after a Root replacement both presented a chain under a
-Root nothing held, and `tests/vendored/sts_ldaps.js` and `sts_spiffe_grpc.js`
+Root nothing held, and `tests/protocol/sts_ldaps.js` and `sts_spiffe_grpc.js`
 failed with `unable to get local issuer certificate` in every mode, until a
 restart. This module's own log line said "one anchor covers LDAPS 636" the
 whole time.
@@ -1007,7 +1068,7 @@ argument. The short version:
   handshake on one node and checks the other node's signature against the
   first node's key fails. That is tlsfuzzer's different-SNI probe and the
   TLS 1.2-ticket-as-PSK probe, both recorded as cluster-only exceptions
-  (`perNodeKey`, `clustered: true`) in `tests/vendored/tlsfuzzer_kit.js`.
+  (`perNodeKey`, `clustered: true`) in `tests/protocol/tlsfuzzer_kit.js`.
 * **Codes.** `STS-TLS-0036` is a key that could not be applied;
   `STS-TLS-0037` is a stored key that is not 48 bytes.
 
@@ -1016,9 +1077,13 @@ each claim.
 
 ## A RESTART IS ANNOUNCED TOO: WHAT THE SERVICE LAST ANNOUNCED IS KEPT (2026-09-26, #264)
 
-Until #264, a restart was never announced. The listener KEY is made at every
+Until #264, a restart was never announced. The listener KEY was made at every
 start (`makeServerCertificate()`), so even a product restart with the Root
-kept presents a new leaf. A receiver that pinned the old one learned nothing.
+kept presented a new leaf. A receiver that pinned the old one learned nothing.
+**Since 2026-10-08 the key and, while it is current, the certificate are kept
+per node where minted state persists** (next section), so a plain restart of
+one node presents the leaf it presented before and announces nothing; what
+this section announces is a start that presents something else.
 
 **The record.** `tls.listenerAnnounced` is a `realms.sharedMap()`
 (`scope: 'shared'`, `retain: 'keep'`). It is keyed by algorithm unit (`rsa`,
@@ -1046,10 +1111,11 @@ reason `restarted`. That reason is for this type only (`ssf_events.js`'s
 - So the record is shared through the store and any node compares against
   it, which is #162's arrangement for the process CA.
 - It also catches a node that JOINS with a leaf nobody was told of.
-- **The cost, stated in `docs/`**: every node's start is announced, because
-  each node has a listener key of its own. `from` is the certificate the
-  SERVICE last announced, which another live node may still present.
-  Receivers behind a balancer should pin the Root.
+- **The cost, stated in `docs/`**: in a cluster a node's start is announced
+  whenever another node announced after it, because each node has a listener
+  key of its own. `from` is the certificate the SERVICE last announced, which
+  another live node may still present. Receivers behind a balancer should pin
+  the Root.
 
 **It persists only where minted state does**: product mode on postgres, a
 cluster, or a dispatched pool with a real KEK (`persistence_minted.js`'s
@@ -1065,10 +1131,11 @@ cluster, or a dispatched pool with a real KEK (`persistence_minted.js`'s
 certificate (`tls.certificateFile`) and a request worker's handed-in copy.
 
 **Tests:**
-- `tests/listener_certificate_restart.js` runs three starts over one stub
-  store, in product mode with a file KEK and persisted keys. The same Root
-  and a new leaf are announced once, from `listen()`. With no store, nothing
-  is announced. A mutant that drops `persist` fails three assertions.
+- `tests/listener_certificate_restart.js` runs five starts over one stub
+  store, in product mode with a file KEK and persisted keys (next section
+  says what each proves). A start under another node name presents a new
+  leaf under the same Root and is announced once, from `listen()`. With no
+  store, nothing is announced.
 - `tests/service_key_signals.js` E2–E7 covers the rest in one process.
 - No HTTP job can restart the service it talks to, so none covers this.
 
@@ -1086,6 +1153,86 @@ the branch AGAIN, leaving two Intermediates of one name and one CRL address
 chain comes from what `issueUnder()` returns, and `common/pki.js`'s
 `repairBranch()` re-asks "is it stale?" inside the build queue. **An observer
 that ISSUES must not assume the realm branches are current when it runs.**
+
+## THE LISTENER KEY IS KEPT PER NODE (2026-10-08)
+
+**rcbj: "#162 was supposed to generate a key pair if one didn't already exist
+in the database. Not recreate it on every restart with a persisted volume."**
+The Root and the process branch were kept; the listener's own key was made at
+require time (`makeServerCertificate()`, `makeMlDsaServerCertificate()`) and
+certified afresh at every start, so every restart of a product container
+presented a new key pair and a new certificate. #162's decision 2 still binds:
+**each node keeps its OWN listener key**, no listener private key is shared
+between nodes, the process CA is one shared authority, and no node address is
+published anywhere. The header *THE LISTENER KEY IS KEPT PER NODE* in
+`tls_server.js` is the argument; the short version:
+
+* **Where.** `tls.listenerKeys`, a `realms.sharedMap()` (`scope: 'shared'`,
+  `retain: 'keep'` by default), so it persists exactly where
+  `tls.listenerAnnounced` does: product mode on postgres, a cluster, a
+  dispatched pool with a real KEK (`persistence_minted.js`'s `enabled()`).
+  Every row is sealed under the KEK like every minted row. Not a table of its
+  own, for `common/CLAUDE.md`'s *where does this service keep a private key*
+  reason. Elsewhere (development, `memory`, `ldif`) the map dies with the
+  process and the key is made per start, as before; an ephemeral-KEK pool
+  clears the rows it finds. It is a CELL-tier store (`persistence/tiers.js`).
+* **Keyed `unit@node`** — `rsa@node-a`, `ml-dsa-65@node-a`, #264's units —
+  the node being `cluster.nodeName`, else the host name (`cluster.js`'s
+  `nodeName()`). **Two nodes given ONE name would share a key**: the cluster
+  stacks name theirs (`node-a`/`node-b`), AWS, GCP and Azure set
+  `STS_CLUSTER_NODE_NAME` per node, and the compose stack's single node is
+  `hostname: sts`. A RENAMED node makes a key of its own; the old row stays,
+  unread.
+* **Each node holds only its own row.** The store is replicated, so the
+  map's `reconcile.restore` admits a row only when it names this node, at a
+  start's restore and at replication alike. Another node's row is opened by
+  the persistence layer and dropped; it is never held in this node's memory.
+* **When.** Settled the first time `common/pki.js` asks the registration for
+  the public key (`settleListenerKey()`), inside `pki.start()` — after the
+  minted rows are restored, before anything binds. The record keeps the key
+  its self-signed bootstrap is over until `takeIssuedCertificate()` takes a
+  certificate over the settled key and swaps both in one step, so a socket
+  never holds a key without its certificate. With `pki.autoBuild` off nothing
+  is certified, so nothing is settled or stored, and the self-signed
+  certificate is per start as it always was.
+* **A stored key that no longer fits** — another algorithm, an RSA modulus
+  other than `tls.selfSignedKeyBits`, a row that will not parse — is replaced
+  by the key made at this start, `STS-TLS-0048`.
+* **THE CERTIFICATE IS KEPT TOO.** The row also holds the certificate this
+  node last took over that key, its chain and what it was issued for (the
+  name, key usage and extensions — `listenerIssuance()`). At the next start
+  the registration offers it (`heldCertificate`), and `pki.js`'s
+  `heldCertificateCurrent()` presents it again when it is over the same key,
+  its chain is the process branch held NOW (the Issuing CA and the
+  Intermediate, certificate for certificate, and the branch chains to the
+  Root), more than a third of its validity remains, and the register still
+  records its serial unrevoked. Otherwise a new one is issued over the same
+  key. It is read from the node's row and not the `tls:server` slot because
+  that slot holds one node's record at a time (#162).
+* **So a plain restart presents the same leaf**, and #264's comparison finds
+  nothing to announce. `takeIssuedCertificate()` returns early for the
+  certificate it already presents, so a second `certifyRegistered()` in one
+  life re-keys no socket and tells no observer.
+* **What still changes the leaf, over the SAME key**: `build-root`, a rebuilt
+  process branch or a reissued TLS Issuing CA (the chain is no longer the
+  one held, and the observers — LDAPS, SPIFFE, the debugger, the request
+  workers' bundle — are told exactly as before); a changed `tls.hostnames` or
+  `tls.ips`; a revoked or nearly expired leaf. **What changes the KEY**: a
+  wiped volume (or KEK), a renamed node, a changed key size or algorithm, and
+  every start where minted state does not persist.
+* **Everything that holds the key agrees.** The swap happens in the front
+  process before `server.js` hands `serverCertificate()` to the request pool,
+  so workers are handed the kept key at fork; a later re-issue is over the same
+  key, so the bundle that carries no key (`reconcileTheListener()`) is still
+  right. LDAPS, SPIFFE and the debugger listener bind after `pki.start()` and
+  read the record; `onServerCertificateChange` is unchanged. A worker
+  (handed in) and a supplied certificate settle nothing.
+
+`tests/listener_certificate_restart.js` holds it: a second start over the same
+store presents the same key and certificate and announces nothing; another
+node name gets a key of its own (and is announced as a restart, from the
+service's last announcement); a changed `tls.selfSignedKeyBits` makes a new
+key; a start with no store makes a key per start.
 
 ## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
 
@@ -1106,6 +1253,9 @@ did not already. **In a cluster each node's leaves ride on its membership
 row** (`cluster/CLAUDE.md`), because no node can ask another's socket.
 
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
+
+*History: both routes were deleted by #597 — see* MONITORING → TLS
+CONNECTION, AND NO OPEN DOOR *at the end of this file.*
 
 `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could reach the port,
 and since 2026-09-06 an anchor decides whose client certificate becomes an IDENTITY — a
@@ -1147,14 +1297,15 @@ and the sentences are `admin-core/admin_actions.ts`'s `truststoreAction()`; the 
 
 Four things about it are decisions:
 
-* **`add` IS STRICT AND `POST /tls/trust` IS NOT.** Through the gated doors a bundle with
+* **`add` IS STRICT AND `POST /tls/trust` WAS NOT** (until #597 deleted it). Through
+  the gated doors a bundle with
   one block OpenSSL cannot read is refused WHOLE, checked before anything is pushed — an
   unparseable `ca` entry makes the next `setSecureContext()` throw on every listener, which
   `applyAnchors()` logs while the listeners keep their old context and the page says
-  otherwise. The test control keeps accepting what it is given, because development-mode
-  behaviour is not this change's to alter.
-* **THERE IS NO BULK CLEAR ON EITHER GATED DOOR.** `clearAnchors()` stays behind
-  `POST /tls/trust/clear` only. A clear's reach is every client certificate every other
+  otherwise. The test control kept accepting what it was given while it existed.
+* **THERE IS NO BULK CLEAR ON EITHER GATED DOOR.** `clearAnchors()` stayed behind
+  `POST /tls/trust/clear` only, and is reached by the in-process tests alone since
+  #597. A clear's reach is every client certificate every other
   caller relies on, and `tests/CLAUDE.md` records one unguarded clear costing a remote PEP
   its identity for the rest of a run. Removing a `file` anchor IS allowed, and both the
   page and the reply say it comes back at the next start.
@@ -1184,6 +1335,24 @@ the layer, the pin and the product refusal, the last three in a child process, a
 the add and the remove as a REAL HANDSHAKE on a registered listener; `sts_admin_api_operations`
 and `sts_admin_console` drive both doors over HTTP with a CA they mint and remove.
 
+## THE ADMISSION RULE, UNDER PARANOID PKI MODE (#1360, 2026-11-06)
+
+Before #1360 this store took anything OpenSSL could parse, so a self-signed LEAF
+became an anchor for itself. With `anchor-admission` applying (the mode ASKED IN
+THE DEFAULT REALM, as `truststoreOpenToAnybody()` asks it, because these anchors are
+every listener's), `addAnchors()`'s strict path and the file's loader hold each
+block to `pki.anchorProblemSync()`. **The rule is the signer truststore's, and the
+synchronous door exists for this store**: `truststoreAction()` answers in the same
+tick, and the file is read at require. An intermediate is allowed too, since
+OpenSSL builds through one, and it may chain to the service Root.
+
+**A STORED ANCHOR THE RULE NOW REFUSES IS KEPT AND REPORTED** (`STS-TLS-0056`, the
+row's `unadmittable`), because taking a working deployment's anchor away silently
+is worse than an operator reading a red row. **A BLOCK OF THE FILE IT REFUSES IS
+LEFT OUT, NOT FATAL** (`STS-TLS-0057`): an expired CA in the file must not stop the
+service, and an anchor left out trusts less rather than more. `common/CLAUDE.md`
+(3dd) argues the mode.
+
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
 **`protocolOptions()` is where `tls.minVersion`, `tls.ciphers` — and since #212
@@ -1196,7 +1365,7 @@ change re-applies it to every registered listener (the main port among them),
 ECDHE AES-GCM suites for TLS 1.2 — with `honorCipherOrder`, so the server's order wins and
 TLS 1.3 is what a modern client gets. It is the FAPI 2.0 Security Profile's section 5.2.2,
 made every listener's default rather than a FAPI switch, because a cipher suite belongs to
-the socket and a profile to a realm; `tests/vendored/sts_fapi2.js` proves the handshakes (TLS
+the socket and a profile to a realm; `tests/protocol/sts_fapi2.js` proves the handshakes (TLS
 1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused). The floor is still node's
 TLSv1.2, which FAPI 2.0 allows. **A cipher list that builds no context is
 FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
@@ -1263,21 +1432,24 @@ to on.
   listener in a realm should use the same certificate").**
   - The default realm's main port, LDAPS and debugger present the one service
     certificate.
-  - A realm with a listener of its own (#99) presents that realm's
-    certificate, `listener.certificateFile` or one its CA issues.
+  - A custom listener (#472; a realm's own, #99, among them) presents its
+    own: the operator's `certificateFile`, or one its owning realm's CA
+    issues — the default realm's for a service listener.
   - The only listeners that present something else are those whose protocol
     requires it: SPIFFE's gRPC listeners present an X509-SVID of the realm's
     trust domain, and the cell channel presents a cell certificate.
   - A change that would give one realm two different listener certificates is
     against this rule.
-  - **A NEW SERVER CERTIFICATE IS MADE ONLY WHEN A REALM DEFINES ITS OWN PORT**
-    (rcbj, 2026-10-02). The realm's `listener.port`, #99 (`tls/realm_listeners.js`),
-    gets a `realm-tls` leaf from the realm's CA unless `listener.certificateFile`
-    names one. No other setting or listener mints a server certificate. The
-    service certificate is made once, at startup, and only re-issued over its
-    own key when the Root is rebuilt. SPIFFE's SVIDs and the cell channel's
-    leaf are their protocols' credentials, not server certificates in this
-    sense.
+  - **A NEW SERVER CERTIFICATE IS MADE ONLY WHEN A LISTENER IS DEFINED**
+    (rcbj, 2026-10-02, for a realm's own port; widened by rcbj's D5 on #472,
+    2026-10-07: "Files, else realm CA"). A custom listener (`tls/listeners.js`)
+    with no `certificateFile` gets a `realm-tls` leaf from its owning realm's
+    CA — the default realm's for one in `listeners.custom` — one slot per
+    listener per node. No other setting or listener mints a server
+    certificate. The service certificate is made once, at startup, and only
+    re-issued over its own key when the Root is rebuilt. SPIFFE's SVIDs and
+    the cell channel's leaf are their protocols' credentials, not server
+    certificates in this sense.
 * **Tests that need TLS 1.2 turn it on:**
   - `sts_tlsfuzzer.js` turns it on service-wide for its run (it is `exclusive`);
   - `tlsfuzzer_debugger.js` and `ldaps_no_certificate_request.js` set it in
@@ -1292,12 +1464,15 @@ on each TLS listener tab as editable fields. Also, expose HTTP Connection
 Pooling settings on each HTTP/HTTPS listener tab."
 
 * **The session cache is two settings, both runtime.**
-  - `tls.sessionTimeoutS` (60) is how long a session resumes, by ticket or
+  - `tls.sessionTimeoutS` (300 since 2026-10-07, rcbj; 60 until then) is
+    how long a session resumes, by ticket or
     by ID. It replaced `tls.mainSessionTimeoutS`, which was the main port's
     alone; `policyFor()` carries it and `protocolOptions()` hands it to
     OpenSSL as `sessionTimeout`, so a change reaches the next handshake
     through the secure context `reapplyPolicy()` rebuilds.
-  - `tls.sessionCacheSize` (0) is how many TLS 1.2 session IDs a listener
+  - `tls.sessionCacheSize` (2048 since 2026-10-07, rcbj: "so there would
+    actually be TLS connection pooling"; 0 until then) is how many TLS 1.2
+    session IDs a listener
     keeps. **Node has no server-side session cache of its own**: it resumes
     by ticket, and by ID only through the `newSession`/`resumeSession`
     events. `attachSessionCache()` installs those on every listener that
@@ -1307,6 +1482,67 @@ Pooling settings on each HTTP/HTTPS listener tab."
     service did before.
   - **Not on the SPIFFE listeners**, which have only the timeout: grpc-js
     offers no session-ID events.
+  - **The session cache and the server name (RFC 6066 section 3,
+    2026-10-07).** A session ID is resumed only under the server name it
+    was made under; a different name, none, or a malformed one gets the full
+    handshake the RFC asks for. Neither OpenSSL (on a TLS 1.2 hit it parses
+    no name and only notes a mismatch) nor node's `resumeSession` event (it
+    passes the ID alone) does it, so tlsfuzzer's
+    `test-invalid-server-name-extension-resumption.py` failed on the
+    debugger's listener the day the size went to 2048. Node 24's
+    `onclienthello` carries the session id and the ticket flag only —
+    `hello.servername` is absent, and `getServername()` is still false
+    while `resumeSession` runs — so `installSessionNameSniffer()` reads
+    the name from the raw ClientHello before the TLS engine (the
+    pause-and-unshift `client_hello.ts` uses). `installClientHelloHook()`
+    still wraps `TLSSocket.prototype._init` once and, for the servers
+    `attachSessionCache()` registered, wraps each socket's `onclienthello`
+    and `onnewsession` (`watchClientHello()`), preferring
+    `hello.servername` when a node passes it. The cache keeps the name
+    with the session and compares it byte for byte. It FAILS CLOSED: a
+    name it cannot see refuses the resumption, and a node with no
+    `_init` is logged as STS-TLS-0046 and resumes nothing by ID.
+    `tests/listener_tls_policy.js` L5c holds it.
+  - **A TLS 1.2 TICKET is held to the same rule after the handshake
+    (#507, 2026-10-26).** Node resumes a ticket inside OpenSSL with no
+    event, OpenSSL resumes one offered under another name, and nothing
+    node exposes carries the name a ticket was made under: `servername`
+    is false after a TLS 1.2 hit and the session's DER holds no name,
+    with or without an SNI callback answering a context (shown by hand
+    against a bare node server, 2026-10-26). What a resumed TLS 1.2
+    session keeps is the MASTER SECRET of the session it resumes, so
+    `attachSessionCache()` records, at the end of every full TLS 1.2
+    handshake, the hello's name under a SHA-256 of that secret (read
+    from `getSession()`'s SSL_SESSION), and on every resumed TLS 1.2
+    connection looks it up and CLOSES the connection when the name
+    differs (`STS-TLS-0052`) or this node has no record
+    (`STS-TLS-0053`). Closed rather than resumed afresh: by
+    `secureConnection` the handshake is over, and the connection is
+    closed before node's HTTP server or anything else reads it
+    (`prependListener`, `refuseNonNistCurveCertificatesOn()`'s
+    arrangement). The record is per listener and per process, bounded by
+    4096 entries and the listener's `sessionTimeoutS` (a ticket lives no
+    longer), and a replicated shared store `tls.ticketNames`
+    (`tls.presentedChains`'s shape, a CELL-tier store) carries it to the
+    other nodes for a ticket sealed under the cluster's shared key.
+    A mismatch closes at once; a resumed session this node has NO record
+    of is held through one read barrier (`persistence.syncNow()`) and
+    judged again (2026-10-27): behind a balancer the row is still
+    replicating, and the cluster mode's tlsfuzzer showed that closing at
+    once closed every quick reconnect through `sts-lb`. The four options the
+    ticket listed, and why this one: turning TLS 1.2 tickets off
+    (`SSL_OP_NO_TICKET`) also makes TLS 1.3 tickets STATEFUL, so every
+    TLS 1.3 resumption would go through the per-process cache and die
+    with it across nodes; node exposes no ticket callback to carry the
+    name in; and no hook permits a full-handshake fallback after OpenSSL
+    has accepted the ticket. **TLS 1.3 is left alone on purpose**: RFC
+    8446 section 4.2.11 removes the server's check ("the server does not
+    need to" compare) and section 4.6.1 binds the CLIENT to the same SNI,
+    and OpenSSL resumes a TLS 1.3 PSK under another name (same probe).
+    **Not on the SPIFFE listeners**, for the session cache's reason: grpc-js
+    owns those servers and `attachSessionCache()` never sees them; they
+    are TLS 1.3 only in practice. `tests/listener_tls_policy.js` L5d and
+    L5e hold both.
 * **Connection pooling is four settings, all runtime, on the HTTP
   listeners only** (main, the debugger, the plain-HTTP revocation listener,
   and a realm's own): `http.keepAliveTimeoutS` (60; it replaced
@@ -1337,20 +1573,23 @@ rcbj asked for:
   that requires one.
 
 The settings are drawn, all on Server configuration → Listeners
-(`admin-ui/listeners_admin.ts`), along with the TLS and Realm listener groups
-that moved there from this page. `docs/tls.md` has the table.
+(`admin-ui/listeners_admin.ts`), along with the TLS group that moved there
+from this page and, since #472, the Custom listeners group. `docs/tls.md` has
+the table.
 
 * **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
   answers `{ disableTls12, pqcOnly, tls13Suites, clientAuth }`:
-  - the kinds are `main`, `ldaps`, `debugger`, `realm`, `spiffe` and `cell`;
+  - the kinds are `main`, `ldaps`, `debugger`, `custom`, `spiffe` and `cell`
+    (`custom` was `realm` until #472, and takes a listener id where that
+    took a realm id);
   - `protocolOptions(policy)` turns a policy into node's options;
   - `clientAuthOptions(mode)` turns it into `requestCert` / `rejectUnauthorized`;
   - with no argument, `protocolOptions()` is the process's policy, which is
     what every caller that predates #423 still passes.
 
-  A realm's listener reads its `listener.*` rows inside the realm and inherits
-  the process's unless set. `spiffe` and `cell` get no client authentication:
-  their protocols fix it.
+  A custom listener reads its definition's `tls` block and `clientAuth`
+  (`common/listener_map.js`) and inherits the process's unless set. `spiffe`
+  and `cell` get no client authentication: their protocols fix it.
 * **RUNTIME, AND RE-APPLIED IN PLACE.** The floor, the suites and the groups are
   baked into a secure context, and node reads `server.requestCert` /
   `server.rejectUnauthorized` at each connection. So:
@@ -1389,9 +1628,9 @@ that moved there from this page. `docs/tls.md` has the table.
 ## WHAT tlsfuzzer FOUND (2026-09-26, #212)
 
 tlsfuzzer runs against all three listeners that present this module's
-certificate: the main port and LDAPS from `tests/vendored/sts_tlsfuzzer.js`,
+certificate: the main port and LDAPS from `tests/protocol/sts_tlsfuzzer.js`,
 and the debugger's from `tests/tlsfuzzer_debugger.js`. Both run the plan in
-`tests/vendored/tlsfuzzer_kit.js`, which records every exception with its
+`tests/protocol/tlsfuzzer_kit.js`, which records every exception with its
 reason; `tests/CLAUDE.md` (*THE TLS FUZZER*) says how it runs. It found four
 things in this module's policy, all fixed here.
 
@@ -1451,13 +1690,87 @@ is Node/OpenSSL behaviour this service cannot configure, and each is also on
 #212:
 * alert choices that differ from tlsfuzzer's expectations;
 * SNI parsing with no `SNICallback`;
-* no stateful session-ID cache (tickets work);
+* a session-ID cache per listener and per PROCESS (#429), so a session ID
+  offered to another node is not resumed (tickets work);
 * no NewSessionTicket after a PSK resumption;
 * no `psk_ke`;
 * a lazy KeyUpdate answer;
 * OpenSSL checking `legacy_record_version`;
 * the hybrid and compressed-point leniency;
-* no ALPN on LDAPS.
+* no ALPN on LDAPS;
+* an empty body of an extension the script still calls unassigned
+  (`emptyAssignedExtension`,
+  `test-tls13-large-number-of-extensions.py`): the first chunk is ids 2
+  through 4119, which includes extensions IANA has assigned and OpenSSL
+  implements, so RFC 8446 section 4.2 requires decode_error. Later chunks
+  are ids nobody has assigned and are ignored.
+* a random body of that same stale range (`randomAssignedExtension`, the
+  probe whose ids run from 2 through 1047, which still includes
+  `compress_certificate`). The same decode_error, on every listener. The
+  script draws 20 probes, so the failure shows up on whichever listener
+  drew the probe, and a listener that did not draw it reports the
+  exception as not seen.
+
+One TOOL entry sits beside them, `h2Preface` (2026-10-19): since #703 a TLS
+1.2 resumption that offers only `h2` after a full handshake on `http/1.1`
+selects `h2` — RFC 7301 section 3.1, ALPN is a property of the connection
+and is negotiated afresh on a resumption — and the HTTP/2 session then sends
+its SETTINGS frame first (RFC 9113 section 3.4), which
+`test-alpn-negotiation.py`'s "resumption with alpn change" reads as an
+unexpected message while it waits for its close_notify answer. It is a race
+(single-node lost it, memory won it on the same build), so the exception is
+often not seen. RFC 8446 section 4.2.11 does not apply: it binds only TLS 1.3
+early data to the original ALPN.
+
+## A CONNECTION THAT FAILS AT THE TLS LAYER KEEPS ITS ALERT (2026-11-13)
+
+**The memory-mode run on 9300a96d1 failed `sts_tlsfuzzer` on one probe of
+`test-tls13-record-layer-limits.py`** ("too big ciphertext … fuzzed tag",
+*Unexpected closure from peer* where a record_overflow or bad_record_mac
+alert was expected), about one in seventy under load. LDAPS had the same
+failure in run 21 and the same cause (`ldap/CLAUDE.md`, the fork's
+`errorCloseDelay`): node closed the socket within a tick of the TLS failure,
+with the record the alert was about still arriving, so the kernel answered
+with a TCP reset and a reset that reached the peer first discarded the alert
+OpenSSL had already written.
+
+`tls/alert_close.ts` holds such a connection for two seconds before closing
+it, on the main port, every custom listener (`server.js`) and the debugger's
+listener. What it rests on, because none of it is a node option:
+
+* **A server-side TLSSocket closes by calling `destroy()` on the raw socket
+  under it** (`TLSWrap.close()`), and that one call is what closes the
+  descriptor. A raw socket marked as failed has its own `destroy()` replaced
+  for that connection only; the TLS engine goes on reading the TCP stream and
+  discarding it while the socket is held, so the receive buffer stays empty
+  (measured: Recv-Q 0 with the peer still sending).
+* **The FIN goes at once; only the descriptor is held.** A reset comes only
+  from closing with unread data, so the sending side is ended immediately
+  (the FIN follows the alert) and the close waits. The first version held
+  both, and tlsfuzzer's ExpectClose — which after an ExpectNoMessage waits
+  well under a second — failed 23 probes of
+  `test-truncating-of-client-hello.py` on the debugger's listener and ran
+  two more scripts into their watchdog.
+* **There are two ways a failure arrives.** Before node counts the handshake
+  done (a bad record behind the client's Finished, as tlsfuzzer sends it, or
+  a handshake failure), node destroys the TLSSocket itself and closes its
+  handle a microtask after `tlsClientError`, which is where it is marked.
+  After it, the TLSSocket's `error` reaches HTTP/1.1's `clientError` or the
+  HTTP/2 session, both of which destroy in the same call, so it is marked
+  from an `error` listener prepended at `secureConnection`.
+* **`TLSSocket._parent`** (the raw socket) is not public API; without it the
+  connection closes at once as before, logged once (`STS-TLS-0062`).
+* **An alert the PEER sent is not held** — nothing is owed back.
+* **Bounded**: 256 held per listener; beyond that a failure closes at once
+  (`STS-TLS-0061`, the first and then a count at most once a minute). One
+  one-shot timer per failed connection, cleared on close, which is the
+  per-connection timeout the scheduler rule exempts.
+
+`common/parser_refusal.ts` no longer answers a TLS failure: it wrote a
+plaintext 400 into a connection whose TLS engine had just sent its fatal
+alert and logged it as a refused request (`STS-HTTP-0026`). It closes it, and
+the close is held. `tests/tls_alert_close.js` holds all of it, with the
+control.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
@@ -1614,7 +1927,7 @@ the leaf as it does for a real handshake — harmless, and keyed by the leaf.
 **The main port shares the cluster's session-ticket key** (`tls.mainPortSharedTickets`,
 on by default), keeps an idle HTTP/1.1 connection `http.keepAliveTimeoutS`
 (60, against node's own 5) and lets a TLS session resume for
-`tls.sessionTimeoutS` (60). Both were the main port's own settings
+`tls.sessionTimeoutS` (300; 60 until 2026-10-07). Both were the main port's own settings
 (`global.httpKeepAliveTimeoutS`, `tls.mainSessionTimeoutS`) until #429 made
 them service-wide defaults every listener inherits — see *Per-listener
 session cache and connection pooling*, below. What forced it: the main port asks every full
@@ -1633,21 +1946,258 @@ store now (`tls.presentedChains`), and `common/app.js` mounts a bounded wait
 above the request pool for a session that resumed before its chain's row
 arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
 
-**HTTP/2 is not offered** — express cannot run on node's own `http2` server,
-and rcbj wants that out of the box rather than written here: #407.
+**HTTP/2 is offered since #407 (2026-10-19)**, beside HTTP/1.1 and chosen
+per connection by ALPN, on every TLS HTTP listener: the main port, the
+debugger's and each custom listener is `http2.createSecureServer()` with
+`allowHTTP1`, a `tls.Server` like `https.Server`, so every option and
+registration above — the truststore, client authentication, the ticket key,
+the connection observer, JA4 and the PROXY protocol — applies to it
+unchanged. **Whether `h2` is OFFERED is a setting, on by default** (rcbj,
+2026-10-19: "enabled by default on all listeners. But, the user can disable
+it if necessary"): `http.http2`, with a per-listener row from
+`PER_LISTENER_SETTINGS` and a custom listener's `tls.http2`. It is applied
+with the pooling values (`httpPolicyFor()`, `applyHttpPolicy()`) by setting
+the server's `ALPNProtocols`, which node reads at each new connection — so
+it is runtime, needs no rebind, and an open connection keeps its protocol.
+Off, the server still parses HTTP/1.1 only, because nothing offers `h2`; a
+client that offers ONLY `h2` is refused in the handshake with
+`no_application_protocol` (RFC 7301 section 3.2), which is the point of
+turning it off for one. Plain express cannot run on it (4.22 and 5.3 both
+throw on the first HTTP/2 request: express sets an `http.IncomingMessage`
+prototype and `Http2ServerRequest` keeps its state behind its own), so
+`common/app.js` and the debugger ADAPT their two apps with
+`common/http2_express.ts`, which picks the prototype by protocol; an HTTP/1.1
+request gets express's own. **Not `http2-express`**, which #703 used first:
+it replaced `lazyrouter` on the shared `express.application`, so every
+express app in the process, and named itself in `X-Powered-By`;
+`common/CLAUDE.md` (`http2_express.ts`) has the adapter. Nine things follow:
 
-## A trust realm's own front-end listener (#99, 2026-10-02)
+* **A socket is a connection, not a request.** On an HTTP/2 request
+  `req.socket` is node's proxy to the session's socket, shared with every
+  other stream. `getPeerCertificate()` through it is right (the certificate
+  is the connection's); ENDING it is not, which is why
+  `common/lingering_close.js`'s `arm()` does nothing for an HTTP/2 request —
+  the stream closes with RST_STREAM(NO_ERROR) on its own (RFC 9113 8.1).
+* **Connection-specific headers are forbidden** (RFC 9113 8.2.2):
+  `Connection`, `Keep-Alive`, `Transfer-Encoding`. Node drops one with a
+  warning. `request_pool.js` already strips them from a worker's answer.
+* **A body's length may be the framing's alone** (RFC 9113 8.1.1), and
+  body-parser reads a request with neither `content-length` nor
+  `transfer-encoding` as having no body — a token request over HTTP/2
+  without a length answered `grant_type ''`. `common/http2_framing.ts` marks
+  such a request `transfer-encoding: chunked` on the main port's `request`
+  event, ahead of the application, because nothing may sit above the realm
+  middleware.
+* **An HTTP/2 request's `req.headers` carries the pseudo-headers**
+  (`:method`, `:path`, `:scheme`, `:authority`), and node's HTTP/1.1 client
+  throws ERR_INVALID_HTTP_TOKEN on a name with a colon. Both forwarders drop
+  them: `request_pool.js` (keeping `:authority` as `host`) and the
+  debugger's API proxy. A new forwarder owes the same.
+* **The pooling values bound HTTP/1.1 only**, in node: `keepAliveTimeout`,
+  `headersTimeout` and `maxRequestsPerSocket` are read by its HTTP/1.1
+  parser, and node announces 2^32-1 concurrent streams. So
+  `applyHttpPolicy()` also sets the server's SETTINGS
+  (`http.http2MaxConcurrentStreams`, 100 by default, per listener), and
+  `followHttp2Sessions()` holds every session to the keep-alive timeout as an
+  idle timeout (a graceful `close()`: GOAWAY, open streams finish) and to
+  `maxRequestsPerSocket` as a stream count (a GOAWAY after the last). A
+  change reaches open sessions too: new SETTINGS and a new timer. Without it
+  one connection inside `maxConnections` could carry unbounded work for ever.
+* **`:authority` is the host** (RFC 9113 section 8.3.1): the adapter's
+  `init` writes `host` from it, and a request whose `host` names another
+  entity is refused 400, `STS-HTTP-0024` — there, in `request_pool.proxy()`
+  and in the debugger's API proxy, each asking `hostProblem()` itself
+  because the process behind it believes the `host` it is sent.
 
-`tls/realm_listeners.js` binds an HTTPS listener per realm that sets
-`listener.port`, in the front process, built by `server.js`'s
-`realmListener()` with the main port's wiring and the realm's own certificate
-(an operator's files, or a `realm-tls` leaf from the realm's CA, one slot per
-node so one node's issuance never supersedes another's). It is reconciled on
-every realm change; bind failures are recorded, never fatal. Two things it
-needed from this directory: `trustClientCertificatesOn()` takes the listener's
-own certificate (`certificateOf`), because `applyAnchors()` used to push the
-MAIN port's certificate to every registered listener on each truststore
-change; and `forgetListener()`, for a listener closed at runtime.
-`common/app.js`'s `enterRealm` refuses any other realm's path on it
-(STS-TLS-0041); `docs/trust-realms.md` is the operator's half.
+* **CONNECT is answered 501 on every HTTP listener (#1304)**, by
+  `common/connect_refusal.ts` on the server's `connect` event: node never
+  hands a CONNECT to the application (its target is an authority, not a
+  path), and on its own answered a 405 with no `Allow` over HTTP/2 and
+  dropped the connection over HTTP/1.1. `STS-HTTP-0025`; `common/CLAUDE.md`
+  has the module.
+* **A custom listener's `tls.http2` takes `true`, `false`, `on` or `off`**
+  (the strings or the JSON booleans), and decides that listener's offer
+  whatever `http.http2` says; `httpPolicyFor()` reads all four.
+* **The stream cap is on the Listeners page**, beside *HTTP/2 offered*, in
+  each TLS listener's tab (#1304): `http2MaxConcurrentStreams` from the view's
+  `http`, which is `httpPolicyFor()` itself.
+
+`tests/main_port_http2.js` holds all of it.
+
+## Custom listeners (#472, 2026-10-07; a realm's own, #99, among them) — rule 3cg
+
+`tls/listeners.js` binds an HTTPS listener for every definition
+`common/listener_map.js` reads — the service's `listeners.custom` and each
+realm's `listeners.realm`, which is what #99's realm listener became (rcbj's
+D1) — in the front process, on every node, built by `server.js`'s
+`customListener()` with the main port's wiring and the listener's own
+certificate (the operator's files, or a `realm-tls` leaf from the owning
+realm's CA, one slot per listener per node so one node's issuance never
+supersedes another's). It is reconciled on every settings and realm change;
+only what a socket or its certificate is made of rebinds (the owner, port,
+names and certificate files), and a change of `tls` or `clientAuth` is applied
+in place by `reapplyPolicy()`. Bind failures are recorded, never fatal.
+
+Two things it needed from this directory: `trustClientCertificatesOn()` takes
+the listener's own certificate (`certificateOf`), because `applyAnchors()`
+used to push the MAIN port's certificate to every registered listener on each
+truststore change; and `forgetListener()`, for a listener closed at runtime.
+
+**Every socket is marked** — `stsListener` with the listener's id, and a
+realm's own with `stsRealmListener` as well. `common/app.js`'s `enterRealm`
+refuses any other realm's path on a realm's listener (STS-TLS-0041), and its
+`enterListener()` refuses the path of an application not mapped to the
+listener (STS-TLS-0047); `common/request_pool.js` carries the id to a worker
+in a header it strips from the client first. Which application is where, and
+where URLs are built, is `common/CLAUDE.md`'s (*Hosted applications and the
+listeners they are on*); `docs/listeners.md` is the operator's half.
+
+## MONITORING → TLS CONNECTION, AND NO OPEN DOOR (#597, 2026-10-12)
+
+**#591 takes every demonstration out of the runtime; #597 is this family's
+share, and it deleted four routes and a static surface.** `GET /tls`,
+`GET /tls/forwarded` and their script `/tls/pages.js` (#583's diagnostic
+surface: `tls_pages.ts`, `web_tls_pages.ts`, `web_tls_surface.ts`,
+`web_tls_views.ts`, the `tlsPages` catalogs and their bundle), and the two
+open truststore acts `POST /tls/trust` and `POST /tls/trust/clear` (the only
+routes that carried #585's process-wide demonstration mark, which #599
+removed). `STS-TLS-0023` (a bad `?format=`) and
+`STS-TLS-0049`..`0051` (#583's binding of a browser's act) are retired.
+
+**THE TWO PAGES ARE ONE CONSOLE PAGE NOW, AND IT ANSWERS IN PRODUCT** (rcbj's
+decision 3 on #591): Monitoring → TLS connection, `/admin/tls-connection`,
+Admin Read, drawn by `web_tls_connection.ts` from `GET
+/admin-api/tls-connection`, whose answer is `connectionView(req)` here:
+
+* `connection` — HTTPS or not, the TLS version and cipher, the socket's peer
+  address and the client address `common/client_address.js` believes;
+* `clientCertificate` — whether the connection presented one, whether it
+  VERIFIED against the truststore (or OpenSSL's `authorizationError`), the
+  certificate as `describeCertificate()` describes a sighting, its RFC 8705
+  thumbprint, the identity gate's answer (`issuedIdentityOf()`), and the
+  revocation verdict `GET /tls/sign-in` would act on (`checkedSocket()`). It
+  starts no session and records no sighting;
+* `forwarded` — `/tls/forwarded`'s object, extended: `global.trustProxy`,
+  `global.trustedProxies`, whether the peer is a trusted proxy and whether the
+  headers were `believed` (`client_address.js`'s own answer, not a second
+  reading of the settings), the effective base URL, every forwarding header
+  and every client-certificate header with this request's value — and read by
+  nothing, in either mode (`FORWARDING_HEADERS`, `SENSITIVE_HEADERS`).
+
+**THE REQUEST DESCRIBED IS THE API CALL, NOT THE PAGE LOAD**, and that was
+#583's constraint for the old pages (a view fetched afterwards is another
+request). For a console page it is acceptable and the page says so: the
+console is a static application, so its view is always a second request; a
+client certificate belongs to the connection (and keep-alive usually makes it
+the same one), and a proxy writes the same headers on every request it
+relays. Both paths are in `common/request_pool.js`'s `NEVER_DISPATCHED`
+beside `/tls`, because a worker sees the unix socket from its front process.
+**Not under `/admin/tls`**, whose prefix `admin-ui/admin_scope.ts` refuses a
+realm's own administrator: what one's own connection carried is not the
+process's to withhold. The operation reaches this module LAZILY: it is
+required at 20, after the management API.
+
+**THE TRUSTSTORE HAS TWO DOORS, BOTH GATED, IN EVERY MODE**: `/admin/tls/trust`
+and `POST /admin-api/tls/trust/{add,remove}` (below). `tests/tools/pep-credential.js`
+lost its fallback to the open door — a launcher without a token gets no PEP
+credential, and says so — and `clearAnchors()` stays exported for the
+in-process tests only. The sections below that describe `POST /tls/trust` and
+its development-mode test control are history.
+
+`tests/tls_connection_page.js` drives the operation over a real TLS listener
+in a child (no certificate, an untrusted one, a trusted one, the proxy
+settings both ways, the page drawn and escaped, the pin);
+`tests/protocol/sts_tls_connection.js` (local) asks a running service, in every
+mode; `tests/diagnostic_pages.js` holds the old paths unrouted.
+
+## Several accounts in one browser (#561, 2026-10-19)
+
+With `authn.multipleAccounts` on in the certificate's realm, `GET
+/tls/sign-in`'s "already signed in on this browser" check
+(`startCertificateSessionIn()`) no longer asks `sessionOf()`: for a browser
+holding two accounts and naming neither it answers nobody, and for one
+holding one it answers that one — somebody else, perhaps — so the
+certificate's holder would have been told they were "already" signed in as
+whoever the cookie named. The question is asked of the CERTIFICATE'S account
+instead (`certificateAccountHeld()`, by login name as `startSession()`
+matches a re-authentication): the session is always started, and
+`startSession()` RE-AUTHENTICATES that account's session where the browser's
+set holds it live and ADDS one beside the others where it does not. Still one
+session per person per browser, however many fetches; the answer says which
+(`account: 'reauthenticated' | 'added'`, absent with the setting off). The
+cell placement's `held` (`placeCertificateSignIn()`) asks the same question.
+Off, the function is what it was. The design is `authn/CLAUDE.md`, *Several
+signed-in accounts in one browser*.
+
+## THE SIGN-IN SCREEN ASKS THE SAME QUESTIONS (#1051, 2026-10-27)
+
+rcbj's decision on #520: every browser protocol reaches `authn/`'s sign-in
+screen, so the certificate on the connection is offered THERE, once —
+"Continue as <name> with your certificate" — rather than by each protocol.
+The screen is `authn/`'s (`authn/CLAUDE.md`, *The certificate on the
+connection*); what it asks of the certificate is this module's, in the same
+functions `GET /tls/sign-in` runs:
+
+* **`certificateRefusal()`** — nothing verified, refused on revocation, a
+  certificate of this service's that is not an identity, an application's
+  certificate, in that order — and **`certificatePeer()`** — the certificate
+  read off the socket (none on a resumed session) and the name it signs in:
+  the gate's name and nothing else since #1061 (it fell back to the common
+  name, then the subject, until then). Both
+  were moved out of `startCertificateSession()` and
+  `startCertificateSessionIn()` unchanged; `GET /tls/sign-in` answers exactly
+  what it did.
+* **`screenCertificateOffer(req)`** is the view's: synchronous, no revocation
+  asked, nothing logged above debug — a person's name or null.
+  **`screenCertificateHolder(req)`** is the act's: `checkedSocket()`'s
+  verdict, then those two functions, answering the holder (with
+  `recordVerification()`, the #127 identity verification `GET /tls/sign-in`
+  records once its session starts) or a refusal with its STS-AUTHN-0463..0466
+  code and an English sentence for the screen.
+* **TWO DIFFERENCES, BOTH FORCED.** The realm is the PENDING SIGN-IN'S, not
+  the certificate's — the protocol that sent the person decided it — so
+  `tls_client_certificates.checkSocket()` refuses a certificate from another
+  realm's authority (STS-AUTHN-0465), as every main-port door with an ambient
+  realm does; and there is no "already signed in on this browser" answer,
+  since a person at the screen is not signed in for this request.
+* **`authn.ts` reaches this module only where it is already loaded**
+  (`certificateDoor()` reads `require.cache`): this is a JavaScript route
+  module, #20, and a require from #8 would drag its `/tls*` views forward and
+  close a cycle, since it requires `authn`. No slot was added: nothing here
+  needs filling at load, and every process that serves the screen has the
+  composition root's copy long before a request arrives.
+
+## A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS THE ENTRY STORING IT (#1061, 2026-10-27)
+
+The rule and its one mapping are `common/CLAUDE.md` 3ag. What is this
+module's:
+
+* **EVERY SIGN-IN ASKS WITH `{ stored: true }`.** `issuedIdentityOf(socket,
+  options)` passes it through; `GET /tls/sign-in` (`answerCertificateSignIn()`
+  and the cell placement `placeCertificateSignIn()`), `certificateRefusal()`'s
+  default, `screenCertificateOffer()` and `screenCertificateHolder()` all ask
+  it. `certificateRefusal()` gained a fifth refusal, FIRST after revocation:
+  an outside certificate stored on no entry or several, reported as
+  `session.refusedAsStored` (`NOT_STORED` / `STORED_TWICE`) and marked
+  `STS-TLS-0054` / `0055` on the 200; the screen's are `STS-AUTHN-0468` /
+  `0469`, and it reports revocation first when both apply. An application's
+  refusal now holds for a STORED application's certificate too
+  (`gated.accepted && kind === 'application'`, no `issuedHere`).
+* **`certificatePeer()` READS NO NAME OFF THE CERTIFICATE.** It answers only
+  the gate's `username`; with no accepted identity it refuses, naming the CN in
+  the sentence and nothing else. An outside issuer could write anybody's CN.
+* **THE HANDSHAKE NO LONGER RECORDS AN OUTSIDE CERTIFICATE.**
+  `recordClientCertificate()` returns before recording when `!issuedHere`: it
+  used to file the subject and the observer SEEDED `cn=<CN>,ou=users` through
+  `certificatePlan()` — an entry made out of a name somebody else's authority
+  chose. A handshake has no realm to look the stored entry up in, so the door
+  that signs the holder in records the authentication instead. The connection
+  page (`/admin/tls-connection`) still calls `issuedIdentityOf()` WITHOUT
+  `stored`: it describes what arrived, and reports an outside certificate as
+  `issuedHere: false` as before.
+* **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
+  HTTP request to `/tls/sign-in` is held only by the protocol jobs that
+  present one (`sts_tls_connection`, `sts_main_port_pooling`,
+  `sts_global_logout`), which need a stack; they were not run in #1061's
+  session.
 

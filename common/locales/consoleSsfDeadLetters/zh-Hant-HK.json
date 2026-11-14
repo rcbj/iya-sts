@@ -1,0 +1,5 @@
+{
+  "notLoaded": "<strong>Shared Signals 未在此程序中載入</strong>，因此沒有可報告的無法投遞隊列。",
+  "intro": "在「{realm}」領域中，傳送方<strong>無法傳遞</strong>且仍在保存的每個安全事件權杖（Security Event Token）&mdash;&mdash;每個領域都有自己的無法投遞隊列。信件連同原因保存 <code>ssf.deadLetterRetentionS</code>，除了嘗試恢復失效串流的探測之外，不會有任何東西重新傳送它。",
+  "when.note": "依變為無法投遞的時間排列保存的信件，每欄 {bucket}，涵蓋最近 {window}&mdash;&mdash;即整個保留範圍，因此過期的信件會像從隊列中消失一樣從圖表中消失。指向某一欄可查看其計數。"
+}

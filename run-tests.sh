@@ -15,7 +15,7 @@
 # It builds and brings up docker-compose-run-tests.yml: the `sts` service from
 # this repository's own Dockerfile, and a `tests` container with node, a Chrome
 # and this working tree in it. The tests container runs
-# tests/run-tests-in-container.sh — every job (tests/vendored/MANIFEST.js and
+# tests/run-tests-in-container.sh — every job (tests/protocol/MANIFEST.js and
 # tests/run.js's discovery are the count), the Selenium admin-console one
 # included — against the service by its compose DNS name, and
 # compose exits when it does. This script's exit code is that container's
@@ -73,18 +73,36 @@
 #   ./run-tests.sh --no-build                 # reuse the images already built
 #   ./run-tests.sh --keep-stack               # leave the LAST mode's stack
 #                                             # running, to look at
+#   ./run-tests.sh                            # ALL SIX modes of
+#                                             # tests/tools/modes.sh, in order:
+#                                             # memory, single-node, mariadb,
+#                                             # cluster, cells, fuzz
+#                                             # (2026-11-14; about eleven hours
+#                                             # on the development laptop)
 #   ./run-tests.sh --modes=single-node        # one mode of tests/tools/modes.sh
-#                                             # rather than all three (memory,
-#                                             # single-node, cluster), in that
+#                                             # rather than all six, in that
 #                                             # file's own spelling
 #   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
-#                                             # `cluster` job runs the third
-#                                             # (2026-09-21)
+#                                             # `cluster` job runs the cluster
+#                                             # mode (2026-09-21)
+#   ./run-tests.sh --modes=fuzz               # the Schemathesis gate (#1299):
+#                                             # the mode runs its own jobs only
+#                                             # (modes.sh, stsModeJobFilter()),
+#                                             # with no --only typed
 #   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
-#                                             # the fourth mode, two cells of
-#                                             # one service (#98): run only
-#                                             # when named, never by a bare
-#                                             # run or by CI
+#                                             # the cells jobs alone; an --only
+#                                             # narrows every mode, and a mode
+#                                             # with a filter of its own runs
+#                                             # what both keep (none: skipped,
+#                                             # with the reason)
+#   ./run-tests.sh --modes=cluster-portable   # by name only: `cluster` on the
+#                                             # portable statements (#677)
+#   ./run-tests.sh --modes=schema-validation  # every answer held to its model,
+#                                             # one container, every deployment
+#                                             # (#1353); by name only
+#   ./run-tests.sh --plan                     # print what a run of these
+#                                             # arguments would do, mode by
+#                                             # mode, and start nothing
 #   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -106,6 +124,10 @@
 #                                             # skip the install-time risk
 #                                             # loader step in the postgres
 #                                             # modes (#213; riskInstallCheck)
+#   STS_TEST_MODEL_GAP_CHECK=0 ./run-tests.sh
+#                                             # do not fail a mode on a model
+#                                             # gap in a service log (#1579;
+#                                             # modelGapCheck)
 #   STS_TEST_CONFORMANCE_MODES=memory,single-node ./run-tests.sh
 #                                             # the modes that run the OpenID
 #                                             # conformance suite's FAPI plans
@@ -146,6 +168,12 @@ set -u -o pipefail
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
 
+# Linux, or Windows under Cygwin (#512): hostPath() for every host path a
+# native docker.exe is handed, HOST_USER_ARGS for `--user`, and the shims
+# that take the CR off what docker prints. See its header.
+# shellcheck source=tests/tools/host-platform.sh
+. "${CURRENT_DIR}/tests/tools/host-platform.sh"
+
 # The mode matrix. See tests/tools/modes.sh's header.
 # shellcheck source=tests/tools/modes.sh
 . "${CURRENT_DIR}/tests/tools/modes.sh"
@@ -173,9 +201,19 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
 CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
 # THE `cells` MODE'S LAYER (#98, 2026-09-28): a second cell, a global-tier
 # database, cell B's own database and the cell keys, over the same file. Read
-# only in that mode, which runs only when named (`--modes=cells`); its header
-# argues the stack and tests/tools/modes.sh the mode.
+# only in that mode (in a bare run since 2026-11-14); its header argues the
+# stack and tests/tools/modes.sh the mode.
 CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
+# THE `mariadb` MODE'S LAYER (#677): the store on the stack's MariaDB server,
+# its schema built by a one-shot from mariadb/schema.sql. Only in that mode
+# (in a bare run since 2026-11-14); its header argues it.
+MARIADB_COMPOSE_FILE="tests/docker-compose-run-tests-mariadb.yml"
+# THE `fuzz` MODE'S LAYER (#1299): the stack's network made `internal` — no
+# egress — so Schemathesis can throw any input at the service without anything
+# leaving the device. Only in that mode (in a bare run since 2026-11-14, last,
+# with its own job filter: tests/tools/modes.sh, stsModeJobFilter()); its
+# header argues it.
+FUZZ_COMPOSE_FILE="tests/docker-compose-run-tests-fuzz.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
@@ -213,6 +251,8 @@ STS_SAML_SHIB_CONTAINER_NAME="${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-s
 STS_SAML_SSP_CONTAINER_NAME="${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}"
 STS_SAML_PYSAML2_CONTAINER_NAME="${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-tests-saml-pysaml2}"
 STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}"
+# The test peer (#586), named for the same reason.
+STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-test-peer}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -245,6 +285,7 @@ SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-${IMAGE_REGISTRY}/sts-saml-shibboleth:${imag
 SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${imageTag}}"
 SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
 SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
+TEST_PEER_IMAGE="${TEST_PEER_IMAGE:-${IMAGE_REGISTRY}/sts-test-peer:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -273,7 +314,7 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 #
 #   STS_MODE_TIMEOUT      the suite, once, for one mode — every mode but
 #                         `cluster`, which has a bound of its own
-#                         (STS_CLUSTER_MODE_TIMEOUT, 100m; tests/tools/modes.sh,
+#                         (STS_CLUSTER_MODE_TIMEOUT, 200m; tests/tools/modes.sh,
 #                         stsModeTimeout(), says why). The slowest mode ever
 #                         measured here was `dispatch` at 16m when this was
 #                         25m; the suite has grown to 225 jobs since, and on
@@ -297,7 +338,7 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24).
 #
 # rcbj's decision on #142: "a job in ./run-tests.sh that fails when a module
-# fails". The jobs are tests/vendored/sts_fapi_conformance.js and, since #187,
+# fails". The jobs are tests/protocol/sts_fapi_conformance.js and, since #187,
 # five more — OpenID Connect, Shared Signals, OpenID Federation, OpenID4VCI
 # and OpenID4VP (tests/CLAUDE.md, *The other plans*); the suite is four
 # containers in docker-compose-run-tests.yml behind the `conformance` compose
@@ -314,14 +355,21 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 #                                persisting mode would check the same rules
 #                                over again for sixteen more minutes.
 #   STS_CONFORMANCE_TIMEOUT      seconds ADDED to such a mode's bound (default
-#                                10800). #176's four plans took about sixteen
+#                                15600). #176's four plans took about sixteen
 #                                minutes; with #187's the six jobs took about
 #                                two hours and a quarter on 2026-09-24 (the
 #                                OpenID Connect job alone about ninety
 #                                minutes), and the JVM a minute to start.
+#                                It was 10800 until 2026-10-23, when every
+#                                plan of four of those jobs gained a classical
+#                                twin (tests/CLAUDE.md, *The classical twins*)
+#                                and the OpenID Connect lane, the long pole,
+#                                doubled; 15600 is as far as GitHub's six
+#                                hours let the `openid-conformance` job go
+#                                (tests/teardown_bounds.js).
 # ---------------------------------------------------------------------------
 STS_TEST_CONFORMANCE_MODES="${STS_TEST_CONFORMANCE_MODES-memory}"
-STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-10800}"
+STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-15600}"
 
 # ---------------------------------------------------------------------------
 # THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24).
@@ -329,7 +377,7 @@ STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-10800}"
 # Four independent SAML service providers — the Shibboleth SP 3, pysaml2,
 # SimpleSAMLphp and Keycloak's SAML broker — built from tests/saml-peers/ and
 # brought up behind the `saml-peers` compose profile, each driven by a job of
-# its own (tests/vendored/sts_saml_interop_*.js). tests/CLAUDE.md, *THE SAML
+# its own (tests/protocol/sts_saml_interop_*.js). tests/CLAUDE.md, *THE SAML
 # PEERS*, argues all of it.
 #
 #   STS_TEST_SAML_PEERS_MODES    a comma list of modes, in modes.sh's
@@ -356,6 +404,7 @@ STS_SAML_PEERS_TIMEOUT="${STS_SAML_PEERS_TIMEOUT:-900}"
 
 BUILD=1
 KEEP_STACK=0
+PLAN_ONLY=0
 TARGET=local
 MODES_GIVEN=0
 STS_TEST_ARGS="${STS_TEST_ARGS:-}"
@@ -367,6 +416,10 @@ STACK_UP=0
 # teardown() takes them if it has not, which is what an interrupted mode
 # needs — a cancelled CI job used to lose every service log with the stack.
 LOGS_TAKEN=0
+# The service logs captureContainerLogs() took for the mode, and the last one
+# captureOneContainerLog() wrote: modelGapCheck() reads them (#1579's review).
+CAPTURED_SERVICE_LOGS=()
+LAST_CAPTURED_LOG=""
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
@@ -388,13 +441,18 @@ do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --keep-stack) KEEP_STACK=1 ;;
+    # WHAT A RUN WOULD DO, AND NOTHING ELSE (2026-11-14): the modes, each
+    # one's bound, layers and job filter, and which would be skipped. It
+    # reads modes.sh and this file and touches no docker — so it is safe
+    # beside somebody else's run, which a second stack is not.
+    --plan)       PLAN_ONLY=1 ;;
     # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
     # ./local-run-tests.sh (removed 2026-09-16) had `--modes=` since the
     # matrix arrived, and the asymmetry cost an afternoon: the failure being
     # chased was in `dispatch`, on a listener only THIS stack publishes, so
     # reproducing it meant running `memory` and `postgres` first every time.
     # It took the other launcher's spelling and meaning. A run with no
-    # `--modes=` is unchanged: all three, in order.
+    # `--modes=` is STS_ALL_MODES in order: all six since 2026-11-14.
     --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}"
                   MODES_GIVEN=1 ;;
     # WHERE THE SUITE RUNS (2026-09-21) — see *THE TARGET* below.
@@ -405,7 +463,165 @@ do
   esac
   shift
 done
+
+# THE schema-validation MODE (#1353) is one container with everything in it,
+# named on its own: it starts no compose project, so nothing below applies.
+if [ "${RUN_MODES[*]}" = "schema-validation" ];
+then
+  # shellcheck disable=SC2086
+  exec "${CURRENT_DIR}/tests/schema-validation/run.sh" ${STS_TEST_ARGS}
+fi
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
+
+# ---------------------------------------------------------------------------
+# A MODE'S OWN JOB FILTER, AND THE OPERATOR'S (2026-11-14).
+#
+# rcbj put all six modes into a bare run, and `fuzz` runs only its own jobs.
+# Typing `--only=schemathesis` would narrow EVERY mode of the invocation, so
+# the launcher hands that mode's filter (modes.sh, stsModeJobFilter()) to the
+# runner as `--mode-only=` for that mode alone: run-report.js keeps a job only
+# if the operator's --only (when there is one) AND the mode's filter both
+# keep it. A mode with no filter is handed nothing and runs what --only says.
+#
+# THE INTERSECTION CAN BE EMPTY — `./run-tests.sh --only=crypto` asks fuzz for
+# a crypto job that is not Schemathesis — and starting the isolated stack to
+# have the runner refuse an empty list would be a failed mode for a run that
+# asked for nothing wrong. So the launcher works it out first, over the same
+# names the runner chooses from (tests/*.js and MANIFEST.js's `file:`
+# entries; under --conformance-only, the conformance entries alone), and SKIPS
+# the mode with the reason. The runner's own "No jobs to run" stays the
+# backstop for what this cannot see (--lanes, --protocol=off).
+# ---------------------------------------------------------------------------
+
+# The operator's --only fragments, one per line: every `--only=` value split
+# at its commas, and every bare word, which run-report.js reads as one too.
+operatorOnlyFragments()
+{
+  local word
+  # shellcheck disable=SC2086
+  for word in ${STS_TEST_ARGS};
+  do
+    case "${word}" in
+      --only=*) printf '%s\n' "${word#--only=}" | tr ',' '\n' ;;
+      -*)       ;;
+      *)        printf '%s\n' "${word}" ;;
+    esac
+  done | sed '/^$/d'
+}
+
+# The job names the runner chooses from: the in-process files and the
+# protocol jobs' manifest entries — under `--conformance-only`, which keeps
+# no in-process file, only the entries marked `conformance: true`. A
+# superset is harmless here: it can only make this say "something is left"
+# where the runner then says otherwise.
+candidateJobFiles()
+{
+  local f manifest="${CURRENT_DIR}/tests/protocol/MANIFEST.js"
+  if [[ " ${STS_TEST_ARGS} " == *" --conformance-only "* ]];
+  then
+    awk '/\{ *file: *'"'"'/ { buf = ""; on = 1 }
+         on { buf = buf $0 " " }
+         on && /\}/ {
+           if (buf ~ /conformance: *true/ &&
+               match(buf, /file: *'"'"'[^'"'"']*'"'"'/)) {
+             s = substr(buf, RSTART, RLENGTH)
+             sub(/file: *'"'"'/, "", s); sub(/'"'"'$/, "", s); print s
+           }
+           on = 0
+         }' "${manifest}"
+    return 0
+  fi
+  for f in "${CURRENT_DIR}"/tests/*.js;
+  do
+    basename "${f}"
+  done
+  sed -n "s/.*file: *'\([^']*\.js\)'.*/\1/p" "${manifest}"
+}
+
+# 0 when the mode's own filter and the operator's narrowing keep no job at
+# all, which is the mode to skip; 1 otherwise (no filter, or something is
+# kept).
+modeFilterLeavesNothing()
+{
+  local mode="$1" filter frag job op ops
+  filter="$(stsModeJobFilter "${mode}")"
+  [ -z "${filter}" ] && return 1
+  ops="$(operatorOnlyFragments)"
+  # No --only: the mode's own filter decides, unless --conformance-only has
+  # emptied the candidates, which the loop below finds as it does an --only.
+  if [ -z "${ops}" ];
+  then
+    ops="${filter//,/$'\n'}"
+  fi
+  while IFS= read -r job;
+  do
+    for frag in ${filter//,/ };
+    do
+      case "${job}" in
+        *"${frag}"*) ;;
+        *) continue ;;
+      esac
+      while IFS= read -r op;
+      do
+        case "${job}" in
+          *"${op}"*) return 1 ;;
+        esac
+      done <<< "${ops}"
+    done
+  done < <(candidateJobFiles)
+  return 0
+}
+
+# --plan: the run these arguments make, and nothing started. The bounds are
+# the mode's own plus what the launcher adds for the conformance suite and
+# the SAML peers, the same arithmetic as the loop below.
+printPlan()
+{
+  local mode bound filter total=0
+  echo "Modes, in order (${#RUN_MODES[@]}):"
+  for mode in "${RUN_MODES[@]}";
+  do
+    if ! stsModeEnv "${mode}" > /dev/null;
+    then
+      exit 2
+    fi
+    bound="$(stsModeTimeout "${mode}")"
+    if printf ',%s,' "${STS_TEST_CONFORMANCE_MODES}" | grep -q ",${mode},";
+    then
+      bound=$(( bound + STS_CONFORMANCE_TIMEOUT ))
+    fi
+    if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${mode},";
+    then
+      bound=$(( bound + STS_SAML_PEERS_TIMEOUT ))
+    fi
+    filter="$(stsModeJobFilter "${mode}")"
+    echo ""
+    echo "  ${mode}: $(stsModeDescription "${mode}")"
+    echo "    bound:  ${bound}s"
+    printf '    layers: %s' "${COMPOSE_FILE}"
+    stsModeIsCluster "${mode}" && printf ' + %s' "${CLUSTER_COMPOSE_FILE}"
+    stsModeIsMariadb "${mode}" && printf ' + %s' "${MARIADB_COMPOSE_FILE}"
+    stsModeIsFuzz "${mode}" && printf ' + %s' "${FUZZ_COMPOSE_FILE}"
+    stsModeIsCells "${mode}" && printf ' + %s' "${CELLS_COMPOSE_FILE}"
+    echo ""
+    echo "    jobs:   ${filter:-every job}${STS_TEST_ARGS:+ (narrowed by: ${STS_TEST_ARGS})}"
+    if modeFilterLeavesNothing "${mode}";
+    then
+      echo "    SKIPPED: its own filter (${filter}) and the run's --only or --conformance-only keep no job"
+    else
+      total=$(( total + bound ))
+    fi
+  done
+  echo ""
+  echo "Worst case: ${total}s of mode bounds, plus the build and one" \
+       "teardown (${STS_TEARDOWN_TIMEOUT}s) per mode."
+}
+
+if [ "${PLAN_ONLY}" = "1" ];
+then
+  printPlan
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # THE TARGET: WHERE THE SUITE RUNS (2026-09-21).
@@ -645,6 +861,11 @@ preflight()
     echo "to: without docker there is nothing to run. Either the daemon is" >&2
     echo "not running, or this user cannot reach it and sudo would need a" >&2
     echo "password (this script never prompts for one)." >&2
+    if [ "${HOST_WINDOWS}" = "1" ];
+    then
+      echo "On Windows that is Docker Desktop: start it, and check that" >&2
+      echo "\`docker.exe info\` answers from this shell." >&2
+    fi
     return 1
   fi
 
@@ -699,7 +920,7 @@ preflight || exit 1
 # WORKED WHILE DOING ALMOST NOTHING. STS_LOG_LEVEL reaches the loggers
 # config.js registers — its own, and the `sts` logger in helpers.js that every
 # protocol module destructures. It does NOT reach the VENDORED modules under
-# common/vendored/, which each build a bunyan logger at load from
+# common/crypto_impl/, which each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel` and cannot be edited here. On the
 # run that measured this, the level alone left 3,869 debug lines of 3,951 —
 # 3,582 of them from `xmldsig`, which is every canonicalization of every signed
@@ -757,7 +978,7 @@ fi
 # ---------------------------------------------------------------------------
 # THE REMOTE PEP'S IDENTITY. The subject is what the certificate carries and
 # the CN out of it is what the mock files the registration under; the realm is
-# the one tests/vendored/sts_xacml_remote_pep.js creates and LEAVES STANDING
+# the one tests/protocol/sts_xacml_remote_pep.js creates and LEAVES STANDING
 # (no job here removes a realm since 2026-09-06). The stack is built fresh for
 # every run, so nothing carries over between them.
 # ---------------------------------------------------------------------------
@@ -845,6 +1066,11 @@ COMPOSE_ENV=(
   "STS_BAO_CONTAINER_NAME=${STS_BAO_CONTAINER_NAME}"
   "STS_BAO_TLS_CONTAINER_NAME=${STS_BAO_TLS_CONTAINER_NAME}"
   "STS_BAO_SEED_CONTAINER_NAME=${STS_BAO_SEED_CONTAINER_NAME}"
+  # A test stack never restarts `sts` by itself: the compose file's default
+  # (`unless-stopped`) brings an exited service back within seconds, which
+  # would hide a crash the run must see and loop a start that fails on
+  # purpose.
+  "STS_RESTART=no"
   # The keystore, per mode — see tests/tools/modes.sh. `persisted` in the
   # production modes is what makes the key-encryption key come out of the store.
   "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
@@ -874,8 +1100,20 @@ COMPOSE_ENV=(
   "SAML_SSP_ADDRESS=${STS_NETWORK_PREFIX}.44"
   "SAML_PYSAML2_ADDRESS=${STS_NETWORK_PREFIX}.45"
   "SAML_KEYCLOAK_ADDRESS=${STS_NETWORK_PREFIX}.46"
+  # ---- the test peer (#586) ------------------------------------------------
+  # In EVERY local mode: the far party the protocol jobs talk to — SAML SP and
+  # RP, WS-Federation RP, the RFC 9470 and GNAP resource servers, the SSF
+  # receiver. Pinned above the conformance TLS writer's `.47`, for the
+  # conformance suite's reason. The URL is what tells a job the peer is
+  # there; an AWS target names none, and the jobs that need it skip.
+  "STS_TEST_PEER_CONTAINER_NAME=${STS_TEST_PEER_CONTAINER_NAME}"
+  "TEST_PEER_ADDRESS=${STS_NETWORK_PREFIX}.48"
+  "STS_TEST_PEER_URL=http://test-peer:9600"
+  "TEST_PEER_CA_FILE=/run/sts-test/test-peer/ca.crt"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
+  # The token-exchange chain job's token log, off unless the host sets it.
+  "STS_TOKEN_LOG=${STS_TOKEN_LOG:-}"
   # ---------------------------------------------------------------------
   # TLS ON THE MAIN PORT (2026-08-30), and the URL the runner dials with it.
   #
@@ -907,7 +1145,9 @@ COMPOSE_ENV=(
   # certificate — mintThePepCredential() below makes one between bringing the
   # service up and starting the PEP, which is the only window: pep.js reads the
   # files at process start and never again.
-  "XACML_PEP_CERT_DIR=${XACML_PEP_CERT_DIR}"
+  # As compose.exe reads a path on Windows (#512); this script's own
+  # `rm` and `mkdir` of it keep the shell's form.
+  "XACML_PEP_CERT_DIR=$(hostPath "${XACML_PEP_CERT_DIR}")"
   "XACML_PEP_TLS_CERT=/certs/pep.crt"
   "XACML_PEP_TLS_KEY=/certs/pep.key"
   # THE REGISTERED NAME IS THE CERTIFICATE'S COMMON NAME. `xacml.js` files a
@@ -929,7 +1169,7 @@ COMPOSE_ENV=(
   "XACML_PEP_SERVER_CERT_DIR=/usr/src/sts/tests/report/pep-credential/server"
   # ---- the management API's client secret, pinned for this run ------------
   # `/admin-api` requires an access token, and the token is obtained by the
-  # seeded `sts-management-api` client with `client_credentials`. That client's
+  # seeded `sts-api-client` client with `client_credentials`. That client's
   # secret is minted at every start and is readable only THROUGH the API it
   # unlocks — a bootstrap hole — so `adminApi.clientSecret` exists to pin it.
   #
@@ -969,7 +1209,7 @@ then
   COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
 fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
-                 SAML_KEYCLOAK_IMAGE;
+                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE;
 do
   if [ -n "${!peerImage:-}" ];
   then
@@ -1021,17 +1261,20 @@ serviceUrl()
 captureContainerLogs()
 {
   local mode="$1"
+  CAPTURED_SERVICE_LOGS=()
   if [ "${STACK_UP}" != "1" ];
   then
     return 0
   fi
   captureOneContainerLog "${mode}" sts   "00-iya-sts-service.log" "Service log"
+  CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
   # The `cluster` mode's node B and balancer, whose logs go with their
   # containers too (2026-09-14). Node A keeps the name every mode uses.
   if stsModeIsCluster "${mode}";
   then
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-node-b.log" \
       "Node B log"
+    CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
     captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
       "Balancer log"
   fi
@@ -1040,7 +1283,12 @@ captureContainerLogs()
   then
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-cell-b.log" \
       "Cell B log"
+    CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
   fi
+  # The test peer's (#586): one line per message any role received, and
+  # why it refused one — what a job's failure against it is read beside.
+  captureOneContainerLog "${mode}" test-peer "00-test-peer.log" \
+    "Test peer log"
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
 
@@ -1092,6 +1340,66 @@ captureOneContainerLog()
     "${COMPOSE_FILE_ARGS[@]}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
+  # Where it went, for modelGapCheck(): the fallback name is as likely as
+  # the report's own, and recomputing it here would be a second copy.
+  LAST_CAPTURED_LOG="${dest}"
+}
+
+# ---------------------------------------------------------------------------
+# A MODEL GAP IN A SERVICE LOG FAILS THE MODE (#1579's review, 2026-11-13).
+#
+# The model HOLDS what the service answers rather than refusing it (rcbj's
+# decision on #1579): a member the model does not name, a wrong type, an
+# undeclared error code is logged under the family's code — STS-OAUTH-1005,
+# STS-SAML-0121, STS-GNAP-0910 and the rest — and the answer is sent as it
+# was built. So nothing failed on one: #1655 shipped a GNAP model that logged
+# STS-GNAP-0910 on every approval view, and every mode stayed green until
+# #1686 read a log. The service stays advisory; THIS is where a gap fails.
+#
+# tests/tools/model-gap-scan.js reads every node's captured log (node A, and
+# node B or cell B where the mode has one) for the bracketed tag of any code
+# in its MODEL_GAP_CODES — a list tests/model_gap_scan.js holds to the error
+# table and to every hold() site, so a family added later cannot be missed —
+# and names each code with its count and its first line. Run on the HOST
+# after the logs are taken, which is why it is a leaf needing only node: the
+# host already runs node for tests/tools/compose.sh's subnet choice. Its
+# report is tests/report/<mode>-97-model-gaps.log. A log that could not be
+# read fails the check too: a check that could not run has not passed.
+# STS_TEST_MODEL_GAP_CHECK=0 skips it, and says so.
+# ---------------------------------------------------------------------------
+modelGapCheck()
+{
+  local mode="$1" dest rc one
+  local paths=()
+  dest="${CURRENT_DIR}/tests/report/${mode}-97-model-gaps.log"
+  if [ "${STS_TEST_MODEL_GAP_CHECK:-1}" != "1" ];
+  then
+    echo "Mode ${mode}: the model-gap check is off" \
+         "(STS_TEST_MODEL_GAP_CHECK=${STS_TEST_MODEL_GAP_CHECK})."
+    return 0
+  fi
+  if [ "${#CAPTURED_SERVICE_LOGS[@]}" -eq 0 ];
+  then
+    # No stack came up, so no log was taken; the mode's own verdict says why.
+    return 0
+  fi
+  for one in "${CAPTURED_SERVICE_LOGS[@]}"; do
+    paths+=("$(hostPath "${one}")")
+  done
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  node "$(hostPath "${CURRENT_DIR}/tests/tools/model-gap-scan.js")" \
+    "${paths[@]}" > "${dest}" 2>&1
+  rc=$?
+  echo ""
+  echo "Mode ${mode}: model gaps in the service log(s) (#1579):"
+  sed 's/^/  /' "${dest}"
+  if [ "${rc}" -ne 0 ];
+  then
+    echo "Mode ${mode}: FAILED — a service answer is not its model's, or" \
+         "a log could not be read; see ${dest}." >&2
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -1217,7 +1525,7 @@ schedulerTakeover()
     return 1
   fi
   local tool=(docker run --rm --network "${COMPOSE_PROJECT}_default"
-              -v "${CURRENT_DIR}:/repo:ro"
+              -v "$(hostPath "${CURRENT_DIR}"):/repo:ro"
               -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
               -e NODE_PATH=/usr/src/sts/node_modules
               -w /usr/src/sts "${STS_IMAGE}"
@@ -1256,6 +1564,65 @@ schedulerTakeover()
     echo "  The scheduler did NOT survive its leader's crash; see ${dest}." >&2
   fi
   return "${rc}"
+}
+
+# ---------------------------------------------------------------------------
+# WHAT A `down` LEFT OF THIS PROJECT, REMOVED (2026-11-14).
+#
+# A bare run is six modes on four different sets of compose files since that
+# day, and `down` removes only what the files it is given declare — and only
+# when it finishes inside its bound. So after each mode's down, and before the
+# first mode, every container, network and volume still carrying this run's
+# PROJECT label goes too. The label is what makes it safe: compose stamps
+# `com.docker.compose.project=<project>` on everything it creates, and the
+# `sts` container a plain `docker compose up` here gives somebody is in
+# another project. Each docker call is bounded (tests/teardown_bounds.js's
+# rule): a daemon that hangs costs a warning, never the run.
+# ---------------------------------------------------------------------------
+dockerBounded()
+{
+  local seconds="$1"
+  shift
+  local timeoutCmd
+  local cmd=(docker "$@")
+  if [ -n "${DOCKER_SUDO}" ];
+  then
+    cmd=(sudo docker "$@")
+  fi
+  timeoutCmd="$(command -v timeout 2> /dev/null || true)"
+  if [ -z "${timeoutCmd}" ];
+  then
+    "${cmd[@]}" < /dev/null
+    return $?
+  fi
+  "${timeoutCmd}" --kill-after=30s "${seconds}" "${cmd[@]}" < /dev/null
+}
+
+removeProjectLeftovers()
+{
+  local filter="label=com.docker.compose.project=${COMPOSE_PROJECT}"
+  local kind ids
+  for kind in container network volume;
+  do
+    case "${kind}" in
+      container) ids="$(dockerBounded 60 ps -aq --filter "${filter}" \
+                        2> /dev/null)" ;;
+      *)         ids="$(dockerBounded 60 "${kind}" ls -q \
+                        --filter "${filter}" 2> /dev/null)" ;;
+    esac
+    [ -z "${ids}" ] && continue
+    local list=()
+    mapfile -t list <<< "${ids}"
+    echo "Removing what the teardown left of ${COMPOSE_PROJECT}:" \
+         "${#list[@]} ${kind}(s)." >&2
+    case "${kind}" in
+      container) dockerBounded "${STS_TEARDOWN_TIMEOUT}" rm -f -v \
+                   "${list[@]}" > /dev/null 2>&1 || true ;;
+      *)         dockerBounded "${STS_TEARDOWN_TIMEOUT}" "${kind}" rm \
+                   "${list[@]}" > /dev/null 2>&1 || true ;;
+    esac
+  done
+  return 0
 }
 
 # Always tear the stack down, even when the tests fail, so the next run starts
@@ -1310,6 +1677,9 @@ trap 'exit 143' TERM
 docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
   "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
   > /dev/null 2>&1 || true
+# The base file's down cannot name a layer's volumes or its network; an
+# interrupted `cells` or `fuzz` mode leaves both (removeProjectLeftovers()).
+removeProjectLeftovers
 
 # ---------------------------------------------------------------------------
 # BUILD, THEN RUN.
@@ -1442,7 +1812,7 @@ mintAdminApiToken()
   for attempt in $(seq 1 12); do
     if token="$(docker run --rm \
          --network "${COMPOSE_PROJECT}_default" \
-         -v "${CURRENT_DIR}:/repo:ro" \
+         -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
          -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
          -e NODE_PATH=/usr/src/sts/node_modules \
          -w /usr/src/sts \
@@ -1509,6 +1879,10 @@ mintAdminApiToken()
 # one job asserts what an unauthenticated PEP cannot do, and the rest of the
 # suite has no opinion about this certificate at all.
 # ---------------------------------------------------------------------------
+# THE LEAF IS NOT STORED ON AN ENTRY HERE (#1061): an outside certificate is
+# an identity only once it is stored in userCertificate on its entry, and the
+# PEP's entry is in the realm sts_xacml_remote_pep creates later. That job
+# reads pep.crt beside XACML_PEP_SERVER_CERT_DIR and stores it itself.
 mintThePepCredential()
 {
   rm -rf "${XACML_PEP_CERT_DIR}"
@@ -1517,7 +1891,7 @@ mintThePepCredential()
   echo "and adding its Root CA to the mock's truststore..."
   # ---------------------------------------------------------------------
   # RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
-  # ELSE". The tool is a node script that needs `common/vendored/x509.js` and
+  # ELSE". The tool is a node script that needs `common/crypto_impl/x509.js` and
   # its three npm packages (and bunyan, for its logger — see NODE_PATH at
   # mintAdminApiToken()); this host may have neither node nor node_modules.
   # The service image has both — so the REPOSITORY is mounted read-only for the
@@ -1527,10 +1901,17 @@ mintThePepCredential()
   # On the project's network, so it dials `sts` by the name in the
   # certificate rather than a published port this stack does not have.
   # ---------------------------------------------------------------------
-  if ! docker run --rm \
+  # AS THE HOST USER (#254): the service image runs as uid 10001 since #254,
+  # which may not write the host directory mounted at /out. Root could, and
+  # would leave files this launcher's own `rm` cannot delete on the next run
+  # (a root-owned crl/ from 2026-09-28 did exactly that), so the one-shot
+  # runs as whoever runs the launcher: the files are theirs, and the PEP
+  # container reads them as it always did. On Windows there is no owner to
+  # match and HOST_USER_ARGS is empty (tests/tools/host-platform.sh).
+  if ! docker run --rm ${HOST_USER_ARGS[@]+"${HOST_USER_ARGS[@]}"} \
        --network "${COMPOSE_PROJECT}_default" \
-       -v "${CURRENT_DIR}:/repo:ro" \
-       -v "${XACML_PEP_CERT_DIR}:/out" \
+       -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
+       -v "$(hostPath "${XACML_PEP_CERT_DIR}"):/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
        -e NODE_PATH=/usr/src/sts/node_modules \
        -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
@@ -1701,6 +2082,8 @@ fi
 RC=0
 MODES_RUN=()
 MODES_FAILED=()
+# Modes a run named and did not start, each with its reason (2026-11-14).
+MODES_SKIPPED=()
 MODE_COUNT="${#RUN_MODES[@]}"
 MODE_INDEX=0
 
@@ -1721,6 +2104,18 @@ do
   echo " $(stsModeDescription "${MODE}")"
   echo "==========================================================="
 
+  # A MODE WHOSE OWN JOB FILTER AND THE OPERATOR'S --only KEEP NOTHING is
+  # skipped before its stack starts (modeFilterLeavesNothing(), above): not a
+  # failure, and not a pass either — the summary names it with the reason.
+  MODE_FILTER="$(stsModeJobFilter "${MODE}")"
+  if modeFilterLeavesNothing "${MODE}";
+  then
+    echo " SKIPPED: this mode runs only its own jobs (${MODE_FILTER}), and" \
+         "the run's --only or --conformance-only keeps none of them (${STS_TEST_ARGS})."
+    MODES_SKIPPED+=("${MODE} (its own jobs, ${MODE_FILTER}, are outside the run's narrowing)")
+    continue
+  fi
+
   # The mode's environment, added to what compose is already given. Every mode
   # names every variable it cares about — see modes.sh — so a later mode cannot
   # inherit an earlier one's.
@@ -1734,6 +2129,18 @@ do
   # the path is the one inside it and the report lands in the host tree beside
   # every other mode's.
   MODE_ENV+=("STS_TEST_REPORT_DIR=/usr/src/sts/tests/report/${MODE}")
+
+  # THE MODE'S OWN JOB FILTER, FOR THIS MODE ALONE (2026-11-14). The base
+  # environment carries the operator's STS_TEST_ARGS; this later assignment
+  # wins (`env` applies them in order) and adds `--mode-only=`, which the
+  # runner intersects with any --only. The next mode starts from the base
+  # again, so no other mode sees it.
+  if [ -n "${MODE_FILTER}" ];
+  then
+    MODE_ENV+=("STS_TEST_ARGS=${STS_TEST_ARGS:+${STS_TEST_ARGS} }--mode-only=${MODE_FILTER}")
+    echo " This mode runs its own jobs only: --mode-only=${MODE_FILTER}" \
+         "(tests/tools/modes.sh, stsModeJobFilter())."
+  fi
 
   # -------------------------------------------------------------------------
   # THE SERVICE FIRST, THEN ITS CREDENTIALS, THEN THE RUNNER (2026-09-09).
@@ -1796,6 +2203,22 @@ do
   # runner is handed cell A as the service, as `sts` in every mode, and
   # both cells by name through the layer. Cell B's address is pinned like
   # `cluster`'s node B, because `sts2` extends `sts`, whose address is.
+  # ---- THE `mariadb` MODE: THE STORE ON MARIADB (#677) -----------------
+  if stsModeIsMariadb "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${MARIADB_COMPOSE_FILE}")
+  fi
+  if stsModeIsFuzz "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${FUZZ_COMPOSE_FILE}")
+    # Exact cell keys for the schemathesis kit. Empty is every cell, so it
+    # is forwarded only when set; sudo would otherwise drop it and the
+    # overlay's default would silently run the whole matrix.
+    if [ -n "${STS_SCHEMATHESIS_SURFACES:-}" ];
+    then
+      MODE_ENV+=("STS_SCHEMATHESIS_SURFACES=${STS_SCHEMATHESIS_SURFACES}")
+    fi
+  fi
   if stsModeIsCells "${MODE}";
   then
     COMPOSE_FILE_ARGS+=(-f "${CELLS_COMPOSE_FILE}")
@@ -1876,12 +2299,19 @@ do
   # the plans take. Not attached: the JVM's log is thousands of lines, and
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
-                --no-attach mailpit-tls --no-attach mailpit)
+                --no-attach mailpit-tls --no-attach mailpit
+                --no-attach mariadb-tls
+                --no-attach test-peer)
   # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
   # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
   if stsModeIsCells "${MODE}";
   then
     UP_NO_ATTACH+=(--no-attach sts-cell-kek)
+  fi
+  # The `mariadb` mode's schema one-shot exits 0 by design too (#677).
+  if stsModeIsMariadb "${MODE}";
+  then
+    UP_NO_ATTACH+=(--no-attach mariadb-store-schema)
   fi
   # The profiles this mode brings up, joined once below: compose reads ONE
   # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both
@@ -1994,10 +2424,10 @@ do
 
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
-    # The truststore is a Map in the service's process that ANY job can empty:
-    # `POST /tls/trust/clear` needs no credential in development mode (every
-    # mode but `product`, which refuses it), and a job exercising the truststore is entitled
-    # to use it. Nothing noticed until 2026-09-06, when
+    # The truststore is a Map in the service's process that ANY job can change:
+    # `POST /tls/trust/clear` needed no credential until #597 deleted it, and a
+    # job exercising the truststore through /admin-api/tls/trust is entitled
+    # to remove what it finds. Nothing noticed until 2026-09-06, when
     # a client certificate stopped being a turnstile — this container's pull,
     # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
     # one such job left it authenticating as nobody for the rest of the run,
@@ -2018,7 +2448,9 @@ do
     # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
     # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
     # design, and so does `mailpit-tls` (#63; `mailpit` is not attached
-    # either, because its log is every message the suite sends). The `up -d
+    # either, because its log is every message the suite sends) and
+    # `mariadb-tls` (#356, the attribute-source database's certificate).
+    # The `up -d
     # sts` above already ran both; this `up` names every
     # service, so compose STARTS them again, and `--abort-on-container-exit`
     # counts an ATTACHED container's exit — any container's — as the signal
@@ -2115,6 +2547,20 @@ do
 
   captureContainerLogs "${MODE}"
   LOGS_TAKEN=1
+  # After the logs, because they are what it reads: a gap fails the mode
+  # whatever the runner said (modelGapCheck(), above).
+  if ! modelGapCheck "${MODE}";
+  then
+    if [ "${MODE_RC}" -eq 0 ];
+    then
+      MODES_FAILED+=("${MODE}")
+      MODE_RC=1
+    fi
+    if [ "${RC}" -eq 0 ];
+    then
+      RC=1
+    fi
+  fi
 
   # KEPT: the last mode under --keep-stack stays up for the teardown trap to
   # describe, and is the one stack this launcher leaves behind.
@@ -2133,19 +2579,30 @@ do
     echo "The stack did not come down cleanly after mode ${MODE}." >&2
     echo "That is NOT a verdict on the suite — the mode's result above is." >&2
   fi
+  # AND NOTHING OF THE PROJECT IS LEFT FOR THE NEXT MODE (2026-11-14), whose
+  # layers differ: `cells` brings three databases and a volume per cell key,
+  # `fuzz` an `internal` network. A down that timed out, or a container a
+  # layer started that the next mode's files do not name, would otherwise
+  # meet the next mode's fixed container names or its network.
+  removeProjectLeftovers
   STACK_UP=0
 done
 
-if [ "${MODE_COUNT}" -gt 1 ];
+if [ "${MODE_COUNT}" -gt 1 ] || [ "${#MODES_SKIPPED[@]}" -gt 0 ];
 then
   echo ""
   echo "==========================================================="
-  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]}"
+  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]+${MODES_RUN[*]}}"
+  if [ "${#MODES_SKIPPED[@]}" -gt 0 ];
+  then
+    printf ' SKIPPED: %s\n' "${MODES_SKIPPED[@]}"
+  fi
   if [ "${#MODES_FAILED[@]}" -gt 0 ];
   then
     echo " FAILED in: ${MODES_FAILED[*]}"
-  else
-    echo " all modes passed"
+  elif [ "${#MODES_RUN[@]}" -gt 0 ];
+  then
+    echo " all modes run passed"
   fi
   echo " reports: tests/report/<mode>/latest"
   echo "==========================================================="
@@ -2177,6 +2634,15 @@ done
 # try to delete the old ones. It is written from inside the container, which
 # is root; the workflow chowns it before uploading and a person can too:
 #   sudo chown -R "$(id -u):$(id -g)" tests/report
+
+# EVERY MODE SKIPPED IS NOTHING CHECKED, which is never a pass (2026-11-14):
+# `--modes=fuzz --only=crypto` asks for a mode and then for none of its jobs.
+if [ "${RC}" -eq 0 ] && [ "${#MODES_RUN[@]}" -eq 0 ];
+then
+  echo "No mode ran: every one named was skipped (above). Nothing was" \
+       "checked." >&2
+  RC=1
+fi
 
 if [ "${RC}" -ne 0 ];
 then

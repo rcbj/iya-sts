@@ -12,7 +12,8 @@
 // rcbj wants both shapes on the service-provider side of every federation
 // relationship, each a switch on the relationship's page:
 //
-//   * DYNAMIC PROVISIONING (`fedAutocreateUsers`, on by default): the first
+//   * DYNAMIC PROVISIONING (`fedAutocreateUsers`, on in this development
+//     child — a new relationship is written off in product): the first
 //     sign-in creates the person's directory entry, so no SCIM is needed.
 //   * PRE-PROVISIONING (the same switch off): the entry must already exist —
 //     created through SCIM or by hand — and a sign-in for somebody who does
@@ -36,8 +37,8 @@
 // default, link-at-first-sign-in: a pre-provisioned person meets the service
 // provider's own sign-in screen once, as themselves, before their account is
 // linked to the partner (development checks no password there), and an entry
-// a sign-in CREATES is named `<relationship>~<name>`. Which people a partner
-// may assert is `tests/federation_subject_policy.js`'s.
+// a sign-in CREATES is named `<relationship>~sub-<uuid>` (#358). Which
+// people a partner may assert is `tests/federation_subject_policy.js`'s.
 //
 // WHY A CHILD PROCESS: it loads the whole protocol stack, serves it on a
 // loopback port, creates a realm and flips four settings.
@@ -109,6 +110,7 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const base = 'http://127.0.0.1:' + port;
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const SP = 'fpsp';
     const REL = 'fp-oidc';
 
@@ -171,22 +173,36 @@ function childMain() {
       jar = {};
       let r = await request('GET', '/realm/' + SP + '/federation/login/' + REL);
       for (let hop = 0; hop < 20; hop += 1) {
-        if (r.status >= 300 && r.status < 400 && r.headers.location) {
-          r = await request('GET', r.headers.location);
+        const at = String(r.headers.location || '');
+        // THE SCREEN'S OWN REALM (#109): the partner's, or — for a person
+        // who already exists here and is not linked yet — the service
+        // provider's own linking sign-in (link-at-first-sign-in, the
+        // default), where the name is fixed and development checks no
+        // password. A static surface over `/authn-api` since #571: signed
+        // in as its page does, and its answer followed with a GET.
+        if (r.status >= 300 && r.status < 400 &&
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)) {
+          const sent = await authnScreen.submit({ port: port, jar: jar,
+            at: new URL(at, base).pathname + new URL(at, base).search,
+            fields: { action: 'login', username: username,
+                      password: 'x' } });
+          // An administrator is OFFERED a second factor (#246). Ignoring
+          // it finishes the sign-in on the password, which is what a
+          // person who only wants the federated hop does. A required
+          // step is returned as it is.
+          let onward = sent;
+          if (sent.next !== 'redirect') {
+            onward = await authnScreen.ignoreOffer(
+              { port: port, jar: jar }, sent);
+          }
+          if (onward.next !== 'redirect' || !onward.location) {
+            return onward;
+          }
+          r = await request('GET', onward.location);
           continue;
         }
-        const authnId = /name="authn_id" value="([^"]+)"/.exec(r.text);
-        if (r.status === 200 && authnId) {
-          // THE SCREEN'S OWN REALM (#109): the partner's, or — for a person
-          // who already exists here and is not linked yet — the service
-          // provider's own linking sign-in (link-at-first-sign-in, the
-          // default), where the name is fixed and development checks no
-          // password.
-          const realmPrefix = r.path.indexOf('/realm/' + SP + '/') === 0
-            ? '/realm/' + SP : '';
-          r = await request('POST', realmPrefix + '/authn/login', { form: {
-            authn_id: authnId[1], username: username, password: 'x',
-            action: 'login' } });
+        if (r.status >= 300 && r.status < 400 && at) {
+          r = await request('GET', at);
           continue;
         }
         return r;
@@ -203,6 +219,18 @@ function childMain() {
     }
     function attr(entry, name) {
       return entry ? (entry.attributes[name.toLowerCase()] || []) : [];
+    }
+    // An entry a sign-in CREATES is `<relationship>~sub-<uuid>` of the
+    // partner's subject (#358), which for this service as the partner is
+    // the IdP person's entryUUID. The old `<relationship>~<username>` is
+    // what `identityKeyOf()` used to file, and a test that still looks
+    // there would pass a regression that collapsed two subjects.
+    function createdName(username) {
+      const idp = realms.run(realms.DEFAULT_REALM, function () {
+        return entryOf(username);
+      });
+      const uuid = String(attr(idp, 'entryUUID')[0] || '').toLowerCase();
+      return REL + '~sub-' + uuid;
     }
 
     // --- the partner, and the relationship to it ----------------------------
@@ -250,12 +278,19 @@ function childMain() {
     // 1. DYNAMIC PROVISIONING: the first sign-in creates the entry
     // =======================================================================
     let r = await federatedSignIn('fp-dyn');
-    // #109: an entry a sign-in CREATES is namespaced to the relationship.
-    const dyn = await inSp(function () { return entryOf(REL + '~fp-dyn'); });
-    note(r.status === 200 && dyn,
+    // #358: an entry a sign-in CREATES is the partner's subject, namespaced
+    // to the relationship, not the mapped username.
+    const dynName = createdName('fp-dyn');
+    const dyn = await inSp(function () {
+      return entryOf(dynName);
+    });
+    const dynOld = await inSp(function () {
+      return entryOf(REL + '~fp-dyn');
+    });
+    note(r.status === 200 && dyn && !dynOld,
          '1a. DYNAMIC: a person nobody provisioned signs in through the ' +
          'partner, and the service provider CREATES their entry — ' +
-         'namespaced to the relationship since #109',
+         dynName + ' since #358',
          r.status + ' ' + r.text.replace(/\s+/g, ' ').slice(0, 200));
     note(dyn && attr(dyn, 'entryUUID').length === 1,
          '1b. and it has an entryUUID — the subject of the session',
@@ -275,8 +310,10 @@ function childMain() {
     // =======================================================================
     await setRel('fedAutocreateUsers', 'FALSE');
     r = await federatedSignIn('fp-absent');
+    const absentName = createdName('fp-absent');
     const absent = await inSp(function () {
-      return entryOf('fp-absent') || entryOf(REL + '~fp-absent');
+      return entryOf('fp-absent') || entryOf(REL + '~fp-absent') ||
+             entryOf(absentName);
     });
     // The SERVICE PROVIDER's audit log: a realm's rows are its own.
     const refusedCodes = (await inSp(function () {
@@ -352,7 +389,7 @@ function childMain() {
 
     await setRel('fedAutocreateUsers', 'TRUE');
     r = await federatedSignIn('fp-new-noupdate');
-    const NEW_NOUPDATE = REL + '~fp-new-noupdate';
+    const NEW_NOUPDATE = createdName('fp-new-noupdate');
     const fresh = await inSp(function () {
       return entryOf(NEW_NOUPDATE);
     });
@@ -398,7 +435,7 @@ function childMain() {
     //    THE SIGN-IN (2026-09-18). `autoCreateUser()` returned before its
     //    lookup whenever creation was off, so in product mode a
     //    pre-provisioned person never recorded `federationRelationship` and
-    //    never took the partner's attributes. `tests/vendored/
+    //    never took the partner's attributes. `tests/protocol/
     //    sts_federation_realms.js` found it against a product-mode deployment.
     // =======================================================================
     // In the SERVICE PROVIDER's realm only (set while it is ambient): the
@@ -433,20 +470,142 @@ function childMain() {
          'partner\'s attributes do not wait for an unrelated write (#168)',
          JSON.stringify(toldDns.slice(toldFrom)));
     r = await federatedSignIn('fp-nocreate-nobody');
+    const nobodyName = createdName('fp-nocreate-nobody');
     const nobody = await inSp(function () {
+      return entryOf(nobodyName);
+    });
+    const nobodyOld = await inSp(function () {
       return entryOf('fp-nocreate-nobody') ||
              entryOf(REL + '~fp-nocreate-nobody');
     });
     // THE RELATIONSHIP'S SWITCH WINS (rcbj, 2026-09-30): fedAutocreateUsers
     // is on here, so the newcomer is created although the realm's
     // ldap.autocreateUsers is off. Section 2 holds the switch off refusing.
-    note(r.status === 200 && !!nobody,
+    note(r.status === 200 && !!nobody && !nobodyOld,
          '7c. and somebody nobody provisioned is CREATED, because the ' +
          'relationship\'s fedAutocreateUsers overrides the realm setting',
-         r.status + ' ' + !!nobody);
+         r.status + ' ' + nobodyName + ' old=' + !!nobodyOld);
     await inSp(function () {
       config.clearOverride('ldap.autocreateUsers');
     });
+
+    // =======================================================================
+    // 8. GROUP MEMBERSHIP FROM THE TOKEN (#358). A group this relationship
+    // creates is joined and marked. The console's admin-write is not joined
+    // and is audited STS-FED-0164: it grants something by being held, and
+    // provisioning never adds anybody to such a group.
+    // =======================================================================
+    await setRel('fedProvisionGroups', 'TRUE');
+    // The person is created by the same sign-in the earlier sections use.
+    // Memberships go on afterwards: putting them in admin-write first
+    // makes the partner offer a second factor before the hop finishes.
+    const firstGroups = await federatedSignIn('fp-groups');
+    const groupName = createdName('fp-groups');
+    const planted = realms.run(realms.DEFAULT_REALM, function () {
+      const engineers = ldap.createGroup('engineers',
+                                         { members: ['fp-groups'] });
+      let write = ldap.addGroupMember('admin-write', 'fp-groups');
+      if (!write.ok) {
+        write = ldap.createGroup('admin-write',
+                                 { members: ['fp-groups'] });
+      }
+      const cns = (ldap.groupsOfUser('fp-groups').groups || [])
+        .map(function (one) {
+          return String(one.cn || '');
+        });
+      return { engineers: !!engineers.ok, write: !!write.ok, cns: cns,
+               errors: [].concat(engineers.errors || [],
+                                 write.errors || []) };
+    });
+    const spWrite = await inSp(function () {
+      if (ldap.readGroupEntry(ldap.groupDnFor('admin-write'))) {
+        return { ok: true };
+      }
+      return ldap.createGroup('admin-write', {});
+    });
+    r = await federatedSignIn('fp-groups');
+    const membership = await inSp(function () {
+      return ldap.groupsOfUser(groupName);
+    });
+    const cns = (membership.groups || []).map(function (one) {
+      return String(one.cn || '');
+    });
+    const engineers = await inSp(function () {
+      return ldap.readGroupEntry(ldap.groupDnFor('engineers'));
+    });
+    // readGroupEntry() is entryObject(), which spells the attribute the
+    // way the schema learned it. The store itself keeps it lower-case.
+    const attrs = (engineers && engineers.attributes) || {};
+    const mark = attrs.federationRelationship ||
+                 attrs.federationrelationship || [];
+    const ignored = await inSp(function () {
+      return audit.list().filter(function (event) {
+        return event.action === 'federation.group-ignored' &&
+               event.errorCode === 'STS-FED-0164' &&
+               event.detail && event.detail.group === 'admin-write';
+      });
+    });
+    function hopText(one) {
+      const loc = one.location ||
+        (one.headers && one.headers.location) || '';
+      return one.status + ' next=' + (one.next || '') + ' loc=' + loc +
+        ' ' + String(one.text || '').replace(/\s+/g, ' ').slice(0, 140);
+    }
+    note(firstGroups.status === 200 && planted.engineers && planted.write &&
+         spWrite.ok && r.status === 200 && cns.indexOf('engineers') >= 0 &&
+         cns.indexOf('admin-write') < 0 && mark.indexOf(REL) >= 0 &&
+         ignored.length >= 1,
+         '8. fedProvisionGroups joins a new group from the token and ' +
+         'refuses the console\'s admin-write group (STS-FED-0164)',
+         'first=' + hopText(firstGroups) + ' planted=' +
+         JSON.stringify(planted) + ' idp=' +
+         JSON.stringify(planted.cns) + ' second=' + hopText(r) +
+         ' groups=' + JSON.stringify(cns) + ' mark=' +
+         JSON.stringify(mark) + ' ignored=' + ignored.length);
+
+    // 9. A PARTNER'S PHOTO (#719), through the real sign-in: the partner's
+    // `picture` reaches the hook in `federation_sp.ts`, which copies it after
+    // the sign-in, and the service provider's entry names this realm's copy.
+    // `tests/profile_photo.js` asks what the copy does; this asks that a
+    // sign-in starts it at all, which calling the library directly cannot.
+    const photoHost = http.createServer(function (q, s) {
+      const sof = Buffer.alloc(19);
+      sof[0] = 0xff;
+      sof[1] = 0xc0;
+      sof.writeUInt16BE(17, 2);
+      sof[4] = 8;
+      sof.writeUInt16BE(96, 5);
+      sof.writeUInt16BE(96, 7);
+      s.end(Buffer.concat([Buffer.from([0xff, 0xd8]), sof,
+                           Buffer.from([0xff, 0xda, 0, 2, 1, 0xff, 0xd9])]));
+    });
+    await new Promise(function (ready) {
+      photoHost.listen(0, '127.0.0.1', ready);
+    });
+    await setRel('fedAutocreateUsers', 'TRUE');
+    await setRel('fedUpdateUserAttributes', 'TRUE');
+    const photoPerson = 'prov-photo-' + process.pid;
+    const photoSource = 'http://127.0.0.1:' + photoHost.address().port +
+                        '/partner.jpg';
+    realms.run(realms.DEFAULT_REALM, function () {
+      ldap.createUser(photoPerson, { invent: false });
+      ldap.writeProfilePhoto(photoPerson, '', photoSource);
+    });
+    const photoSignIn = await federatedSignIn(photoPerson);
+    const photoName = createdName(photoPerson);
+    let copiedTo = '';
+    for (let i = 0; i < 40 && copiedTo.indexOf('/web/photo/') < 0; i += 1) {
+      copiedTo = await inSp(async function () {
+        return String(attr(entryOf(photoName), 'pictureUrl')[0] || '');
+      });
+      await new Promise(function (r) { setTimeout(r, 100); });
+    }
+    note(photoSignIn.status === 200 &&
+         copiedTo.indexOf('/realm/' + SP + '/web/photo/') > 0,
+         '9. a partner\'s picture is copied after a real federated sign-in, ' +
+         'and the entry names this realm\'s copy',
+         hopText(photoSignIn) + ' pictureUrl=' + copiedTo);
+    photoHost.close();
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

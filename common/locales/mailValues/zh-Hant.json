@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "您本人，或知道您的帳戶名稱、地址及其中一個復原碼的人",
+  "requestedBy.signInScreen": "您本人，或在登入畫面上知道您帳戶名稱的人",
+  "requestedBy.administrator": "管理員",
+  "requestedBy.administratorNamed": "管理員（{actor}）",
+  "how.by": "由{entity, select, user {使用者} admin {管理員} system {系統} policy {原則} someone {某人} other {{entity}}}執行",
+  "credential.type": "{type, select, password {密碼} x509 {X.509 憑證} app {驗證器應用程式} fido2-roaming {安全金鑰} fido2-platform {密碼金鑰} other {{type}}}",
+  "by.you": "您本人",
+  "by.administrator": "管理員",
+  "by.administratorSessionsPage": "管理員（工作階段頁面）",
+  "by.administratorConsoleLogout": "管理員（管理主控台 /admin/logout）",
+  "act.credentialCompromised": "認證資料被標示為已外洩",
+  "act.accountDisabled": "帳戶已停用",
+  "rights.access": "存取",
+  "address.none": "（無）"
+}

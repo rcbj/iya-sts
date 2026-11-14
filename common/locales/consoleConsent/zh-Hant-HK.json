@@ -1,0 +1,11 @@
+{
+  "intro": "<strong>某人同意應用程式可代其請求的內容。</strong>當 <code>oauth2.consentRequired</code> 開啟時——它預設開啟，也是本服務中唯一預設開啟的原則——某個用戶名稱首次針對某個範圍登入某個 <code>client_id</code> 時，授權端點會顯示一個畫面，在其回答之前不簽發任何內容。「允許」會為每個範圍在該用戶自己位於 <code>ou=users</code> 下的項目上寫入一個 <code>{attribute}</code> 值；「拒絕」向客戶端傳回 <code>access_denied</code>，且不記錄任何內容。委派權限依其完整識別碼記錄——<code>https://example.com/write</code>，而絕不是單獨的 <code>write</code>——因為兩個資源可能公開同名權限，對其中一個的同意不得涵蓋另一個。",
+  "colPerson": "用戶",
+  "grantNote": "範圍的寫法與客戶端在 <code>scope</code> 參數中的寫法完全相同：<code>openid</code>、<code>profile</code>，或完整的委派權限識別碼，如 <code>https://example.com/write</code>。它必須是合法的 OAuth 範圍權杖（RFC 6749 第 3.3 節：除空格、雙引號和反斜線外的任何可打印 ASCII 字元），因為含空格的值是兩個範圍，永遠無法比對一個。此處沒有任何應用程式為其定義權限的範圍會被接受而不是拒絕——大多數範圍並不是權限。",
+  "recordedNote": "<strong>每個（用戶，應用程式，範圍）一列，這本身就是回答。</strong>為一個應用程式同意了五個範圍的人是五列，而不是一列標著 <em>5</em>，因為以後請求第六個範圍的客戶端只會就第六個被詢問——這正是畫面顯示的內容，也是這些列必須能夠表達的。時間戳記是此人按下「允許」的時間。<br><br>撤銷一列後，下次該應用程式請求該範圍時會再次詢問此人，並且會<strong>撤回</strong>它：該應用程式為此人持有、攜帶該範圍的每個存取權杖和重新整理權杖都會在每個節點上被撤銷，撤回時刻會以 <code>{attribute}</code> 寫入其項目，因此在此之前授予的重新整理權杖即使在其再次同意後也會在權杖端點被拒絕。撤回一個範圍會撤銷整個重新整理權杖。移除上面的全域同意對其涵蓋的每個人效果相同，且 <code>oauth2.refreshRequiresConsent</code> 會拒絕來自授權端點、沒有任何已記錄同意涵蓋的重新整理權杖。",
+  "searchPlaceholder": "用戶、應用程式或範圍",
+  "noMatch": "<strong>沒有與「{q}」相符的內容。</strong>搜尋範圍包括用戶、應用程式和範圍。",
+  "person": "用戶",
+  "bothHalves": "<strong>兩半都是一般目錄項目上的一般屬性。</strong><code>{globalAttribute}</code> 位於 <code>ou=applications</code> 下的應用程式上，<code>{attribute}</code> 位於 <code>ou=users</code> 下的用戶上，格式為 <code>&lt;when&gt; &lt;scope&gt; &lt;client_id&gt;</code>——client_id 放在最後，因為它是唯一對內容沒有規則的欄位，因此必須佔用值的剩餘部分。<code>GET /admin/ldap/directory</code> 依原樣顯示它們，並且目錄在哪裡持久保存它們就在哪裡持久保存。",
+  "notGranted": "且此客戶端未被授予該權限——在產品模式下，或開啟 <code>oauth2.delegatedPermissionsEnforced</code> 時，無論是否同意，請求都會被拒絕"
+}

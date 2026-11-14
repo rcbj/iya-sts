@@ -33,9 +33,16 @@ from that one difference.
 WS-Federation, SAML 2.0, SAML 1.1 and the admin console all read the same
 cookie, which is why signing in through one signs you in to all of them and why
 signing out of one signs you out of all of them. There is no per-protocol
-session anywhere in this service.
+session anywhere in this service. The person it belongs to is a
+[user](people.md), and the other party is an
+[application](applications.md). [Directory](directory.md).
 
 ### The cookie
+
+In product mode over TLS the browser holds it as `__Host-sts_session`, or
+`__Secure-sts_session` where `authn.cookieDomain` is set, and every other cookie
+this service sets is prefixed the same way. An unprefixed one is ignored. See
+[Security in product mode](product-security.md).
 
 `sts_session`, `Path=/`, `HttpOnly`, `SameSite=Lax`, and `Secure` **only
 when the port is TLS** (`global.https`). That last one is conditional rather than
@@ -48,6 +55,71 @@ points nowhere near the cookie.
 `SameSite=Lax` and not `None`, deliberately: WS-Federation section 13.2.1 sends
 its sign-in request as a cross-site form POST, and `None` would be a change that
 needs its own argument.
+
+### Binding the cookie to the browser: Device Bound Session Credentials
+
+`sts_session` is a bearer cookie: copied off a machine, it works anywhere. With
+**`authn.deviceBoundSessions`** on (per realm, off by default), this service
+speaks the relying-party side of the W3C WebAppSec
+[Device Bound Session Credentials](https://w3c.github.io/webappsec-dbsc/)
+draft:
+
+1. The answer that sets `sts_session` carries
+   `Secure-Session-Registration: (ES256 RS256);path="/authn/dbsc/register";challenge="…"`.
+2. A browser that supports DBSC makes a key pair and posts a proof of it — a
+   `dbsc+jwt` JWT with the public key in its header and the challenge as its
+   `jti`, in `Secure-Session-Response` — to `POST /authn/dbsc/register`. The
+   session is now bound to that key, and the answer is the session's JSON
+   instructions and a second cookie, **`sts_session_bound`**, that lives
+   **`authn.deviceBoundCookieLifetimeS`** (ten minutes by default).
+3. From then on the session is honoured only beside a current
+   `sts_session_bound`. When it runs out, the browser posts to
+   `POST /authn/dbsc/refresh` with `Sec-Secure-Session-Id`; the answer is a
+   403 with a `Secure-Session-Challenge`, the browser signs it, and the
+   cookie is renewed.
+
+**A refresh signed by any other key, or replaying a challenge already spent,
+ends the session** as a sign-out does — CAEP `session-revoked`, Back-Channel
+Logout Tokens, and the session's audit row. A request that presents
+`sts_session` without the bound cookie is simply not signed in; the session is
+not ended, because the browser that holds the key renews the cookie before it
+sends anything.
+
+**With [several accounts in one browser](multiple-accounts.md) on**, each
+account binds on its own: a binding's cookie is named
+`sts_session_bound_<id>` after its DBSC session, each account is honoured
+only beside its own, and a refresh that ends one account's session leaves the
+others signed in.
+
+**A browser that does not support DBSC ignores the header** and keeps an
+ordinary session. A browser that declines or fails registration sends
+`Secure-Session-Skipped`. That is recorded on the session, and
+`/admin/sessions` and the portal's Overview say **binding skipped** with the
+reason. A header that is not a list of tokens is recorded and the session
+stays unbound.
+
+**`authn.deviceBoundIncludeSite`** (off by default) sets `scope.include_site`
+and widens the bound cookie's `Domain` to the registrable domain. Off, the
+cookie stays host-only. The debugger's public host and a custom listener's
+host under that domain are excluded. Realm paths are the same origin and need
+no site scope.
+
+**A passkey profile can require a bound session** (`deviceBoundRequired`),
+off by default, and the save is refused while `authn.deviceBoundSessions` is
+off. Issuance to that application waits while registration is still pending
+(`authn.deviceBoundIssuanceWaitS`, 60 seconds, read at the issuance, not by a
+timer) and is refused when the browser skipped registration or the wait has
+elapsed. A session that was never offered registration is not refused. A
+browser that has not been offered the header keeps an ordinary session.
+
+Federated device-bound sessions, where one origin's key is reused at
+another, are not implemented. The draft's well-known document does not yet
+describe one grammar.
+
+`/admin/sessions` and the portal's Overview say whether a session is bound.
+The challenges and the bound cookie are MACs under a secret every node
+shares, so nothing about them is stored and every node accepts what another
+minted; each challenge is spent once for the whole cluster.
 
 ### What the record holds
 
@@ -83,13 +155,43 @@ Logout, and SPNEGO and federation add none because neither defines one.
 
 Fixed when the session is created, from **`authn.sessionLifetimeS`** (3600 by
 default); changing it reaches the next session and leaves live ones as they
-were. **There is no idle timeout by default**, so a session in constant use dies
-at the same instant as one nobody has touched — set
-**`authn.sessionIdleTimeoutS`** to end a session that many seconds after it was
-last used, whichever limit comes first. The idle timeout is checked whenever a
-session is read, so it applies to sessions that already exist, and a request to
-the admin console or the user portal counts as use of the sign-on session behind
-it.
+were. **In product mode a session also ends after 30 idle minutes**
+(**`authn.sessionIdleTimeoutS`**: 1800 by default in product mode, and 0, meaning
+none, in development mode), whichever limit comes first. The idle timeout is
+checked whenever a session is read, so it applies to sessions that already
+exist, and a request to the admin console or the user portal counts as use of
+the sign-on session behind it.
+
+### How long a session may last, and why
+
+Product mode ends a sign-on session one hour after it starts, and after 30
+minutes without use, whichever comes first. NIST SP 800-63B-4 sets these limits
+for reauthentication:
+
+| Level | Overall limit | Inactivity limit |
+|---|---|---|
+| AAL1 | SHOULD be no more than 30 days | MAY apply, not required |
+| AAL2 | SHOULD be no more than 24 hours | SHOULD be no more than 1 hour |
+| AAL3 | SHALL be no more than 12 hours | SHOULD be no more than 15 minutes |
+
+Product mode requires a second factor at the sign-in screen, so its sessions are
+meant for AAL2. One hour and 30 minutes are well inside both limits. The shorter
+overall limit is deliberate: a stolen session is useful for at most an hour, and
+a person who is still working signs in again. A deployment that needs AAL3 sets
+`authn.sessionIdleTimeoutS` to 900.
+
+These do not follow the two numbers:
+
+| Case | What applies, and why |
+|---|---|
+| A management API, SCIM or SPIRE Server API client session | Extended by `authn.sessionLifetimeS` on each call. No person is involved, and it exists only while the client calls |
+| A refresh token (`oauth2.refreshTokenTtlS`, 24 hours) | Ends with the session it came from. An `offline_access` refresh token outlives the session by design, up to its own lifetime |
+| An access token (`oauth2.accessTokenTtlS`, one hour) | Ends with the session at this service's own endpoints. A resource server that checks only the signature accepts it until it expires |
+| A SAML assertion or a Kerberos ticket | Cannot be recalled and lasts its own lifetime. See [What ending a session stops](#what-ending-a-session-stops) |
+| A federated session | Ends at the partner's `SessionNotOnOrAfter`, if that is sooner |
+
+Reauthentication uses the sign-in itself: `prompt=login`, `max_age`, `acr_values`
+or SAML `ForceAuthn` adds an authentication to the same session.
 
 **An expiry ends the session properly**, not *lazily* when something next
 looks the session up — somebody who closed their browser would never be looked
@@ -111,7 +213,8 @@ that can start a session without being counted, audited and reported:
 | The same screen reached from a SAML 2.0 `AuthnRequest` | `SAML 2.0` |
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — no screen | `Kerberos v5 (SPNEGO)` |
-| A wallet's presentation of a credential this service issued — collected at `/authn/wallet/wait` by the browser that started it, or answered to that page through the Digital Credentials API at `/authn/wallet/dc-api` | `OpenID4VP (a wallet)` |
+| A wallet's presentation of a credential this service issued — collected by the wait page at `/authn/wallet/wait` in the browser that started it, or answered to that page through the Digital Credentials API (`/authn-api/wallet/{state}/dc-api`) | `OpenID4VP (a wallet)` |
+| A self-issued ID Token (SIOPv2) from a wallet, signed by a key the person enrolled at `/portal/self-issued` — the sign-in screen's *Sign in with a self-issued ID*, collected the same way | `SIOPv2 (a self-issued ID)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person authenticated somewhere else entirely | `Federation (SAML 2.0)`, and the same for the other federation protocols |
 
 **No password is checked at any of them** in development mode. The Kerberos
@@ -130,11 +233,12 @@ demand, and a WS-Federation `wfresh` too old all end at the screen.
 
 | Activity | What it reaches |
 |---|---|
-| `GET /oauth2/logout` | OpenID Connect RP-Initiated Logout |
+| `GET\|POST /oauth2/logout` | OpenID Connect RP-Initiated Logout |
 | `GET\|POST /wsfed?wa=wsignout1.0` | WS-Federation 1.2 §13.2.4 |
 | `GET\|POST /saml2/slo` | SAML 2.0 Single Logout |
 | `GET\|POST /logout` | the protocol-independent sign-out — everything, across every family |
 | `/admin/logout`, `/admin/sessions` | an operator ending somebody else's |
+| **End every session in this realm** on `/admin/sessions` (`POST /admin-api/sessions/end-all`) | every sign-on session in the realm started before that moment, the administrator's own included, each ended the next time it is read |
 | the lifetime running out | the sweep, or the next lookup |
 
 All of them go through **one function**, which is what stops four protocols'
@@ -143,15 +247,29 @@ words for one act from drifting apart. That function is also where the RFC 9700
 written, so a sign-out that revoked nothing and logged nothing is not reachable.
 [Signing out](signing-out.md) has the rest.
 
-**Ending a session does not recall what it produced.** Access tokens, ID Tokens,
-SAML assertions and Kerberos tickets issued on it stay valid — that is what
-`/admin/tokens` lists, and it is the state an OIDC client is in when its ID Token
-still verifies and the browser would be asked to sign in again. Refresh tokens
-are the exception in RFC 9700 mode.
+**In development mode, ending a session does not recall what it produced.**
+Access tokens, ID Tokens, SAML assertions and Kerberos tickets issued on it stay
+valid — that is what `/admin/tokens` lists, and it is the state an OIDC client is
+in when its ID Token still verifies and the browser would be asked to sign in
+again. Refresh tokens issued on the session without `offline_access` are the
+exception, in every mode: a sign-out revokes them (OpenID Connect Back-Channel
+Logout section 2.7, `oauth2.revokeRefreshOnLogout`, on by default and settable
+per client). **In product mode the access tokens are revoked as well**; see
+[What ending a session stops](#what-ending-a-session-stops).
+
+**End every session in this realm** is the exception to both: it records one
+instant, so its cost does not grow with the number of sessions, and it revokes
+no token. Use **Revoke all** on the Tokens page
+(`POST /admin-api/tokens/revoke-all`) as well.
 
 ### One session per sign-in, several per person
 
-Nothing here limits how many a person may hold: two browsers is two sessions.
+A person may hold up to `authn.maxSessionsPerSubject` sessions at once (32 by
+default), and past that their oldest one ends. A sign-in ends that oldest
+session at once. After the cap is lowered, the session sweep catches the rest
+a slice of people at a time and finishes a pass in 64 runs.
+`authn.maxSessions` is the realm's
+limit, where a new session is refused. Two browsers is two sessions.
 They are folded onto one person by an **identity key** — the normalisation that
 makes `alice`, `alice@REALM` and a token's `urn:uuid:<entryUUID>` subject one
 identity (the older `urn:sts:user:alice` form is still read) — which
@@ -177,6 +295,18 @@ a token that outlived it would verify against nothing. See
 [persistence](persistence.md) for the three things that *are* written down.
 
 ---
+
+### What ending a session stops
+
+In product mode, ending a session revokes its refresh tokens (except
+`offline_access` ones) and its access tokens, so introspection, UserInfo and this
+service's own APIs refuse them at once. The record of each token is kept.
+
+Some things cannot be recalled. A SAML assertion already held by a service
+provider stays valid until it expires, and a Kerberos ticket stays valid until
+its own end time, because neither is checked with this service when it is used.
+An ID Token is not revoked, since RP-Initiated Logout accepts one as
+`id_token_hint` after the session has ended.
 
 ## 2. The Kerberos ticket-granting ticket
 
@@ -281,9 +411,21 @@ and **how that expiry is worked out** — and a Revoke button on each row that g
 through the same termination `/logout` performs.
 
 `GET /admin-api/sessions` is the same list without a browser;
-`POST /admin-api/sessions/revoke` is the button. Every row carries the two fields
+`POST /admin-api/sessions/revoke` is the button. Below the list, an administrator
+holding Admin Write has **End every session in this realm**
+(`POST /admin-api/sessions/end-all`); see [How one ends](#how-one-ends). Every row carries the two fields
 that write needs, and — for a browser session — the `sessionId` that
 `GET /admin-api/tokens?session=` takes.
+
+The **Unauthenticated** tab is not every browser that has not signed in. It
+lists sessions somebody started with **Continue without signing in**
+(`authn.unauthenticatedSessions`, off by default). An arrival session — a
+browser that reached a front door and has not signed in — is not on this page.
+No protocol reads it as a sign-in, and this page draws no row for it and no
+button that would end it. Signing in moves it to **Live sessions**. Continuing
+without signing in, when that setting is on, is what puts a row on the
+Unauthenticated tab. An empty tab does not mean this service is holding no
+unsigned-in browser.
 
 ### `/admin/metrics` — the count, both ways
 

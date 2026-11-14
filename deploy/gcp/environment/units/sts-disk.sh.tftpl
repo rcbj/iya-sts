@@ -19,4 +19,9 @@ fi
 mkdir -p "$${dir}"
 mountpoint -q "$${dir}" || mount -o discard,defaults,nosuid,nodev "$${dev}" "$${dir}"
 find "$${dir}" -mindepth 1 -delete
+# THE NODE'S, NOT ROOT'S (#254, 2026-10-06): the image runs as uid 10001
+# since that change, and a freshly made file system's root is root's — the
+# first upload would fail on EACCES. Still 0700: nothing else on the VM, and
+# no other container, has a reason to read an upload in flight.
+chown ${owner} "$${dir}"
 chmod 0700 "$${dir}"

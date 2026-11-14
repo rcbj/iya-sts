@@ -153,6 +153,7 @@
 
 import helpers = require('./helpers');
 import config = require('./config');
+import DomainMap = require('./domain_map');
 import applications = require('./applications');
 // The registry of failure codes, a LEAF. A refusal carries its code
 // NON-ENUMERABLY on the result (`errorCodes.mark()`), so the JSON a console or
@@ -204,7 +205,35 @@ interface ConsentDirectory {
     { ok?: boolean; dn?: string; reason?: string } | null | undefined;
   removeWithdrawal(key: string, values: string[]):
     { dn?: string } | null | undefined;
+  // THE GLOBAL CONSENTS APPLIED FOR A PERSON (#537), `oauthConsentApplied`.
+  // Optional: a directory without them records nothing and the portal lists
+  // nothing, which is all they are for.
+  appliedConsentsOf?(key: string): { values?: string[] } | null | undefined;
+  addAppliedConsent?(key: string, values: string[]):
+    { ok?: boolean; dn?: string; reason?: string } | null | undefined;
+  removeAppliedConsent?(key: string, values: string[]):
+    { dn?: string } | null | undefined;
+  // THE HOLDERS A PAGE AT A TIME (#820). Optional: a directory held in
+  // memory has none, and `register()` answers there. Each answers null
+  // where the directory is not windowed.
+  consentHoldersPageAsync?(offset: number, limit: number):
+    Promise<{ total: number; read: number;
+              rows: Array<{ username: string; dn: string;
+                            values?: string[] }> } | null>;
+  consentHolderNamedAsync?(name: string):
+    Promise<{ row: { username: string; dn: string;
+                     values?: string[] } | null } | null>;
 }
+
+/**
+ * How many consent holders an exact client_id or scope search looks inside,
+ * where the directory is in the store (#820): the values are sealed inside
+ * each entry, so no index can find one.
+ */
+const CONSENT_SEARCH_SCAN = 5000;
+
+/** How many holders one page of that scan asks the store for. */
+const CONSENT_SCAN_PAGE = 1000;
 
 // What revoking a grant's tokens needs from `oauth-oidc/oauth2_bcp.js` — the
 // #102 bookkeeping of what one grant issued. Reached LAZILY (see
@@ -248,6 +277,18 @@ const WITHDRAWN_ATTRIBUTE = 'oauthConsentWithdrawn';
  */
 const GLOBAL_WITHDRAWN_ATTRIBUTE = 'oauthGlobalConsentWithdrawn';
 
+// THE GLOBAL CONSENTS APPLIED FOR A PERSON (#537). A global consent writes
+// nothing about anybody — that is the whole of what makes it an override
+// rather than a record — so `/portal/consents` had nothing to list for an
+// application whose scopes an administrator agreed to for everyone. The
+// authorization endpoint now writes, the first time a sign-in passes consent
+// because the application's `oauthGlobalConsent` covered a scope, one value
+// per (application, scope) in `oauthConsent`'s grammar. It records what
+// HAPPENED and decides nothing: `outstanding()` never reads it, and taking
+// the global consent away makes it stop being shown rather than deleting it.
+/** The attribute on a person's entry that records global consents applied. */
+const APPLIED_ATTRIBUTE = 'oauthConsentApplied';
+
 // The token kinds a withdrawal revokes: what a grant under consent issued
 // and a client can present again. An ID Token is presented to nobody here.
 const GRANT_TOKEN_KINDS = ['access_token', 'refresh_token'];
@@ -260,6 +301,13 @@ const GRANT_TOKEN_KINDS = ['access_token', 'refresh_token'];
  * withdrawn consent revokes what was issued under it and refuses the
  * refresh grant from then on.
  */
+// THE ONE SCOPE A SAML 2.0, SAML 1.1 OR WS-FEDERATION SIGN-IN IS CONSENTED
+// UNDER (ASVS 5.0.0 7.6.2, `common/sso_consent.ts`). Those protocols carry no
+// scope, so the register files the person's answer to "may this application
+// sign me in" under this one, beside the OAuth scopes of the same entry. A URN
+// so that no OAuth client's own scope can be mistaken for it.
+const SSO_SIGN_IN_SCOPE = 'urn:iya-sts:scope:sign-in';
+
 class Consent {
   /** The attribute on a person's entry that holds their consents. */
   static readonly USER_ATTRIBUTE = USER_ATTRIBUTE;
@@ -632,7 +680,9 @@ class Consent {
   globalConsentsFrom(entry) {
     const { log } = this.deps;
     log.debug("Entering Consent.globalConsentsFrom().");
-    const raw = ((entry && entry.fields) || {})[GLOBAL_ATTRIBUTE];
+    // The OAuthClient's (#1579).
+    const raw = DomainMap.fieldOf('OAuthClient', 'globalConsent',
+      (entry && entry.fields) || {});
     const out = [];
     (Array.isArray(raw) ? raw :
      (raw === undefined || raw === null || raw === '' ? [] : [raw]))
@@ -852,6 +902,138 @@ class Consent {
   }
 
   // ---------------------------------------------------------------------------
+  // THE GLOBAL CONSENTS APPLIED FOR A PERSON (#537). `noteApplied()` is called
+  // by the authorization endpoint once consent has passed, with the scopes a
+  // global consent answered; `appliedConsentsOf()` is what `/portal/consents`
+  // draws. See APPLIED_ATTRIBUTE.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records that an application's global consent answered for a person, once
+   * per (application, scope): a scope already recorded is not written again,
+   * so a sign-in costs a directory write only the first time.
+   *
+   * Never throws: a record that cannot be written is logged and the sign-in
+   * goes on, because nothing reads it to decide anything.
+   * @param username - the person
+   * @param clientId - the application's client_id
+   * @param scopes - the scopes the global consent answered
+   * @returns `{ ok, stored, scopes }`, `scopes` being those written now
+   */
+  noteApplied(username, clientId, scopes) {
+    const { log, errorCodes, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.noteApplied().");
+    const who = String(clientId || '').trim();
+    const list = (Array.isArray(scopes) ? scopes : self.scopesOf(scopes))
+      .filter(Boolean);
+    const hooks = this.directory;
+    if (!hooks || typeof hooks.appliedConsentsOf !== 'function' ||
+        typeof hooks.addAppliedConsent !== 'function') {
+      log.debug("Leaving Consent.noteApplied(). No directory hooks.");
+      return { ok: true, stored: false, scopes: [] };
+    }
+    try {
+      const key = stats.identityKeyOf(username);
+      if (!key || !who || !list.length) {
+        log.debug("Leaving Consent.noteApplied(). Nothing to record.");
+        return { ok: true, stored: false, scopes: [] };
+      }
+      const held = ((hooks.appliedConsentsOf(key) || {}).values || [])
+        .map(function (value) {
+          return self.parseConsentValue(value);
+        })
+        .filter(function (one) {
+          return one.client === who;
+        })
+        .map(function (one) {
+          return one.scope;
+        });
+      const fresh = list.filter(function (scope) {
+        return held.indexOf(scope) < 0;
+      });
+      if (!fresh.length) {
+        log.debug("Leaving Consent.noteApplied(). Already recorded.");
+        return { ok: true, stored: false, scopes: [] };
+      }
+      const when = new Date();
+      const written = hooks.addAppliedConsent(key, fresh.map(function (scope) {
+        return self.consentValueOf(scope, who, when);
+      })) || {};
+      if (!written.ok) {
+        log.warn(errorCodes.tag('STS-REG-0342') + 'consent: the global ' +
+                 'consent "' + who + '" carries for ' + fresh.join(', ') +
+                 ' answered for "' + key + '", and it could not be ' +
+                 'recorded on their entry (' + (written.reason || 'not ' +
+                 'written') + '), so /portal/consents will not list it.');
+        log.debug("Leaving Consent.noteApplied(). Not written.");
+        return { ok: true, stored: false, scopes: [] };
+      }
+      log.info('consent: the global consent of "' + who + '" answered for "' +
+               key + '" (' + fresh.join(', ') + '); recorded on ' +
+               (written.dn || 'their entry') + ' as ' + APPLIED_ATTRIBUTE +
+               '.');
+      log.debug("Leaving Consent.noteApplied(). " + fresh.length +
+                " written.");
+      return { ok: true, stored: true, scopes: fresh };
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-REG-0342') + 'consent: recording the ' +
+               'global consent "' + who + '" applied for "' +
+               String(username || '') + '" threw: ' +
+               ((e && e.message) || e));
+      log.debug("Leaving Consent.noteApplied(). Threw.");
+      return { ok: true, stored: false, scopes: [] };
+    }
+  }
+
+  /**
+   * Returns the global consents that answered for a person and still stand:
+   * the application still carries the global consent, and the person has not
+   * also agreed to the scope themselves (that is listed as theirs).
+   *
+   * @param username - any spelling of the person's identity
+   * @returns `{ at, scope, client }` per consent
+   */
+  appliedConsentsOf(username) {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.appliedConsentsOf().");
+    const hooks = this.directory;
+    if (!hooks || typeof hooks.appliedConsentsOf !== 'function') {
+      log.debug("Leaving Consent.appliedConsentsOf(). No directory hooks.");
+      return [];
+    }
+    const key = stats.identityKeyOf(username);
+    if (!key) {
+      log.debug("Leaving Consent.appliedConsentsOf(). No identity.");
+      return [];
+    }
+    const own = self.consentsOf(username).map(function (one) {
+      return one.client + ' ' + one.scope;
+    });
+    const globals: Record<string, string[]> = {};
+    const rows = ((hooks.appliedConsentsOf(key) || {}).values || [])
+      .map(function (value) {
+        return self.parseConsentValue(value);
+      })
+      .filter(function (one) {
+        if (!one.scope || !one.client ||
+            own.indexOf(one.client + ' ' + one.scope) >= 0) {
+          return false;
+        }
+        if (!globals[one.client]) {
+          globals[one.client] = self.globalConsentsOf(one.client);
+        }
+        return globals[one.client].indexOf(one.scope) >= 0;
+      })
+      .map(function (one) {
+        return { at: one.at, scope: one.scope, client: one.client };
+      });
+    log.debug("Leaving Consent.appliedConsentsOf(). " + rows.length +
+              " standing.");
+    return rows;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE QUESTION THE AUTHORIZATION ENDPOINT ASKS, AND THE ONE FUNCTION THAT
   // ANSWERS IT.
   //
@@ -879,10 +1061,38 @@ class Consent {
    * Under a FAPI profile a global consent does not count. `all: true` is
    * `prompt=consent`, which makes every requested scope outstanding without
    * deleting anything already agreed.
-   * @param request - `username`, `clientId`, `scope` and `all`
+   * @param request - `username`, `clientId`, `scope`, `all`, `answered`
+   *   (this request's own answer, spent) and `recorded` (what is on file)
    * @returns `{ clientId, scopes, outstanding, names }`, `names` being the
    *   outstanding scopes
    */
+  // A public client's identity cannot be assured, so a person's earlier answer
+  // does not speak for it (ASVS 5.0.0 10.7.1). This service's own applications
+  // are the exception: they are not third parties asking for anything. They
+  // are named EXACTLY: a prefix test (`sts-`) also matched every dynamically
+  // registered client, whose ids begin `sts-client-` by default.
+  //
+  // WHAT 10.7.1 DOES NOT MEAN IS THAT THE ANSWER JUST GIVEN IS IGNORED. An
+  // EARLIER answer does not speak for a public client; the one the person
+  // gave on the screen this authorization request sent them to does, once,
+  // for that request. The authorization endpoint spends it (`answered`,
+  // below) the way it spends an RFC 9396 Allow; without it the second pass
+  // asked again, and again, for ever. And a caller asking what is RECORDED
+  // rather than whether to ask (`recorded`) is not forced either.
+  alwaysAsks(clientId: string): boolean {
+    const { log, applications } = this.deps;
+    log.debug("Entering Consent.alwaysAsks().");
+    const own: string[] = (applications as any).HOSTED_SURFACE_CLIENT_IDS || [];
+    if (own.indexOf(clientId) >= 0 ||
+        !require('./config').value('oauth2.consentAlwaysForPublicClients')) {
+      log.debug("Leaving Consent.alwaysAsks(). Not asked.");
+      return false;
+    }
+    const meta: any = (applications as any).clientConfigOf(clientId) || {};
+    log.debug("Leaving Consent.alwaysAsks().");
+    return String(meta.token_endpoint_auth_method || '') === 'none';
+  }
+
   outstanding(request): any {
     const { log, applications } = this.deps;
     const self = this;
@@ -890,7 +1100,12 @@ class Consent {
     const asked = request || {};
     const clientId = String(asked.clientId || '').trim();
     const wanted = self.scopesOf(asked.scope);
-    const all = !!asked.all;
+    // `answered`: the person agreed to exactly these scopes on the screen
+    // THIS request sent them to, and the caller has spent that answer.
+    // `recorded`: the caller asks what is on file, not whether to ask.
+    const answered = !!asked.answered;
+    const all = !!asked.all ||
+      (!answered && !asked.recorded && self.alwaysAsks(clientId));
     // AN ADMINISTRATOR'S GLOBAL CONSENT IS NOT THE USER'S APPROVAL under a
     // FAPI profile (#138, section 5.2.2 item 12) — this service's own console
     // and portal included, by rcbj's decision: the person approves each
@@ -918,7 +1133,17 @@ class Consent {
         // identifier resolves to the application that exposes it and to the
         // description somebody typed; everything else is just a word, and
         // saying so is better than inventing a sentence about it.
-        permission: applications.forPermission(scope) || null
+        permission: applications.forPermission(scope) || null,
+        // THE `did` SCOPE RELEASES THE PERSON'S PREFERRED DID (#693) where
+        // the realm releases it, and the screen says so rather than calling
+        // it an ordinary scope. Only the person's own answer to this row
+        // releases one (`oauth-oidc/did_claim.ts`).
+        releasesDid: scope === 'did' &&
+          self.deps.config.value('oauth2.didClaim') === true,
+        // SINGLE SIGN-ON TO A SAML OR WS-FEDERATION APPLICATION (ASVS 5.0.0
+        // 7.6.2): the one thing asked is whether this application may sign
+        // the person in, and the screen says that in a sentence of its own.
+        signsIn: scope === SSO_SIGN_IN_SCOPE
       };
     });
     // THE POLICY DECIDES WHICH ARE OUTSTANDING (#305): each scope with
@@ -939,7 +1164,8 @@ class Consent {
       facts: rows.map(function (one) {
         return { scope: one.scope, attributes: [
           self.deps.scopeVerdicts.resourceFact(A.SCOPE_CONSENTED,
-                                               one.consented || one.global)] };
+                                               one.consented || one.global ||
+                                               answered)] };
       })
     }) : { verdicts: [] };
     const needed: Record<string, boolean> = {};
@@ -1313,7 +1539,9 @@ class Consent {
     const self = this;
     log.debug("Entering Consent.globalWithdrawalsOf().");
     const entry = applications.get(String(clientId || '').trim());
-    const raw = entry ? (entry.fields || {})[GLOBAL_WITHDRAWN_ATTRIBUTE] : [];
+    // The OAuthClient's (#1579).
+    const raw = entry ? DomainMap.fieldOf('OAuthClient',
+      'globalConsentWithdrawn', entry.fields || {}) : [];
     const rows = (Array.isArray(raw) ? raw : (raw ? [raw] : []))
       .map(function (value) {
         return self.parseWithdrawalValue(value, true);
@@ -1556,7 +1784,12 @@ class Consent {
         refreshes.push(String(record.jti));
       }
       return true;
-    }, via, how);
+    }, via, how,
+    // Where one person's tokens are filed (#820 part 3); a withdrawal for
+    // every person of a client walks the register, which a client's index
+    // key — every token it was ever issued — would be no narrower than.
+    person ? ['u:' + String(asked.username), 'u:' + person, 's:' + person]
+           : undefined);
     if (refreshes.length) {
       let grants: GrantBookkeeping | null = null;
       try {
@@ -1725,11 +1958,14 @@ class Consent {
    * every person's consents, newest first — for the console page and
    * `GET /admin-api/consent`.
    *
+   * @param options - `recorded: false` reads the global half only, for a
+   *   caller that pages the recorded half itself (`recordedPageAsync()`)
    * @returns `{ required, storable, attribute, globalAttribute, globals,
    *   users, counts }`
    */
-  register() {
+  register(options?) {
     const { log, applications } = this.deps;
+    const recorded = !(options && options.recorded === false);
     const self = this;
     log.debug("Entering Consent.register().");
     const globals = [];
@@ -1764,32 +2000,21 @@ class Consent {
     });
 
     const users = [];
-    if (this.directory) {
+    if (this.directory && recorded) {
       (this.directory.listConsents() || []).forEach(function (row) {
-        (row.values || []).forEach(function (value) {
-          const parsed = self.parseConsentValue(value);
-          if (!parsed.scope) {
-            // An `ldapmodify` can put anything in this attribute. It is SHOWN
-            // rather than dropped, for the reason a dangling grant is shown: a
-            // value the page silently ignored would be one somebody had written
-            // on purpose and could not find out was being ignored.
-            users.push({ username: row.username, dn: row.dn, scope: '',
-                         client: '',
-                         at: '', raw: value, unreadable: true });
-            return;
-          }
-          users.push({ username: row.username, dn: row.dn, scope: parsed.scope,
-                       client: parsed.client, at: parsed.at, raw: parsed.raw,
-                       unreadable: false });
-        });
+        self.recordedRowsOf(row, users);
       });
     }
-    // Newest first, which is what a page about consents somebody just gave has
-    // to show — the row you are looking for is the one you just made.
-    users.sort(function (a, b) {
-      return String(b.at).localeCompare(String(a.at));
-    });
+    self.newestFirst(users);
 
+    // HOW MANY PEOPLE IS A SET (2026-10-22, #820). It was a reduce that
+    // copied the accumulated array for every new name and searched it for
+    // every row — O(P²) in the people, which at 470,000 is not a count
+    // anybody waits for.
+    const people = new Set();
+    users.forEach(function (one) {
+      people.add(one.username);
+    });
     const out = {
       required: self.required(),
       storable: self.storable(),
@@ -1800,10 +2025,7 @@ class Consent {
       counts: {
         globals: globals.length,
         consents: users.length,
-        people: users.reduce(function (acc, one) {
-          return acc.indexOf(one.username) < 0 ?
-            acc.concat([one.username]) : acc;
-        }, []).length,
+        people: people.size,
         unreadable: users.filter(function (one) {
           return one.unreadable;
         }).length
@@ -1811,6 +2033,192 @@ class Consent {
     };
     log.debug("Leaving Consent.register(). " + out.counts.globals +
               " global, " + out.counts.consents + " recorded.");
+    return out;
+  }
+
+  // One person's consent values as the register's rows, appended to `into`.
+  // An `ldapmodify` can put anything in this attribute, so a value that does
+  // not parse is SHOWN rather than dropped, for the reason a dangling grant is
+  // shown: a value the page silently ignored would be one somebody had written
+  // on purpose and could not find out was being ignored.
+  /**
+   * Appends one person's consents to a list of register rows.
+   *
+   * @param row - `{ username, dn, values }`, as the directory hands it
+   * @param into - the list the rows are appended to
+   * @returns the list
+   */
+  recordedRowsOf(row, into) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.recordedRowsOf().");
+    (row.values || []).forEach(function (value) {
+      const parsed = self.parseConsentValue(value);
+      if (!parsed.scope) {
+        into.push({ username: row.username, dn: row.dn, scope: '',
+                    client: '', at: '', raw: value, unreadable: true });
+        return;
+      }
+      into.push({ username: row.username, dn: row.dn, scope: parsed.scope,
+                  client: parsed.client, at: parsed.at, raw: parsed.raw,
+                  unreadable: false });
+    });
+    log.debug("Leaving Consent.recordedRowsOf().");
+    return into;
+  }
+
+  // Newest first, which is what a page about consents somebody just gave has
+  // to show — the row you are looking for is the one you just made.
+  /**
+   * Sorts register rows newest first, in place.
+   *
+   * @param rows - the rows
+   * @returns the rows
+   */
+  newestFirst(rows) {
+    const { log } = this.deps;
+    log.debug("Entering Consent.newestFirst().");
+    rows.sort(function (a, b) {
+      return String(b.at).localeCompare(String(a.at));
+    });
+    log.debug("Leaving Consent.newestFirst().");
+    return rows;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RECORDED HALF ONE PAGE AT A TIME, WHERE THE DIRECTORY IS IN THE STORE
+  // (2026-10-22, #820).
+  //
+  // `register()` reads every person holding a consent — about 470,000 on
+  // 8081, since consent is required by default — one synchronous store read
+  // and one decrypt each, on the request worker answering Monitoring →
+  // Consent; through read-your-write every other worker then waited behind
+  // it. Where the directory is windowed (`consentHoldersPageAsync()` on the
+  // slot answers), this asks instead, ASYNCHRONOUSLY on the read pool: how
+  // many PEOPLE hold a consent (the asked names' index), one page of PEOPLE,
+  // and only their rows opened. What changes for a reader, and the answer
+  // says so (`windowed: true`):
+  //
+  //   * the recorded half is paged by PERSON: a page holds every consent of
+  //     `limit` people, in the directory's key order, newest first within
+  //     the page, and `people` is the count the paging is over;
+  //   * `consents` and `unreadable` are the PAGE's, because counting values
+  //     would open every holder (`countsOf: 'page'`);
+  //   * the search is EXACT: a whole username (one person, asked by name),
+  //     or a whole client_id or scope looked for in at most `scanLimit`
+  //     holders, and `search.complete` says whether that was all of them.
+  //
+  // Null where the directory is not windowed: `register()` is the answer
+  // there, unchanged.
+  // ---------------------------------------------------------------------------
+  /**
+   * One page of the recorded half from the store, or null where the
+   * directory is not windowed.
+   *
+   * @param spec - `{ q, offset, limit, scanLimit, pageOf }`, `pageOf(people)`
+   *   answering `{ offset, limit }` in place of the two
+   * @returns a promise of `{ windowed, people, users, counts, search }` or
+   *   null
+   */
+  async recordedPageAsync(spec) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.recordedPageAsync().");
+    const directory = this.directory;
+    if (!directory || typeof directory.consentHoldersPageAsync !== 'function' ||
+        typeof directory.consentHolderNamedAsync !== 'function') {
+      log.debug("Leaving Consent.recordedPageAsync(). No paged directory.");
+      return null;
+    }
+    const asked = spec || {};
+    const q = String(asked.q || '').trim();
+    const limit = Math.max(1, Math.floor(Number(asked.limit) || 1));
+    const offset = Math.max(0, Math.floor(Number(asked.offset) || 0));
+    // The count, with no page: the paging needs it before it can say which
+    // page is shown.
+    const counted = await directory.consentHoldersPageAsync(0, 0);
+    if (!counted) {
+      log.debug("Leaving Consent.recordedPageAsync(). Not windowed.");
+      return null;
+    }
+    const users = [];
+    let search = null;
+    let people = Number(counted.total) || 0;
+    if (q) {
+      // AN EXACT SEARCH. The values are inside each entry's sealed blob, so
+      // no index can find a client_id or a scope: a whole username is asked
+      // by name, and a client_id or scope is looked for in the first
+      // `scanLimit` holders, a page at a time on the read pool.
+      const scanLimit = Math.max(1, Math.floor(Number(asked.scanLimit) ||
+                                              CONSENT_SEARCH_SCAN));
+      const wanted = q.toLowerCase();
+      const seen = new Set();
+      const named = await directory.consentHolderNamedAsync(q);
+      if (named && named.row) {
+        seen.add(String(named.row.dn).toLowerCase());
+        self.recordedRowsOf(named.row, users);
+      }
+      let scanned = 0;
+      while (scanned < scanLimit) {
+        const want = Math.min(CONSENT_SCAN_PAGE, scanLimit - scanned);
+        const page = await directory.consentHoldersPageAsync(scanned, want);
+        const rows = (page && page.rows) || [];
+        rows.forEach(function (row) {
+          if (seen.has(String(row.dn).toLowerCase())) {
+            return;
+          }
+          const mine = self.recordedRowsOf(row, []).filter(function (one) {
+            return String(one.client).toLowerCase() === wanted ||
+                   String(one.scope).toLowerCase() === wanted;
+          });
+          mine.forEach(function (one) {
+            users.push(one);
+          });
+        });
+        scanned += (page && page.read) || 0;
+        if (!page || !page.read || page.read < want) {
+          break;
+        }
+      }
+      const complete = scanned >= people;
+      search = { exact: true, q: q, scanned: scanned, scanLimit: scanLimit,
+                 holders: people, complete: complete };
+      self.newestFirst(users);
+      // The paging of a search is over its rows: what was found is all
+      // there is to page, and it is bounded by the scan.
+      const matchedPeople = new Set();
+      users.forEach(function (one) {
+        matchedPeople.add(one.username);
+      });
+      people = matchedPeople.size;
+    } else {
+      // The caller's paging is worked out from the count, so it may hand a
+      // function that turns the count into the page to read.
+      const at = typeof asked.pageOf === 'function'
+        ? asked.pageOf(people) : { offset: offset, limit: limit };
+      const page = await directory.consentHoldersPageAsync(at.offset,
+                                                           at.limit);
+      ((page && page.rows) || []).forEach(function (row) {
+        self.recordedRowsOf(row, users);
+      });
+      self.newestFirst(users);
+    }
+    const out = {
+      windowed: true,
+      people: people,
+      users: users,
+      search: search,
+      counts: {
+        people: Number(counted.total) || 0,
+        consents: users.length,
+        unreadable: users.filter(function (one) {
+          return one.unreadable;
+        }).length,
+        countsOf: 'page'
+      }
+    };
+    log.debug("Leaving Consent.recordedPageAsync(). " + users.length +
+              " row(s) of " + out.counts.people + " people.");
     return out;
   }
 
@@ -1872,6 +2280,7 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   Consent: Consent,
+  SSO_SIGN_IN_SCOPE: SSO_SIGN_IN_SCOPE,
   /**
    * Installs the instance the facades forward to, and runs its wiring.
    *
@@ -1899,10 +2308,13 @@ export = {
   identityOf: slot.forward('identityOf'),
   scopeProblem: slot.forward('scopeProblem'),
   globalConsentsOf: slot.forward('globalConsentsOf'),
+  noteApplied: slot.forward('noteApplied'),
+  appliedConsentsOf: slot.forward('appliedConsentsOf'),
   grantGlobal: slot.forward('grantGlobal'),
   revokeGlobal: slot.forward('revokeGlobal'),
   consentsOf: slot.forward('consentsOf'),
   outstanding: slot.forward('outstanding'),
+  alwaysAsks: slot.forward('alwaysAsks'),
   record: slot.forward('record'),
   revoke: slot.forward('revoke'),
   forget: slot.forward('forget'),
@@ -1916,5 +2328,6 @@ export = {
   refreshRefusal: slot.forward('refreshRefusal'),
   revokeIssuedUnder: slot.forward('revokeIssuedUnder'),
   register: slot.forward('register'),
+  recordedPageAsync: slot.forward('recordedPageAsync'),
   state: slot.forward('state')
 };

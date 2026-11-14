@@ -29,6 +29,14 @@
 #                            each is seeded ONCE into the global tier, so a
 #                            value made per cell would be a different value in
 #                            each, and all but the first cell's refused
+#   edge-secret              CloudFront's origin secret (#1341,
+#                            ../environment/cloudfront.tf): the primary cell's
+#                            distribution sends it and EVERY cell's nodes
+#                            require it of an edge, so it is one value. Made
+#                            whether or not the environment has CloudFront,
+#                            for the reason the product-mode values are, and
+#                            copied to a multi-cloud environment's GCP cells
+#                            with the rest (deploy/multicloud/gcp-global)
 # NOT REPLICATED:
 #   global-db-master-password  the global database's master user's, which only
 #                            the primary cell's global-schema-init uses, in
@@ -80,6 +88,53 @@ resource "random_password" "bootstrap_admin" {
   override_special = "!#%*+-=?@^_~"
 }
 
+# THE BOOTSTRAP ADMINISTRATOR'S NAME (rcbj, 2026-11-10), beside its password.
+# Product mode refuses a default name (`admin`, `root`, `sa`; #1447, ASVS
+# 5.0.0 6.3.2) and derives one from a key in the database when it is given
+# one, and on AWS that derived name was in one log line and nowhere else, so
+# the password in Secrets Manager signed nobody in. Generated HERE instead,
+# not a default name, and handed to the nodes as
+# STS_ADMIN_BOOTSTRAP_USERNAME, it is used as it is and can be read whenever
+# it is wanted:
+#
+#   aws secretsmanager get-secret-value --region us-west-2 \
+#     --secret-id iya-sts/<env>/bootstrap-admin-username \
+#     --query SecretString --output text
+#
+# NEITHER IS WRITTEN INTO THE CONTAINER: ECS injects both, and the service
+# writes its bootstrap file only for a password it generated
+# (common/credentials.ts), never for a supplied one.
+#
+# READ ONCE AND KEPT (`ignore_changes`), like the carry-over: the account it
+# names is created once and can never be renamed, so a later apply must not
+# hand the nodes another name. `TF_VAR_bootstrap_admin_username` supplies the
+# name of an account that already exists — an environment built before this
+# secret did — on the apply that first creates it.
+resource "random_id" "bootstrap_admin_username" {
+  count       = 1
+  byte_length = 8
+}
+
+resource "terraform_data" "bootstrap_admin_username" {
+  count = 1
+  input = sensitive(lookup(local.carried, "bootstrap-admin-username",
+    trimspace(var.bootstrap_admin_username) != "" ? trimspace(var.bootstrap_admin_username) :
+  "admin-${random_id.bootstrap_admin_username[0].hex}"))
+
+  lifecycle {
+    ignore_changes = [input]
+    precondition {
+      condition     = !contains(["admin", "root", "sa", "administrator"], lower(trimspace(var.bootstrap_admin_username)))
+      error_message = "bootstrap_admin_username is a default account name, which product mode replaces (common/bootstrap_name.ts); name the account the service actually created."
+    }
+  }
+}
+
+resource "random_password" "edge_secret" {
+  length  = 48
+  special = false
+}
+
 resource "random_password" "krb5_krbtgt" {
   length  = 40
   special = false
@@ -120,7 +175,7 @@ data "aws_kms_key" "global" {
 #                             sealed with, and a product node whose keys will
 #                             not open does not start (common/keystore.js,
 #                             common/secrets.js)
-#   admin-api-client-secret   the seeded `sts-management-api` entry is
+#   admin-api-client-secret   the seeded `sts-api-client` entry is
 #                             written ONCE and never over an existing one
 #                             (common/applications.js, the seed and
 #                             regenerateClientSecret's STS-REG-0061), so the
@@ -170,7 +225,7 @@ data "aws_secretsmanager_secret_version" "carryover" {
 locals {
   carried_keys = [
     "kek", "admin-api-client-secret", "bootstrap-admin-password",
-    "krb5-service-password",
+    "bootstrap-admin-username", "krb5-service-password",
   ]
   carried_now = var.carryover_secret != "" ? {
     for k, v in jsondecode(data.aws_secretsmanager_secret_version.carryover[0].secret_string) :
@@ -203,8 +258,10 @@ locals {
     global-db-app-password   = random_password.db_app.result
     admin-api-client-secret  = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
     bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin.result)
+    bootstrap-admin-username = terraform_data.bootstrap_admin_username[0].output
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
     krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service.result)
+    edge-secret              = random_password.edge_secret.result
     }, local.multi_cloud ? {
     # THE REPLICATION ROLE'S PASSWORD (#97): what a GCP cell's subscription
     # connects to the writer with. Copied into GCP Secret Manager by

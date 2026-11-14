@@ -1,0 +1,306 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: postgres_tally_commit.js
+//
+// ===========================================================================
+// COUNTERS COMMIT WITHOUT WAITING FOR THE LOG FLUSH; RECORDS DO (2026-10-22,
+// #820).
+//
+// On 8081 a sign-in made about eleven committing transactions, and postgres
+// flushes its log one fsync at a time: that was the sign-in rate's ceiling.
+// About half were counters — the shared rate-limit windows and the risk
+// engine's tallies — which now go through a pool whose connections set
+// `synchronous_commit = off`.
+//
+//   T1. the shared rate-limit window count and clear go to that pool;
+//   T2. the risk engine's counts, assessments (recorded, settled, amended),
+//       subjects, session context and failures go to it;
+//   T3. a flush of minted rows, and the risk engine's action claim, do not;
+//   T4. a directory batch passed `{ tally: true }` does (#878); one that is
+//       not stays on the durable pool. The batch is an application's
+//       authentication counts, and nothing else.
+//   T5. a refresh spend's `claimOnce({ noFlushWait: true })` sets
+//       `synchronous_commit` off in that statement and reads the CTE (#886).
+//       The connection is the main pool, not the tally pool. A claim without
+//       the flag, and an origin claim that is handed the flag, stay
+//       synchronous. The minted flush is still T3.
+//
+// A `pg` double records the connection options each statement ran on
+// (`tests/tools/store_double.js`).
+// ===========================================================================
+
+const storeDouble = require('./tools/store_double');
+
+const postgres = require('../persistence/persistence_postgres');
+
+const log = require('bunyan').createLogger({
+  name: 'postgres_tally_commit',
+  level: process.env.LOG_LEVEL || 'info' });
+
+const ASYNC = '-c synchronous_commit=off';
+
+// A `pg` that connects to nothing and remembers every statement, with the
+// options of the connection it was handed to.
+function fakePg(statements) {
+  log.debug("Entering fakePg().");
+  function FakeClient(config) {
+    this.options = (config && config.options) || '';
+  }
+  FakeClient.prototype.query = function (sql, params) {
+    statements.push({ sql: String(sql && sql.text ? sql.text : sql),
+                      params: params || [], options: this.options });
+    return Promise.resolve({ rows: [], rowCount: 0 });
+  };
+  FakeClient.prototype.release = function () {};
+  FakeClient.prototype.on = function () {};
+  FakeClient.prototype.removeListener = function () {};
+  FakeClient.prototype.connect = function (callback) {
+    if (typeof callback === 'function') {
+      callback(null, this);
+      return undefined;
+    }
+    return Promise.resolve(this);
+  };
+  FakeClient.prototype.end = function () {
+    return Promise.resolve();
+  };
+
+  function FakePool(config) {
+    this.config = config || {};
+  }
+  FakePool.prototype.on = function () {};
+  FakePool.prototype.connect = function () {
+    return Promise.resolve(new FakeClient(this.config));
+  };
+  FakePool.prototype.query = function (sql, params) {
+    return new FakeClient(this.config).query(sql, params);
+  };
+  FakePool.prototype.end = function () {
+    return Promise.resolve();
+  };
+  log.debug("Leaving fakePg().");
+  return { Pool: FakePool, Client: FakeClient };
+}
+
+function driverWith(statements) {
+  log.debug("Entering driverWith().");
+  const restore = storeDouble.install(fakePg(statements));
+  try {
+    log.debug("Leaving driverWith().");
+    return postgres.create({
+      url: 'postgres://sts_app@localhost:5432/sts',
+      log: { debug: function () {}, info: function () {},
+             warn: function () {}, error: function () {} }
+    });
+  } finally {
+    restore();
+  }
+}
+
+// The options of the connection the last statement matching `re` ran on.
+function optionsOf(statements, re) {
+  log.debug("Entering optionsOf().");
+  const hits = statements.filter(function (one) {
+    return re.test(one.sql);
+  });
+  log.debug("Leaving optionsOf().");
+  return hits.length ? hits[hits.length - 1].options : null;
+}
+
+async function run(t) {
+  log.debug("Entering run().");
+  const statements = [];
+  const driver = driverWith(statements);
+  const settle = async function (fn) {
+    try {
+      await fn();
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+    }
+  };
+
+  await settle(function () {
+    return driver.countWindow('rw', 'default', 'k', 60000);
+  });
+  await settle(function () {
+    return driver.clearWindow('rw', 'default', 'k');
+  });
+  t.check(optionsOf(statements, /INSERT INTO sts_cluster_windows/) === ASYNC &&
+          optionsOf(statements, /sts:clearWindow /) === ASYNC,
+          'T1. the shared rate-limit window count and clear commit ' +
+          'asynchronously', JSON.stringify(statements.map(function (one) {
+            return one.options + ' ' + one.sql.slice(0, 40);
+          })));
+
+  statements.length = 0;
+  const assessment = { realm: 'default', id: 'a1', at: 1, phase: 'p',
+                       door: 'd', subject: 's', signals: {}, score: 0 };
+  await settle(function () {
+    return driver.riskIncrementCounts('default',
+      [{ subject: 's', feature: 'f', value: 'v' }], 1);
+  });
+  await settle(function () {
+    return driver.riskRecordAssessment(assessment);
+  });
+  await settle(function () {
+    return driver.riskSettleAssessment(assessment);
+  });
+  await settle(function () {
+    return driver.riskAmendAssessment(assessment);
+  });
+  await settle(function () {
+    return driver.riskUpsertSubject({ realm: 'default', subject: 's',
+                                      score: 0, level: 'low' });
+  });
+  await settle(function () {
+    return driver.riskUpsertSessionContext({ realm: 'default',
+                                             sessionId: 'x', subject: 's' });
+  });
+  await settle(function () {
+    return driver.riskRecordFailure({ realm: 'default', at: 1, door: 'd' });
+  });
+  const tallies = [/INSERT INTO sts_risk_feature_counts/,
+                   /INSERT INTO sts_risk_assessments/,
+                   /UPDATE sts_risk_assessments SET decision/,
+                   /UPDATE sts_risk_assessments SET signals/,
+                   /INSERT INTO sts_risk_subjects/,
+                   /INSERT INTO sts_risk_session_context/,
+                   /INSERT INTO sts_risk_failures/];
+  const seen = tallies.map(function (re) {
+    return optionsOf(statements, re);
+  });
+  t.check(seen.every(function (one) {
+    return one === ASYNC;
+  }), 'T2. the risk engine\'s tallies commit asynchronously',
+          JSON.stringify(seen));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.saveMinted([{ handle: 'authn.sessions', realm: 'default',
+                                key: 'sid', body: 'x' }], []);
+  });
+  await settle(function () {
+    return driver.riskClaimAction('default', 's', 'notify', 'a1');
+  });
+  const durable = statements.filter(function (one) {
+    return /sts_minted|sts_risk_subjects SET actions/.test(one.sql);
+  });
+  t.check(durable.length > 0 && durable.every(function (one) {
+    return one.options !== ASYNC;
+  }), 'T3. minted rows and an action claim stay durable at commit',
+          JSON.stringify(durable.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 40);
+          })));
+
+  statements.length = 0;
+  const directoryChange = {
+    upserts: [{ realm: 'default', key: 'cn=app', entry: { dn: 'cn=app' },
+                json: '{}', base: null }],
+    deletes: [],
+    removedRealms: [],
+    releaseClaims: []
+  };
+  await settle(function () {
+    return driver.saveDirectory(directoryChange, { tally: true });
+  });
+  const tallyDir = statements.filter(function (one) {
+    return /sts_ldap_entries/.test(one.sql);
+  });
+  t.check(tallyDir.length > 0 && tallyDir.every(function (one) {
+    return one.options === ASYNC;
+  }), 'T4. a directory batch that is only counts commits asynchronously',
+          JSON.stringify(statements.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 60);
+          })));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.saveDirectory(directoryChange);
+  });
+  const durableDir = statements.filter(function (one) {
+    return /sts_ldap_entries/.test(one.sql);
+  });
+  t.check(durableDir.length > 0 && durableDir.every(function (one) {
+    return one.options !== ASYNC;
+  }), 'T4. a directory batch without the tally flag stays durable',
+          JSON.stringify(durableDir.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 60);
+          })));
+
+  const claimInserts = function (list) {
+    log.debug("Entering claimInserts().");
+    const hits = list.filter(function (one) {
+      return /INSERT INTO sts_cluster_claims/.test(one.sql);
+    });
+    log.debug("Leaving claimInserts().");
+    return hits;
+  };
+  const claimOpts = { ttlMs: 60000, reservation: 'r1' };
+  statements.length = 0;
+  await settle(function () {
+    return driver.claimOnce('oauth.refresh', 'default', 'plain', claimOpts);
+  });
+  const plain = claimInserts(statements);
+  t.check(plain.length === 1 &&
+          plain[0].sql.indexOf('synchronous_commit') < 0 &&
+          plain[0].sql.indexOf('FROM quiet') < 0 &&
+          plain[0].sql.indexOf('INSERT INTO sts_cluster_claims') === 0 &&
+          plain[0].options !== ASYNC &&
+          plain[0].params[0] === 'oauth.refresh' &&
+          plain[0].params.length === 6,
+          'T5. a claim without noFlushWait waits for the log flush',
+          JSON.stringify(plain.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 80);
+          })));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.claimOnce('oauth.refresh', 'default', 'quiet',
+      Object.assign({ noFlushWait: true }, claimOpts));
+  });
+  const quiet = claimInserts(statements);
+  t.check(quiet.length === 1 &&
+          quiet[0].sql.indexOf(
+            'set_config(\'synchronous_commit\', \'off\'') >= 0 &&
+          quiet[0].sql.indexOf('FROM quiet') >= 0 &&
+          quiet[0].sql.indexOf('INSERT INTO sts_cluster_claims') > 0 &&
+          quiet[0].options !== ASYNC &&
+          quiet[0].params[0] === 'oauth.refresh' &&
+          quiet[0].params.length === 6,
+          'T5. a refresh spend claim commits without waiting, on the ' +
+          'main pool, and the CTE is read',
+          JSON.stringify(quiet.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 120);
+          })));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.claimOnce('persistence.origin', '', 'origin',
+      Object.assign({ noFlushWait: true }, claimOpts));
+  });
+  const origin = claimInserts(statements);
+  const began = statements.some(function (one) {
+    return one.sql === 'BEGIN';
+  });
+  t.check(origin.length === 1 && began &&
+          origin[0].sql.indexOf('synchronous_commit') < 0 &&
+          origin[0].sql.indexOf('INSERT INTO sts_cluster_claims') === 0 &&
+          origin[0].options !== ASYNC,
+          'T5. an origin claim ignores noFlushWait and stays one ' +
+          'synchronous commit',
+          JSON.stringify(statements.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 80);
+          })));
+  log.debug("Leaving run().");
+}
+
+module.exports = {
+  name: 'postgres_tally_commit',
+  describe: 'rate-limit windows, risk tallies and application counts ' +
+            'commit with synchronous_commit off; a refresh spend claim ' +
+            'does too, and records stay durable (#820, #878, #886)',
+  run: run
+};

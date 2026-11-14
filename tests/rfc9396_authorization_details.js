@@ -392,6 +392,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const realms = require(ROOT + '/common/realms');
@@ -470,17 +471,6 @@ function childMain() {
     const local = function (location) {
       return String(location || '').replace(/^https?:\/\/[^/]+/, '');
     };
-    const hidden = function (text) {
-      const form = {};
-      (text.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-        const name = /name="([^"]+)"/.exec(tag);
-        const value = /value="([^"]*)"/.exec(tag);
-        if (name) {
-          form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-        }
-      });
-      return form;
-    };
     // Follow sign-in and consent until the client's redirect_uri (or an
     // error page), answering consent with `answer`. Every page on the way is
     // kept for the assertions.
@@ -496,25 +486,23 @@ function childMain() {
           break;
         }
         if (/\/authn\/login/.test(where)) {
-          const page = await request(port, 'GET', local(where),
-                                     { cookies: true });
-          const form = hidden(page.text);
-          form.username = 'r96-alice';
-          form.password = 'anything';
-          form.action = 'login';
-          r = await request(port, 'POST', '/authn/login',
-                            { form: form, cookies: true });
+          // THE SCREEN OVER `/authn-api` (#571), this test's jar kept;
+          // the act's answer is read as the 303 the form was answered with.
+          r = await screen.submit({ port: port, jar: jar, at: local(where),
+            fields: { action: 'login', username: 'r96-alice',
+                      password: 'anything' } });
           continue;
         }
         if (/\/oauth2\/consent/.test(where)) {
-          const page = await request(port, 'GET', local(where),
-                                     { cookies: true });
+          // THE CONSENT SCREEN OVER `/authn-api/consent` (#576): the page
+          // is its view, and the answer is read as the form's 303 was.
+          const page = await screen.openConsent({ port: port, jar: jar,
+                                                  at: local(where) });
           pages.consent = page;
           pages.consentCount += 1;
-          const form = hidden(page.text);
-          form.action = answer || 'allow';
-          r = await request(port, 'POST', '/oauth2/consent',
-                            { form: form, cookies: true });
+          r = await screen.answerConsent({ port: port, jar: jar,
+            at: local(where), opened: page,
+            decision: answer === 'deny' ? 'deny' : 'allow' });
           continue;
         }
         r = await request(port, 'GET', local(where), { cookies: true });

@@ -13,7 +13,7 @@
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
 // The whole flow is asserted over HTTP by
-// `tests/vendored/sts_saml2_bearer_grant.js` — a real assertion at a real
+// `tests/protocol/sts_saml2_bearer_grant.js` — a real assertion at a real
 // token endpoint, the refusals included, the console and the API that issue
 // the key pair. What is HERE is what that job cannot ask.
 //
@@ -46,7 +46,7 @@
 // of the specification is right and that one says the doors are wired up.
 //
 // ---------------------------------------------------------------------------
-// IT SIGNS WITH `tests/vendored/saml_xmldsig.js`, WHICH IS ACROSS THE TWO
+// IT SIGNS WITH `tests/protocol/saml_xmldsig.js`, WHICH IS ACROSS THE TWO
 // HALVES OF THIS DIRECTORY, AND THAT IS DELIBERATE.
 //
 // There is ONE independent XML Signature implementation in this repository's
@@ -55,7 +55,7 @@
 // in that file and the one thing a wrong copy would hide, because a test whose
 // own signer is broken in the same way as its expectations passes.
 //
-// It was the first require from `tests/` into `tests/vendored/`, and the
+// It was the first require from `tests/` into `tests/protocol/`, and the
 // ones that followed it — this signer in other files, and the ACME, SCEP and
 // GNAP clients — are there on the same argument and no other: what makes such
 // a require worth it is that the file is a SECOND IMPLEMENTATION of something
@@ -71,7 +71,7 @@ const pki = require('../common/pki');
 const grant = require('../oauth-oidc/saml_assertion_grant');
 const assertionGrant = require('../oauth-oidc/assertion_grant');
 const applications = require('../common/applications');
-const signer = require('./vendored/saml_xmldsig.js');
+const signer = require('./protocol/saml_xmldsig.js');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also

@@ -119,6 +119,9 @@ import realms = require('../common/realms');
 import mode = require('../common/mode');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
+// #221: the one predicate every door asks (a leaf).
+import serviceAccounts = require('../common/service_accounts');
 import events = require('./ssf_events');
 import subjects = require('./ssf_subjects');
 
@@ -133,6 +136,16 @@ interface RiscRow {
   email: string;
   phone: string;
   subject?: string;
+  // WHAT KIND OF ACCOUNT (#221 P5): `person` (a directory person entry,
+  // which a service account also is) or `application` (an application
+  // entry, keyed `application:<identifier>`). Absent on a row from before
+  // #221, which is a person's.
+  kind?: string;
+  // The application's identifier, on an application's row.
+  application?: string;
+  // Whether the person entry is flagged a service account (#221 P1), as the
+  // last directory write of it said. See serviceAccountIn().
+  serviceAccount?: boolean;
   formerIdentifiers: string[];
   // Identifiers this account gave up, and when — an address it moved off, or
   // everything it held when it was purged (#146). What `identifier-recycled`
@@ -156,6 +169,12 @@ interface RiscRow {
   events: any[];
   streams: string[];
   notes: string[];
+  // THE ACCOUNT HOLDER'S OWN ACTS (2026-11-03): the `txn` of each SET an act
+  // the person made went out under, newest first, bounded as `events` is.
+  // RISC gives no event an `initiating_entity`, so this is what lets this
+  // service's own receivers tell a person's own report from somebody else's
+  // (`ownAct()`). Absent on a row from before it.
+  ownActs?: Array<{ txn: string; at: string }>;
   [member: string]: any;
 }
 
@@ -176,6 +195,9 @@ interface DueEvent {
   subject: Record<string, any> | null;
   row: RiscRow;
   act: string;
+  // Who made the act, as the door said (`user`, `admin`, `policy`,
+  // `system`); '' where it said nothing. Not on the wire: see `ownActs`.
+  initiatingEntity?: string;
 }
 
 interface RiscRegisterDeps {
@@ -197,6 +219,9 @@ interface RiscRegisterDeps {
   subjects: {
     describeSubject(subject: unknown): string;
     complexSubject(members: Record<string, any>): Record<string, any>;
+    applicationSubject(identifier: string,
+                       sessionId: string): Record<string, any> | null;
+    applicationIdOf(subject: unknown): string;
     subjectForUser(name: string, format: string, iss: string,
                    facts?: Record<string, any>): Record<string, any>;
   };
@@ -294,11 +319,15 @@ const OPT_STATES = ['opt-in', 'opt-out-initiated', 'opt-out'];
 // only one this register enforces anything on — see applyToState().
 const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 
-// The directory attributes this file reads, LOWER-CASED, because that is how
-// `ldap_server.js`'s store keys them. Naming them here rather than inline is
-// what keeps `identifierChanges()` from being four copies of one comparison.
+// The directory attributes the identifier events compare, LOWER-CASED,
+// because that is how `ldap_server.js`'s store keys them. Naming them here
+// rather than inline is what keeps `identifierChanges()` from being four
+// copies of one comparison. They are a table of which attributes hold each
+// kind of identifier, read by name on purpose (#1579): a kind is the set of
+// attributes named here, compared before and after the write. The lock is
+// read through the Credential.
 //
-// `pwdaccountlockedtime` is draft-behera-ldap-password-policy's
+// `pwdAccountLockedTime` is draft-behera-ldap-password-policy's
 // `pwdAccountLockedTime`, and SINCE 2026-09-17 IT IS WHAT A DISABLED ACCOUNT
 // IS HERE: an administrator's disable writes it (`common/account_state.ts`),
 // SCIM's `active: false` writes it, and every door refuses the account while
@@ -306,7 +335,6 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // and nothing read — so an `account-disabled` sent over RISC used to report a
 // deprovisioning that disabled nobody, and now reports one that did. A
 // transmitter still only REPORTS; what the receiver does is the receiver's.
-const LOCK_ATTRIBUTE = 'pwdaccountlockedtime';
 const EMAIL_ATTRIBUTES = ['mail'];
 const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
 // The two kinds of identifier RISC's identifier events name, each with the
@@ -551,6 +579,19 @@ class RiscRegister {
     const catalogue = events.EVENT_BY_URI[String(uri || '')];
     const formats = (catalogue && Array.isArray(catalogue.subjectFormats))
       ? catalogue.subjectFormats : null;
+    // AN APPLICATION'S ACCOUNT (#221 P5) IS NAMED BY ITS APPLICATION MEMBER,
+    // whatever `risc.subjectFormat` says: that setting chooses how a PERSON
+    // is named, and none of its formats names an application. The subject
+    // is complex for the reason `ssf_subjects.js` gives — a bare `opaque`
+    // would not say what kind of principal it is — and that is not the
+    // narrowing the paragraph above refuses: the member IS the account.
+    // Google's spelling is not applied to it (section 3.1 is about the
+    // simple identifiers Google's transmitter sends).
+    if (row.kind === 'application' && row.application) {
+      const named = subjects.applicationSubject(String(row.application), '');
+      log.debug("Leaving RiscRegister.subjectFor(). An application.");
+      return named;
+    }
     let subject;
     if (formats && formats.indexOf('email') >= 0) {
       const email = String(row.email || this.defaultEmailFor(row));
@@ -687,6 +728,15 @@ class RiscRegister {
     // A complex subject (#164 phase 4: a device's act) names the account in
     // its `user` member.
     if (body.format === 'complex') {
+      // An APPLICATION's account (#221 P5) is named by the complex
+      // subject's `application` member and filed under
+      // `application:<identifier>`.
+      const application = this.deps.subjects.applicationIdOf(body);
+      if (!body.user && application) {
+        const id = RiscRegister.applicationAccountId(application);
+        log.debug("Leaving RiscRegister.accountIdOf(). An application.");
+        return register.has(id) ? id : '';
+      }
       const found = body.user ? this.accountIdOf(body.user) : '';
       log.debug("Leaving RiscRegister.accountIdOf(). Complex: " +
                 (found || '(none)'));
@@ -1046,10 +1096,19 @@ class RiscRegister {
    * @param uri - the event type URI
    * @returns `{ send, why }`; `why` says why an event was suppressed
    */
-  gate(row: RiscRow, uri: string): { send: boolean; why: string } {
+  gate(row: RiscRow, uri: string): { send: boolean; why: string;
+                                     notApplicable?: string } {
     const { log, config } = this.deps;
     log.debug("Entering RiscRegister.gate(). " + uri);
     const short = this.shortNameOf(uri);
+    // NOT A HOLDER'S CHOICE TO MAKE (#221 P5): the gate is SAID not to
+    // apply, never silently skipped — see optOutApplies().
+    const applies = this.optOutApplies(row);
+    if (!applies.applies) {
+      log.debug("Leaving RiscRegister.gate(). The opt-out gate does not " +
+                'apply to this account.');
+      return { send: true, why: '', notApplicable: applies.why };
+    }
     if (OPT_OUT_EVENTS[short]) {
       log.debug("Leaving RiscRegister.gate(). An opt-out event is never " +
                 'suppressed.');
@@ -1070,6 +1129,100 @@ class RiscRegister {
       'ignores an opt-out gets to be shown doing it.';
     log.debug("Leaving RiscRegister.gate(). Suppressed.");
     return { send: false, why: why };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHOM THE OPT-OUT GATE IS FOR (#221 P5, rcbj's decision of 2026-10-05).
+  //
+  // RISC 1.0 section 2.8 makes opting out the ACCOUNT HOLDER's choice: the
+  // person whose events they are decides whether they are exchanged. Two
+  // kinds of account here have no such holder:
+  //
+  //   * an APPLICATION entry — nobody signs in as it to choose, and its
+  //     events are its operators' business, which is what RISC is for;
+  //   * a SERVICE ACCOUNT (#221 P1) — a person entry flagged as one, owned by
+  //     a person or group answerable for it, and used by software. Its owner
+  //     is not the account, and an opt-out would silence the events about a
+  //     credential every consumer of it relies on.
+  //
+  // For both, the gate is NOT APPLIED, and that is stated rather than done
+  // silently: `gate()` answers `notApplicable` with this sentence, the row
+  // records it once in its notes, `optOutOf()` offers no move and says why,
+  // and `report()` carries `optOutApplies: false` beside it. A row's opt state
+  // stays `opt-in` (participating), which is what it was.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether RISC section 2.8's opt-out gate applies to an account: not
+   * to an application, and not to a service account, neither of which has an
+   * account holder to make the choice.
+   *
+   * @param row - the account's row
+   * @returns `{ applies, why }`; `why` says why it does not
+   */
+  optOutApplies(row: Partial<RiscRow> | null): { applies: boolean;
+                                                 why: string } {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.optOutApplies().");
+    if (row && row.kind === 'application') {
+      log.debug("Leaving RiscRegister.optOutApplies(). An application.");
+      return { applies: false, why: 'This account is an APPLICATION, and ' +
+        'RISC section 2.8\'s opt-out is the account holder\'s choice: an ' +
+        'application has no holder to make it, so the opt-out gate does ' +
+        'not apply and every event about it is exchanged.' };
+    }
+    if (row && row.serviceAccount === true) {
+      log.debug("Leaving RiscRegister.optOutApplies(). A service account.");
+      return { applies: false, why: 'This account is a SERVICE ACCOUNT, ' +
+        'and RISC section 2.8\'s opt-out is the account holder\'s choice: ' +
+        'a service account is used by software and answered for by its ' +
+        'owner, so it has no holder to make it. The opt-out gate does not ' +
+        'apply and every event about it is exchanged.' };
+    }
+    log.debug("Leaving RiscRegister.optOutApplies(). It applies.");
+    return { applies: true, why: '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHETHER A PERSON ENTRY IS A SERVICE ACCOUNT, read off a directory
+  // snapshot (lower-cased attribute names, as `ldap_server.js` hands them).
+  //
+  // ONE FUNCTION, SO THAT IT CAN BE POINTED AT THE ONE PREDICATE. #221's
+  // design gives a service account the auxiliary attribute `stsServiceAccount`
+  // (TRUE) and says every door asks `common/service_accounts.ts`'s
+  // `isServiceAccount(entry)` rather than reading the attribute. That module
+  // is P1's, and this body is a call to it — the snapshot handed here is a
+  // stored entry's attributes, one of the shapes the predicate reads.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person entry's attributes flag it a service account
+   * (`stsServiceAccount` TRUE).
+   *
+   * @param attributes - the entry's attributes, lower-cased names
+   * @returns true for a service account
+   */
+  static serviceAccountIn(attributes?: Record<string, any> | null): boolean {
+    helpers.log.debug("Entering RiscRegister.serviceAccountIn().");
+    const flagged = serviceAccounts.isServiceAccount(
+      { attributes: attributes || {} });
+    helpers.log.debug("Leaving RiscRegister.serviceAccountIn(). " + flagged);
+    return flagged;
+  }
+
+  // The register key of an application's account (#221 P5): its identifier
+  // under a prefix no username here carries, so an application and a person
+  // of the same name are two rows.
+  /**
+   * Returns the register key of an application's account,
+   * `application:<identifier>`.
+   *
+   * @param identifier - the application's identifier
+   * @returns the key, or '' for an empty identifier
+   */
+  static applicationAccountId(identifier: unknown): string {
+    helpers.log.debug("Entering RiscRegister.applicationAccountId().");
+    const id = String(identifier == null ? '' : identifier);
+    helpers.log.debug("Leaving RiscRegister.applicationAccountId().");
+    return id ? 'application:' + id : '';
   }
 
   private shortNameOf(uri: unknown): string {
@@ -1397,6 +1550,70 @@ class RiscRegister {
   }
 
   // ---------------------------------------------------------------------------
+  // THE ACCOUNT HOLDER'S OWN ACT (2026-11-03).
+  //
+  // CAEP gives every event an `initiating_entity`, and this service's own
+  // receivers leave a `credential-change` the PERSON made alone (keep the
+  // session that made the change, OWASP ASVS 3.3; `ssf_receivers.ts`). RISC
+  // gives that member to none of its fourteen, so a person revoking their own
+  // key pair or TLS client certificate for `keyCompromise` on the portal sent a
+  // `credential-compromise` the portal's receiver could not tell from a
+  // detector's, and it revoked the very token the person made the report with
+  // (#1290 made the key pair's revoke send one; `sts_portal_signing_key`,
+  // single-node, found it).
+  //
+  // The fact does not go on the wire — a member RISC does not define would be
+  // a SET a conforming receiver refuses. It is kept HERE, on the account's
+  // row, under the `txn` every SET of the act carries (SSF 1.0 section
+  // 4.1.9), and asked by `txn`, so only the receivers that share this
+  // register — this service's own — can read it. `noteOwnAct()` is called by
+  // `ssf.ts` as the act's `txn` is minted, before any SET is built, so the row
+  // is written ahead of the SET a receiver could collect.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records that the SETs of one act, sent under `txn`, report an act the
+   * account holder made themselves.
+   *
+   * @param row - the account's row, as the act's due event carries it
+   * @param txn - the act's transaction identifier
+   */
+  noteOwnAct(row: RiscRow | null, txn: string): void {
+    const { log, iso } = this.deps;
+    log.debug("Entering RiscRegister.noteOwnAct().");
+    if (!row || !txn) {
+      log.debug("Leaving RiscRegister.noteOwnAct(). Nothing to note.");
+      return;
+    }
+    const held = Array.isArray(row.ownActs) ? row.ownActs : [];
+    row.ownActs = [{ txn: String(txn), at: iso() }].concat(held)
+      .slice(0, this.eventsPerAccount());
+    this.touch(row);
+    log.debug("Leaving RiscRegister.noteOwnAct().");
+  }
+
+  /**
+   * Says whether a SET this service sent reports an act the account holder
+   * made themselves: its subject's row holds its `txn` among `ownActs`.
+   *
+   * @param subject - the SET's `sub_id`
+   * @param txn - the SET's `txn`
+   * @returns true only where the register says so; false where it cannot say
+   */
+  ownAct(subject: unknown, txn: unknown): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.ownAct().");
+    const wanted = String(txn || '');
+    const accountId = wanted ? this.accountIdOf(subject) : '';
+    const row = accountId ? register.get(accountId) : null;
+    const own = !!row && Array.isArray(row.ownActs) &&
+      row.ownActs.some(function (one: { txn: string }): boolean {
+        return !!one && one.txn === wanted;
+      });
+    log.debug("Leaving RiscRegister.ownAct(). " + own);
+    return own;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DIRECTORY WRITE HAPPENED, AND WHAT — IF ANYTHING — SHOULD GO OUT.
   //
   // `ssf.ts` installs this as `ldap_server.setAccountObserver()`'s function and
@@ -1439,12 +1656,15 @@ class RiscRegister {
       return [];
     }
     let row = register.get(accountId);
+    // True while `row` is one this write made and the register does not hold.
+    let fresh = false;
     // A RENAMED ACCOUNT KEEPS ITS ROW (2026-09-14). The register is keyed by
     // the name, and a rename arrives here as an update naming the NEW one; the
     // entry's subject is what says it is the row already held under the old
     // name. Its counts and state move with it, and the old name is kept among
     // its former identifiers so an event naming it is still matched.
-    const renamedUuid = ((deleted ? before : after).entryuuid || [])[0];
+    const renamedUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (deleted ? before : after) || {});
     if (!row && renamedUuid) {
       const wantedSubject = 'urn:uuid:' + String(renamedUuid).toLowerCase();
       let formerId = '';
@@ -1479,8 +1699,9 @@ class RiscRegister {
         phone: this.valuesOf(deleted ? before : after,
                              PHONE_ATTRIBUTES)[0] || ''
       });
-      register.set(accountId, row);
-      this.trim();
+      // NOT YET IN THE REGISTER (#618 phase 2): whether it is kept is
+      // decided once the write has been read — see `keepsFreshRow()`.
+      fresh = true;
     }
     if (asked.issuer && !row.iss) {
       row.iss = String(asked.issuer);
@@ -1492,10 +1713,16 @@ class RiscRegister {
     // (2026-09-14). It is kept on the row because the one event where it
     // matters most — an account PURGED — is about an entry that is gone, and
     // the directory can no longer be asked whose `urn:uuid:` it was.
-    const snapshotUuid = ((deleted ? before : after).entryuuid || [])[0];
+    const snapshotUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (deleted ? before : after) || {});
     if (snapshotUuid) {
       row.subject = 'urn:uuid:' + String(snapshotUuid).toLowerCase();
     }
+    // A SERVICE ACCOUNT (#221), as the entry says on this write — the opt-out
+    // gate does not apply to one (optOutApplies()).
+    row.kind = row.kind || 'person';
+    row.serviceAccount = RiscRegister.serviceAccountIn(deleted ? before
+                                                               : after);
     row.updatedAt = iso();
 
     // A DESCRIPTOR AND NOT A BARE NAME, because everything below reads
@@ -1531,6 +1758,15 @@ class RiscRegister {
       this.identifierMoves(before, after).forEach((move) => {
         this.releaseIdentifier(row, move.from, move.format);
       });
+    }
+    if (fresh) {
+      if (!this.keepsFreshRow(row, acts)) {
+        log.debug("Leaving RiscRegister.observe(). Nothing RISC has a word " +
+                  "for, and nothing for the register to remember.");
+        return [];
+      }
+      register.set(accountId, row);
+      this.trim();
     }
     if (!acts.length) {
       this.followEntry(row, deleted, after);
@@ -1578,6 +1814,11 @@ class RiscRegister {
       }
       const uri = events.RISC_PREFIX + short;
       const allowedOut = this.gate(row, uri);
+      if (allowedOut.notApplicable &&
+          row.notes.indexOf(allowedOut.notApplicable) < 0) {
+        row.notes.push(allowedOut.notApplicable);
+        row.notes = row.notes.slice(-5);
+      }
       if (!allowedOut.send) {
         this.applyActLocally(row, act);
         row.suppressed += 1;
@@ -1616,7 +1857,8 @@ class RiscRegister {
         summary: 'A RISC ' + short + ' is due for account ' + accountId,
         detail: { type: uri, dn: String(asked.dn || '') } });
       due.push({ uri: uri, payload: payload, subject: subject, row: row,
-        act: act.act });
+        act: act.act,
+        initiatingEntity: String(asked.initiatingEntity || '') });
     });
     log.debug("Leaving RiscRegister.dueForActs(). " + due.length + ' due.');
     return due;
@@ -1647,7 +1889,12 @@ class RiscRegister {
     const { log, iso } = this.deps;
     log.debug("Entering RiscRegister.observeAct().");
     const asked = notice || {};
-    const accountId = String(asked.username || '');
+    // AN APPLICATION'S ACT (#221 P5) names it by `application`, and its row
+    // is `application:<identifier>`.
+    const application = String(asked.application || '');
+    const accountId = application
+      ? RiscRegister.applicationAccountId(application)
+      : String(asked.username || '');
     const act = String(asked.act || '');
     if (!this.enabled() || !accountId || !AUTO_ACTS[act]) {
       log.debug("Leaving RiscRegister.observeAct(). Off, nothing named, or " +
@@ -1657,13 +1904,21 @@ class RiscRegister {
     let row = register.get(accountId);
     if (!row) {
       row = this.blankRow({
-        accountId: accountId, sub: accountId, username: accountId,
+        accountId: accountId, sub: application || accountId,
+        username: application || accountId,
         iss: String(asked.issuer || ''), dn: String(asked.dn || ''),
         realm: String(asked.realm || ''),
         email: String(asked.email || ''), phone: String(asked.phone || '')
       });
+      if (application) {
+        row.kind = 'application';
+        row.application = application;
+      }
       register.set(accountId, row);
       this.trim();
+    }
+    if (typeof asked.serviceAccount === 'boolean' && !application) {
+      row.serviceAccount = asked.serviceAccount;
     }
     if (asked.issuer && !row.iss) {
       row.iss = String(asked.issuer);
@@ -1853,8 +2108,9 @@ class RiscRegister {
       log.debug("Leaving RiscRegister.activeIn(). No entry.");
       return null;
     }
-    const values = attrs[LOCK_ATTRIBUTE];
-    const out = !(Array.isArray(values) && values.length);
+    // A lock is the Credential's (#1579).
+    const out = DomainMap.fieldOf('Credential', 'lockedSince', attrs) ===
+      undefined;
     log.debug("Leaving RiscRegister.activeIn(). " + out);
     return out;
   }
@@ -2076,6 +2332,43 @@ class RiscRegister {
   // identifier events above move them too, but only for the value each
   // names; a write that removed the first of two addresses leaves the second
   // as the one the account is known by, and only the entry says so.
+  // ---------------------------------------------------------------------------
+  // A ROW A DIRECTORY WRITE WOULD MAKE, AND WHETHER IT IS WORTH KEEPING
+  // (#618 phase 2, 2026-10-14).
+  //
+  // `observe()` made a row for EVERY account any write touched, so a bulk
+  // load wrote one blank row per person created and — past
+  // `risc.maxAccountsTracked` — journalled the eviction of the oldest: about
+  // 2.3 of the 9.7 change-log rows each LDAP add cost on 8081, each sealed,
+  // inserted, pulled and applied by every other process, for a register
+  // that holds the last two hundred accounts anyway.
+  //
+  // **A ROW IS KEPT WHEN IT SAYS SOMETHING AN ABSENT ROW DOES NOT.** Every
+  // reader answers an absent row with the row's defaults — `optOutOf()` says
+  // `opt-in`, `optOutApplies()` says it applies, `get()` says null and the
+  // next write that matters makes the row then, from that write's own
+  // snapshot. So a fresh row is kept when the write:
+  //   * produced an act (an account created disabled, a purge, an
+  //     identifier moved or recycled, recovery information changed) — the
+  //     row is where its state and its audit-visible notes live. That
+  //     includes every write that RELEASES an identifier, which
+  //     `identifier-recycled` is read from: a purge is an act, and so is
+  //     every move `identifierMoves()` releases;
+  //   * named a SERVICE ACCOUNT — the opt-out gate reads that off the row,
+  //     and an absent row would offer its holder an opt-out it has none of.
+  // What is given up is `/admin/risc-accounts` listing accounts nothing has
+  // happened to, and a hand-sent event naming such an account's ADDRESS
+  // being matched to it rather than filed under the address — the same
+  // answer every account past the register's cap already gets.
+  // ---------------------------------------------------------------------------
+  private keepsFreshRow(row: RiscRow, acts: RiscAct[]): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.keepsFreshRow().");
+    const keep = acts.length > 0 || row.serviceAccount === true;
+    log.debug("Leaving RiscRegister.keepsFreshRow(). " + keep);
+    return keep;
+  }
+
   private followEntry(row: RiscRow, deleted: boolean,
                       after?: Record<string, any>): void {
     const { log } = this.deps;
@@ -2250,18 +2543,24 @@ class RiscRegister {
    * @returns `{ state, since, moves }`
    */
   optOutOf(accountId: unknown): { state: string; since: string;
-                                   moves: string[] } {
+                                   moves: string[]; applies: boolean;
+                                   why: string } {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.optOutOf().");
     const row = register.get(String(accountId || ''));
     const state = row ? row.optOut : 'opt-in';
-    const moves = state === 'opt-in' ? ['optOutInitiated']
+    // An account the gate does not apply to (#221 P5) is offered no move,
+    // and is told why.
+    const applies = this.optOutApplies(row);
+    const moves = !applies.applies ? []
+      : state === 'opt-in' ? ['optOutInitiated']
       : state === 'opt-out-initiated' ? ['optOutCancelled']
       : ['optIn'];
     log.debug("Leaving RiscRegister.optOutOf(). " + state);
     return { state: state,
              since: String((row && row.optOutInitiatedAt) || ''),
-             moves: moves };
+             moves: moves, applies: applies.applies,
+             why: applies.why };
   }
 
   // Whether `act` is a move the account holder may make now.
@@ -2457,7 +2756,11 @@ class RiscRegister {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         lifecycle: row.lifecycle,
+        kind: row.kind || 'person',
+        application: row.application || '',
+        serviceAccount: row.serviceAccount === true,
         optOut: row.optOut,
+        optOutApplies: this.optOutApplies(row).applies,
         credentialStanding: row.credentialStanding,
         credentialChangeRequired: row.credentialChangeRequired,
         recoveryActivated: row.recoveryActivated,
@@ -2590,11 +2893,19 @@ export = {
   applyDue: slot.forward('applyDue'),
   refusals: slot.forward('refusals'),
   noteTransmitted: slot.forward('noteTransmitted'),
+  // The account holder's own acts, by `txn` (2026-11-03).
+  noteOwnAct: slot.forward('noteOwnAct'),
+  ownAct: slot.forward('ownAct'),
   observe: slot.forward('observe'),
   actsFor: slot.forward('actsFor'),
   // The account holder's section 2.8 choice (#146).
   optOutOf: slot.forward('optOutOf'),
   optOutMoveAllowed: slot.forward('optOutMoveAllowed'),
+  // Whom the opt-out gate is for (#221 P5): not an application, not a
+  // service account.
+  optOutApplies: slot.forward('optOutApplies'),
+  serviceAccountIn: RiscRegister.serviceAccountIn,
+  applicationAccountId: RiscRegister.applicationAccountId,
   optOutsDue: slot.forward('optOutsDue'),
   reset: slot.forward('reset'),
   clear: slot.forward('clear'),

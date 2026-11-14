@@ -58,20 +58,43 @@ const OTHER = 'authz-other-' + STAMP;
 const ADMIN = 'authz-admin-' + STAMP;
 const REALM = 'authz-' + STAMP;
 
+// A callback that answers a promise keeps the settings until it settles:
+// an LDAP write carrying a clear password answers a tick later since #756.
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
+  const clear = function () {
+    log.debug("Entering clear().");
+    keys.forEach(function (key) {
+      config.clearOverride(key);
+    });
+    log.debug("Leaving clear().");
+  };
+  let answer;
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
-    log.debug("Leaving withSettings().");
-    return fn();
-  } finally {
-    keys.forEach(function (key) {
-      config.clearOverride(key);
+    answer = fn();
+  } catch (e) {
+    log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+    clear();
+    throw e;
+  }
+  if (answer && typeof answer.then === 'function') {
+    log.debug("Leaving withSettings(). Settles later.");
+    return answer.then(function (value) {
+      clear();
+      return value;
+    }, function (e) {
+      log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+      clear();
+      throw e;
     });
   }
+  clear();
+  log.debug("Leaving withSettings().");
+  return answer;
 }
 
 function product(fn) {
@@ -159,7 +182,7 @@ function refusedWith50(t, result, code, target, what) {
   log.debug("Leaving refusedWith50().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const made = [];
   let granted = false;
@@ -183,7 +206,7 @@ function run(t) {
             'somebody else\'s entry',
             JSON.stringify(devWrite));
 
-    product(function () {
+    await product(async function () {
       // ---------------------------------------------------------------------
       t.log.info('=== 2. the empty-roster rule does not make anybody an ' +
                  'administrator here ===');
@@ -288,7 +311,18 @@ function run(t) {
         log.debug("Leaving passwordWritten().");
       };
       try {
-        const weak = modify(personDn, personDn,
+        // A clear password is hashed on the thread pool first and answers
+        // a tick later (#756).
+        // NOT BY DEFAULT SINCE #1465 (ASVS 5.0.0 6.2.3): an LDAP modify proves
+        // no current password. The rows below are the operator's opt-in.
+        const byDefault = await modify(personDn, personDn,
+                            [['replace', 'userPassword', 'A-long-passphrase-9']]);
+        t.check(byDefault.ok === false &&
+                byDefault.errorName === 'InsufficientAccessRightsError',
+                'by default a person may not set their password over LDAP',
+                JSON.stringify(byDefault));
+        config.setOverride('ldap.selfWritableAttributes', 'userPassword,mail');
+        const weak = await modify(personDn, personDn,
                             [['replace', 'userPassword', 'short']]);
         t.check(weak.ok === false &&
                 weak.errorName === 'ConstraintViolationError',
@@ -297,12 +331,12 @@ function run(t) {
                 'refusal', JSON.stringify(weak));
         t.equal(announced.length, 0, 'and a refused password is announced to ' +
                                      'nobody');
-        const strong = modify(personDn, personDn,
+        const strong = await modify(personDn, personDn,
           [['replace', 'userPassword', 'Self-Service-Passw0rd!' + STAMP]]);
         t.check(strong.ok === true, 'a person may set their own password ' +
                                     'over LDAP',
                 JSON.stringify(strong));
-        t.check(/^\$scrypt\$/.test(attributeOf(PERSON, 'userPassword').join()),
+        t.check(/^\$(scrypt|argon2id)\$/.test(attributeOf(PERSON, 'userPassword').join()),
                 'and it is stored as a hash');
         t.check(announced.length === 1 && announced[0].name === PERSON &&
                 announced[0].password === 'Self-Service-Passw0rd!' + STAMP,
@@ -310,6 +344,7 @@ function run(t) {
                 'Kerberos key register',
                 JSON.stringify(announced.map(function (a) { return a.name; })));
       } finally {
+        config.clearOverride('ldap.selfWritableAttributes');
         credentials.passwordWritten = realWritten;
       }
 
@@ -325,8 +360,12 @@ function run(t) {
       t.check(adminModify.ok === true, 'an administrator may modify somebody ' +
                                        'else\'s mail',
               JSON.stringify(adminModify));
+      // The realm's attribute policy (#396) requires cn, sn, givenName and
+      // mail of every person added over LDAP in product mode.
       const adminAdd = add(adminDn, newDn,
-                           { objectClass: ['top', 'person'], sn: 'x' });
+                           { objectClass: ['top', 'person'], sn: 'x',
+                             cn: 'x', givenName: 'x',
+                             mail: 'authz-new-' + STAMP + '@example.test' });
       t.check(adminAdd.ok === true, 'an administrator may add an entry',
               JSON.stringify(adminAdd));
       const adminDelete = del(adminDn, newDn);
@@ -346,7 +385,10 @@ function run(t) {
       t.check(realmMade, 'precondition: a throwaway realm was created',
               JSON.stringify(created));
       const foreignDn = realms.run(realms.get(REALM), function () {
-        ldap.createUser(ADMIN, { invent: false });
+        // And givenName, sn and mail of a person created in product mode.
+        ldap.createUser(ADMIN, { invent: false,
+          attributes: { givenName: 'Authz', sn: ADMIN,
+                        mail: ADMIN + '@example.test' } });
         return ldap.objectFor(ADMIN).entry.dn;
       });
       t.check(foreignDn !== adminDn && /dc=authz-/.test(foreignDn),

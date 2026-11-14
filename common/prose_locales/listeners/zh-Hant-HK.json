@@ -1,0 +1,46 @@
+{
+  "listeners.builtin.spiffe-workload.what": {
+    "en": "42f169eed1663fe6",
+    "text": "非 TLS：規格的傳輸方式是呼叫者的網絡，產品模式只在宣告為已驗證的網絡上提供。"
+  },
+  "listeners.builtin.cell.clientAuth": {
+    "en": "11980b13bc20d54a",
+    "text": "必要：另一個單元的證書（協定的規定）"
+  },
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "登入服務及其第二因素、錢包、SPNEGO 與證書登入，以及登出。"
+  },
+  "listeners.applications.portal.label": {
+    "en": "00cf214ba77e7497",
+    "text": "用戶入口網站"
+  },
+  "listeners.applications.admin-console.what": {
+    "en": "01585f76e46f24d9",
+    "text": "位於 /admin 的主控台、其腳本及其頁面。"
+  },
+  "listeners.applications.ws-federation.what": {
+    "en": "d46418b8851b7875",
+    "text": "被動請求者設定檔及其元數據。"
+  },
+  "listeners.applications.acme.what": {
+    "en": "2398dbe02edc11de",
+    "text": "透過 ACME 註冊證書。"
+  },
+  "listeners.applications.est.what": {
+    "en": "0792aaa5bdd515bb",
+    "text": "透過 EST 註冊證書。"
+  },
+  "listeners.applications.scep.what": {
+    "en": "2b96ead3c4a041ba",
+    "text": "透過 SCEP 註冊證書。"
+  },
+  "listeners.applications.pki.label": {
+    "en": "b34129880663423f",
+    "text": "核證機關"
+  },
+  "listeners.applications.pki.what": {
+    "en": "8b280b2baedbdfe6",
+    "text": "CRL、OCSP、CA 證書與證書鏈，以及密碼學元數據文件。"
+  }
+}

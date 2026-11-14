@@ -39,7 +39,7 @@
 // IN PROCESS, in a throwaway realm, because it is a truth table over two
 // modes and a directory. The token endpoint is
 // `tests/token_exchange_product.js` and the over-HTTP job
-// `tests/vendored/sts_delegation_policy.js`.
+// `tests/protocol/sts_delegation_policy.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -97,6 +97,15 @@ const REFUSE_FRONT_POLICY =
   'XMLSchema#boolean">true</AttributeValue>' +
   '</AttributeAssignmentExpression></ObligationExpression>' +
   '</ObligationExpressions></Rule></Policy>';
+
+// THE IdP'S OWN NAME (#519): a token presented as the requester's
+// credential is addressed to its holder or to this IdP, and the realm's
+// WS-Trust issuer name is one of the names it answers to.
+function idpAudience() {
+  log.debug("Entering idpAudience().");
+  log.debug("Leaving idpAudience().");
+  return require('../common/issuer_names').issuer();
+}
 
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
@@ -196,6 +205,23 @@ function truthTable(t, m) {
                  source: ['dp-front'], targets: ['dp-back'] });
     t.check(d.allowed && d.semantics === 'delegation',
             m + ' A2. actor = R, the token handed on to it', show(d));
+    // A8 (#1139): the subject token's audience is one of this service's
+    // own API resource objects — the default resource, the management API
+    // — and is passed over as S, so its client_id decides, as before.
+    const ownAudiences = ['sts-resource', 'sts-management-api']
+      .map(function (id) {
+        const entry = applications.get(id);
+        return [].concat(((entry && entry.fields) || {}).oauthAudience ||
+                         [])[0] || '';
+      });
+    d = decide({ actor: 'dp-front', subject: 'dp-alice',
+                 source: ownAudiences.concat(['dp-front']),
+                 targets: [AUDIENCE] });
+    t.check(ownAudiences.every(Boolean) && d.allowed &&
+            d.semantics === 'delegation' && d.audience === 'dp-back',
+            m + ' A8. a subject token addressed to one of this service\'s ' +
+            'own API resource objects: S is its client, not the resource ' +
+            '(#1139)', show([ownAudiences, d]));
     d = decide({ actor: 'dp-rbcd-front', subject: 'dp-alice',
                  source: ['dp-rbcd-front'], targets: ['dp-rbcd-back'] });
     t.check(d.allowed, m + ' A3. resource-based: R accepts S ' +
@@ -531,7 +557,7 @@ function wsTrust(t) {
   const as = function (name, audience) {
     log.debug("Entering as().");
     log.debug("Leaving as().");
-    return saml2.buildSamlAssertion(name, audience || 'https://sts.test', 5);
+    return saml2.buildSamlAssertion(name, audience || idpAudience(), 5);
   };
   const actAs = function (assertion) {
     log.debug("Entering actAs().");
@@ -624,9 +650,13 @@ function wsTrust(t) {
           /InvalidRequest/.test(r.body), 'L9. both elements in one ' +
           'request: wst:InvalidRequest, in development too (STS-WSTRUST-0025)',
           r.errorCode + ' ' + r.body.slice(0, 400));
+  // #496: product refuses an RST with no AppliesTo before the delegation
+  // policy is asked — wst:InvalidRequest, STS-WSTRUST-0031 — so the
+  // policy's own no-target refusal (STS-WSTRUST-0024) is not reached.
   r = ask('product', 'dp-mid', actAs(as('dp-alice', 'dp-front')), '');
-  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0024',
-          'L10. no AppliesTo, the requester not S (STS-WSTRUST-0024)',
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0031' &&
+          /InvalidRequest/.test(r.body),
+          'L10. no AppliesTo: refused before the policy (STS-WSTRUST-0031)',
           r.errorCode + ' ' + r.body.slice(0, 400));
   r = ask('development', 'dp-front', onBehalfOf(as('dp-alice', 'dp-front')),
           'dp-back');
@@ -648,9 +678,13 @@ function wsTrust(t) {
     .exec(r.body) || [])[1] || '';
   const claims = jwt ? JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')
     .toString('utf8')) : {};
-  t.check(r.status === 200 && claims.act && claims.act.sub === 'dp-front' &&
-          !claims.act.act && claims.may_act &&
-          claims.may_act.sub === 'dp-front',
+  // The requester as this service's OAuth tokens name a client actor
+  // (#476): its client subject in the mode — product implies RFC 9700
+  // mode, so `urn:sts:client:` — with the token's own `iss` (#471).
+  t.check(r.status === 200 && claims.act &&
+          claims.act.sub === 'urn:sts:client:dp-front' &&
+          claims.act.iss === claims.iss && !claims.act.act &&
+          claims.may_act && claims.may_act.sub === 'dp-front',
           'L13. an ActAs JWT carries `act` naming the requester, and the ' +
           'subject\'s may_act', r.status + ' ' + JSON.stringify(claims));
   // The register is protocol-independent: the same acts are Monitoring →

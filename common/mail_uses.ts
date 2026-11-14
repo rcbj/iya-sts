@@ -34,6 +34,15 @@
 //   5. **AN ACCESS REQUEST WAITING FOR ITS OWNER** (#432 phase 6), a
 //      notification a person may decline: a GNAP grant a client asked for
 //      while they were not there, waiting on /portal/ciba.
+//   6. **A STARTED POST-LOGIN ACTIVITY'S REMINDER** (#1111), a notification
+//      a person may decline: sign in, and the post-login activity asks you
+//      to register a post-quantum passkey. The one link is the portal's path;
+//      it carries no credential (`common/post_login_activities.ts`).
+//   7. **AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS** (#1180), a
+//      notification a person may decline, waiting on
+//      /portal/access-requests — and, for an emergency access the policy
+//      allowed and granted at once, a security notice nobody may decline,
+//      asking for the review after use (`authzen/authzen_access_request.ts`).
 //
 // A LIBRARY (rule 3). Its requires of the credential store and the account
 // signals are LAZY, at the moment of use: `ssf/account_signals.ts` calls
@@ -46,7 +55,6 @@
 // it takes says nothing either. What happened is on the audit row.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -56,6 +64,7 @@ import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import stsCrypto = require('./crypto');
 import mail = require('./mail');
+import Classes = require('./domain_classes');
 
 type Json = any;
 
@@ -82,6 +91,9 @@ interface MailUsesDeps {
   now: () => number;
   credentials: () => Json;
   accountSignals: () => Json;
+  // #724: the recovery question, asked before a self-service link is mailed.
+  // Optional, so a caller built before it (a test's fake) asks nothing.
+  passkeyPolicy?: () => Json;
 }
 
 /**
@@ -139,17 +151,73 @@ class MailUses {
       },
       accountSignals: function (): Json {
         return require('../ssf/account_signals');
+      },
+      passkeyPolicy: function (): Json {
+        return require('./passkey_policy');
       }
     };
   }
 
-  // The time, as a person reads it in a message: UTC, to the minute.
+  // The time, UTC, to the minute: a dedup key's bucket now. What a MESSAGE
+  // says is `instant()`, put into words in the recipient's language by the
+  // mail channel (#539).
   private when(): string {
     const { log, now } = this.deps;
     log.debug("Entering MailUses.when().");
     log.debug("Leaving MailUses.when().");
     return new Date(now()).toISOString().replace('T', ' ').slice(0, 16) +
       ' UTC';
+  }
+
+  // -------------------------------------------------------------------------
+  // VALUES THAT FOLLOW THE RECIPIENT'S LANGUAGE (#539). A message is sent in
+  // the language of the person it goes to, which only `common/mail.ts`
+  // knows (per recipient, in `queueOne()`). So what this file wants SAID —
+  // "an administrator", a time — is handed over as a message of the
+  // `mailValues` catalog (common/locales/mailValues/) or an instant, and the
+  // channel puts it into words there. A name, an address, a username, and a
+  // reason a person or a refusal wrote, are data and stay as given.
+  // -------------------------------------------------------------------------
+  /**
+   * A value the mail channel puts into words in the recipient's language: a
+   * message of the `mailValues` catalog.
+   *
+   * @param key - the message's key under `mailValues.`
+   * @param params - its parameters, data
+   * @returns `{ i18n, params }`
+   */
+  static said(key: string, params?: Json): Json {
+    helpers.log.debug("Entering MailUses.said(). " + key);
+    helpers.log.debug("Leaving MailUses.said().");
+    return params ? { i18n: 'mailValues.' + key, params: params }
+                  : { i18n: 'mailValues.' + key };
+  }
+
+  // Now, as an instant the channel formats for the recipient.
+  private instant(): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering MailUses.instant().");
+    log.debug("Leaving MailUses.instant().");
+    return { date: now() };
+  }
+
+  // A value as a dedup key's part: a string as it is, a message or an
+  // instant as its JSON, which is deterministic for what this file builds.
+  /**
+   * Turns a value — a string, or a message or instant for the channel — into
+   * a deterministic string for a dedup key.
+   *
+   * @param value - the value
+   * @returns the string
+   */
+  static keyOf(value: unknown): string {
+    helpers.log.debug("Entering MailUses.keyOf().");
+    if (value && typeof value === 'object') {
+      helpers.log.debug("Leaving MailUses.keyOf(). JSON.");
+      return JSON.stringify(value);
+    }
+    helpers.log.debug("Leaving MailUses.keyOf().");
+    return String(value == null ? '' : value);
   }
 
   // -------------------------------------------------------------------------
@@ -197,6 +265,26 @@ class MailUses {
     log.debug("Entering MailUses.resetNeedsRecoveryCode().");
     log.debug("Leaving MailUses.resetNeedsRecoveryCode().");
     return config.value('mail.resetRequiresBackupCode') !== false;
+  }
+
+  // The recovery question for the forgot-password door (#724): the code of
+  // its refusal, or ''. A person holding no passkey is not covered, and a
+  // process with no passkey policy (a test's deps) asks nothing.
+  private recoveryRefused(creds: Json, username: string): string {
+    const { log } = this.deps;
+    log.debug("Entering MailUses.recoveryRefused().");
+    const policy = this.deps.passkeyPolicy ? this.deps.passkeyPolicy() : null;
+    if (!policy || typeof creds.holdsPasskey !== 'function') {
+      log.debug("Leaving MailUses.recoveryRefused(). Not asked.");
+      return '';
+    }
+    policy.select(username, '');
+    const refused = policy.recoveryRefusal({ username: username,
+      door: 'forgot-password', at: 'door',
+      covered: creds.holdsPasskey(username) });
+    log.debug("Leaving MailUses.recoveryRefused(). " +
+              (refused ? refused.code : 'allowed'));
+    return refused ? refused.code : '';
   }
 
   /**
@@ -260,6 +348,16 @@ class MailUses {
       log.debug("Leaving MailUses.requestReset(). Disabled.");
       return answer('the account is disabled', 'STS-MAIL-0030');
     }
+    // NO SELF-SERVICE RECOVERY FOR A PASSKEY HOLDER WHERE THE PASSKEY
+    // POLICY SAYS operator-only (#724), decided by the issuance policy and
+    // asked BEFORE a recovery code is spent or anything is mailed. The form's
+    // answer is the same sentence; the audit row names the code.
+    const recoveryCode = this.recoveryRefused(creds, username);
+    if (recoveryCode) {
+      log.debug("Leaving MailUses.requestReset(). Operator-only recovery.");
+      return answer('the passkey policy lets only an operator recover this ' +
+                    'account', recoveryCode);
+    }
     const who = mail.recipient(username);
     if (!who || !who.address) {
       log.debug("Leaving MailUses.requestReset(). No address.");
@@ -297,7 +395,7 @@ class MailUses {
         // THE ADDRESS OWNER IS TOLD, once an hour at most: the name and the
         // address were right, so this is somebody who knows both.
         mail.send({ username: username, template: 'reset-refused-attempt',
-          values: { username: username, when: this.when() },
+          values: { username: username, when: this.instant() },
           dedupKey: 'reset-refused:' + this.when().slice(0, 13),
           via: via || 'the forgot-password form', actor: '' });
         log.debug("Leaving MailUses.requestReset(). Wrong recovery code.");
@@ -315,7 +413,7 @@ class MailUses {
                      String(verdict.remaining) + ' remain.',
         reasonUser: 'You used one of your recovery codes.' });
     }
-    const issued = creds.issuePasswordReset(username);
+    const issued = creds.issuePasswordReset(username, { source: 'self' });
     if (!issued || !issued.ok) {
       log.debug("Leaving MailUses.requestReset(). Not issued.");
       return answer('no link could be issued: ' +
@@ -325,14 +423,12 @@ class MailUses {
     const sent = mail.send({
       username: username, template: 'password-reset',
       values: { username: username, requestedBy: needsCode
-                  ? 'you, or somebody who knew your account name, your ' +
-                    'address and one of your recovery codes'
-                  : 'you, or somebody who knew your account name, on the ' +
-                    'sign-in screen',
+                  ? MailUses.said('requestedBy.recoveryCode')
+                  : MailUses.said('requestedBy.signInScreen'),
                 expiresMinutes: String(config.value(
                   'security.passwordResetTtlMinutes')) },
       links: { link: RESET_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(issued.token) },
+                     '#token=' + encodeURIComponent(issued.token) },
       via: via || 'the forgot-password form', actor: username
     });
     if (!sent.ok) {
@@ -386,7 +482,7 @@ class MailUses {
       return { ok: true, verified: true, message: who.address +
                ' is already verified.' };
     }
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     const ttl = Number(config.value('mail.verificationTtlMinutes'));
     // BOUND TO THE ADDRESS THE ACCOUNT HAS NOW (#64): the hash is of the
     // token AND `mail`, so a link outlives no change of address by anybody.
@@ -400,7 +496,7 @@ class MailUses {
       values: { username: username, address: who.address,
                 expiresMinutes: String(ttl) },
       links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(token) },
+                     '#token=' + encodeURIComponent(token) },
       via: via, actor: actor || username
     });
     if (!sent.ok) {
@@ -437,17 +533,16 @@ class MailUses {
       log.debug("Leaving MailUses.checkVerification(). Nobody.");
       return refused;
     }
+    // The pending verification is the Credential's, its token a secret
+    // named here because this is the check that needs it (#1579); the
+    // address it is checked against is the User's.
     const attrs = entry.attributes || {};
-    const first = function (name: string): string {
-      log.debug("Entering first().");
-      const v = attrs[name.toLowerCase()] || [];
-      log.debug("Leaving first().");
-      return v.length ? String(v[0]) : '';
-    };
-    const stored = first('stsMailVerifyToken');
-    const expires = Number(first('stsMailVerifyExpires') || 0);
-    const address = first('stsMailVerifyAddress');
-    const current = first('mail');
+    const pending = Classes.Credential.fromEntry(attrs,
+      { secrets: ['mailVerifyToken'] });
+    const stored = pending.mailVerifyToken || '';
+    const expires = Number(pending.mailVerifyExpires || 0);
+    const address = pending.mailVerifyAddress || '';
+    const current = Classes.User.fromEntry(attrs).email || '';
     // THE HASH IS OF THE TOKEN AND THE ADDRESS THE ACCOUNT HAD WHEN IT WAS
     // SENT (#64), so a link for an address somebody has since replaced — or
     // a change asked for from an address since replaced — verifies nothing.
@@ -474,7 +569,8 @@ class MailUses {
    * @param token - the link's token
    * @returns `{ ok, address, changed }`, or a coded refusal
    */
-  completeVerification(username: string, token: string): Json {
+  async completeVerification(username: string, token: string):
+      Promise<Json> {
     const { log, mail, audit } = this.deps;
     log.debug("Entering MailUses.completeVerification(). " + username);
     const checked = this.checkVerification(username, token);
@@ -483,19 +579,36 @@ class MailUses {
       return checked;
     }
     const dir = mail.directory();
-    dir.writeMailFlag(username, 'stsMailVerifyToken', '');
-    dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
-    dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
     if (checked.change) {
       // A NEW ADDRESS BECOMES `mail` NOW, AND NOT BEFORE (D5), verified —
       // the person proved it — and the directory tells the former one.
-      if (typeof dir.writeAddress !== 'function' ||
-          !dir.writeAddress(username, checked.address, 'link')) {
+      // THE CLAIM IS ANSWERED BEFORE THE LINK IS SPENT (#644): a collision
+      // leaves the triple, so the link can be tried again, and is the
+      // code recorded. Any other failure still spends the link.
+      const written = dir && typeof dir.writeAddress === 'function'
+        ? await dir.writeAddress(username, checked.address, 'link') : false;
+      const accepted = written === true ||
+        (!!written && (written as Json).ok === true);
+      if (!accepted) {
+        const code = written && (written as Json).code;
+        if (code === 'STS-LDAP-0202') {
+          log.debug("Leaving MailUses.completeVerification(). The address " +
+                    "is already a name.");
+          return this.deps.errorCodes.mark({ ok: false, errors: ['The new ' +
+            'address could not be stored. Try again.'] }, 'STS-LDAP-0202');
+        }
+        dir.writeMailFlag(username, 'stsMailVerifyToken', '');
+        dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
+        dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
         log.debug("Leaving MailUses.completeVerification(). Not written.");
         return this.deps.errorCodes.mark({ ok: false, errors: ['The new ' +
           'address could not be stored. Try again.'] }, 'STS-MAIL-0038');
       }
-    } else {
+    }
+    dir.writeMailFlag(username, 'stsMailVerifyToken', '');
+    dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
+    dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
+    if (!checked.change) {
       dir.writeMailFlag(username, 'stsMailVerified', checked.address);
     }
     audit.audit({ action: 'mail.verified', actor: username, target: username,
@@ -558,7 +671,7 @@ class MailUses {
       log.debug("Leaving MailUses.startAddressChange(). The same address.");
       return this.startVerification(username, via, actor);
     }
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     const ttl = Number(config.value('mail.verificationTtlMinutes'));
     dir.writeMailFlag(username, 'stsMailVerifyToken',
                       crypto.hashSecret(this.boundToken(token, who.address)));
@@ -570,7 +683,7 @@ class MailUses {
       values: { username: username, address: wanted,
                 expiresMinutes: String(ttl) },
       links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(token) },
+                     '#token=' + encodeURIComponent(token) },
       via: via, actor: actor || username
     });
     if (!sent.ok) {
@@ -612,13 +725,15 @@ class MailUses {
       username: username,
       template: reset ? 'password-reset' : 'account-activation',
       values: { username: username,
-                requestedBy: 'an administrator' + (actor ? ' (' + actor + ')'
-                                                         : ''),
+                requestedBy: actor
+                  ? MailUses.said('requestedBy.administratorNamed',
+                                  { actor: actor })
+                  : MailUses.said('requestedBy.administrator'),
                 expiresMinutes: String(config.value(reset
                   ? 'security.passwordResetTtlMinutes'
                   : 'security.activationTtlMinutes')) },
       links: { link: (reset ? RESET_PATH : ACTIVATE_PATH) + '?user=' +
-                     encodeURIComponent(username) + '&token=' +
+                     encodeURIComponent(username) + '#token=' +
                      encodeURIComponent(token) },
       via: via, actor: actor
     });
@@ -662,11 +777,12 @@ class MailUses {
         log.debug("Leaving MailUses.notice(). Off, nobody, or no transport.");
         return out;
       }
-      const values = Object.assign({ username: username, when: this.when() },
+      const values = Object.assign({ username: username,
+                                     when: this.instant() },
                                    f.values || {});
       out = mail.send({
         username: username, template: kind, values: values,
-        dedupKey: f.dedupKey || (kind + ':' + String(values.how ||
+        dedupKey: f.dedupKey || (kind + ':' + MailUses.keyOf(values.how ||
                                  values.why || values.by || '')),
         via: f.via || 'a security notice', actor: f.actor || ''
       });
@@ -674,8 +790,8 @@ class MailUses {
         mail.send({
           toAdministrators: true, template: 'administrator-alert',
           values: { username: username, when: values.when,
-                    act: String(f.act || kind),
-                    why: String(values.why || '') },
+                    act: f.act || kind,
+                    why: values.why || '' },
           dedupKey: 'admin:' + kind + ':' + username,
           via: f.via || 'a security notice', actor: 'the service'
         });
@@ -713,19 +829,25 @@ class MailUses {
         String(notice.credentialType || 'password') === 'password' &&
         !notice.friendlyName) {
       out = this.notice('password-changed', username, {
-        values: { how: String(notice.reasonUser || notice.via ||
-                              'by ' + (notice.initiatingEntity || 'someone')) },
+        // `reasonUser` is CAEP's `reason_user`, a sentence the door that
+        // acted wrote in English for every receiver; it stays as written.
+        values: { how: notice.reasonUser || notice.via
+          ? String(notice.reasonUser || notice.via)
+          : MailUses.said('how.by', {
+              entity: String(notice.initiatingEntity || 'someone') }) },
         via: notice.via });
     } else if (act === 'credentialCompromised') {
       out = this.notice('credential-compromised', username, {
-        values: { what: String(notice.credentialType || 'password'),
+        values: { what: MailUses.said('credential.type', {
+                    type: String(notice.credentialType || 'password') }),
                   why: String(notice.reasonUser || '') },
-        bySystem: system, act: 'credential marked compromised',
+        bySystem: system,
+        act: MailUses.said('act.credentialCompromised'),
         via: notice.via });
     } else if (act === 'recoveryActivated' && !notice.mailed) {
       out = this.notice('recovery-started', username, {
-        values: { by: notice.initiatingEntity === 'user' ? 'you'
-                                                         : 'an administrator' },
+        values: { by: notice.initiatingEntity === 'user'
+          ? MailUses.said('by.you') : MailUses.said('by.administrator') },
         via: notice.via });
     }
     log.debug("Leaving MailUses.fromAccountSignal().");
@@ -744,8 +866,9 @@ class MailUses {
    * on the portal.
    *
    * @param username - the resource owner
-   * @param facts - `client` (the registered identifier), `rights` (a
-   *   sentence), `expiresMinutes`, `dedupKey`
+   * @param facts - `client` (the registered identifier), `rights` (the
+   *   access types asked for, data; empty says "access" in the person's
+   *   language), `expiresMinutes`, `dedupKey`
    * @returns what `send()` answered, or `{ ok: false, skipped }`
    */
   accessRequested(username: string, facts: Json): Json {
@@ -762,7 +885,8 @@ class MailUses {
       out = mail.send({
         username: username, template: 'access-request',
         values: { username: username, client: String(f.client || ''),
-                  rights: String(f.rights || 'access'),
+                  rights: f.rights ? String(f.rights)
+                    : MailUses.said('rights.access'),
                   expiresMinutes: String(f.expiresMinutes || '') },
         links: { link: '/portal/ciba' },
         dedupKey: String(f.dedupKey || ('access-request:' + username)),
@@ -776,6 +900,186 @@ class MailUses {
                '" realm could not be queued: ' + ((e && e.message) || e));
     }
     log.debug("Leaving MailUses.accessRequested().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // 6. A STARTED POST-LOGIN ACTIVITY'S REMINDER (#1111): to the address on
+  // the person's entry, never one a request names; the link is the portal's
+  // path on this service's pinned origin, which signs nobody in. The dedup
+  // key names the started activity and the mail's number, so a run repeated on
+  // another node inside `mail.dedupWindowS` queues it once.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells the realm's administrators that a certificate it relies on changed
+   * state (#1360). The audit calls this on a change only.
+   *
+   * @param facts - `{ changes, dedupKey }`
+   * @returns what the channel answered, or null when it could not send
+   */
+  pkiPinStatus(facts: Json): Json {
+    const { log, mail } = this.deps;
+    log.debug("Entering MailUses.pkiPinStatus().");
+    let out: Json = null;
+    try {
+      out = mail.send({
+        toAdministrators: true, template: 'pki-pin-status',
+        values: { changes: String(facts.changes || '') },
+        dedupKey: String(facts.dedupKey || ''),
+        via: 'the pinned certificate audit', actor: 'the service'
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.pkiPinStatus(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.pkiPinStatus().");
+    return out;
+  }
+
+  /**
+   * Mails a person a started post-login activity's reminder to sign in.
+   *
+   * @param username - the person
+   * @param facts - `started` (its id), `mails` (how many it sent them
+   *   before this one), `actor` (who started it)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  postLoginReminder(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.postLoginReminder(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.postLoginReminder(). Nobody, or no " +
+                  "transport.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'post-login-reminder',
+        values: { username: username },
+        links: { signin: '/portal' },
+        dedupKey: 'post-login-reminder:' + String(f.started || '') + ':' +
+                  username + ':' + String(Number(f.mails) || 0),
+        via: 'a started post-login activity', actor: String(f.actor || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.postLoginReminder(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0494') + 'mail: the post-login ' +
+               'reminder for ' + username + ' in the "' + realms.currentId() +
+               '" realm could not be queued: ' + ((e && e.message) || e));
+      out = { ok: false, skipped: 'threw' };
+    }
+    log.debug("Leaving MailUses.postLoginReminder().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // 8. A UMA 2.0 REQUEST WAITING FOR ITS RESOURCE OWNER (#1194): an "ask me
+  // each time" share was matched, and the request waits on /portal/shared.
+  // Never throws, for `accessRequested()`'s reason.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells a resource owner that a UMA request waits for their approval.
+   *
+   * @param username - the owner
+   * @param facts - `requester`, `client`, `resource`, `scopes`,
+   *   `expiresMinutes`, `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  umaApprovalRequested(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.umaApprovalRequested(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.umaApprovalRequested(). Nobody, or no " +
+                  "transport.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'uma-approval',
+        values: { username: username, requester: String(f.requester || ''),
+                  client: String(f.client || ''),
+                  resource: String(f.resource || ''),
+                  scopes: String(f.scopes || ''),
+                  expiresMinutes: String(f.expiresMinutes || '') },
+        links: { link: '/portal/shared' },
+        dedupKey: String(f.dedupKey || ('uma-approval:' + username)),
+        via: 'a UMA request', actor: String(f.client || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.umaApprovalRequested(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0180') + 'mail: the UMA approval ' +
+               'notice for ' + username + ' in the "' + realms.currentId() +
+               '" realm could not be queued: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.umaApprovalRequested().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS (#1180): to the
+  // address on the approver's own entry, never one a request names; the
+  // link is the portal page, which signs nobody in. The dedup key names the
+  // task and the approver, so a request mailed again inside
+  // `mail.dedupWindowS` is queued once. Never throws.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells an approver an AuthZEN access request waits for them, or — for
+   * an emergency access already granted — asks for their review.
+   *
+   * @param username - the approver
+   * @param facts - `requester`, `subject`, `action`, `resource`,
+   *   `application` (data, from the denied tuple), `emergency`,
+   *   `justification`, `expiresMinutes`, `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  authzenAccessRequested(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.authzenAccessRequested(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.authzenAccessRequested(). Nobody, or " +
+                  "no transport.");
+        return out;
+      }
+      const values: Json = { username: username,
+                             requester: String(f.requester || ''),
+                             subject: String(f.subject || ''),
+                             action: String(f.action || ''),
+                             resource: String(f.resource || ''),
+                             application: String(f.application || '') };
+      if (f.emergency) {
+        values.justification = String(f.justification || '');
+      } else {
+        values.expiresMinutes = String(f.expiresMinutes || '');
+      }
+      out = mail.send({
+        username: username,
+        template: f.emergency ? 'authzen-emergency-access'
+                              : 'authzen-access-request',
+        values: values,
+        links: { link: '/portal/access-requests' },
+        dedupKey: String(f.dedupKey || ('authzen-access-request:' +
+                                        username)),
+        via: 'an AuthZEN access request', actor: String(f.requester || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.authzenAccessRequested(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHZEN-0093') + 'mail: the AuthZEN ' +
+               'access request notice for ' + username + ' in the "' +
+               realms.currentId() + '" realm could not be queued: ' +
+               ((e && e.message) || e));
+      out = { ok: false, skipped: 'threw' };
+    }
+    log.debug("Leaving MailUses.authzenAccessRequested().");
     return out;
   }
 
@@ -795,7 +1099,7 @@ class MailUses {
     log.debug("Leaving MailUses.accountDisabled().");
     return this.notice('account-disabled', username, {
       values: { why: String(why || '') }, bySystem: bySystem,
-      act: 'account disabled', via: 'account state' });
+      act: MailUses.said('act.accountDisabled'), via: 'account state' });
   }
 
   // An administrator ended a person's sessions.
@@ -804,15 +1108,18 @@ class MailUses {
    *
    * @param username - the person
    * @param count - how many were ended
-   * @param by - who ended them
+   * @param by - who ended them: a name, or a `mailValues` message
+   * (`MailUses.said()`) the channel words in the person's language
    * @returns what `notice()` answered
    */
-  sessionsEnded(username: string, count: number, by: string): Json {
+  sessionsEnded(username: string, count: number, by: string | Json): Json {
     const { log } = this.deps;
     log.debug("Entering MailUses.sessionsEnded(). " + username);
     log.debug("Leaving MailUses.sessionsEnded().");
     return this.notice('sessions-ended', username, {
-      values: { count: String(count), by: String(by || 'an administrator') },
+      values: { count: String(count),
+                by: by && typeof by === 'object' ? by
+                  : by ? String(by) : MailUses.said('by.administrator') },
       dedupKey: 'sessions-ended:' + username, via: 'an administrator' });
   }
 
@@ -839,8 +1146,8 @@ class MailUses {
     const out = mail.sendToFormerAddress({
       username: username, formerAddress: formerAddress,
       template: 'address-changed',
-      values: { username: username, when: this.when(),
-                address: newAddress || '(none)' },
+      values: { username: username, when: this.instant(),
+                address: newAddress || MailUses.said('address.none') },
       dedupKey: 'address-changed:' + formerAddress + '>' + newAddress,
       via: 'a directory change' });
     log.debug("Leaving MailUses.addressChanged().");
@@ -871,6 +1178,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   RESET_ANSWER: MailUses.RESET_ANSWER,
   VERIFY_PATH: MailUses.VERIFY_PATH,
+  said: MailUses.said,
   resetOffered: slot.forward('resetOffered'),
   requestReset: slot.forward('requestReset'),
   resetNeedsRecoveryCode: slot.forward('resetNeedsRecoveryCode'),
@@ -884,5 +1192,8 @@ export = {
   accountDisabled: slot.forward('accountDisabled'),
   sessionsEnded: slot.forward('sessionsEnded'),
   addressChanged: slot.forward('addressChanged'),
-  accessRequested: slot.forward('accessRequested')
+  accessRequested: slot.forward('accessRequested'),
+  authzenAccessRequested: slot.forward('authzenAccessRequested'),
+  postLoginReminder: slot.forward('postLoginReminder'),
+  pkiPinStatus: slot.forward('pkiPinStatus')
 };

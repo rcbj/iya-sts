@@ -95,7 +95,8 @@ function sharedClaimStore() {
           rows.set(k, { reservation: opts.reservation,
                         expiresAt: Date.now() + opts.ttlMs });
         }
-        asked.push({ scope: scope, digest: digest, claimed: claimed });
+        asked.push({ scope: scope, digest: digest, claimed: claimed,
+                     noFlushWait: !!(opts && opts.noFlushWait) });
         return { claimed: claimed, existing: claimed ? null :
                  { origin: 'the other process' } };
       });
@@ -187,6 +188,14 @@ async function refreshFamily(t) {
         }).length === 2,
                 'and both reached the shared store — the race happened and ' +
                 'the store decided it');
+        t.check(store.asked.filter(function (one) {
+          return one.scope === 'oauth.refresh';
+        }).every(function (one) {
+          return one.noFlushWait === true;
+        }),
+                'THE REFRESH SPEND DOES NOT WAIT FOR ITS OWN WAL FLUSH ' +
+                '(#886): every oauth.refresh claim asks for noFlushWait',
+                JSON.stringify(store.asked));
         const revoke = (lost && lost.revoke) || [];
         t.check(['fam-root', 'fam-child-a', 'fam-child-b'].every(
                   function (jti) { return revoke.indexOf(jti) >= 0; }),
@@ -198,6 +207,12 @@ async function refreshFamily(t) {
                 'and names the family, so the grant can revoke it by id');
 
         await bcp.revokeFamily('fam-root', 'fam-client');
+        t.check(store.asked.some(function (one) {
+          return one.scope === 'oauth.refresh-family-revoked' &&
+                 one.noFlushWait !== true;
+        }),
+                'A FAMILY REVOKED BY ID STAYS A SYNCHRONOUS CLAIM: it is ' +
+                'the durable record, and does not pass noFlushWait');
         const late = await bcp.spendRefreshToken({ claims: {
           jti: 'fam-minted-elsewhere', client_id: 'fam-client', exp: exp,
           refresh_family: 'fam-root' } });
@@ -207,6 +222,37 @@ async function refreshFamily(t) {
                 'NEVER LISTED — one minted on another node in the same ' +
                 'instant — and revokes it (STS-OAUTH-0517)',
                 JSON.stringify(late));
+
+        // THE CLAIM IS ASKED BESIDE THE FAMILY QUESTION (2026-10-21, #820):
+        // two round trips in a row on every refresh became one.
+        const realHeld = store.claimHeld;
+        const realOnce = store.claimOnce;
+        const at = {};
+        store.claimHeld = function () {
+          const args = arguments;
+          at.heldStarted = at.heldStarted || Date.now();
+          return sleep(30).then(function () {
+            at.heldDone = at.heldDone || Date.now();
+            return realHeld.apply(store, args);
+          });
+        };
+        store.claimOnce = function () {
+          at.onceStarted = at.onceStarted || Date.now();
+          return realOnce.apply(store, arguments);
+        };
+        let side = null;
+        try {
+          side = await bcp.spendRefreshToken({ claims: {
+            jti: 'fam-side-by-side', client_id: 'fam-client', exp: exp,
+            refresh_family: 'fam-side' } });
+        } finally {
+          store.claimHeld = realHeld;
+          store.claimOnce = realOnce;
+        }
+        t.check(side && side.ok && at.onceStarted && at.heldDone &&
+                at.onceStarted < at.heldDone,
+                'THE SPEND IS CLAIMED WHILE THE FAMILY IS ASKED, not after: ' +
+                'one round trip, not two', JSON.stringify(at));
 
         const failing = {
           claimOnce: function () {
@@ -466,7 +512,8 @@ function childMain() {
             rows.set(k, { reservation: opts.reservation,
                           expiresAt: Date.now() + opts.ttlMs });
           }
-          asked.push({ scope: scope, digest: digest, claimed: claimed });
+          asked.push({ scope: scope, digest: digest, claimed: claimed,
+                       noFlushWait: !!(opts && opts.noFlushWait) });
           return { claimed: claimed, existing: claimed ? null :
                    { origin: 'the other node' } };
         });
@@ -515,32 +562,20 @@ function childMain() {
                 oauthTokenEndpointAuthMethod: 'client_secret_basic' } });
     const basic = 'Basic ' + Buffer.from('once-a:' + SECRET).toString('base64');
 
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (first) {
       if (!(first.status === 302 &&
             /\/authn\/login/.test(String(first.headers.location || '')))) {
         return first;
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = 'once-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      const posted = await request(port, 'POST', screen,
-                                   { form: form, cookies: true });
-      const back = String(posted.headers.location || '')
-        .replace(/^https?:\/\/[^/]+/, '');
-      return back ? request(port, 'GET', back, { cookies: true }) : posted;
+      // THE SCREEN OVER `/authn-api` (#571), in this flow's jar.
+      const sent = await authnScreen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: 'once-alice',
+                  password: 'anything' } });
+      const back = sent.next === 'redirect'
+        ? String(sent.location || '').replace(/^https?:\/\/[^/]+/, '') : '';
+      return back ? request(port, 'GET', back, { cookies: true }) : sent;
     };
     const codeFrom = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');

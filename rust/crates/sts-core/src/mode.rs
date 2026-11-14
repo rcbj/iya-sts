@@ -273,7 +273,7 @@ impl Mode {
         };
         match (value, row.only_while_values) {
             (SettingValue::List(list), Some(_)) => {
-                if marked(row, list).is_empty() {
+                if marked(&self.settings, row, list).is_empty() {
                     return true;
                 }
             }
@@ -311,7 +311,7 @@ impl Mode {
         let Some(row) = row(key) else {
             return value;
         };
-        let read = product_value(row, &value);
+        let read = product_value(&self.settings, row, &value);
         let said = format!("{}|{}", key, source);
         let first = match self.announced.lock() {
             Ok(mut seen) => seen.insert(said),
@@ -326,7 +326,11 @@ impl Mode {
             let what = match (&value, row.only_while_values) {
                 (SettingValue::List(list), Some(_)) => format!(
                     " names {}, which is IGNORED, ",
-                    to_json(&SettingValue::List(marked(row, list)))
+                    to_json(&SettingValue::List(marked(
+                        &self.settings,
+                        row,
+                        list
+                    )))
                 ),
                 _ => format!(" is set to {} and is IGNORED, ", to_json(&value)),
             };
@@ -422,7 +426,7 @@ impl Mode {
                 let in_force = if allowed {
                     stored.clone()
                 } else {
-                    product_value(row, &stored)
+                    product_value(&self.settings, row, &stored)
                 };
                 Some(json!({
                     "key": row.key,
@@ -520,9 +524,19 @@ fn value_text(value: &SettingValue) -> String {
 }
 
 /// The elements of a list the row's `onlyWhileValues` names, compared as
-/// text.
-fn marked(row: &SettingRow, list: &[String]) -> Vec<String> {
-    let names = row.only_while_values.unwrap_or(&[]);
+/// text — and its `onlyWhileValuesUnless` values too while that setting is
+/// not on (#1456).
+fn marked(
+    settings: &Settings,
+    row: &SettingRow,
+    list: &[String],
+) -> Vec<String> {
+    let mut names: Vec<&str> = row.only_while_values.unwrap_or(&[]).to_vec();
+    if let Some(unless) = &row.only_while_values_unless {
+        if settings.value_of(unless.setting) != SettingValue::Bool(true) {
+            names.extend_from_slice(unless.values);
+        }
+    }
     list.iter()
         .filter(|one| names.contains(&one.as_str()))
         .cloned()
@@ -532,13 +546,17 @@ fn marked(row: &SettingRow, list: &[String]) -> Vec<String> {
 /// What a value the mode refuses is read as: the default, or for a list the
 /// list without the marked elements — and where nothing would be left, the
 /// default without them, so a product KDC is never left offering nothing.
-fn product_value(row: &SettingRow, value: &SettingValue) -> SettingValue {
+fn product_value(
+    settings: &Settings,
+    row: &SettingRow,
+    value: &SettingValue,
+) -> SettingValue {
     let dflt = row.parse(Some(&default_json(row.default)));
     let (SettingValue::List(list), Some(_)) = (value, row.only_while_values)
     else {
         return dflt;
     };
-    let withheld = marked(row, list);
+    let withheld = marked(settings, row, list);
     let kept: Vec<String> = list
         .iter()
         .filter(|one| !withheld.contains(one))
@@ -548,7 +566,7 @@ fn product_value(row: &SettingRow, value: &SettingValue) -> SettingValue {
         return SettingValue::List(kept);
     }
     let fallback = dflt.as_list().to_vec();
-    let marked_default = marked(row, &fallback);
+    let marked_default = marked(settings, row, &fallback);
     SettingValue::List(
         fallback
             .into_iter()

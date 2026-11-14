@@ -7,8 +7,18 @@ output "service_url" {
 }
 
 output "public_hostname" {
-  description = "The CNAME clients use, when public_hostname is set; empty otherwise."
+  description = "The name clients use, when public_hostname is set; empty otherwise."
   value       = var.public_hostname
+}
+
+output "direct_hostname" {
+  description = "The name that reaches the load balancer itself; the public name unless CloudFront is in front of it."
+  value       = local.direct_host
+}
+
+output "cloudfront_distribution_id" {
+  description = "The CloudFront distribution in front of the load balancer; empty without one, and in every cell but the primary, which holds the environment's one (#1341)."
+  value       = local.cloudfront_here ? aws_cloudfront_distribution.main[0].id : ""
 }
 
 output "public_certificate_arn" {
@@ -75,8 +85,13 @@ output "load_balancer_ports" {
 }
 
 output "spiffe_default_ports" {
-  description = "The default realm's SPIFFE ports on the load balancer (spiffe_default.tf): workload and server."
+  description = "The default realm's SPIFFE port on the load balancer (spiffe_default.tf): the SPIRE Server API. The Workload API is not published (#324)."
   value       = local.spiffe_default_ports
+}
+
+output "spiffe_workload_port_accepted" {
+  description = "Accepted and not published (#324). An apply removes a Workload API listener that an earlier apply created."
+  value       = local.spiffe_workload_port_accepted
 }
 
 output "reports_bucket" {

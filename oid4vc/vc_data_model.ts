@@ -56,7 +56,7 @@
 // resources' bytes and `common/` leaves.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import vcJsonLd = require('./vc_jsonld');
@@ -423,8 +423,8 @@ class VcDataModel {
       if (one.digestSRI !== undefined) {
         const m = /^(sha256|sha384|sha512)-([A-Za-z0-9+/]+={0,2})$/
           .exec(String(one.digestSRI));
-        const ok = !!m && crypto.createHash(m[1]).update(bytes)
-          .digest('base64') === m[2];
+        const ok = !!m &&
+          crypto.digest(m[1], bytes, 'base64') === m[2];
         if (!ok) {
           out.push({ where: at + '.digestSRI', message: 'the digestSRI does ' +
                      'not match ' + one.id + '.' });
@@ -433,8 +433,7 @@ class VcDataModel {
       if (one.digestMultibase !== undefined) {
         const text = String(one.digestMultibase);
         const ok = text.charAt(0) === 'u' &&
-          crypto.createHash('sha256').update(bytes).digest('base64url') ===
-            text.slice(1);
+          crypto.digest('sha256', bytes, 'base64url') === text.slice(1);
         if (!ok) {
           out.push({ where: at + '.digestMultibase', message: 'the ' +
                      'digestMultibase does not match ' + one.id +

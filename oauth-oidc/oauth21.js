@@ -140,7 +140,7 @@ const REQUIREMENTS = [
     title: 'Accept a token request with no redirect_uri',
     note: 'THE ROW THAT MAKES THIS A MODE OF ITS OWN. RFC 6749 section 4.1.3 ' +
           'required redirect_uri at the token endpoint, and RFC 9700 mode ' +
-          'enforces that (transaction-bound, STS-OAUTH-0147). OAuth 2.1 ' +
+          'enforces that (transaction-bound). OAuth 2.1 ' +
           'removed the parameter because PKCE binds the code instead, so a ' +
           'client following 2.1 alone never sends it. Section 10.2 still ' +
           'requires a server that supports both kinds of client to accept it ' +
@@ -419,17 +419,19 @@ function registeredClientRefusal(client, clientId) {
     return refusal('STS-OAUTH-0272', 'invalid_request',
       'registered-client-required',
       'section 2.3.1: a client must have registered its complete redirect ' +
-      'URI. Client "' + clientId + '" holds ' + withheld.length + ' ' +
-      'redirect URI(s) this service observed and nobody has confirmed (' +
-      withheld.join(', ') + '), and product mode does not believe an ' +
-      'observed address. Confirm the one it should use on ' +
+      // The observed addresses are not named (#1331): they are values a
+      // caller could aim at, and the operator sees them on the console.
+      'URI. Client "' + clientId + '" has only redirect URIs this service ' +
+      'observed and nobody has confirmed, and product mode does not ' +
+      'believe an observed address. Confirm the one it should use on ' +
       '/admin/applications, or POST /admin-api/applications/confirm-address.');
   }
   log.debug("Leaving registeredClientRefusal(). None at all.");
   return refusal('STS-OAUTH-0271', 'invalid_request',
     'registered-client-required',
     'section 2.3.1: "Authorization servers MUST require clients to register ' +
-    'their complete redirect URI." Client "' + (clientId || '') + '" has ' +
+    'their complete redirect URI." ' +
+    (clientId ? 'Client "' + clientId + '"' : 'This client') + ' has ' +
     ((client && client.known) ? 'an entry here with no redirect URI on it'
                               : 'no entry here at all') + '. ' +
     'Register it at POST /oauth2/register with its redirect_uris, or give ' +
@@ -918,11 +920,12 @@ function loopbackAnyPort() {
  *
  * @param repeated - the names found more than once
  * @param where - the endpoint, named in the refusal
+ * @param always - ask whether or not this mode is on
  * @returns null, or an `invalid_request` refusal
  */
-function repeatedParameterRefusal(repeated, where) {
+function repeatedParameterRefusal(repeated, where, always) {
   log.debug("Entering repeatedParameterRefusal().");
-  if (!enabled()) {
+  if (!enabled() && !always) {
     log.debug("Leaving repeatedParameterRefusal(). The mode is off.");
     return null;
   }

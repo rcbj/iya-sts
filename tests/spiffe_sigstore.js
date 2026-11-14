@@ -50,7 +50,7 @@ const pkijs = require('pkijs');
 
 const config = require('../common/config');
 const kit = require('./webauthn_attestation_kit');
-const pqx = require('../common/vendored/pqc_x509');
+const pqx = require('../common/crypto_impl/pqc_x509');
 const sigstore = require('../spiffe/spiffe_sigstore');
 const tufModule = require('../spiffe/spiffe_sigstore_tuf');
 const dockerAttestor = require('../spiffe/spiffe_workload_attestor_docker');

@@ -21,6 +21,8 @@
 // lazy one keeps the order a non-question.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -34,6 +36,7 @@ interface GrantManagementApiDeps {
   parseBody: typeof helpers.parseBody;
   errorCodes: typeof errorCodes;
   loadGrants(): Json;
+  loadViews(): Json;
 }
 
 const BASE = '/admin-api';
@@ -69,6 +72,11 @@ class GrantManagementApi {
       errorCodes: errorCodes,
       loadGrants: function (): Json {
         return require('./grant_management');
+      },
+      // The console's paging, required lazily for the grant register's
+      // reason: this file is required at 19 and `admin_views` long before.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -91,13 +99,65 @@ class GrantManagementApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering GrantManagementApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving GrantManagementApi.sendJson().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE GRANTS, SEARCHED AND PAGED (#313's sweep, 2026-10-12).
+  //
+  // One row per (person, client) authorization, kept until it expires or is
+  // revoked, so the register grows with the realm. `/admin/grants` is drawn
+  // from this answer, so the page and a caller read the same slice. `grantq`
+  // is a substring over the three identifiers a reader arrives holding;
+  // filter first, then page, on `grantsPage` — `pagingOf()`'s rule.
+  //
+  // PAGED BEFORE IT IS DECORATED (2026-10-22, #820): the grant resource
+  // (scopes, claims, details) is built for the page's rows only; the filter
+  // reads the three identifiers a bare row already has.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the grants answer: one page of the grants the query matched.
+   *
+   * @param query - the request's query
+   * @returns the grants, the counts, the filter and the paging
+   */
+  grantsView(query: Json): Json {
+    const { log, loadGrants, loadViews } = this.deps;
+    log.debug("Entering GrantManagementApi.grantsView().");
+    const views = loadViews();
+    const clientId = String(query.client_id || '').slice(0, 256);
+    const wanted = String(views.queryOne(query, 'grantq') || '')
+      .trim().slice(0, 256);
+    const needle = wanted.toLowerCase();
+    const register = loadGrants();
+    const all: Json[] = register.list(clientId || undefined, { bare: true });
+    const matched = all.filter(function (g: Json): boolean {
+      return !needle ||
+        [g.grantId, g.clientId, g.subject].some(function (v: Json): boolean {
+          return String(v || '').toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+    const page = views.pagedRows(query, matched,
+                                 { name: 'grants', noun: 'grants' });
+    const shown = page.shown.map(function (g: Json): Json {
+      return register.decorate(g);
+    });
+    log.debug("Leaving GrantManagementApi.grantsView(). " +
+              shown.length + " of " + matched.length + ".");
+    return { grants: shown, total: all.length, matched: matched.length,
+             filter: { q: wanted || null, clientId: clientId || null },
+             paging: { grants: views.pagingJson(page.paging) } };
   }
 
   /**
@@ -110,39 +170,36 @@ class GrantManagementApi {
     const { log, parseBody, errorCodes, loadGrants } = this.deps;
     const self = this;
     log.debug("Entering GrantManagementApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/grants', tag: 'OAuth 2.0 / OIDC',
         operationId: 'getGrants',
-        summary: 'The OAuth grants this realm holds (Grant Management for ' +
-                 'OAuth 2.0)',
-        description: 'Everything /admin/grants draws: every grant a client ' +
-          'created, merged or replaced through Grant Management, newest ' +
-          'first — its grant_id, client, subject and generation, the ' +
-          'grant resource the grant management API answers (scopes and ' +
-          'resources, claims, authorization_details, created_at, ' +
-          'last_updated, expires_at, updated_by) and how many tokens ' +
-          'minted under it this realm still records. Never a token.',
         mirrors: 'GET /admin/grants',
         parameters: [
           { name: 'client_id', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
-            description: 'Only this client\'s grants.' }
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['no-such-client'] },
+            description: 'Only this client\'s grants.' },
+          { name: 'grantq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
+            description: 'Narrows the grants to those whose grant_id, ' +
+                         'client or subject contains this.' },
+          { name: 'grantsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [1] },
+            description: 'Which page of the matched grants. Clamped, like ' +
+                         'every page parameter here.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [10] },
+            description: 'Grants per page, capped.' }
         ],
-        responseDescription: 'The grants.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`grants`: one row per grant.' },
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API grants endpoint.");
-          const clientId = String((req.query || {}).client_id || '')
-            .slice(0, 256);
-          self.sendJson(res, 200,
-                        { grants: loadGrants().list(clientId || undefined) });
+          self.sendJson(res, 200, self.grantsView(req.query || {}));
           log.debug("Leaving the management API grants endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/grants/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/grants/:action',
         tag: 'OAuth 2.0 / OIDC', mirrors: 'POST /admin/grants',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API grants action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -171,27 +228,8 @@ class GrantManagementApi {
                     result.ok);
         },
         actions: [
-          { action: 'revoke-grant', operationId: 'revokeGrant',
-            summary: 'Revoke a grant',
-            description: 'What a client\'s DELETE /oauth2/grants/{grant_id} ' +
-              'does, done by an administrator: the grant leaves the ' +
-              'register, so every refresh token issued under it is ' +
-              'refused, and every token this realm recorded under it is ' +
-              'revoked. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                grantId: { type: 'string', minLength: 1, maxLength: 128,
-                           description: 'The grant_id, as GET ' +
-                                        '/admin-api/grants lists it.' }
-              },
-              required: ['grantId'],
-              examples: [{ grantId: 'TSdqirmAxDa0_-DB_1bASQ' }],
-              additionalProperties: false
-            },
-            responseDescription: 'How many tokens were revoked with it.' }
-        ] }
+          { action: 'revoke-grant', operationId: 'revokeGrant' }
+        ] })
     ];
     log.debug("Leaving GrantManagementApi.buildRoutes().");
     return ROUTES;

@@ -9,15 +9,18 @@
     "strict": false,
     "skipLibCheck": true,
     "types": ["node"],
-    "typeRoots": ["./tests/node_modules/@types"]
+    "typeRoots": ["./tests/node_modules/@types"],
+    "paths": { "express": ["./tests/node_modules/@types/express"] }
   },
   "include": [
     "server.js", "sts_metadata.ts", "types/**/*.d.ts",
     "acme/*.js", "acme/*.ts",
     "admin-core/*.js", "admin-core/*.ts",
+    "account-api/*.js", "account-api/*.ts",
     "admin-ui/*.js", "admin-ui/*.ts",
     "attribute-sources/*.js", "attribute-sources/*.ts",
     "authn/*.js", "authn/*.ts",
+    "authzen/*.js", "authzen/*.ts",
     "cluster/*.js", "cluster/*.ts",
     "common/*.js", "common/*.ts",
     "debugger/*.js", "debugger/*.ts",
@@ -26,6 +29,7 @@
     "gnap/*.js", "gnap/*.ts",
     "home/*.js", "home/*.ts",
     "kerberos/*.js", "kerberos/*.ts",
+    "launch/*.js", "launch/*.ts",
     "ldap/*.js", "ldap/*.ts",
     "logout/*.js", "logout/*.ts",
     "mgmt-api/*.js", "mgmt-api/*.ts",
@@ -35,19 +39,22 @@
     "persistence/*.js", "persistence/*.ts",
     "pki/*.js", "pki/*.ts",
     "portal/*.js", "portal/*.ts",
+    "report/*.js", "report/*.ts",
     "risk/*.js", "risk/*.ts",
     "saml/*.js", "saml/*.ts",
     "scep/*.js", "scep/*.ts",
     "scim/*.js", "scim/*.ts",
     "spiffe/*.js", "spiffe/*.ts",
+    "uma/*.js", "uma/*.ts",
     "ssf/*.js", "ssf/*.ts",
     "tls/*.js", "tls/*.ts",
     "ws-federation/*.js", "ws-federation/*.ts",
     "ws-trust/*.js", "ws-trust/*.ts",
-    "xacml/*.js", "xacml/*.ts"
+    "xacml/*.js", "xacml/*.ts",
+    "models/**/*.ts"
   ],
   "exclude": [
     "node_modules", "tests/node_modules", "node-ldapjs",
-    "common/vendored", "debugger/embedded"
+    "common/crypto_impl", "debugger/embedded"
   ]
 }

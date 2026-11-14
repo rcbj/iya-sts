@@ -36,7 +36,7 @@
 //     hundred.
 //
 // The AP-REQs below are built here, against the acceptor's own key, with the
-// vendored codec — the same shape `tests/vendored/krb5_drive.js` sends — so the
+// vendored codec — the same shape `tests/protocol/krb5_drive.js` sends — so the
 // acceptor runs every one of its checks rather than a stub of them.
 // ===========================================================================
 
@@ -118,7 +118,8 @@ const SUMMARY = 'return { demo: p.seedsDemoPrincipals, served: ' +
   'p.krbtgtUnavailableReason(), etypes: p.KDC_ETYPES, all: ' +
   'p.all().map(function (x) { return { name: x.name.join("/") + "@" + ' +
   'x.realm, password: x.password, salt: x.salt, kvno: x.kvno, etypes: ' +
-  'p.supportedEtypes(x) }; }), seeds: p.delegationSeeds() };';
+  'p.supportedEtypes(x) }; }), seeds: p.delegationSeeds(), ' +
+  'advertised: p.ADVERTISED_SERVICE_HOSTS, domains: p.SERVICE_DOMAINS };';
 
 function names(report) {
   log.debug("Entering names().");
@@ -166,7 +167,7 @@ function productModeHoldsNoFixtures(t) {
           'are fixtures',
           JSON.stringify(bare.report.served));
 
-  const configured = inAChild({ STS_MODE: 'product',
+  const configured = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
                                 KRB5_KRBTGT_PASSWORD: 'not-the-published-one',
                                 KRB5_SERVICE_PASSWORD: 'the-keytab-secret',
                                 KRB5_SERVICE_SALT: 'EXAMPLE.COMsvc-web' },
@@ -183,6 +184,16 @@ function productModeHoldsNoFixtures(t) {
           'with both set it holds krbtgt and the configured service account, ' +
           'and nothing else',
           JSON.stringify(names(configured.report)));
+  // THE HOSTS A PAGE OR HEADER ADVERTISES (2026-10-12): none in product,
+  // where the KDC registers no `HTTP/<host>` on first sight, although the
+  // configured list is still there to be advertised in development.
+  t.check(Array.isArray(configured.report.advertised) &&
+          configured.report.advertised.length === 0 &&
+          (configured.report.domains || []).length > 0,
+          'product mode advertises no host whose SPN the KDC would not ' +
+          'issue (ADVERTISED_SERVICE_HOSTS is empty, SERVICE_DOMAINS is not)',
+          JSON.stringify({ advertised: configured.report.advertised,
+                           domains: configured.report.domains }));
   t.check((configured.report.all[0] || {}).password === null,
           'and a KRB5_KRBTGT_PASSWORD set in product is IGNORED: the krbtgt ' +
           'still carries no password (#169, the onlyWhile marker)',
@@ -230,6 +241,12 @@ function theServiceAccountFollowsTheSetting(t) {
           'the account the acceptor looks for EXISTS under the configured ' +
           'name — it was always HTTP/web.<domain> whatever the setting said',
           JSON.stringify(account || null));
+  t.check(JSON.stringify(moved.report.advertised) ===
+          JSON.stringify(moved.report.domains) &&
+          (moved.report.advertised || []).length > 0,
+          'development mode advertises every host it registers an SPN for',
+          JSON.stringify({ advertised: moved.report.advertised,
+                           domains: moved.report.domains }));
   t.check(names(moved.report).indexOf('HTTP/web.example.com@' +
                                       principals.REALM) >= 0,
           'and the fixture HTTP/web account is still there in development, ' +
@@ -475,7 +492,7 @@ function theAcceptorExplainsAMissingAccount(t) {
     ', JSON.stringify(r.checks)); process.exit(0); });';
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign({}, process.env,
-                       { STS_MODE: 'product', LOG_LEVEL: 'fatal' }),
+                       { STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true', LOG_LEVEL: 'fatal' }),
     encoding: 'utf8', timeout: 60000
   });
   let checks = null;

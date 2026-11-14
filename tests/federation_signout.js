@@ -14,7 +14,7 @@
 // Front-Channel logout, a WS-Federation cleanup — and tells a partner of a
 // sign-out here; `federation_sp.ts` keeps what a sign-in learns about the
 // partner's session and its SessionNotOnOrAfter; `logout/logout.ts` ends the
-// matched session through its one model. `tests/vendored/
+// matched session through its one model. `tests/protocol/
 // sts_federation_signout.js` drives all of it over HTTP against a running
 // service; this file holds what a running service cannot be made to show on
 // demand, and what is cheaper to pin at the function:
@@ -91,7 +91,7 @@ function childMain() {
     const backchannel = require(ROOT + '/oauth-oidc/backchannel_logout');
     const logout = require(ROOT + '/logout/logout');
     const stats = require(ROOT + '/common/admin_stats');
-    const xmldsig = require(ROOT + '/tests/vendored/saml_xmldsig');
+    const xmldsig = require(ROOT + '/tests/protocol/saml_xmldsig');
     const forge = require('node-forge');
 
     // EVERY CODE A RESPONSE IS MARKED WITH, in order: the refusals' codes
@@ -108,7 +108,7 @@ function childMain() {
 
     // HTTPS under a CA of this child's own — federation_subject_policy.js's
     // arrangement and reason: product refuses a plain-http back channel.
-    const testCa = require(ROOT + '/tests/vendored/outbound_test_ca');
+    const testCa = require(ROOT + '/tests/protocol/outbound_test_ca');
     const ca = await testCa.makeCa();
     const leaf = await testCa.listenerCertificate(ca, '127.0.0.1');
     const caPem = ca.certPem;
@@ -119,6 +119,7 @@ function childMain() {
                                       app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const base = 'https://127.0.0.1:' + port;
     const SP = 'fso' + (MODE === 'product' ? 'p' : 'd');
     const REL = 'fso-oidc';
@@ -176,6 +177,14 @@ function childMain() {
         req.end(body);
       });
     }
+    // THE SIGN-OUT PAGE IN THE SP REALM, as its page signs out (#577):
+    // the view, the act over /authn-api/logout, and the signed-out
+    // document it answers where the browser has a partner to tell.
+    function signOutHere(fields) {
+      return authnScreen.signOut({ port: port, ca: caPem, jar: jar,
+        prefix: '/realm/' + SP, fields: fields,
+        origin: new URL(base).origin });
+    }
     function inSp(fn) {
       return realms.run(realms.get(SP), fn);
     }
@@ -184,10 +193,6 @@ function childMain() {
     }
     function wait(ms) {
       return new Promise(function (r) { setTimeout(r, ms); });
-    }
-    function hidden(text, name) {
-      const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(text);
-      return m ? m[1] : '';
     }
     function decodeHtml(text) {
       return String(text || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
@@ -372,8 +377,11 @@ function childMain() {
       }
       return helpers.subjectForName(PERSON);
     });
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode.
     inSp(function () {
-      ldap.createUser(PERSON, { invent: false });
+      ldap.createUser(PERSON, { invent: false, attributes: {
+        givenName: 'Fso', sn: PERSON, mail: PERSON + '@example.test' } });
     });
     const linked = inSp(function () {
       return actions.usersAction({ action: 'federation-link', user: PERSON,
@@ -392,6 +400,21 @@ function childMain() {
       let r = await request('GET', '/realm/' + SP + '/federation/login/' +
                                    REL);
       for (let hop = 0; hop < 20; hop += 1) {
+        // THE PARTNER'S SIGN-IN SCREEN, a static surface over `/authn-api`
+        // since #571: signed in as its page does, its answer followed.
+        if (r.status >= 300 && r.status < 400 &&
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(r.headers.location))) {
+          const at = new URL(r.headers.location, base);
+          const sent = await authnScreen.submit({ port: port, ca: caPem,
+            jar: jar, at: at.pathname + at.search,
+            fields: { action: 'login', username: PERSON, password: 'x' } });
+          if (sent.next !== 'redirect') {
+            r = sent;
+            break;
+          }
+          r = await request('GET', sent.location);
+          continue;
+        }
         if (r.status >= 300 && r.status < 400 && r.headers.location) {
           const next = new URL(r.headers.location, base);
           if (next.pathname.indexOf('/realm/' + SP + '/federation/acs/') ===
@@ -399,13 +422,6 @@ function childMain() {
             partnerJar = Object.assign({}, jar);
           }
           r = await request('GET', r.headers.location);
-          continue;
-        }
-        const authnId = hidden(r.text, 'authn_id');
-        if (r.status === 200 && authnId) {
-          r = await request('POST', '/authn/login', { form: {
-            authn_id: authnId, username: PERSON, password: 'x',
-            action: 'login' } });
           continue;
         }
         break;
@@ -578,8 +594,7 @@ function childMain() {
       return !row.terminable && /own sign-out/.test(row.why);
     }), '4a. with no browser (/admin/logout, the API) the partner row is ' +
         'listed and cannot be ended', JSON.stringify(partnerRows));
-    const out = await request('POST', '/realm/' + SP + '/logout',
-                              { form: { scope: 'global' } });
+    const out = await signOutHere({ scope: 'global' });
     const link = decodeHtml((/href="([^"]*end_session[^"]*|[^"]*oauth2\/logout[^"]*)"/
       .exec(out.text) || [])[1] || '');
     const asked = link ? new URL(link) : null;
@@ -735,6 +750,27 @@ function childMain() {
            one[0] + ', and ends nothing', r.status + ' ' +
            JSON.stringify(marks.slice(since)));
     }
+    // THE REFUSAL IS THE SHARED ERROR PAGE (#1327): the sentence for the
+    // code in the page's language, "no session was ended" below it, the
+    // background collapsed, the way to the portal, and the diagnostics with
+    // an incident ID and the English detail as data.
+    const shown = await request('GET', refusals[0][1].url.replace(base, ''),
+      { headers: { 'accept-language': 'fr' } });
+    note(shown.status === 403 &&
+         /<html lang="fr"/.test(shown.text) &&
+         shown.text.indexOf('La déconnexion du partenaire a été refusée') >
+           0 &&
+         shown.text.indexOf('n’est pas signé, et cette relation') > 0 &&
+         shown.text.indexOf('Aucune session n’a été fermée ici.') > 0 &&
+         /<details class="prose">[\s\S]*fedLastError/.test(shown.text) &&
+         /href="[^"]*\/portal"/.test(shown.text) &&
+         /section class="diagnostics"/.test(shown.text) &&
+         /<dd><code>\d+<\/code><\/dd>/.test(shown.text) &&
+         shown.text.indexOf('The LogoutRequest is not signed') > 0 &&
+         shown.text.indexOf('federation/CLAUDE.md') < 0,
+         '5c-ii. a refused sign-out is the shared error page, in French ' +
+         'for a browser that asks for it, with its incident ID',
+         shown.status + ' ' + shown.text.slice(0, 600));
     since = marks.length;
     const unknown = await request('GET', logoutRequestUrl({
       sessionIndex: 'idx-nobody', key: partnerKey }).url.replace(base, ''));
@@ -774,8 +810,7 @@ function childMain() {
     // signed LogoutRequest; its LogoutResponse is matched once.
     await samlSignIn('idx-two-' + MODE, '');
     held = fedSession(SAML);
-    const bye = await request('POST', '/realm/' + SP + '/logout',
-                              { form: { scope: 'global' } });
+    const bye = await signOutHere({ scope: 'global' });
     const outLink = decodeHtml((/href="(https:\/\/partner\.invalid\/slo[^"]*)"/
       .exec(bye.text) || [])[1] || '');
     let sent = null;
@@ -834,6 +869,93 @@ function childMain() {
            'InResponseTo and RelayState once; again it is refused (0124)',
            confirmed.status + ' ' + twice.status);
     }
+
+    // THE TWO SIGN-OUT OUTCOMES ARE TRANSLATED (#1327, rcbj), and neither is
+    // the error page: an outcome keeps its own layout and its 200.
+    //
+    // 5m. The partner answers the round trip with a status other than
+    // Success: "signed out here, and not at the partner", in French for a
+    // browser that asks for it, its StatusCode and StatusMessage as sent.
+    await samlSignIn('idx-three-' + MODE, '');
+    const byeAgain = await signOutHere({ scope: 'global' });
+    const againLink = decodeHtml((/href="(https:\/\/partner\.invalid\/slo[^"]*)"/
+      .exec(byeAgain.text) || [])[1] || '');
+    let refusedOutcome = { status: 0, text: '' };
+    if (againLink) {
+      const raw = new URL(againLink).search.slice(1);
+      const pick = function (name) {
+        const m = new RegExp('(?:^|&)' + name + '=([^&]*)').exec(raw);
+        return m ? m[1] : '';
+      };
+      const xml = zlib.inflateRawSync(Buffer.from(decodeURIComponent(
+        pick('SAMLRequest')), 'base64')).toString('utf8');
+      const requestId = (/ID="([^"]+)"/.exec(xml) || [])[1];
+      const lrXml = '<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:' +
+        'SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:' +
+        'assertion" ID="_lresp' + nodeCrypto.randomBytes(6).toString('hex') +
+        '" Version="2.0" IssueInstant="' + new Date().toISOString() +
+        '" Destination="' + samlSlo + '" InResponseTo="' + requestId +
+        '"><saml:Issuer>' + PARTNER + '</saml:Issuer><samlp:Status>' +
+        '<samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:' +
+        'Responder"/><samlp:StatusMessage>fso partner busy' +
+        '</samlp:StatusMessage></samlp:Status></samlp:LogoutResponse>';
+      let qs = 'SAMLResponse=' + encodeURIComponent(zlib.deflateRawSync(
+        Buffer.from(lrXml)).toString('base64')) + '&RelayState=' +
+        encodeURIComponent(decodeURIComponent(pick('RelayState'))) +
+        '&SigAlg=' + encodeURIComponent(RSA_SHA256);
+      qs += '&Signature=' + encodeURIComponent(nodeCrypto.sign('sha256',
+        Buffer.from(qs), partnerKey.privateKeyPem).toString('base64'));
+      since = marks.length;
+      refusedOutcome = await request('GET', '/realm/' + SP +
+        '/federation/slo/' + SAML + '?' + qs,
+        { headers: { 'accept-language': 'fr' } });
+    }
+    note(refusedOutcome.status === 200 && marked(since, 'STS-FED-0125') &&
+         /<html lang="fr"/.test(refusedOutcome.text) &&
+         /Déconnecté ici, mais pas chez le partenaire/
+           .test(refusedOutcome.text) &&
+         /<code>urn:oasis:names:tc:SAML:2\.0:status:Responder<\/code>/
+           .test(refusedOutcome.text) &&
+         /fso partner busy/.test(refusedOutcome.text) &&
+         /class="language-row"/.test(refusedOutcome.text) &&
+         !/<div class="warn"/.test(refusedOutcome.text) &&
+         !/Signed out here/.test(refusedOutcome.text),
+         '5m. a partner\'s non-Success LogoutResponse is the outcome page ' +
+         '(0125), 200, in French with its chooser, the StatusCode and ' +
+         'StatusMessage as sent, and not the error page',
+         refusedOutcome.status + ' ' + refusedOutcome.text.slice(0, 600));
+
+    // 5n. A WS-Federation partner's wsignoutcleanup1.0 for a browser that
+    // holds none of its sessions: "nothing to sign out", in French.
+    const WSFED = 'fso-wsfed';
+    const wsMade = inSp(function () {
+      return federation.create({ fedId: WSFED, fedRole: 'service-provider',
+                                 fedProtocol: 'wsfed' });
+    });
+    ['fedPeer:urn:test:fso-wsfed-partner:' + MODE,
+     'fedSsoUrl:https://wsfed-partner.invalid/sts',
+     'fedSigningCertificate:' + partnerKey.der,
+     // Product refuses a plaintext assertion unless allowed, as for SAML.
+     'fedAllowUnencrypted:TRUE',
+     'fedEnabled:TRUE'].forEach(function (one) {
+      const at = one.indexOf(':');
+      setRel(WSFED, one.slice(0, at), one.slice(at + 1));
+    });
+    since = marks.length;
+    const nothing = await request('GET', '/realm/' + SP +
+      '/federation/slo/' + WSFED + '?wa=wsignoutcleanup1.0',
+      { headers: { 'accept-language': 'fr' } });
+    note(wsMade.ok && nothing.status === 200 &&
+         marked(since, 'STS-FED-0122') &&
+         /<html lang="fr"/.test(nothing.text) &&
+         /<h1>Rien à déconnecter<\/h1>/.test(nothing.text) &&
+         nothing.text.indexOf(WSFED) > 0 &&
+         /class="language-row"/.test(nothing.text) &&
+         !/<div class="warn"/.test(nothing.text) &&
+         !/Nothing to sign out/.test(nothing.text),
+         '5n. a wsignoutcleanup1.0 with nothing to end is the outcome page ' +
+         '(0122), 200, in French with its chooser, and not the error page',
+         nothing.status + ' ' + nothing.text.slice(0, 600));
 
     // =======================================================================
     // 6. SessionNotOnOrAfter
@@ -904,6 +1026,7 @@ function runMode(t, modeName) {
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', FSO_ROOT: ROOT,
+        STS_SECURITY_FILE_ROOTS: os.tmpdir(),
                                   FSO_OUT: out, FSO_MODE: modeName }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });

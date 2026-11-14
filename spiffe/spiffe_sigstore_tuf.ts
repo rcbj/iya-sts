@@ -193,6 +193,7 @@ class SigstoreTuf {
   firstRoot(): { root: any; key: string } {
     const { log, fs, stsCrypto } = this.deps;
     log.debug("Entering SigstoreTuf.firstRoot().");
+    require('../common/outbound_tls').assertNamedFile(this.rootFile());
     const text = fs.readFileSync(this.rootFile());
     log.debug("Leaving SigstoreTuf.firstRoot().");
     return { root: JSON.parse(text.toString('utf8')),

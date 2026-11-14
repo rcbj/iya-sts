@@ -302,19 +302,28 @@ function aaguidExtension(aaguid, critical) {
 
 // packed, Basic: an attestation certificate under `anchor` (section 8.2.1's
 // subject, CA false, the AAGUID extension). spoil: 'signature', 'ou',
-// 'aaguid-extension', 'ca'. `crl` names a distribution point.
-async function packed(ctx, anchor, spoil, crl) {
+// 'aaguid-extension', 'ca'. `crl` names a distribution point. `serial`
+// (#532) puts a device serial where an enterprise attestation does:
+// `{ subject: '...' }` as the subject's serialNumber, `{ yubico: n }` as
+// Yubico's serial extension (an INTEGER).
+async function packed(ctx, anchor, spoil, crl, serial) {
   log.debug("Entering packed().");
   const att = await keyPair('ec');
+  const extra = [];
+  if (serial && serial.yubico !== undefined) {
+    extra.push(extension('1.3.6.1.4.1.41482.13.1', false,
+      new asn1js.Integer({ value: Number(serial.yubico) }).toBER(false)));
+  }
   const leaf = await certificate({
     subject: [['2.5.4.6', 'US'], ['2.5.4.10', 'Synthetic Vendor'],
               ['2.5.4.11', spoil === 'ou' ? 'Something Else'
                                           : 'Authenticator Attestation'],
-              ['2.5.4.3', 'Synthetic Attestation']],
+              ['2.5.4.3', 'Synthetic Attestation']]
+      .concat(serial && serial.subject ? [['2.5.4.5', serial.subject]] : []),
     publicKey: att.crypto.publicKey, issuer: anchor, crl: crl,
     ca: spoil === 'ca' ? true : false,
     extensions: [aaguidExtension(spoil === 'aaguid-extension'
-      ? Buffer.alloc(16, 0xee) : ctx.aaguid)] });
+      ? Buffer.alloc(16, 0xee) : ctx.aaguid)].concat(extra) });
   const signed = Buffer.concat([ctx.authData, ctx.clientDataHash]);
   let sig = nodeCrypto.sign('sha256', signed, att.privateKey);
   if (spoil === 'signature') {

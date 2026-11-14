@@ -53,28 +53,41 @@
 //   * THE ANSWER IS POSTED, NEVER GOT. A GET that recorded consent would be a
 //     consent anything that prefetches a link could give — a browser, a chat
 //     client unfurling a URL, a security scanner. The screen is a GET and the
-//     decision is a POST, which is what a form is for.
+//     decision is a POST: since #576, `POST /authn-api/consent/{id}`.
 //
 // ---------------------------------------------------------------------------
-// NO SCRIPT, AND THEREFORE NO CSP RELAXATION AT ALL.
+// A PAGE OF THE SIGN-IN SURFACE SINCE #576 (#569's umbrella).
 //
-// `app.js` sets `script-src 'none'` for the whole service and CLAUDE.md's rule
-// is that a page wanting a script has to argue that it CANNOT work without one.
-// This one plainly can: it is two buttons in a form. So the policy is untouched
-// — no `contentSecurityPolicy()` override anywhere in this file — and this is
-// not a candidate for the list of scripted pages.
+// Until #576 this module drew the page (two buttons in a form, no script)
+// and took the form's POST. It is a static surface's page now, on #571's
+// pattern (`authn/CLAUDE.md`): `GET /oauth2/consent` answers the SHELL after
+// the three checks — refusing as it always did — and the sign-in surface's
+// bundle, served here as `/oauth2/consent.js`, draws the page from
+// `GET /authn-api/consent/{id}` (`consentView()`) and sends Allow or Deny to
+// `POST /authn-api/consent/{id}` (`consentAct()`), bound by
+// `authn/authn_api.ts` as every act there is: JSON, an Origin of this
+// service, and the CSRF token of the browser's `sts_session` cookie.
+// SCRIPT IS REQUIRED (rcbj on #569): the shell's `<noscript>` says so.
 //
-// The stylesheet is `authn.js`'s CARD_CSS, imported rather than copied. A
-// person meets the sign-in screen and this screen in one flow, seconds apart,
-// and two hand-maintained stylesheets would drift into looking like two
-// different services.
+// NOTHING THE SCREEN DECIDES MOVED. The record, its three checks, the
+// limits a person may lower, the record spent either way, the audit rows,
+// the consent written and `consent_error` handed back are what the form's
+// POST did; the answer that was a 303 now NAMES the address
+// (`next: redirect`) and the page goes there with a GET. The authorization
+// endpoint, its redirects and its response modes are untouched.
+//
+// The stylesheet is the card every page of the sign-in surface is drawn
+// with (`/web/card.css`, `common/web_card_css.ts`), whose `.card.consent`
+// rules are the ones this module appended to it while it drew the page. A
+// person meets the sign-in screen and this screen in one flow, seconds
+// apart, and two stylesheets would drift into looking like two services.
 //
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape, for a module that registers routes (rule 1): `ConsentScreen` takes
 // the session owner, the consent register, the audit log and the rest through
-// its constructor, and its `registerRoutes(app)` holds the GET and the POST in
-// their old order. The pending store stays module-level, declared at load as
+// its constructor, and its `registerRoutes(app)` holds the GET (the shell
+// since #576) and the page's script. The pending store stays module-level, declared at load as
 // before. The module logs the line it always logged at load, and registers
 // NOTHING (#50, R1): it exports `registerRoutes(app)`, which
 // `common/protocol_stack.ts` calls at the point in the route order where
@@ -100,7 +113,9 @@ import errorCodes = require('../common/error_codes');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
-// The session, and the stylesheet the sign-in screen is drawn with. This module
+// The request shape of `/oauth2/consent`, from the model (#1579).
+import OAuthModel = require('./oauth_model');
+// The session, the answers and the sign-in surface's bundle. This module
 // is required AFTER authn.js in `common/protocol_stack.ts`, so this is a cache
 // hit — and since #50's R1 requiring a converted module registers nothing, so
 // it could move no route from anywhere; and that module does not require this
@@ -112,6 +127,17 @@ import LimitsForm = require('../common/limits_form');
 // RFC 9396: what an authorization_details row says, and the one-time Allow.
 // A library that registers nothing, so requiring it here moves no route.
 import authorizationDetails = require('./authorization_details');
+// The page's language (#539): the authorization request's `ui_locales`, the
+// person, the client's locale policy. A library that registers nothing.
+import PageLocale = require('../common/page_locale');
+
+// The static surfaces' one shell writer (#570, #576).
+import ShellDocument = require('../common/shell_document');
+// Which listener this request arrived on, and whether it answers `/authn`
+// (#472), for the language chooser's address. A LEAF.
+import listenerMap = require('../common/listener_map');
+// What a detail's limits say, row by row, for the view (#576).
+import AccessLimits = require('../common/access_limits');
 
 // A loose JSON-shaped object: a pending record, a row, an answer.
 type Json = any;
@@ -138,10 +164,11 @@ interface ConsentScreenDeps {
   authorizationDetails: typeof authorizationDetails;
 }
 
-const vt = validation.types;
-const vz = validation.z;
-
 const CONSENT_PATH = '/oauth2/consent';
+
+// THE PAGE'S SCRIPT (#576): the sign-in surface's bundle, at this page's
+// own address.
+const CONSENT_SCRIPT_PATH = '/oauth2/consent.js';
 
 // Ten minutes, `authn.js`'s AUTHN_TTL_MS by intention rather than by accident:
 // the two records are two halves of one interrupted request, and a consent that
@@ -171,23 +198,6 @@ const pending = realms.map({ persist: 'consent_screen.pending',
                              // #333: the screen's `expires`, ms.
                              expiresAt: realms.expiryField('expires', 1) });
 
-// The few rules the sign-in screen's stylesheet has no use for. Appended rather
-// than merged into CARD_CSS, so that a change here cannot alter the sign-in
-// screen — which four tests and a person's muscle memory depend on.
-const CONSENT_CSS =
-  // #432 phase 5: a detail's limit controls, as GNAP's approval page draws.
-  'div.limits{margin:6px 0 0;font-size:.9em}div.limits div{margin:3px 0}' +
-  '.card{width:460px}p.app{font-size:.9em;margin:0 0 ' +
-  '14px}ul.scopes{list-style:none;padding:0;margin:0 0 8px}ul.scopes ' +
-  'li{padding:8px 10px;margin:6px 0;border:1px solid ' +
-  '#e3e3ea;border-radius:6px;background:#fafafd;font-size:.85em}ul.scopes li ' +
-  'span{display:block;color:#666;font-size:.9em;margin-top:3px}' +
-  'ul.scopes li dl{margin:6px 0 0;display:grid;grid-template-columns:auto ' +
-  '1fr;gap:2px 8px}ul.scopes li dt{color:#555}ul.scopes li dd{margin:0;' +
-  'overflow-wrap:anywhere}' +
-  'details{margin:10px 0 0;font-size:.8em;color:#555}details ' +
-  'summary{cursor:pointer}';
-
 // ---------------------------------------------------------------------------
 // WHAT THE CONSENT SCREEN TAKES: a pending id, and an answer.
 //
@@ -200,15 +210,10 @@ const CONSENT_CSS =
 // issued. Anything that is not `allow` or `deny` is not a third option this
 // screen is willing to interpret.
 // ---------------------------------------------------------------------------
-const CONSENT_QUERY = vz.object({
-  consent: vt.opt(vt.base64url)
-});
+const CONSENT_QUERY = OAuthModel.request('consent');
 
-const CONSENT_FORM = vz.object({
-  consent_id: vt.opt(vt.base64url),
-  action: vt.opt(vt.oneOf(['allow', 'deny'])),
-  csrf_token: vt.opt(vt.token)
-});
+// THE ANSWER'S BODY (#576) is `POST /authn-api/consent/{id}`'s, checked by
+// `authn/authn_api.ts`: `action`, and the limit controls by their names.
 
 /**
  * The OAuth consent screen at `/oauth2/consent`: the pending records, the page,
@@ -329,6 +334,7 @@ class ConsentScreen {
       // render time, so that what the person is shown is what was decided —
       // the same rule `authn.js`'s record follows for `forcePasswordless`.
       scopes: Array.isArray(info.scopes) ? info.scopes : [],
+      resources: Array.isArray(info.resources) ? info.resources : [],
       // What the whole request asked for, including the scopes already
       // agreed. Shown under a fold, because "you already agreed to these
       // three" is the answer to the question somebody asks when a screen they
@@ -341,12 +347,24 @@ class ConsentScreen {
       authorizationDetails: Array.isArray(info.authorizationDetails)
         ? info.authorizationDetails : [],
       detailsDigest: String(info.detailsDigest || ''),
+      // A PUBLIC CLIENT'S SCOPES (ASVS 5.0.0 10.7.1): asked every time, so
+      // Allow is recorded under this digest for the authorization endpoint's
+      // next pass to spend, as `detailsDigest` is. '' for any other client.
+      scopeAnswerDigest: String(info.scopeAnswerDigest || ''),
       // The details THEMSELVES (#432 phase 5), so a detail's limits can be
       // drawn as controls and read back lowered; `authorizationDetails`
       // above is how each is described.
       rawAuthorizationDetails: Array.isArray(info.rawAuthorizationDetails)
         ? info.rawAuthorizationDetails : [],
       protocol: String(info.protocol || 'OAuth 2.0 / OIDC'),
+      // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the languages the
+      // relying party asked the consent screen to be drawn in. The caller
+      // passes them; where it did not, the request the person resumes has
+      // them on its query — `returnTo` is that request whole, unless it is a
+      // request object, whose `ui_locales` is inside the JWT and is only
+      // known to a caller that resolved it.
+      uiLocales: String(info.uiLocales ||
+                        ConsentScreen.uiLocalesOf(returnTo)),
       expires: Date.now() + this.consentTtlMs()
     };
     pending.set(record.id, record);
@@ -370,6 +388,17 @@ class ConsentScreen {
     return CONSENT_PATH + '?consent=' + encodeURIComponent(record.id);
   }
 
+  // The `ui_locales` on a return path's query, or ''.
+  private static uiLocalesOf(returnTo: string): string {
+    helpers.log.debug("Entering ConsentScreen.uiLocalesOf().");
+    const at = returnTo.indexOf('?');
+    const out = at < 0 ? ''
+      : String(new URLSearchParams(returnTo.slice(at + 1))
+        .get('ui_locales') || '');
+    helpers.log.debug("Leaving ConsentScreen.uiLocalesOf().");
+    return out;
+  }
+
   // The record a request names, or null. Expired ones are dropped on the way
   // past, which is the only cleanup this store needs beyond the sweep above —
   // `authn.js`'s `pendingFor()` exactly.
@@ -380,6 +409,41 @@ class ConsentScreen {
    * @param id - the record's id
    * @returns the record, or null
    */
+  // ONLY THE PERSON IT WAS ASKED OF CLAIMS IT (2026-11-11, run 16's
+  // single-node mode). The first browser to ask about a consent was the one
+  // it was tied to (#1454), whoever that browser's session belonged to, so
+  // somebody else holding the id who asked first — and was refused — had
+  // claimed it on the way, and the person it was asked of was then refused
+  // their own consent as "started in another browser": a refusal that spent
+  // the record for its owner, which `sts_consent`'s last check exists to
+  // catch. An unclaimed record is claimed now only by a session that
+  // `answeredBy()` says is the person's; any other session is refused and
+  // claims nothing.
+  claimForBrowser(id: unknown, sessionId: string, req?: Req): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ConsentScreen.claimForBrowser().");
+    const record = pending.get(String(id || ''));
+    if (!record) {
+      log.debug("Leaving ConsentScreen.claimForBrowser(). No record.");
+      return true;
+    }
+    if (!sessionId) {
+      log.debug("Leaving ConsentScreen.claimForBrowser(). No session.");
+      return !record.browserSession;
+    }
+    if (!record.browserSession) {
+      if (req && !this.answeredBy(req, record).ok) {
+        log.debug("Leaving ConsentScreen.claimForBrowser(). Somebody " +
+                  "else's session, which claims nothing.");
+        return false;
+      }
+      record.browserSession = sessionId;
+      pending.set(String(id), record);
+    }
+    log.debug("Leaving ConsentScreen.claimForBrowser().");
+    return record.browserSession === sessionId;
+  }
+
   pendingFor(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering ConsentScreen.pendingFor(). id=" + (id || '(none)'));
@@ -411,6 +475,11 @@ class ConsentScreen {
   private answeredBy(req: Req, record: Json): Json {
     const { log, authn } = this.deps;
     log.debug("Entering ConsentScreen.answeredBy().");
+    // THE PERSON ASKED IS THE HINT (#561): with several accounts in one
+    // browser, the session answering is theirs where the browser holds it,
+    // never whichever account the browser signed in to last. Nothing
+    // changes with `authn.multipleAccounts` off.
+    authn.hintAccount(req, { loginHint: String(record.username || '') });
     const session = authn.sessionOf(req);
     if (!session) {
       log.debug("Leaving ConsentScreen.answeredBy(). Nobody is signed in.");
@@ -441,9 +510,13 @@ class ConsentScreen {
   }
 
   // -------------------------------------------------------------------------
-  // THE PAGE.
+  // THE PAGE IS DRAWN IN THE BROWSER SINCE #576.
   //
-  // What it shows, and why each part is on it:
+  // `/oauth2/consent` answers the sign-in surface's SHELL (`shell()`,
+  // below), and `/authn/signin.js` — served here as `/oauth2/consent.js`
+  // too — draws the page from `GET /authn-api/consent/{id}`, whose view is
+  // `consentView()`: what `consentPage()` drew, as facts and no words.
+  // What it shows, and why each part is on it, did not change:
   //
   //   * WHICH APPLICATION, by the name on its entry with the raw client_id
   //     under it. Both, because the name is what somebody recognises and the
@@ -453,114 +526,158 @@ class ConsentScreen {
   //   * ONE ROW PER SCOPE, with the permission's description where the scope
   //     resolves to one somebody defined. A screen that lists five opaque
   //     words is a screen that teaches a person to press Allow.
+  //   * RFC 9396 section 11.2's SHOULD: every detail is shown, member by
+  //     member, because the person is agreeing to THIS payment or THIS
+  //     account access and a type name alone says nothing about the amount.
   //   * WHAT WAS ALREADY AGREED, under a `<details>`, so that a second visit
   //     explains itself.
-  //   * THE REQUEST'S OWN PARAMETERS at the foot, in the sign-in screen's
-  //     `meta` block, because this is a debugging tool and the redirect_uri is
-  //     the thing somebody is usually here to check.
+  //   * A DETAIL'S LIMITS (#432 phase 5), which the person may lower: the
+  //     limits themselves and `AccessLimits.rows()` of them, which the
+  //     browser draws as the controls GNAP's approval page draws
+  //     (`common/web_limits_form.ts`).
+  //   * THE REQUEST'S OWN PARAMETERS at the foot, because this is a
+  //     debugging tool and the redirect_uri is the thing somebody is usually
+  //     here to check.
+  //
+  // IN THE PERSON'S LANGUAGE (#539), chosen in the browser from the
+  // authorization request's `ui_locales` (`uiLocales` beside the view), the
+  // person's own (`preferredLanguage`), the chooser, the browser's and the
+  // locale policy for the client and the person, whose groups may name it
+  // (#1238; the shell's `data-sts-locale-default`). What the
+  // request carried is data and is drawn as it is.
   // -------------------------------------------------------------------------
-  private consentPage(base: string, record: Json): string {
-    const { log, xmlEscape, authn, consent } = this.deps;
-    log.debug("Entering ConsentScreen.consentPage(). " +
+  /**
+   * The consent screen's view: every fact the page is drawn from, and no
+   * words.
+   *
+   * @param req - the request
+   * @param record - the pending consent
+   * @returns the view
+   */
+  consentView(req: Req, record: Json): Json {
+    const { log, baseUrlOf, consent } = this.deps;
+    log.debug("Entering ConsentScreen.consentView(). " +
               record.scopes.length + " scope(s).");
-    const rows = record.scopes.map(function (one) {
-      const permission = one.permission;
-      return '<li><code>' + xmlEscape(one.scope) + '</code>' +
-        (permission
-          ? '<span>' + xmlEscape(permission.description ||
-              ('the permission "' + permission.name + '"')) +
-            ' — exposed by <code>' + xmlEscape(permission.identifier) +
-            '</code>, ' +
-            'and the access token will be addressed to ' +
-            '<code>' + xmlEscape(permission.baseUri) +
-            '</code></span>'
-          : '<span>an ordinary scope: this service attaches no meaning to ' +
-            'it and will put it on the token\'s scope claim as it ' +
-            'stands</span>') +
-        '</li>';
-    }).join('');
-    // RFC 9396 section 11.2's SHOULD: every detail is shown, member by member,
-    // because the person is agreeing to THIS payment or THIS account access
-    // and a type name alone says nothing about the amount.
-    const detailRows = record.authorizationDetails.map(function (one) {
-      return '<li class="detail"><code>' + xmlEscape(one.type) + '</code>' +
-        '<span>' + (one.description ? xmlEscape(one.description) + ' — '
-                                    : '') +
-        'understood by <code>' + xmlEscape(one.resourceName || one.resource) +
-        '</code>, and the access token will be addressed to <code>' +
-        xmlEscape(one.audience) + '</code></span>' +
-        (one.members.length
-          ? '<dl>' + one.members.map(function (member) {
-            return '<dt>' + xmlEscape(member.name) + '</dt><dd><code>' +
-              xmlEscape(member.value) + '</code></dd>';
-          }).join('') + '</dl>'
-          : '') +
-        '</li>';
-    }).join('');
-    const already = record.already.length
-      ? '<details><summary>' + record.already.length + ' scope(s) you have ' +
-        'already agreed to for this application</summary><ul ' +
-        'class="scopes">' +
-        record.already.map(function (one) {
-          return '<li><code>' + xmlEscape(one.scope) + '</code><span>' +
-            (one.global
-              ? 'consented for everybody on this application\'s entry ' +
-                '(<code>oauthGlobalConsent</code>) — you were never asked'
-              : 'agreed by you' +
-                (one.at ? ' at ' + xmlEscape(one.at) : '')) +
-            '</span></li>';
-        }).join('') + '</ul></details>'
-      : '';
-    const page = '<!DOCTYPE html>\n<html lang="en"><head>' +
-      '<meta charset="utf-8">' +
-      '<title>Allow access? — mock authorization server</title><style>' +
-      authn.CARD_CSS + CONSENT_CSS + '</style></head><body>' +
-      '<div class="card">' +
-      '<h1>Allow access?</h1>' +
-      '<p class="sub">Signed in as <code>' + xmlEscape(record.username) +
-      '</code> ' +
-          'at <code>' +
-      xmlEscape(base) + '</code></p>' +
-      '<p class="app"><strong>' + xmlEscape(record.clientName) +
-      '</strong> is ' +
-      'asking for access on your behalf.' +
-      (record.clientName === record.clientId ? ''
-        : '<br><code>' + xmlEscape(record.clientId) + '</code>') + '</p>' +
-      '<ul class="scopes">' + rows + detailRows + '</ul>' +
-      (record.authorizationDetails.length
-        ? '<p class="app">This request carries <strong>' +
-          record.authorizationDetails.length + ' authorization detail' +
-          (record.authorizationDetails.length === 1 ? '' : 's') +
-          '</strong> (RFC 9396). You are asked about them every time: Allow ' +
-          'agrees to exactly what is listed, for this one request.</p>'
-        : '') +
-      already +
-      '<form method="post" action="' + CONSENT_PATH + '">' +
-      '<input type="hidden" name="consent_id" value="' +
-      xmlEscape(record.id) +
-      '">' + this.limitsBlock(record) + '<div ' +
-      'class="row"><button type="submit" id="consent-allow" name="action" ' +
-      'value="allow">Allow</button><button type="submit" id="consent-deny" ' +
-      'name="action" value="deny" ' +
-      'class="secondary">Deny</button></div></form><div ' +
-      'class="meta"><div>Allow writes one ' +
-      '<code>' + xmlEscape(consent.USER_ATTRIBUTE) + '</code> ' +
-      'value per scope onto your entry under <code>ou=users</code>, so you ' +
-      'are not asked again for these. Deny returns ' +
-      '<code>access_denied</code> to ' +
-      'the application and records nothing.</div><div>Nothing has been ' +
-      'issued yet. This screen is <code>oauth2.consentRequired</code>, which ' +
-      'is on by default; /admin/consent is where every answer given here ' +
-      'can be read and taken back.</div><div>Consenting for: ' +
-      '<code>' + xmlEscape(record.protocol) + '</code></div>' +
-      record.details.map(function (d) {
-        return '<div>' + xmlEscape(d.label) + ': <code>' +
-          xmlEscape(d.value == null ? '' : d.value) + '</code>' +
-          (d.note ? ' (' + xmlEscape(d.note) + ')' : '') + '</div>';
-      }).join('') +
-      '</div></div></body></html>\n';
-    log.debug("Leaving ConsentScreen.consentPage().");
-    return page;
+    const raw = Array.isArray(record.rawAuthorizationDetails)
+      ? record.rawAuthorizationDetails : [];
+    const view = {
+      // The frame's marker: the card is drawn wider for the scope rows.
+      consent: true,
+      username: String(record.username || ''),
+      base: baseUrlOf(req),
+      client: { id: String(record.clientId || ''),
+                name: String(record.clientName || '') },
+      // WHO IS ASKING (#1300): the client's logo, privacy policy and terms
+      // where it registered any of them, drawn above the card's body by
+      // the sign-in surface's frame as on the sign-in pages; null otherwise.
+      clientDisplay: this.deps.authn.clientDisplay(record.clientId),
+      // ASVS 5.0.0 10.7.2: where the access will be used.
+      resources: record.resources || [],
+      // ASVS 5.0.0 10.7.2: how long one grant of this access can last.
+      lifetimeHours: Math.round(Number(require('../common/applications')
+        .hostedEffective(record.clientId, 'oauth2.refreshTokenTtlS',
+                    require('../common/config'))) / 3600),
+      scopes: record.scopes.map(function (one: Json): Json {
+        const p = one.permission;
+        return { scope: String(one.scope),
+                 permission: p ? { description: p.description || '',
+                                   name: p.name || '',
+                                   identifier: p.identifier || '',
+                                   baseUri: p.baseUri || '' } : null,
+                 // The `did` scope's sentence (#693).
+                 releasesDid: one.releasesDid === true,
+                 // Single sign-on's sentence (ASVS 5.0.0 7.6.2).
+                 signsIn: one.signsIn === true };
+      }),
+      authorizationDetails: record.authorizationDetails.map(
+        function (one: Json): Json {
+          return { type: String(one.type || ''),
+                   description: one.description || '',
+                   resource: one.resourceName || one.resource || '',
+                   audience: one.audience || '',
+                   members: (one.members || []).map(function (m: Json) {
+                     return { name: String(m.name), value: m.value == null
+                       ? '' : String(m.value) };
+                   }) };
+        }),
+      already: record.already.map(function (one: Json): Json {
+        return { scope: String(one.scope), global: !!one.global,
+                 at: one.at ? String(one.at) : '' };
+      }),
+      // Each detail that carries limits, by its index in the request — the
+      // index the controls' names carry and `loweredDetails()` reads back.
+      limits: raw.map(function (detail: Json, r: number): Json {
+        return detail && typeof detail === 'object' && detail.limits &&
+          typeof detail.limits === 'object'
+          ? { r: r, type: String(detail.type || ''), limits: detail.limits,
+              rows: AccessLimits.rows(detail.limits) }
+          : null;
+      }).filter(Boolean),
+      attribute: consent.USER_ATTRIBUTE,
+      protocol: String(record.protocol || ''),
+      details: record.details.map(function (d: Json): Json {
+        return { label: String(d.label), value: d.value == null ? ''
+                   : String(d.value), note: d.note ? String(d.note) : '' };
+      })
+    };
+    log.debug("Leaving ConsentScreen.consentView().");
+    return view;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE THREE CHECKS, ASKED BY THE SHELL, THE VIEW AND THE ACT ALIKE: the
+  // record exists and has not expired, and the session in this browser is
+  // the person the question was asked of. Each refusal leaves the record
+  // ALONE — a screen that spent itself on a refusal would turn each of them
+  // into a denial of service against the person it was asked of — and
+  // names its code (marked by the caller) and its sentence (English).
+  // `answering` words the sentence for an answer rather than the page.
+  // -------------------------------------------------------------------------
+  /**
+   * The pending consent a request may see or answer, or why not.
+   *
+   * @param req - the request
+   * @param id - the consent's id
+   * @param answering - the request is an answer, not the page
+   * @returns `{ ok: true, record, who }`, or `{ ok: false, code, why }`
+   */
+  askedOf(req: Req, id: unknown, answering: boolean): Json {
+    const { log } = this.deps;
+    log.debug("Entering ConsentScreen.askedOf().");
+    const record = this.pendingFor(id);
+    if (!record) {
+      log.debug("Leaving ConsentScreen.askedOf(). Nothing pending.");
+      return { ok: false, code: 'STS-OAUTH-0149', why: answering
+        ? 'This consent form has expired, or it has already been answered. ' +
+          'Start the request again from the application that sent you here.'
+        : 'There is no consent waiting under that id, or it has expired. ' +
+          'Start the request again from the application that sent you ' +
+          'here — nothing was issued and nothing was recorded.' };
+    }
+    const who = this.answeredBy(req, record);
+    if (!who.ok) {
+      log.debug("Leaving ConsentScreen.askedOf(). " + who.why + ".");
+      return { ok: false,
+        code: who.why === 'nosession' ? 'STS-OAUTH-0150' : 'STS-OAUTH-0151',
+        why: who.why === 'nosession'
+          ? (answering
+            ? 'Nobody is signed in here any more, so this answer belongs to ' +
+              'nobody. Nothing was recorded.'
+            : 'Nobody is signed in here any more, so there is nobody to ' +
+              'record an answer for. Start the request again from the ' +
+              'application that sent you here.')
+          : (answering
+            ? 'This consent was asked of "' + record.username + '" and ' +
+              'this browser is signed in as "' + who.who + '". Nothing was ' +
+              'recorded.'
+            : 'This consent was asked of "' + record.username + '" and the ' +
+              'session in this browser belongs to "' + who.who + '". It is ' +
+              'refused rather than recorded against whoever happens to be ' +
+              'signed in, which is the one failure at this door that would ' +
+              'write something untrue into the directory.') };
+    }
+    log.debug("Leaving ConsentScreen.askedOf(). It is them.");
+    return { ok: true, record: record, who: who };
   }
 
   // -------------------------------------------------------------------------
@@ -571,22 +688,9 @@ class ConsentScreen {
   // limits gets them inside the form, `allow` reads them back, and only a
   // lower value is accepted. The details as lowered are recorded with the
   // Allow and are what the authorization endpoint's next pass issues.
+  // Since #576 the controls' values arrive as members of the act's JSON
+  // body, under the names the controls carry.
   // -------------------------------------------------------------------------
-  private limitsBlock(record: Json): string {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering ConsentScreen.limitsBlock().");
-    const raw = Array.isArray(record.rawAuthorizationDetails)
-      ? record.rawAuthorizationDetails : [];
-    const rows = raw.map(function (detail: Json, r: number): string {
-      const controls = LimitsForm.controls(detail, 0, r, xmlEscape);
-      return controls ? '<li class="detail"><code>' +
-        xmlEscape(String(detail.type || '')) + '</code>' + controls +
-        '</li>' : '';
-    }).join('');
-    log.debug("Leaving ConsentScreen.limitsBlock().");
-    return rows ? '<ul class="scopes">' + rows + '</ul>' : '';
-  }
-
   // The details as the person lowered their limits: `{ ok, lowered }`
   // (lowered null when nothing changed), or `{ ok: false, code, why }`.
   private loweredDetails(req: Req, body: Json, record: Json): Json {
@@ -624,21 +728,15 @@ class ConsentScreen {
     return { ok: true, lowered: changed ? lowered : null };
   }
 
-  private sendConsentPage(res: Res, html: string): void {
-    const { log } = this.deps;
-    log.debug("Entering ConsentScreen.sendConsentPage().");
-    res.status(200).type('text/html').set('Cache-Control', 'no-store')
-       .send(html);
-    log.debug("Leaving ConsentScreen.sendConsentPage().");
-  }
-
   // -------------------------------------------------------------------------
   // BACK TO THE AUTHORIZATION REQUEST.
   //
-  // 303 AND NOT 302, for `returnToCaller()`'s reason in `authn.js` — this is
-  // the redirect that follows a POST, and 303 is the only status that SAYS the
-  // next request is a GET. It is one funnel for both answers so that the
-  // status code is decided once.
+  // The form's answer was a 303 — `returnToCaller()`'s reason in `authn.js`,
+  // the redirect that follows a POST — and since #576 the act's answer NAMES
+  // that address (`next: redirect`), which the page goes to with a GET:
+  // what a 303 did. The address is the one `res.location()` would have
+  // sent (`authn.locationOf()`: the realm's prefix, the listener that
+  // answers it), so the two cannot differ.
   //
   // A REFUSAL RIDES BACK ON `consent_error`, which the authorization endpoint
   // reads exactly as it reads `authn_error`: this module names the outcome and
@@ -648,9 +746,10 @@ class ConsentScreen {
   // would be this file making a protocol decision it has no way to make
   // correctly.
   // -------------------------------------------------------------------------
-  private backToCaller(res: Res, record: Json, error: string | null,
+  private backToCaller(res: IyaApi.AuthnAnswering<'getConsent' |
+                         'answerConsent'>, record: Json, error: string | null,
                        description: string | null): void {
-    const { log } = this.deps;
+    const { log, authn } = this.deps;
     log.debug("Entering ConsentScreen.backToCaller(). error=" +
               (error || '(none)'));
     let target = record.returnTo;
@@ -659,173 +758,257 @@ class ConsentScreen {
         'consent_error=' + encodeURIComponent(error) +
         '&consent_error_description=' + encodeURIComponent(description || '');
     }
-    res.redirect(303, target);
-    log.debug("Leaving ConsentScreen.backToCaller(). Sent the browser to " +
-              target + " with a 303.");
+    // AND THE AUTHORIZATION REQUEST RESUMES AS THE PERSON WHO ANSWERED
+    // (#561): a selection ticket for their session in this browser's account
+    // set, so a browser holding several accounts does not ask which again.
+    // Unchanged with `authn.multipleAccounts` off.
+    target = authn.accountTicketFor(res.req, target,
+                                    { loginHint: String(record.username ||
+                                                        '') });
+    authn.answerJson(res, 200, { ok: true, next: 'redirect',
+                                 location: authn.locationOf(res, target) });
+    log.debug("Leaving ConsentScreen.backToCaller(). Named " + target + ".");
+  }
+
+  // A refusal of an answer, in the vocabulary every refusal at this door
+  // used (`oauthError()`'s members), with `ok: false` and `errors` beside
+  // them, as `/authn-api`'s refusals are. The code was marked by the caller;
+  // it is never in the body.
+  // error-code: none — the definition of this helper; every call site marks its own code first
+  private refused(res: Res, status: number, why: string): void {
+    const { log, authn } = this.deps;
+    log.debug("Entering ConsentScreen.refused(). " + status);
+    authn.answerJson(res, status, { ok: false, next: 'refused',
+                                    errors: [why], error: 'invalid_request',
+                                    error_description: why });
+    log.debug("Leaving ConsentScreen.refused().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ANSWER: `POST /authn-api/consent/{id}` (#576), bound by
+  // `authn/authn_api.ts` (JSON, an Origin of this service, the CSRF token of
+  // the browser's session) and its body checked there; what it decides is
+  // what the form's POST decided, moved whole.
+  //
+  // THE RECORD IS SPENT EITHER WAY, before anything is written or anybody
+  // is sent anywhere. A consent id that survived being answered would be one
+  // a back button could answer a second time, and on Allow that is a second
+  // write of something already agreed; on Deny it is an `access_denied`
+  // delivered twice to a client that has already given up.
+  // -------------------------------------------------------------------------
+  /**
+   * Answers a pending consent: Allow (with the limits a person lowered) or
+   * Deny. The answer names the authorization request to go back to.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param id - the consent's id
+   * @param body - the act's JSON: `action` and the limit controls
+   * @returns nothing
+   */
+  consentAct(req: Req, res: IyaApi.AuthnAnswering<'answerConsent'>, id: string,
+             body: Json): void {
+    const { log, consent, audit, errorCodes, authorizationDetails } =
+      this.deps;
+    log.debug("Entering ConsentScreen.consentAct().");
+    const asked = this.askedOf(req, id, true);
+    if (!asked.ok) {
+      errorCodes.mark(res, asked.code);
+      this.refused(res, 400, asked.why);
+      log.debug("Leaving ConsentScreen.consentAct(). " + asked.code);
+      return;
+    }
+    const record = asked.record;
+    // THE LIMITS, before the record is spent: a value raised or no longer
+    // meeting its type is refused, and the page can be answered again.
+    let lowered: Json = null;
+    if (String(body.action || '') === 'allow') {
+      const read = this.loweredDetails(req, body, record);
+      if (!read.ok) {
+        errorCodes.mark(res, read.code === 'STS-OAUTH-0919'
+          ? 'STS-OAUTH-0919' : 'STS-OAUTH-0918');
+        // error-code: none — marked on the line above
+        this.refused(res, 400, read.why);
+        log.debug("Leaving ConsentScreen.consentAct(). The limits.");
+        return;
+      }
+      lowered = read.lowered;
+    }
+    pending.delete(record.id);
+
+    const names = record.scopes.map(function (one) {
+      return one.scope;
+    }).concat(record.authorizationDetails.map(function (one) {
+      return 'authorization_details:' + one.type;
+    }));
+    if (String(body.action || '') !== 'allow') {
+      audit.record({
+        action: 'consent.deny', actor: record.username,
+        target: record.clientId,
+        protocol: 'OAuth 2.0 / OIDC', channel: 'http', outcome: 'refused',
+        errorCode: 'STS-OAUTH-0152',
+        detail: 'refused ' + names.join(', ')
+      });
+      log.info('consent: "' + record.username + '" refused "' +
+               record.clientId + '" the scope(s) ' + names.join(', ') +
+               '. Nothing was recorded and nothing was issued; the ' +
+               'client is told access_denied.');
+      errorCodes.mark(res, 'STS-OAUTH-0152');
+      this.backToCaller(res, record, 'access_denied',
+        'The user did not consent to ' + names.join(' ') + '.');
+      log.debug("Leaving ConsentScreen.consentAct(). Denied.");
+      return;
+    }
+
+    // RFC 9396: Allow on details is ONE answer for ONE request, recorded
+    // here and spent by the authorization endpoint's second pass. The
+    // scopes are written down as they always were; the details never are.
+    if (record.detailsDigest) {
+      authorizationDetails.noteConsented(record.username, record.clientId,
+                                         record.detailsDigest, lowered);
+    }
+    // And a public client's scopes, which the endpoint asks about every
+    // time (`consent.alwaysAsks()`): this Allow answers THIS request once.
+    // It is recorded whether or not the write below stores anything.
+    if (record.scopeAnswerDigest) {
+      authorizationDetails.noteConsented(record.username, record.clientId,
+                                         record.scopeAnswerDigest, null);
+    }
+    const written = consent.record(record.username, record.clientId,
+      record.scopes.map(function (one) {
+        return one.scope;
+      }));
+    audit.record({
+      action: 'consent.grant', actor: record.username,
+      target: record.clientId,
+      // The protocol that sent the person here: single sign-on to a SAML or
+      // WS-Federation application asks on this screen too (ASVS 7.6.2).
+      protocol: String(record.protocol || 'OAuth 2.0 / OIDC'),
+      channel: 'http',
+      outcome: written.stored ? 'success' : 'warning',
+      detail: 'consented ' + names.join(', ') +
+              (written.stored ? '' :
+               ' (not written down: ' + (written.reason || 'no entry') +
+               ', so they will be asked again)')
+    });
+    this.backToCaller(res, record, null, null);
+    log.debug("Leaving ConsentScreen.consentAct(). Allowed.");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SHELL (#576): what `/oauth2/consent` answers once the three checks
+  // pass, through `common/shell_document.ts` (3cl's recipe), loading the
+  // sign-in surface's bundle from `/oauth2/consent.js` — this page's own
+  // listener's address for it, so the page's script is served wherever
+  // the OAuth 2.0 / OpenID Connect application is mapped (#472), and
+  // `/authn-api/consent` is that application's too
+  // (`common/hosted_applications.js`).
+  //
+  // SCRIPT IS REQUIRED (rcbj on #569): no form is drawn here for a browser
+  // without it — the `<noscript>` says so — and no submit button stands in
+  // for the script. The policy is the shell's: `script-src 'self'`,
+  // `connect-src 'self'` (and the sign-in service's origin where it is on
+  // another listener, for the language chooser), `style-src 'self'`,
+  // `frame-ancestors` re-added by `app.contentSecurityPolicy()` whatever is
+  // asked.
+  // -------------------------------------------------------------------------
+  /**
+   * Sends the consent screen's shell document.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param record - the pending consent
+   * @returns nothing
+   */
+  private shell(req: Req, res: Res, record: Json): void {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering ConsentScreen.shell().");
+    const authnAt = listenerMap.isTrivial() ||
+      listenerMap.admits(listenerMap.listenerOf(req), 'authn')
+      ? '' : baseUrlOf(req, 'authn');
+    const html = ShellDocument.document({
+      title: 'Allow access? — IYA STS',
+      attributes: ([['data-sts-prefix', realms.currentPrefix()],
+                    ['data-sts-authn', authnAt],
+                    ['data-sts-step-fragment',
+                     require('../common/mode').hidesStepIds() ? '1' : '']] as
+                   Array<[string, string]>)
+        .concat(PageLocale.shellAttributes(req,
+                                           String(record.clientId || ''),
+                                           String(record.username || ''))),
+      stylesheets: ['/web/card.css'],
+      script: CONSENT_SCRIPT_PATH,
+      open: '<div class="card consent">',
+      close: '</div>',
+      noscript: '<h1>Allow access?</h1><div class="err">This consent page ' +
+        'is a script that runs in your browser, and with scripts blocked ' +
+        'there is nothing it can show. Allow scripts for this page to ' +
+        'answer it.</div>',
+      loading: '<p class="sub">Loading&hellip;</p>'
+    });
+    // THE CLIENT'S LOGO (#1300): the browser loads it from the client's own
+    // address, so this page's `img-src` names exactly that origin — the
+    // shell is per pending consent, and so per client.
+    const shown = this.deps.authn.clientDisplay(record.clientId);
+    ShellDocument.serve(app, req, res, html, {
+      connect: ShellDocument.originsOf([authnAt]),
+      csp: { 'style-src': "'self'" },
+      images: shown && shown.logoOrigin ? [shown.logoOrigin] : [] });
+    log.debug("Leaving ConsentScreen.shell().");
   }
 
   /**
-   * Registers `GET` and `POST /oauth2/consent`: the screen, and the answer.
+   * Registers `GET /oauth2/consent` — the shell — and `GET
+   * /oauth2/consent.js`, the sign-in surface's bundle at this page's own
+   * address. The answer is `/authn-api/consent`'s (#576); `POST
+   * /oauth2/consent` is gone.
    *
    * @param app - the express app
    */
   registerRoutes(app: Json): void {
-    const { log, parseBody, oauthError, baseUrlOf, consent, audit,
-            errorCodes, validation, authorizationDetails } = this.deps;
+    const { log, oauthError, errorCodes, validation, authn } = this.deps;
     const self = this;
     log.debug("Entering ConsentScreen.registerRoutes().");
 
     // -----------------------------------------------------------------------
-    // GET — the screen.
+    // GET — the shell, after the three checks, which refuse as they always
+    // did (400, `invalid_request`) so that a stale or borrowed link says why
+    // without a script.
     // -----------------------------------------------------------------------
     app.get(CONSENT_PATH, function (req, res) {
       log.debug("Entering the consent screen.");
+      // THE ID IS IN THE FRAGMENT (#1454), in product: the shell, for nobody
+      // yet; the page finds the step.
+      if (require('../common/mode').hidesStepIds() &&
+          !(req.query && req.query.consent)) {
+        self.shell(req, res, {});
+        return;
+      }
       const asked = validation.check(req, 'query', CONSENT_QUERY);
       if (!asked.ok) {
         log.debug("Leaving the consent screen. The request is malformed.");
         errorCodes.mark(res, 'STS-OAUTH-0148');
         return oauthError(res, 400, 'invalid_request', asked.detail);
       }
-      const record = self.pendingFor(asked.value.consent);
-      if (!record) {
-        log.debug("Leaving the consent screen. Nothing is pending under " +
-                  "that id.");
-        errorCodes.mark(res, 'STS-OAUTH-0149');
-        return oauthError(res, 400, 'invalid_request',
-          'There is no consent waiting under that id, or it has expired. ' +
-          'Start the request again from the application that sent you ' +
-          'here — nothing was issued and nothing was recorded.');
+      const found = self.askedOf(req, asked.value.consent, false);
+      if (!found.ok) {
+        log.debug("Leaving the consent screen. " + found.code + ".");
+        errorCodes.mark(res, found.code);
+        // error-code: none — marked on the line above, askedOf()'s code
+        return oauthError(res, 400, 'invalid_request', found.why);
       }
-      const who = self.answeredBy(req, record);
-      if (!who.ok) {
-        log.debug("Leaving the consent screen. " + who.why + ".");
-        errorCodes.mark(res,
-                        who.why === 'nosession' ? 'STS-OAUTH-0150' :
-                        'STS-OAUTH-0151');
-        return oauthError(res, 400, 'invalid_request',
-          who.why === 'nosession'
-            ? 'Nobody is signed in here any more, so there is nobody to ' +
-              'record an answer for. Start the request again from the ' +
-              'application that sent you here.'
-            : 'This consent was asked of "' + record.username + '" and the ' +
-              'session in this browser belongs to ' +
-              '"' + who.who + '". It is refused rather than ' +
-              'recorded against whoever happens to be signed in, which is ' +
-              'the one failure at this door that would write something ' +
-              'untrue into the directory.');
-      }
-      self.sendConsentPage(res, self.consentPage(baseUrlOf(req), record));
-      log.debug("Leaving the consent screen. Showed " +
-                record.scopes.length + " scope(s) for " + record.id + ".");
+      self.shell(req, res, found.record);
+      log.debug("Leaving the consent screen. The shell, for " +
+                found.record.scopes.length + " scope(s).");
     });
 
-    // -----------------------------------------------------------------------
-    // POST — the answer.
-    //
-    // THE RECORD IS SPENT EITHER WAY, before anything is written or anybody
-    // is redirected. A consent id that survived being answered would be one a
-    // back button could answer a second time, and on Allow that is a second
-    // write of something already agreed; on Deny it is an `access_denied`
-    // delivered twice to a client that has already given up.
-    // -----------------------------------------------------------------------
-    app.post(CONSENT_PATH, function (req, res) {
-      log.debug("Entering the consent endpoint.");
-      // A detail's limit controls (#432 phase 5) are not this form's own
-      // fields: `loweredDetails()` reads them off the raw body.
-      const raw = parseBody(req);
-      const posted = validation.checkParsed(LimitsForm.strip(raw), 'body',
-                                            CONSENT_FORM);
-      if (!posted.ok) {
-        log.debug("Leaving the consent endpoint. The request is malformed.");
-        errorCodes.mark(res, 'STS-OAUTH-0148');
-        return oauthError(res, 400, 'invalid_request', posted.detail);
-      }
-      const body = posted.value;
-      const record = self.pendingFor(body.consent_id);
-      if (!record) {
-        log.debug("Leaving the consent endpoint. The form had expired.");
-        errorCodes.mark(res, 'STS-OAUTH-0149');
-        return oauthError(res, 400, 'invalid_request',
-          'This consent form has expired, or it has already been answered. ' +
-          'Start the request again from the application that sent you ' +
-          'here.');
-      }
-      const who = self.answeredBy(req, record);
-      if (!who.ok) {
-        log.debug("Leaving the consent endpoint. " + who.why + ".");
-        errorCodes.mark(res,
-                        who.why === 'nosession' ? 'STS-OAUTH-0150' :
-                        'STS-OAUTH-0151');
-        return oauthError(res, 400, 'invalid_request',
-          who.why === 'nosession'
-            ? 'Nobody is signed in here any more, so this answer belongs to ' +
-              'nobody. Nothing was recorded.'
-            : 'This consent was asked of "' + record.username + '" and ' +
-              'this browser is signed in as "' + who.who + '". Nothing was ' +
-              'recorded.');
-      }
-      // THE LIMITS, before the record is spent: a value raised or no longer
-      // meeting its type is refused, and the form can be answered again.
-      let lowered: Json = null;
-      if (String(body.action || '') === 'allow') {
-        const read = self.loweredDetails(req, raw, record);
-        if (!read.ok) {
-          log.debug("Leaving the consent endpoint. The limits.");
-          errorCodes.mark(res, read.code === 'STS-OAUTH-0919'
-            ? 'STS-OAUTH-0919' : 'STS-OAUTH-0918');
-          return oauthError(res, 400, 'invalid_request', read.why);
-        }
-        lowered = read.lowered;
-      }
-      pending.delete(record.id);
-
-      const names = record.scopes.map(function (one) {
-        return one.scope;
-      }).concat(record.authorizationDetails.map(function (one) {
-        return 'authorization_details:' + one.type;
-      }));
-      if (String(body.action || '') !== 'allow') {
-        audit.record({
-          action: 'consent.deny', actor: record.username,
-          target: record.clientId,
-          protocol: 'OAuth 2.0 / OIDC', channel: 'http', outcome: 'refused',
-          errorCode: 'STS-OAUTH-0152',
-          detail: 'refused ' + names.join(', ')
-        });
-        log.info('consent: "' + record.username + '" refused "' +
-                 record.clientId + '" the scope(s) ' + names.join(', ') +
-                 '. Nothing was recorded and nothing was issued; the ' +
-                 'client is told access_denied.');
-        log.debug("Leaving the consent endpoint. Denied.");
-        errorCodes.mark(res, 'STS-OAUTH-0152');
-        return self.backToCaller(res, record, 'access_denied',
-          'The user did not consent to ' + names.join(' ') + '.');
-      }
-
-      // RFC 9396: Allow on details is ONE answer for ONE request, recorded
-      // here and spent by the authorization endpoint's second pass. The
-      // scopes are written down as they always were; the details never are.
-      if (record.detailsDigest) {
-        authorizationDetails.noteConsented(record.username, record.clientId,
-                                           record.detailsDigest, lowered);
-      }
-      const written = consent.record(record.username, record.clientId,
-        record.scopes.map(function (one) {
-          return one.scope;
-        }));
-      audit.record({
-        action: 'consent.grant', actor: record.username,
-        target: record.clientId,
-        protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-        outcome: written.stored ? 'success' : 'warning',
-        detail: 'consented ' + names.join(', ') +
-                (written.stored ? '' :
-                 ' (not written down: ' + (written.reason || 'no ' +
-                    'entry') +
-                                       ', so they will be asked again)')
-      });
-      log.debug("Leaving the consent endpoint. Allowed.");
-      return self.backToCaller(res, record, null, null);
+    // THE PAGE'S SCRIPT: the sign-in surface's bundle, brotli, gzip or
+    // neither by the request's Accept-Encoding, read once by `authn.ts`.
+    app.get(CONSENT_SCRIPT_PATH, function (req, res) {
+      log.debug("Entering the consent screen's script.");
+      ShellDocument.sendFile(req, res, authn.signInBundle(),
+                             'application/javascript');
+      log.debug("Leaving the consent screen's script.");
     });
 
     log.debug("Leaving ConsentScreen.registerRoutes().");
@@ -887,5 +1070,11 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   CONSENT_PATH: ConsentScreen.CONSENT_PATH,
   beginConsent: slot.forward('beginConsent'),
-  pendingFor: slot.forward('pendingFor')
+  pendingFor: slot.forward('pendingFor'),
+  claimForBrowser: slot.forward('claimForBrowser'),
+  // `/authn-api/consent/{id}`'s view and act (#576), for `authn_api.ts`.
+  askedOf: slot.forward('askedOf'),
+  consentView: slot.forward('consentView'),
+  consentAct: slot.forward('consentAct'),
+  CONSENT_SCRIPT_PATH: CONSENT_SCRIPT_PATH
 };

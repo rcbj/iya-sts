@@ -22,7 +22,7 @@
 // alternative private key is never in the public view" is an assertion about
 // what a function dropped, which over HTTP is the absence of a string.
 //
-// What is NOT re-asserted is the encoder: `common/vendored/x509.js`'s
+// What is NOT re-asserted is the encoder: `common/crypto_impl/x509.js`'s
 // preTBSCertificate arithmetic is the parent project's file and is held to
 // its own tests there. What is asserted is that `pki.js` REACHES it — each
 // tier carries the key it was asked for and a signature its issuer's
@@ -32,12 +32,13 @@
 delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
+const tls = require('tls');
 const config = require('../common/config');
 const pki = require('../common/pki');
 const keystore = require('../common/keystore');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 
 const log = require('bunyan').createLogger({ name: 'pki_hybrid',
   level: process.env.LOG_LEVEL || 'info' });
@@ -120,6 +121,8 @@ async function run(t) {
     await aForeignPathRefusesOnlyAWrongSignature(t);
     await aClassicalBranchStillVerifies(t);
     await anAlgorithmThatCannotSignIsRefused(t);
+    await aProcessBranchPastTheListenerLimitIsRefused(t);
+    await aListenerChainKeyOpenSslCannotReadIsRefused(t);
   } finally {
     [REALM, CLASSICAL, REFUSED].forEach(function (id) {
       pki.clearChain(id);
@@ -308,6 +311,255 @@ async function anAlgorithmThatCannotSignIsRefused(t) {
   t.equal(errorCodes.codeOf(refused), 'STS-PKI-0200', 'as STS-PKI-0200');
   t.check(!pki.hasChain(REFUSED), 'and nothing was stored');
   log.debug("Leaving anAlgorithmThatCannotSignIsRefused().");
+}
+
+async function aProcessBranchPastTheListenerLimitIsRefused(t) {
+  log.debug("Entering aProcessBranchPastTheListenerLimitIsRefused().");
+  t.log.info('=== 7. a process branch whose signatures exceed a stock ' +
+             'TLS client\'s certificate list is refused (#1421, #1432) ===');
+  // Asked without building. ML-DSA-87 is the recommended hybrid and fits.
+  // SLH-DSA-256f is 49856 bytes; the leaf and the TLS Issuing CA each carry
+  // one, and that list is past OpenSSL's 102400-byte default. The same
+  // size as the signing key is the same two signatures (#1432).
+  t.equal(pki.processListenerAltSignatureProblem('ml-dsa-87'), null,
+          'ML-DSA-87 still fits the process listener');
+  t.equal(pki.processListenerAltSignatureProblem('slh-dsa-shake-128f'), null,
+          'SLH-DSA-SHAKE-128f still fits the process listener');
+  t.equal(pki.processListenerAltSignatureProblem(null), null,
+          'a classical process branch is not a size refusal');
+  t.equal(pki.processListenerAltSignatureProblem(null, 'ec-p256'), null,
+          'a classical signing key adds nothing to the budget');
+  t.equal(pki.processListenerAltSignatureProblem(
+            null, 'slh-dsa-shake-256s'), null,
+          'SLH-DSA-256s as the signing key still fits');
+  t.equal(pki.processListenerAltSignatureProblem(
+            null, 'mldsa87-ecdsa-p521-sha512'), null,
+          'a composite ML-DSA-87 signing key still fits');
+  ['slh-dsa-shake-256f', 'slh-dsa-sha2-256f'].forEach(function (id) {
+    const problem = pki.processListenerAltSignatureProblem(id);
+    t.equal(errorCodes.codeOf(problem), 'STS-PKI-0270',
+            id + ' is refused as STS-PKI-0270');
+    t.check(problem && !/STS-/.test((problem.errors || []).join(' ')),
+            id + ' names no error code in the sentence',
+            (problem && problem.errors || []).join(' '));
+    const primary = pki.processListenerAltSignatureProblem(null, id);
+    t.equal(errorCodes.codeOf(primary), 'STS-PKI-0270',
+            id + ' as the signing key is refused as STS-PKI-0270');
+    t.check(primary && !/STS-/.test((primary.errors || []).join(' ')),
+            id + ' as the signing key names no error code',
+            (primary && primary.errors || []).join(' '));
+    t.check(primary && /signing key/.test((primary.errors || []).join(' ')),
+            id + ' as the signing key says so');
+  });
+  const both = pki.processListenerAltSignatureProblem(
+    'slh-dsa-shake-192f', 'slh-dsa-shake-192f');
+  t.equal(errorCodes.codeOf(both), 'STS-PKI-0270',
+          'a 192f signing key plus the same alternative key is refused');
+  const before = pki.describeScope(pki.PROCESS_SCOPE);
+  const refused = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: 'ec-p256', altKeyAlg: 'slh-dsa-shake-256f'
+  });
+  t.check(!refused.ok, 'building the process branch with SLH-DSA-256f is ' +
+          'refused before any key is made',
+          (refused.errors || []).join(' '));
+  t.equal(errorCodes.codeOf(refused), 'STS-PKI-0270',
+          'and the build carries STS-PKI-0270');
+  const pure = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: 'slh-dsa-shake-256f', altKeyAlg: 'none'
+  });
+  t.check(!pure.ok, 'a pure SLH-DSA-256f process branch is refused before ' +
+          'any key is made', (pure.errors || []).join(' '));
+  t.equal(errorCodes.codeOf(pure), 'STS-PKI-0270',
+          'and that build carries STS-PKI-0270');
+  t.check(pure && /signing key/.test((pure.errors || []).join(' ')) &&
+          !/alternative/.test((pure.errors || []).join(' ')),
+          'the pure-key refusal names the signing key and no alternative',
+          (pure.errors || []).join(' '));
+  t.check(pure && !/STS-/.test((pure.errors || []).join(' ')),
+          'the pure-key refusal names no error code',
+          (pure.errors || []).join(' '));
+  const after = pki.describeScope(pki.PROCESS_SCOPE);
+  t.equal(after.built, before.built,
+          'the refused build stored nothing');
+  t.equal(after.altKeyAlg, before.altKeyAlg,
+          'the process branch\'s alternative key is unchanged');
+  t.equal(after.keyAlg, before.keyAlg,
+          'the process branch\'s signing key is unchanged');
+  log.debug("Leaving aProcessBranchPastTheListenerLimitIsRefused().");
+}
+
+// The PEM bundle a listener would present for a leaf from `useCaseId`'s
+// Issuing CA in `scopeId` — the process branch's `tls`, or a realm's
+// `spiffe`, `pep-tls` or `realm-tls` — with the Root after it (#1064),
+// loaded the way `setSecureContext()` loads it. Answers the error's message,
+// or '' when OpenSSL took it. `grpc` also binds a grpc-js server with it,
+// the way `spiffe/spiffe_grpc.ts` binds the SPIRE Server API and the Broker
+// API.
+async function listenerContextProblem(scopeId, useCaseId, grpc) {
+  log.debug("Entering listenerContextProblem(). " + scopeId + "/" +
+            useCaseId);
+  const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const issued = await pki.issueUnder(scopeId || pki.PROCESS_SCOPE,
+                                      useCaseId || 'tls', {
+    publicKeyPem: pair.publicKey.export({ type: 'spki', format: 'pem' }),
+    subject: 'CN=pki-hybrid listener',
+    profile: useCaseId === 'spiffe' ? undefined : 'tls-server' });
+  if (!issued.ok) {
+    log.debug("Leaving listenerContextProblem(). No leaf.");
+    return 'no leaf: ' + (issued.errors || []).join(' ');
+  }
+  const bundle = [issued.certificatePem].concat(issued.issuerChainPem)
+    .concat([pki.serviceRoot().certificatePem])
+    .map(function (pem) {
+      return /\n$/.test(pem) ? pem : pem + '\n';
+    }).join('');
+  const key = pair.privateKey.export({ type: 'pkcs8', format: 'pem' });
+  try {
+    tls.createSecureContext({ key: key, cert: bundle });
+  } catch (e) {
+    log.debug("Caught in listenerContextProblem(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving listenerContextProblem(). Refused.");
+    return String((e && e.message) || e);
+  }
+  if (grpc) {
+    const bound = await grpcBindProblem(key, bundle);
+    log.debug("Leaving listenerContextProblem(). grpc-js: " + bound);
+    return bound;
+  }
+  log.debug("Leaving listenerContextProblem(). Loaded.");
+  return '';
+}
+
+// A grpc-js server bound on a loopback port with `createSsl()` over that
+// key and bundle, request-but-not-require as the SPIFFE listeners are, and
+// shut at once. Answers the bind's error, or '' when it listened.
+function grpcBindProblem(key, bundle) {
+  log.debug("Entering grpcBindProblem().");
+  const grpcJs = require('@grpc/grpc-js');
+  const server = new grpcJs.Server();
+  const credentials = grpcJs.ServerCredentials.createSsl(
+    Buffer.from(pki.serviceRoot().certificatePem, 'utf8'),
+    [{ private_key: Buffer.from(key, 'utf8'),
+       cert_chain: Buffer.from(bundle, 'utf8') }], true);
+  log.debug("Leaving grpcBindProblem().");
+  return new Promise(function (resolve) {
+    server.bindAsync('127.0.0.1:0', credentials, function (err) {
+      server.forceShutdown();
+      resolve(err ? String(err.message || err) : '');
+    });
+  });
+}
+
+async function aListenerChainKeyOpenSslCannotReadIsRefused(t) {
+  log.debug("Entering aListenerChainKeyOpenSslCannotReadIsRefused().");
+  t.log.info('=== 8. a composite ML-DSA key is refused for the Root, ' +
+             'the process branch and a realm branch, which the listeners ' +
+             'load (fuzz, 2026-11-12) ===');
+  const composite = 'mldsa65-ecdsa-p256-sha512';
+  t.check(pki.listenerUnreadableKeyAlg(composite) &&
+          pki.listenerUnreadableKeyAlg('mldsa87-rsa4096-pss-sha512') &&
+          !pki.listenerUnreadableKeyAlg('ml-dsa-65') &&
+          !pki.listenerUnreadableKeyAlg('slh-dsa-shake-128f') &&
+          !pki.listenerUnreadableKeyAlg('ec-p256'),
+          'composites are the keys OpenSSL cannot read; ML-DSA, SLH-DSA ' +
+          'and EC are not');
+  const before = pki.describeScope(pki.PROCESS_SCOPE);
+  const branch = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: composite, altKeyAlg: 'none' });
+  t.equal(errorCodes.codeOf(branch), 'STS-PKI-0272',
+          'a composite process branch is refused as STS-PKI-0272');
+  t.check(branch && !/STS-/.test((branch.errors || []).join(' ')),
+          'and the sentence names no error code',
+          (branch && branch.errors || []).join(' '));
+  const after = pki.describeScope(pki.PROCESS_SCOPE);
+  t.equal(after.built, before.built, 'and nothing was stored');
+  const rootBefore = pki.serviceRoot();
+  const root = await pki.buildRoot({ keyAlg: composite, altKeyAlg: 'none' });
+  t.equal(errorCodes.codeOf(root), 'STS-PKI-0272',
+          'a composite Root is refused as STS-PKI-0272');
+  t.check(pki.serviceRoot() === rootBefore, 'and the Root is unchanged');
+  // A REALM'S BRANCH IS ON LISTENER CHAINS TOO (after #1684): its
+  // Intermediate is presented by the realm's SPIFFE gRPC listeners, its
+  // Remote PEP listeners and its custom listeners, and OpenSSL cannot read a
+  // composite Intermediate any more than a composite Root.
+  const realmBefore = pki.describeScope(REFUSED);
+  const realm = await pki.buildChain(REFUSED, { keyAlg: composite,
+                                                altKeyAlg: 'none' });
+  t.equal(errorCodes.codeOf(realm), 'STS-PKI-0274',
+          'a composite realm branch is refused as STS-PKI-0274');
+  t.check(realm && !/STS-/.test((realm.errors || []).join(' ')),
+          'and the sentence names no error code',
+          (realm && realm.errors || []).join(' '));
+  t.equal(pki.describeScope(REFUSED).built, realmBefore.built,
+          'and nothing was stored for the realm');
+  t.check(!pki.describeIssuer(REFUSED, 'spiffe'),
+          'and the realm has no SPIFFE authority to mint from');
+  // THE SETTING NAMING ONE: the build is not refused (the startup build reads
+  // it), it is made classical, and OpenSSL loads what it made.
+  const pure = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: 'ml-dsa-65', altKeyAlg: 'none' });
+  t.check(pure && pure.ok, 'an ML-DSA-65 process branch is built',
+          JSON.stringify(pure && pure.errors));
+  t.equal(await listenerContextProblem(), '',
+          'and OpenSSL loads the listener chain it makes');
+  // An ML-DSA realm branch is the post-quantum one a realm may have, and
+  // every listener chain under it loads.
+  const realmPure = await pki.buildChain(REFUSED, { keyAlg: 'ml-dsa-65',
+                                                    altKeyAlg: 'none' });
+  t.check(realmPure && realmPure.ok, 'an ML-DSA-65 realm branch is built',
+          JSON.stringify(realmPure && realmPure.errors));
+  await realmListenerChainsLoad(t, 'ML-DSA-65');
+  pki.clearChain(REFUSED);
+  const set = config.setOverride('pki.keyAlgorithm', composite);
+  try {
+    t.check(set && set.ok !== false, 'pki.keyAlgorithm is set to a ' +
+            'composite for this section', JSON.stringify(set));
+    const fallback = await pki.buildScope(pki.PROCESS_SCOPE, {
+      altKeyAlg: 'none' });
+    t.check(fallback && fallback.ok, 'a process build naming no key with ' +
+            'the setting composite is not refused',
+            JSON.stringify(fallback && fallback.errors));
+    t.check(!pki.listenerUnreadableKeyAlg(
+              pki.describeScope(pki.PROCESS_SCOPE).keyAlg),
+            'it was built with a key OpenSSL reads',
+            pki.describeScope(pki.PROCESS_SCOPE).keyAlg);
+    t.equal(await listenerContextProblem(), '',
+            'and OpenSSL loads the listener chain it makes');
+    // A realm branch built with no named key — what a new realm, a repair
+    // and the startup build do — is not refused either: a deployment that
+    // stored the setting still starts, with a classical branch.
+    const realmFallback = await pki.buildChain(REFUSED, { altKeyAlg: 'none' });
+    t.check(realmFallback && realmFallback.ok, 'a realm build naming no ' +
+            'key with the setting composite is not refused',
+            JSON.stringify(realmFallback && realmFallback.errors));
+    t.check(!pki.listenerUnreadableKeyAlg(
+              pki.describeScope(REFUSED).keyAlg) &&
+            !pki.listenerUnreadableKeyAlg(
+              (pki.describeIssuer(REFUSED, 'spiffe') || {}).keyAlg),
+            'it was built with a key OpenSSL reads, its SPIFFE authority ' +
+            'too', pki.describeScope(REFUSED).keyAlg);
+    await realmListenerChainsLoad(t, 'the fallback');
+  } finally {
+    config.clearOverride('pki.keyAlgorithm');
+    pki.clearChain(REFUSED);
+  }
+  log.debug("Leaving aListenerChainKeyOpenSslCannotReadIsRefused().");
+}
+
+// Every chain a realm branch puts on one of this service's listeners loads:
+// the SPIFFE authority's (through grpc-js as well, which is how the SPIRE
+// Server API and the Broker API bind it), the Remote PEP listeners' and the
+// custom listeners'.
+async function realmListenerChainsLoad(t, what) {
+  log.debug("Entering realmListenerChainsLoad(). " + what);
+  t.equal(await listenerContextProblem(REFUSED, 'spiffe', true), '',
+          what + ': the SPIFFE listener chain loads, through grpc-js too');
+  t.equal(await listenerContextProblem(REFUSED, 'pep-tls'), '',
+          what + ': the Remote PEP listener chain loads');
+  t.equal(await listenerContextProblem(REFUSED, 'realm-tls'), '',
+          what + ': the custom listener chain loads');
+  log.debug("Leaving realmListenerChainsLoad().");
 }
 
 module.exports = {

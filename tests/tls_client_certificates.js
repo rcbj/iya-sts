@@ -69,6 +69,7 @@ delete process.env.CONFIG_FILE;
 
 const childProcess = require('child_process');
 const fs = require('fs');
+const http2 = require('http2');
 const https = require('https');
 const nodeCrypto = require('crypto');
 const os = require('os');
@@ -158,6 +159,49 @@ function fakeSocket(certPem, chainPems, authorized) {
     }
   };
 }
+
+// The same question over HTTP/2 (#407): one session per ask, so each is a
+// handshake of its own presenting `cert`, as `ask()` is with `agent: false`.
+function askH2(port, cert, key) {
+  log.debug("Entering askH2().");
+  log.debug("Leaving askH2().");
+  return new Promise(function (resolve) {
+    const session = http2.connect('https://127.0.0.1:' + port,
+      { cert: cert, key: key, rejectUnauthorized: false });
+    session.on('error', function (e) {
+      resolve({ status: 0, body: { error: e.message } });
+    });
+    const stream = session.request({ ':method': 'GET',
+                                     ':path': '/tls/sign-in' });
+    let status = 0;
+    let text = '';
+    stream.on('response', function (h) {
+      status = h[':status'];
+    });
+    stream.setEncoding('utf8');
+    stream.on('data', function (c) { text += c; });
+    stream.on('end', function () {
+      let body = {};
+      try {
+        body = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in a callback in askH2(): " +
+                  ((e && e.message) || e));
+        body = { raw: text.slice(0, 300) };
+      }
+      session.close();
+      resolve({ status: status, body: body });
+    });
+    stream.on('error', function (e) {
+      session.close();
+      resolve({ status: 0, body: { error: e.message } });
+    });
+    stream.end();
+  });
+}
+
+// Over each protocol the main port speaks, labelled for the assertion.
+const OVER = [{ label: 'HTTP/1.1', ask: ask }, { label: 'HTTP/2', ask: askH2 }];
 
 async function childBody() {
   log.debug("Entering childBody().");
@@ -414,9 +458,13 @@ async function childBody() {
   }), 'D: the service Root is in the client truststore');
   // THE MAIN PORT'S POSTURE, built here because this module binds nothing any
   // more: a client certificate ASKED FOR and never required, over the same
-  // truststore and the same protocol policy `server.js` uses.
+  // truststore and the same protocol policy `server.js` uses — and, since
+  // #407, the same kind of server, HTTP/2 beside HTTP/1.1, so every claim
+  // below is made over each: `getPeerCertificate()` on an HTTP/2 request is
+  // node's proxy to the session's socket.
   const serverCert = tls.serverCertificate();
-  const listener = https.createServer(Object.assign({
+  const listener = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: serverCert.certPem, key: serverCert.privateKeyPem,
     ca: tls.clientTruststoreOptions().ca,
     requestCert: true, rejectUnauthorized: false
@@ -428,34 +476,38 @@ async function childBody() {
   });
   const port = listener.address().port;
   const clientCert = issued.certificatePem + issued.chainPem.join('');
-  const signedIn = await ask(port, clientCert, issued.privateKeyPem);
-  const session = signedIn.body.session || {};
-  t.check(signedIn.status === 200 && signedIn.body.signedIn === true &&
-          session.started === true &&
-          session.username === PERSON && session.realm === REALM,
-          'D: /tls/sign-in signs the holder in, in the certificate\'s realm',
-          JSON.stringify({ status: signedIn.status, session: session,
-                           raw: signedIn.body.raw,
-                           error: signedIn.body.error }));
-  t.check((signedIn.body.clientCertificate || {}).presented === true &&
-          (signedIn.body.clientCertificate || {}).verified === true,
-          'D: and reports the certificate as presented and verified',
-          JSON.stringify(signedIn.body.clientCertificate));
   const assertionCert = assertion.issued.certificatePem +
                         assertion.issued.chainPem.join('');
-  const refusedAsIdentity = await ask(port, assertionCert,
-                                      assertion.issued.privateKeyPem);
-  // NO STATUS IS ASSERTED HERE AND THAT IS THE POINT: 9443 answered 403
-  // because the socket itself refused, and this route reports rather than
-  // refuses. What must be true is that NO SESSION STARTED and the answer says
-  // which rule stopped it.
-  t.check(refusedAsIdentity.status === 200 &&
-          refusedAsIdentity.body.signedIn === false &&
-          (refusedAsIdentity.body.session || {}).refusedAsIdentity === true,
-          'D: the assertion key pair verifies, starts NO session, and is ' +
-          'reported as not an identity',
-          JSON.stringify({ status: refusedAsIdentity.status,
-                           session: refusedAsIdentity.body.session }));
+  for (const over of OVER) {
+    const signedIn = await over.ask(port, clientCert, issued.privateKeyPem);
+    const session = signedIn.body.session || {};
+    t.check(signedIn.status === 200 && signedIn.body.signedIn === true &&
+            session.started === true &&
+            session.username === PERSON && session.realm === REALM,
+            'D (' + over.label + '): /tls/sign-in signs the holder in, in ' +
+            'the certificate\'s realm',
+            JSON.stringify({ status: signedIn.status, session: session,
+                             raw: signedIn.body.raw,
+                             error: signedIn.body.error }));
+    t.check((signedIn.body.clientCertificate || {}).presented === true &&
+            (signedIn.body.clientCertificate || {}).verified === true,
+            'D (' + over.label + '): and reports the certificate as ' +
+            'presented and verified',
+            JSON.stringify(signedIn.body.clientCertificate));
+    const refusedAsIdentity = await over.ask(port, assertionCert,
+                                             assertion.issued.privateKeyPem);
+    // NO STATUS IS ASSERTED HERE AND THAT IS THE POINT: 9443 answered 403
+    // because the socket itself refused, and this route reports rather than
+    // refuses. What must be true is that NO SESSION STARTED and the answer
+    // says which rule stopped it.
+    t.check(refusedAsIdentity.status === 200 &&
+            refusedAsIdentity.body.signedIn === false &&
+            (refusedAsIdentity.body.session || {}).refusedAsIdentity === true,
+            'D (' + over.label + '): the assertion key pair verifies, ' +
+            'starts NO session, and is reported as not an identity',
+            JSON.stringify({ status: refusedAsIdentity.status,
+                             session: refusedAsIdentity.body.session }));
+  }
   const notTheirs = tlsClient.revoke(REALM, 'bob', issued.serialHex,
                                      'keyCompromise');
   t.check(!notTheirs.ok && errorCodes.codeOf(notTheirs) === 'STS-PKI-0171',
@@ -464,15 +516,17 @@ async function childBody() {
                                    'keyCompromise');
   t.check(revoked.ok && tlsClient.listFor(REALM, PERSON)[0].state === 'revoked',
           'D: the holder revokes it', JSON.stringify(revoked.errors || ''));
-  const afterRevoke = await ask(port, clientCert, issued.privateKeyPem);
-  t.check(afterRevoke.status === 200 && afterRevoke.body.signedIn === false &&
-          (afterRevoke.body.session || {}).refusedOnRevocation === true,
-          'D: and from then on it signs nobody in, refused on revocation — ' +
-          'the chain still VERIFIES, which is why the refusal has to be made ' +
-          'here rather than by the handshake',
-          JSON.stringify({ status: afterRevoke.status,
-                           session: afterRevoke.body.session,
-                           revocation: afterRevoke.body.revocation }));
+  for (const over of OVER) {
+    const afterRevoke = await over.ask(port, clientCert, issued.privateKeyPem);
+    t.check(afterRevoke.status === 200 && afterRevoke.body.signedIn === false &&
+            (afterRevoke.body.session || {}).refusedOnRevocation === true,
+            'D (' + over.label + '): and from then on it signs nobody in, ' +
+            'refused on revocation — the chain still VERIFIES, which is why ' +
+            'the refusal has to be made here rather than by the handshake',
+            JSON.stringify({ status: afterRevoke.status,
+                             session: afterRevoke.body.session,
+                             revocation: afterRevoke.body.revocation }));
+  }
   await new Promise(function (ok) {
     listener.close(ok);
   });

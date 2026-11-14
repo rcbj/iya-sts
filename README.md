@@ -2,12 +2,6 @@
 
 # iya-sts
 
-> [!WARNING]
-> **Not ready for production deployments.** This is a relatively new project.
-> No formal penetration testing has been done, and it has not been formally
-> evaluated by any standards body. Do not use it to protect real users,
-> credentials or data yet.
-
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 
@@ -15,7 +9,7 @@ It started as IYA STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
 project's test suite, and it runs in one of two modes, per trust realm
 (`global.mode`):
 
-* **`development`** (the default) is that mock: any username signs in, anything
+* **`development`** (the default) is the permissive test mode: any username signs in, anything
   named is created, signing keys are regenerated on every start and test
   controls are open. Use it to exercise clients. **Never use it to protect
   anything.**
@@ -64,14 +58,58 @@ One identity layer. Multiple protocols. Multiple trust relationships. Modern app
 
 iya-sts is built for organizations that don't want to replace their entire identity infrastructure just to build what's next.
 
+# OpenID Connect Certification
+<p align="left"><img src="docs/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg" alt="IYA STS — Security Token Service"></p>
+
+**Iya-STS v1.0.0**, from Iya CyberSecurity Solutions, has achieved OpenID Connect Provider (OP) certification through the OpenID Foundation across all seven published OP conformance profiles and all four OpenID Connect logout profiles.
+
+## OpenID Connect Provider Conformance Profiles
+
+| Conformance Profile | Certification Date |
+|---|---|
+| Basic OpenID Provider | November 5, 2026 |
+| Implicit OpenID Provider | November 5, 2026 |
+| Hybrid OpenID Provider | November 5, 2026 |
+| Configuration | November 5, 2026 |
+| Dynamic OpenID Provider | November 5, 2026 |
+| Form Post Response Mode | November 5, 2026 |
+| Third-Party Initiated Login | November 5, 2026 |
+
+**Official registry:** [Certified OpenID Providers & Profiles](https://openid.net/certification/certified-openid-providers-profiles/)
+
+## OpenID Connect Logout Profiles
+
+| Logout Profile | Certification Date |
+|---|---|
+| RP-Initiated Logout | November 5, 2026 |
+| Session Management | November 5, 2026 |
+| Front-Channel Logout | November 5, 2026 |
+| Back-Channel Logout | November 5, 2026 |
+
+**Official registry:** [Certified OpenID Providers for Logout Profiles](https://openid.net/certification/certified-openid-providers-for-logout-profiles/)
+
+## Certification Summary
+
+Iya-STS v1.0.0 has achieved **11 OpenID Foundation certifications**:
+
+- 7 OpenID Connect Provider conformance profiles
+- 4 OpenID Connect Logout profiles
+
+All eleven certifications are dated November 5, 2026, and are published in the OpenID Foundation's official certification registries.
+
+These certifications demonstrate conformance of Iya-STS v1.0.0 with the applicable OpenID Connect Provider and Logout specifications and profiles.
+
+For independent verification, refer to the official OpenID Foundation certification registries linked above.
+
 ## Architecture
 
-[![iya-sts architecture](docs/iya-sts-architecture.jpeg)](docs/iya-sts-architecture.jpeg)
+[![iya-sts architecture](docs/architecture.svg)](docs/architecture.svg)
 
-One leader process owns every listener, and a request dispatcher hands work to
-three worker pools (crypto, admin and request). The protocol subsystems share
-one session model and one set of services over the embedded directory and the
-key material. [`docs/architecture.md`](docs/architecture.md) walks through each
+One front process owns every listener, and a request dispatcher hands work to
+two pools of worker threads (request and surface); one scheduler runs every
+periodic job. The protocol families and the hosted applications share one
+session model and one set of services over the embedded directory and the key
+material. [`docs/architecture.md`](docs/architecture.md) walks through each
 layer. Each source directory has a `CLAUDE.md` with the maintainer's notes for
 the modules in it.
 
@@ -152,7 +190,7 @@ through a first sign-in.
 
 ### The ports
 
-Eleven bindings across ten numbers — 88 is listed twice because TCP and UDP are
+Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are
 two sockets. Every one is settable.
 
 | Port | | Setting / env var | What is on it |
@@ -161,7 +199,6 @@ two sockets. Every one is settable.
 | **8082** | tcp | `pki.httpPort` / `PKI_HTTP_PORT` | Plain HTTP `/pki/` only: CRLs, OCSP and CA certificates. `0` turns it off. |
 | **88** | **tcp** | `krb5.kdcPort` / `KRB5_KDC_PORT` | The KDC. |
 | **88** | **udp** | *(the same setting)* | The KDC over UDP. |
-| **8888** | tcp | `krb5.servicePort` / `KRB5_SERVICE_PORT` | The Kerberized test service. |
 | **389** | tcp | `ldap.port` / `LDAP_PORT` | The embedded directory, plain LDAP. |
 | **636** | tcp | `ldap.tlsPort` / `LDAPS_PORT` | The same directory over TLS. |
 | **8092** | tcp | `spiffe.workloadPort` / `STS_SPIFFE_WORKLOAD_PORT` | The SPIFFE Workload API over gRPC. |
@@ -178,9 +215,12 @@ And two Unix domain sockets (mount the directory as a volume to reach them):
 | `/tmp/spire-server/private/api.sock` | `spiffe.serverSocket` / `STS_SPIFFE_SERVER_SOCKET` | off — the SPIRE Server API's private socket |
 
 A socket that fails to bind is reported and is not fatal. `docker-compose.yml`
-publishes 8081 and 8082 only; a raw Kerberos client needs
-`-p 88:88/tcp -p 88:88/udp -p 8888:8888`, while a browser reaches the KDC
-through `POST /KdcProxy` on 8081.
+publishes 8081, 8082 and the KDC on 88 (TCP and UDP), with the acceptor
+holding `HTTP/localhost`, so `kinit` and a browser's SPNEGO sign-in work from
+the host ([the recipe](docs/kerberos.md#signing-in-from-a-browser-on-the-base-installation));
+a `docker run` needs `-p 88:88/tcp -p 88:88/udp`, and a client that can reach
+only 8081 uses `POST /KdcProxy`. The Kerberos-protected test service that was on
+8888 is the development companion's ([docker-compose](docs/docker-compose.md)).
 
 ### Configuration
 
@@ -193,15 +233,22 @@ AWS cluster.
 
 ## Versioning
 
-The version is **M.N.O**: M.N from the `VERSION` file, and O the UTC build
-instant (or `BUILD_NUMBER`), stamped into the image when it is built.
+The version is **M.N.O.build**: the release read whole from the `VERSION`
+file (currently `1.0.0`), then a build number stamped into the image when it
+is built — the UTC build instant (`1.0.0.20261104151200`) by default, or, for
+a release build, the number the build names (`1.0.0.0`).
 
 ```bash
-node common/version.js                    # 0.1.20260906143205
+node common/version.js                    # 1.0.0.20261104151200
 node common/version.js --sync-manifests   # after editing VERSION
-BUILD_NUMBER=$(date -u +%Y%m%d%H%M%S) GIT_COMMIT=$(git rev-parse HEAD) \
-  docker compose --profile xacml build    # one release, both images
+GIT_COMMIT=$(git rev-parse HEAD) \
+  docker compose --profile xacml build    # both images, naming the commit
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+                                          # a release build: 1.0.0.0
 ```
+
+A release flag without a valid `BUILD_NUMBER` fails the build; without the
+flag `BUILD_NUMBER` is ignored.
 
 ## Running the tests
 
@@ -209,10 +256,18 @@ Everything runs in containers; the host needs only docker.
 
 ```bash
 ./docker-npm-test.sh                # the in-process suite, in the tests image
-./run-tests.sh                      # every job, every mode — what CI runs
-./run-tests.sh --modes=memory       # one mode: memory, single-node or cluster
+./run-tests.sh                      # every job, in all six modes
+./run-tests.sh --modes=memory       # one mode of the six (see below)
+./run-tests.sh --plan               # what a run would do; starts nothing
 ./run-coverage.sh                   # coverage, from a run of its own
 ```
+
+A bare `./run-tests.sh` runs six modes, in this order: `memory`,
+`single-node`, `mariadb`, `cluster`, `cells` and `fuzz`. The `fuzz` mode runs
+only its Schemathesis jobs; the other modes run every job. An `--only=`
+narrows every mode, and a mode it leaves with no job is skipped, with the
+reason. A bare run takes about eleven hours on a laptop. CI does not run a
+bare run: its jobs name the modes they run.
 
 `./run-tests.sh` writes a report to `tests/report/<mode>/latest/`.
 [`tests/CLAUDE.md`](tests/CLAUDE.md) describes the jobs, the modes and where a

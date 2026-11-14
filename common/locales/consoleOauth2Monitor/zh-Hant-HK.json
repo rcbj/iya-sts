@@ -1,0 +1,11 @@
+{
+  "nounClients": "客戶端",
+  "colClient": "客戶端",
+  "unregistered": "未註冊——依據 RFC 9126 第 2.4 節對已驗證客戶端予以接受",
+  "colAuthenticated": "客戶端已驗證",
+  "parNote": "客戶端透過後端通道將授權請求的參數推送到 /oauth2/par，並取得一個 request_uri 作為回應；隨後瀏覽器只將該參照帶到 /oauth2/authorize。在一次瀏覽器流程中該請求至少會被讀取兩次，並在據其簽發授權回應時被使用。",
+  "byClient": "依客戶端",
+  "parNoClients": "自程序啟動以來，此領域中沒有客戶端推送過授權請求。",
+  "allErrors": "傳回的錯誤（所有客戶端）",
+  "stepUpNote": "資源伺服器若認為權杖背後的驗證太弱或太舊，會以 401 <code>insufficient_user_authentication</code> 回應，並附上所需的 <code>acr_values</code> 與 <code>max_age</code>，客戶端則在授權請求中重複它們。工作階段滿足要求時，授權端點直接依工作階段回應；不滿足時，讓此人重新登入一次；若該次登入仍不滿足，則以 <code>unmet_authentication_requirements</code> 拒絕。授權端點的每次計數對應一次處理，因此一次成功的升級驗證會分別計為一次「被要求重新登入」和一次「登入後滿足」。本服務產生的情境類別為 "
+}

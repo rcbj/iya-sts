@@ -23,15 +23,16 @@
 // The mock has had a certificate authority of its own since 2026-09-11
 // (`common/pki.js`; its listener certificate is a leaf of the service Root),
 // but the PEP stands for a workload whose authority is SOMEBODY ELSE'S. What
-// admits a foreign authority is the TRUSTSTORE — `POST /tls/trust` — which
+// admits a foreign authority is the TRUSTSTORE — `POST
+// /admin-api/tls/trust/add` — which
 // holds no foreign anchor until one is added at runtime, precisely because
 // the CA in question does not exist anywhere until somebody builds it
 // (`tls/CLAUDE.md`).
 //
 // The parent project's `tests/pki_mutual_tls.js` has done exactly this since
 // long before the remote PEP existed: it builds a Root CA and an Issuing CA in
-// a browser, issues a client certificate from them, POSTs the CA to
-// `/tls/trust`, and then reads back which chain the mock built out of what was
+// a browser, issues a client certificate from them, POSTs the CA to the
+// truststore, and then reads back which chain the mock built out of what was
 // sent. This file is that flow with a command line instead of a browser.
 //
 // **SO NOTHING WAS ADDED TO THE MOCK OR TO THE PEP TO PROVIDE THIS
@@ -43,7 +44,7 @@
 // ---------------------------------------------------------------------------
 // THE ENGINE IS THE VENDORED ONE, AND THAT IS THE POINT OF USING IT
 //
-// `common/vendored/x509.js` is the debugger's own PKI code, byte-identical,
+// `common/crypto_impl/x509.js` is the debugger's own PKI code, byte-identical,
 // already in this repository and already the thing `spiffe/spiffe_ca.ts` runs
 // its certificate authority on. Over there it is held to roughly 240
 // certificates by `tests/pki_x509.js` — every key algorithm against every
@@ -97,6 +98,12 @@
 //   --url       the mock, where the anchor is POSTed. Required.
 //   --out       where the three files go. Required; created if absent.
 //   --subject   the leaf's DN in RFC 4514 order. Defaults to the CN below.
+//   --root-subject
+//               the Root CA's DN (#695). Default `CN=iya-sts test Root CA,
+//               O=iya-sts tests`, the name the test suite's own roots carry
+//               — and the AWS suite reset (deploy/aws/reset-environment.js)
+//               removes every runtime anchor with that common name. An
+//               operator's PEP sets its own, so the reset leaves its root.
 //   --years     the leaf's life. Default 1.
 //   --quiet     only the DN on stdout, for a launcher to capture.
 //   --crl-base  where the Issuing CA's and the leaf's CRLs will be served
@@ -106,19 +113,43 @@
 //               a list, and a product-mode service refuses the chain
 //               (STS-PKI-0190) — which is what the launchers pass it for.
 //
+//   --store-on  a username (#1061): after the anchor, the leaf is STORED on
+//               that person's entry (created first if absent), through
+//               POST /admin-api/users/add-certificate. Needs --realm when
+//               the entry is not in the default realm, and the realm must
+//               already exist.
+//   --realm     the realm --store-on writes in. Default: the default realm.
+//
 // It prints the leaf's DN as its LAST line, so `$(... --quiet)` is the DN and a
 // launcher needs no parsing.
+//
+// ---------------------------------------------------------------------------
+// **TRUSTING THE ROOT NO LONGER MAKES THE LEAF ANYBODY (#1061, rcbj
+// 2026-10-27).** A certificate from an outside authority — which is every
+// certificate this file makes — is an identity at a door that reads a client
+// certificate as a person or application (the XACML gates, /tls/sign-in, the
+// sign-in screen, SCIM, Shared Signals, WS-Trust, LDAP SASL EXTERNAL) only
+// while it is STORED, byte for byte, in `userCertificate` on exactly one
+// entry of the realm the request is in. Its CN is never read as a name. So
+// whoever presents one of these leaves stores it first: `--store-on` here,
+// or `storeOnEntry()` (exported below) from a job, which makes the entry
+// where it is missing. The launchers mint the PEP's leaf before the job that
+// creates the PEP's realm has run, so `sts_xacml_remote_pep.js` stores the
+// launcher's `pep.crt` itself; the AWS runner's `pep-credential.sh` is in the
+// same position. RFC 8705 client authentication and GNAP's key proof read
+// the certificate as a KEY and are unchanged.
 //
 // **`MOCK_STS_DIR` RELOCATES THE ENGINE**, defaulting to two directories up.
 // The containerized launcher runs this file with the repository mounted into an
 // image whose own copy lives elsewhere, which is the same override
-// `tests/vendored/module_paths.js` takes and for the same reason.
+// `tests/protocol/module_paths.js` takes and for the same reason.
 // ===========================================================================
 
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const crypto = require('crypto');
 const { URL } = require('url');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -129,8 +160,9 @@ const log = require('bunyan').createLogger({ name: 'pep-credential',
 
 const REPO = process.env.MOCK_STS_DIR ||
              path.join(__dirname, '..', '..');
-const x509 = require(path.join(REPO, 'common', 'vendored', 'x509.js'));
-const keys = require(path.join(REPO, 'common', 'vendored', 'key_material.js'));
+const x509 = require(path.join(REPO, 'common', 'crypto_impl', 'x509.js'));
+const keys = require(path.join(REPO, 'common', 'crypto_impl',
+                               'key_material.js'));
 
 const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 
@@ -162,8 +194,11 @@ function parseArgs(argv) {
     if (name === '--url') { opts.url = value; }
     else if (name === '--out') { opts.out = value; }
     else if (name === '--subject') { opts.subject = value; }
+    else if (name === '--root-subject') { opts.rootSubject = value; }
     else if (name === '--years') { opts.years = parseInt(value, 10) || 1; }
     else if (name === '--quiet') { opts.quiet = true; }
+    else if (name === '--store-on') { opts.storeOn = value; }
+    else if (name === '--realm') { opts.realm = value; }
     else if (name === '--crl-base') {
       opts.crlBase = value.replace(/\/+$/, '');
     }
@@ -195,40 +230,34 @@ function say(opts, line) {
 // fetching that anchor first over an unverified connection, which is the same
 // trust decision one step further away.
 // ---------------------------------------------------------------------------
-// **THE GATED DOOR FIRST (2026-09-18).** `POST /tls/trust` needs no credential,
-// so product mode refuses it — and a product-mode deployment is exactly where a
-// test's anchor has to go through `POST /admin-api/tls/trust/add` instead,
-// which is gated by the management API's access token and persisted in
-// ou=trustAnchors, so every node of a cluster applies it. That door is tried
-// first whenever a token can reach it (a job's preload attaches one to any
-// /admin-api request; a launcher passes STS_ADMIN_API_TOKEN), and **it VERIFIES
-// the connection**, because it carries a bearer token and the argument above
-// is about a request with no secret in it. `/tls/trust` — unverified, as
-// argued — is the fallback, for a development stack reached before anything
-// trusts its certificate.
+// **THE GATED DOOR, AND SINCE #597 THE ONLY ONE (2026-10-12).** The anchor
+// goes through `POST /admin-api/tls/trust/add`, which is gated by the
+// management API's access token (a job's preload attaches one to any
+// /admin-api request; a launcher passes STS_ADMIN_API_TOKEN) and persisted
+// in ou=trustAnchors, so every node of a cluster applies it — and **it
+// VERIFIES the connection**, because it carries a bearer token and the
+// argument above is about a request with no secret in it (the launchers
+// fetch the service's own certificate first, `tests/tools/trust.js`).
+// `POST /tls/trust`, the open test control this fell back to for a
+// development stack, was deleted by #597, so there is no fallback: a
+// caller with no token, or no anchor for the service, is told so.
 function postAnchor(url, pem) {
   log.debug("Entering postAnchor().");
   const base = String(url || '').replace(/\/+$/, '');
   const token = process.env.STS_ADMIN_API_TOKEN || '';
-  const gated = send(base + '/admin-api/tls/trust/add', 'application/json',
-    JSON.stringify({ certificates: pem }),
-    token ? { Authorization: 'Bearer ' + token } : {}, true);
   log.debug("Leaving postAnchor().");
-  return gated.then(function (answer) {
-    if (answer.ok) {
+  return sender(base + '/admin-api/tls/trust/add', 'application/json',
+    JSON.stringify({ certificates: pem }),
+    token ? { Authorization: 'Bearer ' + token } : {}, true)
+    .then(function (answer) {
+      if (!answer.ok) {
+        answer.why = 'POST /admin-api/tls/trust/add answered ' +
+          (answer.status || answer.why) + ' ' +
+          String(answer.body || '').slice(0, 200) +
+          (token ? '' : ' (no STS_ADMIN_API_TOKEN was set)');
+      }
       return answer;
-    }
-    return send(base + '/tls/trust', 'text/plain', pem, {}, false)
-      .then(function (open) {
-        if (!open.ok) {
-          open.why = 'POST /admin-api/tls/trust/add answered ' +
-            (answer.status || answer.why) + ' and POST /tls/trust answered ' +
-            (open.status || open.why) + ' ' + String(open.body || '')
-              .slice(0, 200);
-        }
-        return open;
-      });
-  });
+    });
 }
 
 function send(where, type, body, extraHeaders, verify) {
@@ -273,6 +302,253 @@ function send(where, type, body, extraHeaders, verify) {
       resolve({ ok: false, why: error.message });
     });
     request.end(body);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE ONE CALL EVERY ADD AND REMOVE GOES THROUGH, REPLACEABLE FOR A TEST
+// (#1307). `tests/trust_anchor_cleanup.js` drives `forgetAnchors()`,
+// `settleAnchors()` and `trustRecorded()` against a fake with send()'s
+// signature and answer shape, so the cleanup's decisions are asserted without
+// a service. `useSender(null)` puts send() back; a test restores what
+// `useSender()` handed it, never null by assumption.
+// ---------------------------------------------------------------------------
+let sender = send;
+
+function useSender(fn) {
+  log.debug("Entering useSender().");
+  const previous = sender;
+  sender = typeof fn === 'function' ? fn : send;
+  log.debug("Leaving useSender().");
+  return previous;
+}
+
+// THE ANCHORS WHOSE ADD THE SERVICE CONFIRMED, by SHA-256 fingerprint.
+// "Not held" is a finished remove only for an anchor NOT in here: its add
+// timed out or was refused, so the service may never have taken it. For one
+// in here the add answered 2xx, and "not held" is a node of a cluster that
+// has not yet applied the row — the remove retries (REMOVE_TRIES, one
+// operation's retry delay, not periodic work) and then fails as it always
+// did, because a pass there would leave the row in ou=trustAnchors.
+const confirmed = new Set();
+const REMOVE_TRIES = 5;
+let retryDelayMs = 1000;
+
+// For a test: the delay between the tries of one remove. Answers the
+// previous value; a non-number or a negative one restores 1000.
+function useRetryDelay(ms) {
+  log.debug("Entering useRetryDelay().");
+  const previous = retryDelayMs;
+  retryDelayMs = typeof ms === 'number' && ms >= 0 ? ms : 1000;
+  log.debug("Leaving useRetryDelay().");
+  return previous;
+}
+
+function fingerprintOf(pem) {
+  log.debug("Entering fingerprintOf().");
+  try {
+    const print = new crypto.X509Certificate(pem).fingerprint256;
+    log.debug("Leaving fingerprintOf().");
+    return print;
+  } catch (error) {
+    // Not a certificate: the caller decides what that means, with ''.
+    log.debug("Caught in fingerprintOf(): " +
+              ((error && error.message) || error));
+    log.debug("Leaving fingerprintOf(). Not a certificate.");
+    return '';
+  }
+}
+
+// A job posting through its own door calls this after its post answered
+// 2xx; trustRecorded() calls it itself. Answers whether it was a certificate.
+function confirmAnchor(pem) {
+  log.debug("Entering confirmAnchor().");
+  const print = fingerprintOf(pem);
+  if (print) {
+    confirmed.add(print);
+  }
+  log.debug("Leaving confirmAnchor().");
+  return !!print;
+}
+
+function isConfirmed(pem) {
+  log.debug("Entering isConfirmed().");
+  const print = fingerprintOf(pem);
+  log.debug("Leaving isConfirmed().");
+  return !!print && confirmed.has(print);
+}
+
+// The sentence `tls/tls_server.js`'s removeAnchor() refuses a fingerprint it
+// does not hold with (STS-TLS-0016; codes are never sent, and the APIs' errors
+// stay English), carried in the 400's `errors`.
+const NOT_HELD = /holds no anchor with the SHA-256 fingerprint/;
+
+// ---------------------------------------------------------------------------
+// RECORD AN ANCHOR BEFORE IT IS POSTED (#1307, from #695's review of #682).
+//
+// Every job recorded its anchor only after the add answered 2xx. send()
+// gives up after 15s, and an add the service APPLIED but answered late was
+// then never recorded, so the job's own cleanup left it in the truststore
+// (32 anchors, service-wide) and only `deploy/aws/reset-environment.js`
+// caught it. Recording first costs nothing, because a remove of an anchor
+// the service never took answers "not held", which removeAnchor() counts as
+// done for an anchor whose add was never confirmed (see `confirmed`).
+//
+// `recordAnchor(added, pem)` is the record alone, for a job that posts
+// through a door of its own, which calls `confirmAnchor(pem)` once its post
+// answered 2xx; `trustRecorded(url, pem, added)` is the record, then
+// `trustAnchor()`'s post, then the confirmation on a 2xx, and answers what
+// the post answered. Only an
+// anchor THE JOB MINTED is recorded: removing one it re-posts (the remote
+// PEP's, `XACML_PEP_CA_PEM`) would take it from somebody else.
+// ---------------------------------------------------------------------------
+function recordAnchor(added, pem) {
+  log.debug("Entering recordAnchor().");
+  if (!Array.isArray(added)) {
+    log.debug("Leaving recordAnchor(). No list.");
+    throw new Error('recordAnchor() needs the job\'s list of added anchors');
+  }
+  if (pem && added.indexOf(pem) < 0) {
+    added.push(pem);
+  }
+  log.debug("Leaving recordAnchor().");
+  return added;
+}
+
+function trustRecorded(url, pem, added) {
+  log.debug("Entering trustRecorded().");
+  recordAnchor(added, pem);
+  log.debug("Leaving trustRecorded().");
+  return postAnchor(url, pem).then(function (answer) {
+    if (answer.ok) {
+      confirmAnchor(pem);
+    }
+    return answer;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// REMOVE AN ANCHOR THIS PROCESS ADDED (#335).
+//
+// The client truststore is service-wide and holds 32. A job that posts a
+// suite CA removes it when the job finishes, pass or fail. The command-line
+// `main()` does not: the remote PEP needs that anchor for the rest of the
+// run, and `deploy/aws/reset-environment.js` spares it by fingerprint.
+// A fingerprint the service answers it does not hold is a remove that is
+// done (#1307), answered `{ ok: true, absent: true }` — for an anchor whose
+// add was never confirmed. A confirmed one is asked again, REMOVE_TRIES in
+// all, and then fails, saying so.
+// ---------------------------------------------------------------------------
+function removeAnchor(url, pem) {
+  log.debug("Entering removeAnchor().");
+  const base = String(url || '').replace(/\/+$/, '');
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  let fingerprint = '';
+  try {
+    fingerprint = new crypto.X509Certificate(pem).fingerprint256;
+  } catch (error) {
+    // A PEM this process cannot read is one failed remove, reported to
+    // forgetAnchors(), rather than an exception that skips the rest of
+    // the list.
+    log.debug("Caught in removeAnchor(): " +
+              ((error && error.message) || error));
+    log.debug("Leaving removeAnchor(). Not a certificate.");
+    return Promise.resolve({ ok: false,
+                             why: 'the anchor is not a certificate' });
+  }
+  const wasConfirmed = confirmed.has(fingerprint);
+  const once = function () {
+    log.debug("Entering once().");
+    log.debug("Leaving once().");
+    return sender(base + '/admin-api/tls/trust/remove', 'application/json',
+      JSON.stringify({ fingerprint: fingerprint }),
+      token ? { Authorization: 'Bearer ' + token } : {}, true);
+  };
+  const attempt = function (tries) {
+    log.debug("Entering attempt(). try " + tries);
+    log.debug("Leaving attempt().");
+    return once().then(function (answer) {
+      const notHeld = !answer.ok && answer.status === 400 &&
+                      NOT_HELD.test(String(answer.body || ''));
+      if (notHeld && !wasConfirmed) {
+        // NOT HELD IS DONE (#1307), for an add never confirmed: it timed
+        // out or was refused, so the service may never have taken it, and
+        // holding no such anchor is the state the remove was for.
+        return { ok: true, status: answer.status, body: answer.body,
+                 absent: true };
+      }
+      if (notHeld && tries < REMOVE_TRIES) {
+        // CONFIRMED AND NOT HELD: a node that has not applied the add yet.
+        // Asked again after a pause, a bounded number of times.
+        return new Promise(function (resolve) {
+          setTimeout(resolve, retryDelayMs);
+        }).then(function () {
+          return attempt(tries + 1);
+        });
+      }
+      if (answer.ok) {
+        confirmed.delete(fingerprint);
+      }
+      if (!answer.ok) {
+        answer.why = 'POST /admin-api/tls/trust/remove answered ' +
+          (answer.status || answer.why) + ' ' +
+          String(answer.body || '').slice(0, 200) +
+          (token ? '' : ' (no STS_ADMIN_API_TOKEN was set)') +
+          (notHeld ? ' — its add was CONFIRMED and it is still not held ' +
+                     'after ' + tries + ' tries' : '');
+      }
+      return answer;
+    });
+  };
+  log.debug("Leaving removeAnchor().");
+  return attempt(1);
+}
+
+function forgetAnchors(url, pems) {
+  log.debug("Entering forgetAnchors().");
+  const list = Array.isArray(pems) ? pems.filter(Boolean) : [];
+  log.debug("Leaving forgetAnchors().");
+  return list.reduce(function (chain, pem) {
+    return chain.then(function (problems) {
+      return removeAnchor(url, pem).then(function (answer) {
+        if (!answer.ok) {
+          problems.push(answer.why || ('HTTP ' + answer.status));
+        }
+        return problems;
+      });
+    });
+  }, Promise.resolve([]));
+}
+
+// `failed` is the error the job already threw, or null when it passed. A
+// remove that fails after a passing job fails the job. A remove that fails
+// after a job that already failed is logged and the original error is kept.
+function settleAnchors(url, pems, failed) {
+  log.debug("Entering settleAnchors().");
+  log.debug("Leaving settleAnchors().");
+  return forgetAnchors(url, pems).then(function (problems) {
+    if (problems.length && failed) {
+      log.warn("the trust anchors this job added were not removed: " +
+               problems.join("; ") + "; the job had already failed");
+      throw failed;
+    }
+    if (problems.length) {
+      throw new Error("the trust anchors this job added were not removed: " +
+                      problems.join("; "));
+    }
+    if (failed) {
+      throw failed;
+    }
+  }, function (error) {
+    log.debug("Caught in settleAnchors(): " +
+              ((error && error.message) || error));
+    if (failed) {
+      log.warn("removing the trust anchors this job added failed: " +
+               ((error && error.message) || error) +
+               "; the job had already failed");
+      throw failed;
+    }
+    throw error;
   });
 }
 
@@ -332,7 +608,7 @@ async function issue(spec) {
 
 // ---------------------------------------------------------------------------
 // THE WHOLE CHAIN, IN MEMORY. Exported so that a TEST can mint a credential
-// without writing files — `tests/vendored/sts_xacml_endpoints.js` needs a
+// without writing files — `tests/protocol/sts_xacml_endpoints.js` needs a
 // trusted client certificate to drive the three PEP endpoints at all now that
 // they are gated, and a second implementation of this in that file would be a
 // second reading of how a chain is built.
@@ -344,7 +620,7 @@ async function issue(spec) {
 // and the leaf the Issuing CA's. Where those lists are served is the caller's
 // choice, by `options.crlBase`:
 //
-//   * absent — the default, for a test: `tests/vendored/test_crl_host.js`
+//   * absent — the default, for a test: `tests/protocol/test_crl_host.js`
 //     serves them from THIS process, which is alive while its certificate is
 //     presented;
 //   * a URL — the lists are named `<crlBase>/root.crl` and
@@ -358,7 +634,7 @@ async function mint(opts) {
   log.debug("Entering mint().");
   const options = opts || {};
   const host = options.crlBase === undefined
-    ? require('../vendored/test_crl_host.js') : null;
+    ? require('../protocol/test_crl_host.js') : null;
   const rootList = host ? await host.reserve('root')
     : (options.crlBase ? { url: options.crlBase + '/root.crl' } : null);
   const issuingList = host ? await host.reserve('issuing')
@@ -390,7 +666,7 @@ async function mint(opts) {
     // Fresh for as long as the leaf lives, because nothing re-signs them: the
     // container serving them has no key.
     const days = (options.years || 1) * 366;
-    const lists = require('../vendored/test_crl_host.js');
+    const lists = require('../protocol/test_crl_host.js');
     crls = { 'root.crl': await lists.crlFor(root, { days: days }),
              'issuing.crl': await lists.crlFor(issuing, { days: days }) };
   }
@@ -433,12 +709,13 @@ async function main() {
 
   say(opts, 'Building a Root CA, an Issuing CA and a TLS client certificate ' +
             'for ' + opts.subject + ' on ' + REPO +
-            '/common/vendored/x509.js ' +
+            '/common/crypto_impl/x509.js ' +
             '— the same engine spiffe/spiffe_ca.ts issues X509-SVIDs with.');
 
   // THE LISTS GO WHERE --crl-base SAYS, OR NOWHERE (#174): this process exits
   // as soon as it has written the credential, so it cannot serve them itself.
   const minted = await mint({ subject: opts.subject, years: opts.years,
+                              rootSubject: opts.rootSubject || '',
                               crlBase: opts.crlBase || false });
   const root = minted.root;
   const issuing = minted.issuing;
@@ -473,7 +750,8 @@ async function main() {
      '    issues   ' + leaf.subject + '   (serial ' + leaf.serialHex + ')',
      '',
      'pep.crt is the LEAF followed by the ISSUING CA, which is what the PEP',
-     'presents. Only the ROOT was POSTed to ' + opts.url + '/tls/trust, so the',
+     'presents. Only the ROOT was added to the truststore at ' + opts.url,
+     '(POST /admin-api/tls/trust/add), so the',
      'mock has to build the path from what arrives to the anchor it holds.',
      'The leaf expires ' + leaf.notAfter + '.',
      ''].join('\n'));
@@ -490,9 +768,9 @@ async function main() {
   const posted = await postAnchor(opts.url, root.pem);
   if (!posted.ok) {
     process.stderr.write('Could not add the Root CA to ' + opts.url +
-      '/tls/trust: ' + (posted.why || ('HTTP ' + posted.status + ' ' +
-      String(posted.body).slice(0, 300))) + '\nThe certificate files were ' +
-      'written, but the mock will not verify them: this credential is ' +
+      '/admin-api/tls/trust/add: ' + (posted.why || ('HTTP ' +
+      posted.status + ' ' + String(posted.body).slice(0, 300))) +
+      '\nThe certificate files were written, but the mock will not verify them: this credential is ' +
       'useless until the anchor is trusted.\n');
     process.exit(1);
   }
@@ -506,13 +784,137 @@ async function main() {
   // THE DN, LAST AND ON STDOUT, so that `$(pep-credential.js --quiet ...)` is
   // the DN and a launcher needs no parsing. Everything else this file says
   // goes to stderr for that reason.
+  if (opts.storeOn) {
+    const stored = await storeFromCli(opts, leaf.pem);
+    if (!stored.ok) {
+      process.stderr.write('Could not store the leaf on ' + opts.storeOn +
+        ': POST /admin-api/users/add-certificate answered ' +
+        (stored.status || stored.why) + ' ' +
+        String(stored.body || '').slice(0, 300) + '\nThe anchor is trusted, ' +
+        'but the certificate names nobody until it is stored (#1061).\n');
+      process.exit(1);
+    }
+    say(opts, 'The leaf is stored on ' + opts.storeOn + '\'s entry' +
+              (opts.realm ? ' in the "' + opts.realm + '" realm' : '') +
+              ', which is what makes it that entry\'s identity (#1061).');
+  }
   process.stdout.write(leaf.subject + '\n');
   log.debug("Leaving main().");
 }
 
-// Guarded so that a test can require this file for `mint()` and `trustAnchor()`
-// without it parsing arguments and writing files — the same guard
-// `xacml-pep/pep.js` and `common/request_worker.ts` carry, for the same reason.
+// Guarded so that a test can require this file for `mint()`, `trustAnchor()`,
+// `trustRecorded()`, `removeAnchor()`, `forgetAnchors()` and `settleAnchors()`
+// (and `useSender()`, `useRetryDelay()`, #1307) without it parsing
+// arguments and writing files — the same guard `xacml-pep/pep.js` and
+// `common/request_worker.ts` carry, for the same reason.
+// ---------------------------------------------------------------------------
+// STORE A LEAF ON ITS ENTRY (#1061), from a job.
+//
+// `api` is the job's own verbs — `{ get(url), post(url, payload) }`, each a
+// promise of `{ status, body, text }` — because every job already
+// authenticates to /admin-api its own way and this file must not grow a
+// second one. `prefix` is '' for the default realm or `/realm/<id>`. The
+// entry is created first where `GET /admin-api/users/certificates` says there
+// is none (a 400 is that refusal, STS-ADMIN-0898; codes are never sent), with
+// the attributes a product-mode realm's attribute policy requires.
+// Answers `{ prefix, user, sha256 }` for `forgetStored()`.
+// ---------------------------------------------------------------------------
+async function storeOnEntry(api, base, prefix, username, leafPem, attributes) {
+  log.debug("Entering storeOnEntry(). " + prefix + " " + username);
+  const root = String(base || '').replace(/\/+$/, '') + String(prefix || '') +
+               '/admin-api/users';
+  const listed = await api.get(root + '/certificates?user=' +
+                               encodeURIComponent(username));
+  if (listed.status !== 200) {
+    const made = await api.post(root + '/create', {
+      username: username, invent: false,
+      attributes: Object.assign({ cn: username, givenName: 'Certificate',
+                                  sn: username,
+                                  mail: username + '@certificate-holder.test',
+                                  displayName: username }, attributes || {})
+    });
+    if (made.status !== 200) {
+      log.debug("Leaving storeOnEntry(). The create was refused.");
+      throw new Error('POST ' + prefix + '/admin-api/users/create for ' +
+        username + ' answered ' + made.status + ' ' +
+        String(made.text || JSON.stringify(made.body)).slice(0, 300) +
+        '. An outside certificate is an identity only on an entry that ' +
+        'stores it, so there has to be one.');
+    }
+  }
+  const leaf = String(leafPem || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const stored = await api.post(root + '/add-certificate', {
+    user: username, certificate: leaf ? leaf[0] : String(leafPem || '') });
+  if (stored.status !== 200 || !stored.body || !stored.body.ok) {
+    log.debug("Leaving storeOnEntry(). The store was refused.");
+    throw new Error('POST ' + prefix + '/admin-api/users/add-certificate ' +
+      'for ' + username + ' answered ' + stored.status + ' ' +
+      String(stored.text || JSON.stringify(stored.body)).slice(0, 300) +
+      '. Without it the certificate verifies and names nobody (#1061).');
+  }
+  log.debug("Leaving storeOnEntry(). " + stored.body.sha256);
+  return { prefix: String(prefix || ''), user: username,
+           sha256: String(stored.body.sha256 || '') };
+}
+
+// Takes off what `storeOnEntry()` stored, for a job's cleanup: an entry in a
+// realm the run keeps (the default one) must not keep a certificate whose key
+// was a temporary file. Failures are logged and answered, never thrown — a
+// cleanup that throws would replace the job's own verdict.
+async function forgetStored(api, base, list) {
+  log.debug("Entering forgetStored(). " + (list || []).length);
+  const problems = [];
+  for (const one of (list || [])) {
+    try {
+      const r = await api.post(String(base || '').replace(/\/+$/, '') +
+        one.prefix + '/admin-api/users/remove-certificate',
+        { user: one.user, sha256: one.sha256 });
+      if (r.status !== 200) {
+        problems.push(one.user + ': ' + r.status);
+      }
+    } catch (e) {
+      log.debug("Caught in forgetStored(): " + ((e && e.message) || e));
+      problems.push(one.user + ': ' + ((e && e.message) || e));
+    }
+  }
+  if (problems.length) {
+    log.warn('pep-credential: some stored certificates were not taken off: ' +
+             problems.join('; '));
+  }
+  log.debug("Leaving forgetStored().");
+  return problems;
+}
+
+// The CLI's `--store-on`, over `send()`: create (a refusal because the entry
+// exists is expected and passed over), then store.
+async function storeFromCli(opts, leafPem) {
+  log.debug("Entering storeFromCli().");
+  const prefix = opts.realm ? '/realm/' + opts.realm : '';
+  const root = String(opts.url).replace(/\/+$/, '') + prefix +
+               '/admin-api/users';
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  const headers = token ? { Authorization: 'Bearer ' + token } : {};
+  const user = String(opts.storeOn);
+  const made = await send(root + '/create', 'application/json',
+    JSON.stringify({ username: user, invent: false,
+      attributes: { cn: user, givenName: 'Remote', sn: user,
+                    mail: user + '@xacml-remote-pep.test',
+                    displayName: user } }), headers, true);
+  if (!made.ok) {
+    log.info('pep-credential: the create of ' + user + ' answered ' +
+             (made.status || made.why) + '; an entry that is already there ' +
+             'is the usual reason, and the store below says if not.');
+  }
+  const leaf = String(leafPem).match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const stored = await send(root + '/add-certificate', 'application/json',
+    JSON.stringify({ user: user, certificate: leaf ? leaf[0] : leafPem }),
+    headers, true);
+  log.debug("Leaving storeFromCli().");
+  return stored;
+}
+
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +
@@ -522,4 +924,10 @@ if (require.main === module) {
 }
 
 module.exports = { mint: mint, trustAnchor: postAnchor,
+                   removeAnchor: removeAnchor, forgetAnchors: forgetAnchors,
+                   settleAnchors: settleAnchors,
+                   recordAnchor: recordAnchor, trustRecorded: trustRecorded,
+                   confirmAnchor: confirmAnchor, isConfirmed: isConfirmed,
+                   useSender: useSender, useRetryDelay: useRetryDelay,
+                   storeOnEntry: storeOnEntry, forgetStored: forgetStored,
                    DEFAULT_SUBJECT: DEFAULT_SUBJECT };

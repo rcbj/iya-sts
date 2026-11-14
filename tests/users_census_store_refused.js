@@ -1,0 +1,258 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: users_census_store_refused.js
+//
+// ===========================================================================
+// A USERS-LIST CENSUS THE STORE REFUSED IS NOT ASKED AGAIN PERSON BY PERSON,
+// AND NO LIST READS RECOVERY CODES (#786).
+//
+// On 8081 the census failed on the request's directory budget and the list
+// fell back to `mechanismsFor()` for ~165,000 names — keys, authenticator
+// and recovery codes, every read refused and logged — and a request worker
+// was held for minutes.
+//
+//   R1. a census refused by the store (STS-LDAP-0175) answers every name
+//       unknown and asks nobody on their own — synchronously and not;
+//   R2. a census that threw for any other reason is still answered one name
+//       at a time;
+//   R3. that one-at-a-time path reads no recovery codes, including for a
+//       person who holds an authenticator app (recoveryAdvised's read);
+//   R4. a row none of whose names the census answered has no factors
+//       (unknown), not "no credential";
+//   R5. where the directory offers no census, each name is still asked on
+//       its own and no recovery codes are read;
+//   R6. a census that failed on the store under a code `storeRefused()`
+//       does not list (a pool timeout, STS-STORE-0066) is refused as well;
+//   R7. in a windowed process, a census that threw for any reason is
+//       refused, with no one-name read (#786's review). R2 is the same
+//       throw in a process holding the directory in memory.
+//
+// In a child process: it replaces the directory's census hooks.
+// ===========================================================================
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const childProcess = require('child_process');
+
+const log = require('bunyan').createLogger({
+  name: 'users_census_store_refused', level: process.env.LOG_LEVEL || 'info' });
+
+// Runs in the child. Stringified, so it may use nothing from this file's scope.
+function child() {
+  const findings = [];
+  const note = function (ok, what, detail) {
+    findings.push({ ok: !!ok, what: what,
+                    detail: detail === undefined ? '' : String(detail) });
+  };
+  const OUT = process.env.UCR_OUT;
+  const ROOT = process.env.UCR_ROOT;
+  const finish = function () {
+    require('fs').writeFileSync(OUT, JSON.stringify(findings));
+    process.exit(0);
+  };
+  (async function () {
+    require(ROOT + '/ldap/ldap_server');
+    const credentials = require(ROOT + '/common/credentials');
+    const errorCodes = require(ROOT + '/common/error_codes');
+    const backupCodes = require(ROOT + '/common/backup_codes');
+    const views = require(ROOT + '/admin-core/admin_views');
+    const proto = credentials.Credentials.prototype;
+    const counts = { mechanisms: 0, recovery: 0, codesOf: 0 };
+    const realMechanisms = proto.mechanismsFor;
+    const realRecovery = proto.backupCodeStatus;
+    const realCodesOf = proto.backupCodesOf;
+    proto.mechanismsFor = function () {
+      counts.mechanisms++;
+      return realMechanisms.apply(this, arguments);
+    };
+    proto.backupCodeStatus = function () {
+      counts.recovery++;
+      return realRecovery.apply(this, arguments);
+    };
+    proto.backupCodesOf = function () {
+      counts.codesOf++;
+      return realCodesOf.apply(this, arguments);
+    };
+    // An authenticator enrolment makes `recoveryAdvised` true of a person
+    // who holds no recovery codes, which is the read `backupCodeStatus`
+    // does not cover (#786).
+    proto.totpStatusOf = function () {
+      return { enrolledAt: 1, algorithm: 'SHA1', digits: 6, period: 30,
+               sealed: false, unusable: false, why: '' };
+    };
+    note(typeof realCodesOf === 'function' && backupCodes.offered() === true,
+         'recovery codes are offered, and the census can reach the read',
+         'codesOf=' + typeof realCodesOf + ' offered=' +
+         backupCodes.offered());
+    const names = ['ucr-a', 'ucr-b', 'ucr-c'];
+    const refused = function () {
+      return errorCodes.mark(new Error('this request has already waited ' +
+        '5000 ms for the store'), 'STS-LDAP-0175');
+    };
+
+    credentials.addDirectoryHooks({
+      credentialCensus: function () {
+        throw refused();
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(refused());
+      }
+    });
+    const syncFacts = credentials.factorCensus(names);
+    const asyncFacts = await credentials.factorCensusAsync(names);
+    note(syncFacts.size === 0 && asyncFacts.size === 0 &&
+         counts.mechanisms === 0 && counts.recovery === 0 &&
+         counts.codesOf === 0,
+         'R1. a census the store refused answers every name unknown and asks ' +
+         'nobody on their own, synchronously and not',
+         JSON.stringify({ sync: syncFacts.size, async: asyncFacts.size,
+                          counts: counts }));
+
+    credentials.addDirectoryHooks({
+      credentialCensus: function () {
+        throw new Error('something else went wrong');
+      }
+    });
+    const other = credentials.factorCensus(names);
+    note(other.size === 3 && counts.mechanisms === 3,
+         'R2. a census that threw for another reason is still answered one ' +
+         'name at a time', JSON.stringify({ size: other.size,
+                                            counts: counts }));
+    note(counts.recovery === 0 && counts.codesOf === 0,
+         'R3. and that one-at-a-time path reads no recovery codes, including ' +
+         'for a person who holds an authenticator app',
+         JSON.stringify(counts));
+
+    // R6, R7 (#786's review): a store failure the three listed codes do not
+    // name, and any failure where the directory is a window onto the store,
+    // are refused too — no `mechanismsFor()` per name.
+    const r6 = { mechanisms: counts.mechanisms, recovery: counts.recovery,
+                 codesOf: counts.codesOf };
+    const poolTimeout = function () {
+      return errorCodes.mark(new Error('timed out waiting for a connection ' +
+        'from the pool'), 'STS-STORE-0066');
+    };
+    credentials.addDirectoryHooks({
+      credentialCensus: function () {
+        throw poolTimeout();
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(poolTimeout());
+      }
+    });
+    const storeSync = credentials.factorCensus(names);
+    const storeAsync = await credentials.factorCensusAsync(names);
+    note(storeSync.size === 0 && storeAsync.size === 0 &&
+         counts.mechanisms === r6.mechanisms &&
+         counts.recovery === r6.recovery && counts.codesOf === r6.codesOf,
+         'R6. a census that failed on the store under a code storeRefused() ' +
+         'does not list (a pool timeout) answers every name unknown and asks ' +
+         'nobody on their own, synchronously and not',
+         JSON.stringify({ sync: storeSync.size, async: storeAsync.size,
+                          before: r6, counts: counts }));
+
+    credentials.addDirectoryHooks({
+      directoryWindowed: function () {
+        return true;
+      },
+      credentialCensus: function () {
+        throw new Error('a page of the window could not be read');
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(new Error('a page of the window could not ' +
+                                        'be read'));
+      }
+    });
+    const winSync = credentials.factorCensus(names);
+    const winAsync = await credentials.factorCensusAsync(names);
+    note(winSync.size === 0 && winAsync.size === 0 &&
+         counts.mechanisms === r6.mechanisms,
+         'R7. in a windowed process a census that threw for any reason is ' +
+         'answered unknown, with no one-name read',
+         JSON.stringify({ sync: winSync.size, async: winAsync.size,
+                          before: r6, counts: counts }));
+
+    // R4: the view's merge, over a census that answered nobody.
+    const instance = new views.AdminViews(views.AdminViews.defaultDeps());
+    const population = { spellings: new Map([
+      ['ucr-a', [{ username: 'ucr-a' }]],
+      ['ucr-b', [{ username: 'ucr-b' }]]]) };
+    const rows = [{ key: 'ucr-a' }, { key: 'ucr-b' }];
+    const merged = instance.peopleCensusOf(population, rows, new Map([
+      ['ucr-b', { password: true, usable: true, primaryKeys: 0, mfaKeys: 0 }]
+    ]));
+    note(merged.get('ucr-a') === null && merged.get('ucr-b') &&
+         merged.get('ucr-b').password === true,
+         'R4. a row the census did not answer has no factors (unknown); one ' +
+         'it answered keeps its facts', JSON.stringify([merged.get('ucr-a'),
+           merged.get('ucr-b') && merged.get('ucr-b').password]));
+
+    const before = { mechanisms: counts.mechanisms,
+                     recovery: counts.recovery, codesOf: counts.codesOf };
+    credentials.addDirectoryHooks({});
+    const absent = credentials.factorCensus(names);
+    note(absent.size === 3 &&
+         counts.mechanisms === before.mechanisms + 3 &&
+         counts.recovery === before.recovery &&
+         counts.codesOf === before.codesOf,
+         'R5. where the directory offers no census, each name is still asked ' +
+         'on its own and no recovery codes are read',
+         JSON.stringify({ size: absent.size, before: before,
+                          counts: counts }));
+    finish();
+  })().catch(function (e) {
+    note(false, 'the child threw', (e && e.stack) || e);
+    finish();
+  });
+}
+
+function run(t) {
+  log.debug("Entering run().");
+  const root = path.join(__dirname, '..');
+  const out = path.join(os.tmpdir(), 'sts-ucr-' + process.pid + '-' +
+                                     Date.now() + '.json');
+  const env = {};
+  Object.keys(process.env).forEach(function (key) {
+    if (!/^(STS_|CONFIG_FILE$)/.test(key)) {
+      env[key] = process.env[key];
+    }
+  });
+  Object.assign(env, { UCR_OUT: out, UCR_ROOT: root, LOG_LEVEL: 'fatal',
+                       STS_LOG_LEVEL: 'fatal' });
+  const result = childProcess.spawnSync(process.execPath,
+    ['-e', '(' + child.toString() + ')()'], {
+      cwd: root, env: env, encoding: 'utf8', timeout: 180000,
+      maxBuffer: 64 * 1024 * 1024 });
+  let findings = null;
+  try {
+    findings = JSON.parse(fs.readFileSync(out, 'utf8'));
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    findings = null;
+  }
+  try {
+    fs.rmSync(out, { force: true });
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+  }
+  if (t.check(Array.isArray(findings),
+              'the child process reported its findings',
+              'status=' + result.status + ' ' +
+              String(result.stderr || '').slice(-2000))) {
+    findings.forEach(function (one) {
+      t.check(one.ok, one.what, one.detail);
+    });
+  }
+  log.debug("Leaving run().");
+}
+
+module.exports = {
+  name: 'users_census_store_refused',
+  describe: 'a users-list census the store refused is not asked again person ' +
+            'by person, and no list reads recovery codes (#786)',
+  run: run
+};

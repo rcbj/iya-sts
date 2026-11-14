@@ -21,7 +21,7 @@
 //     written in this file, and its key — not the password — pre-authenticates
 //     a real AS-REQ built here with the vendored codec, and opens the AS-REP.
 //     That is `kinit -k` in miniature; the MIT client itself is driven by
-//     `tests/vendored/sts_kerberos_keytab.js`.
+//     `tests/protocol/sts_kerberos_keytab.js`.
 //   * **PRODUCT MODE, IN A CHILD PROCESS**, because the principal database is
 //     built at require time in the process's mode (kerberos_person_keys.js's
 //     reason): the keytab from the right password at the current kvno and no
@@ -244,7 +244,13 @@ async function keytabChild() {
   };
 
   const PW = 'Keytab-Owner-Passw0rd!-1';
-  directory.createUser('ktowner', { invent: false });
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  const person = function (name) {
+    return { invent: false, attributes: { givenName: 'Kt', sn: name,
+                                          mail: name + '@example.test' } };
+  };
+  directory.createUser('ktowner', person('ktowner'));
   out.steps.set = credentials.setPassword('ktowner', PW).ok;
   await personKeys.idle();
   out.kvnoStart = kvnoOf('ktowner');
@@ -268,7 +274,7 @@ async function keytabChild() {
   // --- C. refused before anything is derived ---
   out.nobody = brief(await personKeys.personKeytab('ktnobody', PW, {}));
   out.badName = brief(await personKeys.personKeytab('a/b', PW, {}));
-  directory.createUser('ktlocked', { invent: false });
+  directory.createUser('ktlocked', person('ktlocked'));
   credentials.setPassword('ktlocked', PW);
   await personKeys.idle();
   out.disableOk = credentials.setAccountDisabled('ktlocked', true).ok;
@@ -318,6 +324,16 @@ async function keytabChild() {
   out.kvnoAfterRandom = kvnoOf('ktowner');
   out.typedPasswordAfterRandom = await asWithPassword('ktowner', PW2);
   out.randomText = JSON.stringify(random);
+
+  // --- E-ii. a password that must be changed gets no ticket (#1446) ---
+  directory.createUser('kttemp', person('kttemp'));
+  credentials.setPassword('kttemp', PW);
+  await personKeys.idle();
+  out.tempBefore = await asWithPassword('kttemp', PW);
+  credentials.setPasswordResetRequired('kttemp', true);
+  out.tempFlagged = await asWithPassword('kttemp', PW);
+  credentials.setPasswordResetRequired('kttemp', false);
+  out.tempAfter = await asWithPassword('kttemp', PW);
 
   // --- F. refusals that change nothing ---
   const kvnoBeforeRefusals = kvnoOf('ktowner');
@@ -432,9 +448,10 @@ function inAChild(t, mode) {
   });
   if (mode === 'product') {
     Object.assign(env, {
-      STS_MODE: 'product',
+      STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_SECURITY_RATE_PER_IDENTITY: '1000', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
       KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret',
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: kekFile
     });
   }
@@ -480,6 +497,11 @@ function everyEtypeSignedIn(results) {
 function productAssertions(t, r) {
   log.debug("Entering productAssertions().");
   t.log.info('=== product: the keytab from a password in hand ===');
+  t.check(r.tempBefore.ok && !r.tempFlagged.ok &&
+          r.tempFlagged.code === 23 && r.tempAfter.ok,
+          'product: a password that must be changed gets KDC_ERR_KEY_EXPIRED, ' +
+          'and the same password works once it need not be',
+          JSON.stringify([r.tempBefore, r.tempFlagged, r.tempAfter]));
   t.check(r.productKdc === true, 'the child is a product KDC');
   const own = r.own.keytab
     ? independentKeytabRead(Buffer.from(r.own.keytab, 'base64')) : [];

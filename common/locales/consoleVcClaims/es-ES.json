@@ -1,0 +1,3 @@
+{
+  "ldapTypes": "La lista es de <strong>tipos de atributo LDAP</strong> y no de nombres de claim, porque este servicio tiene un directorio, y un claim cuyo valor nadie más puede ver es media demostración. Un atributo seleccionado se convierte en el claim nombrado a su lado, y el valor es el de la entrada de esa persona bajo <code>ou=users</code>; así, un cliente LDAP y una cartera OID4VCI que apunten a este servicio ven a la misma persona. Tres filas no son de los RFC 4519/4524/2798: no existe un tipo de atributo estándar para la fecha de nacimiento ni para la nacionalidad, así que se toman prestados los nombres del esquema SCHAC en lugar de inventarlos."
+}

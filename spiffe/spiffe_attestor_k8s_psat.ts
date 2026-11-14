@@ -208,6 +208,14 @@ class K8sPsatAttestor {
       caFile = caFile || IN_CLUSTER + '/ca.crt';
       tokenFile = tokenFile || IN_CLUSTER + '/token';
     }
+    // These two name a file the answer's bearer token comes from (#1481).
+    const confine = require('../common/outbound_tls').assertNamedFile;
+    if (caFile) {
+      confine(caFile);
+    }
+    if (tokenFile) {
+      confine(tokenFile);
+    }
     const ca = caFile ? fs.readFileSync(caFile, 'utf8') : '';
     const token = tokenFile ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
     log.debug("Leaving K8sPsatAttestor.reach().");

@@ -41,6 +41,8 @@
 // load, where it was always declared.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -118,7 +120,12 @@ class OAuth2MonitorApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering OAuth2MonitorApi.sendJson(). status=" + status);
     // error-code: none — the status is a variable; each refusal below marks
@@ -153,83 +160,51 @@ class OAuth2MonitorApi {
     const { log, parseBody, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2MonitorApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/oauth2/monitor',
         tag: 'OAuth 2.0 / OIDC',
         operationId: 'getOauth2Monitor',
-        summary: 'What the authorization server has done in this realm, ' +
-                 'by mechanism, with the pushed authorization requests ' +
-                 'still held',
-        description: 'Everything /admin/oauth2/monitor draws, in SECTIONS ' +
-          '— one per mechanism counted, RFC 9126 pushed authorization ' +
-          'requests the first. Each section carries its events (the ' +
-          'closed vocabulary with a label and a total each), the ' +
-          'totals, the OAuth errors returned, one row per client_id ' +
-          'with every counter (paged by `clientsPage` and `per`), and ' +
-          '— for RFC 9126 — the pushed requests the store still ' +
-          'holds, newest first: request_uri, client, authorization ' +
-          'server, state, created and expiry, reads, whether and how ' +
-          'the client authenticated, form or request object, the ' +
-          'redirect_uri and whether section 2.4 let it in ' +
-          'unregistered, the DPoP key, and the parameters. That ' +
-          'list is paged by `offset` and `limit` (or the ' +
-          'console\'s `page` and `per`) ' +
-          'and filtered by `state` and `client_id`. RFC 9470\'s ' +
-          'step-up is the second section (`stepup`), its clients ' +
-          'paged by `stepUpClientsPage`, carrying the requirement ' +
-          'this service\'s own resource server enforces ' +
-          '(`ownResourceRequirement`) and `acrValuesSupported`. ' +
-          'Per trust realm, ' +
-          'merged across processes, and with no reset.',
         mirrors: 'GET /admin/oauth2/monitor',
         parameters: [
           { name: 'offset', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 0 },
+            schema: { type: 'integer', minimum: 0, examples: [0] },
             description: 'Skip this many pushed requests (newest first). ' +
                          'Wins over `page` when both are sent.' },
           { name: 'limit', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 500 },
+            schema: { type: 'integer', minimum: 1, maximum: 500,
+                      examples: [50] },
             description: 'At most this many pushed requests; 50 by ' +
                          'default.' },
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string', enum: ['live', 'spent', 'all'] },
+            schema: { type: 'string', enum: ['live', 'spent', 'all'],
+                      examples: ['all'] },
             description: '`live` (not yet spent), `spent` (an ' +
                          'authorization response was issued on it; kept ' +
                          'until it would have expired), or `all`, the ' +
                          'default.' },
           { name: 'client_id', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['no-such-client'] },
             description: 'Only the pushed requests bound to this ' +
                          'client.' },
           { name: 'page', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The console\'s spelling: which page of pushed ' +
                          'requests, `per` to a page.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 500 },
+            schema: { type: 'integer', minimum: 1, maximum: 500,
+                      examples: [10] },
             description: 'Rows per page, for `page` and `clientsPage`.' },
           { name: 'clientsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the RFC 9126 section\'s ' +
                          'per-client counter rows.' },
           { name: 'stepUpClientsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the RFC 9470 section\'s ' +
                          'per-client counter rows.' }
         ],
-        responseDescription: 'The sections, their counters and the pushed ' +
-                             'requests held.',
-        responseSchema: self.object(
-          'The OAuth 2.0 / OIDC activity in this realm: ' +
-          '`since`, `actions`, and `sections` — each with ' +
-          '`id`, `title`, `events`, `totals`, `errors`, ' +
-          '`clients`, `clientsPaging`, `clientsParam` and, ' +
-          'for `par`, `pushedRequests` (`filter`, `total`, ' +
-          '`offset`, `limit`, `capacity`, `lifetime_s`, ' +
-          '`paging`, `items`), for `stepup`, ' +
-          '`ownResourceRequirement` and ' +
-          '`acrValuesSupported`.'),
-        handler: function (req: Req, res: Res) {
+        handler: function (req, res) {
           log.debug("Entering the management API OAuth 2.0 monitor " +
                     "endpoint.");
           const model = self.consoleModel();
@@ -246,10 +221,10 @@ class OAuth2MonitorApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/oauth2/monitor/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/oauth2/monitor/:action',
         tag: 'OAuth 2.0 / OIDC',
         mirrors: 'POST /admin/oauth2/monitor',
-        handler: function (req: Req, res: Res) {
+        handler: function (req, res) {
           log.debug("Entering the management API OAuth 2.0 monitor " +
                     "action.");
           const body = Object.assign(
@@ -281,35 +256,8 @@ class OAuth2MonitorApi {
         },
         actions: [
           { action: 'delete-pushed-request',
-            operationId: 'deletePushedRequest',
-            summary: 'Withdraw a pushed authorization request (RFC 9126)',
-            description: 'Removes one request_uri from this realm\'s store ' +
-              'of pushed authorization requests, live or spent. The ' +
-              'authorization endpoint refuses it from then on with ' +
-              '400 invalid_request_uri, exactly as it refuses one ' +
-              'that expired and was swept; a browser already on the ' +
-              'sign-in or consent screen with it is refused when it ' +
-              'comes back. Counted as `par.deleted` and written to ' +
-              'the audit log. A value not in the ' +
-              '`urn:ietf:params:oauth:request_uri:` namespace, or one ' +
-              'this realm does not hold, is refused 400.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                request_uri: {
-                  type: 'string', minLength: 1, maxLength: 512,
-                  description: 'The whole request_uri, as listed ' +
-                               'by GET /admin-api/oauth2/monitor.' }
-              },
-              required: ['request_uri'],
-              examples: [{ request_uri: 'urn:ietf:params:oauth:request_uri:' +
-                                        'bwc4JK-ESC0w8acc191e-Y1LTC2' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The request_uri withdrawn, the client it ' +
-                                 'was bound to and the state it was in.' }
-        ] }
+            operationId: 'deletePushedRequest' }
+        ] })
     ];
     log.debug("Leaving OAuth2MonitorApi.buildRoutes().");
     return ROUTES;

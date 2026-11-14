@@ -111,6 +111,11 @@ function childMain() {
         return Promise.resolve({ inserted: false });
       },
       leaveChangeReader: function () { return Promise.resolve(true); },
+      // A NUDGE, as the native postgres driver has: without one the pull
+      // runs every second whatever the default says (#677,
+      // `persistence_replication.js` intervalMs()), which is not what this
+      // assertion is about.
+      watchChanges: function () { return function () {}; },
       purgeChangeLog: function () {
         return Promise.resolve({ trimmed: 0, readers: 1, readersGone: 0,
                                  bound: 1 });
@@ -217,7 +222,8 @@ function childMain() {
          purgeJob.owner === 'common/admin_stats.js',
          'D1. the tracked-token purge is a cluster job, and a token ' +
          'recorded registers it no second time');
-    const soon = stats.purgeExpiredTokens(Date.now() + (skewS + 1) * 1000);
+    const soon = await stats.purgeExpiredTokens(Date.now() +
+                                                (skewS + 1) * 1000);
     const listed = function () {
       return JSON.stringify(stats.tokenList ? stats.tokenList() : '');
     };
@@ -229,8 +235,9 @@ function childMain() {
     note(soon.records === 0 || keepS === 0,
          'D3. but its record stays for oauth2.expiredTokenRetentionS, so ' +
          '/admin/tokens can still show it expired', JSON.stringify(soon));
-    const pastKeep = stats.purgeExpiredTokens(Date.now() +
-                                              (skewS + keepS + 10) * 1000);
+    const pastKeep = await stats.purgeExpiredTokens(Date.now() +
+                                                    (skewS + keepS + 10) *
+                                                    1000);
     note(pastKeep.records >= 1 && listed().indexOf('p5-old') < 0 &&
          listed().indexOf('p5-live') >= 0,
          'D4. past the retention the record goes too, and the live token\'s ' +

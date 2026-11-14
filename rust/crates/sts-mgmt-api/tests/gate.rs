@@ -190,14 +190,14 @@ fn every_refusal_in_order() {
     c["client_id"] = json!("sts-admin-console");
     c["sub"] = json!("alice");
     let r = ask("GET", bearer(token(&keys, "at+jwt", c))).unwrap_err();
-    assert_eq!((r.status, r.code), (401, codes::STS_OAUTH_0939));
+    assert_eq!((r.status, r.code), (401, codes::STS_OAUTH_0944));
     assert!(ask("GET", bearer(token(&keys, "at+jwt", good()))).is_ok());
     use sts_oauth::sender_constraints::public_client_issuance_refusal as issuance;
     assert_eq!(
         issuance("sts-admin-console", "none", "", "authorization_code")
             .unwrap()
             .code,
-        codes::STS_OAUTH_0938
+        codes::STS_OAUTH_0943
     );
     assert!(
         issuance("sts-admin-console", "none", "jkt", "authorization_code")

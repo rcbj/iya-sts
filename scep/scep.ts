@@ -94,13 +94,14 @@
 // order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import audit = require('../common/audit');
 import config = require('../common/config');
+import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import validation = require('../common/validation');
@@ -116,37 +117,36 @@ import InstanceSlot = require('../common/instance_slot');
 // Libraries; each is a no-op in a single-cell service.
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
+// THE OPERATIONS, THE CAPABILITIES AND THE QUERY ARE THE MODEL'S (#1579):
+// `models/enrollment/scep.tsp`. A leaf.
+import EnrollmentModel = require('../common/enrollment_model');
 
-const vz = validation.z;
-const vt = validation.types;
+// The four operations and the methods each answers, the model's
+// `@operations` (#1579).
+const OPERATION_ROWS = EnrollmentModel.operations('scep');
 
 /**
  * The four SCEP operations: GetCACaps, GetCACert, GetNextCACert (answered 501)
  * and PKIOperation.
  */
-const OPERATIONS = ['GetCACaps', 'GetCACert', 'GetNextCACert',
-                    'PKIOperation'];
+const OPERATIONS = OPERATION_ROWS.map(function (op) {
+  return op.name;
+});
 
-// RFC 8894 section 3.5.2. `SCEPStandard` asserts AES, POSTPKIOperation and
-// SHA-256; each is still named, because older clients read the list rather
-// than the umbrella. `GetNextCACert` is deliberately absent — see the header.
+// RFC 8894 section 3.5.2, the model's `capabilities` register (#1579), whose
+// comment says why each is named and why `GetNextCACert` is absent.
 /**
  * The capabilities GetCACaps announces (RFC 8894 section 3.5.2).
  */
-const CAPABILITIES = ['POSTPKIOperation', 'SHA-256', 'SHA-512', 'AES',
-                      'SCEPStandard', 'Renewal'];
+const CAPABILITIES = EnrollmentModel.names('scep', 'capabilities');
 
 const PROFILE_SEGMENT = /^[a-z][a-z0-9-]{0,63}$/;
 
-// The GET binding's base64 is at most a third larger than the largest message
-// `scep.maxRequestBytes` allows at its maximum; the precise bound is checked
-// against the setting once the length is known.
-const MESSAGE_PARAMETER_CAP = Math.ceil(4194304 / 3) * 4 + 4;
-
-const QUERY = vz.object({
-  operation: vt.oneOf(OPERATIONS),
-  message: vt.opt(vz.string().max(MESSAGE_PARAMETER_CAP))
-});
+// The query every request carries, the model's (#1579): the operation, one of
+// the four, and the GET binding's message, whose cap is the base64 of the
+// largest message `scep.maxRequestBytes` allows at its maximum; the precise
+// bound is checked against the setting once the length is known.
+const QUERY = EnrollmentModel.body('scep', 'query');
 
 // How long a completed transaction's result is kept for CertPoll and for a
 // retried request, and how many a realm keeps. A result is a public
@@ -208,7 +208,7 @@ const TRANSACTION_POLL_MS = 250;
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface ScepDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   log: typeof log;
   audit: typeof audit;
   config: typeof config;
@@ -260,7 +260,7 @@ class Scep {
     log.debug("Entering Scep.defaultDeps().");
     log.debug("Leaving Scep.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       log: log,
       audit: audit,
       config: config,
@@ -605,12 +605,11 @@ class Scep {
   }
 
   spkiSha256(publicKeyPem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Scep.spkiSha256().");
-    const der = nodeCrypto.createPublicKey(publicKeyPem)
-      .export({ type: 'spki', format: 'der' });
+    const der = stsCrypto.spkiDerOf(publicKeyPem);
     log.debug("Leaving Scep.spkiSha256().");
-    return nodeCrypto.createHash('sha256').update(der).digest('hex');
+    return stsCrypto.digest('sha256', der, 'hex');
   }
 
   // ---------------------------------------------------------------------------
@@ -625,7 +624,7 @@ class Scep {
    * @returns a promise of the CSR and the content cipher, or a `refusal`
    */
   async readRequest(message, raKeys) {
-    const { log, cms, core, nodeCrypto } = this.deps;
+    const { log, cms, core, stsCrypto } = this.deps;
     log.debug("Entering Scep.readRequest().");
     const opened = cms.openEnvelope(message.content, raKeys.certificatePem,
                                     raKeys.privateKeyPem);
@@ -649,8 +648,7 @@ class Scep {
     }
     log.debug("Leaving Scep.readRequest().");
     return { csr: csr, cipher: opened.cipher,
-             csrSha256: nodeCrypto.createHash('sha256').update(opened.content)
-               .digest('hex') };
+             csrSha256: stsCrypto.digest('sha256', opened.content, 'hex') };
   }
 
   // The stored result of a transactionID, when this request is a retry of it.
@@ -1573,6 +1571,15 @@ class Scep {
       log.debug("Leaving Scep.handle(). Malformed profile.");
       return;
     }
+    if (!mode.answersScep()) {
+      this.record({ operation: 'disabled', outcome: 'refused', status: 503,
+                    errorCode: 'STS-SCEP-0067' });
+      this.scepError(res, 503, 'STS-SCEP-0067',
+                     'SCEP is not offered in product mode unless ' +
+                     'scep.allowInProduct is on.');
+      log.debug("Leaving Scep.handle(). Not offered in product.");
+      return;
+    }
     if (!this.enabled()) {
       this.record({ operation: 'disabled', outcome: 'refused', status: 503,
                     errorCode: 'STS-SCEP-0001' });
@@ -1593,13 +1600,16 @@ class Scep {
       return;
     }
     const operation = query.value.operation;
-    if (req.method === 'POST' && operation !== 'PKIOperation') {
+    const methods = OPERATION_ROWS.filter(function (op) {
+      return op.name === operation;
+    })[0].methods;
+    if (req.method === 'POST' && methods.indexOf('POST') < 0) {
       this.record({ operation: operation, outcome: 'refused', status: 405,
                     errorCode: 'STS-SCEP-0003' });
       this.scepError(res, 405, 'STS-SCEP-0003',
                      operation + ' is a GET (RFC 8894 ' +
                      'section 4); only PKIOperation may be POSTed.',
-                     { Allow: 'GET' });
+                     { Allow: methods.join(', ') });
       log.debug("Leaving Scep.handle(). POST of a GET operation.");
       return;
     }

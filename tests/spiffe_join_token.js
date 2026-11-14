@@ -62,7 +62,7 @@ function childScript() {
     "const registry = require(" +
     JSON.stringify(path.join(ROOT, 'spiffe/spiffe_registry')) + ");",
     "const x509 = require(" +
-    JSON.stringify(path.join(ROOT, 'common/vendored/x509')) + ");",
+    JSON.stringify(path.join(ROOT, 'common/crypto_impl/x509')) + ");",
     "const agent = api.SERVICE_HANDLERS.filter(function (s) { return s.name === 'agent'; })[0].handlers;",
     "function storeHolds(token) {",
     "  let found = false;",

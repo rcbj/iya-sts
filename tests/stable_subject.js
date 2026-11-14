@@ -585,10 +585,14 @@ function childMain() {
           password: 'x', scope: 'openid' }, client) });
       const louUuid = uuidOfName('ss-lou');
       const risc = require(ROOT + '/ssf/risc');
+      // A write the RISC register KEEPS a row for (#618 phase 2: a blank
+      // update makes none) — an address moved, which is an act.
       risc.observe({ kind: 'updated', username: 'ss-lou',
                      dn: ldap.objectFor('ss-lou').entry.dn, realm: 'default',
-                     before: { entryuuid: [louUuid] },
-                     after: { entryuuid: [louUuid], title: ['x'] } });
+                     before: { entryuuid: [louUuid],
+                               mail: ['ss-lou@old.example'] },
+                     after: { entryuuid: [louUuid],
+                              mail: ['ss-lou@new.example'] } });
       ldap.performOperation('modifyDN', {
         dn: ldap.objectFor('ss-lou').entry.dn, boundDn: '', channel: 'ldaps',
         newRdn: 'uid=ss-louis', newSuperior: '', deleteOldRdn: true });

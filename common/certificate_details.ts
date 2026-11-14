@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 // THE MECHANISM IS THE VENDORED INSPECTOR'S AND THE COMPLETENESS IS HERE.
 //
-// `common/vendored/x509.js`'s `describeCertificate()`, `describeExtension()`
+// `common/crypto_impl/x509.js`'s `describeCertificate()`, `describeExtension()`
 // and `verifyChain()` are the parent project's own certificate inspector — the
 // code behind its PKI / X.509 page and `saml_cert.html` — so an extension this
 // service names and one that project names are named by ONE table, and a
@@ -81,14 +81,16 @@ const log = bunyan.createLogger({
   level: config.value('global.logLevel')
 });
 
-import nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453): the fingerprints and the
+// key import the key facts are read through.
+import stsCrypto = require('./crypto');
 import pkijs = require('pkijs');
 import asn1js = require('asn1js');
 // The parent project's own inspector, byte-identical. DO NOT EDIT IT HERE.
-import x509 = require('./vendored/x509');
+import x509 = require('./crypto_impl/x509');
 // Its post-quantum registry, for the one thing the inspector's summary gets
 // wrong — see `publicKeyLabel()`.
-import pqcX509 = require('./vendored/pqc_x509');
+import pqcX509 = require('./crypto_impl/pqc_x509');
 import InstanceSlot = require('./instance_slot');
 
 interface Logger {
@@ -99,7 +101,7 @@ interface Logger {
 // each is described here by what this module reads of it.
 interface CertificateDetailsDeps {
   log: Logger;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   pkijs: typeof pkijs;
   asn1js: typeof asn1js;
   x509: typeof x509;
@@ -167,7 +169,7 @@ const EXTENSION_LABELS: Record<string, string> = {
  * `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates`
  * answer from.
  *
- * The mechanism is the vendored inspector's (`common/vendored/x509.js`); this
+ * The mechanism is the vendored inspector's (`common/crypto_impl/x509.js`); this
  * class adds what a details view owes.
  */
 class CertificateDetails {
@@ -208,7 +210,7 @@ class CertificateDetails {
     log.debug("Leaving CertificateDetails.defaultDeps().");
     return {
       log: log,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       pkijs: pkijs,
       asn1js: asn1js,
       x509: x509,
@@ -305,11 +307,10 @@ class CertificateDetails {
    * @returns lower-case hex with no separators
    */
   fingerprintOf(pem: unknown): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CertificateDetails.fingerprintOf().");
     log.debug("Leaving CertificateDetails.fingerprintOf().");
-    return nodeCrypto.createHash('sha256').update(this.pemToDer(pem))
-      .digest('hex');
+    return stsCrypto.digest('sha256', this.pemToDer(pem), 'hex');
   }
 
   private parse(pem: unknown): { der: Buffer; cert: pkijs.Certificate } {
@@ -384,11 +385,11 @@ class CertificateDetails {
   // an ANSWER rather than an error — the SubjectPublicKeyInfo still names its
   // algorithm and its size.
   private keyFactsOf(spkiDer: Uint8Array): KeyFacts | null {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CertificateDetails.keyFactsOf().");
     try {
-      const key = nodeCrypto.createPublicKey({ key: Buffer.from(spkiDer),
-                                               format: 'der', type: 'spki' });
+      const key = stsCrypto.publicKeyOf({ key: Buffer.from(spkiDer),
+                                          format: 'der', type: 'spki' });
       const out: KeyFacts = { type: key.asymmetricKeyType };
       const details = key.asymmetricKeyDetails || {};
       if (details.modulusLength) {
@@ -445,7 +446,7 @@ class CertificateDetails {
    *   signature algorithms
    */
   async describe(pem: string) {
-    const { log, x509, nodeCrypto } = this.deps;
+    const { log, x509, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering CertificateDetails.describe().");
     const parsed = this.parse(pem);
@@ -507,10 +508,9 @@ class CertificateDetails {
         extensionCount: extensions.length
       },
       fingerprints: {
-        sha1: this.colonHex(nodeCrypto.createHash('sha1').update(parsed.der)
-          .digest()),
-        sha256: this.colonHex(nodeCrypto.createHash('sha256')
-          .update(parsed.der).digest())
+        sha1: this.colonHex(stsCrypto.sha1Digest('certificate-fingerprint',
+                                                 parsed.der)),
+        sha256: this.colonHex(stsCrypto.digest('sha256', parsed.der))
       },
       fields: {
         tbsCertificate: {
@@ -540,8 +540,7 @@ class CertificateDetails {
             publicKeyHex: publicKeyBytes.toString('hex'),
             // The SHA-256 of the whole SubjectPublicKeyInfo, which is what an
             // HPKP-style pin and `STS_SPKI_PIN` are made of.
-            spkiSha256: nodeCrypto.createHash('sha256').update(spkiDer)
-              .digest('base64')
+            spkiSha256: stsCrypto.digest('sha256', spkiDer, 'base64')
           },
           issuerUniqueID: uniqueId(cert.issuerUniqueID),
           subjectUniqueID: uniqueId(cert.subjectUniqueID),
@@ -582,12 +581,22 @@ class CertificateDetails {
   //   unverified   candidates carry the name and none of their keys verifies
   //   too-deep     the walk passed MAX_PATH, which only a loop produces
   // -------------------------------------------------------------------------
+  // Each link of a chain, from pki.js's door (#1368). Lazily: this module is
+  // required by what pki.js's own callers load, and it needs pki.js only when a
+  // dialog is opened.
+  private chainLinks(pems: string[]): Promise<any[]> {
+    const { log } = this.deps;
+    log.debug("Entering CertificateDetails.chainLinks().");
+    log.debug("Leaving CertificateDetails.chainLinks().");
+    return require('./pki').verifyChain(pems);
+  }
+
   private async signedBy(childPem: string, parentPem: string):
       Promise<boolean> {
     const { log, x509 } = this.deps;
     log.debug("Entering CertificateDetails.signedBy().");
     try {
-      const links = await x509.verifyChain([childPem, parentPem]);
+      const links = await this.chainLinks([childPem, parentPem]);
       log.debug("Leaving CertificateDetails.signedBy().");
       return !!(links[0] && links[0].signatureValid);
     } catch (e) {
@@ -724,7 +733,7 @@ class CertificateDetails {
     const opts = options || {};
     const anchors = opts.anchors || {};
     const built = await this.pathFor(pem, candidates);
-    const links = await x509.verifyChain(built.path.map(function (one) {
+    const links = await this.chainLinks(built.path.map(function (one) {
       return one.pem;
     }));
     const chain = [];

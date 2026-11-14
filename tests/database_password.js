@@ -152,6 +152,7 @@ async function run(t) {
     // ---------------------------------------------------------------------
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: shared,
       STS_KEYS_KEK_FIELD: 'kek',
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
@@ -189,6 +190,7 @@ async function run(t) {
     // ---------------------------------------------------------------------
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_URL: 'postgres://sts_app@db.example:5432/sts'
@@ -227,6 +229,7 @@ async function run(t) {
     // ---------------------------------------------------------------------
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_PASSWORD_REF: own,
@@ -255,6 +258,7 @@ async function run(t) {
                      { mode: 0o600 });
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_PASSWORD_REF: wrongShape,
@@ -274,6 +278,7 @@ async function run(t) {
     });
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_PASSWORD_REF: wrongShape,
@@ -303,6 +308,7 @@ async function run(t) {
                        { mode: 0o600 });
       await withEnvironment({
         STS_KEYS_KEK_PROVIDER: 'file',
+        STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
         STS_KEYS_KEK_FILE: rawKey,
         STS_DATABASE_PASSWORD_PROVIDER: 'file',
         STS_DATABASE_PASSWORD_REF: secretFile,
@@ -325,6 +331,7 @@ async function run(t) {
     // ---------------------------------------------------------------------
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_PASSWORD_REF: own,
@@ -339,6 +346,7 @@ async function run(t) {
     });
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_PASSWORD_REF: own,
@@ -364,6 +372,7 @@ async function run(t) {
     fs.writeFileSync(empty, '   \n', { mode: 0o600 });
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey,
       STS_DATABASE_PASSWORD_PROVIDER: 'file',
       STS_DATABASE_PASSWORD_REF: empty,
@@ -387,6 +396,7 @@ async function run(t) {
     // ---------------------------------------------------------------------
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: rawKey
     }, async function () {
       t.equal(await secrets.readKek(), kek,

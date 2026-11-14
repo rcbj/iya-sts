@@ -24,9 +24,19 @@
 //      way (#117's rule), even while it is accepted; an event the policy does
 //      not permit ends nothing.
 //   D. A DISABLED POLICY decides nothing, and nothing is ended.
+//   G. WHAT A STATIC SURFACE HOLDS (#1042): a signal revokes the tokens the
+//      receiving surface's own client holds for the person — the console's,
+//      the portal's, the reports application's — narrowed to a named
+//      session and never a token issued after the event; and the reports
+//      application is a receiver of its own, its inbox narrowed per person.
+//   H. A RISC EVENT REPORTING THE PERSON'S OWN ACT (2026-11-03): a
+//      credential-compromise the account holder's keyCompromise revoke sent,
+//      emitted through the transmitter, revokes no portal token (its txn is
+//      on the account's RISC row); an administrator's, a detector's and a
+//      txn the row does not name still do.
 //   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
-//      receiver and at /ssf/receive, whatever ssf.receiveRequireSignature
-//      says; development still accepts one at /ssf/receive and records it.
+//      receiver, whatever ssf.receiveRequireSignature says; and there is no
+//      /ssf/receive in either mode (#593 deleted it; Express's own 404).
 //
 // In a child process, because it loads the whole protocol stack.
 // ===========================================================================
@@ -144,11 +154,10 @@ function childMain() {
         token = token.slice(0, -4) + (token.slice(-4) === 'AAAA' ? 'BBBB'
                                                                   : 'AAAA');
       }
-      const req = { headers: {
-        authorization: record.delivery.authorization_header,
-        'content-type': 'application/secevent+jwt' },
-        body: token, res: {} };
-      return receivers.accept('admin-console', req);
+      // Taken as the console's poll takes one (#771): the seeded stream is a
+      // poll stream, and `acceptPolled()` is the push's checks without the
+      // push.
+      return receivers.acceptPolled('admin-console', token);
     };
     const endedOf = function (answer) {
       return ((answer.entry && answer.entry.reactions) || [])
@@ -217,11 +226,8 @@ function childMain() {
         subject: subject,
         payload: Object.assign({ event_timestamp:
           Math.floor(Date.now() / 1000) }, payload || {}) });
-      const req = { headers: {
-        authorization: record.delivery.authorization_header,
-        'content-type': 'application/secevent+jwt' },
-        body: events.signSetSync(claims), res: {} };
-      return receivers.accept('admin-console', req);
+      return receivers.acceptPolled('admin-console',
+                                    events.signSetSync(claims));
     };
     const bySession = function (sid) {
       return { format: 'complex',
@@ -262,6 +268,26 @@ function childMain() {
     note(endedOf(byAdmin) === 1,
          'E4. an administrator\'s credential-change still ends the ' +
          'person\'s console session', JSON.stringify(byAdmin.entry.reactions));
+    // E4b (2026-10-27): a credential ADDED takes nothing away. A person
+    // created with a password and signed in within the same second lost
+    // that sign-in to the signal's delivery a moment later (run #4).
+    derived('sr-erin', 'sso-parent-2b');
+    const added = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'create' });
+    note(endedOf(added) === 0 && !!(added.entry.reactions[0] || {}).skipped,
+         'E4b. a credential an administrator ADDED (change_type create) ' +
+         'ends nothing: nothing was taken away',
+         JSON.stringify(added.entry.reactions));
+    const swept = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update' });
+    note(endedOf(swept) === 1,
+         'E4c. and the session E4b left standing was there to end: an ' +
+         'update by an administrator ends it',
+         JSON.stringify(swept.entry.reactions));
     // E5 (2026-09-24): a session begun AFTER the event's second is not
     // about it — delivery is asynchronous, and the person may already have
     // signed in again with the new password. One begun within it is still
@@ -281,6 +307,249 @@ function childMain() {
          'E5. an administrator\'s credential-change from BEFORE a session ' +
          'began leaves it, and one from the second it began ends it',
          JSON.stringify([late.entry.reactions, current.entry.reactions]));
+
+    // --- G. what a static surface holds: its client's tokens (#1042) ------
+    // Since #446 and #568 the console and the portal are static
+    // applications holding tokens, and no relying-party session: C and E
+    // above drive the debugger-shaped sessions the call still ends. Here a
+    // signal revokes the tokens the receiving surface's OWN client holds for
+    // the person, and nothing else.
+    const stats = require(ROOT + '/common/admin_stats');
+    const cryptoNode = require('crypto');
+    const token = function (username, clientId, sessionId) {
+      const jti = 'sr-' + cryptoNode.randomBytes(8).toString('hex');
+      const now = Math.floor(Date.now() / 1000);
+      stats.recordJwt({ jti: jti, sub: String(helpers.subjectForName(username)),
+        username: username, client_id: clientId, iat: now, exp: now + 3600 },
+        '', { kind: 'access_token', sessionId: sessionId || '' });
+      return jti;
+    };
+    const revokedOf = function (answer) {
+      return ((answer.entry && answer.entry.reactions) || [])
+        .reduce(function (n, r) {
+          return n + (Number(r.revoked) || 0);
+        }, 0);
+    };
+    const erinConsole = token('sr-erin', 'sts-admin-console');
+    const erinPortal = token('sr-erin', 'sts-user-portal');
+    const erinReport = token('sr-erin', 'sts-report');
+    const frankConsole = token('sr-frank', 'sts-admin-console');
+    const g1 = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update' });
+    note(revokedOf(g1) === 1 && stats.isRevoked(erinConsole) &&
+         !stats.isRevoked(erinPortal) && !stats.isRevoked(erinReport) &&
+         !stats.isRevoked(frankConsole),
+         'G1. an administrator\'s credential-change about erin revokes the ' +
+         'token the CONSOLE\'s client holds for her, and not her portal or ' +
+         'reports token, nor anybody else\'s console token',
+         JSON.stringify([g1.entry.reactions, stats.isRevoked(erinConsole),
+                         stats.isRevoked(erinPortal),
+                         stats.isRevoked(frankConsole)]));
+    const g1bToken = token('sr-erin', 'sts-admin-console');
+    const g1b = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'create' });
+    note(revokedOf(g1b) === 0 && !stats.isRevoked(g1bToken),
+         'G1b. a credential ADDED (change_type create) revokes no token',
+         JSON.stringify(g1b.entry.reactions));
+    const g2Token = token('sr-erin', 'sts-admin-console');
+    const g2 = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update',
+        event_timestamp: Math.floor(Date.now() / 1000) - 10 });
+    note(revokedOf(g2) === 0 && !stats.isRevoked(g2Token),
+         'G2. a token issued AFTER the event is left alone, as a session ' +
+         'begun after it is', JSON.stringify(g2.entry.reactions));
+    const inX = token('sr-erin', 'sts-admin-console', 'sso-x');
+    const inY = token('sr-erin', 'sts-admin-console', 'sso-y');
+    const g3 = pushAbout('session-revoked', bySession('sso-x'),
+                         { initiating_entity: 'user' });
+    note(stats.isRevoked(inX) && !stats.isRevoked(inY) &&
+         !stats.isRevoked(g2Token),
+         'G3. a session-revoked naming a sign-on session revokes only the ' +
+         'console tokens issued on it',
+         JSON.stringify([g3.entry.reactions, stats.isRevoked(inX),
+                         stats.isRevoked(inY)]));
+    // The reports application, the third receiver (#1042).
+    const reportRecord = receivers.streamFor('report');
+    note(!!reportRecord &&
+         receivers.surfaceOf(receivers.REPORT).audience === 'sts-report',
+         'G4. the reports application has a stream of its own, audienced ' +
+         'to sts-report', JSON.stringify(reportRecord &&
+                                         reportRecord.stream_id));
+    const toReport = receivers.acceptPolled('report', events.signSetSync(
+      events.buildSet({ uri: events.CAEP_PREFIX + 'credential-change',
+        issuer: record.iss, audience: 'sts-report',
+        subject: { format: 'iss_sub', iss: record.iss, sub: erin },
+        payload: { event_timestamp: Math.floor(Date.now() / 1000),
+                   initiating_entity: 'admin', credential_type: 'password',
+                   change_type: 'update' } })));
+    note(toReport.status === 202 && toReport.entry.verified &&
+         revokedOf(toReport) === 1 && stats.isRevoked(erinReport) &&
+         !stats.isRevoked(erinPortal),
+         'G5. delivered to the reports application, it revokes the token ' +
+         'sts-report holds for erin, and not her portal token',
+         JSON.stringify([toReport.status, toReport.entry.reactions]));
+    note(receivers.listFor('report', {}).length >= 1 &&
+         receivers.listFor('report', { person: { username: 'sr-frank',
+           sub: frank, mail: '' } }).length === 0 &&
+         receivers.listFor('report', { person: { username: 'sr-erin',
+           sub: erin, mail: '' } }).length >= 1,
+         'G6. the reports inbox holds the signal; narrowed to a person it ' +
+         'is shown to erin and not to frank');
+    // G7, G8 (2026-10-27): a RISC account-disabled about a person who is
+    // ENABLED now was superseded — the disable ended what it had to end
+    // when it happened — so it revokes nothing; about a person who is
+    // disabled it still does. `sts_second_factor_doors` disables, enables
+    // and signs the person in within one second.
+    const pushRisc = function (short, subject, payload) {
+      const claims = events.buildSet({ uri: events.RISC_PREFIX + short,
+        issuer: record.iss, audience: 'sts-admin-console',
+        subject: subject,
+        payload: Object.assign({ event_timestamp:
+          Math.floor(Date.now() / 1000) }, payload || {}) });
+      return receivers.acceptPolled('admin-console',
+                                    events.signSetSync(claims));
+    };
+    const g7Token = token('sr-erin', 'sts-admin-console');
+    const g7 = pushRisc('account-disabled',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, {});
+    note(revokedOf(g7) === 0 && !stats.isRevoked(g7Token),
+         'G7. an account-disabled about a person who is ENABLED now ' +
+         'revokes nothing: a later enable superseded it',
+         JSON.stringify(g7.entry.reactions));
+    const accountState = require(ROOT + '/common/account_state');
+    let disabledOk = false;
+    try {
+      const act = accountState.setDisabled('sr-erin', true, { by: 'test' });
+      disabledOk = !!(act && act.ok !== false);
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+      disabledOk = false;
+    }
+    const g8Token = token('sr-erin', 'sts-admin-console');
+    const g8 = pushRisc('account-disabled',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, {});
+    note(disabledOk && revokedOf(g8) === 1 && stats.isRevoked(g8Token),
+         'G8. and about a person who IS disabled it revokes the console ' +
+         'token', JSON.stringify([disabledOk, g8.entry.reactions]));
+    try {
+      accountState.setDisabled('sr-erin', false, { by: 'test' });
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+    }
+    // G9, G10 (2026-11-10): an event with NO event_timestamp is bounded by
+    // its SET's `iat`. RISC's account-credential-change-required carries
+    // none (an activation link, a reset link), and it revoked every portal
+    // token the person held when the poll collected it — one issued on a
+    // sign-in made after the act included (`sts_portal_directory_attributes`,
+    // product single-node). A SET issued ten seconds before the token leaves
+    // it; one issued in the token's second still revokes it.
+    const pushUndated = function (short, subject, iatOffset) {
+      const claims = events.buildSet({ uri: events.RISC_PREFIX + short,
+        issuer: record.iss, audience: 'sts-user-portal',
+        subject: subject, payload: {} });
+      claims.iat = Math.floor(Date.now() / 1000) + iatOffset;
+      return receivers.acceptPolled('user-portal',
+                                    events.signSetSync(claims));
+    };
+    const g9Token = token('sr-erin', 'sts-user-portal');
+    const g9 = pushUndated('account-credential-change-required',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, -10);
+    note(g9.status === 202 && g9.entry.verified &&
+         revokedOf(g9) === 0 && !stats.isRevoked(g9Token),
+         'G9. an account-credential-change-required with no ' +
+         'event_timestamp, in a SET issued BEFORE the token, leaves the ' +
+         'token: the SET\'s iat bounds what it is about',
+         JSON.stringify([g9.status, g9.entry.reactions]));
+    const g10 = pushUndated('account-credential-change-required',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, 0);
+    note(revokedOf(g10) >= 1 && stats.isRevoked(g9Token),
+         'G10. and the same event in a SET issued in the token\'s second ' +
+         'revokes it', JSON.stringify(g10.entry.reactions));
+
+    // --- H. a RISC event reporting the person's OWN act (2026-11-03) ------
+    // A person revoking their own key pair for keyCompromise on the portal
+    // (#1290) sends CAEP's revoke (`user`, skipped since 2026-09-23) AND
+    // RISC's credential-compromise, which has no initiating_entity — and the
+    // portal acted on it, revoking the token the person had made the report
+    // with (`sts_portal_signing_key`, single-node). Emitted through the
+    // transmitter itself, so the txn the receiver asks about is the one the
+    // act noted, then collected off the portal's own stream as its poll
+    // collects it.
+    const ssf = require(ROOT + '/ssf/ssf');
+    const ssfStreams = require(ROOT + '/ssf/ssf_streams');
+    const riscRegister = require(ROOT + '/ssf/risc');
+    const portalRecord = receivers.streamFor('user-portal');
+    const compromiseUri = events.RISC_PREFIX + 'credential-compromise';
+    const seenJtis = [];
+    const emitCompromise = async function (initiatingEntity) {
+      await ssf.emitRiscAccountAct({ username: 'sr-erin',
+        act: 'credentialCompromise', initiatingEntity: initiatingEntity,
+        via: 'portal', values: { credential_type: 'x509' } });
+      const queued = ssfStreams.queueOf(portalRecord).filter(function (one) {
+        return !!one && !!one.token && !!one.claims &&
+          !!(one.claims.events || {})[compromiseUri] &&
+          seenJtis.indexOf(one.jti) < 0;
+      });
+      queued.forEach(function (one) {
+        seenJtis.push(one.jti);
+      });
+      return queued[0] || null;
+    };
+    const h1Token = token('sr-erin', 'sts-user-portal');
+    const h1Set = await emitCompromise('user');
+    const h1 = h1Set
+      ? receivers.acceptPolled('user-portal', h1Set.token) : null;
+    note(!!h1 && h1.status === 202 && h1.entry.verified &&
+         riscRegister.ownAct(h1Set.claims.sub_id, h1Set.claims.txn) &&
+         revokedOf(h1) === 0 && !stats.isRevoked(h1Token) &&
+         h1.entry.reactions.length >= 1 &&
+         h1.entry.reactions.every(function (r) {
+           return r.skipped === 'the person\'s own report';
+         }),
+         'H1. a RISC credential-compromise reporting the person\'s OWN act ' +
+         '(their keyCompromise revoke on the portal) revokes no portal ' +
+         'token: the transmitter noted its txn on the account\'s RISC row ' +
+         'and the receiver leaves it alone, as it leaves the CAEP twin',
+         JSON.stringify([!!h1Set, h1 && h1.entry && h1.entry.reactions,
+                         stats.isRevoked(h1Token)]));
+    const h2Token = token('sr-erin', 'sts-user-portal');
+    const h2Set = await emitCompromise('admin');
+    const h2 = h2Set
+      ? receivers.acceptPolled('user-portal', h2Set.token) : null;
+    note(!!h2 && h2.entry.verified &&
+         !riscRegister.ownAct(h2Set.claims.sub_id, h2Set.claims.txn) &&
+         revokedOf(h2) >= 1 && stats.isRevoked(h2Token),
+         'H2. the same event from an ADMINISTRATOR\'s act still revokes ' +
+         'the portal token the person holds',
+         JSON.stringify([!!h2Set, h2 && h2.entry && h2.entry.reactions]));
+    const h3Token = token('sr-erin', 'sts-user-portal');
+    const h3Set = await emitCompromise('system');
+    const h3 = h3Set
+      ? receivers.acceptPolled('user-portal', h3Set.token) : null;
+    note(!!h3 && revokedOf(h3) >= 1 && stats.isRevoked(h3Token),
+         'H3. and a DETECTOR\'s (initiating entity system) still revokes it',
+         JSON.stringify([!!h3Set, h3 && h3.entry && h3.entry.reactions]));
+    const h4Token = token('sr-erin', 'sts-user-portal');
+    const forgedTxn = await emitCompromise('admin');
+    let h4 = null;
+    if (forgedTxn) {
+      // A SET this transmitter never noted as the person's, naming a txn
+      // the register does not hold, is not the person's own.
+      const claims = Object.assign({}, forgedTxn.claims,
+        { jti: 'sr-h4-' + cryptoNode.randomBytes(6).toString('hex'),
+          txn: 'sr-h4-unknown-txn' });
+      h4 = receivers.acceptPolled('user-portal', events.signSetSync(claims));
+    }
+    note(!!h4 && revokedOf(h4) >= 1 && stats.isRevoked(h4Token),
+         'H4. a txn the account\'s row does not name is not the person\'s ' +
+         'own: the event acts',
+         JSON.stringify([!!forgedTxn, h4 && h4.entry && h4.entry.reactions]));
 
     // --- D. a disabled policy ----------------------------------------------
     const written = xacmlStore.write('signal-response',
@@ -328,33 +597,29 @@ function childMain() {
                                                              : 'AAAA');
     };
     config.setOverride('ssf.receiveRequireSignature', false);
+    // DELETED BY #593: the test peer is that push receiver now, so a SET
+    // pushed at /ssf/receive finds an unrouted path in development too.
     const devReceive = await pushAtReceive(forgedToken());
     config.setOverride('global.mode', 'product');
     let prodInternal = null;
-    let prodReceive = null;
     try {
       prodInternal = push('session-revoked', erin, {}, true);
-      prodReceive = await pushAtReceive(forgedToken());
     } finally {
       config.clearOverride('global.mode');
       config.clearOverride('ssf.receiveRequireSignature');
       server.close();
     }
-    // Development passes the signature step and RECORDS it; this test's
-    // issuer is not the listener's own, so it is then refused for that.
-    note(!/invalid_key/.test(devReceive.text) &&
-         /has been recorded/.test(devReceive.text),
-         'F1. development gets an unverified SET past the signature step at ' +
-         '/ssf/receive and records it, as the debugger needs',
+    note(devReceive.status === 404 &&
+         /Cannot POST \/ssf\/receive/.test(devReceive.text),
+         'F1. there is no /ssf/receive, in development either (#593)',
          devReceive.status + ' ' + devReceive.text.slice(0, 200));
     note(prodInternal.status === 400 &&
          prodInternal.body.err === 'invalid_key' &&
-         prodInternal.entry.reactions.length === 0 &&
-         prodReceive.status === 400 && /invalid_key/.test(prodReceive.text),
-         'F2. product refuses one at the console\'s receiver and at ' +
-         '/ssf/receive with invalid_key, the setting off (#117)',
-         JSON.stringify([prodInternal.status, prodReceive.status,
-                         prodReceive.text.slice(0, 200)]));
+         prodInternal.entry.reactions.length === 0,
+         'F2. product refuses one at the console\'s receiver with ' +
+         'invalid_key, the setting off (#117)',
+         JSON.stringify([prodInternal.status,
+                         prodInternal.body && prodInternal.body.err]));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

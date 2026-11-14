@@ -92,9 +92,15 @@
 // to the monitor page's detail view of a captured message in development.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
+// The one place this service hashes and draws random values (#453).
+import stsCrypto = require('./crypto');
+// Which application a mailed link opens, and where it is advertised (#472).
+// Two LEAVES.
+import hostedApplications = require('./hosted_applications');
+import listenerMap = require('./listener_map');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
 import realms = require('./realms');
@@ -104,6 +110,11 @@ import audit = require('./audit');
 import cacheRegistry = require('./cache_registry');
 import clusterClaims = require('../cluster/cluster_claims');
 import MailTemplates = require('./mail_templates');
+// #539: the realm's default language. A leaf over the directory slot.
+import localePolicy = require('./locale_policy');
+// #539: a value given as a message or an instant is put into words in the
+// recipient's language (`resolveValues()`). A leaf: it requires nothing here.
+import i18n = require('./i18n');
 import mailTransports = require('./mail_transports');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
@@ -189,8 +200,12 @@ interface Message {
 interface SendRequest {
   // A person in the ambient realm, by username…
   username?: string;
-  // …or the realm's Admin Write roster, each member with an address.
+  // …or the realm's Admin Write roster, each member with an address…
   toAdministrators?: boolean;
+  // …or a GROUP of this realm by DN (#989), whose own `mail` attribute is
+  // the address. The address comes from the directory, never from the
+  // request, so the channel's rule holds.
+  groupDn?: string;
   template: string;
   values?: Json;
   // name → a PATH on this service (header point 6).
@@ -204,11 +219,15 @@ interface SendRequest {
 interface Directory {
   personEntry: (username: string) => Json;
   personByMail: (address: string) => string;
+  // A group of this realm by DN, `{ dn, attributes }`, or null (#989).
+  groupEntry?: (dn: string) => Json;
   writeMailFlag: (username: string, name: string, value: unknown) => boolean;
   personExists?: (username: string) => boolean;
   // #64: `mail` itself, by an administrator or a completed change.
-  writeAddress?: (username: string, address: string,
-                  source: string) => boolean;
+  // A promise of `{ ok, code }` (#644). A boolean is what a test stub
+  // still returns.
+  writeAddress?: (username: string, address: string, source: string) =>
+    boolean | Promise<boolean | { ok?: boolean; code?: string }>;
 }
 
 interface MailDeps {
@@ -501,11 +520,11 @@ class Mail {
   fingerprint(cfg: Json): string {
     const { log } = this.deps;
     log.debug("Entering Mail.fingerprint().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(JSON.stringify(TRANSPORT_KEYS.map(function (key) {
+    const digest = stsCrypto.digest('sha256',
+      JSON.stringify(TRANSPORT_KEYS.map(function (key) {
         return cfg[key.replace(/^mail\./, '')];
-      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort])))
-      .digest('base64url');
+      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort])),
+      'base64url');
     log.debug("Leaving Mail.fingerprint().");
     return digest;
   }
@@ -552,7 +571,6 @@ class Mail {
     } catch (e) {
       log.debug("Caught in Mail.transport(): " + ((e && e.message) || e));
       this.buildProblems.set(realmId, { at: Date.now(),
-        code: errorCodes.codeOf(e) || 'STS-MAIL-0004',
         why: String((e && e.message) || e) });
       if (!errorCodes.codeOf(e)) {
         errorCodes.mark(e, 'STS-MAIL-0004');
@@ -608,10 +626,11 @@ class Mail {
   linkBase(): string {
     const { log, config, realms, mode } = this.deps;
     log.debug("Entering Mail.linkBase().");
-    // A realm with a listener of its own (#99) mails links on its own base.
-    const pinned = String(config.value('listener.publicBaseUrl') ||
-                          config.value('global.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    // The base of every application the mapping does not name (#472's `*`;
+    // a realm with a listener of its own, #99, maps it there), or
+    // `global.publicBaseUrl`. `linkOn()` moves one link to the base of the
+    // application its path belongs to.
+    const pinned = helpers.pinnedBaseUrl();
     if (pinned) {
       log.debug("Leaving Mail.linkBase(). Pinned.");
       return pinned + realms.currentPrefix();
@@ -629,6 +648,29 @@ class Mail {
       realms.currentPrefix();
     log.debug("Leaving Mail.linkBase(). The listener's: " + base);
     return base;
+  }
+
+  // ONE MAILED LINK ON THE BASE OF THE APPLICATION IT OPENS (#472): an
+  // activation or reset link on the portal's advertised listener, a sign-in
+  // link on the sign-in service's — whichever of them an administrator moved
+  // — and on `base` (`linkBase()`) where that application is advertised on
+  // the main port, which is what every link was before.
+  /**
+   * Returns one mailed link: the path on its application's advertised base,
+   * or on `base` where that is the main port.
+   *
+   * @param base - `linkBase()`'s answer
+   * @param path - the link's root-relative path
+   * @returns the URL
+   */
+  linkOn(base: string, path: string): string {
+    const { log, realms } = this.deps;
+    log.debug("Entering Mail.linkOn().");
+    const app = hostedApplications.classify(path);
+    const own = app && app !== hostedApplications.EVERYWHERE
+      ? listenerMap.advertisedBase(app) : '';
+    log.debug("Leaving Mail.linkOn().");
+    return own ? own + realms.currentPrefix() + path : base + path;
   }
 
   // -------------------------------------------------------------------------
@@ -665,21 +707,17 @@ class Mail {
       return null;
     }
     const attrs = entry.attributes || {};
-    const first = function (name: string): string {
-      log.debug("Entering first().");
-      const values = attrs[name.toLowerCase()] || [];
-      log.debug("Leaving first().");
-      return values.length ? String(values[0]) : '';
-    };
-    const address = first('mail').trim();
-    const verified = first('stsMailVerified').trim();
+    const user = Classes.User.fromEntry(attrs);
+    const record = Classes.PersonRecord.fromEntry(attrs);
+    const address = (user.email || '').trim();
+    const verified = (record.mailVerified || '').trim();
     log.debug("Leaving Mail.recipient().");
     return {
       username: String(username),
       address: address,
       verified: !!address && verified.toLowerCase() === address.toLowerCase(),
-      language: first('preferredLanguage'),
-      name: first('displayName') || first('cn') || String(username)
+      language: user.preferredLanguage || '',
+      name: user.displayName || (user.cn || [])[0] || String(username)
     };
   }
 
@@ -692,6 +730,40 @@ class Mail {
    * @param username - the person
    * @returns the category ids
    */
+  /**
+   * A group of this realm as a recipient (#989): its DN as the key, its
+   * `mail` attribute as the address, its `cn` as the name. Null where the
+   * directory offers no group hook or holds no such group; a group with
+   * no address has `address: ''`, which `queueOne()` refuses.
+   *
+   * @param dn - the group's DN
+   * @returns the recipient, or null
+   */
+  groupRecipient(dn: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Mail.groupRecipient().");
+    const entry = directory && typeof directory.groupEntry === 'function' &&
+      dn ? directory.groupEntry(String(dn)) : null;
+    if (!entry) {
+      log.debug("Leaving Mail.groupRecipient(). None.");
+      return null;
+    }
+    const attrs = entry.attributes || {};
+    const group = Classes.Group.fromEntry(attrs);
+    const address = String(group.email || '').trim();
+    log.debug("Leaving Mail.groupRecipient().");
+    return {
+      username: String(dn),
+      address: address,
+      // A group's address is the operator's to set; there is nothing to
+      // verify it against, and a notice is sent to it as given.
+      verified: !!address,
+      language: '',
+      name: group.name || String(dn),
+      group: true
+    };
+  }
+
   declined(username: string): string[] {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.declined(). " + username);
@@ -749,9 +821,17 @@ class Mail {
   // -------------------------------------------------------------------------
   // A REALM'S TEMPLATES
   // -------------------------------------------------------------------------
+  // #539: for each language in order, the realm's own wording, then the
+  // BUILT-IN TRANSLATION along that language's catalog chain — and before
+  // the built-in, the realm's own wording under any tag of that chain, so a
+  // realm that wrote `fr` still wins over the built-in French for a person
+  // who asked for `fr-CA` (a realm's words in a language always beat ours in
+  // it). `zh-tw` reaches `zh-Hant` here and never `zh`, which `languageOrder()`
+  // puts after it and which would be Simplified.
   /**
-   * Chooses the wording of a message: the realm's own in the first language it
-   * has, else the built-in English.
+   * Chooses the wording of a message: for each language in order, the realm's
+   * own, then the built-in translation in that language; else the built-in
+   * English.
    *
    * @param id - the message's id
    * @param languages - the languages to try, best first
@@ -771,6 +851,22 @@ class Mail {
       if (held) {
         log.debug("Leaving Mail.templateFor(). The realm's, " + languages[i]);
         return { spec: spec, parts: held, lang: languages[i], own: true };
+      }
+      const translated = MailTemplates.builtInFor(id, languages[i]);
+      if (translated) {
+        const chain = MailTemplates.chainFor(languages[i]);
+        for (let j = 0; j < chain.length; j++) {
+          const tag = chain[j].toLowerCase();
+          const ownInChain = own.get(id + ':' + tag);
+          if (ownInChain) {
+            log.debug("Leaving Mail.templateFor(). The realm's, " + tag);
+            return { spec: spec, parts: ownInChain, lang: tag, own: true };
+          }
+        }
+        log.debug("Leaving Mail.templateFor(). Built-in, " +
+                  translated.lang);
+        return { spec: spec, parts: translated.parts,
+                 lang: translated.lang, own: false };
       }
       if (languages[i] === 'en') {
         log.debug("Leaving Mail.templateFor(). Built-in.");
@@ -799,9 +895,12 @@ class Mail {
           langs.push(String(key).slice(at + 1));
         }
       });
+      // #539: the catalog tags with a built-in translation, beside the
+      // languages the realm has its own wording in.
       return { id: spec.id, title: spec.title, category: spec.category,
                values: MailTemplates.COMMON.concat(spec.values),
-               links: spec.links, languages: langs.sort() };
+               links: spec.links, languages: langs.sort(),
+               builtInLanguages: MailTemplates.builtInLanguages(spec.id) };
     });
     log.debug("Leaving Mail.listTemplates().");
     return out;
@@ -1008,8 +1107,18 @@ class Mail {
         return out;
       }
       let names: string[] = [];
+      let group: Json = null;
       if (req.toAdministrators) {
         names = deps.administrators();
+      } else if (req.groupDn) {
+        // THE GROUP IS RESOLVED ONCE, HERE (#989), and queued under its DN
+        // as the recipient key, so the dedup window, the ceilings and the
+        // outbox rows name the group. A group with no entry or no address
+        // is refused with the codes a person's missing entry or address
+        // takes; the report channel checks the address first and records
+        // its own code, so this is the backstop.
+        group = this.groupRecipient(String(req.groupDn));
+        names = [String(req.groupDn)];
       } else if (req.username) {
         names = [String(req.username)];
       }
@@ -1035,7 +1144,9 @@ class Mail {
         return out;
       }
       names.forEach(function (name) {
-        const one = self.queueOne(req, spec, name, base);
+        const one = group
+          ? self.queueOne(req, spec, name, base, undefined, group)
+          : self.queueOne(req, spec, name, base);
         if (one.refused) {
           out.refused.push(one.refused);
         } else if (one.duplicate) {
@@ -1110,7 +1221,7 @@ class Mail {
     const entry = directory && req.username
       ? directory.personEntry(String(req.username)) : null;
     const pending = entry
-      ? String(((entry.attributes || {}).stsmailverifyaddress || [])[0] || '')
+      ? Classes.Credential.fromEntry(entry.attributes).mailVerifyAddress || ''
       : '';
     if (!pending) {
       out.error = 'no address change is pending';
@@ -1141,6 +1252,75 @@ class Mail {
       out.error = String((e && e.message) || e);
     }
     log.debug("Leaving Mail.sendToPendingAddress().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE THIRD MESSAGE NOT SENT TO `mail` AS IT IS (#644): the link that makes
+  // an email-shaped sign-in name live, to `stsPseudonymVerifyAddress`. One
+  // template only, `pseudonym-verification`. The address is the entry's
+  // pending name, never a request's.
+  // -------------------------------------------------------------------------
+  /**
+   * Sends the sign-in-name link to the pending address on the entry; only the
+   * `pseudonym-verification` template.
+   *
+   * @param req - as for `send()`, with `username`
+   * @returns as for `send()`, or a coded refusal
+   */
+  sendToPseudonymAddress(req: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Mail.sendToPseudonymAddress().");
+    const out: Json = { ok: false, queued: [], refused: [], duplicates: [] };
+    const spec = MailTemplates.builtIn('pseudonym-verification');
+    if (!req || req.template !== 'pseudonym-verification' ||
+        !this.available()) {
+      out.error = 'no mail transport is configured';
+      log.debug("Leaving Mail.sendToPseudonymAddress(). Not this template, " +
+                "or no transport.");
+      return out;
+    }
+    const base = this.linkBase();
+    if (!base) {
+      out.error = 'global.publicBaseUrl is not set';
+      log.debug("Leaving Mail.sendToPseudonymAddress(). No link base.");
+      return out;
+    }
+    const entry = directory && req.username
+      ? directory.personEntry(String(req.username)) : null;
+    const pending = entry
+      ? Classes.Credential.fromEntry(entry.attributes)
+        .pseudonymVerifyAddress || ''
+      : '';
+    if (!pending) {
+      out.error = 'no sign-in name is pending';
+      log.debug("Leaving Mail.sendToPseudonymAddress(). Nothing pending.");
+      return out;
+    }
+    try {
+      const one = this.queueOne(req, spec, String(req.username || ''), base,
+                                pending);
+      if (one.refused) {
+        out.refused.push(one.refused);
+        out.error = one.refused.why;
+      } else if (one.duplicate) {
+        out.duplicates.push(one.duplicate);
+      } else {
+        out.queued.push(one.queued);
+      }
+      out.ok = out.queued.length + out.duplicates.length > 0;
+      Object.defineProperty(out, 'delivered',
+                            { value: this.dispatch(out.queued),
+                              enumerable: false });
+    } catch (e) {
+      log.debug("Caught in Mail.sendToPseudonymAddress(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0031') + 'mail: a sign-in name ' +
+               'verification could not be queued: ' +
+               ((e && e.message) || e));
+      out.error = String((e && e.message) || e);
+    }
+    log.debug("Leaving Mail.sendToPseudonymAddress().");
     return out;
   }
 
@@ -1185,14 +1365,116 @@ class Mail {
     return out;
   }
 
-  // One recipient: every check, then the row. `former` is
-  // `sendToFormerAddress()`'s address, and only that.
+  // -------------------------------------------------------------------------
+  // VALUES THAT FOLLOW THE RECIPIENT'S LANGUAGE (#539). A caller that knows
+  // only what it wants said — "an administrator", an instant — cannot know
+  // the language: that is chosen per RECIPIENT, in `queueOne()`, and an
+  // administrator alert goes to several people in several. So such a value
+  // is handed over unresolved:
+  //
+  //   { i18n: 'mailValues.<key>', params: {...} }   a message of the
+  //       `mailValues` namespace (common/locales/mailValues/), ICU as every
+  //       other; only that namespace, so a caller cannot reach a page's words
+  //   { date: <ms or ISO> }                         an instant, in UTC with
+  //       the zone named (`Translator.date()`)
+  //
+  // Anything else is DATA (a name, an address, a username, a refusal's own
+  // English reason) and is left exactly as it was. A message's params are
+  // data too, put in as strings. A value that cannot be resolved renders
+  // empty rather than as `[object Object]`.
+  // -------------------------------------------------------------------------
+  /**
+   * Resolves every value given as a message or an instant into words in one
+   * language; every other value is left as it was.
+   *
+   * @param given - the caller's values
+   * @param lang - the language the template was chosen in, or a list,
+   * best first, ending with it
+   * @returns a new object of the values, each message and instant a string
+   */
+  resolveValues(given: Json, lang: string | string[]): Json {
+    const { log } = this.deps;
+    const langs = (Array.isArray(lang) ? lang : [lang])
+      .map(function (one: unknown): string {
+        return String(one || '');
+      }).filter(Boolean);
+    log.debug("Entering Mail.resolveValues(). " + langs.join(' '));
+    const out: Json = {};
+    let t: Json = null;
+    const translator = function (): Json {
+      log.debug("Entering translator().");
+      if (!t) {
+        t = i18n.translator(langs.length ? langs : ['en'], 'en');
+      }
+      log.debug("Leaving translator().");
+      return t;
+    };
+    Object.keys(given || {}).forEach(function (name: string): void {
+      const v = given[name];
+      if (!v || typeof v !== 'object' || Array.isArray(v)) {
+        out[name] = v;
+        return;
+      }
+      try {
+        if (typeof v.i18n === 'string' && /^mailValues\.[A-Za-z0-9_.-]+$/
+          .test(v.i18n)) {
+          const params: Json = {};
+          Object.keys(v.params || {}).forEach(function (p: string): void {
+            const one = v.params[p];
+            params[p] = one == null ? '' : one;
+          });
+          // `text()` strips anything shaped like a tag from the WHOLE
+          // result, parameters included, so a name such as `<b>x</b>` would
+          // lose characters. `mailValues` messages carry no markup, so the
+          // HTML form — the message as written, each parameter escaped — is
+          // taken and its escaping undone: the parameter arrives exactly as
+          // given, and the renderer escapes the whole value once.
+          out[name] = Mail.unescapeHtml(translator().html(v.i18n, params));
+        } else if (Object.prototype.hasOwnProperty.call(v, 'date') &&
+                   (typeof v.date === 'number' ||
+                    typeof v.date === 'string')) {
+          out[name] = translator().date(v.date);
+        } else {
+          out[name] = '';
+        }
+      } catch (e) {
+        log.debug("Caught in Mail.resolveValues(): " +
+                  ((e && e.message) || e));
+        // A value that cannot be put into words renders empty: the message
+        // still goes, and a fragment of JSON in it would be worse.
+        out[name] = '';
+      }
+    });
+    log.debug("Leaving Mail.resolveValues().");
+    return out;
+  }
+
+  // The inverse of `Html.esc()` (and `I18n.esc()`), `&amp;` last so that
+  // an escaped `&lt;` in the original is not undone twice.
+  /**
+   * Undoes HTML escaping of the five characters `Html.esc()` escapes.
+   *
+   * @param value - escaped text
+   * @returns the text as it was before escaping
+   */
+  static unescapeHtml(value: string): string {
+    helpers.log.debug("Entering Mail.unescapeHtml().");
+    helpers.log.debug("Leaving Mail.unescapeHtml().");
+    return String(value == null ? '' : value)
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  }
+
+  // One recipient: every check, then the row. `former` overrides the
+  // address on the entry: a former address, a pending recovery address,
+  // or a pending sign-in name (#644).
   private queueOne(req: SendRequest, spec: Json, username: string,
-                   base: string, former?: string): Json {
+                   base: string, former?: string, group?: Json): Json {
     const { log, realms, audit, now } = this.deps;
     log.debug("Entering Mail.queueOne(). " + username);
     const realmId = realms.currentId();
-    const found = this.recipient(username);
+    // A group recipient (#989) arrives resolved; `username` is its DN.
+    const found = group || this.recipient(username);
     const who = found && former
       ? Object.assign({}, found, { address: former }) : found;
     if (!who) {
@@ -1225,8 +1507,8 @@ class Mail {
         username + ' declined ' + cat.label.toLowerCase()) };
     }
     const dedup = req.dedupKey
-      ? nodeCrypto.createHash('sha256').update(username + '\n' + spec.id +
-          '\n' + String(req.dedupKey)).digest('base64url').slice(0, 22)
+      ? stsCrypto.digest('sha256', username + '\n' + spec.id +
+          '\n' + String(req.dedupKey), 'base64url').slice(0, 22)
       : '';
     const duplicate = this.duplicateOf(realmId, dedup);
     if (duplicate) {
@@ -1245,20 +1527,41 @@ class Mail {
         this.setting('mail.rateWindowS') + ' seconds, the ceiling ' +
         '(mail.ratePerRecipient, mail.ratePerCategory)') };
     }
+    // The recipient's own language, then the realm's locale policy (#539),
+    // which replaced `mail.defaultLanguage`: one default for pages and mail.
+    // The policy for the RECIPIENT (#1238): their groups may name a locale
+    // profile; a group recipient (#989) is nobody's. A mail is not sent for
+    // an application, so none is named.
     const languages = MailTemplates.languageOrder(who.language,
-      String(this.setting('mail.defaultLanguage') || 'en'));
+      String(localePolicy.defaultLocaleFor('', group ? '' : username) ||
+             'en'));
     const chosen = this.templateFor(spec.id, languages);
-    const values: Json = Object.assign({}, req.values || {});
+    // #539: a value a caller gave as a message (`{ i18n }`) or an instant
+    // (`{ date }`) becomes words HERE, in the language the template was
+    // chosen in, and only then reaches the renderer — which escapes it as
+    // it escapes every other value. What the outbox row keeps is the
+    // rendered message, so the console shows what was sent.
+    // The recipient's own first preference leads when it is a form of the
+    // chosen language — `fr-CA` for a message chosen in `fr` — so a value
+    // reads that region's overlay and its date is written the way that
+    // region writes one; otherwise the chosen language alone.
+    const top = String(languages[0] || '');
+    const valueLangs = top && chosen.lang &&
+      top.split('-')[0].toLowerCase() ===
+        String(chosen.lang).split('-')[0].toLowerCase()
+      ? [top, chosen.lang] : [chosen.lang];
+    const values: Json = this.resolveValues(req.values || {}, valueLangs);
     values.realm = String((realms.current() && realms.current().name) ||
                           realmId);
     values.service = values.service ||
       String(realms.domainOf(realms.current()) || 'this service');
     const links = req.links || {};
+    const self = this;
     spec.links.forEach(function (name: string) {
       const path = String(links[name] || '');
       // A PATH, and nothing that could make it another origin.
       values[name] = /^\/(?!\/)/.test(path) && !/[\s\\]/.test(path)
-        ? base + path : '';
+        ? self.linkOn(base, path) : '';
     });
     // #64: EVERY MESSAGE IS WRAPPED IN THE REALM'S LAYOUT, in the language
     // the message itself was chosen in where the realm has one, the
@@ -1268,13 +1571,16 @@ class Mail {
     const layout = this.templateFor(MailTemplates.LAYOUT_ID,
                                     [chosen.lang].concat(languages));
     const body = MailTemplates.render(chosen.parts, values);
+    // #539: the reason in the language the LAYOUT went out in, so the
+    // sentence that carries it is in one language.
     const rendered = layout
       ? MailTemplates.wrap(layout.parts, body, Object.assign({}, values, {
-          reason: cat2 ? cat2.reason : 'a message from this service'
+          reason: cat2 ? MailTemplates.reasonFor(cat2.id, layout.lang)
+            : 'a message from this service'
         }))
       : body;
     const at = now();
-    const id = nodeCrypto.randomBytes(16).toString('base64url');
+    const id = stsCrypto.randomBytes(16).toString('base64url');
     const domain = this.fromAddress().split('@').pop();
     const row: Message = {
       id: id, realm: realmId, username: username, to: who.address,
@@ -1627,13 +1933,16 @@ class Mail {
 
   // -------------------------------------------------------------------------
   // THE SWEEP (header point 3): every realm, what is due, bounded by
-  // `mail.concurrency`; then retention; then the summary line. Resolves
-  // `{ attempted, removed, dead }`. Never rejects.
+  // `mail.concurrency`; then retention; then the summary. A dead letter or
+  // a deferred delivery is a warning; a count with neither is debug while
+  // this sweep is a scheduler job. Resolves `{ attempted, removed, dead }`.
+  // Never rejects.
   // -------------------------------------------------------------------------
   /**
    * Sweeps every realm's outbox: attempts what is due within
-   * `mail.concurrency`, applies retention, and writes the summary line. Never
-   * rejects.
+   * `mail.concurrency` and applies retention. A dead letter or a deferred
+   * delivery is a warning; a count with neither is debug while this sweep
+   * is a scheduler job. Never rejects.
    *
    * @returns a promise of `{ attempted, removed, dead }`
    */
@@ -1739,12 +2048,15 @@ class Mail {
     return { attempted: attempted, removed: removed, dead: dead };
   }
 
-  // ONE SUMMARY LINE per realm per sweep interval at most, and only when
-  // something happened — never a line per message (rcbj's rule for delivery
-  // failures).
+  // A dead letter or a deferred delivery is a warning (STS-MAIL-0028). A
+  // count with neither is info here and debug while the sweep is a
+  // scheduler job. At most one line per realm per mail.deliverS, and only
+  // when something happened.
   /**
-   * Writes at most one summary line per realm per sweep interval, and only when
-   * something happened.
+   * A dead letter or a deferred delivery is a warning (STS-MAIL-0028). A
+   * count with neither is info here and debug while the sweep is a
+   * scheduler job. At most one line per realm per mail.deliverS, and only
+   * when something happened.
    *
    * @param realmId - the realm
    * @param force - true to write it whatever the interval
@@ -1995,15 +2307,14 @@ class Mail {
       available: this.available(),
       from: cfg.from,
       linkBase: this.linkBase(),
-      linkBasePinned: !!String(this.setting('listener.publicBaseUrl') ||
-                               this.setting('global.publicBaseUrl') || ''),
+      linkBasePinned: !!helpers.pinnedBaseUrl(),
       relay: cfg.transport === 'smtp'
         ? { host: cfg.smtpHost, port: cfg.smtpPort, tls: cfg.smtpTls,
             auth: cfg.smtpAuth, dkim: cfg.dkimDomain
               ? cfg.dkimAlgorithm + ' d=' + cfg.dkimDomain + ' s=' +
                 cfg.dkimSelector : 'off' }
         : null,
-      buildProblem: problem ? { code: problem.code, why: problem.why,
+      buildProblem: problem ? { why: problem.why,
                                 at: new Date(problem.at).toISOString() }
                             : null,
       counts: this.counts(),
@@ -2080,6 +2391,7 @@ export = {
   send: slot.forward('send'),
   sendToFormerAddress: slot.forward('sendToFormerAddress'),
   sendToPendingAddress: slot.forward('sendToPendingAddress'),
+  sendToPseudonymAddress: slot.forward('sendToPseudonymAddress'),
   attempt: slot.forward('attempt'),
   dispatch: slot.forward('dispatch'),
   retry: slot.forward('retry'),

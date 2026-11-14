@@ -1,0 +1,14 @@
+{
+  "sentencePq": "后量子密钥对：{label}",
+  "sentenceComposite": "复合后量子密钥对：{label} — 两半都必须验证通过",
+  "sentenceKem": "后量子密钥建立密钥：{label} — 它不签署任何内容",
+  "sentenceHybrid": "混合：一个经典密钥，其证书还携带一个{label}",
+  "sentenceOther": "后量子：{label}",
+  "legendPq": " 表示使用后量子算法的密钥对",
+  "legendPqAfter": " — ML-DSA 或 SLH-DSA。",
+  "legendComposite": " 表示复合密钥：一个密钥包含后量子和经典两半，两半都必须验证通过。",
+  "legendKem": " 表示后量子密钥建立密钥，它不签署任何内容。",
+  "legendHybridLabel": "备用 ML-DSA-65 密钥",
+  "legendHybrid": " 表示经典密钥，其证书还携带一个备用的后量子密钥 — 密钥本身并不是后量子的。将指针悬停在图标上可查看算法。没有图标的密钥是经典密钥（RSA、ECDSA 或 EdDSA）。决定标记的是密钥自身的算法，而不是其证书上的签名：由 RSA CA 认证的 ML-DSA 密钥会被标记，而由 ML-DSA CA 认证的 RSA 密钥则不会。",
+  "legendTitle": "后量子密钥对"
+}

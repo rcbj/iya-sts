@@ -21,6 +21,11 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# Under Cygwin (#512), the shims that take the CR off what the cloud CLI
+# prints, so an id read back from it compares; nothing on Linux.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../../tests/tools/host-platform.sh"
+
 # The HOME region: the state bucket is here whatever region a multi-cell
 # environment's cells are in (#98), and one bucket holds every state.
 AWS_REGION="${AWS_REGION:-us-west-2}"

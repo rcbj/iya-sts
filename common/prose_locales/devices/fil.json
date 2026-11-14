@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "OpenID Connect Native SSO for Mobile Apps: ang authorization-code grant ng unang app na may device_sso scope ang gumagawa ng device at nag-aabot dito ng device_secret, naka-hash sa entry at may bisa lang para sa sign-on session na iyon."
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "Isang administrator, sa Directory → Devices o POST /admin-api/devices/create: pag-aari ng isang tao o ng isang application, na may mga key na itinipa by value. Ang key na idinagdag sa ganitong paraan ay naitatalang hindi pinatunayan ng sinuman at self-asserted."
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "Ang may-ari sa /portal/devices (o sa mga JSON door nito, POST /portal/devices/challenge at /portal/devices/proof), na nagpapatunay ng key: isang device-key-proof+jwt JWS sa ibabaw ng challenge na naka-bind sa session niya — na may Android Key Attestation sa x5c nito, o isang Apple App Attest statement sa halip — o nagli-link ng WebAuthn platform credential na in-enrol niya, gamit ang bagong assertion."
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "EST (RFC 7030) simpleenroll sa /.well-known/est/device/: isang certificate na na-issue sa device entry na pinangangalanan ng urn:sts:device:<id> ng request — o sa bago, na pag-aari ng requester — na may TPM key attestation (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). Ang may-ari para sa sarili niyang device, Admin Write para sa kahit alin."
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "SCEP (RFC 8894) PKCSReq na may challenge password na na-issue para sa device profile — pareho, para sa mga device na ito lang ang sinasalita."
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "Ang client certificate sa TLS connection — sa sign-in at sa token endpoint (RFC 8705) — tinutugma ayon sa SHA-256 ng SubjectPublicKeyInfo nito, kaya ang na-renew na certificate sa parehong key ay parehong device. Pinatutunayan ng handshake ang possession; naitatala kung na-verify ang chain, at hindi kinikilala ang certificate na tinanggihan dahil sa revocation."
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "Isang DPoP proof sa token endpoint, tinutugma ayon sa jkt nito — ang RFC 7638 thumbprint na dala ng bawat jwk key."
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "Isang WebAuthn assertion sa sign-in na ang credential ay naka-link sa device."
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "Ang Native SSO device_secret, habang buhay ang sign-on session na pinag-issue-han nito."
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "ang device member sa session-established, session-presented at session-revoked"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked (kung saan pinangangalanan ito ng risc.autoEmitTypes; hindi bilang default)"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "complex: device (iss_sub — ang issuer ng realm na ito at ang device id) at user (ang may-ari, kung tao)"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "ang registeredDevice ng authentication event (binabasa ng authn.registeredDeviceOf(session) ang pinakahuli)"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "ang registered_device ng issuance request, bago ang issuance gate"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "tinatanggap sa parehong mode ang by-value key ng isang administrator, naitatala bilang proof admin at self-asserted"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "walang nonce operation ang SCEP, kaya hindi kailanman naipapakitang fresh ang TPM statement sa ibabaw nito"
+  }
+}

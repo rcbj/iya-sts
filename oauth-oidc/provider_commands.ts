@@ -74,11 +74,13 @@
 // `common/protocol_stack.ts` registers after `oauth2`'s.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
+// A token register row as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 import applications = require('../common/applications');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
@@ -86,6 +88,7 @@ import mode = require('../common/mode');
 import fedHttp = require('../federation/federation_http');
 import clusterClaims = require('../cluster/cluster_claims');
 import outbound = require('./outbound_delivery');
+import Classes = require('../common/domain_classes');
 
 type Json = any;
 type Req = import('express').Request;
@@ -398,6 +401,51 @@ class ProviderCommands {
     return ACCOUNT_COMMANDS.indexOf(base) >= 0;
   }
 
+  /**
+   * The roles a relying party's metadata answer names, as section 2.2 of the
+   * specification defines one: `id`, `display` and an optional `description`,
+   * all strings. Anything else is dropped here, because this is a value another
+   * party wrote and the register's answer is held to a closed model (#1353): as
+   * it arrived, one relying party's odd answer would have refused the whole
+   * realm's report, every other client's row with it.
+   *
+   * @param roles - the member as it arrived, or as it was stored earlier
+   * @returns the roles, at most 200
+   */
+  static rolesFrom(roles: Json): Json[] {
+    helpers.log.debug("Entering ProviderCommands.rolesFrom().");
+    const text = function (value: Json): boolean {
+      return typeof value === 'string' && value.length > 0;
+    };
+    const out = (Array.isArray(roles) ? roles : []).filter(function (one: Json) {
+      return one && typeof one === 'object' && text(one.id);
+    }).slice(0, 200).map(function (one: Json) {
+      const role: Json = { id: one.id, display: text(one.display)
+        ? one.display : one.id };
+      if (text(one.description)) {
+        role.description = one.description;
+      }
+      return role;
+    });
+    helpers.log.debug("Leaving ProviderCommands.rolesFrom(). " + out.length);
+    return out;
+  }
+
+  /**
+   * A stream's `last_access`, kept only where it is a time: a number or a
+   * string. Another party wrote it, for `rolesFrom()`'s reason.
+   *
+   * @param value - the member as it arrived
+   * @returns the value, or null to record none
+   */
+  static lastAccessFrom(value: Json): Json {
+    helpers.log.debug("Entering ProviderCommands.lastAccessFrom().");
+    const usable = (typeof value === 'number' && Number.isFinite(value)) ||
+      (typeof value === 'string' && value.length > 0);
+    helpers.log.debug("Leaving ProviderCommands.lastAccessFrom(). " + usable);
+    return usable ? value : null;
+  }
+
   // The digest a callback token is stored under.
   /**
    * Returns the digest a callback token is stored under.
@@ -408,8 +456,7 @@ class ProviderCommands {
   static digest(token: string): string {
     helpers.log.debug("Entering ProviderCommands.digest().");
     helpers.log.debug("Leaving ProviderCommands.digest().");
-    return nodeCrypto.createHash('sha256').update(String(token))
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(token), 'base64url');
   }
 
   // -------------------------------------------------------------------------
@@ -433,10 +480,9 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
-    // The realm's own base first (#99), as helpers.pinnedBaseUrl() reads it.
-    const pinned = String(config.value('listener.publicBaseUrl') ||
-                          config.value('global.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    // The authorization server's advertised base (#99, #472), as every URL
+    // of it is built.
+    const pinned = helpers.pinnedBaseUrl('oauth-oidc');
     if (config.value('oauth2.issuer') || pinned) {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
       return jwtAccessToken.issuerFor(pinned + realms.currentPrefix());
@@ -604,7 +650,7 @@ class ProviderCommands {
   private mintCallback(fields: Json): string {
     const { log, now } = this.deps;
     log.debug("Entering ProviderCommands.mintCallback().");
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     callbacks.set(ProviderCommands.digest(token), Object.assign({
       expiresAt: now() + this.setting('oauth2.commandCallbackTtlS') * 1000
     }, fields));
@@ -642,16 +688,13 @@ class ProviderCommands {
         const cap = this.setting('oauth2.commandMetadataMaxGroups');
         out.groups = directory.allGroupEntries().slice(0, cap)
           .map(function (group: Json) {
-            const a = group.attributes || {};
-            const first = function (name: string): string {
-              const v = a[name];
-              return String((Array.isArray(v) ? v[0] : v) || '');
-            };
-            const one: Json = { id: first('cn') || String(group.dn),
-                                display: first('displayName') || first('cn') ||
+            // What a group is called and says is its concept's (#1579).
+            const held = Classes.Group.fromEntry(group.attributes || {});
+            const one: Json = { id: held.name || String(group.dn),
+                                display: held.displayName || held.name ||
                                          String(group.dn) };
-            if (first('description')) {
-              one.description = first('description');
+            if (held.description) {
+              one.description = held.description;
             }
             return one;
           });
@@ -736,7 +779,8 @@ class ProviderCommands {
   async signedToken(row: Json): Promise<Json> {
     const { log, applications, signJwtAsAsync, errorCodes } = this.deps;
     log.debug("Entering ProviderCommands.signedToken(). " + row.clientId);
-    const registered: Json = applications.registrationOf(row.clientId) || {};
+    // From the client's attributes (#290), whoever set them.
+    const registered: Json = applications.clientConfigOf(row.clientId);
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
     if (alg === 'none') {
       log.debug("Leaving ProviderCommands.signedToken(). alg none.");
@@ -857,7 +901,7 @@ class ProviderCommands {
         commandsSupported: a.commands_supported.map(String),
         commandEndpoint: String(a.command_endpoint || ''),
         audSubRequired: a.aud_sub_required === true,
-        roles: Array.isArray(a.roles) ? a.roles.slice(0, 200) : [],
+        roles: ProviderCommands.rolesFrom(a.roles),
         context: a.context, learnedAt: this.deps.now()
       });
     }
@@ -1101,7 +1145,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.executeRun(). No issuer.");
       return fail('STS-OAUTH-0767', 'no issuer is known for this realm');
     }
-    const registered: Json = applications.registrationOf(run.clientId) || {};
+    const registered: Json = applications.clientConfigOf(run.clientId);
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
     const maxResumes = this.setting('oauth2.commandStreamResumes');
     let token = '';
@@ -1199,8 +1243,8 @@ class ProviderCommands {
       this.noteAccount(run.clientId, String(data.sub),
                        held ? held.username : '',
                        String(data.account_state), run.command,
-                       data.last_access ? { lastAccess: data.last_access }
-                                        : undefined);
+                       ProviderCommands.lastAccessFrom(data.last_access) !==
+                         null ? { lastAccess: data.last_access } : undefined);
       run.accounts++;
     } else if (event.event === 'command-complete') {
       run.totalAccounts = data && Number.isInteger(data.total_accounts)
@@ -1239,7 +1283,7 @@ class ProviderCommands {
              accounts: run.accounts, totalAccounts: run.totalAccounts,
              resumes: run.resumes, lastEventId: run.lastEventId || '',
              errors: (run.errors || []).slice(0), why: run.why || '',
-             errorCode: run.errorCode || '', actor: run.actor || '',
+             actor: run.actor || '',
              startedAt: iso(run.startedAt), finishedAt: iso(run.finishedAt) };
   }
 
@@ -1425,9 +1469,12 @@ class ProviderCommands {
     try {
       const stats = this.deps.stats();
       const key = String(stats.identityKeyOf(username) || username);
-      stats.tokenList().forEach(function (record: Json) {
-        const who = String(record.username || record.subject || '');
-        const client = String(record.clientId || record.client_id || '');
+      // This person's records, through the register's index (#820 part 3).
+      // Each register row read through the `IssuedToken` concept (#1579).
+      stats.tokenList(username).forEach(function (record: Json) {
+        const token = DomainClasses.IssuedToken.fromRecord(record);
+        const who = String(token.username || '');
+        const client = String(token.clientId || '');
         if (client && who && (who === username ||
             String(stats.identityKeyOf(who) || who) === key)) {
           out[client] = true;
@@ -1710,9 +1757,15 @@ class ProviderCommands {
     const accountRows: Json[] = [];
     accounts.forEach(function (row: Json) {
       if (row && (!o.clientId || row.clientId === o.clientId)) {
-        accountRows.push(Object.assign({}, row, {
+        const shown = Object.assign({}, row, {
           updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString()
-                                   : '' }));
+                                   : '' });
+        // Through the same door as `roles`: a row stored earlier is as the
+        // relying party wrote it, and one bad row must not refuse the report.
+        if (ProviderCommands.lastAccessFrom(row.lastAccess) === null) {
+          delete shown.lastAccess;
+        }
+        accountRows.push(shown);
       }
     });
     accountRows.sort(function (a, b) {
@@ -1736,18 +1789,27 @@ class ProviderCommands {
         return { clientId: c.clientId, name: c.name, endpoint: c.endpoint,
                  learned: known ? {
                    commandsSupported: known.commandsSupported,
-                   audSubRequired: known.audSubRequired, roles: known.roles,
+                   audSubRequired: known.audSubRequired,
+                   // Through the same door: a row learned before #1353 is
+                   // as the relying party wrote it.
+                   roles: ProviderCommands.rolesFrom(known.roles),
                    learnedAt: new Date(known.learnedAt).toISOString() }
                    : null };
       }),
-      accounts: accountRows.slice(0, Number(o.limit) || 500),
+      // WHOLE, unless a caller asks for a `limit` (#313's sweep). These were
+      // cut at 500 accounts, 500 deliveries and 100 runs, silently: a row
+      // past the cut could not be reached from anywhere. `/admin-api/
+      // commands` pages them instead (`provider_commands_api.ts`).
+      accounts: Number(o.limit) > 0
+        ? accountRows.slice(0, Number(o.limit)) : accountRows,
       deliveries: this.outbox.rows({ state: o.state, q: o.q })
-        .slice(0, Number(o.limit) || 500)
+        .slice(0, Number(o.limit) > 0 ? Number(o.limit) : undefined)
         .map(function (row: Json) {
           return self.outbox.view(row);
         }),
       counts: this.outbox.counts(),
-      runs: runRows.slice(0, 100),
+      runs: Number(o.limit) > 0 ? runRows.slice(0, Number(o.limit))
+                                : runRows,
       accountCommands: ACCOUNT_COMMANDS.slice(0),
       tenantCommands: TENANT_COMMANDS.slice(0)
     };

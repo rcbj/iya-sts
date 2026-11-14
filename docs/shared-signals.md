@@ -42,15 +42,16 @@ The vocabularies run over that pipe:
 
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
-| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens, a registered device's compliance, risk level or credentials change |
-| **RISC** | 14 | an account | a person is deleted, disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link, or sets `pwdReset` over LDAP; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed; this service detects a compromised credential (below) |
+| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person or an application changes, a directory change moves a claim of somebody (or an application) holding live tokens, a registered device's compliance, risk level or credentials change, a SPIFFE registration entry is removed |
+| **RISC** | 14 | an account | a person or an application entry is deleted; a person is disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link, or sets `pwdReset` over LDAP; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed; this service detects a compromised credential (below) |
 
 Since #164 every CAEP and RISC event type has an act here that sends it: a
 registered device's compliance changing (`device-compliance-change`), its risk
 level changing (`risk-level-change`, principal `DEVICE`), its keys and Native
 SSO secret changing (`credential-change`), and a person's device compromised or
-removed (RISC `credential-compromise` and the deprecated `sessions-revoked`,
-with the device beside the person in the subject). [Devices](devices.md) lists
+removed (RISC `credential-compromise`, and the deprecated `sessions-revoked`
+where `risc.autoEmitTypes` names it, with the device beside the person in the
+subject). [Devices](devices.md) lists
 each. You can still emit any of them by hand from the console or the
 management API.
 [CAEP events](caep-events.md) covers what triggers each CAEP event.
@@ -106,7 +107,18 @@ They can cancel during the wait, or opt back in afterwards. The wait stops
 somebody who has just taken an account over from silencing it at once.
 **Only the holder moves it**: an administrator's Reset or Clear on the RISC
 register keeps the account's opt state, and a pending opt-out still becomes
-effective on schedule.
+effective on schedule. **An application and a service account have no
+holder to make the choice** ([#221](https://github.com/rcbj/iya-sts/issues/221)),
+so the opt-out does not apply to either: every event about them is exchanged,
+`/admin/risc-accounts` and its row's notes say the gate does not apply, and
+`/portal/signals` shows a service account the reason instead of a button.
+
+**Applications are subjects too** (#221). An application is named by SSF 1.0's
+complex subject's `application` member, `{ "format": "opaque", "id":
+"<client_id>" }`; a receiver adds it to a stream like any subject. Its
+credentials, its own tokens' claims, its own grant and its deletion are
+sent about it — see [the CAEP events](caep-events.md), *Applications and
+workloads*.
 
 **Every value of `mail`, `telephoneNumber` and `mobile` counts.** A second
 address changing, or a `mobile` beside a `telephoneNumber`, is an
@@ -142,19 +154,22 @@ subscribes only to the keys it pins, and every type it receives means one
 action: fetch that document again. The refresh-token encryption keys are
 never announced, because they are published nowhere.
 
-**The listener's key is made at every start**, so a restart presents a new
-certificate. The service keeps the fingerprint it last announced in its store
-and compares it with the new certificate once the port is bound. If they
-differ, it sends `tls-certificate-changed` with `reason: restarted`, where
-`<previous>` is the certificate it last announced.
+**A start can present a certificate nobody was told about.** Each node keeps
+its listener key, and the certificate over it, across restarts where minted
+state survives ([TLS](tls.md)), but a new key or a re-issued certificate at
+start is still possible. The service keeps the fingerprint it last announced
+in its store and compares it with the certificate it presents once the port
+is bound. If they differ, it sends `tls-certificate-changed` with
+`reason: restarted`, where `<previous>` is the certificate it last announced.
+A restart that presents the same certificate sends nothing.
 - **Where it works:** only where minted state survives a restart, which is
   product mode on postgres or a cluster. In `memory` mode, on an `ldif` store
   and in a single-process development service a restart is not announced.
   Development builds a new Root at every start anyway.
-- **In a cluster:** the record is the SERVICE's, not a node's. Every node's
-  start is announced, and `<previous>` may be a certificate another node
-  still presents. A receiver behind the balancer should pin the Root, not a
-  leaf.
+- **In a cluster:** the record is the SERVICE's, not a node's. A node's
+  start is announced whenever another node announced after it, and
+  `<previous>` may be a certificate another node still presents. A
+  receiver behind the balancer should pin the Root, not a leaf.
 - **Never announced:** a self-signed bootstrap certificate or one supplied
   through `tls.certificateFile`.
 
@@ -181,7 +196,6 @@ metadata and discovers every endpoint from it:
 | `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add (an empty 200) or remove (204) a subject, SSF 1.0 sections 8.1.3.2 and 8.1.3.3 |
 | `POST /ssf/verify` | ask for a verification event |
 | `POST /ssf/poll` | RFC 8936 poll delivery and acknowledgement |
-| `POST /ssf/receive`, `GET /ssf/received` | this service as a **receiver** (below) |
 | `GET /ssf` | a description of the family; `?format=json` returns the same as data |
 
 In a trust realm every path is under `/realm/{id}`. A realm's metadata is at
@@ -284,7 +298,11 @@ host), only `https` with the receiver's certificate verified is used — plain
 http only with `ssf.pushAllowHttp` and verification off only with
 `ssf.pushSkipTlsVerification`, **both in development mode only** (#171);
 product reaches a privately certified receiver through `ssf.pushCaFile` — and
-every push has a timeout, a cap on the response size and **no redirects**. With push
+every push has a timeout, a cap on the response size and **no redirects**. The
+receiver's host must be in `security.outboundAllowedHosts` when that is set, in
+either mode. In product mode it is also held to the rules every outbound
+request follows: it must not resolve to an internal address, and the push goes
+to the address that was checked (`STS-SSF-0158` otherwise). With push
 turned off, SSF still works in full over poll, and `delivery_methods_supported`
 lists only poll.
 
@@ -319,6 +337,14 @@ it to `paused` to test a receiver that has to enable its own stream first.
   announced with `stream-updated` first. The value is published on every stream
   configuration while it is set. It is off by default because a push receiver
   never needs to call back after creating its stream.
+* **A person's browser stream times out anyway.** A stream a person owns and
+  collects by poll — what a browser receiver such as `oidc-caep-client` makes
+  with the person's own token — takes `ssf.personStreamInactivityTimeoutS`
+  (a day by default) and `ssf.personStreamInactivityAction` (`delete`) when
+  nothing above sets a timeout. Each poll is activity, so a stream with a tab
+  open never times out; one left behind when its tab was closed, its storage
+  cleared or the person moved browser is removed, and stops counting against
+  `ssf.maxStreams`.
 * **`ssf.verificationEveryS`** (0 by default): every enabled stream is sent a
   verification event, with no `state`, when this transmitter has sent it none
   for that long. **Send a verification event** on `/admin/ssf` does the same
@@ -347,28 +373,76 @@ the composite ML-DSA algorithms). A SET has `typ: secevent+jwt`.
 `ssf.setCertificateHeader` controls whether it carries the signing key's
 certificate chain, as `x5u` (the default), `x5c`, both, or neither.
 
-### Authentication: three schemes, two scopes
+### Authentication: four schemes, two scopes
 
 The metadata document lists the schemes it accepts in
 `authorization_schemes`:
 
-* **OAuth 2.0**: an access token from this service with `ssf:read` or
-  `ssf:write`. DPoP- and certificate-bound tokens are checked the same way as
-  at every other protected endpoint.
+* **OAuth 2.0**: an access token from this service with the read scope
+  (`ssf.read`) or the write scope (`ssf.manage`), which includes read. These
+  are the CAEP Interoperability Profile 1.0 names. DPoP- and certificate-bound
+  tokens are checked the same way as at every other protected endpoint.
 * **HTTP Basic**: a directory person's name and password, so that a client
   that has no token flow yet can still reach every endpoint. Basic carries no
   scope, so a Basic caller gets both. `ssf.authBasic` turns the scheme off.
   In product mode a person who holds or must hold a second factor is refused
   their own password with the `401` a wrong one gets, and uses an
   [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `ssf`.
-* **GNAP**: a key-bound GNAP access token whose access includes `ssf:read` or
-  `ssf:write`, so that a GNAP web application can own a stream itself. See
-  [GNAP](gnap.md).
+* **GNAP**: a key-bound GNAP access token whose access includes one of those
+  names, or an object of type `ssf` with the action the call needs, so that a
+  GNAP web application can own a stream itself. See [GNAP](gnap.md).
+* **TLS client certificate** (`urn:ietf:rfc:8705`): the certificate on the
+  connection, sent with no `Authorization` header. Only a certificate that
+  names an application is taken: one this realm issued to it (on the
+  application's Credentials section, or through
+  `POST /admin-api/applications/issue-tls-client-certificate`) while the
+  application still holds it, or one from an outside certificate authority
+  stored byte for byte in `userCertificate` on that application's entry and
+  on no other — stored from the **Credentials** section of its page or with
+  `POST /admin-api/applications/add-certificate`
+  ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Either is refused when revoked. The receiver is that application: it owns the streams it creates
+  under its identifier, exactly as a GNAP token for it would, and reaches no
+  other receiver's. It holds what a token for the application would be
+  issued: the Shared Signals scopes its `oauthAllowedScope` declares and its
+  `SSF_READ` and `SSF_MANAGE` roles authorize, asked again on every call. A
+  person's certificate, another realm's, one the application no longer
+  holds and a revoked one are refused with 401 (`STS-SSF-0147`, `0148`,
+  `0150`); an application whose declarations and roles authorize nothing
+  the call needs gets 403 (`STS-SSF-0149`). A certificate from an authority
+  you added to the truststore that is stored on no entry is refused 401
+  (`STS-SSF-0151`), and one stored on more than one (`STS-SSF-0152`); its
+  common name and subject are never read.
+  `ssf.authClientCert` turns the scheme off.
 
-`ssf:read` lets a caller read a stream, its status and the poll queue.
-`ssf:write` is needed to create, change or delete a stream, change subjects or
-status, or ask for verification. A read token that attempts a write gets a 403
-that names the scope it needs.
+`ssf.read` lets a caller read a stream, its status and the poll queue.
+`ssf.manage` is the write scope: it is needed to create, change or delete a
+stream, change subjects or status, or ask for verification. Update, add and
+remove subject, and update status are writes; poll is a read. A read token
+that attempts a write gets a 403 that names the scope it needs.
+
+**Write includes read.** The profile says `ssf.manage` includes every
+`ssf.read` permission, and this service applies that one rule everywhere:
+
+* A token that carries a write scope may read.
+* A client that declares a write scope in `oauthAllowedScope` may be issued
+  the read scope as well. A client that declares only the read scope is not
+  issued a write scope. This holds in both modes, through the token endpoint
+  and GNAP.
+* A token is honoured only while its client still declares a scope that
+  grants what the call needs (`STS-SSF-0107`). A token that holds only
+  `ssf.manage`, whose client now declares only `ssf.read`, can still read
+  and can no longer write.
+
+`ssf.authScopeRead` and `ssf.authScopeWrite` rename the two scopes. A
+renamed scope is accepted beside the profile name, which stays accepted. A
+renamed write scope includes read, as `ssf.manage` does, and so does a name
+set on both settings. Discovery's `scopes_supported` lists every name. With
+the defaults that is `ssf.read` and `ssf.manage`. This service's older
+names, `ssf:read` and `ssf:write`, are not Shared Signals scopes.
+
+The default access-token lifetime (`oauth2.accessTokenTtlS`, 3600 seconds)
+meets the profile's sixty-minute ceiling. These tokens have no separate cap,
+and the lifetime's own maximum stays thirty days.
 
 ### Limiting what an application's stream may carry
 
@@ -406,23 +480,20 @@ once per sweep as a summary, never once per SET.
 
 ### This service as a receiver
 
-`POST /ssf/receive` accepts a SET pushed **at** this service, for testing a
-client that acts as the transmitter. It verifies the signature when it can
-find a key. A SET that another party signed is reported as *not verifiable
-here*, not as invalid. `GET /ssf/received` lists what arrived.
-`ssf.receiveRequireSignature` makes it refuse a SET whose signature fails, the
-way a strict receiver would. **Product mode always refuses one**, at this
-endpoint and at the console's and portal's own receivers (#117).
+This service's own receivers are the admin console's, the user portal's and
+the reports application's, which are seeded streams of its transmitter (see *Signals received*). They
+verify each SET's signature, and refuse one that does not verify when
+`ssf.receiveRequireSignature` is on — **product mode always refuses one**
+(#117). They also refuse a SET whose header's `typ` is not `secevent+jwt`
+(section 4.1.1), whose `iss` is not their stream's (section 4.1.6), or whose
+`aud` does not name them. Every SET that arrives is recorded first.
 
-Every SET that arrives is recorded, and it is then refused if its header's
-`typ` is not `secevent+jwt` (section 4.1.1), if its `iss` is not one
-`ssf.receiveIssuers` lists (`invalid_issuer`, section 4.1.6), or if its `aud`
-names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
-the first means this realm's own transmitter issuer and the second means the
-endpoint's own URL, for example `https://host/ssf/receive`. The console's and
-portal's receivers make the same `typ` and `iss` checks against their own
-streams. To receive a federation partner's streams, see *Receiving from a
-federation partner*, below.
+`POST /ssf/receive` and `GET /ssf/received`, an endpoint that accepted a SET
+pushed **at** this service so that a client could be tested as a
+transmitter, were removed in
+[#593](https://github.com/rcbj/iya-sts/issues/593). The test suite's peer
+plays that receiver. To receive a federation partner's streams, see
+*Receiving from a federation partner*, below.
 
 ### Receiving from a federation partner
 
@@ -452,7 +523,10 @@ nobody in here — a device manager, an endpoint agent, an HR system — is an
    (`fedSignalsDelivery` `poll`) is polled every `ssf.foreignPollS` seconds.
    A push stream is given `/federation/signals/{id}` and an authorization
    header only the two services know. `fedSignalsEvents` is what the stream
-   asks for.
+   asks for. The stream can then be read, updated, replaced (a PUT of every
+   setting this realm supplies), paused or enabled, its status read,
+   verified and deleted from the same page; the token asks for
+   `ssf.read ssf.manage` unless `fedSignalsScope` says otherwise.
 4. **Link people.** For a partner people sign in through, the links its
    sign-ins wrote are what its `iss_sub` subjects match: `iss` is the
    partner (or its SSF issuer) and `sub` the identifier it signs them in
@@ -465,7 +539,8 @@ nobody in here — a device manager, an endpoint agent, an HR system — is an
 A Security Event Token is acted on only if it verified: its signature against
 the keys the partner's SSF configuration names, `typ`, `iss`, the stream's
 `aud`, and a `jti` never seen before. Product mode refuses an unverified one.
-What it leads to is the `signal-response` XACML policy's decision. By
+What it leads to is the `signal-response` XACML policy's decision; a
+`session-revoked` is a revocation whatever its `initiating_entity`. By
 default:
 
 | Partner | Events | Reaction here |
@@ -487,22 +562,60 @@ trusted that far, and prefer narrowing `partnerRevokeGrantEvents` in the
 An administrator can lift a block with *Unblock* on the relationship's page
 (`POST /admin-api/federation/signals-unblock`). Every arrival from every
 partner, and every block, is on Monitoring → Signals from partners
-(`/admin/ssf/transmitters`, `GET /admin-api/ssf/transmitters`).
+(`/admin/ssf/transmitters`, `GET /admin-api/ssf/transmitters`). What arrived,
+the blocks and the account locks are each paged there — `receivedPage`,
+`blocksPage` and `locksPage`, sharing `per` — and `relationship` narrows what
+arrived before it is paged.
 
 Development records what it would do and does nothing unless
 `ssf.actOnSignalsInDevelopment` is on.
 
-### The console and the portal are registered receivers
+### The console, the portal and the reports application are registered receivers
 
-Each trust realm has two streams seeded by the service itself, one for the
-admin console and one for the user portal. Both ask for every CAEP and RISC
-event type, and both take delivery over a real RFC 8935 push to an endpoint of
-their own. What arrives is shown at `/admin/signals` and `/portal/signals`.
+Each trust realm has three streams seeded by the service itself, one each for
+the admin console, the user portal and the reports application. Each asks for
+every CAEP and RISC event type and collects it over RFC 8936 poll from this
+service's own `/ssf/poll`. What arrives is shown at `/admin/signals` and
+`/portal/signals`; the reports application answers it at
+`GET /report-api/signals` and has no page for it.
 [Signals received](signals-received.md) explains how this works, and why an
-empty page has five possible causes. **Both act on what they receive**: a
-verified event the `signal-response` policy permits ends the receiving
-surface's own sessions for the person it names (product mode; development
-records it). An unverified event is never acted on.
+empty page has five possible causes. **All three act on what they receive**: a
+verified event the `signal-response` policy permits revokes the tokens the
+receiving application's own client holds for the person it names (product
+mode; development records it). An unverified event is never acted on.
+
+### Broadcast announcements
+
+An administrator can show a short message to everybody signed in to the
+admin console, the user portal or the reports application. Open
+**Server configuration → Broadcast Announcement** (`/admin/broadcast`), type
+the message, choose the applications (all three are ticked) and press
+**Broadcast**. Every tab of those applications that is open at that moment
+shows it in a banner at the top of the screen. The banner closes itself after
+ten seconds, or at once with its **×**. A tab opened afterwards does not show
+it.
+
+It travels as a Shared Signals event of this service's own,
+`urn:iya:sts:secevent:event-type:announcement`, on the receiver streams the
+three applications already have for CAEP and RISC, and only on those. Each
+application's receiver collects it from `/ssf/poll` like any other event,
+checks it, and keeps a verified one for `ssf.announcementKeepS` seconds. Each
+open tab asks its own API every `ssf.announcementPollMs` milliseconds:
+`/admin-api/announcements`, `/account-api/announcements` or
+`/report-api/announcements`. An announcement whose signature does not verify
+is recorded on the application's Signals page and shown to nobody.
+
+- **Who can send it**: anybody with Admin Write. A realm administrator
+  reaches the people signed in to their own realm. A service administrator in
+  the default realm can also choose **Every realm**.
+- **The message** is plain text, at most `ssf.announcementMaxChars`
+  characters.
+- **From a script**: `POST /admin-api/broadcast/send` with
+  `{ "message": "…", "surfaces": ["admin-console", "user-portal", "report"],
+  "everyRealm": false }`. The answer says how many receiver streams took it in
+  each realm; `sent: 0` with `why` means nothing could be delivered (for
+  example `ssf.internalReceivers` is off, or a stream was disabled at
+  `/admin/ssf`).
 
 ### Deliberate defects
 
@@ -542,12 +655,21 @@ specifications, and are honoured in both modes.
 
 ## Development and product mode
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a receiver the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `ssf.pushCaFile`.
+
 | | Development | Product |
 |---|---|---|
-| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries `ssf:read` or `ssf:write` only when its client declares them in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`) | required, and a Basic password is checked against the person's hashed `userPassword` |
+| Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries the read scope (`ssf.read`) or the write scope (`ssf.manage`) only when its client declares a scope granting that permission in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`). Write includes read | required, and a Basic password is checked against the person's hashed `userPassword` |
 | Access tokens | verified | verified |
 | Subjects of automatic events | a person with no `mail` gets an invented `@example.com` address | a real value from the directory entry, or the issuer/subject pair. RISC's two identifier events are not sent when there is no real value |
 | Streams, queues, CAEP and RISC registers | in memory, lost on restart | persisted with other minted state (product mode on postgres) |
+
+**HTTP Basic in product mode.** A password carries no scope, and Basic grants
+both the read and the write scope. In product mode the person must therefore
+hold Admin Write, or the request is refused with 403 (`STS-SSF-0157`). Use an
+OAuth access token for a receiver or a transmitter.
+`security.allowUnscopedPeople` lifts the check, and ASVS 5.0.0 requirements
+8.2.1 and 8.2.2 are then not met.
 
 See [What is not checked](what-is-not-checked.md).
 
@@ -559,7 +681,7 @@ empty.
 
 ## Configuration
 
-There are 63 settings in three groups, and the SSF table also lists one GNAP
+There are 77 settings in three groups, and the SSF table also lists one GNAP
 setting that affects streams. Every one can be changed while the service runs
 except `ssf.internalReceivers`. The CAEP and RISC groups have no
 effect on SSF itself: turning either vocabulary off only removes its event
@@ -597,24 +719,33 @@ types from what a stream may ask for.
 | `ssf.deadLetterMaxPerStream` | `STS_SSF_DEAD_LETTER_MAX_PER_STREAM` | `1000` | yes | The most dead letters one stream keeps. The oldest is dropped first. |
 | `ssf.deadLetterSweepS` | `STS_SSF_DEAD_LETTER_SWEEP_S` | `60` | yes | How often expired dead letters are deleted, due probes are sent and the summary is logged. |
 | `ssf.authBasic` | `STS_SSF_AUTH_BASIC` | `true` | yes | Whether HTTP Basic is accepted and advertised. |
-| `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's and the portal's own receiver streams. |
+| `ssf.authClientCert` | `STS_SSF_AUTH_CLIENT_CERT` | `true` | yes | Whether a receiver's TLS client certificate is accepted and `urn:ietf:rfc:8705` advertised. |
+| `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's, the portal's and the reports application's own receiver streams. |
+| `ssf.announcementPollMs` | `STS_SSF_ANNOUNCEMENT_POLL_MS` | `5000` | yes | How often each open console, portal and reports tab asks for a [broadcast announcement](#broadcast-announcements). |
+| `ssf.announcementKeepS` | `STS_SSF_ANNOUNCEMENT_KEEP_S` | `60` | yes | How long each application's receiver keeps an announcement for its tabs to collect. |
+| `ssf.announcementMaxChars` | `STS_SSF_ANNOUNCEMENT_MAX_CHARS` | `500` | yes | The longest announcement, in characters. |
 | `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per receiver in a realm. A create past the limit is refused with 403, and the refusal names this setting. The console's and portal's own streams do not count. |
 | `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |
 | `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
+| `ssf.personStreamInactivityTimeoutS` | `STS_SSF_PERSON_STREAM_INACTIVITY_TIMEOUT_S` | `86400` | yes | The inactivity timeout of a stream a person owns and collects by poll — what a browser receiver makes with the person's own token — when neither its application nor `ssf.inactivityTimeoutS` sets one. Each poll is activity, so only an abandoned stream (its tab closed for good) times out. `0` turns it off. |
+| `ssf.personStreamInactivityAction` | `STS_SSF_PERSON_STREAM_INACTIVITY_ACTION` | `delete` | yes | What that timeout does: `delete` (frees the place under `ssf.maxStreams`), `disable` or `pause`. |
 | `ssf.verificationEveryS` | `STS_SSF_VERIFICATION_EVERY_S` | `0` | yes | Sends every enabled stream a transmitter-initiated verification event (no `state`) when it has had none for this long. `0` sends none on a schedule. |
 | `ssf.streamMaintenanceSweepS` | `STS_SSF_STREAM_MAINTENANCE_SWEEP_S` | `60` | yes | How often the `ssf.stream-maintenance` scheduler job applies the two settings above. |
-| `ssf.receiveAudiences` | `STS_SSF_RECEIVE_AUDIENCES` | *(empty)* | yes | The `aud` values `POST /ssf/receive` accepts. Empty means the endpoint's own URL. Anything else is recorded and refused with `invalid_audience`. |
-| `ssf.receiveIssuers` | `STS_SSF_RECEIVE_ISSUERS` | *(empty)* | yes | The `iss` values `POST /ssf/receive` accepts. Empty means this realm's own transmitter issuer. Anything else is recorded and refused with `invalid_issuer`. |
 | `ssf.maxSubjectsPerStream` | `STS_SSF_MAX_SUBJECTS_PER_STREAM` | `100` | yes | How many subjects one stream may name. |
 | `ssf.maxQueuedEvents` | `STS_SSF_MAX_QUEUED_EVENTS` | `200` | yes | How many undelivered SETs one stream holds. The oldest is dropped first. |
 | `ssf.pollMaxEvents` | `STS_SSF_POLL_MAX_EVENTS` | `20` | yes | The most SETs one poll returns, whatever the receiver asks for. |
-| `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many SETs `POST /ssf/receive` keeps for display. |
+| `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many delivered SETs each of this service's own receivers (the console's, the portal's and the reports application's) keeps, per realm. |
 | `ssf.maxStreamLogEntries` | `STS_SSF_MAX_STREAM_LOG_ENTRIES` | `200` | yes | How many log lines each stream keeps. |
-| `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | The scope needed to read a stream, its status or the poll queue. |
-| `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
-| `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. |
+| `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf.read` | yes | The scope that reads a stream, its status or the poll queue. The CAEP profile name `ssf.read` is always accepted, even when this is renamed. Write includes read, so a write scope reads as well. |
+| `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf.manage` | yes | The scope that creates, updates or deletes a stream, changes subjects or status, or asks for verification. The CAEP profile name `ssf.manage` is always accepted, even when this is renamed. Write includes read, so a name set here reads as well. |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
-| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
+| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console, the portal and the reports application revoke their own client's tokens on a received signal in development too; product always does. |
+| `ssf.signalsRevokeGrants` | `STS_SSF_SIGNALS_REVOKE_GRANTS` | `true` | yes | A verified event from a federation partner that the `signal-response` policy answers with `signal-revoke-grants` revokes the person's GNAP grants, OAuth grants, tokens and authorization codes (#432). See *Receiving from a federation partner*. |
+| `ssf.foreignPollS` | `STS_SSF_FOREIGN_POLL_S` | `30` | yes | How often the `ssf.foreign-poll` scheduler job polls every federation partner whose stream is a poll stream. |
+| `ssf.foreignPollMaxEvents` | `STS_SSF_FOREIGN_POLL_MAX_EVENTS` | `50` | yes | The `maxEvents` asked of a partner in one poll. |
+| `ssf.foreignPollMaxRounds` | `STS_SSF_FOREIGN_POLL_MAX_ROUNDS` | `5` | yes | How many polls one run makes while the partner says `moreAvailable`. |
+| `ssf.foreignInboxMax` | `STS_SSF_FOREIGN_INBOX_MAX` | `500` | yes | How many SETs from partners a realm keeps, the oldest dropped first. A replayed `jti` is recognised against these. |
+| `ssf.foreignTimeoutMs` | `STS_SSF_FOREIGN_TIMEOUT_MS` | `10000` | yes | How long one request to a partner's Shared Signals (discovery, its token endpoint, stream management, a poll) may take. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
 | `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
@@ -721,7 +852,7 @@ changed with `POST /admin-api/config/set`.
   every stream this realm's transmitter holds, with its subjects, queue,
   counters, log and dead letters. A dead stream is marked. Each stream has
   controls to change its status, delete it, send it a SET, **Send a
-  verification event**, **Revive** it and **Drop its dead letters**. What `POST /ssf/receive` received is listed too.
+  verification event**, **Revive** it and **Drop its dead letters**.
   There is no control to create a stream (see *Not implemented*).
 * **Protocols → CAEP** (`/admin/caep`): the `caep.*` settings, the catalogue
   of the eight event types and their members, and the form for sending one by
@@ -738,7 +869,7 @@ changed with `POST /admin-api/config/set`.
   not their tokens.
 * **The management API** mirrors all of these: `GET /admin-api/ssf` and
   `POST /admin-api/ssf/{action}` (`status`, `delete`, `transmit`,
-  `clear-received`, `revive`, `clear-dead-letters`, `verify`),
+  `revive`, `clear-dead-letters`, `verify`),
   `GET /admin-api/ssf/dead-letters`, `GET /admin-api/caep`,
   `GET /admin-api/caep/sessions` and `POST /admin-api/caep/{action}` (`emit`,
   `reset-session`, `clear`), `GET /admin-api/risc`,

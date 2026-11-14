@@ -11,7 +11,7 @@
 // `README.md` grew a *The ports* section on 2026-09-07 — ten bindings, their
 // settings, their environment variables. It is the most useful kind of table
 // and the kind this repository has already been bitten by twice: a job count
-// written into the root CLAUDE.md beside `tests/vendored/MANIFEST.js` went
+// written into the root CLAUDE.md beside `tests/protocol/MANIFEST.js` went
 // stale twice, which is why tests/CLAUDE.md now says "`MANIFEST.js` IS THE
 // COUNT" and writes no number of its own.
 //

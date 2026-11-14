@@ -27,7 +27,7 @@ be continued, be modified onto different access, and be revoked.
        │  POST /gnap/continue/{grant} ───▶│                                  │
        │  ◀── access_token                │                                  │
        │                                  │                                  │
-       │  GET /gnap/rs/resource  Authorization: GNAP <token>  (signed)       │
+       │  GET <resource server>  Authorization: GNAP <token>  (signed)       │
 ```
 
 ## Endpoints
@@ -41,8 +41,11 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/token/{handle}` | POST · DELETE | rotate, including client key rotation · revoke (section 6) |
 | `/gnap/interact/{id}` | GET | the redirect interaction start (4.1.1) |
 | `/gnap/app/{id}` | GET | the app interaction start (4.1.4) |
-| `/gnap/code` | GET · POST | user code entry, and `user_code_uri` (4.1.2, 4.1.3) |
-| `/gnap/approve/{id}` | GET · POST | the resource owner's approval page |
+| `/gnap/code` | GET | user code entry, and `user_code_uri` (4.1.2, 4.1.3) |
+| `/gnap/approve/{id}` | GET | the resource owner's approval page |
+| `/gnap-api/code` | GET · POST | the user code page's API: the code is sent here |
+| `/gnap-api/approve/{id}` | GET · POST | the approval page's API: what it asks, and the answer |
+| `/gnap/interaction.js`, `/gnap-api` | GET | the interaction pages' script, and the index of their API |
 | `/.well-known/gnap-as-rs` | GET | resource server discovery (RFC 9767 section 3.1) |
 | `/gnap/introspect` | POST | token introspection (RFC 9767 section 3.3) |
 | `/gnap/resource` | POST | resource set registration (RFC 9767 section 3.4) |
@@ -50,10 +53,21 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/zcap/controller` | GET | the controller document a zcap token's root capability names |
 | `/gnap/biscuit/revocations` | GET | the revocation identifiers of revoked biscuit tokens (this service's own; see [revocation](#seeing-a-revocation-without-introspection)) |
 | `/status-lists/access-tokens` | GET | the realm's access-token status list, shared with OAuth (see [revocation](#seeing-a-revocation-without-introspection)) |
-| `/gnap/rs/resource` | GET · POST | a demonstration resource server |
-| `/gnap/rs/spend` | POST | the demonstration resource server's operation that spends against a right's [limits](#limits) |
 
 In a trust realm every path is under `/realm/{id}`.
+
+**The pages a person reads — the user code page, the approval page, and what
+is said after a decision or a refusal — run as a script in the browser**
+(since #578): `/gnap/code` and `/gnap/approve/{id}` answer a small document
+that loads `/gnap/interaction.js`, which draws the page in the browser's
+language from `/gnap-api` and sends the person's answer there. **A browser
+with scripts blocked is told it needs them, and nothing else is drawn.** What
+a client instance sees is unchanged: a start link's redirect to the approval
+page, the redirect back to its finish URI with `hash` and `interact_ref` —
+the browser goes to the same address — or the push. `/gnap-api` takes JSON
+from a page of this service only (its `Origin`, and an `X-CSRF-Token` bound
+to the browser's `sts_session` cookie); it is not an API for a client
+instance.
 
 ## What is supported
 
@@ -88,7 +102,7 @@ All five formats RFC 9767 registers are minted and verified.
 
 | Format | What it is | How a resource server verifies it |
 |---|---|---|
-| `jwt-signed` | a JWT with `typ` `GNAP`, signed with the realm key | `/oauth2/jwks` |
+| `jwt-signed` | a JWT whose protected header carries `typ` `gnap-at+jwt`, signed with the realm key | `/oauth2/jwks`, and refuse any other header `typ` (see below) |
 | `jwt-encrypted` | that JWT inside a JWE | to the resource server's own `gnapJweKey` (RSA-OAEP-256 or ECDH-ES+A256KW), else `dir` A256GCM that only introspection can open |
 | `macaroon` | the V2 binary format, HMAC-SHA256, first-party caveats | the root key written onto the resource server's application entry as `gnapMacaroonKey` |
 | `biscuit` | Ed25519, Datalog facts and checks | the root public key in `/gnap/keys` |
@@ -99,6 +113,52 @@ that accepts only some formats, then the resource server's
 `gnapAccessTokenFormat`, then the client's, then `gnap.accessTokenFormat`.
 
 **Resource servers can always introspect**, whatever the format.
+
+### The JWT formats' type
+
+A `jwt-signed` token's protected header is
+`{"alg": "RS256", "typ": "gnap-at+jwt", "kid": …}` (with `x5c` or `x5u` where
+`gnap.accessTokenCertificateHeader` asks), and the JWS inside a
+`jwt-encrypted` token carries the same header. Every JWT this realm signs —
+ID Tokens, RFC 9068 access tokens, logout tokens — is signed with the same
+key, so **a resource server must check the header `typ`** (RFC 8725 section
+3.11, explicit typing), comparing it case-insensitively and accepting
+`application/gnap-at+jwt` as the same type (RFC 7515 section 4.1.9). This
+service's own resource server does, and refuses anything else
+(`STS-GNAP-0343`); an OAuth resource server here likewise refuses a GNAP
+token, whose header is not `at+jwt`.
+
+> **`gnap-at+jwt` is a private media type.** RFC 9767 registers no media type
+> for a JWT access token, so this service names one the way RFC 9068 named
+> `at+jwt`. It is not in the IANA media types registry, and another GNAP
+> implementation will not use it.
+
+The payload also carries `"typ": "GNAP"`. That is a private claim, the
+marker every token this service signs carries for its own token register
+(`Bearer`, `ID`, `Refresh` on the OAuth tokens); it is not the token's type,
+and a resource server should not dispatch on it.
+
+### Custom claims
+
+RFC 9635 section 3.2.1 leaves the access token opaque to the client, so a
+custom claim is not a field of the token response. It is a claim of the JWT
+a resource server verifies.
+
+On **Directory → Applications → the application → Configuration → GNAP →
+Custom claims**, each row is added to a `jwt-signed` token and to the JWT
+inside a `jwt-encrypted` one (`gnapClaimsAccessToken`, the
+`gnap_access_token` set). The application's row wins over the realm's row of
+the same name. A name the token sets itself wins over both: `access`,
+`flags`, `label`, `grant_id`, and the JWT names (`iss`, `sub`, `aud`,
+`exp`, `client_id`, `username`, and the rest of that list). `uid` is not
+reserved. Macaroon, biscuit and zcap tokens do not carry these rows. The
+groups claim, the roles claim and the ticked directory-attribute catalogue
+are not added.
+
+`POST /admin-api/applications/set-custom-claim` with `set` =
+`gnap_access_token` writes the same row.
+[Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes)
+describes the section.
 
 ### Seeing a revocation without introspection
 
@@ -115,7 +175,7 @@ none:
 
 **The access-token status list is the realm's one list.** GNAP's JWTs share it
 with OAuth's [RFC 9068 access tokens](oauth-oidc.md#jwt-access-tokens-rfc-9068).
-It holds one bit per token over 1,048,576 indexes. Each index is allocated at
+It holds one bit per token over 16,777,216 indexes. Each index is allocated at
 random when the token is minted and freed when the token expires. The bit is
 computed from the revocation itself, so it is set however the token is revoked:
 at its management URI, by rotation, by revoking its grant, on `/admin/tokens`
@@ -212,8 +272,80 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSan*` | RFC 8705's certificate subject, shared with OAuth: under a PKI, a certificate carrying it is this client's |
 | `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri` | what the approval page shows |
 
-**An unknown key** is given an entry on first sight in development mode. In
-product mode it is refused `invalid_client` until it is registered.
+**An unknown key** that names a registered client in `class_id` is an
+instance of that client, in every mode (see
+[below](#an-unregistered-key-as-an-instance-of-a-registered-client)). Any
+other unknown key is given an entry on first sight in development mode. In
+product mode it is refused `invalid_client` until it is registered — and so
+is a key, or an instance identifier, belonging to an entry development
+created that way: an entry made on first sight is not a registration (#496,
+`STS-GNAP-0902`). Register the client through the console or `/admin-api`.
+
+### An unregistered key as an instance of a registered client
+
+A browser application makes its own key in every browser, so it cannot
+register its key in advance. RFC 9635 separates a client's **class** (the
+application) from its **instances** (one key each), and lets the authorization
+server accept a key it has not seen (section 2.3.3). With
+`gnap.unregisteredInstances` on (the default), a key no entry holds is
+accepted as an instance of the application its request names in `client.class_id`:
+
+```json
+POST /gnap
+{"client": {"key": {"proof": "httpsig", "jwk": {…}}, "class_id": "my-spa"},
+ "access_token": {"access": ["ssf.read"]},
+ "interact": {"start": ["redirect"],
+              "finish": {"method": "redirect", "uri": "https://app.example.com/callback", "nonce": "…"}}}
+```
+
+The application must be a **registered** GNAP client (not one created on first
+sight) that lists at least one registered `gnapFinishUri`. Otherwise the request
+is refused `invalid_client` (`STS-GNAP-0906`). Register the application once,
+with its finish URIs, CORS origin and allowed scopes, and no key.
+
+**`class_id` selects; it does not raise trust.** The instance is held to the
+application's registered rules and gets nothing they do not already guarantee:
+
+* **The finish URI is the boundary.** In product mode the interaction
+  reference and hash go only to a registered finish URI, so they reach the
+  real application, never whoever made the request.
+* **The person always approves on the page.** `gnapSkipInteraction` is not
+  honoured for an unregistered instance, and a remembered approval does not
+  stand in for the page. `gnap.consentRequired` off keeps its meaning. A right
+  whose type declares `interaction: never` is issued as to any client acting
+  as itself.
+* **The key is never written to the entry.** Each grant records the key it
+  was made with, and every later continuation, rotation and resource-server
+  proof is checked against it. An `instance_id` handed to such a key keeps
+  resolving to the same application, and stops when the setting is turned off.
+
+This is the arrangement OAuth uses for public clients: the `client_id` is public,
+and the trust is in the registered redirect URI and the person approving.
+Turn `gnap.unregisteredInstances` off to require every key to be registered.
+
+**A right's locations must name a registered resource server in product
+mode** (#505). Each location of each access right must be at or under the
+`gnapResourceServerUri` of a registered resource server, be one of this
+service's own resource servers (the default resource indicator,
+`/admin-api`, `/account-api`, `/report-api`), or name
+a registered application by its audience, permission base URI, `client_id`
+or identifier. Otherwise the request is refused `invalid_request` (400,
+`STS-GNAP-0903`) at creation, modification and derivation alike — the right
+is not quietly left out of the token's audience, as it is in development
+mode.
+
+**An access token must be for a resource server, in every mode** (#593).
+The rights in a token request must name at least one: a reference a resource
+server registered, a location at or under a resource server's
+`gnapResourceServerUri`, or a type a resource server declares — or this
+service's own Shared Signals transmitter, by `ssf.read`, `ssf.manage` (or
+a name `ssf.authScopeRead` or `ssf.authScopeWrite` adds) or a right of type
+`ssf`. A request whose rights
+name none is refused
+`invalid_request` (400, `STS-GNAP-0904`) before anybody is asked to approve.
+There is no default audience: until #593 such a token was audienced to a
+demonstration resource server at `/gnap/rs/resource`, which has been
+removed.
 
 The two sealed attributes are encrypted under the process key-encryption key
 whenever keys persist — see [encryption at rest](encryption-at-rest.md).
@@ -227,7 +359,7 @@ for one and requires none. How that certificate is trusted is
 
 | Model | What is required | Default in |
 |---|---|---|
-| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
+| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/admin/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
 | `pinned` (section 7.3.2) | the certificate is the one the key names, by thumbprint or public key; self-signed is allowed and no chain is built | development (`auto`) |
 
 **A revoked certificate is refused in both models**, under
@@ -288,6 +420,16 @@ mode** issues the token and records that it *would have been refused*. A
 refused, is listed on **Monitoring → Delegation** and at `GET
 /admin-api/delegation` under protocol `GNAP`.
 
+**The assertion must have been issued to the client presenting it**, in
+both modes: an ID Token's `aud` must name the client (its identifier or one
+of its `oauthClientId` values), and a SAML assertion's `Audience` likewise.
+An assertion issued to another client is refused `unknown_user`
+(`STS-GNAP-0073`): RFC 9635 section 11.13 names a captured assertion
+presented by a client that is not its audience as the way an end user is
+impersonated. A web application that signed a person in with OpenID Connect
+presents its own ID Token; it cannot hand that token to a back-end service
+to present in its place.
+
 A client that skips interaction **without** a user assertion acts for nobody:
 nothing is asked, and no subject information is released.
 
@@ -298,20 +440,34 @@ nothing is asked, and no subject information is released.
   catalogue](#access-types-and-the-issuance-policy) declares its type
   `derivableFrom` a type the original carries. Such a right is still put to
   the issuance policy and to the delegation question for its resource server.
-* **The chain of who derived it**, as RFC 8693 section 4.1's `act`: the
-  deriving resource server, with any earlier ones nested under it. Every
-  format carries it, in the part only this authorization server can write:
+* **The chain of who derived it**, as the OAuth2 Token Exchange act chain
+  (RFC 8693 section 4.1's `act`). It is this service's extension: neither
+  RFC 9635 nor RFC 9767 defines one. It follows the token exchange's rules
+  (#526):
+  * the deriving resource server is outermost, with any earlier ones nested
+    under it;
+  * the first derivation puts the **original client**, the client the
+    person's token was issued to, at the foot;
+  * every entry is `{"sub": "urn:sts:client:<identifier>", "iss": "<this
+    authorization server's grant endpoint>"}`, the GNAP token's own `iss`.
+
+  For example, two derivations give
+  `{"sub": "urn:sts:client:esb1", "iss": "…/gnap", "act": {"sub":
+  "urn:sts:client:apigw1", "iss": "…/gnap", "act": {"sub":
+  "urn:sts:client:webapp1", "iss": "…/gnap"}}}`. Every format carries it, in
+  the part only this authorization server can write:
 
   | Format | Where |
   |---|---|
   | `jwt-signed`, `jwt-encrypted` | the `act` claim |
   | `macaroon` | a `gnap:act=` caveat before the `gnap:access=` caveat; one appended after it is refused |
-  | `biscuit` | `actor(0, "<resource server>")` facts in the authority block, 0 the most recent |
+  | `biscuit` | `actor(i, "<subject>")` and `actor_iss(i, "<issuer>")` facts in the authority block, 0 the most recent |
   | `zcap` | the capability's `gnapActor` member, under its proof |
 
   Introspection returns it as `act`, and rotation keeps it.
-* **At most `gnap.maxDerivationDepth` links** (2 by default). A derivation past
-  it is refused in every mode.
+* **At most `gnap.maxDerivationDepth` derivations** (2 by default). The
+  original client's entry is not a derivation. A derivation past the limit is
+  refused in every mode.
 
 ## Access types and the issuance policy
 
@@ -492,15 +648,12 @@ depend on this one for every operation. A resource server should:
 5. reset the totals at each interval boundary;
 6. give a spend back when the operation then fails.
 
-`POST /gnap/rs/spend` is the reference. It needs a token granting the action
-`spend` on `urn:iya-sts:gnap:demo` and takes
-`{ "amount": "12.50", "currency": "EUR", "receiver": "bob" }` (each
-optional; `"simulateFailure": true` makes the operation fail after the spend
-so you can see it refunded). It answers the totals and what remains for the
-period, `403` past a limit (`STS-GNAP-0870`), outside the window or interval
-(`0871`), for another receiver (`0872`) or currency (`0873`), and keeps the
-totals in one store every node shares (`sts_cluster_budgets` on postgres),
-so a cluster spends one budget. A right with no limits is spent unaccounted.
+`gnap/gnap_spend.ts` in this repository is the reference: it refuses past a
+limit (`STS-GNAP-0870`), outside the window or interval (`0871`), for another
+receiver (`0872`) or currency (`0873`), and keeps the totals in one store
+every node shares (`sts_cluster_budgets` on postgres), so a cluster spends one
+budget. A right with no limits is spent unaccounted. The demonstration
+operation that exposed it, `POST /gnap/rs/spend`, was removed in #593.
 
 ## The resource owner
 
@@ -605,6 +758,21 @@ its tokens can be rotated (`invalid_rotation`), and it is finalized as
 grant's. A longer lifetime lets a client keep access by rotating its tokens
 for longer on the strength of one approval.
 
+### Instance identifiers
+
+With `gnap.instanceIds` on, a client that sends its key by value is handed an
+`instance_id` (RFC 9635 section 3.5). **The same key at the same application
+gets the same `instance_id` back** every time (#1221): the identifier is
+derived from the realm, the application and the key, under a cluster secret,
+so a client that signs in again does not add a record, and none is kept in a
+form that names the identifier.
+
+**A record nobody uses for `gnap.grantLifetimeS` is gone.** Its `instance_id`
+is then refused as unknown (`STS-GNAP-0080`), and the `gnap.grant-expiry` job
+deletes the record. Sending the key by value again, or using the
+`instance_id`, keeps a record alive. A client whose `instance_id` is refused
+sends its key by value and is handed the same identifier again.
+
 ### What a client is told about the person
 
 * **Subject identifiers are per client.** An `opaque` identifier is different
@@ -652,11 +820,15 @@ with a sentence saying what was wrong.
   session is `gnap-token:<jti>`.
 * A **grant modified** sends `token-claims-change` carrying the new `access`.
 * A GNAP web application can **own a stream**: it presents its GNAP access token
-  to `/ssf/stream` with the `GNAP` scheme and a proof, with `ssf:read` or
-  `ssf:write` in the token's access. Those rights are this service's own
-  protected scopes: a grant asking for them is refused `request_denied`
-  (`STS-GNAP-0719`) unless the application's `oauthAllowedScope` declares them,
-  and the transmitter asks again on every call. The transmitter metadata lists
+  to `/ssf/stream` with the `GNAP` scheme and a proof, with the read scope
+  (`ssf.read`) or the write scope (`ssf.manage`, which includes read) in the
+  token's access, or an object of type `ssf` with that action (a `write`
+  action reads as well). Those rights are this
+  service's own protected scopes: a grant asking for them is refused
+  `request_denied` (`STS-GNAP-0719`) unless the application's
+  `oauthAllowedScope` declares a scope granting each permission the right
+  asks for (write includes read), and the transmitter
+  asks again on every call. The transmitter metadata lists
   `urn:ietf:rfc:9635` for it.
 * A stream a GNAP web application owns is **scoped**: it hears only about
   people who approved a grant to that application.
@@ -670,8 +842,9 @@ with a sentence saying what was wrong.
   `signal-response` policy, and `ssf.signalsRevokeGrants` (on by default)
   turns it off. See [signals received](signals-received.md).
 * A **registered resource server** can own a stream the same way: its
-  application entry is a `gnap-resource-server`, and it asks for `ssf:read` /
-  `ssf:write` as a client with its own key. Its stream hears **only**
+  application entry is a `gnap-resource-server`, and it asks for a read or
+  write scope (`ssf.read` or `ssf.manage`) as a
+  client with its own key. Its stream hears **only**
   `session-revoked` for `gnap-token:<jti>` and `gnap-grant:<id>`, and only for
   tokens audienced to it. A token is audienced to it if its access resolved to
   that server, or its `aud` names the server's identifier or one of its
@@ -693,7 +866,8 @@ A grant ends when its client revokes it (RFC 9635 section 5.4), and also when:
 | A sign-out ends one of their sessions (a Revoke on `/admin/sessions`, a partner's sign-out) | the grants approved on that session |
 | An administrator revokes the grant on `/admin/gnap` or `/admin/sessions` | that grant |
 | The client's application entry is **deleted** | every grant of that client |
-| The entry's `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` is **removed or replaced** | the grants bound to a key the entry no longer names. Rotating an access token's key (section 6.1.1) changes nothing |
+| The entry's `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` is **removed or replaced** | the grants bound to a key the entry no longer names. Rotating an access token's key (section 6.1.1) changes nothing, and neither does this for an [unregistered instance](#an-unregistered-key-as-an-instance-of-a-registered-client)'s grants, whose key was never on the entry |
+| `gnap.unregisteredInstances` is **turned off** | every grant an unregistered instance holds, refused at its next use (`STS-GNAP-0907`) |
 | A registered **device is marked compromised** | the grants whose client key is one of the device's keys (by value or by its certificate, for mutual TLS), and the OAuth tokens bound to them by DPoP or mutual TLS |
 | A federation partner's verified signal (above) | the person's grants and tokens |
 
@@ -703,7 +877,10 @@ about it. Separately, **every use is checked**: a token or grant whose
 resource owner is disabled, or whose client's entry is gone or no longer names
 its key, is refused at its next continuation, rotation, derivation,
 presentation or introspection (`STS-GNAP-0730`–`0735`), whatever changed the
-account or the entry and on a cluster node the change has not reached yet.
+account or the entry and on a cluster node the change has not reached yet. An
+unregistered instance's grant is held to its entry still existing and to
+`gnap.unregisteredInstances` still being on (`STS-GNAP-0907`), not to a key on
+the entry (#1219).
 
 The person's grants appear on `/admin/logout` and as **GNAP grant** rows on
 `/admin/sessions`. A sign-out of one application elsewhere (`/oauth2/logout`,
@@ -751,13 +928,14 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.mtlsTrust` | `STS_GNAP_MTLS_TRUST` | `auto` | yes | How a key proved by mutual TLS is trusted: `pki` or `pinned` ([mutual TLS trust](#mutual-tls-trust)). `auto` is `pki` in product and `pinned` in development. **Warning:** `pinned` gives up chain validation and rotation at the authority. |
 | `gnap.subIdFormats` | `STS_GNAP_SUB_ID_FORMATS` | `opaque,iss_sub,email,account,uri,phone_number,aliases` | yes | `sub_id_formats_supported` in RFC 9493's spellings; a format is released only when the entry holds the fact it needs. |
 | `gnap.assertionFormats` | `STS_GNAP_ASSERTION_FORMATS` | `id_token,saml2` | yes | `assertion_formats_supported`, built by the same code the OIDC and SAML families use. |
-| `gnap.assertionMaxAgeS` | `STS_GNAP_ASSERTION_MAX_AGE_S` | `300` | yes | How long past its `exp` an assertion this realm signed is still accepted as a user hint (section 2.4). |
+| `gnap.assertionMaxAgeS` | `STS_GNAP_ASSERTION_MAX_AGE_S` | `300` (`0` in product unless set) | yes | How long past its `exp` an assertion this realm signed is still accepted as a user hint (section 2.4). Product mode allows none unless an operator sets a value. |
 | `gnap.keyRotation` | `STS_GNAP_KEY_ROTATION` | `true` | yes | `key_rotation_supported` (section 6.1.1); off answers `key_rotation_not_supported`. |
 | `gnap.tokenManagement` | `STS_GNAP_TOKEN_MANAGEMENT` | `true` | yes | Whether access tokens carry a manage URI and management token (section 6). |
 | `gnap.bearerTokens` | `STS_GNAP_BEARER_TOKENS` | `true` | yes | Off refuses the `bearer` flag with `invalid_flag` for every client; `gnapBearerTokens` FALSE refuses one. |
 | `gnap.durableTokens` | `STS_GNAP_DURABLE_TOKENS` | `false` | yes | Section 3.2.1's `durable` flag: a token survives the grant being modified. |
 | `gnap.revokeOnModify` | `STS_GNAP_REVOKE_ON_MODIFY` | `true` | yes | A modification revokes the grant's earlier tokens, unless they were issued durable (section 5.3). |
 | `gnap.instanceIds` | `STS_GNAP_INSTANCE_IDS` | `true` | yes | A client that sent its key by value is handed an `instance_id` to send by reference next time (section 3.5). |
+| `gnap.unregisteredInstances` | `STS_GNAP_UNREGISTERED_INSTANCES` | `true` | yes | A key no application registers is accepted as an instance of the registered GNAP client its `class_id` names, when that client lists a registered `gnapFinishUri` ([unregistered instances](#an-unregistered-key-as-an-instance-of-a-registered-client)). Off: such a key is refused in product. |
 | `gnap.continueAfterApproval` | `STS_GNAP_CONTINUE_AFTER_APPROVAL` | `true` | yes | Whether an approved grant's response carries `continue`, so the client can modify or revoke it later. |
 | `gnap.consentRequired` | `STS_GNAP_CONSENT_REQUIRED` | `true` | yes | Off approves every interactive grant as soon as the resource owner has signed in, with no approval page. |
 | `gnap.rememberApprovals` | `STS_GNAP_REMEMBER_APPROVALS` | `true` | yes | Records what a resource owner approved in the consent register on their entry, so the same rights are not asked for again. |
@@ -769,7 +947,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3 token introspection. |
 | `gnap.resourceRegistration` | `STS_GNAP_RESOURCE_REGISTRATION` | `true` | yes | RFC 9767 section 3.4 resource set registration. |
 | `gnap.tokenDerivation` | `STS_GNAP_TOKEN_DERIVATION` | `true` | yes | RFC 9767 section 4: a resource server exchanges a token it was given for one to a downstream resource server. |
-| `gnap.maxDerivationDepth` | `STS_GNAP_MAX_DERIVATION_DEPTH` | `2` | yes | How many resource servers a derived token's actor chain (`act`) may name. Each derivation adds the deriving resource server; one past this depth is refused in every mode. |
+| `gnap.maxDerivationDepth` | `STS_GNAP_MAX_DERIVATION_DEPTH` | `2` | yes | How many times a token may be derived: how many deriving resource servers its actor chain (`act`) may name, the original client at its foot not counted. One past this depth is refused in every mode. |
 | `gnap.pushFinish` | `STS_GNAP_PUSH_FINISH` | `true` | yes | The section 4.2.2 push finish; off makes no outbound request at all and stops advertising `push`. |
 | `gnap.pushAllowHttp` | `STS_GNAP_PUSH_ALLOW_HTTP` | `false` | yes | Allows a push to a plain `http` URI, logged as a warning: any host in development, a loopback address only in product (RFC 9635 section 2.5.2.1). |
 | `gnap.pushSkipTlsVerification` | `STS_GNAP_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Pushes to an `https` URI whose certificate does not verify, logged on every push. Ignored in product mode, and refused on write there. |
@@ -778,10 +956,12 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.pushTimeoutMs` | `STS_GNAP_PUSH_TIMEOUT_MS` | `5000` | yes | How long a push finish may take. |
 | `gnap.jweEnc` | `STS_GNAP_JWE_ENC` | `A256GCM` | yes | The `enc` of a `jwt-encrypted` token encrypted to a resource server's own key; one encrypted to this server is always `dir` with `A256GCM`. |
 | `gnap.accessTokenCertificateHeader` | `STS_GNAP_ACCESS_TOKEN_CERTIFICATE_HEADER` | `x5u` | yes | Whether a `jwt-signed` or `jwt-encrypted` token's JWS names its signing certificate chain (`x5u`, `x5c`, `both`, `none`); see [PKI](pki.md#a-signed-token-names-its-certificate-chain). |
-| `gnap.demoResourceServer` | `STS_GNAP_DEMO_RESOURCE_SERVER` | `true` | yes | Runs `/gnap/rs/resource`, which judges a token in any of the five formats and answers the RS-first challenge. |
 | `gnap.ownerLookupCacheS` | `STS_GNAP_OWNER_LOOKUP_CACHE_S` | `60` | yes | How long the owner a resource server's gnapOwnerLookupUri named for an identifier is held before it is asked again (#432 phase 5): a grant asks at its request, on its approval page and at issue. A failed lookup is never held. 0 asks every time; a longer one keeps a former owner able to approve for that long after the resource server says otherwise. |
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
+
+In product mode an expired user assertion gets no grace unless an operator sets
+`gnap.assertionMaxAgeS`, in the environment or on the console.
 
 Every setting is on `/admin/gnap` and in [*Every setting*](configuration.md#every-setting). See
 [Configuration](configuration.md) for how a value resolves and where it is
@@ -860,6 +1040,8 @@ changed — the console page, or `POST /admin-api/config/set`.
   controller document list them all. A zcap token on a post-quantum suite is
   signed with the realm's ML-DSA-44 or SLH-DSA-SHA2-128s key, which rotates the
   same way.
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a finish URI the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `gnap.pushCaFile`.
 
 ## Error codes
 

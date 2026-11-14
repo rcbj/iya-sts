@@ -76,8 +76,8 @@ async function childBody() {
   const realms = require(ROOT + '/common/realms');
   const ldap = require(ROOT + '/ldap/ldap_server');
   const core = require(ROOT + '/common/cert_enrollment');
-  const keyMaterial = require(ROOT + '/common/vendored/key_material');
-  const x509 = require(ROOT + '/common/vendored/x509');
+  const keyMaterial = require(ROOT + '/common/crypto_impl/key_material');
+  const x509 = require(ROOT + '/common/crypto_impl/x509');
   const tlsClient = require(ROOT + '/common/tls_client_certificates');
 
   await keystore.start();

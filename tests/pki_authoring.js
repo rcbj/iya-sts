@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
-// `tests/vendored/sts_pki_workbench.js` drives this pane over HTTP and is the
+// `tests/protocol/sts_pki_workbench.js` drives this pane over HTTP and is the
 // other half of this. What is HERE is the four things that cannot be asserted
 // by driving a running service:
 //
@@ -36,7 +36,7 @@
 //     private key; over HTTP the evidence for that is the absence of a string.
 //
 // The fifth thing is the encoder, and it is deliberately NOT re-asserted here:
-// `common/vendored/x509.js` is the parent project's own file, held to roughly
+// `common/crypto_impl/x509.js` is the parent project's own file, held to roughly
 // 240 certificates against OpenSSL over there. What this file checks is that
 // the FORM reaches it — that a box ticked on the page is an extension in the
 // certificate — which is this repository's half of the seam.
@@ -49,7 +49,7 @@ delete process.env.CONFIG_FILE;
 const nodeCrypto = require('crypto');
 const authoring = require('../common/pki_authoring');
 const pki = require('../common/pki');
-const x509 = require('../common/vendored/x509');
+const x509 = require('../common/crypto_impl/x509');
 // The page. Requiring it registers `/admin/pki` and starts nothing (see the
 // root CLAUDE.md's
 // *Socket owners start their listeners from `listen()`*), so an
@@ -59,6 +59,10 @@ const pkiAdmin = require('../admin-ui/pki_admin');
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
 // what the harness's assertion logger reads.
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'pki_authoring',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -99,7 +103,9 @@ async function run(t) {
              'declared ===');
 
   const json = pkiAdmin.pkiView(undefined, authoring.defaultDraft(FORM));
-  const html = pkiAdmin.paneHtml(json, json.workbench.draft);
+  // The renderer takes the page's translator since #539; node's is English.
+  const html = pkiAdmin.paneHtml(json, json.workbench.draft,
+    require('../admin-ui/web_kit').context({}, true).t);
   const drawn = new Set();
   const matcher = /name="(pki_[A-Za-z0-9_]+)"/g;
   let hit;
@@ -176,7 +182,7 @@ async function run(t) {
   // contract is "post back what came back". Without it a `false` matched none
   // of the cases above and read as TRUE, so `apply-profile` followed by
   // `issue-certificate` turned every cleared box on —
-  // `tests/vendored/sts_pki_workbench.js` found it on its first run and this
+  // `tests/protocol/sts_pki_workbench.js` found it on its first run and this
   // is the in-process half of that fix.
   const round = authoring.draftFrom({ pki_reuse_key: false, pki_ext_bc: true });
   t.check(round.pki_reuse_key === false && round.pki_ext_bc === true,
@@ -559,7 +565,7 @@ async function run(t) {
 
 module.exports = {
   name: 'pki_authoring',
-  describe: 'The Certificate & Key Configuration pane: the form against the ' +
+  describe: 'The Certificate Workbench: the form against the ' +
             'page that draws it, the six line grammars and what each ' +
             'refuses, the three subject rules a profile change must and must ' +
             'not break, the approach filters, every extension reaching the ' +

@@ -1,0 +1,15 @@
+{
+  "title": "无法开始此次登录",
+  "refusal.STS-LAUNCH-0001": "此信任域中没有应用 <code>{app}</code>，因此没有可供您登录的对象。",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> 不是可以开始登录的协议。此处的链接可开始 saml2、saml11、wsfed 或 oidc 登录。",
+  "refusal.STS-LAUNCH-0003": "此应用不使用 <code>{protocol}</code> 登录。",
+  "refusal.STS-LAUNCH-0004": "此应用可以通过多种协议启动，而链接没有说明使用哪一种。",
+  "refusal.STS-LAUNCH-0005": "无法从此处启动此应用。请在应用本身开始登录。",
+  "refusal.STS-LAUNCH-0006": "此应用没有注册可将您发送过去的地址，因此在此处开始的登录无处可去。",
+  "refusal.STS-LAUNCH-0007": "链接指定的发送地址没有为此应用注册，因此已被拒绝。",
+  "refusal.general": "无法开始此次登录。",
+  "background": "此链接在本身份提供方为某个应用开始登录（由身份提供方发起的登录）。尚未向任何应用发送任何内容，因此问题在此处报告。",
+  "application": "应用",
+  "protocol": "protocol",
+  "target": "target"
+}

@@ -98,7 +98,15 @@ const ISSUANCE = {
   // `common/cert_enrollment.ts` for an application subject, roles waived and
   // the device deferred: it is the protocol-declaration rule (#380) that
   // decides it, the family the caller names.
-  CERTIFICATE: 'issue-certificate'
+  CERTIFICATE: 'issue-certificate',
+  // AN ACCOUNT A FEDERATED SIGN-IN WOULD CREATE (#565), asked by
+  // `federation/federation_sp.ts` before the session whose funnel creates
+  // it, with the sign-in's risk facts and the partner's category, roles
+  // waived: so an operator's rule can refuse CREATION — a consumer
+  // provider's newcomer at MEDIUM, an unverified address — while existing
+  // people still sign in. The built-in risk rules apply to it as to a
+  // session.
+  ACCOUNT: 'create-account'
 };
 
 /**
@@ -238,7 +246,8 @@ function deciderInstalled() {
  * `subject`, `claims`, `realm`, and optionally `risk`, `session`, `device` and
  * `deviceDeferred`
  * @returns `{ allowed, decision, why, roles, required, policy }`, where
- * `allowed` is what the caller branches on
+ * `allowed` is what the caller branches on. A device-bound hold (#740)
+ * also carries `deferred: true` and is not an error code.
  */
 function check(request) {
   log.debug('Entering check(). kind=' + (request || {}).kind);
@@ -324,23 +333,57 @@ function check(request) {
   // THE PROTOCOL DECLARATION (2026-10-01) rides along whenever the
   // application named is declared for something, and makes the policy asked
   // past the role shortcut in product, where its rule can refuse.
-  const protocol = protocolFactsOf(asked);
-  // `mode.js` is required LAZILY: it is a leaf, but this file is in the
-  // parent project's Kerberos COPY closure and a top-level require here would
-  // add a file to it (kerberos/CLAUDE.md).
+  // A KERBEROS SERVICE IS ASKED ABOUT BY ITS ENTRY'S OWN NAME (#747), read
+  // once here so that every fact below and the PEP's own reads of the
+  // requirement are about the same entry: kerberosEntryOf().
+  const named = kerberosEntryOf(asked);
+  const protocol = protocolFactsOf(named);
+  // `mode.js` is required LAZILY: it is a leaf, and the lazy require kept it
+  // out of the parent project's Kerberos COPY closure, which reached this
+  // file (an obligation until #1280; the arrangement stands).
   const mode = protocol ? require('./mode') : null;
   const protocolMatters = !!mode && !mode.issuesThroughUndeclaredProtocols();
-  if (!enforceRoles && !risk && !deviceMatters && !protocolMatters) {
+  // THE SIGN-IN MECHANISMS (#457) ride along on a BROWSER issuance to an
+  // application that lists the ones it allows, and make the policy asked
+  // past both shortcuts: its `authn-mechanism` rule holds in both modes and
+  // is not about roles.
+  const mechanisms = mechanismFactsOf(asked);
+  // AND THE SECOND FACTORS (#475), the same way and for the same reason:
+  // the `mfa-mechanism` rule holds in both modes and is not about roles.
+  const mfa = mfaFactsOf(asked);
+  // THE DEVICE-BOUND SESSION (#743, #740). Computed in THIS file rather than
+  // by requiring `authn/device_bound_sessions`, which kept that module out
+  // of the parent project's Kerberos COPY closure (`kerberos/krb5_kdc.js`
+  // requires this file; an obligation until #1280, and the arrangement
+  // stands). `deviceBoundFactOf()` is the same reading as
+  // `DeviceBoundSessions.factFrom` and has to stay that way. The
+  // requirement makes the policy asked only while the feature is on, an
+  // application is named, and the fact is still open. `none` and `bound`
+  // do not, and the feature off does not, so a session that was never
+  // offered registration is decided exactly as before. There is no timer.
+  const deviceBoundSession = deviceBoundFactOf(asked);
+  const deviceBoundOn = config.value('authn.deviceBoundSessions') === true;
+  const deviceBoundMatters = deviceBoundOn && !!asked.application &&
+    (deviceBoundSession === 'pending' || deviceBoundSession === 'skipped' ||
+     deviceBoundSession === 'timedout');
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723), OpenID Connect
+  // EAP ACR Values 1.0's `phr` / `phrh`, or `none`: rides along on the same
+  // four browser kinds whenever the policy is asked, and does not make it
+  // asked — the rules that read it are an operator's choice.
+  const phishing = phishingFactsOf(asked);
+  if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
+      !mechanisms && !mfa && !deviceBoundMatters) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application && !risk && !deviceMatters) {
+  if (!asked.application && !risk && !deviceMatters &&
+      !deviceBoundMatters) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
   }
-  const question = Object.assign({}, asked, {
+  const question = Object.assign({}, named, {
     protocol: asked.protocol || PROTOCOL_OF_KIND[String(asked.kind)] || '',
     risk: risk,
     device: device,
@@ -348,6 +391,15 @@ function check(request) {
     protocolFamilies: protocol ? protocol.families : [],
     declaredProtocols: protocol ? protocol.declared : [],
     mode: mode ? mode.current() : '',
+    authnMechanisms: mechanisms ? mechanisms.satisfied : null,
+    allowedAuthnMechanisms: mechanisms ? mechanisms.allowed : null,
+    mfaMechanisms: mfa ? mfa.satisfied : null,
+    allowedMfaMechanisms: mfa ? mfa.allowed : null,
+    authority: authorityFactsOf(asked),
+    phishingResistance: phishing,
+    // #740. The fact token. The PEP holds `pending` and refuses `skipped`
+    // and `timedout` when the application's profile requires a binding.
+    deviceBoundSession: deviceBoundSession,
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -367,13 +419,264 @@ function check(request) {
               'this is a defect in the embedded PEP rather than a decision. ' +
               error.message);
     log.debug("Leaving check().");
-    return allow('The embedded PEP threw, which is a defect rather than a ' +
-                 'decision: ' + error.message);
+    return noDecision(allow('The embedded PEP threw, which is a defect ' +
+                            'rather than a decision: ' + error.message));
   }
-  const result = answer || allow('The embedded PEP answered nothing.');
+  const result = answer || noDecision(allow('The embedded PEP answered ' +
+                                            'nothing.'));
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// The device-bound fact of the session an issuance rests on (#743, #740):
+// `bound`, `skipped`, `pending`, `timedout` or `none`. The same reading as
+// `DeviceBoundSessions.factFrom`. It lives here so this file does not
+// require that module (which kept the Kerberos COPY closure small until
+// #1280; the arrangement stands). `timedout` is this read
+// when a pending offer is older than `authn.deviceBoundIssuanceWaitS`.
+// Nothing stores that word and no timer flips it. Strictly past the window;
+// at the boundary the fact is still `pending`.
+/**
+ * Reads the device-bound fact off an issuance question's session.
+ *
+ * @param asked - the question, whose `session.dbsc` is the binding
+ * @returns `bound`, `skipped`, `pending`, `timedout` or `none`
+ */
+function deviceBoundFactOf(asked) {
+  log.debug('Entering deviceBoundFactOf().');
+  const session = asked && asked.session;
+  const d = session && session.dbsc;
+  let fact = 'none';
+  if (!d) {
+    fact = 'none';
+  } else if (d.jkt && d.id) {
+    fact = 'bound';
+  } else if (Array.isArray(d.skippedReasons) && d.skippedReasons.length) {
+    fact = 'skipped';
+  } else if (d.offeredAt) {
+    const wait = Number(config.value('authn.deviceBoundIssuanceWaitS'));
+    const seconds = Number.isFinite(wait) ? wait : 60;
+    fact = Date.now() - Number(d.offeredAt) > seconds * 1000
+      ? 'timedout' : 'pending';
+  }
+  log.debug('Leaving deviceBoundFactOf(). ' + fact);
+  return fact;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGN-IN MECHANISM FACTS OF A BROWSER ISSUANCE (#457): the mechanisms
+// the named application allows (the first-factor list of the authentication
+// policy it names, `appAuthnPolicy`, since #1148; its own `appAuthnMechanism`
+// until then — or, since #1237, the policy one of the PERSON'S GROUPS names
+// where its precedence is lower) and those the person's authentication
+// satisfies, or null when there is nothing to compare — no application, a
+// policy that allows every mechanism, or an issuance that is not a browser
+// sign-in (rcbj: browser-based authentication only). A sign-in naming no
+// application is not asked here, as before: the issuance it is for — an
+// authorization code, an assertion — names one, and is asked then.
+//
+// A BROWSER ISSUANCE is one of four: a session started at a sign-in door,
+// which names the event it is about to record (`authenticationEvent`); and
+// an authorization response, a SAML assertion or a WS-Federation token
+// issued on a browser session (`session`). The token endpoint, WS-Trust,
+// Kerberos and an enrolled certificate are not asked: no browser is there to
+// re-prompt, and neither is a caller that says `browser: false` (SAML 2.0's
+// attribute query, which finds a session by NameID over a back channel).
+// Required LAZILY, for `disabledSubject()`'s reason. Never
+// throws: a registry that cannot be read allows every mechanism, as it
+// declares no protocol in protocolFactsOf().
+// ---------------------------------------------------------------------------
+const BROWSER_KINDS = [ISSUANCE.SESSION, ISSUANCE.AUTHORIZATION_CODE,
+                       ISSUANCE.SAML_ASSERTION, ISSUANCE.WSFED_TOKEN];
+
+// ---------------------------------------------------------------------------
+// WHO VOUCHED FOR THE AUTHENTICATION, WHEN A FEDERATION PARTNER DID (#565):
+// the relationship's category — consumer or enterprise — its provider, and
+// whether the address it sent counts as verified, from the event being
+// recorded or the session's latest one. Null for any other authentication,
+// so a rule about them is inapplicable to a password sign-in.
+// ---------------------------------------------------------------------------
+/**
+ * The federation facts of the authentication an issuance rests on (#565).
+ *
+ * @param asked - the issuance request
+ * @returns `{ category, provider, emailVerified }`, or null
+ */
+function authorityFactsOf(asked) {
+  log.debug('Entering authorityFactsOf().');
+  const events = asked.session && Array.isArray(asked.session.events)
+    ? asked.session.events : [];
+  const event = asked.authenticationEvent || events[events.length - 1] ||
+                null;
+  const authority = event && event.authority;
+  if (!authority || authority.kind !== 'federation') {
+    log.debug('Leaving authorityFactsOf(). Not federated.');
+    return null;
+  }
+  log.debug('Leaving authorityFactsOf(). ' + authority.category);
+  return { category: String(authority.category || 'enterprise'),
+           provider: String(authority.provider || ''),
+           emailVerified: String(authority.emailVerified || 'true') };
+}
+
+// THE PERSON THE ISSUANCE IS FOR (#1237), where the request names one: the
+// policy one of their groups names competes with the application's, so the
+// two facts below are read with them. '' for a client or a workload.
+function personOf(asked) {
+  log.debug('Entering personOf().');
+  const subject = asked.subject || {};
+  const out = subject.kind === 'user' && subject.name
+    ? String(subject.name) : '';
+  log.debug('Leaving personOf().');
+  return out;
+}
+
+/**
+ * The sign-in mechanism facts of a browser issuance (#457).
+ *
+ * @param asked - the issuance request
+ * @returns `{ allowed, satisfied }`, or null when there is nothing to compare
+ */
+function mechanismFactsOf(asked) {
+  log.debug('Entering mechanismFactsOf().');
+  const name = String(asked.application || '').trim();
+  const person = personOf(asked);
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (!name || asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving mechanismFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  let allowed = [];
+  const mechanisms = require('./authn_mechanisms');
+  try {
+    const entry = require('./applications').get(name);
+    allowed = mechanisms.allowedOf(entry ? entry.fields : null, person);
+  } catch (e) {
+    log.debug('Caught in mechanismFactsOf(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-XACML-0169') + 'issuance_gate: the ' +
+              'application registry could not be read for "' + name +
+              '"\'s sign-in mechanisms, so none was required: ' +
+              ((e && e.message) || e));
+    // A mechanism nothing holds, in product, so that a sign-in that cannot be
+    // judged is refused rather than waved through (#1494).
+    allowed = require('./mode').failsOpenOnPolicyFault() ? [] : ['unreadable'];
+  }
+  if (!allowed.length) {
+    log.debug('Leaving mechanismFactsOf(). Every mechanism is allowed.');
+    return null;
+  }
+  const satisfied = event ? mechanisms.ofEvent(event)
+                          : mechanisms.satisfiedBy(session);
+  log.debug('Leaving mechanismFactsOf(). Allowed ' + allowed.join(', ') +
+            '; satisfied ' + (satisfied.join(', ') || 'none') + '.');
+  return { allowed: allowed, satisfied: satisfied };
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND-FACTOR FACTS OF A BROWSER ISSUANCE (#475): the second factors
+// the named application allows (the second-factor list of the
+// authentication policy it names, `appAuthnPolicy`, since #1148; its own
+// `appMfaMechanism` until then — or, since #1237, the policy one of the
+// PERSON'S GROUPS names where its precedence is lower) and those the
+// person's authentication gave, or null when there is nothing to compare —
+// for mechanismFactsOf()'s reasons, on the same four browser kinds, and also
+// when the authentication gave no second factor at all: the list says which
+// second factors, never whether one is needed (rcbj), so a session on one
+// factor is not this rule's to deny. Never throws: a registry that cannot be
+// read allows whatever the realm allows.
+// ---------------------------------------------------------------------------
+/**
+ * The second-factor facts of a browser issuance (#475).
+ *
+ * @param asked - the issuance request
+ * @returns `{ allowed, satisfied }`, or null when there is nothing to compare
+ */
+function mfaFactsOf(asked) {
+  log.debug('Entering mfaFactsOf().');
+  const name = String(asked.application || '').trim();
+  const person = personOf(asked);
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (!name || asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving mfaFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  const factors = require('./mfa_mechanisms');
+  const satisfied = event ? factors.ofEvent(event)
+                          : factors.satisfiedBy(session);
+  if (!satisfied.length) {
+    log.debug('Leaving mfaFactsOf(). No second factor was given.');
+    return null;
+  }
+  let allowed = [];
+  try {
+    const entry = require('./applications').get(name);
+    allowed = factors.allowedOf(entry ? entry.fields : null, person);
+  } catch (e) {
+    log.debug('Caught in mfaFactsOf(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-XACML-0172') + 'issuance_gate: the ' +
+              'application registry could not be read for "' + name +
+              '"\'s second factors, so none was required: ' +
+              ((e && e.message) || e));
+    allowed = require('./mode').failsOpenOnPolicyFault() ? [] : ['unreadable'];
+  }
+  if (!allowed.length) {
+    log.debug('Leaving mfaFactsOf(). The realm\'s second factors apply.');
+    return null;
+  }
+  log.debug('Leaving mfaFactsOf(). Allowed ' + allowed.join(', ') +
+            '; gave ' + satisfied.join(', ') + '.');
+  return { allowed: allowed, satisfied: satisfied };
+}
+
+// ---------------------------------------------------------------------------
+// THE PHISHING-RESISTANCE FACT OF A BROWSER ISSUANCE (#723): what OpenID
+// Connect EAP ACR Values 1.0's two classes the authentication earned —
+// `phr`, `phrh` — or `none`, read off the event a session is about to record
+// or the session's latest, by `common/phishing_resistance.ts`, which argues
+// the evidence. Null where there is no browser authentication to describe,
+// for mechanismFactsOf()'s reasons. The leaf is required LAZILY, and only
+// here, for `disabledSubject()`'s reason: no Kerberos issuance reaches this
+// line. Never throws.
+// ---------------------------------------------------------------------------
+/**
+ * The phishing-resistance fact of a browser issuance (#723).
+ *
+ * @param asked - the issuance request
+ * @returns `phr`/`phrh` earned, or [`none`]; null when not a browser one
+ */
+function phishingFactsOf(asked) {
+  log.debug('Entering phishingFactsOf().');
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving phishingFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  let out = null;
+  try {
+    const classes = require('./phishing_resistance');
+    out = classes.factOf(event ? classes.ofEvent(event)
+                               : classes.ofSession(session));
+  } catch (e) {
+    // A defect in a leaf: no fact, rather than a refused issuance. A rule
+    // that requires the fact then finds an empty bag and does not hold.
+    log.debug('Caught in phishingFactsOf(): ' + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug('Leaving phishingFactsOf(). ' + (out ? out.join(' ') : 'none'));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,9 +685,8 @@ function check(request) {
 // is nothing to compare — no application, no family (a session), or an
 // application declared for nothing, which no rule refuses. Required LAZILY,
 // for `disabledSubject()`'s reason: this file is a leaf. A Kerberos service
-// is named without its realm by the KDC, so its entry is also looked up with
-// `@<krb5.realm>`. Never throws: a registry that cannot be read declares
-// nothing.
+// arrives already named by its entry (kerberosEntryOf(), #747). Never
+// throws: a registry that cannot be read declares nothing.
 // ---------------------------------------------------------------------------
 function protocolFactsOf(asked) {
   log.debug('Entering protocolFactsOf().');
@@ -399,14 +701,7 @@ function protocolFactsOf(asked) {
   let declared = [];
   try {
     const applications = require('./applications');
-    const names = [String(asked.application)];
-    if (asked.kind === ISSUANCE.KERBEROS_TICKET &&
-        names[0].indexOf('@') < 0 && config.value('krb5.realm')) {
-      names.push(names[0] + '@' + String(config.value('krb5.realm')));
-    }
-    for (let i = 0; i < names.length && !declared.length; i += 1) {
-      declared = applications.declaredFamiliesFor(names[i]);
-    }
+    declared = applications.declaredFamiliesFor(String(asked.application));
   } catch (e) {
     log.debug('Caught in protocolFactsOf(): ' + ((e && e.message) || e));
     declared = [];
@@ -418,6 +713,69 @@ function protocolFactsOf(asked) {
   log.debug('Leaving protocolFactsOf(). ' + families.join(',') + ' against ' +
             declared.join(','));
   return { families: families, declared: declared };
+}
+
+// ---------------------------------------------------------------------------
+// THE ENTRY A KERBEROS SERVICE IS ASKED ABOUT BY (#747, 2026-10-20).
+//
+// A service's entry has one of two names, and nothing about a request says
+// which: every door that makes one — `create-service` from the console and
+// the Management API, the TGS's sighting (`applications.seen()`), the
+// delegation seeds — names it `SPN@REALM`, and an operator may have made one
+// by the bare SPN before any of those existed. Until #747 the KDC asked by
+// the bare SPN and only `protocolFactsOf()` tried the other name, so
+// `requiredRolesOf()` and `requiresNarrowedRoles()` — the PEP's reads of
+// `appRequiredRole` — never found the entry the doors made, and a role a
+// service required was not enforced at the TGS.
+//
+// So the name is resolved HERE, once, and the question carries it: the bare
+// SPN when an entry has that name (what was enforced before, unchanged, and
+// still the one that decides when both exist, as protocolFactsOf() chose),
+// then `SPN@REALM`, and the name as asked when neither exists. The realm is
+// the one the caller names (the KDC sends `SPN@<answering realm>`), or the
+// ambient trust realm's `krb5.realm` for a bare name. The registry is the
+// ambient realm's, so another trust realm's entry of the same name is never
+// read. Required LAZILY, for `disabledSubject()`'s reason. Never throws: a
+// registry that cannot be read leaves the name as asked.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the request with a Kerberos service's application named by the
+ * entry that exists for it, bare SPN first, then `SPN@REALM`.
+ *
+ * @param asked - the issuance request
+ * @returns the request itself, or a copy carrying the resolved `application`
+ */
+function kerberosEntryOf(asked) {
+  log.debug('Entering kerberosEntryOf().');
+  const given = String(asked.application || '');
+  if (asked.kind !== ISSUANCE.KERBEROS_TICKET || !given) {
+    log.debug('Leaving kerberosEntryOf(). Not a Kerberos service.');
+    return asked;
+  }
+  const at = given.lastIndexOf('@');
+  const realm = String(config.value('krb5.realm') || '');
+  const names = at >= 0 ? [given.slice(0, at), given]
+    : (realm ? [given, given + '@' + realm] : [given]);
+  let found = '';
+  try {
+    const applications = require('./applications');
+    for (let i = 0; i < names.length && !found; i += 1) {
+      if (applications.get(names[i])) {
+        found = names[i];
+      }
+    }
+  } catch (e) {
+    log.debug('Caught in kerberosEntryOf(): ' + ((e && e.message) || e));
+    // No registry in this process: the name as asked, which every reader
+    // of it then treats as an unknown application (EVERYBODY).
+    found = '';
+  }
+  if (!found || found === given) {
+    log.debug('Leaving kerberosEntryOf(). As asked: ' + given);
+    return asked;
+  }
+  log.debug('Leaving kerberosEntryOf(). ' + given + ' is ' + found);
+  return Object.assign({}, asked, { application: found });
 }
 
 // Whether a subject name is a disabled account. Never throws: a reader that
@@ -794,6 +1152,107 @@ function strictTransferReading(asked) {
   return verdict;
 }
 
+// ---------------------------------------------------------------------------
+// THE PASSKEY QUESTIONS (#536): action-ids `register-passkey` and
+// `use-passkey`, asked by `common/passkey_policy.ts` when a passkey is about
+// to be written onto a person's entry and when one has answered a sign-in.
+// The passkey policy (Directory -> Policies) CONFIGURES them; the issuance
+// policy DECIDES them, from the facts and the selected profile's rows.
+//
+// **NOT MEMBERS OF `ISSUANCE`**, for `TRANSFER`'s reason: registering a key
+// and signing in with one issue nothing, and every reader of `KINDS` lists
+// issuances.
+//
+// `request`: `{ action, subject, realm, groups, backupEligible, minPinLength,
+// serial, serialHeld, attestation, policy, settings }` — FACTS, gathered by
+// `passkey_policy.ts`; the answer is `{ verdict, code, reason, decidedBy,
+// why }`, verdict `allow` or `refuse`, a refusal carrying the error code the
+// door records and the reason it words its sentence by.
+//
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES**, the transfer
+// question's arrangement: the engine's libraries are loaded here lazily and
+// asked the built-in document; a process that cannot load them falls to the
+// same rules read from the facts (`passkey_rules.js`), STS-AUTHN-0324 —
+// never to something looser.
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids of the two passkey questions (#536). Not members of
+ * `ISSUANCE`.
+ */
+const PASSKEY = {
+  REGISTER: 'register-passkey',
+  USE: 'use-passkey'
+};
+
+function builtInPasskeyVerdict(asked, why) {
+  log.debug('Entering builtInPasskeyVerdict().');
+  let out;
+  try {
+    const verdicts = require('../xacml/xacml_passkey_verdicts');
+    out = verdicts.decide(asked, null, {});
+  } catch (error) {
+    log.error(errorCodes.tag('STS-AUTHN-0324') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for ' +
+              String(asked.action) + '; the passkey rules read from the ' +
+              'facts decide. ' + ((error && error.message) || error));
+    out = Object.assign({ decidedBy: 'none' },
+                        require('./passkey_rules').strictReading(asked));
+  }
+  log.debug('Leaving builtInPasskeyVerdict(). ' + out.verdict);
+  return Object.assign({ why: why }, out);
+}
+
+/**
+ * Puts a passkey question (#536) to the issuance policy: `register-passkey`
+ * or `use-passkey`, with the facts `common/passkey_policy.ts` gathered.
+ *
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers nothing, the built-in policy decides.
+ *
+ * @param request - the passkey question
+ * @returns `{ verdict, code, reason, decidedBy, why }`
+ */
+function checkPasskey(request) {
+  log.debug('Entering checkPasskey().');
+  const asked = Object.assign({}, request || {});
+  if (!decider) {
+    log.debug('Leaving checkPasskey(). No decider: the built-in policy.');
+    return builtInPasskeyVerdict(asked, 'No XACML family is loaded in this ' +
+                                 'process; the built-in policy decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: asked.action,
+      application: '',
+      subject: { kind: 'user', name: String(asked.subject || ''),
+                 authenticated: true },
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      passkeyQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on a passkey question; the ' +
+              'built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkPasskey(). The decider threw.');
+    return builtInPasskeyVerdict(asked, 'The embedded PEP threw: ' +
+                                 error.message);
+  }
+  const passkey = answer && answer.passkey;
+  if (!passkey || !passkey.verdict) {
+    log.debug('Leaving checkPasskey(). The PEP answered no verdict.');
+    return builtInPasskeyVerdict(asked, 'The embedded PEP answered no ' +
+                                 'passkey verdict.');
+  }
+  log.debug('Leaving checkPasskey(). ' + passkey.verdict);
+  return { verdict: passkey.verdict, code: passkey.code || '',
+           reason: passkey.reason || '',
+           decidedBy: passkey.decidedBy || '', why: answer.why || '' };
+}
+
 /**
  * Puts a transfer question (#98) to the issuance policy: `hold-session`,
  * `serve-request` or `release-attributes`, with the facts
@@ -973,6 +1432,19 @@ function disabledSubject(name) {
   return disabled;
 }
 
+// NO DECISION IS NO TOKEN, IN PRODUCT (#1494, ASVS 5.0.0 16.5.3), as at the
+// access gate; development keeps the answer it is handed.
+function noDecision(answer) {
+  log.debug("Entering noDecision().");
+  if (require('./mode').failsOpenOnPolicyFault()) {
+    log.debug("Leaving noDecision(). Development.");
+    return answer;
+  }
+  log.debug("Leaving noDecision(). Refused.");
+  return errorCodes.mark({ allowed: false, decision: 'Indeterminate',
+    why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
+}
+
 function allow(why) {
   log.debug("Entering allow().");
   log.debug("Leaving allow().");
@@ -1007,5 +1479,7 @@ module.exports = {
   checkExchange: checkExchange,
   TRANSFER: TRANSFER,
   checkTransfer: checkTransfer,
+  PASSKEY: PASSKEY,
+  checkPasskey: checkPasskey,
   strictTransferReading: strictTransferReading
 };

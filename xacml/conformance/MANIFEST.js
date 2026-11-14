@@ -8,7 +8,7 @@
 // `PROVENANCE.md` beside this file is the argument — where the suite came
 // from, under what licence, and the one link in its chain that public sources
 // do not establish. This file is the machine-readable half, and it exists for
-// the same reason `tests/vendored/MANIFEST.js` does: these files are COPIES,
+// the same reason `tests/protocol/MANIFEST.js` does: these files are COPIES,
 // and a copy needs an ORIGIN so that drift can be detected.
 //
 // The drift this guards against is not somebody editing a test on purpose. It
@@ -31,7 +31,7 @@
 // ---------------------------------------------------------------------------
 // THESE FILES ARE NOT EDITED HERE. EVER.
 //
-// The same rule `common/vendored/` and `tests/vendored/` carry, and here it is
+// The same rule `common/crypto_impl/` and `tests/protocol/` carry, and here it is
 // stronger rather than weaker, because there is no "edit the parent's copy and
 // re-sync" path available: upstream is somebody else's project. A defect found
 // in a case is reported to AuthzForce, or recorded in EXPECTED_FAILURES below

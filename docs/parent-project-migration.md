@@ -15,8 +15,11 @@ in-process Kerberos jobs load their modules out of this repository's
 subdirectories without complaint. If a document here still reads as though a
 reorganisation is pending, that document is the one that is wrong.
 
-What remains is not a migration but a **standing obligation**, and it is the
-whole reason this page is still here — see *The COPY set is a closure* below.
+**THE STANDING OBLIGATION ENDED WITH #1280 (2026-11-02).** This page used to
+say that what remained was a standing obligation — *The COPY set is a closure*
+below — to keep the parent's `tests/Dockerfile` able to load this repository's
+Kerberos modules. Nothing in this repository is vendored to or from the parent
+any more, so that is the parent's business now, and this page is history.
 
 ---
 
@@ -28,7 +31,7 @@ from what this document prescribed, and somebody reading the old advice would
 
 **1. `tests/Dockerfile` — done as described.** Every `COPY sts/…` line names a
 folder now (`sts/kerberos/krb5_kdc.js`, `sts/common/helpers.js`,
-`sts/common/vendored/bbs2023.js`), and the file's own comment records why: the
+`sts/common/crypto_impl/bbs2023.js`), and the file's own comment records why: the
 subdirectories have to be preserved in the image, because `krb5_kdc.js` requires
 `../common/helpers` and a flattened copy resolves that outside the submodule and
 fails as a missing dependency rather than as a misplaced file. The two modules
@@ -39,8 +42,8 @@ Dockerfile says at each one.
 **2. `tests/module_paths.js` — done DIFFERENTLY, and this is the paragraph that
 matters.** This document proposed that callers pass a path with its directory,
 `mockStsModule("kerberos/krb5_kdc.js")`. That is *not* what was built. The
-resolver SEARCHES instead: `mockStsSearchDirs()` walks the mock's top-level
-directories plus `common/vendored/`, so `mockStsModule("krb5_kdc.js")` still
+resolver SEARCHES instead: `mockStsSearchDirs()` walks this service's top-level
+directories plus `common/crypto_impl/`, so `mockStsModule("krb5_kdc.js")` still
 takes a **bare filename** and finds `kerberos/krb5_kdc.js` on its own.
 
 The consequence is the useful half: **the four callers were never edited and
@@ -140,9 +143,10 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
   its own.
 * **`CONFIG_FILE` and the `KRB5_*` environment variables.** The resolution order
   is the same and the environment still wins over the appconfig file.
-* **Every vendored file, byte for byte.** Nothing in `common/vendored/` or
+* **Every vendored file, byte for byte.** Nothing in `common/crypto_impl/` or
   `kerberos/krb5_spnego.js` was edited for any of this — they were moved, and the
-  two byte-compare tests pass against them where they now sit.
+  two byte-compare tests passed against them where they then sat. (Since
+  #1280 none of them is a copy, and those tests are the parent's own.)
 
 ---
 
@@ -151,7 +155,7 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
 **The next bump of the `sts/` gitlink across this change turns that job red, and
 the fix is over there.**
 
-It starts two mocks against one database and asserts `coordinates: false`,
+It starts two instances of the service against one database and asserts `coordinates: false`,
 demonstrating that neither sees the other's writes. `persistence_replication.js`
 makes that false: every change is written to a monotonic log inside the
 transaction that made it, and each process applies what the others committed.

@@ -23,7 +23,7 @@
 // service with a real receiver at the far end. This header named the parent
 // project's `tests/risc_protocol.js` as that job; no such file exists there
 // (checked 2026-09-16), and the nearest over-HTTP coverage is
-// `tests/vendored/sts_ssf_allowed_events.js`, which emits RISC events by hand.
+// `tests/protocol/sts_ssf_allowed_events.js`, which emits RISC events by hand.
 // What is here is the six things that CANNOT be asserted over HTTP:
 //
 //   * **ONE DIRECTORY WRITE PRODUCING TWO EVENTS.** A `PUT /Users/:id` that

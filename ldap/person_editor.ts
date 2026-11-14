@@ -78,6 +78,25 @@
 // MUST list (RFC 4519 3.12), so clearing either, or removing its last value,
 // is refused — the same rule a schema-checking directory would apply.
 //
+// **NOR, IN PRODUCT MODE, CAN AN ATTRIBUTE THE REALM'S ATTRIBUTE POLICY
+// REQUIRES (#396)** — `common/attribute_policy.ts`, `givenName` and `mail`
+// by default. Only taking a value AWAY is refused: a person created before
+// the policy said so, who never held one, may still be edited in every other
+// attribute, and is given one here like anybody else.
+//
+// ---------------------------------------------------------------------------
+// A REALM'S CUSTOM ATTRIBUTES ARE IN THE UNIVERSE TOO (#396).
+//
+// `common/attribute_policy.ts` keeps a register of attributes an
+// administrator defined for the realm (`ou=attributeDefinitions`), each with
+// a syntax and whether it holds one value or several. They are a THIRD list
+// beside the schema and the catalogue, read per call like the other two, so
+// a definition is editable here, settable at a create and checked against its
+// syntax the moment it exists. They are drawn under a group of their own,
+// Custom. The register refuses a name either of the other lists knows, a
+// name beginning `sts` and `memberOf`, so the allowlist's reason above still
+// holds: nothing becomes editable that an administrator did not name.
+//
 // ---------------------------------------------------------------------------
 // THE VALUES ARE CHECKED WHERE THE SCHEMA GIVES THEM A SHAPE, and nowhere
 // else. Every value is trimmed, is at most `MAX_VALUE_LENGTH` characters and
@@ -131,11 +150,17 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import inetOrgPerson = require('../common/inetorgperson');
 import vcClaims = require('../oid4vc/vc_claims');
 import countryCodes = require('../common/country_codes');
+// The realm's custom attributes and its required ones (#396). A library that
+// requires this module only lazily, so the require here closes no cycle.
+import attributePolicy = require('../common/attribute_policy');
+// The person references the policy kinds declare (#1235, rule 3cx): a leaf.
+import PolicySelection = require('../common/policy_selection');
 
 // One editable attribute, as the page draws it and the API publishes it.
 interface EditableRow {
@@ -151,6 +176,11 @@ interface EditableRow {
   group: string;
   example: string;
   simple: boolean;
+  // A realm's own attribute, from the attribute policy's register (#396).
+  custom: boolean;
+  // A POLICY REFERENCE (#1235): `default` and the realm's named policies of
+  // the kind that declared it, the only values a write may set.
+  choices?: string[];
 }
 
 // One attribute of the universe that is NOT editable, with the door to use.
@@ -173,8 +203,14 @@ interface LocatedPerson {
 interface PersonDirectory {
   locate(key: string): LocatedPerson | null;
   // Replace one attribute's values (none removes it) and report it. Answers
-  // whether the entry was written.
-  write(dn: string, name: string, values: string[]): boolean;
+  // whether the entry was written. `{ ok: false }` is a description that
+  // carries an operator code: nothing was written, and the object is
+  // truthy (#1416).
+  write(dn: string, name: string, values: string[]): boolean | {
+    ok: false;
+    errors?: string[];
+    reason?: string;
+  };
 }
 
 interface EditRequest {
@@ -197,6 +233,19 @@ interface PersonEditorDeps {
                             binary?: boolean }>;
   catalogueRows: () => Array<{ ldap: string; label: string;
                                schema: string }>;
+  // The realm's custom attributes (#396), and what the attribute policy
+  // makes of an edit.
+  customRows: () => Array<{ name: string; label: string; syntax: string;
+                            multi: boolean; description: string }>;
+  // WHOSE PROFILE (#1241): `subject.attributes` is the person's entry (as
+  // the edit leaves it), from which the attribute policy reads their uid and
+  // their own `stsAttributePolicy`, and their groups by the uid.
+  editRefusal: (before: Record<string, unknown>,
+                after: Record<string, unknown>,
+                subject?: { attributes?: Record<string, unknown> }) =>
+    { removed: string[]; message: string } | null;
+  requiredNames: (subject?: { attributes?: Record<string, unknown> }) =>
+    string[];
   alpha3: (code: string) => string;
   audit: (row: Record<string, unknown>) => void;
 }
@@ -214,7 +263,12 @@ const MAX_VALUE_LENGTH = 1024;
 const SINGLE_VALUED = ['displayname', 'employeenumber', 'preferredlanguage',
                        'c', 'schacdateofbirth', 'employeestatus',
                        'placeofbirthcountry', 'placeofbirthregion',
-                       'placeofbirthlocality'];
+                       'placeofbirthlocality',
+                       // #1292: SCHAC's gender is SINGLE-VALUE, and the
+                       // other four stand for one fact each, as the OpenID
+                       // Connect claim each becomes is one value.
+                       'schacgender', 'middlename', 'timezone',
+                       'pictureurl', 'profileurl'];
 
 // The shaped attributes, lower-cased name -> format. See the header.
 const FORMATS: Record<string, string> = {
@@ -223,17 +277,44 @@ const FORMATS: Record<string, string> = {
   schacdateofbirth: 'date',
   preferredlanguage: 'language',
   labeleduri: 'uri',
+  // #1292: an http(s) URL, as `labeledURI`; the OpenID Connect claim each
+  // becomes is a URL, so a label after it is not offered in the example.
+  pictureurl: 'uri', profileurl: 'uri',
   seealso: 'dn', manager: 'dn', secretary: 'dn'
 };
 
-// What each format asks for, in the words a refusal and the page use.
+// What each format asks for, in the words a refusal and the page use. The
+// last three are a custom attribute's syntaxes (#396); `date`, `uri` and
+// `dn` serve both.
 const FORMAT_HINTS: Record<string, string> = {
   country: 'an ISO 3166-1 alpha-2 country code, such as SE',
   date: 'a date, YYYYMMDD or YYYY-MM-DD',
   language: 'a language range, such as en-GB or "da, en-gb;q=0.8"',
   uri: 'an http or https URL, optionally followed by a space and a label',
-  dn: 'a distinguished name, such as uid=bob,ou=users,dc=example,dc=com'
+  dn: 'a distinguished name, such as uid=bob,ou=users,dc=example,dc=com',
+  integer: 'a whole number, such as 42 or -7',
+  boolean: 'TRUE or FALSE',
+  email: 'an email address, such as alice@example.com'
 };
+
+// A custom attribute's syntax (#396) as the format its values are checked
+// against; `string` has none.
+const SYNTAX_FORMATS: Record<string, string> = {
+  string: '', integer: 'integer', boolean: 'boolean', date: 'date',
+  email: 'email', uri: 'uri', dn: 'dn'
+};
+
+// An example of a valid value for a custom attribute, by its syntax.
+const SYNTAX_EXAMPLES: Record<string, string> = {
+  string: 'Some text', integer: '42', boolean: 'TRUE', date: '20260131',
+  email: 'alice@example.com', uri: 'https://example.com/',
+  dn: 'uid=bob,ou=users,dc=example,dc=com'
+};
+
+// RFC 5322 section 3.4.1's addr-spec in the dot-atom form every address
+// this service sends to has: a local part and a domain, no whitespace. The
+// SHAPE of one; whether it delivers is the mail channel's question.
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // MANAGED: in the universe, and written by a door of its own.
 const MANAGED: Record<string, string> = {
@@ -257,7 +338,8 @@ const FIELD_GROUPS = [
   { id: 'name', label: 'Name',
     what: 'What the person is called: the two names every person must hold ' +
           '(cn and sn), the parts of them, and the names they were known by.',
-    attributes: ['cn', 'sn', 'givenName', 'displayName', 'initials',
+    attributes: ['cn', 'sn', 'givenName', 'middleName', 'displayName',
+                 'initials', 'schacGender',
                  'schacPersonalTitle', 'salutation', 'alsoKnownAs',
                  'birthFamilyName', 'birthGivenName', 'birthMiddleName'] },
   { id: 'contact', label: 'Contact',
@@ -266,7 +348,7 @@ const FIELD_GROUPS = [
           'is marked verified and the former one is told.',
     attributes: ['telephoneNumber', 'mobile', 'homePhone', 'pager',
                  'facsimileTelephoneNumber', 'preferredLanguage',
-                 'labeledURI'] },
+                 'timeZone', 'labeledURI', 'profileUrl', 'pictureUrl'] },
   { id: 'organization', label: 'Organization',
     what: 'Where they sit in the organization.',
     attributes: ['title', 'o', 'ou', 'businessCategory', 'departmentNumber',
@@ -284,6 +366,23 @@ const FIELD_GROUPS = [
     attributes: ['schacDateOfBirth', 'placeOfBirthCountry',
                  'placeOfBirthRegion', 'placeOfBirthLocality',
                  'schacCountryOfCitizenship', 'x500UniqueIdentifier'] },
+  // THE POLICIES A PERSON NAMES (#1235, rule 3cx): one attribute per policy
+  // kind that a person selects, each declared by its kind
+  // (`PolicySelection.declareReference('person', ...)`). `groupOf()` never answers
+  // it: a declared reference is put here by name when the universe is built.
+  { id: 'policies', label: 'Policies',
+    what: 'The named policy of each kind that this person names: `default`, ' +
+          'or one of this realm\'s named policies of that kind (Directory > ' +
+          'Policies). It competes on precedence with the policy the ' +
+          'application names and the policies the person\'s groups name.',
+    attributes: [] as string[] },
+  // A REALM'S OWN ATTRIBUTES (#396), drawn after the schema's groups.
+  // `groupOf()` never answers it: a custom row is put here by name when the
+  // universe is built.
+  { id: 'custom', label: 'Custom',
+    what: 'This realm\'s own attributes, defined on Directory > Policies > ' +
+          'Attribute policy.',
+    attributes: [] as string[] },
   { id: 'other', label: 'Other',
     what: 'Everything else the schema gives a person.',
     attributes: [] as string[] }
@@ -321,14 +420,28 @@ const FIELD_EXAMPLES: Record<string, string> = {
   seealso: 'cn=staff,ou=groups,dc=example,dc=com',
   internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
   teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
-  mail: 'alice@example.com'
+  mail: 'alice@example.com',
+  middlename: 'Jane', schacgender: '2', timezone: 'Europe/Stockholm',
+  pictureurl: 'https://example.com/~alice/photo.jpg',
+  profileurl: 'https://example.com/~alice/'
 };
 
-// WHAT THE SIMPLE VIEW OF `/admin/users/new` OFFERS: the names, the address
-// and the contact details somebody creating a person usually has. Lower-cased.
+// WHAT THE SIMPLE VIEW OFFERS: the names, the address and the contact details
+// somebody creating or looking after a person usually has. Lower-cased. ONE
+// LIST FOR TWO PAGES (#500, 2026-10-07): the simple view of `/admin/users/new`
+// and the simple view of each sub-tab of a person's Attributes tab, which
+// shows these and keeps the rest of the tab behind its advanced view. A
+// sub-tab of fewer than six fields has no advanced view (rcbj), so a row
+// here for one of those changes only the create form. The sub-tabs' sets
+// were last held to the shape of an application's Every protocol and OAuth
+// sub-tabs: the fields an operator fills in, not every one the schema has.
 const SIMPLE_FIELDS = ['cn', 'sn', 'givenname', 'displayname', 'mail',
-                       'telephonenumber', 'mobile', 'title', 'o', 'ou',
-                       'preferredlanguage'];
+                       'telephonenumber', 'mobile', 'preferredlanguage',
+                       'title', 'o', 'ou', 'departmentnumber',
+                       'employeenumber', 'employeetype', 'manager',
+                       'street', 'l', 'st', 'postalcode', 'c',
+                       'schacdateofbirth', 'schaccountryofcitizenship',
+                       'placeofbirthcountry', 'description'];
 
 /**
  * Returns the field grid group an attribute is drawn in.
@@ -367,7 +480,17 @@ const LANGUAGE_RANGE = /^(\*|[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*)(\s*;\s*q\s*=\s*(
 
 // The shape of a DN: one or more `type=value` RDNs. What a DN MEANS is the
 // directory's business; this only refuses a value that is not one.
-const DN_SHAPE = /^\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=]+(\s*,\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=]+)*\s*$/;
+//
+// WRITTEN SO THAT NO TWO PARTS CAN CLAIM THE SAME CHARACTER (2026-10-30).
+// The first version had `\s*` on both sides of each comma and at the end,
+// beside a value class `[^,=]+` that also matches whitespace: a value's
+// trailing spaces could be the value's or the separator's, and a string of
+// many `+ ,A=` repetitions with no match at the end made the engine try
+// every split — exponential backtracking (CodeQL js/redos). Now a value
+// starts with a non-blank and runs to the comma, taking any spaces before
+// it, and only the space AFTER a comma or `=` is the separator's. The one
+// value this refuses that the old shape passed is an all-blank one.
+const DN_SHAPE = /^\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=\s][^,=]*(,\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=\s][^,=]*)*$/;
 
 // The directory, through its slot. Module-level rather than on the instance,
 // for `common/mail.ts`'s reason: `ldap_server.js` fills it at its own require,
@@ -427,6 +550,21 @@ class PersonEditor {
         return vcClaims.personFields();
       },
       alpha3: countryCodes.alpha3,
+      customRows: function customRows() {
+        helpers.log.debug("Entering customRows().");
+        helpers.log.debug("Leaving customRows().");
+        return attributePolicy.definitions();
+      },
+      editRefusal: function editRefusal(before, after, subject) {
+        helpers.log.debug("Entering editRefusal().");
+        helpers.log.debug("Leaving editRefusal().");
+        return attributePolicy.editRefusal(before, after, subject);
+      },
+      requiredNames: function requiredNames(subject) {
+        helpers.log.debug("Entering requiredNames().");
+        helpers.log.debug("Leaving requiredNames().");
+        return attributePolicy.required(subject);
+      },
       // LAZILY: `common/audit.js` is a leaf, but it is the audit log's to be
       // loaded where the service loads it.
       audit: function audit(row) {
@@ -443,14 +581,16 @@ class PersonEditor {
   // appears here with nothing else to change.
   // -------------------------------------------------------------------------
   private universe(): { editable: EditableRow[]; withheld: Withheld[] } {
-    const { log, schemaRows, catalogueRows } = this.deps;
+    const { log, schemaRows, catalogueRows, customRows } = this.deps;
     log.debug("Entering PersonEditor.universe().");
     const editable: EditableRow[] = [];
     const withheld: Withheld[] = [];
     const seen = new Set<string>();
     const consider = function (name: string, label: string, schema: string,
                                flags: { must?: boolean; secret?: boolean;
-                                        binary?: boolean }) {
+                                        binary?: boolean;
+                                        custom?: { syntax: string;
+                                                   multi: boolean } }) {
       log.debug("Entering consider(). " + name);
       const key = name.toLowerCase();
       if (seen.has(key)) {
@@ -480,13 +620,29 @@ class PersonEditor {
         log.debug("Leaving consider(). Managed.");
         return;
       }
-      const format = FORMATS[key] || '';
+      const custom = flags.custom;
+      const format = custom ? (SYNTAX_FORMATS[custom.syntax] || '')
+                            : (FORMATS[key] || '');
+      // A POLICY REFERENCE (#1235): one value, from a closed set. Its
+      // example is the first choice (`default`), a value the box may hold.
+      // `tests/person_fields.js` fails an editable attribute with none.
+      const reference = PolicySelection.referenceOf('person', name);
       editable.push({ name: name, label: label, schema: schema,
-                      multi: SINGLE_VALUED.indexOf(key) < 0,
+                      multi: reference ? false
+                        : custom ? custom.multi
+                          : SINGLE_VALUED.indexOf(key) < 0,
                       must: !!flags.must, format: format,
                       note: format ? FORMAT_HINTS[format] : '',
-                      group: groupOf(name), example: FIELD_EXAMPLES[key] || '',
-                      simple: SIMPLE_FIELDS.indexOf(key) >= 0 });
+                      group: reference ? 'policies'
+                        : custom ? 'custom' : groupOf(name),
+                      example: reference ? reference.choices[0]
+                        : custom
+                          ? (SYNTAX_EXAMPLES[custom.syntax] || '')
+                          : (FIELD_EXAMPLES[key] || ''),
+                      simple: reference ? true
+                        : SIMPLE_FIELDS.indexOf(key) >= 0,
+                      custom: !!custom,
+                      choices: reference ? reference.choices : undefined });
       log.debug("Leaving consider(). Editable.");
     };
     schemaRows().forEach(function (row) {
@@ -494,6 +650,33 @@ class PersonEditor {
     });
     catalogueRows().forEach(function (row) {
       consider(row.ldap, row.label, row.schema, {});
+    });
+    // THE REALM'S OWN, LAST (#396): a name the two lists above already hold
+    // is never one, since the register refuses it, and `seen` would keep
+    // the schema's row if one ever were.
+    let custom: Array<{ name: string; label: string; syntax: string;
+                        multi: boolean }> = [];
+    try {
+      custom = customRows();
+    } catch (e) {
+      log.debug("Caught in PersonEditor.universe(): " +
+                ((e && e.message) || e));
+      // A register that cannot be read adds nothing: the schema's and the
+      // catalogue's attributes are still every person's.
+      custom = [];
+    }
+    custom.forEach(function (row) {
+      consider(row.name, row.label,
+               'custom attribute (' + row.syntax + ')',
+               { custom: { syntax: row.syntax, multi: !!row.multi } });
+    });
+    // THE POLICY REFERENCES THE KINDS DECLARED (#1235), last: a kind's
+    // person attribute (`stsServiceAccountPolicy`) is in neither list above,
+    // and the directory is schemaless, so the declaration is what puts it on
+    // the Policies tab. One the lists already hold keeps their row.
+    PolicySelection.referencesOn('person').forEach(function (row) {
+      consider(row.attribute, 'The ' + row.noun + ' this person names',
+               'policy reference (#1235)', {});
     });
     log.debug("Leaving PersonEditor.universe(). " + editable.length +
               " editable, " + withheld.length + " withheld.");
@@ -567,11 +750,27 @@ class PersonEditor {
       return null;
     }
     const universe = this.universe();
+    // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), marked per row so
+    // the page can say which boxes an edit may not empty — of THIS person,
+    // under the profile they and their groups name (#1241).
+    let required: string[] = [];
+    try {
+      required = this.deps.requiredNames({ attributes: person.attributes })
+        .map(function (one) {
+          return one.toLowerCase();
+        });
+    } catch (e) {
+      log.debug("Caught in PersonEditor.editorFor(): " +
+                ((e && e.message) || e));
+      // Unmarked rather than undrawn: the edit itself still asks.
+      required = [];
+    }
     const attributes = universe.editable.map(function (row) {
       const held = person.attributes[row.name.toLowerCase()] || [];
       const naming = person.naming.indexOf(row.name.toLowerCase()) >= 0;
       return Object.assign({}, row, {
         values: held.map(String),
+        required: required.indexOf(row.name.toLowerCase()) >= 0,
         editable: !naming,
         why: naming
           ? 'The entry is named by it (' + person.dn + '), so an edit would ' +
@@ -579,12 +778,20 @@ class PersonEditor {
           : ''
       });
     });
+    // One concept of each kind for the entry (#1390). The rows above stay
+    // by attribute name: the editor is a grid of whatever the realm offers.
+    const user = Classes.User.fromEntry(person.attributes);
+    const credential = Classes.Credential.fromEntry(person.attributes);
     log.debug("Leaving PersonEditor.editorFor(). " + person.dn);
     // The address as well, withheld from the editor but drawn beside it by
     // the page, whose `set-mail` form starts from it.
     return { dn: person.dn, attributes: attributes,
              withheld: universe.withheld,
-             mail: String((person.attributes.mail || [])[0] || '') };
+             mail: user.email || '',
+             // Sign-in names (#644), withheld from the attribute grid the
+             // same way mail is: the page draws them beside the address.
+             pseudonyms: credential.pseudonym || [],
+             pseudonymPending: credential.pseudonymVerifyAddress || '' };
   }
 
   // -------------------------------------------------------------------------
@@ -663,6 +870,23 @@ class PersonEditor {
       log.debug("Leaving PersonEditor.shaped(). " + ok);
       return ok ? { value: value } : { error: hint };
     }
+    // A CUSTOM ATTRIBUTE'S THREE (#396).
+    if (format === 'integer') {
+      const ok = /^-?(0|[1-9][0-9]{0,17})$/.test(value);
+      log.debug("Leaving PersonEditor.shaped(). " + ok);
+      return ok ? { value: value } : { error: hint };
+    }
+    if (format === 'boolean') {
+      const upper = value.toUpperCase();
+      const ok = upper === 'TRUE' || upper === 'FALSE';
+      log.debug("Leaving PersonEditor.shaped(). " + ok);
+      return ok ? { value: upper } : { error: hint };
+    }
+    if (format === 'email') {
+      const ok = EMAIL_SHAPE.test(value);
+      log.debug("Leaving PersonEditor.shaped(). " + ok);
+      return ok ? { value: value } : { error: hint };
+    }
     // `dn`, the last format.
     const ok = DN_SHAPE.test(value);
     log.debug("Leaving PersonEditor.shaped(). " + ok);
@@ -712,6 +936,17 @@ class PersonEditor {
                         '.' };
       }
       const value = String(checked.value);
+      // A POLICY REFERENCE SET AT A CREATE (#1241) names a policy the realm
+      // holds, as `update()` asks of an edit: the attribute policy reads a
+      // newcomer's own reference from what the create writes.
+      const notHeld = row.choices
+        ? PolicySelection.referenceProblem(value, row.choices, row.name)
+        : null;
+      if (notHeld) {
+        log.debug("Leaving PersonEditor.checkCreateValues(). Not a policy " +
+                  "here.");
+        return { error: notHeld };
+      }
       if (value !== '' && !out.some(function (held) {
         return held.toLowerCase() === value.toLowerCase();
       })) {
@@ -815,6 +1050,26 @@ class PersonEditor {
       return this.refused('STS-LDAP-0106', 'Name the value to ' + mode +
                           '.');
     }
+    // A POLICY REFERENCE NAMES A POLICY THE REALM HOLDS (#1235), the
+    // application's CHOICES_CHECKED_HERE rule: one that does not would be
+    // a reference the kind has to treat as missing.
+    const notHeld = row.choices
+      ? PolicySelection.referenceProblem(value, row.choices, row.name) : null;
+    if (notHeld) {
+      log.debug("Leaving PersonEditor.update(). Not a policy here.");
+      return this.refused('STS-LDAP-0106', notHeld);
+    }
+    // AND ONLY BY A HOLDER THE KIND ALLOWS (#1240): the service-account
+    // policy is named by a service account and nobody else. The kind says
+    // who in its declaration; a clear is always allowed.
+    const declared = row.choices && value !== ''
+      ? PolicySelection.referenceOf('person', row.name) : null;
+    const notHolder = declared && declared.holderRefusal
+      ? declared.holderRefusal(person.attributes, value) : null;
+    if (notHolder) {
+      log.debug("Leaving PersonEditor.update(). Not a holder of it.");
+      return this.refused(notHolder.code, notHolder.message);
+    }
     const before = (person.attributes[lower] || []).map(String);
     // A HOT PATH, run once per held value: no Entering/Leaving pair here,
     // which would drown the log in a line per value compared.
@@ -848,21 +1103,57 @@ class PersonEditor {
                           'it cannot be left empty. Set another value ' +
                           'instead.');
     }
+    // AND WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), in product
+    // mode: only a value taken AWAY, never one the person already lacked —
+    // under the profile that applies to the person as this edit leaves them
+    // (#1241), so a change of their own `stsAttributePolicy` is asked of
+    // the profile it names.
+    const leaves: Record<string, unknown> =
+      Object.assign({}, person.attributes, { [lower]: after });
+    const policy = this.deps.editRefusal({ [lower]: before },
+                                         { [lower]: after },
+                                         { attributes: leaves });
+    if (policy) {
+      log.debug("Leaving PersonEditor.update(). Required by the policy.");
+      return this.refused('STS-LDAP-0164', policy.message);
+    }
     const written = directory.write(person.dn, lower, after);
-    audit({ category: 'admin', action: 'admin.user.attribute',
-            actor: String(ctx.actor || ''), target: person.dn,
-            outcome: written ? 'success' : 'failure',
-            errorCode: written ? undefined : 'STS-LDAP-0110',
-            // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
-            summary: (written ? '' : 'could not ') + mode + ' ' + row.name +
-                     ' on ' + person.dn,
-            detail: { attribute: row.name, mode: mode,
-                      values: after.length, via: String(ctx.via || '') } });
+    // `{ ok: false }` is truthy. writePersonAttribute() answers it when a
+    // description carries an operator code and writes nothing (#1416).
+    // The success answer below quotes every value, which is how that code
+    // would leave this process. Audit the failure before that return, and
+    // do not audit it as a success. `false` is still "not a person".
+    if (written && typeof written === 'object') {
+      audit({ category: 'admin', action: 'admin.user.attribute',
+              actor: String(ctx.actor || ''), target: person.dn,
+              outcome: 'failure', errorCode: 'STS-LDAP-0211',
+              // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
+              summary: 'could not ' + mode + ' ' + row.name + ' on ' +
+                       person.dn,
+              detail: { attribute: row.name, mode: mode,
+                        values: after.length, via: String(ctx.via || '') } });
+      log.debug("Leaving PersonEditor.update(). Not written.");
+      return this.refused('STS-LDAP-0211', (written.errors || [])[0] ||
+                          'The directory did not store the change.');
+    }
     if (!written) {
+      audit({ category: 'admin', action: 'admin.user.attribute',
+              actor: String(ctx.actor || ''), target: person.dn,
+              outcome: 'failure', errorCode: 'STS-LDAP-0110',
+              summary: 'could not ' + mode + ' ' + row.name + ' on ' +
+                       person.dn,
+              detail: { attribute: row.name, mode: mode,
+                        values: after.length, via: String(ctx.via || '') } });
       log.debug("Leaving PersonEditor.update(). Not written.");
       return this.refused('STS-LDAP-0110', 'The directory did not store the ' +
                           'change to ' + row.name + ' on ' + person.dn + '.');
     }
+    audit({ category: 'admin', action: 'admin.user.attribute',
+            actor: String(ctx.actor || ''), target: person.dn,
+            outcome: 'success',
+            summary: mode + ' ' + row.name + ' on ' + person.dn,
+            detail: { attribute: row.name, mode: mode,
+                      values: after.length, via: String(ctx.via || '') } });
     log.debug("Leaving PersonEditor.update(). " + mode + " " + row.name +
               ": " + before.length + " -> " + after.length + " value(s).");
     return { ok: true, dn: person.dn, attribute: row.name, mode: mode,
@@ -910,6 +1201,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   MAX_VALUE_LENGTH: MAX_VALUE_LENGTH,
+  // For `tests/sanitizer_shapes.js`, which holds the shape to its
+  // backtracking bound; the editor reaches it through normalised() only.
+  DN_SHAPE: DN_SHAPE,
   MODES: MODES,
   /**
    * The field grid's groups, in tab order; an attribute none names is in

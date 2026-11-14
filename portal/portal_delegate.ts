@@ -16,221 +16,62 @@
 // any actor the claim does not name. An administrator sets the same attribute
 // from the person's /admin/users page and POST /admin-api/users/set-may-act.
 //
-// **THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT** — the
-// portal's rule (portal/CLAUDE.md): the form names the DELEGATE, never whose
-// delegate it is. **A REAL SUBMIT BUTTON AND NO SCRIPT**, under the
-// service-wide `script-src 'none'`.
-//
-// **IT IS A FILE BESIDE `portal.ts`**, registered through `register(context)`
-// exactly as `portal_app_passwords.ts` is, and for its reason.
+// **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
+// drawn in the browser by `web_delegate.ts`. **THE IDENTITY IS THE TOKEN'S
+// AND THERE IS NO PARAMETER FOR IT** — the portal's rule (portal/CLAUDE.md):
+// the body names the DELEGATE, never whose delegate it is.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
+import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-// What the portal hands over — `portal_app_passwords.ts`'s context.
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — the portal helper's type, not a call to it.
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
-  config: { value(key: string): any };
-}
+const vz = validation.z;
+const vt = validation.types;
 
 interface PortalDelegateDeps {
-  // For the constructor only: a page logs through the portal's context.
   log: { debug(message: string): void };
   credentials: Json;
 }
 
-class PortalDelegatePage {
-  readonly PATH: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
+// THE SEARCH'S QUERY (2026-10-20): what the person typed, by part of a
+// `uid`. Its length below three is refused by the handler, with a code of
+// its own, rather than by the schema: the page says why in the person's
+// language, and a generic validation failure would not.
+const SEARCH_QUERY = ModelZod.query('account', 'findDelegateCandidates');
 
-  constructor(private readonly deps: PortalDelegateDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalDelegatePage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/delegate';
-    this.FORM = vz.object({
-      action: vt.opt(vt.oneOf(['set', 'clear'])),
-      delegate: vz.string().max(1024).optional(),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      done: vz.string().max(200).optional()
-    });
-    ctx.log.debug("Leaving PortalDelegatePage.constructor().");
-  }
+// The fewest characters a search takes. The directory refuses fewer too
+// (`ldap_server.js`, DELEGATE_CANDIDATE_MIN); this is the door's answer.
+const SEARCH_MIN = 3;
 
-  private page(session: Json, message: unknown, error: unknown): string {
-    const { log, shell, esc, websecurity } = this.ctx;
-    const { credentials } = this.deps;
-    log.debug("Entering PortalDelegatePage.page().");
-    const who = String(session.user.username);
-    const facts = credentials.delegationFactsFor(who) || {};
-    const csrf = websecurity.field(session.id);
-    const current = facts.mayAct
-      ? '<p>The party who may act for you is <code>' + esc(facts.mayAct) +
-        '</code>' + (facts.delegate
-          ? ' (' + esc(facts.delegate.kind === 'person'
-            ? 'a person' : 'an application') + ').'
-          : ' — which names nothing in this directory now, so your tokens ' +
-            'carry no <code>may_act</code>.') + '</p>'
-      : '<p>You have named nobody. Your access tokens carry no ' +
-        '<code>may_act</code> claim.</p>';
-    const body = '<div class="card"><h2>Who may act for you</h2>' +
-      '<p class="sub">An application or a person you name here may ask this ' +
-      'service for a token in your name by exchanging one of yours (RFC 8693 ' +
-      'token exchange). Every access token issued about you says so in its ' +
-      '<code>may_act</code> claim, and an exchange of one by anybody ELSE is ' +
-      'refused. You may name one party.</p>' + current +
-      (facts.notDelegated
-        ? '<div class="err">An administrator has marked your account as one ' +
-          'that cannot be delegated, so nobody may act for you whatever ' +
-          'you name here.</div>' : '') +
-      '<form method="post" action="' + this.PATH + '">' + csrf +
-      '<input type="hidden" name="action" value="set">' +
-      '<p><label>Their directory name (DN) <input type="text" ' +
-      'name="delegate" size="60" maxlength="1024" required value="' +
-      esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,...">' +
-      '</label>' +
-      '</p><p><button type="submit">Name them</button></p></form>' +
-      (facts.mayAct
-        ? '<form method="post" action="' + this.PATH + '">' + csrf +
-          '<input type="hidden" name="action" value="clear">' +
-          '<p><button class="danger" type="submit">Name nobody</button></p>' +
-          '</form>' : '') + '</div>';
-    log.debug("Leaving PortalDelegatePage.page().");
-    return shell(this.PATH, session, message, error, body);
-  }
+// THE SEARCH'S OWN BUDGET, PER WINDOW OF `security.rateLimitWindowS`
+// (sixty seconds by default), counted across the cluster
+// (`websecurity.attemptShared()`). Not the settings' five per identity,
+// which are a guessing door's: the page asks after three idle seconds, so
+// a person refining a name asks a few times a minute, and a sixth answer
+// refused would be the page breaking. Thirty per person and 120 per
+// address still stop a script walking the directory three letters at a
+// time.
+const SEARCH_LIMIT = { identity: 30, address: 120 };
 
-  private getPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, asked.value.done || null,
-                                        null));
-  }
-
-  private postPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { credentials } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(csrf) || 'STS-PORTAL-0017');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, null, csrf.detail));
-    }
-    const named = String(body.action) === 'clear'
-      ? '' : String(body.delegate || '').trim();
-    const result = credentials.setMayAct(who, named);
-    ctx.audit.record({
-      category: 'authentication', action: 'portal.delegation.may-act',
-      errorCode: result.ok ? undefined
-        : (ctx.errorCodes.codeOf(result) || 'STS-PORTAL-0086'),
-      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
-      summary: (result.ok ? '' : 'could not ') + (named ? 'named ' + named +
-               ' as the party who may act for them' : 'cleared the party ' +
-               'who may act for them') + ' on /portal/delegate',
-      detail: { delegate: named,
-                errors: result.ok ? undefined : result.errors }
-    });
-    if (!result.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0086');
-      log.debug('Leaving POST ' + PATH + '. Refused.');
-      return ctx.send(res, 400, this.page(session, null,
-        (result.errors || ['Not changed.'])[0]));
-    }
-    log.debug('Leaving POST ' + PATH + '. Written.');
-    res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      named ? 'Your delegate is set.' : 'You have named nobody.')).end();
-    return undefined;
-  }
-
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalDelegatePage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res);
-    });
-    log.debug("Leaving PortalDelegatePage.registerRoutes().");
-  }
-}
+const DELEGATE_FORM = ModelZod.body('account', 'setDelegate');
 
 /**
- * The portal page at /portal/delegate: where a person names the one party who
- * may act for them, RFC 8693's `may_act` (#108).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * `/portal/delegate`'s account API operations: the one party who may act for
+ * the person, RFC 8693's `may_act` (#108).
  */
 class PortalDelegate {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -251,18 +92,176 @@ class PortalDelegate {
   }
 
   /**
-   * Registers the page's routes on the portal's app.
+   * The page's view: who may act for the person, what kind of entry that
+   * is, and whether their account refuses delegation.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param username - the signed-in person
+   * @returns `{ mayAct, delegate, notDelegated }`
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalDelegate.register().");
-    const page = new PortalDelegatePage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalDelegate.register().");
-    return { path: page.PATH };
+  view(username: string): Json {
+    const { log, credentials } = this.deps;
+    log.debug("Entering PortalDelegate.view().");
+    const facts = credentials.delegationFactsFor(username) || {};
+    log.debug("Leaving PortalDelegate.view().");
+    return { mayAct: String(facts.mayAct || ''),
+             delegate: facts.delegate
+               ? { kind: String(facts.delegate.kind || '') } : null,
+             notDelegated: !!facts.notDelegated };
+  }
+
+  /**
+   * Names or clears the party who may act for the caller.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  change(ctx: AccountContext, res: AccountAnswering<'setDelegate'>,
+         caller: AccountCaller,
+         body: Json): unknown {
+    const { log, credentials } = this.deps;
+    log.debug("Entering PortalDelegate.change().");
+    const who = caller.username;
+    const named = String(body.action) === 'clear'
+      ? '' : String(body.delegate || '').trim();
+    const result = credentials.setMayAct(who, named);
+    ctx.audit.record({
+      category: 'authentication', action: 'portal.delegation.may-act',
+      errorCode: result.ok ? undefined
+        : (ctx.errorCodes.codeOf(result) || 'STS-PORTAL-0086'),
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? '' : 'could not ') + (named ? 'named ' + named +
+               ' as the party who may act for them' : 'cleared the party ' +
+               'who may act for them') + ' on /portal/delegate',
+      detail: { delegate: named,
+                errors: result.ok ? undefined : result.errors }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalDelegate.change(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0086',
+                        (result.errors || ['Not changed.'])[0],
+                        { view: this.view(who) });
+    }
+    // THE SUCCESS MESSAGE IN THE PERSON'S LANGUAGE (#539).
+    const t = ctx.translatorFor(who);
+    log.debug("Leaving PortalDelegate.change(). " +
+              (named ? "Named." : "Cleared."));
+    return ctx.json(res, 200, { ok: true,
+      message: named ? t.text('portalDelegate.doneSet')
+                     : t.text('portalDelegate.doneCleared') });
+  }
+
+  /**
+   * Finds the native people of this realm whose `uid` contains what the
+   * caller typed (2026-10-20): at most ten, each `{ uid, cn, dn }`, and
+   * `more` when more matched. Rate-limited, audited, and never about
+   * anybody but people the caller could name anyway by typing their DN.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param query - the checked query
+   * @returns a promise of nothing
+   */
+  async search(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'findDelegateCandidates'>,
+               caller: AccountCaller, query: Json): Promise<unknown> {
+    const { log, credentials } = this.deps;
+    log.debug("Entering PortalDelegate.search().");
+    const who = caller.username;
+    const typed = String(query.q || '').trim();
+    const t = ctx.translatorFor(who);
+    const record = function (outcome: string, code: string | undefined,
+                             summary: string, detail: Json): void {
+      log.debug("Entering record().");
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.delegation.search',
+        errorCode: code, actor: who, target: who, outcome: outcome,
+        summary: summary + ' on /portal/delegate',
+        detail: Object.assign({ query: typed }, detail)
+      });
+      log.debug("Leaving record().");
+    };
+    if (typed.length < SEARCH_MIN) {
+      record('failure', 'STS-PORTAL-0620', 'could not search for a ' +
+             'delegate with fewer than ' + SEARCH_MIN + ' characters', {});
+      log.debug("Leaving PortalDelegate.search(). Too short.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0620',
+                        t.text('portalDelegate.searchTooShort',
+                               { min: SEARCH_MIN }));
+    }
+    const allowed = await ctx.websecurity.attemptShared(
+      'portal-delegate-search', req, who, SEARCH_LIMIT);
+    if (!allowed.ok) {
+      const code = ctx.errorCodes.codeOf(allowed) || 'STS-PORTAL-0621';
+      record('failure', code, 'was refused a delegate search: too many', {});
+      log.debug("Leaving PortalDelegate.search(). Rate limited.");
+      return ctx.refuse(res, 429, code, allowed.detail);
+    }
+    let found: Json = null;
+    try {
+      found = await credentials.findDelegateCandidates(who, typed);
+    } catch (e) {
+      log.debug("Caught in PortalDelegate.search(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    if (!found || !found.ok) {
+      const code = (found && ctx.errorCodes.codeOf(found)) ||
+        'STS-PORTAL-0622';
+      record('failure', code, 'could not search for a delegate', {});
+      log.debug("Leaving PortalDelegate.search(). The directory failed.");
+      return ctx.refuse(res, 503, 'STS-PORTAL-0622',
+                        t.text('portalDelegate.searchFailed'));
+    }
+    const people = (found.people || []).map(function (one: Json): Json {
+      return { uid: String(one.uid || ''), cn: String(one.cn || ''),
+               dn: String(one.dn || '') };
+    });
+    record('success', undefined, 'searched for a delegate (' +
+           people.length + ' shown' + (found.more ? ', more matched' : '') +
+           ')', { shown: people.length, more: !!found.more });
+    log.debug("Leaving PortalDelegate.search(). " + people.length);
+    return ctx.json(res, 200, { query: typed, people: people,
+                                more: !!found.more });
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalDelegate.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/delegate',
+        operationId: 'getDelegate', access: 'person', query: ModelZod.query('account', 'getDelegate'),
+        handler: function (req, res,
+                           caller: AccountCaller): unknown {
+          return ctx.json(res, 200, self.view(caller.username));
+        } },
+      { method: 'GET', path: ctx.BASE + '/delegate/candidates',
+        operationId: 'findDelegateCandidates', access: 'person',
+        query: SEARCH_QUERY,
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
+          return self.search(ctx, req, res, caller, input.query);
+        } },
+      { method: 'POST', path: ctx.BASE + '/delegate',
+        operationId: 'setDelegate', access: 'person', body: DELEGATE_FORM,
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
+          return self.change(ctx, res, caller, input.body);
+        } }
+    ];
+    log.debug("Leaving PortalDelegate.accountOperations().");
+    return rows;
   }
 }
 
@@ -277,12 +276,12 @@ const slot = new InstanceSlot<PortalDelegate>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/delegate, registered by `portal.ts`.
+ * `/portal/delegate`'s account API operations (#108, #568).
  * @namespace
  */
 export = {
   PortalDelegate: PortalDelegate,
   installInstance: (instance: PortalDelegate): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations')
 };

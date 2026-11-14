@@ -1,0 +1,16 @@
+{
+  "about": "向所有已登录管理控制台、用户门户或报表应用的人显示一条简短消息，显示在他们每个已打开标签页顶部的横幅中。它作为本服务自己的 Shared Signals 事件，通过每个应用的接收方流发送，标签页大约在 {seconds} 秒内显示。横幅十秒后自动关闭。之后打开的标签页不会显示它。",
+  "notReady": "目前无法投递任何内容：",
+  "readOnly": "发送公告需要 Admin Write。",
+  "message": "消息",
+  "maxChars": "纯文本，最多 {max} 个字符。",
+  "surfaces": "显示于",
+  "scope.legend": "发送到",
+  "scope.realm": "此领域（<code>{realm}</code>）",
+  "scope.every": "所有领域（{count} 个）",
+  "scope.only": "它将发送给已登录此领域 <code>{realm}</code> 的人。",
+  "send": "广播",
+  "streamsLink": "承载它的接收方流（Shared Signals）",
+  "banner.heading": "公告",
+  "banner.close": "关闭"
+}

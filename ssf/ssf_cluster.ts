@@ -72,7 +72,7 @@
 // module's old names are FACADES that forward to it, for `ssf/ssf.ts`,
 // `ssf/ssf_auth.ts` and the tests, and its `wire` step asks for the probe
 // lease, which the old module did at load. A process that loads this module
-// without the root builds a default when the module loads, and campaigns
+// without the root builds a default when the module loads, and contends
 // then.
 // ---------------------------------------------------------------------------
 
@@ -407,7 +407,7 @@ class SsfCluster {
                            leadsProbes: this.leadsProbes() }, stats);
   }
 
-  // The role is asked for at require time and campaigned for on every
+  // The role is asked for at require time and contended for on every
   // heartbeat of a front process; see cluster.js's lead(). A process that
   // never joins a cluster is told it holds the role at once, and holds()
   // answers true there.
@@ -415,9 +415,9 @@ class SsfCluster {
    * Asks the cluster for `PROBE_LEASE`, logging when this node gains or loses
    * it.
    */
-  campaign(): void {
+  contend(): void {
     const { log, cluster } = this.deps;
-    log.debug("Entering SsfCluster.campaign().");
+    log.debug("Entering SsfCluster.contend().");
     cluster.lead(PROBE_LEASE, {
       onGain: function (token) {
         log.debug("Entering onGain().");
@@ -435,7 +435,7 @@ class SsfCluster {
         log.debug("Leaving onLose().");
       }
     });
-    log.debug("Leaving SsfCluster.campaign().");
+    log.debug("Leaving SsfCluster.contend().");
   }
 
   // What the composition root passes (#50, R2): the real modules, as the
@@ -471,14 +471,14 @@ class SsfCluster {
   // the probe lease, as the module always did. Run once, for whichever
   // instance is installed.
   /**
-   * Runs the installed instance's load-time step: campaigning for the probe
+   * Runs the installed instance's load-time step: contending for the probe
    * lease.
    *
    * @param instance - the installed instance
    */
   static wire(instance: SsfCluster): void {
     log.debug("Entering SsfCluster.wire().");
-    instance.campaign();
+    instance.contend();
     log.debug("Leaving SsfCluster.wire().");
   }
 }

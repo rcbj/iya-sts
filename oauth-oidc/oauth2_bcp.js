@@ -120,11 +120,12 @@
 // service can detect several of them and fix none.
 // ===========================================================================
 
-const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
+// A leaf (it requires only config and error_codes), so it closes no cycle.
+const cacheRegistry = require('../common/cache_registry');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // applications.js registers no route and requires nothing from oauth-oidc/, so
@@ -176,6 +177,9 @@ const validation = require('../common/validation');
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 const errorCodes = require('../common/error_codes');
+// Where a family's revocation is SAID, so the next refresh of any of its
+// members waits for it (the review of #879). A leaf over `helpers.js`.
+const RevokingWrites = require('../common/revoking_writes');
 
 // ---------------------------------------------------------------------------
 // THE TABLE.
@@ -199,6 +203,11 @@ const errorCodes = require('../common/error_codes');
 //                true before this file existed. These are the rows that say
 //                what the service already did, and they are here so that
 //                nobody has to read the code to find out.
+//   'waived'   — enforced by the mode and turned off in this realm by an
+//                administrator's setting, which the row's note names. One row
+//                can say it, `no-implicit` (and `prefer-code`, which is what
+//                is left once it has refused), and only because section 2.1.2
+//                is a SHOULD NOT (#1295; see implicitWaived()).
 //
 // Most rows are cited by `requirement:` on the refusal they produce. Five are
 // not, and that is right rather than an omission — a requirement met by DOING
@@ -303,7 +312,8 @@ const REQUIREMENTS = [
           'anything else is refused before there is an error to report ' +
           '(redirect-exact-match). What the BCP suggests beyond that — URI ' +
           'analytics, reputation of the content behind the URI — is not ' +
-          'something a mock can do or should pretend to: a service that ' +
+          'something this service can do or should pretend to: a service ' +
+          'that ' +
           'claimed to have judged the credibility of a destination would be ' +
           'teaching a client author that somebody had.' },
 
@@ -388,7 +398,7 @@ const REQUIREMENTS = [
       log.debug("Leaving tls-everywhere.note().");
       return 'NOT ENFORCED: global.https is off, so this service answers ' +
              'OAuth over plain HTTP. That is the default because it is a ' +
-             'mock reached from a browser on a laptop and a self-signed ' +
+             'service reached from a browser on a laptop and a self-signed ' +
              'certificate regenerated every start is a real cost to pay ' +
              'before anything works. Turn global.https on — which RFC 9700 ' +
              'mode does by default — and every endpoint moves to TLS ' +
@@ -409,8 +419,8 @@ const REQUIREMENTS = [
           'disagreed about whether a forwarded header was believable — and ' +
           'the htu one had teeth, because a client that chooses the expected ' +
           'htu can replay a proof captured at another endpoint by naming it. ' +
-          'GET /tls/forwarded shows what a request carried and what was ' +
-          'believed of it.' },
+          'Monitoring → TLS connection (GET /admin-api/tls-connection) shows ' +
+          'what a request carried and what was believed of it.' },
 
   { id: 'no-certificate-header', section: '2.6', level: 'MUST NOT',
     appliesTo: 'authorization server', enforced: 'always',
@@ -424,7 +434,8 @@ const REQUIREMENTS = [
           'read the certificate off the TLS handshake itself. The cost is ' +
           'real and is stated rather than hidden — a proxy terminating mTLS ' +
           'in front of this service cannot pass the certificate through — ' +
-          'and /tls/forwarded lists the ones a request carried so that ' +
+          'and Monitoring → TLS connection lists the ones a request carried ' +
+          'so that ' +
           'ignoring them is visible rather than silent.' },
 
   { id: 'proxy-sanitizes-headers', section: '2.6', level: 'MUST',
@@ -438,7 +449,8 @@ const REQUIREMENTS = [
           'lets any client reach past it. What this service can do about it ' +
           'is not believe those headers unless told to ' +
           '(proxy-headers-not-trusted) and show what arrived ' +
-          '(/tls/forwarded); it cannot make the hop in front of it behave. ' +
+          '(Monitoring → TLS connection); it cannot make the hop in front of ' +
+          'it behave. ' +
           'The same is true of protecting the proxy-to-application ' +
           'connection against eavesdropping, injection and replay — that is ' +
           'a deployment decision about a link this process has no view of.' },
@@ -455,7 +467,8 @@ const REQUIREMENTS = [
           'redirectUriProblem()): it is not named for a domain, and it is ' +
           'what localhost:3000/cb typed without http:// parses as. Until ' +
           'that date this note said a private-use scheme was refused whether ' +
-          'the mode was on or off, which was a limitation of the mock rather ' +
+          'the mode was on or off, which was a limitation of this service ' +
+          'rather ' +
           'than a position on the specification.' },
 
   // --- section 2.1.1 — the authorization code grant -----------------------
@@ -475,7 +488,8 @@ const REQUIREMENTS = [
     note: 'A SHOULD is not refused: a registered confidential client that ' +
           'omits code_challenge is answered, and the omission is logged and ' +
           'counted. Refusing it would make this server stricter than the ' +
-          'specification, which is its own kind of wrong for a mock a client ' +
+          'specification, which is its own kind of wrong for a service a ' +
+          'client ' +
           'is calibrated against.' },
 
   { id: 'pkce-s256', section: '2.1.1', level: 'SHOULD',
@@ -530,8 +544,8 @@ const REQUIREMENTS = [
     appliesTo: 'client (detected by this server)', enforced: 'detected',
     title: 'code_challenge and nonce must be transaction-specific',
     note: 'A real authorization server cannot generally tell a reused ' +
-          'challenge from a fresh one. This one can, because it is a mock ' +
-          'and remembers: a code_challenge or nonce presented again AFTER ' +
+          'challenge from a fresh one. This one can, because it remembers: a ' +
+          'code_challenge or nonce presented again AFTER ' +
           'the code issued for its earlier presentation was redeemed is a ' +
           'second transaction reusing a first transaction\'s value, and is ' +
           'refused. Presenting it again BEFORE that — a reloaded browser ' +
@@ -560,22 +574,44 @@ const REQUIREMENTS = [
           'detectable for a client that has no PKCE.' },
 
   // --- section 2.1.2 — the implicit grant ---------------------------------
+  // THE ONE ROW AN ADMINISTRATOR MAY WAIVE (#1295): both fields are
+  // functions, as response-over-tls's are, because the answer is the
+  // realm's `oauth2.allowImplicitTokenResponses` — see implicitWaived().
   { id: 'no-implicit', section: '2.1.2', level: 'SHOULD NOT',
-    appliesTo: 'client (enforced by this server)', enforced: 'yes',
+    appliesTo: 'client (enforced by this server)',
+    enforced: function () {
+      log.debug("Entering the no-implicit enforcement report.");
+      const waived = implicitWaived();
+      log.debug("Leaving the no-implicit enforcement report.");
+      return waived ? 'waived' : 'yes';
+    },
     title: 'Do not use the implicit grant or any response type issuing an ' +
            'access token',
-    note: 'response_type values naming `token` — token, code token, id_token ' +
-          'token, code id_token token — are refused with ' +
-          'unsupported_response_type, and the metadata stops advertising ' +
-          'them and drops the implicit grant type. `id_token` and `code ' +
-          'id_token` remain: they issue no access token from the ' +
-          'authorization endpoint, which is the property section 2.1.2 is ' +
-          'about.' },
+    note: function () {
+      log.debug("Entering the no-implicit note.");
+      const waived = implicitWaived();
+      log.debug("Leaving the no-implicit note.");
+      return (waived ? WAIVER_NOTE + ' ' : '') +
+        'response_type values naming `token` — token, code token, id_token ' +
+        'token, code id_token token — are refused with ' +
+        'unsupported_response_type, and the metadata stops advertising ' +
+        'them. `id_token` and `code id_token` remain, with the implicit ' +
+        'grant type RFC 7591 section 2.1 pairs them with: they issue no ' +
+        'access token from the authorization endpoint, which is the ' +
+        'property section 2.1.2 is about.';
+    } },
 
   { id: 'prefer-code', section: '2.1.2', level: 'SHOULD',
-    appliesTo: 'client', enforced: 'yes',
+    appliesTo: 'client',
+    enforced: function () {
+      log.debug("Entering the prefer-code enforcement report.");
+      const waived = implicitWaived();
+      log.debug("Leaving the prefer-code enforcement report.");
+      return waived ? 'waived' : 'yes';
+    },
     title: 'Use response_type=code',
-    note: 'What is left once the token-bearing response types are gone. The ' +
+    note: 'What is left once the token-bearing response types are gone, so ' +
+          'it is waived exactly where no-implicit is. The ' +
           'consequence is worth seeing rather than reading: with the mode ' +
           'on, the debugger\'s implicit pane gets a protocol error instead ' +
           'of an access token in a fragment.' },
@@ -669,8 +705,8 @@ const REQUIREMENTS = [
           'window a proof is accepted in, and a repeat is refused — so a ' +
           'proof captured off the wire cannot be used a second time even ' +
           'within its own freshness window. Turning on the server-supplied ' +
-          'nonce (/dpop/nonce-mode) narrows that window to one this server ' +
-          'chose. A certificate binding needs no replay defence of its own: ' +
+          'nonce (the per-realm setting oauth2.dpopNonceRequired) narrows ' +
+          'that window to one this server chose. A certificate binding needs no replay defence of its own: ' +
           'the proof is the TLS handshake, which cannot be replayed without ' +
           'the private key.' },
 
@@ -869,12 +905,16 @@ const REQUIREMENTS = [
           '`aud` of a token signed by somebody else is a string this service ' +
           'cannot check and was never the audience of anyway, the same ' +
           'judgement made about a foreign cnf. And what counts as "this ' +
-          'resource server" is the PATH rather than the whole URL: every ' +
-          'token minted here carries <base>/resource where the base is ' +
-          'whatever URL the minting request arrived on, so a whole-URL ' +
-          'comparison would refuse a token minted at localhost and presented ' +
-          'at 127.0.0.1 — while what the check is FOR, a token narrowed to ' +
-          'somebody else by `resource`, always has a different path.' },
+          'resource server" is the WHOLE URL (RFC 9068 section 4 step 4): ' +
+          'an `aud` is accepted only when it is, entire, the default ' +
+          'resource indicator <base>/resource of an authorization server ' +
+          'this process publishes at the address the request arrived on — ' +
+          'the default one or a named one under /{id}. So a token minted at ' +
+          'localhost and presented at 127.0.0.1 is refused: an address is ' +
+          'part of an identifier, and global.publicBaseUrl is how a ' +
+          'deployment reached under several names gives this service one. ' +
+          'It compared the PATH until RFC 9068 was applied in every mode, ' +
+          'which accepted a token narrowed to somebody else\'s /resource.' },
 
   { id: 'least-privilege-scope', section: '2.3', level: 'SHOULD',
     appliesTo: 'authorization server and client', enforced: 'detected',
@@ -1045,7 +1085,8 @@ const REQUIREMENTS = [
           'ignores the metadata is caught. So every surface computes the ' +
           'DRIFT: which overridden members disagree with the document this ' +
           'service would build, and which removals hide something real. A ' +
-          'mock that let somebody publish a misleading document is useful; ' +
+          'service that let somebody publish a misleading document is ' +
+          'useful; ' +
           'one that did it quietly is a trap.' },
 
   { id: 'no-client-id-confusion', section: '2.6, 4.13', level: 'SHOULD NOT',
@@ -1218,15 +1259,14 @@ const REQUIREMENTS = [
 
   { id: 'framing-device-pages', section: '4.14', level: 'MUST',
     appliesTo: 'authorization server', enforced: 'always',
-    title: 'And the device authorization pages, if there were any',
-    note: 'There are none: this service implements no device authorization ' +
-          'grant, so there is no user_code page to frame. It is a row rather ' +
-          'than an omission because the section names those pages and a ' +
-          'reader checking this table against it should find the answer ' +
-          'rather than a gap. If that grant is ever added, its pages are ' +
-          'covered by the two rows above without anybody doing anything — ' +
+    title: 'And the device authorization pages',
+    note: 'RFC 8628\'s user_code page is /portal/device (#150, off by ' +
+          'default behind oauth2.deviceAuthorization). It relaxes nothing, ' +
+          'so it carries the framing clauses of the two rows above like ' +
+          'every other page, without anybody having done anything for it — ' +
           'which is the point of the policy being a service-wide default ' +
-          'that a relaxation cannot weaken.' },
+          'that a relaxation cannot weaken. Until #276 this row said there ' +
+          'was no such page; the grant had been built in #150.' },
 
   // --- section 4.3 — token leakage through the browser --------------------
   { id: 'no-token-in-query', section: '2.6, 4.3.2', level: 'MUST NOT',
@@ -1311,7 +1351,7 @@ const REQUIREMENTS = [
           'token it issues, in memory and in full, and prints them on ' +
           '/admin/tokens: that is what makes the console able to show a ' +
           'person the JWT they just received, and it is the same decision ' +
-          '/krb5/principals makes about the Kerberos passwords. A real ' +
+          'the Kerberos password settings make. A real ' +
           'resource server must do the opposite. What IS true: nothing here ' +
           'writes a token to disk, the audit log redacts access_token and ' +
           'eight other query keys so a token never reaches a row, and the ' +
@@ -1443,6 +1483,133 @@ function enabled() {
          fapi.enabled() || mode.enforcesOauthSecurityBcp();
 }
 
+// ---------------------------------------------------------------------------
+// SECTION 2.1.2 WAIVED BY AN ADMINISTRATOR (#1295, rcbj's decision,
+// 2026-11-03).
+//
+// Product mode implies this mode and no realm can turn it off, so before this
+// a product deployment could not offer `id_token token`, `code token` or `code
+// id_token token` — and the OpenID Connect Implicit, Hybrid and Dynamic OP
+// certification profiles need them. Section 2.1.2 is a SHOULD NOT, the one
+// requirement of the mode a deployment may knowingly decline, so
+// `oauth2.allowImplicitTokenResponses` waives THAT ROW and nothing else: the
+// mode stays on (enabled() is unchanged), and every other row — PKCE, exact
+// redirect matching, the nonce, the password grant, refresh rotation — still
+// holds. It is a config row, so only an administrator can set it, and
+// `config.set` audits the change.
+//
+// OAUTH 2.1 AND FAPI IGNORE IT. OAuth 2.1 removes the implicit grant from the
+// framework outright (a MUST, not a SHOULD NOT), and a FAPI profile is a
+// stricter profile layered on this mode that the setting has no business
+// loosening. A realm asking for either has asked for the stricter answer, and
+// the waiver would make the mode it named a lie.
+//
+// EVERY DOOR ASKS THIS ONE FUNCTION — the authorization endpoint
+// (checkAuthorizationRequest), registration (checkClientRegistration), the
+// metadata (applyToMetadata) and the report (the `no-implicit` row) — so the
+// four cannot disagree about which realm is waived.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether an administrator waived RFC 9700 section 2.1.2 in the
+ * ambient realm (`oauth2.allowImplicitTokenResponses`), which OAuth 2.1 mode
+ * and every FAPI profile override.
+ *
+ * @returns true when the token-bearing response types are allowed despite
+ *   the mode
+ */
+function implicitWaived() {
+  log.debug("Entering implicitWaived().");
+  const waived = !!config.value('oauth2.allowImplicitTokenResponses') &&
+                 !oauth21.enabled() && !fapi.enabled();
+  log.debug("Leaving implicitWaived(). " + waived);
+  return waived;
+}
+
+// ---------------------------------------------------------------------------
+// WHETHER THE REALM ALLOWS THE TOKEN RESPONSE TYPES AT ALL (#1296): where RFC
+// 9700 mode is off section 2.1.2 is not enforced, and where it is on only
+// the waiver above lifts it. What an application may LIST in
+// `oauthAllowedTokenResponseTypes` (applications.js refuses a value written
+// while this is false, STS-REG-0364) — the realm making the flows POSSIBLE,
+// rcbj's words on #1296, beside each application ENABLING them.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm allows the token response types: RFC 9700
+ * mode is off, or section 2.1.2 is waived in it.
+ *
+ * @returns true when an application may have them enabled
+ */
+function tokenResponsesAllowed() {
+  log.debug("Entering tokenResponsesAllowed().");
+  const allowed = !enabled() || implicitWaived();
+  log.debug("Leaving tokenResponsesAllowed(). " + allowed);
+  return allowed;
+}
+
+// The token response types a client registering itself may enable for
+// itself in the ambient realm (#1296, rcbj's decision 3), each in the
+// canonical word order; empty by default.
+/**
+ * Reads `oauth2.dynamicRegistrationTokenResponseTypes`.
+ *
+ * @returns the canonical values
+ */
+function dynamicRegistrationTokenResponseTypes() {
+  log.debug("Entering dynamicRegistrationTokenResponseTypes().");
+  const raw = config.value('oauth2.dynamicRegistrationTokenResponseTypes');
+  const values = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
+    })
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving dynamicRegistrationTokenResponseTypes(). " +
+            values.length + " value(s).");
+  return values;
+}
+
+// The sentence the report carries when the row is waived: who, by what, and
+// what is still in force — so a reader of GET /oauth2/rfc9700 does not
+// conclude the mode is off. Since #1296 it says the waiver is per
+// application, and names the setting that lets a client enable a type for
+// itself.
+const WAIVER_NOTE = 'WAIVED IN THIS REALM BY AN ADMINISTRATOR: ' +
+  'oauth2.allowImplicitTokenResponses is on, so the response types below ' +
+  'are advertised and accepted — but only for an application whose ' +
+  'oauthAllowedTokenResponseTypes lists the one asked for, set by an ' +
+  'administrator or the application\'s owner, or by a client registering ' +
+  'itself within oauth2.dynamicRegistrationTokenResponseTypes. Section ' +
+  '2.1.2 is a SHOULD NOT, and every other requirement of this mode stays ' +
+  'in force.';
+
+/**
+ * The requirements an administrator waived in the ambient realm, as data for
+ * `GET /oauth2/rfc9700` and `/admin/mode`.
+ *
+ * @returns `[{ requirement, section, level, setting }]`, empty when nothing
+ *   is waived or the mode is off
+ */
+function waivers() {
+  log.debug("Entering waivers().");
+  if (!enabled() || !implicitWaived()) {
+    log.debug("Leaving waivers(). None.");
+    return [];
+  }
+  log.debug("Leaving waivers(). no-implicit.");
+  // #1296: the waiver is PER APPLICATION — `attribute` is what enables a
+  // type on one, and `dynamicRegistration` the setting naming which a client
+  // registering itself may enable, with its value.
+  return [{ requirement: 'no-implicit', section: 'RFC 9700 2.1.2',
+            level: 'SHOULD NOT',
+            setting: 'oauth2.allowImplicitTokenResponses',
+            perApplication: true,
+            attribute: 'oauthAllowedTokenResponseTypes',
+            dynamicRegistration: {
+              setting: 'oauth2.dynamicRegistrationTokenResponseTypes',
+              value: dynamicRegistrationTokenResponseTypes() } }];
+}
+
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
 // setting that can turn it off — see oauth21.js's `loopback-any-port` row.
 function loopbackPortWildcard() {
@@ -1491,22 +1658,23 @@ function registeredUrisFor(client) {
       client.redirect_uris.length) {
     log.debug("Leaving registeredUrisFor(). " + client.redirect_uris.length +
               " URI(s) from this client's own entry.");
+    // `source` is read by a person on an error page (2026-11-04), so it
+    // says whose list it is rather than where the directory keeps it.
     return { list: client.redirect_uris.map(String),
-             source: 'this client\'s own entry in the application registry ' +
-                     '(ou=applications, attribute oauthRedirectUri)' };
+             source: 'registered for this client' };
   }
   // OAuth 2.1 section 2.3.1: a client registers ITS OWN complete redirect URI,
   // and a list every client may use is the opposite of that — so that mode
   // answers with nothing to match and `checkRedirectUri()` refuses by name.
   if (oauth21.enabled()) {
     log.debug("Leaving registeredUrisFor(). OAuth 2.1 mode reads no fallback.");
-    return { list: [], source: 'this client\'s own entry (OAuth 2.1 mode ' +
-                               'does not read oauth2.redirectUris)' };
+    return { list: [], source: 'registered for this client (OAuth 2.1 ' +
+                               'mode does not read oauth2.redirectUris)' };
   }
   const list = configuredRedirectUris();
   log.debug("Leaving registeredUrisFor(). " + list.length + " URI(s) from " +
       "oauth2.redirectUris.");
-  return { list: list, source: 'the oauth2.redirectUris setting' };
+  return { list: list, source: 'listed in the oauth2.redirectUris setting' };
 }
 
 // Only "none" — or nothing at all — says public. The DEFAULTING is not done
@@ -1704,14 +1872,19 @@ function checkRedirectUri(opts) {
         return { ok: true, matched: own[i], how: result.how };
       }
     }
-    log.debug("Leaving checkRedirectUri(). Not one of the client's own.");
+    // THE REGISTERED URIs ARE NEVER NAMED TO THE CALLER (#1331, rcbj): a
+    // refusal that listed them handed whoever sent the request the exact
+    // value to aim at, in the error_description and on the error page.
+    // Only the address the request sent is named; the operator finds the
+    // registered set on the application, and here at debug.
+    log.debug("Leaving checkRedirectUri(). Not one of the client's own (" +
+              own.length + " registered: " + own.join(', ') + ").");
     return { ok: false, errorCode: 'STS-OAUTH-0569', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             description: 'OIDC Core section 3.1.2.1: redirect_uri must ' +
-                          'exactly match one of the redirect URIs registered ' +
-                          'for this client, and "' + presentedUri + '" ' +
-                          'matches none of its ' + own.length + ': ' +
-                          own.join(', ') + '. This holds in every mode.' };
+             description: 'OIDC Core section 3.1.2.1: "' + presentedUri +
+                          '" is not a redirect URI registered for this ' +
+                          'client, and a redirect_uri must match a ' +
+                          'registered one exactly.' };
   }
   const presented = String(opts.redirectUri || '');
   const parsed = parseUri(presented);
@@ -1766,17 +1939,17 @@ function checkRedirectUri(opts) {
     }
   }
   if (!matched) {
-    log.debug("Leaving checkRedirectUri(). No registered URI matches.");
+    // Named to the operator only (#1331), as the check above.
+    log.debug("Leaving checkRedirectUri(). No registered URI matches (" +
+              registered.list.length + " " + registered.source + ": " +
+              registered.list.join(', ') + ").");
     return { ok: false, errorCode: 'STS-OAUTH-0122', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             description: 'RFC 9700 section 2.1: redirect_uri must match one ' +
-                          'of the URIs registered for this client by exact ' +
-                          'string comparison (RFC 3986 section 6.2.1). ' +
-                          '"' + presented + '" matches none ' +
-                              'of the ' +
-                          registered.list.length + ' in ' + registered.source +
-                          ': ' +
-                          registered.list.join(', ') + '.' };
+             description: 'RFC 9700 section 2.1: "' + presented + '" is ' +
+                          'not a redirect URI registered for this client, ' +
+                          'and a redirect_uri must match a registered one ' +
+                          'by exact string comparison (RFC 3986 section ' +
+                          '6.2.1).' };
   }
   log.debug("Leaving checkRedirectUri(). Accepted by " + matched.how + ".");
   return { ok: true, matched: matched.uri, how: matched.how };
@@ -1810,13 +1983,23 @@ function checkPostLogoutRedirectUri(opts) {
       return uriMatches(uri, presented).ok;
     });
     if (!found) {
-      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
+      // `reason` and `citation` are a sentence's (2026-11-04): "<reason>
+      // (<citation>)", where the description is the log's. `notRegistered`
+      // tells the signed-out page to draw its warning box (#1302), which
+      // names the address asked for and, since #1331, never the registered
+      // ones: listing them handed the caller the value to aim at.
+      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered (" +
+                declared.length + " registered: " + declared.join(', ') +
+                ").");
       return { ok: false, errorCode: 'STS-OAUTH-0123',
                error: 'invalid_request', requirement: 'no-open-redirector',
+               reason: 'it is not a post-logout redirect URI this client ' +
+                       'registered',
+               notRegistered: true,
+               citation: 'RP-Initiated Logout 1.0 section 3',
                description: 'RP-Initiated Logout 1.0 section 3: "' +
-                 presented + '" is not among the ' + declared.length +
-                 ' post_logout_redirect_uri(s) this client registered: ' +
-                 declared.join(', ') + '.' };
+                 presented + '" is not a post-logout redirect URI this ' +
+                 'client registered.' };
     }
     log.debug("Leaving checkPostLogoutRedirectUri(). Registered.");
     return { ok: true };
@@ -2112,8 +2295,10 @@ function checkAuthorizationRequest(opts) {
   const types = opts.types || [];
   const client = opts.client;
 
-  // Section 2.1.2 — no access token from the authorization endpoint.
-  if (types.indexOf('token') >= 0) {
+  // Section 2.1.2 — no access token from the authorization endpoint, unless
+  // an administrator waived it in this realm (#1295) AND the application has
+  // the type enabled (#1296, below).
+  if (types.indexOf('token') >= 0 && !implicitWaived()) {
     log.debug("Leaving checkAuthorizationRequest(). The response type issues " +
               "an access token.");
     return { ok: false, errorCode: 'STS-OAUTH-0126',
@@ -2124,6 +2309,37 @@ function checkAuthorizationRequest(opts) {
                           'authorization endpoint. Use response_type=code' +
                           (types.indexOf('id_token') >= 0 ?
                            ' or code id_token' : '') + '.' };
+  }
+
+  // THE REALM MAKES THEM POSSIBLE; THE APPLICATION ENABLES THEM (#1296,
+  // rcbj's decision 2). A waived realm honours a token response type only
+  // for a client whose `oauthAllowedTokenResponseTypes` lists it — empty by
+  // default, and empty means none — written by an administrator, the
+  // application's owner, or a dynamic registration within the realm's own
+  // list. `unauthorized_client`, RFC 6749 sections 4.1.2.1 and 4.2.2.1's
+  // word for a client "not authorized to request an authorization code [or
+  // access token] using this method": the server supports the response
+  // type, which is why it is not 0126's `unsupported_response_type`, and
+  // this client may not use it.
+  if (types.indexOf('token') >= 0) {
+    const asked = types.slice(0).sort().join(' ');
+    const allowed = applications.allowedTokenResponseTypesOf(
+      query.client_id);
+    if (allowed.indexOf(asked) < 0) {
+      log.debug("Leaving checkAuthorizationRequest(). The application does " +
+                "not have the token response type enabled.");
+      return { ok: false, errorCode: 'STS-OAUTH-0998',
+               error: 'unauthorized_client', requirement: 'no-implicit',
+               description: 'RFC 9700 section 2.1.2: this realm allows the ' +
+                            'response types that issue an access token from ' +
+                            'the authorization endpoint only to applications ' +
+                            'that have them enabled, and client "' +
+                            String(query.client_id || '') + '" does not ' +
+                            'have "' + asked + '" enabled ' +
+                            '(oauthAllowedTokenResponseTypes). An ' +
+                            'administrator or the application\'s owner ' +
+                            'enables it.' };
+    }
   }
 
   // OAUTH 2.1 — PKCE FOR CONFIDENTIAL CLIENTS TOO, and the method REQUIRED.
@@ -2160,6 +2376,16 @@ function checkAuthorizationRequest(opts) {
                             'here with a token_endpoint_auth_method other ' +
                             'than "none" is treated as confidential, for ' +
                             'which PKCE is RECOMMENDED rather than required.' };
+    }
+    // EVERY CODE-FLOW CLIENT, IN PRODUCT (#1495, ASVS 5.0.0 10.4.6).
+    if (require('../common/mode').requiresPkceOfEveryClient()) {
+      log.debug("Leaving checkAuthorizationRequest(). A confidential client " +
+                "sent no code_challenge.");
+      return { ok: false, errorCode: 'STS-OAUTH-1002', error: 'invalid_request',
+               requirement: 'pkce-confidential-clients',
+               description: 'This server requires PKCE (RFC 7636) of every ' +
+                            'client. Send code_challenge and ' +
+                            'code_challenge_method=S256.' };
     }
     log.warn('RFC 9700 section 2.1.1: confidential client "' +
              (query.client_id || '') +
@@ -2310,25 +2536,44 @@ function checkClientRegistration(metadata) {
                           'way to make it safe. Register for ' +
                           'authorization_code and use PKCE.' };
   }
-  if (grants.indexOf('implicit') >= 0) {
+  const responses = Array.isArray(meta.response_types) ?
+                    meta.response_types.map(String) : [];
+  const withToken = responses.filter(function (one) {
+    return one.split(/\s+/).indexOf('token') >= 0;
+  });
+  // THE IMPLICIT GRANT IS REFUSED ONLY WHERE NOTHING TOKEN-FREE NEEDS IT
+  // (#1295). RFC 7591 section 2.1 and OpenID Connect Registration pair
+  // `id_token` and `code id_token` with the implicit grant, and the
+  // authorization endpoint allows both in this mode — they issue no access
+  // token there, which is all section 2.1.2 is about. Refusing every
+  // `implicit` made the registration those response types call for
+  // impossible. So it is refused when no registered response type is one
+  // that needs it, and when a token-bearing one is registered beside it (the
+  // grant would then be for that one, which 0134 below refuses on its own).
+  // An administrator's waiver of section 2.1.2 lifts both refusals.
+  const waived = implicitWaived();
+  const tokenFreeIdToken = responses.some(function (one) {
+    const words = one.split(/\s+/);
+    return words.indexOf('id_token') >= 0 && words.indexOf('token') < 0;
+  });
+  if (grants.indexOf('implicit') >= 0 && !waived &&
+      (!tokenFreeIdToken || withToken.length)) {
     log.debug("Leaving checkClientRegistration(). It asked for the implicit " +
-              "grant.");
+              "grant with no token-free response type needing it.");
     return { ok: false, errorCode: 'STS-OAUTH-0133',
              error: 'invalid_client_metadata', requirement: 'no-implicit',
              description: 'RFC 9700 section 2.1.2: the implicit grant issues ' +
                           'an access token from the authorization endpoint, ' +
                           'where it travels through the browser and lands in ' +
                           'history, logs and referrers. This server refuses ' +
-                          'those response types, so it will not register a ' +
-                          'client for the grant either. Register for ' +
-                          'authorization_code.' };
+                          'those response types, so it registers the ' +
+                          'implicit grant only beside `id_token` or `code ' +
+                          'id_token`, which issue no access token there and ' +
+                          'are what RFC 7591 section 2.1 pairs it with. ' +
+                          'Register for authorization_code, or for one of ' +
+                          'those response types.' };
   }
-  const responses = Array.isArray(meta.response_types) ?
-                    meta.response_types.map(String) : [];
-  const withToken = responses.filter(function (one) {
-    return one.split(/\s+/).indexOf('token') >= 0;
-  });
-  if (withToken.length) {
+  if (withToken.length && !waived) {
     log.debug("Leaving checkClientRegistration(). A response type issues an " +
               "access token.");
     return { ok: false, errorCode: 'STS-OAUTH-0134',
@@ -2342,6 +2587,49 @@ function checkClientRegistration(metadata) {
                           'honour. `code` and `code id_token` issue no ' +
                           'access token from that endpoint and are ' +
                           'registrable.' };
+  }
+  // A CLIENT ENABLES A TOKEN RESPONSE TYPE FOR ITSELF ONLY WITHIN THE
+  // REALM'S LIST (#1296, rcbj's decision 3). A waived realm makes these
+  // response types POSSIBLE; each client still needs them enabled, and a
+  // registration that asks for one is the client enabling it for itself —
+  // the types it registers are recorded as its
+  // `oauthAllowedTokenResponseTypes` (applications.js,
+  // applyRegistrationFields()). So it may ask only for what
+  // `oauth2.dynamicRegistrationTokenResponseTypes` names, EMPTY by default:
+  // a production realm that waives section 2.1.2 for one administered
+  // application does not thereby open the flows to every client that
+  // registers itself, and a realm that wants open self-registration of them
+  // (the OpenID Foundation's Dynamic OP plan) says so in a setting of its
+  // own. Its own code rather than 0134's: 0134 says the realm refuses the
+  // types, and this realm allows them — to clients it was told about.
+  // RFC 7592's update asks this same function, so an update follows the
+  // same rule.
+  if (withToken.length) {
+    const selfService = dynamicRegistrationTokenResponseTypes();
+    const outside = withToken.map(function (one) {
+      return one.split(/\s+/).filter(Boolean).sort().join(' ');
+    }).filter(function (one, index, all) {
+      return selfService.indexOf(one) < 0 && all.indexOf(one) === index;
+    });
+    if (outside.length) {
+      log.debug("Leaving checkClientRegistration(). A token response type " +
+                "outside the realm's dynamic-registration list.");
+      return { ok: false, errorCode: 'STS-OAUTH-0999',
+               error: 'invalid_client_metadata', requirement: 'no-implicit',
+               description: 'RFC 9700 section 2.1.2: this realm allows the ' +
+                            'response types that issue an access token from ' +
+                            'the authorization endpoint only to applications ' +
+                            'that have them enabled, and a client ' +
+                            'registering itself may enable only ' +
+                            (selfService.length
+                              ? '"' + selfService.join('", "') + '"'
+                              : 'none of them') +
+                            ' (oauth2.dynamicRegistrationTokenResponseTypes' +
+                            '). ' +
+                            '"' + outside.join('", "') + '" is not on that ' +
+                            'list; ask an administrator to enable it on the ' +
+                            'application, or register for `code`.' };
+    }
   }
   // PRODUCT MODE: A PUBLIC CLIENT MAY NOT REGISTER FOR client_credentials
   // (2026-09-17). OAuth 2.1 refuses the same combination in its own mode
@@ -2967,8 +3255,17 @@ function maxRefreshTokens() {
 // tombstone so an older copy cannot be written back, and `rotated` only moves
 // forward — a node that had not yet heard of a rotation must not write the
 // record back as unrotated, which would make the replay it marks undetectable.
+// ON DEMAND (#820, 2026-10-21): not read back whole at a start — 715,000
+// records on 8081, and as many again in every process — but held as a
+// bounded cache over the store and read by jti when one is presented. Filed
+// by FAMILY (`indexBy`), in memory and in `sts_minted_index`, so a family's
+// members are found by asking rather than by walking every record.
 const refreshTokens = realms.map({
   persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  onDemand: { maxEntries: 50000 },
+  indexBy: function (record) {
+    return record && record.family ? [String(record.family)] : [];
+  },
   // #333: the sweep's `forget`, ms.
   expiresAt: realms.expiryField('forget', 1),
   mergeRow: function (mine, theirs) {
@@ -2992,6 +3289,8 @@ const refreshTokens = realms.map({
 // every issuance — the idle rule refuses earlier but deletes nothing.
 const refreshFamilies = realms.map({
   persist: 'oauth2_bcp.refreshFamilies',
+  // On demand (#820), for `refreshTokens`' reason: read by family id.
+  onDemand: { maxEntries: 50000 },
   expiresAt: realms.expiryField('forget', 1)
 });
 
@@ -3008,6 +3307,14 @@ function forgetStaleRefreshTokens() {
       refreshFamilies.delete(id);
     }
   });
+  // THE CAP IS A BOUND ON WHAT IS HELD, and an on-demand store holds a
+  // bounded cache whatever the population (#820): there every record stays
+  // in the store until its `forget`, and the expiry purge takes it then.
+  // Dropping the oldest held record here would forget a live token.
+  if (refreshTokens.onDemandLive()) {
+    log.debug("Leaving forgetStaleRefreshTokens(). On demand: no cap.");
+    return;
+  }
   const cap = maxRefreshTokens();
   if (refreshTokens.size > cap) {
     // Step 2: retired tokens, oldest first (a Map iterates in insertion order).
@@ -3099,8 +3406,10 @@ function familyForIssuance(jti, parentJti, parentFamily) {
 }
 
 // Every jti this node knows to be in a family: the per-token records, and a
-// legacy `members` array where a restored row still carries one.
-function membersOf(familyId, alsoJti) {
+// legacy `members` array where a restored row still carries one. `accessOut`,
+// where given, also collects the access tokens the records name (#820: what a
+// grant issued is on the refresh token's own row when rotation is on).
+function membersOf(familyId, alsoJti, accessOut) {
   log.debug("Entering membersOf().");
   const wanted = String(familyId || '');
   const out = new Set();
@@ -3108,9 +3417,16 @@ function membersOf(familyId, alsoJti) {
     out.add(String(alsoJti));
   }
   if (wanted) {
-    refreshTokens.forEach(function (record, jti) {
+    // BY THE FAMILY INDEX (#820), not a walk of every record: the store is
+    // not held whole on demand, and the walk was O(every token) at every
+    // revocation and rotation check either way.
+    refreshTokens.lookup(wanted).forEach(function (jti) {
+      const record = refreshTokens.get(jti);
       if (record && record.family === wanted) {
         out.add(String(jti));
+        if (accessOut && record.access) {
+          accessOut.add(String(record.access));
+        }
       }
     });
     const family = refreshFamilies.get(wanted);
@@ -3137,8 +3453,10 @@ function membersOf(familyId, alsoJti) {
  * @param parentJti - the presented token's jti, or '' for a family's root
  * @param clientId - the client
  * @param parentFamily - the presented token's own family claim
+ * @param grant - what the grant issued beside it, `{ access, expSec }`
+ *   (`noteGrantTokens()`'s record, kept on this row instead); optional
  */
-function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
+function noteRefreshIssued(jti, parentJti, clientId, parentFamily, grant) {
   log.debug("Entering noteRefreshIssued(). jti=" + jti + ", parent=" +
             (parentJti || '(root)'));
   // ROTATION IS NO LONGER THE MODE'S ALONE (#34, 2026-09-15): the bookkeeping
@@ -3153,9 +3471,16 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   }
   const familyId = familyForIssuance(jti, parentJti, parentFamily);
   const forget = Date.now() + refreshFamilyWindowMs();
+  // WHAT THE GRANT ISSUED, ON THIS ROW (2026-10-22, #820): the access token
+  // minted beside it, kept as long as `grantTokens` would have kept it, so
+  // that `noteGrantTokens()` writes nothing while rotation is on — one of a
+  // refresh's 13.6 writes, every process applying it. `grantMembersOf()`
+  // reads it here; an older `grantTokens` row is still read there.
+  const kept = grant ? grantForgetOf(grant.expSec) : 0;
   refreshTokens.set(String(jti),
                     { family: familyId, clientId: String(clientId || ''),
-                                   rotated: false, forget: forget });
+                      rotated: false, forget: Math.max(forget, kept),
+                      access: grant ? String(grant.access || '') : '' });
   const known = refreshFamilies.get(familyId);
   // NO `members` ARRAY IS WRITTEN — see (2) above. What the row still holds
   // is the family's clock, and a lost update of either field between two
@@ -3170,7 +3495,17 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
         // lifetime wearing a different name.
         lastUsedAt: Date.now() };
   refreshFamilies.set(familyId, family);
-  forgetStaleRefreshTokens();
+  // THE BOUND AT THE INSERT, THE EXPIRY IN A JOB (#761, the root CLAUDE.md's
+  // rule for periodic work). This walked every record and every family on
+  // every issuance to drop the expired ones — a cost that grew with the
+  // population (1.2% of a request worker at 20,000 families on 8081, and
+  // the cap is a million). Expired records go in `caches.eject-expired`,
+  // every minute in every process (`refreshBookkeeping`, below); the cap is
+  // still kept here, by the same sweep, once the realm is past it.
+  if (!refreshTokens.onDemandLive() &&
+      refreshTokens.size > maxRefreshTokens()) {
+    forgetStaleRefreshTokens();
+  }
   log.debug("Leaving noteRefreshIssued(). Family " + familyId + ".");
 }
 
@@ -3201,8 +3536,14 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
 // safe direction — it still expires — and is logged.
 // ---------------------------------------------------------------------------
 // refresh jti -> { family, access, clientId, forget }
+// On demand and filed by family (#820), for `refreshTokens`' reason.
 const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
                                  tombstone: true,
+                                 onDemand: { maxEntries: 50000 },
+                                 indexBy: function (record) {
+                                   return record && record.family
+                                     ? [String(record.family)] : [];
+                                 },
                                  // #333: the sweep's `forget`, ms.
                                  expiresAt: realms.expiryField('forget', 1) });
 
@@ -3214,7 +3555,8 @@ function forgetStaleGrantTokens() {
       grantTokens.delete(jti);
     }
   });
-  const cap = 2 * maxRefreshTokens();
+  // No cap on demand (#820), for `forgetStaleRefreshTokens()`' reason.
+  const cap = grantTokens.onDemandLive() ? Infinity : 2 * maxRefreshTokens();
   let dropped = 0;
   while (grantTokens.size > cap) {
     const oldest = grantTokens.keys().next();
@@ -3233,6 +3575,17 @@ function forgetStaleGrantTokens() {
   }
   log.debug("Leaving forgetStaleGrantTokens(). " + grantTokens.size + " " +
             "remembered.");
+}
+
+// How long what a grant issued is kept: until the later of its tokens'
+// expiries, plus the clock skew; the family window where there is none.
+function grantForgetOf(expSec) {
+  log.debug("Entering grantForgetOf().");
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const exp = Number(expSec);
+  log.debug("Leaving grantForgetOf().");
+  return (isFinite(exp) && exp > 0 ? exp * 1000 : Date.now() +
+          refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0);
 }
 
 // Called from `refreshToken()` in `oauth2.ts`, the one function that mints a
@@ -3254,18 +3607,97 @@ function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
     log.debug("Leaving noteGrantTokens(). Nothing to record.");
     return;
   }
-  const skew = Number(config.value('oauth2.clockSkewS'));
-  const exp = Number(expSec);
+  // WITH ROTATION ON, `noteRefreshIssued()` already wrote this on the refresh
+  // token's own row (#820).
+  if (senderConstraints.rotationRequired()) {
+    log.debug("Leaving noteGrantTokens(). On the refresh token's row.");
+    return;
+  }
   grantTokens.set(String(refreshJti), {
     family: String(familyId),
     access: String(accessJti || ''),
     clientId: String(clientId || ''),
-    forget: (isFinite(exp) ? exp * 1000 : Date.now() +
-             refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0)
+    forget: grantForgetOf(expSec)
   });
-  forgetStaleGrantTokens();
+  // The bound here, the expiry in the job (#761), as `noteRefreshIssued()`.
+  if (!grantTokens.onDemandLive() &&
+      grantTokens.size > 2 * maxRefreshTokens()) {
+    forgetStaleGrantTokens();
+  }
   log.debug("Leaving noteGrantTokens().");
 }
+
+// ---------------------------------------------------------------------------
+// THE THREE STORES ABOVE, DESCRIBED TO `/admin/caches` AND EJECTED BY ITS JOB
+// (#761, rule 3ap). `caches.eject-expired` calls `eject()` every minute in
+// every process; it deletes exactly what the insert-time sweep did — a
+// record whose `forget` has passed — so what a reader can find is what it
+// could find before, for a shorter time: the sweep ran only at the realm's
+// next issuance, and on an idle realm never. The cap stays at the insert.
+// One row per realm, with the counts: a row per record would be a million.
+// A hit is a refresh whose record was found when it was rotated.
+// ---------------------------------------------------------------------------
+function staleRecord(record, key, now) {
+  return !record || record.forget < now;
+}
+
+const refreshBookkeepingCount = cacheRegistry.register({
+  name: 'oauth2.refresh-token-bookkeeping',
+  title: 'Refresh token rotation records',
+  description: 'A record per refresh token and per family, so a replayed ' +
+    'refresh token revokes its family (RFC 9700), and what each grant ' +
+    'issued, so revoking a refresh token revokes the access token beside ' +
+    'it (RFC 7009).',
+  owner: 'oauth-oidc/oauth2_bcp.js',
+  scope: 'realm',
+  kind: 'replay',
+  settings: ['oauth2.maxRefreshTokenFamilies'],
+  maxEntries: function () {
+    log.debug("Entering the refresh bookkeeping's maxEntries().");
+    log.debug("Leaving the refresh bookkeeping's maxEntries().");
+    return maxRefreshTokens();
+  },
+  bound: 'Enforced: oauth2.maxRefreshTokenFamilies refresh-token records ' +
+    'per realm, twice that for what a grant issued; past it the retired ' +
+    'ones go first, then the oldest, with a warning.',
+  lifetime: function () {
+    log.debug("Entering the refresh bookkeeping's lifetime().");
+    log.debug("Leaving the refresh bookkeeping's lifetime().");
+    return 'Until the family window after the token was issued has passed; ' +
+      'the caches.eject-expired job then drops the record.';
+  },
+  entries: function () {
+    log.debug("Entering the refresh bookkeeping's entries().");
+    const out = [];
+    realms.list().forEach(function (r) {
+      const tokens = refreshTokens.realmMap(r.id);
+      const families = refreshFamilies.realmMap(r.id);
+      const grants = grantTokens.realmMap(r.id);
+      const n = (tokens ? tokens.size : 0);
+      if (!n && !(families && families.size) && !(grants && grants.size)) {
+        return;
+      }
+      out.push({ realm: r.id,
+                 key: n + ' token(s), ' + (families ? families.size : 0) +
+                   ' famil(ies), ' + (grants ? grants.size : 0) +
+                   ' grant record(s)',
+                 validUntil: null, valid: true,
+                 basis: 'each record\'s forget' });
+    });
+    log.debug("Leaving the refresh bookkeeping's entries().");
+    return out;
+  },
+  eject: function (now) {
+    log.debug("Entering the refresh bookkeeping's eject().");
+    const at = typeof now === 'number' ? now : Date.now();
+    const total = cacheRegistry.realmMapEjector(realms, refreshTokens,
+                                                staleRecord)(at) +
+      cacheRegistry.realmMapEjector(realms, refreshFamilies, staleRecord)(at) +
+      cacheRegistry.realmMapEjector(realms, grantTokens, staleRecord)(at);
+    log.debug("Leaving the refresh bookkeeping's eject(). " + total);
+    return total;
+  }
+});
 
 // The family a presented refresh token belongs to: what its own token says,
 // then what either record here says, then the token itself as the root of a
@@ -3301,9 +3733,17 @@ function familyOfRefresh(claims) {
 function grantMembersOf(familyId, alsoJti) {
   log.debug("Entering grantMembersOf().");
   const wanted = String(familyId || '');
-  const out = new Set(membersOf(wanted, alsoJti));
+  // The access tokens the refresh tokens' own rows name (#820), beside the
+  // older `grantTokens` rows below.
+  const access = new Set();
+  const out = new Set(membersOf(wanted, alsoJti, access));
+  access.forEach(function (jti) {
+    out.add(jti);
+  });
   if (wanted) {
-    grantTokens.forEach(function (record, jti) {
+    // By the family index (#820), as `membersOf()`.
+    grantTokens.lookup(wanted).forEach(function (jti) {
+      const record = grantTokens.get(jti);
       if (record && record.family === wanted) {
         out.add(String(jti));
         if (record.access) {
@@ -3319,6 +3759,9 @@ function grantMembersOf(familyId, alsoJti) {
 // How long a family revoked by a replay stays revoked: as long as any member
 // minted before the revocation could still be presented. The window is the
 // family bookkeeping's own, and the client's lifetime where it is longer.
+// settingFor() rather than hostedEffective() (#825): a token already issued
+// at the client's own lifetime must stay inside the revocation mark even
+// after the realm cap is lowered.
 function familyRevocationTtlMs(clientId) {
   log.debug("Entering familyRevocationTtlMs().");
   const perClient = Number(applications.settingFor(String(clientId || ''),
@@ -3347,6 +3790,10 @@ function revokeFamily(familyId, clientId) {
     log.debug("Leaving revokeFamily(). No family.");
     return Promise.resolve(false);
   }
+  // Said BEFORE the claim, while the request that revokes is still being
+  // answered: a member of this family refreshed on another worker waits for
+  // this answer's ticket (the review of #879).
+  RevokingWrites.note('refresh family ' + familyId + ' revoked');
   log.debug("Leaving revokeFamily(). Claiming the mark.");
   return clusterClaims.claim({
     scope: 'oauth.refresh-family-revoked', value: String(familyId),
@@ -3403,6 +3850,28 @@ function revokeFamily(familyId, clientId) {
  * @returns a promise of `{ ok: true, handle }`, or a refusal in
  *   `checkRefreshRequest()`'s shape with `revoke`
  */
+/**
+ * Reads the presented refresh token's record and its family together,
+ * off the event loop, before the checks that ask for them (2026-10-21,
+ * #820): see `warm()` in common/realms.js.
+ *
+ * @param claims - the opened refresh token's claims
+ * @returns a promise settled when both are held, absent or not read
+ */
+function warmRefresh(claims) {
+  log.debug("Entering warmRefresh().");
+  const c = claims || {};
+  const jti = String(c.jti || '');
+  const family = String(c[FAMILY_CLAIM] || '');
+  log.debug("Leaving warmRefresh().");
+  return Promise.all([
+    jti ? refreshTokens.warm([jti]) : null,
+    family ? refreshFamilies.warm([family]) : null
+  ]).then(function () {
+    return undefined;
+  });
+}
+
 async function spendRefreshToken(opts) {
   log.debug("Entering spendRefreshToken().");
   if (!senderConstraints.rotationRequired()) {
@@ -3420,6 +3889,39 @@ async function spendRefreshToken(opts) {
   const familyId = String((known && known.family) || claims[FAMILY_CLAIM] ||
                           '');
   const clientId = String(claims.client_id || '');
+  // THE CLAIM IS ASKED BESIDE THE FAMILY QUESTION, NOT AFTER IT (2026-10-21,
+  // #820): two round trips to the claim store in a row on every refresh,
+  // where neither answer depends on the other. The family's answer still
+  // decides first; a claim won meanwhile is released as any claim on a
+  // refused request is (`releaseUnlessSucceeded()`), and one that is not
+  // waited for is still settled, so its failure is never unhandled.
+  const expiresMs = Number(claims.exp) * 1000;
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const claiming = clusterClaims.claim({
+    scope: 'oauth.refresh', value: jti,
+    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
+                                : refreshFamilyWindowMs()) +
+           (isFinite(skew) ? skew * 1000 : 0),
+    // THE SPEND DOES NOT WAIT FOR ITS OWN WAL FLUSH (#886). It has to be
+    // visible before the mint, so another worker presenting the same token
+    // loses. It must not be its own fsync: postgres flushes the log one
+    // fsync at a time, and this claim plus the minted flush were two of
+    // them on every refresh. The minted flush of the new refresh token
+    // stays synchronous, and that commit flushes the log through its own
+    // position, this claim's record included. The response is not sent
+    // until that flush returns, so a crash before it loses a token that
+    // was not issued. The token's own row is not written this way.
+    noFlushWait: true
+  });
+  const settleUnused = function () {
+    claiming.then(function (unused) {
+      if (unused && unused.ok) {
+        clusterClaims.releaseUnlessSucceeded(o.res, unused.handle);
+      }
+    }, function (e) {
+      log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
+    });
+  };
   if (familyId) {
     let revoked = false;
     try {
@@ -3427,6 +3929,7 @@ async function spendRefreshToken(opts) {
         scope: 'oauth.refresh-family-revoked', value: familyId
       });
     } catch (e) {
+      settleUnused();
       log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
       log.error(errorCodes.tag('STS-OAUTH-0518') + 'RFC 9700 mode: whether ' +
                 'refresh family ' + familyId + ' was revoked could not be ' +
@@ -3436,6 +3939,7 @@ async function spendRefreshToken(opts) {
       return storeRefusal();
     }
     if (revoked) {
+      settleUnused();
       log.warn('RFC 9700 section 2.2.2: refresh token ' + jti + ' belongs ' +
                'to family ' + familyId + ', which a replay has already ' +
                'revoked. Refused, and revoked itself.');
@@ -3451,14 +3955,7 @@ async function spendRefreshToken(opts) {
                             'request.' };
     }
   }
-  const expiresMs = Number(claims.exp) * 1000;
-  const skew = Number(config.value('oauth2.clockSkewS'));
-  const answer = await clusterClaims.claim({
-    scope: 'oauth.refresh', value: jti,
-    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
-                                : refreshFamilyWindowMs()) +
-           (isFinite(skew) ? skew * 1000 : 0)
-  });
+  const answer = await claiming;
   if (answer.ok) {
     clusterClaims.releaseUnlessSucceeded(o.res, answer.handle);
     log.debug("Leaving spendRefreshToken(). Spent.");
@@ -3516,6 +4013,11 @@ function noteRefreshRotated(jti) {
     return;
   }
   const known = refreshTokens.get(String(jti));
+  if (known) {
+    refreshBookkeepingCount.hit();
+  } else {
+    refreshBookkeepingCount.miss();
+  }
   if (known) {
     known.rotated = true;
     // THROUGH THE STORE, for noteRedeemed()'s reason: this is the mark that
@@ -3585,10 +4087,15 @@ function coreRefreshRefusal(claims, body, presentedClient) {
                description: 'RFC 6749 section 6: a refresh must not request ' +
                             'a scope the original grant did not carry ' +
                             '(and RFC 9700 section 2.3 restricts a token\'s ' +
-                            'privileges to the minimum). This grant carries ' +
-                            '"' + (claims.scope || '') + '" ' +
-                            'and the request asks additionally ' +
-                            'for: ' + extra.join(', ') + '.' };
+                            'privileges to the minimum). ' +
+                            // A grant with no scope is said to carry none,
+                            // rather than quoted as "".
+                            (claims.scope
+                              ? 'This grant carries "' + claims.scope +
+                                '" and the request asks additionally for: '
+                              : 'This grant carries no scope, and the ' +
+                                'request asks for: ') +
+                            extra.join(', ') + '.' };
     }
   }
   log.debug("Leaving coreRefreshRefusal(). Nothing refused.");
@@ -3687,7 +4194,10 @@ function checkRefreshRequest(opts) {
   // PER CLIENT: the presented client's own `oauthRefreshIdleSeconds` where it
   // has one. A deployment giving a background job a long idle window and a
   // browser client a short one is the ordinary case this serves.
-  const idleSeconds = applications.settingFor(presentedClient,
+  // #825: the console, the portal and the reports application take the
+  // shorter of their own bound and the realm, and an absent bound uses the
+  // shipped number rather than a realm idle of 0.
+  const idleSeconds = applications.hostedEffective(presentedClient,
                                              'oauth2.refreshIdleSeconds',
                                              config);
   if (idleSeconds > 0 && known && known.family) {
@@ -3888,9 +4398,8 @@ function codeRedemptionRelaxed() {
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
-  // that answered an identical repeat with the same tokens is now an opt-in
-  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode), for
-  // the parent project's development-mode job that still asserts it.
+  // that answered an identical repeat with the same tokens is an opt-in
+  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode).
   if (!enabled() && config.value('oauth2.codeReplayIdempotent')) {
     log.debug("Leaving checkCodeReplay(). RFC 9700 mode is off and " +
               "oauth2.codeReplayIdempotent is on; the relaxation stands.");
@@ -4209,20 +4718,30 @@ function applyToMetadata(metadata) {
     log.debug("Leaving applyToMetadata(). RFC 9700 mode is off.");
     return metadata;
   }
-  if (Array.isArray(metadata.response_types_supported)) {
+  // Section 2.1.2's response types stay where an administrator waived it in
+  // this realm (#1295) — what the endpoint accepts is what is advertised.
+  if (Array.isArray(metadata.response_types_supported) && !implicitWaived()) {
     metadata.response_types_supported =
         metadata.response_types_supported.filter(function (type) {
       return String(type).split(/\s+/).indexOf('token') < 0;
     });
   }
   if (Array.isArray(metadata.grant_types_supported)) {
-    // `implicit` (section 2.1.2) and `password` (section 2.4) both come out. A
-    // metadata document is a promise the endpoint has to keep, and the token
-    // endpoint now refuses both — a client configured from a list that still
-    // named them would be misled by this server rather than by its own code.
+    // `password` (section 2.4) comes out: the token endpoint refuses it, and
+    // a client configured from a list that still named it would be misled by
+    // this server rather than by its own code.
+    //
+    // `implicit` STAYS WHILE A RESPONSE TYPE THAT USES IT IS ADVERTISED
+    // (#1295). It came out with the token response types until then, which
+    // left `id_token` and `code id_token` advertised beside a grant list
+    // without the grant RFC 7591 section 2.1 and OpenID Connect Discovery
+    // pair them with — and registration refused that grant too. Decided by
+    // impliesImplicitGrant(), which fapi.js's narrowing asks again.
+    const keepImplicit = impliesImplicitGrant(
+      metadata.response_types_supported);
     metadata.grant_types_supported = metadata.grant_types_supported.filter(
         function (grant) {
-      return grant !== 'implicit' && grant !== 'password';
+      return grant !== 'password' && (grant !== 'implicit' || keepImplicit);
     });
   }
   // S256 only, since `plain` is refused at the authorization endpoint. This is
@@ -4234,6 +4753,31 @@ function applyToMetadata(metadata) {
   oauth21.applyToMetadata(metadata);
   log.debug("Leaving applyToMetadata(). The mode narrowed three members.");
   return metadata;
+}
+
+// Whether a response_types_supported list needs the implicit grant beside it:
+// any value naming `token` or `id_token` (RFC 7591 section 2.1's table).
+// A list that is not an array says nothing, and is read as needing it, so the
+// grant is never dropped on a document this function did not see.
+/**
+ * Tells whether a `response_types_supported` list carries a response type
+ * that RFC 7591 section 2.1 pairs with the implicit grant.
+ *
+ * @param types - the list
+ * @returns true when the implicit grant belongs beside it
+ */
+function impliesImplicitGrant(types) {
+  log.debug("Entering impliesImplicitGrant().");
+  if (!Array.isArray(types)) {
+    log.debug("Leaving impliesImplicitGrant(). No list.");
+    return true;
+  }
+  const needs = types.some(function (type) {
+    const words = String(type).split(/\s+/);
+    return words.indexOf('token') >= 0 || words.indexOf('id_token') >= 0;
+  });
+  log.debug("Leaving impliesImplicitGrant(). " + needs);
+  return needs;
 }
 
 // What GET /oauth2/rfc9700 publishes, and what a test reads to find out whether
@@ -4258,7 +4802,8 @@ function state() {
         (mainPortIsTls() ? 'https.' : 'http, because global.https has been ' +
                                       'turned off.')
       : 'Nothing below is being enforced. This service behaves as the ' +
-        'permissive mock it is, which is the default. Set oauth2.rfc9700 to ' +
+        'permissive service it is, which is the default. Set oauth2.rfc9700 ' +
+        'to ' +
         'turn the mode on.',
     // WHICH FLAG turned it on. `oauth2.oauth21` implies this mode, and without
     // this member a realm carrying only that one would read here as enforcing
@@ -4275,6 +4820,13 @@ function state() {
       'oauth2.fapi': fapi.profile() || null,
       'oauth2.redirectUris': configuredRedirectUris(),
       'oauth2.loopbackPortWildcard': loopbackPortWildcard(),
+      // #1295: the stored value, beside `waived` below, which is whether it
+      // is in force (OAuth 2.1 and FAPI ignore it).
+      'oauth2.allowImplicitTokenResponses':
+        !!config.value('oauth2.allowImplicitTokenResponses'),
+      // #1296: what a client registering itself may enable, canonical.
+      'oauth2.dynamicRegistrationTokenResponseTypes':
+        dynamicRegistrationTokenResponseTypes(),
       'global.https': mainPortIsTls(),
       // Not part of this mode and reported beside it anyway: a client author
       // reading this page to find out what it is talking to needs to know that
@@ -4303,6 +4855,10 @@ function state() {
     // The same five as one block, with what turned rotation on — the console
     // page and both reports read this rather than each deciding for itself.
     sender_constraints: senderConstraints.state(),
+    // #1295: what an administrator waived in this realm, as data — the
+    // `no-implicit` row says `waived` and why; this is the list a caller
+    // reads without scanning the rows.
+    waived: waivers(),
     // Reported beside the settings because it is the one thing here that a
     // caller cannot infer from its own request: it already knows what scheme it
     // used, and what it wants to know is whether that was the only option.
@@ -4354,6 +4910,14 @@ capabilities.provide('oauth.refresh-rotation');
 module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,
+  // #1295: section 2.1.2 waived by an administrator, and the list of waivers.
+  implicitWaived: implicitWaived,
+  waivers: waivers,
+  // #1296: whether an application may have them enabled, and what a client
+  // registering itself may enable.
+  tokenResponsesAllowed: tokenResponsesAllowed,
+  dynamicRegistrationTokenResponseTypes: dynamicRegistrationTokenResponseTypes,
+  impliesImplicitGrant: impliesImplicitGrant,
   isConfidential: isConfidential,
   declaredPublic: declaredPublic,
   credentialOnFile: credentialOnFile,
@@ -4379,6 +4943,7 @@ module.exports = {
   // which this file may require and which may never require this file back.
   rotationRequired: senderConstraints.rotationRequired,
   spendRefreshToken: spendRefreshToken,
+  warmRefresh: warmRefresh,
   revokeFamily: revokeFamily,
   revokeRefreshOnLogout: revokeRefreshOnLogout,
   noteTokenBinding: noteTokenBinding,

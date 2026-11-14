@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # THE FIREWALL: AWS'S THREE SECURITY GROUPS, COLLAPSED INTO RULES ON THE NODES.
 #
-#   allowed_cidrs ──443,389,636,80,88,8092,8181──▶ (LB address) ──▶ nodes
+#   allowed_cidrs ──443,636,80,88,8092,8181──▶ (LB address) ──▶ nodes
 #   health checkers ──443──────────────────────────────────────────▶ nodes
 #   nodes ──443 (Google APIs, ACME) / 53 (DNS-01 checks) ──▶ internet
 #   nodes ──5432──▶ the database's PSC endpoint

@@ -1,0 +1,6 @@
+{
+  "gnap.cells.note": {
+    "en": "26de01686adb3d1c",
+    "text": "Las concesiones que tiene esta celda. Una concesión se crea donde llega su cliente y se traslada a la celda de origen de su propietario de recursos antes de aprobarse, así que normalmente son todas; una concesión cuya instancia de cliente está registrada en otra celda se queda allí, y allí se lista y se revoca."
+  }
+}

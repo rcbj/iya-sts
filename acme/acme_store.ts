@@ -49,7 +49,7 @@
 // `AcmeStore` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import realms = require('../common/realms');
@@ -87,6 +87,10 @@ const certificates = realms.map({ persist: 'acme.certificates' });
 // RFC 9773 certID -> certificate id.
 const renewals = realms.map({ persist: 'acme.renewalInfo' });
 // The random part of every Replay-Nonce already presented, with its expiry.
+// KEYED BY ITS `credentialDigest()` (#614): a spent nonce is only ever asked
+// about, so the store holds no nonce, spent or not — the issue's rule for
+// every one-time value, applied here although a Replay-Nonce is public and
+// MAC-bound and grants nothing on its own.
 const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age',
                                 // #333: the value IS the expiry, seconds.
                                 expiresAt: realms.expiryField(null, 1000) });
@@ -161,7 +165,7 @@ const MAX_ORDERS_PER_ACCOUNT = 1000;
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface AcmeStoreDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   log: typeof log;
   claims: typeof claims;
   cellLocator: typeof cellLocator;
@@ -178,7 +182,7 @@ class AcmeStore {
   /**
    * Creates the store.
    *
-   * @param deps - node's crypto, the logger and the cluster claims
+   * @param deps - `common/crypto.js`, the logger and the cluster claims
    */
   constructor(private readonly deps: AcmeStoreDeps) {
     deps.log.debug("Entering AcmeStore.constructor().");
@@ -196,7 +200,7 @@ class AcmeStore {
     log.debug("Entering AcmeStore.defaultDeps().");
     log.debug("Leaving AcmeStore.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       log: log,
       claims: claims,
       cellLocator: cellLocator
@@ -220,10 +224,10 @@ class AcmeStore {
   // base64url characters more (28 or 32 in all), inside `ID_PATTERN`'s 8 to
   // 64; nothing in a single-cell service.
   newId(bytes) {
-    const { log, nodeCrypto, cellLocator } = this.deps;
+    const { log, stsCrypto, cellLocator } = this.deps;
     log.debug("Entering AcmeStore.newId().");
     log.debug("Leaving AcmeStore.newId().");
-    return cellLocator.stamp(nodeCrypto.randomBytes(bytes || 15)
+    return cellLocator.stamp(stsCrypto.randomBytes(bytes || 15)
       .toString('base64url'));
   }
 
@@ -592,9 +596,10 @@ class AcmeStore {
    * @returns true when spent now
    */
   spendNonce(id, expiresS) {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeStore.spendNonce().");
-    if (usedNonces.has(id)) {
+    const key = stsCrypto.credentialDigest(String(id));
+    if (usedNonces.has(key)) {
       usedNoncesCount.hit();
       log.debug("Leaving AcmeStore.spendNonce(). Already spent.");
       return false;
@@ -619,7 +624,7 @@ class AcmeStore {
       log.debug("Leaving AcmeStore.spendNonce(). The history is full.");
       return false;
     }
-    usedNonces.set(id, Number(expiresS));
+    usedNonces.set(key, Number(expiresS));
     log.debug("Leaving AcmeStore.spendNonce(). Spent.");
     return true;
   }

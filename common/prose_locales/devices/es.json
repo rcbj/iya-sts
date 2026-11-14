@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "OpenID Connect Native SSO for Mobile Apps: la concesión de código de autorización de la primera aplicación con el ámbito device_sso crea el dispositivo y le entrega un device_secret, con hash en la entrada y válido solo para esa sesión de inicio de sesión."
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "Un administrador, en Directorio → Dispositivos o POST /admin-api/devices/create: propiedad de una persona o de una aplicación, con claves introducidas por valor. Una clave agregada así se registra como no demostrada por nadie y autoafirmada."
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "El propietario en /portal/devices (o sus puertas JSON, POST /portal/devices/challenge y /portal/devices/proof), demostrando una clave: un JWS device-key-proof+jwt sobre un desafío vinculado a su sesión — con una Android Key Attestation en su x5c, o en su lugar una declaración de Apple App Attest — o vinculando una credencial de plataforma WebAuthn que registró, con una aserción reciente."
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "simpleenroll de EST (RFC 7030) en /.well-known/est/device/: un certificado emitido a la entrada de dispositivo que nombra el urn:sts:device:<id> de la solicitud — o a una nueva, propiedad del solicitante — con una atestación de clave TPM (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). El propietario para su propio dispositivo, Admin Write para cualquiera."
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "PKCSReq de SCEP (RFC 8894) con una contraseña de desafío emitida para el perfil de dispositivo — lo mismo, para los dispositivos que solo hablan ese protocolo."
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "El certificado de cliente de la conexión TLS — en un inicio de sesión y en el endpoint de token (RFC 8705) — identificado por el SHA-256 de su SubjectPublicKeyInfo, de modo que un certificado renovado sobre la misma clave es el mismo dispositivo. El handshake demuestra la posesión; se registra si la cadena se verificó, y un certificado rechazado por revocación no se reconoce."
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "Una prueba DPoP en el endpoint de token, identificada por su jkt — la huella RFC 7638 que lleva toda clave jwk."
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "Una aserción WebAuthn en un inicio de sesión cuya credencial está vinculada al dispositivo."
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "El device_secret de Native SSO, mientras la sesión de inicio de sesión para la que se emitió siga activa."
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "el miembro device en session-established, session-presented y session-revoked"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked (cuando risc.autoEmitTypes lo nombra; no de forma predeterminada)"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "complejo: device (iss_sub — el emisor de este dominio y el id del dispositivo) y user (el propietario, cuando es una persona)"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "el registeredDevice del evento de autenticación (authn.registeredDeviceOf(session) lee el más reciente)"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "el registered_device de la solicitud de emisión, antes de la puerta de emisión"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "la clave por valor de un administrador se acepta en ambos modos, registrada con prueba admin y autoafirmada"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "SCEP no tiene operación de nonce, así que una declaración TPM sobre él nunca se muestra como reciente"
+  }
+}

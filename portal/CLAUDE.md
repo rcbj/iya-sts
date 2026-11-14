@@ -1,5 +1,104 @@
 # CLAUDE.md — `portal/`
 
+## A STATIC APPLICATION SINCE #568 (2026-10-12) — READ THIS FIRST — rule 3ck
+
+**The portal is drawn in the browser now**, on the admin console's pattern
+(#446). `/portal` and every path under it answer one document
+(`portal.ts`), which loads `/portal/portal.js` — the runtime and every page's
+renderer — and `/portal/portal.css`. The runtime signs in as the PUBLIC client
+`sts-user-portal` (PKCE, `account:manage`, every token DPoP-bound to a key the
+browser cannot export, held in memory), draws every page from an
+`/account-api` operation and sends every form to the operation that mirrors
+it. `account-api/CLAUDE.md` argues the API, its gate and its answer
+conventions. rcbj's four decisions on #568: the console's pattern (reversing
+#444's D9 for the portal), `/account-api`, the pages for nobody drawn the same
+way, and the console-session adoption dropped.
+
+| Files | What they are |
+|---|---|
+| `portal.ts` | The server half that is left: the shell (drawn and sent through `common/shell_document.ts` since #570, its bytes unchanged), its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
+| `account_*.ts` (seven), `portal_*.ts` (fourteen) | Each page family's `/account-api` operations — the page's view and its forms — with the reasoning below. The seven `account_*` modules are the pages that were in `portal.ts`. |
+| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn; since #570 `PortalRuntime extends SpaClient extends WebPage`, `common/web_spa_client.ts` and `common/web_page.ts`, whose `publicJson()`, `formFields()`, `realmLinks()`, `targetFragment()` and `saveBase64()` it inherits — `common/CLAUDE.md`, 3cl), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row) and one renderer module per family. |
+
+**WHAT THE SECTIONS BELOW SAY THAT IS NO LONGER SO**, read with this table
+rather than rewritten one by one, because most of each section is about what
+a page DOES, which did not change:
+
+| The section says | Since #568 |
+|---|---|
+| a page is drawn by a method of `Portal` and answered by a route here | it is drawn by its `web_*.ts` renderer from its operation's answer |
+| `requireSignIn()`, the portal's relying-party session, `sts_portal`, `oidcRp.renewal('portal')` | gone: the token is the session, and `/account-api`'s gate asks what `requireSignIn()` asked — the access policy included |
+| a CSRF token on every form (A07) | gone with the cookie it guarded: a request is a DPoP-bound token and a proof by a key no other page holds |
+| a write answers 303 with `?done=` | it answers `{ ok, message }` in the person's language; a secret shown once is a `view` drawn in place |
+| every page here but a few is `script-src 'none'`, and a page that "has no script" or "runs no script" | every `/portal/*` path is the one shell under `script-src 'self'` and `connect-src 'self'`, and every page runs `/portal/portal.js`; what "no script" still means is that the page needs nothing in the browser beyond drawing its answer and sending its forms |
+| `/authn/webauthn.js` on `/portal/keys`, `/portal/activate`, `/portal/devices`; `/portal/copy.js` on `/portal/mfa` | the runtime runs the ceremonies and reveals the Copy buttons (`web_portal_webauthn.ts`); the four scripted-page rows are one in the root `CLAUDE.md` |
+| the `Location`-header bug and `oidc_rp.js`'s choke point | the runtime builds its own authorization request under the realm's prefix |
+| `NAV` in `portal.ts` | `NAV` in `web_portal_kit.ts`, read by the frame and by `paths()` |
+| the console-session adoption (2026-09-30) | DROPPED: single sign-on through `/oauth2/authorize` covers it |
+
+**THE RULE THAT MATTERS MORE THAN THE REST IS UNCHANGED AND IS HELD AT THE
+API**: no operation takes a username, an id or a DN naming whose account it
+acts on — the person is the token's subject.
+
+### A link to the documentation (#895)
+
+Every portal page links to the public documentation
+(`https://rcbj.github.io/iya-sts/`), chosen by `common/web_doc_links.ts`. A
+new portal page owes its row there in the same change that adds the page.
+`tests/doc_links.js` fails without it. A signed-in page draws it at the top
+of `.main`, above a flash (`PortalShell.frame()`). A page drawn for nobody
+— activation, a password reset, forgot-password, verify-email — draws the
+same link in `drawView()` before `PortalShell.bare()`. A problem page and
+"not a page" do not: `bare()` stays path-agnostic.
+
+
+### A realm's sign-in appearance (#717, 2026-11-04)
+
+rcbj's D4 on #717 puts the portal among the surfaces that take a realm's
+appearance (`common/branding.ts`; `common/CLAUDE.md` has the design). The
+portal does not link the card's stylesheet, so it takes it in three places
+of its own:
+
+* **The shell says `branded: true`** (`Portal.shellDocument()`), so
+  `ShellDocument` links the realm's `/web/theme.css` after `/portal/portal.css`
+  and puts the brand facts on `<html>` — and, for a realm that set nothing,
+  neither: the shell is the bytes it was (`tests/web_foundation.js` A).
+* **The stylesheet reads the custom properties** (`PortalKit.themed()` over
+  the rules as written, `STYLE_AS_WRITTEN`): every colour a realm may set
+  becomes `var(--sts-…, <the literal it replaced>)`, so with no theme linked
+  the portal draws what it did. Its accent's fallback is the PORTAL'S blue
+  (`#2c5cc5`), not the card's indigo, because that is what it always drew.
+  **A realm's `theme.css` carries only the properties it changed**
+  (`common/branding.ts`, `DEFAULT_PROPERTIES`), so a realm that only
+  uploaded a logo, or changed only its page colour, keeps the portal's own
+  blue; a realm that set an accent draws it here as on the sign-in screen. The semantic colours (an error's red, a
+  success's green) and the mid greys stay literal. The two buttons that are
+  NOT in the accent (`button.danger`, `.secondary`) write their white
+  `#ffffff`, which `themed()` skips, so a light accent's black button text
+  never lands on dark red. The tints (a hover, a tag, a just-generated row,
+  a code's ground) were written for a white card; under a realm's theme
+  they are mixed from its colours (`BRAND_CSS`, `color-mix()`, at
+  `:where()` specificity), and a browser without `color-mix()` keeps the
+  literal.
+* **The runtime draws the header**: `PortalRuntime.put()` — the one place
+  every page, framed or bare, is put in the document — draws
+  `WebSurface.brandHeader()` from `WebSurface.brandOf(<html>)` above the
+  page and ends the title with the realm's display name instead of
+  `IYA STS`. One copy of the header's markup and escaping: the portal
+  imports the public runtime for its two static methods rather than drawing
+  its own.
+
+**THE LAYOUT: `centered` is the header above the page; `banner` AND `split`
+are both a band in the accent colour across the top.** The portal is not a
+card: it is a column of navigation beside a column of cards, and the split
+panel beside that would be a third column, which leaves a phone nothing. So
+the portal draws the split layout as the band. The form-preserving promise
+holds trivially: nothing in a page changes, only what is above it.
+
+`tests/branding_surfaces.js` holds all of it: the shell with and without an
+appearance, the stylesheet's properties and the two white buttons, and the
+runtime's header and title.
+
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)
 
 Every browser-facing surface here until now was for somebody else. The sign-in
@@ -22,8 +121,8 @@ somebody came for is below the fold of a page about something else.
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
-| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
-| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
+| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of `audit.authenticationHistoryDays` (thirty by default), each naming the application the sign-in was for, with "this was me" / "this wasn't me" (#62 P6, #955, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
+| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`); and, under **Administrative consents**, the global consents that answered for them at sign-in, with no button (#537) |
 | `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
@@ -39,9 +138,26 @@ SOMEBODY A CREDENTIAL rather than taking one. **EIGHT SINCE 2026-09-13** —
 column from it, `headingFor()` titles the page from it, and `paths()` reports it
 to `sts_metadata.ts` — so a page added there appears in the column, in the
 browser tab and in the endpoint list, and one removed leaves none of the three
-behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
+behind. `tests/protocol/sts_portal_sessions.js` asserts, for the first four
 (Overview, Applications, Password, Security keys), that its own entry is marked
 `aria-current="page"`.
+
+**THE COLUMN BEHAVES AS THE CONSOLE'S SIDEBAR SINCE #1229** (rcbj: "update
+the menu in the User Portal (/portal) to behave the same way as the Admin
+Console. Ideally, code is reused"). Each `NAV` section is a `<details>` of one
+named group (`PortalShell.NAV_GROUP`, `data-section` its `key`), collapsed
+until the reader opens it, one open at a time; the runtime's `openSection` is
+`null` until the first page is drawn, which opens the section holding it
+(`PortalShell.sectionKeyOf()`, by `navPathFor()`, so a page under a listed
+one counts as that page's), and after that is what the reader opened or `''`
+when they closed it — held in the runtime, never in storage. The section
+holding the page is marked `current` (it was `open` until #1229, a class that
+now means something else), open or not. The markup, the toggle rule and the
+heading's CSS are `common/web_nav_sections.ts`'s, the console's code moved
+there rather than copied; `admin-ui/CLAUDE.md` (#750) argues the behaviour,
+and `tests/portal_nav_sections.js` holds the portal's half of it. The column
+still does not scroll on its own (`web_portal_kit.ts`'s stylesheet note), so
+there is no `revealActiveNav()` here.
 
 **A `GET` AND A `POST` SHARE `/portal/password`.** The form has to live
 somewhere now that it is not on the overview, and a form and the handler that
@@ -54,6 +170,38 @@ Drawing a page is reading. That distinction is the reason the portal has an
 action of its own at all — see `common/access_gate.ts`'s `ACTION` — and a
 deployment that later lets a helpdesk role READ an account without changing it
 needs the two to have been kept apart from the beginning.
+
+## THE REALM'S CUSTOM ATTRIBUTES ON THE OVERVIEW (#700, 2026-11-04)
+
+rcbj's ticket: the portal's account page shows a realm's custom attributes,
+"with a per-attribute flag for whether the person sees each one and whether
+they may edit it themselves (off by default)". The flags are the definition's
+(`common/CLAUDE.md` 3co: `portalVisible`, `portalEditable`, editable implying
+visible).
+
+* **`GET /account-api/overview`'s `customAttributes`**:
+  `[{ name, label, description, syntax, multi, values, editable }]`, one per
+  definition with `portalVisible`, empty where the person has no entry. Drawn
+  from the REGISTER and never by iterating the entry, the inetOrgPerson
+  table's rule. `web_overview.ts`'s *More about you* card, not drawn when the
+  list is empty.
+* **`POST /account-api/attributes`** (mirrors `POST /portal/attributes`),
+  `{ attribute, values }`: the values the attribute is to hold AFTERWARDS,
+  so none clears it. The person is the token's subject; no username is
+  taken. Refused for an undefined attribute (STS-PORTAL-0626), a hidden one
+  (0627, 403) and a read-only one (0628, 403); values checked by the person
+  editor's `checkCreateValues()` (0629 for a value or a count it refuses).
+* **Written through the person editor**, `setLanguage()`'s way, one edit at
+  a time with `via: 'the user portal'`, so its audit row, syntax check and
+  the attribute policy's `editRefusal()` hold. **Adds before removes** for a
+  multi-valued attribute, so replacing a required value is never an empty
+  moment; emptying one outright is asked of `editRefusal()` before anything
+  is written (STS-LDAP-0164, nothing changed). A single-valued one is one
+  `set`. A refusal part-way records the editor's own code.
+* **The form**: one box per held value, plus one empty box for a
+  multi-valued attribute; a cleared box is no value. `tests/account_api.js`
+  2c/2d hold that the form has its operation and sends only its fields;
+  `tests/portal_custom_attributes.js` holds the rest.
 
 ## `/portal/applications`: THE ISSUANCE POLICY, ASKED ON SOMEBODY'S BEHALF (2026-09-06)
 
@@ -165,14 +313,24 @@ rather than a list of ones to avoid — this registry accepts an entry from a
 dynamic client registration, so a scheme of somebody's choosing must not be
 able to reach an attribute a signed-in person's page renders as an `href`.
 
-### It is still not a launch button, and that is a refusal rather than a gap
+### The name is not a launch button; the Sign in links beside it are (#426)
 
-The link goes to the application's own front door and hands it nothing, which
+The name goes to the application's own front door and hands it nothing, which
 is where a sign-in starts and is exactly what a person would type themselves.
-It does not START one. This service implements identity-provider-initiated
-sign-on in none of the four browser profiles — `/saml2`'s own page lists it
-among what is not implemented — so a link that began one would have to invent a
-request the application never asked for and is not expecting. The page says so.
+**This heading said "still not a launch button, and that is a refusal rather
+than a gap" until #426**, on the ground that this service implemented
+identity-provider-initiated sign-on in none of the browser profiles. That was
+already out of date — `/saml2/unsolicited` arrived with #189 and the OpenID
+Connect Core section 4 link with #120 — and #426 made it a feature: a row
+carries one **Sign in** link per protocol it can be started in
+(`launches`, from `account_overview.ts`'s `launchableOf()`), each
+`/launch/{app}?protocol=…`, the same URL the console shows on the
+application's protocol sub-tab. A protocol is offered only where the issuance
+policy's dry run permits its family, the application's identity-provider-
+initiated switch is on (off by default), and there is somewhere registered to
+send it. The OpenID Connect link went straight to the client's
+`initiate_login_uri` before #426; it goes through the door now, which records
+the launch and obeys the client's switch. `launch/CLAUDE.md` argues the door.
 
 ### It is paginated, and the cap is a setting since 2026-09-12
 
@@ -198,7 +356,7 @@ is that the CALLER may administer this service, and the question this page
 answers is about the SUBJECT — an identity nothing on the request may
 nominate. A token is not a person. The feature is still
 driven by a test, which is what the convention is for:
-`tests/vendored/sts_portal_sessions.js` signs a real browser in and reads the
+`tests/protocol/sts_portal_sessions.js` signs a real browser in and reads the
 page.
 
 ### What the test asserts, and why the decisive one is a TRANSITION
@@ -236,9 +394,10 @@ own account with a form they abandoned. It is the same shape of lockout
 
 ### The QR code is an image this server drew, and the typed secret is not a fallback nobody sees
 
-`script-src 'none'` covers every page here except `/portal/keys` (see below,
-2026-09-10), so a QR library running in the browser was never available on this
-one — `common/totp.ts` renders an SVG and it arrives as
+Until #568 (2026-10-12) `script-src 'none'` covered every page here except
+`/portal/keys` (see below, 2026-09-10) and a few states of others the root
+`CLAUDE.md`'s table listed, so a QR library running in the browser was never
+available on this one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
 
@@ -297,7 +456,52 @@ even though nothing reaches the directory until `confirm`. A deployment that
 later lets a helpdesk role READ an account without changing it must not have the
 enrolment door on the read side of that line.
 
-## `/portal/keys`: ENROLLING A SECURITY KEY, AND A BACKUP FOR IT (2026-09-10)
+## `/portal/keys`: ENROLLING A PASSKEY, AND A BACKUP FOR IT (2026-09-10; *Passkeys* since #470)
+
+### A passkey carries no role (#1135, 2026-10-29)
+
+**Until #1135 every key was enrolled in a ROLE** — `primary` (instead of a
+password, passwordless) or `mfa` (a second step after it) — and both of this
+directory's enrolment doors asked which: `/portal/keys` drew *How will you use
+it?* with two radios, `/portal/activate` drew three (*no passkey*, *instead of
+a password*, *as a second step*), and every key row said which it was, on the
+row and again in *Details*. rcbj's decision on #1135: the question goes,
+because a person who has never heard of a second factor cannot answer it, and
+what they want is to register a passkey. **The REALM decides how a key is
+used**, at the sign-in and for every key alike
+(`webauthnPolicy.useAllowed()`, `authn/CLAUDE.md`); the person is asked
+nothing about it. What this directory does about it:
+
+* **`/portal/keys` asks nothing but the two calls to action** (and the lane,
+  #643, where the realm offers two). The rows carry no role, *Details* has no
+  *Used* row, and *Learn more* says the service decides. The view's
+  `enrol.roles` became `enrol.allowed` — `webauthnPolicy.enrolmentAllowed()`,
+  which `beginKeyEnrolment()` asks again at the door — and with it false the
+  page says the realm accepts a passkey for no use. The note under the keys
+  says whether a password alone signs the person in (`mfaRequired`), a fact
+  about the account rather than about any key, and nothing for a person with
+  no password.
+* **`/portal/activate` asks "set a password", "register a passkey", or
+  both**: one checkbox (`passkey`) where three radios were. With no password
+  the passkey is the way in, passwordless — **where the realm lets a key be a
+  first factor** (`useAllowed('primary')`); where it does not, the setup view
+  says so (`passkeyAlone: false`, *a password is needed*) and a key-only POST
+  is refused under `STS-PORTAL-0007`, the "no way in" code, with the realm's
+  own reason. (Until #1135 that code's second branch refused a key enrolled
+  as `mfa` with no password, because the person had SAID it was not a way
+  in.) What the passkey will be on the key step and on *account ready* is
+  stated from the facts (`secondStep`: a password set and a key allowed as a
+  second step), never from a choice.
+* **The old fields are still ACCEPTED and IGNORED**: `role` on
+  `POST /account-api/keys`, and `key_role` on `POST /account-api/activation`,
+  whose `primary` and `mfa` both mean "register a passkey" and `none` means
+  not. The parent project's vendored protocol jobs send them, and those copies
+  are never edited here. No answer carries `role` or `keyRole` any more; the
+  activation views carry `passkey` and `secondStep`.
+* **The audit rows are role-free**: *created a passkey*, *registered a passkey
+  while activating*, and no `role` in any `detail`. The device link's
+  ceremony row records `role: ''`, the row's `role` meaning the USE an
+  assertion answered since #1135, and a link answers no sign-in step.
 
 **THIS PAGE COULD NOT ENROL A KEY UNTIL THIS DAY**, and it said so in a
 paragraph of its own:
@@ -328,9 +532,10 @@ sentence is that the person holding one key had no way to prepare for it.
 
 `credentials.beginKeyEnrolment()` mints a challenge and holds it;
 `confirmKeyEnrolment()` verifies what the browser produced and only then writes.
-The ROLE is chosen at the start and carried, never read off the answer — the
-POST at the far end is the browser's RESULT and says nothing about what was
-asked for, which is the rule the sign-in ceremony already follows.
+The KIND and the LANE are chosen at the start and carried, never read off the
+answer — the POST at the far end is the browser's RESULT and says nothing about
+what was asked for, which is the rule the sign-in ceremony already follows.
+(A ROLE was carried the same way until #1135, when a key stopped having one.)
 
 **The keys the person already holds go out with the options.** A conforming
 authenticator that recognises one refuses rather than creating a second
@@ -353,13 +558,32 @@ trusted", "verified" with no trusted root, "no attestation sent", or "not
 verified" where the policy verified nothing. `authn/CLAUDE.md`, *The
 attestation statement*, has the rest.
 
+### The recovery codes' Copy button is a script, and the box beside it is the fallback (#224, 2026-10-06)
+
+rcbj: "Right now, the user must select and copy the displayed text. The
+resulting formatting is messed up." A fresh set is drawn as a grid, and a
+selection across a CSS grid copies as whatever the browser makes of it. So
+the card says the codes twice: the grid, to read, and a READ-ONLY BOX holding
+them one per line, which a selection copies exactly as drawn. The **Copy all
+codes** button writes that box to the clipboard, which no markup can, so the
+one response that shows a fresh set (`sendCodesPage()`, the POST of
+`generate-codes`) carries `script-src 'self'` for `/portal/copy.js` and nothing
+else; every other state of `/portal/mfa` runs no script. With script blocked
+the button stays hidden and the box is the whole mechanism. The script reads
+only the box beside its button and sends nothing. rcbj asked for the same in
+the admin console and then withdrew it: the console never shows a person's
+codes (`admin-ui/web_users.ts`, the recovery codes block).
+
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
 It arrived 2026-09-10, in a directory whose own file said every page of it was
-`script-src 'none'`.
+`script-src 'none'`. (History since #568, 2026-10-12: every portal page now
+runs `/portal/portal.js` under `script-src 'self'`, and the ceremony is
+`web_portal_webauthn.ts`'s; the argument below is why the page needed a
+script at all.)
 
-`app.js` sets `script-src 'none'` everywhere and the rule is that a page gets an
-exception only when it CANNOT work without one — several candidates have been
+`app.js` sets `script-src 'none'` as the service-wide default and the rule is
+that a page gets an exception only when it CANNOT work without one — several candidates have been
 refused on it (the root `CLAUDE.md` lists them), `/authn/totp` among them, which sits next door to a scripted page
 and still had to argue its own case.
 
@@ -391,6 +615,152 @@ blocked it posts a `finish` with no credential, and the handler answers *your
 browser did not run the ceremony* — naming the one step that needs it and saying
 the rest of the portal runs no script at all.
 
+### The passkey page (#470, 2026-10-06)
+
+rcbj asked for the passkey screens to follow the FIDO Alliance's passkey
+management guidelines (passkeycentral.org, *combining all passkey types*).
+What that changed, and why each piece is the way it is:
+
+* **One heading, *Passkeys*, over two groups, in a person's words.** The
+  groups are *passkeys on your devices* and *passkeys on security keys* —
+  never "synced" and "device-bound". `credentials.keyGroup()` decides which:
+  - **the backup eligibility flag first.** A synced passkey reached over
+    hybrid is reported `cross-platform`, and it belongs with the devices.
+  - **then the attachment.** Windows Hello is device-bound and still a
+    device.
+  - **then, for a key that recorded neither, its transports.**
+
+  BE, BS and the transports were checked by `webauthn.js` and dropped until
+  this change. `addKey()` keeps them now, and `noteKeyUsed()` keeps BS
+  current, because BS can change after enrolment.
+* **Each row shows:**
+  - a server-drawn SVG icon. It is markup, not an image, so `img-src` is
+    untouched;
+  - the name, from `keyName()`: the label, else the default;
+  - the provider;
+  - Created and Last used. `lastUsedAt` was recorded and never drawn;
+  - Rename and Remove;
+  - a *Details* `<details>` with the algorithm, attestation, AAGUID,
+    backup state and transports (and, until #1135, the key's role). This is a debugging service, so nothing
+    technical was dropped, only folded.
+
+  Rename is a `<details>` holding a form, so it needs no script.
+* **The provider.**
+  - **When a FIDO MDS BLOB is loaded, MDS alone names it** (rcbj, on the
+    ticket): the description for the key's AAGUID.
+  - Otherwise `authn/passkey_providers.ts`, a short hand-written table of
+    credential managers, names it. The community list carries no licence,
+    so it was not copied.
+  - Which source answered is decided once, at enrolment (`keyProviderFor()`,
+    asynchronous), and kept as `provider` and `providerSource`, because a
+    page is drawn synchronously.
+  - A name proves nothing, and nothing that decides reads it.
+* **The two calls to action** are two submit buttons of one form, so the
+  button pressed is the `kind`, with no script.
+  - *Create a passkey* asks for a discoverable credential and HINTS
+    `client-device`, then `hybrid`, with no attachment. That is how the
+    2026-09-26 lesson (Linux Firefox refused a hard `platform`) survives.
+  - *Use a security key* asks for `cross-platform` and hints `security-key`.
+* **The name comes after the ceremony, not before.**
+  - The box before it is gone.
+  - A key defaults to its provider's name, else "Passkey" or "Security key".
+  - ~~The success redirect carries `named=<credentialId>`, and the page opens
+    that key's rename form at the top.~~ **Gone on 2026-10-28 (rcbj)**: the
+    box at the top ("give your passkey a nickname", the rename form drawn
+    open) said what the row's own Rename says and read as a second step.
+    The finish lands on the plain page, the new key sits on its row under
+    its default name, and it is renamed there like any other. `named` left
+    the query, the view and `REFRESH_KEPT` with it; the two protocol jobs
+    rename through the row's fold.
+* **`POST /portal/rename-key`** follows `remove-key`'s A01 rule: the id comes
+  from the body and is looked up among the session's own keys.
+  `credentials.renameKey()` is the one writer, also used by
+  `POST /admin-api/users/rename-key`. An empty name restores the default.
+  It is audited, and sends no CAEP event, because a name is not a
+  credential change.
+* **The Signal API** (WebAuthn Level 3 section 5.1.10) runs in the same
+  shared script, which reads a `wa-signal` element: all accepted credential
+  ids, plus the display name, under the person's USER HANDLE (#474) — 64
+  random bytes on their entry, unique to one entry in one realm. Until
+  #474 the handle was the username, so the same username in two realms
+  was one account to a credential manager and the element was drawn only
+  where no other realm was defined. Now `signalBlock()` draws it for
+  anybody holding a minted handle, and for nobody else: a person whose
+  keys all predate #474 shares the old name handle across realms still.
+  Every ceremony on this page creates the credential under the handle
+  (`data-userid`, from the pending enrolment). The element is never drawn while a
+  ceremony is armed, so the page loads one script tag. Every response of
+  both handlers and of `remove-key` and `rename-key` goes through
+  `sendKeysPage()`, so the script is allowed wherever the element is drawn.
+* **Two lanes (#643, `webauthn.pqcAlongsideClassical`)**: while the realm
+  offers both, the enrolment form carries a classical / post-quantum radio
+  (`KeysPages.laneChoice()`, shared with the activation's setup form) and
+  `POST /account-api/keys` `begin` takes `lane`, carried on the pending
+  enrolment; the armed ceremony is that lane's handle, name
+  (`<username>+ml-dsa` for the post-quantum lane), algorithms and exclude
+  list. Each row's Details say its lane. **The Signal API is sent once per
+  lane** — the view's `signals`, drawn as `#wa-signal` and `#wa-signal-pqc`,
+  each with that lane's handle, name and ids only: one signal under the
+  classical handle naming every key would tell the credential manager the
+  post-quantum passkeys are unknown in that account. The post-quantum name
+  says its algorithm (`<username>+ml-dsa-65`) once every post-quantum key
+  uses one. `authn/CLAUDE.md` (*Two lanes*) argues the rest.
+* **A post-quantum passkey required (#718)**: each row carries
+  `postQuantumRefused`, from `passkeyPolicy.postQuantumRefusal()` asked of
+  the key's algorithm under the person's selected profile — the same
+  question the sign-in asks, so the page and the refusal cannot disagree —
+  and the page draws `#passkey-post-quantum-refused` with
+  `portal.keys.postQuantumRefused` (seven languages; a warning, not a
+  refusal, so it is translated as `syncedRefused` is). Under
+  `registration-and-sign-in` the armed ceremony offers only ML-DSA and,
+  with both lanes on, `lanes` is `["pqc"]`, so the page asks nothing and
+  `begin`'s `classical` default becomes the post-quantum lane
+  (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
+  passkey required*) argues the rest.
+* **The ceremony starts when the call to action is pressed (rcbj,
+  2026-10-28).** Pressing *Create a passkey* or *Use a security key* used
+  to draw a second form holding the same choice again — a *Create passkey*
+  / *Register security key* button that ran the ceremony, and *My browser
+  did not ask — tell me why* beside it. The press IS the request, so the
+  armed page now carries `data-autostart` on `#wa-data` and
+  `web_portal_webauthn.ts` runs `navigator.credentials.create()` as soon
+  as it is drawn; the second button and the "did not ask" button are gone
+  from this page, Cancel and the hidden ML-DSA guidance stay. A prompt the
+  browser refuses or the person dismisses is posted as the finish's error,
+  which abandons the enrolment and draws the two calls to action again
+  with the browser's own words, as a refused ceremony always did. The
+  activation's key step and the device link keep `#wa-go` and run on its
+  click: each is one step of a longer form, where the press that armed the
+  ceremony was not the person asking for the prompt. The device job
+  (`sts_portal_device_webauthn.js`) waits for the nickname form a finished
+  ceremony draws rather than clicking a button.
+* **The classical retry (#944)**: the armed ceremony carries `fallback`
+  (`asksPostQuantum`, `classical`, `retrying`), `#wa-data` carries it as
+  `data-fallback`, and `KeysPages.fallback()` draws the guidance HIDDEN
+  (`#wa-fallback`), shown by `web_portal_webauthn.ts` through
+  `common/web_webauthn.ts`'s `offerFallback()` only after a registration
+  that asked for ML-DSA fails. The failure is posted as the finish's
+  `credential` — `{ error, capabilities }`, `capabilities` null where the
+  platform reported none — and the answer is not drawn (#961). The account
+  API leaves the enrolment and answers no `view` when that object has its
+  own `capabilities` property and the fallback offers the classical begin;
+  without the property, or when the fallback does not offer the retry, the
+  enrolment is abandoned and the page redrawn (2026-09-26). The retry's
+  form (`action` `begin`, the same kind and lane, `algorithms`
+  `classical`) replaces the enrolment when it is pressed. `begin` asks
+  `classicalRetryRefusal()` again (`STS-AUTHN-0420`, reason `algorithms`),
+  and the pending record's `classicalOnly` holds the finish to the retry's
+  list. (The portal's passkey Upgrade went with #1100: a classical passkey
+  is upgraded at a sign-in, by the post-login activity.) The activation's
+  and the
+  device link's ceremonies draw no guidance, so a failure there is posted
+  as before and abandoned. `authn/CLAUDE.md` (*The classical retry*) argues
+  it.
+
+`tests/passkey_management.js` holds the credential layer, and
+`tests/protocol/sts_portal_backup_keys.js` holds the page over HTTP: the two
+buttons, the groups, rename and Last used.
+
 ### It is held to the same two address rules as the sign-in screen (2026-09-12)
 
 `authn.rpIdProblem()` refuses a ceremony whose configured `webauthn.rpId` does
@@ -408,8 +778,8 @@ use — which product mode refuses (`STS-AUTHN-0206`), so the only way through
 was to go back and set a password. Reported by rcbj as exactly that.
 
 The key is registered on the activation page now, between the password and the
-authenticator app, as a `key` step: `beginKeyEnrolment()` with the role and the
-`kind` the first page chose (`kindChoice()` is drawn there too), the ceremony
+authenticator app, as a `key` step: `beginKeyEnrolment()` with the `kind` the
+first page chose (and, until #1135, the role) (`kindChoice()` is drawn there too), the ceremony
 drawn by `activationKeyForm()`, `confirmKeyEnrolment()` on the POST. **What
 authorises it is the activation link**, re-checked and claimed on that POST like
 every other; the link is spent only when the activation FINISHES, so a key that
@@ -423,11 +793,13 @@ the same resource and a real button under it — its own row in the root table.
 ## THE ACTIVATION FLOW LEARNED IT TOO, AND THE LINK IS STILL SPENT LAST
 
 An authenticator is a CHECKBOX on `/portal/activate` and not a fourth radio
-button, and that is the whole of what it says about itself: the radio group is
-*what signs you in* and exactly one of its values can be true. A one-time code
+button, and that is the whole of what it says about itself: the radio group was
+*what signs you in* and exactly one of its values could be true. A one-time code
 is not one of those answers — it is a second factor beside whichever of them was
 chosen — so it is an independent box, and the *at least one way in* rule
-underneath is untouched.
+underneath is untouched. (Since #1135 the passkey is a checkbox too, because
+registering one no longer says what it is for; see *A passkey carries no
+role*.)
 
 Ticking it costs a second POST, because a secret has to be shown and a code
 typed back. **The link is not spent in between**, which is this directory's
@@ -568,133 +940,135 @@ That is refused in two places on purpose: at `/portal/activate`, where the
 combination would be created, and in `credentials.removeKey()`, where it would
 be arrived at later by removing the password. Same rule, both ends.
 
-## THE PORTAL IS AN OIDC RELYING PARTY (2026-09-06)
+## THE PORTAL IS AN OAUTH CLIENT OF THIS SERVICE — A PUBLIC ONE SINCE #568
 
-`requireSignIn()` sends an unauthenticated visitor through **the authorization
-code flow**, as the registered client `sts-user-portal` — an ordinary entry
-under `ou=applications`, seeded at startup in every realm. It does not reach for
-the sign-on session at all: the browser goes to `/oauth2/authorize`, the sign-in
-screen is reached only because the AUTHORIZATION ENDPOINT decides it needs one,
-and what comes back is a code that buys an ID Token that establishes the
-portal's OWN session in its own cookie (`sts_portal`).
-`common/oidc_rp.ts` runs it and argues it.
+It was a CONFIDENTIAL OpenID Connect relying party from 2026-09-06 to #568:
+`sts-user-portal`, `private_key_jwt`, a back-channel code redemption by this
+process and a session of its own in `sts_portal`. **It is a PUBLIC client
+now**, signing in in the browser (`web_portal_runtime.ts`): the authorization
+code flow with PKCE at the authorization server of the realm the portal was
+opened in, `resource` that realm's `/account-api` (and its `/admin-api`,
+for an owner's pages, since #607), back at
+`/portal/callback` — a page the runtime draws, whose callback address the
+shell registers on the client entry as the console's does
+(`oidcRp.ensureSurfaceCallback()`: learnt in development, refused in product
+unless registered). Every token is DPoP-bound (`sender_constraints.js`'s
+DPOP_BOUND_PUBLIC_CLIENTS) and the client is exempt from FAPI's
+confidential-client rule (`fapi.js`), the console's two arrangements.
+Under a FAPI profile it also sends an OpenID `nonce` derived from its PKCE
+verifier and refuses an ID Token without it, and under
+`oauth2.fapiRequireMtls` it is let through DPoP-bound rather than refused for
+having no client certificate (2026-10-12) — `oauth-oidc/CLAUDE.md`, 3cb,
+*under a FAPI profile they sign in at all*.
 
-Three things about it are this directory's:
+What still holds from the relying-party years:
 
-* **AND SINCE 2026-09-11 THAT SINGLE SIGN-ON REACHES THE CONSOLE, IN EVERY
-  REALM, AND IT DID NOT BEFORE.** The portal's flow has always run in the
-  AMBIENT realm — `/portal` is a person's own account in the realm they are in —
-  and the console's ran in the DEFAULT realm wherever it was reached. An
-  authorization endpoint can only answer out of the realm it is reached in, so
-  inside a realm the two surfaces were asking two different authorization
-  servers and neither could see the other's sign-on session: **signing in at
-  `/realm/acme/portal` and then opening `/realm/acme/admin` meant signing in
-  again, and so did the other direction.** Nothing here changed — the console's
-  flow moved to the ambient realm to meet this one. `admin-ui/CLAUDE.md` argues
-  what that cost the console and `common/oidc_rp.ts` holds the split.
-* **A `Location` HEADER IS NOT MARKUP, AND THIS SURFACE IS WHERE THAT COST
-  SOMETHING.** `app.js` rewrites every root-relative `href`, `action` and `src`
-  in an HTML response into the current realm — which is what carries this
-  portal's own links inside `/realm/acme` — and a redirect header is none of
-  those. The seven `requireSignIn()` call sites pass a constant built from
-  `BASE`, which is `/portal` with no prefix on it, so a sign-in at
-  `/realm/acme/portal` completed the flow in acme, was handed a session in acme,
-  and was then redirected to the DEFAULT realm's portal — which correctly has no
-  session for that person and asks them to sign in again. **A sign-in that works
-  and then immediately asks again, with nothing in the flow having failed.** It
-  is fixed at `oidc_rp.js`'s one choke point rather than at the seven call
-  sites, and idempotently, because the console passes an address that already
-  carries the prefix and a caller should not have to know which kind it holds.
-* **A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR ACCOUNT PAGE.**
-  Reading `authn.sessionOf()` would have meant exactly that — any sign-in
-  anywhere in this service silently opening somebody's own account page,
-  without this application ever having asked. Now the portal has to run a flow,
-  and single sign-on is what makes that flow invisible when there IS a sign-on
-  session: the authorization endpoint answers with a code and nobody types
-  anything. **That is single sign-on happening through the protocol rather than
-  through a shared cookie**, which is the distinction worth being able to
-  demonstrate on a mock.
-* **THE SECTION BELOW USED TO SAY `appAuthnMechanism`-style: "NO application —
-  the portal is not one".** It is one now. What made that sentence right was
-  that no entry existed and naming one would have put a fiction in the
-  registry; what makes it wrong is that the entry is real, seeded by this
-  service, and is what the role gate is handed.
-* **ENDING THE PORTAL'S SESSION ALONE DOES NOT END THE SIGN-ON SESSION**, and
-  the next visit signs the person straight back in without a screen. That is
-  what every real relying party does, and the cascade runs the other way:
-  ending the SIGN-ON session ends the portal's with it. **WHICH IS WHY THE SIGN
-  OUT BUTTON ENDS BOTH** — see below.
+* **SINGLE SIGN-ON HAPPENS THROUGH THE PROTOCOL, NOT A SHARED COOKIE.** A person
+  who signed in anywhere in this realm is answered by `/oauth2/authorize` with
+  a code and types nothing — which is also how a console administrator reaches
+  their portal now that the adoption is gone.
+* **A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR ACCOUNT PAGE**:
+  the portal still has to run a flow, and its token is its own.
+* **THE TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON**
+  (`STS-ACCOUNT-0008`), which is what the relying-party session's cascade did.
 
-## A LIVE CONSOLE SESSION IS ADOPTED, AND THE BULLET ABOVE HAS ONE EXCEPTION (2026-09-30)
+## THE CONSOLE-SESSION ADOPTION (2026-09-30) WAS DROPPED ON #568
 
-**Observed on a product deployment:** an administrator followed the console's
-account-menu link here and was asked to choose a realm and then to sign in
-again. The console session outlives its sign-on session by renewing its own
-tokens (`common/oidc_rp.ts` section 4), so this portal's code flow met no
-sign-on session. rcbj decided that the portal reads the realm and the
-authenticated session from the console session. `adoptConsoleSession()`, called
-by `requireSignIn()` before the chooser, makes a portal session of this
-surface's own from it through `authn.adoptRelyingPartySession()`. The session
-has the same person and the same authentication record. It lives in the
-console session's identity realm (`derivedFromRealm`, the same answer the
-account-menu link uses). Its PARENT is the console session, so it ends with
-that session through the cascade and through the reader. A realm
-administrator at the bare `/portal` is REDIRECTED to their realm's portal,
-built from the registry and never echoed. Under another realm's prefix, or
-with a `?realm=` naming another realm, nothing is adopted. **ONE DIRECTION:**
-nothing here writes `sts_admin`. The access policy still decides.
-`POST /portal/signout` on an adopted session ends the console session and its
-sign-on session as well, for this file's own reason: otherwise the next page
-adopts again. What stops an adoption (STS-PORTAL-0098, -0099) leaves the old
-path exactly as it was. `tests/portal_adopts_console.js` holds it.
-**The bullet *A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR
-ACCOUNT PAGE* still holds for every sign-on session. The one thing that
-opens the portal without a flow is this service's own console, which the
-person is already signed in to as themselves.**
+It made a portal session from a live console session, because the console's
+session outlived its sign-on session by renewing its own tokens and the
+portal's code flow then met no sign-on session. Neither side holds a server
+session any more: both are public clients whose tokens die with the sign-on
+session they came from, so a console administrator following the account
+menu's link meets a live sign-on session at `/oauth2/authorize` and is signed
+in with no screen. rcbj's decision 4 on #568. `tests/portal_adopts_console.js`
+went with it.
 
 ## Two sign-outs, and they are two different acts (2026-09-06)
 
-**They were on one page when this was written and the page split under
-them.** The narrow one moved into the shell and is now in the corner of
-EVERY page, which is the same decision rather than a new one — a
-person who wants out should not have to find the page it lives on first.
-The wider one stayed where it was, at the foot of the Overview.
+**THE BUTTON IN THE CORNER OF EVERY PAGE** is a form posting to
+`/portal/signout`, which the runtime answers (`PortalRuntime.signOut()`): it
+forgets the tokens and sends the browser to `/logout`, which ends the sign-on
+session — and with it every token issued on it, the portal's included, and
+the console's. It has to reach the sign-on session for the reason it always
+had: ending only the portal's own state would let the next visit sign straight
+back in with nothing typed.
 
-**THE BUTTON IN THE CORNER OF EVERY PAGE IS `POST /portal/signout`.** It
-ends the portal's own relying-party session AND the sign-on session it was
-derived from, and clears both cookies. It has to end both: this portal is a
-relying party, so ending only its own session would leave the next visit
-running the code flow, meeting the live sign-on session, and coming back in
-with nothing typed — a Sign out button that visibly does not sign anybody out.
-The cascade in `dropSession()` then ends anything else derived from that
-sign-on session, the admin console included, and the page SAYS so rather than
-reaching further than its label quietly.
+**THE BUTTON AT THE FOOT OF THE OVERVIEW IS STILL `POST /logout`**, the wider
+act: every session and credential this identity holds in every protocol. Both
+are drawn, each says which it is. That form is not the portal's, so the
+runtime leaves it to the browser.
 
-**THE BUTTON AT THE FOOT OF THE OVERVIEW IS STILL `POST /logout`**, and it is the wider
-act: every session and credential this identity holds in every protocol —
-tokens, tickets, offers, LDAP binds. Both are drawn, each says which it is, and
-the heading over the second one says it reaches further. Two controls that do
-different things is not duplication; one control that quietly did the wider
-thing would be.
+## Several accounts in one browser: one per tab, and the account menu (#561, 2026-10-19)
 
-Three details worth keeping:
+**The console's arrangement, and its reasoning is in `admin-ui/CLAUDE.md`
+8c-iv**; what is the portal's own is here. With `authn.multipleAccounts` off
+none of it is stored, sent or drawn: the header, the sign-in's record, the
+authorization request and the sign-out's address are the bytes they were.
 
-* **The CSRF token is checked on the sign-out**, like every other form here. A
-  sign-out fired from another site is the classic "harmless" CSRF that is not:
-  somebody's session ending under them repeatedly, with no way to stay signed
-  in. The refusal writes `portal.signout.csrf`, beside the success's
-  `portal.signout`, for the reason every refusal here is registered in
-  `audit.js` — a log of only what worked is a log of everything except the
-  attack.
-* **It does NOT go through `requireSignIn()`**, which is deliberate rather than
-  an omission: that function redirects a person with no session into the
-  authorization code flow, which for a sign-out would send somebody who is
-  already signed out off to sign IN. A sign-out asked of a browser with no
-  session is answered with the page saying they are signed out, because that is
-  true.
-* **The sessions it ends each write their own `session.end`** through
-  `dropSession()`. The `portal.signout` row is the ACT and does not count them
-  again — rule 3c, read as it is everywhere else here.
+* **THE TAB'S ACCOUNT** is `{ sub, username }` in sessionStorage
+  (`sts-portal-account`), written when `/account-api/me` is read and removed
+  when the list says off, and sent as `login_hint` on every sign-in the
+  runtime starts — a step-up's among them, so a step-up is of this tab's
+  account. `authorizeUrl()` copies a sign-in's extra parameters into the
+  request as before, except the runtime's own (`expect`, `another`,
+  `login_hint`: `OWN_EXTRAS`), which never leave the tab.
+* **THE ACCOUNT MENU** (`PortalShell.accountMenu()`) is a `<details>` AFTER
+  Sign out — `tests/portal_refresh.js` 6 holds Refresh and Sign out side by
+  side — with a button per other signed-in account and *Sign in with
+  another account*. Sign out goes to `/logout?login_hint=<username>`.
+  **Since #751 its summary reads *Switch user*** and its panel is drawn with
+  no other account signed in too (saying so, `portal.accounts.none`), ending
+  on the line that the account the tab leaves stays signed in
+  (`portal.accounts.kept`) — the console's group, for the console's reasons
+  (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn — and off is no
+  longer the default: `authn.multipleAccounts` is on by default since
+  2026-10-20 (rcbj, #751; `authn/CLAUDE.md`).
+  `tests/protocol/sts_multi_account_tabs.js` 2a switches a real tab to bob
+  and back to alice from it, nothing typed.
+* **A SWITCH** asks over a form typed in, aborts what is in flight —
+  `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
+  token requests — and discards `me`, the page for nobody's locale
+  (`nobody`), the form table, the view, the flash, the owner token and
+  its scopes, and the client's tokens and key; an answer for another
+  subject than the one switched to is refused. **A switch whose sign-in
+  cannot be started** (a pushed request the network refused) draws
+  *Switching accounts failed* and keeps the tab's account, as the
+  console's does (#731, `admin-ui/CLAUDE.md` 8c-iv,
+  `tests/multi_account_concurrency_tabs.js` 2).
+* **`/portal?accounts=another` IS HOW EVERY OTHER PAGE SIGNS IN AS ANOTHER
+  ACCOUNT** (delivery step 6, `common/CLAUDE.md` 3cl). `/authn/login` is
+  not a destination — it needs a pending sign-in — so the public pages'
+  control links here, and `route()` turns the marker into the portal's own
+  authorization request with `prompt=login` and no hint, after reading the
+  list: with the setting off the marker is dropped from the address and
+  the page is today's. The address is the portal's ADVERTISED one, which
+  `GET /authn-api/accounts` answers as `anotherAccount`, because a page on
+  another listener (#472) cannot work it out.
+* **THE DEVICE PAGE SAYS WHICH ACCOUNT APPROVES** (`/portal/device`,
+  `web_device.ts`'s `approvingAs()`). An approval is this tab's account's —
+  the access token's subject, on the sign-on session it was issued on — and
+  nothing else in the request is per account, so nothing acted as the wrong
+  account; but RFC 8628 section 5.4's defence is showing the person what
+  they authorize, and with two accounts signed in "you" is no longer
+  obvious. So, with more than one live account in the browser's list, the
+  request names the account it will be approved as (`device-as`,
+  `portalDevice.request.as`); otherwise the page is the one it was. A
+  `verification_uri_complete` opened in a new tab has no account of its own
+  and signs in as any tab does: the picker where nothing chooses.
+* **THE LIST IS FETCHED ONLY WHERE THE SHELL SAYS SO** (`data-sts-accounts`,
+  `common/CLAUDE.md` 3cl `web_accounts.ts`).
+
+## A Refresh button beside Sign out (2026-10-09, #538)
+
+Every signed-in page draws **Refresh** to the left of Sign out
+(`PortalShell.refreshForm()`): a GET form to the page's own path carrying only
+the parameters a page reads to draw itself — `page`, `per`, `<list>Page`,
+`stepup`, `gnapstepup`, `enrolled`, `named` (`PortalShell.REFRESH_KEPT`). The
+runtime answers it by asking the page's operation again. **Nothing else is
+carried**, for #538's reason: a parameter a link put on the URL
+(`?user=<somebody>`) must never be drawn back into a signed-in page. A message
+a write left is held in the runtime and drawn once, never on the URL, so there
+is no `done` to carry or to drop.
 
 ## `beginAuthentication()` and not a bare redirect
 
@@ -726,7 +1100,7 @@ file that got it wrong: `POST /portal/activate` ended by linking to
 `authn.LOGIN_PATH`. **Nothing was broken except one `href`** — the password was
 set, the link was spent, the audit row was written — which is why it survived
 being written directly under an argument saying it could not work, and why the
-guard for it had to be an over-HTTP job (`tests/vendored/sts_portal_sessions.js`)
+guard for it had to be an over-HTTP job (`tests/protocol/sts_portal_sessions.js`)
 rather than anything in process.
 
 **It links to `/portal` now, and the destination is the argument.** That page
@@ -742,7 +1116,7 @@ browser arrives at the same screen with something behind it. Two properties:
   flow in progress to resume.
 
 **BOTH BRANCHES NOW GO TO THE SAME ADDRESS**, and what differs is prose. The
-`key_role !== 'none'` branch already went to `/portal` — for the enrolment
+`key_role !== 'none'` branch (a passkey asked for, since #1135) already went to `/portal` — for the enrolment
 reason — so the bug was only ever in the *no key* branch, which is the ordinary
 one. That asymmetry is worth noticing: the rarer path was right and the common
 path was wrong, so the flow most people take was the one that failed.
@@ -759,12 +1133,12 @@ sign-in, and let it mint the record.**
 
 | | Control | Where |
 |---|---|---|
-| A01 | identity from the session, never the request | this directory, and THREE test files at three layers — see below |
+| A01 | identity from the token, never the request | `account-api/account_api.ts`, this directory, and the test files at three layers — see below |
 | A02 | scrypt for passwords, activation token hashed | `common/credentials.ts`, `common/crypto.js` |
 | A03 | every value through `esc()`; no SQL built from input anywhere | this directory |
 | A04 | rate limiting on activation, sign-in and password change | `common/websecurity.ts` |
 | A05 | the CSP `app.js` sets on every response | `common/app.js` |
-| A07 | CSRF tokens, the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `common/websecurity.ts`, `authn/authn.ts` |
+| A07 | a DPoP-bound token on every request (CSRF tokens until #568), the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `account-api/account_api.ts`, `authn/authn.ts` |
 | A09 | every act audited | `common/audit.js` |
 
 **Changing a password requires the current one even though the person is signed
@@ -787,7 +1161,7 @@ about to change is not.
 |---|---|---|
 | `tests/portal_access.js` | the CREDENTIAL layer: `credentials.removeKey()` looks an id up among the caller's OWN keys | a route that never reaches that function |
 | `tests/access_policy.js` | the POLICY layer: the XACML `access-control` document denies a subject who is not the owner | a handler that hands the PDP the wrong subject |
-| `tests/vendored/sts_portal_sessions.js` | the ROUTE, over HTTP, with two real signed-in browsers | nothing above it — this is the one that sends a request |
+| `tests/protocol/sts_portal_sessions.js` | the ROUTE, over HTTP, with two real signed-in browsers | nothing above it — this is the one that sends a request |
 
 **THE THIRD ONE EXISTS BECAUSE THE FIRST TWO NEVER SEND A REQUEST**, and that is
 not a theoretical gap. It was mutation-tested by making `/portal/password` read
@@ -801,7 +1175,7 @@ was reading `GET /admin-api/audit` back and checking the ACTOR on the
 only the audit row proves the write.** If a handler changes something, assert
 who it was attributed to and not merely what came back.
 
-**`/portal/mfa` HAS ONE OF ITS OWN TOO** (`tests/vendored/sts_portal_totp.js`,
+**`/portal/mfa` HAS ONE OF ITS OWN TOO** (`tests/protocol/sts_portal_totp.js`,
 section 3), and on this page the rule protects something sharper than a leak:
 enrolling for somebody else would leave the attacker HOLDING that account's
 second factor. The decisive assertion is not that the page came back with the
@@ -826,7 +1200,7 @@ their sessions and their account, to this portal, over OpenID CAEP and RISC.
 `ssf/ssf_receivers.ts` holds the design, `ssf/CLAUDE.md` argues it, and the A01
 half is above. Three things belong here.
 
-**IT IS UNDER *Your account* AND NOT UNDER *How you sign in*.** That section
+**IT IS UNDER *Your account* AND NOT UNDER *How I sign in*.** That section
 holds the CREDENTIALS on this person's entry, one page each, and every page in
 it is a control — a password form, a key list, an authenticator enrolment. This
 is not a control and not about a credential: it is a RECORD, and a reader
@@ -838,9 +1212,10 @@ person it is about could clear it, so there is no Clear here — the console has
 one, for its own inbox. The page says that in as many words rather than simply
 lacking the button, because a missing control reads as an oversight.
 
-**IT NEEDS NO SCRIPT AND HAS NONE, SO THE CLAIM THIS FILE MAKES ABOUT
-`script-src 'none'` IS UNCHANGED BY IT.** `/portal/keys` is still the only
-exception in this directory. A list of events with a `<details>` per payload is
+**IT NEEDED NO SCRIPT AND HAD NONE, SO THE CLAIM THIS FILE THEN MADE ABOUT
+`script-src 'none'` WAS UNCHANGED BY IT.** `/portal/keys` was still the only
+exception in this directory (until #568, 2026-10-12, made every portal page
+the static shell under `script-src 'self'`). A list of events with a `<details>` per payload is
 markup; the argument that page was granted its exception on — a WebAuthn
 ceremony is a browser API call and there is no server-side substitute — does
 not apply here and was not reached for.
@@ -913,7 +1288,7 @@ thing this section must not do: **an entry in this directory carries whatever
 anybody put on it**, and this service writes four `sts`-prefixed CREDENTIALS
 onto that same object. A page that printed the entry would print a TOTP shared
 secret the day somebody enrolled an authenticator. That file's header carries
-the argument; `tests/vendored/sts_portal_directory_attributes.js` is where it
+the argument; `tests/protocol/sts_portal_directory_attributes.js` is where it
 is held, and every other assertion in that job passes against the wrong
 implementation.
 
@@ -953,8 +1328,8 @@ be explored is the more useful half. So the set ones are drawn plainly and the
 rest are one fold per class.
 
 **`<details>` is MARKUP and not script**, which is why it is available at all:
-every page of this portal but `/portal/keys` is `script-src 'none'`, and the
-console made exactly this argument for its own collapsible prose. There is no collapse-all and there
+every page of this portal but `/portal/keys` was `script-src 'none'` until #568
+(2026-10-12), and the console made exactly this argument for its own collapsible prose. There is no collapse-all and there
 will not be one.
 
 ### Nothing here can be edited
@@ -988,11 +1363,28 @@ card says what to do with the key it holds — claims and a `kid` for a JWT, an
 assertion. **Three things are shared rather than doubled**: the rate limit
 (a key generation costs the same CPU either way), `pki.personSelfService`, and
 the error codes, none of which named a profile. The nav label is *Signing
-keys*. `tests/vendored/sts_portal_signing_key.js` section 8 is the proof, and
+keys*. `tests/protocol/sts_portal_signing_key.js` section 8 is the proof, and
 its SAN check exists because a JWT leaf written onto the SAML attributes
 verifies exactly like a SAML one — the certificate's subjectAltName is the only
 place the difference shows; five mutants, all caught, that one only after the
 check was added.
+
+**WHAT A GENERATE ANSWERS IS DRAWN IN THE CARD WHOSE BUTTON MADE IT, AND THE
+FILES IN THE CERTIFICATE'S ROW (#671, 2026-11-03).** It was a card of its own
+at the top of the page, three cards above the TLS client certificate's
+Generate: rcbj pressed Generate, saw the bottom of the page drawn again with
+nothing new on it, and reported that nothing was downloaded. Now all three
+cards answer the SAME TWO FILES (`view.fresh.files.key`, the private key as
+unencrypted PKCS#8 PEM, and `.chain`, the leaf and its issuers), drawn as
+download links in the certificate's row — a signing key's *Certificate* row,
+the TLS certificate's row in the list — tinted (`tr.fresh-row`), with what to
+do with them in a `.fresh` block under the table. The runtime scrolls that
+row's table to the top of the window (`showFresh()`). **No private key is
+printed on the page any more**, and **the TLS card asks for no file password
+and answers no `.p12`** (rcbj's decision, the same day): a browser cannot
+import what the portal hands out, and that was accepted for three cards that
+work alike. The console's issue still answers a password-protected `.p12`
+(`tlsClient.bundle()`); the portal's is `tlsClient.pemFiles()`.
 
 **IT IS THE SAME ACT AND NOT A SECOND IMPLEMENTATION**, which is the whole
 reason this page requires `common/pki.js` and `common/person_assertions.js`
@@ -1016,7 +1408,7 @@ in a token as every other person — which is why the rule is enforced in the
 grant rather than on the page: a check the page performed would be a check the
 `/admin-api` door did not.
 
-### The private key is shown once, and `generate` therefore RENDERS
+### The private key is offered once, and `generate` therefore RENDERS
 
 Every other write here answers 303 with a message on the query string. This one
 cannot, for the reason `generate-codes` on `/portal/mfa` cannot: **a redirect
@@ -1026,11 +1418,12 @@ and the person.
 
 **AND THERE IS NO SECOND CHANCE AT IT.** The key is sealed on the entry and
 nothing in this service opens it again — not this page, not `/admin/pki`, not
-`/admin-api`. The page says so at the moment it shows it, and *generate again*
+`/admin-api`. The page says so at the moment it offers it, and *generate again*
 is the only answer to having lost it. That is the same position the recovery
-codes reached from the other direction, and `tests/vendored/sts_portal_signing_key.js`
-asserts it by fetching the page a second time and looking for a PEM block that
-must not be there.
+codes reached from the other direction, and `tests/protocol/sts_portal_signing_key.js`
+asserts it by fetching the page a second time and looking for a PEM block, or a
+key download, that must not be there. **Since #671 it is a download, not a
+printed block** (above).
 
 ### What it deliberately does not ask
 
@@ -1072,31 +1465,49 @@ from `/admin/pki` is unaffected, which is the point of having the switch.
 
 ### Where it is filed, and the argument that was refused
 
-Under **How you sign in**, whose own description is *the credentials on your own
+Under **How I sign in**, whose own description is *the credentials on your own
 entry, one page each*. The argument for *Your account* — that this key never
 signs anybody IN, since there is no browser session at the end of it — was
 considered and refused: it is an argument about the section's TITLE rather than
 about what the section holds, and moving the heading's meaning to fit one page
 would misfile the other three.
 
+### SEVERAL KEY PAIRS PER CARD, REVOKED ROW BY ROW (#1290, 2026-11-03)
+
+rcbj asked for the two signing-key cards to work like the TLS card. Each now
+LISTS every key pair the person holds (`view.profiles[].held.keys`, newest
+first, each with its `handle`, label, state and certificate), with a *Revoke*
+form on each valid row (`action: 'revoke'`, `handle`, `reason`
+`cessationOfOperation` or `keyCompromise`) and a *Generate* that ADDS one under
+an optional label. **Take off and its `remove` act are gone**: revoking puts
+the certificate on the CRL, which take-off never did. At
+`pki.personSigningKeyMax` valid key pairs (`profiles[].atCap`) the Generate form
+is replaced by a folded note, and the act is refused before a key is generated
+(`STS-PKI-0223`). The new key pair's row carries the two downloads
+(`view.fresh.handle` names it), as the TLS card's new row does.
+`common/CLAUDE.md` 3ab, continued, argues the storage.
+
 ## A TLS CLIENT CERTIFICATE, THE THIRD CARD ON `/portal/signing-key` (2026-09-13)
 
 Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates
-a TLS client certificate that maps to their identity and installs it in their
-browser. `common/tls_client_certificates.js` issues, packages and revokes;
+a TLS client certificate that maps to their identity. Since #671 (2026-11-03)
+the portal hands out PEM files only, which a browser cannot import; the
+console's issue still answers a `.p12`. `common/tls_client_certificates.js` issues, packages and revokes;
 `common/CLAUDE.md` 3ag argues the gate that makes trusting the
 service Root safe, and `tls/CLAUDE.md` what a presented certificate is worth.
 What is this page's:
 
-* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
-  one-time card with three `data:` links carrying `download` — the `.p12`, an
-  encrypted `-key.pem`, the `-chain.pem` — which is the console keytab page's
-  arrangement and the only way a file leaves a page with `script-src 'none'`.
-  Nothing keeps the private key; the page says so, and the install steps
-  (Windows, macOS, Firefox, Linux Chrome, curl) are folds on the same card.
-* **THE FILE PASSWORD IS TYPED TWICE, CHECKED, USED ONCE AND NOT KEPT** — not
-  audited, not logged. A mismatch is 400 `STS-PORTAL-0040` before any key is
-  generated.
+* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` answers
+  two `data:` links carrying `download`, the unencrypted `-key.pem` and the
+  `-chain.pem`, drawn in the new certificate's row (#671) — the console keytab
+  page's arrangement, which was the only way a file left a page with
+  `script-src 'none'`; the static portal (#568) kept it. Nothing keeps the
+  private key; the page says so, and a `curl` line under the list says how to
+  present the files.
+* **NO FILE PASSWORD AND NO `.p12` SINCE #671** (rcbj, 2026-11-03). The
+  password was typed twice and a mismatch was 400 `STS-PORTAL-0040`, now
+  retired with the field: a body still carrying `p12_password` is refused at
+  the form's shape.
 * **IT SHARES THE PAGE'S SAFEGUARDS RATHER THAN GROWING ITS OWN**:
   `pki.personSelfService`, the two self-service rate limits (an RSA key
   generation costs the same CPU whatever it certifies), the CSRF token. The one
@@ -1108,9 +1519,10 @@ What is this page's:
   revocation (the CRL, OCSP, and every door that reads a certificate refusing
   it), with two reasons a person
   can honestly give: `cessationOfOperation` and `keyCompromise`.
-* **A PACKAGING FAILURE REVOKES THE CERTIFICATE AT ONCE** (`STS-PORTAL-0042`): its
-  key is gone, and a valid certificate nobody can present or knows to revoke is
-  worse than a line on a list.
+* **NOTHING IS PACKAGED, SO NOTHING CAN FAIL BETWEEN THE ISSUE AND THE
+  ANSWER** (#671). A packaging failure used to revoke the certificate at once
+  (`STS-PORTAL-0042`, now retired): the key and the chain are answered as the
+  issue handed them over (`tlsClient.pemFiles()`).
 * **WHERE IT WORKS IS ONE ADDRESS SINCE 2026-09-16**, and the card says so:
   `GET /tls/sign-in` on the host the page was reached at. It named two — the
   8443 and 9443 listeners, built from `tls.port` and `tls.mutualPort`, because
@@ -1131,7 +1543,7 @@ What is this page's:
 **NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
 per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it
 is listed like every other leaf of the `tls-client` authority.
-`tests/vendored/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
+`tests/protocol/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
 handshake was `tests/tls_client_certificates.js` in process, because no launcher
 published 9443 to a job — **a certificate now arrives on the port every job
 already uses**, which is the deletion's one gift to this page.
@@ -1269,9 +1681,17 @@ withdrawal does; four things are this page's:
   on their entry is refused 400 (`STS-PORTAL-0085`), the `/portal/keys`
   credential id's arrangement. `manage-own`, CSRF on the POST, and the
   withdrawal audited as `consent.revoke` with the person as actor.
-* **A scope under GLOBAL consent is not listed**: nothing about the person was
-  written, and the override is the operator's configuration of the application.
-  The page says so in a sentence rather than drawing rows with no button.
+* **A scope under GLOBAL consent is listed apart, under Administrative
+  consents, with no button (#537).** The override is the operator's
+  configuration of the application, so it is not the person's to withdraw.
+  Until #537 nothing about the person was written, so the page could only say
+  so in a sentence. Now the authorization endpoint records each scope a global
+  consent answered for the person (`oauthConsentApplied`,
+  `consent.noteApplied()`, the first time only). The section draws the records
+  that still stand (`consent.appliedConsentsOf()`): the application still
+  carries the global consent, and the person has not also agreed to the scope
+  themselves. It is not paged, because global consent is configured on a
+  handful of applications. A sign-in made before #537 recorded nothing.
 * **No script, real forms**, paged by application (twenty per page). The
   console's and the API's counterpart of *Withdraw everything for this
   application* is `revoke-application-consent` (rule 7).
@@ -1300,7 +1720,7 @@ administrator could see or end a GNAP grant. Four things are this page's:
   person, or one with nothing live left (`STS-PORTAL-0163`, 400) — the
   `/portal/keys` credential id's arrangement. `manage-own`, CSRF on the POST,
   and `gnap.grant.revoke` audited with the person as actor:
-  `tests/vendored/sts_gnap_core.js` section 15 asserts the ACTOR, this
+  `tests/protocol/sts_gnap_core.js` section 15 asserts the ACTOR, this
   directory's rule that only the audit row proves the write.
 * **Under cells (#98) it lists this cell's grants**, which is normally all of
   them (a grant moves to its resource owner's home before approval), and says
@@ -1328,6 +1748,34 @@ nobody and the person themselves (`STS-AUTHN-0227`); the page answers 400 with
 the person names moot. An administrator sets the same attribute from the
 person's `/admin/users` page and `POST /admin-api/users/set-may-act`.
 
+**A SEARCH FINDS A PERSON BY PART OF THEIR USERNAME (2026-10-20, rcbj).**
+Above the DN form, which stays because an application is named by its DN,
+a box asks `GET /account-api/delegate/candidates?q=` and lists at most ten
+people, each with a button that POSTs their DN to the same operation the DN
+form uses. That keeps `setMayAct()`'s checks the only checks. The rules:
+
+* **The match is a contains on the `uid`**, which is the entry's RDN value.
+  No other attribute is matched. A result is the uid, the `cn` (for display)
+  and the DN, and nothing else. rcbj first said cn and corrected it to uid:
+  the RDN value is the one name the store holds in the clear, so it can be
+  indexed while every attribute stays sealed.
+* **Only native people of this realm**: never an entry `stsProvisionedBy`
+  marks, never the person themselves, a disabled account, a service
+  account, a group or an application. `ldap/CLAUDE.md` (*Who created an
+  entry*) argues the stamp. A native person who LINKED a partner is still
+  native. `stsNotDelegated` on a CANDIDATE is not a reason to leave them
+  out: it says nobody may act for THEM, and the page already says when the
+  caller's own account carries it.
+* **The page asks after three seconds without a keystroke**, and only for
+  three characters or more (rcbj: "to avoid unnecessary searching"). Enter
+  asks at once, and the operation refuses a short text (`STS-PORTAL-0620`).
+  Every keystroke makes an answer still in flight stale, so it is never
+  drawn over a newer one (`web_delegate.ts`'s `DelegateSearch`). The timer
+  is the browser's own; the no-periodic-timers rule is about the server.
+* **The search form is the page's own**: it is wired by `DelegatePages.wire()`
+  from the runtime's `wire()`, and its submit is stopped at the form, so the
+  portal's form handling never sends it to a portal path.
+
 ## `/portal/self-issued`: THE WALLET KEYS THAT SIGN YOU IN (2026-09-23, #129)
 
 The SIOPv2 subjects enrolled on the person's own entry, each with a Remove,
@@ -1339,9 +1787,283 @@ for that session's person and sends them back here with `?enrolled=1`.
 Nothing is typed, because a DID pasted into a box could be somebody else's —
 the one person it would then let in. The removal form names the SUBJECT,
 never whose it is (`STS-PORTAL-0087` when it is not theirs).
+**The link names the tab's own account as `login_hint`** (2026-10-20, rcbj
+on 8081): with `authn.multipleAccounts` on and two people signed in in one
+browser, a request naming neither is answered nobody, so the enrolment was
+refused (`STS-VC-0093`) for everyone who had used Switch user. The hint
+only chooses among the sessions the browser already holds; one naming
+nobody here is still refused (`oid4vc/vc_signin.ts`, `startable()`).
 `portal_self_issued.ts` draws it the way `portal_delegate.ts` does. An
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
+
+**Since #693 (2026-10-20) each row says HOW it was enrolled** — *Proved with
+your wallet* (`proof: wallet`) or *Added by an administrator* (`admin`, by
+value, unproven) — because a subject released to a relying party must be one
+the person proved, and the person is the one who can tell. **Proving a
+subject that is already theirs proves it again** rather than being refused:
+that is how an administrator's entry becomes a proved one, and how a did:web
+whose document now names another key is re-pinned — the one re-pin flow,
+chosen because it costs nothing new: the same link, the same transaction,
+the same `siop.enrol()`. The enrolment writes `portal.siop.enrol` (the
+removal's shape, `STS-VC-0094` on a refusal) from `oid4vc/vc_signin.ts`,
+where the enrolment happens. The pin itself is `oid4vc/CLAUDE.md`'s (3ba).
+
+**Since #693's phase 2 a proved DID can be marked PREFERRED** here (*Make
+preferred*, *Clear*: `action: prefer | unprefer` on the same POST, naming the
+subject, never the person — `STS-PORTAL-0615`, audited
+`portal.siop.prefer`). Only a row the person proved, and only a DID, offers
+it; the page says whether this realm releases the mark as the `did` claim
+(`didClaim` on the view). What it is and what releases it:
+`oid4vc/CLAUDE.md` and `oauth-oidc/CLAUDE.md` (*The `did` claim*).
+
+**EACH ROW IS ONE LINE, AND SAYS WHERE THE KEY CAME FROM** (2026-10-20,
+rcbj on 8081). The subject shows its START AND ITS END — 13 characters, `…`,
+the last 7 (`SelfIssuedPages.middle()`), because every thumbprint begins
+`urn:ietf:params:oauth:` and an end ellipsis drew rows nobody could tell
+apart — and its `title` is the whole value; `td .oneline`'s CSS ellipsis
+(`web_portal_kit.ts`, overriding `td code`'s break-anywhere) is only the
+guard on a phone. The **Location** column is the
+enrolment value's `location` (`oid4vc/CLAUDE.md`, 3ba), drawn the same way:
+one short line — a web wallet's host and port, an app's reported name, or
+*Browser (DC API)* / *Administrator* / *Not recorded* — and the full story
+in the `title`: the wallet's whole address, "Name reported by the wallet
+app: …", or a sentence. A wallet's name is its own say-so, so the page
+labels it as reported and escapes it like any other value. A row from
+before the column says *Not recorded*; proving it again records it. The
+table sits in `.scrollx`, so a phone too narrow for even the cut-down cells
+scrolls it inside the card. `tests/self_issued_location.js` holds all of
+it; the console's `/admin/users` block draws the same column
+(`admin-ui/web_users.ts`, `siopLocationCell()`).
+
+**A DID'S DOCUMENT IS ONE CLICK AWAY** (2026-10-20, rcbj: "a simple
+hyperlink with a mouseover that shows the full URL", opening "a new tab that
+displays the DID"; then "did:web + resolved view"). Under a DID subject, one
+short line: *DID document*, `target="_blank" rel="noopener noreferrer"`, its
+`title` the whole address. A did:web links to its PUBLISHED document, at the
+address the view names (`didDocumentUrl`, `siop.didWebUrl()` on the server,
+so the browser carries no method mapping). A did:jwk or did:key links to
+**`/portal/self-issued/did?subject=`**, this column's first SUB-PAGE: drawn
+from `GET /account-api/self-issued/did`, it shows the document RESOLVED FROM
+THE IDENTIFIER (`oid4vc/vc_did_resolver.ts`, required lazily) as JSON in a
+`<pre>` that wraps inside its card, and fetches nothing. A thumbprint is no
+DID and has no link. **The operation answers only for a subject enrolled for
+the token's person** — anything else is `STS-PORTAL-0618`, before anything
+about it is said — and an enrolled did:web or thumbprint is `STS-PORTAL-0619`,
+so it is not a resolver for anybody's input. With no subject it answers
+`{ subject: '', document: null }` and the page points back at the list (so a
+page drawn with an empty query, `tests/account_api.js` 2b, still draws).
+**A sub-page is headed and marked in the column as its parent**
+(`PortalShell.navPathFor()`: the deepest listed path it is under, never the
+overview's), and `subject` is kept by Refresh and the language chooser
+(`REFRESH_KEPT`). The new tab has no `sessionStorage` (`noopener`), so it
+signs in from the browser's session as any fresh portal tab does and lands
+back on the sub-page with its query; where the browser holds several
+accounts, that sign-in names none and may ask which. `tests/self_issued_location.js` (sections 6-8).
+
+**NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20, rcbj after an
+investigation of empty portal lists on 8081). `siop.list()` answers null where
+the directory holds no entry for the token's person, and the view read that as
+`[]` — "none enrolled", indistinguishable from a person who enrolled nothing.
+`GET /account-api/self-issued` now refuses it (`STS-PORTAL-0616`, 404, audited
+`portal.siop.view`) and the page draws its heading and no list under the
+runtime's message; an entry with nothing enrolled is still the empty list.
+`tests/portal_list_refusals.js` holds both.
+
+**OFF SAYS HOW TO TURN IT ON** (#655). With `oid4vp.signInSelfIssued` off
+the view carries `turnOn`: the setting, its environment variable, and
+whether the person holds **Admin Write in the realm the request is in**
+(`admin_rbac.rolesOf()`, required lazily — the roster is the console's, at
+18). Write, because changing a setting is a write; that realm's roster,
+because it is that realm's setting, and a realm administrator may write it
+(`admin_scope.ts` keeps only per-process rows from them). An administrator
+gets the setting named and a link to `/admin/vc#vc-tab-oid4vp`, the tab
+`SETTING_HOMES` puts the OID4VP group on — not `/admin/config`, which is the
+index and has no form for it. Anybody else is told to ask an administrator,
+and gets no link to a console that would refuse them. The roster is asked
+only when the sign-in is off, and one that throws reads as "may not".
+`tests/self_issued_off_note.js`.
+
+### A DID THIS REALM PUBLISHES FOR THE PERSON (#1291, 2026-11-03)
+
+The same page carries *DIDs this realm publishes for you* where
+`did.personPublishing` is on (or the person still holds one): the custody,
+the cap, *Publish a DID*, and each DID's document link, custody, versions and
+state, with *Add key*, *Rotate key* and *Deactivate*. `oid4vc/person_did.ts`
+and `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) are the design; what
+is the portal's:
+
+* **A WALLET ACT IS A LINK, NOT A FORM** — Publish in `wallet` custody, and
+  both proofs of a change (`authorize-add.<rid>` / `authorize-rotate.<rid>`,
+  then *Prove the new key*, `key.<rid>`) — to
+  `/authn/wallet?siop=1&enrol=1&did_act=…&login_hint=…`, for *Enrol a
+  wallet*'s reason: it is a sign-in round trip. It comes back with
+  `?did=published|authorized|changed&rid=…`, which the GET's `did` query
+  turns into the notice.
+* **THE REALM'S OWN ACTS ARE `POST /account-api/self-issued/dids`**
+  (mirrors `POST /portal/self-issued/dids`): `publish` in `realm` or
+  `download` custody, `add-key` / `rotate-key` of a `realm`-custody DID, and
+  `deactivate` of any. The identity is the token's; the body names only the
+  DID's `rid`. Refusals carry the library's code (`STS-VC-0167` to `0176`).
+* **A DOWNLOADED KEY IS ANSWERED ONCE**, as `view.fresh` (`kind: 'did-key'`,
+  a `data:` file), drawn in a `.fresh` pane by `freshPane()`, #671's
+  pattern; no GET ever carries it again.
+* **REMOVING A PUBLISHED DID FROM THE SUBJECT LIST DEACTIVATES IT** (the
+  POST's `remove` routes to `didAct('deactivate')`): its address is kept, so
+  a removal that left the document published would say something false.
+
+## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
+
+The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose
+credential leaves this service to be held somewhere else: a pre-authorized
+OpenID4VCI Credential Offer (Appendix H.2, or H.3 deferred) of one of the
+realm's credential configurations, for the person's OWN wallet. It was the
+product behaviour of the demo issuer's `/issuer/offer` until rcbj decided on
+2026-10-12 that it is a real self-service feature; `oid4vc/CLAUDE.md` has
+that history and `makeOffer()`, which the demo issuer called too until it left
+for the development companion on #594 (which links a person here for a
+pre-authorized offer).
+
+* **Two operations** (`portal_wallet.ts`): `GET
+  /account-api/credentials/offerable` (the page's view: the configurations,
+  named as the issuer's metadata names them, the two modes, the offer's
+  lifetime) and `POST /account-api/credentials/offers` (`configuration`,
+  `mode`). The paths are the API's names for the resource rather than the
+  page's, because a native application holding `account:manage` asks for an
+  offer with no page in sight; `mirrors` ties them to `GET` and `POST
+  /portal/wallet` as rule 7's twin asks.
+* **THE SUBJECT IS THE TOKEN'S**: the offer names `caller.username` and the
+  token's `sub`, and a body naming anybody is ignored — the A01 rule above.
+* **AND THE TOKEN'S `sub` AND PERSON MUST NAME EACH OTHER** (2026-10-20,
+  rcbj). The history is read by `caller.sub` (`vc_issued.ts`'s subject
+  index) and the page is `caller.username`'s; where they disagree the
+  history was somebody else's, or — with no index entry — an empty list that
+  read as "nothing issued". The history, an offer and a Remove each refuse it
+  (`STS-PORTAL-0617`, 403, audited as the operation's own action or
+  `portal.vc.view`) before anything is read or written by that subject.
+  **EITHER DIRECTION TIES THEM**: `subjectForName(username)` is the subject
+  (it folds a name the way the directory files it — a certificate subject, a
+  namespaced federated uid), or `nameForSubject(sub)` is the username (which
+  also reads the legacy `urn:sts:user:` form). Every token this service
+  issues the portal passes: `sub` is the session user's and `username` that
+  user's name, in the realm the token is audienced to, one token per
+  multi-account tab; and a process with no directory compares nothing and
+  refuses nothing. The page, refused, draws no form and no history. Agreeing
+  with nothing indexed is still the empty history.
+  `tests/portal_list_refusals.js` holds the refusals; the wallet's own jobs
+  hold that a person signed in to the portal is never refused.
+* **IT IS MADE ON THE SIGN-ON SESSION THE TOKEN WAS ISSUED ON**
+  (`caller.signOn`), which CAEP reports as `session-presented` naming
+  OpenID4VCI. Where the token registry no longer says
+  which session that was — it is capped — or the session continued without
+  signing in, the offer is REFUSED (`STS-PORTAL-0590`) rather than made on
+  nothing; signing in again cures it. `STS-PORTAL-0310` is the same answer
+  for a device link, for the same reason.
+* **THE OFFER IS SHOWN ONCE, IN PLACE**: the POST answers the offer and the
+  page's `view` with it, and the runtime draws it without a URL — the
+  pre-authorized code and the Transaction Code beside it must not reach the
+  address bar or the history. A reload shows the form again, and a new offer
+  is a new code.
+* **THE QR CODE IS DRAWN IN THE BROWSER** (`common/web_qr.ts`, here until #572 moved it beside the sign-in surface, which draws one too), from the offer BY
+  REFERENCE, which is short enough to scan; the open-in-wallet link carries
+  the offer by value as the `openid-credential-offer://` URI a native wallet
+  registers for (`haip-vci://` where `oid4vci.walletInvocation` says so,
+  `vc_offers.ts`'s `offerScheme()`), and the configured web wallet
+  (`oid4vci.walletUrl`) gets a second link — **none by default since
+  2026-10-12**, when that setting stopped defaulting to the embedded
+  debugger's `http://localhost:3000`. Under the links the page says what to
+  do when nothing opens (`wallet-no-app`). A third-party wallet redeems the
+  pre-authorized code naming no client, which the authorization server's
+  metadata says it may (`pre-authorized_grant_anonymous_access_supported`,
+  OpenID4VCI 1.0 section 12.3); before that member a wallet defaulted to
+  sending a client_id of its own, which product refuses unregistered. `/portal/mfa`'s QR code is an image the server drew, because
+  its secret is the server's to show; here the answer is a URI and the
+  picture is only a way of showing it, so the renderer makes it. `web_qr.ts`
+  requires nothing, emits inline SVG (the portal's `img-src` admits no
+  `data:` image) and is held module for module to the `qrcode` package the
+  server uses, for every level and mask (`tests/portal_wallet.js`, A).
+* **THE ELEMENT IDS ARE THE DEMO ISSUER'S** — `offer_qr`, `tx_code`,
+  `offer_uri`, `open_in_wallet` — so a reader of either screen finds the
+  same things.
+* **Filed under the credentials section**, beside *Self-issued IDs*, for the
+  signing keys' reason: what it hands over is a credential about the person,
+  on their own sign-in.
+* `tests/portal_wallet.js` holds the operations, the refusals and the page's
+  round trip through the bundle; three protocol jobs make their offers here
+  (`oid4vc/CLAUDE.md`).
+* **THE CREDENTIALS ISSUED TO THE PERSON, AND REMOVE** (#661, rcbj 2026-10-16).
+  The view's `issued` was `vc_issued.ts`'s `historyForSubject(caller.sub)`
+  (one entry per issuance since #670, below): every credential still on one
+  of the person's rows, newest first, with
+  its state and the last event their wallet sent to the Notification
+  Endpoint. The issuer mints the Credential Response's `notification_id`
+  BEFORE it records the credential so the two are linked; the wallet's
+  report is shown and disowns nothing. A row goes when its last credential
+  expires, so this is what the register holds, not everything ever issued.
+  **Remove** is `POST /account-api/credentials/remove` (`id`), mirrored by
+  `POST /portal/remove-wallet-credential` because `POST /portal/wallet` is
+  the offer. rcbj chose REVOKE AND KEEP IN THE HISTORY over hiding a row
+  (2026-10-16): `removeForSubject()` sets that one credential's status-list
+  entry INVALID, revokes its issued-register row and stamps it removed,
+  which `disownedReason()` refuses at sign-in — the one credential, not an
+  `ldp_vc` row's siblings, which `disown()` would take. **No protocol lets
+  an issuer delete a wallet's copy** (OpenID4VP is a verifier asking;
+  OpenID4VCI's notification runs wallet to issuer), so the page says the
+  person must delete it in the wallet (`wallet-remove-note`). The id is a
+  digest of the row and the credential, looked up among the CALLER's rows
+  only: another person's is refused as unknown (`STS-PORTAL-0591`).
+  The history is PAGED twenty at a time, as `/portal/sign-ins` and
+  `/portal/claim-sources` are (`page`, `paging`, `kit.pageNav()`), and both
+  forms carry the page they were on so the view an act answers is that
+  page. `tests/portal_wallet_history.js` holds it.
+* **ONE ROW PER ISSUANCE, ITS BATCH COPIES UNDER IT** (#670, rcbj
+  2026-10-17). The issuer advertises `batch_credential_issuance.batch_size`
+  (`oid4vci.batchSize`, 4), so a wallet sends four proofs and takes four
+  credentials from one Credential Response, each bound to a different key
+  of its own with its own status-list entry — and the list showed four rows
+  for one "Add to your wallet". **They were never one register row** (the
+  brief for #670 expected they would be; the code says otherwise): a JOSE
+  row is keyed by its credential
+  and an `ldp_vc` row by its holder key. What the copies share is the
+  response's `notification_id`, so `vc_issued.ts`'s `issuancesForSubject()`
+  groups by it (`oid4vc/CLAUDE.md`). The view's `issued` is one entry per
+  issuance — configuration, format, issued, its state (the copies' where
+  they agree, else `mixed` with `counts`, drawn "3 of 4: Valid"), Remove —
+  and its `copies` are drawn in a `<details>` fold under the row: "Copy 2
+  of 4", the wallet key (the first twelve characters of the RFC 7638
+  thumbprint, with the whole thumbprint and, for `ldp_vc`, the holder's
+  `did:jwk` as the tooltip — twelve characters of a `did:jwk` are
+  `did:jwk:eyJ` for every key, which is why the visible part is always the
+  thumbprint, as on the console's sign-out page), the status-list index,
+  and a Remove of its own where the issuance has more than one. While
+  `batchSize` is over one the pane says batching is on, how many copies,
+  and that it is so verifiers cannot link presentations by the key
+  (`wallet-batch-note`); at one it says nothing about batching. **A page
+  counts issuances.** **REMOVE IS STILL ONE OPERATION**:
+  `POST /account-api/credentials/remove`'s `id` is an issuance's (every copy
+  still good) or a copy's (that copy alone). The two are digests of
+  different strings and cannot collide; both are the same act on the same
+  resource, with the same refusal (`STS-PORTAL-0591`, on an id not on one of
+  the CALLER's rows), the same audit action (`portal.vc.remove`, its detail
+  saying `scope`, `removed` and `copies`) and the one portal path, so a
+  `scope` member could only restate the id and would add a mismatch to
+  refuse. The answer says `scope` and `removed`; one CAEP signal per act.
+  **The console has no list of a person's issued credentials to keep in
+  step**: its sign-out page (`logout/logout.ts`'s `wallet-credential`) lists
+  register ROWS, one per wallet key, because a global sign-out disowns a
+  row, and already shows each one's key the same twelve characters long.
+  `tests/portal_wallet_batch.js` holds it.
+* **THE SIGNING ALGORITHM, CHOSEN PER OFFER** (rcbj, 2026-10-16). One
+  `<select name="signingAlg">` under the configuration and mode radios: every
+  configuration's `signingAlgs` (the configured default first, post-quantum
+  drafts named as drafts in `ALG_NOTES`), each option's `data-for` naming
+  its configurations and `data-default-for` those it is the default of. The
+  runtime's `wireDependentSelects()` (`data-depends-on="configuration"`)
+  shows only the checked configuration's and selects its default; the first
+  configuration's are drawn so already, for a browser without the script. A
+  value not in the configuration's list is refused (`STS-PORTAL-0592`); the
+  default is not recorded as a choice, so a change of the setting before
+  the wallet redeems still applies. `oid4vc/CLAUDE.md` has where it goes.
 
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
@@ -1384,9 +2106,14 @@ the Kind column on `/portal/keys`, the note under it, the link card's list of
 keys not offered (named with the model a trusted attestation gave) and
 `beginLink()`'s refusal.
 
+**SUPERSEDED BY #470 (2026-10-06)**: the three-way radio described next became
+two calls to action — *Create a passkey* and *Use a security key* — and its
+lesson is kept by sending *Create a passkey* with NO attachment, only hints
+(see *The passkey page*, above). The paragraph is kept for why.
+
 **AND `/portal/keys` ASKS WHERE THE KEY LIVES (2026-09-26).** The page asked for
-"a security key" and let the browser choose, and with `webauthn.residentKey` at
-`discouraged` Chrome and Edge offered a USB key or a phone and never the
+"a security key" and let the browser choose, and with `webauthn.residentKey` (the
+passkey policy's since #527) at `discouraged` Chrome and Edge offered a USB key or a phone and never the
 device's own authenticator — so nothing a person enrolled could be linked. The
 form now offers *Built into this device* (a platform authenticator and a
 discoverable credential, `preferred` unless the setting says `required`) and *A
@@ -1401,7 +2128,7 @@ was), and **a ceremony the browser could not run abandons the pending
 enrolment** and draws the form again with the browser's error: the first
 version defaulted to *Built into this device* and kept the enrolment armed, so
 Linux Firefox — which has nothing built in — could register no key at all and
-never get back to the choice. `tests/vendored/sts_portal_backup_keys.js`
+never get back to the choice. `tests/protocol/sts_portal_backup_keys.js`
 section 1a holds both.
 
 **THE LINK STEP IS A SCRIPTED PAGE, AND ITS OWN ROW IN THE ROOT TABLE.** A
@@ -1419,9 +2146,15 @@ a `link-finish` with no assertion, answered by a sentence.
 registers it self-asserted. Refusals are `STS-DEVICE-0016`–`0028`; the page
 and the JSON doors never take an identity from the request.
 
-**What it still has no test for**: the scripted link step in a real browser
-(the Selenium console job is rcbj's; `tests/device_enrolment.js` drives the
-same `finishLink()` with an assertion built in process).
+**The scripted link step is driven in a real browser** by
+`tests/protocol/sts_portal_device_webauthn.js` (#258): Chrome's virtual
+authenticators, the roaming key refused, the page with its script blocked,
+the armed policy, the link, and a later sign-in recognising the device.
+**In product it can only assert the refusal**: Chrome re-mints the virtual
+authenticator's self-signed attestation certificate at every registration,
+so no anchor makes its key attested, and product links nothing less — so
+the device and its recognition are asserted in development (`memory` mode).
+`tests/device_enrolment.js` still holds `finishLink()` in process.
 
 ## `/portal/ciba`: SIGN-IN REQUESTS (2026-09-23, #131)
 
@@ -1492,6 +2225,51 @@ other portal page's 303 is still a bare path (`portal_ciba.ts`, the MFA
 pages), which is the same defect in a non-default realm and is left for its
 own change.
 
+**THE CALLBACK IS BOUND TO THE BROWSER BY A COOKIE OF ITS OWN, NOT BY THE
+SIGN-ON COOKIE (2026-10-12).** #568 first bound it to the browser's
+`sts_session`; but that cookie is one per origin at `Path=/` whatever realm
+minted it (`authn/CLAUDE.md`, `consoleSession()`), so a provider that is
+another trust realm on the same origin overwrote it at its own sign-in, and
+every such link was refused `STS-PORTAL-0300` while the page said nothing —
+`sts_claims_aggregation` found it, with the refusal's text lost on a static
+shell. Link's answer now sets `sts_claim_link`, a random secret scoped to
+the realm's callback path (HttpOnly, SameSite=Lax), the flow keeps its
+SHA-256, and the callback wants that cookie (`0300`) and the sign-on session
+the token was issued on still live and the person's, asked by its id
+(`STS-PORTAL-0303`). The cookie is cleared on every callback. The page draws
+the callback's `problem` and `done` from its operation's `problem` and
+`notice`.
+
+## EVERY PORTAL LIST THAT CAN GROW WITHOUT A BOUND IS PAGED (#313's sweep, 2026-10-12)
+
+The console's rule (`admin-ui/CLAUDE.md`, *EVERY LIST THAT CAN GROW WITHOUT A
+BOUND IS PAGED*) holds here too. Three lists broke it and page now, twenty a
+page, each answer carrying the slice and a paging member beside it
+(`page`, `pages`, `per`, `total` — the portal's shape since #172):
+
+| Page | List | Moves on | Was |
+|---|---|---|---|
+| `/portal/claim-sources` | `providers`, the realm's Claims Providers (`ou=claimproviders` grows with what an operator registers) | `page`; `linked` counts the person's links over every page | the whole register |
+| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of the configured window (`audit.authenticationHistoryDays`, thirty by default), each with the application the sign-in named | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
+| `/portal/email` | `sent`, the outbox's messages to the person | `sentPage`, beside `sentPaging` — named because the page holds other things than the list | the newest twenty, silently truncated |
+
+`PortalKit.pageNav()` (`web_portal_kit.ts`) draws the control for a list that
+moves on a parameter of its own and carries the reader's other parameters,
+less `notice`, `problem` and `done`, which belong to the moment they were
+said. The three older lists (consents, GNAP grants, the overview's
+applications and signals) still draw their own `?page=` controls.
+
+**Left unpaged, each with its bound**: devices (`devices.maxPerPerson`),
+app passwords (`appPasswords.maxPerPerson`), passkeys
+(`webauthn.maxKeysPerPerson`), enrolled certificates
+(`pki.enrollmentMaxCertificatesPerEntry`), TLS client certificates
+(`pki.personTlsClientCertificateMax`), EAB keys and SCEP challenges (10 a
+person), self-issued subjects (10), CIBA and GNAP requests waiting (each
+expires with its request), administrative consents (`portal_consents.ts`
+argues it), and `/portal/wallet`'s credential configurations — a `<select>`
+over the realm's configurations, not a table, and a menu is drawn whole so it
+can be chosen from.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a
@@ -1517,6 +2295,18 @@ three differences:
   `ssf/account_signals.ts`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
+* **A RECOVERY FOR A PASSKEY HOLDER (#724, `common/CLAUDE.md` 3cq).** The
+  POST asks the recovery question before it claims the link
+  (`recoveryCheck()`): under `recoveryAssurance: operator-only` a link the
+  person asked for themselves (`stsPasswordResetSource: self`) is refused
+  403, `STS-AUTHN-0380`, with its own sentence, and stays unspent; an
+  administrator's is not. A spent link then leaves a pending recovery
+  (`credentials.noteRecovery()`). Where a hold is required and that write
+  fails (#962, `STS-AUTHN-0382`), the link is not spent and the password is
+  taken off again, so it cannot sign in with nothing pending; the link can
+  be submitted again. `/portal/activate`'s finish does the same for
+  somebody who held a passkey before the link was issued. The sign-in
+  after either is held by `authn.ts` (`authn/CLAUDE.md`).
 
 ## SEVERAL NODES: A LINK IS CLAIMED BEFORE ANYTHING IS SET (2026-09-14, #46)
 
@@ -1559,3 +2349,126 @@ Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
 - **The reset form's sentence changed with it**: "no password you had before
   works once it is set" rather than "your old password no longer works",
   because a self-service link removes nothing until it is used.
+
+## `portal_pseudonyms.ts`: `/portal/pseudonyms` and `/portal/verify-pseudonym` (#644)
+
+`/portal/pseudonyms` is signed in. The person is the token's subject, and
+the account API operations take no username. A name that is not an email is
+a sign-in name at once. An email is not, until `/portal/verify-pseudonym`
+spends the link mailed to that address. The GET of the link draws the
+confirmation and spends nothing, because a mail scanner follows every link.
+That page is not `/portal/verify-email`, which confirms the recovery
+address. `account-api/CLAUDE.md` has the operations.
+
+## RESOURCES I OWN (#604, 2026-10-12)
+
+rcbj: a section of the column, *Resources I own*, with Roles, Groups, Service
+accounts and Applications, "driven by the owner fields". `portal_owned.ts`
+answers four GETs, `/account-api/owned/<kind>` (`KINDS`), each mirroring
+`/portal/owned/<kind>`; `web_owned.ts` draws them; `NAV`'s `owned` section
+lists them after *Your account*. A resource is the person's when one of its
+owner values — a role's `owner`, a group's `owner`, a service account's
+`stsServiceAccountOwner`, an application's `appOwner` — names the person's
+entry or a group the directory says they are in (`groupsOfUser()`); each row
+says which (`via`). The owners are set on the console's Owners tabs, and an
+owner may add and remove other owners (#607). The person is the token's, as
+everywhere here. Everything is reached lazily at request time.
+`tests/portal_owned.js` holds it.
+
+**rcbj, 2026-10-13: no list of the person's groups under the table** — each
+row's `via` already names the group that makes it theirs — **and a pager on
+every page**, one page or many (`pageNav(..., always)`).
+
+### AND ONE OF THEM, ADMINISTERED (#607, 2026-10-13)
+
+rcbj: a person updates what they own from here, through the MANAGEMENT API,
+and the check that they own it is the access-control policy's owner rule —
+not repeated in `/account-api` (`mgmt-api/CLAUDE.md` *OWNERS*,
+`xacml/CLAUDE.md`, `common/CLAUDE.md` 3cn). So:
+
+* **EACH ROW OPENS ITS PAGE**, `/portal/owned/<kind>?name=<id>` — the same
+  path, so the column and the heading need nothing — unless the row is
+  `closed` (`portal_owned.ts` asks `ownership.protectionOf()` for the rows on
+  the page), which says so instead.
+* **THE PAGE IS DRAWN FROM `/admin-api`**: a `PortalPage` may carry
+  `admin(query)`, the management API path whose GET answers it for that
+  query, and the runtime reads it with the OWNER TOKEN; the view is
+  `{ owned: { status, answer, canWrite, query } }`. A refusal — the owner
+  rule's sentence, or why there is no owner token — is drawn, in English.
+* **ITS FORMS POST THERE**: `data-admin="/admin-api/<kind>/<action>"`, sent
+  as JSON with the owner token (`submitOwned()`; `fields.<attribute>` and
+  `lines.<attribute>` become an `update-fields` body's `fields`), and the page
+  is drawn again with the answer's message, a regenerated client secret said
+  once, or the errors. The controls are the template's default owner
+  actions; a realm whose policy narrows them refuses, and the refusal is
+  drawn. Without `owner:write` the page draws no form.
+* **THE OWNER TOKEN** (`web_portal_runtime.ts`): the sign-in names TWO
+  resources — this realm's `/account-api` and `/admin-api` (RFC 8707,
+  `SpaClient.formOf()` repeating the parameter) — and asks for
+  `owner:read owner:write` beside `account:manage`. The code is redeemed for
+  the account API, and the management API's token is REFRESHED from the same
+  grant with `/admin-api` as its resource when an owner's page asks; the
+  refresh token keeps both resources (`oauth-oidc/CLAUDE.md`), and one
+  rotation chain serves both. The authorization server issues the owner
+  scopes only to a person who owns something, so `scope` on that answer is
+  what `canWrite` reads. The shell names `/admin-api`'s listener where it is
+  elsewhere (`data-sts-api`, and `connect-src`).
+
+## CONNECTED ACCOUNTS (#565, 2026-10-19)
+
+`/portal/connected-accounts` (`portal_connected_accounts.ts`,
+`web_connected_accounts.ts`) is where a person connects a consumer or social
+provider to their own account. It is two `/account-api` operations, on the
+claim sources' pattern: Connect answers `location`, the provider's address.
+**There is no callback of this page's own**: the provider answers at the
+federation module's assertion consumer service, where every check of a
+federated sign-in is made, and `federation_sp.ts`'s `finishConnect()` writes
+the link and sends the browser back with `done` or `problem`. The browser
+binding is the federation module's `sts_fed_link`, set on Connect's answer.
+
+The account-takeover checks are this page's, before anything starts:
+* a sign-on session (`STS-PORTAL-0610`) whose risk is LOW or unscored
+  (`STS-PORTAL-0611`, a refusal, never a step-up);
+* an authentication within `federation.connectRecentAuthMinutes`, or the
+  answer is `stepUp` (`prompt=login`, `max_age`).
+
+**Any authentication counts as recent, not only a password**, a departure
+from the plan's "authenticated locally" (2026-10-19). A person whose account
+a provider made has no password here, and proving that provider again proves
+the account. The federation module and the directory are reached at request
+time (8a-acct is before 10c and 21). `federation/CLAUDE.md` has the
+federation half.
+
+## A skipped device binding on the Overview (#743, 2026-10-25)
+
+The Overview's "Bound to this browser" row already said yes or no
+(#725). A sign-on whose fact is `skipped` says "binding skipped" and the
+reason tokens the session stored (`overview.deviceBoundSkipped`,
+`{reasons}`, in the seven base catalogs). `fact` and `reasons` are
+language-free on the account answer; the browser translates. `pending`,
+`timedout` and `none` stay "No". The portal is this origin, so it does
+not use a site-scoped or federated DBSC session.
+
+## SHARING: `/portal/shared` AND `/portal/shared-with-me` (#1168 phase 3, #1192)
+
+User-Managed Access 2.0's two pages, a section of their own (rcbj's
+decision 7). **The first page writes a POLICY**: each share is one XACML rule
+in the person's own document (`uma/uma_owner_policy.ts`; `uma/CLAUDE.md`
+argues the fixed shape and why a card is drawn only for a rule that rebuilds
+to the same XML). One `POST /account-api/shared` takes the form's `action`
+(`share`, `unshare`, `alfa`), the consents page's arrangement. **A01 holds as
+everywhere**: the owner is the token's subject, a resource named in the form
+must be theirs and a share named for removal must be in their document
+(`tests/portal_shared.js` D1). The section is always in the column; the page
+says when UMA is off.
+
+## THE OVERVIEW'S PROFILE PHOTO (#719, 2026-11-05)
+
+`web_photo.ts` turns a chosen file into a centered square of at most 720 pixels
+on a canvas, and that one result is both the preview and the hidden field Save
+sends, so Save stays disabled until there is one. **Everything goes through
+`data:` URLs** because the portal's `img-src` is `'self' data:`; a `blob:` URL
+would need the policy widened, and nothing else wants it. The limits arrive on
+the Overview's `photo.limits` and are the server's to enforce:
+`common/CLAUDE.md` (3db).
+

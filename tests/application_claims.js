@@ -29,6 +29,9 @@
 //   D. the view model the configuration tabs draw: rows marked by source,
 //      a replaced realm row marked so; and the token lifetimes in force,
 //      the application's override and the realm's value.
+//   E. GNAP (#1250): an application's gnap_access_token rows through
+//      configuredJwtClaims() and a minted jwt-signed token. Protocol claims
+//      win. Groups, roles and the catalogue are not added.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -199,9 +202,119 @@ function childMain() {
            idTtl.source === 'realm' && idTtl.value === idTtl.realmValue,
            'D2. the token lifetimes in force: the application\'s override ' +
            'and the realm\'s value', JSON.stringify(lifetimes.rows));
+
+      // --- E. GNAP access-token JWT claims (#1250) ----------------------
+      applications.createApplication({ identifier: 'ac-gnap',
+        protocols: ['gnap'], fields: {} });
+      applications.createApplication({ identifier: 'ac-gnap-other',
+        protocols: ['gnap'], fields: {} });
+      stats.setClaimSet('gnap_access_token', [
+        { name: 'tenant', value: 'realm' }]);
+      const gnapTenant = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'tenant',
+        value: 'app' });
+      const gnapPlan = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'plan',
+        value: 'gold' });
+      const gnapUid = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'uid',
+        value: '${username}' });
+      note(gnapTenant.ok && gnapPlan.ok && gnapUid.ok,
+           'E0. three GNAP rows set on the application',
+           JSON.stringify([gnapTenant.errors, gnapPlan.errors,
+                           gnapUid.errors]));
+      const forGnap = stats.configuredJwtClaims('gnap_access_token',
+        { client_id: 'ac-gnap', username: 'ada' });
+      const gnapKeys = Object.keys(forGnap).sort();
+      note(forGnap.tenant === 'app' && forGnap.plan === 'gold' &&
+           forGnap.uid === 'ada' &&
+           gnapKeys.join(',') === 'plan,tenant,uid',
+           'E1. the application\'s rows win, ${username} expands, and ' +
+           'groups, roles and the catalogue are not added',
+           JSON.stringify(forGnap));
+      const forGnapOther = stats.configuredJwtClaims('gnap_access_token',
+        { client_id: 'ac-gnap-other', username: 'ada' });
+      note(forGnapOther.tenant === 'realm' &&
+           forGnapOther.plan === undefined,
+           'E2. another GNAP client gets the realm\'s set',
+           JSON.stringify(forGnapOther));
+      const reservedAccess = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'access',
+        value: 'nope' });
+      const reservedGrant = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'grant_id',
+        value: 'nope' });
+      const reservedUser = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'username',
+        value: 'nope' });
+      const gnapOnOauth = act({ action: 'set-custom-claim',
+        application: 'ac-web', set: 'gnap_access_token', name: 'tenant',
+        value: 'nope' });
+      note(code(reservedAccess) === 'STS-REG-0206' &&
+           code(reservedGrant) === 'STS-REG-0206' &&
+           code(reservedUser) === 'STS-REG-0206' &&
+           code(gnapOnOauth) === 'STS-REG-0206',
+           'E3. access, grant_id and username are reserved, and an OAuth ' +
+           'application cannot set the GNAP set',
+           JSON.stringify([code(reservedAccess), code(reservedGrant),
+                           code(reservedUser), code(gnapOnOauth),
+                           gnapOnOauth.errors]));
+      note(stats.applicationClaimSet('gnap_access_token',
+             { identifier: 'hand', fields: { gnapClaimsAccessToken:
+               '[{"name":"access","value":"nope"}]' } }).length === 0,
+           'E4. a stored row naming access is ignored, not issued');
+      const gnapState = views.applicationClaimsState(
+        applications.get('ac-gnap'));
+      note(gnapState.sets.map(function (one) {
+        return one.id;
+      }).join(',') === 'gnap_access_token',
+           'E5. the GNAP tab\'s model is that set and not the OAuth ones',
+           gnapState.sets.map(function (one) { return one.id; }).join(','));
+      try {
+        const tokens = require(ROOT + '/gnap/gnap_tokens');
+        const now = Math.floor(Date.now() / 1000);
+        const minted = await tokens.mint('jwt-signed', {
+          jti: 'ac-gnap-' + stamp,
+          iss: 'https://as.example/gnap',
+          sub: 'urn:uuid:ada',
+          aud: ['https://rs.example/api'],
+          instanceId: 'ac-gnap',
+          access: ['read'],
+          flags: ['bearer'],
+          cnf: null,
+          iat: now - 10,
+          nbf: null,
+          exp: now + 60,
+          label: null,
+          act: null,
+          grant: 'grant-ac'
+        }, { base: 'https://as.example', application: 'ac-gnap',
+             username: 'ada' });
+        const payload = JSON.parse(Buffer.from(minted.value.split('.')[1],
+          'base64url').toString('utf8'));
+        note(payload.tenant === 'app' && payload.plan === 'gold' &&
+             payload.uid === 'ada' && payload.typ === 'GNAP' &&
+             Array.isArray(payload.access) && payload.access[0] === 'read' &&
+             payload.groups === undefined &&
+             payload.grant_id === 'grant-ac',
+             'E6. a jwt-signed token carries the rows under the protocol ' +
+             'claims', JSON.stringify(payload));
+      } catch (e) {
+        // The child has no logger. The finding carries the stack, and the
+        // parent prints it when this note fails.
+        note(false, 'E6. a jwt-signed token carries the rows under the ' +
+             'protocol claims', e && (e.stack || e.message));
+      }
+      const gnapAttr = act({ action: 'set-custom-claim',
+        application: 'ac-gnap', set: 'gnap_access_token', name: 'department',
+        attribute: 'uid', type: 'string' });
+      note(gnapAttr.ok === true,
+           'E7. a directory-attribute row is accepted on the GNAP set',
+           JSON.stringify(gnapAttr.errors));
       stats.setClaimSet('access_token', []);
       stats.setClaimSet('saml2', []);
       stats.setClaimSet('saml11', []);
+      stats.setClaimSet('gnap_access_token', []);
     });
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

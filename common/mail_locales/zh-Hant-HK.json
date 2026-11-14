@@ -1,0 +1,44 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "重設您的 {{service}} 密碼",
+      "text": "有人（{{requestedBy}}）要求重設帳戶 {{username}} 的密碼。\n\n如需設定新密碼，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n此連結只能使用一次。如果這不是您的要求，可以忽略此電郵：在連結被使用之前，什麼都不會改變。\n",
+      "html": "<p>有人（{{requestedBy}}）要求重設帳戶 <strong>{{username}}</strong> 的密碼。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">設定新密碼</a>。此連結只能使用一次。</p><p>如果這不是您的要求，可以忽略此電郵：在連結被使用之前，什麼都不會改變。</p>"
+    },
+    "address-verification": {
+      "subject": "確認您在 {{service}} 的地址",
+      "text": "帳戶 {{username}} 將 {{address}} 登記為其電郵地址。\n\n如需確認這是您的地址，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n如果這不是您的帳戶，請忽略此電郵。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 將 {{address}} 登記為其電郵地址。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">確認這是您的地址</a>。</p><p>如果這不是您的帳戶，請忽略此電郵。</p>"
+    },
+    "address-changed": {
+      "subject": "您的 {{service}} 帳戶的電郵地址已變更",
+      "text": "帳戶 {{username}} 的電郵地址已於 {{when}} 變更為 {{address}}。此電郵已寄送至變更前的地址。\n\n如果您沒有預期到這種情況，請立即聯絡您的帳戶管理員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的電郵地址已於 {{when}} 變更為 {{address}}。此電郵已寄送至變更前的地址。</p><p>如果您沒有預期到這種情況，請立即聯絡您的帳戶管理員。</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}：有應用程式要求存取權",
+      "text": "應用程式 {{client}} 要求代表帳戶 {{username}} 取得存取權：{{rights}}。\n\n在您核准之前，不會允許任何存取。如需核准或拒絕，請在 {{expiresMinutes}} 分鐘內登入並開啟此頁面：\n\n{{link}}\n\n如果您不認得此要求，請在該頁面拒絕，或忽略此電郵：它會自行過期。\n",
+      "html": "<p>應用程式 <strong>{{client}}</strong> 要求代表帳戶 <strong>{{username}}</strong> 取得存取權：{{rights}}。</p><p>在您核准之前，不會允許任何存取。請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">核准或拒絕</a>。</p><p>如果您不認得此要求，請在該頁面拒絕，或忽略此電郵：它會自行過期。</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}：{{username}} 的 {{act}}",
+      "text": "本服務（而非某個人）於 {{when}} 對帳戶 {{username}} 執行了操作：{{act}}。\n\n{{why}}\n\n您收到此電郵，是因為您在此領域中擁有 Admin Write 權限。\n",
+      "html": "<p>本服務（而非某個人）於 {{when}} 對帳戶 <strong>{{username}}</strong> 執行了操作：{{act}}。</p><p>{{why}}</p><p>您收到此電郵，是因為您在此領域中擁有 Admin Write 權限。</p>"
+    },
+    "sign-in-link": {
+      "subject": "您的 {{service}} 登入連結",
+      "text": "如需以 {{username}} 身分完成登入 {{service}}，請在 {{minutes}} 分鐘內，在您開始登入的那個瀏覽器中開啟此連結：\n\n{{signin}}\n\n此連結只能使用一次，且只能在該瀏覽器中使用。\n\n如果您並未在登入，請忽略此電郵：此連結無法讓其他任何人登入。\n",
+      "html": "<p>如需以 <strong>{{username}}</strong> 身分完成登入 {{service}}，請在 {{minutes}} 分鐘內，在您開始登入的那個瀏覽器中<a href=\"{{signin}}\">開啟此連結</a>。</p><p>此連結只能使用一次，且只能在該瀏覽器中使用。</p><p>如果您並未在登入，請忽略此電郵：此連結無法讓其他任何人登入。</p>"
+    },
+    "test-message": {
+      "subject": "{{service}} 測試電郵",
+      "text": "這是一封測試電郵，應 {{username}} 的要求，於 {{when}} 透過 {{transport}} 傳輸方式寄出。\n",
+      "html": "<p>這是一封測試電郵，應 <strong>{{username}}</strong> 的要求，於 {{when}} 透過 {{transport}} 傳輸方式寄出。</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}}（{{realm}}）\n您收到此電郵，是因為它是{{reason}}。\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}}（{{realm}}）。您收到此電郵，是因為它是{{reason}}。</small></p>"
+  }
+}

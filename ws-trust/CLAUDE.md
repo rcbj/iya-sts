@@ -1,7 +1,50 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`). One file.
+`/sts/cert`, and its metadata, #958, below). Five files: `wstrust.ts`, the
+endpoint; `wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
+`wstrust_capabilities.ts`, the token capability model and the extension
+document and schema at `GET /sts/metadata/capabilities{,.xsd}`;
+`wstrust_mex.ts`, WS-MetadataExchange at `POST /sts/mex`; and `ws_model.ts`,
+the model as both this family and `../ws-federation/` read it — see *THE
+MESSAGES ARE THE MODEL'S*, at the end. The three metadata files are kept out
+of `wstrust.ts` because `tests/model_ws.js` refuses a URI written there.
+
+**THE METADATA (#958).** Three documents from one set of flags
+(`WsTrustMetadata.liveFlags()`, read as the endpoint reads them), so what is
+advertised moves with what is accepted:
+
+* **The WSDL has a port type per trust version** — its own namespace's
+  messages, its own operations (May 2004 has no Cancel), each input and
+  output's `wsam:Action` (the output's the one this file writes) — and a
+  SOAP 1.1 and 1.2 port each, all at `/sts`. The credentials and the issued
+  types are WS-SecurityPolicy alternatives that appear only while accepted.
+  **It is always returned formatted** (rcbj, 2026-11-13): `document()`
+  hands its text to `common/xml_format.ts`, one element a line, two spaces
+  a level, so `GET /sts/metadata` and the WS-MEX section are readable as
+  they arrive. Only whitespace between elements is added
+  (`tests/wstrust_metadata.js` F).
+  **It is validated against the published schemas** (`tests/wstrust_metadata.js`
+  W, rcbj 2026-11-13): WSDL 1.1, its SOAP 1.1 and 1.2 bindings, WS-Policy
+  2004/09, WS-SecurityPolicy 1.2 and the four trust XSDs (`tests/xml-schemas`,
+  in the corpora image), with every element outside `wsdl:types` declared by
+  one of them, every message an element its version's XSD declares, every
+  action the version's own, and the authentication and issued types as exact
+  sets. **The policy assertions are in SP 1.2's namespace (200702)**: SP 1.3's
+  200802 declares only the five assertions 1.3 added, and they were written
+  there until the check found it.
+* **The capability document is an IYA-STS extension, not a standard**
+  (`urn:iya-sts:metadata:token-capabilities:1`): WS-SecurityPolicy cannot
+  say which credential is exchanged for which token type, and the ticket
+  required every pair to be stated rather than inferred. Every
+  input × output pair is written out as supported, conditional or
+  unsupported. **A new credential or token type owes a row there**, or the
+  document says less than the endpoint does; `tests/wstrust_metadata.js` C
+  validates it against its own schema with xmllint.
+* **WS-MEX is an address of its own** (`POST /sts/mex`, the 2004/09
+  submission's Get and GetMetadata). A WS-Transfer Get sent to `POST /sts`
+  is answered as it always was: giving `/sts` a second meaning would change
+  a specification endpoint's behaviour for an existing client.
 
 **ONE PARSER ANSWERS ALL FOUR VERSIONS**, and that is not a simplification. The
 trust namespace alone has four versions in use, so `firstByLocal()` and
@@ -66,6 +109,12 @@ issued; both change what the console can draw.
   WS-Security credential, which this service never issued and cannot name. That
   wall is still recorded beside the followable one, because "it began somewhere
   this register cannot name" and "this is where it began" are different answers.
+  **Its note says what was CHECKED, by mode (#479).** In product the token
+  was verified, and the note says so: an assertion against this realm's
+  certificate and inside its Conditions, a JWT against this realm's key,
+  with its issuer and `exp` checked. In development it was not, and the
+  note says that. Until #479 the development sentence was written in every
+  mode.
 
 The requester also carries an `application` where this registry already holds an
 entry under the name it authenticated as. It stays a LOOKUP: an unknown name
@@ -73,10 +122,26 @@ leaves the slot empty and the party is drawn from `presented`, as before.
 
 **Both are authorized by the delegation policy since #108 (2026-09-23)**, and
 the row names what allowed it in the same field where a Kerberos row names an
-attribute on an account — see the next section. What this service does NOT do
-is put the composite fact into an `ActAs` token — nothing in the assertion says
-a middle tier acted — and the row states that as a gap in the mock rather than
-in the profile.
+attribute on an account — see the next section. **The composite fact IS in
+an `ActAs` token since #186.** A SAML 2.0 assertion names every party that
+acted, one `<del:Delegate>` each, least to most recent, in its SAML V2.0
+Condition for Delegation Restriction. A JWT names them in RFC 8693's nested
+`act` claim (#476). **A SAML 1.1 assertion names them in an attribute
+(#522, rcbj 2026-10-08)**, because SAML 1.1 has no Delegation Restriction
+(the SAML V2.0 condition derives from SAML 2.0's `ConditionAbstractType`
+and does not validate in SAML 1.1): `AttributeName="delegates"`,
+`AttributeNamespace="urn:iya:sts:delegation"`, one `AttributeValue` per
+party in the same order, signed with the assertion. A condition of this
+service's own was the alternative and was not chosen: a SAML 1.1 relying
+party treats an assertion with a condition it does not understand as
+Indeterminate, where an attribute it does not know is ignored.
+`delegatedDelegates()` reads the attribute back, so a chain of SAML 1.1
+tokens keeps it (`buildSaml11Token()`). Until #522 a SAML 1.1 token named
+nobody and the register was the only record. An `OnBehalfOf` token adds nobody, and keeps whatever chain
+the presented token carried. The act's note says which of these the issued
+token does, in that token's vocabulary (`actNote()`, #478). Until #478 the
+note and this paragraph still said no `ActAs` token carried the fact, "a gap
+in the mock".
 
 ## WHO MAY ACT FOR WHOM, AND AS WHAT (#108, 2026-09-23; #186, 2026-10-03)
 
@@ -101,17 +166,38 @@ is what the policy reads (`partyFacts()` asks the registry first).
 **BOTH ELEMENTS IN ONE REQUEST ARE REFUSED IN EVERY MODE** —
 `wst:InvalidRequest`, `STS-WSTRUST-0025`: they ask for opposite semantics.
 **No `AppliesTo` is refused unless the act is a self one** (the policy's
-`no-target`).
+`no-target`) — in development, where that refusal is not enforced. **In
+product an RST with no `AppliesTo`, or one nobody registered, is refused
+before the policy is asked** (#496, *An application nobody registered*,
+below), so `no-target` and `unregistered-target` (`STS-WSTRUST-0024`) are not
+reached from WS-Trust there; they still decide RFC 8693's exchange.
 
 **A REFUSAL IS WS-TRUST 1.4 SECTION 11's `wst:RequestFailed`** ("The specified
-request failed"). `soapFault()` takes the fault code as an optional third
-argument and the request's own trust namespace as the fourth: on SOAP 1.1 it
-REPLACES `soap:Client` as the `faultcode`, and on SOAP 1.2 it is the `Subcode`
-under `soap:Sender` — section 11's own mapping. The codes by refusal kind:
+request failed") — see *Every refusal names its section 11 fault code*, below,
+for how `soapFault()` places it. The codes by refusal kind:
 `intermediary` `STS-WSTRUST-0019`, a realm policy's `policy` `0020`,
 `semantics` `0022`, `authority` `0023`, the target kinds (`target`,
-`targets`, `unregistered-target`, `no-target`) `0024`, the rest (a protected
-subject, may_act) `0018`.
+`targets`, `unregistered-target`, `no-target`) `0024`, `may-act` `0033`, the
+rest (a protected subject) `0018`.
+
+**`may_act` ON A DELEGATED JWT (#747, 2026-10-20).** #477 accepted a JWT inside
+either element and handed the policy none of its `may_act`, so a token whose
+subject had named another delegate was not refused here while the token
+exchange refused it in every mode. `verifiedMayAct()` now reads the claim on
+the exchange's terms — only off a JWT that verifies with this realm's key, so
+development verifies it for this claim though it believes the JWT's subject
+unverified — and `mayActActor()` names the requester as the exchange names its
+actor (a client by its subject in the mode, client_id and `urn:sts:client:`
+form as aliases; `iss` that of the requester's own JWT credential, '' for any
+other). The two facts go to `decide()` and the policy's `may-act` rule does
+the rest; nothing about the rule is WS-Trust's own.
+
+**THE ROW SPEAKS WS-TRUST (#481).** `authorizedBy` on a WS-Trust act reads,
+for example, `the issuance policy allowed delegation by "esb" for "alice" to
+"back", the application the AppliesTo names (the token inside <wst14:ActAs>
+was issued for "esb").` It names the AppliesTo and the token inside the
+element. RFC 8693's "subject token" was written on every row until #481,
+and the OAuth 2.0 and Kerberos rows keep the sentence they had.
 
 **ENFORCED IN PRODUCT** (`mode.authorizesDelegation()`); development issues and
 the act says "WOULD HAVE BEEN REFUSED in product: …". A refused act is recorded
@@ -119,14 +205,70 @@ with `outcome: refused` before the fault is answered, so it is on
 `/admin/delegation` — the only list a refusal is in. A requester delegating
 about ITSELF acts for nobody and needs nothing.
 
-**THE ORDER COST ONE THING, AND IT IS STATED RATHER THAN FIXED.**
-`authenticate()` records the delegated subject's `recordAuthentication()` row
-before the policy is asked, so a refused delegation still leaves that row on
-`/admin/users`. Moving the policy into `authenticate()` would need the
-`AppliesTo`, which the "authenticate ABOVE the branch" rule below keeps out of
-it.
+**A REFUSED DELEGATION LEAVES NO `/admin/users` ROW (#183, 2026-10-05).**
+`authenticate()` used to record the delegated subject's `recordAuthentication()`
+row before the policy was asked, so a refused `OnBehalfOf` / `ActAs` still
+listed its subject as seen. `authenticate()` now records only the REQUESTER (who
+did authenticate, whatever is decided after), and `handleRst()` records the
+delegated subject in `recordDelegatedSubject()` once the decision has allowed
+the act or not enforced its refusal. The policy was not moved into
+`authenticate()`, which the "authenticate ABOVE the branch" rule below keeps
+away from the `AppliesTo`. **The delegation decision moved instead: it is
+asked AHEAD of the role gate and the JWT-subject check** (both elements,
+`STS-WSTRUST-0025`, with it), because in development the record is what grows
+the subject's directory entry (`ldap.autocreateUsers`), and those two checks
+read that entry. Product creates nobody there. The cost: in development, a
+subject this request is the first to name is decided before their entry
+exists — an unknown party, where it used to be a freshly invented entry with
+no delegation attributes. Development enforces only a `may_act` mismatch,
+which is read off the verified delegated JWT and not off the subject's entry;
+and the decision is about who the directory says they are, not about an
+entry the request invented. Validate and Cancel return before the decision, so
+a delegated subject named in either is not recorded at all.
 
 ---
+
+## Every refusal names its section 11 fault code (#183, 2026-10-05)
+
+WS-Trust 1.4 section 11 defines the fault codes an STS returns, "in terms of
+SOAP 1.1. For SOAP 1.2, the Fault/Code/Value is env:Sender ... and the
+Fault/Code/Subcode/Value is the faultcode below." `soapFault()` takes the code
+as its third argument and the request's own trust namespace as its fourth: on
+SOAP 1.1 it REPLACES `soap:Client` as the `faultcode`, and on SOAP 1.2 it is the
+`Subcode` under `soap:Sender`. Until #183 only the delegation refusals (#108)
+and the 2004/04 Cancel (#188) named one; every other refusal was the generic
+fault. Each refusal names its code at the place it refuses:
+
+| Code | Refusals | Why that one |
+|---|---|---|
+| `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
+| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025`, a delegated Kerberos token's `0054`, `0055`, `0058`–`0060` and `0063` (#658: no TLS for a Kerberos proof key), `0067` (a Renew or Cancel of a Kerberos token) | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0039` (#1046, #1061), a signed request's `0040`–`0047`, `0049`, `0050`, `0052`, `0053` (#521), the requester's Kerberos token's `0054`–`0057` and a Kerberos-keyed signature's `0069` (#658) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `AuthenticationBadElements` | `0040` when the reading's code is `STS-KEYS-0163` (#521): a signature that does not cover the Body or the Timestamp | section 11's "Insufficient Digest Elements", exactly |
+| `ExpiredData` | `0006`, in either seat, a JWT's `0027` in either seat (#477, #519), and a signed request's Timestamp, `0048` (#521) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
+| `BadRequest` | `0062` (#658: `wstrust.issueKerberos` off) and `0064` (an AppliesTo that is no Kerberos service) | section 11's "The request was invalid or malformed" is InvalidRequest's; BadRequest's own sentence in 1.4 is "The specified RequestSecurityToken is not understood" — a token type this STS does not issue here, which is what both are |
+| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell), `0061` (#658: a forwarded Kerberos ticket from a requester not trusted for delegation), `0065` (`wst:Delegatable` to a target not trusted for it), `0066` (the KDC could not mint the ticket) | the request was understood and authenticated, and could not be done |
+
+**Not used, and why**: `InvalidSecurityToken` is "Security token has been
+revoked" in 1.4's table, and nothing here checks revocation of a presented
+token; `InvalidTimeRange` would refuse a `wst:Lifetime`, which is CLAMPED instead
+(section 4.1 makes it a request the STS decides); `BadRequest`,
+`RenewNeeded` and `UnableToRenew` have no refusal here that they describe
+better than the codes above — an unknown RequestType is issued, and a Renew
+re-issues whatever token it is handed. (`BadRequest` was on this list until
+#658.) (`InvalidScope` was on this list until
+#496, when an `AppliesTo` nobody registered stopped being issued for in
+product.)
+
+**`0015` IS NOT A REFUSAL**, and it is not a section 11 code: every one of
+those is a Sender fault. An exception in the endpoint is `receiverFault()`'s
+`soap:Receiver` (SOAP 1.2 Part 1 section 5.4.6) or `soap:Server` (SOAP 1.1
+section 4.4.1), in the version the request was sent in — it was always a SOAP
+1.2 envelope until #183. `0014` and `0068` (#658: a Kerberos token the
+acceptor did not accept) are a `wst:Status` in a 200, not a fault.
+
+`tests/wstrust_fault_codes.js` asks every refusal above on both SOAP versions,
+the namespace and the receiver fault included.
 
 ## Two rules about where a credential is read, and both were learnt the hard way
 
@@ -190,8 +332,8 @@ what to present:**
   `/admin/delegation` can now name what a JWT exchange produced.
 * **`?encrypt=1` honours `saml2.encryptionAlgorithm` / `saml2.keyTransportAlgorithm`**,
   answered for the AppliesTo as `/saml2` answers them for a service provider.
-* **`wstrust.issuer` and `saml.issuer` disagreeing is SAID** — on `GET /sts` and
-  in the startup log — rather than reconciled, because the split is deliberate.
+* ~~`wstrust.issuer` and `saml.issuer` disagreeing is SAID~~ — **both retired
+  by #523**: there is one name, so nothing can disagree (below).
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
@@ -199,14 +341,21 @@ what to present:**
 
 The answer echoes the request's trust namespace, and until #188 it answered
 every version in 1.3's vocabulary. Validating each answer against its own
-version's published schema (`tests/vendored/sts_xml_schema_validation.js`)
+version's published schema (`tests/protocol/sts_xml_schema_validation.js`)
 found three elements the **2004/04** member submission does not have:
 
 * **Issue is answered with the RSTR itself.** That version's
   `RequestSecurityTokenResponseCollection` holds `minOccurs='2'` responses —
   it is for several tokens at once — so a collection of one was invalid.
-  The action is `.../RSTR/Issue`. 2005/02 (`minOccurs='1'`) and 1.3 (the
-  collection is REQUIRED for an Issue's final response) are unchanged.
+  The action is `.../RSTR/Issue`. 1.3 and 1.4 keep the collection (it is
+  REQUIRED for an Issue's final response). **2005/02 answers with the RSTR
+  too since 2026-11-13**, and every pre-OASIS answer carries the operation's
+  own action (`RSTR/Issue`, `RSTR/Renew`, `RSTR/Validate`, `RSTR/Cancel`),
+  which is what both versions define and what their clients (WCF's
+  WSTrustFeb2005) dispatch on; until then they carried 1.3's
+  `RSTRC/IssueFinal` and `RSTR/<Op>Final`. `WsTrust.answerAction()` is the
+  one rule, and the WSDL asks it. Holding the WSDL to the published
+  specifications (`tests/wstrust_metadata.js` W) found it.
 * **The reference is `wst:RequestedTokenReference`**, the element 2005/02
   renamed `RequestedAttachedReference`.
 * **Cancel is refused** with that namespace's `wst:InvalidRequest` fault
@@ -228,6 +377,10 @@ changed (`tests/tools/fetch-xml-schemas.sh`).
 
 ## What is tested, and what is not
 
+`tests/wstrust_fault_codes.js` (#183) holds every refusal's section 11 code on
+both SOAP versions, the receiver fault, and the `/admin/users` row of a
+refused and an allowed delegation, in process in both modes.
+
 The parent project has `tests/wstrust.js` and
 `tests/wstrust_schema_validate.js`, which drive the DEBUGGER's client side
 against this endpoint. Nothing tested this module on its own until
@@ -247,6 +400,498 @@ OAuth 2.0 grants follow (`STS-OAUTH-0510`): a bare name is a `sub` a relying par
 on and a person created later under the name would inherit. An `anonymous` request names
 nobody by design and is unaffected, and so is a SAML assertion, whose `NameID` is the
 username. A process with no directory still uses the name. `tests/stable_subject.js` D5b.
+
+## THE JWT FOLLOWS RFC 9068 AND RFC 8693 IN ITS STRUCTURE AND CLAIMS (#476, 2026-10-06)
+
+rcbj: "follow RFC-9068 and OAuth2 Token Exchange spec for claims in the
+JWT", and "The only time oauth2 token exchange and rfc9068 should be
+followed is for response token JWT structure and contents." So
+`buildJwt()` changed, and nothing else did. The RST, the AppliesTo, the
+requester's authentication, the RSTR and its `wst:TokenType`, and every
+SAML assertion are WS-Trust's and SAML's, as before.
+
+* **`typ: at+jwt`** (RFC 9068 section 2.1). The token is the bearer
+  credential the AppliesTo's service accepts, which is what an access
+  token is, and the header is what keeps it from being read as an ID Token
+  (`oauth2.ts`'s `ownTokenKind()` now calls it an `access_token`).
+* **`client_id`** (RFC 9068 section 2.2, RFC 8693 section 4.3) is the
+  APPLICATION the requester authenticated as: the client_id it registers,
+  else its identifier, the rule `may_act` uses. It is the requester of an
+  OnBehalfOf or ActAs, or of a token about itself.
+* **`act`** (RFC 8693 section 4.1) has the current actor outermost, as since
+  #186. Each entry takes the shape this service's OAuth tokens give it.
+  RFC 8693 permits each of these and requires none:
+  * `iss` in every entry, this token's own (#471). Each prior delegate came
+    from a token this STS issued, so this issuer vouches for all of them.
+  * An application named by its client subject in the mode: `urn:sts:client:`
+    in RFC 9700 mode (`oauth2_bcp.enabled()`, asked lazily, as
+    `common/consent.ts` does), and the bare client_id otherwise (#471).
+  * A person who acted is named by their `urn:uuid:` subject.
+  * #443's original client needs no rule. In WS-Trust the first application
+    of a chain is in `act` because it made the first ActAs itself.
+
+**The exceptions, each with its reason:**
+
+* **No `client_id` for a person's own token.** A person who asks with their
+  own UsernameToken (or assertion) for a token about themselves has no
+  client. A name in the claim that is not a client's would be worse than
+  none.
+* **No `scope` unless the application configures it** (#485). An RST asks
+  for none and none is invented. The AppliesTo's application may name scopes
+  on `wstrustJwtScope`, and those are carried after the judgement an OAuth
+  access token's get (`configuredScope()`, `scopePolicy.narrow()`):
+  * the application is the client, so its `oauthAllowedScope` declares what
+    it may be issued, in product; the protected scopes are held to it in
+    every mode;
+  * the issuance policy asks its per-scope question;
+  * what is left off gets the token endpoint's audit row, STS-OAUTH-0579.
+
+  **A write naming an undeclared scope is ACCEPTED and dropped at
+  issuance**, which is the token endpoint's own backstop. The declaration may
+  change after the write, development grants undeclared scopes, and the
+  field's description says to declare it on `oauthAllowedScope`. A SAML token
+  has no scope.
+
+  **AND IT IS SAID WHERE IT IS SET (#488).** Each value the policy would drop
+  earns a warning from `scopePolicy.configuredScopeWarnings()`. It names the
+  value and why, and says to declare it on `oauthAllowedScope` or remove it.
+  In development it says what product would do. The warning appears:
+  * beside the field on Configuration → WS-Trust;
+  * after the Save reply's message;
+  * as `warnings` on the `/admin-api/applications` `set` / `add` / `remove` /
+    `update-fields` replies;
+  * on the application's GET view.
+
+  All four carry the one list (rule 7). The write still stands.
+* **No `auth_time` or `acr`.** RFC 9068 section 2.2.1 makes them
+  optional, and a delegated JWT could only copy them from an
+  authentication it never saw. **`amr` is carried since #1046 on a token
+  about the requester** (see that section); a delegated one still has none.
+* ~~`iss` is `wstrust.issuer`~~ **Reversed by #480 (rcbj: "Realm's OAuth
+  issuer").** `iss` is the realm's OAuth 2.0 issuer, the one
+  `/.well-known/oauth-authorization-server` publishes at the request's base
+  (`oauthIssuer()`, through `oauth2.issuerOf()`), in every mode. RFC 9068
+  section 4 has a resource server compare `iss` with that metadata, and the
+  signing key is already that server's, at `/oauth2/jwks`. Every `act`
+  entry's `iss` is the same value (#471). GET /sts names it on a line of its
+  own, `JWT issuer:`, beside the STS's name.
+* **`exp` is the lifetime the RSTR's `wst:Lifetime` states.** WS-Trust 1.4
+  section 4.1 makes that the STS's decision, so the two cannot disagree.
+* **The SAML Delegation Restriction is unchanged.** Its `del:Delegate`s name
+  applications by their bare identifiers in every mode. The `urn:sts:client:`
+  form and `iss` are the JWT's alone.
+
+`tests/wstrust_jwt_claims.js` holds each of these in both modes, in
+process. `tests/delegation_policy.js` L13 holds the product form of `act`.
+
+## A JWT THIS STS ISSUED IS READ INSIDE OnBehalfOf / ActAs (#477, 2026-10-06)
+
+**This is a change to how a WS-Trust request is processed, and it is kept
+apart from #476 for that reason. It needs rcbj's decision.**
+
+WS-Trust names no kind of token for either element: 1.3 section 9.2 and
+1.4 section 9.3 each hold "a security token or wsse:SecurityTokenReference".
+Until #477 only a SAML assertion was read there, so a chain whose response
+tokens were JWTs stopped at its first hop:
+
+* product refused the JWT as `0008` ("no SAML assertion");
+* development delegated for `delegated-subject`.
+
+`delegatedJwt()` reads the `wsse:BinarySecurityToken` this STS's own RSTR
+carries a JWT in (ValueType `urn:ietf:params:oauth:token-type:jwt`), on
+`checkedAssertion()`'s footing, because the smallest real answer to "which
+issuer is trusted" is this STS. **In product** the JWT is refused with a
+fault unless all four of these hold:
+
+* it verifies with this realm's own key (`helpers.verifyOwnJws()`), else
+  `0026`;
+* it is within its `exp` and `nbf`, else `0027`, `wst:ExpiredData`;
+* its `iss` is the realm's OAuth issuer, the one this STS's own JWTs carry
+  since #480, else `0026`. **Consequence of #480:** an OAuth access token
+  from this realm carries the same issuer under the same key, so it is
+  accepted here too. The realm is one issuer;
+* its `sub` is the `urn:uuid:` of a person this directory holds, else
+  `0028`.
+
+**Development** reads it unverified and believes it, as it believes a
+NameID.
+
+What the rest of the request needs is read off the JWT as an assertion's
+is:
+
+| Read | From |
+|---|---|
+| the subject | `sub` |
+| S | `aud` |
+| the prior delegates | `act`, innermost first, so least to most recent. Each `sub` is read back to an application's identifier (from `urn:sts:client:<client_id>` or the bare client_id) or to a person's username |
+| what the act consumed | `jti` |
+
+The decision, the SAML assertion and the JWT that is issued do not change.
+An assertion inside still wins where an element carries both.
+`tests/wstrust_jwt_claims.js` K holds each of these in both modes.
+
+## THE AppliesTo's CLAIM SETTINGS GOVERN BOTH TOKEN TYPES (#483, #484, 2026-10-06)
+
+An application's claim settings are:
+* its groups-claim settings (`appGroupsClaim`, `appGroupsClaimName`,
+  `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`);
+* the roles claim (`roles.js`);
+* its custom claims (`oauthClaimsAccessToken`, `saml2CustomAttributes`, and
+  the realm's sets they sit over).
+
+They reach a WS-Trust token through the same functions they reach an OAuth
+access token and a SAML SSO assertion through: `stats.jwtClaims
+('access_token', …)` and `stats.samlAttributes('saml2', …)`. There is no
+second implementation. **What was verified, before the fix:**
+
+* **The JWT carried none of them.** `buildJwt()` never asked `jwtClaims()`.
+  `applicationClaims()` now asks it, with `customClaimContext()`'s members,
+  and assigns the protocol's own claims over the result.
+* **The SAML assertion carried the roles claim correctly.** Its groups claim
+  used the REALM's settings, because `applications.settingFor()` looks an
+  identifier up, and an AppliesTo URI is not one. Its custom attributes
+  appeared for the first token only. After that, the OBSERVED entry
+  `seen()` files under the AppliesTo URI answered `applications.get()`
+  ahead of `forAppliesTo()`, and that entry has no rows.
+
+**The fix is one context member, `application`.** WS-Trust resolves the
+application the way the register does (`appliesToApplication()`:
+`forAppliesTo()` first, which skips the self-named entry) and passes it to
+both builders (`buildSamlAssertion()`'s `opts.application`). Three readers
+ask for it first and keep their old lookups for every other caller:
+`effectiveClaimSet()`, `GroupClaims.appOf()` and `claimApplicationsOf()`.
+
+**Whose settings, and about whom.** The settings are the AppliesTo's
+application's: the relying party the token is for, as a SAML assertion's
+are its service provider's. The values are the SUBJECT's. An OnBehalfOf or
+ActAs token carries the person's groups, roles and claims, and nothing of
+the requester's.
+
+**Exceptions:**
+
+* ~~No SAML 1.1 token~~ **Closed by #487.** WS-Trust issues SAML 1.1 for the
+  SAML 1.1 TokenType, and `saml11CustomAttributes`, the SAML 1.1 groups and
+  roles attributes apply to it (see the #487 section).
+* **Placeholders are each context's own.** A JWT's `${…}` are an OAuth
+  access token's (`username`, `sub`, `email`, `name`, `client_id` — the
+  JWT's own, the requester — `audience`). A SAML attribute's are the SAML
+  builder's (`subject`, `audience`), as on SAML SSO.
+* **The settings are the AppliesTo's, where OAuth reads the client's.** An
+  OAuth access token takes its custom claims from its CLIENT's entry. A
+  WS-Trust JWT takes them from the AppliesTo's application, which is the
+  party the token is issued to and is what #483 and #484 ask for.
+
+`tests/wstrust_token_claims.js` compares each WS-Trust token with what
+`jwtClaims()` and `samlAttributes()` give OAuth and SAML SSO for the same
+application, in both modes. The #473 chain jobs assert all of it at every
+hop.
+
+## ONE ISSUER PER REALM: THE REALM'S OAUTH ISSUER, IN EVERY TOKEN (#523, 2026-10-08)
+
+rcbj, on #523: "Shouldn't we have consistency between OAuth2 Token Exchange
+JWT Access Token iss claim and WS-Trust Issue RST OBO/ActAs Issuer
+elements?" — and then, for every protocol, "The OAuth issuer URL", with no
+override. It replaced #480/#494's rule, under which a SAML assertion from
+this STS carried the SAML 2.0 entityID (`urn:sts:idp:<sp>` per registered
+application) while a JWT from the SAME request carried the OAuth issuer: one
+STS, one request, two names.
+
+* **A SAML 2.0 Issuer, a SAML 1.1 Issuer and a JWT's `iss` are one string**,
+  `oauthIssuer(base)` — which now asks `common/issuer_names.ts`'s
+  `issuer(base)` — read at the request's base and handed to `buildToken()`
+  as `jwtIssuer` for all three token types, so the three cannot be read at
+  different bases. It is the name SAML SSO and WS-Federation publish as
+  their entityID, and what `GET /sts` reports on its one `Issuer:` line.
+* **Not the AppliesTo's.** The Issuer says who ISSUED; who ASKED is the
+  delegation's own record — the last `del:Delegate` (SAML 2.0), the
+  `delegates` attribute (SAML 1.1, #522), `act` (JWT). An OnBehalfOf token
+  names nobody, as before.
+* **Nothing to refuse for want of a name.** `STS-WSTRUST-0029` (product,
+  no entityID) is retired; the OAuth issuer is never empty.
+* **The IdP audiences of #519** — what a caller's own credential may be
+  addressed to besides its registered audience — are that issuer and
+  `<base>/sts` (`idpAudiences()`).
+* `wstrust.issuer`, `saml.issuer`, `issuerDisagreement()` and the startup
+  `warnAtStartup()` are gone; `wire()` is kept, empty, as the root's hook.
+* **Pin `global.publicBaseUrl`** in a deployment: unpinned, the issuer is
+  the host a request arrived on, and a relying party configured from one
+  host's name refuses a token issued under another.
+
+`tests/issuer_names.js` holds it in process (U3: SAML 2.0, SAML 1.1 and JWT
+alike, both modes); `kit.samlIssuerFor()` holds every chain job's
+assertions to the authorization server metadata's `issuer`, which the
+application's `/saml2/metadata/{sp}` and `/wsfed/metadata/{rp}` must name too.
+
+## An application nobody registered gets nothing, in product (#496, 2026-10-06)
+
+rcbj, on #496: in product an application that is not registered gets nothing
+but its protocol's own "unknown application" error — and **an RST with no
+`AppliesTo` at all is refused too**. `unregisteredApplication()` asks it,
+behind `mode.issuesToUnregisteredApplications()` (the
+`unregistered-applications` row on `/admin/mode`):
+
+* **"Registered" is #494's word**: `appRegisteredBy` on the entry
+  `appliesToApplication()` resolves the AppliesTo to, through
+  `IssuerNames.registeredApplication()`. So the application refused and the
+  one the registry files the issuance under are one; an entry a
+  development `seen()` filed is a sighting and is refused like no entry, so a
+  realm switched from development keeps nothing development learnt.
+* **`wst:InvalidScope`, `STS-WSTRUST-0030`** for an unregistered AppliesTo;
+  **`wst:InvalidRequest`, `STS-WSTRUST-0031`** for none or an empty one (the
+  fault table above argues both). HTTP 500, as every other Fault.
+* **ABOVE `authenticate()`**, which is where the requester's
+  `recordAuthentication()` row is written: a refused request leaves no
+  `/admin/users` row, no `seen()` sighting, no delegation act and no token.
+  The cost is that an unregistered AppliesTo with a bad credential is
+  answered `InvalidScope` rather than `FailedAuthentication`; the request is
+  unanswerable whoever sent it, and answering it first is what keeps the
+  caller out of every register.
+* **Every token type (SAML 2.0, SAML 1.1, JWT) and `OnBehalfOf` / `ActAs`**:
+  it is asked before the token type or the delegation is read. **Issue and
+  Renew** — every operation that mints; Validate and Cancel issue nothing and
+  are not asked.
+* **Development is unchanged**: a token for any AppliesTo or none, under the
+  shared name, and `seen()` files the AppliesTo.
+* **An entry an LDAP add made IS registered, since #504**:
+  `stampLdapRegistration()` writes `appRegisteredBy: ldap:<the bound DN>` on an
+  add under `ou=applications`, unless the add already says who. A modify of an
+  entry that only turned up does not register it.
+
+`tests/unregistered_applications.js` holds it in both modes, with the
+nothing-recorded checks; `tests/wstrust_fault_codes.js` holds both faults.
+
+**A JWT's `iss` is not one of these.** It is the realm's OAuth issuer
+(#476's exceptions, above; rcbj kept it on #494).
+
+## ANY TOKEN TYPE IN ANY SEAT, AND AN APPLICATION AS ITSELF (#519, 2026-10-08)
+
+rcbj: "maximum flexibility in supported input / output token types for the
+WS-Trust protocol". An RST has three seats that take a token, and each takes
+SAML 2.0, SAML 1.1 and JWT:
+
+| Seat | What it takes |
+|---|---|
+| the requester's credential, `wsse:Security` | **a WS-Security signature over the request (#521)**, asked first; a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in; and, when none of those is there, **the connection's TLS client certificate (#1046)** |
+| `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477); a delegated Kerberos ticket (#658) |
+| `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476), a Kerberos token (#658) |
+
+**THE REQUESTER'S JWT** is read by `readOwnJwt()`, the one function the
+delegated JWT goes through too, so the two seats cannot disagree about what
+"a JWT this STS issued" means: in product verified with this realm's own key,
+within `exp` / `nbf`, the realm's OAuth issuer (#480), and a subject this
+realm knows. Its refusals are the requester's — `wst:FailedAuthentication`,
+`wst:ExpiredData` for an expired one — under the delegated JWT's codes
+(`0026`–`0028`). An accepted one is a credential issued earlier, so a SAML
+assertion issued on it states PreviousSession, as on an assertion. A JWT
+inside OnBehalfOf / ActAs is NOT read as the requester's
+(`insideAnotherPartysToken()`), and `homeNameOf()` reads its `sub` to place
+the request in a deployment of cells.
+
+**AN APPLICATION AUTHENTICATES AS ITSELF, WITH ITS CLIENT SECRETS** (rcbj: "I
+don't really want to use a user object service account along side the
+application object. it's redundant"). A UsernameToken whose Username names
+NO person and names an application — by identifier, else by client_id — is
+checked against that application's unexpired client secrets
+(`applicationSecretCredential()`), in product; development believes it, as
+it believes a person's password, except the reserved `invalid`. A wrong
+secret is the fault a wrong password gets (`0003`), for the enumeration
+rule. **A person of the name is asked first**, so a service account (#221)
+beside an application of its name authenticates exactly as before: service
+accounts are still supported, and the application path is for a tier that
+has none. **WS-Trust only**: the other password-only doors (LDAP bind, SCIM
+and SSF Basic, EST) still read people alone.
+
+* **An application's own token is about the application.** A JWT for it
+  names it by its client subject — `urn:sts:client:<client_id>` where the
+  token endpoint does (RFC 9700 mode, which product implies), bare
+  otherwise, as an `act` entry names it — and `client_id` its own; so
+  `0017` does not refuse it. A SAML assertion's NameID is its identifier.
+  Presented back as the credential, either is read to the application
+  (`applicationNamedBy()`), and the delegation policy reads the APPLICATION
+  entry, as it always did for a service account.
+* **Recorded as a client** (`recordAuthentication({ isClient })`), which is
+  what keeps the directory from making a person of its name in development
+  (`ldap.autocreateUsers`). Without it, the first token an application asked
+  for would have grown exactly the service account this exists to avoid.
+* **The act names the token the requester presented.** A delegation act's
+  `WS-Security credential` row carries the identifier (assertion `ID` /
+  `AssertionID`, JWT `jti`) of a token presented as the credential, so the
+  register can follow the token a tier was issued for itself to the act it
+  was spent on.
+
+**A TOKEN AS THE CREDENTIAL IS ADDRESSED TO ITS HOLDER OR TO THE IdP**
+(rcbj, 2026-10-08: "A caller's credential AppliesTo element can either be
+the audience registered in the application object or a generic audience that
+references the IdP"). In product, an assertion or a JWT presented in
+`wsse:Security` is accepted only when one of its audiences is
+(`credentialAudienceProblem()`):
+
+* an audience its holder's APPLICATION registers — the subject's
+  application by identifier or client_id (a service account is the
+  application of its name), the audience resolving to it through the
+  AppliesTo lookup (`appliesToApplication()`); this is the token a tier was
+  issued for itself; or
+* one of the names this IdP answers to (`idpAudiences()`): the WS-Trust
+  issuer name GET /sts reports, the realm's SAML entityID, the realm's OAuth
+  issuer, and the `/sts` address at the request's base.
+
+Anything else is `STS-WSTRUST-0032`, `wst:FailedAuthentication`. It closes
+what was open before #519 for an assertion credential too: a tier holding a
+token about a person, addressed to the tier, was authenticated AS that
+person by presenting it. A person who wants a credential of their own asks
+for one addressed to the IdP. **An RST whose AppliesTo is one of the IdP's
+names is issued in product**, beside #496's registered applications
+(`unregisteredApplication()`): the IdP is not an application and is not
+unregistered. Development verifies no credential and enforces none of it.
+
+`tests/wstrust_jwt_claims.js` sections R and S hold it in process in both
+modes; `tests/protocol/sts_wstrust_own_token_chain.js` drives the four-tier
+chain on each tier's own token in every type, and the 36-request matrix.
+
+## THE REQUESTER'S TLS CLIENT CERTIFICATE, A FOURTH CREDENTIAL (#1046, 2026-10-27)
+
+From #520 (rcbj, 2026-10-27: every candidate door is a yes but ACME). The
+certificate is a FOURTH ROW of the requester's seat above, read by
+`requesterCredential()` on the same path as the three message credentials,
+not beside them: `connectionCertificate()` answers null, a refusal or a
+credential exactly as they do, and everything after (`authenticate()`'s
+recording, the delegation policy's requester, `doorAssessment()`, the
+session, the token) reads the answer without knowing which it was.
+
+* **ASKED LAST.** A UsernameToken, an assertion or a JWT in `wsse:Security`
+  names the requester explicitly; the main port asks every connection for a
+  certificate and requires none, so a client that happens to hold one is
+  still the party its message names.
+* **ONE MAPPING.** `common/tls_client_certificates.js`'s `checkSocket()`
+  (an identity in THIS realm: a realm's TLS client or enrollment Issuing
+  CA, clientAuth, exactly one `urn:sts:person:` or `urn:sts:application:`,
+  the holder resolved through a rename) and `stillHeld()` (RFC 8705's
+  implicit-mapping rule: the holder's record still lists it). **A chain to
+  an anchor installed at `/admin-api/tls/trust` was NOT a credential here
+  until #1061**; since then the gate is asked `{ stored: true }` and such a
+  certificate is the person or application whose entry stores it in
+  `userCertificate` (`common/CLAUDE.md` 3ag), a requester exactly as an issued
+  one is (`stillHeld()` answers true for a stored identity). Stored on no
+  entry it is a fault, `STS-WSTRUST-0038`; on more than one, `0039`. Still
+  nothing is read off a CN or a subject. An unverified certificate is not a
+  credential. The stored case is held in process by
+  `tests/wstrust_client_certificate.js`; no protocol job presents one.
+* **A VERIFIED CERTIFICATE THAT IS REFUSED IS A FAULT IN EVERY MODE**,
+  `wst:FailedAuthentication`: revoked (`req.certificateRevocation`,
+  `STS-WSTRUST-0034`), not an identity here — another realm's authority, a
+  key pair that is not a TLS client certificate, a holder gone (`0035`) —
+  no longer held (`0036`), a disabled person (`0037`, `credentials
+  .accountDisabled()`). There is no `mode.js` question: the handshake
+  verified the chain and development has nothing it could believe instead,
+  every other door on this gate answers the same in both modes, and
+  answering `anonymous` for a credential just refused is what the reserved
+  password `invalid` exists to prevent.
+* **WHAT THE TOKEN SAYS.** `authnContextOf()`: `TLSClient` (the
+  handshake's certificate — `X509` names a message-level signature);
+  SAML 1.1's `urn:ietf:rfc:2246`; and `amrOf()`, the one reading the
+  session, the door's risk facts and the JWT share: `swk` (RFC 8176, what
+  `/tls/sign-in` says — this service cannot know the key is in hardware).
+  **The JWT carries `amr` since this ticket**, for a token about the
+  requester only: `["swk"]`, or `["pwd"]` for a UsernameToken — the
+  authentication this STS saw. A delegated token and one issued on an
+  assertion or a JWT carry none (#476's reason, which still holds for them).
+* **AN APPLICATION'S CERTIFICATE IS THE APPLICATION, AND SIGNS NOBODY IN**:
+  `isClient`, its own token (`urn:sts:client:` subject, its own
+  `client_id`), and no session — `/tls/sign-in`'s rule for the same
+  certificate. A person's starts a session with `["swk"]`.
+* **`wstrust.acceptClientCertificate`**, on by default as
+  `scim.authClientCert` is, turns the credential off; it is a WS-Trust
+  setting, so `/admin/wstrust` and `GET /admin-api/wstrust` both show it
+  (rule 7).
+* **IN CELLS**, a request whose connection carries a verified certificate
+  and whose message names no requester is served WHERE IT ARRIVED
+  (`homeNameOf()`'s `certificateOnConnection`): the certificate is the
+  socket's, and a relayed request has no socket to present it on. A
+  delegation from such a requester is therefore not relayed to the
+  delegated subject's home either.
+
+**A WS-Security signature over the request was #1046's follow-up (#1056)
+and is built by #521**, below; it is asked before this credential.
+
+`tests/wstrust_client_certificate.js` holds it in process, both modes.
+
+## A SIGNATURE OVER THE REQUEST, A FIFTH CREDENTIAL (#521, 2026-10-28)
+
+rcbj (2026-10-08): "allow a WS-Trust call to authenticate a caller with a
+digital signature on the message body. The digital signature certificate
+would be mapped to a user or application object as digital signature." It
+also closes #1056, the half of #1046 that was not built. rcbj's four
+decisions on #521 (2026-10-28), all the options recommended:
+
+1. **Registration reuses #1061's `userCertificate`**: an outside certificate
+   stored byte for byte on exactly one entry, its keyUsage carrying
+   `digitalSignature`. No second store; the console's and `/admin-api`'s
+   `add-certificate` / `remove-certificate` are the doors.
+2. **An Issuing CA of its own, `message-signing`** (`common/pki.js`):
+   digitalSignature only, no EKU, the `urn:sts:` name in the SAN. Issued to a
+   person or an application by an administrator, from the console and
+   `/admin-api` (`issue-signing-certificate` / `revoke-signing-certificate`
+   on Users and Applications). A TLS client certificate does NOT sign a
+   request, and a message-signing one signs nobody in over TLS:
+   `tls_client_certificates.js`'s PURPOSES, one gate read two ways.
+3. **The signature authenticates; a UsernameToken, assertion or JWT beside it
+   must name the same entry** (`requesterSigned()`), still checked as it is
+   alone — `0053` otherwise, in every mode.
+4. One PR closes #521 and #1056.
+
+**WHERE IT SITS.** `requesterCredential()` asks `messageSignature()` FIRST
+— it is the one credential that covers the request — then the message
+credential (`messageCredential()`, the old body), then the connection's
+certificate. Everything after reads the answer as it reads the others:
+`kind: 'signature'`, `authnContextOf()` `X509` (SAML 2.0's message-level
+class; `TLSClient` is the handshake's), SAML 1.1's `X509-PKI` (the method
+`saml/authn_context.ts` maps X509 to), `amrOf()` `swk`, and no session for
+an application's.
+
+**THE CHECKS, in `messageSignature()`'s order** — the header comment there
+is the list with each code (`0040`–`0052`). Three are worth knowing before
+changing anything:
+
+* **THE WRAPPING GUARDS ARE BY POSITION.** `crypto.readWsSecuritySignature()`
+  finds THE Body (the Envelope's child) and THE Timestamp (the one security
+  header's child) by where they are and requires the references to name
+  THEIR ids, every id in the document unique, exclusive c14n only. And
+  `handleRst()` reads the RST off the WHOLE document with `firstByLocal()`,
+  which finds a header before the Body — so a signed request is refused
+  (`0046`) when any `RST_PARTS` element is outside the signed Body. A new
+  document-wide read in `handleRst()` owes `RST_PARTS` its name.
+* **TWO CHECKS WAIT, so the endpoint takes them first.**
+  `prepareMessageSignature()` runs in `stsEndpointHere()` before the door's
+  assessment: the revocation verdict (the register for an issued leaf;
+  `registeredVerdictFor()` for a stored one — the operator registered THAT
+  certificate, the dialling argument `revocation_status.js` makes for a
+  registered certificate) and the replay claim (`used_assertions.js`,
+  format `wss-message`, use `wstrust-requester`, issuer the leaf's SHA-256,
+  identifier the SignatureValue, until the Timestamp's Expires plus skew).
+  The answers ride in on `connectionOf()`'s `signature`. The claim is bound
+  to the response: a Fault releases it, so only an ANSWERED request is spent.
+  **A caller of `handleRst()` that skipped the endpoint is refused `0051` in
+  product**, rather than accepted unchecked for replay.
+* **THE KEY IS NEVER THE DOCUMENT'S CHOICE.** The certificate the header
+  names is mapped first, and `verifyWsSecuritySignature()` is handed that
+  leaf; the KeyInfo's own certificate is not read by the engine. A
+  thumbprint, issuer-serial or SKI reference resolves only among this realm's
+  issued message-signing certificates (`signingCertificateFor()`): the stored
+  index is by SHA-256 of the DER, so a stored certificate is carried in a
+  BinarySecurityToken.
+
+**DEVELOPMENT** (`mode.verifiesCredentials()` false) reads the signature's
+structure and its certificate reference and believes the holder: the mapped
+entry, else the urn:sts: SAN, else the CN. Nothing else is checked, and the
+authentication row's note says so — the posture a UsernameToken has there.
+
+**IN CELLS** a signed request is placed by the `urn:sts:person:` name of a
+BinarySecurityToken's certificate (`homeNameOf()`), read unverified as a
+UsernameToken's name is; any other signer is served where it arrived.
+
+`tests/wstrust_message_signature.js` holds it in process, both modes, every
+refusal by code, wrapping and replay, signing with keys made at run time;
+`tests/protocol/sts_wstrust_signed_requests.js` drives it over HTTP.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
@@ -287,3 +932,166 @@ no token. A person already held here as a projection is read as they are.
 A NameID that is not a login name (an email address, a pairwise value) is
 unknown to the routing index and served where it arrives. Held in process by `tests/cell_saml_federation.js`.
 
+## KERBEROS TOKENS IN EVERY SEAT (#658, 2026-11-03)
+
+rcbj's decisions D1–D8 on #658 (the ticket carries them). The wire format is
+the Web Services Security Kerberos Token Profile 1.1: an AP-REQ in a
+BinarySecurityToken of one of six ValueTypes. Every Kerberos operation is
+`kerberos/krb5_tokens.ts`'s; this file only reads the seats and speaks
+WS-Trust's faults.
+
+**ONLY A TICKET FOR THIS SERVICE'S OWN SPN IS ACCEPTED**, by the acceptor
+(`krb5_service.js`'s `accept()`, `record: false`). The acceptor's rule — a
+ticket for one service proves nothing to another — is what decides the
+delegated case. The user's ticket to the middle tier is never read here, even
+though this process holds that key. What the middle tier presents is a ticket
+it obtained FOR THIS SERVICE by Kerberos delegation, and the ticket says how:
+
+* `S4U_DELEGATION_INFO` in its PAC (S4U2Proxy). The last transited service
+  must be the requester (`kerberosChainProblem()`, `0060`, every mode); the
+  ones before it are `delegates`; S is the requester's application (D3).
+* `FORWARDED` (bought with a forwarded TGT). The requester must carry
+  `krb5TrustedForDelegation` (`0061`).
+* Neither: refused in every mode (D2, `0059`).
+
+**Protocol transition is not read off the ticket.** An S4U2Proxy ticket looks
+the same whether its evidence came from S4U2Self or from a real sign-in,
+because this KDC writes no asserted-identity SID (S-1-18-2). The KDC's own
+row on `/admin/delegation` records the S4U2Self. The ticket's plan said
+"recorded as protocol transition"; that is the KDC's row, not this one.
+
+**THE ASYNCHRONOUS BOUNDARY.** Accepting a ticket is asynchronous, and
+`handleRst()` is synchronous for its seventy callers. So every Kerberos
+token in the document is accepted FIRST:
+
+* by the endpoint, in `prepareKerberosAt()` beside #521's
+  `prepareMessageSignature()`;
+* or by `handleRst()` itself, which then answers a Promise for that one
+  request.
+
+The verdicts ride on the connection (`kerberos`, keyed by the token's text),
+and each seat reads its verdict synchronously. ISSUING one is asynchronous
+too (the KDC encrypts). So the tail of an issue moved, unchanged, into
+`finishIssue()`, which `handleRst()` reaches directly or after
+`issueKerberos()` resolves. `stsEndpointNow()` serves a Promise by calling
+itself with the answer in hand.
+
+**Accepting spends the token** (the acceptor's replay claim), whatever is
+decided after. An AP-REQ is good once anywhere.
+
+**CELLS: SERVED WHERE IT ARRIVES.** The ticket's client is only inside the
+encrypted ticket and Authenticator, so there is no name to read unverified.
+Accepting the token to read one would spend it, and the home cell would then
+refuse the relayed request as a replay. `homeNameOf()` answers ''. The ticket
+said "placed by its cname"; that cannot be built.
+
+**ISSUED** (`issueKerberos()`):
+
+* The target is the AppliesTo's application's SPN (`appliesToApplication()`
+  answers an identifier; the entry is read for its SPN).
+* `delegates`, mapped to `SPN@REALM` or the identifier (D4), are
+  S4U_DELEGATION_INFO's transited services.
+* The proof key is the Authenticator's subkey, as `wst:BinarySecret`, over TLS
+  only (D5, `0063`).
+* `wst:Forwardable` asks for a forwardable ticket (the KDC drops it for a
+  protected person).
+* `wst:Delegatable` asks for a forwarded TGT in the Authenticator (D7), only
+  to a target trusted for it (`0065`).
+* The Lifetime is the Authenticator's window. A target in another realm is
+  `krb5_tokens.ts`'s trust walk (D8).
+
+**A SIGNATURE WITH THE TOKEN'S SESSION KEY** (D7, `kerberosSignature()`) is
+`messageSignature()`'s other branch. When the reading's key reference is a
+Kerberos token, the token is the credential (`kerberosCredential()`) and the
+HMAC must verify with its key (`crypto.verifyWsSecurityHmac()`). The signed
+parts and the Timestamp are checked by `signedPartsProblem()`, which the X.509
+branch now shares. There is nothing to prepare: replay is the token's.
+
+**Validate** of a Kerberos token answers the acceptor's verdict (`0068`).
+**Renew** and **Cancel** of one are refused (`0067`).
+
+Settings: `wstrust.acceptKerberos` (on) and `wstrust.issueKerberos` (off).
+`tests/kerberos_tokens.js` holds all of it in process, and
+`tests/protocol/sts_kerberos_tokens.js` over HTTP and TCP 88.
+
+## THE MESSAGES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/ws/soap.tsp`, `wstrust.tsp` and `wsfed.tsp` are the source of
+every value this family and WS-Federation write, of the RST's children as
+they are read, and of the order every envelope part is written in.** They
+are XML messages as SAML's are, so they are written with SAML's decorators
+(`../models/lib/saml_lib.tsp`) and read by the same class,
+`../common/xml_model.ts`; `models/lib/saml_lib.mjs` puts them in their own
+file, `models/generated/ws.json`, by the prefixes of their ids, and
+`ws_model.ts` (`WsModel`) reads it beside `saml.json`.
+
+* **The vocabularies.** The four trust namespaces (the answer echoes the
+  request's; `trust14` is `ActAs`'s alone), the request types, the actions,
+  the key types and a Validate's status values — each APPENDED to the
+  request's trust namespace, `relative: true`, so `WsModel.relative(...)`
+  is the one place one is built — the token types (`saml11Namespace` is the
+  SAML 1.1 assertion namespace an older client names the type by, its
+  `aliasOf` the SAML 1.1 token; `tokenTypeAsked()` reads it), the
+  section 11 fault codes (`soapFault()` asks the model for the one it is
+  handed, so a code it does not hold throws; the four `readOnly` are the
+  ones *Every refusal names its section 11 fault code* says are not used),
+  SOAP 1.1's and 1.2's fault codes, the WS-Addressing, WS-Policy and
+  WS-Security namespaces, the WSS value types, and #522's delegates
+  attribute. **SAML's terms are not copied**: a term that is one (the
+  SAML 1.1 assertion namespace, a WSS value type that is the JWT token
+  type) is written as that PROPERTY (`IyaSts.Saml11.Namespaces.assertion`),
+  the generated term carries `same`, and the URI is in the model once.
+  `PreviousSession` is now a term of `saml2.authnContext`, where it belongs.
+* **The RST, as it is read.** Every child, `read` for those the code acts
+  on. `anotherPartys` marks the five that hold somebody else's token —
+  `NOT_A_CREDENTIAL` is that list — and `inSignedBody` the ones #521 requires
+  inside a signed Body — `RST_PARTS` is the RST and that list, in the order
+  `0046`'s sentence names them. Each is still FOUND by its local name in the
+  whole document, by the code, for the reason this file opens with.
+* **The envelopes, as they are written.** `envelope()` is the one writer
+  of a SOAP envelope (`soapFault()` and `receiverFault()` hand it their
+  Body), its Header and Body joined by `WsModel.children()`, and so are the
+  Fault of each SOAP version, the RSTR collection, the RSTR — its parts in
+  THIS ENDPOINT'S order, because the schema makes it a sequence of `xs:any`
+  — its RequestedSecurityToken (a SAML 2.0 or 1.1 assertion told apart by
+  namespace, an EncryptedAssertion, a BinarySecurityToken), the proof
+  token, the AppliesTo, the Lifetime, the two references and the Status.
+  `WsModel.hold()` checks every envelope as it goes out — the assertion
+  inside against SAML's own model — logs a gap under **STS-WSTRUST-0071**,
+  and sends it unchanged.
+
+**What `/sts` serves as metadata, stated in the model**: `GET /sts/metadata`
+is WSDL 1.1 with WS-SecurityPolicy (#958), built by `wstrust_metadata.ts`
+from the same terms and flags the endpoint accepts, beside the capability
+document and `POST /sts/mex` (*THE METADATA*, at the top). `GET /sts` still
+answers text and
+`GET /sts/cert` the certificate. No KET or BatchIssue of its own: a
+request type that is not Renew, Validate or Cancel is answered as an Issue,
+as it always was.
+
+**Byte for byte**: `tests/ws_model_wire.js` recorded `/sts` and `/wsfed`
+before the switch — every operation in each trust version on both SOAP
+versions, each refusal, WS-Federation's metadata, sign-in, refusals and
+sign-outs, in a development and a product realm — three runs identical, and
+the switched tree answers the same record, with every hold of the run heard
+and silent. `tests/model_ws.js` holds the build's refusals, no URI, fault
+code or list of the two directories written outside the model, the readers
+and writers, and every recorded envelope held with nothing to say.
+
+**What stays in code, and why.** XML parsing (`helpers.firstByLocal()`,
+local names with the namespace ignored), canonicalisation, signing,
+encryption and every WS-Security signature check (`../common/crypto.js`).
+Everything that needs state: a credential's verification, the delegation
+policy, a registered AppliesTo, the lifetime's clamp, a Kerberos token's
+acceptance. The Kerberos Token Profile's token and value types are
+`../kerberos/krb5_tokens.ts`'s. The text inside a part — a token, an
+address, a reason — is written where its value is, inside a part the model
+orders. **`Forwardable` and `Delegatable` (#658) are signed parts too** (rcbj,
+#1579): they are read off the whole document like every other part, so
+they are `inSignedBody` and in `RST_PARTS`, and a signed request carrying
+either outside its signed Body is `STS-WSTRUST-0046`. Until then a copy in a
+header asked for a forwardable ticket, or a forwarded TGT, nobody signed for.
+**Both are read as xs:boolean** (rcbj, #1579, 2026-11-11): `true` or `1`
+is true, `false` or `0` false, and an absent `Forwardable` is true. Until
+then `<wst:Delegatable>1</wst:Delegatable>` read as false and
+`<wst:Forwardable>0</wst:Forwardable>` as true.

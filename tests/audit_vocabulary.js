@@ -19,7 +19,9 @@
 // What is held here, by reading the source:
 //
 //   1. Every literal `action: '<a>.<b>'` in a service directory is a row of
-//      ACTIONS (the audit rows are the only dotted `action:` literals here).
+//      ACTIONS (the audit rows are the only dotted `action:` literals here),
+//      and so is every literal handed to an `audited()` or `this.record()`
+//      helper that writes one.
 //   2. The four actions built by concatenation are listed with their
 //      suffixes, so a new suffix fails here rather than at the filter.
 //   3. Every row names a category CATEGORIES declares.
@@ -37,7 +39,8 @@ const ROOT = path.join(__dirname, '..');
 const DIRS = ['common', 'admin-core', 'admin-ui', 'attribute-sources',
   'authn', 'portal',
   'oauth-oidc', 'saml', 'ws-trust', 'ws-federation', 'federation',
-  'kerberos', 'ldap', 'scim', 'ssf', 'spiffe', 'xacml', 'gnap', 'acme',
+  'kerberos', 'ldap', 'scim', 'ssf', 'spiffe', 'xacml', 'authzen', 'gnap',
+  'acme',
   'est', 'scep', 'risk', 'oid4vc', 'oidfed', 'pki', 'mgmt-api', 'logout',
   'cluster', 'persistence', 'tls', 'debugger', 'home'];
 
@@ -49,7 +52,9 @@ const BUILT = {
   'oauth2.claims-providers.': ['add-provider', 'update-provider',
                                'remove-provider', 'revoke-link'],
   'xacml.pep.': ['enable', 'disable'],
-  'attribute-sources.': ['add', 'update', 'remove', 'refresh']
+  'attribute-sources.': ['add', 'update', 'remove', 'refresh'],
+  'ssf.signals.': ['read-stream', 'update-stream', 'delete-stream',
+                   'set-status', 'add-subject', 'remove-subject', 'verify']
 };
 
 function sources() {
@@ -100,6 +105,28 @@ module.exports = {
         if (!have.has(m[1])) {
           missing.push(m[1] + ' (' + path.relative(ROOT, file) + ')');
         }
+      }
+      // AND THE ACTIONS A HELPER IS HANDED (2026-10-06): admin_actions.ts'
+      // and ssf_transmitters.ts' `audited(name, …)` and the private
+      // `this.record(name, …)` of service_account_rotation.ts and
+      // federation_keys.ts each write `action: name`, so the literal is the
+      // first argument, not an `action:` — and twenty-two actions written
+      // that way had no row, with nothing here to say so. Both branches of
+      // a `audited(c ? 'a' : 'b', …)` are read.
+      const viaHelper = new RegExp("(?:audited|(?:this|self)\\.record)" +
+        "\\(\\s*(?:[\\w.!]+\\s*\\?\\s*)?" +
+        "'([a-z][a-z0-9-]*(?:\\.[a-zA-Z0-9-]+)+)'" +
+        "(?:\\s*:\\s*'([a-z][a-z0-9-]*(?:\\.[a-zA-Z0-9-]+)+)')?", 'g');
+      while ((m = viaHelper.exec(text)) !== null) {
+        [m[1], m[2]].forEach(function (one) {
+          if (!one) {
+            return;
+          }
+          seen += 1;
+          if (!have.has(one)) {
+            missing.push(one + ' (' + path.relative(ROOT, file) + ')');
+          }
+        });
       }
     });
     t.check(seen > 150, 'the scan found the audit rows it reads',

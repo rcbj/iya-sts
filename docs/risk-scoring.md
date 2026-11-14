@@ -78,9 +78,45 @@ something:
 | Where | the address → its network (ASN) → its country |
 | What with | the User-Agent → browser and version → operating system and version → device type |
 
-The score is near or below 1 when a sign-in is as likely to be the person as
-an attacker, and far below 1 for a familiar one. A sign-in from a new network
-on a new device scores well above 1.
+The score is the product of three factors, and each assessment shows all
+three (`model: ip ×… · ua ×… · user ×…` on Monitoring → Risk, and
+`signals[0].factors` in `GET /admin-api/risk`):
+
+- **ip** and **ua**: for each feature, how likely the value is in the realm
+  divided by how likely it is for this person. Below 1 means the value is
+  more typical of this person than of everybody; a value the person has
+  never used scores 4.
+- **user**: the paper's user term, one divided by the number of people who
+  have signed in, over this person's share of the realm's sign-ins
+  (`signals[0].terms`). It is 1 for a person who signs in as often as the
+  average, above 1 for one who signs in less, and the same whatever address
+  or browser they use. The number of people is counted once and kept for
+  `risk.populationUsersCacheS` seconds (60). When it is due, the sign-in
+  that finds it so is scored with the kept number while it is counted again
+  in the background, so no sign-in waits for the count except a realm's
+  very first. A realm of fewer than 1,000 people is counted at every
+  sign-in.
+
+**When a lookup finds nothing.** A private, loopback or container-bridge
+address is in no dataset, and without the ASN and geolocation datasets (or
+with stale ones) no address has a network or a country. Such a level is
+**unknown**, and the model counts it as never seen, for this person and for
+the realm alike (Freeman et al., section II-C, Eq. 9). The same goes for a
+browser, operating system or device type the `User-Agent` does not name. So
+an address the person has used before is still familiar, and an address
+they have never used is new (ip ×4) even when nobody can say what network
+it is on. Each assessment lists the unknown levels (`unknown: asn, country`
+on Monitoring → Risk, `signals[0].unknown` in `GET /admin-api/risk`). A
+request with no `User-Agent` at all, such as a Kerberos one, is not an
+unknown: having no header is itself the value.
+
+A familiar sign-in usually scores far below 1, because a person's own
+address and browser are rare in the realm. **Where everybody shares one
+address and one browser** — behind a NAT, a VPN or a container bridge — the
+ip and ua factors are near 1, and the score is close to the user term. A
+person who signs in less than the average then scores above 1 from their
+usual context. A sign-in from a new network on a new device scores well
+above the person's usual score.
 
 ### Evaluators
 
@@ -96,6 +132,9 @@ on a new device scores well above 1.
 | `account-failures` | ×3 | five or more refused passwords for this person in the last hour |
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour — **not counted for an address on the realm's operator allow list**, which the operator has declared trusted (#311) |
 | `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata. A key whose signature counter went backwards (a clone) sets the person's standing to HIGH with this signal at once, and RISC `credential-compromise` is sent once: the policy's credential-compromise reaction to that standing is recorded as already sent |
+| `network-signups` | ×3 | `risk.networkSignupThreshold` (ten) or more accounts created by federated sign-ins from this network in the last hour (#565). Not counted for an address on the realm's operator allow list, and capped in a known context like the other address signals |
+| `new-federated-provider` | ×2 | a federation partner or consumer provider this person has not signed in through before (#565). Waits for `risk.minimumHistory`, as `new-device` does |
+| `federated-provider-weight` | the operator's | the sign-in came through a relationship the realm weights with a `federation:<id>=<factor>` entry in `risk.signalFactors` (#565). It never makes an unscored sign-in scored by itself |
 | `totp-replay` | ×2 | a one-time code was presented a second time for this person in the last hour. The code is refused, and it is not counted as a refused password. It is not a security event on its own, because somebody who pressed submit twice looks the same |
 
 **Lists and private addresses.** A list matches a loopback, private,
@@ -106,7 +145,9 @@ person arrives from the same address, so one listed bogon puts a signal on
 everybody. Turn off `risk.listsMatchSpecialPurpose` (Monitoring → Risk) when
 you test on one machine or run that way. The Tor, reputation and deny lists
 are then set aside for such an address, and the assessment records which
-lists were set aside. The allow list is not affected.
+lists were set aside. The allow list is not affected. The setting is about
+lists only: a private address the person has never used is still new to the
+model.
 
 **A known context caps the address evidence at MEDIUM.** A person may have at
 least `risk.minimumHistory` earlier sign-ins from this exact address and this
@@ -117,7 +158,8 @@ and the assessment says what was capped. Evidence about the credential is not
 capped, because a network does not share it: `account-failures`,
 `automated-client`, `authenticator-compromised` and "this wasn't me". The cap
 also bounds how far the `risk.rescore` job can raise that session on a list it
-gains later.
+gains later. Unknown network or country levels change nothing here, because a
+known context is counted by address and browser only.
 
 These factors are a first calibration. You can change any of them for a
 realm with `risk.signalFactors`, without a new release. It takes a list of
@@ -153,10 +195,43 @@ check, not a measurement.
 
 | Level | Score |
 |---|---|
-| LOW | below `risk.mediumScorePercent` ÷ 100 (1 by default) |
+| LOW | below `risk.mediumScorePercent` ÷ 100 (3 by default) |
 | MEDIUM | from `risk.mediumScorePercent` ÷ 100 |
 | HIGH | from `risk.highScorePercent` ÷ 100 (10 by default) |
 | UNSCORED | a first sign-in with no evaluator signal |
+
+**Why MEDIUM starts at 3, not 1.** The score is a likelihood ratio: how much
+likelier this sign-in is from an attacker than from the person. Freeman et
+al. (Eq. (4)) compare it with a threshold θ, the odds that a sign-in with
+the right password is the person's. Those odds are far above 1, and the
+paper sets θ for a chosen false-positive rate. A line at 1 would assume
+that half of all correct-password sign-ins are attacks. It would also make
+MEDIUM anybody who signs in less often than average from a shared network,
+because the user factor alone is then above 1. On a test stack, where
+everybody shares one address and one browser, the largest user factor seen
+was 1.98. So the default is 3.
+
+A lower line is stricter. To tune it for a realm, use the **Calibration**
+section above: `risk.calibrationMediumPercent` sets the share of sign-ins
+the suggested MEDIUM line puts at MEDIUM or worse.
+
+With MEDIUM at 3, a single evaluator raises a sign-in to MEDIUM only when
+the model already scored it above 3 ÷ the factor. For example, `tor-exit`
+(×5) needs a model score of at least 0.6. A sign-in from the person's own
+address and browser on an unshared network usually scores far lower, so the
+Tor signal alone leaves it LOW. HIGH is unchanged at 10, so `operator-deny`
+(×20) still makes HIGH any sign-in that scored 0.5 or more, unless it comes
+from a known context, which caps address evidence at MEDIUM.
+
+**That is why the three list signals decide on their own (#503).** The
+factors were not raised to match the line: a factor is evidence about the
+sign-in and the line is the odds for the whole population, so scaling one by
+the other would count the odds twice. Instead the issuance policy asks for a
+second factor at LOW whenever `tor-exit`, `reputation` or `operator-deny`
+fired — the `role-issuance` template's `stepUpSignals` parameter, described
+under *How a score decides*. A list the operator loaded says something about
+the address whatever the model thinks of the person's habits, and what to do
+about it is a decision, so it is made in the policy.
 
 ## How a score decides
 
@@ -175,16 +250,24 @@ person's roles:
 | `urn:sts:xacml:risk-satisfied` | the step-ups the authentication already meets: `second-factor`, and `security-key` when a WebAuthn key was used |
 | `urn:sts:xacml:risk-held` | the step-ups the person could answer: `second-factor` if they hold an authenticator app or a security key, and `security-key` if they hold a key |
 
-The built-in policy has three risk rules, ahead of the role rule, and a risk
+The built-in policy has four risk rules, ahead of the role rule, and a risk
 Deny overrides a role Permit. The console (`sts-admin-console`) is the
 exception, described below.
 
 | Risk | Decision |
 |---|---|
-| LOW or UNSCORED | decided on roles alone |
+| UNSCORED | decided on roles alone |
+| LOW, with a signal on the `stepUpSignals` list (`tor-exit`, `reputation`, `operator-deny` by default; #503) | refused until the authentication carried a **second factor** |
+| any other LOW | decided on roles alone |
 | MEDIUM, with a signal about the device or TLS client (`automated-client`, `new-tls-stack`) | refused until the authentication used a **security key** |
 | any other MEDIUM | refused until the authentication carried a **second factor** |
 | HIGH | refused |
+
+A fifth rule exists only when the template's `refuseSignals` parameter names
+a signal: an authentication carrying one is then **refused at any level**,
+however many factors it presented, as HIGH is. The list is empty by default,
+because a refusal on an address signal is what locked every administrator
+out on #226.
 
 **An authentication with no assessment is decided on roles alone.** Nothing
 unknown is ever a reason to refuse.
@@ -192,9 +275,10 @@ unknown is ever a reason to refuse.
 **The admin console is never refused on risk.** A console that nobody can sign
 in to leaves a cluster that nobody can repair (#226). For the applications
 named by the `role-issuance` template's `neverLockOut` parameter
-(`sts-admin-console` by default), HIGH and MEDIUM ask for a step-up instead:
+(`sts-admin-console` by default), HIGH and MEDIUM — and a signal on either
+list above — ask for a step-up instead:
 
-| The person holds | Decision at HIGH or MEDIUM |
+| The person holds | Decision at HIGH or MEDIUM, or on a listed signal |
 |---|---|
 | a security key | refused until the authentication used the key |
 | a second factor but no key | refused until the authentication carried a second factor |
@@ -233,9 +317,24 @@ audit record, under `STS-RISK-0016` (refused) and `STS-RISK-0017` (a step-up
 the door could not ask for).
 
 **Every session carries the risk it was decided on**, and every token issued
-on it is decided on that risk. An issuance with no session, such as a Kerberos
-service ticket, uses the person's last assessed risk held by that node, for
-`risk.standingValidMinutes`.
+on it is decided on that risk. That includes a credential offer a person makes
+for themselves on the user portal: the wallet's token request is decided on
+the risk of the session the offer was made on. An issuance with no session,
+such as a Kerberos service ticket, uses the person's last assessed risk held
+by that process, for `risk.standingValidMinutes`. With postgres persistence,
+when a person's level changes, every other process drops the risk it holds
+for them and reads it again, so an earlier refused sign-in does not keep
+refusing after a later one has scored lower.
+
+**WS-Trust and the Kerberos KDC assess the sign-in being made.** Each WS-Trust
+Issue or Renew that signs its requester in, and each Kerberos AS-REQ whose
+pre-authentication verified, is assessed and recorded before anything is
+issued. The decision is made on that assessment, not on an earlier one. A
+person refused at MEDIUM is assessed again on their next attempt, and is let
+through as soon as that attempt scores lower. The KDC refuses a ticket on risk
+with `KDC_ERR_POLICY` (12). The service tickets that follow a ticket-granting
+ticket, and a WS-Trust request that delegates (`OnBehalfOf`, `ActAs`), are
+decided on the person's last assessment, which is the sign-in's.
 
 ### Changing the rules
 
@@ -243,8 +342,12 @@ The rules are an ordinary policy on **XACML → Policies**: a realm's own
 override of `role-issuance` replaces the built-in document in that realm. You
 can permit MEDIUM, refuse it outright for administrators, add a rule on any
 attribute of the person's directory entry, or change which signals demand a
-key — the `role-issuance` template's `keySignals` parameter. Building the
-template with `decideRisk` set to `no` gives the roles-only policy.
+key — the `role-issuance` template's `keySignals` parameter. Two more
+parameters key a decision on the signal rather than the level (#503):
+`stepUpSignals` names the signals that ask for a second factor at LOW
+(`none` builds no such rule), and `refuseSignals` the signals that refuse
+at any level. Building the template with `decideRisk` set to `no` gives
+the roles-only policy.
 
 **An override written before these rules existed reads no risk attribute**,
 and that realm then refuses nothing on risk. The console says so on the
@@ -295,9 +398,12 @@ as any other is.
 
 ### What people say about their own sign-ins
 
-Each person sees their own assessed sign-ins of the last thirty days on the
-user portal, at **Recent sign-ins** (`/portal/sign-ins`): when, from where,
-with what browser and system, and at what level. Each has two buttons:
+Each person sees their own assessed sign-ins on the user portal, at
+**Recent sign-ins** (`/portal/sign-ins`): when, from where, with what
+browser and system, through which door, for which application, and at what
+level, newest first and twenty a page. The window is the realm's
+`audit.authenticationHistoryDays`, thirty days by default. Each has two
+buttons:
 
 - **This wasn't me** puts the person's risk at HIGH. By default that ends
   every session they hold, this one included, and RISC is told their
@@ -321,6 +427,15 @@ form. The script sends nothing anywhere, and the form works exactly as before
 if the script is blocked. The service keeps only a keyed digest of the
 identifier, never the identifier. A browser this person has never signed in
 from is the signal `new-device` (×2).
+
+The history counts the fingerprint, or the person's own registered device,
+as its own feature, `device-id`. It is not the model's device type (desktop,
+mobile, tablet), which is a level of the User-Agent. Until October 2026
+(#506) both were counted under one name, `device`. The fingerprints counted
+there are not converted: nothing reads them any more, and they are deleted
+under `risk.historyRetentionDays` like any history nobody adds to. The one effect
+you may see: the first sign-in after the upgrade from a browser a person has
+used before can carry `new-device` once.
 
 **A browser fingerprint is personal data** about the person's device,
 collected without them doing anything, so turning it on is your decision to
@@ -379,6 +494,12 @@ ways in:
   expanded as it is read, and nothing expanded is written to disk. See
   [Uploading a file](#uploading-a-file). A short list can also be pasted on
   the same page, or sent as `content` to `POST /admin-api/risk/import`.
+  Both forms have one *Dataset and its format* drop-down that offers only
+  the pairs that go together — each dataset with the formats it is read
+  from — and the table above them, *Which file goes with which dataset*,
+  says what each format's file looks like. Through the API, `dataset` and
+  `format` are two fields as before, and a pair that does not go together
+  is refused.
 - **At install time, with the loader.** Run it inside the image. It
   connects to the database the way the service does, from the same
   settings (see step 3 below):
@@ -416,6 +537,7 @@ certificate chain presented to it.
 | `iplist.reputation` | an IP reputation list | the same |
 | `iplist.operator-deny`, `iplist.operator-allow` | your own lists, one per realm | the same |
 | `fido.mds3` | every FIDO-certified authenticator model and its status reports, by AAGUID | the MDS3 BLOB exactly as FIDO publishes it: one signed JWT |
+| `android.attestation-status` | the Android attestation certificates Google has revoked or suspended, by serial (#256); consulted by device registration and WebAuthn, not scored ([Devices](devices.md#googles-android-attestation-status-list)) | Google's status list as it publishes it: JSON `entries` keyed by lower-case hex serial; downloaded daily by `devices.android-status-refresh` |
 
 ### Uploading a file
 
@@ -450,7 +572,8 @@ million rows takes minutes to load into the database. A refusal found before
 the file is stored, such as terms nobody has accepted, is the answer itself.
 
 The upload is written to `risk.uploadDirectory` while it is imported, and
-deleted when the import ends. Every stack this repository ships mounts a
+deleted when the import ends. Report jobs are built in the same directory
+([Reports](reporting.md#where-a-job-is-built)), so size it for both. Every stack this repository ships mounts a
 volume there; on AWS it is an encrypted EBS volume per node, created and
 deleted with the node's task ([A cluster in AWS](aws-cluster.md#where-a-risk-dataset-upload-goes)). Give it room for the largest file you will upload, as
 compressed. Several limits apply:
@@ -461,6 +584,8 @@ compressed. Several limits apply:
 | (free space) | | An upload the directory has no room for. Send a `Content-Length`: without one, the whole of `risk.uploadMaxBytes` must be free. |
 | `risk.expandedMaxBytes` | 8 GiB | A compressed file that expands past it. |
 | `risk.expansionMaxRatio` | 100 | A compressed file that expands more than this many times its size, past 16 MiB. Real datasets compress 5 to 20 times; a decompression bomb, a thousand. |
+| `risk.maxSkippedLinesPercent` | 10 | A file in which more than this share of its non-comment lines are not rows of the chosen format. Nothing of it is kept. |
+| (file name) | | On the console's form, a file whose extension does not fit the format chosen, after any `.gz` or `.zip` (`STS-RISK-0055`). The API's body has no name, so this is not asked of it. |
 
 The two expansion limits apply to a `.gz` or `.zip` from the watched
 directory and the loader too.
@@ -488,7 +613,9 @@ recorded under your name, so do it as the person responsible for the
 deployment. Pass the provider names to the loader's `--accept-terms`, or
 accept on Monitoring → Risk or with `POST /admin-api/risk/accept-terms`. The
 provider names are `dbip-lite`, `ipinfo-lite`, `tor-project`, `firehol` and
-`fido-mds3`. Your own allow and deny lists need no acceptance.
+`fido-mds3`. Your own allow and deny lists need no acceptance, and nor does
+Google's Android attestation status list (`google-android-attestation`), a
+public list published for every verifier to consult.
 
 **2. Download the files.** DB-IP Lite's city and ASN data, the Tor exit list,
 FireHOL's level 1 reputation list and the FIDO metadata are published at the
@@ -508,6 +635,7 @@ To script the same thing, use `POST /admin-api/risk/upload`.
 | `torbulkexitlist` | `iplist.tor-exit` | `ip-list` |
 | `firehol_level1.netset` | `iplist.reputation` | `ip-list` |
 | the FIDO MDS3 BLOB | `fido.mds3` | `fido-mds3-jwt` |
+| Google's Android attestation status list | `android.attestation-status` | `android-attestation-status-json` |
 
 **Or run the install-time loader instead.** It downloads and imports every
 file in one command, which suits an automated installation. It reads a
@@ -555,9 +683,11 @@ the same settings: the connection string from `STS_DATABASE_URL` or
 `persistence.databaseUrl`, and the password from
 `persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
 another secret store). It also verifies the database server's certificate
-when `persistence.databaseTlsRejectUnauthorized` is on. So in a container of
-the service's image it needs nothing else: no password on the command line
-and no `PGPASSWORD`. For a throwaway database with no secret store, a
+as the service does: when `persistence.databaseTlsRejectUnauthorized` is on
+(the default), or when the connection string says `sslmode=verify-ca` or
+`verify-full`, against `persistence.databaseTlsCaFile` when it is set. So in a
+container of the service's image it needs nothing else: no password on the
+command line and no `PGPASSWORD`. For a throwaway database with no secret store, a
 password written into `STS_DATABASE_URL` still works. If the secret store is
 configured but cannot be read, the loader stops with `STS-RISK-0040` and the
 store's own reason, and imports nothing.
@@ -658,6 +788,38 @@ once the active BLOB is overdue), under the same acceptance and the same
 checks. An authenticator the metadata does not list, including one that
 attests nothing (the all-zero AAGUID), is simply unknown.
 
+### Looking up an authenticator
+
+To see what the loaded BLOB says about one authenticator model, open the
+**Lookups** tab of Monitoring → Risk and use **Look up an authenticator**, or
+call `GET /admin-api/risk?authenticator=<key>`. The key can be any of the
+three the BLOB lists models under, and its kind is told by its shape:
+
+| Key | Looks like |
+|---|---|
+| an AAGUID (FIDO2 / WebAuthn) | a UUID, with or without dashes, `{…}` or capitals |
+| an AAID (FIDO UAF) | `XXXX#XXXX`, hex |
+| an attestation certificate key identifier (FIDO U2F) | 40 hex digits |
+
+For a listed model the answer gives its description, protocol family,
+certification level, latest status and date, whether it is **compromised**
+(any status report of REVOKED, USER_VERIFICATION_BYPASS or a KEY_COMPROMISE —
+a passkey from it is refused at registration and HIGH at sign-in), every
+status report, and the metadata statement as kept (without its icon). The
+API answers it as `authenticatorLookup`: `keyKind`, `key`, `listed`,
+`version`, `stale` and `model`.
+
+When nothing is listed it says why, in `why`: `no-blob` (no BLOB is
+loaded), `not-listed`, `all-zero` (the all-zero AAGUID, which an
+authenticator that attests nothing sends), `not-a-key` (none of the three
+shapes) or `unreadable` (the store could not answer; `detail` says what
+happened).
+
+A stale BLOB is still asked, and the answer says `stale`, so you can see
+what it says while you wait for the next one. Attestation and risk scoring
+still ignore a stale BLOB. The lookup only reads the metadata; nothing that
+decides a registration or a score reads its answer.
+
 **The same BLOB serves WebAuthn attestation (#105).** A security key's
 registration is checked against it: the model's attestation root
 certificates anchor its attestation chain, and a model a status report calls
@@ -678,6 +840,31 @@ REVOKED, USER_VERIFICATION_BYPASS or a KEY_COMPROMISE is refused outright
 
 **Rollback** makes the previous version active again. A superseded version's
 rows are deleted after `risk.supersededRetentionDays`; its record stays.
+
+**Remove** is on every version whose rows are loaded, in the Datasets tab
+(`POST /admin-api/risk/delete`). It deletes that version's rows, and the
+version's record stays, marked `deleted`. It cannot be activated, and the
+scheduled downloads, the dataset directory and the install-time loader treat
+it as already recorded. **An administrator can upload or import the same
+version again** (console upload or paste, `POST /admin-api/risk/import` or
+`/upload`). Its record is reused and loaded like a new one.
+
+A removed version's row has one of two controls:
+
+- **Reload**, for a version this service downloaded itself, from the address
+  it is configured with now: the Android attestation status list
+  (`devices.androidStatusUrl`), and the FIDO MDS3 BLOB when `risk.mdsUrl` is
+  set. It downloads the file again and loads it as that version
+  (`POST /admin-api/risk/reload`). If the address now serves a different
+  file, the reload is refused: that file is a newer version, and the
+  scheduled download loads it.
+- **Upload again**, for every other version: an upload form with the
+  dataset, format, realm and version already set, so you only choose the
+  file. A FIDO MDS3 BLOB that was uploaded, which is the usual way, is
+  reloaded this way. Removing the **active** version unloads the dataset. It
+then has no active version and risk scores stop reading it. Nothing else is
+activated in its place, and **Roll back** is still offered when there is an
+earlier version. A version that is still loading cannot be removed.
 
 **A stale dataset counts for nothing.** Geolocation and ASN data older than
 `risk.geoStaleAfterDays`, and Tor or reputation lists older than
@@ -784,7 +971,7 @@ kept in step with `common/config.js`.
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | The policy asked what happens when a person's risk changes. |
 | `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | How many people's standing each process holds. |
-| `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
+| `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `300` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | Factors over the built-in ones, as `signal=factor`, comma-separated. |
 | `risk.listsMatchSpecialPurpose` | `STS_RISK_LISTS_MATCH_SPECIAL_PURPOSE` | `true` | Let the Tor, reputation and deny lists match loopback, private and reserved addresses. Turn off for a service on one machine, or behind a private bridge, NAT or proxy. |
@@ -797,6 +984,7 @@ kept in step with `common/config.js`.
 | `risk.datasetsDirectory` | `STS_RISK_DATASETS_DIRECTORY` | *(empty)* | The directory the dataset job imports from; empty turns the job off. |
 | `risk.datasetsDirectoryScanS` | `STS_RISK_DATASETS_DIRECTORY_SCAN_S` | `300` | How often that directory is read. |
 | `risk.datasetShrinkLimitPercent` | `STS_RISK_DATASET_SHRINK_LIMIT_PERCENT` | `50` | How much smaller than the active version a new one may be before it is refused. |
+| `risk.maxSkippedLinesPercent` | `STS_RISK_MAX_SKIPPED_LINES_PERCENT` | `10` | The largest share of a file's non-comment lines that may fail to parse; past it the file is refused. `100` accepts any file holding one row. |
 | `risk.supersededRetentionDays` | `STS_RISK_SUPERSEDED_RETENTION_DAYS` | `30` | How long a superseded version's rows are kept for rollback. |
 | `risk.geoStaleAfterDays` | `STS_RISK_GEO_STALE_AFTER_DAYS` | `45` | Age after which geolocation and ASN data counts for nothing. |
 | `risk.ipListStaleAfterHours` | `STS_RISK_IP_LIST_STALE_AFTER_HOURS` | `24` | Age after which a Tor or reputation list counts for nothing. |
@@ -825,12 +1013,13 @@ kept in step with `common/config.js`.
 This service's own console and portal receive the CAEP `risk-level-change`
 events it sends. At `HIGH`, each one ends its own sessions for that person
 (product mode), as the `signal-response` policy permits. See
-[Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal).
+[Signals received](signals-received.md#what-the-three-applications-do-with-a-signal).
 
 ## In the running service
 
 - **Monitoring → Risk** (`/admin/risk`) shows everything on this page: the
-  assessments, people by current standing, a lookup of any address, every
+  assessments, people by current standing, a lookup of any address and of
+  any authenticator in the FIDO metadata, every
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
   settings. `?subject=` narrows the assessments to one person. The

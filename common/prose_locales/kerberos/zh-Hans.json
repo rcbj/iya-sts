@@ -1,0 +1,38 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "此响应和页面中都没有任何密钥材料。人员的密钥在其密码被设置或验证时从密码派生，从不显示；服务主体的 keytab 只交付一次，由创建它的创建或轮换操作交付，人员的 keytab 也只交付一次，从手头的密码派生——管理员在此人页面上设置的密码，或此人自己在 /portal/kerberos 上的密码。"
+  },
+  "kerberos.notes.modeProduct": {
+    "en": "8d432ed7c10cfff6",
+    "text": "此 KDC 是产品模式的：人员通过存储在其目录条目上的密钥，以自己的密码进行身份验证，没有密钥的人会被拒绝并提示“请先登录一次”。"
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "此 KDC 是开发模式的：每个用户的密钥都来自 krb5.userPassword，人员从不会获得存储的密钥。在这里创建的服务主体在两种模式下都使用。"
+  },
+  "kerberos.notes.realmServed": {
+    "en": "8a723c27287c5be5",
+    "text": "每个信任领域一个 KDC：这些是阅读本页时所在信任领域的人员和应用，作为该领域自己的 Kerberos 领域 {{kerberosRealm}} 中的主体。"
+  },
+  "kerberos.notes.realmNone": {
+    "en": "8b5e4bb62b24c1f7",
+    "text": "此信任领域没有 KDC：{{reason}}。请在该领域上设置 krb5.realm 并开启 krb5.enabled，为其提供一个 KDC；端口 88 按请求中的 Kerberos 领域名称路由请求。"
+  },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "“此信任领域的 KDC 已开启但无法使用”：{{reason}}。其 Kerberos 领域为 {{kerberosRealm}}。"
+  },
+  "kerberos.notes.window": {
+    "en": "f23c2b84dd49da4d",
+    "text": "密钥在密码被设置或验证之后派生，需要几十毫秒才能就位；在此之前，KDC 会拒绝此人，而不是接受较旧的密钥。"
+  },
+  "kerberos.notes.previous": {
+    "en": "6266fa9952830399",
+    "text": "密码更改或轮换会保留被替换的版本——最多 krb5.retainedKeyVersions 个，每个保留 krb5.retainedKeyTtlS——因此在其下签发的票据在可能过期之前仍被接受。旧版本只用于打开这样的票据：不会在其下签发任何东西，旧密码也永远无法登录。“丢弃旧版本”会在发生泄露后立即结束这个窗口期。"
+  },
+  "kerberos.notes.param.noKdcReason": {
+    "en": "eb8c1a9f118d56b9",
+    "text": "它的 krb5.enabled 已关闭"
+  }
+}

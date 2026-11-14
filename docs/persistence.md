@@ -74,7 +74,17 @@ passed, and leaves out a short-lived row with no expiry once it is older than
 takes to read, not as long as everything that was ever written. The
 `persistence.minted-expiry-purge` job then deletes those rows from the database
 in batches every five minutes, together with any row left behind by a realm
-that has been removed. You can see it on Monitoring → Scheduler.
+that has been removed. You can see it on Monitoring → Scheduler. In a
+service deployed as cells, that job cleans each cell's own database, and
+`persistence.minted-expiry-purge-global` cleans the global database, run by
+one cell at a time; one database being unreachable does not stop the other
+being cleaned. While the global database is unreachable a cell's run cannot
+tell which realms still exist, so it deletes no row as left behind by a
+removed realm, says so once in the log (`STS-STORE-0164`), and still
+records the run as succeeded, with the reason on Monitoring → Scheduler.
+The tombstones of ended rows are swept the same way, by
+`persistence.tombstone-purge` in each cell and
+`persistence.tombstone-purge-global` for the global database.
 
 **A restarted node carries on where it left off.** Each node writes its own
 share of the audit log and the statistics. When a container restarts under the
@@ -139,9 +149,13 @@ STS_PERSISTENCE_MODE=postgres node server.js
 ```
 
 The default `persistence.databaseUrl` is
-`postgres://sts:sts@localhost:5432/sts`, which matches the Postgres service in
-this repository's `docker-compose.yml` — user, password and database all `sts`.
-Bring one up to match:
+`postgres://sts:sts@localhost:5432/sts`: user, password and database all `sts`.
+That is for development mode only. **Product mode does not start with a
+well-known database password** (`sts`, `sts_app`, `postgres` and the like) or
+one equal to the user name (`STS-STORE-0170`), unless
+`persistence.allowDefaultDatabasePassword` is on, so give the role a password
+of your own there. The compose stack generates its passwords at first start.
+Bring up a development database to match:
 
 ```bash
 docker run -d --name sts-db -p 5432:5432 \
@@ -149,10 +163,15 @@ docker run -d --name sts-db -p 5432:5432 \
   postgres:18
 ```
 
-That plain container speaks TLS only if you configure it to; the compose stack
-below does it for you and **requires** it. Against a database of your own,
-either bring your own certificate or leave `sslmode` out of the connection
-string and connect in the clear — this service does whichever the string says.
+That plain container speaks TLS only if you configure it to, and this service
+**never connects to its database in the clear**: a connection string with no
+`sslmode` is dialled as `sslmode=require`, and `sslmode=disable` or `allow`, or
+a string that is not a `postgres://` URL, stops the service starting
+(`STS-STORE-0078`). So give that container a certificate (the compose stack
+below does it for you, and requires TLS at the database end too) — and,
+because the service verifies the server's certificate by default, name its
+CA in `persistence.databaseTlsCaFile` unless it chains to something the
+process already trusts.
 
 Point it somewhere else with `STS_DATABASE_URL`, or by editing
 `persistence.databaseUrl` in your appconfig file — all four of them carry the
@@ -164,7 +183,8 @@ settings, the sealed keys, the minted state, the change log, the cluster's
 coordination tables and risk scoring's datasets and history.
 [PostgreSQL schema](postgres-schema.md) describes every table and column. A
 schema change only ever adds; running `postgres/schema.sql` again upgrades an
-older database.
+older database. A release 1.0.0 database (schema version 31) is upgraded by
+`postgres/upgrade-1.0.0.sql` instead, so the asked-names index is not rebuilt.
 
 #### Building it, and the role that cannot rebuild it
 
@@ -213,8 +233,9 @@ this service connecting as the restricted `sts_app` rather than as the owner.
 **A volume created by an earlier version has the tables and no such role**, and the
 service container then restart-loops with `password authentication failed for
 user "sts_app"`. `docker compose down -v` is the fix, and what it removes is the
-directory, the realm registry and the appconfig overrides — never anything this
-service minted.
+directory, the realm registry and the appconfig overrides — and, in product mode
+(the stack's default), the sealed signing keys and everything minted under them.
+[The compose stack](docker-compose.md) lists every volume and variable.
 
 ```bash
 docker compose up            # start; the directory is there again next time
@@ -222,26 +243,130 @@ docker compose down          # stop, keeping the volumes
 docker compose down -v       # stop and throw the data away
 ```
 
-### The compose database is TLS, and requires it
+### The compose database is TLS, and the service verifies it
 
 The Postgres container generates a server key pair on its first
 start and every `host` rule in its `pg_hba.conf` is `hostssl`, so a plaintext
 client is refused by the database with `no pg_hba.conf entry for host …, no
-encryption`. The connection string carries `?sslmode=require` to match.
+encryption`.
 
 The certificate is **self-signed**, because it is generated in the container by
-something that has no CA to sign it. So the connection is *encrypted* and the
-server is not *authenticated*, and `/admin/persistence` says exactly that in its
-**Transport** row rather than showing one tick for two different facts. Turn
-`persistence.databaseTlsRejectUnauthorized` on when you point this at a real
-database whose certificate chains to something `NODE_EXTRA_CA_CERTS` names.
+something that has no CA to sign it. The container copies the certificate (never
+the key) into the `sts-db-ca` volume, which the service mounts read-only, and the
+service trusts that one file for its database connections:
+`STS_DATABASE_TLS_CA_FILE` is `/run/secrets/database-ca/postgres.crt` and the
+connection string carries `?sslmode=verify-full`. So the connection is both
+*encrypted* and *authenticated* — the chain and the host name `postgres` are
+checked — and `/admin/persistence` shows both facts in its **Transport** row.
+
+**The server's certificate is verified by default, in every mode.**
+`persistence.databaseTlsRejectUnauthorized` is `true` unless you turn it off.
+The trust anchors are the file `persistence.databaseTlsCaFile` names when it is
+set — trusted for the database connections only, and nothing else the service
+dials — and the process's default trust store, with `NODE_EXTRA_CA_CERTS`,
+otherwise. A managed database whose certificate chains to a public root, or to
+a bundle you name in either place, needs nothing more. A CA file that is named
+and cannot be read, or holds no certificate, stops the service starting
+(`STS-STORE-0079`). The setting may also name a directory, and then every `.crt`
+and `.pem` file in it is read.
+
+Turning it off is honoured in development mode only: a product deployment with `false` still stored verifies, and writing `false` there is refused. Under [paranoid PKI mode](pki.md#paranoid-pki-mode) the server's certificate is also held to `tls-server-outbound`, with one softer rule: a revocation status that could not be established does not stop the store being dialled, and a certificate revoked does.
+
+> **Warning:** turning `persistence.databaseTlsRejectUnauthorized` off leaves
+> the database server **unauthenticated**. The connection is still encrypted,
+> but anything that can answer at the database's address can impersonate it and
+> read and write every row the service keeps — the sealed keys and the directory
+> included. Monitoring → Database and `/admin/persistence` say so in red, and the
+> service logs a warning at start. Turn it off only for a throwaway database.
+
+`sslmode=verify-ca` and `sslmode=verify-full` in the connection string verify
+the certificate whatever that setting says, as libpq does: `verify-full`
+checks the chain and the host name, and `verify-ca` checks the chain only. A
+certificate that does not verify stops the service starting
+(`STS-STORE-0006`, with the TLS error). The setting decides only for a string
+whose `sslmode` is unset, `require` or `prefer`, and checks the host name too.
+The name that is checked is the one written in the connection string. An IP
+address is checked as that address: a certificate that names only `localhost`
+does not authenticate a database dialled by a different address.
 
 **Upgrading from an older stack needs `docker compose down -v`.** The image is
 `postgres:18` now, and a major version will not read a data directory written by
 the previous one — nor will it accept the old `/var/lib/postgresql/data` mount,
 which is a single mount at `/var/lib/postgresql` from 18 onwards. Throwing the
-volume away costs only what somebody typed: the directory, the realm registry
-and the setting overrides. Nothing this service mints was ever in there.
+volume away costs the directory, the realm registry and the setting overrides,
+and in product mode the sealed signing keys and everything minted under them.
+
+### A second engine: `mariadb`
+
+PostgreSQL is this service's primary store, and the one to choose for a
+deployment. **MariaDB is a second engine** that runs the same store: the same
+tables, the same change log, the same coordination between processes and
+nodes, compiled for MariaDB. This project's test suite runs against it, and
+you can too:
+
+```bash
+STS_PERSISTENCE_MODE=mariadb \
+STS_DATABASE_URL='mariadb://sts_app:PASSWORD@db-host:3306/sts_store' \
+node server.js
+```
+
+**What it needs:**
+
+- **MariaDB 11.8** (the version it is tested against) with InnoDB.
+- **The `mysql2` package in the image.** It is optional, like the attribute
+  sources' drivers: build the image with `--build-arg STS_CLOUD_SDKS=mysql2`.
+- **The schema, built once by an owner.** `mariadb/schema.sql` creates every
+  table and an application account that may read and write the rows and
+  nothing else (no `CREATE`, `ALTER` or `DROP`):
+
+  ```bash
+  mariadb -u root -p \
+    --init-command="SET @sts_app_password='...'" \
+    sts_store < mariadb/schema.sql
+  ```
+
+  `@sts_app_user`, `@sts_app_host` and `@sts_app_require_ssl` name the rest.
+  Like PostgreSQL's script it is idempotent, and running it again rotates the
+  password. Against a schema built this way the service creates nothing; with
+  an object missing, the application account is refused at start and the
+  message names the script.
+- **TLS.** A `mariadb://` string is held to the same rule as a `postgres://`
+  one: the connection is always TLS, `ssl=false` or `ssl-mode=DISABLED` stops
+  the service starting, and the server's certificate is verified by default
+  against `persistence.databaseTlsCaFile`. Run the server with
+  `--require-secure-transport=ON` and a certificate whose name is the host in
+  the connection string.
+- **A change log with no gaps.** The server's `auto_increment_increment` must
+  be 1 and `innodb_autoinc_lock_mode` 0 or 1 (1 is MariaDB's default). Other
+  values hand out numbers that every reader would wait for, so the service
+  refuses to start on them (`STS-STORE-0091`).
+
+**What is different on MariaDB:**
+
+- **No change notification.** MariaDB has nothing like PostgreSQL's
+  `LISTEN`/`NOTIFY`, so another process's change is found by polling the
+  change log, every second unless `persistence.pollInterval` says otherwise.
+- **Held whole, not windowed.** The directory window and the session window
+  read through a PostgreSQL connection of their own, so on MariaDB the
+  directory, the sessions and the stores read on demand are held in memory in
+  every process. `ldap.workerDirectory=postgres-lru` and
+  `authn.sessionWindow=on` are refused there.
+- **Refused:** cells, the bulk import, cell conversion and the risk dataset
+  installer need PostgreSQL itself, and say so if asked to run on MariaDB.
+- **Key lengths.** MariaDB's index keys are bounded, so a directory entry
+  whose normalised DN is longer than 352 characters (or a realm id longer than
+  64) is refused when it is created or renamed (`STS-LDAP-0204`). PostgreSQL
+  has no such limit.
+- **[Monitoring → Database](#checking-on-it)** reads MariaDB's own counters
+  (`information_schema`): the cache hit rate, commits and rollbacks, the
+  connections the account can see, the tables and indexes. Counts MariaDB
+  does not keep, such as an index's scans, are left out rather than shown as
+  zero.
+
+`persistence.sqlDialect=portable` is the other half of this: on PostgreSQL it
+sends the statements MariaDB runs for coordinating processes and minted
+state, with no change notification. It exists so the test suite can prove
+that code on PostgreSQL. Leave it at `native` for anything else.
 
 ## The settings
 
@@ -250,6 +375,9 @@ and the setting overrides. Nothing this service mints was ever in there.
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` |
 | `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` |
 | `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` |
+| `persistence.sqlDialect` | `STS_PERSISTENCE_SQL_DIALECT` | `native` |
+| `persistence.databaseTlsRejectUnauthorized` | `STS_DATABASE_TLS_REJECT_UNAUTHORIZED` | `true` |
+| `persistence.databaseTlsCaFile` | `STS_DATABASE_TLS_CA_FILE` | *(empty)* |
 | `persistence.writeDelay` | `STS_PERSISTENCE_WRITE_DELAY` | `1500` |
 | `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` |
 | `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` |
@@ -306,12 +434,19 @@ a store that broke afterwards, which is recorded and is not fatal.
 
 ### A restored person has not signed in
 
-Somebody restored from the store shows on `/admin/users` as **restored** rather
-than as having authenticated. They exist — an entry, searchable over 389,
-readable over SCIM, and a token issued to them carries their attributes — and
-they have not signed in during *this* process, so they are not counted among the
-sign-ins. Their counts and their event list are statistics, and start at zero
-with everything else.
+Somebody restored from the store shows on `/admin/users` as a **directory**
+person rather than as having authenticated. They exist — an entry, searchable
+over 389, readable over SCIM, and a token issued to them carries their
+attributes — and the page lists them from the directory itself, so they are
+not counted among the sign-ins.
+
+The restore does not copy the directory's people into the register of people
+this service has *seen* (it did until 2026-10-13; at a hundred thousand people
+that copy held every process's event loop for seconds at every start). In
+product mode on postgres the register is itself persisted, so the people it saw
+in earlier runs come back with the rest of what this service mints; in every
+other configuration their counts and their event list are statistics, and
+start at zero with everything else.
 
 ### Settings come back as runtime overrides, not as a new layer
 
@@ -360,25 +495,13 @@ already makes about its own pull.
 Turn it off with `persistence.coordinate`; `persistence.pollInterval` (5s) is the
 worst-case convergence lag when a notification is lost.
 
-#### What it does *not* share
+Several containers against one store go further than this: membership,
+leases, a barrier before each request, and claims for every value used once.
+[How the cluster works](cluster-concepts.md) explains them, and what each
+node still holds alone.
 
-* **Sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's four
-  are bound per process, and always will be. Coordination is about state.
-* **The replay caches and DPoP `jti` sets converge rather than synchronise.**
-  Between a write in one process and its arrival in another there is a window the
-  size of the poll interval in which a proof one process refused is accepted by
-  another. Sticky sessions at the load balancer close it; nothing here does.
-  **The RFC 7523 / RFC 7522 used-assertion history does not have that window**:
-  on postgres, recording a use is one atomic `INSERT … ON CONFLICT` in the table
-  `sts_used_assertions`, so two processes can never both accept one assertion.
-  A database built by an older `postgres/schema.sql` has no such table — run
-  that file again as the owner; it adds the table and changes nothing else.
-* **A realm's signing keys are not adopted mid-life.** A key changed in another
-  process is logged and ignored here: taking it would strand everything this
-  process has already signed. Rotation across processes is a rolling restart.
-
-`/admin/persistence` reports all of it, and `status.replication` carries it in
-the JSON.
+`/admin/persistence` reports the change log's state, and `status.replication`
+carries it in the JSON.
 
 ### Request workers can hold the directory as a window
 
@@ -400,10 +523,13 @@ behaves the same way to every protocol; what changes is where the answer comes
 from:
 
 * **A miss costs one database round trip**, during which that worker does
-  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds it; past it, or
-  when the database refuses, the request is answered **503 with
+  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds one question;
+  past it, or when the database refuses, the request is answered **503 with
   `Retry-After`** (`STS-LDAP-0130`, `STS-LDAP-0131`) rather than from a
-  directory that cannot say what it is missing.
+  directory that cannot say what it is missing. One `/admin` or `/admin-api`
+  request also has a budget on the sum of those waits
+  (`ldap.workerDirectoryBudgetMs`, 5,000, `STS-LDAP-0175`): a question that
+  would pass it is refused and not asked.
 * **A walk of the people** — an LDAP subtree search, a console list — reads
   them from the database a page at a time.
 * **A worker's writes are its own**, as before: an entry it changed is kept

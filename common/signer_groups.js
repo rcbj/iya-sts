@@ -40,6 +40,7 @@
 
 const bunyan = require('bunyan');
 const config = require('./config');
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
 
 const log = bunyan.createLogger({
   name: 'signer_groups',
@@ -80,7 +81,8 @@ const GROUPS = [
                'introspection', 'oauth-signed-metadata'] },
   { id: 'credentials', label: 'Verifiable credentials',
     pkiUseCase: 'jose',
-    useCases: ['vci-credential', 'vci-signed-metadata', 'vp-request-object'] },
+    useCases: ['vci-credential', 'vci-signed-metadata', 'vci-trusted-list',
+               'vp-request-object'] },
   { id: 'events', label: 'Security Event Tokens', pkiUseCase: 'jose',
     useCases: ['ssf-set'] },
   { id: 'wstrust-gnap', label: 'WS-Trust JWTs and GNAP access tokens',
@@ -108,7 +110,7 @@ const GROUP_IDS = GROUPS.map(function (one) { return one.id; });
 // with RSA-3072 and ML-DSA-87 with P-384), matched by security category —
 // a pairing whose halves are of different strengths protects at the weaker.
 //
-// `keyAlg` is `common/vendored/key_material.js`'s id, `jwsAlgs` the JWS
+// `keyAlg` is `common/crypto_impl/key_material.js`'s id, `jwsAlgs` the JWS
 // algorithms the key signs (an RSA key signs RS* and PS*; an EC key's curve
 // fixes its one algorithm), and `slot` the name its certificate is filed
 // under — `<group>/<slot>` — which can never collide with a per-algorithm
@@ -122,7 +124,10 @@ const GROUP_IDS = GROUPS.map(function (one) { return one.id; });
  */
 const PAIRS = [
   { slot: 'RS256', keyAlg: 'rsa-3072', kind: 'rsa',
-    jwsAlgs: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'],
+    // An RSA key serves every RS and PS algorithm; the registry lists them.
+    jwsAlgs: algorithmRegistry.joseNames(function (row) {
+      return row.keyKind === 'rsa';
+    }),
     pq: { slot: 'ML-DSA-65', alg: 'ML-DSA-65' } },
   { slot: 'ES256', keyAlg: 'ec-p256', kind: 'curve', jwsAlgs: ['ES256'],
     pq: { slot: 'ML-DSA-44', alg: 'ML-DSA-44' } },

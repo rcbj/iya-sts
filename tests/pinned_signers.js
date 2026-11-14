@@ -117,8 +117,8 @@ function childMain() {
     const keystore = require(ROOT + '/common/keystore');
     const stsCrypto = require(ROOT + '/common/crypto');
     const pqJose = require(ROOT + '/common/pq_jose');
-    const pqcX509 = require(ROOT + '/common/vendored/pqc_x509');
-    const x509 = require(ROOT + '/common/vendored/x509');
+    const pqcX509 = require(ROOT + '/common/crypto_impl/pqc_x509');
+    const x509 = require(ROOT + '/common/crypto_impl/x509');
     const rotation = require(ROOT + '/common/signing_rotation');
     const pkiAdmin = require(ROOT + '/admin-ui/pki_admin');
     const audit = require(ROOT + '/common/audit');

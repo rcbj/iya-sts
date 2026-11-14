@@ -71,7 +71,7 @@ import realms = require('../common/realms');
 import keystore = require('../common/keystore');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import OidfedStore = require('./oidfed_store');
 
 type Json = any;
@@ -213,7 +213,8 @@ class FederationKeys {
   algorithm(): string {
     const { log, config } = this.deps;
     log.debug("Entering FederationKeys.algorithm().");
-    const alg = String(config.value('oidfed.signingAlg') || 'ES256');
+    const alg = helpers.usableSigningAlg(
+      String(config.value('oidfed.signingAlg') || 'ES256'));
     log.debug("Leaving FederationKeys.algorithm(). " + alg);
     return helpers.FEDERATION_KEY_ALGS.indexOf(alg) >= 0 ? alg : 'ES256';
   }
@@ -313,7 +314,7 @@ class FederationKeys {
     try {
       const held = JSON.parse(text);
       const out = held.b64 ? Buffer.from(held.b64, 'base64')
-                           : nodeCrypto.createPrivateKey(String(held.pem));
+                           : stsCrypto.privateKeyFrom(String(held.pem));
       log.debug("Leaving FederationKeys.opened().");
       return out;
     } catch (e: any) {

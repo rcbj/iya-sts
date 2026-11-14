@@ -11,7 +11,7 @@
 // driver (`attribute_source_drivers.ts`, Knex) is replaced by one that
 // answers rows from a table held here, so what is held is everything this
 // service decides — the protocol job against a real PostgreSQL is
-// `tests/vendored/`'s. Held here:
+// `tests/protocol/`'s. Held here:
 //   A. a definition is refused for mail, an attribute this service keeps, a
 //      name that is not an identifier, a dialect this step does not read, an
 //      attribute another source writes, and a host

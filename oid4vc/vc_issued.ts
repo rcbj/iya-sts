@@ -62,17 +62,47 @@
 // ---------------------------------------------------------------------------
 // DISOWNED (2026-09-17). A credential stops signing anybody in when:
 //
-//   * a GLOBAL sign-out — `/logout`, `/admin/logout`, `/admin-api/logout` —
-//     ended the `wallet-credential` row `logout/logout.ts` draws from this
-//     register: `disown()` stamps the row, and every credential issued at or
-//     before that instant is disowned with it (a credential issued AFTER, on
-//     a fresh token, is not — which is what lets a person who signed out
-//     everywhere enrol a wallet again);
+//   * an administrator's GLOBAL sign-out — `/admin/logout`,
+//     `/admin-api/logout` — or the `wallet-credential` row ticked on
+//     `/logout`, ended the row `logout/logout.ts` draws from this register:
+//     `disown()` stamps the row, and every credential issued at or before
+//     that instant is disowned with it (a credential issued AFTER, on a
+//     fresh token, is not). The person's own Global logout on `/logout`
+//     does not: that act leaves the credential, and the DID it is bound to,
+//     valid;
 //   * an administrator revoked its row on `/admin/tokens` (the issued
 //     register's mark, read by handle, so a restore undoes it);
 //   * its status-list entry is not VALID — revoked or suspended on
-//     `/admin/vc-status` or by the two acts above, which also set the bit so
-//     a verifier elsewhere learns it (`vc_status.ts`).
+//     `/admin/vc/monitor` or by the two acts above, which also set the bit so
+//     a verifier elsewhere learns it (`vc_status.ts`);
+//   * its HOLDER removed it on `/portal/wallet` (#661, 2026-10-16,
+//     `removeForSubject()`): that one credential, stamped removed, its
+//     status-list entry INVALID and its issued-register row revoked. The
+//     wallet's copy is the holder's to delete: no protocol lets an issuer
+//     do it. Since #670 the holder may remove EVERY COPY of one issuance in
+//     one act, or one copy alone — see *A BATCH IS ONE ISSUANCE*.
+//
+// **A BATCH IS ONE ISSUANCE, AND THE REGISTER DOES NOT KEEP IT AS ONE ROW**
+// (#670, rcbj 2026-10-17). The issuer advertises
+// `batch_credential_issuance.batch_size` (`oid4vci.batchSize`, 4), a wallet
+// sends that many proofs, and one Credential Response carries that many
+// credentials, each bound to a DIFFERENT holder key (OpenID4VCI 1.0 section
+// 8.2) with its own status-list entry. They are not one row: a JOSE row is
+// keyed by its credential and an `ldp_vc` row by its holder key, so each copy
+// lands on a row of its own. What they DO share is the Credential
+// Response's `notification_id`, which the issuer mints once per response and
+// section 11 defines as naming the credentials of that response together —
+// the specification's own identifier for an issuance, recorded on every
+// copy since #661. So `issuancesForSubject()` GROUPS a person's copies by
+// it, and a credential recorded without one (before #661) is an issuance of
+// its own. The holder key each copy is bound to is the row's `jkt`, the RFC
+// 7638 thumbprint of the proof's key, recorded since #38; a DID-bound
+// (`ldp_vc`) copy also keeps the holder's `did:jwk` (`holderDid`) since #670.
+//
+// **WHAT THE WALLET SAID** (#661, 2026-10-16): each credential keeps the
+// `notification_id` its Credential Response carried, and the last event the
+// wallet sent to the Notification Endpoint with it (OpenID4VCI 1.0 section
+// 11, `noteWalletEvent()`), for the holder's history. It disowns nothing.
 //
 // **An ordinary sign-out disowns nothing here.** `/oauth2/logout`, SAML
 // Single Logout, WS-Federation's `wsignout1.0` and the console's and portal's
@@ -90,13 +120,13 @@
 // disowns) can all require it without a cycle.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import realms = require('../common/realms');
 import stsCrypto = require('../common/crypto');
 import stats = require('../common/admin_stats');
 import cacheRegistry = require('../common/cache_registry');
 import config = require('../common/config');
+import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 // THE STATUS LISTS, whose entry for a credential is one of the three ways it
 // is disowned. A library that requires nothing in this directory but its
@@ -111,6 +141,7 @@ import accountSignals = require('../ssf/account_signals');
 // The parts of a `realms.map()` store this module uses.
 interface Store {
   get(key: string): any;
+  has(key: string): boolean;
   set(key: string, value: any): unknown;
   delete(key: string): boolean;
   forEach(fn: (value: any, key: string) => void): void;
@@ -130,6 +161,79 @@ interface Issued {
   // Appendix D.2 values), or empty.
   keyStorage: string[];
   userAuthentication: string[];
+  // THE WALLET'S OWN REPORT (OpenID4VCI 1.0 section 11): the
+  // `notification_id` the Credential Response carried, and the last event
+  // the wallet sent with it, or ''.
+  notificationId?: string;
+  walletEvent?: string;
+  walletEventAt?: number;
+  // THE HOLDER REMOVED IT on /portal/wallet: when, and by whom.
+  removedAt?: number;
+  removedVia?: string;
+  // THE HOLDER'S DID, for a DID-bound (`ldp_vc`) credential (#670): the
+  // `did:jwk` its subject names — and since #693, in any format, the
+  // person's proven DID a configuration bound to it carries. The key itself
+  // is the row's `jkt`.
+  holderDid?: string;
+  // WHAT THE REPORTS ASK (#1021, rcbj: credentials by wallet kind and
+  // algorithm): the holder key's algorithm as `Credentials.keyAlgorithm()`
+  // names it (ES256, EdDSA, ML-DSA-65, …), and the channel the credential
+  // request came by — `web` when it carried a browser Origin (a web
+  // wallet), `app` otherwise (a native wallet). Empty on a row written
+  // before.
+  holderAlg?: string;
+  channel?: string;
+}
+
+// WHY A CREDENTIAL SIGNS NOBODY IN ANY MORE (#653), `disownedFact()`'s
+// answer.
+interface DisownedFact {
+  kind: string;
+  reason: string;
+  at: string;
+  via: string;
+  reissue: boolean;
+}
+
+// One credential of a person's history, for `/portal/wallet`.
+interface HistoryEntry {
+  id: string;
+  format: string;
+  configId: string;
+  issuedAt: number;
+  expiresAt: number;
+  status: string;
+  removedAt: number;
+  walletEvent: string;
+  walletEventAt: number;
+  // The issuance it came in (#670): the group `issuancesForSubject()` files
+  // it under, never shown.
+  issuance: string;
+  // The holder key it is bound to: the RFC 7638 thumbprint, and for a
+  // DID-bound credential the DID, or ''.
+  keyThumbprint: string;
+  holderDid: string;
+  // Its index in the realm's status list, or ''.
+  statusIndex: string;
+}
+
+// One issuance of a person's history (#670): the copies one Credential
+// Response carried, each bound to a different key of the wallet's.
+interface IssuanceEntry {
+  id: string;
+  format: string;
+  configId: string;
+  issuedAt: number;
+  expiresAt: number;
+  // The copies' state where they share one, else `mixed`.
+  status: string;
+  // How many copies are in each state.
+  counts: { [state: string]: number };
+  removedAt: number;
+  walletEvent: string;
+  walletEventAt: number;
+  // Oldest first, as the wallet's proofs were.
+  copies: HistoryEntry[];
 }
 
 interface VcIssuedDeps {
@@ -138,9 +242,17 @@ interface VcIssuedDeps {
   subjectForName: typeof helpers.subjectForName;
   jwkThumbprint: typeof stsCrypto.jwkThumbprint;
   artifactRevokedByKey: (key: string) => any;
+  artifactByKey: (key: string) => any;
+  revokeArtifact: (record: any, via: string) => boolean;
   statusOf: (key: string) => number;
+  // When and by what a status entry was last set (#653), or null. Optional.
+  statusChangeOf?: (key: string) => { status: number; changedAt: number;
+                                     via: string } | null;
   setStatus: (key: string, value: number, via: string) => boolean;
   store: Store;
+  // THE TWO INDEXES (2026-10-17): see `bySubject` and `byNotification`.
+  subjectIndex: Store;
+  notificationIndex: Store;
   // The register's bound, `oid4vp.signInRegisterMaxEntries` (2026-09-18).
   maxRows: () => number;
 }
@@ -161,6 +273,45 @@ const MAX_PER_ROW = 64;
 // until then, which is why it is not earlier.
 const issued = realms.map({ persist: 'vc_issued.credentials',
                             expiresAt: realms.expiryField('expiresAt', 1) });
+
+// THE INDEXES THE HOLDER'S PAGE READS (rcbj, 2026-10-17: "lists are
+// maintained as you go rather than ... full table scans that do not scale").
+// `/portal/wallet`'s history and Remove asked every row for its subject, and
+// the Notification Endpoint every credential for its `notification_id`, on
+// each call; both are a lookup now.
+//
+//   * `bySubject`: digest(subject) -> { keys: [row key, ...], expiresAt }
+//   * `byNotification`: notification_id -> { keys: [row key, ...],
+//     expiresAt } — every row the response reached, since a batch's copies
+//     are rows of their own (#670); an entry from before names one `key`
+//
+// Written in `record()` and dropped where this module deletes a row
+// (`sweep()`, an expired `lookup()`, `forget()`, and the rows the size bound
+// evicts in `record()`, read before `cacheRegistry.makeRoom()` takes them).
+// **A READER NEVER PRUNES A KEY FOR A ROW IT CANNOT SEE** (2026-10-20): this
+// process's copy of a persisted store answers "not here" alike for a row
+// that is gone and for one that has not arrived yet (another process's
+// write still on its way through the change log, a row the restore could
+// not open), and an index entry pruned on such a read was lost for good —
+// the person's history read as empty from then on. A key is dropped only
+// where this module deleted the row itself, or where the row it names is
+// HERE and names another subject or no longer carries the notification.
+// `expiresAt` is the rows', for the database's own expiry, which is what
+// ends a key left behind. Rows recorded before the indexes existed are
+// indexed once per realm (`ensureIndexed()`, marked by `INDEXED_MARK`).
+const bySubject = realms.map({ persist: 'vc_issued.bySubject',
+                               expiresAt: realms.expiryField('expiresAt', 1) });
+const byNotification = realms.map({ persist: 'vc_issued.byNotification',
+                                    expiresAt: realms.expiryField('expiresAt',
+                                                                  1) });
+// The key in `bySubject` that says the realm's rows have been indexed. Not a
+// digest, so no subject can collide with it. `-v2` since 2026-10-20: the
+// reader pruned a key whose row it could not see until then, so each realm
+// is indexed once more, which files every row it holds under its subject
+// again (`indexRow()` adds a key only once) and gives back what a pruned
+// entry lost. The `-v1` mark is dropped as the scan is marked.
+const INDEXED_MARK = '#indexed-v2';
+const INDEXED_MARK_BEFORE = '#indexed-v1';
 
 // Described to `/admin/caches` (rule 3ap, #38 follow-ups). It is not a cache:
 // it cannot be rebuilt, and a lookup that misses refuses a sign-in — which is
@@ -252,9 +403,14 @@ class VcIssued {
       subjectForName: helpers.subjectForName,
       jwkThumbprint: stsCrypto.jwkThumbprint,
       artifactRevokedByKey: stats.artifactRevokedByKey,
+      artifactByKey: stats.artifactByKey,
+      revokeArtifact: stats.revokeArtifact,
       statusOf: vcStatus.statusOf,
+      statusChangeOf: vcStatus.changeOf,
       setStatus: vcStatus.setStatus,
       store: issued,
+      subjectIndex: bySubject,
+      notificationIndex: byNotification,
       maxRows: function (): number {
         return Number(config.value('oid4vp.signInRegisterMaxEntries'));
       }
@@ -276,8 +432,8 @@ class VcIssued {
     const { log } = this.deps;
     log.debug("Entering VcIssued.digestOf().");
     const jwt = String(credential || '').split('~')[0];
-    const digest = crypto.createHash('sha256').update(jwt, 'ascii')
-      .digest('base64url');
+    const digest = stsCrypto.digest('sha256', Buffer.from(jwt, 'ascii'),
+                                    'base64url');
     log.debug("Leaving VcIssued.digestOf().");
     return digest;
   }
@@ -293,8 +449,8 @@ class VcIssued {
     const { log } = this.deps;
     log.debug("Entering VcIssued.keyForHolder().");
     log.debug("Leaving VcIssued.keyForHolder().");
-    return 'ldp:' + jkt + ':' + crypto.createHash('sha256')
-      .update(String(subject), 'utf8').digest('base64url');
+    return 'ldp:' + jkt + ':' +
+           stsCrypto.digest('sha256', String(subject), 'base64url');
   }
 
   // ---------------------------------------------------------------------------
@@ -377,7 +533,9 @@ class VcIssued {
    * the ability to sign somebody in, not the wallet the credential.
    *
    * @param entry - the credential, its format, configuration, subject, holder
-   *   key, expiry and status and validity details
+   *   key (and DID, for `ldp_vc`), expiry and status and validity details;
+   *   `announce: false` sends no CAEP signal, for the second and later copies
+   *   of one batch
    * @returns the row key, or '' when nothing was kept
    */
   record(entry: { credential: unknown; format: string; configId: string;
@@ -385,7 +543,10 @@ class VcIssued {
                   artifactKey?: string; statusKey?: string;
                   validFrom?: string; validUntil?: string;
                   keyStorage?: string[];
-                  userAuthentication?: string[] }): string {
+                  userAuthentication?: string[];
+                  notificationId?: string; holderDid?: string;
+                  holderAlg?: string; channel?: string;
+                  announce?: boolean }): string {
     const { log, store, jwkThumbprint } = this.deps;
     log.debug("Entering VcIssued.record(). format=" + entry.format);
     const format = String(entry.format || '');
@@ -415,7 +576,15 @@ class VcIssued {
       validUntil: String(entry.validUntil || ''),
       expiresAt: Number(entry.expiresAt) || 0,
       keyStorage: [].concat(entry.keyStorage || []).map(String),
-      userAuthentication: [].concat(entry.userAuthentication || []).map(String)
+      userAuthentication: [].concat(entry.userAuthentication || []).map(String),
+      notificationId: String(entry.notificationId || ''),
+      walletEvent: '',
+      walletEventAt: 0,
+      removedAt: 0,
+      removedVia: '',
+      holderDid: String(entry.holderDid || ''),
+      holderAlg: String(entry.holderAlg || ''),
+      channel: String(entry.channel || '')
     };
     const ldp = format === 'ldp_vc';
     const key = ldp ? this.keyForHolder(jkt, entry.subject)
@@ -431,8 +600,7 @@ class VcIssued {
     // nobody in — exactly what disowning one does — so no bound here can
     // let a credential in that should not be.
     if (!before && !store.get(key)) {
-      cacheRegistry.makeRoom(store, this.deps.maxRows(),
-                             { counter: issuedCount });
+      this.makeRoomIndexed();
     }
     // THROUGH THE STORE, whole, so the journal carries the row.
     store.set(key, {
@@ -448,7 +616,11 @@ class VcIssued {
       disownedAt: before ? Number(before.disownedAt) || 0 : 0,
       disownedVia: before ? String(before.disownedVia || '') : ''
     });
-    const holder = this.deps.nameForSubject(String(entry.subject));
+    this.indexRow(store.get(key));
+    // ONE SIGNAL PER ISSUANCE (#670): the copies of a batch are one
+    // credential to the person, so the issuer announces the first only.
+    const holder = entry.announce === false ? ''
+      : this.deps.nameForSubject(String(entry.subject));
     if (holder) {
       accountSignals.credentialChanged({ username: holder,
         credentialType: 'verifiable-credential', changeType: 'create',
@@ -483,6 +655,7 @@ class VcIssued {
     }
     if (row.expiresAt && row.expiresAt <= Date.now()) {
       store.delete(key);
+      this.unindexRow(row);
       issuedCount.miss();
       log.debug("Leaving VcIssued.lookup(). Expired.");
       return null;
@@ -552,48 +725,119 @@ class VcIssued {
   }
 
   // ---------------------------------------------------------------------------
-  // WHY THESE CREDENTIALS SIGN NOBODY IN ANY MORE, or ''. See the header for
+  // WHY THESE CREDENTIALS SIGN NOBODY IN ANY MORE, or null. See the header for
   // the three acts. Asked of the credentials a presentation COULD be; for a
   // Data Integrity row those are every sibling with the same validity window,
   // and any one of them disowned disowns the presentation, because nothing in
   // an unlinkable proof says which sibling it came from.
+  //
+  // **A FACT, NOT ONLY A SENTENCE (#653).** A refusal that said only "Token
+  // Status List index 48658 is INVALID" left the person unable to tell that
+  // their own earlier global sign-out had done it, or that the fix is a new
+  // credential. So the answer carries the KIND of act, WHEN it happened
+  // (where anything recorded it) and by WHAT, and whether a credential
+  // issued again would sign in — true for every kind but a suspension, which
+  // an administrator may lift and which a new credential would not explain.
+  // The sentence `disownedReason()` answers is this fact's `reason`, so the
+  // two cannot disagree. A batch's copies are rows of their own, and a
+  // global sign-out stamps each, so whichever copy is presented answers the
+  // same act.
   // ---------------------------------------------------------------------------
   /**
-   * Says why these credentials sign nobody in any more; any one candidate
-   * disowned disowns the presentation.
+   * Says why these credentials sign nobody in any more, as a fact; any one
+   * candidate disowned disowns the presentation.
+   *
+   * @param row - the row
+   * @param candidates - the credentials the presentation could be
+   * @returns `{ kind, reason, at, via, reissue }`, or null; `kind` is
+   *   `signed-out`, `removed`, `revoked` or `status`, `at` an ISO 8601
+   *   instant or ''
+   */
+  disownedFact(row: any, candidates: Issued[]): DisownedFact | null {
+    const { log, artifactRevokedByKey, statusOf } = this.deps;
+    log.debug("Entering VcIssued.disownedFact().");
+    const disownedAt = Number((row && row.disownedAt) || 0);
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (disownedAt && c.issuedAt <= disownedAt) {
+        const via = String(row.disownedVia || 'unstated');
+        const at = VcIssued.instant(disownedAt);
+        log.debug("Leaving VcIssued.disownedFact(). Signed out.");
+        return { kind: 'signed-out', at: at, via: via, reissue: true,
+                 reason: 'a global sign-out (' + via + ') disowned the ' +
+                   'credentials issued to this wallet for this person ' +
+                   'before ' + at };
+      }
+      if (c.removedAt) {
+        const via = String(c.removedVia || 'unstated');
+        const at = VcIssued.instant(c.removedAt);
+        log.debug("Leaving VcIssued.disownedFact(). Removed.");
+        return { kind: 'removed', at: at, via: via, reissue: true,
+                 reason: 'its holder removed it (' + via + ')' +
+                   (at ? ' at ' + at : '') };
+      }
+      const mark = c.artifactKey ? artifactRevokedByKey(c.artifactKey) : null;
+      if (mark) {
+        const via = String(mark.via || 'unstated');
+        const at = VcIssued.instant(mark.at);
+        log.debug("Leaving VcIssued.disownedFact(). Revoked.");
+        return { kind: 'revoked', at: at, via: via, reissue: true,
+                 reason: 'it was revoked in this service\'s issued ' +
+                   'register (' + via + ')' + (at ? ' at ' + at : '') };
+      }
+      const status = c.statusKey ? statusOf(c.statusKey) : 0;
+      if (status) {
+        // WHO SET THE BIT, AND WHEN — the status list's own record of its
+        // last change (`vc_status.ts`'s `changeOf()`). Optional, so a test's
+        // own deps need not name it; and absent for an entry that reads
+        // INVALID only because it expired or was forgotten.
+        // Only a change TO the status read counts: an entry still VALID
+        // underneath reads INVALID from its expiry or the issued register's
+        // mark, and its last change says nothing about either.
+        const last = (c.statusKey && this.deps.statusChangeOf)
+          ? this.deps.statusChangeOf(c.statusKey) : null;
+        const change = last && Number(last.status) === status ? last : null;
+        const via = change ? String(change.via || 'unstated') : '';
+        const at = change ? VcIssued.instant(change.changedAt) : '';
+        const name = status === 2 ? 'SUSPENDED' : status === 1 ? 'INVALID' :
+          'status ' + status;
+        log.debug("Leaving VcIssued.disownedFact(). Status " + status + ".");
+        return { kind: 'status', at: at, via: via, reissue: status !== 2,
+                 reason: 'its status list entry says ' + name +
+                   (via ? ' (' + via + ')' : '') + (at ? ' since ' + at : '') };
+      }
+    }
+    log.debug("Leaving VcIssued.disownedFact(). Not disowned.");
+    return null;
+  }
+
+  /**
+   * Says why these credentials sign nobody in any more, as the sentence of
+   * `disownedFact()`.
    *
    * @param row - the row
    * @param candidates - the credentials the presentation could be
    * @returns the reason, or ''
    */
   disownedReason(row: any, candidates: Issued[]): string {
-    const { log, artifactRevokedByKey, statusOf } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering VcIssued.disownedReason().");
-    const disownedAt = Number((row && row.disownedAt) || 0);
-    for (let i = 0; i < candidates.length; i++) {
-      const c = candidates[i];
-      if (disownedAt && c.issuedAt <= disownedAt) {
-        log.debug("Leaving VcIssued.disownedReason(). Signed out.");
-        return 'a global sign-out (' + (row.disownedVia || 'unstated') +
-          ') disowned the credentials issued to this wallet for this ' +
-          'person before ' + new Date(disownedAt).toISOString();
-      }
-      const mark = c.artifactKey ? artifactRevokedByKey(c.artifactKey) : null;
-      if (mark) {
-        log.debug("Leaving VcIssued.disownedReason(). Revoked.");
-        return 'it was revoked in this service\'s issued register (' +
-          (mark.via || 'unstated') + ')';
-      }
-      const status = c.statusKey ? statusOf(c.statusKey) : 0;
-      if (status) {
-        log.debug("Leaving VcIssued.disownedReason(). Status " + status + ".");
-        return 'its status list entry says ' +
-          (status === 2 ? 'SUSPENDED' : status === 1 ? 'INVALID' :
-            'status ' + status);
-      }
+    const fact = this.disownedFact(row, candidates);
+    log.debug("Leaving VcIssued.disownedReason().");
+    return fact ? fact.reason : '';
+  }
+
+  // An instant as ISO 8601, from milliseconds or a string a record kept; ''
+  // where nothing usable was recorded.
+  private static instant(value: unknown): string {
+    helpers.log.debug("Entering VcIssued.instant().");
+    const ms = typeof value === 'number' ? value : Date.parse(String(value));
+    if (!value || !isFinite(ms) || ms <= 0) {
+      helpers.log.debug("Leaving VcIssued.instant(). None.");
+      return '';
     }
-    log.debug("Leaving VcIssued.disownedReason(). Not disowned.");
-    return '';
+    helpers.log.debug("Leaving VcIssued.instant().");
+    return new Date(ms).toISOString();
   }
 
   // ---------------------------------------------------------------------------
@@ -613,7 +857,7 @@ class VcIssued {
     log.debug("Entering VcIssued.rowsForSubject().");
     const now = Date.now();
     const out: any[] = [];
-    store.forEach((row) => {
+    const consider = (row: any): void => {
       if (!row || (subject !== null && row.subject !== String(subject)) ||
           (row.expiresAt && row.expiresAt <= now)) {
         return;
@@ -623,7 +867,14 @@ class VcIssued {
         return;
       }
       out.push(row);
-    });
+    };
+    // One person's through the index; everyone's (`null`) is every row by
+    // definition.
+    if (subject === null) {
+      store.forEach(consider);
+    } else {
+      this.rowsOfSubject(String(subject)).forEach(consider);
+    }
     log.debug("Leaving VcIssued.rowsForSubject(). " + out.length + ".");
     return out;
   }
@@ -689,6 +940,619 @@ class VcIssued {
     return true;
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S HISTORY, for `/portal/wallet` (#661, 2026-10-16): every
+  // credential still on a row of theirs, newest first, each with its state
+  // and the wallet's last report. A row goes when its last credential
+  // expires, so this is what the register still holds, not every credential
+  // ever issued. Since #670 the page reads it through
+  // `issuancesForSubject()`, which groups it; this is the copies.
+  //
+  // `id` is a digest of the row and the credential, never the row key: a
+  // JOSE row's key is a digest of the credential itself.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns every credential still recorded for one person, newest first.
+   *
+   * @param subject - the person's `urn:uuid:` subject
+   * @returns the history, one entry per credential
+   */
+  historyForSubject(subject: string): HistoryEntry[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.historyForSubject().");
+    const out = this.copiesOfSubject(String(subject || ''))
+      .map(function (one) {
+        return one.entry;
+      });
+    out.sort(function (a, b) {
+      return b.issuedAt - a.issuedAt;
+    });
+    log.debug("Leaving VcIssued.historyForSubject(). " + out.length + ".");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S ISSUANCES (#670, rcbj 2026-10-17): the copies grouped by the
+  // Credential Response they came in (the header's *A BATCH IS ONE
+  // ISSUANCE*), newest issuance first and its copies oldest first, which is
+  // the order the wallet's proofs were in. An issuance's state is its
+  // copies' where they agree and `mixed` where they do not, with how many
+  // are in each; `/portal/wallet` pages these, so a page counts issuances.
+  //
+  // An issuance's `id` is a digest of a different string from a copy's, so
+  // the two kinds of id cannot be one another and `removeForSubject()` can
+  // take either.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns one person's issuances, newest first: each the copies one
+   * Credential Response carried, bound to different keys of the wallet's.
+   *
+   * @param subject - the person's `urn:uuid:` subject
+   * @returns the issuances
+   */
+  issuancesForSubject(subject: string): IssuanceEntry[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.issuancesForSubject().");
+    const groups: { [key: string]: IssuanceEntry } = {};
+    const order: string[] = [];
+    this.copiesOfSubject(String(subject || '')).forEach((one) => {
+      const e = one.entry;
+      let group = groups[e.issuance];
+      if (!group) {
+        group = { id: this.issuanceId(e.issuance), format: e.format,
+                  configId: e.configId, issuedAt: e.issuedAt,
+                  expiresAt: e.expiresAt, status: '', counts: {},
+                  removedAt: 0, walletEvent: '', walletEventAt: 0,
+                  copies: [] };
+        groups[e.issuance] = group;
+        order.push(e.issuance);
+      }
+      group.copies.push(e);
+      group.issuedAt = Math.min(group.issuedAt, e.issuedAt);
+      // The latest expiry, and none where any copy has none.
+      group.expiresAt = !group.expiresAt || !e.expiresAt ? 0
+        : Math.max(group.expiresAt, e.expiresAt);
+      group.counts[e.status] = (group.counts[e.status] || 0) + 1;
+      group.removedAt = Math.max(group.removedAt, e.removedAt);
+      if (e.walletEventAt > group.walletEventAt) {
+        group.walletEvent = e.walletEvent;
+        group.walletEventAt = e.walletEventAt;
+      }
+    });
+    const out = order.map(function (key) {
+      const group = groups[key];
+      const states = Object.keys(group.counts);
+      group.status = states.length === 1 ? states[0] : 'mixed';
+      // The copies keep the order they were recorded in, which a sort on
+      // the same millisecond would not promise.
+      group.copies = group.copies.map(function (c, i) {
+        return { c: c, i: i };
+      }).sort(function (a, b) {
+        return (a.c.issuedAt - b.c.issuedAt) || (a.i - b.i);
+      }).map(function (one) {
+        return one.c;
+      });
+      return group;
+    });
+    out.sort(function (a, b) {
+      return b.issuedAt - a.issuedAt;
+    });
+    log.debug("Leaving VcIssued.issuancesForSubject(). " + out.length + ".");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE HOLDER REMOVES A CREDENTIAL (#661, 2026-10-16; every copy or one,
+  // #670). OpenID4VP and OpenID4VCI give an issuer no way to delete a
+  // credential from a wallet, so removing is this service's half: each copy
+  // removed has its status-list entry set INVALID (final, and what a
+  // verifier elsewhere reads), its issued-register row marked revoked, and
+  // is stamped removed, which `disownedReason()` refuses at sign-in. Only the
+  // credentials named — for an `ldp_vc` row, not its siblings, which
+  // `disown()` would take with it. The holder deletes the wallet's copies
+  // themselves.
+  //
+  // `id` is a COPY's (`historyForSubject()`, an issuance's `copies[].id`),
+  // which removes that copy alone, or an ISSUANCE's
+  // (`issuancesForSubject()`), which removes every copy of it still good.
+  // One act, so ONE CAEP signal, whatever the number of copies.
+  //
+  // The subject is the caller's, never a parameter (`account-api/CLAUDE.md`):
+  // an id that is not on one of THEIR rows is refused as unknown, whoever's
+  // it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Removes one of a person's credentials, or every copy of one issuance:
+   * each copy's status-list entry INVALID, its issued-register row revoked,
+   * and the copy refused at sign-in.
+   *
+   * @param subject - the person's `urn:uuid:` subject
+   * @param id - a copy's id, or an issuance's, from `issuancesForSubject()`
+   * @param via - who removed it, and where
+   * @returns `{ ok, already, scope, removed, copies }`, or
+   *   `{ ok: false, error }`
+   */
+  removeForSubject(subject: string, id: string,
+                   via: string): { ok: boolean; already?: boolean;
+                                   scope?: string; removed?: number;
+                                   copies?: number; error?: string } {
+    const { log, store, setStatus, artifactByKey, revokeArtifact } = this.deps;
+    log.debug("Entering VcIssued.removeForSubject().");
+    const wanted = String(id || '');
+    const mine = this.copiesOfSubject(String(subject || ''));
+    let scope = 'copy';
+    let targets = mine.filter(function (one) {
+      return one.entry.id === wanted;
+    });
+    if (!targets.length) {
+      scope = 'issuance';
+      targets = mine.filter((one) => {
+        return this.issuanceId(one.entry.issuance) === wanted;
+      });
+    }
+    if (!wanted || !targets.length) {
+      log.debug("Leaving VcIssued.removeForSubject(). Not one of theirs.");
+      return { ok: false, error: 'You have no credential with that id. The ' +
+        'list on /portal/wallet shows the ones this service still records ' +
+        'for you.' };
+    }
+    const fresh = targets.filter(function (one) {
+      return !one.c.removedAt;
+    });
+    if (!fresh.length) {
+      log.debug("Leaving VcIssued.removeForSubject(). Already removed.");
+      return { ok: true, already: true, scope: scope, removed: 0,
+               copies: targets.length };
+    }
+    const why = String(via || 'unstated');
+    const now = Date.now();
+    const touched: { [key: string]: any } = {};
+    fresh.forEach(function (one) {
+      one.c.removedAt = now;
+      one.c.removedVia = why;
+      touched[String(one.row.key)] = one.row;
+    });
+    // THROUGH THE STORE, whole, so the journal carries each row once.
+    Object.keys(touched).forEach(function (key) {
+      store.set(key, touched[key]);
+    });
+    fresh.forEach(function (one) {
+      if (one.c.statusKey) {
+        setStatus(one.c.statusKey, 1, why);
+      }
+      if (one.c.artifactKey) {
+        const artifact = artifactByKey(one.c.artifactKey);
+        if (artifact) {
+          revokeArtifact(artifact, why);
+        }
+      }
+    });
+    const row = fresh[0].row;
+    log.info('oid4vp-signin: ' + fresh.length + ' credential(s) on ' +
+             Object.keys(touched).length + ' row(s), the first ' +
+             cacheRegistry.digestKey(row.key) + ', were removed by their ' +
+             'holder (' + why + ').');
+    const holder = this.deps.nameForSubject(String(row.subject || ''));
+    if (holder) {
+      const what = String(row.configId || row.format);
+      accountSignals.credentialChanged({ username: holder,
+        credentialType: 'verifiable-credential', changeType: 'revoke',
+        friendlyName: what,
+        initiatingEntity: 'user', via: why,
+        reasonAdmin: holder + ' removed ' + (fresh.length > 1
+          ? fresh.length + ' copies of a ' : 'a ') + what + ' credential ' +
+          'this realm issued them (' + why + ').',
+        reasonUser: 'You removed a credential this service issued to your ' +
+                    'wallet.' });
+    }
+    log.debug("Leaving VcIssued.removeForSubject(). Removed " + fresh.length +
+              ".");
+    return { ok: true, already: false, scope: scope, removed: fresh.length,
+             copies: targets.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE WALLET REPORTED (OpenID4VCI 1.0 section 11): stamped on every
+  // credential the Credential Response with this `notification_id` carried.
+  // It is the wallet's word and changes nothing else — a wallet that deleted
+  // its copy has not revoked anything, and one that says it accepted a
+  // credential cannot reinstate one.
+  //
+  // EVERY ROW THE RESPONSE REACHED (#670): a batch's copies are on rows of
+  // their own, so the index names each of them (`keys`); an entry written
+  // before then names one (`key`), and is read as a list of one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records a wallet's notification event on the credentials it names.
+   *
+   * @param notificationId - the Credential Response's `notification_id`
+   * @param event - `credential_accepted`, `credential_failure` or
+   *   `credential_deleted`
+   * @returns how many credentials it was recorded on
+   */
+  noteWalletEvent(notificationId: string, event: string): number {
+    const { log, store, notificationIndex } = this.deps;
+    log.debug("Entering VcIssued.noteWalletEvent().");
+    const id = String(notificationId || '');
+    let count = 0;
+    if (!id) {
+      log.debug("Leaving VcIssued.noteWalletEvent(). No id.");
+      return 0;
+    }
+    this.ensureIndexed();
+    const now = Date.now();
+    const entry = notificationIndex.get(id);
+    const keys = this.keysOf(entry);
+    const live: string[] = [];
+    let failures = 0;
+    let error: unknown = '';
+    keys.forEach((key) => {
+      const read = this.readRow(key);
+      // A ROW NOT HERE, OR NOT READABLE, KEEPS ITS KEY: the index's header
+      // comment says why.
+      if (read.failed || !read.row) {
+        failures += read.failed ? 1 : 0;
+        error = read.failed ? read.error : error;
+        live.push(key);
+        return;
+      }
+      const row = read.row;
+      let here = 0;
+      [].concat(row.credentials || []).forEach(function (c: Issued) {
+        if (c.notificationId === id) {
+          c.walletEvent = String(event || '');
+          c.walletEventAt = now;
+          here += 1;
+        }
+      });
+      // A row that is here and no longer carries the notification (its
+      // oldest credentials went at MAX_PER_ROW) is pruned: a fact about the
+      // row.
+      if (here) {
+        live.push(key);
+        store.set(key, row);
+        count += here;
+      }
+    });
+    this.reportUnreadable('a wallet\'s notification names', failures, error);
+    if (entry && live.length !== keys.length) {
+      if (live.length) {
+        notificationIndex.set(id, { keys: live,
+                                    expiresAt: entry.expiresAt || 0 });
+      } else {
+        notificationIndex.delete(id);
+      }
+    }
+    log.debug("Leaving VcIssued.noteWalletEvent(). " + count + ".");
+    return count;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE INDEXES (2026-10-17): kept as rows are written and dropped, so a
+  // person's rows and a notification's row are a lookup, never a scan.
+  // ---------------------------------------------------------------------------
+  private subjectKey(subject: string): string {
+    return stsCrypto.digest('sha256', String(subject), 'base64url');
+  }
+
+  // Files a row under its subject, and each credential's notification_id.
+  private indexRow(row: any): void {
+    const { subjectIndex, notificationIndex } = this.deps;
+    if (!row || !row.key || !row.subject) {
+      return;
+    }
+    const k = this.subjectKey(row.subject);
+    const entry = subjectIndex.get(k) || { keys: [], expiresAt: 0 };
+    const keys: string[] = [].concat(entry.keys || []);
+    if (keys.indexOf(String(row.key)) < 0) {
+      keys.push(String(row.key));
+    }
+    // The latest expiry of the rows it names, 0 while any never expires —
+    // a row's own rule (`record()`).
+    const expiresAt = !entry.keys || !entry.keys.length
+      ? Number(row.expiresAt) || 0
+      : (!entry.expiresAt || !row.expiresAt ? 0
+        : Math.max(Number(entry.expiresAt), Number(row.expiresAt)));
+    subjectIndex.set(k, { keys: keys, expiresAt: expiresAt });
+    // EVERY ROW A RESPONSE REACHED (#670): a batch's copies are on rows of
+    // their own and share the response's `notification_id`.
+    [].concat(row.credentials || []).forEach((c: Issued) => {
+      if (!c.notificationId) {
+        return;
+      }
+      const was = notificationIndex.get(c.notificationId);
+      const named = this.keysOf(was);
+      if (named.indexOf(String(row.key)) >= 0) {
+        return;
+      }
+      const at = Number(c.expiresAt) || 0;
+      notificationIndex.set(c.notificationId,
+                            { keys: named.concat([String(row.key)]),
+                              expiresAt: !was ? at
+                                : (!was.expiresAt || !at ? 0
+                                  : Math.max(Number(was.expiresAt), at)) });
+    });
+  }
+
+  // The row keys a notification index entry names: `keys`, or the one `key`
+  // an entry written before #670 carries.
+  private keysOf(entry: any): string[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.keysOf().");
+    if (!entry) {
+      log.debug("Leaving VcIssued.keysOf(). No entry.");
+      return [];
+    }
+    if (Array.isArray(entry.keys)) {
+      log.debug("Leaving VcIssued.keysOf().");
+      return entry.keys.map(String);
+    }
+    log.debug("Leaving VcIssued.keysOf(). An entry from before #670.");
+    return entry.key ? [String(entry.key)] : [];
+  }
+
+  // Takes a deleted row out of both indexes.
+  private unindexRow(row: any): void {
+    const { subjectIndex, notificationIndex } = this.deps;
+    if (!row || !row.key) {
+      return;
+    }
+    if (row.subject) {
+      const k = this.subjectKey(row.subject);
+      const entry = subjectIndex.get(k);
+      if (entry) {
+        const keys = [].concat(entry.keys || []).filter(function (one) {
+          return one !== String(row.key);
+        });
+        if (keys.length) {
+          subjectIndex.set(k, { keys: keys, expiresAt: entry.expiresAt });
+        } else {
+          subjectIndex.delete(k);
+        }
+      }
+    }
+    [].concat(row.credentials || []).forEach((c: Issued) => {
+      const entry = c.notificationId ? notificationIndex.get(c.notificationId)
+                                     : null;
+      const named = this.keysOf(entry);
+      if (named.indexOf(String(row.key)) < 0) {
+        return;
+      }
+      const left = named.filter(function (one) {
+        return one !== String(row.key);
+      });
+      if (left.length) {
+        notificationIndex.set(c.notificationId,
+                              { keys: left, expiresAt: entry.expiresAt });
+      } else {
+        notificationIndex.delete(c.notificationId);
+      }
+    });
+  }
+
+  // THE SIZE BOUND, WITH THE INDEXES KEPT. `makeRoom()` deletes the oldest
+  // rows without saying which, so the rows it can take — the first
+  // `size - limit + 1` in the store's order, which is the order it deletes
+  // in — are read first, and each one no longer in this process's store
+  // once it returns leaves both indexes: the one place a row's absence is a
+  // FACT, because this process has just deleted it.
+  private makeRoomIndexed(): void {
+    const { log, store } = this.deps;
+    log.debug("Entering VcIssued.makeRoomIndexed().");
+    const limit = Number(this.deps.maxRows());
+    const over = isFinite(limit) && limit > 0 ? store.size - limit + 1 : 0;
+    const candidates: any[] = [];
+    if (over > 0) {
+      const keys = store.keys();
+      for (let i = 0; i < over; i += 1) {
+        const next = keys.next();
+        if (next.done) {
+          break;
+        }
+        candidates.push({ key: next.value, row: store.get(next.value) });
+      }
+    }
+    cacheRegistry.makeRoom(store, limit, { counter: issuedCount });
+    let unindexed = 0;
+    candidates.forEach((one) => {
+      if (one.row && !store.has(one.key)) {
+        this.unindexRow(one.row);
+        unindexed += 1;
+      }
+    });
+    log.debug("Leaving VcIssued.makeRoomIndexed(). " + unindexed +
+              " evicted.");
+  }
+
+  // One row of the register, or what kept it from being read: `failed`
+  // where the store threw, which a reader must not take for a row that is
+  // gone (STS-VC-0151 at the reader, once per read).
+  private readRow(key: string): { row: any; failed: boolean;
+                                  error: unknown } {
+    const { log, store } = this.deps;
+    log.debug("Entering VcIssued.readRow().");
+    try {
+      const row = store.get(key);
+      log.debug("Leaving VcIssued.readRow().");
+      return { row: row, failed: false, error: '' };
+    } catch (e) {
+      log.debug("Caught in VcIssued.readRow(): " + ((e && e.message) || e));
+      log.debug("Leaving VcIssued.readRow(). The store threw.");
+      return { row: null, failed: true, error: (e && e.message) || e };
+    }
+  }
+
+  // Says, once per read, that some of an index entry's rows could not be
+  // read and the entry was left as it was.
+  private reportUnreadable(which: string, failures: number,
+                           error: unknown): void {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.reportUnreadable().");
+    if (failures) {
+      log.error(errorCodes.tag('STS-VC-0151') + 'vc_issued: ' + failures +
+                ' row(s) ' + which + ' could not be read from the issued ' +
+                'register, and the index entry naming them was left as it ' +
+                'was: ' + String(error));
+    }
+    log.debug("Leaving VcIssued.reportUnreadable().");
+  }
+
+  // One person's rows through the index. A key whose row this process does
+  // not hold, or could not read, is SKIPPED AND KEPT (the index's header
+  // comment says why); only a row that is here and names another subject is
+  // pruned, which is a fact about the row rather than about this process's
+  // view of the store.
+  private rowsOfSubject(subject: string): any[] {
+    const { log, subjectIndex } = this.deps;
+    log.debug("Entering VcIssued.rowsOfSubject().");
+    if (!subject) {
+      log.debug("Leaving VcIssued.rowsOfSubject(). No subject.");
+      return [];
+    }
+    this.ensureIndexed();
+    const k = this.subjectKey(subject);
+    const entry = subjectIndex.get(k);
+    if (!entry) {
+      log.debug("Leaving VcIssued.rowsOfSubject(). Not indexed.");
+      return [];
+    }
+    const rows: any[] = [];
+    const kept: string[] = [];
+    let missing = 0;
+    let failures = 0;
+    let error: unknown = '';
+    [].concat(entry.keys || []).forEach((key: string) => {
+      const read = this.readRow(key);
+      if (read.failed) {
+        failures += 1;
+        error = read.error;
+        kept.push(key);
+        return;
+      }
+      if (!read.row) {
+        missing += 1;
+        kept.push(key);
+        return;
+      }
+      if (read.row.subject === subject) {
+        rows.push(read.row);
+        kept.push(key);
+      }
+    });
+    this.reportUnreadable('of one person\'s history', failures, error);
+    if (kept.length !== (entry.keys || []).length) {
+      if (kept.length) {
+        subjectIndex.set(k, { keys: kept, expiresAt: entry.expiresAt });
+      } else {
+        subjectIndex.delete(k);
+      }
+    }
+    log.debug("Leaving VcIssued.rowsOfSubject(). " + rows.length +
+              " row(s), " + missing + " not here, " + failures +
+              " unreadable.");
+    return rows;
+  }
+
+  // ONCE PER REALM, the rows recorded before the indexes existed: the one
+  // scan, marked in the index's own store so no process repeats it.
+  private ensureIndexed(): void {
+    const { log, store, subjectIndex } = this.deps;
+    if (subjectIndex.get(INDEXED_MARK)) {
+      return;
+    }
+    log.debug("Entering VcIssued.ensureIndexed(). Indexing the register.");
+    let count = 0;
+    store.forEach((row) => {
+      this.indexRow(row);
+      count += 1;
+    });
+    subjectIndex.set(INDEXED_MARK, { at: Date.now(), expiresAt: 0 });
+    if (subjectIndex.get(INDEXED_MARK_BEFORE)) {
+      subjectIndex.delete(INDEXED_MARK_BEFORE);
+    }
+    log.debug("Leaving VcIssued.ensureIndexed(). " + count + " row(s).");
+  }
+
+  // ONE PERSON'S COPIES, each with its row and its history entry, in the
+  // order they were recorded: rows as the subject index lists them, and
+  // credentials as each row lists them.
+  private copiesOfSubject(subject: string): { row: any; c: Issued;
+                                              entry: HistoryEntry }[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.copiesOfSubject().");
+    const now = Date.now();
+    const out: { row: any; c: Issued; entry: HistoryEntry }[] = [];
+    this.rowsOfSubject(subject).forEach((row) => {
+      [].concat(row.credentials || []).forEach((c: Issued) => {
+        const id = this.credentialId(row, c);
+        out.push({ row: row, c: c, entry: {
+          id: id, format: String(row.format),
+          configId: String(row.configId || ''),
+          issuedAt: Number(c.issuedAt) || 0,
+          expiresAt: Number(c.expiresAt) || 0,
+          status: this.stateOf(row, c, now),
+          removedAt: Number(c.removedAt) || 0,
+          walletEvent: String(c.walletEvent || ''),
+          walletEventAt: Number(c.walletEventAt) || 0,
+          // THE ISSUANCE: the response's `notification_id`, and for a
+          // credential recorded without one (before #661) itself alone.
+          issuance: c.notificationId ? 'n:' + c.notificationId : 'c:' + id,
+          keyThumbprint: String(row.jkt || ''),
+          holderDid: String(c.holderDid || ''),
+          statusIndex: String(c.statusKey || '') } });
+      });
+    });
+    log.debug("Leaving VcIssued.copiesOfSubject(). " + out.length + ".");
+    return out;
+  }
+
+  // An issuance's id: a digest of a different string from any copy's, so the
+  // two cannot be one another.
+  private issuanceId(issuance: string): string {
+    const { log } = this.deps;
+    log.debug("Entering VcIssued.issuanceId().");
+    log.debug("Leaving VcIssued.issuanceId().");
+    return stsCrypto.digest('sha256', 'issuance|' + String(issuance),
+                            'base64url').slice(0, 22);
+  }
+
+  // A credential's id in a person's history: a digest of its row and its
+  // place on it, so it says nothing about the credential.
+  private credentialId(row: any, c: Issued): string {
+    return stsCrypto.digest('sha256', String(row.key) + '|' +
+                            String(c.issuedAt) + '|' + String(c.statusKey ||
+                            c.artifactKey || ''), 'base64url').slice(0, 22);
+  }
+
+  // A credential's state, for a person's history: `removed` (by them),
+  // `signed-out` (a global sign-out disowned it), `revoked` (an
+  // administrator, or its status entry INVALID), `suspended`, `expired` or
+  // `valid` — the first that applies.
+  private stateOf(row: any, c: Issued, now: number): string {
+    const { artifactRevokedByKey, statusOf } = this.deps;
+    if (c.removedAt) {
+      return 'removed';
+    }
+    const disownedAt = Number((row && row.disownedAt) || 0);
+    if (disownedAt && c.issuedAt <= disownedAt) {
+      return 'signed-out';
+    }
+    if (c.artifactKey && artifactRevokedByKey(c.artifactKey)) {
+      return 'revoked';
+    }
+    const status = c.statusKey ? statusOf(c.statusKey) : 0;
+    if (status === 2) {
+      return 'suspended';
+    }
+    if (status) {
+      return 'revoked';
+    }
+    if (c.expiresAt && c.expiresAt <= now) {
+      return 'expired';
+    }
+    return 'valid';
+  }
+
   // Takes one JOSE credential out of the sign-in path, for a test.
   /**
    * Takes one JOSE credential out of the sign-in path, for a test.
@@ -699,7 +1563,12 @@ class VcIssued {
   forget(credential: unknown): boolean {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.forget().");
-    const gone = store.delete(this.keyForJose(credential));
+    const key = this.keyForJose(credential);
+    const row = store.get(key);
+    const gone = store.delete(key);
+    if (row) {
+      this.unindexRow(row);
+    }
     log.debug("Leaving VcIssued.forget(). " + gone);
     return gone;
   }
@@ -721,14 +1590,15 @@ class VcIssued {
     const { log, store } = this.deps;
     log.debug("Entering VcIssued.sweep().");
     const now = Date.now();
-    const stale: string[] = [];
+    const stale: any[] = [];
     store.forEach(function (row, key) {
       if (row && row.expiresAt && row.expiresAt <= now) {
-        stale.push(key);
+        stale.push({ key: key, row: row });
       }
     });
-    stale.forEach(function (key) {
-      store.delete(key);
+    stale.forEach((one) => {
+      store.delete(one.key);
+      this.unindexRow(one.row);
     });
     log.debug("Leaving VcIssued.sweep(). " + stale.length + " expired.");
   }
@@ -775,10 +1645,15 @@ export = {
   lookup: slot.forward('lookup'),
   lookupHolder: slot.forward('lookupHolder'),
   credentialsMatching: slot.forward('credentialsMatching'),
+  disownedFact: slot.forward('disownedFact'),
   disownedReason: slot.forward('disownedReason'),
   rowsForSubject: slot.forward('rowsForSubject'),
   rowByKey: slot.forward('rowByKey'),
   disown: slot.forward('disown'),
+  historyForSubject: slot.forward('historyForSubject'),
+  issuancesForSubject: slot.forward('issuancesForSubject'),
+  removeForSubject: slot.forward('removeForSubject'),
+  noteWalletEvent: slot.forward('noteWalletEvent'),
   forget: slot.forward('forget'),
   size: slot.forward('size')
 };

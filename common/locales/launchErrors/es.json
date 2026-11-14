@@ -1,0 +1,15 @@
+{
+  "title": "No se pudo iniciar este inicio de sesión",
+  "refusal.STS-LAUNCH-0001": "No hay ninguna aplicación <code>{app}</code> en este dominio de confianza, así que no hay nada en lo que iniciar su sesión.",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> no es un protocolo en el que se pueda iniciar una sesión. Un enlace aquí inicia saml2, saml11, wsfed u oidc.",
+  "refusal.STS-LAUNCH-0003": "Esta aplicación no inicia sesión con <code>{protocol}</code>.",
+  "refusal.STS-LAUNCH-0004": "Esta aplicación se puede iniciar en más de un protocolo, y el enlace no indica cuál.",
+  "refusal.STS-LAUNCH-0005": "Esta aplicación no se puede iniciar desde aquí. Inicie la sesión desde la propia aplicación.",
+  "refusal.STS-LAUNCH-0006": "Esta aplicación no tiene registrada ninguna dirección a la que enviarle, así que un inicio de sesión empezado aquí no tiene adónde ir.",
+  "refusal.STS-LAUNCH-0007": "El enlace indica una dirección a la que enviarle que no está registrada para esta aplicación, por lo que se rechazó.",
+  "refusal.general": "No se pudo iniciar este inicio de sesión.",
+  "background": "Este enlace inicia, en este proveedor de identidad, un inicio de sesión en una aplicación (inicio de sesión iniciado por el proveedor de identidad). Todavía no se ha enviado nada a ninguna aplicación, así que el problema se indica aquí.",
+  "application": "Aplicación",
+  "protocol": "protocol",
+  "target": "target"
+}

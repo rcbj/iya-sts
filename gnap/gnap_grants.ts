@@ -108,9 +108,9 @@
 // when the module loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import DomainMap = require('../common/domain_map');
 // The one random-value section (#65): user codes, drawn uniformly.
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
@@ -139,6 +139,9 @@ import revocation = require('./gnap_revocation');
 // WHICH CLIENTS MAY HOLD THIS SERVICE'S PROTECTED SCOPES (#110), the same
 // question the OAuth token endpoint asks. A library.
 import scopePolicy = require('../common/scope_policy');
+// The Shared Signals scope names (#334), so a grant asking for `ssf.read`
+// or `ssf.manage` names this transmitter and is not "for nobody".
+import ssfScopes = require('../common/ssf_scopes');
 // The TLS client certificate on a connection, and who this realm issued it to
 // (#107). A library.
 import mtls = require('../oauth-oidc/mtls');
@@ -156,6 +159,12 @@ import ownership = require('./gnap_ownership');
 // approval needs and approval by an absent resource owner. A library; it
 // reaches this module back lazily, so the require closes no cycle.
 import gnapApproval = require('./gnap_approval');
+// WHAT A RIGHT'S LOCATIONS MAY NAME IN PRODUCT (#505): the one definition of
+// a registered target, shared with RFC 8707's `resource`. A static library
+// that reaches what it reads lazily, so the require closes no cycle.
+import RegisteredTargets = require('../common/registered_targets');
+// A session as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -390,20 +399,23 @@ class GnapGrants {
   }
 
   /**
-   * Returns every value of a field on an application entry, as strings.
+   * Returns every value of one of an application's GNAP settings, as
+   * strings. The setting is named by its field in the GnapClient concept,
+   * not by the attribute it is stored in (#1579), so the model says which
+   * attribute it is.
    *
    * @param app - the application entry
-   * @param name - the field's name
+   * @param name - the GnapClient field
    * @returns the values, empty when there are none
    */
-  fieldValues(app, name) {
+  fieldValues(app: any, name: keyof IyaDomain.GnapClient & string): string[] {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.fieldValues().");
     if (!app || !app.fields) {
       log.debug("Leaving GnapGrants.fieldValues().");
       return [];
     }
-    const value = app.fields[name];
+    const value: unknown = DomainMap.fieldOf('GnapClient', name, app.fields);
     if (value === undefined || value === null || value === '') {
       log.debug("Leaving GnapGrants.fieldValues().");
       return [];
@@ -413,13 +425,14 @@ class GnapGrants {
   }
 
   /**
-   * Returns the first value of a field on an application entry.
+   * Returns the first value of one of an application's GNAP settings, named
+   * as `fieldValues()` names it.
    *
    * @param app - the application entry
-   * @param name - the field's name
+   * @param name - the GnapClient field
    * @returns the value, or null
    */
-  field(app, name) {
+  field(app: any, name: keyof IyaDomain.GnapClient & string): string | null {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.field().");
     log.debug("Leaving GnapGrants.field().");
@@ -466,6 +479,22 @@ class GnapGrants {
     log.debug("Entering GnapGrants.realmBase().");
     log.debug("Leaving GnapGrants.realmBase().");
     return baseUrlOf(req);
+  }
+
+  // The OAuth authorization server's base (#472): the issuer a subject
+  // identifier names is the realm's OpenID provider, which may be advertised
+  // on another listener than GNAP.
+  /**
+   * Returns the realm's OAuth authorization server's base URL.
+   *
+   * @param req - the request
+   * @returns the base URL
+   */
+  oauthBase(req) {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering GnapGrants.oauthBase().");
+    log.debug("Leaving GnapGrants.oauthBase().");
+    return baseUrlOf(req, 'oauth-oidc');
   }
 
   /**
@@ -587,14 +616,14 @@ class GnapGrants {
       return (app.kinds || []).some(function (kind) {
         return kind === KIND_CLIENT || kind === KIND_RS;
       }) || (app.allowedProtocols || []).indexOf('gnap') >= 0 ||
-        !!this.field(app, 'gnapKey') || !!this.field(app, 'gnapInstanceId');
+        !!this.field(app, 'key') || !!this.field(app, 'instanceId');
     });
   }
 
   private registeredKeyIdentity(app) {
     const { log, errorCodes, keys } = this.deps;
     log.debug("Entering GnapGrants.registeredKeyIdentity().");
-    const raw = this.field(app, 'gnapKey');
+    const raw = this.field(app, 'key');
     if (!raw) {
       log.debug("Leaving GnapGrants.registeredKeyIdentity().");
       return null;
@@ -622,8 +651,36 @@ class GnapGrants {
     log.debug("Leaving GnapGrants.appByKeyIdentity().");
     return this.gnapApplications().filter((app) => {
       return this.registeredKeyIdentity(app) === identity ||
-             this.field(app, 'gnapKeyIdentity') === identity;
+             this.field(app, 'keyIdentity') === identity;
     })[0] || null;
+  }
+
+  // AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496). An
+  // entry development created on first sight of a proved key carries the
+  // key (`gnapKey`, `gnapKeyIdentity`) and no `appRegisteredBy`, so the same
+  // key was accepted in product as though an administrator had provisioned
+  // it — the unknown-key refusal (`STS-GNAP-0082`) only asked whether ANY
+  // entry held it. "Registered" is #494's word. The refusal is the one an
+  // unknown key gets, in section 2.3.3's terms, and comes before the entry
+  // is sighted again or anything is issued. Development is unchanged.
+  private unregisteredCaller(app, kind) {
+    const { log, mode } = this.deps;
+    log.debug("Entering GnapGrants.unregisteredCaller().");
+    if (mode.issuesToUnregisteredApplications() ||
+        String((app && app.registeredBy) || '')) {
+      log.debug("Leaving GnapGrants.unregisteredCaller(). Served.");
+      return null;
+    }
+    log.debug("Leaving GnapGrants.unregisteredCaller(). Not registered.");
+    return this.refusal('STS-GNAP-0902', 'the application "' +
+        String(app && app.identifier) + '" this key or instance belongs to ' +
+        'is not registered with this authorization server; in product mode ' +
+        'an application must be registered (the console, /admin-api, RFC ' +
+        '7591 or an LDAP add under ou=applications) before it can make ' +
+        'requests, and one created on first sight is not (RFC 9635 section ' +
+        '2.3.3).',
+                        kind === KIND_RS ? 'invalid_resource_server' :
+                        'invalid_client', 401);
   }
 
   private appByInstanceId(instanceId) {
@@ -632,18 +689,24 @@ class GnapGrants {
     const dynamic = store.instanceById(instanceId);
     if (dynamic) {
       const app = applications.get(dynamic.identifier);
+      // An instance handed out to an unregistered key (#1216) stops resolving
+      // when gnap.unregisteredInstances is turned off, as its key would.
+      const classInstance = !!dynamic.classInstance;
+      const off = classInstance &&
+                  this.deps.config.value('gnap.unregisteredInstances') === false;
       log.debug("Leaving GnapGrants.appByInstanceId().");
-      return app ? { app: app, key: dynamic.key, dynamic: true } : null;
+      return app && !off ? { app: app, key: dynamic.key, dynamic: true,
+                             classInstance: classInstance } : null;
     }
     const app = this.gnapApplications().filter((one) => {
-      return this.field(one, 'gnapInstanceId') === instanceId;
+      return this.field(one, 'instanceId') === instanceId;
     })[0];
     log.debug("Leaving GnapGrants.appByInstanceId().");
     return app ?
            { app: app,
-                   key: this.field(app, 'gnapKey') ?
-                        JSON.parse(this.field(app, 'gnapKey')) : null,
-                   dynamic: false } : null;
+                   key: this.field(app, 'key') ?
+                        JSON.parse(this.field(app, 'key')) : null,
+                   dynamic: false, classInstance: false } : null;
   }
 
   // Resolve a key REFERENCE (section 7.1.1) against application entries: a
@@ -661,13 +724,13 @@ class GnapGrants {
     const { log, errorCodes, keystore } = this.deps;
     log.debug("Entering GnapGrants.resolveKeyReference().");
     const app = this.gnapApplications().filter((one) => {
-      return this.field(one, 'gnapKeyReference') === reference;
+      return this.field(one, 'keyReference') === reference;
     })[0];
     if (!app) {
       log.debug("Leaving GnapGrants.resolveKeyReference(). Unknown.");
       return null;
     }
-    const secret = this.field(app, 'gnapSymmetricKey');
+    const secret = this.field(app, 'symmetricKey');
     if (secret) {
       let bytes = Buffer.from(secret, 'base64url');
       if (keystore.persists() && stsCrypto.isEncryptedWithKek(secret)) {
@@ -688,11 +751,11 @@ class GnapGrants {
         bytes = null;
       }
       log.debug("Leaving GnapGrants.resolveKeyReference(). Shared secret.");
-      return bytes ? { secret: bytes, proof: this.field(app, 'gnapKeyProof') ||
-                       'httpsig', alg: this.field(app, 'gnapSymmetricAlg') ||
+      return bytes ? { secret: bytes, proof: this.field(app, 'keyProof') ||
+                       'httpsig', alg: this.field(app, 'symmetricAlg') ||
                        'HS256', app: app } : null;
     }
-    const raw = this.field(app, 'gnapKey');
+    const raw = this.field(app, 'key');
     log.debug("Leaving GnapGrants.resolveKeyReference(). Registered public " +
               "key.");
     return raw ? { key: JSON.parse(raw), app: app } : null;
@@ -826,7 +889,7 @@ class GnapGrants {
     }
     if (app && descriptor.identity &&
         this.registeredKeyIdentity(app) !== descriptor.identity &&
-        this.field(app, 'gnapKeyIdentity') !== descriptor.identity) {
+        this.field(app, 'keyIdentity') !== descriptor.identity) {
       applications.seen({ identifier: app.identifier, protocol: PROTOCOL,
                           counts: false,
                           fields: { gnapKeyIdentity: descriptor.identity } });
@@ -866,6 +929,9 @@ class GnapGrants {
     let descriptor;
     let app = null;
     let instanceId = null;
+    // An instance of a registered application whose key nobody registered
+    // (#1216): see classInstanceOf().
+    let classInstance = false;
     if (member.reference) {
       const found = this.appByInstanceId(member.reference);
       if (!found) {
@@ -877,12 +943,24 @@ class GnapGrants {
                             'invalid_client', 401);
       }
       app = found.app;
+      const unregisteredInstance = this.unregisteredCaller(app, kind);
+      if (unregisteredInstance) {
+        log.debug("Leaving GnapGrants.identifyCaller(). The instance's " +
+                  "application is not registered.");
+        return unregisteredInstance;
+      }
       instanceId = member.reference;
+      classInstance = !!found.classInstance;
+      // A client using its identifier keeps it (#1221). A static
+      // gnapInstanceId has no record, and touching one is a no-op.
+      if (found.dynamic) {
+        this.deps.store.touchInstance(member.reference);
+      }
       if (found.key) {
         descriptor = keys.describe(found.key,
                                    this.referenceResolver);
-      } else if (this.field(app, 'gnapKeyReference')) {
-        descriptor = keys.describe(this.field(app, 'gnapKeyReference'),
+      } else if (this.field(app, 'keyReference')) {
+        descriptor = keys.describe(this.field(app, 'keyReference'),
                                    this.referenceResolver);
       } else {
         descriptor = this.refusal('STS-GNAP-0081', 'the application "' +
@@ -936,6 +1014,28 @@ class GnapGrants {
     }
     if (!app) {
       app = this.appByKeyIdentity(descriptor.identity);
+    }
+    // A KEY NOBODY REGISTERED, NAMING A REGISTERED APPLICATION (#1216): an
+    // instance of it, in both modes, while gnap.unregisteredInstances is on.
+    if (!app && kind === KIND_CLIENT && member.classId) {
+      const claimed = this.classInstanceOf(member.classId);
+      if (claimed.app) {
+        app = claimed.app;
+        classInstance = true;
+      } else if (claimed.why && !mode.autoCreates()) {
+        log.debug("Leaving GnapGrants.identifyCaller(). class_id names no " +
+                  "application an unregistered key may be an instance of.");
+        return this.refusal('STS-GNAP-0906', 'this key is not registered ' +
+            'with this authorization server, and the class_id "' +
+            String(member.classId) + '" ' + claimed.why + ' (RFC 9635 ' +
+            'sections 2.3 and 2.3.3).', 'invalid_client', 401);
+      }
+    }
+    const unregisteredKey = app ? this.unregisteredCaller(app, kind) : null;
+    if (unregisteredKey) {
+      log.debug("Leaving GnapGrants.identifyCaller(). The key's application " +
+                "is not registered.");
+      return unregisteredKey;
     }
     if (mtlsTrust === 'pki') {
       const unbound = this.bindMtlsCaller(req, app, descriptor);
@@ -1007,14 +1107,90 @@ class GnapGrants {
              instanceId: instanceId,
              created: created,
              display: this.displayOf(app, member),
-             classId: this.field(app, 'gnapClassId') || member.classId || null,
-             classIdDeclared: !this.field(app, 'gnapClassId') &&
-                              !!member.classId };
+             classId: this.field(app, 'classId') || member.classId || null,
+             classIdDeclared: !this.field(app, 'classId') &&
+                              !!member.classId,
+             classInstance: classInstance };
+  }
+
+  // -------------------------------------------------------------------------
+  // AN UNREGISTERED KEY AS AN INSTANCE OF A REGISTERED APPLICATION (#1216,
+  // rcbj 2026-10-30, the default).
+  //
+  // A browser application makes its own key in every browser, so a key an
+  // administrator must store in `gnapKey` first (single-valued) means one
+  // administrator visit per person. RFC 9635 separates a client's class from
+  // its instances and lets the AS accept a key it has not seen (section
+  // 2.3.3); OAuth's public clients are the same arrangement, a public
+  // client_id and the trust in the registered redirect URI and the person.
+  //
+  // So a proved key no entry holds, whose request's `class_id` is the
+  // identifier of a registered GNAP client listing a registered
+  // `gnapFinishUri`, is an instance of that application. **This is the one
+  // place `class_id` is read, and it SELECTS, it does not raise trust (#432
+  // phase 7, below)**: the instance is held to the application's registered
+  // rules and gets nothing they do not already guarantee —
+  //   * the finish URI is the boundary: product sends the interaction
+  //     reference and hash only to a registered one, so they reach the real
+  //     application, never whoever asked;
+  //   * the person always approves on the page: `gnapSkipInteraction` is not
+  //     honoured for it, and a remembered approval does not stand in for the
+  //     page (createGrant(), rememberedFor(); RFC 6749 section 10.2's rule
+  //     for clients that cannot be authenticated);
+  //   * the key is never written to the entry: the grant records it, as it
+  //     does for every grant, and every later proof is checked against that.
+  //
+  // `{ app }` when the claim selects one; `{ why }` when it names something
+  // an unregistered key may not be an instance of; `{}` when the setting is
+  // off, which leaves the unknown-key rule as it was.
+  // -------------------------------------------------------------------------
+  /**
+   * Finds the registered GNAP client application a request's `class_id` makes
+   * an unregistered key an instance of (#1216).
+   *
+   * @param classId - the request's `client.class_id`
+   * @returns `{ app }`, `{ why }`, or `{}` while `gnap.unregisteredInstances`
+   *   is off
+   */
+  classInstanceOf(classId: unknown): { app?: any; why?: string } {
+    const { log, config, mode, applications } = this.deps;
+    log.debug("Entering GnapGrants.classInstanceOf().");
+    if (config.value('gnap.unregisteredInstances') === false) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). Off.");
+      return {};
+    }
+    const app = applications.get(String(classId || ''));
+    const gnap = app && this.gnapApplications().some(function (one) {
+      return one.identifier === app.identifier;
+    });
+    if (!app || !gnap) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). No GNAP application.");
+      return { why: 'names no GNAP client application in this realm' };
+    }
+    const kinds = app.kinds || [];
+    if (kinds.indexOf(KIND_RS) >= 0 && kinds.indexOf(KIND_CLIENT) < 0) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). A resource server.");
+      return { why: 'names a GNAP resource server, not a client' };
+    }
+    if (!mode.issuesToUnregisteredApplications() &&
+        !String(app.registeredBy || '')) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). Not registered.");
+      return { why: 'names an application nobody registered' };
+    }
+    const finish = applications.returnAddressesOf(app, 'gnapFinishUri');
+    if (!(finish.registered || []).length) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). No finish URI.");
+      return { why: 'names an application with no registered gnapFinishUri, ' +
+                    'the address that makes serving an unregistered key safe' };
+    }
+    log.debug("Leaving GnapGrants.classInstanceOf(). " + app.identifier + ".");
+    return { app: app };
   }
 
   // -------------------------------------------------------------------------
   // `class_id` AND `display` ARE SELF-DECLARED AND NEVER RAISE TRUST (#432
-  // phase 7, 2026-10-03).
+  // phase 7, 2026-10-03). (One reader SELECTS on `class_id` since #1216,
+  // classInstanceOf() above, and raises nothing.)
   //
   // Section 2.3: "the pre-registered values MUST take precedence" — so a
   // value an administrator put on the entry wins, and a value only the
@@ -1041,12 +1217,12 @@ class GnapGrants {
       name = String(asked.name);
       declared.push('name');
     }
-    let uri = this.field(app, 'gnapDisplayUri');
+    let uri = this.field(app, 'displayUri');
     if (!uri && asked.uri) {
       uri = String(asked.uri);
       declared.push('uri');
     }
-    let logoUri = this.field(app, 'gnapLogoUri');
+    let logoUri = this.field(app, 'logoUri');
     if (!logoUri && asked.logoUri && String(asked.logoUri).length < 2048) {
       logoUri = String(asked.logoUri);
       declared.push('logoUri');
@@ -1098,9 +1274,8 @@ class GnapGrants {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.digestTokenOf().");
     log.debug("Leaving GnapGrants.digestTokenOf().");
-    return 'gnap:' + nodeCrypto.createHash('sha256')
-        .update(this.canonicalJson(right), 'utf8').digest('base64url').slice(0,
-        22);
+    return 'gnap:' + stsCrypto.digest('sha256', this.canonicalJson(right),
+                                      'base64url').slice(0, 22);
   }
 
   // ---------------------------------------------------------------------------
@@ -1155,6 +1330,146 @@ class GnapGrants {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // A RIGHT'S LOCATIONS NAME A REGISTERED RESOURCE SERVER, IN PRODUCT (#505).
+  //
+  // RFC 9635 section 8's `locations` are "the location of the RS or
+  // RS-controlled resource", and they are what a token's audience is made
+  // of (`resourceServersFor()`). Until #505 a location that resolved to no
+  // resource server was simply left out: the right was granted and the token
+  // issued with no audience for it — #496's audit's GNAP gap. In product
+  // every location of every right must now name a registered target, and a
+  // right that names one that does not is REFUSED, not dropped: the request
+  // is answered `invalid_request` (STS-GNAP-0903), section 3.6's code for an
+  // invalid parameter value and the one a location the catalogue's owner
+  // does not answer to already gets (STS-GNAP-0812). A location is
+  // registered when `common/registered_targets.ts` says so — one of this
+  // service's own resource servers, or a registered application by its
+  // audience, permission base URI, client_id or identifier — or when it is
+  // AT or UNDER the `gnapResourceServerUri` of a REGISTERED GNAP resource
+  // server, GNAP's own addressing and the match `resourceServersFor()`
+  // makes. Asked at the request stage, so at creation, modification and
+  // derivation alike, before anybody is asked to approve. A reference
+  // string names no location. IN EVERY MODE SINCE #1140 (rcbj: no access
+  // token for an audience no application object holds, in both modes);
+  // development was unchanged by #505.
+  // ---------------------------------------------------------------------------
+  private unregisteredLocationRefusal(req, tokens) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.unregisteredLocationRefusal().");
+    const servers = this.gnapApplications().filter(function (one) {
+      return !!String((one && one.registeredBy) || '');
+    });
+    for (let t = 0; t < (tokens || []).length; t++) {
+      const access = tokens[t].access || [];
+      for (let r = 0; r < access.length; r++) {
+        const right = access[r];
+        if (!right || typeof right !== 'object' ||
+            !Array.isArray(right.locations)) {
+          continue;
+        }
+        const strangers = RegisteredTargets.unregistered(right.locations, req)
+          .filter((location) => {
+            return !servers.some((app) => {
+              return this.fieldValues(app, 'resourceServerUri').some(
+                function (uri) {
+                  return !!uri && (location === uri ||
+                                   location.indexOf(uri) === 0);
+                });
+            });
+          });
+        if (strangers.length) {
+          log.debug("Leaving GnapGrants.unregisteredLocationRefusal(). " +
+                    strangers.length + " unregistered location(s).");
+          return this.refusal('STS-GNAP-0903', 'access_token' +
+            (tokens.length > 1 ? '[' + t + ']' : '') + '.access[' + r +
+            ']\'s location ' + RegisteredTargets.describe(strangers) +
+            ' A GNAP resource server is registered with its ' +
+            'gnapResourceServerUri, and a location at or under it names it ' +
+            '(RFC 9635 section 8).', 'invalid_request', 400);
+        }
+      }
+    }
+    log.debug("Leaving GnapGrants.unregisteredLocationRefusal(). None.");
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ACCESS TOKEN FOR NOBODY IN PARTICULAR IS REFUSED (#593, rcbj's
+  // decision 4 on #591), IN EVERY MODE.
+  //
+  // A token's audience is the resource servers its rights resolve to
+  // (`resourceServersFor()`: a registered reference, a location at or under
+  // a resource server's `gnapResourceServerUri`, or the owner of a
+  // catalogued type). Where they resolved to none, the token used to be
+  // audienced to the demonstration resource server at `/gnap/rs/resource`
+  // — a default audience that named the one resource server every client
+  // here could be pointed at. #593 deleted that resource server (the test
+  // peer plays one), and with it the default: a token whose access names
+  // no resource server would be a token for nobody, or for everybody, which
+  // is the confused deputy RFC 9767's audience exists to prevent.
+  //
+  // **THE ONE RESOURCE SERVER THAT NEEDS NO ENTRY IS THIS SERVICE'S OWN
+  // SHARED SIGNALS TRANSMITTER.** Its access is a reference string naming
+  // any published Shared Signals scope (`common/ssf_scopes.ts`: the two
+  // settings, `ssf.read` and `ssf.manage`), or an
+  // object of type `ssf` (`ssf/ssf_auth.ts`'s `gnapCovers()`), and it
+  // REFUSES a token issued for a named resource server (STS-SSF-0079) — so
+  // a right of that shape names a resource server, this service's, and is
+  // not refused here.
+  //
+  // **`invalid_request`, HTTP 400** (STS-GNAP-0904): RFC 9635 section 3.6
+  // defines no error for an access request a resource server does not
+  // answer to, and its `invalid_request` is "the request is missing a
+  // required parameter, includes an invalid parameter value or is otherwise
+  // malformed" — what a request is when nothing in it says where the token
+  // is to be used. It is the code a location naming no registered resource
+  // server already gets (STS-GNAP-0903), for the same reason; section 3.6's
+  // `request_denied` is a refusal by policy or by the resource owner, and
+  // neither was asked. Asked at the request stage, AFTER the issuance
+  // policy's questions (so a right the policy refuses keeps its own, more
+  // specific refusal) and of what the policy left, at creation, modification
+  // and derivation alike and before anybody is asked to approve; a request
+  // for no access token is not asked at all.
+  // ---------------------------------------------------------------------------
+  private noResourceServerRefusal(tokens) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.noResourceServerRefusal().");
+    // `gnap_rights.ts`'s `protectedFacts()` reads the same vocabulary.
+    const ownScopes = ssfScopes.published();
+    const namesTransmitter = function (right) {
+      log.debug("Entering namesTransmitter().");
+      log.debug("Leaving namesTransmitter().");
+      return typeof right === 'string' ? ownScopes.indexOf(right) >= 0
+        : !!(right && typeof right === 'object' && right.type === 'ssf');
+    };
+    for (let t = 0; t < (tokens || []).length; t++) {
+      const access = tokens[t].access || [];
+      if (!access.length) {
+        continue;
+      }
+      if (this.resourceServersFor(access).length ||
+          access.some(namesTransmitter)) {
+        continue;
+      }
+      log.debug("Leaving GnapGrants.noResourceServerRefusal(). " +
+                "access_token" + (tokens.length > 1 ? '[' + t + ']' : '') +
+                " names no resource server.");
+      return this.refusal('STS-GNAP-0904', 'access_token' +
+        (tokens.length > 1 ? '[' + t + ']' : '') + '.access names no ' +
+        'resource server, so the token would be for nobody in particular, ' +
+        'and this authorization server issues none. Name one: a reference ' +
+        'a resource server registered (RFC 9767 section 3.4), a location ' +
+        'at or under a registered resource server\'s gnapResourceServerUri, ' +
+        'or a type a registered resource server declares (RFC 9635 section ' +
+        '8) — or this service\'s Shared Signals transmitter, by "' +
+        ownScopes.join('" or "') + '" or an object of ' +
+        'type "ssf".', 'invalid_request', 400);
+    }
+    log.debug("Leaving GnapGrants.noResourceServerRefusal(). None.");
+    return null;
+  }
+
   // The request stage (#432 phase 3): the catalogue's well-formedness, then
   // one policy question per right. A refusal, or the tokens as the policy
   // left them and what it narrowed.
@@ -1166,12 +1481,31 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.judgeRequested(). Malformed.");
       return malformed;
     }
+    // #505: in product, a location naming no registered resource server.
+    const unregistered = this.unregisteredLocationRefusal(req, tokens);
+    if (unregistered) {
+      log.debug("Leaving GnapGrants.judgeRequested(). An unregistered " +
+                "location.");
+      return unregistered;
+    }
     const ctx = this.rightsContext(req, grantish, app, approval);
     // The owner lookups first (#432 phase 5): the question is synchronous.
     ctx.owners = await rights.owners(tokens, ctx);
     const judged = rights.judge(tokens, ctx, rights.STAGES.REQUEST);
-    log.debug("Leaving GnapGrants.judgeRequested(). " +
-              (judged.ok ? 'Judged.' : 'Refused.'));
+    if (!judged.ok) {
+      log.debug("Leaving GnapGrants.judgeRequested(). Refused.");
+      return judged;
+    }
+    // #593: in every mode, a token whose access names no resource server —
+    // asked of what the policy left, and AFTER it, so a right the policy
+    // refuses (an uncatalogued type in product, STS-GNAP-0810) keeps its
+    // own, more specific refusal.
+    const nobody = this.noResourceServerRefusal(judged.tokens || tokens);
+    if (nobody) {
+      log.debug("Leaving GnapGrants.judgeRequested(). No resource server.");
+      return nobody;
+    }
+    log.debug("Leaving GnapGrants.judgeRequested(). Judged.");
     return judged;
   }
 
@@ -1248,7 +1582,7 @@ class GnapGrants {
       }
       (right.locations || []).forEach((location) => {
         this.gnapApplications().forEach((app) => {
-          if (this.fieldValues(app, 'gnapResourceServerUri').some(
+          if (this.fieldValues(app, 'resourceServerUri').some(
               function (uri) {
             return location === uri || location.indexOf(uri) === 0;
           })) {
@@ -1297,13 +1631,13 @@ class GnapGrants {
     const preferences = [];
     if (rsIds.length === 1) {
       const rs = applications.get(rsIds[0]);
-      if (this.field(rs, 'gnapAccessTokenFormat')) {
-        preferences.push(this.field(rs, 'gnapAccessTokenFormat'));
+      if (this.field(rs, 'accessTokenFormat')) {
+        preferences.push(this.field(rs, 'accessTokenFormat'));
       }
     }
     const client = applications.get(grant.client.identifier);
-    if (this.field(client, 'gnapAccessTokenFormat')) {
-      preferences.push(this.field(client, 'gnapAccessTokenFormat'));
+    if (this.field(client, 'accessTokenFormat')) {
+      preferences.push(this.field(client, 'accessTokenFormat'));
     }
     preferences.push(String(config.value('gnap.accessTokenFormat') ||
                             'jwt-signed'));
@@ -1337,6 +1671,13 @@ class GnapGrants {
         continue;
       }
       const username = grant.ro ? grant.ro.username : null;
+      // #738: the phishing-resistance fact is the session's, and the
+      // gate computes it only for a browser kind. An access token is
+      // not one, so this call passes the session and no
+      // phishingResistance argument: the gate does not read one (that
+      // would be issuance_gate.js). OAuth's token issuance passes the
+      // same session and kind. A SAML subject assertion below is a
+      // browser kind, so that check already gets the fact.
       const allowed = gate.check({
         application: grant.client.identifier, kind: gate.ISSUANCE.ACCESS_TOKEN,
         // GNAP's, not OAuth 2.0's, for the protocol-declaration rule.
@@ -1393,13 +1734,12 @@ class GnapGrants {
       }
       const keyDescriptor = keys.describe(grant.client.key,
                                           this.referenceResolver);
+      // NO DEFAULT AUDIENCE (#593): a request whose access named no
+      // resource server was refused at the request stage
+      // (`noResourceServerRefusal()`), and what reaches here empty is a
+      // token for this service's own Shared Signals transmitter, which
+      // accepts only a token issued for no named resource server.
       const audience = rsIds.slice();
-      if (!audience.length &&
-          (config.value('gnap.demoResourceServer') !== false)) {
-        // A token for nobody in particular is valid at the demonstration RS,
-        // which is how a client can present one somewhere at all.
-        audience.push(base + '/gnap/rs/resource');
-      }
       const model = {
         jti: store.handle(16),
         iss: grant.grantEndpoint,
@@ -1426,9 +1766,9 @@ class GnapGrants {
       };
       const rs = rsIds.length === 1 ? applications.get(rsIds[0]) : null;
       let jweKey = null;
-      if (rs && this.field(rs, 'gnapJweKey')) {
+      if (rs && this.field(rs, 'jweKey')) {
         try {
-          jweKey = JSON.parse(this.field(rs, 'gnapJweKey'));
+          jweKey = JSON.parse(this.field(rs, 'jweKey'));
         } catch (e) {
           log.debug("Caught in GnapGrants.issueTokens(): " +
                     ((e && e.message) || e));
@@ -1444,7 +1784,10 @@ class GnapGrants {
       try {
         minted = await tokens.mint(format, model, { base: base,
           rs: rs ? { identity: rs.identifier, jweKey: jweKey } : null,
-          sessionId: grant.ro ? grant.ro.sessionId : null, setId: grant.id });
+          sessionId: grant.ro ? grant.ro.sessionId : null, setId: grant.id,
+          // #1250: which application's rows, and ${username} in them.
+          application: grant.client.identifier,
+          username: username || '' });
       } catch (e) {
         log.debug("Caught in GnapGrants.issueTokens(): " +
                   ((e && e.message) || e));
@@ -1480,7 +1823,8 @@ class GnapGrants {
       if (config.value('gnap.tokenManagement') !== false) {
         const manageValue = store.issueManagement(record);
         store.saveToken(record);
-        response.manage = { uri: base + '/gnap/token/' + record.manageHandle,
+        response.manage = { uri: helpers.rebaseTo(base, 'gnap') +
+                                 '/gnap/token/' + record.manageHandle,
                             access_token: { value: manageValue } };
       }
       grant.tokens = (grant.tokens || []).concat([record.jti]);
@@ -1584,7 +1928,7 @@ class GnapGrants {
       return null;
     }
     const oauth2 = this.deps.loadOauth2();
-    const issuer = oauth2.issuerOf(this.realmBase(req));
+    const issuer = oauth2.issuerOf(this.oauthBase(req));
     const formats = grant.request.subject.subIdFormats.filter((format) => {
       return this.allows(this.capabilityList(req, grant.as,
                                              'sub_id_formats_supported'),
@@ -1700,7 +2044,7 @@ class GnapGrants {
     log.debug("Entering GnapGrants.startInteraction(). grant=" + grant.id);
     const supportedStarts = this.capabilityList(req, grant.as,
         'interaction_start_modes_supported');
-    const appModes = this.fieldValues(app, 'gnapInteractionStartModes');
+    const appModes = this.fieldValues(app, 'interactionStartModes');
     const usable = interact.start.filter((mode) => {
       return request.START_MODES.indexOf(mode) >= 0 &&
              this.allows(supportedStarts, mode) &&
@@ -1780,7 +2124,8 @@ class GnapGrants {
         const id = store.handle(18);
         interaction.modes[mode] = { id: id, used: false };
         store.putInteraction(mode + ':' + id, grant.id);
-        out[mode] = base + '/gnap/' + (mode === 'redirect' ? 'interact' :
+        out[mode] = helpers.rebaseTo(base, 'gnap') +
+                    '/gnap/' + (mode === 'redirect' ? 'interact' :
                                        'app') + '/' + id;
       } else if (mode === 'user_code' || mode === 'user_code_uri') {
         const code = interaction.modes.user_code ?
@@ -1790,7 +2135,8 @@ class GnapGrants {
         interaction.modes[mode] = { code: code, used: false };
         store.putUserCode(code, grant.id);
         out[mode] = mode === 'user_code' ? code :
-                    { code: code, uri: base + '/gnap/code' };
+                    { code: code, uri: helpers.rebaseTo(base, 'gnap') +
+                                       '/gnap/code' };
       }
     });
     if (finish) {
@@ -1827,9 +2173,9 @@ class GnapGrants {
     const { log, request } = this.deps;
     log.debug("Entering GnapGrants.interactionHash().");
     const spec = request.HASH_METHODS[hashMethod || 'sha-256'];
-    const digest = nodeCrypto.createHash(spec.node)
-      .update([clientNonce, serverNonce, interactRef, grantEndpoint].join('\n'),
-              'ascii').digest();
+    const digest = stsCrypto.digest(spec.node,
+      Buffer.from([clientNonce, serverNonce, interactRef,
+                   grantEndpoint].join('\n'), 'ascii'));
     log.debug("Leaving GnapGrants.interactionHash().");
     return digest.subarray(0, spec.bits / 8).toString('base64url');
   }
@@ -1854,9 +2200,12 @@ class GnapGrants {
   // And a right that needs an authentication level is never issued with no
   // session to meet it (STS-GNAP-0893): the request goes to the page, which
   // steps the person up, or — offering no interaction — is refused. An
-  // assertion's own `acr` is not taken as that session: it is a statement
-  // about a sign-in somewhere else, at some earlier time, presented by the
-  // client that wants the token.
+  // `interact.acr` of only `phr` and `phrh` is that same bar (#738): no
+  // session has earned it yet, so a skip would issue without the class.
+  // A list that names anything else is not the demand. An assertion's own
+  // `acr` is not taken as that session: it is a statement about a sign-in
+  // somewhere else, at some earlier time, presented by the client that
+  // wants the token.
   // ---------------------------------------------------------------------------
   private skipVerdict(trusted: boolean, asked: any, resolved: any,
                       requirement: any): any {
@@ -1889,6 +2238,20 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.skipVerdict(). An acr is needed.");
       return { skip: false, forPerson: false, code: 'STS-GNAP-0893',
                why: 'a right needs authentication level ' + acrs.join(' ') +
+                    ', which only a session the resource owner signs in ' +
+                    'with can meet' };
+    }
+    // #738. The class has not been earned: there is no session on a skip.
+    // 0893, not 0905 — 0905 is the refusal after the one interaction trip.
+    // Absent, empty, or mixed: not a demand, and the skip stands.
+    const interact = asked && asked.interact;
+    const demand = this.deps.request.interactAcrDemand(
+      interact ? interact.acr : undefined);
+    if (skip && demand.eap) {
+      log.debug("Leaving GnapGrants.skipVerdict(). interact.acr needs a " +
+                "session.");
+      return { skip: false, forPerson: false, code: 'STS-GNAP-0893',
+               why: 'interact.acr asks for ' + demand.tokens.join(' ') +
                     ', which only a session the resource owner signs in ' +
                     'with can meet' };
     }
@@ -1967,11 +2330,15 @@ class GnapGrants {
     }
     const oauth2 = this.deps.loadOauth2();
     const resolved = subject.resolveUser(asked.user, {
-      issuer: oauth2.issuerOf(this.realmBase(req)),
-      oauthIssuer: oauth2.issuerOf(this.realmBase(req)),
+      issuer: oauth2.issuerOf(this.oauthBase(req)),
+      oauthIssuer: oauth2.issuerOf(this.oauthBase(req)),
       // A user reference resolves only for the client it was issued to
       // (#432 phase 7, gnap_subject.ts).
-      client: identifier
+      client: identifier,
+      // And an assertion only for the client it was issued to (#497, RFC
+      // 9635 section 11.13): every name the presenting client goes by.
+      clientNames: [identifier].concat(DomainMap.fieldOf('OAuthClient',
+        'clientIds', (app && app.fields) || {}) || [])
     });
     if (!resolved.ok) {
       log.debug("Leaving GnapGrants.createGrant(). User refused.");
@@ -1992,7 +2359,10 @@ class GnapGrants {
                 certSpki: caller.descriptor.proof.method === 'mtls'
                   ? this.deps.mtls.presentedKeyThumbprint(req) : '',
                 display: caller.display, classId: caller.classId,
-                classIdDeclared: caller.classIdDeclared },
+                classIdDeclared: caller.classIdDeclared,
+                // A key nobody registered, an instance of this application
+                // by its class_id (#1216): the page is never skipped for it.
+                classInstance: !!caller.classInstance },
       request: { tokens: asked.tokens, multiple: asked.multiple,
                  subject: asked.subject,
                  interact: asked.interact },
@@ -2042,9 +2412,15 @@ class GnapGrants {
     const response: Record<string, any> = {};
     if (config.value('gnap.instanceIds') !== false && !caller.instanceId &&
         caller.descriptor.format !== 'reference') {
-      const instanceId = store.handle(18);
+      // The same key at the same application gets the same identifier back,
+      // derived, so a repeat sign-in rewrites one record (#1221).
+      const instanceId = store.instanceIdFor(identifier,
+                                             caller.descriptor.identity);
       store.putInstance(instanceId, { identifier: identifier, key:
-                                      caller.descriptor.value });
+                                      caller.descriptor.value,
+                                      // Still an unregistered key (#1216)
+                                      // when it comes back by reference.
+                                      classInstance: !!caller.classInstance });
       response.instance_id = instanceId;
     }
     // WITHOUT INTERACTION. A registered client marked `gnapSkipInteraction`
@@ -2073,10 +2449,12 @@ class GnapGrants {
     // right of an `always` type, or naming a consent action, needs its
     // owner on the page whoever asks; a request of `never` rights alone
     // needs nobody, from any client, acting as itself; and a right that
-    // needs an authentication level cannot be issued with no session to
-    // meet it.
-    const trusted = this.field(app, 'gnapSkipInteraction') === 'TRUE' &&
-                    !caller.created;
+    // needs an authentication level, or an interact.acr of only phr and
+    // phrh (#738), cannot be issued with no session to meet it.
+    // An unregistered key acting as an instance of the application (#1216)
+    // is not the key the application was trusted with: it never skips.
+    const trusted = this.field(app, 'skipInteraction') === 'TRUE' &&
+                    !caller.created && !caller.classInstance;
     const skip = this.skipVerdict(trusted, asked, resolved, requirement);
     if (skip.skip) {
       const forPerson = skip.forPerson;
@@ -2296,9 +2674,11 @@ class GnapGrants {
   //     nobody approved. `gnap_delegation.ts`'s `derivableBeyond()` is the
   //     one place the access-type catalogue (phase 4) will widen it.
   //   * IT CARRIES THE ACTOR CHAIN: RFC 8693 section 4.1's `act`, the deriving
-  //     resource server outermost over the original token's chain, in every
-  //     format (`grant.actorChain`, read by `issueTokens()` and kept by
-  //     rotation and modification).
+  //     resource server outermost over the original token's chain — or over
+  //     the original client where it has none (#526) — each entry
+  //     `{ sub: urn:sts:client:<id>, iss }`, in every format
+  //     (`grant.actorChain`, read by `issueTokens()` and kept by rotation and
+  //     modification).
   //   * THE CHAIN IS CAPPED at `gnap.maxDerivationDepth` (STS-GNAP-0782).
   // ---------------------------------------------------------------------------
   private async deriveToken(req, grant, app, asked) {
@@ -2330,7 +2710,7 @@ class GnapGrants {
           'section 4).', 'invalid_request');
     }
     const rsNames = [app.identifier].concat(this.fieldValues(app,
-        'gnapResourceServerUri'));
+        'resourceServerUri'));
     const forThisRs = !existing.aud.length || existing.aud.some(function (aud) {
       return rsNames.indexOf(aud) >= 0;
     });
@@ -2365,7 +2745,12 @@ class GnapGrants {
                           'more than the token it is derived from: ' + raised +
                           ' (RFC 9767 section 4).', 'request_denied', 403);
     }
-    const chain = delegation.actorChainFor(app.identifier, existing.act);
+    // #526: the chain begins with the existing token's client where it
+    // carries none yet, and every entry is written by this authorization
+    // server — its issuer, the derived token's own `iss`.
+    const chain = delegation.actorChainFor(app.identifier, existing.act,
+                                           existing.instanceId,
+                                           grant.grantEndpoint);
     if (!chain.ok) {
       log.debug("Leaving GnapGrants.deriveToken(). The chain is too deep.");
       return chain;
@@ -2468,6 +2853,26 @@ class GnapGrants {
     return { ok: true, status: 200, body: body, grant: grant };
   }
 
+  // WHO DECIDED, AND HOW THEY HAD SIGNED IN (#1579): the session read
+  // through the `Session` concept, so what a grant remembers of its resource
+  // owner is the model's statement of the session.
+  /**
+   * The resource owner a grant records, from the session they decided on.
+   *
+   * @param username - the resource owner, normalised
+   * @param session - their sign-on session
+   * @returns `{ username, sessionId, authTime, amr, acr }`
+   */
+  private resourceOwnerOf(username, session) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.resourceOwnerOf().");
+    const view = DomainClasses.Session.fromRecord(session);
+    log.debug("Leaving GnapGrants.resourceOwnerOf().");
+    return { username: username, sessionId: view.id,
+             authTime: view.authTime,
+             amr: view.methods, acr: view.assuranceLevel };
+  }
+
   // ---------------------------------------------------------------------------
   // THE RESOURCE OWNER'S DECISION, from `gnap_interact.ts`.
   //
@@ -2518,9 +2923,7 @@ class GnapGrants {
       // remembered approval made without drawing it (`gnap_interact.ts`).
       grant.approval = selection.remembered ? 'remembered' : 'interaction';
       grant.subjectAuthorizedBy = selection.subject ? 'interaction' : null;
-      grant.ro = { username: username, sessionId: session.id,
-                   authTime: session.authTime,
-                   amr: session.amr, acr: session.acr };
+      grant.ro = this.resourceOwnerOf(username, session);
       if (config.value('gnap.rememberApprovals') !== false) {
         const digests = [];
         selection.tokens.forEach((one) => {
@@ -2535,9 +2938,7 @@ class GnapGrants {
       signals.noteApprover(grant.client.identifier, username);
     } else {
       grant.decision = { approved: false, error: 'user_denied' };
-      grant.ro = { username: username, sessionId: session.id,
-                   authTime: session.authTime,
-                   amr: session.amr, acr: session.acr };
+      grant.ro = this.resourceOwnerOf(username, session);
     }
     monitor.record(grant.client.identifier,
                    grant.decision.approved ? 'grant.approved' : 'grant.denied',
@@ -2590,6 +2991,15 @@ class GnapGrants {
     }
     if (config.value('gnap.rememberApprovals') === false) {
       log.debug("Leaving GnapGrants.rememberedFor().");
+      return false;
+    }
+    // A KEY NOBODY REGISTERED (#1216) cannot be authenticated as the
+    // application, so what the person approved for the application before
+    // does not stand in for the page (RFC 6749 section 10.2's rule for
+    // clients that cannot be authenticated).
+    if (grant.client && grant.client.classInstance) {
+      log.debug("Leaving GnapGrants.rememberedFor(). An unregistered " +
+                "instance is asked every time.");
       return false;
     }
     const held = consent.consentsOf(username).filter(function (row) {
@@ -2670,33 +3080,45 @@ class GnapGrants {
    * still does not meet it: the request is answered `request_denied`
    * (STS-GNAP-0899), recorded as the decision, and the finish method is
    * enacted — RFC 9470's "one sign-in, then refuse" in GNAP's vocabulary.
+   * `code` STS-GNAP-0905 is the same refusal when what came back unmet is
+   * `interact.acr` (#738): still `request_denied`, which is what a client
+   * is told. The code is recorded, never sent.
    *
    * @param req - the request to the approval page
    * @param grant - the grant
    * @param session - the session that came back
    * @param missing - the acr values it does not meet
+   * @param code - STS-GNAP-0899, or STS-GNAP-0905 for interact.acr
    * @returns the finish method's answer
    */
-  async refuseUnmetStepUp(req, grant, session, missing) {
+  async refuseUnmetStepUp(req, grant, session, missing, code?) {
     const { log, store, audit, monitor, subject } = this.deps;
     log.debug("Entering GnapGrants.refuseUnmetStepUp().");
+    const recorded = code || 'STS-GNAP-0899';
+    const interactAcr = recorded === 'STS-GNAP-0905';
     grant.interaction.decided = true;
     grant.decision = { approved: false, error: 'request_denied',
-                       code: 'STS-GNAP-0899',
-                       why: 'the approval needed authentication level ' +
-                            (missing || []).join(' ') + ', which the ' +
-                            'resource owner\'s sign-in did not meet (RFC ' +
-                            '9470).' };
+                       code: recorded,
+                       why: interactAcr
+                         ? 'interact.acr asked for ' +
+                           (missing || []).join(' ') +
+                           ', which the resource owner\'s one sign-in ' +
+                           'did not meet.'
+                         : 'the approval needed authentication level ' +
+                           (missing || []).join(' ') + ', which the ' +
+                           'resource owner\'s sign-in did not meet (RFC ' +
+                           '9470).' };
     const username = subject.normaliseName(session.user.username);
-    grant.ro = { username: username, sessionId: session.id,
-                 authTime: session.authTime, amr: session.amr,
-                 acr: session.acr };
+    grant.ro = this.resourceOwnerOf(username, session);
     monitor.record(grant.client.identifier, 'grant.denied',
                    { gnapError: 'request_denied' });
-    audit.failure('STS-GNAP-0899', { protocol: PROTOCOL, channel: 'http',
+    audit.failure(recorded, { protocol: PROTOCOL, channel: 'http',
       actor: username, target: grant.client.identifier,
-      summary: 'A GNAP approval needed a stronger sign-in than the resource ' +
-               'owner completed',
+      summary: interactAcr
+        ? 'A GNAP approval needed the phishing resistance interact.acr ' +
+          'asked for, and the one sign-in did not meet it'
+        : 'A GNAP approval needed a stronger sign-in than the resource ' +
+          'owner completed',
       detail: { grant: grant.id, missing: (missing || []).join(' '),
                 acr: String(session.acr || '') } });
     const finished = await this.finishInteraction(req, grant);
@@ -2723,9 +3145,7 @@ class GnapGrants {
     grant.ownerApproval.answered = true;
     grant.ownerApproval.answeredAt = this.deps.nowSec();
     grant.subjectAuthorizedBy = null;
-    grant.ro = { username: username, sessionId: session.id,
-                 authTime: session.authTime, amr: session.amr,
-                 acr: session.acr };
+    grant.ro = this.resourceOwnerOf(username, session);
     if (selection.approve) {
       grant.decision = { approved: true, tokens: selection.tokens,
                          subject: !!selection.subject };
@@ -3633,9 +4053,11 @@ class GnapGrants {
         ? applications.get(record.rsIdentifiers[0]) : null;
       minted = await tokens.mint(record.format, model, { base:
           this.realmBase(req), rs: rs ? { identity: rs.identifier, jweKey:
-                                          this.field(rs, 'gnapJweKey') ?
+                                          this.field(rs, 'jweKey') ?
                                           JSON.parse(this.field(rs,
-          'gnapJweKey')) : null } : null, setId: record.grantId });
+          'jweKey')) : null } : null, setId: record.grantId,
+          application: record.instanceId,
+          username: record.username || '' });
     } catch (e) {
       log.debug("Caught in GnapGrants.manageVerified(): " +
                 ((e && e.message) || e));
@@ -3749,8 +4171,13 @@ class GnapGrants {
         ended += 1;
       }
     });
-    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ".");
-    return { summary: ended + ' GNAP grant(s) finalized as expired' };
+    // And the instance records nobody has used for gnap.grantLifetimeS
+    // (#1221): the store only grew before.
+    const purged = store.purgeInstances();
+    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ", " + purged +
+              " instance record(s).");
+    return { summary: ended + ' GNAP grant(s) finalized as expired, ' +
+                      purged + ' unused instance record(s) deleted' };
   }
 
   /**
@@ -3770,7 +4197,8 @@ class GnapGrants {
       title: 'GNAP: expired grants',
       describe: 'Finalizes each GNAP grant whose interaction or grant ' +
                 'lifetime (gnap.grantLifetimeS) has ended and that no ' +
-                'request has touched since, recording why (#432).',
+                'request has touched since, recording why (#432), and ' +
+                'deletes each instance record unused for as long (#1221).',
       owner: 'gnap/gnap_grants.ts',
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return 300000;

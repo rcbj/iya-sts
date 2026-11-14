@@ -249,17 +249,17 @@ async fn a_removal_marks_announces_delivers_and_goes_anyway() {
     life.create("acme", "", "", "", &Map::new(), false).unwrap();
 
     // A realm's own setting is what a read inside it answers.
-    life.set_override("acme", "saml2.entityId", json!("urn:x"))
+    life.set_override("acme", "saml.organizationName", json!("urn:x"))
         .unwrap();
     let acme = registry.get("acme").unwrap();
     assert_eq!(
         sts_core::realm::run_sync(acme, || settings
-            .value_of("saml2.entityId")
+            .value_of("saml.organizationName")
             .as_str()
             .to_string()),
         "urn:x"
     );
-    assert_ne!(settings.value_of("saml2.entityId").as_str(), "urn:x");
+    assert_ne!(settings.value_of("saml.organizationName").as_str(), "urn:x");
 
     let (_, report) = life.retire("acme", None, None).await.unwrap();
     assert_eq!(report.late, vec!["logout"]);

@@ -1,0 +1,6 @@
+{
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "El servicio de inicio de sesión y sus segundos factores, la cartera, los inicios de sesión con SPNEGO y con certificado, y el cierre de sesión."
+  }
+}

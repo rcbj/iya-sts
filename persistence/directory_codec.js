@@ -19,10 +19,15 @@
 // key every node holds), so an exact match is still one indexed probe and
 // nothing in the column says what it matched.
 //
-//   name_keys   the `uid` values, lower-cased      — `byName()`
+//   name_keys   the `uid` values and the live      — `byName()`
+//               `stsPseudonym` values, lower-cased
+//               (#644). A pending verification
+//               address is not a name.
 //   mail_keys   `mail`, lower-cased                — `byMail()`
-//   uuid_keys   `entryUUID` and its aliases        — `byUuid()`
-//   class_keys  `objectClass`, lower-cased         — `classesUnder()`
+//   uuid_keys   `entryUUID` and its aliases        — `byUuid()`,
+//                                                   `withUuids()`
+//   class_keys  the GROUP `objectClass` values     — `classesUnder()`
+//               (CLASS_INDEXED), lower-cased; none for anything else
 //   value_keys  `name=value` of VALUE_INDEXED       — `byAttribute()`
 //   attr_names  the attribute NAMES, in the clear  — `withAttribute()`
 //
@@ -57,8 +62,87 @@ const DIGEST_LABEL = 'directory-index';
 // The attributes whose values `byAttribute()` looks up — as written, not
 // lower-cased, because those lookups compare a value exactly (a DID, a SPIFFE
 // ID, a certificate subject, a login name, a federation link).
+//
+// **AND THE FOUR A DEVICE IS RECOGNISED BY (#636, 2026-10-14)**: a device's
+// derived key thumbprint, its Native SSO secret's hash, a linked WebAuthn
+// credential's id, and its `owner` (the DN of the person or application that
+// owns it). `ldap_server.js`'s `deviceEntryByIndex()` and
+// `deviceEntriesOwnedBy()` ask them in a windowed process, where until #636
+// recognition built an index by walking `ou=devices` — on a token request,
+// through the synchronous bridge, and a `page()` under `ou=devices` reads the
+// realm's keys past the last device, so it cost the whole directory however
+// few devices there were. `owner` is also on a group or a service account;
+// the callers keep the rows under `ou=devices`. A row written before #636
+// carries none of the four until it is next written, and nothing migrates
+// it (rcbj: every install is rebuilt).
+//
+// **AND ONE DERIVED KEY: `usercertificatesha256` (#1061, 2026-10-27).** A
+// certificate from an outside authority is an identity only when it is the
+// very certificate stored in `userCertificate` (RFC 4523) on exactly one
+// entry, and the question is asked on every handshake that presents one. The
+// value as written is a base64 DER of a kilobyte or more, so it is not
+// indexed as itself: `indexOf()` keys each stored certificate by the SHA-256
+// of its DER (`certificateDigestsOf()`), and `byAttribute()` is asked for
+// that digest. No attribute of that name is ever on an entry — it exists only
+// as an index key — and no schema version moves, because `value_keys` is
+// written by the service. An entry written before this carries no key until
+// it is next written; storing the certificate IS a write (no migration, by
+// rcbj's decision on #1061).
+//
+// **AND A SECOND DERIVED KEY: `grantinggroup` (#1306, 2026-11-04).** A
+// partner's token may name a group that does not exist yet, and federated
+// provisioning must not create one whose NAME already stands for something
+// here (`ldap_server.js`'s `federatedGroupAuthority()`, #358): a group an
+// entry names, by cn or DN, in one of GRANTING_ATTRIBUTES below. The
+// question is asked on a sign-in, and in a windowed process the entries
+// that hold such a value may not be here — a service account's
+// `stsServiceAccountOwner` is under `ou=users` — or may have been written by
+// another process this one has not yet heard from. The values compare
+// trimmed and in any case, and a DN by its normalised form, which an exact
+// lookup cannot answer, so each value is keyed as `grantingKeysOf()` reads
+// it. Like `usercertificatesha256`, no attribute of that name is ever on an
+// entry, and an entry written before this carries no key until it is next
+// written (rcbj's no-migration rule on #636 and #1061).
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
-                       'federationlink'];
+                       'federationlink', 'stsdevicekeythumbprint',
+                       'stsdevicesecrethash', 'stsdevicecredentialid',
+                       'owner', 'usercertificatesha256', 'grantinggroup'];
+
+// The attributes that confer something on the members of the group they
+// name (#358, #607): a role's member group, the three owner attributes, an
+// application's delegation subject group, a relationship's subject group.
+// `ldap_server.js` reads this list too, so the walk over what this process
+// holds and the store's `grantinggroup` key cannot disagree about it.
+const GRANTING_ATTRIBUTES = Object.freeze(['rolemembergroup', 'owner',
+  'appowner', 'stsserviceaccountowner', 'appdelegationsubjectgroup',
+  'fedsubjectgroup']);
+
+// A value written as a DN: an attribute type and `=` at the front. The
+// directory's own `DN_SHAPED`.
+const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
+
+// The attribute names a stored certificate is held under: RFC 4523's type with
+// RFC 4522's `;binary` transfer option (what an LDAP client and this service
+// write, base64), and the bare type a hand-written entry may carry.
+const CERTIFICATE_ATTRIBUTES = ['usercertificate;binary', 'usercertificate'];
+
+// THE OBJECT CLASSES `class_keys` HOLDS: THE GROUP CLASSES, AND ONLY THOSE
+// (#618 phase 2, schema version 18). `classesUnder()` is the one question
+// asked of the column, and it is only ever asked for a group class
+// (`ldap_server.js`'s GROUP_CLASSES, which `tests/directory_queries.js` holds
+// to this list): "the groups placed under `ou=users` or `ou=devices`". Until
+// version 18 the column held every class, so every person wrote four GIN
+// entries — `top`, `person`, `organizationalPerson`, `inetOrgPerson`, each
+// in more than 99% of 8081's rows — that narrowed nothing. A person now
+// writes `[]`, which the partial index leaves out. An entry written before
+// version 18 still holds all its classes until it is next written, and the
+// question answers the same over either: a group class is in both.
+//
+// The database cannot narrow the column itself — each value is a keyed
+// digest it cannot read — which is why this is done where the digests are
+// made rather than by a generated column or an index expression.
+const CLASS_INDEXED = Object.freeze(['groupofnames', 'groupofuniquenames',
+                                     'posixgroup', 'groupofurls']);
 
 function keystore() {
   log.debug("Entering keystore().");
@@ -117,6 +201,108 @@ function valuesOf(attrs, name) {
   return out;
 }
 
+/**
+ * The DER bytes of one stored `userCertificate` value: base64 of the DER (what
+ * the `;binary` option carries), or a PEM block. null for anything else.
+ *
+ * @param value - the stored value
+ * @returns the DER, or null
+ */
+function certificateDerOf(value) {
+  log.debug("Entering certificateDerOf().");
+  const text = String(value == null ? '' : value);
+  const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/
+    .exec(text);
+  const body = (pem ? pem[1] : text).replace(/\s+/g, '');
+  if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
+    log.debug("Leaving certificateDerOf(). Not base64.");
+    return null;
+  }
+  const der = Buffer.from(body, 'base64');
+  // A DER certificate is a SEQUENCE; anything else is not one, and keying it
+  // would only make a lookup answer an entry for something that cannot be
+  // presented.
+  log.debug("Leaving certificateDerOf().");
+  return der.length > 16 && der[0] === 0x30 ? der : null;
+}
+
+/**
+ * The SHA-256 digests, lower-case hex, of the certificates an entry stores in
+ * `userCertificate` (either spelling), each once.
+ *
+ * @param attrs - the entry's attributes, plaintext
+ * @returns the digests
+ */
+function certificateDigestsOf(attrs) {
+  log.debug("Entering certificateDigestsOf().");
+  const out = [];
+  CERTIFICATE_ATTRIBUTES.forEach(function (name) {
+    valuesOf(attrs, name).forEach(function (one) {
+      const der = certificateDerOf(one);
+      if (der) {
+        const hex = require('../common/crypto').digest('sha256', der, 'hex');
+        if (out.indexOf(hex) < 0) {
+          out.push(hex);
+        }
+      }
+    });
+  });
+  log.debug("Leaving certificateDigestsOf(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * The keys one value of a granting attribute is found by: the value trimmed
+ * and lower-cased (a group's cn), and for a DN-shaped value its normalised
+ * form as well (each RDN trimmed and lower-cased — `ldap_server.js`'s
+ * `normalizeDn()`). A name or a DN asked of `grantinggroup` is asked in one
+ * of these forms.
+ *
+ * @param value - the stored value, or the name or DN being asked about
+ * @returns the keys, each once
+ */
+function grantingKeysOf(value) {
+  log.debug("Entering grantingKeysOf().");
+  const text = String(value == null ? '' : value).trim();
+  const out = [];
+  if (text) {
+    out.push(text.toLowerCase());
+    if (DN_SHAPED.test(text)) {
+      const dn = text.split(',').map(function (part) {
+        return part.trim().toLowerCase();
+      }).join(',');
+      if (out.indexOf(dn) < 0) {
+        out.push(dn);
+      }
+    }
+  }
+  log.debug("Leaving grantingKeysOf().");
+  return out;
+}
+
+/**
+ * The `grantinggroup` keys of an entry: `grantingKeysOf()` of every value of
+ * every granting attribute it holds, each once.
+ *
+ * @param attrs - the entry's attributes, plaintext
+ * @returns the keys
+ */
+function grantingGroupKeysOf(attrs) {
+  log.debug("Entering grantingGroupKeysOf().");
+  const out = [];
+  GRANTING_ATTRIBUTES.forEach(function (name) {
+    valuesOf(attrs, name).forEach(function (one) {
+      grantingKeysOf(one).forEach(function (key) {
+        if (out.indexOf(key) < 0) {
+          out.push(key);
+        }
+      });
+    });
+  });
+  log.debug("Leaving grantingGroupKeysOf(). " + out.length + ".");
+  return out;
+}
+
 function lowered(list) {
   log.debug("Entering lowered().");
   log.debug("Leaving lowered().");
@@ -147,22 +333,69 @@ function indexOf(attrs) {
   };
   const valueKeys = [];
   VALUE_INDEXED.forEach(function (name) {
-    unique(valuesOf(a, name)).forEach(function (one) {
+    const values = name === 'usercertificatesha256'
+      ? certificateDigestsOf(a)
+      : (name === 'grantinggroup' ? grantingGroupKeysOf(a)
+        : unique(valuesOf(a, name)));
+    values.forEach(function (one) {
       valueKeys.push(lookupOf('attr:' + name, one));
     });
   });
   const out = {
-    nameKeys: keyed('name', lowered(valuesOf(a, 'uid'))),
+    // `uid` and a live pseudonym answer the same question (#644). The
+    // pending address is a different attribute and is not a key.
+    nameKeys: keyed('name', lowered(valuesOf(a, 'uid')
+      .concat(valuesOf(a, 'stspseudonym')))),
     mailKeys: keyed('mail', lowered(valuesOf(a, 'mail'))),
     uuidKeys: keyed('uuid', lowered(valuesOf(a, 'entryuuid')
       .concat(valuesOf(a, 'stsentryuuidalias')))),
-    classKeys: keyed('class', lowered(valuesOf(a, 'objectclass'))),
+    classKeys: keyed('class', lowered(valuesOf(a, 'objectclass'))
+      .filter(function (one) {
+        return CLASS_INDEXED.indexOf(one) >= 0;
+      })),
     valueKeys: valueKeys,
     attrNames: unique(Object.keys(a).map(function (one) {
       return one.toLowerCase();
     }))
   };
   log.debug("Leaving indexOf().");
+  return out;
+}
+
+// A value sealed under a data key: `$aesgcm$2$<dek id>$…` or the same with
+// `aessiv` (persistence_postgres.js's SEALED_VALUE, which re-seals by it).
+const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+
+/**
+ * The data keys an entry holds values under, for `sts_ldap_entries.dek_keys`
+ * (#623): `{ <dek id>: <values> }` — the stored blob's own key, once, and the
+ * key of every value sealed INSIDE the attributes, once per value. What the
+ * re-encryption job finds an entry by and what `sts_ldap_dek_counts` sums,
+ * so it counts what the directory walk it replaced counted.
+ *
+ * @param attrs - the attributes as text (their JSON) or as an object; a
+ *   blob that did not open is passed as null and counts for its own key only
+ * @param stored - the `attrs` column value: the sealed blob, or the plain
+ *   attributes where nothing seals
+ * @returns the map, `{}` for an entry holding nothing sealed
+ */
+function dekKeysOf(attrs, stored) {
+  log.debug("Entering dekKeysOf().");
+  const out = {};
+  const add = function (id) {
+    if (id) {
+      out[id] = (out[id] || 0) + 1;
+    }
+  };
+  if (typeof stored === 'string') {
+    add(require('../common/crypto').dekIdOf(stored));
+  }
+  const text = typeof attrs === 'string' ? attrs
+    : (attrs === null || attrs === undefined ? '' : JSON.stringify(attrs));
+  (text.match(SEALED_VALUE) || []).forEach(function (one) {
+    add(one.split('$')[3]);
+  });
+  log.debug("Leaving dekKeysOf().");
   return out;
 }
 
@@ -180,6 +413,37 @@ function create(tier) {
   const codecTier = tier === 'service' ? 'service' : 'cell';
   const codec = {
     tier: codecTier,
+    /**
+     * Makes each realm's `directory` data encryption key ahead of a flush
+     * that will seal entries of it (2026-10-27): the flush waits for the
+     * queued key rows BEFORE it writes, and a key first made by a seal
+     * inside the write was queued after that wait, so its row commits after
+     * the entries sealed under it and every other process's change-log
+     * reader drops them (STS-STORE-0042/0072). `keystore.ensureDek()`.
+     *
+     * @param realmIds - the realms whose entries are about to be sealed
+     * @returns how many realms hold a key now
+     */
+    prepareKeys: function (realmIds) {
+      log.debug("Entering codec.prepareKeys().");
+      if (!sealing()) {
+        log.debug("Leaving codec.prepareKeys(). Not sealing.");
+        return 0;
+      }
+      const ks = keystore();
+      if (!ks || typeof ks.ensureDek !== 'function') {
+        log.debug("Leaving codec.prepareKeys(). No keystore.");
+        return 0;
+      }
+      let held = 0;
+      (realmIds || []).forEach(function (realmId) {
+        if (ks.ensureDek(LABEL, codecTier, { realm: String(realmId || '') })) {
+          held += 1;
+        }
+      });
+      log.debug("Leaving codec.prepareKeys(). " + held);
+      return held;
+    },
     /**
      * The `attrs` column value for an entry: the sealed blob (a JSON string)
      * or the attributes themselves.
@@ -233,7 +497,8 @@ function create(tier) {
       log.debug("Leaving codec.openAttributes().");
       return parsed.a || {};
     },
-    index: indexOf
+    index: indexOf,
+    dekKeys: dekKeysOf
   };
   log.debug("Leaving create().");
   return codec;
@@ -256,15 +521,43 @@ function keyArgs(name, args) {
   if (name === 'byName') {
     const wanted = lower(a[2]);
     a[2] = { key: lookupOf('name', wanted), rdn: wanted };
+  } else if (name === 'withNames') {
+    a[2] = (a[2] || []).map(function (one) {
+      const wanted = lower(one);
+      return { key: lookupOf('name', wanted), rdn: wanted };
+    });
   } else if (name === 'byUuid') {
     a[1] = { key: lookupOf('uuid', lower(a[1])) };
+  } else if (name === 'withUuids') {
+    a[1] = (a[1] || []).map(function (one) {
+      return { key: lookupOf('uuid', lower(one)) };
+    });
   } else if (name === 'byMail') {
     a[1] = { key: lookupOf('mail', lower(a[1])) };
+  } else if (name === 'equalUnder') {
+    a[3] = { key: lookupOf(String(a[2]), lower(a[3])) };
   } else if (name === 'byAttribute') {
+    // An attribute `value_keys` does not hold would be answered "nobody" by
+    // a question that looks right — `classesUnder`'s reason, below (#636).
+    if (VALUE_INDEXED.indexOf(lower(a[1])) < 0) {
+      log.debug("Leaving keyArgs(). An attribute that is not indexed.");
+      throw new Error('directory_codec: byAttribute is asked only for the ' +
+                      'value-indexed attributes (' +
+                      VALUE_INDEXED.join(', ') + '), not ' + lower(a[1]));
+    }
     a[2] = { key: lookupOf('attr:' + lower(a[1]), String(a[2])) };
   } else if (name === 'classesUnder') {
     a[2] = (a[2] || []).map(function (one) {
-      return { key: lookupOf('class', lower(one)) };
+      const wanted = lower(one);
+      // A class the column does not hold would be answered "nobody" by a
+      // question that looks right, so it is refused where it is asked.
+      if (CLASS_INDEXED.indexOf(wanted) < 0) {
+        log.debug("Leaving keyArgs(). A class that is not indexed.");
+        throw new Error('directory_codec: classesUnder is asked only for ' +
+                        'the group classes (' + CLASS_INDEXED.join(', ') +
+                        '), not ' + wanted);
+      }
+      return { key: lookupOf('class', wanted) };
     });
   }
   log.debug("Leaving keyArgs().");
@@ -283,8 +576,9 @@ function keyArgs(name, args) {
  */
 function openAnswer(codec, name, answer) {
   log.debug("Entering openAnswer(). " + name);
-  if (!Array.isArray(answer)) {
-    log.debug("Leaving openAnswer(). Not rows.");
+  // KEYS AND DNs ONLY (`keysUnder`, #616): nothing sealed to open.
+  if (!Array.isArray(answer) || name === 'keysUnder') {
+    log.debug("Leaving openAnswer(). Not entries.");
     return answer;
   }
   const out = [];
@@ -316,12 +610,20 @@ function openAnswer(codec, name, answer) {
 module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
+  GRANTING_ATTRIBUTES: GRANTING_ATTRIBUTES,
+  grantingKeysOf: grantingKeysOf,
+  grantingGroupKeysOf: grantingGroupKeysOf,
+  CLASS_INDEXED: CLASS_INDEXED,
+  CERTIFICATE_ATTRIBUTES: CERTIFICATE_ATTRIBUTES,
+  certificateDerOf: certificateDerOf,
+  certificateDigestsOf: certificateDigestsOf,
   create: create,
   // The same, for the postgres driver, whose own factory is `create()`: a
   // `create(` in its body reads to tests/no_periodic_timers.js as the
   // factory calling itself.
   codecFor: create,
   indexOf: indexOf,
+  dekKeysOf: dekKeysOf,
   lookupOf: lookupOf,
   keyArgs: keyArgs,
   openAnswer: openAnswer

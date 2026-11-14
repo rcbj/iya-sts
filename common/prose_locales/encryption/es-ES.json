@@ -1,0 +1,6 @@
+{
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "Se cuenta en el ÚNICO embudo por el que pasan ambas operaciones — `encryptWithDek()` y `decryptWithDek()` de `crypto.js`, con los propios envolvimientos y desenvolvimientos de las claves de cifrado de datos bajo `data-keys` — y no en los puntos de llamada, porque un total armado a partir de los puntos de llamada es incorrecto la primera vez que alguien añade otro, y lo es EN SILENCIO. El desglose de abajo es por una ETIQUETA que pasa cada punto de llamada; un llamante que no pasa ninguna se cuenta igual, bajo `(unlabelled)`. ESTAS CIFRAS SON DE TODO EL PROCESO Y NO POR DOMINIO — una clave de cifrado de claves pertenece al proceso, así que dividir el recuento por dominio sería contar el dominio en el que casualmente estaba una solicitud — y están en memoria, así que un reinicio es la forma de obtener uno vacío."
+  }
+}

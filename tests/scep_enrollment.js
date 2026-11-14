@@ -9,7 +9,7 @@
 // SCEP (RFC 8894), IN PROCESS: THE CMS CODEC, THE RA CERTIFICATE, THE HANDLER,
 // THE CONSOLE MODEL AND THE STORES' REALM BOUNDARY (2026-09-13).
 //
-// `tests/vendored/sts_scep_enrollment.js` drives the protocol over HTTP with an
+// `tests/protocol/sts_scep_enrollment.js` drives the protocol over HTTP with an
 // independent client and holds everything a device can see. What is here is
 // the half it cannot:
 //
@@ -30,10 +30,10 @@
 //      reads (the third statement of one shape, see scep_console.js).
 //   5. THE failInfo EVERY CORE CODE MAPS TO.
 //
-// The messages are built with `tests/vendored/scep_client.js` — the protocol
+// The messages are built with `tests/protocol/scep_client.js` — the protocol
 // job's own client — rather than with `scep/scep_cms.ts`, for that job's
 // reason: a codec checked against itself agrees with itself. It is one of the
-// few requires from `tests/` into `tests/vendored/`, and the first of them is
+// few requires from `tests/` into `tests/protocol/`, and the first of them is
 // argued in `tests/saml_assertion_grant.js` on the same ground.
 //
 // The in-process server is `common/app.js` on an ephemeral port; the realm it
@@ -65,7 +65,7 @@ scepModule.registerRoutes(app);
 require('../scep/scep_admin').registerRoutes(app);
 const consoleModel = require('../scep/scep_console');
 const api = require('../scep/scep_api');
-const client = require('./vendored/scep_client');
+const client = require('./protocol/scep_client');
 
 const log = require('bunyan').createLogger({ name: 'scep_enrollment',
   level: process.env.LOG_LEVEL || 'info' });
@@ -502,26 +502,21 @@ async function checkConsole(t) {
           view.endpoints.getCaCert === 'https://x.test/enroll/scep' +
           '?operation=GetCACert', 'nine profiles and the device profile, five ' +
           'refused, absolute URLs');
-  const route = (app._router || app.router).stack.filter(function (one) {
-    return one.route && one.route.path === '/admin/scep' &&
-           one.route.methods.get;
-  })[0];
-  let pageJson = null;
-  const res = { headers: {}, locals: {},
-    set: function (k, v) { res.headers[k] = v; return res; },
-    status: function () { return res; },
-    type: function () { return res; },
-    send: function (body) { pageJson = body; return res; } };
-  route.route.stack[0].handle(Object.assign(fakeReq({ format: 'json',
-                                                      per: '1000' }),
-                                            { path: '/admin/scep',
-                                              originalUrl: '/admin/scep' }),
-                              res, function () {});
-  const page = JSON.parse(pageJson || '{}');
+  // THE PAGE IS THE OPERATION'S ANSWER, drawn (#446): asked of GET
+  // /admin-api/scep and drawn by its renderer, as the static console draws
+  // it — the SCEP tab of Protocols → Cert issuance since 2026-10-12, its
+  // answer composed into that page's view as `scep`.
+  const drawn = await require('./tools/console_page.js')
+    .consolePage(__dirname + '/..').draw('/admin/cert-issuance',
+                                         { per: '1000' });
+  const page = JSON.parse(JSON.stringify((drawn.json || {}).scep || {}));
   delete page.protocolEndpoints;
   t.equal(JSON.stringify(Object.keys(page).sort()),
           JSON.stringify(Object.keys(view).sort()),
-          'GET /admin/scep?format=json is the view the API answers with');
+          'GET /admin-api/scep answers the view the page is drawn from');
+  t.check(drawn.status === 200 && drawn.html.indexOf(made.challenge) < 0 &&
+          /SCEP/.test(drawn.html),
+          'and the page drawn from it carries no challenge');
   const actionsRow = api.ROUTES.filter(function (one) {
     return one.actions;
   })[0];

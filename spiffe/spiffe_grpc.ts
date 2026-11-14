@@ -71,6 +71,7 @@ import path = require('path');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import LazyModule = require('../common/lazy_module');
+import SpiffeModel = require('./spiffe_model');
 const { log } = helpers;
 // ---------------------------------------------------------------------------
 // THE gRPC RUNTIME AND ITS PROTO LOADER ARE REQUIRED AT FIRST USE (#348).
@@ -129,7 +130,7 @@ import authn = require('../authn/authn');
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.
 import accessGate = require('../common/access_gate');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 // For the server's own SVID and the roots it verifies clients against. Both
 // register nothing, so neither can move a route or close a cycle.
 import spiffeId = require('./spiffe_id');
@@ -201,7 +202,7 @@ interface SpiffeGrpcDeps {
   auth: typeof auth;
   authn: typeof authn;
   accessGate: typeof accessGate;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   spiffeId: typeof spiffeId;
   ca: typeof ca;
   peer: typeof peer;
@@ -288,7 +289,7 @@ class SpiffeGrpc {
       auth: auth,
       authn: authn,
       accessGate: accessGate,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       spiffeId: spiffeId,
       ca: ca,
       peer: peer,
@@ -558,6 +559,65 @@ class SpiffeGrpc {
   // of its own (an authorization refusal, a JWT-SVID refused at
   // ValidateJWTSVID) and a second coded row would count one refusal twice.
   /**
+   * A request field's refusal, from the model: the call marked with its
+   * error code, and the status error to throw. The handler decides WHERE
+   * the field is read and what it read; the model says what is refused and
+   * in which words (#1579).
+   *
+   * @param call - the gRPC call
+   * @param message - the request message's full name in the protos
+   * @param field - the field
+   * @param when - `empty`, `malformed` or `unexpected`
+   * @param method - the method, where the message is shared by several
+   * @param reason - a malformed SPIFFE ID's sentence
+   * @returns the error
+   */
+  // error-code: none — the code comes from the model and is marked here
+  refuseField(call, message, field, when, method?, reason?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering SpiffeGrpc.refuseField().");
+    const refusal = SpiffeModel.refusal(message, field, when, method, reason);
+    errorCodes.mark(call, refusal.code);
+    log.debug("Leaving SpiffeGrpc.refuseField(). " + refusal.code);
+    // error-code: none — a constructor; marked on the line above
+    return this.statusError(refusal.status, refusal.message);
+  }
+
+  /**
+   * Holds a message about to be written to its method's response in the
+   * model, and hands it back unchanged (#1579).
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param reply - the message
+   * @returns the message
+   */
+  answer(surface, method, reply) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.answer().");
+    SpiffeModel.holdReply(surface, method, reply);
+    log.debug("Leaving SpiffeGrpc.answer().");
+    return reply;
+  }
+
+  /**
+   * Holds the status a call ends with to the model's, and hands it back
+   * unchanged (#1579).
+   *
+   * @param surface - the surface
+   * @param method - the method
+   * @param ending - the status object grpc-js sends
+   * @returns the status object
+   */
+  ended(surface, method, ending) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.ended().");
+    SpiffeModel.holdStatus(surface, method, ending.code);
+    log.debug("Leaving SpiffeGrpc.ended().");
+    return ending;
+  }
+
+  /**
    * Decides which error code the audit row for a failed call carries.
    *
    * @param call - the gRPC call
@@ -747,16 +807,15 @@ class SpiffeGrpc {
    * @returns the session, or null when nobody authenticated
    */
   sessionForCaller(caller) {
-    const { log, nodeCrypto, authn, errorCodes } = this.deps;
+    const { log, stsCrypto, authn, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.sessionForCaller().');
     if (!caller || !caller.authenticated || !caller.spiffeId) {
       log.debug('Leaving SpiffeGrpc.sessionForCaller(). Nobody authenticated.');
       return null;
     }
     try {
-      const key = nodeCrypto.createHash('sha256')
-        .update('spire-server-api ' + String(caller.spiffeId))
-        .digest('hex').slice(0, 24);
+      const key = stsCrypto.digest('sha256',
+        'spire-server-api ' + String(caller.spiffeId), 'hex').slice(0, 24);
       const session = authn.startSession(
         { set: function () {}, req: null }, caller.spiffeId,
         ['swk'], '1', 'SPIRE Server API',
@@ -1079,7 +1138,7 @@ class SpiffeGrpc {
                              SECURITY_HEADER + ': true" (SPIFFE Workload ' +
                              'Endpoint specification). This one did not. ' +
                              'Every conforming Workload API will refuse it, ' +
-                             'which is why this mock does too; ' +
+                             'which is why this service does too; ' +
                              'spiffe.requireSecurityHeader turns the check ' +
                              'off if you are deliberately testing something ' +
                              'else.') };
@@ -1563,7 +1622,8 @@ class SpiffeGrpc {
                           { refused: prepared.refusal.message },
                           prepared.caller, prepared.errorCode);
           log.debug('Leaving the ' + method + ' handler. Refused.');
-          callback(self.errorToStatus(prepared.refusal, method));
+          callback(self.ended(surface, method,
+                              self.errorToStatus(prepared.refusal, method)));
           return;
         }
         Promise.resolve()
@@ -1590,11 +1650,12 @@ class SpiffeGrpc {
           })
           .then(function (reply) {
             self.recordCall(surface, method, true, {}, prepared.caller);
-            callback(null, reply || {});
+            callback(null, self.answer(surface, method, reply || {}));
             log.debug('Leaving the ' + method + ' handler.');
           })
           .catch(function (err) {
-            const status = self.errorToStatus(err, method);
+            const status = self.ended(surface, method,
+                                      self.errorToStatus(err, method));
             self.recordCall(surface, method, false, { status: status.code },
                             prepared.caller,
                             self.failureCodeOf(call, err));
@@ -1725,7 +1786,9 @@ class SpiffeGrpc {
   // the SPIRE Server API's among them — does leave this thread. `bidiStream()`
   // is unchanged for the same reason read the other way: `AttestAgent` and
   // `SyncAuthorizedEntries` are request/response in practice, but the stream
-  // and its `data`/`end` events belong to the connection.
+  // and its `data`/`end` events belong to the connection. Those events are
+  // emitted outside the handler's `realms.run()`, so `handlersInRealm()`
+  // rebinds the listeners (`bindCallListeners()`, #324).
   // ---------------------------------------------------------------------------
   /**
    * Wraps a server-streaming handler, which is never dispatched: the stream
@@ -1749,7 +1812,8 @@ class SpiffeGrpc {
           self.recordCall(surface, method, false,
                           { refused: prepared.refusal.message },
                           prepared.caller, prepared.errorCode);
-          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          call.emit('error', self.ended(surface, method,
+            self.errorToStatus(prepared.refusal, method)));
           log.debug('Leaving the ' + method + ' stream handler. Refused.');
           return;
         }
@@ -1779,7 +1843,7 @@ class SpiffeGrpc {
                 log.debug("Leaving push().");
                 return false;
               }
-              call.write(message);
+              call.write(self.answer(surface, method, message));
               log.debug("Leaving push().");
               return true;
             }, function end(err) {
@@ -1792,12 +1856,15 @@ class SpiffeGrpc {
                 return;
               }
               open = false;
-              call.emit('error', self.errorToStatus(err, method));
+              call.emit('error', self.ended(surface, method,
+                                            self.errorToStatus(err, method)));
               log.debug("Leaving end().");
             });
           })
           .then(function (first) {
-            if (first && open) call.write(first);
+            if (first && open) {
+              call.write(self.answer(surface, method, first));
+            }
             self.recordCall(surface, method, true, { streaming: true },
                             prepared.caller);
             log.debug('Leaving the ' + method + ' stream handler. The ' +
@@ -1805,7 +1872,8 @@ class SpiffeGrpc {
                       'ending as a fault.');
           })
           .catch(function (err) {
-            const status = self.errorToStatus(err, method);
+            const status = self.ended(surface, method,
+                                      self.errorToStatus(err, method));
             self.recordCall(surface, method, false, { status: status.code },
                             prepared.caller,
                             self.failureCodeOf(call, err));
@@ -1831,7 +1899,7 @@ class SpiffeGrpc {
   // a client that sent its one message and half-closed (a shape gRPC allows)
   // got an empty stream while the handler went on to SPEND THE JOIN TOKEN and
   // record the agent, so every retry was refused as spent.
-  // `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  // `tests/protocol/sts_spiffe_grpc.js` recorded it as a service defect and
   // worked round it on the client side; this is the fix. The stream is ended
   // once every handler started so far has written its answer or failed, and a
   // challenge outstanding at the half-close is failed with `ended` — the
@@ -1858,7 +1926,8 @@ class SpiffeGrpc {
           self.recordCall(surface, method, false,
                           { refused: prepared.refusal.message },
                           prepared.caller, prepared.errorCode);
-          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          call.emit('error', self.ended(surface, method,
+            self.errorToStatus(prepared.refusal, method)));
           log.debug('Leaving the ' + method + ' bidi handler. Refused.');
           return;
         }
@@ -1929,7 +1998,7 @@ class SpiffeGrpc {
                               ' second(s).');
                 }, timeoutMs)
               };
-              call.write(message);
+              call.write(self.answer(surface, method, message));
             });
           }
         };
@@ -1945,7 +2014,9 @@ class SpiffeGrpc {
           const running = Promise.resolve()
             .then(function () { return handler(request, call, conversation); })
             .then(function (reply) {
-              if (reply && !failed) call.write(reply);
+              if (reply && !failed) {
+                call.write(self.answer(surface, method, reply));
+              }
             })
             .catch(function (err) {
               log.debug("Caught in the " + method + " bidi handler: " +
@@ -1955,7 +2026,8 @@ class SpiffeGrpc {
               }
               failed = true;
               failWaiting('ended', 'The stream failed.');
-              const status = self.errorToStatus(err, method);
+              const status = self.ended(surface, method,
+                                        self.errorToStatus(err, method));
               self.recordCall(surface, method, false, { status: status.code },
                               prepared.caller, self.failureCodeOf(call, err));
               call.emit('error', status);
@@ -2430,6 +2502,22 @@ class SpiffeGrpc {
     return options;
   }
 
+  /**
+   * The chain a SPIFFE gRPC listener presents for its server SVID: the SVID,
+   * the authorities above it, and the Root that signs them (#1064), from the
+   * one function every TLS listener here takes its bundle from.
+   *
+   * @param svid - a minted X509-SVID; its `chainPem` is leaf-first
+   * @returns the PEM bundle
+   */
+  static presentedChainPem(svid: any): string {
+    helpers.log.debug('Entering SpiffeGrpc.presentedChainPem().');
+    const chain = (svid && svid.chainPem) || [];
+    helpers.log.debug('Leaving SpiffeGrpc.presentedChainPem().');
+    return require('../tls/tls_server').presentedBundlePem({
+      certPem: chain[0] || '', chainPem: chain.slice(1) });
+  }
+
   async svidServerCredentials(surface: string) {
     const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
@@ -2484,11 +2572,13 @@ class SpiffeGrpc {
       // `unable to get issuer certificate` — a message about the ANCHOR, on a
       // connection whose chain was complete. The Root anchors it, and a client
       // presenting [leaf, SPIFFE Issuing CA, Intermediate] builds a path to it.
-      Buffer.from(ca.state().trustAnchors.map(function (anchor) {
-        return anchor.certificatePem;
-      }).join('\n'), 'utf8'),
+      //
+      // **AND EVERY FEDERATED TRUST DOMAIN'S X.509 AUTHORITIES (#438)** —
+      // `listenerTrustPem()` says why, and what it cannot do.
+      this.listenerTrustPem().pem,
       [{ private_key: Buffer.from(svid.privateKeyPem, 'utf8'),
-         cert_chain: Buffer.from(svid.chainPem.join('\n'), 'utf8') }],
+         cert_chain: Buffer.from(SpiffeGrpc.presentedChainPem(svid),
+                                 'utf8') }],
       true);
     try {
       // See the header. This is a reach into grpc-js's own options object and
@@ -2529,6 +2619,8 @@ class SpiffeGrpc {
               SpiffeGrpc.policyContextOptions(kind)));
           });
       held.stsPolicyKind = kind;
+      held.stsSurface = surface;
+      held.stsTrustFingerprint = this.listenerTrustPem().fingerprint;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +
@@ -2557,7 +2649,7 @@ class SpiffeGrpc {
   // presenting [SVID, old SPIFFE Issuing CA, old Intermediate] under a Root
   // nothing held, and every mutual-TLS caller holding the new bundle was
   // refused with `unable to get local issuer certificate` until a restart
-  // (tests/vendored/sts_spiffe_grpc.js section 7, red in every mode).
+  // (tests/protocol/sts_spiffe_grpc.js section 7, red in every mode).
   //
   // grpc-js keeps a watcher on every bound server for its credentials and
   // hands `updateSecureContextOptions()` to it as `setSecureContext()`, which
@@ -2581,11 +2673,11 @@ class SpiffeGrpc {
     const identity = spiffeId.serverId(ca.trustDomain());
     const svid = await ca.mintX509Svid(identity,
       { ttl: config.value('spiffe.caTtl') });
+    const trust = this.listenerTrustPem();
+    credentials.stsTrustFingerprint = trust.fingerprint;
     credentials.updateSecureContextOptions(Object.assign({
-      ca: Buffer.from(ca.state().trustAnchors.map(function (anchor) {
-        return anchor.certificatePem;
-      }).join('\n'), 'utf8'),
-      cert: [Buffer.from(svid.chainPem.join('\n'), 'utf8')],
+      ca: trust.pem,
+      cert: [Buffer.from(SpiffeGrpc.presentedChainPem(svid), 'utf8')],
       key: [Buffer.from(svid.privateKeyPem, 'utf8')]
     // The listeners' policy (#423) goes with every new context: a context
     // without it is node's defaults until the next setting change.
@@ -2594,6 +2686,121 @@ class SpiffeGrpc {
              'certificate as ' + identity + ' (serial ' + svid.serialHex +
              ') under the replaced Root.');
     log.debug('Leaving SpiffeGrpc.refreshServerApiCredentials().');
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE SPIRE SERVER API'S AND THE BROKER API'S HANDSHAKE TRUSTS (#438,
+  // 2026-10-13): THIS REALM'S TRUST ANCHORS AND EVERY FEDERATED TRUST
+  // DOMAIN'S X.509 AUTHORITIES.
+  //
+  // Both listeners REQUEST a client certificate without requiring one, and
+  // `spiffe_auth.ts` verifies what arrived itself — against this realm's
+  // authorities AND its federated trust domains'. Until #438 the handshake's
+  // `ca` held only the realm's anchors, so a federated SVID never verified at
+  // the TLS layer, and grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j) hands
+  // `getAuthContext()` an EMPTY object for a certificate OpenSSL did not
+  // authorize: a federated broker or agent was "none presented" to the
+  // service until `spiffe_auth.ts` learnt to read the socket
+  // (`tlsPeerCertificateOf()`). With the federated authorities here, OpenSSL
+  // chains a federated SVID, the auth context carries it, and the
+  // certificate request's acceptable-CA list names the federated authorities
+  // too — which is what a client choosing among certificates reads.
+  //
+  // **THE TLS VERDICT STILL DECIDES NOTHING.** `spiffe_auth.ts` verifies
+  // every SVID against the bundles, the trust domain against the authority
+  // that signed it (so a federated authority vouching for a name in THIS trust
+  // domain is refused there), and revocation — whatever OpenSSL said.
+  //
+  // **A FEDERATED AUTHORITY THAT IS NOT SELF-SIGNED DOES NOT ANCHOR HERE, AND
+  // NOTHING IN THIS PROCESS CAN MAKE IT.** In SPIFFE a bundle authority is a
+  // trust anchor whatever its shape, and OpenSSL needs
+  // `X509_V_FLAG_PARTIAL_CHAIN` to treat a non-self-signed certificate in the
+  // truststore as one. Node's `allowPartialTrustChain` sets it — and
+  // `tls.Server`'s `setSecureContext()`, which both
+  // `http2.createSecureServer()` and grpc-js's `updateSecureContextOptions()`
+  // go through, copies a fixed list of options into the context it builds,
+  // and that one is not on it:
+  // measured on node 22.13 and 24.16, a server given only an intermediate and
+  // the flag answers `UNABLE_TO_GET_ISSUER_CERT` at construction and after
+  // `setSecureContext()` alike. So an SVID under such an authority is
+  // unauthorized at the handshake, and `spiffe_auth.ts`'s read of the socket
+  // is what keeps it verifiable — and keeps "did not verify" apart from "none
+  // was presented", which an empty auth context alone cannot tell apart.
+  // Reaching past grpc-js into node's SecureContext to set the flag would be a
+  // second private-member reach for a case no SPIRE deployment publishes (its
+  // bundle authorities are roots, an UpstreamAuthority's included).
+  //
+  // Read in the AMBIENT realm, like every other reader here: the listeners
+  // are built and refreshed inside the realm whose socket it is.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the PEM a SPIFFE TCP listener's handshake trusts: this realm's
+   * anchors and every federated trust domain's X.509 authorities.
+   *
+   * @returns `{ pem, fingerprint, federated }` — the buffer for `ca`, its text
+   *   for telling a change, and how many federated authorities it holds
+   */
+  listenerTrustPem(): { pem: Buffer, fingerprint: string, federated: number } {
+    const { log, ca } = this.deps;
+    log.debug('Entering SpiffeGrpc.listenerTrustPem().');
+    const own = ca.state().trustAnchors.map(function (anchor) {
+      return anchor.certificatePem;
+    });
+    const foreign = ca.federatedX509AuthoritiesPem().map(function (row) {
+      return row.certificatePem;
+    });
+    const text = own.concat(foreign).map(function (pem) {
+      return String(pem).trim();
+    }).join('\n');
+    log.debug('Leaving SpiffeGrpc.listenerTrustPem(). ' + own.length +
+              ' anchor(s), ' + foreign.length + ' federated.');
+    return { pem: Buffer.from(text, 'utf8'), fingerprint: text,
+             federated: foreign.length };
+  }
+
+  // -------------------------------------------------------------------------
+  // A CHANGED FEDERATION ON A SOCKET ALREADY BOUND (#438).
+  //
+  // `spiffe_server.ts` calls this for both of a realm's TCP listeners when a
+  // federated bundle is added, changed or removed — by this process, another
+  // one, or another node, through the change log (`spiffe_ca.ts`, the
+  // declaration of `federated`). Only `ca` moves: the context in force is
+  // taken as it is — this listener's own SVID, which nothing here re-mints,
+  // and the listeners' policy (#423) — so a trust change costs no signature
+  // and never presents a different certificate. `rejectUnauthorized` is a
+  // CONSTRUCTOR option and untouched, so AttestAgent's no-SVID bootstrap is
+  // exactly what it was. Nothing is re-applied when the trust is unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * Re-applies a listener's TLS trust after its realm's federated bundles
+   * changed, to the next handshake; the rest of the context is kept.
+   *
+   * @param credentials - the listener's credentials
+   * @returns whether the trust changed
+   */
+  refreshListenerTrust(credentials): boolean {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeGrpc.refreshListenerTrust().');
+    const held: any = credentials;
+    const current = held && typeof held._getSecureContextOptions === 'function'
+      ? held._getSecureContextOptions() : null;
+    if (!current) {
+      log.debug('Leaving SpiffeGrpc.refreshListenerTrust(). No context.');
+      return false;
+    }
+    const trust = this.listenerTrustPem();
+    if (held.stsTrustFingerprint === trust.fingerprint) {
+      log.debug('Leaving SpiffeGrpc.refreshListenerTrust(). Unchanged.');
+      return false;
+    }
+    held.stsTrustFingerprint = trust.fingerprint;
+    held.updateSecureContextOptions(Object.assign({}, current,
+                                                  { ca: trust.pem }));
+    log.info('spiffe: the ' + (held.stsSurface || 'SPIFFE') + ' TCP ' +
+             'listener now trusts ' + trust.federated + ' federated X.509 ' +
+             'authority(ies) at the handshake, beside this realm\'s anchors.');
+    log.debug('Leaving SpiffeGrpc.refreshListenerTrust(). Changed.');
+    return true;
   }
 }
 
@@ -2801,6 +3008,7 @@ export = {
   notFound: slot.forward('notFound'),
   permissionDenied: slot.forward('permissionDenied'),
   unavailable: slot.forward('unavailable'),
+  refuseField: slot.forward('refuseField'),
   unary: slot.forward('unary'),
   serverStream: slot.forward('serverStream'),
   bidiStream: slot.forward('bidiStream'),
@@ -2815,6 +3023,8 @@ export = {
   brokerCredentials: slot.forward('brokerCredentials'),
   brokerHeaderPresent: slot.forward('brokerHeaderPresent'),
   refreshServerApiCredentials: slot.forward('refreshServerApiCredentials'),
+  refreshListenerTrust: slot.forward('refreshListenerTrust'),
+  listenerTrustPem: slot.forward('listenerTrustPem'),
   // Exported for `tests/spire_api_access_policy.js`, which drives the two
   // decisions this function makes directly: the claim is about a DECISION and
   // not about an endpoint, so driving it over gRPC would mean standing up two

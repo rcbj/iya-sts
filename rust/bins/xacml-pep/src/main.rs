@@ -14,6 +14,9 @@
 
 #![forbid(unsafe_code)]
 
+mod authzen;
+mod authzen_catalogue;
+mod authzen_map;
 mod enforce;
 mod listener;
 mod options;
@@ -37,7 +40,7 @@ use sts_core::log::{self, tag};
 use sts_core::version;
 use tokio::net::TcpListener;
 
-use crate::listener::HttpsListener;
+use crate::listener::{peer_of, HttpsListener, Transport};
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
 use crate::pip::RemotePip;
@@ -137,7 +140,7 @@ async fn serve_http(pep: Arc<Pep>, port: u16) {
         };
         let pep = pep.clone();
         tokio::spawn(async move {
-            let service = tower_service(pep);
+            let service = tower_service(pep, Transport::default());
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(TokioIo::new(stream), service)
                 .await;
@@ -148,11 +151,20 @@ async fn serve_http(pep: Arc<Pep>, port: u16) {
     }
 }
 
-fn tower_service(pep: Arc<Pep>) -> TowerToHyperService<axum::routing::Router> {
-    let router = axum::Router::new().fallback(move |request| {
-        let pep = pep.clone();
-        async move { pep.handle(request).await }
-    });
+/// The one handler, with what is known about the connection — the
+/// transport, and on HTTPS the caller's certificate (#1179) — put on every
+/// request it carries.
+fn tower_service(
+    pep: Arc<Pep>,
+    transport: Transport,
+) -> TowerToHyperService<axum::routing::Router> {
+    let router = axum::Router::new().fallback(
+        move |mut request: axum::http::Request<axum::body::Body>| {
+            let pep = pep.clone();
+            request.extensions_mut().insert(transport.clone());
+            async move { pep.handle(request).await }
+        },
+    );
     TowerToHyperService::new(router)
 }
 
@@ -187,8 +199,15 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
                 tracing::debug!("TLS handshake failed: {}", error);
                 return;
             }
+            let transport = Transport {
+                https: true,
+                peer: peer_of(tls.ssl()),
+            };
             let served = Builder::new(TokioExecutor::new())
-                .serve_connection(TokioIo::new(tls), tower_service(pep))
+                .serve_connection(
+                    TokioIo::new(tls),
+                    tower_service(pep, transport),
+                )
                 .await;
             if let Err(error) = served {
                 tracing::debug!("connection ended: {}", error);
@@ -200,10 +219,15 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
 #[tracing::instrument(level = "debug", skip_all)]
 async fn start(options: Options, info: version::VersionInfo) {
     tracing::info!(
-        "xacml-pep: version {} (build {}{}, {}). M.N is the service's own \
-         release; the build number is this image's.",
+        "xacml-pep: version {} ({}built {}{}, {}). The release is the \
+         service's own; the build number is this image's.",
         info.version,
-        info.build,
+        if info.release {
+            "a RELEASE build, "
+        } else {
+            ""
+        },
+        info.built_at,
         if info.commit.is_empty() {
             String::new()
         } else {
@@ -213,7 +237,7 @@ async fn start(options: Options, info: version::VersionInfo) {
             "stamped at image build time"
         } else {
             "COMPUTED AT STARTUP — this is not a built image, so the build \
-             number is when this process started"
+             time is when this process started"
         }
     );
     tracing::info!(
@@ -261,6 +285,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         &options.https_key_path,
         options.https_port,
         options.https_reload_interval_ms,
+        options.authzen_client_ca.as_deref(),
     ));
     let pep = Arc::new(Pep::new(
         options.clone(),
@@ -331,6 +356,33 @@ async fn start(options: Options, info: version::VersionInfo) {
             }
         });
     }
+    if options.authzen_enabled {
+        tracing::info!(
+            "xacml-pep: the AuthZEN edge PDP answers POST {} and {} on the \
+             HTTPS listener, to the callers pulled from the PDP ({}) \
+             presenting a certificate that verifies against \
+             PEP_AUTHZEN_CLIENT_CA{}.",
+            authzen::EVALUATION_PATH,
+            authzen::EVALUATIONS_PATH,
+            if options.authzen_callers_configured {
+                format!(
+                    "narrowed to the {} certificate(s) of \
+                     PEP_AUTHZEN_CALLERS, which decides alone until the \
+                     first pull",
+                    options.authzen_callers.len()
+                )
+            } else {
+                "PEP_AUTHZEN_CALLERS is not set; nothing is answered until \
+                 the first pull"
+                    .to_string()
+            },
+            if https.asks_for_client_certificates() {
+                ""
+            } else {
+                " — which is not set, so nobody is admitted"
+            }
+        );
+    }
     install_fault_handler();
     serve_http(pep, options.port).await;
 }
@@ -374,11 +426,19 @@ fn main() {
     log::install("xacml-pep", log::parse_level(&level));
     if args.get(1).map(String::as_str) == Some("--stamp") {
         let dir = args.get(2).map(String::as_str).unwrap_or(".");
-        let info = version::stamp(Path::new(dir));
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&info).unwrap_or_default()
-        );
+        // A release flag without a valid BUILD_NUMBER is refused (#1317):
+        // the message names both variables, and the non-zero exit fails the
+        // image build at its `RUN`, as `common/version.js --stamp` does.
+        match version::stamp(Path::new(dir)) {
+            Ok(info) => println!(
+                "{}",
+                serde_json::to_string_pretty(&info).unwrap_or_default()
+            ),
+            Err(refusal) => {
+                eprintln!("{}", refusal);
+                std::process::exit(1);
+            }
+        }
         return;
     }
     let here = std::env::current_dir().unwrap_or_else(|_| ".".into());

@@ -9,7 +9,7 @@
 // WHAT AN ACME REQUEST IS ON THE WIRE, AND WHERE ACME'S STATE LIVES — IN
 // PROCESS (2026-09-13).
 //
-// `tests/vendored/sts_acme_enrollment.js` drives the ACME server over HTTPS
+// `tests/protocol/sts_acme_enrollment.js` drives the ACME server over HTTPS
 // with an independent client, and `tests/acme_protocol.js` drives its handlers
 // in a child process. What is here is what neither can ask, because every
 // request either of them sends is one a CONFORMING client builds:

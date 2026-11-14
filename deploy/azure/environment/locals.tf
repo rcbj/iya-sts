@@ -61,7 +61,8 @@ locals {
 
   # A DEFAULT PORT IS LEFT OUT of the URL that goes inside a certificate:
   # deploy/aws/environment/locals.tf, `pki_public_url`, argues it.
-  pki_public_url = var.pki_listener_port == 80 ? "http://${local.public_host}" : "http://${local.public_host}:${var.pki_listener_port}"
+  # Behind Front Door, the direct name (frontdoor.tf): an edge speaks HTTPS only.
+  pki_public_url = var.pki_listener_port == 80 ? "http://${local.direct_host}" : "http://${local.direct_host}:${var.pki_listener_port}"
 
   # EVERY PORT THE LOAD BALANCER PUBLISHES and the node port behind it —
   # AWS's map, row for row (deploy/aws/environment/locals.tf argues each).
@@ -69,9 +70,13 @@ locals {
   # Azure load-balancing rule has a frontend and a backend port, so the
   # container listens where it always has and Docker publishes each port
   # 1:1 (units/sts-node.service.tftpl).
+  # NO PLAIN LDAP ON 389 (rcbj, 2026-11-10, AWS's locals.tf): the ASVS L2
+  # hardening (#1490) turns `ldap.plainListener` off in product, so a product
+  # node binds nothing there, and a published 389 was a port nobody answers
+  # (on AWS its health check replaced a healthy node). LDAPS on 636 is the
+  # directory's only published port.
   published_ports = merge({
     https = { listener = 443, container = 8081 }
-    ldap  = { listener = 389, container = 389 }
     ldaps = { listener = 636, container = 636 }
     pki   = { listener = var.pki_listener_port, container = 8082 }
     }, var.publish_kerberos ? {
@@ -100,6 +105,13 @@ locals {
   tls_keyfile     = "/var/run/sts-tls/key.pem"
   host_upload_dir = "/mnt/risk-uploads"
   risk_upload_dir = "/usr/src/sts/data/risk-uploads"
+
+  # THE USER THE SERVICE IMAGE RUNS AS (#254, 2026-10-06): `sts`, uid and gid
+  # 10001, fixed in the root Dockerfile rather than looked up, so that what
+  # the VM mounts into the node can be handed to it here. Two things are:
+  # the upload disk (sts-disk.sh) and the TLS key (sts-cert, node-init's
+  # cert.sh). Spelt once, like the paths above.
+  service_user = "10001:10001"
 
   # The vault's URL, with Key Vault's trailing slash removed: the SDK and
   # the REST calls both take it either way, and a URL spelt one way is easier

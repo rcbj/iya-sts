@@ -1,0 +1,15 @@
+{
+  "sub": "將您列為核准者的 AuthZEN 存取請求：某個應用程式的執行點被拒絕了領域政策允許申請的操作，正在等待政策指定的某位人員。<strong>核准本身不會授予任何權限</strong>：應用程式會攜帶核准再次詢問，由領域政策重新決定。",
+  "off": "此領域已關閉存取請求。",
+  "none": "沒有等待您處理的存取請求。",
+  "asks": "一個執行點請求此存取：",
+  "subject": "對象",
+  "action": "操作",
+  "resource": "資源",
+  "application": "應用程式",
+  "requester": "請求方",
+  "waits": "等待至 {when}。",
+  "approve": "核准",
+  "deny": "拒絕",
+  "done": "{status, select, approved {存取請求已核准。應用程式現在可以再次詢問。} denied {存取請求已拒絕。} other {存取請求狀態為 {status}。}}"
+}

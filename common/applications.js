@@ -67,7 +67,8 @@
 // objectClass in the whole of its lib/ tree are a default search filter and the
 // names of result codes 65 and 69, which a server would have to raise itself.
 // It is also a SUBMODULE this repository does not modify. So there was nothing
-// to extend and nothing to register with: the schema below is DEFINED HERE, and
+// to extend and nothing to register with: the schema is DEFINED BY THIS SERVICE
+// (models/directory/application.tsp since #1390), and
 // it is a VOCABULARY rather than a constraint. Nothing rejects an entry for
 // disobeying it, exactly as nothing rejects one anywhere else in this
 // deliberately schemaless directory — `GET /admin/ldap/service` says so at
@@ -132,26 +133,29 @@
 // (That page was unprotected when this was written; it is behind the console
 // gate since 2026-09-06, and an LDAP search never returns the attribute —
 // `ldap/ldap_server.js`'s `SECRET_ATTRIBUTES`.) The same objection applies to
-// `GET /krb5/principals`, which prints Kerberos passwords, and the answer is
-// the one written there: a debugger whose accounts are unusable without
-// reading the source is worse than one that says what they are. The secret is
+// `GET /krb5/principals`, which printed Kerberos passwords until #595, and
+// the answer is the one written there: a debugger whose accounts are
+// unusable without reading the source is worse than one that says what they
+// are. The secret is
 // generated per registration and lives on the entry, so it is written down
 // wherever the directory is (`persistence/CLAUDE.md`).
 //
 // It is worth being precise about what that costs now that RFC 9700 mode
 // CHECKS that secret (section 2.5): anyone who can read this directory can
-// authenticate as that client. On a service that authenticates nobody and says
-// so on every page, that is the honest state of affairs rather than a hole —
+// authenticate as that client. On a development-mode service that
+// authenticates nobody and says so on every page, that is the honest state of
+// affairs rather than a hole —
 // but it is why `audit.js` must never be given this value. Its rule that no
 // credential is ever recorded is about the audit log and stands untouched: the
 // rows this module writes name the application and never its secret.
 // ===========================================================================
 
-const crypto = require('crypto');
-// For TABLES only — the JWS and JWE algorithms RFC 9701's and RFC 9101's
-// client metadata may name (introspectionResponseProblem(), and the
-// REQUEST_OBJECT_* lists). A leaf `helpers.js` already requires, so this adds
-// nothing to the load path and closes no cycle.
+// The JWS and JWE algorithms RFC 9701's and RFC 9101's client metadata may
+// name (introspectionResponseProblem(), and the REQUEST_OBJECT_* lists), and
+// since #453 every digest, key import and random value here. A leaf
+// `helpers.js` already requires, so this adds nothing to the load path and
+// closes no cycle.
+const ModelTables = require('./model_tables');
 const stsCrypto = require('./crypto');
 const config = require('./config');
 // The mode. A LEAF (rule 3) requiring only `config`, which is already required
@@ -168,6 +172,8 @@ const audit = require('./audit');
 // `errorCodes.mark()` on the RESULT OBJECT — so a caller can read it with
 // `errorCodes.codeOf(result)` and the JSON a client receives is unchanged.
 const errorCodes = require('./error_codes');
+// A leaf over `config` (#704): the client-secret sweep's slices.
+const loopSlices = require('./loop_slices');
 const cacheRegistry = require('./cache_registry');
 // THE ROLE REGISTER, for one string and one reason: `DEFAULT_REQUIRED_ROLE`.
 // A plain require in the ordinary direction and it can stay one — `roles.js`
@@ -177,6 +183,7 @@ const cacheRegistry = require('./cache_registry');
 // files, and the day they disagreed every application would silently start
 // requiring a role nobody holds.
 const roles = require('./roles');
+const DomainClasses = require('./domain_classes');
 
 // THE KEY-ENCRYPTION KEY, for the one attribute in this table that is a PRIVATE
 // KEY (2026-09-10). It is a LIBRARY and registers nothing, and it requires
@@ -201,6 +208,11 @@ const validation = require('./validation');
 // no cycle and moves no route.
 const certificateSubject = require('./certificate_subject');
 
+// THE OAUTH MODEL (#1579): the JSON type of each client metadata member a
+// registration refusal tests. A leaf over `validation.js` and
+// `model_tables.js`, so the require closes no cycle and moves no route.
+const OAuthModel = require('../oauth-oidc/oauth_model');
+
 // ---------------------------------------------------------------------------
 // THE KINDS. One per way an application can present itself to this service.
 //
@@ -218,6 +230,12 @@ const certificateSubject = require('./certificate_subject');
 const KINDS = [
   { kind: 'oauth2-client', label: 'OAuth 2.0 client',
     what: 'A client_id presented at the authorization or token endpoint.' },
+  // #1139: this service's own APIs as resources, and any API an operator
+  // registers the same way. The one OAuth kind that is never a client.
+  { kind: 'oauth2-resource-server', label: 'OAuth 2.0 resource server',
+    what: 'An API access tokens are addressed to, named by its ' +
+          'oauthAudience. It is never a client: its client_id is refused ' +
+          'at every endpoint a client presents itself at.' },
   { kind: 'oidc-relying-party', label: 'OpenID Connect relying party',
     what: 'The same client_id where the request asked for the openid scope — ' +
           'a relying party is an OAuth client that also wants an ID Token, ' +
@@ -234,7 +252,8 @@ const KINDS = [
     what: 'An AppliesTo from a RequestSecurityToken — the service the token ' +
           'is for.' },
   { kind: 'oid4vp-verifier', label: 'OpenID4VP verifier',
-    what: 'The client_id the mock Verifier presents in an Authorization ' +
+    what: 'The client_id this service\'s Verifier presents in an ' +
+          'Authorization ' +
           'Request.' },
   { kind: 'federation-identity-provider', label: 'Federated identity provider',
     what: 'A FOREIGN identity service this instance federates with as a ' +
@@ -276,7 +295,7 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 //
 //   * `appProtocol` is DERIVED — the families this application has actually
 //     appeared in, accumulated by seen() as each one happens. Nothing may edit
-//     it, for the reason EDITABLE's header gives at length.
+//     it, for the reason the editability header gives at length.
 //   * `appAllowedProtocol` is DECLARED — the families somebody has said this
 //     application is FOR, ticked on /admin/applications/new before it has ever
 //     connected to anything. It is configuration, like the redirect URIs beside
@@ -372,6 +391,9 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // console walks this table, DEDUPES BY ATTRIBUTE and draws one field per
 // attribute, listing the families it serves — so the form has eleven identifier
 // fields for sixteen families (fourteen when this was written) and says why.
+// The simplified create form does not draw a primary name (#393): that value
+// is the registry identifier, and fillPrimaryNames() writes it when the
+// create leaves the attribute empty. The advanced view still draws it.
 //
 // **EVERY ONE OF THEM IS MULTI-VALUED BAR ONE.** An application legitimately
 // answers to two client_ids, two entityIDs or two SPNs here — one per
@@ -388,8 +410,11 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // The five families this service records no identifier for — LDAP, SCIM,
 // SPIFFE, OpenID4VCI, mutual TLS — get a field anyway, because "what is this
 // application called when it talks LDAP to us" is a fact an operator has and
-// this registry had nowhere to put. Nothing will ever write those attributes on
-// its own, so they read as declaration and only ever as declaration.
+// this registry had nowhere to put. A create writes the registry identifier
+// into a family's identifier attribute when that attribute was left empty
+// (`fillPrimaryNames()`, #393), except a certificate subject, a bind DN and
+// a SPIFFE ID, which are not that name. A protocol module still does not
+// invent those three.
 // ---------------------------------------------------------------------------
 /**
  * The declared protocol vocabulary: each family an application may be declared
@@ -447,8 +472,10 @@ const PROTOCOLS = [
           'acceptor may be asked to be. This covers SPNEGO (HTTP Negotiate, ' +
           'RFC 4559) to a Kerberos-protected service, which carries the same ' +
           'ticket. Signing people in to this application with SPNEGO is not ' +
-          'a family: set appAuthnMechanism to spnego, and declare the ' +
-          'protocol the application gets its tokens or assertions through.' },
+          'a family: list spnego among the first-factor mechanisms of the ' +
+          'authentication policy the application names (appAuthnPolicy), ' +
+          'and declare the protocol the application gets its tokens or ' +
+          'assertions through.' },
   { id: 'oid4vci', label: 'OpenID4VCI', kind: '',
     kinds: [],
     identifierAttribute: 'oauthClientId', redirectAttribute: 'oauthRedirectUri',
@@ -544,6 +571,25 @@ const PROTOCOLS = [
           'finish URIs are return addresses like any other; a resource ' +
           'server carries the locations it answers for and, once it has ' +
           'registered a resource set, the macaroon root key it verifies with.' },
+  // USER-MANAGED ACCESS 2.0 (#1168). A RESOURCE SERVER: the application
+  // whose protection API token (PAT) registers resources and asks permission
+  // tickets, and the audience of every RPT issued for them. It is an OAuth
+  // client too — the PAT is an ordinary access token its client_id obtains
+  // — so it carries no identifier of its own here: declaring the family is
+  // what makes an OAuth client a UMA resource server, and the realm's
+  // uma-authorization policy refuses a registration or a permission for one
+  // that is not declared. `umaOwnsResources` (its one family-scoped
+  // attribute) lets the APPLICATION be the resource owner, through a
+  // client_credentials PAT (rcbj's decision 5 on #1168).
+  { id: 'uma', label: 'UMA 2.0', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A User-Managed Access 2.0 resource server: an OAuth client that ' +
+          'obtains a protection API token for /uma, registers the ' +
+          'resources it holds for a resource owner, asks permission ' +
+          'tickets for them, and is the audience of the requesting party ' +
+          'tokens issued for them. Declaring the family is what admits it; ' +
+          'umaOwnsResources lets the application itself be an owner.' },
   // CERTIFICATE ENROLLMENT (rcbj, 2026-10-01): ACME, EST and SCEP, a family
   // each, so an application may be allowed one and not another. An
   // application is already an enrollment SUBJECT in all three
@@ -584,7 +630,43 @@ const PROTOCOLS = [
           'key pair, or paste the public half of your own), the services in ' +
           'didService and the URIs in didAlsoKnownAs. Nothing is issued ' +
           'through this family: it is how the application is identified and ' +
-          'its keys found.' }
+          'its keys found.' },
+  // A SECRET PUSH DESTINATION (#221 P3, 2026-10-06): a secrets manager this
+  // service WRITES a service account's rotated password to. rcbj's answer on
+  // #221: "Each push destination is an application entry in the realm, and
+  // the destination's write credential is held on that entry" — so the
+  // register of destinations is the realm's application entries declared for
+  // this family, and `common/secret_destinations.ts` reads them. Like `ssf`,
+  // the application is something this service CALLS; like `did`, nothing is
+  // issued through it — and an entry declared for this family alone is
+  // refused every issuance in product mode by the declaration rule above.
+  { id: 'secret-destination', label: 'Secret push destination', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A secrets manager this service PUSHES a service account\'s ' +
+          'rotated password to (#221): AWS Secrets Manager, Google Cloud ' +
+          'Secret Manager, Azure Key Vault, or a HashiCorp Vault / OpenBao ' +
+          'KV version 2 engine — and, in development mode only, a file. ' +
+          'The secret must already exist there: a push writes a new version ' +
+          'and never creates one. The write credential ' +
+          '(secretDestCredential) is sealed on this entry and never shown. ' +
+          'Nothing is issued through this family.' },
+  // #552: an OUTBOUND SCIM CLIENT. Like a secret destination this is an
+  // application this service CALLS — a remote SCIM 2.0 service provider it
+  // pushes this realm's people and groups to (`scim/scim_client.ts`) — and
+  // its credentials are sealed and withheld on the entry. Nothing is issued
+  // through it.
+  { id: 'scim-client', label: 'SCIM client (outbound provisioning)',
+    kind: '', kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A remote SCIM 2.0 service provider this service PUSHES users and ' +
+          'groups to (#552): RFC 7643 resources over RFC 7644, created, ' +
+          'replaced or patched, deactivated or deleted as the directory ' +
+          'changes, and reconciled on demand or on a schedule. It ' +
+          'authenticates with HTTP Basic, an OAuth 2.0 client_credentials ' +
+          'token, or a TLS client certificate; every credential is sealed ' +
+          'on this entry and never shown. Configured on Protocols → SCIM → ' +
+          'Clients. Nothing is issued through this family.' }
 ];
 
 /**
@@ -624,13 +706,14 @@ const SAML_CERTIFICATE_ATTRIBUTES = ['samlSigningCertificate',
 // WHAT CONSUMING A SERVICE PROVIDER'S METADATA MAY WRITE, and the only
 // attributes replaceSamlMetadataFields() will touch. A closed list, because
 // that function writes DERIVED attributes no door may edit, and a function
-// that wrote whatever it was handed would be a door around the EDITABLE table.
+// that wrote whatever it was handed would be a door around the `editable` rows.
 /**
  * The attributes consuming a service provider's metadata may write, and the
  * only ones `replaceSamlMetadataFields()` touches.
  */
 const SAML_METADATA_FIELDS = [
   'samlSpMetadata', 'samlEncryptionCertificate', 'samlSigningCertificate',
+  'samlSpMetadataSigningCertificate',
   'samlAssertionConsumerService', 'samlAcsEndpoint',
   'samlSingleLogoutService', 'samlSloEndpoint', 'samlSpNameIdFormat',
   'samlSpAuthnRequestsSigned', 'samlSpWantAssertionsSigned',
@@ -797,3263 +880,17 @@ function normaliseProtocols(value) {
  * every attribute with its kind (single or multi), whether it is editable, the
  * families it applies to and a sentence on what it holds.
  */
-// Why every per-receiver Shared Signals override is family-scoped: one
-// sentence, shared by the twenty rows that carry it.
-const SSF_OVERRIDE_FAMILY_WHY = 'It changes what this application\'s ' +
-  'Shared Signals streams are sent, so on an entry declared for no Shared ' +
-  'Signals family it would read like a setting in force.';
+// **THE TABLE IS NOT IN THIS FILE (#1390).** It is written in TypeSpec, in
+// models/directory/application.tsp, with the reasoning for each row. The image
+// build compiles that and writes the file read here. A row is added there, and
+// common/compiled_tree.js refuses a tree that does not have this file.
+const SCHEMA = ModelTables.schema('application');
 
-const SCHEMA = {
-  objectClasses: [
-    { name: 'top', where: 'RFC 4512', standard: true,
-      what: 'The abstract class every entry carries.' },
-    { name: 'applicationProcess', where: 'RFC 4519 section 3.3', standard: true,
-      what: 'The one REGISTERED object class that fits an application. It ' +
-            'brings cn, description, seeAlso, ou and l — so the NAME of an ' +
-            'application here is a standard attribute even though nothing ' +
-            'else about it can be.' },
-    { name: 'stsApplication', where: 'this service', standard: false,
-      what: 'INVENTED, because no registered LDAP schema has a client_id, a ' +
-            'set of redirect URIs, an entityID or a service principal name. ' +
-            'Every product that stores OAuth clients keeps them in its own ' +
-            'database rather than in a directory, so there was nothing to ' +
-            'borrow. These are this service\'s own names in the way ' +
-            'x509subject and didSubject already are.' }
-  ],
-  attributes: [
-    // --- identity ---------------------------------------------------------
-    { name: 'appIdentifier', kind: 'single', from: 'every protocol',
-      what: 'THE KEY: the identifier exactly as the protocol presented it. ' +
-            'The entry\'s own cn may be a digest of it where it is too long ' +
-            'to be a readable RDN, so this is the attribute to search on — ' +
-            'the same arrangement didSubject has on a DID-named person.' },
-    { name: 'cn', kind: 'single', from: 'this registry', standard: true,
-      what: 'The RDN value: the identifier itself, or app-<12 hex> where ' +
-            'that would be longer than 64 characters.' },
-    { name: 'appName', kind: 'single', from: 'RFC 7591 client_name, or the ' +
-                                             'identifier',
-      what: 'What to call it on a page. A registration supplies one; ' +
-            'otherwise the identifier is the name, because inventing a ' +
-            'friendly name for an opaque id would be inventing a fact.' },
-    // ---------------------------------------------------------------------
-    // WHERE THIS APPLICATION LIVES, added 2026-09-10 for /portal/applications.
-    //
-    // That page lists the applications a person may be signed in to, and until
-    // this attribute existed it named them without being able to say where any
-    // of them was. A name and a client_id are not somewhere you can go.
-    //
-    // **IT IS DECLARED AND IS NEVER DERIVED, WHICH IS THE WHOLE OF THE
-    // DECISION.** The first attempt computed an address from the redirect URIs
-    // already on the entry — take the ORIGIN of the first http(s) one — and it
-    // was rejected because a redirect URI is a CALLBACK: a browser sent to one
-    // carrying none of the parameters it exists to receive gets an error from
-    // the application rather than its front door, and the origin above it is a
-    // GUESS that is wrong for every application served under a path. A page
-    // that guesses is a page whose links are right often enough that nobody
-    // checks them. So this is a fact somebody states, and where it is absent
-    // the portal draws the row with no link at all and says why.
-    //
-    // **RFC 7591 `client_uri` IS THE SAME FACT and register() writes it here**,
-    // which is what stops this being an attribute only a hand-edited entry ever
-    // carries: that member is defined as "URL string of a web page providing
-    // information about the client", which is exactly the question this
-    // answers. It is `set` rather than `multi` for `appAuthnMechanism`'s reason
-    // — an application has ONE home page, and a list would be a question no
-    // page here has anywhere to ask.
-    //
-    // `labeledURI` (RFC 2079) was the standards-purist alternative and was not
-    // taken: its value is a URI followed by an optional label, so it would need
-    // a grammar and a parser to hold one URL, and it is multi-valued by
-    // definition. An attribute of this registry's own says one thing.
-    //
-    // THE VALUE IS CHECKED WHERE IT IS WRITTEN — http or https and nothing else
-    // — because the one thing this service does with it is put it in an `href`
-    // on a page. See homePageProblem(). `ldapmodify` reaches it like every
-    // other attribute and is not checked, which is why homePageOf() checks
-    // again when it reads.
-    // ---------------------------------------------------------------------
-    { name: 'appHomePageUrl', kind: 'single',
-      from: 'RFC 7591 client_uri, the console, the management API, or by hand',
-      what: 'THE APPLICATION\'S OWN HOME PAGE: where a person goes to reach ' +
-            'it, and therefore where a sign-in to it starts. It is what ' +
-            '/portal/applications links each row to, and an entry without ' +
-            'one is drawn there with no link rather than with a guessed ' +
-            'address. DECLARED and never derived — the redirect URIs beside ' +
-            'it are callbacks and not front doors, so nothing computes this ' +
-            'from them. http or https only, because it becomes an href.' },
-    // ---------------------------------------------------------------------
-    // THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM ON THIS
-    // APPLICATION'S BEHALF (2026-09-13).
-    //
-    // Until this date every response here carried `Access-Control-Allow-Origin:
-    // *`, so a script on ANY origin could read any answer this service gave a
-    // non-credentialed request. `common/cors.js` now echoes an origin only when
-    // it is this service's own or is listed here — and WHICH entry's list is
-    // asked is decided by the request: one that names a client (a `client_id`,
-    // a Basic credential, a client assertion, an access token's `client_id`)
-    // is judged against THAT entry's list alone, and one that names nobody
-    // (discovery, a JWKS, a DID document, every preflight) against every entry
-    // in the realm. That module's header argues both halves.
-    //
-    // **AN EMPTY LIST ALLOWS NO THIRD-PARTY ORIGIN, IN BOTH MODES.** That is
-    // the rule as it was asked for and it is not mode-gated: a CORS header is
-    // not a refusal a client under test learns anything from, it is what a
-    // browser uses to decide whether a page may read an answer.
-    //
-    // It is an attribute of THIS REGISTRY rather than of the OAuth families
-    // because every family's endpoints are behind the same decision — SCIM,
-    // GNAP and the management API included — so it carries no `families`.
-    // Values are normalised to the serialisation a browser sends when written
-    // through this module (`validation.normaliseOrigin()`); `ldapmodify` is
-    // not normalised, which is why the reader normalises again.
-    // ---------------------------------------------------------------------
-    { name: 'appCorsOrigin', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM FOR THIS ' +
-            'APPLICATION — `https://app.example.com`, one exact origin per ' +
-            'value, with no path and no wildcard. A request that names this ' +
-            'application as its client (a client_id, a Basic credential, a ' +
-            'client assertion, or an access token issued to it) is answered ' +
-            'with Access-Control-Allow-Origin only when its Origin is listed ' +
-            'here; a request that names no client at all — discovery, a ' +
-            'JWKS, a DID document, a CORS preflight — is answered for an ' +
-            'origin listed on ANY application in the realm. EMPTY ALLOWS NO ' +
-            'THIRD-PARTY ORIGIN, in both modes. This service\'s own origins ' +
-            '(its listeners, global.publicBaseUrl, the embedded debugger, ' +
-            'and global.corsOrigins) never need listing. Normalised when ' +
-            'written: scheme and host lower-cased, a default port dropped.' },
-    { name: 'appKind', kind: 'multi', from: 'every protocol',
-      what: 'What this application IS, one value per role it has been seen ' +
-            'in. Several is the ordinary case and is the point: an OAuth ' +
-            'client that asks for the openid scope is also a relying party.' },
-    { name: 'appProtocol', kind: 'multi', from: 'every protocol',
-      what: 'The protocol families it has appeared in, accumulated.' },
-    { name: 'appAllowedProtocol', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'THE PROTOCOL FAMILIES THIS APPLICATION IS DECLARED FOR, one ' +
-            'value per family, from the closed table PROTOCOLS publishes. It ' +
-            'is the DECLARED twin of appProtocol above and the two must not ' +
-            'be read as one thing: that attribute is what has happened and ' +
-            'cannot be edited, this one is what somebody said the ' +
-            'application is for and is ticked on /admin/applications/new ' +
-            'before it has ever connected. It grants nothing. In PRODUCT ' +
-            'mode the issuance policy refuses an issuance through a family ' +
-            'it does not name — an application declared for SAML 2.0 alone ' +
-            'is refused an access token (STS-XACML-0084); in development it ' +
-            'refuses nothing. Declared for nothing, nothing is refused in ' +
-            'either mode.' },
-    { name: 'appAuthorizationServer', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'WHICH AUTHORIZATION SERVERS this client has used, by the name ' +
-            'in their paths — one value per server it has been seen at. This ' +
-            'process publishes several, each with its own capabilities and ' +
-            'its own endpoints under /{id}/oauth2/…, and EVERY CLIENT MAY ' +
-            'USE EVERY ONE of them: nothing here restricts a client to a ' +
-            'server, so this records where it HAS been rather than where it ' +
-            'may go. Accumulated, because a client that talks to two of them ' +
-            'is one client with two values and not two clients.' },
-    { name: 'description', kind: 'multi', from: 'this registry', standard: true,
-      what: 'One line per protocol that first brought this application here.' },
-
-    // --- what has happened ------------------------------------------------
-    { name: 'appFirstSeen', kind: 'single', from: 'this registry',
-      what: 'GeneralizedTime, when this identifier was first presented.' },
-    { name: 'appLastSeen', kind: 'single', from: 'this registry',
-      what: 'GeneralizedTime, the most recent time.' },
-    { name: 'appAuthentications', kind: 'single', from: 'this registry',
-      what: 'How many credentials this service has accepted FOR this ' +
-            'application. ASSIGNED on every change — a counter that ' +
-            'accumulated values would be nonsense — and it is a live number ' +
-            'in a directory entry, which is unusual enough to say out loud: ' +
-            'a real directory would not hold one.' },
-    { name: 'appSessions', kind: 'single', from: 'this registry',
-      what: 'How many DISTINCT browser sign-on sessions have involved it. ' +
-            'Counted from the session id that rides on the authentication ' +
-            'funnel, so a direct grant with no browser session behind it ' +
-            'adds nothing.' },
-    { name: 'appUsers', kind: 'single', from: 'this registry',
-      what: 'How many distinct identities have authenticated for it. The ' +
-            'identities themselves are NOT listed here: an application used ' +
-            'by two thousand people would otherwise put two thousand values ' +
-            'on one entry.' },
-    { name: 'appLastSession', kind: 'single', from: 'this registry',
-      what: 'The most recent sign-on session id. It is what appSessions is ' +
-            'counted against — a different one increments the count — and it ' +
-            'is on the entry rather than in memory because the entry is the ' +
-            'store: without it a restart of nothing at all would recount the ' +
-            'session already counted.' },
-    { name: 'appLastUser', kind: 'single', from: 'this registry',
-      what: 'The most recent identity, for the same reason and with the same ' +
-            'limitation: it counts a CHANGE of user rather than a distinct ' +
-            'set, which is right for the ordinary case and undercounts ' +
-            'somebody alternating between two applications. Stated in seen() ' +
-            'where the trade is made.' },
-
-    // --- OAuth 2.0 / OpenID Connect ---------------------------------------
-    { name: 'appRegistered', kind: 'single', from: 'POST /oauth2/register',
-      what: 'TRUE when this application went through dynamic client ' +
-            'registration here, FALSE when it is simply a client_id that ' +
-            'turned up. It records HOW the application got here and not ' +
-            'what counts: RFC 9700 mode judges a client against its own ' +
-            'oauthRedirectUri whenever the entry holds one, however it got ' +
-            'there, and against the oauth2.redirectUris setting only when ' +
-            'it holds none — which OAuth 2.1 mode refuses instead. An ' +
-            'omitted token_endpoint_auth_method means client_secret_basic ' +
-            'for a registered client and nothing for one made by hand.' },
-    // WHO PUT THIS APPLICATION HERE ON PURPOSE (2026-09-18). appRegistered
-    // above cannot answer it: it means RFC 7591 and is what RFC 9700 mode's
-    // rules and RFC 7592's endpoints turn on, so an application an operator
-    // created on /admin/applications/new stays FALSE there — and the list
-    // page, reading only that flag, said "Registered: no" about an entry
-    // somebody had just finished registering. This is the answer the page
-    // wanted, kept apart so that giving it changes no protocol's behaviour.
-    { name: 'appRegisteredBy', kind: 'single', from: 'this registry',
-      what: 'How this application was registered, when it was: ' +
-            '"administrator" (created on /admin/applications/new or through ' +
-            'the management API), "rfc7591" (POST /oauth2/register) or ' +
-            '"startup" (one of this service\'s own seeded clients). Absent ' +
-            'on an application that simply turned up. Written by this ' +
-            'registry and not editable; it grants and refuses nothing.' },
-    // REGISTERED THROUGH AN OPENID FEDERATION (#134, 2026-09-23): an
-    // application that became a client because its Trust Chain ended at one
-    // of this realm's Trust Anchors (OpenID Federation for OpenID Connect
-    // 1.1, section 12), how, until when and through which anchor. Past
-    // appFederationExpiresAt the client is UNKNOWN to every endpoint
-    // (clientConfigOf()) — 12.3: a registration may not outlive the chain it
-    // was made from — and the oidfed.registrations-expire job removes it.
-    { name: 'appFederationRegistration', kind: 'single',
-      from: 'OpenID Federation (#134)',
-      what: '"automatic" (its first signed authentication request) or ' +
-            '"explicit" (its Entity Configuration POSTed to /oidfed/register).' },
-    { name: 'appFederationExpiresAt', kind: 'single',
-      from: 'OpenID Federation (#134)',
-      what: 'When the registration ends, in SECONDS since the epoch: the ' +
-            'Trust Chain\'s own expiry, or oidfed.registrationLifetimeS ' +
-            'if that comes first.' },
-    { name: 'appFederationTrustAnchor', kind: 'single',
-      from: 'OpenID Federation (#134)',
-      what: 'The Trust Anchor its chain ended at.' },
-    { name: 'oauthClientId', kind: 'multi', from: 'OAuth 2.0 / OIDC / ' +
-                                                  'OpenID4VCI',
-      identifier: true,
-      identifierName: 'client_id',
-      what: 'THE CLIENT_ID, and the identifier attribute of three families: ' +
-            'an OpenID Connect relying party IS an OAuth client, and a ' +
-            'wallet collecting a credential at the OpenID4VCI issuer ' +
-            'authenticates as one, so all three declare their name here ' +
-            'rather than in three attributes that would be three spellings ' +
-            'of one fact. Usually equal to appIdentifier, which is what a ' +
-            'protocol sighting writes; a SECOND value is a client_id this ' +
-            'application also answers to — a per-environment id — and is why ' +
-            'this accumulates rather than being assigned. Absent on an entry ' +
-            'no OAuth family has been declared for.' },
-    { name: 'oauthAudience', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'THE AUDIENCE THIS APPLICATION ANSWERS TO — the `aud` an access ' +
-            'token addressed to it carries, and what a client puts in RFC ' +
-            '8693 section 2.1\'s `audience` (or `resource`) when it ' +
-            'exchanges a token to reach this application. It is the OAuth ' +
-            'spelling of a fact three other families here already record ' +
-            'under their own names: `wstrustAppliesTo` is the same thing in ' +
-            'a RequestSecurityToken and `samlEntityId` is the same thing in ' +
-            'an assertion\'s AudienceRestriction, and one attribute holding ' +
-            'all three would be one string that has to mean whichever ' +
-            'protocol asked last.\n\nIt is DECLARED — nobody presents an ' +
-            'audience as their own name, so nothing here writes it and it ' +
-            'cannot be derived — and it is a URI rather than a client_id ' +
-            'because that is what an audience is: the resource, not the ' +
-            'client that calls it. Several values is the ordinary case (a ' +
-            'per-environment hostname), which is why it accumulates.\n\n**IT ' +
-            'IS READ, WHICH MAKES IT THE EXCEPTION** among the declaration ' +
-            'attributes beside it. The token exchange looks an `audience` UP ' +
-            'here — forAudience() — so that a delegation recorded for ' +
-            '`https://esb1.example.com` names the application `esb1` on ' +
-            '/admin/delegation and in its picture, instead of drawing a box ' +
-            'for a URL that nothing else in the register mentions. It is a ' +
-            'LOOKUP and not a permission: an audience nobody registered is ' +
-            'exchanged for exactly as before and recorded verbatim, because ' +
-            'a mock that refused would remove a test case rather than add ' +
-            'one.' },
-    { name: 'oauthClientSecret', kind: 'multi', from: 'POST /oauth2/register',
-      sensitive: true,
-      what: 'THE SECRETS THIS SERVICE MINTED OR WAS GIVEN. Each value is ' +
-            'SEALED under the key-encryption key wherever the process holds ' +
-            'a durable one (since 2026-10-01), so a directory read, a ' +
-            'database row and a backup hold ciphertext; without one ' +
-            '(development) it is in the clear. The console and ' +
-            '/admin-api, behind a credential, show it opened. Never ' +
-            'written to the audit log.\n\n' +
-            'SEVERAL SINCE 2026-10-01, EACH A RECORD: ' +
-            '{"id","secret","created","expires","description"}, the two ' +
-            'times in seconds since the epoch and `expires` 0 for never. ' +
-            'Every unexpired secret authenticates; the NEWEST unexpired one ' +
-            'is the one this service signs and encrypts with and the ' +
-            'client_secret RFC 7591 and 7592 return. A bare value (an ' +
-            'ldapmodify, a set) is a secret with no expiry; a set REPLACES ' +
-            'every secret, and the Credentials section adds, removes and ' +
-            'rotates them one at a time, at most oauth2.clientSecretsMax.' },
-    { name: 'oauthRedirectUri', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Registered redirect URIs from a registration, and any ' +
-            'redirect_uri this service has ACCEPTED for the application ' +
-            'beside them. The two are not the same claim and the registry ' +
-            'does not merge them silently — see appRedirectUriObserved.' },
-    { name: 'appRedirectUriObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'A redirect_uri seen on an authorization request that this ' +
-            'service answered. Kept apart from oauthRedirectUri because ' +
-            '"registered" and "used" are different facts, and RFC 9700 ' +
-            'section 2.1 is entirely about not confusing them: an ' +
-            'exact-match check reads the registered list, and this one is ' +
-            'evidence of what a client actually does.' },
-    // PROVENANCE, NOT A SECOND LIST OF ADDRESSES (2026-09-12). The attribute
-    // above holds what a client USED and nothing ever trusts it. This one is a
-    // MARK on a value that IS in a trusted list — a return address that got
-    // onto `samlAssertionConsumerService`, `wsfedReplyUrl` or
-    // `oauthRedirectUri` because a development-mode request named it rather
-    // than because anybody registered it. ONE attribute carrying `<attribute>
-    // <value>` rather than one per family: the families are
-    // RETURN_ADDRESS_ATTRIBUTES, derived from the PROTOCOLS table, so a family
-    // added tomorrow is marked the day it is added and the schema does not grow
-    // a row per family for the privilege. The attribute name goes FIRST because
-    // it has no space in it and the URL takes the remainder — `consent.js`'s
-    // rule about which field is unconstrained. DERIVED, so it is in no EDITABLE
-    // row: it is removed by confirming, discarding, or writing the address
-    // explicitly.
-    { name: 'appReturnAddressObserved', kind: 'multi',
-      from: 'a development-mode sighting',
-      what: 'WHICH RETURN ADDRESSES ON THIS ENTRY WERE NEVER REGISTERED BY ' +
-            'ANYBODY. Each value is `<attribute> <address>` — for example ' +
-            '`samlAssertionConsumerService https://sp.example.com/acs` — and ' +
-            'marks an address a DEVELOPMENT-mode request named, which ' +
-            'development writes onto the entry because it believes every ' +
-            'address. PRODUCT mode treats a marked address as NOT registered ' +
-            'and refuses it exactly as it refuses one that is not on the ' +
-            'entry at all, so a realm switched from development to product ' +
-            'does not quietly trust what development learnt. An operator ' +
-            'CONFIRMS one (the mark goes, the address stays), DISCARDS one ' +
-            '(both go), or writes the address explicitly, which confirms it. ' +
-            'Addresses recorded BEFORE this attribute existed carry no mark ' +
-            'and cannot be told apart from registered ones — review those by ' +
-            'hand.' },
-    { name: 'oauthPostLogoutRedirectUri', kind: 'multi', from: 'POST ' +
-        '/oauth2/register',
-      what: 'Registered post_logout_redirect_uris, which RP-Initiated Logout ' +
-            'matches against in RFC 9700 mode.' },
-    { name: 'oauthFrontchannelLogoutUri', kind: 'single',
-      from: 'POST /oauth2/register, the console, or by hand',
-      what: 'WHERE THIS CLIENT IS TOLD THAT THE USER SIGNED OUT — OpenID ' +
-            'Connect Front-Channel Logout 1.0 section 2\'s ' +
-            'frontchannel_logout_uri. The sign-out page loads it in a hidden ' +
-            'iframe, with iss and sid on the query string when the client ' +
-            'asked for them. It is SINGLE-valued because the specification ' +
-            'defines one URI per client, unlike the redirect URIs beside it; ' +
-            'a client with none registered is not notified at all and is ' +
-            'listed on /logout as such rather than silently skipped.' },
-    { name: 'oauthFrontchannelLogoutSessionRequired', kind: 'single',
-      from: 'POST /oauth2/register, the console, or by hand',
-      what: 'TRUE if this client requires `iss` and `sid` on the ' +
-            'notification above — Front-Channel Logout 1.0 section 2\'s ' +
-            'frontchannel_logout_session_required. It matters because an RP ' +
-            'with several sessions in one browser cannot tell which one ' +
-            'ended without the sid, and RFC 7591 section 2 makes an omitted ' +
-            'boolean FALSE rather than unknown — so an absent value here ' +
-            'means the client did not ask, which is a different fact from ' +
-            'the client not having registered.' },
-    { name: 'oauthBackchannelLogoutUri', kind: 'single',
-      from: 'POST /oauth2/register, the console, or by hand',
-      what: 'WHERE THIS SERVICE POSTS A LOGOUT TOKEN WHEN THE USER SIGNS OUT ' +
-            '— OpenID Connect Back-Channel Logout 1.0 section 2.2\'s ' +
-            'backchannel_logout_uri. Every sign-out of a session this client ' +
-            'was issued an authorization response on sends one, ' +
-            'server-to-server, after the sign-out has answered, through the ' +
-            'outbound policy (https with the certificate verified; no ' +
-            'internal address in ' +
-            'product mode). SINGLE-valued, like the front-channel URI: the ' +
-            'specification defines one per client. https with no fragment; ' +
-            'http only for a confidential client and only where the ' +
-            'outbound policy sends over http (federation.outboundAllowHttp, ' +
-            'development mode; section 2.2, #123).' },
-    { name: 'oauthBackchannelLogoutSessionRequired', kind: 'single',
-      from: 'POST /oauth2/register, the console, or by hand',
-      what: 'TRUE if this client requires `sid` in the Logout Token — ' +
-            'Back-Channel Logout 1.0 section 2.2\'s ' +
-            'backchannel_logout_session_required. This service puts `sid` ' +
-            'AND `sub` in every Logout Token it sends, so the flag is always ' +
-            'honoured; it is recorded because "false" and "not stated" are ' +
-            'different facts about a client, as for the front-channel flag.' },
-    { name: 'oauthGrantType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Grant types registered or observed at the token endpoint.' },
-    { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'response_type values seen at the authorization endpoint.' },
-    { name: 'oauthScope', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Scopes this application has ASKED FOR, accumulated as it asks. ' +
-            'SIGHTED, never declared: nothing is allowed or refused by it. ' +
-            'What the application may be issued is oauthAllowedScope.' },
-    // ---------------------------------------------------------------------
-    // THE DECLARED TWIN OF `oauthScope` (#110, 2026-09-22), and the
-    // `appProtocol` / `appAllowedProtocol` split again: one attribute is what
-    // happened and the other is what somebody said. Until that day an RFC
-    // 7591 registration's `scope` was written onto `oauthScope` beside every
-    // scope the client had merely asked for, so what was declared and what was
-    // observed could not be told apart — and nothing read either as a limit.
-    //
-    // IT IS READ, in three places. The authorization, pushed authorization and
-    // token endpoints refuse a scope it does not list (`common/scope_policy.ts`
-    // decides which, and in which mode); `tokenSet()` narrows a refresh or an
-    // exchange to it; and the resource servers behind this service's own
-    // protected scopes — /admin-api, /scim/v2, the Shared Signals endpoints —
-    // ask it again on every call, so removing a value cuts off a token already
-    // issued. GNAP reads it for the Shared Signals access rights.
-    //
-    // NOT FAMILY-SCOPED, deliberately. A SCIM or Shared Signals client is
-    // declared for that family and still gets its token from /oauth2/token;
-    // refusing the declaration on its entry would refuse the one thing it
-    // needs.
-    // ---------------------------------------------------------------------
-    { name: 'oauthAllowedScope', kind: 'multi',
-      from: 'POST /oauth2/register (its `scope`), the console, the ' +
-            'management API, or by hand',
-      what: 'THE SCOPES THIS CLIENT MAY BE ISSUED — RFC 7591 section 2\'s ' +
-            '`scope`, "the list that the client can use when requesting ' +
-            'access tokens". One scope token per value. Three kinds of scope ' +
-            'read it differently.\n\n**This service\'s own protected ' +
-            'scopes** — admin:read and admin:write (/admin-api), the SCIM ' +
-            'scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals ' +
-            'scopes (ssf.authScopeRead, ssf.authScopeWrite) and the debugger ' +
-            'permission — are issued ONLY to a client that lists them, IN ' +
-            'BOTH MODES, and the resource server behind each asks again on ' +
-            'every call, so removing a value here cuts off tokens already ' +
-            'issued. An RFC 7591 registration may not declare them; an ' +
-            'administrator does, here.\n\n**Every other scope**, in ' +
-            'product mode, is issued only when listed here — or, when ' +
-            'nothing is listed, when it is in the default set: openid, ' +
-            'profile, email, address, phone, offline_access and this ' +
-            'realm\'s OpenID4VCI credential scopes. In development any ' +
-            'scope is issued.\n\n**A scope naming an application or a ' +
-            'delegated permission** keeps its own rules (the audience, and ' +
-            'oauthDelegatedPermission) and need not be listed.\n\nA scope ' +
-            'outside the list is refused invalid_scope at the authorization ' +
-            'and token endpoints (RFC 6749 section 3.3), and taken off a ' +
-            'refresh or a token exchange. Distinct from oauthScope, which is ' +
-            'only what the client has asked for.' },
-
-    // --- delegated permissions: the RESOURCE half, then the CLIENT half -----
-    //
-    // THREE ATTRIBUTES THAT ARE ONE FEATURE, AND THEY ARE THE FIRST THING IN
-    // THIS SCHEMA WHERE ONE ENTRY'S VALUE IS ONLY MEANINGFUL AGAINST ANOTHER
-    // ENTRY'S. Everything above describes the application it is on. A GRANT
-    // does not: `oauthDelegatedPermission` on webapp1 is a fact about webapp1
-    // AND about the resource whose permission it names, and neither entry is
-    // complete on its own. That is what makes this a RELATIONSHIP rather than
-    // one more declaration, and it is why `common/app_permissions.ts` exists to
-    // read the two halves together — see its header, which argues the model.
-    //
-    // The shape is Microsoft Entra ID's, deliberately and by name: a resource
-    // application EXPOSES an API (`oauth2PermissionScopes` there) and a client
-    // application is granted delegated permissions on it
-    // (`requiredResourceAccess`). Two attributes on two entries, one value per
-    // relationship, so one client granted three permissions is three values and
-    // three clients granted one permission is three values on three entries —
-    // which is how 1-to-many and many-to-1 both fall out of the same attribute
-    // without a container of their own.
-    { name: 'oauthPermissionBaseUri', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      what: 'THE BASE URI EVERY PERMISSION THIS APPLICATION DEFINES HANGS ' +
-            'OFF, and the thing that makes a permission name globally unique ' +
-            'here. A permission is identified by this value followed by its ' +
-            'name — base `https://example.com/` and name `write` are the ' +
-            'permission `https://example.com/write` — which is what a client ' +
-            'puts in a `scope` and what the access token is then AUDIENCED ' +
-            'to. Entra ID calls it the Application ID URI and spells it ' +
-            '`api://<guid>`; the shape is the same and nothing here requires ' +
-            'that scheme.\n\nIT IS NORMALISED TO END IN A SEPARATOR when it ' +
-            'is written through this module — a trailing `/` is added where ' +
-            'there is no `/`, `#` or `:` at the end — because base + name is ' +
-            'a plain concatenation and `https://example.com` + `write` would ' +
-            'otherwise produce `https://example.comwrite`. An `ldapmodify` ' +
-            'reaches this attribute like every other and is not normalised, ' +
-            'so a base written by hand means exactly what it ' +
-            'says.\n\nSINGLE-VALUED, and it is the one attribute in this ' +
-            'group that could not be widened without deciding something: two ' +
-            'bases would mean every permission on the entry had two ' +
-            'identifiers, and the lookup that turns a scope into an audience ' +
-            'would have to pick one to put in `aud`.' },
-    { name: 'oauthPermission', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'ONE PERMISSION THIS APPLICATION EXPOSES, one value each. The ' +
-            'value is the permission\'s NAME — `read`, `write`, ' +
-            '`Widgets.ReadWrite.All` — optionally followed by `|` and a ' +
-            'description: `write|Change widgets on somebody\'s behalf`. The ' +
-            'FIRST `|` is the delimiter and every later one belongs to the ' +
-            'description, so a description may contain the character and a ' +
-            'name may not.\n\nThe name must be a legal OAuth scope token ' +
-            '(RFC 6749 section 3.3 — no space, no double quote, no ' +
-            'backslash), because that is what a client will put in a `scope` ' +
-            'parameter and what comes back on the token\'s `scope` claim. ' +
-            'Nothing enforces that when an `ldapmodify` writes it; this ' +
-            'module and both consoles do.\n\nA PERMISSION MUST EXIST BEFORE ' +
-            'ANYTHING CAN BE GRANTED IT, which is the one ordering rule this ' +
-            'feature has and is checked in updateApplication() so that the ' +
-            'console form and the management API cannot disagree about it. ' +
-            'It is checked on the GRANT and not here: this attribute is the ' +
-            'definition, and a definition nobody has used yet is the ' +
-            'ordinary first step rather than a mistake.' },
-    // WHICH OF THIS APPLICATION'S PERMISSIONS NEED A ROLE (#303, part B of
-    // #88, 2026-09-27). rcbj's decision 1 on #88: a permission is gated by
-    // role only where its RESOURCE application says so, so every existing
-    // client keeps behaving as it did until an operator opts a permission
-    // in. The role side is `rolePermission` on a role entry
-    // (`common/roles.js`); the question is `common/role_permissions.ts`'s.
-    { name: 'oauthRoleGatedPermission', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'A PERMISSION THIS APPLICATION DEFINES THAT IS ISSUED ONLY TO A ' +
-            'SUBJECT HOLDING A ROLE THAT AUTHORIZES IT. One value each, the ' +
-            'permission\'s NAME as `oauthPermission` gives it (`write`, not ' +
-            'the full identifier). A person or an application asking for a ' +
-            'gated permission is issued it only while they hold a role whose ' +
-            '`rolePermission` names the full identifier (base + name); ' +
-            'otherwise it is left off the token (RFC 6749 section 3.3), and ' +
-            'a request asking for nothing else is refused `invalid_scope`. A ' +
-            'permission not listed here is issued as it always was, which is ' +
-            'what keeps every existing client working until somebody opts ' +
-            'in.\n\nThe name must be one of this entry\'s own permissions ' +
-            'when it is written through this module; an `ldapmodify` is not ' +
-            'checked, and a value naming no defined permission gates nothing, ' +
-            'because no request can name it.' },
-    // THE RFC 9728 DOCUMENT THIS APPLICATION WAS CREATED FROM (2026-09-13).
-    // /admin/applications/new can be handed a protected resource's metadata
-    // document and turn it into an entry; the members with an attribute of
-    // their own are written to those attributes, and this keeps the whole
-    // document beside them — `samlSpMetadata`'s arrangement, for its reason: a
-    // setting with the document it came from missing is a value nobody can
-    // check. DECLARATION ONLY: nothing in this service reads it back.
-    { name: 'oauthResourceMetadata', kind: 'single',
-      from: 'an RFC 9728 import, the console, the management API, or by hand',
-      what: 'THE PROTECTED RESOURCE METADATA DOCUMENT (RFC 9728) THIS ' +
-            'APPLICATION WAS CONFIGURED FROM, as compact JSON. Its ' +
-            '`resource` is the default name, `oauthPermissionBaseUri` and ' +
-            '`oauthAudience` of an entry created from it, and its ' +
-            '`scopes_supported` the permissions; every other member — ' +
-            '`authorization_servers`, `jwks_uri`, `bearer_methods_supported`, ' +
-            'the DPoP members — is recorded here and nowhere else.\n\nIt is ' +
-            'DECLARATION ONLY: nothing reads it back, nothing re-fetches it, ' +
-            'and changing it changes none of the attributes it filled in. A ' +
-            'value written through this module must be a JSON object with a ' +
-            '`resource`; an `ldapmodify` is not checked.' },
-    { name: 'oauthResourceMetadataUrl', kind: 'single',
-      from: 'an RFC 9728 import, the console, the management API, or by hand',
-      what: 'WHERE THE PROTECTED RESOURCE METADATA DOCUMENT WAS FETCHED FROM, ' +
-            'when it was fetched rather than pasted or uploaded. Recorded and ' +
-            'never dialled again: the fetch is an administrator\'s act on ' +
-            '/admin/applications/new or POST ' +
-            '/admin-api/applications/load-resource-metadata, and nothing ' +
-            'refreshes it.' },
-    { name: 'oauthDelegatedPermission', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'A PERMISSION THIS APPLICATION HAS BEEN GRANTED ON ANOTHER ONE — ' +
-            'the whole permission identifier, base URI and name together: ' +
-            '`https://example.com/write`. It is the DELEGATION RELATIONSHIP, ' +
-            'and it is held on the CLIENT rather than on the resource for ' +
-            'Entra\'s reason and one more: the client is the party that will ' +
-            'name it in a `scope`, so the entry that answers "may this ' +
-            'request be honoured" is the entry the request ' +
-            'identifies.\n\n**IT IS READ, and it is read in the one place ' +
-            'that decides what a token says.** A `scope` value matching a ' +
-            'defined permission becomes the access token\'s `aud` (the base ' +
-            'URI) and its `scope` (the name) — see oauth2.js\'s ' +
-            'audienceScopes(). In PRODUCT MODE an ungranted permission is ' +
-            'refused `invalid_scope` at the authorization and token ' +
-            'endpoints, always. In development it is reported and REFUSES ' +
-            'nothing unless `oauth2.delegatedPermissionsEnforced` is on, ' +
-            'which is off by default: a client under test is exercised by ' +
-            'both answers.\n\nA VALUE THAT RESOLVES TO NO DEFINED ' +
-            'PERMISSION IS NOT AN ERROR AND IS NOT HIDDEN. The resource\'s ' +
-            'entry may have been deleted, or the permission removed from ' +
-            'under it; `/admin/delegation` shows such a grant as DANGLING, ' +
-            'which is the same three-state honesty the rest of this console ' +
-            'applies to a name it cannot resolve.' },
-
-    // --- consent: the OVERRIDE half ------------------------------------------
-    //
-    // THE SECOND ATTRIBUTE HERE WHOSE VALUE IS ABOUT SOMEBODY ELSE, and it is
-    // about a different somebody else from the three above. A delegated
-    // permission is a relationship between two APPLICATIONS; this is a
-    // statement about every PERSON who will ever sign in to this one. That is
-    // why it is a separate attribute from `oauthDelegatedPermission` rather
-    // than a flag on it: a client may hold a permission nobody has consented
-    // to, and a person may consent a scope the client was never granted, and
-    // /admin/consent exists to show the difference.
-    { name: 'oauthGlobalConsent', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'A SCOPE NOBODY IS ASKED ABOUT WHEN THEY SIGN IN TO THIS ' +
-            'APPLICATION. One value per scope, written exactly as a client ' +
-            'puts it in a `scope` parameter — `openid`, `profile`, or a ' +
-            'whole delegated permission identifier such as ' +
-            '`https://example.com/write`.\n\n**It is an OVERRIDE and not a ' +
-            'record.** With `oauth2.consentRequired` on (which is the ' +
-            'default), the authorization endpoint draws /oauth2/consent for ' +
-            'any scope this person has not agreed to for this application; a ' +
-            'scope named here is skipped for EVERYBODY, and nothing is ' +
-            'written to anybody\'s entry. So removing a value asks everybody ' +
-            'again — including the people who would have said yes — where ' +
-            'removing a person\'s own `oauthConsent` asks only them.\n\n**It ' +
-            'is keyed on the pair and not on the scope alone.** Consenting ' +
-            '`read` here consents it for THIS application; an application ' +
-            'registered five minutes later that spells the same word is ' +
-            'still asked.\n\nA value that names no permission any ' +
-            'application defines is not an error and is not hidden — most ' +
-            'scopes are not permissions. It must be a legal RFC 6749 section ' +
-            '3.3 scope token, because a value with a space in it could never ' +
-            'match one scope; an `ldapmodify` reaches this attribute like ' +
-            'every other and is not checked, and /admin/consent shows what ' +
-            'it put there.' },
-    // WHEN AN OVERRIDE ABOVE WAS WITHDRAWN (#172), one value per scope. NOT
-    // editable, and that is the point of it: it is what stops a RE-ADDED
-    // override reviving the refresh tokens issued under the one that was
-    // taken away, so a form that could remove it would be a form that could
-    // bring a withdrawn grant back. `common/consent.ts` writes it, through
-    // `noteGlobalConsentWithdrawn()` below, and nothing else does.
-    { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
-      from: 'the consent register, when a global consent is withdrawn',
-      what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
-            'the instant to the millisecond. The refresh grant refuses a ' +
-            'refresh token granted before it that stood on that override, ' +
-            'even after the override is added back — a withdrawn grant is ' +
-            'not revived by the next one. One value per scope; a later ' +
-            'withdrawal replaces the earlier. Written by the consent ' +
-            'register and never by a form.' },
-    // SEVERAL SINCE 2026-10-01 (rcbj): a client may hold a secret AND a key
-    // pair and present either, so the entry lists every method it may use and
-    // the token endpoint accepts the one a request presents
-    // (`client_auth.methodFor()`). `none` stands alone — it is what makes a
-    // client PUBLIC, and a client that is public and also authenticates is
-    // two contradictory declarations (`authMethodsProblem()`). The FIRST
-    // value is what RFC 7591's single-valued member reports.
-    { name: 'oauthTokenEndpointAuthMethod', kind: 'multi', from: 'POST ' +
-        '/oauth2/register',
-      what: 'How it authenticates — every method it may use at the token ' +
-            'endpoint, any one of which a request may present. `none` (a ' +
-            'public client) cannot be held with any other. RFC 7591 section ' +
-            '2 makes client_secret_basic the default when a registration ' +
-            'omits it, which is why an omission means CONFIDENTIAL rather ' +
-            'than unknown.' },
-    // OPENID CONNECT NATIVE SSO FOR MOBILE APPS 1.0 (#130, 2026-09-23).
-    { name: 'oauthNativeSso', kind: 'single',
-      from: 'the console, the management API, or a TRUSTED software ' +
-            'statement at POST /oauth2/register',
-      families: ['oidc'],
-      familyWhy: 'Native SSO is an OpenID Connect profile: the device_sso ' +
-        'scope, the ds_hash in an ID Token, and the exchange of one.',
-      what: 'TRUE lets this client ask for the device_sso scope — and so be ' +
-            'handed a device_secret — and take part in a Native SSO token ' +
-            'exchange, as the first app or the second. Anything else, the ' +
-            'default, refuses both. Both apps of an exchange must hold it ' +
-            'AND share oauthNativeSsoGroup. A registration may set it only ' +
-            'through a trusted software statement, because the group is the ' +
-            'boundary and a client may not choose its own.' },
-    { name: 'oauthNativeSsoGroup', kind: 'single',
-      from: 'the console, the management API, or a TRUSTED software ' +
-            'statement at POST /oauth2/register',
-      families: ['oidc'],
-      familyWhy: 'The same profile as oauthNativeSso.',
-      what: 'The Native SSO group: the apps that may share one device ' +
-            'session — in practice one vendor\'s. A token exchange is ' +
-            'refused unless the app that received the ID Token and the app ' +
-            'asking share it. 1 to 64 of letters, digits and . _ : -; an ' +
-            'empty or malformed value takes the client out of Native SSO.' },
-    // OPENID CONNECT CIBA CORE 1.0 SECTION 4 (#131, 2026-09-23): the four
-    // registration members, from a registration, the console or the API.
-    { name: 'oauthBackchannelTokenDeliveryMode', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API',
-      families: ['oidc'],
-      familyWhy: 'CIBA is an OpenID Connect flow: it issues an ID Token.',
-      what: 'CIBA `backchannel_token_delivery_mode`: poll, ping or push. A ' +
-            'client with none may not use the Backchannel Authentication ' +
-            'Endpoint at all.' },
-    { name: 'oauthBackchannelClientNotificationEndpoint', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API',
-      families: ['oidc'],
-      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
-      what: 'CIBA `backchannel_client_notification_endpoint`: the https ' +
-            'URL a ping or a push is POSTed to, under the outbound policy. ' +
-            'Required for ping and push.' },
-    { name: 'oauthCommandEndpoint', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API',
-      families: ['oidc'],
-      familyWhy: 'OpenID Provider Commands are sent to OpenID Connect ' +
-                 'relying parties.',
-      what: 'OpenID Provider Commands `command_endpoint` (#151): the https ' +
-            'URL a Command Token is POSTed to, under the outbound policy. ' +
-            'A client with none is sent no command.' },
-    { name: 'oauthBackchannelAuthenticationRequestSigningAlg',
-      kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API',
-      families: ['oidc'],
-      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
-      what: 'CIBA `backchannel_authentication_request_signing_alg`: when ' +
-            'set, every authentication request from this client must be a ' +
-            'signed request object with this algorithm (section 7.1.1).' },
-    { name: 'oauthBackchannelUserCodeParameter', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API',
-      families: ['oidc'],
-      familyWhy: 'The same flow as oauthBackchannelTokenDeliveryMode.',
-      what: 'TRUE: every authentication request from this client carries ' +
-            'the person\'s `user_code` (CIBA section 7.1), a secret the ' +
-            'person set on /portal/ciba, which stops a client that knows ' +
-            'only a name from sending them requests.' },
-    // OPENID CONNECT CORE SECTION 8 AND SECTION 9 (#118, 2026-09-22).
-    { name: 'oauthSubjectType', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oidc'],
-      familyWhy: 'It decides which `sub` an ID Token and a UserInfo response ' +
-        'name this person by, which only an OpenID Connect client is given.',
-      what: 'OIDC Core section 8 `subject_type`: `public` (the default, and ' +
-            'what an empty value means) gives every client the same `sub`; ' +
-            '`pairwise` gives this client one of its own, derived from the ' +
-            'person, the sector and a secret every node shares, so two ' +
-            'clients of different sectors cannot correlate one person; ' +
-            '`ephemeral` (#149) gives it a random one for each ' +
-            'authentication, the same for everything that authentication ' +
-            'issues and never again after.' },
-    { name: 'oauthSectorIdentifierUri', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oidc'],
-      familyWhy: 'It is the sector a pairwise `sub` is computed for.',
-      what: 'OIDC Core section 8.1 `sector_identifier_uri`: an https URL ' +
-            'whose HOST is the sector a pairwise `sub` is derived for, so ' +
-            'several redirect hosts of one organisation see one subject. A ' +
-            'REGISTRATION that names one has it FETCHED and must be listed ' +
-            'in the JSON array it serves, every redirect URI of it; one ' +
-            'written here by an administrator is the administrator\'s ' +
-            'statement and is not fetched. Empty: the sector is the host of ' +
-            'the redirect URIs, which must then all share one.' },
-    { name: 'oauthTokenEndpointAuthSigningAlg', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides which signature a private_key_jwt or ' +
-        'client_secret_jwt assertion at the token endpoint must carry.',
-      what: 'OIDC Core section 9 / RFC 7591 ' +
-            '`token_endpoint_auth_signing_alg`: the ONE JWS algorithm this ' +
-            'client\'s authentication assertion must be signed with. An ' +
-            'assertion signed with any other is refused, in every mode. ' +
-            'Empty: any algorithm the method allows.' },
-    { name: 'oauthJwks', kind: 'single', from: 'POST /oauth2/register, or by ' +
-                                               'hand',
-      what: 'THE CLIENT\'S PUBLIC KEYS, as a JWKS document — what ' +
-            'private_key_jwt is verified against (RFC 7591 `jwks`). This is ' +
-            'the asymmetric credential RFC 9700 section 2.5 RECOMMENDS, and ' +
-            'it is the one credential attribute here that is NOT a secret: ' +
-            'it is public key material, worth nothing to anybody who reads ' +
-            'it, which is the whole point of preferring it to a shared ' +
-            'secret.' },
-    { name: 'oauthJwksUri', kind: 'single', from: 'POST /oauth2/register',
-      what: 'RFC 7591 `jwks_uri`, https. FETCHED since #120, when a key ' +
-            'is needed, under federation/federation_http.ts\'s outbound ' +
-            'policy (https, no redirect, a size cap, internal addresses ' +
-            'refused in product mode), cached for ' +
-            'oauth2.clientJwksCacheS and fetched again for an unknown kid at ' +
-            'most every oauth2.clientJwksRefetchS. Never beside `oauthJwks`: ' +
-            'RFC 7591 section 2 allows one or the other.' },
-    // -------------------------------------------------------------------
-    // RFC 9701 (2026-09-13). THE THREE CLIENT METADATA MEMBERS OF SECTION 6,
-    // each an attribute of its own, and they are READ: `/oauth2/introspect`
-    // signs — and where asked, encrypts — the JWT response it gives THIS
-    // client as a resource server with what they say.
-    //
-    // `single`, for the override attributes' reason: an algorithm has one
-    // answer and a list has no rule for which one signs. Family-scoped like
-    // `oauthTokenExchangeRefreshToken`, because what they change is what an
-    // OAuth endpoint sends one client_id, and on an entry no introspection
-    // request can name they would read like a registration in force. The
-    // VALUES are checked on every write door by introspectionResponseProblem()
-    // below — the list is `common/crypto.js`'s own, so a value this service
-    // cannot sign or encrypt with cannot be stored.
-    { name: 'oauthIntrospectionSignedResponseAlg', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides how /oauth2/introspect signs the JWT response ' +
-        'it gives this client, so on an entry declared for neither OAuth ' +
-        'family it would sit there reading like a registration in force.',
-      what: 'RFC 9701 section 6 `introspection_signed_response_alg`: the JWS ' +
-            'algorithm of the JWT introspection response this application ' +
-            'receives when it asks /oauth2/introspect with `Accept: ' +
-            'application/token-introspection+jwt`. EMPTY MEANS RS256, the ' +
-            'section\'s default. Any algorithm in ' +
-            '`introspection_signing_alg_values_supported` — every asymmetric ' +
-            'one this service holds a key for, and HS256/384/512 keyed with ' +
-            'this application\'s own client_secret. `none` is refused: ' +
-            'section 5 says the response MUST be cryptographically secured.' },
-    { name: 'oauthIntrospectionEncryptedResponseAlg', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides whether /oauth2/introspect encrypts the JWT ' +
-        'response it gives this client, so on an entry declared for neither ' +
-        'OAuth family it would sit there reading like a registration in ' +
-        'force.',
-      what: 'RFC 9701 section 6 `introspection_encrypted_response_alg`: the ' +
-            'JWE key management algorithm the signed introspection response ' +
-            'is ENCRYPTED to this application with, making it a Nested JWT. ' +
-            'EMPTY MEANS NOT ENCRYPTED. One of the asymmetric algorithms ' +
-            '(RSA-OAEP, RSA-OAEP-256, ECDH-ES and its key-wrap variants), ' +
-            'and ' +
-            'the key is taken from this entry\'s `oauthJwks`, or the set its ' +
-            '`oauthJwksUri` answers (#120). The symmetric families are ' +
-            'refused: they are for a document encrypted TO this service.' },
-    { name: 'oauthIntrospectionEncryptedResponseEnc', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides how /oauth2/introspect encrypts the JWT ' +
-        'response it gives this client, so on an entry declared for neither ' +
-        'OAuth family it would sit there reading like a registration in ' +
-        'force.',
-      what: 'RFC 9701 section 6 `introspection_encrypted_response_enc`: the ' +
-            'JWE content encryption algorithm. EMPTY MEANS A128CBC-HS256 ' +
-            'once ' +
-            '`oauthIntrospectionEncryptedResponseAlg` is set. It MUST NOT be ' +
-            'set without that attribute, and a write that tries is refused; ' +
-            'an entry left holding one alone (by `ldapmodify`, or by ' +
-            'clearing ' +
-            'the algorithm) makes the JWT introspection response fail with ' +
-            'the reason rather than go out unencrypted.' },
-    // -------------------------------------------------------------------
-    // RFC 9101 AND OPENID CONNECT DYNAMIC CLIENT REGISTRATION (2026-09-13).
-    // FIVE MEMBERS a client registers about the REQUEST OBJECTS it sends to
-    // the authorization endpoint, each an attribute, and all five READ by
-    // `oauth-oidc/request_object.ts`. Family-scoped for the introspection
-    // attributes' reason.
-    //
-    // `oauthRequestUri` IS THE ONE THAT MATTERS MOST, because it is the whole
-    // of what makes fetching a request_uri defensible: this service dials a
-    // request_uri ONLY when it is one of these values, exactly, so the URL a
-    // request names was declared on the client's entry beforehand rather than
-    // chosen by whoever sent the request. `multi`, because a client serving
-    // request objects from several places is one client.
-    { name: 'oauthRequestUri', kind: 'multi',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It is the list of request_uri values /oauth2/authorize ' +
-        'will fetch for this client, so on an entry declared for neither ' +
-        'OAuth family it would sit there reading like a permission to dial ' +
-        'those URLs.',
-      what: 'OpenID Connect Registration `request_uris`: the request_uri ' +
-            'values (RFC 9101 section 5.2) this client may send, one per ' +
-            'line. THE AUTHORIZATION ENDPOINT FETCHES A request_uri ONLY ' +
-            'WHEN IT IS ONE OF THESE, compared exactly once any #fragment is ' +
-            'removed — a request_uri nobody registered is refused ' +
-            'invalid_request_uri and never dialled, which is what keeps the ' +
-            'fetch from being a server-side request forgery. https, or http ' +
-            'in development mode only.' },
-    { name: 'oauthRequestObjectSigningAlg', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides which request objects /oauth2/authorize accepts ' +
-        'from this client, so on an entry declared for neither OAuth family ' +
-        'it would read like a restriction in force.',
-      what: 'OpenID Connect Registration `request_object_signing_alg`: the ' +
-            'ONLY JWS algorithm a request object from this client is ' +
-            'accepted in. EMPTY MEANS ANY algorithm in ' +
-            'request_object_signing_alg_values_supported. `none` may be ' +
-            'registered only where an unsigned request object is accepted at ' +
-            'all — development mode, with no signed one required.' },
-    { name: 'oauthRequestObjectEncryptionAlg', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides which request objects /oauth2/authorize accepts ' +
-        'from this client, so on an entry declared for neither OAuth family ' +
-        'it would read like a restriction in force.',
-      what: 'OpenID Connect Registration `request_object_encryption_alg`: ' +
-            'when set, a request object from this client MUST be encrypted ' +
-            '(RFC 9101 section 6.1) with this JWE key management algorithm — ' +
-            'to this realm\'s request object key published in /oauth2/jwks ' +
-            '(use: enc) for RSA-OAEP and ECDH-ES, or to this client\'s own ' +
-            'client_secret for the symmetric families. EMPTY MEANS ' +
-            'encryption is optional.' },
-    { name: 'oauthRequestObjectEncryptionEnc', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides which request objects /oauth2/authorize accepts ' +
-        'from this client, so on an entry declared for neither OAuth family ' +
-        'it would read like a restriction in force.',
-      what: 'OpenID Connect Registration `request_object_encryption_enc`: ' +
-            'the JWE content encryption a request object from this client ' +
-            'must use. EMPTY MEANS A128CBC-HS256 once ' +
-            '`oauthRequestObjectEncryptionAlg` is set; it may not be set ' +
-            'without that attribute.' },
-    { name: 'oauthRequireSignedRequestObject', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides whether /oauth2/authorize refuses a plain ' +
-        'request from this client, so on an entry declared for neither OAuth ' +
-        'family it would read like a requirement in force.',
-      what: 'RFC 9101 section 10.5 `require_signed_request_object`, for ' +
-            'this client alone: TRUE refuses an authorization request from ' +
-            'it that carries no `request` or `request_uri`, and a request ' +
-            'object signed with `none`, with invalid_request. FALSE or ' +
-            'empty defers to oauth2.requireSignedRequestObject.' },
-    // RFC 9126 SECTION 6 (2026-09-13). ONE MEMBER a client registers about
-    // HOW it sends an authorization request: pushed, or not at all. READ by
-    // `oauth-oidc/oauth2.ts`'s `pushedRequestPolicyRefusal()`. Family-scoped for
-    // the introspection attributes' reason.
-    { name: 'oauthRequirePushedAuthorizationRequests', kind: 'single',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It decides whether /oauth2/authorize refuses a request ' +
-        'from this client that was not pushed, so on an entry declared for ' +
-        'neither OAuth family it would read like a requirement in force.',
-      what: 'RFC 9126 section 6 `require_pushed_authorization_requests`, ' +
-            'for this client alone: TRUE refuses an authorization request ' +
-            'from it that does not carry a request_uri issued at ' +
-            '/oauth2/par, with invalid_request. FALSE or empty defers to ' +
-            'oauth2.requirePushedAuthorizationRequests.' },
-    // -------------------------------------------------------------------
-    // RFC 9396, RICH AUTHORIZATION REQUESTS (2026-09-13). TWO ATTRIBUTES, and
-    // they sit on DIFFERENT KINDS OF ENTRY, which is the design rcbj chose:
-    // a RESOURCE declares the authorization_details types it understands (a
-    // type selects its resource server the way a delegated permission does),
-    // and a CLIENT may register the types it will use (RFC 9396 section 10's
-    // `authorization_details_types`). READ by
-    // `oauth-oidc/authorization_details.ts`. Family-scoped for the
-    // introspection attributes' reason.
-    // SINCE #432 PHASE 4 (2026-10-03) IT IS THE ACCESS-TYPE CATALOGUE that
-    // RFC 9396 and GNAP share — see `authorizationDetailsTypeOf()`'s block —
-    // so a GNAP resource server declares its types here too.
-    { name: 'oauthAuthorizationDetailsType', kind: 'multi',
-      from: 'the console (the Access types tab), the management API, the ' +
-            'RFC 9728 import, or by hand',
-      families: ['oauth2', 'oidc', 'gnap'],
-      familyWhy: 'It is a type /oauth2/authorize, /oauth2/token and /gnap ' +
-        'accept and address tokens to this application for, so on an entry ' +
-        'declared for no OAuth family and not for GNAP it would read like ' +
-        'an API in service.',
-      what: 'An ACCESS TYPE this application, as a resource server, owns — ' +
-            'one per value, read by RFC 9396 authorization_details and by ' +
-            'GNAP access rights alike. A bare type name, or a JSON object ' +
-            '{"type", "description", "locations", "schema", "actions", ' +
-            '"datatypes", "privileges", "required", "interaction", ' +
-            '"consentActions", "bearer", "maxLifetimeS", "acr", ' +
-            '"derivableFrom", "introspectionClaims", "limits"}: `locations` ' +
-            'are the addresses a right of this type may name (the ' +
-            'permission base URI and oauthAudience always count), `schema` ' +
-            'a JSON Schema every right of it must satisfy, `actions`, ' +
-            '`datatypes` and `privileges` the values it may name, ' +
-            '`required` the members it must carry, `bearer: false` that a ' +
-            'token carrying it is sender-constrained, `maxLifetimeS` the ' +
-            'longest such a token lives, `derivableFrom` the types it may ' +
-            'be derived from (RFC 9767 section 4), `introspectionClaims` ' +
-            'what this resource server is told about the person at ' +
-            'introspection, and `limits` the JSON Schema (a subset) a ' +
-            'right\'s limits must meet. `interaction` (always, default, ' +
-            'never), `consentActions` and `acr` decide, for GNAP, whether ' +
-            'the resource owner is asked and how strongly signed in (#432 ' +
-            'phase 6). An undeclared type is ' +
-            'refused invalid_authorization_details by RFC 9396 in every ' +
-            'mode, and by GNAP in product mode.' },
-    { name: 'oauthAuthorizationDetailsTypes', kind: 'multi',
-      from: 'POST /oauth2/register, the console, the management API, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It narrows what /oauth2/authorize and /oauth2/token accept ' +
-        'from this client, so on an entry declared for neither OAuth family ' +
-        'it would read like a restriction in force.',
-      what: 'RFC 9396 section 10 `authorization_details_types`: the ONLY ' +
-            'authorization_details types this client may use, one per ' +
-            'value. EMPTY MEANS any type this authorization server ' +
-            'supports.' },
-    // -------------------------------------------------------------------
-    // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
-    // RESOURCE: what it requires of the authentication behind an access token
-    // addressed to it. RFC 9470 defines no registration or metadata member for
-    // either — section 3 is a challenge a resource server sends — so they are
-    // written by an operator, never by a registration. ENFORCED by the stand-in
-    // resource `/oauth2/step-up/resource/{identifier}`, which answers for this
-    // application; READ through `stepUpRequirementOf()` below, whose grammar is
-    // `oauth-oidc/step_up.ts`'s header's. Family-scoped for the introspection
-    // attributes' reason.
-    { name: 'oauthStepUpAcrValues', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It is a requirement on OAuth access tokens addressed to ' +
-        'this application, so on an entry declared for neither OAuth family ' +
-        'it would read like a requirement in force.',
-      what: 'RFC 9470 section 3: the acr values this application, as a ' +
-            'resource server, requires of the authentication behind an ' +
-            'access token — space-separated, most preferred first. A token ' +
-            'whose acr meets none is challenged 401 ' +
-            'insufficient_user_authentication with these as acr_values. The ' +
-            'levels 0 < 1 < mfa are ordered; hwk, phr and phrh are met by a ' +
-            'password with a security key; any other value only by that ' +
-            'exact acr. EMPTY requires nothing.' },
-    { name: 'oauthStepUpMaxAge', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It is a requirement on OAuth access tokens addressed to ' +
-        'this application, so on an entry declared for neither OAuth family ' +
-        'it would read like a requirement in force.',
-      what: 'RFC 9470 section 3\'s max_age: the oldest authentication, in ' +
-            'whole seconds, this application accepts behind an access token. ' +
-            'A token whose auth_time is older, or absent, is challenged 401 ' +
-            'insufficient_user_authentication with max_age. 0 means an ' +
-            'authentication this second. EMPTY requires nothing.' },
-    // -------------------------------------------------------------------
-    // RFC 7521 / RFC 7523 (2026-09-10). SEVEN ATTRIBUTES (eight since the key
-    // source joined them on 2026-09-13), and the split between them is the
-    // split between what an OPERATOR says and what this service ISSUED.
-    //
-    // The first is a DECLARATION and is the whole trust decision: this
-    // application may present assertions under these `iss` values. There is no
-    // permissive reading of it — see `oauth-oidc/assertion_grant.js`, where the
-    // argument is federation's.
-    //
-    // The other six are what a build on /admin/pki wrote here, and they are on
-    // the APPLICATION ENTRY rather than in a store of the PKI module's own for
-    // the reason `applications.js` gives about everything else in this table:
-    // a second store would be a second answer to "what is that client's signing
-    // key", and the second answer would be the one an `ldapsearch` could not
-    // see.
-    // -------------------------------------------------------------------
-    { name: 'oauthAssertionIssuer', kind: 'multi', from: 'by hand',
-      identifier: true,
-      identifierName: 'assertion iss',
-      what: 'THE `iss` VALUES THIS APPLICATION MAY PRESENT IN AN RFC 7523 ' +
-            'SECTION 2.1 AUTHORIZATION GRANT, and it is one of the few ' +
-            'DECLARED attributes here that is READ. A JWT bearer assertion ' +
-            'IS the whole authorization — there is no browser, no password ' +
-            'and no consent step in that grant — so accepting one from ' +
-            'anybody would mean anybody who can reach this port getting an ' +
-            'access token as anybody. This is therefore the second feature ' +
-            'in this service with no permissive answer available, beside ' +
-            'federation, and `oauth2.jwtBearerRequireRegisteredIssuer` is on ' +
-            'by default.\n\nAn assertion a client issues ABOUT ITSELF names ' +
-            'its own client_id as `iss` and needs no value here: that lookup ' +
-            'already succeeds through oauthClientId, and asking an operator ' +
-            'to write the client_id down twice would be a configuration step ' +
-            'with no decision in it. It accumulates, because one application ' +
-            'legitimately asserts under a per-environment issuer name.' },
-    { name: 'oauthAssertionJwks', kind: 'single', from: '/admin/pki',
-      what: 'THE PUBLIC KEYS THIS SERVICE ISSUED THIS APPLICATION, as a JWKS ' +
-            'document, each key carrying `x5c` (its certificate chain) and ' +
-            '`x5t#S256`. Written by the Issue control on /admin/pki and by ' +
-            'POST /admin-api/pki/issue.\n\nIt is a SECOND attribute beside ' +
-            '`oauthJwks` and never overwrites it. A client that registered ' +
-            'its own keys and was later issued a pair by an operator has two ' +
-            'ways to sign, both of which somebody deliberately arranged — ' +
-            'and writing over the first would silently end it the moment ' +
-            'somebody pressed a button about the second. Both are read, ' +
-            'ORed, by client_auth.js and by assertion_grant.js. Public key ' +
-            'material, so like oauthJwks it is worth nothing to whoever ' +
-            'reads this directory.' },
-    { name: 'oauthAssertionCertificate', kind: 'single', from: '/admin/pki',
-      what: 'The leaf certificate, PEM, whose subject is this application ' +
-            'and whose issuer is the realm\'s Issuing CA. The same bytes as ' +
-            'the first `x5c` member above, in the form a person can paste ' +
-            'into `openssl x509 -text`.' },
-    { name: 'oauthAssertionCertificateChain', kind: 'single',
-      from: '/admin/pki',
-      what: 'The Issuing CA and the Intermediate CA, PEM, in that order — ' +
-            'what a leaf travels with. The ROOT is deliberately not in it: a ' +
-            'root is a trust anchor, and a relying party that accepted one ' +
-            'because it arrived in the chain would be accepting a ' +
-            'certificate that vouched for itself.' },
-    { name: 'oauthAssertionPrivateKey', kind: 'single', from: '/admin/pki',
-      sensitive: true,
-      what: 'THE PRIVATE KEY, PEM. **SEALED AT REST WHEREVER THE ' +
-            'KEY-ENCRYPTION KEY OUTLIVES THE PROCESS** — AES-256-GCM through ' +
-            'common/keystore.js, the same mechanism and the same key that ' +
-            'seal this service\'s own signing keys, common/pki.js\'s three ' +
-            'CA key pairs and an authenticator\'s shared secret. So an ' +
-            'ldapsearch on TCP 389 where every bind succeeds, an ldif file, ' +
-            'a database row and a backup of either hold `$aesgcm$…` and not ' +
-            'a usable key. The surfaces that come through this module — ' +
-            '/admin/applications and GET /admin-api/applications, both ' +
-            'behind a credential — are handed the PEM, because the seal ' +
-            'protects the STORE rather than the console an operator collects ' +
-            'an issued credential from; SEALED_FIELDS argues the split. In ' +
-            'DEVELOPMENT mode it is written in the clear, which is the rule ' +
-            'the authenticator secret beside it follows and for its reason: ' +
-            'the key-encryption key there is ephemeral, so sealing an entry ' +
-            'that survives a restart under a key that does not would make ' +
-            'the private half permanent garbage while the certificate came ' +
-            'back. It is never written to the audit log, and this service ' +
-            'keeps NO SECOND COPY of it — common/pki.js hands it over once, ' +
-            'at issuance, and forgets it.' },
-    { name: 'oauthAssertionKid', kind: 'single', from: '/admin/pki',
-      what: 'The `kid` of the issued key, derived from the key material as ' +
-            'every kid in this service is (RFC 7638). An assertion naming it ' +
-            'in its JWS header narrows the verification to that key; one ' +
-            'naming nothing is tried against every key registered for this ' +
-            'application, which is correct rather than lax.' },
-    { name: 'oauthAssertionExpiresAt', kind: 'single', from: '/admin/pki',
-      what: 'When the issued certificate expires, as a GeneralizedTime. It ' +
-            'is a fact about the CERTIFICATE and not a policy: nothing here ' +
-            'refuses an assertion because this date has passed — what ' +
-            'refuses one is the certificate failing to build a path, which ' +
-            'is checked where the chain is checked. Drawn on /admin/pki so ' +
-            'that an operator can see what is about to stop working.' },
-    { name: 'oauthAssertionKeySource', kind: 'single',
-      from: '/admin/pki, or the application\'s own page',
-      what: 'WHERE THE RFC 7523 KEY PAIR ABOVE CAME FROM, and therefore who ' +
-            'holds its private half. `issued` — generated here and signed by ' +
-            'this realm\'s Issuing CA, the private key on ' +
-            '`oauthAssertionPrivateKey`. `uploaded-realm-ca` — a certificate ' +
-            'this realm\'s own certificate authority issued, uploaded in ' +
-            'place of a generated pair. `uploaded-external-ca` — a ' +
-            'certificate from another authority, uploaded with its whole ' +
-            'chain up to a self-signed root, every link verified. For both ' +
-            'uploaded values the APPLICATION holds the private key and this ' +
-            'service never has.\n\nA fact about what was done and not a ' +
-            'policy: no verifier reads it, and an entry written before it ' +
-            'existed carries none — the console reads a sealed private key ' +
-            'as `issued` there, which is the only thing that could have put ' +
-            'one on the entry.' },
-    // -------------------------------------------------------------------
-    // RFC 7522 — THE SAML 2.0 PROFILE OF THE SAME FRAMEWORK (2026-09-11).
-    // SEVEN MORE ATTRIBUTES (eight with the key source), AND THE WHOLE POINT
-    // OF THEM IS THAT THEY ARE NOT THE ONES ABOVE.
-    //
-    // An application may hold TWO key pairs issued by this realm's
-    // certificate authority — one for RFC 7523 and one for RFC 7522 — and no
-    // code path crosses between the two sets:
-    // `oauth-oidc/saml_assertion_grant.js` never reads an `oauthAssertion*`
-    // attribute and `oauth-oidc/assertion_grant.js` never reads an
-    // `oauthSamlAssertion*` one. So a key pair issued for one profile cannot
-    // sign for the other, and taking one off leaves the other working.
-    //
-    // **THAT SEPARATION IS A DESIGN DECISION RATHER THAN AN ACCIDENT OF
-    // NAMING**, and the reason is that the two profiles verify differently:
-    // a JWT is verified against a JWKS or an x5c chain that reaches this
-    // realm's Root, and a SAML assertion is verified ONLY against a
-    // certificate registered here. One attribute set holding both would make
-    // the second rule unenforceable — the chain path would reach the SAML
-    // certificate too. `oauth-oidc/saml_assertion_grant.js`'s header argues
-    // it at length.
-    //
-    // The first TWO are DECLARED and are what a party registers; the other
-    // five are what an Issue on /admin/pki wrote, and they are the same five
-    // the JWT profile writes with a different spelling of the key handle —
-    // an X.509 key is named by its THUMBPRINT here where a JWS key is named
-    // by its `kid`, because those are the handles the two formats actually
-    // carry.
-    // -------------------------------------------------------------------
-    { name: 'oauthSamlAssertionIssuer', kind: 'multi', from: 'by hand',
-      identifier: true,
-      identifierName: 'SAML assertion Issuer',
-      what: 'THE `<Issuer>` VALUES THIS APPLICATION MAY PRESENT IN AN RFC ' +
-            '7522 SECTION 2.1 AUTHORIZATION GRANT. It is ' +
-            '`oauthAssertionIssuer`\'s sibling for the SAML 2.0 profile and ' +
-            'it is READ for the same reason: a bearer assertion IS the whole ' +
-            'authorization — no browser, no password, no consent step — so ' +
-            'accepting one from anybody would mean anybody who can reach ' +
-            'this port getting an access token as anybody. ' +
-            '`oauth2.saml2BearerRequireRegisteredIssuer` is on by ' +
-            'default.\n\nIt is a SEPARATE attribute from the JWT one and not ' +
-            'a shared list: a party trusted to assert in one format has not ' +
-            'thereby been trusted to assert in the other, and an operator ' +
-            'who declared an issuer for RFC 7523 must not silently have ' +
-            'declared it for RFC 7522. Compared by Simple String Comparison ' +
-            '(RFC 3986 section 6.2.1), which RFC 7522 section 3 item 1 asks ' +
-            'for — no case folding and no trailing-slash tolerance. It ' +
-            'accumulates, for the reason the JWT one does.' },
-    { name: 'oauthSamlAssertionSigningCertificate', kind: 'single',
-      from: 'by ' +
-        'hand',
-      what: 'THE CERTIFICATE THIS PARTY SIGNS ITS RFC 7522 ASSERTIONS WITH, ' +
-            'PEM, registered by value. The analogue of `oauthJwks` for a ' +
-            'profile whose signatures are XML Signature rather than JWS — ' +
-            'there is no JWKS in SAML, the thing a party registers IS a ' +
-            'certificate.\n\nSeveral PEM blocks may be in one value, because ' +
-            'a party rotating a certificate holds two for as long as ' +
-            'assertions signed by the old one are still in flight. Public ' +
-            'key material, so like `oauthJwks` it is worth nothing to ' +
-            'whoever reads this directory.\n\n**A CERTIFICATE ARRIVING IN ' +
-            'THE ASSERTION\'S OWN `<ds:KeyInfo>` IS NOT A SUBSTITUTE FOR ' +
-            'THIS.** It is used to choose among what is registered here and ' +
-            'never as a key in its own right, which is where this profile is ' +
-            'stricter than RFC 7523: a chain to this realm\'s Root proves ' +
-            'the REALM issued a key and says nothing about WHICH application ' +
-            'holds it, so accepting one would let an application\'s RFC 7523 ' +
-            'leaf sign a SAML assertion.' },
-    { name: 'oauthSamlAssertionCertificate', kind: 'single', from: '/admin/pki',
-      what: 'The leaf certificate this service ISSUED this application for ' +
-            'RFC 7522, PEM, whose subject is the application and whose ' +
-            'issuer is the realm\'s Issuing CA. Written by the Issue control ' +
-            'on /admin/pki with the SAML 2.0 purpose chosen, and by POST ' +
-            '/admin-api/pki/issue with `purpose: "saml"`. It is a DIFFERENT ' +
-            'certificate over a DIFFERENT key pair from ' +
-            '`oauthAssertionCertificate` beside it, and its subjectAltName ' +
-            'carries the RFC 7522 profile URI so that a certificate read out ' +
-            'of context says which profile it was issued for.' },
-    { name: 'oauthSamlAssertionCertificateChain', kind: 'single',
-      from: '/admin/pki',
-      what: 'The Issuing CA and the Intermediate CA, PEM, in that order — ' +
-            'what the leaf above travels with. The ROOT is deliberately not ' +
-            'in it, for the reason the JWT chain row gives: a relying party ' +
-            'that accepted one because it arrived in the chain would be ' +
-            'accepting a certificate that vouched for itself.' },
-    { name: 'oauthSamlAssertionPrivateKey', kind: 'single', from: '/admin/pki',
-      sensitive: true,
-      what: 'THE PRIVATE KEY of the RFC 7522 pair, PEM. **SEALED AT REST ' +
-            'WHEREVER THE KEY-ENCRYPTION KEY OUTLIVES THE PROCESS**, by the ' +
-            'same mechanism and under the same key as ' +
-            '`oauthAssertionPrivateKey` beside it — see that row, which ' +
-            'argues the whole of it. This service keeps NO SECOND COPY: ' +
-            'common/pki.js hands it over once, at issuance, and forgets it.' },
-    { name: 'oauthSamlAssertionThumbprint', kind: 'single', from: '/admin/pki',
-      what: 'The SHA-256 thumbprint of the issued certificate, base64url. It ' +
-            'is what `oauthAssertionKid` is for the JWT profile and it is ' +
-            'spelt differently because the two formats carry different ' +
-            'handles: a JWS header names a `kid` and an XML Signature ' +
-            'carries the certificate itself, so what matches a presented ' +
-            '<ds:KeyInfo> against what is registered is a thumbprint.' },
-    { name: 'oauthSamlAssertionExpiresAt', kind: 'single', from: '/admin/pki',
-      what: 'When the issued RFC 7522 certificate expires, as a ' +
-            'GeneralizedTime. A fact about the CERTIFICATE and not a policy, ' +
-            'exactly as `oauthAssertionExpiresAt` is: nothing here refuses ' +
-            'an assertion because this date has passed. Drawn on /admin/pki ' +
-            'so that an operator can see what is about to stop working.' },
-    { name: 'oauthSamlAssertionKeySource', kind: 'single',
-      from: '/admin/pki, or the application\'s own page',
-      what: 'Where the RFC 7522 key pair above came from, in the vocabulary ' +
-            '`oauthAssertionKeySource` uses and for its reason: `issued`, ' +
-            '`uploaded-realm-ca` or `uploaded-external-ca`. It is a SEPARATE ' +
-            'attribute from the JWT one because the two key pairs are ' +
-            'separate — one may be issued here while the other is somebody ' +
-            'else\'s certificate.' },
-    // -------------------------------------------------------------------
-    // RFC 7591 SECTION 2.3 — SOFTWARE STATEMENTS (2026-09-13). Two kinds of
-    // row, and `oauth-oidc/software_statement.ts` argues both: on a PUBLISHER,
-    // the declaration and the statement this realm issued it; on a client that
-    // REGISTERED with a statement, three facts about how it got in. The keys a
-    // declared publisher signs with are the ones above — `oauthJwks` and the
-    // RFC 7523 key pair — because a key is the party's and the declaration is
-    // the decision.
-    // -------------------------------------------------------------------
-    { name: 'oauthSoftwareStatementIssuer', kind: 'multi', from: 'by hand',
-      identifier: true,
-      identifierName: 'software statement iss',
-      what: 'THE `iss` VALUES WHOSE SOFTWARE STATEMENTS THIS APPLICATION ' +
-            'VOUCHES FOR at POST /oauth2/register (RFC 7591 section 2.3) — ' +
-            'the application is the software PUBLISHER, and a statement ' +
-            'naming one of these issuers is verified against its `jwks` or ' +
-            'its RFC 7523 key pair from /admin/pki, or an x5c this realm ' +
-            'issued to it. It is READ: a statement from an issuer nobody ' +
-            'declares is refused unapproved_software_statement while ' +
-            '`oauth2.softwareStatementRequireTrustedIssuer` is on, and a ' +
-            'trusted one fixes the registered metadata and may open a ' +
-            'closed registration endpoint.\n\nA SEPARATE attribute from ' +
-            '`oauthAssertionIssuer`: a party trusted to say who a person is ' +
-            'has not thereby been trusted to say what software may register ' +
-            'as. A statement this realm issued itself needs no declaration. ' +
-            'It accumulates, for the reason the assertion issuers do.' },
-    { name: 'oauthIssuedSoftwareStatement', kind: 'single',
-      from: 'the application\'s own page, or POST ' +
-            '/admin-api/applications/issue-software-statement',
-      what: 'THE SOFTWARE STATEMENT THIS REALM LAST ISSUED FOR THIS ' +
-            'APPLICATION, as the compact JWS, typed ' +
-            '`software-statement+jwt`, with `sub` naming this application. ' +
-            'A client presenting it at POST /oauth2/register is registered ' +
-            'with the members it fixes. NOT A SECRET — RFC 7591 section 2.3 ' +
-            'expects a statement to ship with every copy of the software — ' +
-            'and not a record of every statement issued: issuing again ' +
-            'replaces this value, and the earlier statement still verifies ' +
-            'until it expires or the realm\'s signing key changes.' },
-    { name: 'appSoftwareStatementIssuer', kind: 'single',
-      from: 'POST /oauth2/register',
-      what: 'The `iss` of the software statement this client REGISTERED ' +
-            'with, or absent when it presented none. Cleared by an RFC 7592 ' +
-            'update that carries none, and by the registration being ' +
-            'deleted.' },
-    { name: 'appSoftwareStatementTrusted', kind: 'single',
-      from: 'POST /oauth2/register',
-      what: 'TRUE when that statement was verified against an issuer this ' +
-            'realm trusts, FALSE when it was accepted unverified because ' +
-            '`oauth2.softwareStatementRequireTrustedIssuer` was off. A ' +
-            'client registered on a TRUE statement at an endpoint otherwise ' +
-            'closed must present a trusted statement from the same issuer ' +
-            'with every update.' },
-    { name: 'appSoftwareStatementPublisher', kind: 'single',
-      from: 'POST /oauth2/register',
-      what: 'The application the trust came through: the one declaring the ' +
-            'issuer, or — for a statement this realm issued — the ' +
-            'application it was issued for.' },
-    { name: 'oauthTlsClientAuthSubjectDn', kind: 'single', from: 'by hand',
-      identifier: true,
-      identifierName: 'subject DN',
-      what: 'RFC 8705 section 2.1.2 `tls_client_auth_subject_dn`: the ' +
-            'subject DN of the PKI certificate this client authenticates ' +
-            'with, in RFC 4514 form. Compared as a NAME since 2026-09-13 ' +
-            '(common/certificate_subject.js: attribute types folded, values ' +
-            'caseIgnoreMatch, the AVAs of a multi-valued RDN in any order) ' +
-            'and only against a certificate whose chain VERIFIED. One of the ' +
-            'FIVE subject parameters, and a client registers at most one — ' +
-            'a second is refused (STS-REG-0131, STS-REG-0135). With none, ' +
-            'tls_client_auth still authenticates a certificate this realm ' +
-            'issued to THIS application. IT IS ALSO THE IDENTIFIER ATTRIBUTE ' +
-            'OF THE `mtls` FAMILY, and it is SINGLE-VALUED while every other ' +
-            'identifier here accumulates, because RFC 8705 says the ' +
-            'certificate matches "the single expected subject".' },
-    { name: 'oauthTlsClientAuthSanDns', kind: 'single',
-      from: 'by hand / POST /oauth2/register',
-      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_dns`: a dNSName ' +
-            'the certificate this client authenticates with must carry, ' +
-            'compared without regard to case or a trailing dot, never as a ' +
-            'wildcard. One of the five subject parameters; see ' +
-            'oauthTlsClientAuthSubjectDn.' },
-    { name: 'oauthTlsClientAuthSanUri', kind: 'single',
-      from: 'by hand / POST /oauth2/register',
-      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_uri`: a ' +
-            'uniformResourceIdentifier the certificate must carry, compared ' +
-            'exactly. One of the five subject parameters.' },
-    { name: 'oauthTlsClientAuthSanIp', kind: 'single',
-      from: 'by hand / POST /oauth2/register',
-      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_ip`: an iPAddress ' +
-            'the certificate must carry, IPv4 or IPv6, compared as the ' +
-            'address rather than its spelling. One of the five subject ' +
-            'parameters.' },
-    { name: 'oauthTlsClientAuthSanEmail', kind: 'single',
-      from: 'by hand / POST /oauth2/register',
-      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_email`: an ' +
-            'rfc822Name the certificate must carry, the domain compared ' +
-            'without regard to case and the local part exactly (RFC 5280 ' +
-            'section 7.5). One of the five subject parameters.' },
-    { name: 'oauthTlsClientCertificateBoundAccessTokens', kind: 'single',
-      from: 'by hand / POST /oauth2/register',
-      what: 'RFC 8705 section 3.4 ' +
-            '`tls_client_certificate_bound_access_tokens`, TRUE or FALSE. ' +
-            'TRUE is this client DECLARING that its tokens are ' +
-            'certificate-bound, and it is held to that in EVERY mode: a ' +
-            'token request from it over a connection with no client ' +
-            'certificate is refused (STS-OAUTH-0487) rather than answered ' +
-            'with an unbound token, which section 3.4 leaves to the ' +
-            'authorization server. FALSE or absent changes nothing — a ' +
-            'client presenting a certificate still gets a bound token.' },
-    { name: 'oauthTlsClientCertificateThumbprint', kind: 'single', from: 'by ' +
-        'hand',
-      what: 'For RFC 8705 section 2.2 self_signed_tls_client_auth: the ' +
-            'base64url SHA-256 of the DER of the certificate this client ' +
-            'authenticates with. THIS SERVICE\'S OWN NAME, kept beside ' +
-            'what the RFC names: since 2026-09-13 a certificate also ' +
-            'authenticates the client when it is the x5c[0] of a key in the ' +
-            'jwks it registered (section 2.2.2). Fetch a certificate\'s ' +
-            'thumbprint with GET /tls/sign-in, or compute it: openssl x509 ' +
-            '-outform DER | openssl dgst -sha256 -binary | base64url.' },
-    { name: 'oauthConfidential', kind: 'single', from: 'this registry',
-      what: 'TRUE/FALSE, the determination RFC 9700 mode makes about it — ' +
-            'and therefore whether PKCE is required of it and whether its ' +
-            'secret is checked. Written here so the answer can be read ' +
-            'rather than inferred.' },
-
-    // --- SAML, WS-Federation, WS-Trust ------------------------------------
-    { name: 'samlEntityId', kind: 'multi', from: 'SAML 2.0 / SAML 1.1',
-      identifier: true,
-      identifierName: 'entityID',
-      what: 'THE SERVICE PROVIDER\'S ENTITYID — the assertion audience, and ' +
-            'the identifier attribute of BOTH SAML families. SAML 1.1 has no ' +
-            'entityID of its own in the protocol (there is no request ' +
-            'message for one to travel in) and what stands in for it — ' +
-            'Shibboleth\'s providerId, the path segment, or the TARGET\'s ' +
-            'origin — names the same party, so one attribute holds it rather ' +
-            'than two that would disagree the first time an application was ' +
-            'declared for both. Accumulates: an application answering to two ' +
-            'entityIDs is one application.\n\nIT IS READ, as the SECOND half ' +
-            'of forAppliesTo(): a WS-Trust AppliesTo and the ' +
-            'AudienceRestriction of the assertion issued for it are one ' +
-            'string, so an application that registered it here rather than ' +
-            'on `wstrustAppliesTo` still gets its own box on the delegation ' +
-            'map. The same lookup and the same non-permission — nothing here ' +
-            'is ever refused for being unregistered.' },
-    { name: 'samlAssertionConsumerService', kind: 'multi', from: 'SAML 2.0 / ' +
-        'SAML 1.1',
-      what: 'THE ASSERTION CONSUMER SERVICE URL — where a SAML response is ' +
-            'posted back to, and the redirect URI of both SAML families. It ' +
-            'held WS-Federation\'s `wreply` as well until 2026-08-25; that ' +
-            'moved to wsfedReplyUrl, because the SAML pages read this ' +
-            'attribute for the Single Logout fallback and a wreply arriving ' +
-            'in it made a WS-Federation application look as though it had ' +
-            'named a SAML ACS. CHECKED IN PRODUCT MODE ONLY: development ' +
-            'sends a response wherever the request asked and records the ' +
-            'address here; product delivers only to an address already on ' +
-            'this list, and a sighting there never adds one. What ' +
-            'development RECORDS here is marked on appReturnAddressObserved, ' +
-            'and product refuses a marked address until an operator confirms ' +
-            'it — so a realm switched from development to product does not ' +
-            'trust what development learnt. Values recorded before that mark ' +
-            'existed carry none and still need reviewing.' },
-    { name: 'samlSingleLogoutService', kind: 'multi',
-      from: 'consumed metadata, or by hand',
-      what: 'WHERE A <samlp:LogoutResponse> IS SENT for this service ' +
-            'provider, and where a LogoutRequest goes when this identity ' +
-            'provider starts the logout. DECLARED, not observed: a ' +
-            'LogoutRequest carries no return address, so only SP METADATA ' +
-            'or an operator can say. Consuming the metadata writes its ' +
-            'SingleLogoutService locations here (and each endpoint\'s ' +
-            'binding and ResponseLocation on samlSloEndpoint, which is read ' +
-            'first). With none recorded the fallback is ' +
-            'saml2.defaultSingleLogoutService and then the assertion ' +
-            'consumer service URL above, which is a guess this service makes ' +
-            'out loud rather than quietly.' },
-    { name: 'samlNameIdFormat', kind: 'multi', from: 'SAML 2.0',
-      what: 'Every NameID Format this service provider has asked for in a ' +
-            'NameIDPolicy, accumulated. It is evidence rather than ' +
-            'configuration: this identity provider answers with whatever was ' +
-            'asked for, including a format nobody has ever heard of, so a ' +
-            'value here does not restrict the next request.' },
-    { name: 'samlResponseBinding', kind: 'multi', from: 'SAML 2.0',
-      what: 'The ProtocolBinding values it has asked its responses back on — ' +
-            'HTTP-POST, HTTP-Redirect or HTTP-Artifact. Several is the ' +
-            'ordinary case for a service provider being exercised, which is ' +
-            'what makes this a list.' },
-    // THE TRUST ANCHOR FOR A SERVICE PROVIDER'S SIGNATURES (2026-09-17,
-    // #37). It was single-valued and written straight off the ds:KeyInfo of
-    // every signed AuthnRequest while nothing verified a request signature;
-    // now that something does, a certificate a REQUEST carries cannot be
-    // what the request is checked against, so a sighting writes
-    // `samlObservedSigningCertificate` below instead and this attribute holds
-    // only what an operator or consumed metadata registered. MULTI, because
-    // metadata publishes the old and new key side by side during a rollover
-    // and both must verify. `saml/request_signature.ts` argues the rest.
-    { name: 'samlSigningCertificate', kind: 'multi',
-      from: 'consumed metadata, the SAML 2.0 page, or by hand',
-      what: 'THE SERVICE PROVIDER\'S REGISTERED SIGNING CERTIFICATES, base64 ' +
-            'DER, one per value. A signed AuthnRequest, LogoutRequest or ' +
-            'LogoutResponse from this service provider is VERIFIED against ' +
-            'these — in every mode — and refused when it verifies against ' +
-            'none. Written by consuming its metadata (every KeyDescriptor ' +
-            'use="signing" or with no use), by the SAML 2.0 console page, by ' +
-            'POST /admin-api/saml2/set-signing-certificate, by confirming ' +
-            'the observed certificate below, or by hand; an RSA certificate ' +
-            'is required, because the verifier here is RSA. It is NEVER ' +
-            'written from a request: the certificate a request carries in ' +
-            'its ds:KeyInfo goes on samlObservedSigningCertificate. Values ' +
-            'written before 2026-09-17 were captured off requests and carry ' +
-            'no provenance — review them before trusting them. Public key ' +
-            'material, so unlike oauthClientSecret it is worth nothing to ' +
-            'whoever reads this directory.' },
-    { name: 'samlObservedSigningCertificate', kind: 'single',
-      from: 'a signed SAML 2.0 request',
-      what: 'THE CERTIFICATE THE LAST SIGNED REQUEST CARRIED IN ITS ' +
-            'ds:KeyInfo, base64 DER, when it is not one of the registered ' +
-            'samlSigningCertificate values. OBSERVED, NOT TRUSTED: a key a ' +
-            'request brings with it proves nothing about who sent the ' +
-            'request, so it verifies nothing in either mode. Development ' +
-            'still encrypts an assertion to it when the entry holds no other ' +
-            'certificate; product does not. An operator CONFIRMS it (it ' +
-            'moves onto samlSigningCertificate) or DISCARDS it, on the SAML ' +
-            '2.0 page or with POST /admin-api/saml2/confirm-signing-' +
-            'certificate and /discard-signing-certificate. ONE value — the ' +
-            'last — so a stream of requests carrying made-up keys cannot ' +
-            'grow the entry.' },
-    { name: 'samlAuthnRequestVerification', kind: 'single',
-      from: 'SAML 2.0',
-      what: 'WHAT CHECKING THE LAST REQUEST\'S SIGNATURE FOUND: `verified`, ' +
-            '`failed`, `unsigned` or `no-certificate` (signed, and nothing ' +
-            'registered to check it against), then the binding and the ' +
-            'algorithm. Assigned, like samlAuthnRequestSigned beside it.' },
-    // ---------------------------------------------------------------------
-    // SAML 2.0 ENCRYPTION, added 2026-08-27. Three attributes that are NOT
-    // setting overrides — they are where the recipient's key comes from — and
-    // four that are.
-    //
-    // THE CERTIFICATE IS RESOLVED IN THREE PLACES, MOST SPECIFIC FIRST:
-    // `samlEncryptionCertificate` (extracted from metadata, or typed), then a
-    // REGISTERED `samlSigningCertificate`, then — in development mode only
-    // since 2026-09-17 (#37) — the OBSERVED `samlObservedSigningCertificate`
-    // off a signed AuthnRequest's ds:KeyInfo. That last one is what makes
-    // this work with no configuration at all in development; product does not
-    // encrypt to a key anybody could have put in a request. Using a SIGNING
-    // key to encrypt to is not what a careful deployment does — real metadata
-    // carries a separate `use="encryption"` KeyDescriptor — and it is the
-    // right default for a mock, where the alternative is refusing to
-    // demonstrate the feature.
-    { name: 'samlSpMetadataUrl', kind: 'single', from: 'by hand',
-      what: 'WHERE THIS SERVICE PROVIDER\'S METADATA IS PUBLISHED. It is ' +
-            'fetched by the "refresh metadata" action on the application ' +
-            'page and by POST /admin-api/applications/refresh-metadata, and ' +
-            'NEVER while a flow is running — an assertion that had to wait ' +
-            'on somebody else\'s web server to be issued would make every ' +
-            'sign-in as reliable as that server. What the fetch writes is ' +
-            'everything consuming the document writes — see ' +
-            'samlSpMetadata below.\n\nThis is ' +
-            'the SECOND outbound-request surface in this service; federation ' +
-            'was the first and is the only other. It follows the same ' +
-            'refusals — the URL must be one this entry carries, the scheme ' +
-            'must be http or https, and the request times out.' },
-    { name: 'samlSpMetadata', kind: 'single', from: 'a metadata fetch, or by ' +
-                                                    'hand',
-      what: 'THE SERVICE PROVIDER\'S METADATA DOCUMENT, cached verbatim. It ' +
-            'is what the refresh action stores, and what uploading one on ' +
-            'the SAML 2.0 page (or POST /admin-api/saml2/upload-metadata) ' +
-            'stores for a service provider whose metadata this service ' +
-            'cannot reach. CONSUMING it (2026-09-17) writes its ' +
-            'AssertionConsumerService and SingleLogoutService endpoints as ' +
-            'REGISTERED return addresses (samlAssertionConsumerService, ' +
-            'samlAcsEndpoint, samlSingleLogoutService, samlSloEndpoint), its ' +
-            'signing certificates (samlSigningCertificate), its encryption ' +
-            'certificate (samlEncryptionCertificate), its NameIDFormats, ' +
-            'AuthnRequestsSigned and WantAssertionsSigned, and its ' +
-            'validUntil and cacheDuration. Setting this attribute by hand ' +
-            'stores the document and consumes NOTHING — use the upload.' +
-            '\n\nIT IS KEPT AS WELL AS THE EXTRACT so that a reader can see ' +
-            'what was actually consumed. A certificate with no document ' +
-            'behind it is a value nobody can check.' },
-    { name: 'samlEncryptionCertificate', kind: 'single',
-      from: 'metadata, or by hand',
-      what: 'THE CERTIFICATE AN ASSERTION IS ENCRYPTED TO, base64 DER or ' +
-            'PEM. Written by the metadata fetch from the <md:KeyDescriptor ' +
-            'use="encryption"> — falling back to an unqualified ' +
-            'KeyDescriptor, which the specification says serves both uses — ' +
-            'and settable by hand for a service provider with no metadata at ' +
-            'all.\n\nIt decides what goes out. With none here a registered ' +
-            'samlSigningCertificate is used, then — in development only — ' +
-            'the observed one, and with none of them the assertion is sent ' +
-            'in clear (development) or refused (product), and the page says ' +
-            'so.' },
-    // ---------------------------------------------------------------------
-    // WHAT CONSUMING THE METADATA FOUND (2026-09-17, #37). DERIVED — each is
-    // rewritten whole by every consumption and by nothing else, which is
-    // `applications.replaceSamlMetadataFields()`'s job — except the
-    // metadata's own signing certificate, which is what an operator
-    // DECLARES the document must be signed with.
-    //
-    // THE TWO ENDPOINT ATTRIBUTES CARRY ONE ENDPOINT PER VALUE, space
-    // separated with the URL LAST — `appReturnAddressObserved`'s arrangement,
-    // for its reason: a URL has no raw space in it, so it can take the
-    // remainder. The plain locations are ALSO written to
-    // samlAssertionConsumerService and samlSingleLogoutService, because those
-    // are what the return-address rules and every older reader already ask.
-    // ---------------------------------------------------------------------
-    { name: 'samlAcsEndpoint', kind: 'multi', from: 'consumed metadata',
-      what: 'An <md:AssertionConsumerService> from the consumed metadata, as ' +
-            '`<index> <isDefault> <binding> <location>` — isDefault is ' +
-            '`true`, `false` or `-` for unstated. An AuthnRequest naming an ' +
-            'AssertionConsumerServiceIndex is answered at that endpoint and ' +
-            'on its binding; one naming an AssertionConsumerServiceURL must ' +
-            'name one of these (in EVERY mode, once metadata has been ' +
-            'consumed); one naming neither goes to the default endpoint ' +
-            '(saml-metadata-2.0-os section 2.2.3).' },
-    { name: 'samlSloEndpoint', kind: 'multi', from: 'consumed metadata',
-      what: 'An <md:SingleLogoutService> from the consumed metadata, as ' +
-            '`<binding> <location>` or `<binding> <location> ' +
-            '<responseLocation>`. A LogoutResponse goes to the ' +
-            'ResponseLocation where there is one, on the binding the ' +
-            'LogoutRequest arrived on where the service provider publishes ' +
-            'it.' },
-    { name: 'samlSpNameIdFormat', kind: 'multi', from: 'consumed metadata',
-      what: 'The <md:NameIDFormat> values the service provider\'s metadata ' +
-            'declares. Unlike samlNameIdFormat (what it has ASKED for), ' +
-            'these RESTRICT: a NameIDPolicy naming another format is ' +
-            'answered InvalidNameIDPolicy (saml-core-2.0-os section ' +
-            '3.4.1.1), and the default format is chosen from them.' },
-    { name: 'samlSpAuthnRequestsSigned', kind: 'single',
-      from: 'consumed metadata',
-      what: 'TRUE when the metadata says AuthnRequestsSigned="true": an ' +
-            'unsigned request from this service provider is then refused ' +
-            'whatever saml2.requireSignedAuthnRequests says, and the ' +
-            'metadata this identity provider serves it says ' +
-            'WantAuthnRequestsSigned="true".' },
-    { name: 'samlSpWantAssertionsSigned', kind: 'single',
-      from: 'consumed metadata',
-      what: 'TRUE when the metadata says WantAssertionsSigned="true": the ' +
-            'assertion is signed even where saml2.signAssertion (or ' +
-            'saml2SignAssertion) is off — in product mode; development ' +
-            'honours the setting, which is a test case, and logs that the ' +
-            'service provider asked otherwise.' },
-    { name: 'samlSpWantAssertionsEncrypted', kind: 'single',
-      from: 'consumed metadata',
-      what: 'TRUE when the consumed metadata publishes a KeyDescriptor ' +
-            'marked use="encryption" — the service provider saying it has a ' +
-            'key for encrypted assertions, which SAML 2.0 metadata has no ' +
-            'attribute of its own for (the interoperability profiles read ' +
-            'the key as the request). The assertion is then ENCRYPTED to ' +
-            'that key in every mode, whatever saml2.encryptAssertion says.' },
-    { name: 'samlSpMetadataValidUntil', kind: 'single',
-      from: 'consumed metadata',
-      what: 'The EFFECTIVE validUntil of the consumed document — the ' +
-            'earliest on any enclosing EntitiesDescriptor, the ' +
-            'EntityDescriptor and its SPSSODescriptor. A document already ' +
-            'expired is refused when consumed; once this passes, every ' +
-            'request from the service provider is REFUSED (STS-SAML-0074) ' +
-            'until a newer document is consumed.' },
-    { name: 'samlSpMetadataCacheDuration', kind: 'single',
-      from: 'consumed metadata',
-      what: 'The EFFECTIVE cacheDuration of the consumed document (the ' +
-            'shortest in its chain), as the xs:duration it carried. Once it ' +
-            'has elapsed since the document was consumed, the document is ' +
-            'STALE: the background refresher fetches it again where it can ' +
-            '(saml2.spMetadataRefresh), and it keeps working until its ' +
-            'validUntil.' },
-    { name: 'samlSpMetadataConsumedAt', kind: 'single',
-      from: 'consumed metadata',
-      what: 'When the document was last consumed, and how: `<ISO instant> ' +
-            '<refresh|upload|mdq>` — `mdq` for one fetched from the Metadata ' +
-            'Query responder, which the background refresher can fetch ' +
-            'again.' },
-    { name: 'samlSpMetadataSignature', kind: 'single',
-      from: 'consumed metadata',
-      what: 'What checking the consumed document\'s own signature found: ' +
-            '`verified`, `unsigned`, or `signed-not-verified` (signed, and ' +
-            'no samlSpMetadataSigningCertificate to check it against).' },
-    { name: 'samlSpMetadataSigningCertificate', kind: 'single',
-      from: 'by hand',
-      what: 'THE CERTIFICATE THIS SERVICE PROVIDER\'S METADATA MUST BE ' +
-            'SIGNED WITH, base64 DER. With it set, a document that is ' +
-            'unsigned, or whose signature does not verify against it, is ' +
-            'REFUSED and nothing on the entry changes. Without it a signed ' +
-            'document is consumed and recorded as signed-not-verified: the ' +
-            'trust act is then the operator\'s choice of URL (or document), ' +
-            'which is what an explicit refresh or upload is.' },
-    { name: 'saml2EncryptAssertion', kind: 'single', from: 'by hand',
-      overrides: 'saml2.encryptAssertion',
-      what: 'TRUE or FALSE: encrypt the assertion issued to THIS service ' +
-            'provider, overriding saml2.encryptAssertion. This is the one of ' +
-            'the four most worth having per application — an estate where ' +
-            'one service provider requires encryption and the others cannot ' +
-            'read it is the ordinary case, and a service-wide switch could ' +
-            'not express it.' },
-    { name: 'saml2EncryptionAlgorithm', kind: 'single', from: 'by hand',
-      overrides: 'saml2.encryptionAlgorithm',
-      what: 'The block cipher used for this service provider — aes256-gcm, ' +
-            'aes128-gcm, aes256-cbc or aes128-cbc — overriding ' +
-            'saml2.encryptionAlgorithm. A value that is not one of those ' +
-            'four is IGNORED with a warning and the service-wide choice is ' +
-            'used, exactly as an unparseable number would be.' },
-    { name: 'saml2KeyTransportAlgorithm', kind: 'single', from: 'by hand',
-      overrides: 'saml2.keyTransportAlgorithm',
-      what: 'How the content key is wrapped for this service provider — ' +
-            'rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256; #168) or ' +
-            'rsa-1_5 — overriding ' +
-            'saml2.keyTransportAlgorithm. An appliance that accepts only ' +
-            'rsa-1_5 is the reason this is per application rather than a ' +
-            'decision made once for the whole service.' },
-    { name: 'saml2EncryptLogoutNameId', kind: 'single', from: 'by hand',
-      overrides: 'saml2.encryptLogoutNameId',
-      what: 'TRUE or FALSE: send <saml:EncryptedID> rather than ' +
-            '<saml:NameID> in the LogoutRequest sent to this service ' +
-            'provider, overriding saml2.encryptLogoutNameId. Separate from ' +
-            'the assertion switch above because they are separate ' +
-            'capabilities in every service provider library that has them: ' +
-            'one that decrypts assertions may still expect a plain NameID in ' +
-            'a logout message.' },
-
-    // ---------------------------------------------------------------------
-    // THE OAUTH 2.0 / OIDC PER-CLIENT OVERRIDES, added 2026-08-27 in the same
-    // change that generalised the SAML ten below.
-    //
-    // Five settings a real authorization server varies per client and this one
-    // could not: how long each of the three tokens lives, how long a quiet
-    // refresh chain survives, and whether signing out kills the refresh token.
-    // Every one is a DEFAULT on /admin/token-lifetimes and an exception here.
-    //
-    // WHAT IS DELIBERATELY NOT HERE is as much of the point as what is.
-    // `oauth2.issuer` and `oauth2.rfc9700` describe the authorization SERVER —
-    // one answer per realm, and a per-client issuer would produce tokens that
-    // fail discovery. `oauth2.clockSkewS` and `oauth2.clientAssertionSkewS` are
-    // clock tolerances, which the SAML block below argues are a fact about the
-    // estate rather than about one relying party. And `oauth2.redirectUris` is
-    // the SERVICE-WIDE default list; the per-application half of that has
-    // existed since this file was written and is `oauthRedirectUri` above.
-    { name: 'oauthAccessTokenTtlS', kind: 'single', from: 'by hand',
-      overrides: 'oauth2.accessTokenTtlS',
-      what: 'HOW LONG AN ACCESS TOKEN ISSUED TO THIS CLIENT LIVES, in ' +
-            'seconds, overriding oauth2.accessTokenTtlS for it alone. It ' +
-            'becomes the token\'s `exp`, so it is stamped in at signing time ' +
-            'and nothing here can shorten a token already issued. Set it to ' +
-            '30 on one client to watch that client refresh while every other ' +
-            'client carries on.' },
-    { name: 'oauthIdTokenTtlS', kind: 'single', from: 'by hand',
-      overrides: 'oauth2.idTokenTtlS',
-      what: 'The same for the OIDC ID Token, overriding oauth2.idTokenTtlS. ' +
-            'Separate from the access token\'s because the two go to ' +
-            'different readers: an ID Token is consumed once at sign-in and ' +
-            'an access token is presented for as long as it lasts.' },
-    { name: 'oauthRefreshTokenTtlS', kind: 'single', from: 'by hand',
-      overrides: 'oauth2.refreshTokenTtlS',
-      what: 'The same for the refresh token, overriding ' +
-            'oauth2.refreshTokenTtlS. A value at or below ' +
-            'oauthAccessTokenTtlS is legal and is a grant that can never ' +
-            'usefully be renewed — /admin/token-lifetimes reports that ' +
-            'combination for the service-wide pair, and it is just as ' +
-            'reachable here.' },
-    { name: 'oauthRefreshIdleSeconds', kind: 'single', from: 'by hand',
-      overrides: 'oauth2.refreshIdleSeconds',
-      what: 'RFC 9700 MODE ONLY: how long a refresh chain may sit unused ' +
-            'before it is cut off, overriding oauth2.refreshIdleSeconds for ' +
-            'this client. It is measured from the last time any token in the ' +
-            'CHAIN was redeemed rather than from issuance, so a busy client ' +
-            'keeps its grant and a quiet one does not. Outside RFC 9700 mode ' +
-            'nothing reads it, which is a property of the setting rather ' +
-            'than of this attribute.' },
-    // AN APPLICATION'S OWN CUSTOM CLAIMS (rcbj, 2026-10-01), one JSON array
-    // of rows per claim set, each row the realm's shape (`name` and `value`,
-    // or `name`, `attribute`, `multi` and `type`). Added to the realm's set
-    // at issuance and winning by name (admin_stats.effectiveClaimSet()).
-    // Written by the configuration tab's Custom claims section, through the
-    // `set-custom-claim` and `remove-custom-claim` actions; kept off the
-    // field grid, which would show a JSON array as one text box.
-    { name: 'oauthClaimsAccessToken', kind: 'single',
-      from: 'the console\'s Custom claims section',
-      what: 'THIS APPLICATION\'S OWN ACCESS TOKEN CLAIMS, as a JSON array of ' +
-            'rows like the realm\'s Custom claims page. Added to the realm\'s ' +
-            'access token claims for tokens issued to this client, and an ' +
-            'application row replaces the realm row of the same name.' },
-    { name: 'oauthClaimsIdToken', kind: 'single',
-      from: 'the console\'s Custom claims section',
-      what: 'THIS APPLICATION\'S OWN ID TOKEN CLAIMS, as a JSON array of ' +
-            'rows like the realm\'s Custom claims page. Added to the realm\'s ' +
-            'ID Token claims for this client, winning by name.' },
-    { name: 'oauthClaimsUserinfo', kind: 'single',
-      from: 'the console\'s Custom claims section',
-      what: 'THIS APPLICATION\'S OWN USERINFO CLAIMS, as a JSON array of ' +
-            'rows like the realm\'s UserInfo claims page. Added to the ' +
-            'realm\'s UserInfo claims answered to this client, winning by ' +
-            'name.' },
-    { name: 'oauthRevokeRefreshOnLogout', kind: 'single', from: 'by hand',
-      overrides: 'oauth2.revokeRefreshOnLogout',
-      what: 'TRUE or FALSE: does signing out revoke this client\'s refresh ' +
-            'tokens, overriding oauth2.revokeRefreshOnLogout. FALSE is the ' +
-            'interesting case and it is why this is worth having per client ' +
-            '— a client that can refresh its way back after a sign-out is a ' +
-            'real defect in real deployments, and this makes it reproducible ' +
-            'for ONE client while the rest behave.' },
-
-    // ---------------------------------------------------------------------
-    // THE SIXTH OAUTH OVERRIDE, ADDED 2026-09-01, AND THE FIRST ATTRIBUTE IN
-    // THIS SCHEMA THAT IS SCOPED TO A PROTOCOL FAMILY.
-    //
-    // Every other row here is offered on every entry. Most of them are named
-    // for the family they belong to and that has been enough: writing
-    // `saml2SignAssertion` onto an OAuth client is inert rather than wrong, and
-    // refusing it would be this registry having an opinion about an attribute
-    // nothing reads. This one is different in a way worth spelling out, because
-    // the mechanism it introduces will be reached for again.
-    //
-    // It decides what the TOKEN ENDPOINT does for one client_id. So an entry
-    // that is not an OAuth client at all cannot be the entry it decides
-    // anything for — there is no request that would ever arrive naming it — and
-    // a value written there is not merely inert, it is a POLICY somebody
-    // believes is in force. That is the state `families` exists to refuse: the
-    // attribute applies to the OAuth 2.0 and OpenID Connect families, and
-    // updateApplication() and createApplication() both turn away a write onto
-    // an entry declared for neither, naming what to tick first. The console
-    // does not offer it there either, which is the same "a form cannot offer a
-    // field the action would refuse" rule EDITABLE's own header states.
-    //
-    // `ldapmodify` still reaches it, as it reaches everything here. The refusal
-    // is the difference between offering an operation and merely not preventing
-    // it, which is the line the derived attributes are already on.
-    { name: 'oauthTokenExchangeRefreshToken', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'oauth2.tokenExchangeRefreshToken',
-      families: ['oauth2', 'oidc'],
-      what: 'WHETHER AN RFC 8693 TOKEN EXCHANGE PERFORMED BY THIS CLIENT ' +
-            'GETS A `refresh_token` BESIDE THE EXCHANGED ACCESS TOKEN, ' +
-            'overriding oauth2.tokenExchangeRefreshToken for it alone. One ' +
-            'of three words: `never`, `when-requested` (the service-wide ' +
-            'default — the client asks with RFC 8693 section 2.1\'s ' +
-            '`requested_token_type` and gets one only if it did) or ' +
-            '`always`.\n\nIT IS READ ON THE CLIENT PERFORMING THE EXCHANGE ' +
-            'and not on the audience, because the refresh token is handed to ' +
-            'the client: it is that party\'s credential to hold, revoke and ' +
-            'eventually redeem. The subject the exchange is ABOUT has no ' +
-            'entry in this registry at all in the interesting case, since ' +
-            'the whole point of an exchange is a subject_token from ' +
-            'somewhere else.\n\n**IT APPLIES TO THE OAUTH 2.0 AND OPENID ' +
-            'CONNECT FAMILIES AND TO NO OTHER, and unlike every other ' +
-            'attribute here that is ENFORCED.** An entry declared for ' +
-            'neither is turned away by both console doors and by the ' +
-            'management API, naming the family to tick first — because a ' +
-            'value here is a policy about the token endpoint, and an entry ' +
-            'no token request can ever name would carry it looking as though ' +
-            'it were in force. The block above this row argues it. ' +
-            '`ldapmodify` reaches this attribute like every other and is not ' +
-            'checked.\n\nA VALUE THAT IS NOT ONE OF THE THREE WORDS IS NOT ' +
-            'AN ERROR AT WRITE TIME AND IS NOT SILENT: settingFor() warns ' +
-            'naming the entry, the attribute and what it holds, and the ' +
-            'service-wide setting decides — the same three-state honesty ' +
-            'every other override on this entry gets.' },
-
-    // ---------------------------------------------------------------------
-    // THE GROUP CLAIM, PER APPLICATION, added 2026-08-27.
-    //
-    // The one override group here that is NOT a protocol's: these four reach an
-    // OAuth 2.0 access token, an OIDC ID Token, a UserInfo response, a SAML 2.0
-    // assertion and a SAML 1.1 one at once, because `group_claims.js` answers
-    // all five claim sets from one place. So an application that carries them
-    // gets its own group claim in whichever of those it actually uses, and an
-    // application declared for two protocols gets the same answer in both —
-    // which is the behaviour a claim mapping should have and the reason these
-    // are four attributes rather than eight.
-    // ---------------------------------------------------------------------
-    // THE ROLES THIS APPLICATION REQUIRES, added 2026-09-05 with the role
-    // register.
-    //
-    // IT IS THE OPPOSITE RELATION FROM `roleMemberApplication` ON A ROLE
-    // ENTRY, and the two are one keystroke apart in a listing, so it is worth
-    // being exact: `roleMemberApplication` says this application HOLDS a role
-    // — what a client_credentials grant is decided on, where there is no
-    // person — and this attribute says what this application DEMANDS of
-    // whoever is being authenticated before anything is issued for it.
-    //
-    // ABSENT MEANS `EVERYBODY`, and that is what makes the whole feature off
-    // by default without being switched off. Everybody holds EVERYBODY, so an
-    // application nobody has configured admits exactly who it admitted before
-    // roles existed — while the decision is still a real XACML decision,
-    // visible on /admin/xacml/decide and in the audit log. Narrowing this list
-    // is how enforcement is turned on for one application, and it is the only
-    // way it is turned on.
-    { name: 'appRequiredRole', kind: 'multi', from: 'by hand',
-      what: 'A role somebody must hold before this application is issued ' +
-            'anything — a token, an assertion, a WS-Federation response, a ' +
-            'session. Multi-valued and ANY of them is enough. ABSENT MEANS ' +
-            'EVERYBODY, the built-in role everybody holds, which is why an ' +
-            'unconfigured application refuses nobody. The decision is made ' +
-            'by the XACML PDP against the policy named by ' +
-            'xacml.issuancePolicy, not by an if in an issuance site, so the ' +
-            'reason for a refusal is a policy somebody can read.' },
-
-    // ---------------------------------------------------------------------
-    // THE DELEGATION POLICY (#108, 2026-09-23): WHO MAY ACT FOR WHOM AT THE
-    // TWO DOORS THAT HAD NO POLICY — WS-Trust `OnBehalfOf` / `ActAs` and the
-    // RFC 8693 token exchange.
-    //
-    // KERBEROS'S MODEL, DELIBERATELY AND BY NAME, and on the same kind of
-    // entry: a KDC decides S4U2Proxy from `msDS-AllowedToDelegateTo` on the
-    // front end and `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back
-    // end, protocol transition from TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION,
-    // and nothing at all for an account flagged NOT_DELEGATED. These four are
-    // those, on `ou=applications`, so there is no new store and no new object
-    // class — an `ldapmodify` IS a policy change, exactly as it is for a
-    // redirect URI. `common/delegation_policy.ts` reads them; the person's
-    // half (`stsNotDelegated`, `stsMayAct`) is on the person's own entry.
-    //
-    // A TARGET IS AN APPLICATION IDENTIFIER. An RFC 8693 `audience` or
-    // `resource` and a WS-Trust `AppliesTo` are resolved to the application
-    // that registered them first (forAudience(), forAppliesTo()), and a value
-    // here may also be the raw string, so an unregistered audience can be
-    // allowed without inventing an entry for it.
-    // ---------------------------------------------------------------------
-    { name: 'appAllowedToDelegateTo', kind: 'multi', from: 'by hand',
-      what: 'THE TARGETS THIS APPLICATION MAY OBTAIN A TOKEN FOR ON SOMEBODY ' +
-            'ELSE\'S BEHALF, when it is the INTERMEDIARY of a WS-Trust ' +
-            'OnBehalfOf / ActAs request or an RFC 8693 token exchange — the ' +
-            'analogue of Kerberos\'s msDS-AllowedToDelegateTo, on the front ' +
-            'end. One application identifier (or the literal audience / ' +
-            'AppliesTo) per value. Enforced in product mode; development ' +
-            'records what would have been refused on /admin/delegation. ' +
-            'appAllowedToActOnBehalfOf on the TARGET is the other way to ' +
-            'allow the same pair.' },
-    { name: 'appAllowedToActOnBehalfOf', kind: 'multi', from: 'by hand',
-      what: 'THE INTERMEDIARIES THIS APPLICATION ACCEPTS as acting for ' +
-            'somebody else when it is the TARGET of a delegation — the ' +
-            'resource-based analogue of Kerberos\'s ' +
-            'msDS-AllowedToActOnBehalfOfOtherIdentity, set on the back end. ' +
-            'One intermediary application identifier per value.' },
-    { name: 'appDelegationSubjectGroup', kind: 'multi', from: 'by hand',
-      what: 'THE PEOPLE THIS INTERMEDIARY MAY ACT FOR, as group DNs: a ' +
-            'subject must be a member of one of them. EMPTY MEANS ANYBODY ' +
-            'who is not protected — a person carrying stsNotDelegated, or a ' +
-            'member of the console\'s Admin Read or Admin Write roster, is ' +
-            'never delegated whatever this says.' },
-    // #186: THE SEMANTICS this application may use or be used with — one set
-    // for the three protocols, read as a fact by the exchange policy. It
-    // replaced appTrustedToImpersonate: impersonation in the set is that
-    // flag (and, at Kerberos, a forwardable S4U2Self ticket).
-    { name: 'appDelegationSemantics', kind: 'multi', from: 'by hand',
-      what: 'THE SEMANTICS this application allows: `delegation`, ' +
-            '`impersonation`, or both. As the ACTOR — the client of a token ' +
-            'exchange, the requester of a WS-Trust OnBehalfOf / ActAs, the ' +
-            'service of a Kerberos S4U request — it says what this ' +
-            'application may DO; empty is delegation only, so impersonating ' +
-            'somebody needs `impersonation` here (Kerberos\'s ' +
-            'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION). As the SUBJECT it says ' +
-            'what may be done AS it; empty is both. The issuance policy ' +
-            'decides; this is one of its facts.' },
-    { name: 'appDefaultDelegationSemantics', kind: 'single', from: 'by hand',
-      what: '`delegation` or `impersonation`: what an act this application ' +
-            'is part of is when the request does not say — the actor\'s ' +
-            'default first, then the subject\'s, then ' +
-            'delegation.defaultSemantics.' },
-    { name: 'appNotDelegated', kind: 'single', from: 'by hand',
-      what: 'TRUE or FALSE, default FALSE: nobody may act for this ' +
-            'application, in any protocol — NOT_DELEGATED, the ' +
-            'application\'s counterpart of a person\'s stsNotDelegated.' },
-    { name: 'appMayAct', kind: 'single', from: 'by hand',
-      what: 'The DN of ONE party — a person or another application — this ' +
-            'application names as its delegate: a token about it carries ' +
-            'RFC 8693 section 4.4\'s may_act naming that party, as the ' +
-            'issuance policy assigns it, and an exchange of that token by ' +
-            'anybody else is refused. A person\'s counterpart is stsMayAct.' },
-
-    { name: 'appGroupsClaim', kind: 'single', from: 'by hand',
-      overrides: 'groups.claim',
-      what: 'TRUE or FALSE: does anything issued to this application carry a ' +
-            'groups claim at all, overriding groups.claim. FALSE on one ' +
-            'application is how a client that breaks on an unexpected claim ' +
-            'is exercised without taking the claim away from everything ' +
-            'else.' },
-    { name: 'appGroupsClaimName', kind: 'single', from: 'by hand',
-      overrides: 'groups.claimName',
-      what: 'What the groups claim is CALLED for this application, ' +
-            'overriding groups.claimName. This is the attribute that earns ' +
-            'the group its place here: `groups`, `roles`, `memberOf` and a ' +
-            'URI-shaped claim name are all ordinary, they differ per relying ' +
-            'party in every real deployment, and a single service-wide name ' +
-            'meant only one of them could be tested at a time.' },
-    { name: 'appGroupsClaimValue', kind: 'single', from: 'by hand',
-      overrides: 'groups.claimValue',
-      what: 'Whether the claim carries each group\'s name or its whole DN, ' +
-            'overriding groups.claimValue. Relying parties genuinely differ: ' +
-            'one matches on `cn` and the next was written against an LDAP ' +
-            'DN.' },
-    { name: 'appGroupsClaimFromMemberOf', kind: 'single', from: 'by hand',
-      overrides: 'groups.claimFromMemberOf',
-      what: 'Where the groups are read from for this application, overriding ' +
-            'groups.claimFromMemberOf — the person\'s memberOf attribute, or ' +
-            'a search of the groups container. The two agree in this ' +
-            'directory; they are worth telling apart because a real ' +
-            'directory\'s memberOf can lag.' },
-
-    // ---------------------------------------------------------------------
-    // THE WS-FEDERATION ASSERTION LIFETIME, added 2026-08-27 together with the
-    // setting it overrides — which did not exist either, because wsfed.js
-    // carried a module-level `const lifetimeMin = 60`. A group of one, for the
-    // reason config.js's row gives.
-    { name: 'wsfedAssertionLifetimeMin', kind: 'single', from: 'by hand',
-      overrides: 'wsfed.assertionLifetimeMin',
-      what: 'How long the SAML 1.1 assertion inside a WS-Federation sign-in ' +
-            'response for THIS relying party is valid, in minutes, ' +
-            'overriding wsfed.assertionLifetimeMin. It sets the assertion\'s ' +
-            'Conditions and the wsu:Lifetime of the ' +
-            'RequestSecurityTokenResponse around it, so the envelope and the ' +
-            'document inside it cannot disagree. It is separate from ' +
-            'saml11AssertionLifetimeMin: one application may speak both, and ' +
-            'a WS-Federation session and a Browser/POST assertion are not ' +
-            'consumed the same way.' },
-
-    // ---------------------------------------------------------------------
-    // THE TEN PER-APPLICATION OVERRIDES, added 2026-08-27.
-    //
-    // Each one names a `config.js` setting and, where it is set, WINS over it
-    // for this application alone. Absent — which is every application until
-    // somebody types one — the setting decides, exactly as it always did.
-    // `overrides` is the setting's key, and it is on the row rather than in
-    // prose because `/admin/saml-assertions` reads it to name the attribute
-    // beside each default, and saml2_sso.js and saml11_sso.js read it to
-    // resolve a value. Three readers, one table.
-    //
-    // ALL TEN ARE `single`, and that is a decision rather than an oversight.
-    // Every identifier attribute here is `multi` because an application
-    // answering to two client_ids is one application; a SETTING is the
-    // opposite case — an application has one answer to "sign the assertion?",
-    // and a list would be a question with no page to ask it and no rule for
-    // which value won.
-    //
-    // DECLARED, never observed. Nothing in this service writes them: they are
-    // configuration in exactly the way `samlSingleLogoutService` is, and for
-    // the same reason — there is nothing to observe. An application does not
-    // tell this service how long its assertions should live.
-    //
-    // A VALUE THAT WILL NOT PARSE IS IGNORED, not refused, and the resolver
-    // says so in the log. That is this service's rule everywhere a directory
-    // value is read back: an `ldapmodify` can put any string on any attribute,
-    // and an identity provider that refused to issue because somebody typed
-    // "yes" instead of "true" would be a mock that stopped answering.
-    { name: 'saml2CustomAttributes', kind: 'single',
-      from: 'the console\'s Custom SAML attributes section',
-      what: 'THIS SERVICE PROVIDER\'S OWN SAML 2.0 ATTRIBUTES, as a JSON array ' +
-            'of rows like the realm\'s Custom SAML attributes page (a ' +
-            'nameFormat allowed). Added to the realm\'s SAML 2.0 attributes ' +
-            'in assertions for this audience, winning by name.' },
-    { name: 'saml11CustomAttributes', kind: 'single',
-      from: 'the console\'s Custom SAML attributes section',
-      what: 'THIS RELYING PARTY\'S OWN SAML 1.1 ATTRIBUTES, as a JSON array of ' +
-            'rows like the realm\'s Custom SAML attributes page (a namespace ' +
-            'allowed). Added to the realm\'s SAML 1.1 attributes in ' +
-            'assertions for this audience (SAML 1.1, WS-Federation, ' +
-            'WS-Trust), winning by name.' },
-    { name: 'saml2AssertionLifetimeMin', kind: 'single', from: 'by hand',
-      overrides: 'saml2.assertionLifetimeMin',
-      what: 'HOW LONG THIS SERVICE PROVIDER\'S ASSERTIONS ARE VALID, in ' +
-            'minutes, overriding saml2.assertionLifetimeMin for it alone. ' +
-            'What it becomes is Conditions/NotOnOrAfter and the bearer ' +
-            'SubjectConfirmationData/NotOnOrAfter alike, widened at both ' +
-            'ends by saml.clockSkewS — which is NOT per application, because ' +
-            'it is a fact about the clocks in this estate rather than about ' +
-            'one relying party.' },
-    { name: 'saml2SignAssertion', kind: 'single', from: 'by hand',
-      overrides: 'saml2.signAssertion',
-      what: 'TRUE or FALSE: sign the <saml:Assertion> issued to this service ' +
-            'provider, overriding saml2.signAssertion for it alone. FALSE is ' +
-            'a test case rather than a mistake — a service provider that ' +
-            'accepts an unsigned assertion has a hole in it, and this is how ' +
-            'one is found without turning signing off for every other ' +
-            'application at the same time. That is the whole reason this is ' +
-            'per application.' },
-    { name: 'saml2SignResponse', kind: 'single', from: 'by hand',
-      overrides: 'saml2.signResponse',
-      what: 'TRUE or FALSE: sign the <samlp:Response> around the assertion ' +
-            'for this service provider, overriding saml2.signResponse. On ' +
-            'the HTTP Redirect binding it also controls the query-string ' +
-            'signature of section 3.4.4.1, which is the one a redirect ' +
-            'response is really verified by.' },
-    { name: 'saml2NameIdFormat', kind: 'single', from: 'by hand',
-      overrides: 'saml2.nameIdFormat',
-      what: 'The NameID Format used for this service provider when its ' +
-            'AuthnRequest\'s NameIDPolicy asks for none, overriding ' +
-            'saml2.nameIdFormat. A request that DOES name a format is still ' +
-            'answered with the one it named — this is the default, not a ' +
-            'restriction, and it is deliberately NOT checked against ' +
-            'samlNameIdFormat beside it, which is the list of formats this ' +
-            'service provider has ASKED for.' },
-    { name: 'saml2ArtifactTtlS', kind: 'single', from: 'by hand',
-      overrides: 'saml2.artifactTtlS',
-      what: 'How long an artifact minted for this service provider can be ' +
-            'resolved for, in seconds, overriding saml2.artifactTtlS. An ' +
-            'artifact is ALSO one-shot however long this is — resolving it ' +
-            'destroys it, which section 3.6.4.1 requires and no lifetime can ' +
-            'express.' },
-    { name: 'saml11AssertionLifetimeMin', kind: 'single', from: 'by hand',
-      overrides: 'saml11.assertionLifetimeMin',
-      what: 'The SAML 1.1 equivalent of saml2AssertionLifetimeMin, ' +
-            'overriding saml11.assertionLifetimeMin for this relying party. ' +
-            'Separate from the 2.0 attribute for the reason the two SETTINGS ' +
-            'are separate: the profiles are separate implementations ' +
-            'consumed differently, and an application declared for both ' +
-            'legitimately wants two answers.' },
-    { name: 'saml11SignAssertion', kind: 'single', from: 'by hand',
-      overrides: 'saml11.signAssertion',
-      what: 'TRUE or FALSE: sign the SAML 1.1 <saml:Assertion> for this ' +
-            'relying party, overriding saml11.signAssertion. The ' +
-            'Browser/POST profile REQUIRES a signed assertion ' +
-            '(saml-profile-1.1 section 4.2.1.4), so FALSE here is exactly ' +
-            'the test case: a relying party that accepts it anyway has a ' +
-            'hole.' },
-    { name: 'saml11SignResponse', kind: 'single', from: 'by hand',
-      overrides: 'saml11.signResponse',
-      what: 'TRUE or FALSE: sign the SAML 1.1 <samlp:Response> for this ' +
-            'relying party, overriding saml11.signResponse, with the ' +
-            'reference naming ResponseID.' },
-    { name: 'saml11NameIdFormat', kind: 'single', from: 'by hand',
-      overrides: 'saml11.nameIdFormat',
-      what: 'The NameIdentifier Format used for this relying party, ' +
-            'overriding saml11.nameIdFormat. SAML 1.1 has no request ' +
-            'message, so nothing can ask for a format and this is the only ' +
-            'thing that decides it — which makes it the more useful of the ' +
-            'two per-application format attributes.' },
-    { name: 'saml11ArtifactTtlS', kind: 'single', from: 'by hand',
-      overrides: 'saml11.artifactTtlS',
-      what: 'How long a SAML 1.1 artifact minted for this relying party can ' +
-            'be resolved for, in seconds, overriding saml11.artifactTtlS. ' +
-            'The Browser/Artifact profile\'s SOAP responder is what redeems ' +
-            'it, once.' },
-    { name: 'samlAuthnRequestSigned', kind: 'single', from: 'SAML 2.0',
-      what: 'TRUE when the last AuthnRequest from this service provider ' +
-            'carried a signature — an enveloped ds:Signature on the POST ' +
-            'binding, or the Signature parameter of section 3.4.4.1 on the ' +
-            'Redirect binding. ASSIGNED rather than accumulated, because it ' +
-            'is a fact about the last request and a history of booleans ' +
-            'would say nothing.' },
-    { name: 'wsfedRealm', kind: 'multi', from: 'WS-Federation',
-      identifier: true,
-      identifierName: 'wtrealm',
-      what: 'THE WTREALM from a wsignin1.0 request (section 13.2.1) — ' +
-            'WS-Federation\'s identifier attribute. Accumulates, for the ' +
-            'reason every identifier here does.' },
-    { name: 'wsfedReplyUrl', kind: 'multi',
-      from: 'WS-Federation, the console, or by hand',
-      what: 'WHERE A SIGN-IN RESPONSE IS POSTED BACK TO for this ' +
-            'application: the `wreply` of section 13.2.1, WS-Federation\'s ' +
-            'redirect URI. It was written into samlAssertionConsumerService ' +
-            'until 2026-08-25, which put a wreply in the attribute the SAML ' +
-            'pages read for an assertion consumer service and for the Single ' +
-            'Logout fallback — one attribute holding two protocols\' return ' +
-            'addresses, so a WS-Federation application appeared to have a ' +
-            'SAML ACS it had never named. Two facts, two attributes. Like ' +
-            'the SAML one beside it this is CHECKED IN PRODUCT MODE ONLY: ' +
-            'development refuses no wreply, because a mock that refused ' +
-            'would remove a test case rather than add one; product posts ' +
-            'only to an address on this list and a sighting never adds one. ' +
-            'A wreply development recorded is marked on ' +
-            'appReturnAddressObserved and product refuses it until it is ' +
-            'confirmed; values recorded before that mark existed carry none ' +
-            'and still need reviewing before a realm is switched to product.' },
-    { name: 'wsfedSignOutUri', kind: 'multi', from: 'by hand',
-      what: 'WHERE A wsignoutcleanup1.0 PING IS SENT for this application — ' +
-            'WS-Federation\'s logout URI, and the one this table did not ' +
-            'have until 2026-08-30. DECLARED, not observed, which makes it ' +
-            'the sibling of samlSingleLogoutService rather than of ' +
-            'wsfedReplyUrl: a cleanup is sent when a SESSION ends, and by ' +
-            'then the request that would have carried a wreply is long ' +
-            'over.\n\n**IT IS NOT READ BY THE SIGN-OUT YET**, and that is ' +
-            'stated rather than implied. `cleanupTargetsFor()` builds its ' +
-            'list from `session.wsfedRealms`, which records the wreply each ' +
-            'sign-in response actually went to — so what this service pings ' +
-            'today is what it OBSERVED, and this attribute is what an ' +
-            'operator DECLARED. They are two different facts and the second ' +
-            'is the one a person setting an application up can state in ' +
-            'advance. Wiring it in as the fallback for a realm signed into ' +
-            'with no wreply is the obvious next step and is deliberately not ' +
-            'taken here: this change adds the field and the storage, and ' +
-            'changing where a cleanup goes is a change to what the protocol ' +
-            'does.' },
-    { name: 'wstrustAppliesTo', kind: 'multi', from: 'WS-Trust',
-      identifier: true,
-      identifierName: 'AppliesTo',
-      what: 'THE APPLIESTO ADDRESS from a RequestSecurityToken — the service ' +
-            'the token is issued FOR, and WS-Trust\'s identifier attribute. ' +
-            'Accumulates.\n\n**IT IS READ**, which it was not before ' +
-            '2026-08-27, and it is `oauthAudience`\'s exception arriving ' +
-            'through a second protocol: an OnBehalfOf or ActAs asking for a ' +
-            'token to reach `https://esb.example.com` is recorded on ' +
-            '/admin/delegation against the APPLICATION that registered that ' +
-            'address, so a chain of delegated hops draws as one picture ' +
-            'rather than as boxes named after URLs that nothing else in it ' +
-            'mentions. A LOOKUP and not a permission — an AppliesTo nobody ' +
-            'registered is issued for exactly as before and recorded ' +
-            'verbatim. See forAppliesTo(), which asks this attribute first ' +
-            'and `samlEntityId` behind it.' },
-
-    // --- Kerberos and OID4VP ----------------------------------------------
-    { name: 'krb5ServicePrincipalName', kind: 'multi', from: 'Kerberos v5',
-      identifier: true,
-      identifierName: 'SPN',
-      what: 'THE SPN, e.g. HTTP/sts@EXAMPLE.COM — Kerberos v5\'s identifier ' +
-            'attribute. A Kerberos service is an application like the others ' +
-            'here, and it is the one whose identifier this service may have ' +
-            'created on demand (KRB5_SERVICE_DOMAINS). It accumulates, and ' +
-            'here that is the ordinary case rather than the unusual one: one ' +
-            'service commonly answers to several SPNs — HTTP/host and ' +
-            'HTTP/host.example.com — and a real KDC holds them all against ' +
-            'one account.' },
-    // #186: UNCONSTRAINED DELEGATION is Kerberos's alone, and OFF unless set.
-    { name: 'krb5TrustedForDelegation', kind: 'single', from: 'by hand',
-      what: 'TRUE or FALSE, default FALSE: this Kerberos service is TRUSTED ' +
-            'FOR DELEGATION — unconstrained (Active Directory\'s ' +
-            'TRUSTED_FOR_DELEGATION). Its service tickets carry ' +
-            'ok-as-delegate, which tells a client it may forward its TGT ' +
-            'here; whoever holds a forwarded TGT can act as that person ' +
-            'anywhere. A protected person\'s TGT is never forwardable, so it ' +
-            'is never forwarded however this is set. Constrained delegation ' +
-            '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf) is the ' +
-            'safer alternative.' },
-    // THE STORED SERVICE KEY (2026-09-12). Two rows, and the split between
-    // them is the design: one is SECRET and one is not, so that every page
-    // listing service principals can say what is held without opening a key.
-    // Both are DERIVED in `EDITABLE`'s sense — neither is a form field — and
-    // written by `kerberos/krb5_person_keys.ts` through the directory slot,
-    // NOT through updateApplication(), whose audit summary and reply quote
-    // the value written. They are rows here for one reason that is not
-    // optional: writeApplication() REPLACES an entry from its record, and an
-    // attribute the schema does not list would be erased by the next
-    // sighting — which for a Kerberos service is the next ticket issued for it.
-    { name: 'krb5ServiceKeys', kind: 'single',
-      from: '/admin/kerberos/principals',
-      secret: true,
-      what: 'A SERVICE PRINCIPAL\'S RANDOM LONG-TERM KEYS, one per enctype, ' +
-            'in ONE value: a JSON document naming the SPN, the realm and the ' +
-            'kvno beside the keys, SEALED under the key-encryption key ' +
-            'wherever that key outlives the process. One value rather than ' +
-            'one per enctype so that a key cannot be moved onto another ' +
-            'entry or another kvno without the seal failing. ' +
-            'Password-equivalent: it is WITHHELD from every page and every ' +
-            '/admin-api reply, and the one time it leaves this service is as ' +
-            'the keytab a create or a rotate hands over.' },
-    { name: 'krb5ServiceKeyInfo', kind: 'single',
-      from: '/admin/kerberos/principals',
-      what: 'What `krb5ServiceKeys` holds, without the keys: the kvno, the ' +
-            'enctypes, when the keys were made and whether they are sealed. ' +
-            'Written in the same act as the keys, so the two cannot describe ' +
-            'different generations.' },
-    // CERTIFICATE ENROLLMENT (2026-09-13): what ACME, EST and SCEP issued to
-    // this application, the credentials that let it ask, and the host names
-    // an administrator registered for it. `common/cert_enrollment.ts` is the
-    // one reader and writer; the attributes are schema rows so that a sighting
-    // rewriting this entry from its record does not erase them.
-    { name: 'appEnrolledCertificate', kind: 'multi',
-      from: '/enroll/acme, /.well-known/est, /enroll/scep',
-      what: 'One JSON record per certificate issued to this application over ' +
-            'an enrollment protocol: serial, protocol, profile, subject, ' +
-            'names, validity, who asked, whether the key was generated here, ' +
-            'the certificate and its issuing chain, and a revocation mark. ' +
-            'Public material. Written by common/cert_enrollment.ts only.' },
-    { name: 'appEnrolledPrivateKey', kind: 'multi',
-      from: '/.well-known/est/serverkeygen',
-      secret: true,
-      what: 'A private key THIS SERVICE generated for one of the certificates ' +
-            'above (EST server-side key generation, or the console\'s ' +
-            'server-generated key pair), as `<serial>:<PEM>`, sealed wherever ' +
-            'the key-encryption key outlives the process. WITHHELD from every ' +
-            'page and /admin-api reply; it is handed over once, at issuance.' },
-    { name: 'appAcmeEabKey', kind: 'multi',
-      from: '/admin/acme',
-      secret: true,
-      what: 'ACME External Account Binding keys issued for this application, ' +
-            'one JSON record each: the key id, the sealed HMAC key, its ' +
-            'expiry and the account it bound. A working credential, WITHHELD ' +
-            'from every page and /admin-api reply.' },
-    { name: 'appScepChallenge', kind: 'multi',
-      from: '/admin/scep',
-      secret: true,
-      what: 'SCEP challenge passwords issued for this application, one JSON ' +
-            'record each: the id, a SHA-256 digest of the secret, the profile, ' +
-            'the expiry and when it was redeemed. WITHHELD from every page and ' +
-            '/admin-api reply.' },
-    { name: 'appCertificateHostName', kind: 'multi',
-      from: '/admin/acme, /admin/est, /admin/scep',
-      what: 'A DNS name or IP address this application may be issued a ' +
-            'certificate for over ACME, EST or SCEP. Registering one is the ' +
-            'whole proof of control: this service never dials a name to ' +
-            'validate it. Set by an administrator; read by ' +
-            'common/cert_enrollment.ts.' },
-    { name: 'appRegistrationJson', kind: 'single',
-      from: 'POST /oauth2/register',
-      what: 'THE RFC 7591 REGISTRATION VERBATIM, as JSON on one attribute. ' +
-            'It is here because RFC 7591 lets a client register arbitrary ' +
-            'metadata and RFC 7592\'s read has to hand back what was ' +
-            'registered — which no fixed set of LDAP attributes can ' +
-            'represent. It is the STARTING POINT when the record is ' +
-            'reconstructed and not the last word: every member that also has ' +
-            'an attribute above is then overwritten FROM that attribute, so ' +
-            'an ldapmodify of oauthRedirectUri is what RFC 9700 mode ' +
-            'enforces. Edit this only to change a member that has no ' +
-            'attribute of its own.' },
-    { name: 'appRegistrationAccessToken', kind: 'single', from: 'POST ' +
-        '/oauth2/register',
-      sensitive: true,
-      what: 'The RFC 7592 registration access token, which is what guards ' +
-            'the read, update and delete operations on this client. Sealed ' +
-            'like oauthClientSecret wherever the process holds a durable ' +
-            'key-encryption key (since 2026-10-01), and never written to ' +
-            'the audit log.' },
-    { name: 'oid4vpClientId', kind: 'multi', from: 'OpenID4VP',
-      identifier: true,
-      identifierName: 'client_id',
-      what: 'THE VERIFIER\'S CLIENT_ID in an Authorization Request asking ' +
-            'for a presentation — OpenID4VP\'s identifier attribute. This ' +
-            'service\'s own mock Verifier takes its from configuration ' +
-            '(oid4vp.clientId) rather than from a caller, so that record ' +
-            'appears the first time a presentation is verified; a value ' +
-            'declared here is a FOREIGN verifier somebody is configuring.' },
-
-    // --- THE FOUR FAMILIES THAT ONLY EVER DECLARE ------------------------
-    // Nothing in this service writes any of these four. That is the whole
-    // point of them rather than a gap: LDAP, SCIM, SPIFFE and Federation
-    // either authenticate the CALLER rather than an application (the first
-    // two), file the identity in a container of its own (the third), or keep
-    // the arrangement under ou=federations (the fourth) — so the registry had
-    // nowhere to put "what is this application called when it talks to us that
-    // way", which is a fact an operator has before anything connects. They are
-    // declaration and only ever declaration, exactly as appAllowedProtocol is,
-    // and like it they grant and refuse nothing.
-    { name: 'federationPartnerId', kind: 'multi', from: 'the console, or by ' +
-                                                        'hand',
-      identifier: true,
-      identifierName: 'partner id',
-      what: 'WHAT A FEDERATION PARTNER CALLS ITSELF — a foreign identity ' +
-            'provider\'s entityID, or its issuer identifier where the ' +
-            'relationship speaks OpenID Connect. THE RELATIONSHIP IS NOT ' +
-            'HERE: the endpoints, the certificate and the attribute mapping ' +
-            'live under ou=federations and are what /federation/acs/{id} ' +
-            'actually verifies against (see federation/CLAUDE.md). This ' +
-            'entry is the partner as a PARTY, and this attribute is the name ' +
-            'it goes by — so a value here federates with nobody, which is ' +
-            'the one place in this service where that sentence has teeth.' },
-    { name: 'ldapBindDn', kind: 'multi', from: 'the console, or by hand',
-      identifier: true,
-      identifierName: 'bind DN',
-      what: 'THE DN A DIRECTORY CLIENT BINDS AS on 389 or LDAPS 636. EVERY ' +
-            'BIND HERE SUCCEEDS — any DN, any password, anonymous — so ' +
-            'nothing will ever write this and nothing will ever read it; it ' +
-            'is where an operator records which credential an application is ' +
-            'expected to use, beside the rest of what that application is.' },
-    { name: 'scimClientId', kind: 'multi', from: 'the console, or by hand',
-      identifier: true,
-      identifierName: 'client_id',
-      what: 'WHAT A PROVISIONING CLIENT AT /scim/v2 IS CALLED — the OAuth ' +
-            'client_id it presents a token from, or the username it sends in ' +
-            'Basic. That surface authenticates its CALLER in any of the six ' +
-            'schemes RFC 7644 section 2 names rather than an application ' +
-            'identifier, so it writes nothing here; the value is a ' +
-            'declaration, and the SCIM gate is what decides whether a ' +
-            'credential is demanded at all.' },
-    { name: 'acmeAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
-      what: 'THE ACME PROFILES THIS APPLICATION MAY BE ISSUED. Where it ' +
-            'lists something it OVERRIDES acme.allowedProfiles for this ' +
-            'application, wider or narrower; empty leaves the realm\'s ' +
-            'list. The five CA, OCSP and KDC profiles are never issued.' },
-    { name: 'acmeDefaultProfile', kind: 'single', from: 'the console, or by hand',
-      what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER ACME WHEN A ' +
-            'REQUEST NAMES NONE, overriding acme.defaultProfile. Used ' +
-            'only while the list in force for it allows it.' },
-    { name: 'acmeCertificateLifetimeDays', kind: 'single', from: 'by hand',
-      overrides: 'acme.certificateLifetimeDays',
-      what: 'How long a certificate this application is issued over ACME ' +
-            'is valid, in days, overriding acme.certificateLifetimeDays ' +
-            '(longer or shorter). No certificate outlives its Issuing CA.' },
-    { name: 'estAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
-      what: 'THE EST PROFILES THIS APPLICATION MAY BE ISSUED. Where it ' +
-            'lists something it OVERRIDES est.allowedProfiles for this ' +
-            'application, wider or narrower; empty leaves the realm\'s ' +
-            'list. The five CA, OCSP and KDC profiles are never issued.' },
-    { name: 'estDefaultProfile', kind: 'single', from: 'the console, or by hand',
-      what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER EST WHEN A ' +
-            'REQUEST NAMES NONE, overriding est.defaultProfile. Used ' +
-            'only while the list in force for it allows it.' },
-    { name: 'estCertificateLifetimeDays', kind: 'single', from: 'by hand',
-      overrides: 'est.certificateLifetimeDays',
-      what: 'How long a certificate this application is issued over EST ' +
-            'is valid, in days, overriding est.certificateLifetimeDays ' +
-            '(longer or shorter). No certificate outlives its Issuing CA.' },
-    { name: 'scepAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
-      what: 'THE SCEP PROFILES THIS APPLICATION MAY BE ISSUED. Where it ' +
-            'lists something it OVERRIDES scep.allowedProfiles for this ' +
-            'application, wider or narrower; empty leaves the realm\'s ' +
-            'list. The five CA, OCSP and KDC profiles are never issued.' },
-    { name: 'scepDefaultProfile', kind: 'single', from: 'the console, or by hand',
-      what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER SCEP WHEN A ' +
-            'REQUEST NAMES NONE, overriding scep.defaultProfile. Used ' +
-            'only while the list in force for it allows it.' },
-    { name: 'scepCertificateLifetimeDays', kind: 'single', from: 'by hand',
-      overrides: 'scep.certificateLifetimeDays',
-      what: 'How long a certificate this application is issued over SCEP ' +
-            'is valid, in days, overriding scep.certificateLifetimeDays ' +
-            '(longer or shorter). No certificate outlives its Issuing CA.' },
-    { name: 'estBasicAuthentication', kind: 'single', from: 'by hand',
-      overrides: 'est.basicAuthentication',
-      what: 'Whether EST accepts this application\'s client id and secret ' +
-            '(HTTP Basic, RFC 7030 section 3.2.3), overriding ' +
-            'est.basicAuthentication: TRUE accepts it and FALSE refuses it ' +
-            'whatever the realm says; unset leaves the realm to decide.' },
-    { name: 'estCertificateAuthentication', kind: 'single', from: 'by hand',
-      overrides: 'est.certificateAuthentication',
-      what: 'Whether EST accepts a certificate this realm issued this ' +
-            'application (TLS client authentication, RFC 7030 section ' +
-            '3.3.2), overriding est.certificateAuthentication: TRUE accepts ' +
-            'it and FALSE refuses it; unset leaves the realm to decide.' },
-    { name: 'estServerKeyGeneration', kind: 'single', from: 'by hand',
-      overrides: 'est.serverKeyGeneration',
-      what: 'Whether EST /serverkeygen (RFC 7030 section 4.4) may generate ' +
-            'this application\'s key, overriding est.serverKeyGeneration: ' +
-            'TRUE allows it and FALSE refuses it; unset leaves the realm ' +
-            'to decide.' },
-    { name: 'enrollMaxCertificates', kind: 'single', from: 'by hand',
-      overrides: 'pki.enrollmentMaxCertificatesPerEntry',
-      what: 'How many unexpired enrolled certificates (ACME, EST and SCEP ' +
-            'together) this application may hold, overriding ' +
-            'pki.enrollmentMaxCertificatesPerEntry (higher or lower).' },
-    // THE DID DOCUMENT'S CONTENTS (2026-10-01): what this service publishes
-    // at <base>/applications/<identifier>/did.json for an application
-    // declared for `did`. See the `did` row of PROTOCOLS.
-    { name: 'didPublicKeyJwk', kind: 'multi',
-      from: 'the console\'s Generate a key pair, or by hand',
-      what: 'A PUBLIC KEY THE APPLICATION\'S DID DOCUMENT PUBLISHES, one JWK ' +
-            'per value, each a JsonWebKey2020 verification method named by ' +
-            'its kid (its RFC 7638 thumbprint where it carries none) and ' +
-            'listed under authentication and assertionMethod. Public members ' +
-            'only: a value carrying d, p, q, dp, dq, qi, oth, k or priv is ' +
-            'refused. Generate a key pair on the application\'s page and ' +
-            'the private half is handed out once and not kept here.' },
-    { name: 'didPrivateKeys', kind: 'single', sensitive: true,
-      from: 'the console\'s Generate a key pair',
-      what: 'THE PRIVATE HALVES OF THE DID KEYS THIS SERVICE GENERATED, as a ' +
-            'JSON array of private JWKs, SEALED at rest under the ' +
-            'key-encryption key like an application\'s RFC 7523 key pair. ' +
-            'Kept so this service can sign the application\'s Domain Linkage ' +
-            'Credentials (the DIF Well-Known DID Configuration) on request; a ' +
-            'key pasted into didPublicKeyJwk by hand has no private half ' +
-            'here and cannot sign one. Written by Generate a key pair only.' },
-    { name: 'didService', kind: 'multi', from: 'the console, or by hand',
-      what: 'A SERVICE THE DID DOCUMENT NAMES, as <type>|<serviceEndpoint>: ' +
-            'for example LinkedDomains|https://app.example.com. The type is ' +
-            'one token; the endpoint an absolute http or https URL. Each ' +
-            'becomes a service entry with the id <did>#service-<n>.' },
-    { name: 'didAlsoKnownAs', kind: 'multi', from: 'the console, or by hand',
-      what: 'ANOTHER IDENTIFIER FOR THE SAME APPLICATION, published as the ' +
-            'DID document\'s alsoKnownAs: an absolute URI such as the ' +
-            'application\'s web origin or its client_id URL. DID Core makes ' +
-            'it a claim, not a proof; a relying party checks it.' },
-    { name: 'ssfReceiverId', kind: 'multi',
-      from: 'SSF, the console, or by hand',
-      identifier: true,
-      identifierName: 'receiver id',
-      what: 'WHAT A SHARED SIGNALS RECEIVER IS CALLED — whatever it ' +
-            'authenticated as when it created a stream at /ssf/stream, which ' +
-            'is also the `aud` of every Security Event Token that stream ' +
-            'carries. Unlike the four declaration-only identifiers above it, ' +
-            'this one IS written by the protocol: creating a stream records ' +
-            'a sighting, because a receiver authenticating and being agreed ' +
-            'a stream is exactly the kind of event this registry exists to ' +
-            'hold. It still grants nothing — a stream is what decides what a ' +
-            'receiver gets, and it carries its own audience.' },
-    { name: 'ssfDeliveryEndpoint', kind: 'multi', from: 'the console, or by ' +
-                                                        'hand',
-      what: 'WHERE THIS RECEIVER EXPECTS ITS EVENTS PUSHED — an RFC 8935 ' +
-            'delivery endpoint. It is a DECLARATION and nothing reads it: a ' +
-            'push goes to the endpoint on the STREAM, which the receiver ' +
-            'named when it created one, and this service will not take a URL ' +
-            'to dial from an application entry: a URL recorded here is a ' +
-            'note about what a receiver is, and a URL on a stream is a URL ' +
-            'this service opens a connection to. The two are deliberately ' +
-            'not the same store.' },
-    // ---------------------------------------------------------------------
-    // THE ONE ATTRIBUTE ON THIS ENTRY THAT LIMITS SHARED SIGNALS (2026-09-12).
-    //
-    // Every other SSF attribute here is a declaration nothing reads. This one
-    // is READ, by `ssf/ssf_streams.ts`'s allowedEventsFor(), at two moments:
-    // when a stream owned by this application is agreed (its `events_delivered`
-    // is narrowed) and at every delivery (so tightening it takes effect on
-    // streams that already exist). Empty means unrestricted, which is what
-    // every entry was before it existed. Family-scoped like
-    // `oauthTokenExchangeRefreshToken` and for the same reason: on an entry
-    // nobody declared for Shared Signals it would read like a policy in force
-    // over streams that cannot be its.
-    { name: 'ssfAllowedEvents', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      families: ['ssf'],
-      familyWhy: 'It limits which Security Event Tokens a stream owned by ' +
-        'this application is sent, so on an entry declared for no Shared ' +
-        'Signals family it would sit there reading like a limit that was in ' +
-        'force.',
-      what: 'WHICH SHARED SIGNALS EVENT TYPES A STREAM OWNED BY THIS ' +
-            'APPLICATION MAY BE SENT. One value per line, each either a ' +
-            'whole profile — `caep` (the eight session events) or `risc` ' +
-            '(the fourteen account events) — or one event type URI, such as ' +
-            'https://schemas.openid.net/secevent/caep/event-type/session-revoked. ' +
-            'EMPTY MEANS UNRESTRICTED. SSF\'s own verification and ' +
-            'stream-updated events are always allowed. It is ENFORCED twice: ' +
-            'a stream this application creates or updates is agreed only the ' +
-            'types allowed here (anything else it asked for is absent from ' +
-            '`events_delivered`, and the stream\'s log says why), and every ' +
-            'delivery checks it again, so removing a value stops existing ' +
-            'streams receiving that type. The owner is whoever authenticated ' +
-            'to /ssf/stream, matched against this entry\'s identifier or its ' +
-            'ssfReceiverId values.' },
-    // ---------------------------------------------------------------------
-    // PER-RECEIVER SHARED SIGNALS SETTINGS (2026-10-01). Each overrides one
-    // caep.*, risc.* or ssf.* setting for the streams this application owns,
-    // read through ssfSettingFor(). They are the ones that stay inside SSF
-    // 1.0, CAEP 1.0 and RISC 1.0 when two receivers differ: optional members
-    // of a SET, transmitter-supplied stream members, and the transmitter's
-    // own limits. Left service-wide on purpose: what the metadata document
-    // publishes (default_subjects, the delivery methods), what describes the
-    // SUBJECT rather than the delivery (a risk level, an assurance
-    // namespace), what the stream's own `format` already chooses, and the
-    // account holder's RISC opt-out. Empty means the setting decides, and
-    // the console shows its value. `strictOverride` refuses a value that
-    // does not parse at the write, where the older overrides warn on read.
-    // ---------------------------------------------------------------------
-    { name: 'ssfCaepIncludeReasons', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'caep.includeReasons', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'TRUE or FALSE: send reason_admin and reason_user on the CAEP ' +
-            'events this receiver\'s streams carry. Both are OPTIONAL ' +
-            'members (CAEP 1.0 section 2), so either answer conforms.' },
-    { name: 'ssfCaepReasonLanguage', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'caep.reasonLanguage', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'The BCP 47 language tag the CAEP reason members are keyed ' +
-            'under on this receiver\'s streams. They stay objects keyed ' +
-            'by a tag either way.' },
-    { name: 'ssfCaepOmitEventTimestamp', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'caep.omitEventTimestamp', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'TRUE or FALSE: leave event_timestamp (OPTIONAL, CAEP 1.0 ' +
-            'section 2) off the CAEP events this receiver\'s streams ' +
-            'carry.' },
-    { name: 'ssfRiscIncludeReasons', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'risc.includeReasons', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'TRUE or FALSE: send reason_admin and reason_user on the RISC ' +
-            'events that define them, on this receiver\'s streams.' },
-    { name: 'ssfRiscReasonLanguage', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'risc.reasonLanguage', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'The BCP 47 language tag the RISC reason members are keyed ' +
-            'under on this receiver\'s streams.' },
-    { name: 'ssfRiscOmitEventTimestamp', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'risc.omitEventTimestamp', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'TRUE or FALSE: leave event_timestamp off the RISC events ' +
-            'that define it, on this receiver\'s streams.' },
-    { name: 'ssfSigningAlgorithm', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.signingAlgorithm', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'The JWS algorithm this receiver\'s Security Event Tokens are ' +
-            'signed with. Each is one this transmitter publishes a key ' +
-            'for in its JWKS, so the receiver can always verify.' },
-    { name: 'ssfMinVerificationInterval', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.minVerificationInterval', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'Seconds: min_verification_interval (SSF 1.0 section 8.1.1, ' +
-            'transmitter-supplied) on this receiver\'s streams. A ' +
-            'receiver asking for a shorter one is refused.' },
-    { name: 'ssfInactivityTimeoutS', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.inactivityTimeoutS', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'Seconds: inactivity_timeout (SSF 1.0 section 8.1.1, ' +
-            'transmitter-supplied) on this receiver\'s streams; 0 means ' +
-            'none.' },
-    { name: 'ssfInactivityAction', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.inactivityAction', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'What happens to one of this receiver\'s streams when its ' +
-            'inactivity timeout passes.' },
-    { name: 'ssfVerificationEveryS', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.verificationEveryS', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'Seconds between the verification events this transmitter ' +
-            'sends on this receiver\'s streams by itself; 0 means none.' },
-    { name: 'ssfStreamStatusOnCreate', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.streamStatusOnCreate', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'The status a stream this receiver creates starts in.' },
-    { name: 'ssfMaxStreams', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.maxStreams', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'How many streams this receiver may hold at once.' },
-    { name: 'ssfMaxSubjectsPerStream', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.maxSubjectsPerStream', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'How many subjects one of this receiver\'s streams may name.' },
-    { name: 'ssfMaxQueuedEvents', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.maxQueuedEvents', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'How many undelivered events one of this receiver\'s streams ' +
-            'holds.' },
-    { name: 'ssfPollMaxEvents', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.pollMaxEvents', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'The most events one poll of this receiver\'s stream returns ' +
-            '(RFC 8936 lets a transmitter return fewer than maxEvents).' },
-    { name: 'ssfDeadLetterMaxPerStream', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.deadLetterMaxPerStream', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'How many dead letters one of this receiver\'s streams keeps.' },
-    { name: 'ssfPushTimeoutMs', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.pushTimeoutMs', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'Milliseconds to wait for this receiver\'s push endpoint to ' +
-            'answer.' },
-    { name: 'ssfPushRetries', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.pushRetries', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'How many times a failed push to this receiver is tried again ' +
-            'before it becomes a dead letter.' },
-    { name: 'ssfPushRetryDelayMs', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      overrides: 'ssf.pushRetryDelayMs', families: ['ssf'],
-      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
-      what: 'Milliseconds between push attempts to this receiver.' },
-    // ---------------------------------------------------------------------
-    // GNAP (RFC 9635 + RFC 9767), 2026-09-12. See gnap/CLAUDE.md.
-    // ---------------------------------------------------------------------
-    { name: 'gnapInstanceId', kind: 'single', from: 'the console, or by hand',
-      identifier: true,
-      identifierName: 'GNAP instance identifier',
-      what: 'A STATIC instance identifier (RFC 9635 section 2.3.1): the ' +
-            'string a client sends as `client` in place of its key. The key ' +
-            'it must then prove is gnapKey or gnapKeyReference on this ' +
-            'entry. Dynamic identifiers the authorization server hands out ' +
-            '(section 3.5) are not written here.' },
-    { name: 'gnapKey', kind: 'single', from: 'GNAP (on first sight, ' +
-                                             'development), the console, or ' +
-                                             'by hand',
-      what: 'The client instance\'s or resource server\'s PUBLIC key, as the ' +
-            'JSON key object of RFC 9635 section 7.1: a proof method and ' +
-            'exactly one of jwk, cert or cert#S256. It is how a request by ' +
-            'value is matched to this entry, by the key\'s thumbprint.' },
-    { name: 'gnapKeyIdentity', kind: 'single', from: 'GNAP',
-      what: 'The thumbprint identity of gnapKey (jkt:... for a JWK, x5t:... ' +
-            'for a certificate), written when GNAP creates the entry so the ' +
-            'key can be found without re-reading it.' },
-    { name: 'gnapKeyReference', kind: 'single', from: 'the console, or by hand',
-      what: 'A KEY REFERENCE (RFC 9635 section 7.1.1): the opaque string a ' +
-            'client sends as `key`. It resolves to gnapSymmetricKey when ' +
-            'that is set, and to gnapKey otherwise.' },
-    { name: 'gnapKeyProof', kind: 'single', from: 'the console, or by hand',
-      what: 'The proofing method a key reference is bound to (section 7.1.1: ' +
-            '"MUST be bound to a single proofing mechanism"): httpsig, jwsd ' +
-            'or jws. Default httpsig.' },
-    { name: 'gnapMtlsTrust', kind: 'single', from: 'the console, or by hand',
-      what: 'How a key this client proves by mutual TLS is trusted, for ' +
-            'this client alone (#107): `pki` or `pinned`, as the realm\'s ' +
-            'gnap.mtlsTrust. It can only make the realm STRICTER — `pki` ' +
-            'where the realm is pinned — and `pinned` is refused where the ' +
-            'realm is pki (STS-REG-0196) and ignored if the realm is made ' +
-            'pki afterwards. Empty follows the realm. Under pki the ' +
-            'certificate must chain to the client truststore and be issued ' +
-            'to this entry by this realm, or carry the one RFC 8705 subject ' +
-            'parameter it registers (oauthTlsClientAuthSubjectDn or an ' +
-            'oauthTlsClientAuthSan* attribute).' },
-    { name: 'gnapSymmetricKey', kind: 'single', from: 'the console, or by hand',
-      sensitive: true,
-      what: 'A SHARED SECRET for a key reference, base64url, at least 32 ' +
-            'bytes — the one case GNAP allows a symmetric key, because it ' +
-            'never crosses the wire (section 7.1.2). Sealed with the ' +
-            'key-encryption key when keys persist, withheld from LDAP ' +
-            'readers in product mode.' },
-    { name: 'gnapSymmetricAlg', kind: 'single', from: 'the console, or by hand',
-      what: 'The algorithm a shared secret signs with: HS256 (default), ' +
-            'HS384 or HS512 for jwsd and jws; hmac-sha256 for httpsig.' },
-    { name: 'gnapClassId', kind: 'single',
-      from: 'GNAP, the console, or by hand',
-      what: 'The client software\'s class_id (section 2.3). A registered ' +
-            'value takes precedence over the one a request carries.' },
-    { name: 'gnapDisplayUri', kind: 'single', from: 'GNAP, the console, or ' +
-                                                    'by hand',
-      what: 'The client\'s display.uri, shown on the approval page (section ' +
-            '2.3.2).' },
-    { name: 'gnapLogoUri', kind: 'single',
-      from: 'GNAP, the console, or by hand',
-      what: 'The client\'s display.logo_uri. Only a data: image is drawn; ' +
-            'any other URI is shown as a link (section 11.16).' },
-    { name: 'gnapFinishUri', kind: 'multi', from: 'GNAP (observed, ' +
-                                                  'development), the ' +
-                                                  'console, or by hand',
-      what: 'An INTERACTION FINISH URI (section 2.5.2) this client may be ' +
-            'sent back to or pushed to. A return address: in product mode a ' +
-            'finish URI not listed here is refused.' },
-    { name: 'gnapInteractionStartModes', kind: 'multi', from: 'the console, ' +
-        'or by hand',
-      what: 'The interaction start modes this client may use (redirect, app, ' +
-            'user_code, user_code_uri). Empty means every mode the ' +
-            'authorization server offers.' },
-    { name: 'gnapAllowedAccess', kind: 'multi', from: 'the console, or by hand',
-      what: 'The access types and reference strings this client may request, ' +
-            'or this resource server may register. Empty means any.' },
-    { name: 'gnapBearerTokens', kind: 'single', from: 'the console, or by hand',
-      what:
-        'FALSE refuses the bearer flag for this client with invalid_flag.' },
-    { name: 'gnapSkipInteraction', kind: 'single', from: 'the console, or by ' +
-        'hand',
-      what: 'TRUE makes this a TRUSTED client instance (section 2.3.3): a ' +
-            'grant that asks for no subject information is approved with no ' +
-            'resource owner and no interaction, and one carrying a verified ' +
-            'user assertion is approved for that person. Honoured only for a ' +
-            'registered entry, never one GNAP created on sight.' },
-    { name: 'gnapAccessTokenFormat', kind: 'single', from: 'the console, or ' +
-        'by hand',
-      what: 'The RFC 9767 token format for tokens issued to this client, or ' +
-            'for this resource server: jwt-signed, jwt-encrypted, macaroon, ' +
-            'biscuit or zcap.' },
-    { name: 'gnapAccessTokenLifetimeS', kind: 'single', from: 'the console, ' +
-        'or by hand',
-      overrides: 'gnap.accessTokenLifetimeS',
-      what: 'The lifetime in seconds of access tokens issued to this client.' },
-    { name: 'gnapResourceServerUri', kind: 'multi', from: 'the console, or ' +
-        'by hand',
-      what: 'The locations this resource server answers for. An access right ' +
-            'whose locations start with one of these is audienced to this ' +
-            'entry, and a token for it is minted with this resource ' +
-            'server\'s format, JWE key and macaroon key.' },
-    { name: 'gnapOwnerLookupUri', kind: 'single', from: 'the console, or ' +
-        'by hand',
-      what: 'Where this resource server answers who owns a resource (#432 ' +
-            'phase 5): an https URL template holding {identifier} once, in ' +
-            'its path, e.g. https://rs.example.com/owners/{identifier}. The ' +
-            'authorization server fetches it with the identifier ' +
-            'percent-encoded into that segment and reads {"owner": "<DN>"} ' +
-            '(404: nobody owns it); the person approving a right naming the ' +
-            'identifier must be that person or a member of that group.' },
-    { name: 'gnapJweKey', kind: 'single', from: 'the console, or by hand',
-      what: 'This resource server\'s PUBLIC encryption key (a JWK) for ' +
-            'jwt-encrypted tokens, so only this resource server can read ' +
-            'them.' },
-    { name: 'gnapMacaroonKey', kind: 'single', from: 'GNAP',
-      sensitive: true,
-      what: 'The macaroon ROOT KEY this resource server verifies its ' +
-            'macaroon tokens with, base64url. Written by the authorization ' +
-            'server when the resource server first registers a resource set; ' +
-            'sealed with the key-encryption key when keys persist.' },
-    { name: 'gnapScopedSignals', kind: 'single',
-      from: 'the console, or by hand',
-      what: 'FALSE opts this web application out of Shared Signals scoping: ' +
-            'a stream it owns then carries events about everybody, like any ' +
-            'other receiver\'s.' },
-    { name: 'spiffeWorkloadId', kind: 'multi', from: 'the console, or by hand',
-      identifier: true,
-      identifierName: 'SPIFFE ID',
-      what: 'A SPIFFE ID this application is expected to hold — ' +
-            'spiffe://<trust domain>/<path>. A SPIFFE identity gets an entry ' +
-            'of its OWN under ou=spiffe (see spiffe/CLAUDE.md) and the ' +
-            'registry there is what an SVID is actually issued against, so ' +
-            'this writes nothing and reads nothing: it is the link between ' +
-            'an application in this registry and an identity in that one, ' +
-            'said by hand because no protocol says it.' },
-
-    // --- AND THE ONE PAIR HERE THAT DOES DECIDE SOMETHING ----------------
-    //
-    // When this block was written, every attribute above this line either
-    // recorded what happened or declared something nothing reads —
-    // `appAllowedProtocol` says so in capitals, and the four declaration-only
-    // identifiers above are still that. (Several rows above are READ by now:
-    // the setting overrides, `ssfAllowedEvents`, and the RFC 9701, 9101, 9126,
-    // 9396 and 9470 attributes — each says so on its own row.) These two are
-    // read, by `authn.js`, on the way to the sign-in screen.
-    //
-    // WHAT THEY ANSWER is a question this registry could not answer before:
-    // WHERE ARE THIS APPLICATION'S USERS AUTHENTICATED? A relationship under
-    // `ou=federations` says how to talk to a foreign identity provider and says
-    // nothing about who should be sent there, and an application entry said
-    // what the application is and nothing about how its people sign in. So a
-    // federated sign-in was something a PERSON chose, on a button at the foot
-    // of the sign-in screen, once per sign-in — which is the discovery step a
-    // real deployment does not make its users perform.
-    //
-    // THEY ARE NOT A PERMISSION, and that is the same posture the rest of this
-    // registry takes: nothing here refuses a local sign-in for an application
-    // that names a relationship, nothing refuses a person who reaches the
-    // screen by another route, and clearing them takes the shortcut away
-    // rather than locking anybody out. What they change is the DEFAULT ROUTE
-    // to the screen — see authn.js's federationFor().
-    //
-    // AND THE FIRST OF THEM HOLDS A LIST, since 2026-08-26. The discovery step
-    // this pair removed was a person choosing from EVERY relationship this
-    // service has; naming several here narrows that list to this
-    // application's own partners without pretending the choice does not
-    // exist. A deployment with one federated identity provider still gets the
-    // redirect it always got — the list is one value long — and one with two
-    // gets a page listing exactly two. See authn.js's federationFor(), which
-    // resolves every value and reports the ones that would not work.
-    { name: 'appFederationRelationship', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'THE FEDERATION RELATIONSHIPS THIS APPLICATION\'S USERS ARE ' +
-            'AUTHENTICATED THROUGH — each value the `fedId` of an entry ' +
-            'under ou=federations, in THIS trust realm, whose `fedRole` is ' +
-            'service-provider. Both halves of that are checked when it is ' +
-            'read rather than when it is written: an identity-provider-side ' +
-            'relationship goes the other way (this service asserts to that ' +
-            'partner, so there is nothing to sign in to), and the register ' +
-            'is per realm, so an id that names a relationship in another ' +
-            'realm names nothing here.\n\nIT HOLDS A LIST, and that is what ' +
-            'makes an application able to offer more than one identity ' +
-            'provider. ONE usable value with the auto-redirect on is the ' +
-            'case this attribute was added for and it is unchanged: the ' +
-            'browser goes straight to that partner. SEVERAL usable values ' +
-            'draw /authn/select-idp, where the person chooses which one — ' +
-            'home realm discovery narrowed to this application\'s partners ' +
-            'rather than performed against every relationship this service ' +
-            'has. They need not share a protocol: a SAML 2.0 partner and an ' +
-            'OpenID Connect one are two values here and two buttons there, ' +
-            'because what the list names is where a person can be ' +
-            'authenticated and not how.\n\nA value that names a relationship ' +
-            'this service cannot use is REPORTED on the screen rather than ' +
-            'dropped, one line per value: a list of three whose middle entry ' +
-            'is disabled must not look like a list of two.\n\nIt is WRITTEN ' +
-            'BY NOBODY. No protocol presents it and no sighting derives it — ' +
-            'an application\'s home identity provider is an arrangement ' +
-            'somebody made, not something this service can observe — so it ' +
-            'is editable and it starts empty.' },
-    { name: 'appFederationAutoRedirect', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      what: 'TRUE if a person signing in to this application should be sent ' +
-            'STRAIGHT to the partner named above, without the sign-in screen ' +
-            'in between. This is home realm discovery done by configuration ' +
-            'instead of by asking, which is what a deployment with one ' +
-            'federated identity provider actually does.\n\nIt is TRUE BY ' +
-            'DEFAULT once a relationship is named, because naming one and ' +
-            'then having to click a button is the state nobody wants; set it ' +
-            'FALSE to keep the screen, where the partners are then the only ' +
-            'buttons offered. An absent value therefore means "yes" here and ' +
-            'not "unknown", which is the opposite of what RFC 7591 section 2 ' +
-            'makes an omitted boolean mean — said out loud because the two ' +
-            'rules meet on one entry.\n\nWITH SEVERAL RELATIONSHIPS NAMED IT ' +
-            'MEANS EXACTLY WHAT IT ALWAYS MEANT — "without the sign-in ' +
-            'screen" — and what changes is what that leaves. With one it is ' +
-            'a redirect straight to the partner. With several it is the ' +
-            'chooser at /authn/select-idp: one button per partner and no ' +
-            'password field, which is the sign-in screen\'s job done without ' +
-            'the sign-in screen. What it never means is "pick one for them"; ' +
-            'there is no value of a boolean that can say which identity ' +
-            'provider somebody\'s employer is.\n\nFALSE with several named ' +
-            'is therefore the SCREEN, with one button per partner under the ' +
-            'password box — the same thing FALSE has always done, with the ' +
-            'partners plural.\n\nWith no relationship named it does nothing ' +
-            'at all, rather than being an error: the two are edited ' +
-            'separately and a value left behind by a relationship that was ' +
-            'cleared should not refuse the next write.' },
-
-    // ---------------------------------------------------------------------
-    // AND THE THIRD, WHICH GENERALISES THE PAIR ABOVE IT.
-    //
-    // The two attributes above can say "send my people to a federated
-    // identity provider" and cannot say anything else, because until
-    // 2026-08-26 there was nothing else to say: every way of authenticating
-    // somebody here was either this service's own screen or somebody else's
-    // service. The SPNEGO sign-in is neither — it is a credential the
-    // browser already holds — so an application had no way to ask for the
-    // commonest integrated-authentication deployment there is.
-    //
-    // ITS VOCABULARY IS THE FEDERATION REGISTER'S, and deliberately the same
-    // one: `password`, `password-mfa`, `webauthn`, `spnego`, `federation`,
-    // which is `fedAuthnMechanism`'s list exactly. Two tables would have
-    // drifted the first time either grew a value, and the two attributes
-    // answer the same question from two sides — this one says where THIS
-    // APPLICATION's people sign in, and that one says what to do when THAT
-    // PARTNER asks. **The list is not imported here**, which is worth saying
-    // rather than looking like an oversight: `federation.js` requires this
-    // file, so a require back would close a cycle. It is checked where it is
-    // READ instead — `authn.js`'s declaredMechanismFor() — which is where
-    // `appFederationRelationship`'s four checks are made too, and for the same
-    // reason: this is a string on a directory entry that `ldapmodify` can
-    // reach, so a check made at the write would be a check about the past.
-    //
-    // AN EMPTY VALUE IS NOT `password`. It means this entry says nothing, and
-    // that is the whole compatibility argument: every entry in existence holds
-    // an empty one, and reading it as an explicit "use the password screen"
-    // would have switched off every appFederationRelationship in the field in
-    // one commit.
-    //
-    // LIKE THE PAIR ABOVE IT, IT IS NOT A PERMISSION. Nothing refuses a person
-    // who reaches the sign-in screen by another route, nothing refuses the
-    // Kerberos door to an application that has not declared it — the button is
-    // on the screen for everybody — and clearing this takes the shortcut away
-    // rather than locking anybody out. What it changes is the DEFAULT ROUTE.
-    // ---------------------------------------------------------------------
-    { name: 'appAuthnMechanism', kind: 'single',
-      from: 'the console, the management API, or by hand',
-      what: 'HOW THIS APPLICATION\'S USERS AUTHENTICATE, one value from the ' +
-            'same closed list fedAuthnMechanism uses: password, ' +
-            'password-mfa, webauthn, spnego, wallet, federation.\n\nIt is ' +
-            'the ' +
-            'generalisation of appFederationRelationship beside it, and the ' +
-            'value that could not be said before it existed is `spnego` — ' +
-            'INTEGRATED AUTHENTICATION, where this application\'s people are ' +
-            'sent to /authn/spnego and signed in on the Kerberos ticket ' +
-            'their machine already holds, with no screen drawn and nothing ' +
-            'typed. That is the one mechanism here resting on a credential ' +
-            'this service genuinely verifies.\n\n`wallet` (2026-09-17) ' +
-            'sends them to /authn/wallet instead, where their wallet ' +
-            'presents a credential this realm issued them and they are ' +
-            'signed in as the entry it was issued for — asked for a second ' +
-            'factor afterwards where the request demands two.\n\n' +
-            '`federation` means the ' +
-            'relationships named in appFederationRelationship, which is what ' +
-            'naming one already implied, said out loud — so it changes ' +
-            'nothing, and declaring it while naming NO usable relationship ' +
-            'is reported on the sign-in screen rather than falling quietly ' +
-            'back to a password box. `password`, `password-mfa` and ' +
-            '`webauthn` are the sign-in screen, in the three shapes it ' +
-            'has.\n\nEMPTY MEANS THIS ENTRY SAYS NOTHING, which is not the ' +
-            'same as password: it falls through to appFederationRelationship ' +
-            'and then to the screen, which is exactly what every application ' +
-            'did before this attribute existed.\n\nA value this service ' +
-            'cannot honour — a mechanism it does not have, `spnego` while ' +
-            'krb5.spnegoAuthentication is off, or `wallet` while ' +
-            'oid4vp.signIn is off — is REPORTED on the screen, ' +
-            'one line, rather than dropped. A configured mechanism that ' +
-            'silently is not happening looks exactly like one that is.\n\nIt ' +
-            'is WRITTEN BY NOBODY. No protocol presents it and no sighting ' +
-            'derives it, so it is editable and it starts empty.' }
-  ]
-};
-
-// ---------------------------------------------------------------------------
-// WHAT A CONSOLE MAY CHANGE, which is a different question from what an entry
-// carries and is therefore a table of its own rather than a field on the rows
-// above.
-//
-// The distinction is DERIVED versus DECLARED. An application entry holds both
-// kinds and they must not be edited alike:
-//
-//   * DECLARED — what this application IS allowed to do. Its redirect URIs, its
-//     grant types, its secret, whether it is confidential. Nothing about them
-//     is a fact about the past; they are configuration, they are what RFC 9700
-//     mode READS, and being able to change them is the point of having a
-//     registry at all. These are editable.
-//
-//   * DERIVED — what HAPPENED. The counters, the first and last sighting, the
-//     kinds and protocols it has been seen in, the redirect URIs it has
-//     actually used. A form that could rewrite those would make this page lie
-//     about the service's own behaviour, and the lie would be indistinguishable
-//     from a bug in the recording. These are not editable here.
-//
-// LDAP can still change every one of them — this directory enforces nothing and
-// `ldapmodify` reaches any attribute on any entry. That is not an inconsistency
-// to fix: an operator with an LDAP client is doing something deliberate, and
-// the console is a set of controls somebody clicks. Refusing the derived ones
-// HERE is the difference between offering an operation and merely not
-// preventing it.
-//
-// `set` replaces (single-valued), `multi` adds and removes values. The mode has
-// to match the attribute's own `kind` or the entry ends up with a list where
-// the schema promises one value, so both are read from these two tables and
-// never from a caller.
-// ---------------------------------------------------------------------------
-const EDITABLE = {
-  appName: 'set',
-  // DECLARED, which is the whole of why it is here and `appProtocol` is not.
-  // See the PROTOCOLS table above: one of those two attributes is what somebody
-  // said this application is for and the other is what happened to it.
-  appAllowedProtocol: 'multi',
-  // `multi` for `oauthClientId`'s reason read the other way: an application
-  // that will admit either of two roles is one application, and a `set` here
-  // would replace the list with one value and read afterwards as the others
-  // having been deliberately withdrawn — which, on the one attribute here
-  // that REFUSES people, is the failure worth designing against.
-  appRequiredRole: 'multi',
-  // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
-  // rows and `common/delegation_policy.ts`.
-  appAllowedToDelegateTo: 'multi',
-  appAllowedToActOnBehalfOf: 'multi',
-  appDelegationSubjectGroup: 'multi',
-  appDelegationSemantics: 'multi',
-  appDefaultDelegationSemantics: 'set',
-  appNotDelegated: 'set',
-  appMayAct: 'set',
-  // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
-  // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn below,
-  // whose own row says why — an application answering to two client_ids or two
-  // SPNs is one application, and a `set` here would replace the list with one
-  // value and read afterwards as the others having been forgotten.
-  oauthClientId: 'multi',
-  // THE AUDIENCE, which is the identifier from the OTHER side: what a token
-  // addressed to this application says in `aud`, rather than what the
-  // application calls itself at the token endpoint. `multi` because a per-
-  // environment hostname is the ordinary case, and because it is the one
-  // attribute here something LOOKS UP — see forAudience(), and the row in
-  // SCHEMA, where the difference between a lookup and a permission is spelled
-  // out.
-  oauthAudience: 'multi',
-  oauthClientSecret: 'set',
-  // A LIST since 2026-10-01: every method the client may use, `none` alone.
-  oauthTokenEndpointAuthMethod: 'multi',
-  // Native SSO (#130). One answer each.
-  oauthNativeSso: 'set',
-  oauthNativeSsoGroup: 'set',
-  // CIBA (#131). One answer each.
-  oauthBackchannelTokenDeliveryMode: 'set',
-  oauthBackchannelClientNotificationEndpoint: 'set',
-  oauthBackchannelAuthenticationRequestSigningAlg: 'set',
-  oauthBackchannelUserCodeParameter: 'set',
-  // OpenID Provider Commands (#151).
-  oauthCommandEndpoint: 'set',
-  // OIDC Core sections 8 and 9 (#118). One answer each.
-  oauthSubjectType: 'set',
-  oauthSectorIdentifierUri: 'set',
-  oauthTokenEndpointAuthSigningAlg: 'set',
-  oauthJwks: 'set',
-  oauthJwksUri: 'set',
-  // RFC 9701's three. `set`, because each holds one algorithm.
-  oauthIntrospectionSignedResponseAlg: 'set',
-  oauthIntrospectionEncryptedResponseAlg: 'set',
-  oauthIntrospectionEncryptedResponseEnc: 'set',
-  // RFC 9101's five. The request URIs accumulate, like redirect URIs; the
-  // other four hold one answer each.
-  oauthRequestUri: 'multi',
-  oauthRequestObjectSigningAlg: 'set',
-  oauthRequestObjectEncryptionAlg: 'set',
-  oauthRequestObjectEncryptionEnc: 'set',
-  oauthRequireSignedRequestObject: 'set',
-  // RFC 9126's one. It holds one answer.
-  oauthRequirePushedAuthorizationRequests: 'set',
-  // RFC 9396's two. Both accumulate: a resource understands several types, and
-  // a client uses several.
-  oauthAuthorizationDetailsType: 'multi',
-  oauthAuthorizationDetailsTypes: 'multi',
-  // RFC 9470's two. Each holds one answer: the acr values are one ordered
-  // list in one value, because a directory's multi-valued attribute has no
-  // order and the order is the preference.
-  oauthStepUpAcrValues: 'set',
-  oauthStepUpMaxAge: 'set',
-  // RFC 7521 / RFC 7523. The declaration is `multi` like every other
-  // identifier attribute here — one application legitimately asserts under a
-  // per-environment issuer name, and a `set` would replace the list with one
-  // value and read afterwards as the others having been forgotten. The six the
-  // PKI page writes are `set`, because each holds ONE answer and a list of two
-  // private keys has no rule for which signs.
-  oauthAssertionIssuer: 'multi',
-  oauthAssertionJwks: 'set',
-  oauthAssertionCertificate: 'set',
-  oauthAssertionCertificateChain: 'set',
-  oauthAssertionPrivateKey: 'set',
-  oauthAssertionKid: 'set',
-  oauthAssertionExpiresAt: 'set',
-  // WHERE THE KEY PAIR CAME FROM (2026-09-13) — issued here, or a certificate
-  // uploaded in its place. `set` for the six's reason, and in this table at
-  // all because `admin-ui/pki_admin.ts` writes it through updateApplication()
-  // beside them; KEY_SOURCES below is the closed vocabulary it is checked
-  // against.
-  oauthAssertionKeySource: 'set',
-  // RFC 7522's seven, the same two kinds for the same two reasons: the
-  // declaration accumulates and the five the PKI page writes each hold ONE
-  // answer. The REGISTERED certificate is `set` and not `multi` because
-  // several PEM blocks go in ONE value — a certificate rotation is two blocks
-  // in one attribute, not two attribute values, so that the whole of what a
-  // party may sign with is replaced in one write.
-  oauthSamlAssertionIssuer: 'multi',
-  oauthSamlAssertionSigningCertificate: 'set',
-  oauthSamlAssertionCertificate: 'set',
-  oauthSamlAssertionCertificateChain: 'set',
-  oauthSamlAssertionPrivateKey: 'set',
-  oauthSamlAssertionThumbprint: 'set',
-  oauthSamlAssertionExpiresAt: 'set',
-  oauthSamlAssertionKeySource: 'set',
-  // RFC 7591 section 2.3 (2026-09-13). The declaration accumulates like every
-  // issuer declaration here; the issued statement is ONE value, replaced by
-  // the next issue. The three `appSoftwareStatement*` facts are what a
-  // registration recorded and are not here.
-  oauthSoftwareStatementIssuer: 'multi',
-  oauthIssuedSoftwareStatement: 'set',
-  oauthTlsClientAuthSubjectDn: 'set',
-  // RFC 8705's other four subject parameters and the section 3.4 flag
-  // (2026-09-13). Checked on the way in by mtlsAttributeProblem().
-  oauthTlsClientAuthSanDns: 'set',
-  oauthTlsClientAuthSanUri: 'set',
-  oauthTlsClientAuthSanIp: 'set',
-  oauthTlsClientAuthSanEmail: 'set',
-  oauthTlsClientCertificateBoundAccessTokens: 'set',
-  oauthTlsClientCertificateThumbprint: 'set',
-  oauthConfidential: 'set',
-  appRegistrationAccessToken: 'set',
-  samlEntityId: 'multi',
-  // DECLARED, both of them, which is why they are here and the four SAML
-  // attributes beside them are not: where a LogoutResponse goes and which
-  // certificate the service provider signs with are configuration, and the
-  // NameID formats it has asked for and whether its last request was signed
-  // are what HAPPENED.
-  // `multi` since 2026-09-17 (#37): a rollover publishes two keys.
-  samlSigningCertificate: 'multi',
-  samlSingleLogoutService: 'multi',
-  samlSpMetadataSigningCertificate: 'set',
-  // THE TEN PER-APPLICATION SETTING OVERRIDES. Every one is `set`, for the
-  // reason their SCHEMA rows give: a setting has one answer, and `multi` would
-  // accumulate two values with no rule for which won. They are editable
-  // because nothing observes them — like samlSingleLogoutService above, if
-  // they cannot be written here they cannot be written at all.
-  saml2AssertionLifetimeMin: 'set',
-  saml2SignAssertion: 'set',
-  saml2SignResponse: 'set',
-  saml2NameIdFormat: 'set',
-  saml2ArtifactTtlS: 'set',
-  saml11AssertionLifetimeMin: 'set',
-  saml11SignAssertion: 'set',
-  saml11SignResponse: 'set',
-  saml11NameIdFormat: 'set',
-  saml11ArtifactTtlS: 'set',
-  // The OAuth 2.0 / OIDC per-client five, the group claim's four and
-  // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
-  // setting has one answer.
-  oauthAccessTokenTtlS: 'set',
-  oauthIdTokenTtlS: 'set',
-  oauthRefreshTokenTtlS: 'set',
-  oauthRefreshIdleSeconds: 'set',
-  oauthRevokeRefreshOnLogout: 'set',
-  // The sixth, and the first whose row carried `families`. Editable like the
-  // five above it and refused on an entry declared for neither OAuth 2.0 nor
-  // OpenID Connect — see familyRefusal(), and the block above the row itself.
-  oauthTokenExchangeRefreshToken: 'set',
-  appGroupsClaim: 'set',
-  appGroupsClaimName: 'set',
-  appGroupsClaimValue: 'set',
-  appGroupsClaimFromMemberOf: 'set',
-  wsfedAssertionLifetimeMin: 'set',
-  // SAML 2.0 encryption: three that say where the recipient's key comes from,
-  // and four setting overrides. All `set` — one answer each.
-  samlSpMetadataUrl: 'set',
-  samlSpMetadata: 'set',
-  samlEncryptionCertificate: 'set',
-  saml2EncryptAssertion: 'set',
-  saml2EncryptionAlgorithm: 'set',
-  saml2KeyTransportAlgorithm: 'set',
-  saml2EncryptLogoutNameId: 'set',
-  wsfedRealm: 'multi',
-  wstrustAppliesTo: 'multi',
-  krb5ServicePrincipalName: 'multi',
-  krb5TrustedForDelegation: 'set',
-  oid4vpClientId: 'multi',
-  // The four that are ONLY ever declared — nothing in this service writes them.
-  federationPartnerId: 'multi',
-  // And the pair that IS read, by authn.js, on the way to the sign-in screen.
-  // Editable for the reason the rest of the declared half is: nothing observes
-  // an application's home identity provider, so if this cannot be written here
-  // it cannot be written at all. `multi` since 2026-08-26, and it used to be
-  // `set`. An application may name SEVERAL service-provider-side relationships
-  // — a SAML 2.0 partner and an OpenID Connect one are an ordinary pair — and
-  // the person picks between them at /authn/select-idp. A `set` here would
-  // replace the list with one value and read afterwards as the others having
-  // been forgotten, which is the same argument every other identifier attribute
-  // above makes.
-  appFederationRelationship: 'multi',
-  appFederationAutoRedirect: 'set',
-  // And the THIRD of that group, added 2026-08-26. Editable for the same
-  // reason the other two are: nothing in this service can OBSERVE how an
-  // application's people are supposed to authenticate, so if it cannot be
-  // written here it cannot be written at all. `set` and not `multi` — an
-  // application has one answer to "how do my people sign in", and a list would
-  // be a question this attribute has no page to ask.
-  appAuthnMechanism: 'set',
-  // The home page, `set` for its row's reason: an application has one. It is
-  // editable AND written by register() from RFC 7591 `client_uri`, which is the
-  // same arrangement oauthRedirectUri has — a registration states it, and an
-  // entry nobody registered has no other way to acquire one.
-  appHomePageUrl: 'set',
-  // The CORS allowlist, `multi` because an application is served from several
-  // origins as an ordinary matter — a per-environment host, a local
-  // development server beside the deployed one.
-  appCorsOrigin: 'multi',
-  ldapBindDn: 'multi',
-  scimClientId: 'multi',
-  spiffeWorkloadId: 'multi',
-  // The Shared Signals pair. `ssfReceiverId` is the one identifier here that a
-  // PROTOCOL also writes — creating a stream records a sighting — so it is
-  // `multi` like every other accumulating identifier; the delivery endpoint is
-  // declaration only, and `multi` because a receiver legitimately runs one per
-  // environment.
-  ssfReceiverId: 'multi',
-  ssfDeliveryEndpoint: 'multi',
-  // Certificate enrollment's per-application overrides (2026-10-01).
-  acmeAllowedProfiles: 'multi',
-  acmeDefaultProfile: 'set',
-  acmeCertificateLifetimeDays: 'set',
-  estAllowedProfiles: 'multi',
-  estDefaultProfile: 'set',
-  estCertificateLifetimeDays: 'set',
-  scepAllowedProfiles: 'multi',
-  scepDefaultProfile: 'set',
-  scepCertificateLifetimeDays: 'set',
-  estBasicAuthentication: 'set',
-  estCertificateAuthentication: 'set',
-  estServerKeyGeneration: 'set',
-  enrollMaxCertificates: 'set',
-  // The DID document's contents (2026-10-01).
-  didPublicKeyJwk: 'multi',
-  didPrivateKeys: 'set',
-  didService: 'multi',
-  // An application's own claim sets (2026-10-01), each one JSON array.
-  oauthClaimsAccessToken: 'set',
-  oauthClaimsIdToken: 'set',
-  oauthClaimsUserinfo: 'set',
-  saml2CustomAttributes: 'set',
-  saml11CustomAttributes: 'set',
-  didAlsoKnownAs: 'multi',
-  ssfAllowedEvents: 'multi',
-  // The per-receiver Shared Signals overrides, each one value an empty
-  // write clears (the setting then decides); see their SCHEMA rows.
-  ssfCaepIncludeReasons: 'set',
-  ssfCaepReasonLanguage: 'set',
-  ssfCaepOmitEventTimestamp: 'set',
-  ssfRiscIncludeReasons: 'set',
-  ssfRiscReasonLanguage: 'set',
-  ssfRiscOmitEventTimestamp: 'set',
-  ssfSigningAlgorithm: 'set',
-  ssfMinVerificationInterval: 'set',
-  ssfInactivityTimeoutS: 'set',
-  ssfInactivityAction: 'set',
-  ssfVerificationEveryS: 'set',
-  ssfStreamStatusOnCreate: 'set',
-  ssfMaxStreams: 'set',
-  ssfMaxSubjectsPerStream: 'set',
-  ssfMaxQueuedEvents: 'set',
-  ssfPollMaxEvents: 'set',
-  ssfDeadLetterMaxPerStream: 'set',
-  ssfPushTimeoutMs: 'set',
-  ssfPushRetries: 'set',
-  ssfPushRetryDelayMs: 'set',
-  // GNAP. `gnapKeyIdentity` and `gnapMacaroonKey` are the authorization
-  // server's to write and are deliberately absent: an identity that disagreed
-  // with gnapKey, or a macaroon key that was not the derived one, would be an
-  // entry that verified nothing.
-  gnapInstanceId: 'set',
-  gnapKey: 'set',
-  gnapKeyReference: 'set',
-  gnapKeyProof: 'set',
-  gnapMtlsTrust: 'set',
-  gnapSymmetricKey: 'set',
-  gnapSymmetricAlg: 'set',
-  gnapClassId: 'set',
-  gnapDisplayUri: 'set',
-  gnapLogoUri: 'set',
-  gnapFinishUri: 'multi',
-  gnapInteractionStartModes: 'multi',
-  gnapAllowedAccess: 'multi',
-  gnapBearerTokens: 'set',
-  gnapSkipInteraction: 'set',
-  gnapAccessTokenFormat: 'set',
-  gnapAccessTokenLifetimeS: 'set',
-  gnapResourceServerUri: 'multi',
-  gnapOwnerLookupUri: 'set',
-  gnapJweKey: 'set',
-  gnapScopedSignals: 'set',
-  oauthRedirectUri: 'multi',
-  oauthPostLogoutRedirectUri: 'multi',
-  oauthFrontchannelLogoutUri: 'set',
-  oauthFrontchannelLogoutSessionRequired: 'set',
-  oauthBackchannelLogoutUri: 'set',
-  oauthBackchannelLogoutSessionRequired: 'set',
-  oauthGrantType: 'multi',
-  oauthResponseType: 'multi',
-  oauthScope: 'multi',
-  // DECLARED (#110): what the client may be issued. See its SCHEMA row.
-  oauthAllowedScope: 'multi',
-  // THE THREE THAT MAKE A DELEGATED PERMISSION. Two `multi` and one `set`, and
-  // each mode is the attribute's own kind read back: a base URI is one answer
-  // per application (its own row says why widening it would mean deciding
-  // which of two identifiers a token is audienced to), and both lists
-  // accumulate because an application legitimately exposes six permissions and
-  // holds four.
-  //
-  // THEY ARE THE ONLY EDITABLE ATTRIBUTES HERE WITH A CROSS-ENTRY RULE, and it
-  // is checked in updateApplication() rather than in the console: a permission
-  // must be DEFINED before it can be GRANTED, and the check has to sit where
-  // both doors go through it or the form and `POST
-  // /admin-api/applications/update` would hold two opinions about the same
-  // relationship. Same argument as `appAllowedProtocol`'s closed vocabulary two
-  // hundred lines up, and the same asymmetry: only an ADD is checked, because a
-  // REMOVE has to name a value the entry already carries and refusing to remove
-  // what LDAP put there would shut the one door that could tidy it up.
-  oauthPermissionBaseUri: 'set',
-  oauthPermission: 'multi',
-  oauthRoleGatedPermission: 'multi',
-  oauthDelegatedPermission: 'multi',
-  oauthGlobalConsent: 'multi',
-  // The RFC 9728 document an entry was created from, and where it came from.
-  // Declared and not read; see the two SCHEMA rows.
-  oauthResourceMetadata: 'set',
-  oauthResourceMetadataUrl: 'set',
-  samlAssertionConsumerService: 'multi',
-  // WS-Federation's return address, which used to be recorded in the attribute
-  // above. Its own row says why the two were split.
-  wsfedReplyUrl: 'multi',
-  wsfedSignOutUri: 'multi',
-  description: 'multi'
-};
-
-// Merged onto the rows so that one table answers "what is this attribute?" and
-// "may I change it?" — the console builds its two selects from it and the
-// action validates against the same thing, which is what stops a form offering
-// a field the action would refuse.
-SCHEMA.attributes.forEach(function (row) {
-  row.editable = EDITABLE[row.name] || false;
-});
+// WHAT A CONSOLE MAY CHANGE is each row's `editable` (`set`, `multi` or
+// false), written in the model beside the row with the reasoning that used to
+// head a table here (#1579). One table answers "what is this attribute?" and
+// "may I change it?": the console builds its two selects from it and the
+// action validates against the same thing.
 
 const ATTRIBUTE_BY_NAME = {};
 SCHEMA.attributes.forEach(function (row) {
@@ -4096,13 +933,13 @@ function editableAttributes(mode) {
 // console's idea of what it may offer eventually disagrees with the action's.
 //
 // THE TEST IS `appAllowedProtocol` AND NOT `appProtocol`, which is the
-// declared-versus-derived line EDITABLE's header draws, applied to a refusal.
-// What somebody DECLARED the application is for is a statement they made and
-// can change; what this service has SEEN it do is a fact about the past, and an
-// application that has been ticked for OAuth 2.0 and has never yet made a
-// request is exactly the entry somebody is configuring when they reach for
-// this. Testing the derived attribute would refuse every write until after the
-// first token request, which is the wrong way round.
+// declared-versus-derived line the editability header draws, applied to a
+// refusal. What somebody DECLARED the application is for is a statement they
+// made and can change; what this service has SEEN it do is a fact about the
+// past, and an application that has been ticked for OAuth 2.0 and has never yet
+// made a request is exactly the entry somebody is configuring when they reach
+// for this. Testing the derived attribute would refuse every write until after
+// the first token request, which is the wrong way round.
 // ---------------------------------------------------------------------------
 /**
  * Returns the protocol families an application was declared for
@@ -4224,7 +1061,7 @@ function didKeyProblem(jwk) {
   }
   let key = null;
   try {
-    key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    key = stsCrypto.publicKeyFromJwk(jwk);
   } catch (e) {
     log.debug("Caught in didKeyProblem(): " + ((e && e.message) || e));
     key = null;
@@ -4267,7 +1104,9 @@ const CLAIM_ROW_SETS = {
   oauthClaimsIdToken: 'id_token',
   oauthClaimsUserinfo: 'userinfo',
   saml2CustomAttributes: 'saml2',
-  saml11CustomAttributes: 'saml11'
+  saml11CustomAttributes: 'saml11',
+  krb5ClaimsPac: 'kerberos-pac',
+  gnapClaimsAccessToken: 'gnap_access_token'
 };
 
 /**
@@ -4300,6 +1139,73 @@ function claimRowsProblem(attribute, value) {
   const checked = require('./admin_stats').checkClaimEntries(setId, rows);
   log.debug("Leaving claimRowsProblem(). " + (checked.ok ? 'ok' : 'refused'));
   return checked.ok ? '' : checked.errors.join(' ');
+}
+
+// AN APPLICATION'S OWN ATTRIBUTE SELECTIONS (#495), held at the write to the
+// catalogue: `claim_attributes.ts` and `vc_claims.ts`, required lazily because
+// both reach this module through `admin_stats.js`. Shared by the two (one
+// catalogue), each asked through its own module so a rename there is
+// followed here.
+const CLAIM_SELECTION_ATTRIBUTES = [
+  'oauthClaimAttributesAccessToken', 'oauthClaimAttributesIdToken',
+  'oauthClaimAttributesUserinfo', 'saml2ClaimAttributes',
+  'saml11ClaimAttributes', 'vcCredentialClaimAttributes'
+];
+
+/**
+ * Says whether a value of one of an application's attribute-selection
+ * attributes is acceptable: a JSON array of catalogue attribute names.
+ *
+ * @param attribute - the attribute being written
+ * @param value - the value
+ * @returns '' when it is, the refusal sentence otherwise
+ */
+function claimSelectionProblem(attribute, value) {
+  log.debug("Entering claimSelectionProblem(). attribute=" + attribute);
+  const text = String(value == null ? '' : value).trim();
+  if (CLAIM_SELECTION_ATTRIBUTES.indexOf(attribute) < 0 || !text) {
+    log.debug("Leaving claimSelectionProblem(). Not a selection value.");
+    return '';
+  }
+  let names = null;
+  try {
+    names = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in claimSelectionProblem(): " +
+              ((e && e.message) || e));
+    names = null;
+  }
+  if (!Array.isArray(names)) {
+    log.debug("Leaving claimSelectionProblem(). Not an array.");
+    return attribute + ' holds a JSON array of attribute names.';
+  }
+  const checker = attribute === 'vcCredentialClaimAttributes'
+    ? require('../oid4vc/vc_claims') : require('./claim_attributes');
+  const checked = checker.checkNames(names);
+  log.debug("Leaving claimSelectionProblem(). " +
+            (checked.ok ? 'ok' : 'refused'));
+  return checked.ok ? '' : checked.errors.join(' ');
+}
+
+// A RESOURCE SERVER'S CLAIMS PER PERMISSION (2026-10-09), held at the write:
+// keys are permissions the entry exposes, values catalogue names. Asked of
+// `claim_attributes.ts` lazily, for claimSelectionProblem()'s reason.
+/**
+ * Says whether an `oauthPermissionClaims` value is acceptable for an entry.
+ *
+ * @param value - the JSON text
+ * @param record - the entry it would be written to (record or view)
+ * @returns '' when it is, the refusal sentence otherwise
+ */
+function permissionClaimsProblem(value, record) {
+  log.debug("Entering permissionClaimsProblem().");
+  const exposed = permissionsOf(record).map(function (one) {
+    return one.name;
+  });
+  const out = require('./claim_attributes').permissionClaimsProblem(value,
+                                                                    exposed);
+  log.debug("Leaving permissionClaimsProblem(). " + (out ? 'refused' : 'ok'));
+  return out;
 }
 
 /**
@@ -4678,14 +1584,97 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
 });
 
 // ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// The create form used to ask for three strings that were usually one: the
+// registry identifier, a display name, and the ticked family's identifier
+// attribute. The display name was already optional (`blankRecord()` names the
+// entry after its identifier, and a create overwrites that only when a name
+// is given). The family's identifier attribute is the same kind of default.
+//
+// **THREE ATTRIBUTES ARE A DIFFERENT KIND OF NAME AND ARE NEVER FILLED.**
+// `oauthTlsClientAuthSubjectDn` is the certificate subject RFC 8705 matches,
+// one DN, and writing a client_id into it would make mutual TLS match a
+// subject nobody has. `ldapBindDn` is the DN a client binds as, not the key
+// this entry is filed under. `spiffeWorkloadId` is a `spiffe://` URI, and a
+// SPIFFE identity lives under `ou=spiffe` rather than here. Each stays a
+// field of its own on both views of the form.
+//
+// Everything else a family names as its identifier — a client_id, an
+// entityID, a wtrealm, an AppliesTo, an SPN, a GNAP instance id — is the
+// string a sighting already files the entry under. A hand-made entry that
+// left the attribute empty was the odd one out.
+// ---------------------------------------------------------------------------
+const NOT_THE_REGISTRY_IDENTIFIER = [
+  'oauthTlsClientAuthSubjectDn',
+  'ldapBindDn',
+  'spiffeWorkloadId'
+];
+
+/**
+ * Returns the identifier attributes whose primary value is the registry
+ * identifier.
+ *
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributeNames() {
+  log.debug("Entering primaryNameAttributeNames().");
+  const names = [];
+  PROTOCOLS.forEach(function (family) {
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        names.indexOf(attribute) >= 0) {
+      return;
+    }
+    names.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributeNames(). " + names.length +
+            " attribute(s).");
+  return names;
+}
+
+const PRIMARY_NAME_ATTRIBUTES = primaryNameAttributeNames();
+
+/**
+ * Returns the primary-name attributes of the families named.
+ *
+ * One attribute shared by several families is returned once. An attribute
+ * that is not the registry identifier is not returned.
+ *
+ * @param protocols - the family ids
+ * @returns the attribute names, in protocol-table order
+ */
+function primaryNameAttributes(protocols) {
+  log.debug("Entering primaryNameAttributes().");
+  const declared = protocols || [];
+  const wanted = [];
+  PROTOCOLS.forEach(function (family) {
+    if (declared.indexOf(family.id) < 0) {
+      return;
+    }
+    const attribute = family.identifierAttribute;
+    if (!attribute ||
+        NOT_THE_REGISTRY_IDENTIFIER.indexOf(attribute) >= 0 ||
+        wanted.indexOf(attribute) >= 0) {
+      return;
+    }
+    wanted.push(attribute);
+  });
+  log.debug("Leaving primaryNameAttributes(). " +
+            (wanted.length ? wanted.join(', ') : 'none') + ".");
+  return wanted;
+}
+
+// ---------------------------------------------------------------------------
 // EVERY PER-APPLICATION FIELD, TYPED, FOR THE CONSOLE'S FIELD GRID
 // (2026-09-30).
 //
 // `/admin/applications/new` and an application's own page draw one grid of
-// every attribute EDITABLE allows, each with the control its TYPE needs: a
-// pair of true/false radio buttons for a boolean, a text box for a string,
-// and a list of text boxes with a "+" and a delete button for an array of
-// strings. The grid is drawn from `applicationFields()` below, so the two
+// every attribute whose row is `editable`, each with the control its TYPE
+// needs: a pair of true/false radio buttons for a boolean, a text box for a
+// string, and a list of text boxes with a "+" and a delete button for an array
+// of strings. The grid is drawn from `applicationFields()` below, so the two
 // pages and `GET /admin-api/applications/new` cannot offer different fields.
 //
 // **THE TYPE OF AN ARRAY IS THE SCHEMA'S `multi`**; nothing else is needed.
@@ -4708,19 +1697,31 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
  * The single-valued attributes that take TRUE or FALSE.
  */
 const BOOLEAN_ATTRIBUTES = [
+  // #552: whether an outbound SCIM client pushes.
+  'scimClientEnabled',
   'oauthFrontchannelLogoutSessionRequired',
   'oauthBackchannelLogoutSessionRequired', 'oauthNativeSso',
   'oauthBackchannelUserCodeParameter', 'oauthRequireSignedRequestObject',
-  'oauthRequirePushedAuthorizationRequests',
-  'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
+  'oauthRequirePushedAuthorizationRequests', 'oauthHttpSignedRequests',
+  'oauthTlsClientCertificateBoundAccessTokens',
   'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
   'oauthRevokeRefreshOnLogout', 'appNotDelegated', 'appGroupsClaim',
+  // #693: the did claim to a pairwise or ephemeral client.
+  'oauthDidClaimWithPairwise',
   'krb5TrustedForDelegation',
   'saml2SignAssertion', 'saml2SignResponse', 'saml11SignAssertion',
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
   'gnapScopedSignals', 'appFederationAutoRedirect',
   'ssfCaepIncludeReasons', 'ssfCaepOmitEventTimestamp',
-  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp'
+  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp',
+  // Who may start a sign-in (#426, #710).
+  'saml2IdpInitiatedSso', 'saml2SpInitiatedSso', 'saml11IdpInitiatedSso',
+  'saml11SpInitiatedSso', 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
+  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+  // ASVS 5.0.0 7.6.2: whether single sign-on asks first.
+  'saml2SsoConsent', 'saml11SsoConsent', 'wsfedSsoConsent',
+  // UMA 2.0 (#1168): whether the resource server may own resources itself.
+  'umaOwnsResources'
 ];
 
 /**
@@ -4738,44 +1739,202 @@ const BOOLEAN_ATTRIBUTES = [
 // ML-KEM and HPKE algorithms follow keys.*) and two live in modules that
 // require this one (read when asked, never at load).
 //
-// `oauthGrantType` and `oauthResponseType` are not here: they are what a
-// client was SEEN using, an open record. The setting overrides take their
-// lists from their setting (`config.js`'s enumValues), in the console.
+// `oauthGrantType` and `oauthResponseType` are here since #706 (rcbj: a
+// checkbox per value, no free text). They were open text until then, on the
+// argument that an extension grant is a URI nobody lists in advance (RFC 6749
+// section 4.5) — but the token endpoint answers `unsupported_grant_type` to
+// any grant it does not implement, so declaring one is declaring nothing a
+// client could use. The two lists are FLOW_GRANT_TYPES and
+// FLOW_RESPONSE_TYPES below. The setting overrides take their lists from their
+// setting (`config.js`'s enumValues), in the console.
 // ---------------------------------------------------------------------------
+// THE TWO DELEGATION SEMANTICS (#108, #186), one list for the two places that
+// need it: the field grid's choices below — so the Configuration tab offers a
+// checkbox per value for `appDelegationSemantics` and a choice of one for
+// `appDefaultDelegationSemantics` rather than a free text box — and the check
+// at the write, delegationAttributeProblem().
+const DELEGATION_SEMANTICS = ['delegation', 'impersonation'];
+
+// THE PROTOCOLS /launch/{app} CAN START (#426, #713), for the field grid's
+// choices and the check at the write of `appLaunchProtocol`.
+const LAUNCH_PROTOCOLS = ['saml2', 'saml11', 'wsfed', 'oidc'];
+
+// WHAT A CLIENT MAY DECLARE IN `oauthResponseType` AND `oauthGrantType`
+// (#706): every response type the authorization endpoint issues and every
+// grant the token endpoint implements — the metadata's
+// `response_types_supported` and `grant_types_supported` with every switch
+// on, which `tests/flow_type_choices.js` holds them to. EVERY grant, not the
+// realm's advertised ones: a declaration names what the client may use, and a
+// client declaring the device grant while `oauth2.deviceAuthorization` is off
+// is refused by the endpoint's own switch, which is the right refusal. A
+// response type is written with its words in this order, which is the
+// metadata's (canonicalResponseType()).
+const FLOW_RESPONSE_TYPES = ['code', 'token', 'id_token', 'code token',
+  'code id_token', 'id_token token', 'code id_token token', 'none'];
+// THE FOUR OF THEM THAT ISSUE AN ACCESS TOKEN FROM THE AUTHORIZATION
+// ENDPOINT (RFC 9700 section 2.1.2), in the same word order: the closed set
+// of `oauthAllowedTokenResponseTypes` and of the setting
+// `oauth2.dynamicRegistrationTokenResponseTypes` (#1296).
+const TOKEN_RESPONSE_TYPES = ['token', 'code token', 'id_token token',
+  'code id_token token'];
+const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
+  'client_credentials', 'password',
+  'urn:ietf:params:oauth:grant-type:token-exchange',
+  'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+  'urn:ietf:params:oauth:grant-type:jwt-bearer',
+  'urn:ietf:params:oauth:grant-type:saml2-bearer',
+  'urn:openid:params:grant-type:ciba',
+  'urn:ietf:params:oauth:grant-type:device_code',
+  // UMA 2.0 (#1168): a client that presents permission tickets declares it,
+  // and the realm's uma-authorization policy refuses one that does not.
+  'urn:ietf:params:oauth:grant-type:uma-ticket'];
+
+/**
+ * A response_type value with its words sorted, the order every member of
+ * FLOW_RESPONSE_TYPES is written in — so `id_token code` is stored as the
+ * `code id_token` the console ticks, and the two cannot be two values.
+ *
+ * @param value - the value as given
+ * @returns the value, its words single-spaced and sorted
+ */
+function canonicalResponseType(value) {
+  log.debug("Entering canonicalResponseType().");
+  const out = String(value === undefined || value === null ? '' : value)
+    .split(/\s+/).filter(Boolean).sort().join(' ');
+  log.debug("Leaving canonicalResponseType().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION MAY LIST A TOKEN RESPONSE TYPE ONLY WHILE ITS REALM ALLOWS
+// THEM (#1296, rcbj's decision 2). `oauthAllowedTokenResponseTypes` is a
+// permission the authorization endpoint honours only where the realm waives
+// RFC 9700 section 2.1.2, so a value written while it does not is a
+// permission nothing would ever honour — and one that would come into force,
+// unseen, the day an administrator turned the realm's waiver on. REFUSED
+// rather than recorded (the choice the ticket left open): the same reasoning
+// as the registration endpoint's mirror rule (oauth-oidc/CLAUDE.md rule 3f),
+// that a stored permission the server will refuse is a promise broken, and a
+// refusal names the attribute and the setting so the administrator knows
+// which switch comes first. Asked of `oauth2_bcp.js` LAZILY: it requires this
+// module at load.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses token response types the ambient realm does not allow.
+ *
+ * @param values - the values being written; nothing is refused when empty
+ * @returns the refusal, or '' when allowed
+ */
+function tokenResponseTypesProblem(values) {
+  log.debug("Entering tokenResponseTypesProblem().");
+  const asked = valuesOf(values).map(function (one) {
+    return String(one).trim();
+  }).filter(Boolean);
+  if (!asked.length ||
+      require('../oauth-oidc/oauth2_bcp').tokenResponsesAllowed()) {
+    log.debug("Leaving tokenResponseTypesProblem(). Allowed.");
+    return '';
+  }
+  log.debug("Leaving tokenResponseTypesProblem(). Not in this realm.");
+  return 'oauthAllowedTokenResponseTypes cannot list ' + asked.join(', ') +
+    ': this realm does not allow the response types that issue an access ' +
+    'token from the authorization endpoint (RFC 9700 section 2.1.2). An ' +
+    'administrator allows them with oauth2.allowImplicitTokenResponses, ' +
+    'which OAuth 2.1 mode and the FAPI profiles override.';
+}
+
 const ATTRIBUTE_CHOICES = {
+  oauthGrantType: function () {
+    return FLOW_GRANT_TYPES.slice(0);
+  },
+  oauthResponseType: function () {
+    return FLOW_RESPONSE_TYPES.slice(0);
+  },
+  // #1296: the four token response types.
+  oauthAllowedTokenResponseTypes: function () {
+    return TOKEN_RESPONSE_TYPES.slice(0);
+  },
+  // #426: the protocols /launch/{app} can start.
+  appLaunchProtocol: function () {
+    return LAUNCH_PROTOCOLS.slice(0);
+  },
+  appDelegationSemantics: function () {
+    return DELEGATION_SEMANTICS.slice(0);
+  },
+  appDefaultDelegationSemantics: function () {
+    return DELEGATION_SEMANTICS.slice(0);
+  },
+  // #430: what a service says of a TGT delegated to it across a trust.
+  krb5ForeignTgtDelegation: function () {
+    return ['inherit', 'deny'];
+  },
   oauthTokenEndpointAuthMethod: function () {
     return require('../oauth-oidc/client_auth').METHODS.slice(0);
   },
   oauthBackchannelTokenDeliveryMode: function () {
     return ['poll', 'ping', 'push'];
   },
+  // The JWS lists below are narrowed to the classical algorithms while
+  // `keys.postQuantumSigning` is off (helpers.offeredJwsAlgs(), 2026-10-23),
+  // as the registration checks they come from are.
   oauthBackchannelAuthenticationRequestSigningAlg: function () {
-    return stsCrypto.JWS_ASYMMETRIC_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS);
   },
   oauthSubjectType: function () {
     return ['public', 'pairwise', 'ephemeral'];
   },
   oauthTokenEndpointAuthSigningAlg: function () {
-    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
+  // What this realm SIGNS a response with: EdDSA left out too while
+  // `keys.eddsaSigning` is off (helpers.signableJwsAlgs(), #1292).
   oauthIntrospectionSignedResponseAlg: function () {
-    return INTROSPECTION_SIGNING_ALGS.slice(0);
+    return helpers.signableJwsAlgs(INTROSPECTION_SIGNING_ALGS);
   },
   oauthIntrospectionEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(INTROSPECTION_ENCRYPTION_ALGS);
   },
   oauthIntrospectionEncryptedResponseEnc: function () {
-    return INTROSPECTION_ENCRYPTION_ENCS.slice(0);
+    return permittedEncs(INTROSPECTION_ENCRYPTION_ENCS).slice(0);
   },
   oauthRequestObjectSigningAlg: function () {
-    return REQUEST_OBJECT_SIGNING_ALGS.concat(
+    return helpers.offeredJwsAlgs(REQUEST_OBJECT_SIGNING_ALGS).concat(
       mode.acceptsUnsignedRequestObjects() ? ['none'] : []);
   },
   oauthRequestObjectEncryptionAlg: function () {
     return helpers.decryptableJweAlgs(REQUEST_OBJECT_ENCRYPTION_ALGS);
   },
   oauthRequestObjectEncryptionEnc: function () {
-    return REQUEST_OBJECT_ENCRYPTION_ENCS.slice(0);
+    return permittedEncs(REQUEST_OBJECT_ENCRYPTION_ENCS).slice(0);
+  },
+  // #290's nine algorithms, from the lists clientResponseMetadataProblem()
+  // checks.
+  oauthIdTokenSignedResponseAlg: function () {
+    return helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+  },
+  oauthIdTokenEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  },
+  oauthIdTokenEncryptedResponseEnc: function () {
+    return permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).slice(0);
+  },
+  oauthUserinfoSignedResponseAlg: function () {
+    return helpers.signableJwsAlgs(USERINFO_SIGNING_ALGS);
+  },
+  oauthUserinfoEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  },
+  oauthUserinfoEncryptedResponseEnc: function () {
+    return permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).slice(0);
+  },
+  oauthAuthorizationSignedResponseAlg: function () {
+    return helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+  },
+  oauthAuthorizationEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  },
+  oauthAuthorizationEncryptedResponseEnc: function () {
+    return permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).slice(0);
   },
   gnapMtlsTrust: function () {
     return GNAP_MTLS_TRUSTS.slice(0);
@@ -4794,8 +1953,36 @@ const ATTRIBUTE_CHOICES = {
   gnapAccessTokenFormat: function () {
     return settingValues('gnap.accessTokenFormat');
   },
-  appAuthnMechanism: function () {
-    return require('../federation/federation').MECHANISM_IDS.slice(0);
+  // `default` and this realm's named authentication policies (#1148), read
+  // when asked: a policy saved a moment ago is a choice at once.
+  appAuthnPolicy: function () {
+    return ['default'].concat(require('./authn_policy').named()
+      .map(function (one) { return one.name; }));
+  },
+  // `default` and this realm's named passkey policies (#1235), read when
+  // asked, for the same reason.
+  appPasskeyPolicy: function () {
+    return ['default'].concat(require('./passkey_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
+  // `default` and this realm's named locale policies (#1238), the same way.
+  appLocalePolicy: function () {
+    return ['default'].concat(require('./locale_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
+  // `default` and this realm's named password policies (#1236).
+  appPasswordPolicy: function () {
+    return ['default'].concat(require('./password_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
+  // `default` and this realm's named post-login policies (#1239), the same.
+  appPostLoginPolicy: function () {
+    return ['default'].concat(require('./post_login_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
   },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
@@ -4814,13 +2001,62 @@ const ATTRIBUTE_CHOICES = {
   },
   scepDefaultProfile: function () {
     return enrollmentProfileChoices(true);
+  },
+  // A secret push destination (#221 P3), from the module that pushes.
+  secretDestProvider: function () {
+    return require('./secrets').DESTINATION_PROVIDERS.slice(0);
+  },
+  secretDestPayload: function () {
+    return require('./secrets').DESTINATION_PAYLOADS.slice(0);
+  },
+  // An outbound SCIM client (#552), from the module that pushes.
+  scimClientAuthMethod: function () {
+    return require('../scim/scim_client_rules').AUTH_METHODS.slice(0);
+  },
+  scimClientOAuthClientAuth: function () {
+    return require('../scim/scim_client_rules').OAUTH_CLIENT_AUTH.slice(0);
+  },
+  scimClientTlsSource: function () {
+    return require('../scim/scim_client_rules').TLS_SOURCES.slice(0);
+  },
+  scimClientScopeMode: function () {
+    return require('../scim/scim_client_rules').SCOPE_MODES.slice(0);
+  },
+  scimClientGroupMode: function () {
+    return require('../scim/scim_client_rules').GROUP_MODES.slice(0);
+  },
+  scimClientDeprovision: function () {
+    return require('../scim/scim_client_rules').DEPROVISION.slice(0);
+  },
+  // #395, from `scope_claims.ts`: how two sets of claims are combined, and
+  // the OpenID Connect section 5.4 claims a resource server may declare.
+  oauthClaimsCombineAccessToken: realmCombineModes,
+  oauthClaimsCombineIdToken: realmCombineModes,
+  oauthClaimsCombineUserinfo: realmCombineModes,
+  saml2ClaimsCombine: realmCombineModes,
+  saml11ClaimsCombine: realmCombineModes,
+  oauthAccessTokenClaim: function () {
+    return require('./scope_claims').DECLARABLE_CLAIMS.slice(0);
+  },
+  oauthAccessTokenClaimsCombine: function () {
+    return require('./scope_claims').RESOURCE_MODES.slice(0);
   }
 };
 
 // The closed sets nothing checked at a console or API write until 2026-10-01
 // (the others have a validator of their own, which says more). A value
-// outside one is refused (STS-REG-0203). `appAuthnMechanism` is offered and
-// not refused: it is checked where it is read, on purpose.
+// outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
+// with #457, and `appMfaMechanism` with #475: enforced, a misspelt mechanism
+// would allow nothing. Both gave way to `appAuthnPolicy` (#1148), held to
+// `default` and this realm's named authentication policies.
+// The realm-vs-application combine modes (#395), lazily for the reason the
+// rest of this table reads its modules lazily.
+function realmCombineModes() {
+  log.debug("Entering realmCombineModes().");
+  log.debug("Leaving realmCombineModes().");
+  return require('./scope_claims').REALM_MODES.slice(0);
+}
+
 // The certificate profiles an enrollment family issues, from the module that
 // defines them (lazily: it is loaded after this one); `device` over EST and
 // SCEP only, as `cert_enrollment.ts` has it.
@@ -4831,12 +2067,43 @@ function enrollmentProfileChoices(withDevice) {
   return withDevice ? ids.concat(['device']) : ids;
 }
 
+// THE ATTRIBUTES BY WHICH AN APPLICATION NAMES A POLICY (#1235, rule 3cx),
+// one per kind that an application selects: indexed by the kept listing and
+// asked by `applicationsNamingPolicy()`.
+const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy',
+  'appLocalePolicy', 'appPasswordPolicy', 'appPostLoginPolicy'];
+
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
   'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
-  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile'];
+  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
+  'secretDestProvider', 'secretDestPayload', 'appAuthnPolicy',
+  // #1235: a policy reference names a policy the realm holds.
+  'appPasskeyPolicy',
+  // #1238: the same, for the locale policy.
+  'appLocalePolicy',
+  // #1236: the password policy's.
+  'appPasswordPolicy',
+  // #1239: the post-login activity policy's, the same.
+  'appPostLoginPolicy',
+  'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
+  'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
+  // #395: a misspelt mode would silently be the default, and a misspelt
+  // claim would be one no token ever carries.
+  'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
+  'oauthClaimsCombineUserinfo', 'saml2ClaimsCombine', 'saml11ClaimsCombine',
+  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine',
+  // #426: a misspelt protocol would launch nothing.
+  'appLaunchProtocol',
+  // #706: a grant or response type this service does not implement is one
+  // no request could ever be allowed by.
+  'oauthGrantType', 'oauthResponseType',
+  // #1296: only the four token response types.
+  'oauthAllowedTokenResponseTypes',
+  // #430: a misspelt word would be `inherit`, which widens.
+  'krb5ForeignTgtDelegation'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -4911,6 +2178,286 @@ function choiceProblem(attribute, value) {
 }
 
 // ---------------------------------------------------------------------------
+// oauthConfidential IS THE DETERMINATION THE METHODS MAKE (#466).
+//
+// Found on 2026-10-06 while provisioning applications in product mode: a
+// create wrote oauthConfidential TRUE on an entry whose only method was
+// `none`. The attribute is a cache of what RFC 9700 reads off the method
+// (`oauth2_bcp.js`'s `isConfidential()`, through `clientConfigOf()`), and a
+// cache that can disagree with the method is a second answer. The registry
+// writes the flag so the answer can be read. A caller may state the same
+// value; a value that disagrees is refused rather than overwritten, because
+// overwriting would hide the provisioning mistake. It is not edited on its
+// own afterwards: changing the method changes the flag.
+//
+// THE FIRST METHOD IS THE ONE THAT COUNTS, which is all `isConfidential()`
+// needs, because `none` is never held beside another method. An empty list
+// on a REGISTERED client is RFC 7591 section 2's client_secret_basic, and
+// an empty list on an application created by hand is FALSE — the same split
+// `clientConfigOf()` already makes. A confidential method is TRUE even when
+// the secret is missing: authentication then fails for lack of a credential,
+// and the flag does not pretend the client is public.
+// ---------------------------------------------------------------------------
+
+/**
+ * The token endpoint authentication methods in a value, trimmed, with
+ * duplicates and blanks dropped, in the order they were given.
+ *
+ * @param value - one method, a list, or nothing
+ * @returns the methods
+ */
+function authMethodList(value) {
+  log.debug("Entering authMethodList().");
+  const methods = valuesOf(value).map(function (one) {
+    return String(one).trim();
+  }).filter(function (one, index, all) {
+    return one !== '' && all.indexOf(one) === index;
+  });
+  log.debug("Leaving authMethodList().");
+  return methods;
+}
+
+/**
+ * The method a create infers when an OAuth or OpenID Connect application
+ * names none: a secret is client_secret_basic, a JWK Set or its URI is
+ * private_key_jwt, and no credential is `none`.
+ *
+ * @param fields - the fields the create carries
+ * @returns the method
+ */
+function credentialAuthMethod(fields) {
+  log.debug("Entering credentialAuthMethod().");
+  const bag = fields || {};
+  const present = function (name) {
+    log.debug("Entering present().");
+    const found = valuesOf(bag[name]).some(function (one) {
+      return String(one).trim() !== '';
+    });
+    log.debug("Leaving present().");
+    return found;
+  };
+  let method = 'none';
+  if (present('oauthClientSecret')) {
+    method = 'client_secret_basic';
+  } else if (present('oauthJwks') || present('oauthJwksUri')) {
+    method = 'private_key_jwt';
+  }
+  log.debug("Leaving credentialAuthMethod(). " + method);
+  return method;
+}
+
+/**
+ * The methods a hand-create will hold: the ones it named, or the one method
+ * inferred for an OAuth or OpenID Connect application that named none.
+ *
+ * @param protocols - the families the create declared
+ * @param fields - the fields the create carries
+ * @returns the methods
+ */
+function previewAuthMethods(protocols, fields) {
+  log.debug("Entering previewAuthMethods().");
+  const declared = authMethodList(fields &&
+    fields.oauthTokenEndpointAuthMethod);
+  if (declared.length) {
+    log.debug("Leaving previewAuthMethods(). Declared.");
+    return declared;
+  }
+  const ids = valuesOf(protocols);
+  if (ids.indexOf('oauth2') >= 0 || ids.indexOf('oidc') >= 0) {
+    log.debug("Leaving previewAuthMethods(). Inferred.");
+    return [credentialAuthMethod(fields)];
+  }
+  log.debug("Leaving previewAuthMethods(). None.");
+  return [];
+}
+
+/**
+ * TRUE or FALSE when the text is one of those words, ignoring case, and ''
+ * otherwise.
+ *
+ * @param value - the text a caller supplied
+ * @returns 'TRUE', 'FALSE' or ''
+ */
+function statedConfidential(value) {
+  log.debug("Entering statedConfidential().");
+  const text = String(value == null ? '' : value).trim().toUpperCase();
+  const out = text === 'TRUE' || text === 'FALSE' ? text : '';
+  log.debug("Leaving statedConfidential().");
+  return out;
+}
+
+/**
+ * The determination `isConfidential()` would make of this record.
+ *
+ * The first method wins. A registered client that names no method is
+ * client_secret_basic (RFC 7591 section 2). No method on an application
+ * created by hand, and `none`, are FALSE.
+ *
+ * @param record - an application record, or a preview with `registered` and
+ *   `fields`
+ * @returns 'TRUE' or 'FALSE'
+ */
+function oauthConfidentialOf(record) {
+  log.debug("Entering oauthConfidentialOf().");
+  const held = record || {};
+  const fields = held.fields || {};
+  const methods = authMethodList(fields.oauthTokenEndpointAuthMethod);
+  let method = '';
+  if (methods.length) {
+    method = methods[0];
+  } else if (held.registered) {
+    method = 'client_secret_basic';
+  }
+  const flag = method !== '' && method !== 'none' ? 'TRUE' : 'FALSE';
+  log.debug("Leaving oauthConfidentialOf(). " + flag);
+  return flag;
+}
+
+/**
+ * Why a supplied oauthConfidential may not be written, or '' when it was
+ * omitted or it is the determination.
+ *
+ * @param raw - the supplied value; empty means omitted
+ * @param determination - 'TRUE' or 'FALSE', from `oauthConfidentialOf()`
+ * @returns the refusal, or ''
+ */
+function confidentialDisagreement(raw, determination) {
+  log.debug("Entering confidentialDisagreement().");
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) {
+    log.debug("Leaving confidentialDisagreement(). Omitted.");
+    return '';
+  }
+  const stated = statedConfidential(text);
+  if (!stated) {
+    log.debug("Leaving confidentialDisagreement(). Not TRUE or FALSE.");
+    return 'oauthConfidential is TRUE or FALSE, and "' + text + '" is ' +
+      'neither. The registry writes it from ' +
+      'oauthTokenEndpointAuthMethod: none, or no method on an ' +
+      'application created by hand, is FALSE, and any other method is ' +
+      'TRUE.';
+  }
+  if (stated === determination) {
+    log.debug("Leaving confidentialDisagreement(). It agrees.");
+    return '';
+  }
+  log.debug("Leaving confidentialDisagreement(). It disagrees.");
+  return 'oauthConfidential ' + stated + ' does not match the token ' +
+    'endpoint authentication method, which makes this client ' +
+    determination + '. none, or no method on an application created by ' +
+    'hand, is FALSE, and any other method is TRUE. Change ' +
+    'oauthTokenEndpointAuthMethod to change it.';
+}
+
+/**
+ * The refusal for clearing oauthConfidential.
+ *
+ * @returns the sentence
+ */
+function confidentialClearSentence() {
+  log.debug("Entering confidentialClearSentence().");
+  log.debug("Leaving confidentialClearSentence().");
+  return 'oauthConfidential cannot be cleared. It is written from ' +
+    'oauthTokenEndpointAuthMethod: none, or no method on an application ' +
+    'created by hand, is FALSE, and any other method is TRUE. Change ' +
+    'the method to change it.';
+}
+
+/**
+ * The refusal for adding to or removing from oauthConfidential.
+ *
+ * @returns the sentence
+ */
+function confidentialModeSentence() {
+  log.debug("Entering confidentialModeSentence().");
+  log.debug("Leaving confidentialModeSentence().");
+  return 'oauthConfidential is written as a whole from ' +
+    'oauthTokenEndpointAuthMethod, so it is not added to or removed ' +
+    'from. Change the method to change it.';
+}
+
+/**
+ * Whether this entry's flag is the registry's to keep: an OAuth client, a
+ * registered client, one that already names a method or the flag, or a
+ * caller that supplied the flag.
+ *
+ * @param record - the application record
+ * @returns true when the flag belongs on the entry
+ */
+function carriesOauthClient(record) {
+  log.debug("Entering carriesOauthClient().");
+  const fields = (record && record.fields) || {};
+  const families = valuesOf(fields.appAllowedProtocol).map(function (one) {
+    return String(one).trim();
+  });
+  const carries = !!record && (
+    families.indexOf('oauth2') >= 0 || families.indexOf('oidc') >= 0 ||
+    families.indexOf('oid4vci') >= 0 || !!record.registered ||
+    authMethodList(fields.oauthTokenEndpointAuthMethod).length > 0 ||
+    fields.oauthConfidential !== undefined);
+  log.debug("Leaving carriesOauthClient(). " + carries);
+  return carries;
+}
+
+/**
+ * Writes the determination onto the record when the entry is an OAuth
+ * client, or when the caller supplied the flag. A SAML-only application
+ * that said nothing about it is left without the attribute.
+ *
+ * @param record - the application record
+ * @param options - `supplied` when the caller stated the flag
+ * @returns whether the record changed
+ */
+function recordOauthConfidential(record, options) {
+  log.debug("Entering recordOauthConfidential().");
+  const supplied = !!(options && options.supplied);
+  if (!carriesOauthClient(record) && !supplied) {
+    log.debug("Leaving recordOauthConfidential(). Not an OAuth client.");
+    return false;
+  }
+  const changed = setField(record, 'oauthConfidential',
+                           oauthConfidentialOf(record));
+  log.debug("Leaving recordOauthConfidential(). " +
+            (changed ? 'Written.' : 'Already said that.'));
+  return changed;
+}
+
+/**
+ * Writes the determination of an application's methods onto its entry, when
+ * that changes the stored flag.
+ *
+ * @param identifier - the application's identifier
+ * @returns `ok`, `changed` and the application
+ */
+function writeOauthConfidential(identifier) {
+  log.debug("Entering writeOauthConfidential(). identifier=" + identifier);
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving writeOauthConfidential(). No such application.");
+    return { ok: false, changed: false, application: null };
+  }
+  const record = loaded.record;
+  const changed = recordOauthConfidential(record);
+  if (changed) {
+    record.lastAt = record.lastAt || Date.now();
+    save(record);
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'console',
+      channel: 'internal', target: String(identifier),
+      summary: 'Application "' + identifier + '": oauthConfidential is ' +
+               'now "' + record.fields.oauthConfidential + '"',
+      detail: { identifier: String(identifier),
+                attribute: 'oauthConfidential', mode: 'set',
+                editedByHand: true }
+    });
+  }
+  log.debug("Leaving writeOauthConfidential(). " +
+            (changed ? 'Written.' : 'Already said that.'));
+  return { ok: true, changed: changed,
+           application: viewAfterWrite(identifier, record) };
+}
+
+// ---------------------------------------------------------------------------
 // `none` STANDS ALONE AMONG THE TOKEN ENDPOINT AUTHENTICATION METHODS
 // (2026-10-01). Several methods may be declared — a client holding a secret
 // and a key pair may present either — but `none` is the declaration that a
@@ -4948,10 +2495,30 @@ function authMethodsProblem(values) {
     '. Choose "none" alone, or the methods the client authenticates with.';
 }
 
+// THE ATTRIBUTES AN APPLICATION'S PAGE EDITS ON A TAB OF THEIR OWN, which
+// its Configuration grid therefore does not draw (#392). `appCorsOrigin` is
+// the Browser origins tab's: each origin is shown with the one it is matched
+// as and removed by the value as stored, which a grid box cannot show, and
+// two controls over one list read as two settings with a precedence between
+// them. The NEW-application form keeps it in its grid: that page has no such
+// tab, and its grid is the only place an origin can be typed at creation.
+//
+// `appRequiredRole` is the Roles tab's (#458): the roles a person must hold
+// to use the application sit beside the roles it holds as itself, each row
+// shown with what it resolves to (a built-in role, a realm-wide one, this
+// application's own, or nothing at all — a requirement nobody can satisfy),
+// which a grid box cannot show, and chosen from the roles that could meet it
+// rather than typed. The new-application form keeps it in its grid for
+// appCorsOrigin's reason: no Roles tab there, and an application may need to
+// be narrowed from the moment it exists.
+const PAGE_TAB_ATTRIBUTES = ['appCorsOrigin', 'appRequiredRole'];
+
 const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
-  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata'
+  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata',
+  'secretDestCaCertificates',
+  'scimClientTlsCertificate', 'scimClientCaCertificates'
 ];
 
 // THE ATTRIBUTES THE GRID DOES NOT DRAW, because a control of their own does:
@@ -4974,12 +2541,30 @@ function gridExcludedAttributes() {
   const out = ['appName', 'appAllowedProtocol',
                'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
                'oauthScope', 'didPrivateKeys',
+               // A secret destination's write credential (#221 P3): set on
+               // Directory → Secret destinations, where the box is
+               // write-only; a grid cell would draw the withheld sentence
+               // as its value and save it back.
+               'secretDestCredential',
+               // An outbound SCIM client's three credentials (#552): set on
+               // its own page under Protocols → SCIM → Clients, write-only.
+               'scimClientPassword', 'scimClientOAuthClientSecret',
+               'scimClientTlsPrivateKey',
                // Drawn by their own Custom claims and Custom SAML
                // attributes sections (2026-10-01): a JSON array is not a
                // text box.
                'oauthClaimsAccessToken', 'oauthClaimsIdToken',
                'oauthClaimsUserinfo', 'saml2CustomAttributes',
-               'saml11CustomAttributes'];
+               'saml11CustomAttributes',
+               // And the Kerberos PAC claims section (#493).
+               'krb5ClaimsPac',
+               // And the GNAP access-token JWT's Custom claims section
+               // (#1250).
+               'gnapClaimsAccessToken'].concat(
+                 // And their attribute selections (#495), drawn as the
+                 // catalogue's checkboxes — and a resource server's claims
+                 // per permission, drawn on the Scope claims tab.
+                 CLAIM_SELECTION_ATTRIBUTES, ['oauthPermissionClaims']);
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -5067,6 +2652,14 @@ function familiesOfChoices(values) {
   return out;
 }
 
+// WHAT A CREATE MAY NAME (#446): every family id, and every combined choice
+// the console's checkbox column posts — the static console sends that form
+// to `/admin-api/applications/create` as it is, and the request schema's
+// enum is checked before `familiesOfChoices()` expands it there.
+const CHOICE_IDS = PROTOCOL_IDS.concat(COMBINED_CHOICES.map(function (one) {
+  return one.id;
+}));
+
 // ---------------------------------------------------------------------------
 // AN EXAMPLE OF A VALID VALUE FOR EVERY FIELD A PERSON TYPES INTO (rcbj,
 // 2026-10-01): the console draws it as the box's placeholder — grey, gone as
@@ -5085,6 +2678,7 @@ const FIELD_EXAMPLES = {
   appDelegationSemantics: 'delegation',
   appDefaultDelegationSemantics: 'delegation',
   appMayAct: 'uid=alice,ou=users,dc=example,dc=com',
+  krb5S4uSelfRealm: 'PARTNER.EXAMPLE',
   oauthClientId: 'my-web-app',
   oauthAudience: 'https://api.example.com',
   oauthClientSecret: 'press Generate Secret, or 32+ random characters',
@@ -5098,8 +2692,14 @@ const FIELD_EXAMPLES = {
   oauthRequestUri: 'https://app.example.com/requests/signin.jwt',
   oauthAuthorizationDetailsType: 'payment_initiation',
   oauthAuthorizationDetailsTypes: 'payment_initiation',
+  authzenAttribute: '{"object":"resource","property":"classification",' +
+    '"attributeId":"urn:example:classification"}',
+  appAuthzenApplication: 'engineering-portal',
+  appAuthzenCallbackUri: 'https://pep.example.com/callbacks/access-requests',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
+  oauthDefaultAcrValues: 'mfa 1',
+  oauthDefaultMaxAge: '3600',
   oauthAssertionIssuer: 'https://issuer.example.com',
   oauthSamlAssertionIssuer: 'https://idp.example.com/saml',
   oauthSamlAssertionSigningCertificate:
@@ -5130,6 +2730,7 @@ const FIELD_EXAMPLES = {
   oauthIdTokenTtlS: '3600',
   oauthRefreshTokenTtlS: '86400',
   oauthRefreshIdleSeconds: '1800',
+  oauthMaxAuthAgeS: '3600',
   oauthTokenExchangeRefreshToken: 'true',
   appGroupsClaimName: 'groups',
   appGroupsClaimValue: 'cn',
@@ -5143,6 +2744,7 @@ const FIELD_EXAMPLES = {
   saml2KeyTransportAlgorithm: 'http://www.w3.org/2009/xmlenc11#rsa-oaep',
   wsfedRealm: 'urn:example:my-app',
   wstrustAppliesTo: 'https://service.example.com/',
+  wstrustJwtScope: 'api.read',
   krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
   oid4vpClientId: 'x509_san_dns:verifier.example.com',
   federationPartnerId: 'partner-idp',
@@ -5158,6 +2760,30 @@ const FIELD_EXAMPLES = {
                    'Generate a key pair above',
   didService: 'LinkedDomains|https://app.example.com',
   didAlsoKnownAs: 'https://app.example.com',
+  // A secret push destination (#221 P3).
+  secretDestRegion: 'us-east-1',
+  secretDestProject: 'my-project',
+  secretDestEndpoint: 'https://vault.example.com:8200',
+  secretDestMount: 'secret',
+  secretDestField: 'value',
+  secretDestDirectory: '/run/sts-test-secrets',
+  secretDestCaCertificates: '-----BEGIN CERTIFICATE-----',
+  // An outbound SCIM client (#552).
+  scimClientBaseUrl: 'https://idp.example.com/scim/v2',
+  scimClientUsername: 'iya-sts-provisioner',
+  scimClientTokenEndpoint: 'https://idp.example.com/oauth2/token',
+  scimClientOAuthClientId: 'iya-sts-provisioner',
+  scimClientOAuthScope: 'scim:write',
+  scimClientOAuthResource: 'https://idp.example.com/scim/v2',
+  scimClientTlsCertificate: '-----BEGIN CERTIFICATE-----',
+  scimClientCaCertificates: '-----BEGIN CERTIFICATE-----',
+  scimClientScopeGroups: 'staff',
+  scimClientScopeFilter: '(department=Sales)',
+  scimClientGroups: 'staff',
+  scimClientReconcileMinutes: '0',
+  scimClientJurisdiction: 'eu',
+  scimClientCells: 'euc1',
+  scimClientMaxRequestsPerSecond: '10',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',
@@ -5191,11 +2817,20 @@ const FIELD_EXAMPLES = {
   gnapOwnerLookupUri: 'https://rs.example.com/owners/{identifier}',
   gnapJweKey: '{"kty":"EC","crv":"P-256","use":"enc","x":"…","y":"…"}',
   oauthRedirectUri: 'https://app.example.com/callback',
+  // UMA 2.0 (#1194): the claims interaction's return address.
+  oauthClaimsRedirectUri: 'https://app.example.com/uma/claims-callback',
   oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
   oauthFrontchannelLogoutUri: 'https://app.example.com/frontchannel-logout',
   oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
+  // #426: OpenID Connect Core section 4's initiate_login_uri, https only.
+  oauthInitiateLoginUri: 'https://app.example.com/login/initiate',
+  // #1300: what the sign-in and consent screens show, https only.
+  oauthLogoUri: 'https://app.example.com/logo.png',
+  oauthPolicyUri: 'https://app.example.com/privacy',
+  oauthTosUri: 'https://app.example.com/terms',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
+  oauthAllowedTokenResponseTypes: 'id_token token',
   oauthAllowedScope: 'profile',
   oauthPermissionBaseUri: 'https://api.example.com/',
   oauthPermission: 'read|Read your widgets',
@@ -5242,15 +2877,18 @@ const FIELD_FAMILY_PREFIXES = [
   ['oid4vp', ['oid4vp']],
   ['federation', ['federation']],
   ['ldap', ['ldap']],
+  ['scimClient', ['scim-client']],
   ['scim', ['scim']],
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
   ['gnap', ['gnap']],
+  ['uma', ['uma']],
   ['did', ['did']],
   ['acme', ['acme']],
   ['est', ['est']],
   ['scep', ['scep']],
-  ['enroll', ['acme', 'est', 'scep']]
+  ['enroll', ['acme', 'est', 'scep']],
+  ['secretDest', ['secret-destination']]
 ];
 
 /**
@@ -5275,10 +2913,131 @@ const FIELD_GROUPS = [
   { id: 'spiffe', label: 'SPIFFE', families: ['spiffe'] },
   { id: 'ssf', label: 'Shared Signals', families: ['ssf'] },
   { id: 'gnap', label: 'GNAP', families: ['gnap'] },
+  { id: 'uma', label: 'User-Managed Access', families: ['uma'] },
   { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] },
   { id: 'enroll', label: 'Certificate enrollment',
-    families: ['acme', 'est', 'scep'] }
+    families: ['acme', 'est', 'scep'] },
+  { id: 'secret-destination', label: 'Secret push destination',
+    families: ['secret-destination'] },
+  { id: 'scim-client', label: 'SCIM client (outbound provisioning)',
+    families: ['scim-client'] }
 ];
+
+// ---------------------------------------------------------------------------
+// SECTIONS WITHIN A GROUP (#463, rcbj 2026-10-06): fields of one sub-tab drawn
+// under a heading of their own, after the rest of it and saved by the same
+// Save. The first is the delegation policy's seven per-application facts,
+// which sat among the Every protocol fields with nothing to say they were one
+// subject. `krb5TrustedForDelegation` is not here: it is Kerberos's, on that
+// sub-tab, shown only for an application declared for it (rcbj).
+// ---------------------------------------------------------------------------
+/**
+ * The headed sections fields are drawn under inside their group, each with
+ * the attributes it holds, in drawing order.
+ */
+const FIELD_SECTIONS = [
+  { id: 'delegation', label: 'Delegation / Impersonation',
+    attributes: ['appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
+                 'appNotDelegated', 'appDelegationSemantics',
+                 'appDefaultDelegationSemantics', 'appDelegationSubjectGroup',
+                 'appMayAct'] },
+  // #395: which claims a token carries — the realm's set against this
+  // application's own, per token type, and what it wants as a resource
+  // server — on the OAuth and SAML sub-tabs.
+  { id: 'token-claims', label: 'Claims in tokens',
+    attributes: ['oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
+                 'oauthClaimsCombineUserinfo', 'oauthAccessTokenClaim',
+                 'oauthAccessTokenClaimsCombine'] },
+  { id: 'assertion-claims', label: 'Attributes in assertions',
+    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] },
+  // #426: who may start a sign-in, on each browser protocol's sub-tab — the
+  // identity provider, the relying party, or both — and where a third party
+  // starts an OpenID Connect one.
+  { id: 'sign-on-initiation', label: 'Who may start a sign-in',
+    attributes: ['saml2IdpInitiatedSso', 'saml2SpInitiatedSso',
+                 'saml11IdpInitiatedSso', 'saml11SpInitiatedSso',
+                 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
+                 'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+                 'oauthInitiateLoginUri'] },
+  // ASVS 5.0.0 7.6.2: whether single sign-on asks the person first.
+  { id: 'sso-consent', label: 'Asking before single sign-on',
+    attributes: ['saml2SsoConsent', 'saml11SsoConsent', 'wsfedSsoConsent'] }
+];
+
+// ---------------------------------------------------------------------------
+// THE SIMPLE VIEW (#500, rcbj 2026-10-07): the fields each sub-tab of an
+// application's Configuration tab shows before its advanced view is asked
+// for, and that `/admin/applications/new`'s simplified view offers beside the
+// declarations. A sub-tab of six fields or more has the two views; one of
+// fewer has no advanced view and draws everything.
+//
+// HOW THE TWO SETS WERE CHOSEN, because a reader adding an attribute has to
+// choose again. Every protocol and OAuth 2.0 / OpenID Connect are the
+// fields two working applications on rcbj's own instance hold (and, on Every
+// protocol, the second factors, which rcbj asked for beside them — a
+// policy reference, `appAuthnPolicy`, since #1148) — a web
+// application that delegates to an API (rcbj0002) and that API (rcbj0003) —
+// so the simple view is what configuring a real client and resource server
+// took, and everything else on those sub-tabs is advanced. The other
+// sub-tabs were inferred on that model: the identifiers and addresses the
+// protocol cannot work without, and the one or two choices nearly every
+// deployment makes, never a tuning knob, a lifetime or a policy override.
+// `appCorsOrigin` and `appRequiredRole` were held too, and are drawn on tabs
+// of their own.
+// ---------------------------------------------------------------------------
+const SIMPLE_FIELD_ATTRIBUTES = [
+  // Every protocol (rcbj0002, rcbj0003), and the authentication policy an
+  // application names (#1148; its two lists were here since #457 and #475).
+  'description', 'appHomePageUrl', 'appAuthnPolicy',
+  'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
+  'appDelegationSubjectGroup', 'appDelegationSemantics',
+  // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
+  'oauthClientId', 'oauthTokenEndpointAuthMethod',
+  'oauthRedirectUri', 'oauthPostLogoutRedirectUri', 'oauthGrantType',
+  'oauthResponseType', 'oauthAllowedScope', 'oauthAudience',
+  'oauthPermissionBaseUri', 'oauthPermission', 'oauthDelegatedPermission',
+  'oauthGlobalConsent',
+  // SAML 2.0 and SAML 1.1: who the provider is, where its assertions go and
+  // what it signs and encrypts with.
+  'samlEntityId', 'samlAssertionConsumerService', 'samlSingleLogoutService',
+  'samlSpMetadataUrl', 'samlSigningCertificate', 'samlEncryptionCertificate',
+  'saml2NameIdFormat', 'saml2SignAssertion', 'saml2EncryptAssertion',
+  // #426: whether this identity provider may start a sign-in. Not the
+  // OAuth pair (`oauthThirdPartyInitiatedLogin`, `oauthInitiateLoginUri`):
+  // that sub-tab's simple set is rcbj's two working applications' fields,
+  // no more (tests/subtab_views.js), so they are under Advanced there.
+  'saml2IdpInitiatedSso', 'saml11IdpInitiatedSso', 'wsfedIdpInitiatedSso',
+  // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
+  'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
+  'krb5ServicePrincipalName',
+  // Shared Signals: the receiver, where its events go and which.
+  'ssfReceiverId', 'ssfDeliveryEndpoint', 'ssfAllowedEvents',
+  'ssfSigningAlgorithm',
+  // GNAP: the instance and its key, and how it interacts and finishes.
+  'gnapInstanceId', 'gnapKey', 'gnapKeyProof', 'gnapFinishUri',
+  'gnapInteractionStartModes', 'gnapAllowedAccess', 'gnapAccessTokenFormat',
+  // Certificate enrollment: which certificates each protocol may issue.
+  'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
+  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
+  // A secret push destination: which provider, and where.
+  'secretDestProvider', 'secretDestEndpoint', 'secretDestRegion',
+  'secretDestProject'
+];
+
+/**
+ * Says which headed section a field is drawn under, if any.
+ *
+ * @param name - the attribute
+ * @returns the section row, or null
+ */
+function fieldSectionOf(name) {
+  log.debug("Entering fieldSectionOf().");
+  const found = FIELD_SECTIONS.filter(function (one) {
+    return one.attributes.indexOf(name) >= 0;
+  })[0] || null;
+  log.debug("Leaving fieldSectionOf(). " + (found ? found.id : 'None.'));
+  return found;
+}
 
 /**
  * Says which protocol families a field belongs to.
@@ -5378,7 +3137,16 @@ function applicationFields() {
       families: scope.families,
       everyFamily: scope.everyFamily,
       declaration: declared.indexOf(row.name) >= 0,
-      group: group.id
+      // The registry identifier, so the simplified create form does not
+      // draw a second box for it (#393). The advanced view still does.
+      primaryName: PRIMARY_NAME_ATTRIBUTES.indexOf(row.name) >= 0,
+      // Shown by its sub-tab's simple view (#500).
+      simple: SIMPLE_FIELD_ATTRIBUTES.indexOf(row.name) >= 0,
+      group: group.id,
+      // The headed section inside the group it is drawn under (#463), or
+      // none.
+      section: (fieldSectionOf(row.name) || { id: '' }).id,
+      sectionLabel: (fieldSectionOf(row.name) || { label: '' }).label
     };
   });
   log.debug("Leaving applicationFields(). " + rows.length + " field(s).");
@@ -5722,10 +3490,13 @@ function homePageOf(source) {
 
 // ---------------------------------------------------------------------------
 // OPENID CONNECT CORE SECTION 4, `initiate_login_uri` (#120): where a third
-// party — the user portal — may start a sign-in AT the relying party. It is a
-// registration member (OpenID Connect Registration section 2) and lives in
-// `appRegistrationJson` only; `oidcRegistrationProblem()` held it to https
-// when it was written, and it is held to that again here because
+// party — /launch/{app} and the user portal — may start a sign-in AT the
+// relying party. It is a registration member (OpenID Connect Registration
+// section 2) and, since #426, the attribute `oauthInitiateLoginUri`, which
+// registration writes and the console and the management API edit; it lived
+// only inside `appRegistrationJson` before, so a client an administrator made
+// could not have one. Held to https with no fragment when it is written
+// (initiateLoginUriProblem(), STS-REG-0188) and again here, because
 // `ldapmodify` reaches the attribute unchecked. '' where there is none.
 // ---------------------------------------------------------------------------
 /**
@@ -5738,27 +3509,137 @@ function initiateLoginUriOf(source) {
   log.debug("Entering initiateLoginUriOf().");
   const holder = source || {};
   const fields = holder.fields || holder;
-  let document = null;
-  try {
-    document = fields.appRegistrationJson
-      ? JSON.parse(String(fields.appRegistrationJson)) : null;
-  } catch (e) {
-    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
-    // registrationOf() reports an unparseable document; here it names none.
-    document = null;
-  }
-  const text = String((document && document.initiate_login_uri) || '').trim();
-  let usable = '';
-  try {
-    const parsed = new URL(text);
-    usable = parsed.protocol === 'https:' && !parsed.hash ? text : '';
-  } catch (e) {
-    log.debug("Caught in initiateLoginUriOf(): " + ((e && e.message) || e));
-    // Not a URL: no sign-in link.
-    usable = '';
-  }
+  const text = String(valuesOf(fields.oauthInitiateLoginUri)[0] || '').trim();
+  const usable = initiateLoginUriProblem(text) ? '' : text;
   log.debug("Leaving initiateLoginUriOf().");
   return usable;
+}
+
+/**
+ * Says what is wrong with a value for `oauthInitiateLoginUri`: OpenID Connect
+ * Registration section 2 requires https, and a fragment cannot be carried
+ * through the query Core section 4 appends.
+ *
+ * @param value - the value
+ * @returns the problem, or '' when it is usable
+ */
+function initiateLoginUriProblem(value) {
+  log.debug("Entering initiateLoginUriProblem().");
+  const text = String(value == null ? '' : value).trim();
+  let problem = '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'https:') {
+      problem = 'oauthInitiateLoginUri must be an https URL (OpenID Connect ' +
+                'Registration section 2).';
+    } else if (parsed.hash) {
+      problem = 'oauthInitiateLoginUri may not carry a fragment: OpenID ' +
+                'Connect Core section 4 appends a query to it.';
+    }
+  } catch (e) {
+    log.debug("Caught in initiateLoginUriProblem(): " +
+              ((e && e.message) || e));
+    // Not a URL at all.
+    problem = 'oauthInitiateLoginUri must be an absolute https URL.';
+  }
+  log.debug("Leaving initiateLoginUriProblem().");
+  return problem;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE SIGN-IN AND CONSENT SCREENS SHOW ABOUT A CLIENT (#1300): OpenID
+// Connect Registration section 2's `logo_uri`, `policy_uri` and `tos_uri`,
+// the registration member and the attribute each is written to. Held to an
+// absolute https URL with a host and no credentials wherever it is written
+// (clientDisplayUriProblem(), STS-REG-0365: registration, RFC 7592 update,
+// a create and an attribute write) and again where it is read
+// (clientDisplayOf()), because `ldapmodify` reaches the attributes
+// unchecked. A value that fails on the read is not drawn — the screen shows
+// what it can rather than refusing a sign-in over a picture.
+// ---------------------------------------------------------------------------
+const CLIENT_DISPLAY_MEMBERS = [
+  ['logo_uri', 'oauthLogoUri'],
+  ['policy_uri', 'oauthPolicyUri'],
+  ['tos_uri', 'oauthTosUri']
+];
+const CLIENT_DISPLAY_ATTRIBUTES = CLIENT_DISPLAY_MEMBERS.map(function (row) {
+  return row[1];
+});
+
+/**
+ * Says what is wrong with a value for `oauthLogoUri`, `oauthPolicyUri` or
+ * `oauthTosUri` (or the registration member each is written from): it must
+ * be an absolute https URL with a host and no credentials in it.
+ *
+ * @param name - the attribute or member, for the sentence
+ * @param value - the value
+ * @returns the problem, or '' when it is usable
+ */
+function clientDisplayUriProblem(name, value) {
+  log.debug("Entering clientDisplayUriProblem(). " + name);
+  const text = String(value == null ? '' : value);
+  let problem = '';
+  if (typeof value !== 'string' || !text || /\s/.test(text)) {
+    problem = name + ' must be an absolute https URL with no spaces ' +
+              '(OpenID Connect Registration section 2).';
+  } else {
+    try {
+      const parsed = new URL(text);
+      if (parsed.protocol !== 'https:' || !parsed.hostname) {
+        problem = name + ' must be an https URL: the sign-in and consent ' +
+                  'screens are served over https and draw it there ' +
+                  '(OpenID Connect Registration section 2).';
+      } else if (parsed.username || parsed.password) {
+        problem = name + ' may not carry a user name or password.';
+      }
+    } catch (e) {
+      log.debug("Caught in clientDisplayUriProblem(): " +
+                ((e && e.message) || e));
+      // Not a URL at all.
+      problem = name + ' must be an absolute https URL (OpenID Connect ' +
+                'Registration section 2).';
+    }
+  }
+  log.debug("Leaving clientDisplayUriProblem().");
+  return problem;
+}
+
+/**
+ * What the sign-in and consent screens show about an OAuth client (#1300):
+ * its name, its logo and the origin a page's `img-src` must name for it,
+ * and its privacy policy and terms of service — each held to https again
+ * here, a value that fails left out. Null for a client_id no application
+ * answers to, and for one with none of the three.
+ *
+ * @param clientId - the client_id the sign-in or consent is for
+ * @returns `{ name, logo, logoOrigin, policy, tos }`, or null
+ */
+function clientDisplayOf(clientId) {
+  log.debug("Entering clientDisplayOf().");
+  const id = String(clientId == null ? '' : clientId).trim();
+  const entry = id ? forClientId(id) : null;
+  if (!entry) {
+    log.debug("Leaving clientDisplayOf(). No such client.");
+    return null;
+  }
+  const fields = entry.fields || {};
+  const usable = function (attribute) {
+    log.debug("Entering usable(). " + attribute);
+    const text = String(valuesOf(fields[attribute])[0] || '');
+    log.debug("Leaving usable().");
+    return text && !clientDisplayUriProblem(attribute, text) ? text : '';
+  };
+  const logo = usable('oauthLogoUri');
+  const policy = usable('oauthPolicyUri');
+  const tos = usable('oauthTosUri');
+  if (!logo && !policy && !tos) {
+    log.debug("Leaving clientDisplayOf(). Nothing to show.");
+    return null;
+  }
+  log.debug("Leaving clientDisplayOf(). " + entry.identifier);
+  return { name: String(entry.name || valuesOf(fields.appName)[0] || id),
+           logo: logo, logoOrigin: logo ? new URL(logo).origin : '',
+           policy: policy, tos: tos };
 }
 
 // ---------------------------------------------------------------------------
@@ -6244,7 +4125,17 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        'gnapMacaroonKey',
                        // An application DID's private keys (2026-10-01),
                        // kept to sign its Domain Linkage Credentials.
-                       'didPrivateKeys'];
+                       'didPrivateKeys',
+                       // A secret destination's write credential (#221 P3).
+                       // WITHHELD as well (below): sealed so no dump holds
+                       // it, and withheld so no reader opens it — the only
+                       // reader is `secretDestinationCredentialOf()`.
+                       'secretDestCredential',
+                       // An outbound SCIM client's credentials (#552),
+                       // sealed and withheld the same way; the reader is
+                       // `scimClientCredentialOf()`.
+                       'scimClientPassword', 'scimClientOAuthClientSecret',
+                       'scimClientTlsPrivateKey'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
@@ -6254,6 +4145,10 @@ const SEAL_LABELS = {
   oauthSamlAssertionPrivateKey: 'application-private-key',
   gnapSymmetricKey: 'gnap-shared-key',
   gnapMacaroonKey: 'gnap-macaroon-key',
+  secretDestCredential: 'secret-destination-credential',
+  scimClientPassword: 'scim-client-credential',
+  scimClientOAuthClientSecret: 'scim-client-credential',
+  scimClientTlsPrivateKey: 'scim-client-credential',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
   oauthClientSecret: 'client-secret',
@@ -6290,7 +4185,16 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // Certificate enrollment (2026-09-13): a private key
                          // this service generated, and two working credentials.
                          'appEnrolledPrivateKey', 'appAcmeEabKey',
-                         'appScepChallenge'];
+                         'appScepChallenge',
+                         // A secret destination's write credential (#221
+                         // P3): it leaves this service only on the wire to
+                         // its own secrets manager.
+                         'secretDestCredential',
+                         // An outbound SCIM client's credentials (#552):
+                         // they leave only on the wire to its service
+                         // provider and its token endpoint.
+                         'scimClientPassword', 'scimClientOAuthClientSecret',
+                         'scimClientTlsPrivateKey'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -6350,8 +4254,22 @@ const KEY_SOURCE_ATTRIBUTES = Object.keys(KEY_PAIR_ATTRIBUTES).map(
 });
 
 
-function withheldSentence(value) {
+function withheldSentence(value, name) {
   log.debug("Entering withheldSentence().");
+  if (name === 'secretDestCredential') {
+    // NOT EVEN ITS LENGTH: a token's length says which kind of credential
+    // it is, and nothing about this one is anybody's business but its
+    // secrets manager's (#221 P3).
+    log.debug("Leaving withheldSentence(). A destination credential.");
+    return '(withheld: a secret destination\'s write credential, set, ' +
+           'never shown)';
+  }
+  if (name === 'scimClientPassword' || name === 'scimClientOAuthClientSecret' ||
+      name === 'scimClientTlsPrivateKey') {
+    // Nor its length, for the reason above (#552).
+    log.debug("Leaving withheldSentence(). A SCIM client credential.");
+    return '(withheld: a SCIM client credential, set, never shown)';
+  }
   log.debug("Leaving withheldSentence().");
   return '(withheld: Kerberos key material, ' + String(value || '').length +
          ' characters, never shown)';
@@ -6374,8 +4292,9 @@ function withholdFields(fields) {
     if (out === fields) {
       out = Object.assign({}, fields);
     }
-    out[name] = Array.isArray(out[name]) ? out[name].map(withheldSentence)
-                                         : withheldSentence(out[name]);
+    out[name] = Array.isArray(out[name])
+      ? out[name].map(function (one) { return withheldSentence(one, name); })
+      : withheldSentence(out[name], name);
   });
   log.debug("Leaving withholdFields().");
   return out;
@@ -6534,6 +4453,54 @@ function openSealedFields(fields, identifier) {
 }
 
 // ---------------------------------------------------------------------------
+// A SECRET DESTINATION'S WRITE CREDENTIAL, OPENED FOR THE ONE READER THAT
+// USES IT (#221 P3, 2026-10-06).
+//
+// `secretDestCredential` is in SEALED_FIELDS and in WITHHELD_FIELDS, so every
+// view — `fields` and `attributes` alike — carries a sentence in its place
+// and `reveal-secret` has nothing to hand over. `common/secret_destinations
+// .ts` needs the credential itself, at the moment it pushes, and asks here
+// rather than reading the entry around this module: this module owns the
+// seal and so owns the open. The plaintext is returned to the caller and
+// kept nowhere (`key-material-residency`).
+// ---------------------------------------------------------------------------
+/**
+ * Returns a secret destination's write credential, opened, for the push
+ * that uses it. Never drawn and never returned by any view.
+ *
+ * @param identifier - the destination application's identifier
+ * @returns the credential, or '' when there is none or it will not open
+ */
+function secretDestinationCredentialOf(identifier) {
+  log.debug("Entering secretDestinationCredentialOf().");
+  const loaded = load(identifier);
+  const stored = loaded.known
+    ? String([].concat(loaded.record.fields.secretDestCredential || [])[0] ||
+             '')
+    : '';
+  if (!stored) {
+    log.debug("Leaving secretDestinationCredentialOf(). None.");
+    return '';
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving secretDestinationCredentialOf(). Stored clear.");
+    return stored;
+  }
+  const opened = keystore.open(stored, sealLabelOf('secretDestCredential'));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the write credential on secret destination "' +
+             identifier + '" is sealed and will not open under this ' +
+             'process\'s key-encryption key. Set it again on Directory → ' +
+             'Secret destinations.');
+    log.debug("Leaving secretDestinationCredentialOf(). Will not open.");
+    return '';
+  }
+  log.debug("Leaving secretDestinationCredentialOf(). Opened.");
+  return opened;
+}
+
+// ---------------------------------------------------------------------------
 // THE VALUES A CREATE MAY CARRY, validated whole before anything is written.
 //
 // Same rule the protocol families go through one function above and for the
@@ -6541,13 +4508,13 @@ function openSealedFields(fields, identifier) {
 // silently dropped — is worse than a refusal, because what is left reads as a
 // complete declaration of what somebody typed.
 //
-// **THE GATE IS `EDITABLE`, NOT THE SCHEMA.** An attribute has to be in the
-// table AND declared rather than derived: a create that could set
-// `appAuthentications` or `appProtocol` would let a form assert that things had
-// happened, which is the line this module's EDITABLE header draws and the one
-// `updateApplication()` already refuses at. So this refuses the derived ones by
-// name and says which they are, rather than writing them and leaving the page
-// to lie.
+// **THE GATE IS A ROW'S `editable`, NOT ITS PRESENCE.** An attribute has to
+// be in the table AND declared rather than derived: a create that could set
+// `appAuthentications` or `appProtocol` would let a form assert that things
+// had happened, which is the line application.tsp's editability header draws
+// and the one `updateApplication()` already refuses at. So this refuses the
+// derived ones by name and says which they are, rather than writing them and
+// leaving the page to lie.
 //
 // A `single` attribute given several values is REFUSED rather than truncated.
 // Taking the first would be a form quietly keeping one of two things a person
@@ -6556,12 +4523,15 @@ function openSealedFields(fields, identifier) {
 // wrong answer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// WHICH ADDRESSES AN OAUTH ENTRY MAY HOLD (2026-09-13).
+// WHICH DECLARED RETURN ADDRESSES MAY BE WRITTEN (2026-09-13).
 //
 // `oauthRedirectUri` and `oauthPostLogoutRedirectUri` are addresses a browser
 // is SENT to, and `oauthFrontchannelLogoutUri` is one a sign-out page FRAMES.
 // `oauthBackchannelLogoutUri` (2026-09-17, #36) is one this service POSTs a
 // Logout Token to, and takes the same http(s)-only rule.
+// `samlAssertionConsumerService` (2026-10-10, #291) is where a signed SAML
+// assertion is sent; the SAML 1.1 registration action now writes it with the
+// relying party and this same check applies to every other write.
 // Until this date none of the three was checked on the way in — at
 // registration, at a console `add` or at `/admin-api` — so `javascript:` could
 // be stored in all of them. The two redirect attributes were caught again at
@@ -6579,6 +4549,7 @@ function openSealedFields(fields, identifier) {
 // own checks and `frontchannel_logout.js` checks again when it reads.
 // ---------------------------------------------------------------------------
 const ADDRESS_ATTRIBUTES = {
+  samlAssertionConsumerService: 'saml',
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
   oauthFrontchannelLogoutUri: 'frontchannel',
@@ -6601,7 +4572,9 @@ function addressProblem(attribute, value) {
     return commandProblem ? '"' + value + '" cannot be ' + attribute +
       ': it must be an https URL with no fragment.' : null;
   }
-  const problem = kind === 'frontchannel'
+  const problem = kind === 'saml'
+    ? validation.redirectUriProblem(String(value), { privateUse: false })
+    : kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
     : kind === 'backchannel'
       ? validation.backchannelUriProblem(String(value))
@@ -6727,6 +4700,39 @@ function backchannelSchemeProblem(uri, publicClient) {
   return null;
 }
 
+// THE JSON TYPE OF A CLIENT METADATA MEMBER IS THE MODEL'S (#1579).
+// `models/oauth/oauth_members.tsp`'s RegistrationRequest states each member
+// RFC 7591 section 2, OpenID Connect Registration section 2 and the extension
+// specifications define, with its type; every refusal below that tests a
+// member's type asks this, and keeps its own words and its own error code.
+/**
+ * Whether a client metadata member's value is of the JSON type the model
+ * gives it.
+ *
+ * @param {string} member - the registration member
+ * @param {unknown} value - its value
+ * @returns {boolean} true when it is
+ */
+function registrationTypeFits(member, value) {
+  log.debug("Entering registrationTypeFits().");
+  log.debug("Leaving registrationTypeFits().");
+  return OAuthModel.memberFits('registration-request', member, value);
+}
+
+/**
+ * Whether one value of an array member is of the JSON type the model gives
+ * the array's values.
+ *
+ * @param {string} member - the registration member, an array
+ * @param {unknown} value - one of its values
+ * @returns {boolean} true when it is
+ */
+function registrationItemFits(member, value) {
+  log.debug("Entering registrationItemFits().");
+  log.debug("Leaving registrationItemFits().");
+  return OAuthModel.itemFits('registration-request', member, value);
+}
+
 // The same question about an RFC 7591 document, before any of it is written.
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
@@ -6820,6 +4826,36 @@ const INTROSPECTION_DEFAULT_SIGNING_ALG = 'RS256';
  * The content encryption a JWT introspection response uses when the client
  * names an algorithm and no `enc`.
  */
+// WHAT JWE MAY USE HERE (#1486, ASVS 5.0.0 11.3.2): in product CBC-HMAC is
+// offered and accepted only where an operator opted in, and a client that names
+// no `enc` gets AES-GCM. RFC 7591 section 2 lets a server replace a value, and
+// the JWE header says which was used.
+/**
+ * The content encryptions of a list that are available here.
+ *
+ * @param list - the content encryptions
+ * @returns those in force
+ */
+function permittedEncs(list) {
+  log.debug("Entering permittedEncs().");
+  log.debug("Leaving permittedEncs().");
+  return mode.allowsCbcJwe() ? list.slice(0) : list.filter(function (one) {
+    return !/CBC/.test(one);
+  });
+}
+
+/**
+ * The content encryption used where a client names an algorithm and no `enc`.
+ *
+ * @returns A128CBC-HS256 as the specifications say, or A256GCM where CBC is
+ *   withdrawn
+ */
+function defaultJweEnc() {
+  log.debug("Entering defaultJweEnc().");
+  log.debug("Leaving defaultJweEnc().");
+  return mode.allowsCbcJwe() ? 'A128CBC-HS256' : 'A256GCM';
+}
+
 const INTROSPECTION_DEFAULT_ENC = 'A128CBC-HS256';
 
 /**
@@ -6870,7 +4906,8 @@ function introspectionResponseProblem(values) {
   const names = Object.keys(INTROSPECTION_ATTRIBUTES);
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving introspectionResponseProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -6879,14 +4916,18 @@ function introspectionResponseProblem(values) {
   const sign = text.introspection_signed_response_alg;
   const alg = text.introspection_encrypted_response_alg;
   const enc = text.introspection_encrypted_response_enc;
-  if (sign && INTROSPECTION_SIGNING_ALGS.indexOf(sign) < 0) {
+  // The classical algorithms alone while `keys.postQuantumSigning` is off
+  // (helpers.offeredJwsAlgs(), 2026-10-23) — what discovery advertises —
+  // and without EdDSA while `keys.eddsaSigning` is off (#1292).
+  const signable = helpers.signableJwsAlgs(INTROSPECTION_SIGNING_ALGS);
+  if (sign && signable.indexOf(sign) < 0) {
     log.debug("Leaving introspectionResponseProblem(). Signing alg.");
     return refusal('introspection_signed_response_alg', '"' + sign + '" ' +
       (sign.toLowerCase() === 'none'
         ? 'is refused: RFC 9701 section 5 says an introspection response ' +
           'MUST be cryptographically secured, so there is no unsigned one.'
         : 'is not an algorithm this service signs with. It signs with ' +
-          INTROSPECTION_SIGNING_ALGS.join(', ') + ' (see ' +
+          signable.join(', ') + ' (see ' +
           'introspection_signing_alg_values_supported).'));
   }
   // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is on
@@ -6908,11 +4949,11 @@ function introspectionResponseProblem(values) {
       '6 says it MUST NOT be specified without ' +
       'introspection_encrypted_response_alg, and none is registered.');
   }
-  if (enc && INTROSPECTION_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+  if (enc && permittedEncs(INTROSPECTION_ENCRYPTION_ENCS).indexOf(enc) < 0) {
     log.debug("Leaving introspectionResponseProblem(). Content encryption.");
     return refusal('introspection_encrypted_response_enc', '"' + enc + '" is ' +
       'not a content encryption algorithm this service has. It has ' +
-      INTROSPECTION_ENCRYPTION_ENCS.join(', ') + ' (see ' +
+      permittedEncs(INTROSPECTION_ENCRYPTION_ENCS).join(', ') + ' (see ' +
       'introspection_encryption_enc_values_supported).');
   }
   log.debug("Leaving introspectionResponseProblem(). Nothing refused.");
@@ -6959,11 +5000,12 @@ function introspectionAttributeProblem(attribute, value, fields) {
 // applies to a Logout Token too. The grammar is here for the introspection
 // members' reason — this module owns what a registration may say, and every
 // write door (`register()`, `updateRegistration()`, the registration endpoint's
-// own 400) asks it. Unlike those three members these two have NO ATTRIBUTE:
-// they live in `appRegistrationJson` beside `id_token_signed_response_alg`,
-// the member they qualify, which has none either. Whether the client's `jwks`
-// holds a key to encrypt to is asked by `oauth-oidc/id_token_encryption.ts`,
-// which owns the key selection and cannot be required from here.
+// own 400) asks it. Since #290 they are ATTRIBUTES, as the introspection
+// members are (`oauthIdTokenEncryptedResponseAlg` / `Enc`, beside
+// `oauthIdTokenSignedResponseAlg`) — see CLIENT_RESPONSE_ATTRIBUTES below.
+// Whether the client's `jwks` holds a key to encrypt to is asked by
+// `oauth-oidc/id_token_encryption.ts`, which owns the key selection and
+// cannot be required from here.
 //
 // The lists are the introspection response's: the ASYMMETRIC families only,
 // every content encryption `common/crypto.js` has, A128CBC-HS256 by default,
@@ -7007,7 +5049,8 @@ function idTokenEncryptionMetadataProblem(values) {
                  'id_token_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving idTokenEncryptionMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -7030,12 +5073,12 @@ function idTokenEncryptionMetadataProblem(values) {
       'section 2 says id_token_encrypted_response_alg MUST also be provided, ' +
       'and none is.');
   }
-  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+  if (enc && permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).indexOf(enc) < 0) {
     log.debug("Leaving idTokenEncryptionMetadataProblem(). Content " +
               "encryption.");
     return refusal(names[1], '"' + enc + '" is not a content encryption ' +
       'algorithm this service has. It has ' +
-      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + ' (see ' +
+      permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).join(', ') + ' (see ' +
       'id_token_encryption_enc_values_supported).');
   }
   log.debug("Leaving idTokenEncryptionMetadataProblem(). Nothing refused.");
@@ -7049,8 +5092,8 @@ function idTokenEncryptionMetadataProblem(values) {
 // `authorization_signed_response_alg` (RS256 by default — JARM's own default;
 // PS256 under FAPI 1.0 Advanced, which `oauth-oidc/jarm.ts` decides), and
 // `authorization_encrypted_response_alg` / `_enc` (no encryption by default,
-// A128CBC-HS256 when only the alg is named). Like the ID Token's, they have no
-// attribute: they live in `appRegistrationJson`. The grammar is here for the
+// A128CBC-HS256 when only the alg is named). Like the ID Token's, they are
+// attributes since #290 (`oauthAuthorization*`). The grammar is here for the
 // ID Token members' reason; whether the client's `jwks` holds a key to encrypt
 // to is `jarm.ts`'s.
 //
@@ -7080,18 +5123,22 @@ function jarmMetadataProblem(values) {
                  'authorization_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving jarmMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
   }
   const signAlg = String(asked.authorization_signed_response_alg || '').trim();
-  if (signAlg && stsCrypto.JWS_SIGNING_ALGS.indexOf(signAlg) < 0) {
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23), and
+  // no EdDSA while `keys.eddsaSigning` is off (#1292).
+  const signable = helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+  if (signAlg && signable.indexOf(signAlg) < 0) {
     log.debug("Leaving jarmMetadataProblem(). Signing alg.");
     return refusal(names[0], '"' + signAlg + '" is not an algorithm this ' +
       'service signs an authorization response with' + (signAlg === 'none'
         ? ' — JARM section 3 does not allow none' : '') + '. It signs with ' +
-      stsCrypto.JWS_SIGNING_ALGS.join(', ') + ' (see ' +
+      signable.join(', ') + ' (see ' +
       'authorization_signing_alg_values_supported).');
   }
   const alg = String(asked.authorization_encrypted_response_alg || '').trim();
@@ -7111,13 +5158,82 @@ function jarmMetadataProblem(values) {
       'authorization_encrypted_response_alg MUST also be provided, and none ' +
       'is.');
   }
-  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+  if (enc && permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).indexOf(enc) < 0) {
     log.debug("Leaving jarmMetadataProblem(). Content encryption.");
     return refusal(names[2], '"' + enc + '" is not a content encryption ' +
       'algorithm this service has. It has ' +
-      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + '.');
+      permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).join(', ') + '.');
   }
   log.debug("Leaving jarmMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// OPENID CONNECT REGISTRATION SECTION 2: WHAT A CLIENT MAY REGISTER ABOUT THE
+// ENCRYPTION OF ITS USERINFO RESPONSES (#290, 2026-10-08).
+//
+// `userinfo_encrypted_response_alg` and `_enc` were checked only when the
+// UserInfo endpoint answered — a registration naming `A128KW` was accepted
+// and every UserInfo request after it failed. They are refused at the write
+// now, with the ID Token's lists for the ID Token's reason: the ASYMMETRIC
+// families only (a response is encrypted to the key the client registered),
+// every content encryption `common/crypto.js` has, and an `enc` with no `alg`
+// refused (Registration section 2). `oauth2.ts`'s `protectUserinfo()` still
+// checks what it reads, for a value an `ldapmodify` left. STS-REG-0339.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a client's UserInfo encryption members (OIDC Registration section 2).
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function userinfoEncryptionMetadataProblem(values) {
+  log.debug("Entering userinfoEncryptionMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0339', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['userinfo_encrypted_response_alg',
+                 'userinfo_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
+      log.debug("Leaving userinfoEncryptionMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const alg = String(asked.userinfo_encrypted_response_alg || '').trim();
+  const enc = String(asked.userinfo_encrypted_response_enc || '').trim();
+  const offered = helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  if (alg && offered.indexOf(alg) < 0) {
+    log.debug("Leaving userinfoEncryptionMetadataProblem(). Encryption " +
+              "alg.");
+    return refusal(names[0], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts a UserInfo response with. It encrypts with ' +
+      offered.join(', ') + ' (see userinfo_encryption_alg_values_supported). ' +
+      'The symmetric families are for a document encrypted TO this ' +
+      'service; a response is encrypted to the key you registered.');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving userinfoEncryptionMetadataProblem(). enc without " +
+              "alg.");
+    return refusal(names[1], 'OpenID Connect Dynamic Client Registration ' +
+      'section 2 says userinfo_encrypted_response_alg MUST also be ' +
+      'provided, and none is.');
+  }
+  if (enc && permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).indexOf(enc) < 0) {
+    log.debug("Leaving userinfoEncryptionMetadataProblem(). Content " +
+              "encryption.");
+    return refusal(names[1], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      permittedEncs(ID_TOKEN_ENCRYPTION_ENCS).join(', ') + ' (see ' +
+      'userinfo_encryption_enc_values_supported).');
+  }
+  log.debug("Leaving userinfoEncryptionMetadataProblem(). Nothing refused.");
   return null;
 }
 
@@ -7240,12 +5356,12 @@ function requestObjectMetadataProblem(values) {
              member: member, description: member + ': ' + description };
   };
   if (asked.request_uris !== undefined && asked.request_uris !== null) {
-    if (!Array.isArray(asked.request_uris)) {
+    if (!registrationTypeFits('request_uris', asked.request_uris)) {
       log.debug("Leaving requestObjectMetadataProblem(). Not an array.");
       return refusal('request_uris', 'must be an array of URLs.');
     }
     for (let i = 0; i < asked.request_uris.length; i++) {
-      if (typeof asked.request_uris[i] !== 'string') {
+      if (!registrationItemFits('request_uris', asked.request_uris[i])) {
         log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
         return refusal('request_uris', 'every member must be a string.');
       }
@@ -7262,7 +5378,8 @@ function requestObjectMetadataProblem(values) {
                    'request_object_encryption_enc'];
   for (let i = 0; i < strings.length; i++) {
     const value = asked[strings[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(strings[i], value)) {
       log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
       return refusal(strings[i], 'must be a string naming one algorithm.');
     }
@@ -7270,7 +5387,7 @@ function requestObjectMetadataProblem(values) {
   }
   const required = asked.require_signed_request_object;
   if (required !== undefined && required !== null &&
-      typeof required !== 'boolean') {
+      !registrationTypeFits('require_signed_request_object', required)) {
     log.debug("Leaving requestObjectMetadataProblem(). Not a boolean.");
     return refusal('require_signed_request_object', 'must be true or false.');
   }
@@ -7284,11 +5401,15 @@ function requestObjectMetadataProblem(values) {
           : 'this realm is in product mode, where RFC 9101 section 4\'s ' +
             'signed request object is required') + '.');
     }
-  } else if (sign && REQUEST_OBJECT_SIGNING_ALGS.indexOf(sign) < 0) {
+  } else if (sign && helpers.offeredJwsAlgs(REQUEST_OBJECT_SIGNING_ALGS)
+               .indexOf(sign) < 0) {
+    // Classical only while `keys.postQuantumSigning` is off (2026-10-23):
+    // the verification would refuse the rest (STS-KEYS-0157).
     log.debug("Leaving requestObjectMetadataProblem(). Signing alg.");
     return refusal('request_object_signing_alg', '"' + sign + '" is not an ' +
       'algorithm this service verifies. It verifies ' +
-      REQUEST_OBJECT_SIGNING_ALGS.join(', ') + ' (see ' +
+      helpers.offeredJwsAlgs(REQUEST_OBJECT_SIGNING_ALGS).join(', ') +
+      ' (see ' +
       'request_object_signing_alg_values_supported).');
   }
   const alg = text.request_object_encryption_alg;
@@ -7313,11 +5434,11 @@ function requestObjectMetadataProblem(values) {
     return refusal('request_object_encryption_enc', 'it may not be ' +
       'registered without request_object_encryption_alg, and none is.');
   }
-  if (enc && REQUEST_OBJECT_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+  if (enc && permittedEncs(REQUEST_OBJECT_ENCRYPTION_ENCS).indexOf(enc) < 0) {
     log.debug("Leaving requestObjectMetadataProblem(). Content encryption.");
     return refusal('request_object_encryption_enc', '"' + enc + '" is not a ' +
       'content encryption algorithm this service has. It has ' +
-      REQUEST_OBJECT_ENCRYPTION_ENCS.join(', ') + '.');
+      permittedEncs(REQUEST_OBJECT_ENCRYPTION_ENCS).join(', ') + '.');
   }
   log.debug("Leaving requestObjectMetadataProblem(). Nothing refused.");
   return null;
@@ -7547,20 +5668,10 @@ function oidcRegistrationProblem(values) {
       'authorization_code or implicit grant must register at least one ' +
       '(RFC 7591 section 2).', 'invalid_redirect_uri');
   }
-  /** @type {Array<{ member: string, algs: string[] }>} */
-  const algs = [{ member: 'id_token_signed_response_alg',
-                  algs: stsCrypto.JWS_SIGNING_ALGS },
-                { member: 'userinfo_signed_response_alg',
-                  algs: stsCrypto.JWS_SIGNING_ALGS.concat(['none']) }];
-  for (let i = 0; i < algs.length; i++) {
-    const value = asked[algs[i].member];
-    if (value !== undefined && value !== null &&
-        algs[i].algs.indexOf(String(value)) < 0) {
-      log.debug("Leaving oidcRegistrationProblem(). " + algs[i].member + ".");
-      return refusal('STS-REG-0185', algs[i].member, JSON.stringify(value) +
-        ' is not an algorithm this service signs with; it signs with ' +
-        algs[i].algs.join(', ') + '.');
-    }
+  const algProblem = signedResponseAlgProblem(asked);
+  if (algProblem) {
+    log.debug("Leaving oidcRegistrationProblem(). A signing alg.");
+    return algProblem;
   }
   if (asked.jwks !== undefined && asked.jwks_uri !== undefined) {
     log.debug("Leaving oidcRegistrationProblem(). jwks and jwks_uri.");
@@ -7572,26 +5683,10 @@ function oidcRegistrationProblem(values) {
     log.debug("Leaving oidcRegistrationProblem(). jwks_uri is not https.");
     return refusal('STS-REG-0186', 'jwks_uri', 'must be an https URL.');
   }
-  if (asked.default_max_age !== undefined &&
-      !(Number.isInteger(asked.default_max_age) &&
-        asked.default_max_age >= 0)) {
-    log.debug("Leaving oidcRegistrationProblem(). default_max_age.");
-    return refusal('STS-REG-0187', 'default_max_age', 'must be a ' +
-      'non-negative whole number of seconds.');
-  }
-  if (asked.require_auth_time !== undefined &&
-      typeof asked.require_auth_time !== 'boolean') {
-    log.debug("Leaving oidcRegistrationProblem(). require_auth_time.");
-    return refusal('STS-REG-0187', 'require_auth_time', 'must be a boolean.');
-  }
-  if (asked.default_acr_values !== undefined &&
-      !(Array.isArray(asked.default_acr_values) &&
-        asked.default_acr_values.every(function (one) {
-          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
-        }))) {
-    log.debug("Leaving oidcRegistrationProblem(). default_acr_values.");
-    return refusal('STS-REG-0187', 'default_acr_values', 'must be an array ' +
-      'of acr values.');
+  const defaultsProblem = requestDefaultsProblem(asked);
+  if (defaultsProblem) {
+    log.debug("Leaving oidcRegistrationProblem(). A request default.");
+    return defaultsProblem;
   }
   if (asked.initiate_login_uri !== undefined && !/^https:\/\/[^\s]+$/i.test(
       String(asked.initiate_login_uri))) {
@@ -7599,8 +5694,284 @@ function oidcRegistrationProblem(values) {
     return refusal('STS-REG-0188', 'initiate_login_uri', 'must be an https ' +
       'URL (OpenID Connect Registration section 2).');
   }
+  // #1300: what the sign-in and consent screens show — clientDisplayOf().
+  // Only the plain member: a language-tagged one (`logo_uri#ja`, section
+  // 2.1) is kept in the registration as it was sent and drawn nowhere.
+  for (let i = 0; i < CLIENT_DISPLAY_MEMBERS.length; i++) {
+    const member = CLIENT_DISPLAY_MEMBERS[i][0];
+    if (asked[member] === undefined) {
+      continue;
+    }
+    const displayProblem = clientDisplayUriProblem(member, asked[member]);
+    if (displayProblem) {
+      log.debug("Leaving oidcRegistrationProblem(). " + member + ".");
+      return { errorCode: 'STS-REG-0365', error: 'invalid_client_metadata',
+               member: member, description: displayProblem };
+    }
+  }
   log.debug("Leaving oidcRegistrationProblem(). Nothing refused.");
   return null;
+}
+
+// The two signing algorithms of Registration section 2, the one piece of
+// oidcRegistrationProblem() a lone member can be held to without the rest of
+// a registration (#290: the console and the API ask it about one attribute).
+/**
+ * Checks `id_token_signed_response_alg` and `userinfo_signed_response_alg`.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function signedResponseAlgProblem(values) {
+  log.debug("Entering signedResponseAlgProblem().");
+  const asked = values || {};
+  /** @type {Array<{ member: string, algs: string[] }>} */
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23), and
+  // no EdDSA while `keys.eddsaSigning` is off (#1292).
+  const algs = [{ member: 'id_token_signed_response_alg',
+                  algs: helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS) },
+                { member: 'userinfo_signed_response_alg',
+                  algs: helpers.signableJwsAlgs(USERINFO_SIGNING_ALGS) }];
+  for (let i = 0; i < algs.length; i++) {
+    const value = asked[algs[i].member];
+    if (value !== undefined && value !== null &&
+        algs[i].algs.indexOf(String(value)) < 0) {
+      log.debug("Leaving signedResponseAlgProblem(). " + algs[i].member +
+                ".");
+      return { errorCode: 'STS-REG-0185', error: 'invalid_client_metadata',
+               member: algs[i].member,
+               description: algs[i].member + ': ' + JSON.stringify(value) +
+                 ' is not an algorithm this service signs with; it signs ' +
+                 'with ' + algs[i].algs.join(', ') + '.' };
+    }
+  }
+  log.debug("Leaving signedResponseAlgProblem(). Nothing refused.");
+  return null;
+}
+
+// Registration section 2's three request defaults, the same way.
+/**
+ * Checks `default_max_age`, `require_auth_time` and `default_acr_values`.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function requestDefaultsProblem(values) {
+  log.debug("Entering requestDefaultsProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0187', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  if (asked.default_max_age !== undefined &&
+      !(registrationTypeFits('default_max_age', asked.default_max_age) &&
+        asked.default_max_age >= 0)) {
+    log.debug("Leaving requestDefaultsProblem(). default_max_age.");
+    return refusal('default_max_age', 'must be a non-negative whole number ' +
+      'of seconds.');
+  }
+  if (asked.require_auth_time !== undefined &&
+      !registrationTypeFits('require_auth_time', asked.require_auth_time)) {
+    log.debug("Leaving requestDefaultsProblem(). require_auth_time.");
+    return refusal('require_auth_time', 'must be a boolean.');
+  }
+  if (asked.default_acr_values !== undefined &&
+      !(registrationTypeFits('default_acr_values',
+                             asked.default_acr_values) &&
+        asked.default_acr_values.every(function (one) {
+          return registrationItemFits('default_acr_values', one) &&
+                 ACR_VALUE_SHAPE.test(one);
+        }))) {
+    log.debug("Leaving requestDefaultsProblem(). default_acr_values.");
+    return refusal('default_acr_values', 'must be an array of acr values.');
+  }
+  log.debug("Leaving requestDefaultsProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// #290: THE ELEVEN RESPONSE AND REQUEST-DEFAULT MEMBERS AS ATTRIBUTES.
+//
+// OpenID Connect Registration section 2's ID Token and UserInfo signing and
+// encryption members and its two request defaults, and JARM section 3's
+// three. Until #290 they lived only in `appRegistrationJson`, so neither the
+// console nor `/admin-api` could set them and a client created there could
+// not have an ES256 ID Token without registering again through RFC 7591 —
+// a hole in rule 7.
+//
+// ONE GRAMMAR AT EVERY DOOR. `clientResponseMetadataProblem()` is the
+// registration's own five checks, so a registration, a console write and an
+// `/admin-api` write refuse the same value; the attribute check reads the
+// entry's (or the create's) other members beside the one written, because
+// an `enc` without its `alg` is a rule about the pair. A CLEAR is never
+// refused, the rule every check here keeps.
+//
+// ONE PLACE THEY ARE READ. `clientConfigOf()` carries them under their
+// registration names, and every reader — the ID Token, the UserInfo
+// response, JARM, the back-channel Logout Token, the Command Token, step-up's
+// defaults and the `jwks_uri` prefetch — reads that, so an application with
+// no registration document behind it is honoured like one with. A
+// registration REPLACES them (`applyRegistrationFields()`), and
+// `registrationOf()` hands them back from the attributes.
+// ---------------------------------------------------------------------------
+/**
+ * The algorithms a UserInfo response may be signed with, `none` (plain JSON)
+ * included — Registration section 2's list as `oauth2.ts` signs it.
+ */
+const USERINFO_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS.concat(['none']);
+
+/**
+ * The attribute each #290 registration member is stored in.
+ */
+const CLIENT_RESPONSE_ATTRIBUTES = {
+  id_token_signed_response_alg: 'oauthIdTokenSignedResponseAlg',
+  id_token_encrypted_response_alg: 'oauthIdTokenEncryptedResponseAlg',
+  id_token_encrypted_response_enc: 'oauthIdTokenEncryptedResponseEnc',
+  userinfo_signed_response_alg: 'oauthUserinfoSignedResponseAlg',
+  userinfo_encrypted_response_alg: 'oauthUserinfoEncryptedResponseAlg',
+  userinfo_encrypted_response_enc: 'oauthUserinfoEncryptedResponseEnc',
+  authorization_signed_response_alg: 'oauthAuthorizationSignedResponseAlg',
+  authorization_encrypted_response_alg:
+    'oauthAuthorizationEncryptedResponseAlg',
+  authorization_encrypted_response_enc:
+    'oauthAuthorizationEncryptedResponseEnc',
+  default_acr_values: 'oauthDefaultAcrValues',
+  default_max_age: 'oauthDefaultMaxAge'
+};
+
+/**
+ * Checks a client's #290 members as a registration states them: the ID
+ * Token's and UserInfo's signing and encryption, JARM's, and the request
+ * defaults.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function clientResponseMetadataProblem(values) {
+  log.debug("Entering clientResponseMetadataProblem().");
+  const problem = idTokenEncryptionMetadataProblem(values) ||
+                  userinfoEncryptionMetadataProblem(values) ||
+                  jarmMetadataProblem(values) ||
+                  signedResponseAlgProblem(values) ||
+                  requestDefaultsProblem(values);
+  log.debug("Leaving clientResponseMetadataProblem(). " +
+            (problem ? problem.errorCode : 'Nothing refused.'));
+  return problem;
+}
+
+// One stored value as the registration member it stands for: the acr values
+// split into the list the member is, the max age a number where it is a
+// whole one (and left as text otherwise, for the grammar to refuse).
+/**
+ * Turns one #290 attribute value into the registration member's shape.
+ *
+ * @param member - the registration member
+ * @param text - the attribute's value, trimmed
+ * @returns the member's value
+ */
+function clientResponseMemberValue(member, text) {
+  log.debug("Entering clientResponseMemberValue(). " + member);
+  if (member === 'default_acr_values') {
+    log.debug("Leaving clientResponseMemberValue(). A list.");
+    return text.split(/\s+/).filter(Boolean);
+  }
+  if (member === 'default_max_age') {
+    log.debug("Leaving clientResponseMemberValue(). A number, or not.");
+    return /^\d{1,15}$/.test(text) ? Number(text) : text;
+  }
+  log.debug("Leaving clientResponseMemberValue(). A string.");
+  return text;
+}
+
+// The same question about ONE attribute written through the console or
+// `/admin-api`, with the entry's (or the create's) others read beside it.
+/**
+ * Checks one #290 attribute written through the console or the API, against
+ * the registration grammar, with the entry's other members beside it.
+ *
+ * @param attribute - the attribute
+ * @param value - the value written
+ * @param fields - the entry's (or the create's) other attributes
+ * @returns the refusal sentence, naming the attribute, or ''
+ */
+function clientResponseAttributeProblem(attribute, value, fields) {
+  log.debug("Entering clientResponseAttributeProblem(). attribute=" +
+            attribute);
+  const members = Object.keys(CLIENT_RESPONSE_ATTRIBUTES);
+  const member = members.filter(function (name) {
+    return CLIENT_RESPONSE_ATTRIBUTES[name] === attribute;
+  })[0];
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!member || !text) {
+    log.debug("Leaving clientResponseAttributeProblem(). Not asked.");
+    return '';
+  }
+  // The member written, and for an `enc` the `alg` it qualifies as the entry
+  // holds it — nothing else, so a malformed neighbour an `ldapmodify` left
+  // does not block an unrelated write.
+  const asked = {};
+  asked[member] = clientResponseMemberValue(member, text);
+  const pairs = { id_token_encrypted_response_enc:
+                    'id_token_encrypted_response_alg',
+                  userinfo_encrypted_response_enc:
+                    'userinfo_encrypted_response_alg',
+                  authorization_encrypted_response_enc:
+                    'authorization_encrypted_response_alg' };
+  if (pairs[member]) {
+    const alg = String(valuesOf((fields || {})[
+      CLIENT_RESPONSE_ATTRIBUTES[pairs[member]]])[0] || '').trim();
+    if (alg) {
+      asked[pairs[member]] = alg;
+    }
+  }
+  const problem = clientResponseMetadataProblem(asked);
+  log.debug("Leaving clientResponseAttributeProblem().");
+  return problem
+    ? problem.description.replace(problem.member,
+                                  CLIENT_RESPONSE_ATTRIBUTES[problem.member])
+    : '';
+}
+
+// The members as `clientConfigOf()` and `registrationOf()` hand them on: a
+// string for each algorithm that is set, the acr values as a list of the
+// well-formed ones, the max age as a number. A value the grammar refuses —
+// only an `ldapmodify` can leave one — is left out with a warning rather
+// than handed to a reader: an acr nobody can meet would refuse every sign-in
+// with nothing on the page to say why. The algorithms are handed on as they
+// are, because each reader refuses a bad one BY NAME at issuance.
+/**
+ * Reads a client's #290 attributes as registration members.
+ *
+ * @param fields - the entry's attributes
+ * @param identifier - the entry, for the warning
+ * @returns the members that are set, by registration name
+ */
+function clientResponseMembersOf(fields, identifier) {
+  log.debug("Entering clientResponseMembersOf().");
+  const out = {};
+  Object.keys(CLIENT_RESPONSE_ATTRIBUTES).forEach(function (member) {
+    const attribute = CLIENT_RESPONSE_ATTRIBUTES[member];
+    const text = String(valuesOf((fields || {})[attribute])[0] || '').trim();
+    if (!text) {
+      return;
+    }
+    const value = clientResponseMemberValue(member, text);
+    if ((member === 'default_acr_values' || member === 'default_max_age') &&
+        requestDefaultsProblem({ [member]: value })) {
+      log.warn(errorCodes.tag('STS-REG-0341') + 'applications: "' +
+               identifier + '" holds ' + JSON.stringify(text.slice(0, 60)) +
+               ' in ' + attribute + ', which is not a usable ' + member +
+               '; it is ignored.');
+      return;
+    }
+    out[member] = value;
+  });
+  log.debug("Leaving clientResponseMembersOf(). " +
+            Object.keys(out).length + " member(s).");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -7608,7 +5979,8 @@ function oidcRegistrationProblem(values) {
 // SUBJECT AND ITS ASSERTION ALGORITHM (#118, 2026-09-22).
 //
 // The SHAPE of three members, checked without a network — `subject_type` is
-// `public` or `pairwise`, `sector_identifier_uri` is an https URL, and
+// `public`, `pairwise` or `ephemeral` (#149), `sector_identifier_uri` is an
+// https URL, and
 // `token_endpoint_auth_signing_alg` is a JWS algorithm this service verifies
 // that the registered authentication method can use (never `none`, an HMAC
 // only for client_secret_jwt). And one rule about the set: a pairwise client
@@ -7670,7 +6042,9 @@ function cibaMetadataProblem(values) {
                    'https URL with no fragment (CIBA Core section 4).');
   }
   const alg = asked.backchannel_authentication_request_signing_alg;
-  if (alg !== undefined && (stsCrypto.JWS_ASYMMETRIC_ALGS || [])
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
+  if (alg !== undefined &&
+      helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS || [])
         .indexOf(String(alg)) < 0) {
     log.debug("Leaving cibaMetadataProblem(). The algorithm.");
     return refusal('backchannel_authentication_request_signing_alg', '"' +
@@ -7678,7 +6052,8 @@ function cibaMetadataProblem(values) {
                    'verifies (CIBA Core section 4 forbids none).');
   }
   const userCode = asked.backchannel_user_code_parameter;
-  if (userCode !== undefined && typeof userCode !== 'boolean') {
+  if (userCode !== undefined &&
+      !registrationTypeFits('backchannel_user_code_parameter', userCode)) {
     log.debug("Leaving cibaMetadataProblem(). Not a boolean.");
     return refusal('backchannel_user_code_parameter', 'must be a boolean.');
   }
@@ -7698,17 +6073,19 @@ function cibaOf(clientId) {
   log.debug("Entering cibaOf().");
   const who = String(clientId == null ? '' : clientId).trim();
   const found = who ? (forClientId(who) || get(who)) : null;
-  const fields = (found && found.fields) || {};
-  const one = function (name) {
-    return String(valuesOf(fields[name])[0] || '').trim();
+  // What it registered is its OAuthClient's (#1579).
+  const client = DomainClasses.OAuthClient.fromEntry(
+    (found && found.fields) || {});
+  const one = function (value) {
+    return String(valuesOf(value)[0] || '').trim();
   };
-  const mode = one('oauthBackchannelTokenDeliveryMode');
+  const mode = one(client.backchannelTokenDeliveryMode);
   log.debug("Leaving cibaOf(). " + (mode || 'none'));
   return {
     mode: ['poll', 'ping', 'push'].indexOf(mode) >= 0 ? mode : '',
-    endpoint: one('oauthBackchannelClientNotificationEndpoint'),
-    signingAlg: one('oauthBackchannelAuthenticationRequestSigningAlg'),
-    userCode: one('oauthBackchannelUserCodeParameter').toUpperCase() ===
+    endpoint: one(client.backchannelClientNotificationEndpoint),
+    signingAlg: one(client.backchannelAuthenticationRequestSigningAlg),
+    userCode: one(client.backchannelUserCodeParameter).toUpperCase() ===
       'TRUE'
   };
 }
@@ -7811,7 +6188,8 @@ function oidcSubjectMetadataProblem(values) {
   const members = Object.keys(OIDC_SUBJECT_ATTRIBUTES);
   for (let i = 0; i < members.length; i++) {
     const value = asked[members[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(members[i], value)) {
       log.debug("Leaving oidcSubjectMetadataProblem(). Not a string.");
       return refusal(members[i], 'must be a string.');
     }
@@ -7867,11 +6245,13 @@ function oidcSubjectMetadataProblem(values) {
   if (text.token_endpoint_auth_signing_alg) {
     const alg = text.token_endpoint_auth_signing_alg;
     const method = String(asked.token_endpoint_auth_method || '').trim();
-    if (stsCrypto.JWS_SIGNING_ALGS.indexOf(alg) < 0) {
+    // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
+    const verifiable = helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+    if (verifiable.indexOf(alg) < 0) {
       log.debug("Leaving oidcSubjectMetadataProblem(). Unknown algorithm.");
       return refusal('token_endpoint_auth_signing_alg', '"' + alg + '" is ' +
                      'not a JWS algorithm this service verifies (' +
-                     stsCrypto.JWS_SIGNING_ALGS.join(', ') + '); `none` is ' +
+                     verifiable.join(', ') + '); `none` is ' +
                      'never one (OIDC Core section 9).');
     }
     const hmac = /^HS/.test(alg);
@@ -7944,7 +6324,8 @@ function pushedAuthorizationMetadataProblem(values) {
   log.debug("Entering pushedAuthorizationMetadataProblem().");
   const asked = values || {};
   const value = asked.require_pushed_authorization_requests;
-  if (value !== undefined && value !== null && typeof value !== 'boolean') {
+  if (value !== undefined && value !== null &&
+      !registrationTypeFits('require_pushed_authorization_requests', value)) {
     log.debug("Leaving pushedAuthorizationMetadataProblem(). Not a boolean.");
     return { errorCode: 'STS-REG-0120', error: 'invalid_client_metadata',
              member: 'require_pushed_authorization_requests',
@@ -7960,8 +6341,9 @@ function pushedAuthorizationMetadataProblem(values) {
 // `/admin-api`: TRUE or FALSE, the directory's spelling. A CLEAR is never
 // refused.
 /**
- * Checks the PAR requirement attribute written through the console or the API:
- * TRUE or FALSE. A clear is never refused.
+ * Checks the PAR requirement attribute, and the FAPI 2.0 HTTP Signatures one
+ * (#178), written through the console or the API: TRUE or FALSE. A clear is
+ * never refused.
  *
  * @param attribute - the attribute's name
  * @param value - the value written
@@ -7971,7 +6353,10 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
   log.debug("Entering pushedAuthorizationAttributeProblem().");
   const text = String(value === undefined || value === null ? '' : value)
     .trim();
-  if (attribute !== 'oauthRequirePushedAuthorizationRequests' || !text) {
+  // FAPI 2.0 HTTP Signatures' flag (#178) is the same grammar, asked here so
+  // a write of it is refused for the same reason in the same two places.
+  if ((attribute !== 'oauthRequirePushedAuthorizationRequests' &&
+       attribute !== 'oauthHttpSignedRequests') || !text) {
     log.debug("Leaving pushedAuthorizationAttributeProblem(). Not asked.");
     return '';
   }
@@ -7998,6 +6383,45 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
  * @param value - the value written
  * @returns the refusal sentence, or ''
  */
+// ---------------------------------------------------------------------------
+// A REALM A SERVICE MAY OBTAIN S4U2SELF TICKETS FOR MUST BE ONE THIS REALM'S
+// TRUSTS ACCEPT (#430 Phase 3), checked at the write: a trust holding an
+// incoming key from it, or a transitive one whose namespace routes it
+// (`kerberos/krb5_trusts.ts`'s acceptsRealm()). The register is required
+// LAZILY — it is reached through the KDC, and a process with no Kerberos has
+// no trusts, which refuses every value. STS-REG-0362. A clear is never
+// refused.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a value of krb5S4uSelfRealm against the realm's trusts.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the refusal sentence, or ''
+ */
+function kerberosTrustAttributeProblem(attribute, value) {
+  log.debug("Entering kerberosTrustAttributeProblem(). " + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'krb5S4uSelfRealm' || !text) {
+    log.debug("Leaving kerberosTrustAttributeProblem(). Not checked here.");
+    return '';
+  }
+  let accepted = false;
+  try {
+    accepted = !!require('../kerberos/krb5_trusts').acceptsRealm(text);
+  } catch (e) {
+    log.debug("Caught in kerberosTrustAttributeProblem(): " +
+              ((e && e.message) || e));
+    accepted = false;
+  }
+  log.debug("Leaving kerberosTrustAttributeProblem(). " + accepted);
+  return accepted ? '' : attribute + ': "' + text + '" is not a Kerberos ' +
+    'realm this realm\'s trusts accept tickets from. Add a trust holding an ' +
+    'incoming key from it (ou=kerberosTrusts), or one a transitive trust ' +
+    'routes, first.';
+}
+
 function delegationAttributeProblem(attribute, value) {
   log.debug("Entering delegationAttributeProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -8014,7 +6438,7 @@ function delegationAttributeProblem(attribute, value) {
   }
   if ((attribute === 'appDelegationSemantics' ||
        attribute === 'appDefaultDelegationSemantics') &&
-      ['delegation', 'impersonation'].indexOf(text.toLowerCase()) < 0) {
+      DELEGATION_SEMANTICS.indexOf(text.toLowerCase()) < 0) {
     log.debug("Leaving delegationAttributeProblem(). Not a semantics.");
     return attribute + ': "' + text + '" is not delegation or ' +
            'impersonation.';
@@ -8030,6 +6454,132 @@ function delegationAttributeProblem(attribute, value) {
   }
   log.debug("Leaving delegationAttributeProblem(). Nothing refused.");
   return '';
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION MAY NOT NAME ITSELF IN ITS OWN DELEGATION LISTS (#459, rcbj
+// 2026-10-06). `appAllowedToDelegateTo` and `appAllowedToActOnBehalfOf` name
+// the OTHER party of a delegation — the target an intermediary may obtain a
+// token for, the intermediary a target accepts — and an application acting
+// for somebody towards itself is not a delegation at all: it is the
+// application's own token, which needs no entry here. A value naming the
+// entry it is on is therefore always a mistake, and it is refused where it is
+// written rather than left to read as a permission it does not grant.
+//
+// WHAT "ITSELF" MEANS is what `delegation_policy.ts`'s resolution would turn
+// the value back into this entry by: its `appIdentifier`, any identifier it
+// answers to in any family (`identifiersOf()` — a client_id, an entityID, an
+// SPN …), and an audience it registered (`oauthAudience`, which
+// `forAudience()` resolves). Compared EXACTLY, as every one of those lookups
+// compares — an identifier here is case-sensitive.
+//
+// BOTH MODES and every console and API door: `updateApplication()`'s `add`
+// and `set` (so `set-attribute` and `update-fields` too) and
+// `createApplication()`. An `ldapmodify` is not policed, as for every other
+// attribute here (`ldap/CLAUDE.md`), and READS ARE NOT FILTERED: a
+// self-reference written that way grants nothing, since the policy's question
+// is always about two different parties, so hiding it would only hide what
+// the entry holds. STS-REG-0335.
+//
+// `appMayAct` TOO (#461): the one party this application names as its
+// delegate, by DN. Naming its own entry is meaningless — a token about it
+// would say it may act for itself — so it is refused by the same code. Its
+// value is a DN and is compared as LDAP compares one (case, and the spaces
+// after a comma, do not matter) with the entry's DN, or, at a create, with
+// the DN the entry is about to be given (`cn=<labelFor()>,` the container).
+// ---------------------------------------------------------------------------
+/**
+ * The attributes whose values name another application of the realm, and
+ * may not name the application they are on (#459). The console's field grid
+ * offers an application search on each.
+ */
+const APPLICATION_REFERENCE_ATTRIBUTES = ['appAllowedToDelegateTo',
+                                          'appAllowedToActOnBehalfOf'];
+
+/**
+ * The list attributes the console's field grid offers a search on (#459),
+ * and what each searches: the realm's applications for the two lists of
+ * identifiers, its groups for `appDelegationSubjectGroup`, whose values are
+ * group DNs. One table, so the console and this module cannot disagree
+ * about which cells have one.
+ */
+//
+// `parties` (#461) is `appMayAct`'s: ONE person or application, by the DN of
+// its entry, searched as either kind and chosen to REPLACE the one value.
+const FIELD_SEARCHES = {
+  appAllowedToDelegateTo: 'applications',
+  appAllowedToActOnBehalfOf: 'applications',
+  appDelegationSubjectGroup: 'groups',
+  appMayAct: 'parties'
+};
+
+/**
+ * A DN as LDAP compares one, near enough for an equality between two DNs
+ * this directory wrote: lower case, no spaces around a comma.
+ *
+ * @param dn - the DN
+ * @returns the comparable form
+ */
+function comparableDn(dn) {
+  log.debug("Entering comparableDn().");
+  log.debug("Leaving comparableDn().");
+  return String(dn || '').trim().toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Checks that a value of `appAllowedToDelegateTo`,
+ * `appAllowedToActOnBehalfOf` or `appMayAct` does not name the application
+ * it is written on.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @param identifier - the application's identifier
+ * @param fields - the application's fields (what it answers to)
+ * @param entryDn - optional; the entry's DN, where it has one already
+ * @returns the refusal sentence, or ''
+ */
+function selfReferenceProblem(attribute, value, identifier, fields,
+                              entryDn) {
+  log.debug("Entering selfReferenceProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute === 'appMayAct' && text) {
+    const container = containerDn();
+    const ownDns = [entryDn || '',
+                    container ? 'cn=' + labelFor(identifier) + ',' +
+                                container : '']
+      .filter(function (one) { return !!one; })
+      .map(comparableDn);
+    if (ownDns.indexOf(comparableDn(text)) < 0) {
+      log.debug("Leaving selfReferenceProblem(). Another party.");
+      return '';
+    }
+    log.debug("Leaving selfReferenceProblem(). appMayAct names itself.");
+    return attribute + ': "' + text + '" is this application\'s own entry. ' +
+           'It names the OTHER party that may act for it, and an ' +
+           'application acting for itself is not a delegation.';
+  }
+  if (APPLICATION_REFERENCE_ATTRIBUTES.indexOf(attribute) < 0 || !text) {
+    log.debug("Leaving selfReferenceProblem(). Not asked.");
+    return '';
+  }
+  const own = [String(identifier || '').trim()];
+  identifiersOf(fields || {}).forEach(function (row) {
+    row.values.forEach(function (one) {
+      own.push(String(one).trim());
+    });
+  });
+  valuesOf((fields || {}).oauthAudience).forEach(function (one) {
+    own.push(String(one).trim());
+  });
+  if (own.indexOf(text) < 0) {
+    log.debug("Leaving selfReferenceProblem(). Another application.");
+    return '';
+  }
+  log.debug("Leaving selfReferenceProblem(). It names itself.");
+  return attribute + ': "' + text + '" names this application itself. ' +
+         'It lists the OTHER applications of a delegation, and an ' +
+         'application acting towards itself is not one.';
 }
 
 // ---------------------------------------------------------------------------
@@ -8105,7 +6655,9 @@ function mtlsMetadataProblem(values) {
                'Register the one subject the certificate will carry.' };
   }
   const flag = asked.tls_client_certificate_bound_access_tokens;
-  if (flag !== undefined && flag !== null && typeof flag !== 'boolean') {
+  if (flag !== undefined && flag !== null &&
+      !registrationTypeFits('tls_client_certificate_bound_access_tokens',
+                            flag)) {
     log.debug("Leaving mtlsMetadataProblem(). Not a boolean.");
     return { errorCode: 'STS-REG-0132', error: 'invalid_client_metadata',
              member: 'tls_client_certificate_bound_access_tokens',
@@ -8319,27 +6871,52 @@ function gnapMtlsTrustProblem(attribute, value) {
 //                                  `limits` member must meet; a type that
 //                                  declares none refuses `limits` (phase 5
 //                                  uses it)
+//
+// AND, SINCE #564 (application-scoped fine-grained authorization), the two
+// members that say how a detail of the type reaches the owning application's
+// XACML policy — read by `xacml/fga_map.ts`'s `mappingOf()`, required
+// LAZILY and only for a definition that carries one of them, so a definition
+// without either reads exactly as before:
+//
+//   xacml                          rows of member path -> attributeId,
+//                                  category, dataType, single or bag:
+//                                  AuthZEN's catalogue grammar, its
+//                                  reserved-identifier refusal shared rather
+//                                  than copied (`xacml/xacml_attribute_rows
+//                                  .ts`), so a detail can never forge a
+//                                  trusted attribute
+//   notForPolicy                   member paths deliberately NOT mapped
+//
+// The five common data fields need neither: a built-in row maps each.
 // ---------------------------------------------------------------------------
 /**
  * The RFC 9396 authorization details types this service defines itself.
  */
 const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
 
-const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
-                                                  'locations', 'schema',
-                                                  'actions', 'datatypes',
-                                                  'privileges', 'required',
-                                                  'interaction',
-                                                  'consentActions', 'bearer',
-                                                  'maxLifetimeS', 'acr',
-                                                  'derivableFrom',
-                                                  'introspectionClaims',
-                                                  'limits'];
+// THE DEFINITION'S MEMBERS ARE THE MODEL'S (#1579): `models/gnap/gnap.tsp`'s
+// `AccessTypeDefinition`, each with its citation, in the order a refusal
+// lists them. What each member MEANS is checked below, because a list's
+// grammar, a member naming another and a sentence a console shows are not
+// shapes.
+const ACCESS_TYPE_DEFINITION = ModelTables.file('gnap.json').members
+  .find(function (set) {
+    return set.id === 'access-type-definition';
+  });
+
+const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS =
+  ACCESS_TYPE_DEFINITION.list.map(function (member) {
+    return member.name;
+  });
 
 // The three values `interaction` may take (#432 phase 4; enforced by phase
-// 6): `always` asks the resource owner whatever the client is, `never` lets a
-// client that may skip the page skip it, `default` leaves it to the client.
-const ACCESS_TYPE_INTERACTIONS = ['always', 'default', 'never'];
+// 6), the model's: `always` asks the resource owner whatever the client is,
+// `never` lets a client that may skip the page skip it, `default` leaves it
+// to the client.
+const ACCESS_TYPE_INTERACTIONS = ACCESS_TYPE_DEFINITION.list
+  .find(function (member) {
+    return member.name === 'interaction';
+  }).values;
 
 // The members an introspection response already carries, which no type may
 // name as a claim to add beside them: RFC 7662 section 2.2's, RFC 9767
@@ -8445,7 +7022,11 @@ function authorizationDetailsTypeOf(value) {
                 required: [], interaction: 'default', consentActions: [],
                 bearer: null, maxLifetimeS: null, acr: '',
                 derivableFrom: [], introspectionClaims: [], limits: null,
-                validateLimits: null };
+                validateLimits: null,
+                // FINE-GRAINED AUTHORIZATION (#564): the type's rows and
+                // the members it deliberately leaves out, and the
+                // definition object itself, which `fga_map.ts` digests.
+                xacml: [], notForPolicy: [], source: null };
   if (!text) {
     out.problem = 'the definition is empty';
     log.debug("Leaving authorizationDetailsTypeOf(). Empty.");
@@ -8550,6 +7131,21 @@ function authorizationDetailsTypeOf(value) {
     log.debug("Leaving authorizationDetailsTypeOf(). A catalogue member.");
     return out;
   }
+  if (definition.xacml !== undefined ||
+      definition.notForPolicy !== undefined) {
+    // Lazily: the mapping is a library over the XACML engine's model, and
+    // this module is required long before the XACML family — and only a
+    // definition that asks for it pays for loading it.
+    const mapping = require('../xacml/fga_map').mappingOf(definition);
+    if (mapping.problem) {
+      out.problem = mapping.problem;
+      log.debug("Leaving authorizationDetailsTypeOf(). The FGA mapping.");
+      return out;
+    }
+    out.xacml = mapping.xacml;
+    out.notForPolicy = mapping.notForPolicy;
+  }
+  out.source = definition;
   log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
   return out;
 }
@@ -8823,7 +7419,7 @@ function authorizationDetailsMetadataProblem(values) {
              member: 'authorization_details_types',
              description: 'authorization_details_types: ' + description };
   };
-  if (!Array.isArray(types)) {
+  if (!registrationTypeFits('authorization_details_types', types)) {
     log.debug("Leaving authorizationDetailsMetadataProblem(). Not an array.");
     return refusal('must be an array of type names (RFC 9396 section 10).');
   }
@@ -8876,6 +7472,80 @@ function authorizationDetailsAttributeProblem(attribute, value) {
   }
   log.debug("Leaving authorizationDetailsAttributeProblem(). Not asked.");
   return null;
+}
+
+// FINE-GRAINED AUTHORIZATION'S COVERAGE AT THE WRITE (#564, P3): a type
+// definition written to an application whose `appFgaEnforced` is TRUE must
+// leave no member path uncovered (`xacml/fga_map.ts`'s `uncovered()`).
+// `fga_map.ts` is required LAZILY and only for an enforcing application —
+// the arrangement `authorizationDetailsTypeOf()` takes for the mapping
+// grammar — so nothing reaches for it unless an administrator switched
+// enforcement on, which no process without the console (the parent
+// project's in-process Kerberos jobs among them) ever does; and it is a pure
+// library that registers nothing and fills no slot, so loading it here
+// moves nothing. The lifecycle's slot (`setFgaLifecycle()`) is not the
+// door for this: the question is about a definition, not a policy.
+/**
+ * Refuses a type definition that would be uncovered on an application that
+ * enforces fine-grained authorization.
+ *
+ * @param fields - the application entry's fields as they stand
+ * @param value - the definition being written
+ * @returns the sentence naming the uncovered paths, or ''
+ */
+function fgaCoverageProblem(fields, value) {
+  log.debug("Entering fgaCoverageProblem().");
+  const enforced = String(valuesOf((fields || {}).appFgaEnforced)[0] || '')
+    .toUpperCase() === 'TRUE';
+  if (!enforced) {
+    log.debug("Leaving fgaCoverageProblem(). Not enforced.");
+    return '';
+  }
+  const definition = authorizationDetailsTypeOf(value);
+  if (definition.problem) {
+    // Refused by the STS-REG-0112 check above, which runs first.
+    log.debug("Leaving fgaCoverageProblem(). Not a definition.");
+    return '';
+  }
+  const paths = require('../xacml/fga_map').uncovered(definition);
+  log.debug("Leaving fgaCoverageProblem(). " + paths.length + " uncovered.");
+  return paths.length
+    ? 'oauthAuthorizationDetailsType: this application enforces ' +
+      'fine-grained authorization, and the type "' + definition.type +
+      '" would leave ' + paths.join(', ') + ' neither mapped (xacml) nor ' +
+      'listed in notForPolicy, so every detail carrying one would be ' +
+      'refused. Map each, list it in notForPolicy, or close the schema ' +
+      '(additionalProperties: false) where "*" is shown — or switch ' +
+      'enforcement off first.'
+    : '';
+}
+
+// AN AUTHZEN CATALOGUE ROW (#563), checked by the catalogue's own grammar —
+// the one place a row is read, so the write and every request read it alike.
+// A clear is never refused; the identifier list of `appAuthzenApplication`
+// is any non-empty value, as `appAllowedToDelegateTo`'s is.
+/**
+ * Checks an AuthZEN catalogue row written through the console or the API.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the error code and message, or null
+ */
+function authzenAttributeProblem(attribute, value) {
+  log.debug("Entering authzenAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'authzenAttribute' || !text) {
+    log.debug("Leaving authzenAttributeProblem(). Not asked.");
+    return null;
+  }
+  // Lazily: the catalogue is a library over the engine's model and this
+  // module is required long before the XACML family.
+  const parsed = require('../authzen/authzen_catalogue').parse(text);
+  log.debug("Leaving authzenAttributeProblem(). " +
+            (parsed.row ? 'A row.' : parsed.code));
+  return parsed.row ? null
+    : { code: parsed.code, message: attribute + ': ' + parsed.problem + '.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -9055,11 +7725,16 @@ function normaliseFields(value) {
       errors.push('"' + name + '" is not in the published schema. GET ' +
                   '/admin/ldap/applications lists every attribute an entry ' +
                   'may carry; adding one that is not there means adding a ' +
-                  'row to SCHEMA.attributes, not writing it through this.');
+                  'row to models/directory/application.tsp, not writing it through this.');
       code = code || 'STS-REG-0006';
       return;
     }
-    if (!row.editable) {
+    // oauthConfidential is derived from the method and is not editable
+    // (#466). A create may still state TRUE or FALSE when that is the
+    // determination, the same way a seed may state oauthScope. The
+    // agreement is checked in createApplication(), which knows the method
+    // this create will infer. A bad token is refused here.
+    if (!row.editable && name !== 'oauthConfidential') {
       errors.push('"' + name + '" cannot be given here. It is DERIVED — what ' +
                   'has happened to this application rather than what it may ' +
                   'do — and an entry created with one would be asserting a ' +
@@ -9076,6 +7751,16 @@ function normaliseFields(value) {
       code = code || 'STS-REG-0008';
       return;
     }
+    if (name === 'oauthConfidential') {
+      const stated = statedConfidential(values[0]);
+      if (!stated) {
+        errors.push(confidentialDisagreement(values[0], 'FALSE'));
+        code = code || 'STS-REG-0363';
+        return;
+      }
+      fields[name] = stated;
+      return;
+    }
     // THE ONE VALUE CHECK ON THIS WALK, and it is here rather than left to
     // updateApplication() because a create goes through this function and not
     // through that one. An entry created with a home page nothing may link to
@@ -9090,7 +7775,8 @@ function normaliseFields(value) {
     // which creates an entry WITH its permissions, would have done for any
     // document naming an unusable scope. The same rules and the same codes as
     // the update: the base absolute, each name a scope token, no name twice,
-    // and no permission on an entry with no base to identify it by.
+    // no operator error code in the name or the description (#1426), and no
+    // permission on an entry with no base to identify it by.
     if (name === 'oauthPermissionBaseUri') {
       const problem = permissionBaseProblem(values[0]);
       if (problem) {
@@ -9104,6 +7790,15 @@ function normaliseFields(value) {
       const permissionProblems = [];
       values.forEach(function (one) {
         const parsed = parsePermissionValue(one);
+        // Before the name check: its illegal-token sentence quotes the
+        // name, and a quoted code in a 400 body is sent (#1426).
+        const coded = permissionOperatorCodeProblem(parsed.name,
+                                                    parsed.description);
+        if (coded) {
+          permissionProblems.push(coded);
+          code = code || 'STS-REG-0367';
+          return;
+        }
         const problem = permissionNameProblem(parsed.name);
         if (problem) {
           permissionProblems.push(problem);
@@ -9160,6 +7855,22 @@ function normaliseFields(value) {
       if (problem) {
         errors.push(problem);
         code = code || 'STS-REG-0011';
+        return;
+      }
+    }
+    if (name === 'oauthInitiateLoginUri' && values[0]) {
+      const problem = initiateLoginUriProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0188';
+        return;
+      }
+    }
+    if (CLIENT_DISPLAY_ATTRIBUTES.indexOf(name) >= 0 && values[0]) {
+      const problem = clientDisplayUriProblem(name, values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0365';
         return;
       }
     }
@@ -9229,6 +7940,17 @@ function normaliseFields(value) {
       });
       return;
     }
+    // #706: a response type STORED in the console's word order, as the CORS
+    // origins above are stored normalised. The closed set is checked by
+    // createApplication() after this walk.
+    if (name === 'oauthResponseType' ||
+        name === 'oauthAllowedTokenResponseTypes') {
+      fields[name] = values.map(canonicalResponseType)
+                           .filter(function (one, index, all) {
+        return one !== '' && all.indexOf(one) === index;
+      });
+      return;
+    }
     // #110: a declared scope is a scope token, the rule oauthGlobalConsent
     // has, for its reason — a value that is not one can never be asked for.
     if (name === 'oauthAllowedScope') {
@@ -9286,6 +8008,18 @@ function normaliseFields(value) {
       code = code || 'STS-REG-0194';
       return;
     }
+    // The realms a service may obtain S4U2Self tickets for (#430), every
+    // value, against this realm's trusts.
+    const trustProblems = values.map(function (one) {
+      return kerberosTrustAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (trustProblems.length) {
+      trustProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0362';
+      return;
+    }
     // RFC 9126's one.
     const pushedProblem = pushedAuthorizationAttributeProblem(name, values[0]);
     if (pushedProblem) {
@@ -9316,11 +8050,30 @@ function normaliseFields(value) {
       code = code || mtlsProblem.code;
       return;
     }
+    // #290's eleven, read against the create's other members.
+    const responseProblem = clientResponseAttributeProblem(name, values[0],
+                                                           asked);
+    if (responseProblem) {
+      errors.push(responseProblem);
+      code = code || 'STS-REG-0340';
+      return;
+    }
     // RFC 9470's two.
     const stepUpProblem = stepUpAttributeProblem(name, values[0]);
     if (stepUpProblem) {
       errors.push(stepUpProblem.message);
       code = code || stepUpProblem.code;
+      return;
+    }
+    // AuthZEN's catalogue (#563), every value.
+    const authzenProblems = values.map(function (one) {
+      return authzenAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (authzenProblems.length) {
+      authzenProblems.forEach(function (one) { errors.push(one.message); });
+      code = code || authzenProblems[0].code;
       return;
     }
     // RFC 9396's two, every value.
@@ -9369,7 +8122,9 @@ function normaliseFields(value) {
 // made of:
 //
 //   readApplication(identifier)   the entry, or null
-//   writeApplication(identifier, attributes)  create or update it
+//   writeApplication(identifier, attributes, { owned })  create or update
+//                                 it, replacing the owned attributes and
+//                                 keeping every other one (#1230)
 //   allApplications()             every entry, in tree order
 //   countApplications()           how many there are, for the cap message
 //
@@ -9566,8 +8321,8 @@ function fromGeneralizedTime(value) {
 function shortName(identifier) {
   log.debug("Entering shortName().");
   log.debug("Leaving shortName().");
-  return 'app-' + crypto.createHash('sha256').update(String(identifier), 'utf8')
-    .digest('hex').slice(0, 12);
+  return 'app-' + stsCrypto.digest('sha256', String(identifier), 'hex')
+    .slice(0, 12);
 }
 
 const MAX_RDN_LENGTH = 64;
@@ -9627,10 +8382,15 @@ function attributesFor(record) {
     appFirstSeen: [generalizedTime(record.firstAt)],
     appLastSeen: [generalizedTime(record.lastAt)],
     appAuthentications: [String(record.authentications)],
-    appSessions: [String(record.sessions.length)],
-    appUsers: [String(record.users.length)],
+    // THE COUNTS, NOT THE LENGTH OF A LIST (2026-10-21): `seen()` sized
+    // `sessions` and `users` to the counts as sparse arrays so this read
+    // their length — on 8081, two arrays of 345,000 holes allocated at every
+    // sign-in for the load test's one client, and copied by every
+    // `copyRecord()`. The counts are the numbers; the lists stay empty.
+    appSessions: [String(countOf(record, 'sessionCount', 'sessions'))],
+    appUsers: [String(countOf(record, 'userCount', 'users'))],
     appRegistered: [record.registered ? 'TRUE' : 'FALSE'],
-    description: record.descriptions.slice(0)
+    description: record.description ? [record.description] : []
   };
   // The protocol-specific half, from the table. Anything not in the table was
   // refused at setField() and cannot get here.
@@ -9658,6 +8418,47 @@ function attributesFor(record) {
   log.debug("Leaving attributesFor(). " + Object.keys(attributes).length + " " +
       "attribute(s).");
   return attributes;
+}
+
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTES THIS REGISTRY OWNS ON AN ENTRY (#1230), handed to the store
+// with every write so that it can tell the two kinds of attribute on an
+// application's entry apart.
+//
+// `writeApplication()` REPLACES the attributes named here from the record,
+// which is what lets a value removed with ldapmodify stay removed (its
+// comment argues it). Everything ELSE on the entry was written by a door
+// that does not go through this module — a certificate stored by
+// `add-certificate` (#1061, #1227), an attribute an operator added with
+// ldapmodify — and the record never carried it, so a replace erased it at
+// the next sighting. The store keeps those now, and needs this list to know
+// which they are.
+//
+// LOWER-CASED BASE NAMES: LDAP attribute descriptions are case-insensitive
+// (RFC 4512 section 2.5) and an option (`;binary`, `;lang-en`) does not make
+// another attribute, so `userCertificate;binary` is owned exactly when
+// `userCertificate` is. `objectClass` is owned too: `attributesFor()` writes
+// it. Built once, because SCHEMA does not change while the process runs.
+// ---------------------------------------------------------------------------
+let ownedNames = null;
+
+/**
+ * Returns the attributes this registry writes onto an application's entry,
+ * as lower-cased base names (no LDAP options).
+ *
+ * @returns the names
+ */
+function ownedAttributeNames() {
+  log.debug("Entering ownedAttributeNames().");
+  if (!ownedNames) {
+    const names = ['objectclass'];
+    SCHEMA.attributes.forEach(function (row) {
+      names.push(String(row.name).split(';')[0].toLowerCase());
+    });
+    ownedNames = Object.freeze(Array.from(new Set(names)));
+  }
+  log.debug("Leaving ownedAttributeNames(). " + ownedNames.length + ".");
+  return ownedNames;
 }
 
 // Attribute names arrive from the directory in one of TWO spellings and every
@@ -9711,7 +8512,7 @@ function recordFromAttributes(attributes) {
     name: firstValue(attrs, 'appName'),
     kinds: allValues(attrs, 'appKind'),
     protocols: allValues(attrs, 'appProtocol'),
-    descriptions: allValues(attrs, 'description'),
+    description: firstValue(attrs, 'description') || '',
     firstAt: fromGeneralizedTime(firstValue(attrs, 'appFirstSeen')),
     lastAt: fromGeneralizedTime(firstValue(attrs, 'appLastSeen')),
     authentications: parseInt(firstValue(attrs, 'appAuthentications') || '0',
@@ -9742,6 +8543,11 @@ function recordFromAttributes(attributes) {
     }
     record.fields[row.name] = row.kind === 'multi' ? values : values[0];
   });
+  // What its credentials were when it was read, for save() to compare with
+  // (#221 P5). Not enumerable: it is not a field and never written.
+  Object.defineProperty(record, CREDENTIAL_SNAPSHOT, {
+    value: credentialSnapshotOf(record.fields), enumerable: false,
+    writable: true, configurable: true });
   log.debug("Leaving recordFromAttributes(). identifier=" + record.identifier);
   return record;
 }
@@ -9755,7 +8561,7 @@ function blankRecord(identifier) {
     name: String(identifier),
     kinds: [],
     protocols: [],
-    descriptions: [],
+    description: '',
     firstAt: 0,
     lastAt: 0,
     authentications: 0,
@@ -9782,29 +8588,546 @@ function blankRecord(identifier) {
 function load(identifier) {
   log.debug("Entering load().");
   const backing = store();
+  const version = backing && typeof backing.applicationsVersion === 'function'
+    ? backing.applicationsVersion() : null;
+  if (version === null || version === undefined) {
+    log.debug("Leaving load(). No clock.");
+    return loadNow(identifier);
+  }
+  const held = loadMemo();
+  if (held.version !== version) {
+    held.version = version;
+    held.byIdentifier.clear();
+  }
+  const key = String(identifier);
+  let kept = held.byIdentifier.get(key);
+  if (kept) {
+    loadCount.hit();
+  } else {
+    loadCount.miss();
+    kept = loadNow(identifier);
+    if (held.byIdentifier.size >= MAX_LOAD_MEMO) {
+      held.byIdentifier.clear();
+    }
+    held.byIdentifier.set(key, kept);
+  }
+  log.debug("Leaving load(). " + (kept.known ? 'Known.' : 'Not known.'));
+  return { record: copyRecord(kept.record), known: kept.known,
+           entry: copyEntry(kept.entry) };
+}
+
+// What `load()` read before #758, every call: one entry out of the directory
+// and its attributes parsed into a record.
+function loadNow(identifier) {
+  log.debug("Entering loadNow().");
+  const backing = store();
   if (!backing) {
-    log.debug("Leaving load().");
+    log.debug("Leaving loadNow(). No store.");
     return { record: blankRecord(identifier), known: false, entry: null };
   }
   const entry = backing.readApplication(String(identifier));
   if (!entry) {
-    log.debug("Leaving load().");
+    log.debug("Leaving loadNow(). Not there.");
     return { record: blankRecord(identifier), known: false, entry: null };
   }
-  log.debug("Leaving load().");
+  log.debug("Leaving loadNow().");
   return { record: recordFromAttributes(entry.attributes), known: true,
            entry: entry };
 }
 
-function save(record) {
+// ---------------------------------------------------------------------------
+// ONE APPLICATION, KEPT BY THE REGISTRY'S CLOCK (#758).
+//
+// `load()` read the entry out of the directory and parsed it on every call,
+// and a sign-in calls it a few dozen times — `clientConfigOf()` at each of
+// the authorize, resume and token steps, `settingFor()`, the role and
+// issuance checks: about 5% of a request worker under a sign-in load. The
+// answer is kept per realm by `applicationsVersion()`, the clock the
+// listing below is kept by (every write under ou=applications, a write
+// naming no DN, a row another process wrote that this one applied), so the
+// first call after the clock moves reads the directory exactly as before
+// and the rest are answered from that read. Absence is kept too (`known:
+// false`), by the same clock.
+//
+// **EVERY CALLER STILL GETS A RECORD OF ITS OWN** (`copyRecord()`): writers
+// change the record and hand it to `save()`, so the kept one is never handed
+// out — the listing's rule. The credential snapshot `save()` compares with
+// is copied with it.
+//
+// Bounded at MAX_LOAD_MEMO identifiers per realm per clock: past it the
+// kept answers are dropped and read again.
+// ---------------------------------------------------------------------------
+const MAX_LOAD_MEMO = 256;
+
+const loadMemo = realms.keyed(function () {
+  return { version: null, byIdentifier: new Map() };
+});
+
+// Described to `/admin/caches` (rule 3ap).
+const loadCount = cacheRegistry.register({
+  name: 'applications.load',
+  title: 'Application entries read by identifier',
+  description: 'One application\'s entry and its parsed record, by ' +
+    'identifier, so the checks a sign-in makes do not read and parse the ' +
+    'entry per question.',
+  owner: 'common/applications.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return MAX_LOAD_MEMO;
+  },
+  bound: 'Enforced: MAX_LOAD_MEMO (' + MAX_LOAD_MEMO + ') identifiers per ' +
+    'realm; past it the kept answers are dropped.',
+  lifetime: function () {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next read then asks the directory again.';
+  },
+  entries: function () {
+    const out = [];
+    loadMemo.existing().forEach(function (held, id) {
+      held.byIdentifier.forEach(function (kept, identifier) {
+        out.push({ realm: id, key: identifier, validUntil: null,
+                   valid: true, basis: 'ou=applications version' });
+      });
+    });
+    return out;
+  }
+});
+
+// A record's count of sessions or users: the counter where it has one, the
+// length of an older record's list otherwise.
+function countOf(record, counter, list) {
+  log.debug("Entering countOf().");
+  const n = Number(record && record[counter]);
+  log.debug("Leaving countOf().");
+  if (Number.isFinite(n) && n >= 0) {
+    return n;
+  }
+  return Array.isArray(record && record[list]) ? record[list].length : 0;
+}
+
+// A record that shares nothing with the one kept: the lists copied, each
+// field's values copied, and the credential snapshot carried, as
+// `recordFromAttributes()` would have made it.
+function copyRecord(record) {
+  log.debug("Entering copyRecord().");
+  const out = Object.assign({}, record, {
+    kinds: (record.kinds || []).slice(0),
+    protocols: (record.protocols || []).slice(0),
+    sessions: (record.sessions || []).slice(0),
+    users: (record.users || []).slice(0),
+    fields: copyValues(record.fields)
+  });
+  const snapshot = record[CREDENTIAL_SNAPSHOT];
+  if (snapshot) {
+    Object.defineProperty(out, CREDENTIAL_SNAPSHOT, {
+      value: JSON.parse(JSON.stringify(snapshot)), enumerable: false,
+      writable: true, configurable: true });
+  }
+  log.debug("Leaving copyRecord().");
+  return out;
+}
+
+// The entry `readApplication()` answered, with its attributes copied.
+function copyEntry(entry) {
+  log.debug("Entering copyEntry().");
+  if (!entry) {
+    log.debug("Leaving copyEntry(). None.");
+    return null;
+  }
+  const out = Object.assign({}, entry, {
+    attributes: copyValues(entry.attributes),
+    operational: Array.isArray(entry.operational)
+      ? entry.operational.slice(0) : entry.operational
+  });
+  log.debug("Leaving copyEntry().");
+  return out;
+}
+
+function save(record, how) {
   log.debug("Entering save().");
   const backing = store();
   if (!backing) {
     log.debug("Leaving save().");
     return false;
   }
+  // WITH THE NAMES IT OWNS (#1230): the store replaces those and keeps
+  // whatever else is on the entry. See ownedAttributeNames().
+  const written = !!backing.writeApplication(record.identifier,
+                                             attributesFor(record), {
+                                               owned: ownedAttributeNames(),
+                                               observation: !!(how &&
+                                                 how.observation)
+                                             });
+  if (written && !(how && how.quiet)) {
+    noteCredentialWrite(record, how);
+  }
   log.debug("Leaving save().");
-  return !!backing.writeApplication(record.identifier, attributesFor(record));
+  return written;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S CREDENTIALS CHANGED, SAID OVER CAEP (#221 P5).
+//
+// #145's rule is that a credential change is sent from the ONE function every
+// door writes it through, and for an application entry that function is
+// save(): the console's and `/admin-api`'s attribute edits
+// (updateApplication()), the four client-secret acts (finishClientSecretWrite),
+// the expiry sweep, RFC 7591 / 7592 registration and its update, `/admin/pki`'s
+// key pair issue and upload (storeIssuedJwtKeyPair() and the upload's
+// writes, each through updateApplication()), a SAML provider's metadata, and
+// the seeded applications all end there. So the record carries what its
+// credentials were when it was READ (recordFromAttributes() hangs the
+// snapshot on it), save() compares that with what it is writing, and each
+// credential that moved is one CAEP `credential-change` about the
+// APPLICATION (`ssf/account_signals.ts`, `application:`):
+//
+//   credential                        credential_type (urn:iya:sts:...)
+//   oauthClientSecret (by secret id)  ...:credential-type:client-secret
+//   oauthJwks / oauthJwksUri          ...:credential-type:jwk
+//   the RFC 7523 key pair               x509 (with its certificate), else jwk
+//   the RFC 7522 key pair, and its
+//     registered signing certificate    x509
+//   samlSigningCertificate (each),
+//     samlEncryptionCertificate         x509
+//
+// `change_type`: a credential that appears is `create`, one that goes is
+// `revoke`, one replaced is `update`. Client secrets are read by id: a new id
+// alone is `create` (add-secret), an id gone alone `revoke` (remove-secret,
+// the sweep), and a new id beside one gone or one whose expiry moved is
+// `update` (regenerate, and a rotation, which shortens the live ones).
+//
+// **ONE EVENT PER ACT, NOT PER WRITE.** A key pair issued on `/admin/pki` is
+// seven updateApplication() calls, each a save(); reported per save it would
+// be a `jwk` change and then an `x509` one about the same key. So a write is
+// QUEUED, keyed by realm and application, keeping the FIRST snapshot and the
+// LAST state, and the queue is flushed once the door's synchronous act has
+// finished (a microtask — `oauth-oidc/oauth_grant_signals.ts`'s arrangement;
+// nothing waits and nothing repeats).
+//
+// **CHEAP ON THE HOT PATH.** seen() saves on every authentication; the
+// snapshot is the raw stored strings, compared as they are, and a sealed
+// client secret is opened only when its stored values moved.
+//
+// Nothing here throws into the write, and nothing is sent where Shared
+// Signals is not loaded (account_signals.ts answers that). `how.actor`
+// (the console's or the API's principal) makes the initiating entity
+// `admin`; a write with no actor — a registration, the sweep, a seed — is
+// `system`. ONE WRITE IS QUIET: the seeding of this service's own
+// applications (seedInternalApplication()), when a realm or the process
+// starts — the service provisioning its own clients, which no receiver
+// could have known before they existed and which a development process
+// would otherwise announce on every start. A change to one AFTER it is
+// seeded is announced like any other. An ACME, EST or SCEP certificate for
+// an application is NOT here
+// (`appEnrolledCertificate`): `common/cert_enrollment.ts` reports it, with
+// its own reasons, as it does a person's.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_SNAPSHOT = Symbol.for('sts.applications.credentialSnapshot');
+
+// The single-valued credential attributes, compared as strings, and the
+// multi-valued certificate one, compared as a set.
+const SNAPSHOT_SINGLE = ['oauthJwks', 'oauthJwksUri', 'oauthAssertionJwks',
+  'oauthAssertionCertificate', 'oauthSamlAssertionCertificate',
+  'oauthSamlAssertionSigningCertificate', 'samlEncryptionCertificate'];
+
+// realm id + '\n' + identifier -> { realmId, identifier, before, after, how }
+const pendingCredentialWrites = new Map();
+let credentialFlushQueued = false;
+
+/**
+ * Returns what an application's credential attributes hold, as the raw
+ * stored strings, for save() to compare.
+ *
+ * @param fields - the record's fields
+ * @returns the snapshot
+ */
+function credentialSnapshotOf(fields) {
+  log.debug("Entering credentialSnapshotOf().");
+  const f = fields || {};
+  const out = { secrets: valuesOf(f.oauthClientSecret).map(String).sort(),
+                samlSigning: valuesOf(f.samlSigningCertificate).map(String)
+                  .sort() };
+  SNAPSHOT_SINGLE.forEach(function (name) {
+    out[name] = String(valuesOf(f[name])[0] || '');
+  });
+  log.debug("Leaving credentialSnapshotOf().");
+  return out;
+}
+
+// Queues the comparison save() makes, merging writes of one act.
+function noteCredentialWrite(record, how) {
+  log.debug("Entering noteCredentialWrite().");
+  try {
+    const before = record[CREDENTIAL_SNAPSHOT] ||
+      credentialSnapshotOf({});
+    const after = credentialSnapshotOf(record.fields);
+    // The record has now been written as `after`; a second save() of the
+    // same object compares with that.
+    Object.defineProperty(record, CREDENTIAL_SNAPSHOT, {
+      value: after, enumerable: false, writable: true, configurable: true });
+    const realmId = String(realms.currentId() || '');
+    const key = realmId + '\n' + String(record.identifier);
+    const held = pendingCredentialWrites.get(key);
+    if (!held && JSON.stringify(before) === JSON.stringify(after)) {
+      log.debug("Leaving noteCredentialWrite(). No credential moved.");
+      return;
+    }
+    pendingCredentialWrites.set(key, {
+      realmId: realmId, identifier: String(record.identifier),
+      before: held ? held.before : before, after: after,
+      how: Object.assign({}, held ? held.how : {}, how || {}) });
+    if (!credentialFlushQueued) {
+      credentialFlushQueued = true;
+      Promise.resolve().then(flushCredentialWrites).catch(function (e) {
+        log.debug("Caught in noteCredentialWrite(): " +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: the ' +
+                 'credential-change of an application could not be ' +
+                 'announced: ' + ((e && e.message) || e));
+      });
+    }
+  } catch (e) {
+    log.debug("Caught in noteCredentialWrite(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: whether "' +
+             record.identifier + '"\'s credentials moved could not be ' +
+             'decided, so no credential-change is sent: ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving noteCredentialWrite(). Queued.");
+}
+
+// ---------------------------------------------------------------------------
+// A WRITE THAT DID NOT COME THROUGH save() (#221, the gap P5 left): an LDAP
+// add or modify of an application entry over the socket, which the directory
+// commits itself. The directory hands the entry's attributes as they were and
+// as they are, and the SAME comparison save() makes decides what moved — one
+// queue, so an act that also passed through save() is announced once. A
+// delete is not handed here: the application is gone, and RISC
+// account-purged (`noteApplicationRemoved()` in ldap_server.js) says so.
+// ---------------------------------------------------------------------------
+/**
+ * Announces the credential changes of an application entry written over the
+ * LDAP socket, compared as `save()` compares them.
+ *
+ * @param before - the entry's attributes before the write, or null for an add
+ * @param after - its attributes after the write
+ * @param how - `actor` (the bound DN, which makes the entity `admin`) and
+ *   `via`
+ */
+function noteDirectoryWrite(before, after, how) {
+  log.debug("Entering noteDirectoryWrite().");
+  try {
+    const now = recordFromAttributes(after || {});
+    const was = before ? recordFromAttributes(before) : null;
+    if (!now.identifier && was) {
+      now.identifier = was.identifier;
+    }
+    if (!now.identifier) {
+      log.debug("Leaving noteDirectoryWrite(). No identifier.");
+      return;
+    }
+    Object.defineProperty(now, CREDENTIAL_SNAPSHOT, {
+      value: was ? credentialSnapshotOf(was.fields)
+                 : credentialSnapshotOf({}),
+      enumerable: false, writable: true, configurable: true });
+    noteCredentialWrite(now, how || {});
+  } catch (e) {
+    log.debug("Caught in noteDirectoryWrite(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: whether an ' +
+             'LDAP write moved an application\'s credentials could not be ' +
+             'decided, so no credential-change is sent: ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving noteDirectoryWrite().");
+}
+
+// Sends what the queued writes changed, each inside its realm. Answers the
+// number of events handed over (for a test).
+/**
+ * Announces every queued application credential change, each inside its own
+ * realm. Called once the act that queued them has finished.
+ *
+ * @returns the number of credential-change events handed over
+ */
+function flushCredentialWrites() {
+  log.debug("Entering flushCredentialWrites().");
+  credentialFlushQueued = false;
+  const due = Array.from(pendingCredentialWrites.values());
+  pendingCredentialWrites.clear();
+  let handed = 0;
+  due.forEach(function (one) {
+    const realm = realms.get(one.realmId);
+    const run = function () {
+      log.debug("Entering run(). " + one.identifier);
+      handed += announceCredentialChanges(one.identifier, one.before,
+                                          one.after, one.how);
+      log.debug("Leaving run().");
+    };
+    try {
+      if (realm) {
+        realms.run(realm, run);
+      } else {
+        run();
+      }
+    } catch (e) {
+      log.debug("Caught in flushCredentialWrites(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: the ' +
+               'credential-change of "' + one.identifier + '" could not be ' +
+               'announced: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving flushCredentialWrites(). " + handed + " event(s).");
+  return handed;
+}
+
+// The ids and expiries of a list of stored client secret values, opened.
+function secretIdsOf(stored) {
+  log.debug("Entering secretIdsOf().");
+  const out = {};
+  (stored || []).map(parseClientSecretValue).forEach(function (one) {
+    if (one) {
+      out[one.id] = one.expiresAt || 0;
+    }
+  });
+  log.debug("Leaving secretIdsOf().");
+  return out;
+}
+
+// create / update / revoke for a credential that was `from` and is `to`.
+function changeTypeOf(from, to) {
+  log.debug("Entering changeTypeOf().");
+  const out = !from && to ? 'create' : (from && !to ? 'revoke'
+    : (from !== to ? 'update' : ''));
+  log.debug("Leaving changeTypeOf(). " + (out || 'none'));
+  return out;
+}
+
+/**
+ * Compares two credential snapshots of an application and reports each
+ * credential that moved as a CAEP credential-change about the application.
+ *
+ * @param identifier - the application's identifier
+ * @param before - the snapshot before the act
+ * @param after - the snapshot after it
+ * @param how - `actor`, or `initiatingEntity`
+ * @returns the number of events handed over
+ */
+function announceCredentialChanges(identifier, before, after, how) {
+  log.debug("Entering announceCredentialChanges(). " + identifier);
+  const b = before || credentialSnapshotOf({});
+  const a = after || credentialSnapshotOf({});
+  const said = how || {};
+  const entity = said.initiatingEntity
+    ? String(said.initiatingEntity) : (said.actor ? 'admin' : 'system');
+  const signals = require('../ssf/account_signals');
+  const base = { application: String(identifier), initiatingEntity: entity,
+                 via: String(said.via || 'the application registry') };
+  const changes = [];
+  // CLIENT SECRETS, by id — opened only when the stored values moved.
+  if (JSON.stringify(b.secrets) !== JSON.stringify(a.secrets)) {
+    const was = secretIdsOf(b.secrets);
+    const now = secretIdsOf(a.secrets);
+    const added = Object.keys(now).filter(function (id) {
+      return !(id in was);
+    });
+    const removed = Object.keys(was).filter(function (id) {
+      return !(id in now);
+    });
+    const moved = Object.keys(now).some(function (id) {
+      return (id in was) && was[id] !== now[id];
+    });
+    const type = added.length && (removed.length || moved) ? 'update'
+      : (added.length ? 'create' : (removed.length ? 'revoke' : ''));
+    if (type) {
+      changes.push({ credentialType: signals.CLIENT_SECRET_CREDENTIAL_TYPE,
+        changeType: type,
+        friendlyName: 'client secret ' + (added.length ? added : removed)
+          .join(', '),
+        reasonAdmin: 'A client secret of the application ' + identifier +
+          ' was ' + (type === 'create' ? 'added'
+            : type === 'revoke' ? 'removed' : 'replaced') + '.' });
+    }
+  }
+  // THE REGISTERED KEY SET: jwks or jwks_uri, one credential.
+  const keysWere = b.oauthJwks || b.oauthJwksUri;
+  const keysAre = a.oauthJwks || a.oauthJwksUri;
+  const keysType = changeTypeOf(keysWere ? b.oauthJwks + '\n' +
+                                b.oauthJwksUri : '',
+                                keysAre ? a.oauthJwks + '\n' +
+                                a.oauthJwksUri : '');
+  if (keysType) {
+    changes.push({ credentialType: signals.JWK_CREDENTIAL_TYPE,
+      changeType: keysType,
+      friendlyName: (a.oauthJwksUri || (!a.oauthJwks && b.oauthJwksUri))
+        ? 'jwks_uri' : 'jwks',
+      reasonAdmin: 'The registered keys (jwks / jwks_uri) of the ' +
+        'application ' + identifier + ' changed.' });
+  }
+  // THE RFC 7523 KEY PAIR: x509 where a certificate is beside it.
+  const pairWas = b.oauthAssertionCertificate || b.oauthAssertionJwks;
+  const pairIs = a.oauthAssertionCertificate || a.oauthAssertionJwks;
+  const pairType = changeTypeOf(pairWas, pairIs);
+  if (pairType) {
+    const pem = pairType === 'revoke' ? b.oauthAssertionCertificate
+                                      : a.oauthAssertionCertificate;
+    changes.push({ pem: pem,
+      credentialType: pem ? 'x509' : signals.JWK_CREDENTIAL_TYPE,
+      changeType: pairType, friendlyName: 'RFC 7523 signing key pair',
+      reasonAdmin: 'The RFC 7523 signing key pair of the application ' +
+        identifier + ' was ' + (pairType === 'create' ? 'issued'
+          : pairType === 'revoke' ? 'removed' : 'replaced') + '.' });
+  }
+  // EACH CERTIFICATE-SHAPED CREDENTIAL, one by one.
+  [['oauthSamlAssertionCertificate', 'RFC 7522 signing key pair'],
+   ['oauthSamlAssertionSigningCertificate',
+    'RFC 7522 registered signing certificate'],
+   ['samlEncryptionCertificate', 'SAML encryption certificate']]
+    .forEach(function (pair) {
+      const type = changeTypeOf(b[pair[0]], a[pair[0]]);
+      if (type) {
+        changes.push({ pem: type === 'revoke' ? b[pair[0]] : a[pair[0]],
+          credentialType: 'x509', changeType: type, friendlyName: pair[1],
+          reasonAdmin: 'The ' + pair[1] + ' of the application ' +
+            identifier + ' changed.' });
+      }
+    });
+  a.samlSigning.filter(function (one) {
+    return b.samlSigning.indexOf(one) < 0;
+  }).forEach(function (one) {
+    changes.push({ pem: one, credentialType: 'x509', changeType: 'create',
+      friendlyName: 'SAML signing certificate',
+      reasonAdmin: 'A SAML signing certificate was registered for the ' +
+        'application ' + identifier + '.' });
+  });
+  b.samlSigning.filter(function (one) {
+    return a.samlSigning.indexOf(one) < 0;
+  }).forEach(function (one) {
+    changes.push({ pem: one, credentialType: 'x509', changeType: 'revoke',
+      friendlyName: 'SAML signing certificate',
+      reasonAdmin: 'A SAML signing certificate of the application ' +
+        identifier + ' was removed.' });
+  });
+  changes.forEach(function (change) {
+    const notice = Object.assign({}, base, change, {
+      reasonUser: 'A credential of this application changed.' });
+    // A SAML certificate is often stored as bare base64 DER (the metadata's
+    // own form); the identifiers are read off a PEM.
+    if (change.pem && String(change.pem).indexOf('-----BEGIN') < 0) {
+      notice.pem = '-----BEGIN CERTIFICATE-----\n' +
+        (String(change.pem).replace(/\s+/g, '').match(/.{1,64}/g) || [])
+          .join('\n') + '\n-----END CERTIFICATE-----\n';
+    }
+    if (change.pem) {
+      signals.certificateChanged(notice);
+    } else {
+      delete notice.pem;
+      signals.credentialChanged(notice);
+    }
+  });
+  log.debug("Leaving announceCredentialChanges(). " + changes.length +
+            " change(s).");
+  return changes.length;
 }
 
 function addTo(list, value) {
@@ -9819,6 +9142,29 @@ function addTo(list, value) {
   return true;
 }
 
+// THE REGISTRY'S OWN NOTE ON AN ENTRY (#456): how it first got here, written
+// only where the description is EMPTY. The description is one value an
+// administrator may write, so a note that added a second would turn the box
+// back into a list, and one that overwrote would undo what they wrote.
+/**
+ * Writes the registry's note as the description when it has none.
+ *
+ * @param record - the application's record
+ * @param value - the note
+ * @returns whether the record changed
+ */
+function noteDescription(record, value) {
+  log.debug("Entering noteDescription().");
+  const text = String(value == null ? '' : value).trim();
+  if (!text || record.description) {
+    log.debug("Leaving noteDescription(). Nothing to write.");
+    return false;
+  }
+  record.description = text;
+  log.debug("Leaving noteDescription().");
+  return true;
+}
+
 // Set a schema field, honouring the row's `kind`: multi accumulates, single is
 // assigned. The one place that distinction is applied, so a caller cannot get
 // it wrong per attribute — and an attribute that is not in the table is REFUSED
@@ -9829,7 +9175,7 @@ function setField(record, name, value) {
   if (!row) {
     log.warn(errorCodes.tag('STS-REG-0006') +
              'applications: "' + name + '" is not in the schema and was not ' +
-             'recorded. Add a row to SCHEMA.attributes rather than writing ' +
+             'recorded. Add a row to models/directory/application.tsp rather than writing ' +
              'an attribute nothing publishes.');
     log.debug("Leaving setField().");
     return false;
@@ -9837,6 +9183,18 @@ function setField(record, name, value) {
   if (value === undefined || value === null || value === '') {
     log.debug("Leaving setField().");
     return false;
+  }
+  // THE DESCRIPTION IS ON THE RECORD, NOT IN `fields` (#456): attributesFor()
+  // writes it from `record.description`, so a create's typed description
+  // lands there, one value.
+  if (name === 'description') {
+    const text = String(Array.isArray(value) ? value[0] || '' : value).trim();
+    const changed = !!text && record.description !== text;
+    if (text) {
+      record.description = text;
+    }
+    log.debug("Leaving setField(). The description.");
+    return changed;
   }
   // THE CLIENT SECRET IS RECORDS (2026-10-01): a value written here is THE
   // secret, wrapped — see putClientSecret().
@@ -9868,6 +9226,56 @@ function setField(record, name, value) {
   record.fields[name] = text;
   log.debug("Leaving setField().");
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// A PRIMARY NAME IS THE REGISTRY IDENTIFIER (#393).
+//
+// A hand-made entry that left a family's identifier attribute empty was the
+// odd one out: `seen()` and `recordAuthentication()` already file the
+// presented string as both the registry identifier and that attribute.
+// `fillPrimaryNames()` writes the identifier when the create left the
+// attribute empty. An explicit value has already been written by the caller
+// and wins, including a list — that list is the whole list, and the
+// identifier is not forced in beside it. The attribute stays multi (or
+// `set`, for the one primary name that holds a single value). Nothing here
+// rewrites an entry that already exists; a later save fills only a family
+// that save newly declared, and only when the body did not name the
+// attribute (`updateApplicationFields()`).
+//
+// Three attributes are a different kind of fact and are not in
+// `primaryNameAttributes()`: a certificate subject, a bind DN and a SPIFFE
+// ID. Defaulting any of them to a short name would record a subject a
+// security check could trust, or a name that is not the entry's key.
+// ---------------------------------------------------------------------------
+/**
+ * Writes the registry identifier into each declared family's primary name
+ * when that attribute is empty.
+ *
+ * @param record - the application record being created
+ * @param protocols - the families the create declared
+ * @returns the attributes that were filled
+ */
+function fillPrimaryNames(record, protocols) {
+  log.debug("Entering fillPrimaryNames().");
+  const filled = [];
+  primaryNameAttributes(protocols).forEach(function (attribute) {
+    if (valuesOf(record.fields[attribute]).length) {
+      log.debug("fillPrimaryNames(): " + attribute + " was given.");
+      return;
+    }
+    setField(record, attribute, record.identifier);
+    filled.push(attribute);
+  });
+  if (filled.indexOf('samlEntityId') >= 0) {
+    log.debug('applications: "' + record.identifier + '" is declared for ' +
+              'SAML and carried no entityID, so its identifier is being ' +
+              'used as one. Its per-service-provider metadata is live from ' +
+              'now. Set samlEntityId explicitly to use a different name.');
+  }
+  log.debug("Leaving fillPrimaryNames(). " +
+            (filled.length ? filled.join(', ') : 'Nothing to fill.'));
+  return filled;
 }
 
 // ---------------------------------------------------------------------------
@@ -10146,13 +9554,27 @@ function seen(detail) {
   if (!known && !mode.autoCreates()) {
     log.info('applications: product mode, so "' + identifier + '"' +
              kindPhrase +
-             ' was NOT created on sight. An application must be provisioned ' +
-             'ahead of time, through the console, /admin-api or an LDAP add.');
+             ' was NOT created on sight. An application must be registered ' +
+             'ahead of time, through the console, /admin-api, RFC 7591 or ' +
+             'an LDAP add under ou=applications (which registers it); an ' +
+             'entry a sighting filed is not a registration.');
     log.debug("Leaving seen(). Product mode creates nothing.");
     return null;
   }
   const now = Date.now();
   let changed = !known;
+  // A COUNTER ON AN APPLICATION THAT ALREADY EXISTS IS NOT A RECORD THE NEXT
+  // REQUEST READS (#878). The authorization response's sighting increments
+  // appAuthentications and, when the session or the user is new, the session
+  // and user counts. The token endpoint does not read them. They are still
+  // written, and another node still sees them through the change log, but
+  // the response is not held for the commit: a crash of postgres can lose
+  // the last fraction of a second of them, the same trade as the rate-limit
+  // windows (#856). A new application, and a new kind, protocol, name, note
+  // or any other field — a scope, a redirect, an authorization server, a
+  // grant type, an observed return address — stays a durable write. The
+  // password rehash is not this and stays held.
+  let structural = !known;
 
   // ONE SIGHTING MAY NAME SEVERAL KINDS, and two protocols need it to. A
   // wtrealm handed a SAML 1.1 assertion is a WS-Federation application AND the
@@ -10169,17 +9591,27 @@ function seen(detail) {
                'given, which is how one application comes to be listed under ' +
                'two spellings — fix the caller or add a row to KINDS.');
     }
-    if (addTo(record.kinds, kind)) changed = true;
+    if (addTo(record.kinds, kind)) {
+      changed = true;
+      structural = true;
+    }
   });
-  if (info.protocol && addTo(record.protocols, info.protocol)) changed = true;
+  if (info.protocol && addTo(record.protocols, info.protocol)) {
+    changed = true;
+    structural = true;
+  }
   if (info.name) {
     const name = String(info.name);
     if (record.name !== name) {
       record.name = name;
       changed = true;
+      structural = true;
     }
   }
-  if (info.note && addTo(record.descriptions, info.note)) changed = true;
+  if (info.note && noteDescription(record, info.note)) {
+    changed = true;
+    structural = true;
+  }
 
   // **A SIGHTING MAY NOT WRITE A RETURN ADDRESS WHERE ONLY A REGISTERED ONE IS
   // BELIEVED** (2026-09-12). A family's `redirectAttribute` — an ACS URL, a
@@ -10213,7 +9645,10 @@ function seen(detail) {
     }
     const isAddress = RETURN_ADDRESS_ATTRIBUTES.indexOf(name) >= 0;
     const before = isAddress ? valuesOf(record.fields[name]) : [];
-    if (setField(record, name, info.fields[name])) changed = true;
+    if (setField(record, name, info.fields[name])) {
+      changed = true;
+      structural = true;
+    }
     if (isAddress && markObservedAddresses(record, name, before)) {
       log.info('applications: a sighting of "' + identifier + '" wrote a new ' +
                name +
@@ -10221,6 +9656,7 @@ function seen(detail) {
                'product will refuse it until it is confirmed on the ' +
                'application\'s page.');
       changed = true;
+      structural = true;
     }
   });
 
@@ -10242,15 +9678,17 @@ function seen(detail) {
     setField(record, 'appLastUser', info.user);
     changed = true;
   }
-  record.sessions = new Array(record.sessionCount);
-  record.users = new Array(record.userCount);
 
   if (!changed) {
     log.debug("Leaving seen(). It was already known and said nothing new.");
     log.debug("Leaving seen().");
     return record;
   }
-  if (!save(record) && store()) {
+  // Counter-only: the entry was already there and nothing but the counts
+  // moved. `appLastSession` and `appLastUser` travel with those counts.
+  const observation = known && !structural;
+  if (!save(record, observation ? { observation: true } : undefined) &&
+      store()) {
     // A directory is there and would not take the entry — the container is at
     // applications.max. Nothing else records it: the protocol exchange that
     // made this sighting goes on regardless, and the audit row below describes
@@ -10463,6 +9901,21 @@ function applyRegistrationFields(record, registration, statement) {
   } else {
     delete record.fields.oauthBackchannelUserCodeParameter;
   }
+  // #290's eleven, the same way: an update that omits one clears it. The acr
+  // values go in as one space-separated value, in the registration's order.
+  Object.keys(CLIENT_RESPONSE_ATTRIBUTES).forEach(function (member) {
+    const attribute = CLIENT_RESPONSE_ATTRIBUTES[member];
+    const given = meta[member];
+    const value = Array.isArray(given)
+      ? given.map(function (one) { return String(one).trim(); })
+        .filter(Boolean).join(' ')
+      : String(given === undefined || given === null ? '' : given).trim();
+    if (value) {
+      setField(record, attribute, value);
+    } else {
+      delete record.fields[attribute];
+    }
+  });
   // RFC 9396 section 10, the same way: an update that omits it clears it.
   delete record.fields.oauthAuthorizationDetailsTypes;
   if (Array.isArray(meta.authorization_details_types) &&
@@ -10505,8 +9958,48 @@ function applyRegistrationFields(record, registration, statement) {
   // what a registration SAID, and homePageOf() refuses to draw a link to
   // anything that is not http or https when it reads.
   setField(record, 'appHomePageUrl', meta.client_uri);
+  // OpenID Connect Core section 4's `initiate_login_uri` (#426): an attribute
+  // of its own, so /launch/{app} and the console read and edit it where they
+  // read every other fact about the client. Held to https by
+  // oidcRegistrationProblem() before this runs, and REPLACED rather than
+  // kept, for #289's reason below: an RFC 7592 update that drops it means it.
+  delete record.fields.oauthInitiateLoginUri;
+  setField(record, 'oauthInitiateLoginUri', meta.initiate_login_uri);
+  // OpenID Connect Registration section 2's `logo_uri`, `policy_uri` and
+  // `tos_uri` (#1300), each an attribute the sign-in and consent screens
+  // read (clientDisplayOf()), held to https by oidcRegistrationProblem()
+  // before this runs, and REPLACED for the same reason: an update that drops
+  // one means the client no longer has it.
+  CLIENT_DISPLAY_MEMBERS.forEach(function (row) {
+    delete record.fields[row[1]];
+    if (typeof meta[row[0]] === 'string') {
+      setField(record, row[1], meta[row[0]]);
+    }
+  });
+  // REPLACED, NOT ADDED TO (#289): the endpoints hold the client to these two
+  // lists, and RFC 7592 section 2.2 replaces the whole registration, so an
+  // update that narrows grant_types must narrow what the client may use. A
+  // `multi` setField() only adds.
+  delete record.fields.oauthGrantType;
+  delete record.fields.oauthResponseType;
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
+  // #1296: the token response types the registration asked for are ALSO
+  // the client's permission to use them, `oauthAllowedTokenResponseTypes`
+  // — REPLACED for the same reason. The registration endpoint has already
+  // refused any outside `oauth2.dynamicRegistrationTokenResponseTypes`
+  // where RFC 9700 mode is in force (`oauth2_bcp.js`'s
+  // checkClientRegistration(), STS-OAUTH-0999), so what reaches this line
+  // is what the realm let a client enable for itself; outside that mode the
+  // attribute is read by nothing and records what was asked.
+  delete record.fields.oauthAllowedTokenResponseTypes;
+  setField(record, 'oauthAllowedTokenResponseTypes',
+           (Array.isArray(meta.response_types) ? meta.response_types : [])
+             .map(canonicalResponseType)
+             .filter(function (one, index, all) {
+               return TOKEN_RESPONSE_TYPES.indexOf(one) >= 0 &&
+                      all.indexOf(one) === index;
+             }));
   // RFC 7591 section 2's `scope` is a DECLARATION — "the list that the
   // client can use when requesting access tokens" — so it goes on the
   // declared attribute and never on `oauthScope`, which is what the client
@@ -10525,11 +10018,22 @@ function applyRegistrationFields(record, registration, statement) {
   // attribute states the EFFECTIVE value rather than the absence. An entry
   // saying nothing here would read as "unknown", and RFC 9700 mode's answer for
   // this client is not unknown — it is confidential.
-  const method = meta.token_endpoint_auth_method === undefined
-    ? 'client_secret_basic' : String(meta.token_endpoint_auth_method);
-  setField(record, 'oauthTokenEndpointAuthMethod', method);
-  setField(record, 'oauthConfidential',
-           method && method !== 'none' ? 'TRUE' : 'FALSE');
+  // REPLACED, NOT ADDED TO, for the grant types' reason above (#466). The
+  // flag is the determination of the FIRST method, and a `multi` setField()
+  // only adds, so an update that names a method must not leave `none` in
+  // front of it. An empty string — the member present and blank — is not an
+  // omission and does not clear methods the entry already holds.
+  if (meta.token_endpoint_auth_method === undefined) {
+    delete record.fields.oauthTokenEndpointAuthMethod;
+    setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
+  } else {
+    const statedMethod = String(meta.token_endpoint_auth_method).trim();
+    if (statedMethod) {
+      delete record.fields.oauthTokenEndpointAuthMethod;
+      setField(record, 'oauthTokenEndpointAuthMethod', statedMethod);
+    }
+  }
+  recordOauthConfidential(record);
   log.debug("Leaving applyRegistrationFields().");
 }
 
@@ -10555,7 +10059,7 @@ function register(clientId, registration, options) {
   // algorithm nothing would then check.
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
-                     idTokenEncryptionMetadataProblem(registration) ||
+                     clientResponseMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      oidcSubjectMetadataProblem(registration) ||
@@ -10592,7 +10096,7 @@ function register(clientId, registration, options) {
   record.lastAt = now;
   addTo(record.kinds, 'oauth2-client');
   addTo(record.protocols, 'OAuth 2.0');
-  addTo(record.descriptions, federated
+  noteDescription(record, federated
     ? 'registered through an OpenID Federation Trust Chain (' +
       federated.type + ')'
     : 'registered through RFC 7591 dynamic client registration');
@@ -10637,7 +10141,7 @@ function updateRegistration(clientId, registration, options) {
   // The same backstop as register().
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
-                     idTokenEncryptionMetadataProblem(registration) ||
+                     clientResponseMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      commandMetadataProblem(registration) ||
@@ -10706,8 +10210,13 @@ function forgetRegistration(clientId) {
   softwareStatementFactNames().forEach(function (name) {
     delete record.fields[name];
   });
-  setField(record, 'oauthConfidential', 'FALSE');
-  addTo(record.descriptions, 'its RFC 7592 registration was deleted');
+  // The flag follows the methods that remain (#466). Forcing FALSE here
+  // while a confidential method stayed was the same contradiction the other
+  // way round: the entry said public and still authenticated. The method is
+  // left as the registration wrote it; what changes is `registered`, which
+  // is what an empty method list is read against.
+  recordOauthConfidential(record);
+  noteDescription(record, 'its RFC 7592 registration was deleted');
   record.lastAt = Date.now();
   save(record);
   log.debug("Leaving forgetRegistration(). The registration is gone; the " +
@@ -10740,22 +10249,24 @@ function softwareStatementFactNames() {
 function softwareStatementFactsOf(clientId) {
   log.debug("Entering softwareStatementFactsOf().");
   const loaded = load(clientId);
-  const fields = loaded.known ? (loaded.record.fields || {}) : {};
-  const one = function (name) {
+  // The facts are the Application's (#1579).
+  const app = DomainClasses.Application.fromEntry(
+    loaded.known ? (loaded.record.fields || {}) : {});
+  const one = function (value) {
     log.debug("Entering one().");
-    const values = valuesOf(fields[name]);
+    const values = valuesOf(value);
     log.debug("Leaving one().");
     return values.length ? String(values[0]) : '';
   };
-  const issuer = one('appSoftwareStatementIssuer');
+  const issuer = one(app.softwareStatementIssuer);
   if (!issuer) {
     log.debug("Leaving softwareStatementFactsOf(). None.");
     return null;
   }
   log.debug("Leaving softwareStatementFactsOf().");
   return { issuer: issuer,
-           trusted: one('appSoftwareStatementTrusted') === 'TRUE',
-           publisher: one('appSoftwareStatementPublisher') };
+           trusted: one(app.softwareStatementTrusted) === 'TRUE',
+           publisher: one(app.softwareStatementPublisher) };
 }
 
 // Has a federation registration ended (#134, 12.3)? Its expiry is checked
@@ -10951,6 +10462,15 @@ function registrationOf(clientId) {
       delete document[member];
     }
   });
+  // #290's eleven, the same way, in their registration shapes.
+  const responseMembers = clientResponseMembersOf(fields, clientId);
+  Object.keys(CLIENT_RESPONSE_ATTRIBUTES).forEach(function (member) {
+    if (responseMembers[member] !== undefined) {
+      document[member] = responseMembers[member];
+    } else {
+      delete document[member];
+    }
+  });
   // And RFC 9101's five, the same way.
   const requestUris = valuesOf(fields.oauthRequestUri).map(String);
   if (requestUris.length) {
@@ -11045,7 +10565,9 @@ function declaredClient(record, fields, redirectCount) {
      'oauthJwksUri', 'oauthAssertionJwks', 'oauthAssertionIssuer',
      'oauthSamlAssertionIssuer', 'oauthSamlAssertionSigningCertificate',
      'oauthSamlAssertionCertificate',
-     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE]
+     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE,
+     // Declarations since #289, when the sightings moved to *Observed.
+     'oauthGrantType', 'oauthResponseType']
       .concat(TLS_SUBJECT_ATTRIBUTES).some(has) ||
     allowed.indexOf('oauth2') >= 0 || allowed.indexOf('oidc') >= 0 ||
     allowed.indexOf('oid4vci') >= 0;
@@ -11116,11 +10638,11 @@ function clientConfigOf(identifier) {
     // declares nothing, and "has an entry" cannot be the test: every client_id
     // that ever reached an endpoint here has one, written by `seen()`. What a
     // sighting writes for OAuth is `oauthClientId`, `appAuthorizationServer`,
-    // `oauthScope`, `oauthResponseType`, `oauthGrantType` and
+    // `oauthScope`, `oauthResponseTypeObserved`, `oauthGrantTypeObserved` and
     // `appRedirectUriObserved` — so declared is anything else that says what
     // this client IS: a registration, a redirect URI of its own, an
-    // authentication method, a credential, an assertion issuer, or a declared
-    // OAuth protocol family.
+    // authentication method, a credential, an assertion issuer, the grant or
+    // response types it may use (#289), or a declared OAuth protocol family.
     declared: declaredClient(loaded.record, fields,
                              redirects.registered.length +
                              redirects.unconfirmed.length),
@@ -11265,6 +10787,13 @@ function clientConfigOf(identifier) {
     authorization_details_types:
       valuesOf(fields.oauthAuthorizationDetailsTypes).map(String)
   };
+  // #290's eleven, spelled as the registration members because every reader
+  // — the ID Token, UserInfo, JARM, the Logout and Command Tokens, step-up's
+  // defaults — reads them by those names. A member that is not set is
+  // ABSENT, which each reader takes as "not registered" and applies its
+  // specification's default to.
+  Object.assign(config, clientResponseMembersOf(fields,
+                                                loaded.record.identifier));
   log.debug("Leaving clientConfigOf(). " + config.redirect_uris.length +
             " redirect URI(s), method=" + (method || '(unstated)') + ".");
   return config;
@@ -11371,8 +10900,9 @@ function identifierProblem(identifier) {
  * Counts no authentication. Refused for an unusable identifier, one already
  * registered, no directory, or fields the schema refuses.
  *
- * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields` and
- *   `actor`
+ * @param detail - `identifier`, `name`, `kind`, `protocols`, `fields`,
+ *   `lifetimeDays` (the first client secret's lifetime in days, 0 for never;
+ *   `oauth2.clientSecretLifetimeDays` when empty, #394) and `actor`
  * @returns `ok` and the application as the directory now holds it, or `ok:
  *   false` with `errors`
  */
@@ -11381,6 +10911,24 @@ function createApplication(detail) {
   const info = detail || {};
   const identifier = String(info.identifier || '').trim();
   log.debug("Entering createApplication(). identifier=" + identifier);
+  // A CERTIFICATE AT THE CREATE DOOR, under paranoid PKI mode, as at the update
+  // door (#1360). Lazily: the door reaches the authority.
+  const certificateTrust = require('./certificate_trust');
+  for (const attribute of SAML_CERTIFICATE_ATTRIBUTES
+    .concat(['samlEncryptionCertificate'])) {
+    for (const one of valuesOf((info.fields || {})[attribute])) {
+      const refused = String(one || '') && certificateTrust.registrationProblem(
+        attribute === 'samlEncryptionCertificate' ? 'encryption-recipient' :
+          'saml-signer',
+        Buffer.from(samlCertificateBase64(String(one)), 'base64'));
+      if (refused) {
+        log.debug("Leaving createApplication(). Paranoid: " + refused.code);
+        return errorCodes.mark({ ok: false, errors: ['`' + attribute + '` is ' +
+                                 'refused: ' + refused.why + '.'] },
+                               refused.code);
+      }
+    }
+  }
   const problem = identifierProblem(identifier);
   if (problem) {
     log.debug("Leaving createApplication(). " + problem);
@@ -11475,6 +11023,9 @@ function createApplication(detail) {
     valuesOf(given.fields[name]).forEach(function (one) {
       const problem = didValueProblem(name, one) ||
         claimRowsProblem(name, one) ||
+        claimSelectionProblem(name, one) ||
+        (name === 'oauthPermissionClaims'
+          ? permissionClaimsProblem(one, { fields: given.fields }) : '') ||
         didDuplicateProblem(name, one, seen);
       if (problem) {
         didProblems.push(problem);
@@ -11502,12 +11053,41 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: choiceProblems },
                            'STS-REG-0203');
   }
+  // #1296: a token response type only while the realm allows them.
+  const tokenTypesProblem = tokenResponseTypesProblem(
+    valuesOf(given.fields.oauthAllowedTokenResponseTypes));
+  if (tokenTypesProblem) {
+    log.debug("Leaving createApplication(). The realm does not allow the " +
+              "token response types.");
+    return errorCodes.mark({ ok: false, errors: [tokenTypesProblem] },
+                           'STS-REG-0364');
+  }
   const methodsProblem =
     authMethodsProblem(given.fields.oauthTokenEndpointAuthMethod);
   if (methodsProblem) {
     log.debug("Leaving createApplication(). `none` beside another method.");
     return errorCodes.mark({ ok: false, errors: [methodsProblem] },
                            'STS-REG-0207');
+  }
+  // THE DELEGATION LISTS MAY NOT NAME THE NEW APPLICATION ITSELF (#459),
+  // read against the identifier and the identifiers this create is about to
+  // write, for familyRefusal()'s reason: the entry does not exist yet.
+  const selfProblems = [];
+  APPLICATION_REFERENCE_ATTRIBUTES.concat(['appMayAct'])
+    .forEach(function (name) {
+      valuesOf(given.fields[name]).forEach(function (one) {
+        const problem = selfReferenceProblem(name, one, identifier,
+                                             given.fields);
+        if (problem) {
+          selfProblems.push(problem);
+        }
+      });
+    });
+  if (selfProblems.length) {
+    log.debug("Leaving createApplication(). A delegation list names the " +
+              "application itself.");
+    return errorCodes.mark({ ok: false, errors: selfProblems },
+                           'STS-REG-0335');
   }
   // The strict overrides' parse (2026-10-01), for the same reason.
   const strictProblems = Object.keys(given.fields).map(function (name) {
@@ -11529,6 +11109,68 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: modeProblems },
                            'STS-REG-0193');
   }
+  // THE FIRST CLIENT SECRET'S LIFETIME (#394). Until then a create took
+  // only `oauth2.clientSecretLifetimeDays`, so the expiry of a new
+  // application's first secret could be chosen only afterwards, on its page.
+  // `lifetimeDays` is the add form's field, read by the add form's function,
+  // and it applies to whatever secret the create carries — one Generate
+  // Secret minted or one somebody typed, which this function cannot tell
+  // apart and should not. Validated here, before the entry exists, for the
+  // reason everything above is.
+  const lifetime = clientSecretLifetimeOf(info.lifetimeDays);
+  if (!lifetime.ok) {
+    log.debug("Leaving createApplication(). Not a client secret lifetime.");
+    return errorCodes.mark({ ok: false, errors: ['The client secret\'s ' +
+      'lifetime is a whole number of days from 0 (never expires) to 730, ' +
+      'or empty for oauth2.clientSecretLifetimeDays (' +
+      (Number(config.value('oauth2.clientSecretLifetimeDays')) > 0
+        ? Number(config.value('oauth2.clientSecretLifetimeDays')) + ' days'
+        : 'never expires') +
+      '). "' + String(info.lifetimeDays).trim() + '" is not one.'] },
+      'STS-REG-0359');
+  }
+  // A LIFETIME WITH NOTHING TO STAMP IT ON is refused rather than dropped:
+  // the entry would then read as holding a secret that expires when it was
+  // asked to, and it holds none — or holds a record handed in whole, which
+  // keeps the expiry it carries (putClientSecret()).
+  if (lifetime.days !== null) {
+    const secretText = givenSecretText(given.fields.oauthClientSecret);
+    if (!secretText ||
+        isWholeSecretRecord(secretText, parseClientSecretValue(secretText))) {
+      log.debug("Leaving createApplication(). A lifetime and no secret.");
+      return errorCodes.mark({ ok: false, errors: ['A client secret ' +
+        'lifetime of ' + lifetime.days + ' day(s) was given and there is ' +
+        'no new client secret for it to apply to: ' +
+        (secretText ? 'the oauthClientSecret given is a whole record, ' +
+          'which keeps the expiry it carries.'
+          : 'oauthClientSecret is empty. Generate or type a secret, or ' +
+            'leave the lifetime empty.')] }, 'STS-REG-0360');
+    }
+  }
+  // THE FLAG AND THE METHOD ARE ONE ANSWER (#466). A stated
+  // oauthConfidential is accepted when it is the determination the methods
+  // make — the ones named, or the one this create is about to infer for an
+  // OAuth or OpenID Connect application — and refused when it is not.
+  // Asked before the record is touched: a refusal must not leave a
+  // half-written entry. A hand-create is not a registration, so an omitted
+  // method is not yet client_secret_basic.
+  if (given.fields.oauthConfidential !== undefined) {
+    const determination = oauthConfidentialOf({
+      registered: false,
+      fields: {
+        oauthTokenEndpointAuthMethod: previewAuthMethods(asked.protocols,
+                                                         given.fields)
+      }
+    });
+    const flagProblem = confidentialDisagreement(
+      given.fields.oauthConfidential, determination);
+    if (flagProblem) {
+      log.debug("Leaving createApplication(). oauthConfidential disagrees.");
+      log.debug("Leaving createApplication().");
+      return errorCodes.mark({ ok: false, errors: [flagProblem] },
+                             'STS-REG-0363');
+    }
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -11543,9 +11185,9 @@ function createApplication(detail) {
   // names the kind its family would produce. Ticking SAML 2.0 is a statement
   // about what this application is FOR; writing `saml2-service-provider` into
   // its kinds would be this registry claiming it has SEEN one, which is the
-  // derived-versus-declared line EDITABLE's header draws, and the kinds are on
-  // the wrong side of it. So the page shows what the kind WOULD be and the
-  // entry says nothing until a protocol actually recognises the identifier.
+  // derived-versus-declared line the editability header draws, and the kinds
+  // are on the wrong side of it. So the page shows what the kind WOULD be and
+  // the entry says nothing until a protocol actually recognises the identifier.
   if (asked.protocols.length) {
     setField(record, 'appAllowedProtocol', asked.protocols);
   }
@@ -11555,49 +11197,28 @@ function createApplication(detail) {
   // be a second place that decision is made, and the first time the two
   // disagreed would be the first time somebody created an application over one
   // that had just been deleted.
+  //
+  // The client secret goes the way setField() would send it, to
+  // putClientSecret(), with the lifetime this create was given (#394).
   Object.keys(given.fields).forEach(function (name) {
-    setField(record, name, given.fields[name]);
+    // Written from the methods after they are inferred, below (#466).
+    // Copying the caller's value here would store it and then overwrite it.
+    if (name === 'oauthConfidential') {
+      return;
+    }
+    if (name === 'oauthClientSecret' && lifetime.days !== null) {
+      putClientSecret(record, given.fields[name],
+                      { expiresAt: expiryOfLifetime(lifetime.days,
+                                                    nowSec()) });
+    } else {
+      setField(record, name, given.fields[name]);
+    }
   });
-  // ---------------------------------------------------------------------
-  // AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID, added 2026-08-27.
-  //
-  // Ticking SAML 2.0 or SAML 1.1 on /admin/applications/new and typing no
-  // entityID used to produce an entry that could not be used as a service
-  // provider at all: `samlEntityId` is what /saml2 and /saml11 file an
-  // application under and what their per-service-provider metadata is
-  // published for, so without it the declaration was a note and nothing more.
-  //
-  // THE DEFAULT IS THE IDENTIFIER, and that is not an arbitrary pick — it is
-  // what the same application would have got by arriving on its own. A service
-  // provider that turns up with an AuthnRequest is filed under its entityID,
-  // so identifier and entityID are ALREADY one string on every SAML entry this
-  // registry has ever created for itself. Doing anything else here would make
-  // a hand-made entry the odd one out.
-  //
-  // IT IS A DEFAULT AND NOT A RULE. An explicit `samlEntityId` in the create
-  // wins — the loop above has already run — and this only fills a gap. Nothing
-  // is refused: this service accepts any entityID on sight and creates the
-  // entry, so refusing to CREATE one here would be the only place in the SAML
-  // path that turned somebody away, which is the opposite of what the rest of
-  // this file does.
-  //
-  // The metadata is then live immediately, at /saml2/metadata/{slug} and
-  // /saml11/metadata/{rp}, because those endpoints mint a document for
-  // anything asked of them — see saml/CLAUDE.md's decision 1.
-  const declaredSaml = asked.protocols.filter(function (id) {
-    return id === 'saml2' || id === 'saml11';
-  });
-  if (declaredSaml.length && !valuesOf(record.fields.samlEntityId).length) {
-    setField(record, 'samlEntityId', identifier);
-    log.debug('applications: "' + identifier + '" is declared for ' +
-              declaredSaml.join(' and ') + ' and carried no entityID, so its ' +
-              'identifier is being used as one. Its per-service-provider ' +
-              'metadata is live from now — /admin/applications names the ' +
-              'URL, which carries a slug this module deliberately does not ' +
-              'compute (slugOf() belongs to saml/saml2_sso.ts, and requiring ' +
-              'it here would point this module at a protocol). Set ' +
-              'samlEntityId explicitly to use a different name.');
-  }
+  // A declared family's primary name is the identifier when the create left
+  // the attribute empty (#393). An explicit value, including a list, is
+  // already on the record and is the whole list. SAML metadata is live from
+  // the moment samlEntityId is filled, for the reason fillPrimaryNames() logs.
+  fillPrimaryNames(record, asked.protocols);
   // ---------------------------------------------------------------------
   // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
   // AUTHENTICATION METHOD, added 2026-09-18.
@@ -11617,21 +11238,15 @@ function createApplication(detail) {
   // client_secret_basic (RFC 7591's own default for a client that has one),
   // a JWK Set or its URI is private_key_jwt, and NOTHING is `none` — a public
   // client, held to PKCE and RFC 9700 in product mode rather than refused.
-  // An explicit `oauthTokenEndpointAuthMethod` wins, as samlEntityId's does
-  // above; this only fills a gap, so every entry this create writes for
+  // An explicit `oauthTokenEndpointAuthMethod` wins, as a primary name's
+  // does above; this only fills a gap, so every entry this create writes for
   // those families says what it will be held to.
   const declaredOauth = asked.protocols.filter(function (id) {
     return id === 'oauth2' || id === 'oidc';
   });
   if (declaredOauth.length &&
       !valuesOf(record.fields.oauthTokenEndpointAuthMethod).length) {
-    const has = function (name) {
-      return valuesOf(record.fields[name]).some(function (v) {
-        return String(v).trim() !== '';
-      });
-    };
-    const method = has('oauthClientSecret') ? 'client_secret_basic' :
-      (has('oauthJwks') || has('oauthJwksUri')) ? 'private_key_jwt' : 'none';
+    const method = credentialAuthMethod(record.fields);
     setField(record, 'oauthTokenEndpointAuthMethod', method);
     log.debug('applications: "' + identifier + '" is declared for ' +
               declaredOauth.join(' and ') + ' and named no ' +
@@ -11641,12 +11256,19 @@ function createApplication(detail) {
                ', from the credential the create carried') +
               '. Set oauthTokenEndpointAuthMethod explicitly to change it.');
   }
+  // The flag is that determination, including a value the caller stated
+  // when it agreed. An application that is not an OAuth client, and that
+  // did not state the flag, is left without the attribute.
+  recordOauthConfidential(record, {
+    supplied: Object.prototype.hasOwnProperty.call(given.fields,
+                                                   'oauthConfidential')
+  });
   // WHERE IT CAME FROM, said on the entry itself. An application created here
   // has never authenticated anything and its counters are zero; without this
   // line a reader would have to infer that from the zeros, and "created by
   // hand" and "turned up once and never again" would look alike.
-  addTo(record.descriptions, 'created from the console; nothing has ' +
-                             'authenticated for it yet');
+  noteDescription(record, 'created from the console; nothing has ' +
+                          'authenticated for it yet');
   if (!save(record)) {
     log.debug("Leaving createApplication(). The container would not take it.");
     log.debug("Leaving createApplication().");
@@ -11671,6 +11293,9 @@ function createApplication(detail) {
             (asked.protocols.length ?
              ', declared for ' + asked.protocols.join(', ') : '') +
             '. ' + count() + ' application(s) in the directory.');
+  // ITS DEFAULT FINE-GRAINED POLICY (#564, decision 2), after the entry and
+  // its audit row exist, so the policy's own row follows the create's.
+  fgaHook('created', identifier, info.actor || '');
   log.debug("Leaving createApplication(). Created.");
   log.debug("Leaving createApplication().");
   return { ok: true, application: viewAfterWrite(identifier, record) };
@@ -11814,10 +11439,32 @@ function updateApplication(identifier, change) {
                                  '/admin/ldap/applications lists every ' +
                                  'attribute an entry may carry; adding one ' +
                                  'that is not there means adding a row to ' +
-                                 'SCHEMA.attributes, not writing it through ' +
+                                 'models/directory/application.tsp, not writing it through ' +
                                  'this.'] }, 'STS-REG-0006');
   }
-  if (!row.editable) {
+  // #825: removing a hosted session bound is a clear by another door.
+  // The single-value check below answers STS-REG-0008 for these three,
+  // because each is set rather than added, so the refusal that names the
+  // bound has to come first. A confirmed remove is still refused: a
+  // longer realm setting would lengthen the console, the portal or the
+  // reports application. A set or a clear is judged later, after an
+  // unchanged value has been allowed through without a confirmation.
+  if (mode === 'remove' && isHostedSessionClient(identifier) &&
+      hostedBoundAttribute(attribute)) {
+    log.debug("Leaving updateApplication(). A hosted session bound " +
+              "cannot be removed.");
+    return errorCodes.mark({ ok: false,
+      errors: ['"' + attribute + '" is this application\'s own ' +
+               'session bound. Removing it is refused, the same as ' +
+               'clearing it: a longer realm setting would lengthen ' +
+               'the admin console, the user portal or the reports ' +
+               'application.'] }, 'STS-REG-0369');
+  }
+  // oauthConfidential is not editable (#466). A set that states
+  // the determination heals a stale flag; anything else is refused with
+  // the sentence that names the method, which the generic derived-attribute
+  // refusal would misdescribe.
+  if (!row.editable && attribute !== 'oauthConfidential') {
     log.debug("Leaving updateApplication(). Not editable.");
     log.debug("Leaving updateApplication().");
     return errorCodes.mark({ ok: false, errors: ['"' + attribute + '" is not ' +
@@ -11848,11 +11495,63 @@ function updateApplication(identifier, change) {
                                  'forgotten.'] }, 'STS-REG-0008');
   }
   let value = String(asked.value == null ? '' : asked.value);
+  if (attribute === 'oauthConfidential') {
+    if (mode !== 'set') {
+      log.debug("Leaving updateApplication(). Not set as a whole.");
+      log.debug("Leaving updateApplication().");
+      return errorCodes.mark({ ok: false,
+                               errors: [confidentialModeSentence()] },
+                             'STS-REG-0363');
+    }
+    if (!value.trim()) {
+      log.debug("Leaving updateApplication(). Cannot be cleared.");
+      log.debug("Leaving updateApplication().");
+      return errorCodes.mark({ ok: false,
+                               errors: [confidentialClearSentence()] },
+                             'STS-REG-0363');
+    }
+    const determination = oauthConfidentialOf(loaded.record);
+    const flagProblem = confidentialDisagreement(value, determination);
+    if (flagProblem) {
+      log.debug("Leaving updateApplication(). The flag disagrees.");
+      log.debug("Leaving updateApplication().");
+      return errorCodes.mark({ ok: false, errors: [flagProblem] },
+                             'STS-REG-0363');
+    }
+    value = determination;
+  }
   if (mode !== 'set' && !value) {
     log.debug("Leaving updateApplication().");
     return errorCodes.mark({ ok: false,
                              errors: ['A value is required to ' + mode + '.'] },
                            'STS-REG-0009');
+  }
+  // #708: `oauthScope` IS A SIGHTING (what the client asked for), so an
+  // update may not add one — the attribute an administrator means is
+  // `oauthAllowedScope`. (A set of a list is refused above, STS-REG-0008.) A
+  // REMOVE stays open, the tidy-up door every derived list keeps. A CREATE
+  // still accepts it as a seed, because several of the parent project's
+  // vendored jobs create their clients with one; nothing reads it as a
+  // permission either way. The OID4VC wallet, which RECONCILES one shared
+  // entry, declares its scopes on `oauthAllowedScope` instead.
+  if (attribute === 'oauthScope' && mode === 'add') {
+    log.debug("Leaving updateApplication(). oauthScope is a sighting.");
+    return errorCodes.mark({ ok: false, errors: ['"oauthScope" records the ' +
+                                 'scopes this client has ASKED FOR, written ' +
+                                 'as its requests arrive, so it cannot be ' +
+                                 'added by hand. What it may be ' +
+                                 'issued is oauthAllowedScope.'] },
+                           'STS-REG-0361');
+  }
+  // #706: an added response type is stored in the console's word order, and
+  // read in it by the closed-set check below. A REMOVE takes the value as
+  // typed or, when that is not on the entry, its canonical spelling — the
+  // CORS origins' rule, so a value an `ldapmodify` wrote can still go.
+  if ((attribute === 'oauthResponseType' ||
+       attribute === 'oauthAllowedTokenResponseTypes') && (mode === 'add' ||
+      (mode === 'remove' &&
+       valuesOf(loaded.record.fields[attribute]).indexOf(value) < 0))) {
+    value = canonicalResponseType(value);
   }
   // THE ONE EDITABLE ATTRIBUTE WITH A CLOSED VOCABULARY, checked here so that
   // this edit and the create form cannot disagree about what a protocol family
@@ -11880,8 +11579,9 @@ function updateApplication(identifier, change) {
   // the first row to carry `families` (fifteen do today).
   //
   // HERE rather than in the console for the reason every rule in this function
-  // is: this is the ONE door the form and `POST /admin-api/applications/update`
-  // both go through, and a refusal enforced in either alone is a refusal the
+  // is: this is the ONE door the form and the generic `POST
+  // /admin-api/applications/set`, `/add`, `/remove` and `/update-fields` all
+  // go through, and a refusal enforced in either alone is a refusal the
   // other walks around.
   //
   // A CLEAR IS ALWAYS ALLOWED — `mode === 'set'` with an empty value — which is
@@ -11904,11 +11604,38 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [claimProblem] },
                              'STS-REG-0206');
     }
+    const selectionProblem = claimSelectionProblem(attribute, value);
+    if (selectionProblem) {
+      log.debug("Leaving updateApplication(). Selection refused.");
+      return errorCodes.mark({ ok: false, errors: [selectionProblem] },
+                             'STS-REG-0215');
+    }
+    if (attribute === 'oauthPermissionClaims') {
+      const mappingProblem = permissionClaimsProblem(value, loaded.record);
+      if (mappingProblem) {
+        log.debug("Leaving updateApplication(). Permission claims refused.");
+        return errorCodes.mark({ ok: false, errors: [mappingProblem] },
+                               'STS-REG-0344');
+      }
+    }
     const notAChoice = choiceProblem(attribute, value);
     if (notAChoice) {
       log.debug("Leaving updateApplication(). Not one of the values.");
       return errorCodes.mark({ ok: false, errors: [notAChoice] },
                              'STS-REG-0203');
+    }
+    // #1296: a token response type only while the realm allows them. A
+    // remove is not here, so it is never refused — the tidy-up door every
+    // list keeps, which matters most for this one: a realm that withdrew
+    // its waiver leaves values behind that an administrator must be able
+    // to take off.
+    const tokenTypesProblem = attribute === 'oauthAllowedTokenResponseTypes'
+      ? tokenResponseTypesProblem([value]) : '';
+    if (tokenTypesProblem) {
+      log.debug("Leaving updateApplication(). The realm does not allow the " +
+                "token response types.");
+      return errorCodes.mark({ ok: false, errors: [tokenTypesProblem] },
+                             'STS-REG-0364');
     }
     if (attribute === 'oauthTokenEndpointAuthMethod' && mode === 'add') {
       const methodsProblem = authMethodsProblem(
@@ -11950,7 +11677,8 @@ function updateApplication(identifier, change) {
   // ---------------------------------------------------------------------------
   // THE DELEGATED PERMISSION RULES, AND THEY ARE HERE FOR THE REASON THE
   // PROTOCOL FAMILY CHECK ABOVE IS: this function is the ONE door the console
-  // form and `POST /admin-api/applications/update` both go through, and a rule
+  // form and the generic `POST /admin-api/applications/*` writes all go
+  // through, and a rule
   // enforced in either of them alone would be a rule the other could walk
   // around. `common/app_permissions.ts`'s five actions call this function too,
   // so there is one implementation of each rule and not five.
@@ -11976,7 +11704,8 @@ function updateApplication(identifier, change) {
   // an entry could not be dismantled in any order.
   // THE HOME PAGE, checked for the reason the base URI below it is: this
   // function is the ONE door the console form and
-  // `POST /admin-api/applications/update` both go through. Only a `set`
+  // the generic `POST /admin-api/applications/*` writes all go through.
+  // Only a `set`
   // carrying a value — clearing it is how an entry stops naming a home page,
   // and that is a state /portal/applications draws rather than an error.
   if (attribute === 'ssfAllowedEvents' &&
@@ -12015,6 +11744,24 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not a usable delegation " +
                 "policy value.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
+    }
+  }
+  // A realm S4U2Self may name must be one this realm's trusts accept (#430).
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = kerberosTrustAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a realm a trust accepts.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0362');
+    }
+  }
+  // Nor may the two delegation lists name the application itself (#459).
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = selfReferenceProblem(attribute, value, identifier,
+                                         loaded.record.fields,
+                                         loaded.entry && loaded.entry.dn);
+    if (problem) {
+      log.debug("Leaving updateApplication(). It names itself.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0335');
     }
   }
   // RFC 9126's one, on a SET that carries a value.
@@ -12056,6 +11803,16 @@ function updateApplication(identifier, change) {
                              problem.code);
     }
   }
+  // AuthZEN's catalogue (#563), on an ADD or a SET that carries a value.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = authzenAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not an AuthZEN catalogue " +
+                "row.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
   // RFC 9396's two, on an ADD or a SET that carries a value.
   if ((mode === 'set' || mode === 'add') && value) {
     const problem = authorizationDetailsAttributeProblem(attribute, value);
@@ -12064,6 +11821,33 @@ function updateApplication(identifier, change) {
                 "details value.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
+    }
+  }
+  // FINE-GRAINED AUTHORIZATION'S COVERAGE (#564, P3), on an ADD or a SET of
+  // a type definition to an application that ENFORCES it: enabling was
+  // refused while a declared type was uncovered (`fga_policies.ts`'s
+  // `enable()`, STS-FGA-0018), and this is the same rule at the other door
+  // — a definition written afterwards that left a member neither mapped nor
+  // in notForPolicy would make every detail of it refused (STS-FGA-0103).
+  if ((mode === 'set' || mode === 'add') && value &&
+      attribute === 'oauthAuthorizationDetailsType') {
+    const problem = fgaCoverageProblem(loaded.record.fields, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). An uncovered type on an " +
+                "application that enforces fine-grained authorization.");
+      return errorCodes.mark({ ok: false, errors: [problem] },
+                             'STS-FGA-0019');
+    }
+  }
+  // #290's eleven, on a SET that carries a value: the registration's own
+  // grammar, and no `enc` onto an entry with no `alg`.
+  if (mode === 'set' && value) {
+    const problem = clientResponseAttributeProblem(attribute, value,
+                                                   loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable response or " +
+                "request-default setting.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0340');
     }
   }
   // RFC 9470's two, on a SET that carries a value.
@@ -12155,6 +11939,22 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0011');
     }
   }
+  if (attribute === 'oauthInitiateLoginUri' && mode === 'set' && value) {
+    const problem = initiateLoginUriProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable " +
+                "initiate_login_uri.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0188');
+    }
+  }
+  if (CLIENT_DISPLAY_ATTRIBUTES.indexOf(attribute) >= 0 && mode === 'set' &&
+      value) {
+    const problem = clientDisplayUriProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable display URI.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0365');
+    }
+  }
   if (attribute === 'gnapOwnerLookupUri' && mode === 'set' && value) {
     const problem = ownerLookupUriProblem(value);
     if (problem) {
@@ -12171,6 +11971,15 @@ function updateApplication(identifier, change) {
   }
   if (attribute === 'oauthPermission' && mode === 'add') {
     const parsed = parsePermissionValue(value);
+    // Before the name check: its illegal-token sentence quotes the name,
+    // and a quoted code in a 400 body is sent (#1426).
+    const coded = permissionOperatorCodeProblem(parsed.name,
+                                                parsed.description);
+    if (coded) {
+      log.debug("Leaving updateApplication(). The permission carries an " +
+                "operator error code.");
+      return errorCodes.mark({ ok: false, errors: [coded] }, 'STS-REG-0367');
+    }
     const problem = permissionNameProblem(parsed.name);
     if (problem) {
       log.debug("Leaving updateApplication(). The permission name is not " +
@@ -12332,6 +12141,18 @@ function updateApplication(identifier, change) {
   // normalised and not checked, the asymmetry every rule here has: it names a
   // value already on the entry.
   // ---------------------------------------------------------------------------
+  // The encryption certificate's own use case, at the door (#1360).
+  if (attribute === 'samlEncryptionCertificate' && value && mode !== 'remove') {
+    const refused = require('./certificate_trust').registrationProblem(
+      'encryption-recipient',
+      Buffer.from(samlCertificateBase64(value), 'base64'));
+    if (refused) {
+      log.debug("Leaving updateApplication(). Paranoid: " + refused.code);
+      return errorCodes.mark({ ok: false, errors: ['`' + attribute + '` is ' +
+                               'refused: ' + refused.why +
+                               '. Nothing was written.'] }, refused.code);
+    }
+  }
   if (SAML_CERTIFICATE_ATTRIBUTES.indexOf(attribute) >= 0 && value) {
     value = samlCertificateBase64(value);
     if (mode !== 'remove') {
@@ -12395,16 +12216,11 @@ function updateApplication(identifier, change) {
     record.name = value;
     what = 'appName is now "' + value + '"';
   } else if (attribute === 'description') {
-    if (mode === 'add') {
-      changed = addTo(record.descriptions, value);
-      what = 'added a description';
-    } else {
-      const before = record.descriptions.length;
-      record.descriptions = record.descriptions.filter(
-          function (one) { return one !== value; });
-      changed = record.descriptions.length !== before;
-      what = 'removed a description';
-    }
+    // ONE VALUE (#456): set, and an empty one clears it.
+    changed = record.description !== value;
+    record.description = value;
+    what = value ? 'the description is now "' + value + '"'
+                 : 'the description was cleared';
   } else if (mode === 'set') {
     changed = setField(record, attribute, value);
     // setField() ignores an empty value, which is how a caller CLEARS one — so
@@ -12494,6 +12310,16 @@ function updateApplication(identifier, change) {
     what = 'removed "' + value + '" from ' + attribute;
   }
 
+  // The stored flag follows the method (#466). Asked even when the method
+  // itself did not change, so putting the same method back heals a flag an
+  // ldapmodify left disagreeing with it.
+  if (attribute === 'oauthTokenEndpointAuthMethod' &&
+      recordOauthConfidential(record)) {
+    changed = true;
+    what = (what ? what + ', and ' : '') + 'oauthConfidential is now "' +
+      record.fields.oauthConfidential + '"';
+  }
+
   if (!changed) {
     log.debug("Leaving updateApplication(). Nothing changed.");
     log.debug("Leaving updateApplication().");
@@ -12501,19 +12327,40 @@ function updateApplication(identifier, change) {
              application: viewAfterWrite(identifier, record),
              message: 'Nothing changed: ' + attribute + ' already said that.' };
   }
+  // #825: the three hosted surfaces cannot be cleared or set to 0, and a
+  // different number is written only when the save confirms it. Checked
+  // after the unchanged return, so a form that re-posts the current bound
+  // does not have to confirm it. A remove was refused above, before the
+  // single-value check. The copy load() returned is not saved.
+  if (isHostedSessionClient(identifier) &&
+      hostedBoundAttribute(attribute)) {
+    const bound = hostedSessionBoundRefusal(String(identifier), attribute,
+                                             value, asked.confirm, config);
+    if (bound) {
+      log.debug("Leaving updateApplication(). The hosted session bound " +
+                "was refused.");
+      return errorCodes.mark({ ok: false, errors: bound.errors },
+                             bound.code);
+    }
+  }
   record.lastAt = record.lastAt || Date.now();
-  save(record);
+  save(record, { actor: asked.actor || '' });
+  // The ATTRIBUTE is named and the value is not, because two of the editable
+  // attributes are credentials. That is the same rule every LDAP row in this
+  // service follows and it is why it is applied here rather than judged per
+  // attribute — a rule with an exception in it is one somebody will get wrong
+  // when the next credential attribute is added. hostedSessionBound names
+  // the #825 write without naming the number.
+  const detail = { identifier: String(identifier), attribute: attribute,
+                   mode: mode, editedByHand: true };
+  if (isHostedSessionClient(identifier) && hostedBoundAttribute(attribute)) {
+    detail.hostedSessionBound = true;
+  }
   audit.audit({
     action: 'application.update', actor: asked.actor || '', protocol: 'console',
     channel: 'internal', target: String(identifier),
     summary: 'Application "' + identifier + '": ' + what,
-    // The ATTRIBUTE is named and the value is not, because two of the editable
-    // attributes are credentials. That is the same rule every LDAP row in this
-    // service follows and it is why it is applied here rather than judged per
-    // attribute — a rule with an exception in it is one somebody will get wrong
-    // when the next credential attribute is added.
-    detail: { identifier: String(identifier), attribute: attribute, mode: mode,
-              editedByHand: true }
+    detail: detail
   });
   log.info('applications: "' + identifier + '" — ' + what + '.');
   if (mode === 'remove') {
@@ -12697,7 +12544,7 @@ function announceScopeRemoval(identifier, record, attribute, value) {
 function clientSecretBytes() {
   log.debug("Entering clientSecretBytes().");
   log.debug("Leaving clientSecretBytes().");
-  return Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  return Number(config.value('oauth2.registeredSecretBytes'));
 }
 
 /**
@@ -12760,7 +12607,8 @@ function mintClientSecret() {
 //     client is never silently left holding none.
 //   * `oauth2.clientSecretsMax` caps how many an application holds, and a new
 //     secret takes `oauth2.clientSecretLifetimeDays` unless the add form
-//     names another lifetime.
+//     names another lifetime — or, for an application's first secret, the
+//     create form (#394).
 //
 // A VALUE THAT IS NOT A RECORD IS A SECRET. A bare string arrives from three
 // places — a caller of `create` or `set` handing the secret itself (the
@@ -12781,8 +12629,8 @@ function mintClientSecret() {
 function digestSecretId(secret) {
   log.debug("Entering digestSecretId().");
   log.debug("Leaving digestSecretId().");
-  return 'cs-' + crypto.createHash('sha256').update(String(secret))
-    .digest('hex').slice(0, 12);
+  return 'cs-' + stsCrypto.digest('sha256', String(secret), 'hex')
+    .slice(0, 12);
 }
 
 /**
@@ -12793,7 +12641,7 @@ function digestSecretId(secret) {
 function newSecretId() {
   log.debug("Entering newSecretId().");
   log.debug("Leaving newSecretId().");
-  return 'cs-' + crypto.randomBytes(6).toString('hex');
+  return 'cs-' + stsCrypto.randomBytes(6).toString('hex');
 }
 
 /**
@@ -13068,6 +12916,24 @@ function writeClientSecretRecords(record, records) {
   log.debug("Leaving writeClientSecretRecords().");
 }
 
+// Whether a value handed to putClientSecret() is a record handed in whole,
+// which keeps its own expiry, rather than a secret to be wrapped in a new one.
+function isWholeSecretRecord(given, parsed) {
+  log.debug("Entering isWholeSecretRecord().");
+  log.debug("Leaving isWholeSecretRecord().");
+  return String(given).charAt(0) === '{' && !!parsed && parsed.createdAt > 0;
+}
+
+// The first value of a client secret given to a write, trimmed: the one
+// putClientSecret() takes.
+function givenSecretText(value) {
+  log.debug("Entering givenSecretText().");
+  log.debug("Leaving givenSecretText().");
+  return (Array.isArray(value) ? value : [value]).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean)[0] || '';
+}
+
 /**
  * Makes `secret` the application's client secret — the meaning of a `set`
  * or a `create` naming one. A secret already on the entry changes nothing
@@ -13082,9 +12948,7 @@ function writeClientSecretRecords(record, records) {
  */
 function putClientSecret(record, value, options) {
   log.debug("Entering putClientSecret().");
-  const given = (Array.isArray(value) ? value : [value]).map(function (one) {
-    return String(one == null ? '' : one).trim();
-  }).filter(Boolean)[0] || '';
+  const given = givenSecretText(value);
   const parsed = parseClientSecretValue(given);
   if (!parsed) {
     log.debug("Leaving putClientSecret(). Nothing to write.");
@@ -13097,7 +12961,7 @@ function putClientSecret(record, value, options) {
   }
   // A RECORD handed in whole (a value copied off another entry, an
   // ldapmodify-shaped add) keeps what it says; a bare secret is wrapped.
-  const wrapped = given.charAt(0) === '{' && parsed.createdAt > 0
+  const wrapped = isWholeSecretRecord(given, parsed)
     ? parsed
     : newClientSecretRecord(parsed.secret, options);
   writeClientSecretRecords(record, [wrapped]);
@@ -13158,55 +13022,112 @@ function clientSecretSummariesOf(fields, nowS) {
  */
 function sweepClientSecrets(nowMs) {
   log.debug("Entering sweepClientSecrets().");
-  const now = Number(nowMs) || Date.now();
-  const nowS = Math.floor(now / 1000);
-  const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
-                86400;
+  const at = clientSecretSweepClock(nowMs);
   const out = { expiring: [], expired: [], cleared: [] };
   list().forEach(function (row) {
-    const records = clientSecretRecordsOf(row.fields || {});
-    if (!records.length) {
-      return;
-    }
-    const expired = records.filter(function (one) {
-      return clientSecretExpired(one, nowS);
-    });
-    const live = records.filter(function (one) {
-      return !clientSecretExpired(one, nowS);
-    });
-    if (!live.length) {
-      out.expired.push(row.identifier);
-    } else if (live.some(function (one) {
-      return one.expiresAt > 0 && one.expiresAt - nowS <= warnS;
-    })) {
-      out.expiring.push(row.identifier);
-    }
-    // The expired secrets an application holds another beside: removed. With
-    // none live, every expired one but the newest.
-    const removable = live.length ? expired : expired.slice(1);
-    if (removable.length) {
-      const loaded = load(row.identifier);
-      if (loaded.known) {
-        const gone = removable.map(function (one) { return one.id; });
-        try {
-          writeClientSecretRecords(loaded.record,
-            clientSecretRecordsOf(loaded.record.fields).filter(function (one) {
-              return gone.indexOf(one.id) < 0;
-            }));
-          save(loaded.record);
-          out.cleared.push(row.identifier);
-        } catch (e) {
-          // The expired secrets stay until a later sweep can seal what is
-          // left: they authenticate nothing meanwhile, being expired.
-          log.debug("Caught in sweepClientSecrets(): " +
-                    ((e && e.message) || e));
-          log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
-                    'expired client secrets of "' + row.identifier + '" ' +
-                    'were not removed. ' + e.message);
-        }
+    sweepClientSecretOf(row, at, out);
+  });
+  reportClientSecretSweep(out);
+  log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
+    expiring: out.expiring.length, expired: out.expired.length,
+    cleared: out.cleared.length }));
+  return out;
+}
+
+// THE SAME, IN SLICES (#704): what `oauth2.client-secret-expiry` runs. Every
+// application's secrets are unsealed to be judged, and a realm's every
+// application in one turn held the loop of the process running the job;
+// this gives it a turn every CLIENT_SECRET_SWEEP_SLICE applications. The
+// decisions are `sweepClientSecretOf()`'s, the same as the form above.
+/** Applications judged between two turns of the event loop (#704). */
+const CLIENT_SECRET_SWEEP_SLICE = 50;
+
+/**
+ * `sweepClientSecrets()`, a turn of the event loop every
+ * CLIENT_SECRET_SWEEP_SLICE applications (#704).
+ *
+ * @param nowMs - the time in milliseconds; now when omitted
+ * @returns a promise of the identifiers expiring, expired and cleared
+ */
+async function sweepClientSecretsInSlices(nowMs) {
+  log.debug("Entering sweepClientSecretsInSlices().");
+  const at = clientSecretSweepClock(nowMs);
+  const out = { expiring: [], expired: [], cleared: [] };
+  await loopSlices.eachInSlices(list(), function (row) {
+    sweepClientSecretOf(row, at, out);
+  }, CLIENT_SECRET_SWEEP_SLICE);
+  reportClientSecretSweep(out);
+  log.debug("Leaving sweepClientSecretsInSlices(). " + JSON.stringify({
+    expiring: out.expiring.length, expired: out.expired.length,
+    cleared: out.cleared.length }));
+  return out;
+}
+
+// The sweep's clock and warning window, read once per sweep in its realm.
+function clientSecretSweepClock(nowMs) {
+  log.debug("Entering clientSecretSweepClock().");
+  const now = Number(nowMs) || Date.now();
+  log.debug("Leaving clientSecretSweepClock().");
+  return { nowS: Math.floor(now / 1000),
+           warnS: Number(config.value(
+             'oauth2.clientSecretExpiryWarningDays')) * 86400 };
+}
+
+// One application's secrets judged, and its expired ones removed where the
+// sweep may: the identifier joins `out`'s lists.
+function sweepClientSecretOf(row, at, out) {
+  log.debug("Entering sweepClientSecretOf().");
+  const nowS = at.nowS;
+  const warnS = at.warnS;
+  const records = clientSecretRecordsOf(row.fields || {});
+  if (!records.length) {
+    log.debug("Leaving sweepClientSecretOf(). None held.");
+    return;
+  }
+  const expired = records.filter(function (one) {
+    return clientSecretExpired(one, nowS);
+  });
+  const live = records.filter(function (one) {
+    return !clientSecretExpired(one, nowS);
+  });
+  if (!live.length) {
+    out.expired.push(row.identifier);
+  } else if (live.some(function (one) {
+    return one.expiresAt > 0 && one.expiresAt - nowS <= warnS;
+  })) {
+    out.expiring.push(row.identifier);
+  }
+  // The expired secrets an application holds another beside: removed. With
+  // none live, every expired one but the newest.
+  const removable = live.length ? expired : expired.slice(1);
+  if (removable.length) {
+    const loaded = load(row.identifier);
+    if (loaded.known) {
+      const gone = removable.map(function (one) { return one.id; });
+      try {
+        writeClientSecretRecords(loaded.record,
+          clientSecretRecordsOf(loaded.record.fields).filter(function (one) {
+            return gone.indexOf(one.id) < 0;
+          }));
+        save(loaded.record);
+        out.cleared.push(row.identifier);
+      } catch (e) {
+        // The expired secrets stay until a later sweep can seal what is
+        // left: they authenticate nothing meanwhile, being expired.
+        log.debug("Caught in sweepClientSecretOf(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
+                  'expired client secrets of "' + row.identifier + '" ' +
+                  'were not removed. ' + e.message);
       }
     }
-  });
+  }
+  log.debug("Leaving sweepClientSecretOf().");
+}
+
+// The audit rows and the warning a sweep owes, once it has judged them all.
+function reportClientSecretSweep(out) {
+  log.debug("Entering reportClientSecretSweep().");
   out.expiring.forEach(function (id) {
     audit.audit({ action: 'application.secret-expiring', actor: 'scheduler',
       protocol: 'console', channel: 'internal', target: String(id),
@@ -13237,13 +13158,12 @@ function sweepClientSecrets(nowMs) {
              out.expiring.join(', ') + '). Add or rotate one on ' +
              '/admin/applications.');
   }
-  log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
-    expiring: out.expiring.length, expired: out.expired.length,
-    cleared: out.cleared.length }));
-  return out;
+  log.debug("Leaving reportClientSecretSweep().");
 }
 
-// THE MANAGEMENT API'S OWN CLIENT, WHILE ITS SECRET IS PINNED. Seeding writes
+// THE BOOTSTRAP CLIENT, WHILE ITS SECRET IS PINNED — `sts-api-client` since
+// #1139, `sts-management-api` until that identifier became the management
+// API's resource object. Seeding writes
 // `adminApi.clientSecret` onto a FRESH entry and never over an existing one,
 // so a secret regenerated, rotated out or removed here would go on
 // disagreeing with the setting every launcher and deployment mints its API
@@ -13253,7 +13173,7 @@ function sweepClientSecrets(nowMs) {
 function pinnedSecretOf(identifier) {
   log.debug("Entering pinnedSecretOf().");
   log.debug("Leaving pinnedSecretOf().");
-  return String(identifier) === 'sts-management-api' && realms.isDefault()
+  return String(identifier) === 'sts-api-client' && realms.isDefault()
     ? String(config.value('adminApi.clientSecret') || '') : '';
 }
 
@@ -13284,8 +13204,16 @@ function finishClientSecretWrite(identifier, record, opts, detail, summary) {
   const methodSet = !!primary &&
     (methodBefore === '' || methodBefore === 'none');
   if (methodSet) {
+    // setField on a multi attribute only ADDS. A method of `none` would
+    // stay FIRST, so isConfidential() would still read the client as
+    // public and `none` would sit beside client_secret_basic. The new
+    // method replaces `none` (#466).
+    if (methodBefore === 'none') {
+      delete record.fields.oauthTokenEndpointAuthMethod;
+    }
     setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
   }
+  recordOauthConfidential(record);
   if (record.fields.appRegistrationJson) {
     try {
       const document = JSON.parse(record.fields.appRegistrationJson);
@@ -13313,7 +13241,7 @@ function finishClientSecretWrite(identifier, record, opts, detail, summary) {
     }
   }
   record.lastAt = record.lastAt || Date.now();
-  save(record);
+  save(record, { actor: opts.actor || '' });
   audit.audit({
     action: 'application.update', actor: opts.actor || '',
     protocol: 'console', channel: 'internal', target: String(identifier),
@@ -13363,6 +13291,46 @@ function clientSecretsMax() {
   return Math.max(1, Number(config.value('oauth2.clientSecretsMax')) || 1);
 }
 
+// A CLIENT SECRET'S LIFETIME AS A FORM GIVES IT (#394): the add form's
+// `lifetimeDays`, and since #394 the create's, read by one function so the
+// two cannot accept different things. Whole days from 0 (never expires) to
+// 730 — `oauth2.clientSecretLifetimeDays`' own `max` — and empty (or absent)
+// for that setting. A lifetime in days has no "date in the past" to refuse,
+// which is why the create takes days and not a date: the add form's field,
+// so one lifetime is asked the same way on both screens.
+/**
+ * Reads a client secret's lifetime as a form or a caller gives it.
+ *
+ * @param raw - days, a string of days, empty, or absent
+ * @returns `{ ok: true, days }`, `days` null for the default; or
+ *   `{ ok: false }`
+ */
+function clientSecretLifetimeOf(raw) {
+  log.debug("Entering clientSecretLifetimeOf().");
+  const text = raw === undefined || raw === null ? '' : String(raw).trim();
+  if (text === '') {
+    log.debug("Leaving clientSecretLifetimeOf(). The default.");
+    return { ok: true, days: null };
+  }
+  const days = Number(text);
+  if (!isFinite(days) || days < 0 || days > 730 ||
+      Math.floor(days) !== days) {
+    log.debug("Leaving clientSecretLifetimeOf(). Not one.");
+    return { ok: false, days: null };
+  }
+  log.debug("Leaving clientSecretLifetimeOf().");
+  return { ok: true, days: days };
+}
+
+// The `expiresAt` a lifetime gives a secret made at `at` (seconds): 0 for
+// never, and undefined for the default, which newClientSecretRecord()
+// reads as `oauth2.clientSecretLifetimeDays`.
+function expiryOfLifetime(days, at) {
+  log.debug("Entering expiryOfLifetime().");
+  log.debug("Leaving expiryOfLifetime().");
+  return days === null ? undefined : (days > 0 ? at + days * 86400 : 0);
+}
+
 /**
  * Adds a client secret beside the ones an application holds. The new secret
  * is the newest, so it becomes the primary.
@@ -13382,13 +13350,9 @@ function addClientSecret(identifier, options) {
     return unknownApplication(identifier);
   }
   const description = String(opts.description || '').trim();
-  const rawLifetime = opts.lifetimeDays === undefined ||
-    opts.lifetimeDays === null ? '' : String(opts.lifetimeDays).trim();
-  const lifetime = rawLifetime === '' ? null : Number(rawLifetime);
+  const lifetime = clientSecretLifetimeOf(opts.lifetimeDays);
   if (description.length > 200 || /[\r\n\0]/.test(description) ||
-      (lifetime !== null && (!isFinite(lifetime) || lifetime < 0 ||
-                             lifetime > 730 ||
-                             Math.floor(lifetime) !== lifetime))) {
+      !lifetime.ok) {
     log.debug("Leaving addClientSecret(). Bad lifetime or description.");
     return errorCodes.mark({ ok: false, errors: ['A client secret\'s ' +
       'lifetime is a whole number of days from 0 (never expires) to ' +
@@ -13409,9 +13373,7 @@ function addClientSecret(identifier, options) {
   const at = nowSec();
   const secret = mintClientSecret();
   const added = newClientSecretRecord(secret, {
-    expiresAt: lifetime === null ? undefined
-                                 : (lifetime > 0 ? at + lifetime * 86400
-                                                 : 0),
+    expiresAt: expiryOfLifetime(lifetime.days, at),
     description: description });
   try {
     writeClientSecretRecords(record, [added].concat(held));
@@ -13467,7 +13429,7 @@ function removeClientSecret(identifier, options) {
   if (pinned && target.secret === pinned) {
     log.debug("Leaving removeClientSecret(). The pinned secret.");
     return errorCodes.mark({ ok: false, errors: ['That client secret of ' +
-      '"sts-management-api" is pinned by the adminApi.clientSecret ' +
+      '"sts-api-client" is pinned by the adminApi.clientSecret ' +
       'setting, which is what every token for /admin-api is minted with. ' +
       'Change the setting instead.'] }, 'STS-REG-0210');
   }
@@ -13533,7 +13495,7 @@ function regenerateClientSecret(identifier, options) {
   if (pinnedSecretOf(identifier)) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
-                             '"sts-management-api" is pinned by the ' +
+                             '"sts-api-client" is pinned by the ' +
                              'adminApi.clientSecret setting, which is what ' +
                              'every token for /admin-api is minted with. ' +
                              'Regenerating it here would leave the entry and ' +
@@ -13853,6 +13815,14 @@ function samlCertificateProblem(value) {
     log.debug("Leaving samlCertificateProblem(). " + problem);
     return problem;
   }
+  // ITS FIELDS, AT THE DOOR, under paranoid PKI mode (#1360): every write of a
+  // SAML certificate comes through here. Lazily: the door reaches the authority.
+  const paranoid = require('./certificate_trust')
+    .registrationProblem('saml-signer', Buffer.from(der, 'base64'));
+  if (paranoid) {
+    log.debug("Leaving samlCertificateProblem(). Paranoid: " + paranoid.code);
+    return paranoid.why;
+  }
   log.debug("Leaving samlCertificateProblem(). Usable.");
   return '';
 }
@@ -13965,7 +13935,8 @@ function replaceSamlMetadataFields(identifier, replacements, options) {
   }
   audit.audit({
     action: 'application.update', actor: opts.actor || '',
-    protocol: 'SAML 2.0', channel: 'internal', target: String(identifier),
+    protocol: opts.protocol || 'SAML 2.0', channel: 'internal',
+    target: String(identifier),
     summary: 'Application "' + identifier + '": its service provider ' +
              'metadata was consumed (' + (opts.how || 'unstated') + ')',
     detail: { identifier: String(identifier),
@@ -14128,6 +14099,9 @@ function deleteApplication(identifier, options) {
         'here.'] },
                            'STS-REG-0021');
   }
+  // Read BEFORE the entry goes: the retirement below needs the reference.
+  const fgaPolicy = String(valuesOf(loaded.record.fields.appFgaPolicy)[0] ||
+                           '');
   const gone = backing.deleteApplication(String(identifier));
   if (!gone) {
     log.debug("Leaving deleteApplication().");
@@ -14147,6 +14121,10 @@ function deleteApplication(identifier, options) {
   log.info('applications: "' + identifier + '" was deleted. ' + count() + ' ' +
       'left.');
   endGnapGrants(String(identifier), false, opts.actor || '');
+  // ITS FINE-GRAINED POLICY IS RETIRED, NOT DELETED (#564, decision 3):
+  // disabled and marked orphaned, kept for audit until an administrator
+  // removes it.
+  fgaHook('deleted', String(identifier), opts.actor || '', fgaPolicy);
   log.debug("Leaving deleteApplication(). Gone.");
   log.debug("Leaving deleteApplication().");
   return { ok: true,
@@ -14156,6 +14134,423 @@ function deleteApplication(identifier, options) {
                     'authentication(s) and whatever attributes it carried. ' +
                     'It will reappear, empty, the next time that identifier ' +
                     'is accepted by a protocol.' };
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION AS AN LDIF FILE, OUT AND BACK IN (#546, 2026-10-09).
+//
+// rcbj's four decisions, and each is a rule below:
+//
+//   1. RFC 2849 content records, one per application, through the codec
+//      `persistence/persistence_ldif.js` already holds for the ldif store —
+//      one reading of LDIF in this service, not two.
+//   2. CREDENTIAL MATERIAL IS LEFT OUT unless asked for, and when asked for
+//      it goes out UNENCRYPTED: a sealed value is opened and written in the
+//      clear, because a file sealed under this process's key-encryption key
+//      opens nowhere else. The console and the API say so beside the option.
+//   3. AN IMPORT NEVER OVERWRITES. An identifier already recorded in the
+//      realm is refused by name (STS-REG-0349).
+//   4. DECLARED ATTRIBUTES ONLY, BOTH WAYS: what an administrator configures
+//      (the `editable` rows, the key-pair certificates among it) and what names
+//      the entry. What this service RECORDED — counters, sightings, observed
+//      scopes and return addresses, the kinds — is not exported, and an import
+//      carrying one is refused by name (STS-REG-0350), so a copy starts with no
+//      history it did not have.
+//
+// THE PORTABLE CREDENTIALS are the editable ones (below). Five credentials on
+// an application entry are not editable — a Kerberos service key, an
+// enrollment key and challenge, an EAB key, a GNAP macaroon key — because
+// each is minted by its own subsystem and written by nothing an operator
+// types; no import could write one through any door, so none is exported and
+// an import naming one is refused (STS-REG-0351) rather than half-applied.
+//
+// THE DN: the export writes the entry's own DN, so the file is ordinary LDIF
+// an `ldapadd` could load back into the same realm; the import reads only
+// that it is `cn=…,ou=applications,…` and creates the entry in the realm it is
+// imported INTO, under that realm's base. So a file moves an application from
+// one realm to another as it stands.
+// ---------------------------------------------------------------------------
+// AN OUTBOUND SCIM CLIENT'S CREDENTIAL, OPENED FOR THE ONE REQUEST THAT USES
+// IT (#552) — `secretDestinationCredentialOf()`'s reason, for the client's
+// password, OAuth client secret and TLS private key. `scim/scim_client.ts`
+// asks at the moment it sends and keeps nothing (`key-material-residency`).
+// ---------------------------------------------------------------------------
+/**
+ * Returns one of an outbound SCIM client's credentials, opened, for the
+ * request that uses it. Never drawn and never returned by any view.
+ *
+ * @param identifier - the client application's identifier
+ * @param attribute - scimClientPassword, scimClientOAuthClientSecret or
+ *   scimClientTlsPrivateKey
+ * @returns the credential, or '' when there is none or it will not open
+ */
+function scimClientCredentialOf(identifier, attribute) {
+  log.debug("Entering scimClientCredentialOf(). " + attribute);
+  if (['scimClientPassword', 'scimClientOAuthClientSecret',
+       'scimClientTlsPrivateKey'].indexOf(attribute) < 0) {
+    log.debug("Leaving scimClientCredentialOf(). Not a credential.");
+    return '';
+  }
+  const loaded = load(identifier);
+  const stored = loaded.known
+    ? String([].concat(loaded.record.fields[attribute] || [])[0] || '')
+    : '';
+  if (!stored) {
+    log.debug("Leaving scimClientCredentialOf(). None.");
+    return '';
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving scimClientCredentialOf(). Stored clear.");
+    return stored;
+  }
+  const opened = keystore.open(stored, sealLabelOf(attribute));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the ' + attribute + ' on SCIM client "' +
+             identifier + '" is sealed and will not open under this ' +
+             'process\'s key-encryption key. Set it again on Protocols → ' +
+             'SCIM → Clients.');
+    log.debug("Leaving scimClientCredentialOf(). Will not open.");
+    return '';
+  }
+  log.debug("Leaving scimClientCredentialOf(). Opened.");
+  return opened;
+}
+
+// ---------------------------------------------------------------------------
+/**
+ * The credential attributes an export may carry and an import may write:
+ * the editable ones that hold a secret or a private key.
+ */
+const PORTABLE_CREDENTIALS = ['oauthClientSecret',
+                              'appRegistrationAccessToken',
+                              'oauthAssertionPrivateKey',
+                              'oauthSamlAssertionPrivateKey',
+                              'didPrivateKeys', 'secretDestCredential',
+                              'gnapSymmetricKey', 'scimClientPassword',
+                              'scimClientOAuthClientSecret',
+                              'scimClientTlsPrivateKey'];
+
+// The attributes that name the entry, written by the create itself rather than
+// through `fields`.
+const LDIF_NAMING = ['appIdentifier', 'appName', 'appAllowedProtocol',
+                     'description'];
+
+// What an import reads past without a word: the entry's structure, which the
+// create writes for itself in the realm it is imported into.
+const LDIF_STRUCTURAL = ['objectclass', 'cn', 'entrydn', 'createtimestamp',
+                         'modifytimestamp'];
+
+function ldifCodec() {
+  log.debug("Entering ldifCodec().");
+  log.debug("Leaving ldifCodec().");
+  // Required when used: the codec is the ldif store's, and the store is
+  // loaded by persistence.js at its own place in the order.
+  return require('../persistence/persistence_ldif');
+}
+
+// A credential's stored values as the file carries them: opened. Null where a
+// sealed one will not open, which refuses the whole export (STS-REG-0346)
+// rather than writing ciphertext nobody else can read beside a clear value.
+function openedCredentialValues(name, values, identifier) {
+  log.debug("Entering openedCredentialValues(). " + name);
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const stored = String(values[i]);
+    let opened = stored;
+    if (isSealed(stored)) {
+      if (name === 'oauthClientSecret') {
+        opened = openClientSecretText(stored);
+      } else if (name === 'appRegistrationAccessToken') {
+        opened = registrationAccessTokenOf({
+          appRegistrationAccessToken: stored }) || '';
+      } else {
+        const tried = keystore.open(stored, sealLabelOf(name));
+        opened = tried ? String(tried) : '';
+      }
+    }
+    if (!opened || isSealed(opened)) {
+      log.warn(errorCodes.tag('STS-REG-0346') +
+               'applications: "' + identifier + '"\'s ' + name + ' will not ' +
+               'open under this process\'s key-encryption key, so it cannot ' +
+               'be exported in the clear.');
+      log.debug("Leaving openedCredentialValues(). Will not open.");
+      return null;
+    }
+    out.push(opened);
+  }
+  log.debug("Leaving openedCredentialValues().");
+  return out;
+}
+
+/**
+ * Writes one application's entry as an RFC 2849 LDIF document: its declared
+ * attributes, and its portable credentials in the clear when asked.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `credentials` (true to include credential material,
+ *   UNENCRYPTED), `actor`
+ * @returns `{ ok, ldif, fileName, attributes, credentials, leftOut }`, or a
+ *   marked refusal
+ */
+function exportApplicationLdif(identifier, options) {
+  log.debug("Entering exportApplicationLdif(). " + identifier);
+  const opts = options || {};
+  const id = String(identifier || '').trim();
+  const loaded = id ? load(id) : null;
+  if (!loaded || !loaded.known || !loaded.entry) {
+    log.debug("Leaving exportApplicationLdif(). Not recorded.");
+    return errorCodes.mark({ ok: false, errors: ['No application called "' +
+                                 id + '" is recorded in this realm, so ' +
+                                 'there is nothing to export.'] },
+                           'STS-REG-0345');
+  }
+  const withCredentials = opts.credentials === true;
+  const attrs = byLowerName(loaded.entry.attributes);
+  const out = {
+    objectClass: SCHEMA.objectClasses.map(function (one) { return one.name; }),
+    cn: [loaded.record.label || labelFor(id)],
+    appIdentifier: [id]
+  };
+  const leftOut = [];
+  let refused = false;
+  SCHEMA.attributes.forEach(function (row) {
+    if (refused || row.name === 'appIdentifier' || row.name === 'cn') {
+      return;
+    }
+    const values = allValues(attrs, row.name);
+    if (!values.length || !row.editable) {
+      return;
+    }
+    if (PORTABLE_CREDENTIALS.indexOf(row.name) >= 0) {
+      if (!withCredentials) {
+        leftOut.push(row.name);
+        return;
+      }
+      const opened = openedCredentialValues(row.name, values, id);
+      if (!opened) {
+        refused = true;
+        return;
+      }
+      out[row.name] = opened;
+      return;
+    }
+    out[row.name] = values;
+  });
+  if (refused) {
+    log.debug("Leaving exportApplicationLdif(). A credential will not open.");
+    return errorCodes.mark({ ok: false, errors: ['A credential on "' + id +
+                                 '" is sealed under a key-encryption key ' +
+                                 'this process does not hold, so it cannot ' +
+                                 'be written in the clear. Nothing was ' +
+                                 'exported. Export without credential ' +
+                                 'material, or issue the credential ' +
+                                 'again.'] }, 'STS-REG-0346');
+  }
+  const realmId = String(realms.currentId() || 'default');
+  const header = [
+    'One application of this identity service, exported ' +
+      new Date().toISOString() + ' from the "' + realmId + '" realm.',
+    'Its declared attributes only: nothing this service recorded about ' +
+      'its use.',
+    withCredentials
+      ? 'CREDENTIAL MATERIAL IS INCLUDED, UNENCRYPTED. Keep this file as ' +
+        'you would keep the secrets in it.'
+      : 'No credential material: ' +
+        (leftOut.length ? leftOut.join(', ') : 'it held none') + '.',
+    'Import it on Directory > Applications > Import / export, or POST ' +
+      '/admin-api/applications/import-ldif, in any realm.'
+  ];
+  const ldif = ldifCodec().toLdif([{ dn: loaded.entry.dn, attributes: out }],
+                                  header);
+  audit.audit({
+    action: 'application.export', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: id,
+    summary: 'Application "' + id + '" was exported to LDIF' +
+             (withCredentials ? ', WITH its credential material in the clear'
+                              : ', without credential material'),
+    detail: { identifier: id, credentials: withCredentials,
+              attributes: Object.keys(out).join(', ') }
+  });
+  log.debug("Leaving exportApplicationLdif(). " + Object.keys(out).length +
+            " attribute(s).");
+  return { ok: true, ldif: ldif,
+           fileName: labelFor(id).replace(/[^A-Za-z0-9._-]+/g, '_') + '.ldif',
+           attributes: Object.keys(out), credentials: withCredentials,
+           leftOut: leftOut };
+}
+
+/**
+ * Creates an application from an LDIF document holding one record, through
+ * the same checks a console create makes. Never overwrites.
+ *
+ * @param text - the LDIF document
+ * @param options - `actor`
+ * @returns `{ ok, application, identifier }` or a marked refusal
+ */
+function importApplicationLdif(text, options) {
+  log.debug("Entering importApplicationLdif().");
+  const opts = options || {};
+  let records = [];
+  try {
+    records = ldifCodec().fromLdif(String(text == null ? '' : text), log);
+  } catch (e) {
+    log.debug("Caught in importApplicationLdif(): " + ((e && e.message) || e));
+    records = [];
+  }
+  if (records.length !== 1) {
+    log.debug("Leaving importApplicationLdif(). " + records.length +
+              " record(s).");
+    return errorCodes.mark({ ok: false, errors: ['An import reads LDIF ' +
+                                 'holding exactly one application record, ' +
+                                 'as an export writes it; this holds ' +
+                                 records.length + '.'] }, 'STS-REG-0347');
+  }
+  const record = records[0];
+  const rdns = String(record.dn || '').split(',').map(function (part) {
+    return part.trim().toLowerCase();
+  });
+  const attrs = record.attributes || {};
+  const identifier = String((attrs.appidentifier || [])[0] || '').trim();
+  if (rdns.length < 2 || rdns[0].indexOf('cn=') !== 0 ||
+      rdns[1] !== 'ou=applications' || !identifier) {
+    log.debug("Leaving importApplicationLdif(). Not an application entry.");
+    return errorCodes.mark({ ok: false, errors: ['That record is not an ' +
+                                 'application entry: its DN must be ' +
+                                 'cn=…,ou=applications,… and it must carry ' +
+                                 'appIdentifier. It names "' +
+                                 String(record.dn || '') + '".'] },
+                           'STS-REG-0348');
+  }
+  if (load(identifier).known) {
+    log.debug("Leaving importApplicationLdif(). Already recorded.");
+    return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" is ' +
+                                 'already recorded in this realm, and an ' +
+                                 'import never overwrites. Delete it, or ' +
+                                 'change the file\'s appIdentifier, and ' +
+                                 'import again.'] }, 'STS-REG-0349');
+  }
+  // Every attribute named by its schema spelling, and sorted into what the
+  // create takes, what it reads past, and what it refuses.
+  const byLower = {};
+  SCHEMA.attributes.forEach(function (row) {
+    byLower[row.name.toLowerCase()] = row;
+  });
+  const derived = [];
+  const unknown = [];
+  const fields = {};
+  let secrets = [];
+  Object.keys(attrs).forEach(function (lower) {
+    if (LDIF_STRUCTURAL.indexOf(lower) >= 0) {
+      return;
+    }
+    const row = byLower[lower];
+    if (!row) {
+      unknown.push(lower);
+      return;
+    }
+    if (!row.editable && LDIF_NAMING.indexOf(row.name) < 0) {
+      (WITHHELD_FIELDS.indexOf(row.name) >= 0 ||
+       SEALED_FIELDS.indexOf(row.name) >= 0 ? unknown : derived)
+        .push(row.name);
+      return;
+    }
+    const values = (attrs[lower] || []).map(function (one) {
+      return String(one);
+    });
+    if (row.name === 'oauthClientSecret') {
+      secrets = values;
+      return;
+    }
+    if (LDIF_NAMING.indexOf(row.name) < 0) {
+      fields[row.name] = row.kind === 'multi' ? values : values[0];
+    }
+  });
+  if (derived.length) {
+    log.debug("Leaving importApplicationLdif(). Derived attributes.");
+    return errorCodes.mark({ ok: false, errors: ['The record carries ' +
+                                 'what this service records about an ' +
+                                 'application\'s use, which an import may ' +
+                                 'not assert: ' + derived.join(', ') +
+                                 '. Remove them, or export the application ' +
+                                 'again (an export leaves them out).'] },
+                           'STS-REG-0350');
+  }
+  if (unknown.length) {
+    log.debug("Leaving importApplicationLdif(). Unknown attributes.");
+    return errorCodes.mark({ ok: false, errors: ['The record carries what ' +
+                                 'no import can write: ' + unknown.join(', ') +
+                                 '. An attribute must be one of the ' +
+                                 'application schema\'s editable ones; a ' +
+                                 'Kerberos service key, an enrollment key ' +
+                                 'or challenge and a GNAP macaroon key are ' +
+                                 'minted by their own subsystems.'] },
+                           'STS-REG-0351');
+  }
+  const created = createApplication({
+    identifier: identifier,
+    name: String((attrs.appname || [])[0] || identifier),
+    protocols: (attrs.appallowedprotocol || []).map(String),
+    fields: Object.assign(fields,
+      (attrs.description || []).length
+        ? { description: String(attrs.description[0]) } : {}),
+    actor: opts.actor || ''
+  });
+  if (!created || created.ok === false) {
+    log.debug("Leaving importApplicationLdif(). The create refused it.");
+    return created;
+  }
+  if (secrets.length) {
+    // THE CLIENT SECRETS AS THE FILE HOLDS THEM: each a record (an export
+    // writes the records, with their ids and expiries) or a bare secret,
+    // sealed as every stored secret is. Through the create they would
+    // collapse into one, because a create's secret REPLACES.
+    const after = load(identifier).record;
+    const seen = {};
+    const kept = secrets.map(parseClientSecretValue).filter(function (one) {
+      if (!one || seen[one.secret]) {
+        return false;
+      }
+      seen[one.secret] = true;
+      return true;
+    }).map(function (one) {
+      return one.createdAt > 0 ? one : newClientSecretRecord(one.secret);
+    });
+    let written = false;
+    try {
+      // Throws, marked STS-REG-0213, where a durable key will not seal one.
+      writeClientSecretRecords(after, kept);
+      written = save(after);
+    } catch (e) {
+      log.debug("Caught in importApplicationLdif(): " +
+                ((e && e.message) || e));
+      written = false;
+    }
+    if (!written) {
+      log.debug("Leaving importApplicationLdif(). Secrets not written.");
+      return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" ' +
+                                   'was created, but its client secrets ' +
+                                   'could not be written (they would not ' +
+                                   'seal, or the directory refused the ' +
+                                   'write). Add one on its Credentials ' +
+                                   'tab.'] }, 'STS-REG-0352');
+    }
+  }
+  audit.audit({
+    action: 'application.import', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: identifier,
+    summary: 'Application "' + identifier + '" was imported from LDIF' +
+             (secrets.length || Object.keys(fields).some(function (name) {
+               return PORTABLE_CREDENTIALS.indexOf(name) >= 0;
+             }) ? ', with credential material' : ''),
+    // The NAMES only, for createApplication()'s reason.
+    detail: { identifier: identifier,
+              attributes: Object.keys(fields).concat(
+                secrets.length ? ['oauthClientSecret'] : []).join(', ') }
+  });
+  log.debug("Leaving importApplicationLdif(). Imported.");
+  return { ok: true, identifier: identifier,
+           application: viewAfterWrite(identifier, load(identifier).record) };
 }
 
 // ---------------------------------------------------------------------------
@@ -14254,7 +14649,7 @@ function view(record, entry) {
     authentications: record.authentications,
     sessions: record.sessionCount,
     users: record.userCount,
-    descriptions: record.descriptions.slice(0),
+    description: record.description,
     // The entry's own facts, which are facts about the ENTRY rather than about
     // the application: when the directory created it, when it last changed, and
     // whether this service wrote it or a client did.
@@ -14275,58 +14670,112 @@ function view(record, entry) {
     // store gets the ciphertext the store holds.
     // Withheld FIRST: `withholdFields()` copies with Object.assign, which
     // would read — and so open — every accessor the other order put there.
-    fields: openSealedFields(withholdFields(record.fields), record.identifier)
+    fields: fieldsWithDescription(
+      openSealedFields(withholdFields(record.fields), record.identifier),
+      record)
   };
 }
 
+// THE DESCRIPTION AMONG THE FIELDS (#456). It lives on the record rather than
+// in `fields` (setField()), but the field grid shows and compares every
+// editable attribute out of `fields`, so it is put there — one value, or
+// absent when the entry carries none.
+/**
+ * Adds the record's description to a view's fields.
+ *
+ * @param fields - the view's fields
+ * @param record - the application's record
+ * @returns the same fields
+ */
+function fieldsWithDescription(fields, record) {
+  log.debug("Entering fieldsWithDescription().");
+  if (record.description) {
+    fields.description = record.description;
+  }
+  log.debug("Leaving fieldsWithDescription().");
+  return fields;
+}
+
 // ---------------------------------------------------------------------------
-// WHAT A CLIENT REGISTERED IT WOULD USE (#120): the `grant_types` and
-// `response_types` of its REGISTRATION DOCUMENT, which the token and
-// authorization endpoints hold it to in every mode (rcbj's decision). Read
-// from `appRegistrationJson` and NOT from `oauthGrantType` /
-// `oauthResponseType`, because those two also record what was OBSERVED — a
-// list that grows with use is no restriction. A client with no registration
-// document, or one that names neither list (registered before #120 applied
-// RFC 7591's defaults), answers null and is held to nothing, as a client_id
-// nobody registered is.
+// WHAT A CLIENT DECLARED IT WOULD USE: its `oauthGrantType` and
+// `oauthResponseType`, which the token and authorization endpoints hold it to
+// in every mode. #120 held a client that REGISTERED (rcbj's decision) to the
+// `grant_types` and `response_types` of its registration document; #289
+// (rcbj, 2026-10-07) holds every client to the same two lists however they
+// were written — a registration writes them (applyRegistrationFields()), and
+// so does an administrator on the console or `/admin-api`. That became
+// possible only when a sighting stopped writing them: it writes
+// `oauthGrantTypeObserved` and `oauthResponseTypeObserved` now, because a list
+// that grows with use is no restriction. An EMPTY list restricts nothing
+// (rcbj's answer), as for a client_id nobody declared anything about.
 // ---------------------------------------------------------------------------
 /**
- * Returns the grant and response types a client's registration document
- * declares, which the endpoints hold it to in every mode.
+ * Returns the grant and response types a client declares, which the endpoints
+ * hold it to in every mode.
  *
  * @param clientId - the client id
- * @returns the two lists, or null when the client has no document or it names
- *   neither
+ * @returns the two lists, each null when the client declares none; null when
+ *   it declares neither
  */
-function registeredFlowsOf(clientId) {
-  log.debug("Entering registeredFlowsOf().");
+function declaredFlowsOf(clientId) {
+  log.debug("Entering declaredFlowsOf().");
   const loaded = load(String(clientId || ''));
-  if (!loaded.known || !loaded.record.registered) {
-    log.debug("Leaving registeredFlowsOf(). Not registered.");
+  if (!loaded.known) {
+    log.debug("Leaving declaredFlowsOf(). Not known.");
     return null;
   }
-  let document = null;
-  try {
-    document = JSON.parse(loaded.record.fields.appRegistrationJson || 'null');
-  } catch (e) {
-    log.debug("Caught in registeredFlowsOf(): " + ((e && e.message) || e));
-    // Unreadable: registrationOf() reports it; nothing to hold the client to.
-    document = null;
-  }
-  if (!document || (!Array.isArray(document.grant_types) &&
-                    !Array.isArray(document.response_types))) {
-    log.debug("Leaving registeredFlowsOf(). Nothing registered.");
-    return null;
-  }
-  log.debug("Leaving registeredFlowsOf().");
-  return {
-    grant_types: Array.isArray(document.grant_types)
-      ? document.grant_types.map(String) : null,
-    response_types: Array.isArray(document.response_types)
-      ? document.response_types.map(function (one) {
+  // The declared flows are the OAuthClient's (#1579).
+  const client = DomainClasses.OAuthClient.fromEntry(
+    loaded.record.fields || {});
+  const listOf = function (value) {
+    log.debug("Entering listOf().");
+    const values = valuesOf(value)
+      .map(function (one) {
         return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
-      }) : null
+      })
+      .filter(function (one) {
+        return one !== '';
+      });
+    log.debug("Leaving listOf().");
+    return values.length ? values : null;
   };
+  const grants = listOf(client.grantTypes);
+  const responses = listOf(client.responseTypes);
+  if (!grants && !responses) {
+    log.debug("Leaving declaredFlowsOf(). Nothing declared.");
+    return null;
+  }
+  log.debug("Leaving declaredFlowsOf().");
+  return { grant_types: grants, response_types: responses };
+}
+
+// THE TOKEN RESPONSE TYPES A CLIENT IS ALLOWED (#1296): its
+// `oauthAllowedTokenResponseTypes`, in the canonical word order. Unlike the
+// declared lists above, AN EMPTY LIST MEANS NONE — see the attribute's SCHEMA
+// row. Asked by `oauth2_bcp.js`'s checkAuthorizationRequest() only where RFC
+// 9700 mode is in force and the realm waives section 2.1.2.
+/**
+ * Returns the token response types a client may use, as its
+ * `oauthAllowedTokenResponseTypes` lists them.
+ *
+ * @param clientId - the client id
+ * @returns the canonical values; empty for a client unknown or listing none
+ */
+function allowedTokenResponseTypesOf(clientId) {
+  log.debug("Entering allowedTokenResponseTypesOf().");
+  const loaded = load(String(clientId || ''));
+  if (!loaded.known || federationExpired(loaded.record.fields)) {
+    log.debug("Leaving allowedTokenResponseTypesOf(). Not known.");
+    return [];
+  }
+  const values = valuesOf(loaded.record.fields.oauthAllowedTokenResponseTypes)
+    .map(canonicalResponseType)
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving allowedTokenResponseTypesOf(). " + values.length +
+            " value(s).");
+  return values;
 }
 
 // RFC 7592 SECTION 2 (#120): a registration access token presented for a
@@ -14527,8 +14976,17 @@ function buildListing(backing) {
     byClientId: new Map(),
     byAudience: new Map(),
     byAppliesTo: { wstrustAppliesTo: new Map(), samlEntityId: new Map() },
+    // #493: the KDC finds the application a service ticket is for by SPN.
+    byServicePrincipal: new Map(),
     byPermission: new Map(),
-    byPermissionBase: new Map()
+    byPermissionBase: new Map(),
+    // #1235: the applications naming each policy, by reference attribute
+    // and the name lower-case — what refuses a policy's delete and lists
+    // its applications, without a walk of the listing per question.
+    byPolicyReference: POLICY_REFERENCES.reduce(function (all, attribute) {
+      all[attribute] = new Map();
+      return all;
+    }, {})
   };
   // Each Map holds the applications in `list()`'s order, so the first is the
   // one the filter over `list()` found first, and the length is the count
@@ -14546,6 +15004,9 @@ function buildListing(backing) {
         indexInto(listing.byAppliesTo[attribute], String(value), item);
       });
     });
+    valuesOf(fields.krb5ServicePrincipalName).forEach(function (value) {
+      indexInto(listing.byServicePrincipal, String(value), item);
+    });
     permissionsOf(item.record).forEach(function (one) {
       if (one.id && !listing.byPermission.has(one.id)) {
         listing.byPermission.set(one.id, { item: item, permission: one });
@@ -14555,6 +15016,13 @@ function buildListing(backing) {
     if (base) {
       indexInto(listing.byPermissionBase, base, item);
     }
+    POLICY_REFERENCES.forEach(function (attribute) {
+      const named = String(valuesOf(fields[attribute])[0] || '').trim()
+        .toLowerCase();
+      if (named) {
+        indexInto(listing.byPolicyReference[attribute], named, item);
+      }
+    });
   });
   items.forEach(deepFreeze);
   log.debug("Leaving buildListing(). " + items.length + " application(s).");
@@ -14587,6 +15055,33 @@ function listing() {
   return held.listing;
 }
 
+// ---------------------------------------------------------------------------
+// THE CLOCK THE LISTING IS KEPT BY, FOR A CALLER THAT KEEPS SOMETHING OF ITS
+// OWN BUILT FROM `list()` (#625): the store's `applicationsVersion()` — the
+// subtree clock of ou=applications in the ambient realm, moved by every write
+// there, by a write that names no DN, and by a row another process wrote
+// that this one applied — or null where the store has no such hook (a
+// test's stub), which means "keep nothing". The outbound SCIM client asked
+// `list()` on every directory change, a view of every application built per
+// change, and keeps its own clients by this instead.
+// ---------------------------------------------------------------------------
+/**
+ * The version `list()`'s answer is kept by in the ambient realm.
+ *
+ * @returns the version, or null when nothing may be kept
+ */
+function listingVersion() {
+  log.debug("Entering listingVersion().");
+  const backing = store();
+  if (!backing || typeof backing.applicationsVersion !== 'function') {
+    log.debug("Leaving listingVersion(). No version.");
+    return null;
+  }
+  const version = backing.applicationsVersion();
+  log.debug("Leaving listingVersion(). " + version);
+  return version;
+}
+
 /**
  * Lists every application in the ambient realm, most recently seen first.
  *
@@ -14602,6 +15097,84 @@ function list() {
   const rows = kept.items.map(viewOfItem);
   log.debug("Leaving list().");
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// THE APPLICATIONS NAMING A POLICY (#1148 for the authentication policy,
+// generalised by #1235, rule 3cx): what refuses a named policy's delete and
+// what Directory > Policies lists beside it. Every attribute by which an
+// application names a policy of some kind is a row of POLICY_REFERENCES, and
+// the kept listing indexes it (`byPolicyReference`), so a question costs the
+// applications that name the policy rather than a walk of every one.
+// Compared lower-case, as every kind names a policy.
+//
+// A KIND ADOPTING A REFERENCE adds its attribute here, a declaration above,
+// an `editable` row, an ATTRIBUTE_CHOICES source and a CHOICES_CHECKED_HERE
+// entry — `appPasskeyPolicy`'s five lines.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the applications whose policy-reference attribute names a policy,
+ * in the ambient realm, in `list()`'s order.
+ *
+ * @param attribute - the reference attribute, one of POLICY_REFERENCES
+ * @param name - the policy's name
+ * @returns the applications' identifiers
+ */
+function applicationsNamingPolicy(attribute, name) {
+  log.debug("Entering applicationsNamingPolicy(). " + attribute);
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  if (!wanted || POLICY_REFERENCES.indexOf(attribute) < 0) {
+    log.debug("Leaving applicationsNamingPolicy(). Not a question.");
+    return [];
+  }
+  const out = lookedUp('byPolicyReference', wanted, attribute)
+    .map(function (row) {
+      return row.identifier;
+    });
+  log.debug("Leaving applicationsNamingPolicy(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Lists the applications whose `appAuthnPolicy` names an authentication
+ * policy, in the ambient realm (#1148).
+ *
+ * @param name - the policy's name
+ * @returns the applications' identifiers
+ */
+function applicationsNamingAuthnPolicy(name) {
+  log.debug("Entering applicationsNamingAuthnPolicy().");
+  const out = applicationsNamingPolicy('appAuthnPolicy', name);
+  log.debug("Leaving applicationsNamingAuthnPolicy(). " + out.length + ".");
+  return out;
+}
+
+// Every application's `appOwner` values, read off the kept listing with no
+// view built (#759): `ownership.ownsAnything()` asks it on every scope
+// decision, and read the owners out of `list()`, a view of every
+// application, to find them. Strings, in `list()`'s order, one list per
+// application that names an owner.
+/**
+ * Returns the owners every application in the ambient realm names.
+ *
+ * @returns one list of owner values per application that has any
+ */
+function ownerValues() {
+  log.debug("Entering ownerValues().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving ownerValues(). No store.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    const owners = valuesOf(item.record.fields.appOwner).map(String);
+    if (owners.length) {
+      out.push(owners);
+    }
+  });
+  log.debug("Leaving ownerValues(). " + out.length);
+  return out;
 }
 
 // The applications carrying one value, as views, in `list()`'s order — what
@@ -14643,7 +15216,7 @@ function lookedUp(mapName, wanted, attribute) {
 //
 // **A value that will not parse is IGNORED and logged, never thrown.** An
 // `ldapmodify` can put "yes" on `saml2SignAssertion`, and an identity provider
-// that stopped issuing because of it would be a mock that stopped answering.
+// that stopped issuing because of it would be a service that stopped answering.
 // The setting's own value is used and the log names the entry, the attribute
 // and the reason, which is the only way somebody finds out that the exception
 // they typed is not in force.
@@ -14770,6 +15343,279 @@ function overridableSettings() {
 }
 
 // ---------------------------------------------------------------------------
+// THE HOSTED SURFACES' OWN SESSION BOUNDS (#825).
+//
+// The console, the portal and the reports application share one browser
+// sign-on session. Raising authn.sessionLifetimeS, oauth2.refreshTokenTtlS
+// or oauth2.refreshIdleSeconds would otherwise lengthen all three. Each
+// carries its own maximum authentication age, refresh lifetime and refresh
+// idle, and the value in force is the SHORTER of that positive number and
+// the matching positive realm limit. 0 means no limit from that side.
+//
+// The shorter-of applies ONLY to these three, and only at enforcement.
+// settingFor() is unchanged, so an ordinary client follows the realm, and
+// largestSetting() and the refresh-family revocation window keep the
+// client's own stored lifetime. The debugger is a hosted surface and is
+// not in this list: sessions-1m replaces its settings on purpose.
+//
+// An absent, unparseable or non-positive stored value uses the SHIPPED
+// number rather than the realm, so a raised realm cannot lengthen these
+// three in the window before the next start fills an empty attribute.
+// A stored positive number is kept, then shortened by the cap. Clearing
+// or storing 0 is refused at updateApplication(); fill-if-absent restores
+// a value removed outside that door. The bound is not on
+// /admin/token-lifetimes.
+// ---------------------------------------------------------------------------
+const HOSTED_SESSION_CLIENTS = Object.freeze([
+  'sts-admin-console', 'sts-user-portal', 'sts-report']);
+
+// Reports uses the console's numbers: it is an administrative surface
+// (REPORT_USE / REPORT_ADMIN). The portal is a person's own day.
+const HOSTED_SESSION_BOUNDS = Object.freeze({
+  'sts-admin-console': Object.freeze({
+    oauthMaxAuthAgeS: '3600',
+    oauthRefreshTokenTtlS: '3600',
+    oauthRefreshIdleSeconds: '900'
+  }),
+  'sts-user-portal': Object.freeze({
+    oauthMaxAuthAgeS: '28800',
+    oauthRefreshTokenTtlS: '28800',
+    oauthRefreshIdleSeconds: '3600'
+  }),
+  'sts-report': Object.freeze({
+    oauthMaxAuthAgeS: '3600',
+    oauthRefreshTokenTtlS: '3600',
+    oauthRefreshIdleSeconds: '900'
+  })
+});
+
+const HOSTED_BOUND_ATTRIBUTES = Object.freeze({
+  oauthMaxAuthAgeS: 'oauth2.maxAuthAgeS',
+  oauthRefreshTokenTtlS: 'oauth2.refreshTokenTtlS',
+  oauthRefreshIdleSeconds: 'oauth2.refreshIdleSeconds'
+});
+
+// The maximum authentication age is capped by the sign-on session's
+// lifetime, which is not the setting the attribute overrides. The other
+// two are capped by the setting itself.
+const HOSTED_REALM_CAP = Object.freeze({
+  'oauth2.maxAuthAgeS': 'authn.sessionLifetimeS',
+  'oauth2.refreshTokenTtlS': 'oauth2.refreshTokenTtlS',
+  'oauth2.refreshIdleSeconds': 'oauth2.refreshIdleSeconds'
+});
+
+/**
+ * Whether this identifier is the console, the portal or the reports
+ * application.
+ *
+ * @param identifier - the application's identifier
+ * @returns whether it keeps a hosted session bound
+ */
+function isHostedSessionClient(identifier) {
+  log.debug("Entering isHostedSessionClient().");
+  const yes = HOSTED_SESSION_CLIENTS.indexOf(String(identifier || '')) >= 0;
+  log.debug("Leaving isHostedSessionClient(). " + yes + ".");
+  return yes;
+}
+
+/**
+ * Whether the attribute is one of the three hosted session bounds.
+ *
+ * @param name - the attribute
+ * @returns whether a hosted client refuses to clear it
+ */
+function hostedBoundAttribute(name) {
+  log.debug("Entering hostedBoundAttribute().");
+  const yes = Object.prototype.hasOwnProperty.call(HOSTED_BOUND_ATTRIBUTES,
+                                                    String(name || ''));
+  log.debug("Leaving hostedBoundAttribute(). " + yes + ".");
+  return yes;
+}
+
+/**
+ * A positive finite limit, or null when the number adds no limit.
+ *
+ * @param value - the candidate
+ * @returns the number, or null
+ */
+function positiveLimit(value) {
+  log.debug("Entering positiveLimit().");
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    log.debug("Leaving positiveLimit(). Unlimited.");
+    return null;
+  }
+  log.debug("Leaving positiveLimit(). " + n + ".");
+  return n;
+}
+
+/**
+ * The shorter of two limits. A non-positive side is unlimited. Both
+ * unlimited answers 0, which is what the settings use for "no limit".
+ *
+ * @param left - one limit
+ * @param right - the other
+ * @returns the shorter positive limit, or 0
+ */
+function shorterLimit(left, right) {
+  log.debug("Entering shorterLimit().");
+  const a = positiveLimit(left);
+  const b = positiveLimit(right);
+  let out = 0;
+  if (a !== null && b !== null) {
+    out = Math.min(a, b);
+  } else if (a !== null) {
+    out = a;
+  } else if (b !== null) {
+    out = b;
+  }
+  log.debug("Leaving shorterLimit(). " + out + ".");
+  return out;
+}
+
+/**
+ * The value in force for one client. The three hosted surfaces take the
+ * shorter of their own positive bound and the realm cap; every other
+ * client is settingFor().
+ *
+ * @param identifier - the application's identifier
+ * @param settingKey - the setting
+ * @param settings - the settings module
+ * @returns the value in force
+ */
+function hostedEffective(identifier, settingKey, settings) {
+  log.debug("Entering hostedEffective(). identifier=" +
+            (identifier || '(none)') + ", setting=" + settingKey);
+  const use = settings || config;
+  if (!isHostedSessionClient(identifier) ||
+      !Object.prototype.hasOwnProperty.call(HOSTED_REALM_CAP, settingKey)) {
+    const plain = settingFor(identifier, settingKey, use);
+    log.debug("Leaving hostedEffective(). The setting decides.");
+    return plain;
+  }
+  const attribute = OVERRIDE_ATTRIBUTES[settingKey];
+  const record = get(identifier);
+  const raw = record ? valuesOf(record.fields[attribute])[0] : undefined;
+  let base = null;
+  if (raw !== undefined && String(raw).trim() !== '') {
+    const parsed = use.parseAs(settingKey, raw);
+    if (parsed.ok) {
+      base = positiveLimit(parsed.value);
+    }
+  }
+  if (base === null) {
+    const shipped = HOSTED_SESSION_BOUNDS[String(identifier)][attribute];
+    const parsedShip = use.parseAs(settingKey, shipped);
+    base = parsedShip.ok ? positiveLimit(parsedShip.value)
+                          : positiveLimit(shipped);
+  }
+  const cap = use.value(HOSTED_REALM_CAP[settingKey]);
+  const out = shorterLimit(base, cap);
+  log.debug("Leaving hostedEffective(). " + out + ".");
+  return out;
+}
+
+/**
+ * Folds a hosted or realm maximum authentication age into a step-up
+ * requirement. Does not mutate the requirement it was given.
+ *
+ * @param clientId - the client
+ * @param requirement - requirementOf()'s answer
+ * @param settings - the settings module
+ * @returns a requirement whose maxAge is the shorter bound, when there is one
+ */
+function applyClientMaxAge(clientId, requirement, settings) {
+  log.debug("Entering applyClientMaxAge().");
+  const need = requirement || {};
+  const acrValues = Array.isArray(need.acrValues) ? need.acrValues : [];
+  const copy = {
+    acrValues: acrValues,
+    maxAge: need.maxAge === undefined ? null : need.maxAge,
+    present: !!need.present
+  };
+  const bound = positiveLimit(hostedEffective(clientId,
+    'oauth2.maxAuthAgeS', settings || config));
+  if (bound === null) {
+    log.debug("Leaving applyClientMaxAge(). No bound.");
+    return copy;
+  }
+  const asked = copy.maxAge === null || copy.maxAge === undefined
+    ? null : Number(copy.maxAge);
+  copy.maxAge = asked === null || !Number.isFinite(asked)
+    ? bound : Math.min(asked, bound);
+  copy.present = acrValues.length > 0 || copy.maxAge !== null;
+  log.debug("Leaving applyClientMaxAge(). maxAge=" + copy.maxAge + ".");
+  return copy;
+}
+
+/**
+ * Whether a save said it meant to change a hosted session bound.
+ *
+ * @param value - the confirm member
+ * @returns whether it is true, "true", "on" or "1"
+ */
+function confirmAsked(value) {
+  log.debug("Entering confirmAsked().");
+  if (value === true) {
+    log.debug("Leaving confirmAsked(). Yes.");
+    return true;
+  }
+  const text = String(value === undefined || value === null ? '' : value);
+  const yes = text === 'true' || text === 'on' || text === '1';
+  log.debug("Leaving confirmAsked(). " + yes + ".");
+  return yes;
+}
+
+/**
+ * The refusal for clearing or changing a hosted session bound, or null
+ * when the write may proceed. A non-positive or unusable value is refused
+ * before a missing confirmation, so a confirmed clear still says why.
+ *
+ * @param identifier - the application
+ * @param attribute - the attribute
+ * @param value - the value being stored
+ * @param confirm - the save's confirm member
+ * @param settings - the settings module
+ * @returns null, or `{ code, errors }`
+ */
+function hostedSessionBoundRefusal(identifier, attribute, value, confirm,
+                                   settings) {
+  log.debug("Entering hostedSessionBoundRefusal().");
+  if (!isHostedSessionClient(identifier) ||
+      !hostedBoundAttribute(attribute)) {
+    log.debug("Leaving hostedSessionBoundRefusal(). Not a hosted bound.");
+    return null;
+  }
+  const settingKey = HOSTED_BOUND_ATTRIBUTES[attribute];
+  const text = String(value == null ? '' : value).trim();
+  const use = settings || config;
+  const parsed = text ? use.parseAs(settingKey, text) : { ok: false };
+  if (!text || !parsed.ok || positiveLimit(parsed.value) === null) {
+    log.debug("Leaving hostedSessionBoundRefusal(). Not a positive bound.");
+    return {
+      code: 'STS-REG-0369',
+      errors: ['"' + attribute + '" is this application\'s own session ' +
+               'bound. It cannot be cleared, and 0 is refused: either ' +
+               'would let a longer realm setting lengthen the admin ' +
+               'console, the user portal or the reports application. ' +
+               'Store a positive number of seconds.']
+    };
+  }
+  if (!confirmAsked(confirm)) {
+    log.debug("Leaving hostedSessionBoundRefusal(). Not confirmed.");
+    return {
+      code: 'STS-REG-0368',
+      errors: ['"' + attribute + '" is this application\'s own session ' +
+               'bound. Changing it needs confirm set to true, so a save ' +
+               'that did not mean to change the bound is refused and ' +
+               'nothing is written.']
+    };
+  }
+  log.debug("Leaving hostedSessionBoundRefusal(). Accepted.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // THE INSTANT A GLOBAL CONSENT WAS WITHDRAWN (#172), written by
 // `common/consent.ts`'s `revokeGlobal()` and by nothing else — the schema row
 // above says why it is not editable. `stamp` is the register's, so this
@@ -14805,6 +15651,326 @@ function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
   const saved = save(record);
   log.debug("Leaving noteGlobalConsentWithdrawn(). saved=" + saved);
   return saved;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWNERS (#604, rcbj: "Go ahead and [add] the owner pattern
+// to a new tab under Directory->Applications->Application"). The group's and
+// the role's rules: each owner a PERSON or a GROUP of this realm, resolved by
+// the directory's `resolveOwner` (the service account's resolver); one that
+// names nobody is refused when added and reported, never dropped, when it is
+// deleted since; at most MAX_OWNERS. Written onto `appOwner` with
+// noteGlobalConsentWithdrawn()'s load-and-save, and quietly: an owner is not
+// a credential. AN OWNER GRANTS NOTHING.
+// ---------------------------------------------------------------------------
+/** The most owners an application may name; for more, name a group. */
+const MAX_OWNERS = 25;
+
+function ownerLower(dn) {
+  log.debug("Entering ownerLower().");
+  log.debug("Leaving ownerLower().");
+  return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Describes an application's owners, each resolved to a person or a group
+ * of this realm, or `kind: ''` where it names nobody now.
+ *
+ * @param source - a view, a record, or the identifier
+ * @returns `[{ dn, kind, name, present }]`, in the order the entry holds them
+ */
+function ownersOf(source) {
+  log.debug("Entering ownersOf().");
+  let fields = source && typeof source === 'object'
+    ? (source.fields || {}) : null;
+  if (!fields) {
+    const loaded = load(String(source || ''));
+    fields = loaded.known ? loaded.record.fields : {};
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const out = valuesOf(fields.appOwner).map(function (dn) {
+    const found = resolve ? resolve(dn) : { kind: '', dn: '', name: '' };
+    return { dn: found.kind ? found.dn : dn, kind: found.kind || '',
+             name: found.name || '', present: !!found.kind };
+  });
+  log.debug("Leaving ownersOf(). " + out.length);
+  return out;
+}
+
+/**
+ * Adds one owner to an application, writing at once (#604). An owner
+ * already listed answers ok with `changed: false`.
+ *
+ * @param identifier - the application's identifier
+ * @param owner - a person (username, DN or `urn:uuid:` subject) or a group
+ *   (cn or DN) of this realm
+ * @returns `{ ok: true, changed, application, owner, owners, message }`, or
+ *   `{ ok: false, errors }` carrying an error code
+ */
+function addOwner(identifier, owner) {
+  log.debug("Entering addOwner(). identifier=" + identifier);
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving addOwner(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const wanted = String(owner == null ? '' : owner).trim();
+  if (!wanted) {
+    log.debug("Leaving addOwner(). No owner.");
+    return errorCodes.mark({ ok: false, errors: ['Who? Send `owner` with a ' +
+             'person (a username or DN) or a group (its cn or DN) of this ' +
+             'realm.'] }, 'STS-REG-0354');
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const resolved = resolve ? resolve(wanted) : { kind: '' };
+  if (!resolved.kind) {
+    log.debug("Leaving addOwner(). Names nobody.");
+    return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 128) +
+             '" names no person and no group in this realm. An owner ' +
+             'answers for the application, so it must name somebody.'] },
+             'STS-REG-0355');
+  }
+  const record = loaded.record;
+  const before = ownersOf(record);
+  const values = valuesOf(record.fields.appOwner);
+  if (values.some(function (dn) {
+    return ownerLower(dn) === ownerLower(resolved.dn);
+  })) {
+    log.debug("Leaving addOwner(). Already an owner.");
+    return { ok: true, changed: false, application: record.identifier,
+             owner: resolved.dn, owners: before,
+             message: (resolved.name || resolved.dn) + ' was already an ' +
+                      'owner of ' + record.identifier + '.' };
+  }
+  if (values.length >= MAX_OWNERS) {
+    log.debug("Leaving addOwner(). Too many.");
+    return errorCodes.mark({ ok: false, errors: [record.identifier +
+             ' already names ' + values.length + ' owners, the most an ' +
+             'application may name (' + MAX_OWNERS + '). Name a group of ' +
+             'them instead.'] }, 'STS-REG-0356');
+  }
+  record.fields.appOwner = values.concat([resolved.dn]);
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving addOwner(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The owner could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving addOwner(). Added.");
+  return { ok: true, changed: true, application: record.identifier,
+           owner: resolved.dn, owners: ownersOf(record.identifier),
+           message: (resolved.name || resolved.dn) + ' is now an owner of ' +
+                    record.identifier + '.' };
+}
+
+/**
+ * Takes one owner off an application, writing at once (#604). Refused for a
+ * value it does not list; the last owner may go.
+ *
+ * @param identifier - the application's identifier
+ * @param owner - the owner's DN, as the application lists it
+ * @returns `{ ok: true, changed: true, application, owner, owners, message }`,
+ *   or `{ ok: false, errors }` carrying an error code
+ */
+function removeOwner(identifier, owner) {
+  log.debug("Entering removeOwner(). identifier=" + identifier);
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving removeOwner(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const record = loaded.record;
+  const wanted = String(owner == null ? '' : owner).trim();
+  const values = valuesOf(record.fields.appOwner);
+  const kept = values.filter(function (dn) {
+    return ownerLower(dn) !== ownerLower(wanted);
+  });
+  if (!wanted || kept.length === values.length) {
+    log.debug("Leaving removeOwner(). Not an owner.");
+    return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 128) +
+             '" is not one of ' + record.identifier + '\'s owners.'] },
+             'STS-REG-0357');
+  }
+  record.fields.appOwner = kept;
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving removeOwner(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The owners could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving removeOwner(). Removed.");
+  return { ok: true, changed: true, application: record.identifier,
+           owner: wanted, owners: ownersOf(record.identifier),
+           message: wanted + ' is no longer an owner of ' +
+                    record.identifier + '.' };
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). `appOwner` holds the DNs of people and groups, and under
+// #607 an owner is issued owner:write. A person deleted and made again at
+// the same DN was an owner of every application the first one owned, so the
+// directory's delete of a person or a group calls forgetOwner(), and its
+// rename renameOwner(). The applications are found off the kept listing
+// (`ownerValues()`'s source), not by a view of each, and each one named is
+// written as removeOwner() writes it. Returns the identifiers changed, for
+// the caller's audit row.
+// ---------------------------------------------------------------------------
+function replaceOwner(from, to) {
+  log.debug("Entering replaceOwner().");
+  const was = ownerLower(String(from || '').trim());
+  const now = String(to || '').trim();
+  const kept = listing();
+  if (!was || was === ownerLower(now) || !kept) {
+    log.debug("Leaving replaceOwner(). Nothing to change.");
+    return [];
+  }
+  const named = [];
+  kept.items.forEach(function (item) {
+    if (valuesOf(item.record.fields.appOwner).some(function (one) {
+      return ownerLower(String(one).trim()) === was;
+    })) {
+      named.push(item.record.identifier);
+    }
+  });
+  const changed = [];
+  named.forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const owners = [];
+    valuesOf(record.fields.appOwner).forEach(function (one) {
+      const value = ownerLower(String(one).trim()) === was ? now : String(one);
+      if (value && !owners.some(function (other) {
+        return ownerLower(other) === ownerLower(value);
+      })) {
+        owners.push(value);
+      }
+    });
+    record.fields.appOwner = owners;
+    if (save(record, { quiet: true })) {
+      changed.push(identifier);
+    } else {
+      // The old DN stays on the application; the line names both, so an
+      // administrator can take it off by hand (remove-owner).
+      log.error(errorCodes.tag('STS-ADMIN-0922') + 'applications: could ' +
+                'not ' + (now ? 'move the owner ' + from + ' to ' + now +
+                                ' on'
+                              : 'take the deleted owner ' + from + ' off') +
+                ' ' + identifier + '.');
+    }
+  });
+  log.debug("Leaving replaceOwner(). " + changed.length + " application(s).");
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off the owners of every application
+ * in the ambient realm.
+ *
+ * @param dn - the deleted entry's DN
+ * @returns the identifiers of the applications it was taken off
+ */
+function forgetOwner(dn) {
+  log.debug("Entering forgetOwner().");
+  const changed = replaceOwner(dn, '');
+  log.debug("Leaving forgetOwner(). " + changed.length);
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on the owners of every application
+ * in the ambient realm.
+ *
+ * @param from - the DN it had
+ * @param to - the DN it has now
+ * @returns the identifiers of the applications changed
+ */
+function renameOwner(from, to) {
+  log.debug("Entering renameOwner().");
+  const changed = String(to || '').trim() ? replaceOwner(from, to) : [];
+  log.debug("Leaving renameOwner(). " + changed.length);
+  return changed;
+}
+
+/**
+ * Tells whether an application is closed to its owners (#607).
+ *
+ * @param identifier - the application's identifier
+ * @returns true where `stsOwnerProtected` is TRUE on its entry
+ */
+function ownerProtected(identifier) {
+  log.debug("Entering ownerProtected().");
+  const loaded = load(String(identifier || ''));
+  const answer = loaded.known &&
+    String(valuesOf(loaded.record.fields.stsOwnerProtected)[0] || '')
+      .toUpperCase() === 'TRUE';
+  log.debug("Leaving ownerProtected().");
+  return answer;
+}
+
+/**
+ * Marks an application closed to its owners, or opens it again (#607,
+ * rcbj's decision 4), writing at once.
+ *
+ * @param identifier - the application's identifier
+ * @param flag - true closes it to its owners
+ * @returns `{ ok: true, changed, application, ownerProtected }`, or
+ *   `{ ok: false, errors }` carrying an error code
+ */
+function setOwnerProtected(identifier, flag) {
+  log.debug("Entering setOwnerProtected().");
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving setOwnerProtected(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const record = loaded.record;
+  const wanted = flag === true;
+  if (ownerProtected(record.identifier) === wanted) {
+    log.debug("Leaving setOwnerProtected(). Unchanged.");
+    return { ok: true, changed: false, application: record.identifier,
+             ownerProtected: wanted };
+  }
+  record.fields.stsOwnerProtected = wanted ? ['TRUE'] : [];
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving setOwnerProtected(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The mark could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving setOwnerProtected(). Written.");
+  return { ok: true, changed: true, application: record.identifier,
+           ownerProtected: wanted };
+}
+
+// THIS SERVICE'S OWN APPLICATIONS' IDENTIFIERS (#607), which the
+// access-control policy's owner rule closes to their owners: the console's,
+// the portal's, the management API's and the debugger's clients. Read off
+// `internalApplications()` once — its rows mint secrets, so it is not asked
+// per decision — because the identifiers are fixed by this file.
+let internalIdentifierList = null;
+
+/**
+ * Tells whether an identifier is one of this service's own seeded
+ * applications (#607).
+ *
+ * @param identifier - an application identifier
+ * @returns true for a seeded application's identifier
+ */
+function isInternalIdentifier(identifier) {
+  log.debug("Entering isInternalIdentifier().");
+  if (!internalIdentifierList) {
+    internalIdentifierList = internalApplications().map(function (one) {
+      return String(one.identifier);
+    });
+  }
+  log.debug("Leaving isInternalIdentifier().");
+  return internalIdentifierList.indexOf(String(identifier || '')) >= 0;
 }
 
 /**
@@ -14974,6 +16140,43 @@ function permissionNameProblem(name) {
            '`scope` parameter.';
   }
   log.debug("Leaving permissionNameProblem().");
+  return '';
+}
+
+// AN OPERATOR ERROR CODE IN THE NAME OR THE DESCRIPTION IS REFUSED (#1426).
+//
+// Both are returned on every page that lists the permission — the register,
+// the delegation picture, the directory read — so a code stored in one is
+// SENT, which this service never does. A setting's own description is
+// allowed to name a code, and a paste of that sentence lands in a permission
+// description; the name can be a code too, because `STS-AUTHN-0294` is a
+// legal scope token, so `permissionNameProblem()` accepts it. The sentence
+// below quotes neither value: a refusal body is scanned raw, and a quoted
+// code is the same finding as a stored one. Checked BEFORE
+// `permissionNameProblem()`, whose illegal-token sentence quotes the name.
+//
+// An `ldapmodify` still writes the attribute unchecked, as the schema row
+// says. The two doors that do check are the add in `updateApplication()` and
+// the create walk, which never reaches that function.
+/**
+ * Refuses a permission whose name or description contains an operator
+ * error code.
+ *
+ * @param name - the name
+ * @param description - the description
+ * @returns the refusal sentence, or ''
+ */
+function permissionOperatorCodeProblem(name, description) {
+  log.debug("Entering permissionOperatorCodeProblem().");
+  const text = String(name == null ? '' : name) + '\n' +
+               String(description == null ? '' : description);
+  if (/STS-[A-Z]+-[0-9]{4}/.test(text)) {
+    log.debug("Leaving permissionOperatorCodeProblem(). A code.");
+    return 'A permission name or description may not contain an operator ' +
+           'error code. That value is returned on every page that lists ' +
+           'the permission, and a code is recorded rather than sent.';
+  }
+  log.debug("Leaving permissionOperatorCodeProblem().");
   return '';
 }
 
@@ -15466,6 +16669,81 @@ function nativeSsoOf(clientId) {
   return { enabled: enabled, group: enabled ? group : '' };
 }
 
+// ---------------------------------------------------------------------------
+// WHAT FAPI 2.0 HTTP SIGNATURES NEEDS OF A CLIENT (#178): whether it requires
+// signed requests of itself, and its entry's fields, from which
+// `assertion_grant.keysForParty()` reads the keys it signs with (its jwks, its
+// assertion jwks, or its fetched jwks_uri). `known` is false for a client_id
+// no entry claims, which has no keys a signature could verify against.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a client requires signed resource requests of itself, and
+ * returns its entry's fields for its keys.
+ *
+ * @param clientId - the client id
+ * @returns `{ known, required, fields }`
+ */
+function httpSignaturesOf(clientId) {
+  log.debug("Entering httpSignaturesOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const required = String(valuesOf(fields.oauthHttpSignedRequests)[0] || '')
+    .toUpperCase() === 'TRUE';
+  log.debug("Leaving httpSignaturesOf(). known=" + !!found + ", required=" +
+            required);
+  return { known: !!found, required: required, fields: fields };
+}
+
+// THE `did` CLAIM AGAINST A PAIRWISE SUBJECT (#693): whether the client's
+// entry opts in to being told the person's DID although its `sub` is
+// pairwise or ephemeral. FALSE for anything but TRUE, and for a client
+// nobody registered.
+/**
+ * Says whether a client opts in to the `did` claim although it uses
+ * pairwise or ephemeral subject identifiers (`oauthDidClaimWithPairwise`).
+ *
+ * @param clientId - the client id
+ * @returns true only for TRUE on a known client
+ */
+function didClaimWithPairwiseOf(clientId) {
+  log.debug("Entering didClaimWithPairwiseOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const on = String(valuesOf(fields.oauthDidClaimWithPairwise)[0] || '')
+    .trim().toUpperCase() === 'TRUE';
+  log.debug("Leaving didClaimWithPairwiseOf(). " + on);
+  return on;
+}
+
+// AN API AS A RESOURCE, NEVER A CLIENT (#1139): whether the entry a client_id
+// (or registry identifier) names is an `oauth2-resource-server` and NOT an
+// OAuth client as well. `oauth-oidc/oauth2.ts` refuses such a client_id at
+// every endpoint a client presents itself at, in every mode. An entry
+// carrying both kinds is a client that also defines an API, which RFC 9767
+// allows a GNAP resource server and nothing here forbids an OAuth one.
+/**
+ * Says whether a client_id names a resource object that is no client.
+ *
+ * @param clientId - a client_id or registry identifier
+ * @returns true for an `oauth2-resource-server` without `oauth2-client`
+ */
+function isResourceServer(clientId) {
+  log.debug("Entering isResourceServer().");
+  const id = String(clientId == null ? '' : clientId).trim();
+  if (!id) {
+    log.debug("Leaving isResourceServer(). Nothing was asked for.");
+    return false;
+  }
+  const entry = forClientId(id) || get(id);
+  const kinds = (entry && entry.kinds) || [];
+  const resource = kinds.indexOf('oauth2-resource-server') >= 0 &&
+    kinds.indexOf('oauth2-client') < 0;
+  log.debug("Leaving isResourceServer(). " + resource);
+  return resource;
+}
+
 /**
  * Returns the application whose `oauthClientId` lists a value, matched exactly.
  *
@@ -15500,6 +16778,35 @@ function forClientId(clientId) {
   }
   log.debug("Leaving forClientId(). " + found[0].identifier + ".");
   return found[0];
+}
+
+// EVERY APPLICATION THAT REGISTERS A client_id, in `forClientId()`'s order,
+// for a caller that has to choose among them by something the client_id does
+// not say. Development's token endpoint files a sighting under the bare
+// client_id (`seen()`), so a client_id an administrator put on an entry named
+// otherwise — a Kerberos service's `SPN@REALM`, say — is registered twice
+// once the client has asked for a token, and which of the two
+// `forClientId()` answers is decided by `list()`'s order: the newest
+// activity first, at one-second resolution. The token exchange's Kerberos
+// output asks this for the one that is a Kerberos service, and until it did
+// it named the sighting in the PAC on a second boundary (kerberos_tokens X2).
+/**
+ * Lists every application whose `oauthClientId` lists a value, matched
+ * exactly, in `forClientId()`'s order.
+ *
+ * @param clientId - the client id
+ * @returns the views, possibly none
+ */
+function everyForClientId(clientId) {
+  log.debug("Entering everyForClientId().");
+  const wanted = String(clientId == null ? '' : clientId).trim();
+  if (!wanted) {
+    log.debug("Leaving everyForClientId(). Nothing was asked for.");
+    return [];
+  }
+  const found = lookedUp('byClientId', wanted);
+  log.debug("Leaving everyForClientId(). " + found.length + ".");
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -15592,6 +16899,47 @@ function forAppliesTo(appliesTo) {
   }
   log.debug("Leaving forAppliesTo(). No application has registered it.");
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH APPLICATION ANSWERS TO THIS KERBEROS SERVICE PRINCIPAL NAME (#493).
+//
+// The KDC names the service a ticket is for as `service/host@REALM`, which is
+// the identifier this registry files a Kerberos service under when it first
+// sees one — but an operator may have registered the service under another
+// identifier and listed the SPN on `krb5ServicePrincipalName`, so this asks
+// that attribute when `get()` answers nothing. Matched exactly, as a ticket's
+// sname and realm are.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the application whose `krb5ServicePrincipalName` lists an SPN,
+ * matched exactly.
+ *
+ * @param spn - the service principal name, `service/host@REALM`
+ * @returns the view, or null
+ */
+function forServicePrincipal(spn) {
+  log.debug("Entering forServicePrincipal(). spn=" + spn);
+  const wanted = String(spn == null ? '' : spn).trim();
+  if (!wanted) {
+    log.debug("Leaving forServicePrincipal(). Nothing was asked for.");
+    return null;
+  }
+  const found = lookedUp('byServicePrincipal', wanted);
+  if (!found.length) {
+    log.debug("Leaving forServicePrincipal(). None has registered it.");
+    return null;
+  }
+  if (found.length > 1) {
+    log.warn(errorCodes.tag('STS-REG-0026') +
+             'applications: ' + found.length + ' applications have ' +
+             'registered the SPN "' + wanted + '" (' +
+             found.map(function (row) { return row.identifier; }).join(', ') +
+             '). The first is the one a service ticket is issued against. ' +
+             'An SPN names one service; remove it from the others.');
+  }
+  log.debug("Leaving forServicePrincipal(). " + found[0].identifier + ".");
+  return found[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -15829,28 +17177,32 @@ function internalBaseUrl() {
 }
 
 // ---------------------------------------------------------------------------
-// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), seeded only in a
-// process that embeds it (`mode.embedsProtocolDebugger()`), in the default
-// realm only — its listener has no realm prefix, and the console roster that
+// THE EMBEDDED PROTOCOL DEBUGGER'S ENTRY (2026-09-13), in the default realm
+// only — its listener has no realm prefix, and the console roster that
 // decides who may use it is the default realm's.
 //
-// **TWO ENTRIES AND NOT ONE, BECAUSE THEY ARE TWO PARTIES.** `sts-debugger-api`
-// is a RESOURCE SERVER: it exposes one delegated permission and signs nobody
-// in. `sts-debugger-ui` is the CLIENT a person signs in through, and it holds
-// a grant of that permission — the mapping from an application to a
-// permission another application exposes, in Microsoft Entra ID's shape
-// (`common/app_permissions.ts`). The api row comes first because a permission
-// is defined before it is granted.
+// **SEEDED IN EVERY INSTALL SINCE #541 (2026-10-09)**, whether or not this
+// process embeds the debugger — rcbj: "Add a debugger application object by
+// default to new installs. Model it after the admin console application
+// object." It grants nothing by existing: the debugger's gate lets in a
+// console administrator and nobody else (`debugger/debugger_access.ts`), and
+// with the debugger off nothing listens at its redirect URI.
 //
-// The identifiers and the permission are `debugger/debugger_access.ts`'s and
-// are written out here rather than required: this file is a registry every
-// module reads, and a require from it into a feature directory would make the
-// registry depend on the feature. `tests/debugger_access.js` compares them.
+// **ONE ENTRY SINCE #1717 (2026-11-13), AND IT WAS TWO.** `sts-debugger-api`
+// was a RESOURCE SERVER exposing one delegated permission,
+// `urn:sts:debugger-api:debugger`, and `sts-debugger-ui` the client holding a
+// grant of it; the gate checked an access token for it, on the session or on
+// the request's own `Authorization` header. That header is the debugger's to
+// send to its api — a UserInfo Bearer token, introspection's Basic credentials
+// — so the gate is the relying-party session alone now, the UI and its api are
+// one confidential client signing in by `private_key_jwt`, and there is no
+// separate api to register. The id stays `sts-debugger-ui`, so what an install
+// already holds under it survives. `retireDebuggerApiApplication()` below
+// removes a SEEDED copy of the old resource row from an existing install.
 //
-// **THE PERMISSION CARRIES GLOBAL CONSENT** beside the three OpenID Connect
-// scopes, for the reason the console's entry carries them: the person signing
-// in to their own debugger would otherwise be asked whether they consent to
-// it, which has one sensible answer.
+// **THE SCOPES CARRY GLOBAL CONSENT**, for the reason the console's entry
+// carries them: the person signing in to their own debugger would otherwise
+// be asked whether they consent to it, which has one sensible answer.
 // ---------------------------------------------------------------------------
 function debuggerBaseUrl() {
   log.debug("Entering debuggerBaseUrl().");
@@ -15868,60 +17220,20 @@ function debuggerBaseUrl() {
 
 function debuggerApplications() {
   log.debug("Entering debuggerApplications().");
-  if (!mode.embedsProtocolDebugger()) {
-    log.debug("Leaving debuggerApplications(). The debugger is not embedded.");
-    return [];
-  }
   const base = debuggerBaseUrl();
   const issued = nowSec();
-  const permission = 'urn:sts:debugger-api:debugger';
   log.debug("Leaving debuggerApplications().");
   return [
-    { identifier: 'sts-debugger-api',
-      name: 'Protocol debugger api',
-      kinds: ['oauth2-client'],
-      protocols: ['OAuth 2.0'],
-      realmScope: 'default',
-      description: 'seeded at startup: the embedded protocol debugger\'s ' +
-                   'api, the resource server behind ' + base + '/api ' +
-                   '(debugger.enabled)',
-      attributes: {
-        oauthPermissionBaseUri: 'urn:sts:debugger-api:',
-        oauthPermission: ['debugger|Use the identity protocol debugger and ' +
-                          'its api']
-      },
-      // A resource server authenticates at no endpoint here, so the
-      // registration names no grant and no redirect: the row exists to
-      // DEFINE the permission, which is what makes the UI's grant of it a
-      // grant of something.
-      registration: {
-        client_id: 'sts-debugger-api',
-        client_name: 'Protocol debugger api',
-        client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
-        registration_access_token: randomId(24),
-        registration_client_uri: internalBaseUrl() +
-                                 '/oauth2/register/sts-debugger-api',
-        client_uri: base + '/api',
-        application_type: 'web',
-        redirect_uris: [],
-        grant_types: [],
-        response_types: [],
-        scope: '',
-        token_endpoint_auth_method: 'client_secret_basic'
-      } },
     { identifier: 'sts-debugger-ui',
       name: 'Protocol debugger',
       kinds: ['oauth2-client', 'oidc-relying-party'],
       protocols: ['OAuth 2.0 / OIDC'],
       realmScope: 'default',
       description: 'seeded at startup: the embedded identity protocol ' +
-                   'debugger at ' + base + ' (debugger.enabled)',
+                   'debugger at ' + base + ', its UI and its api ' +
+                   '(debugger.enabled)',
       attributes: {
-        oauthDelegatedPermission: [permission],
-        oauthGlobalConsent: ['openid', 'profile', 'email', 'offline_access',
-                             permission]
+        oauthGlobalConsent: ['openid', 'profile', 'email', 'offline_access']
       },
       registration: {
         client_id: 'sts-debugger-ui',
@@ -15936,10 +17248,301 @@ function debuggerApplications() {
         post_logout_redirect_uris: [base + '/'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access ' + permission,
+        scope: 'openid profile email offline_access',
         token_endpoint_auth_method: 'private_key_jwt'
       } }
   ];
+}
+
+// THE RETIRED DEBUGGER API ROW (#1717). An install seeded before #1717 holds
+// `sts-debugger-api`, a resource server whose one permission nothing asks for
+// any more, and a `sts-debugger-ui` holding a grant of that permission. The
+// first is DELETED and the grant, the consent and the declaration are taken
+// off the second — but only where the start wrote them (`appRegisteredBy:
+// startup`): an entry an operator made or edited by hand under either name is
+// theirs and is left exactly as it is, which is the seed's own rule.
+// Idempotent: on a second start there is nothing to find.
+/**
+ * Removes the seeded pre-#1717 debugger api resource row and the seeded
+ * client's grant of its permission, from an install that has them.
+ *
+ * @returns how many entries were changed or removed
+ */
+function retireDebuggerApiApplication() {
+  log.debug("Entering retireDebuggerApiApplication().");
+  const permission = 'urn:sts:debugger-api:debugger';
+  let changed = 0;
+  const api = load('sts-debugger-api');
+  if (api.known &&
+      valuesOf(api.record.fields.appRegisteredBy)[0] === 'startup' &&
+      valuesOf(api.record.fields.oauthPermissionBaseUri)[0] ===
+        'urn:sts:debugger-api:') {
+    const gone = deleteApplication('sts-debugger-api', { actor: '' });
+    if (gone.ok) {
+      log.info('applications: the seeded "sts-debugger-api" resource row ' +
+               'was removed — the debugger\'s UI and api are one client, ' +
+               '"sts-debugger-ui", since #1717.');
+      changed++;
+    }
+  }
+  const ui = load('sts-debugger-ui');
+  if (ui.known &&
+      valuesOf(ui.record.fields.appRegisteredBy)[0] === 'startup') {
+    const record = ui.record;
+    let touched = false;
+    ['oauthDelegatedPermission', 'oauthGlobalConsent',
+     'oauthAllowedScope'].forEach(function (name) {
+      const held = valuesOf(record.fields[name]);
+      const kept = held.filter(function (one) {
+        return String(one) !== permission;
+      });
+      if (kept.length === held.length) {
+        return;
+      }
+      delete record.fields[name];
+      if (kept.length) {
+        setField(record, name, kept);
+      }
+      touched = true;
+    });
+    if (touched && save(record, { quiet: true })) {
+      audit.audit({
+        action: 'application.update', actor: '', protocol: 'internal',
+        channel: 'internal', target: 'sts-debugger-ui',
+        summary: 'Application "sts-debugger-ui" no longer holds the ' +
+                 'retired debugger api permission (#1717)',
+        detail: { identifier: 'sts-debugger-ui', attribute: permission,
+                  seeded: true }
+      });
+      changed++;
+    }
+  }
+  log.debug("Leaving retireDebuggerApiApplication(). " + changed + ".");
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// THIS SERVICE'S OWN APIS, AS OAUTH 2.0 RESOURCES (#1139, 2026-10-29).
+//
+// rcbj: "They represent the APIs as an OAuth2 Resource. They hold the
+// audience and scope information that is valid. To call this API, a separate
+// application object must be created that is configured to call the desired
+// API object." Until #1139 none of these APIs was an object: the audiences
+// were recognised by code (`common/registered_targets.ts`'s
+// `ownResourceServer()`), and `sts-management-api` was a client. Four rows,
+// in every realm:
+//
+//   * `sts-management-api` — `/admin-api`. The identifier was the bootstrap
+//     CLIENT until #1139; that client is `sts-api-client` now (above).
+//   * `sts-account-api` — `/account-api`, the user portal's only door.
+//   * `sts-report-api` — `/report-api`, the reports application's. A resource
+//     object of this name existed until #1030 deleted it for a grant that
+//     decided nothing (`report/CLAUDE.md`); this is the object back, as the
+//     API's representation rather than a grant's home.
+//   * `sts-resource` — `<issuer base>/resource`, the default resource
+//     indicator RFC 9068 section 3 requires for a request that names none,
+//     which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management
+//     accept (`jwt_access_token.ts`'s `isOwnResourceAudience()`).
+//
+// **THE AUDIENCE IS THE PINNED NAME** (rcbj's decision on #1139): the
+// seeded base (`internalBaseUrl()`: `global.publicBaseUrl` with the realm's
+// prefix, else `localhost:<port>`), moved onto the listener that serves the
+// API (`helpers.rebaseTo()`). The default realm's management API carries
+// `adminApi.audience` as well, which is what `/admin-api` has always
+// required a token to name; it is the same value unless an operator pinned
+// another.
+//
+// **A RESOURCE IS NEVER A CLIENT.** Its kind is `oauth2-resource-server`
+// and nothing else, and `oauth-oidc/oauth2.ts` refuses its client_id at
+// every endpoint a client presents itself at, in every mode
+// (STS-OAUTH-0985). Emptying the grant-type lists would not have done it: an
+// entry declaring no grant type is held to none (`declaredFlowsOf()`), and
+// development verifies no client credential. So it carries no secret, no
+// registration access token, no redirect URI and no grant type.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PERMISSIONS EACH OF THIS SERVICE'S APIS DEFINES (#1141, 2026-10-29),
+// and the one table both their seeding and `common/scope_policy.ts` read.
+//
+// rcbj's decision on #1141: for these three APIs a DELEGATED PERMISSION GRANT
+// on the API's object is the client's half of "may this client ask for this
+// scope" — Microsoft Entra ID's `requiredResourceAccess`, the shape
+// `common/app_permissions.ts` already keeps for the debugger — replacing the
+// registration's `scope` (`oauthAllowedScope`, #110), which listing one of
+// these words no longer satisfies. ROLES ARE UNCHANGED as the subject's half
+// (`common/role_permissions.ts`): a delegated permission grant says what a
+// client may ASK for, never whether the person or application holds the
+// right. "Grant" in this file's #1141 prose is always a delegated permission
+// grant, never RFC 6749's authorization grant (rcbj, 2026-10-29).
+//
+// **A FIXED `urn:sts:` BASE, NOT THE API'S URL.** A permission is identified
+// by its base followed by its name (`urn:sts:admin-api:admin:read`), and the
+// delegated permission grant is that string on the client's
+// `oauthDelegatedPermission`. The API's audience is a URL under whatever name
+// this service is reached by (#1140), so a URL base would make every
+// delegated permission grant depend on a host name; the debugger's
+// `urn:sts:debugger-api:` was the precedent (retired by #1717). A client still asks for the BARE
+// word with `resource` naming the API — what the console, the portal and the
+// reports application send — and `scope_policy.ts` reads the delegated
+// permission grant for it.
+// ---------------------------------------------------------------------------
+/**
+ * The permissions this service's own APIs define, by resource object (#1141).
+ */
+const API_PERMISSIONS = Object.freeze({
+  'sts-management-api': Object.freeze({ base: 'urn:sts:admin-api:',
+    permissions: Object.freeze([
+      ['admin:read', 'Every read on /admin-api (ADMIN_READ)'],
+      ['admin:write', 'Every /admin-api operation that changes anything ' +
+                      '(ADMIN_WRITE), except what changes security'],
+      // #645: what changes security, in place of admin:write.
+      ['admin:security', 'The /admin-api operations that change security: ' +
+                         'policies, the policies an object names, the ' +
+                         'Security Administrator role and its holders\' ' +
+                         'accounts (SECURITY_ADMIN)'],
+      ['admin:console', 'The admin console\'s own operations under ' +
+                        '/admin-api/console (ADMIN_CONSOLE)'],
+      ['owner:read', 'Read what the person owns, through /admin-api ' +
+                     '(OWNER_READ)'],
+      ['owner:write', 'Change what the person owns, through /admin-api ' +
+                      '(OWNER_WRITE)']]) }),
+  'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
+    permissions: Object.freeze([
+      ['account:manage', 'The person\'s own account, through /account-api']
+    ]) }),
+  'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
+    permissions: Object.freeze([
+      ['report:use', 'Reports as a user (REPORT_USE)'],
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) }),
+  // THE AUTHZEN AUTHORIZATION API (#563). AuthZEN defines no scope (section
+  // 11.2 leaves the PEP's authentication to the deployment), so the word is
+  // this service's. A client asks for it on client_credentials with
+  // `resource` naming the realm's /access/v1; AUTHZEN_PEPS is asked at the
+  // API, not at issuance.
+  'sts-authzen-api': Object.freeze({ base: 'urn:sts:authzen-api:',
+    permissions: Object.freeze([
+      ['authzen:evaluate', 'AuthZEN access evaluations at /access/v1 ' +
+                           '(AUTHZEN_PEPS)']]) }),
+  // THE UMA 2.0 PROTECTION API (#1168, rcbj's decision 4): Federated
+  // Authorization section 2's `uma_protection` scope, the one word the
+  // specification itself names. A resource server's client obtains a PAT
+  // carrying it — by the code flow, where the resource owner is the person
+  // consenting, or by client_credentials where the application owns
+  // resources (umaOwnsResources) — and holds a delegated permission grant
+  // of it on this object, written when UMA is switched on for it.
+  'sts-uma-protection-api': Object.freeze({
+    base: 'urn:sts:uma-protection-api:',
+    permissions: Object.freeze([
+      ['uma_protection', 'Register resources and ask permission tickets ' +
+                         'on the resource owner\'s behalf at /uma (UMA ' +
+                         '2.0 protection API)']]) })
+});
+
+// The delegated permission grants a seeded client holds, as
+// `oauthDelegatedPermission` values, from the table: `{ api: [names] }`.
+function delegatedPermissionGrants(wanted) {
+  log.debug("Entering delegatedPermissionGrants().");
+  const out = [];
+  Object.keys(wanted).forEach(function (api) {
+    wanted[api].forEach(function (name) {
+      out.push(API_PERMISSIONS[api].base + name);
+    });
+  });
+  log.debug("Leaving delegatedPermissionGrants(). " + out.length +
+            " delegated permission grant(s).");
+  return out;
+}
+
+/**
+ * The resource objects for this service's own APIs, one row each.
+ *
+ * @param base - the seeded base, with the realm's prefix
+ * @returns the rows
+ */
+function apiResourceApplications(base) {
+  log.debug("Entering apiResourceApplications().");
+  const issued = nowSec();
+  // `internalBaseUrl()` carries the realm's prefix only where
+  // `global.publicBaseUrl` is pinned (its own comment says why: development
+  // LEARNS a surface's callback past it). An audience is learnt from
+  // nothing, so a realm's must carry its prefix either way, or every realm's
+  // management API would answer to the default realm's.
+  const realmBase = helpers.pinnedBaseUrl() ? base
+    : base + realms.currentPrefix();
+  const row = function (identifier, name, audiences, what) {
+    const unique = [];
+    const defined = API_PERMISSIONS[identifier];
+    audiences.forEach(function (one) {
+      const text = String(one || '').trim();
+      if (text && unique.indexOf(text) < 0) {
+        unique.push(text);
+      }
+    });
+    return {
+      identifier: identifier,
+      name: name,
+      kinds: ['oauth2-resource-server'],
+      protocols: ['OAuth 2.0'],
+      realmScope: 'every',
+      description: 'seeded at startup: ' + what + ', as an OAuth 2.0 ' +
+                   'resource (applications.seedInternal)',
+      attributes: Object.assign({ appAllowedProtocol: ['oauth2'],
+                                  oauthAudience: unique },
+        // THE SCOPES IT DEFINES (#1141), as permissions under its fixed base;
+        // the default resource defines none.
+        defined ? {
+          oauthPermissionBaseUri: defined.base,
+          oauthPermission: defined.permissions.map(function (one) {
+            return permissionValueOf(one[0], one[1]);
+          })
+        } : {}),
+      registration: {
+        client_id: identifier,
+        client_name: name,
+        client_id_issued_at: issued,
+        client_uri: unique[0],
+        application_type: 'web',
+        redirect_uris: [],
+        grant_types: [],
+        response_types: [],
+        scope: ''
+      }
+    };
+  };
+  const adminApi = helpers.rebaseTo(realmBase, 'management-api') +
+    '/admin-api';
+  const rows = [
+    row('sts-management-api', 'Management API',
+        [adminApi].concat(realms.isDefault()
+          ? [String(config.value('adminApi.audience') || '')] : []),
+        'this service\'s own management API at /admin-api'),
+    row('sts-account-api', 'Account API',
+        [helpers.rebaseTo(realmBase, 'portal') + '/account-api'],
+        'this service\'s own account API at /account-api, the user ' +
+        'portal\'s'),
+    row('sts-report-api', 'Reporting API',
+        [helpers.rebaseTo(realmBase, 'report') + '/report-api'],
+        'this service\'s own reports API at /report-api'),
+    // The AuthZEN Authorization API (#563): its audience, its one permission,
+    // and the realm's attribute catalogue as `authzenAttribute` values,
+    // which an administrator adds (none is seeded: no property means
+    // anything until somebody says what).
+    row('sts-authzen-api', 'AuthZEN API',
+        [helpers.rebaseTo(realmBase, 'authzen') + '/access/v1'],
+        'this service\'s own AuthZEN Authorization API at /access/v1'),
+    // The UMA 2.0 protection API (#1168): its audience, the realm's `/uma`,
+    // and its one permission, `uma_protection`.
+    row('sts-uma-protection-api', 'UMA protection API',
+        [helpers.rebaseTo(realmBase, 'uma') + '/uma'],
+        'this service\'s own UMA 2.0 protection API at /uma'),
+    row('sts-resource', 'Default resource',
+        [helpers.rebaseTo(realmBase, 'oauth-oidc') + '/resource'],
+        'this service\'s default resource indicator (UserInfo, SCIM, ' +
+        'Shared Signals, OpenID4VCI, Grant Management)')
+  ];
+  log.debug("Leaving apiResourceApplications(). " + rows.length +
+            " row(s).");
+  return rows;
 }
 
 // THE CLIENTS THIS SERVICE'S OWN HOSTED SURFACES SIGN IN AS — the three rows
@@ -15952,11 +17555,11 @@ function debuggerApplications() {
 // tokens with the session anyway: the relying-party session holding each one
 // ends in the same cascade, so the token is nobody's any more.
 /**
- * The client ids this service's own hosted surfaces (the console, the portal
- * and the debugger) sign in as.
+ * The client ids this service's own hosted surfaces (the console, the portal,
+ * the reports application and the debugger) sign in as.
  */
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
-  'sts-user-portal', 'sts-debugger-ui']);
+  'sts-user-portal', 'sts-report', 'sts-debugger-ui']);
 
 // The rows, built fresh on each call because each carries a credential that is
 // generated rather than declared — a registration access token, and a client
@@ -15966,7 +17569,12 @@ function internalApplications() {
   log.debug("Entering internalApplications().");
   const base = internalBaseUrl();
   const issued = nowSec();
-  const rows = [
+  // THE API OBJECTS FIRST (#1141): a permission is defined before anything
+  // holds a delegated permission grant of it, the debugger's rule, and the
+  // clients below hold delegated permission grants of them.
+  // Two shapes in one list (a resource and a client), which the checker would
+  // otherwise type by the first; an edit for the checker, the same program.
+  const rows = /** @type {any[]} */ (apiResourceApplications(base)).concat([
     { identifier: 'sts-admin-console',
       name: 'Admin console',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -15998,25 +17606,64 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own admin console at ' +
                    '/admin (applications.seedInternal)',
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
-                                         'offline_access'] },
+      // `admin:read admin:write` WITH THE REST since the cutover (#446): the
+      // console asks for them on every sign-in, and asking an administrator
+      // whether their own console may use the API it is drawn from is a
+      // question with one answer. The scopes are still narrowed to the roles
+      // the person holds.
+      // `admin:console` (#454) beside them: ADMIN_CONSOLE, which this client
+      // confers on everybody signing in through it, authorizes it.
+      // DECLARED FOR WHAT IT IS (2026-10-08): an OAuth 2.0 client and an
+      // OpenID Connect relying party. `protocols` above is the DERIVED
+      // `appProtocol`; the console's protocol checkboxes and the issuance
+      // policy read `appAllowedProtocol`, which nothing seeded, so the
+      // service's own client read as declared for nothing.
+      // THE DELEGATED PERMISSION GRANTS ARE THE CLIENT'S HALF (#1141): of
+      // the four admin permissions (admin:security since #645) on
+      // `sts-management-api`, which `scope_policy.ts` reads where
+      // `oauthAllowedScope` used to list the words.
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    // #825: this surface's own session bound. The shorter of
+                    // each and the realm is what is enforced.
+                    oauthMaxAuthAgeS: '3600',
+                    oauthRefreshTokenTtlS: '3600',
+                    oauthRefreshIdleSeconds: '900',
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['admin:read', 'admin:write',
+                                             'admin:security',
+                                             'admin:console'] }),
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access', 'admin:read',
+                                         'admin:write', 'admin:security',
+                                         'admin:console'] },
       registration: {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
         client_id_issued_at: issued,
         registration_access_token: randomId(24),
-        registration_client_uri: base + '/oauth2/register/sts-admin-console',
-        client_uri: base + '/admin',
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-admin-console',
+        client_uri: helpers.rebaseTo(base, 'admin-console') + '/admin',
         application_type: 'web',
-        redirect_uris: [base + '/admin/callback'],
-        post_logout_redirect_uris: [base + '/admin'],
+        redirect_uris: [helpers.rebaseTo(base, 'admin-console') +
+                        '/admin/callback'],
+        post_logout_redirect_uris: [helpers.rebaseTo(base, 'admin-console') +
+                                    '/admin'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        // `admin:read admin:write` (#110): the API explorer mints the reader
-        // a token as this client, carrying the scopes their console roles
-        // grant, and /admin-api asks whether the client declared them.
-        scope: 'openid profile email offline_access admin:read admin:write',
-        token_endpoint_auth_method: 'private_key_jwt'
+        // `admin:read admin:write` (#110): the console asks for both, and
+        // /admin-api asks whether the client declared them; issuance narrows
+        // them to the roles the person holds. `admin:console` (#454) is the
+        // console's own operations', authorized by the ADMIN_CONSOLE role
+        // this client confers.
+        scope: 'openid profile email offline_access',
+        // A PUBLIC CLIENT SINCE THE CUTOVER (#446, rcbj's decision 1): the
+        // console is a static application signing in in the browser with
+        // PKCE, so it holds no credential — and every token issued to it is
+        // DPoP-bound to a key the browser cannot export
+        // (`sender_constraints.js`, DPOP_BOUND_PUBLIC_CLIENTS). It was
+        // private_key_jwt while the server signed in for it.
+        token_endpoint_auth_method: 'none'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
     // was the admin console's row with one difference, `realmScope: 'every'`,
@@ -16043,25 +17690,125 @@ function internalApplications() {
       // `consent.js`: the entry is the register, so an operator who wants the
       // screen removes the values and gets it, which is what makes this a
       // default rather than a special case.
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
-                                         'offline_access'] },
+      // Declared OAuth 2.0 and OpenID Connect, the console's reason.
+      // `account:manage` (#568) beside the OpenID scopes: the portal asks
+      // for it on every sign-in, and asking a person whether their own
+      // account page may show them their own account is the question this
+      // row's argument already answered. `owner:read` and `owner:write`
+      // (#607) for the same reason: what a person owns is theirs to
+      // administer, and the policy's owner rule — not a consent screen —
+      // is what bounds it.
+      // Delegated permission grants of `account:manage` on
+      // `sts-account-api` and the owner pair on `sts-management-api`
+      // (#1141), the client's half of each.
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    // #825: eight hours, eight hours, one hour.
+                    oauthMaxAuthAgeS: '28800',
+                    oauthRefreshTokenTtlS: '28800',
+                    oauthRefreshIdleSeconds: '3600',
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-account-api': ['account:manage'],
+                      'sts-management-api': ['owner:read', 'owner:write'] }),
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access',
+                                         'account:manage', 'owner:read',
+                                         'owner:write'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
         client_id_issued_at: issued,
         registration_access_token: randomId(24),
-        registration_client_uri: base + '/oauth2/register/sts-user-portal',
-        client_uri: base + '/portal',
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-user-portal',
+        client_uri: helpers.rebaseTo(base, 'portal') + '/portal',
         application_type: 'web',
-        redirect_uris: [base + '/portal/callback'],
-        post_logout_redirect_uris: [base + '/portal'],
+        redirect_uris: [helpers.rebaseTo(base, 'portal') + '/portal/callback'],
+        post_logout_redirect_uris: [helpers.rebaseTo(base, 'portal') +
+                                    '/portal'],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        // `account:manage` (#568): the one scope `/account-api` takes,
+        // declared by this client alone among the seeded ones — and an
+        // owner's two on `/admin-api` (#607), which the authorization server
+        // issues only to a person who owns something (OWNER_READ,
+        // OWNER_WRITE).
+        scope: 'openid profile email offline_access',
+        // A PUBLIC CLIENT SINCE #568 (rcbj's decision 1, the console's
+        // #446 pattern): the portal is a static application signing in in
+        // the browser with PKCE, so it holds no credential — and every token
+        // issued to it is DPoP-bound to a key the browser cannot export
+        // (`sender_constraints.js`, DPOP_BOUND_PUBLIC_CLIENTS). It was
+        // private_key_jwt while the server signed in for it.
+        token_endpoint_auth_method: 'none'
+      } },
+    // THE REPORTS APPLICATION (#956). The portal's pattern: a static
+    // application signing in in the browser as the public client
+    // `sts-report`, PKCE, every token DPoP-bound. `/report` reads the
+    // ambient realm's session, so a realm without this entry could not
+    // sign anybody in. It holds delegated permission grants of the two
+    // report scopes (#1141), as the console holds them of `admin:read` and
+    // `admin:write`, and the native roles REPORT_USE and REPORT_ADMIN
+    // decide at issuance who is issued them (`common/roles.js`,
+    // `common/role_permissions.ts`). Until #1030 (2026-10-27) a resource
+    // application `sts-report-api` DEFINED the two as delegated permissions
+    // and this client held delegated permission grants of them, but the
+    // browser asks for the bare words with `resource`, which then never
+    // consulted a delegated permission grant, so it decided nothing and both
+    // went. #1141 brought both back and made that path consult it.
+    { identifier: 'sts-report',
+      name: 'Reports',
+      kinds: ['oauth2-client', 'oidc-relying-party'],
+      protocols: ['OAuth 2.0 / OIDC'],
+      realmScope: 'every',
+      description: 'seeded at startup: this service\'s own reports at ' +
+                   '/report (applications.seedInternal)',
+      // Delegated permission grants of both report permissions on
+      // `sts-report-api` (#1141).
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    // #825: the same bound as the console. Reports is an
+                    // administrative surface.
+                    oauthMaxAuthAgeS: '3600',
+                    oauthRefreshTokenTtlS: '3600',
+                    oauthRefreshIdleSeconds: '900',
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-report-api': ['report:use', 'report:admin'] }),
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access', 'report:use',
+                                         'report:admin'] },
+      registration: {
+        client_id: 'sts-report',
+        client_name: 'Reports',
+        client_id_issued_at: issued,
+        registration_access_token: randomId(24),
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-report',
+        client_uri: helpers.rebaseTo(base, 'report') + '/report',
+        application_type: 'web',
+        redirect_uris: [helpers.rebaseTo(base, 'report') +
+                        '/report/callback'],
+        post_logout_redirect_uris: [helpers.rebaseTo(base, 'report') +
+                                    '/report'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'private_key_jwt'
+        token_endpoint_auth_method: 'none'
       } },
-    { identifier: 'sts-management-api',
-      name: 'Management API',
+    // THE CLIENT EVERY MACHINE CALLER HERE STARTS AS (#1139, 2026-10-29). It
+    // was `sts-management-api` until #1139 made that identifier the
+    // management API ITSELF, as a resource (`apiResourceApplications()`,
+    // below): rcbj, "The API application object ... will never be used to
+    // authenticate an application. A separate application object has to be
+    // created for any API client." This is that separate object, and it took
+    // over everything the old client carried — `adminApi.clientSecret`, the
+    // OpenBao seeding, the test launchers, the companion, the AWS reset.
+    //
+    // It calls `/admin-api` and `/report-api`: a member of ADMIN_READ,
+    // ADMIN_WRITE and REPORT_USE (`common/roles.js`'s `seedApplications`),
+    // declaring the three scopes those roles authorize. NOT `/account-api`,
+    // which acts only on a person (rcbj's decision on #1139): a
+    // client_credentials token has no account there to act on.
+    { identifier: 'sts-api-client',
+      name: 'API client',
       kinds: ['oauth2-client'],
       protocols: ['OAuth 2.0'],
       // EVERY REALM SINCE 2026-09-14 (#32), and it was the default realm only.
@@ -16071,13 +17818,24 @@ function internalApplications() {
       // at `/realm/<id>/admin-api` and nowhere else, and never at a
       // service-wide operation (`mgmt-api/admin_api.ts`'s gate and
       // `admin-ui/admin_scope.ts`). The default realm's copy is still the
-      // service's and works everywhere.
+      // service's and works everywhere. (Written of `sts-management-api`;
+      // carried over with the rest by #1139.)
       realmScope: 'every',
-      description: 'seeded at startup: this service\'s own management API at ' +
-                   '/admin-api (applications.seedInternal)',
+      description: 'seeded at startup: the client this service\'s own ' +
+                   'management API (/admin-api) and reports API ' +
+                   '(/report-api) are called as (applications.seedInternal)',
+      // Declared OAuth 2.0 alone, the console's reason: a client_credentials
+      // client with no ID Token, so not OpenID Connect.
+      // Delegated permission grants of admin:read, admin:write,
+      // admin:security (#645) and report:use (#1141).
+      attributes: { appAllowedProtocol: ['oauth2'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['admin:read', 'admin:write',
+                                             'admin:security'],
+                      'sts-report-api': ['report:use'] }) },
       registration: {
-        client_id: 'sts-management-api',
-        client_name: 'Management API',
+        client_id: 'sts-api-client',
+        client_name: 'API client',
         client_id_issued_at: issued,
         // CONFIGURED WHERE THERE IS ONE, and minted otherwise. Since
         // `/admin-api` began requiring an access token, a secret that is
@@ -16094,8 +17852,10 @@ function internalApplications() {
                        randomId(24),
         client_secret_expires_at: 0,
         registration_access_token: randomId(24),
-        registration_client_uri: base + '/oauth2/register/sts-management-api',
-        client_uri: base + '/admin/api-explorer',
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-api-client',
+        client_uri: helpers.rebaseTo(base, 'admin-console') +
+                    '/admin/api-explorer',
         application_type: 'web',
         // NO redirect URI and no response type: this one is a back-channel
         // client on client_credentials, and a redirect URI on it would be a
@@ -16103,10 +17863,11 @@ function internalApplications() {
         redirect_uris: [],
         grant_types: ['client_credentials'],
         response_types: [],
-        scope: 'admin:read admin:write',
+        scope: '',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ].concat(/** @type {any} */ (debuggerApplications()));
+  ]);
+  rows.push.apply(rows, /** @type {any} */ (debuggerApplications()));
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
 }
@@ -16137,7 +17898,7 @@ function seedInternalApplication(spec) {
   spec.protocols.forEach(function (protocol) {
     addTo(record.protocols, protocol);
   });
-  addTo(record.descriptions, spec.description);
+  noteDescription(record, spec.description);
   applyRegistrationFields(record, spec.registration);
   // ANYTHING THAT IS NOT AN RFC 7591 MEMBER, and today that is one attribute:
   // `oauthGlobalConsent`. It goes through `setField()` like every other write
@@ -16148,7 +17909,13 @@ function seedInternalApplication(spec) {
   Object.keys(spec.attributes || {}).forEach(function (name) {
     setField(record, name, spec.attributes[name]);
   });
-  if (!save(record)) {
+  // A seed's own attributes must not leave the flag disagreeing with the
+  // method the registration wrote (#466).
+  recordOauthConfidential(record);
+  // QUIET (#221 P5): the service provisioning its own clients when a realm
+  // or the process starts is not a change to a principal anybody could have
+  // known — see save()'s header.
+  if (!save(record, { quiet: true })) {
     log.warn(errorCodes.tag('STS-REG-0020') +
              'applications: "' + spec.identifier + '" was not seeded — the ' +
              'ou=applications container is full (applications.max) or the ' +
@@ -16171,6 +17938,56 @@ function seedInternalApplication(spec) {
   });
   log.debug("Leaving seedInternalApplication(). Created.");
   return true;
+}
+
+// Writes a hosted session bound only where the attribute is ABSENT. A
+// stored number, including one an administrator confirmed, is kept. A
+// value removed with ldapmodify is absent and comes back as the shipped
+// number. Quiet, because a start that fills what the seed already stated
+// is not a change a person made. Does not go through updateApplication(),
+// so it does not ask for confirm.
+function fillHostedSessionBounds() {
+  log.debug("Entering fillHostedSessionBounds().");
+  let wrote = 0;
+  HOSTED_SESSION_CLIENTS.forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const bounds = HOSTED_SESSION_BOUNDS[identifier];
+    const filled = [];
+    Object.keys(bounds).forEach(function (name) {
+      const have = valuesOf(record.fields[name])[0];
+      if (have !== undefined && String(have).trim() !== '') {
+        return;
+      }
+      if (setField(record, name, bounds[name])) {
+        filled.push(name);
+      }
+    });
+    if (!filled.length) {
+      return;
+    }
+    if (!save(record, { quiet: true })) {
+      log.warn(errorCodes.tag('STS-REG-0020') +
+               'applications: "' + identifier + '" was not given its ' +
+               'hosted session bound — the directory would not take the ' +
+               'write. The shipped number is still what enforcement uses.');
+      return;
+    }
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'internal',
+      channel: 'internal', target: identifier,
+      summary: 'Application "' + identifier + '" was given its hosted ' +
+               'session bound (' + filled.join(', ') + ')',
+      detail: { identifier: identifier, attribute: filled.join(', '),
+                hostedSessionBound: true, seeded: true }
+    });
+    wrote++;
+  });
+  log.debug("Leaving fillHostedSessionBounds(). " + wrote + ".");
+  return wrote;
 }
 
 // Called by `ldap_server.js` the moment it has filled setDirectory() — which is
@@ -16205,8 +18022,8 @@ function seedInternalApplications(options) {
   // this is the process starting up and 'every' when a trust realm is being
   // built, and each row says which realms it belongs in — see the rows
   // themselves, where the answers are argued separately rather than
-  // together. A realm gets the console's, the portal's and the management
-  // API's clients; the embedded debugger's two stay in the default realm.
+  // together. A realm gets the console, the portal, the reports client
+  // and the management API. The debugger's stays in the default realm.
   const wanted = String((options || {}).scope || 'default');
   const rows = internalApplications().filter(function (one) {
     return wanted === 'default' || one.realmScope === 'every';
@@ -16215,13 +18032,333 @@ function seedInternalApplications(options) {
   rows.forEach(function (one) {
     if (seedInternalApplication(one)) made++;
   });
+  // #1717: the debugger's api is no longer an application of its own.
+  if (wanted === 'default') {
+    retireDebuggerApiApplication();
+  }
+  // #825: an entry that already existed is left alone by the seed above.
+  // Fill only the bound attributes that are absent, and never a number
+  // already stored.
+  const filled = fillHostedSessionBounds();
   log.info('applications: ' + made + ' of this service\'s own ' + rows.length +
            ' application(s) were seeded' +
            (wanted === 'default' ? '' : ' into this realm') +
            '. They are ORDINARY entries — edit one, or delete it, and it ' +
-           'stays that way until a restart.');
+           'stays that way until a restart. ' + filled +
+           ' hosted session bound(s) were filled where absent.');
   log.debug("Leaving seedInternalApplications(). " + made + " created.");
   return made;
+}
+
+// ---------------------------------------------------------------------------
+// APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564): THE APPLICATION'S
+// HALF, AND THE LIFECYCLE SLOT.
+//
+// Every application CREATED gets a default fine-grained policy and every
+// application DELETED has its policy retired — disabled, kept, marked
+// orphaned (rcbj's decisions 2 and 3). The policy and its lifecycle are
+// `xacml/fga_policies.ts`'s; this module only says WHEN, through a slot that
+// module fills at 23c (`setFgaLifecycle()`), and keeps the two attributes
+// on the entry (`fgaStateOf()`, `setFgaState()`).
+//
+// **A SLOT AND NOT A REQUIRE, AND RULE 3e'S TEST ANSWERS YES BOTH WAYS
+// ROUND.** A require from here to `xacml/fga_policies` at load would close a
+// cycle — that module requires this one, to read and write the two
+// attributes — and would load the XACML store and templates into whatever
+// first requires this module, which is nearly everything and long before
+// 23c: their `InstanceSlot`s would build default instances there and the
+// composition root's install would then be refused. (It would also have put
+// the XACML family into the parent project's Kerberos COPY closure, which
+// reached this module through `kerberos/krb5_delegation.ts` — an obligation
+// until #1280, and the reason a LAZY require at the write, as
+// `authzenAttributeProblem()` takes, was not enough; that one avoids the
+// cycle and the early build.) The slot adds no require at all, and the
+// arrangement stands. The other way round is the natural direction and is
+// what `fga_policies.ts` does.
+//
+// **WHAT IS CALLED, AND WHAT IS NOT.** `createApplication()` — the console,
+// `/admin-api` and an LDIF import, which creates through it — and
+// `deleteApplication()`, which every deletion goes through. NOT a
+// development-mode sighting (`seen()`), an RFC 7591 registration, or this
+// service's own seeded applications: each of those files an entry nobody
+// with the console created, the first two at an unauthenticated caller's
+// request, and a policy written per entry there would let such a caller
+// fill `ou=policies` to `xacml.maxPolicies` and lock administrators out of
+// writing policies at all. Every one of them gets its policy the first time
+// fine-grained authorization is enabled on it — decision 2's own fallback —
+// and so does an application created before the slot was filled.
+//
+// VALIDATED WHOLE: `created` without `deleted` would make policies that are
+// never retired, which is the half of decision 3 an audit depends on.
+// Nothing a hook does may fail the create or the delete it follows — the
+// application is already written or gone — so a throw is logged under
+// STS-FGA-0010 and the act stands.
+// ---------------------------------------------------------------------------
+let fgaLifecycle = null;
+
+/**
+ * Installs the fine-grained authorization lifecycle hooks; filled by
+ * `xacml/fga_policies.ts` when it is wired at 23c.
+ *
+ * @param hooks - `created(identifier, actor)` and `deleted(identifier,
+ *   actor, policy)` — `policy` the deleted entry's appFgaPolicy, read
+ *   before the entry went — both or neither; null removes them
+ */
+function setFgaLifecycle(hooks) {
+  log.debug("Entering setFgaLifecycle().");
+  const whole = !!hooks && typeof hooks.created === 'function' &&
+                typeof hooks.deleted === 'function';
+  if (hooks && !whole) {
+    log.warn(errorCodes.tag('STS-FGA-0011') +
+             'applications: the fine-grained authorization lifecycle slot ' +
+             'was offered without both created and deleted, and was not ' +
+             'installed. Applications created now get their policy when ' +
+             'fine-grained authorization is first enabled on them.');
+  }
+  fgaLifecycle = whole ? hooks : null;
+  log.debug("Leaving setFgaLifecycle(). " +
+            (fgaLifecycle ? "Installed." : "Not installed."));
+}
+
+/**
+ * Returns the installed lifecycle hooks, so that a test which replaces them
+ * can put back what was there.
+ *
+ * @returns the hooks, or null
+ */
+function fgaLifecycleInstalled() {
+  log.debug("Entering fgaLifecycleInstalled().");
+  log.debug("Leaving fgaLifecycleInstalled().");
+  return fgaLifecycle;
+}
+
+// Calls one hook, and never lets it fail the act it follows.
+function fgaHook(which, identifier, actor, policy) {
+  log.debug("Entering fgaHook(). " + which + " " + identifier);
+  if (!fgaLifecycle) {
+    log.debug("Leaving fgaHook(). No lifecycle installed.");
+    return;
+  }
+  try {
+    const answer = fgaLifecycle[which](String(identifier), actor || '',
+                                       policy || '');
+    if (answer && answer.ok === false) {
+      log.warn(errorCodes.tag('STS-FGA-0010') +
+               'applications: "' + identifier + '" was ' + which + ', and ' +
+               'its fine-grained authorization policy was not ' +
+               (which === 'created' ? 'created' : 'retired') + ': ' +
+               (answer.why || (answer.errors || []).join(' ') ||
+                'no reason given') + '.');
+    }
+  } catch (e) {
+    log.debug("Caught in fgaHook(): " + ((e && e.message) || e));
+    // Logged and not rethrown: the application is already written or
+    // already gone, and a 500 for an act that happened would be a lie.
+    log.warn(errorCodes.tag('STS-FGA-0010') +
+             'applications: the fine-grained authorization ' + which +
+             ' hook threw for "' + identifier + '": ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving fgaHook().");
+}
+
+/**
+ * Reads an application's fine-grained authorization attributes.
+ *
+ * @param identifier - the application's identifier
+ * @returns `{ known, policy, enforced }`: whether the registry holds it, its
+ *   appFgaPolicy ('' when none) and whether appFgaEnforced is TRUE
+ */
+function fgaStateOf(identifier) {
+  log.debug("Entering fgaStateOf(). identifier=" + identifier);
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving fgaStateOf(). Unknown.");
+    return { known: false, policy: '', enforced: false };
+  }
+  const fields = loaded.record.fields;
+  const policy = String(valuesOf(fields.appFgaPolicy)[0] || '');
+  const enforced = String(valuesOf(fields.appFgaEnforced)[0] || '')
+    .toUpperCase() === 'TRUE';
+  log.debug("Leaving fgaStateOf(). policy=" + policy + " enforced=" +
+            enforced);
+  return { known: true, policy: policy, enforced: enforced };
+}
+
+// THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564, P7), for
+// the AuthZEN catalogue a remote PEP pulls (`xacml/xacml.ts`'s
+// `authzenCatalogue()`): the edge PDP forwards an evaluation about one of
+// these to the service rather than deciding it from the root. Read off the
+// kept listing with no view built, as `ownerValues()` is, and SORTED, so the
+// catalogue's sync token moves when the set changes and only then. A store
+// that cannot be read THROWS rather than answering an empty list: an empty
+// list would tell the edge to decide every enforcing application from the
+// root, which is the restriction silently not applying.
+/**
+ * Lists the applications in the ambient realm whose `appFgaEnforced` is
+ * TRUE.
+ *
+ * @returns their identifiers, sorted
+ */
+// THE APPLICATIONS DECLARED FOR A PROTOCOL FAMILY (#1168): what the UMA
+// surface draws as the realm's resource servers, and what its discovery
+// says. Read off the kept listing with no view built, as
+// `applicationsEnforcingFga()` below is, and SORTED. A store that cannot be
+// read answers an empty list here rather than throwing: this is a listing
+// for a page and a document, never a decision — the policy decides a
+// resource server's standing from the declaration on ITS entry.
+/**
+ * Lists the applications in the ambient realm declared for a protocol
+ * family (`appAllowedProtocol`).
+ *
+ * @param family - the family id, as PROTOCOLS names it
+ * @returns their identifiers, sorted
+ */
+function applicationsDeclaredFor(family) {
+  log.debug("Entering applicationsDeclaredFor(). family=" + family);
+  const wanted = String(family || '').trim().toLowerCase();
+  const kept = listing();
+  if (!kept || !wanted) {
+    log.debug("Leaving applicationsDeclaredFor(). No store or no family.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    if (item.record.identifier &&
+        declaredFamiliesOf(item.record).indexOf(wanted) >= 0) {
+      out.push(String(item.record.identifier));
+    }
+  });
+  out.sort();
+  log.debug("Leaving applicationsDeclaredFor(). " + out.length + ".");
+  return out;
+}
+
+function applicationsEnforcingFga() {
+  log.debug("Entering applicationsEnforcingFga().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving applicationsEnforcingFga(). No store.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    const enforced = String(valuesOf(item.record.fields.appFgaEnforced)[0] ||
+                            '').toUpperCase() === 'TRUE';
+    if (enforced && item.record.identifier) {
+      out.push(String(item.record.identifier));
+    }
+  });
+  out.sort();
+  log.debug("Leaving applicationsEnforcingFga(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Writes an application's fine-grained authorization attributes; the one
+ * door `xacml/fga_policies.ts` writes them through. Audited as an
+ * `application.update` naming the attributes.
+ *
+ * @param identifier - the application's identifier
+ * @param change - `policy` (an entry name, '' to clear) and/or `enforced`
+ *   (a boolean); a member left out is left as it is
+ * @param options - `actor`
+ * @returns `ok` and whether anything changed, or `ok: false` with `errors`
+ */
+function setFgaState(identifier, change, options) {
+  log.debug("Entering setFgaState(). identifier=" + identifier);
+  const asked = change || {};
+  const opts = options || {};
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving setFgaState(). Unknown.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+      'called "' + identifier + '" in this realm.'] }, 'STS-FGA-0009');
+  }
+  const record = loaded.record;
+  const touched = [];
+  if (asked.policy !== undefined) {
+    const policy = String(asked.policy || '');
+    if (String(valuesOf(record.fields.appFgaPolicy)[0] || '') !== policy) {
+      if (policy) {
+        record.fields.appFgaPolicy = policy;
+      } else {
+        delete record.fields.appFgaPolicy;
+      }
+      touched.push('appFgaPolicy');
+    }
+  }
+  if (asked.enforced !== undefined) {
+    const enforced = asked.enforced ? 'TRUE' : 'FALSE';
+    if (String(valuesOf(record.fields.appFgaEnforced)[0] || 'FALSE')
+          .toUpperCase() !== enforced) {
+      record.fields.appFgaEnforced = enforced;
+      touched.push('appFgaEnforced');
+    }
+  }
+  if (!touched.length) {
+    log.debug("Leaving setFgaState(). Nothing changed.");
+    return { ok: true, changed: false };
+  }
+  if (!save(record, { actor: opts.actor || '' })) {
+    log.debug("Leaving setFgaState(). The directory refused it.");
+    return errorCodes.mark({ ok: false, errors: ['The directory would not ' +
+      'write ' + touched.join(' and ') + ' on "' + identifier + '".'] },
+      'STS-FGA-0012');
+  }
+  audit.audit({
+    action: 'application.update', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": fine-grained ' +
+             'authorization ' + (touched.indexOf('appFgaEnforced') >= 0
+               ? (asked.enforced ? 'enforced' : 'not enforced')
+               : 'policy ' + (asked.policy ? 'set to "' + asked.policy + '"'
+                                           : 'cleared')),
+    detail: { identifier: String(identifier), attributes: touched,
+              mode: 'fga' }
+  });
+  log.debug("Leaving setFgaState(). " + touched.join(', '));
+  return { ok: true, changed: true };
+}
+
+// THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose
+// answers carry this module's tables: the directory's own page
+// (`/admin-api/ldap/applications`: KINDS and SCHEMA), the Applications list
+// and drill-down (`/admin-api/applications`: KINDS, PROTOCOLS, and a schema
+// row's `what` as each attribute's note), and the create form's vocabulary
+// (`/admin-api/applications/new`: KINDS, PROTOCOLS, and `what` again on
+// every row of declarationAttributes()).
+const PROSE_ROUTES = Object.freeze([
+  '/admin-api/ldap/applications',
+  '/admin-api/applications',
+  '/admin-api/applications/new'
+]);
+
+/**
+ * Extracts this module's console prose (#543 phase 2b): each kind's label
+ * and sentence, each protocol family's label and sentence, and each object
+ * class's and attribute's `what`.
+ *
+ * `from` is NOT extracted: it is where a value comes from, written mostly as
+ * a route, a menu path or a protocol name ('POST /oauth2/register',
+ * 'Protocols → SCIM → Clients'), which a translation would have to keep.
+ * `familyWhy` is NOT extracted, though the schema answer carries it: it is
+ * the reason in familyRefusal()'s refusal, and refusals stay English (#539).
+ * `identifierName`, `overrides`, `where` and `kind` name identifiers.
+ *
+ * @returns {Record<string, string>} key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // Lazily, for the reason every module of this namespace gives: required
+  // only when the extractor asks, so loading this module loads nothing new.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('applications.kinds', KINDS, ['label', 'what']),
+    harvest('applications.protocols', PROTOCOLS, ['label', 'what']),
+    harvest('applications.schema', SCHEMA, ['what']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
 }
 
 /**
@@ -16234,9 +18371,24 @@ function seedInternalApplications(options) {
  * @namespace
  */
 module.exports = {
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: PROSE_ROUTES,
+  // #564: the fine-grained authorization lifecycle slot and the two
+  // attributes' reader and writer.
+  setFgaLifecycle: setFgaLifecycle,
+  fgaLifecycleInstalled: fgaLifecycleInstalled,
+  fgaStateOf: fgaStateOf,
+  setFgaState: setFgaState,
+  applicationsEnforcingFga: applicationsEnforcingFga,
+  prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
+  // #221 P5: the application credential-change diff, for its test.
+  flushCredentialWrites: flushCredentialWrites,
+  noteDirectoryWrite: noteDirectoryWrite,
+  credentialSnapshotOf: credentialSnapshotOf,
   frontchannelOriginProblem: frontchannelOriginProblem,
   backchannelSchemeProblem: backchannelSchemeProblem,
   requiredRolesOf: requiredRolesOf,
@@ -16264,6 +18416,10 @@ module.exports = {
   // document, so neither can offer a field the other has never heard of.
   declarationAttributes: declarationAttributes,
   DECLARATION_ATTRIBUTE_NAMES: DECLARATION_ATTRIBUTE_NAMES,
+  // The identifier attributes a declared family presents as the registry
+  // identifier (#393). A create fills an empty one; a certificate subject,
+  // a bind DN and a SPIFFE ID are not in the list.
+  primaryNameAttributes: primaryNameAttributes,
   // What an application answers to in each family, with the protocol's own
   // word for it. Exported for the delegation pictures — see its header for why
   // the list is built here and not in the renderer.
@@ -16274,6 +18430,10 @@ module.exports = {
   // this module exists to prevent.
   homePageOf: homePageOf,
   initiateLoginUriOf: initiateLoginUriOf,
+  clientDisplayOf: clientDisplayOf,
+  clientDisplayUriProblem: clientDisplayUriProblem,
+  initiateLoginUriProblem: initiateLoginUriProblem,
+  LAUNCH_PROTOCOLS: LAUNCH_PROTOCOLS,
   homePageProblem: homePageProblem,
   ownerLookupUriProblem: ownerLookupUriProblem,
   // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request
@@ -16285,7 +18445,16 @@ module.exports = {
   ssfOverrideRows: ssfOverrideRows,
   strictOverrideProblem: strictOverrideProblem,
   attributeChoices: attributeChoices,
+  // #706: what the console offers for the two declared flow lists.
+  FLOW_GRANT_TYPES: FLOW_GRANT_TYPES,
+  FLOW_RESPONSE_TYPES: FLOW_RESPONSE_TYPES,
+  canonicalResponseType: canonicalResponseType,
   authMethodsProblem: authMethodsProblem,
+  oauthConfidentialOf: oauthConfidentialOf,
+  confidentialDisagreement: confidentialDisagreement,
+  confidentialClearSentence: confidentialClearSentence,
+  confidentialModeSentence: confidentialModeSentence,
+  writeOauthConfidential: writeOauthConfidential,
   choiceProblem: choiceProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,
   redirectOriginsOfRealm: redirectOriginsOfRealm,
@@ -16318,6 +18487,13 @@ module.exports = {
   introspectionResponseProblem: introspectionResponseProblem,
   idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
   jarmMetadataProblem: jarmMetadataProblem,
+  // #290: the eleven response and request-default members as attributes.
+  userinfoEncryptionMetadataProblem: userinfoEncryptionMetadataProblem,
+  clientResponseMetadataProblem: clientResponseMetadataProblem,
+  clientResponseAttributeProblem: clientResponseAttributeProblem,
+  CLIENT_RESPONSE_ATTRIBUTES: CLIENT_RESPONSE_ATTRIBUTES,
+  permittedEncs: permittedEncs,
+  defaultJweEnc: defaultJweEnc,
   ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
   ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
   ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,
@@ -16338,12 +18514,18 @@ module.exports = {
   cibaOf: cibaOf,
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
-  registeredFlowsOf: registeredFlowsOf,
+  declaredFlowsOf: declaredFlowsOf,
+  // #1296: the token response types a client is allowed, and the four.
+  allowedTokenResponseTypesOf: allowedTokenResponseTypesOf,
+  TOKEN_RESPONSE_TYPES: TOKEN_RESPONSE_TYPES,
   grantsAndResponseTypesOf: grantsAndResponseTypesOf,
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
   delegationAttributeProblem: delegationAttributeProblem,
+  selfReferenceProblem: selfReferenceProblem,
+  APPLICATION_REFERENCE_ATTRIBUTES: APPLICATION_REFERENCE_ATTRIBUTES,
+  FIELD_SEARCHES: FIELD_SEARCHES,
   mtlsMetadataProblem: mtlsMetadataProblem,
   mtlsAttributeProblem: mtlsAttributeProblem,
   gnapMtlsTrustFor: gnapMtlsTrustFor,
@@ -16378,15 +18560,35 @@ module.exports = {
   // The two conversions, exported because ldap_server.js seeds and reads
   // entries with them and this module owns the schema they encode.
   attributesFor: attributesFor,
+  // What the store replaces on a write and what it keeps (#1230).
+  ownedAttributeNames: ownedAttributeNames,
   nativeSsoOf: nativeSsoOf,
+  httpSignaturesOf: httpSignaturesOf,
+  didClaimWithPairwiseOf: didClaimWithPairwiseOf,
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,
   // The console's field grid (2026-09-30): every field, typed, with the
   // families and group each is drawn under.
   applicationFields: applicationFields,
+  FIELD_SECTIONS: FIELD_SECTIONS,
+  SIMPLE_FIELD_ATTRIBUTES: SIMPLE_FIELD_ATTRIBUTES,
+  PAGE_TAB_ATTRIBUTES: PAGE_TAB_ATTRIBUTES,
+  // An application's owners (#604).
+  MAX_OWNERS: MAX_OWNERS,
+  ownersOf: ownersOf,
+  addOwner: addOwner,
+  removeOwner: removeOwner,
+  // A deleted owner owns nothing; a renamed one still does (2026-11-13).
+  forgetOwner: forgetOwner,
+  renameOwner: renameOwner,
+  // Closed to its owners (#607).
+  ownerProtected: ownerProtected,
+  setOwnerProtected: setOwnerProtected,
+  isInternalIdentifier: isInternalIdentifier,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
+  CHOICE_IDS: CHOICE_IDS,
   fieldExample: fieldExample,
   familiesOfChoices: familiesOfChoices,
   BOOLEAN_ATTRIBUTES: BOOLEAN_ATTRIBUTES,
@@ -16397,14 +18599,21 @@ module.exports = {
   // editableAttributes() itself exists for. Both halves come off the SCHEMA
   // row's `families` member.
   declaredFamiliesOf: declaredFamiliesOf,
+  applicationsDeclaredFor: applicationsDeclaredFor,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
+  secretDestinationCredentialOf: secretDestinationCredentialOf,
+  scimClientCredentialOf: scimClientCredentialOf,
   claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,
   familyRefusal: familyRefusal,
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
+  // One row by its spec; for tests/debugger_access.js, which seeds the
+  // pre-#1717 debugger rows to retire them.
+  seedInternalApplication: seedInternalApplication,
+  retireDebuggerApiApplication: retireDebuggerApiApplication,
   roleGatingFor: roleGatingFor,
   updateApplication: updateApplication,
   noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,
@@ -16413,6 +18622,7 @@ module.exports = {
   addClientSecret: addClientSecret,
   removeClientSecret: removeClientSecret,
   sweepClientSecrets: sweepClientSecrets,
+  sweepClientSecretsInSlices: sweepClientSecretsInSlices,
   secretExpiryOf: secretExpiryOf,
   clientSecretRecordsOf: clientSecretRecordsOf,
   registrationAccessTokenOf: registrationAccessTokenOf,
@@ -16443,6 +18653,12 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  applicationsNamingAuthnPolicy: applicationsNamingAuthnPolicy,
+  applicationsNamingPolicy: applicationsNamingPolicy,
+  POLICY_REFERENCES: POLICY_REFERENCES,
+  // The clock `list()` is kept by (#625).
+  listingVersion: listingVersion,
+  ownerValues: ownerValues,
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,
@@ -16451,6 +18667,14 @@ module.exports = {
   settingFor: settingFor,
   largestSetting: largestSetting,
   overridableSettings: overridableSettings,
+  // #825: the console, the portal and the reports application.
+  HOSTED_SESSION_CLIENTS: HOSTED_SESSION_CLIENTS,
+  isHostedSessionClient: isHostedSessionClient,
+  hostedBoundAttribute: hostedBoundAttribute,
+  hostedEffective: hostedEffective,
+  applyClientMaxAge: applyClientMaxAge,
+  confirmAsked: confirmAsked,
+  hostedSessionBoundRefusal: hostedSessionBoundRefusal,
   // The audience lookup, exported for the token endpoint. See its header for
   // why it is a lookup and not a check.
   forAudience: forAudience,
@@ -16458,10 +18682,16 @@ module.exports = {
   // The client_id lookup beside it, exported for oauth2.js's audienceScopes().
   // Two lookups rather than one that tries both — see forClientId()'s header.
   forClientId: forClientId,
+  // Every entry registering it, for a caller choosing among them (the token
+  // exchange's Kerberos output, which wants the Kerberos service).
+  everyForClientId: everyForClientId,
+  isResourceServer: isResourceServer,
+  API_PERMISSIONS: API_PERMISSIONS,
   // And the WS-Trust / SAML spelling of forAudience(), exported for
   // wstrust.js's delegation act. Its header says why it reads two attributes
   // where the other two read one.
   forAppliesTo: forAppliesTo,
+  forServicePrincipal: forServicePrincipal,
   // ---------------------------------------------------------------------------
   // THE DELEGATED PERMISSION HALF. Everything a reader of ONE entry needs; what
   // needs two entries is common/app_permissions.ts, which requires this module
@@ -16478,6 +18708,8 @@ module.exports = {
   parsePermissionValue: parsePermissionValue,
   permissionValueOf: permissionValueOf,
   permissionNameProblem: permissionNameProblem,
+  // #1426: the name or the description, before any sentence that quotes it.
+  permissionOperatorCodeProblem: permissionOperatorCodeProblem,
   // The RFC 6749 section 3.3 grammar on its own, for common/consent.ts — see
   // the block above it for why the schema owner owns this rule.
   scopeTokenProblem: scopeTokenProblem,
@@ -16496,5 +18728,9 @@ module.exports = {
   allowedScopesOf: allowedScopesOf,
   count: count,
   containerDn: containerDn,
-  maxApplications: maxApplications
+  maxApplications: maxApplications,
+  // #546: one application out to an LDIF file and back in.
+  exportApplicationLdif: exportApplicationLdif,
+  importApplicationLdif: importApplicationLdif,
+  PORTABLE_CREDENTIALS: PORTABLE_CREDENTIALS
 };

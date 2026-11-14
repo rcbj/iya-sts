@@ -69,6 +69,7 @@
 
 import helpers = require('../common/helpers');
 import config = require('../common/config');
+import DomainMap = require('../common/domain_map');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
@@ -216,7 +217,9 @@ class GnapOwnership {
     const { log, applications } = this.deps;
     log.debug("Entering GnapOwnership.templateOf(). " + rsId);
     const app = rsId ? applications.get(rsId) : null;
-    const raw = app && app.fields ? app.fields[LOOKUP_ATTRIBUTE] : '';
+    // The GnapClient's (#1579).
+    const raw: unknown = app && app.fields ?
+      DomainMap.fieldOf('GnapClient', 'ownerLookupUri', app.fields) : '';
     const value = Array.isArray(raw) ? raw[0] : raw;
     log.debug("Leaving GnapOwnership.templateOf().");
     return value ? String(value) : '';

@@ -61,6 +61,9 @@ import InstanceSlot = require('./instance_slot');
 import credentials = require('./credentials');
 import audit = require('./audit');
 import stats = require('./admin_stats');
+// Where a disabled account is SAID, so a refresh grant waits for it (the
+// review of #879). A leaf over `helpers`.
+import RevokingWrites = require('./revoking_writes');
 import errorCodes = require('./error_codes');
 import realms = require('./realms');
 
@@ -388,6 +391,11 @@ class AccountState {
     if (!written || !written.ok) {
       log.debug("Leaving AccountState.setDisabled(). Not written.");
       return written;
+    }
+    // A refresh token of a disabled person must not be redeemed on a worker
+    // that has not yet seen the lock (the review of #879).
+    if (disabled) {
+      RevokingWrites.note('an account disabled');
     }
     const ended = disabled
       ? this.endEverything(name, {

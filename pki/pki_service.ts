@@ -71,7 +71,7 @@
 // ---------------------------------------------------------------------------
 
 import http = require('http');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
@@ -100,7 +100,7 @@ import InstanceSlot = require('../common/instance_slot');
 // one and a test can build one with stubs.
 interface PkiServiceDeps {
   http: typeof http;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   app: typeof app;
   log: typeof log;
   config: typeof config;
@@ -144,7 +144,7 @@ class PkiService {
     helpers.log.debug("Leaving PkiService.defaultDeps().");
     return {
       http: http,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       app: app,
       log: log,
       config: config,
@@ -283,7 +283,7 @@ class PkiService {
    * @param caId - the certificate authority's id
    */
   caCertificateFor(req, res, scopeSegment, caId) {
-    const { log, revocation, errorCodes, nodeCrypto } = this.deps;
+    const { log, revocation, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering PkiService.caCertificateFor().");
     const scope = revocation.scopeFromSegment(scopeSegment);
     const authority = revocation.authorityFor(scope, caId);
@@ -306,13 +306,15 @@ class PkiService {
     // holding the old certificate for an hour built chains to a key that no
     // longer signs anything. `no-cache` with a strong ETag lets a client keep
     // the bytes and costs it one conditional request to learn they are still
-    // right.
+    // right. The ETag is the SHA-256 of the bytes (#453; it was SHA-1): a
+    // client compares it and never computes it (RFC 9110 section 8.8.3), so
+    // any collision-resistant digest serves and SHA-1 is in no list a caller
+    // here may choose from.
     res.status(200)
        .set('Content-Type', 'application/pkix-cert')
        .set('Content-Length', String(der.length))
        .set('Cache-Control', 'no-cache')
-       .set('ETag', '"' + nodeCrypto.createHash('sha1').update(der)
-         .digest('hex') + '"')
+       .set('ETag', '"' + stsCrypto.digest('sha256', der, 'hex') + '"')
        .send(der);
     log.debug("Leaving PkiService.caCertificateFor().");
   }
@@ -328,9 +330,12 @@ class PkiService {
   // no-store" header in authoritative OCSP responses*, and asks for `max-age`
   // no later than
   // `nextUpdate`, `Last-Modified` at `thisUpdate`, `Expires` at `nextUpdate`
-  // and an `ETag` of the response. What a person revoking something needs is
-  // served anyway: a client asking with a nonce gets an answer no cache may
-  // hand to anybody else, and `nextUpdate` is `pki.crlLifetimeMinutes` away.
+  // and an `ETag` of the response — the hex SHA-1 of it, which section 6.2
+  // RECOMMENDS and which is therefore one of `crypto.js`'s SHA1_PURPOSES
+  // (`ocsp-etag`, #453). What a person
+  // revoking something needs is served anyway: a client asking with a nonce
+  // gets an answer no cache may hand to anybody else, and `nextUpdate` is
+  // `pki.crlLifetimeMinutes` away.
   //
   // **A RESPONSE CARRYING A NONCE IS `private, max-age=0`**, because that
   // answer belongs to one request and a shared cache handing it to the next
@@ -348,7 +353,7 @@ class PkiService {
    * @param made - the response the responder made
    */
   sendOcsp(res, made) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering PkiService.sendOcsp().");
     if (made.status !== 'successful' || !made.nextUpdate) {
       this.sendDer(res, 'application/ocsp-response', made.der, false);
@@ -365,8 +370,8 @@ class PkiService {
          : 'max-age=' + maxAge + ', public, no-transform, must-revalidate')
        .set('Last-Modified', new Date(made.thisUpdate).toUTCString())
        .set('Expires', new Date(nextMs).toUTCString())
-       .set('ETag', '"' + nodeCrypto.createHash('sha1').update(made.der)
-         .digest('hex') + '"')
+       .set('ETag', '"' +
+         stsCrypto.sha1Digest('ocsp-etag', made.der, 'hex') + '"')
        .send(made.der);
     log.debug("Leaving PkiService.sendOcsp(). Authoritative.");
   }
@@ -450,6 +455,10 @@ class PkiService {
     res.statusCode = 404;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; " +
+                  "frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
     res.end('This plain-HTTP listener serves the revocation endpoints under ' +
             '/pki/, SCEP under /enroll/scep, and /healthcheck, and nothing ' +
             'else. Everything else this service answers is on its main ' +
@@ -571,9 +580,13 @@ class PkiService {
     //
     // **NAMED BY THE LEAF'S SHA-256, NOT BY A `kid` OR A SLOT.** The address is
     // written into a token that outlives the key that signed it, so it must
-    // name one certificate for ever: a key rotated since is a 404, never a
-    // chain over a different key. The value is matched against the register,
-    // not parsed.
+    // name one certificate for ever: never a chain over a different key. The
+    // value is matched against the register, not parsed. **A certificate the
+    // slot no longer holds is still served until it expires (#318)**, with
+    // the chain it was issued with — the token naming it is still valid, and
+    // OCSP already answered `good` for it; a 404 is a certificate this scope
+    // never issued, one expired, or one of the oldest few a slot displaced
+    // (`pki_merge.js`'s `PUBLISHED_PER_SLOT`).
     //
     // **`no-store`**, for the rule every document that publishes this service's
     // key material follows: in development mode the keys behind these
@@ -593,8 +606,9 @@ class PkiService {
                     'There is no JOSE signing certificate with that SHA-256 ' +
                     'in the "' +
                     scopeSegment +
-                    '" scope of this service. A certificate replaced ' +
-                    'since a token named it is no longer published here.');
+                    '" scope of this service that is still valid. A ' +
+                    'replaced certificate is published here until it ' +
+                    'expires.');
         log.debug("Leaving the certificate chain endpoint. Not found.");
         return;
       }

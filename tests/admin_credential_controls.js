@@ -26,16 +26,21 @@
 //      REMOVES the password, is refused once expired, and sends
 //      credential-change (password, revoke) and
 //      account-credential-change-required.
-//   3. OVER HTTP, /portal/reset-password draws the form for a good link,
+//   3. OVER HTTP, /account-api/reset-password (the static portal's page's
+//      operations since #568) answers the form for a good link,
 //      answers one sentence for a bad one, refuses a mismatch, sets the
 //      password, spends the link, and sends credential-change (password,
 //      create, initiated by the user).
 //   4. disable-primary-keys refuses somebody with no password, and otherwise
 //      removes every primary key and only those, with a credential-change per
-//      key.
+//      key, and ends a session that key signed in while a password-only
+//      session stays (#963).
 //   5. disable-mfa removes the authenticator app, every mfa key and the
 //      recovery codes, sends a credential-change per credential and RISC
 //      recovery-information-changed, and refuses somebody holding none.
+//      It ends a session that names a removed mfa key, one that names the
+//      authenticator app and one that names a recovery code, and leaves a
+//      password-only session (#963).
 //   6. require-mfa / stop-requiring-mfa write the per-account requirement, and
 //      the authentication policy's requireSecondFactor is the realm's.
 //   7. OVER HTTP, a sign-in for somebody of whom a second factor is required
@@ -69,10 +74,10 @@ function childMain() {
                     detail: detail === undefined ? '' : String(detail) });
   }
 
-  function request(port, method, urlPath, form, cookie) {
+  function request(port, method, urlPath, form, cookie, extra) {
     return new Promise(function (resolve) {
       const body = form ? new URLSearchParams(form).toString() : '';
-      const headers = {};
+      const headers = Object.assign({}, extra || {});
       if (cookie) {
         headers.cookie = cookie;
       }
@@ -94,6 +99,24 @@ function childMain() {
     });
   }
 
+  // A JSON BODY, as the static portal sends a form to `/account-api` (#568).
+  function requestJson(port, method, urlPath, body) {
+    return new Promise(function (resolve) {
+      const text = JSON.stringify(body || {});
+      const req = http.request({ host: '127.0.0.1', port: port, path: urlPath,
+        method: method, headers: { 'content-type': 'application/json',
+          'content-length': Buffer.byteLength(text) } }, function (res) {
+        let out = '';
+        res.on('data', function (c) { out += c; });
+        res.on('end', function () {
+          resolve({ status: res.statusCode, headers: res.headers,
+                    text: out });
+        });
+      });
+      req.end(text);
+    });
+  }
+
   function sleep(ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
   }
@@ -110,6 +133,8 @@ function childMain() {
     const streams = require(ROOT + '/ssf/ssf_streams');
     const risc = require(ROOT + '/ssf/risc');
     const actions = require(ROOT + '/admin-core/admin_actions');
+    const authn = require(ROOT + '/authn/authn');
+    const audit = require(ROOT + '/common/audit');
     // #64: the realm-wide requirement and the authenticator-app switch are
     // the authentication policy's rows now (they were authn.mfaRequired and
     // totp.enabled).
@@ -170,6 +195,30 @@ function childMain() {
         return (claims.events || {})[uri] || null;
       };
       const context = { via: 'api', actor: 'tester', base: 'https://sts.test' };
+      // A session made as a sign-in door makes one. The credential on the
+      // event is what `endFactorSessions()` reads (#963); the screens'
+      // own files drive the ceremonies.
+      const sessionRes = { set: function () { return sessionRes; },
+                           append: function () { return sessionRes; },
+                           status: function () { return sessionRes; },
+                           type: function () { return sessionRes; },
+                           send: function () { return sessionRes; },
+                           req: null };
+      const sessionFor = function (name, amr, acr, credential) {
+        return authn.startSession(sessionRes, name, amr, acr,
+          'OAuth 2.0 / OIDC', { credential: credential });
+      };
+      const live = function (session) {
+        return !!(session && authn.sessionById(session.id));
+      };
+      // `audit.list()` is newest first. The success row is the one that
+      // counts sessions; a refusal of the same act is a different row.
+      const auditRow = function (actionName, target) {
+        return audit.list().filter(function (row) {
+          return row.action === actionName && row.target === target &&
+                 row.outcome === 'success';
+        })[0] || null;
+      };
 
       // ====================================================================
       // 1. RESET PASSWORD
@@ -185,6 +234,19 @@ function childMain() {
            '1b. pwdReset is set on the entry');
       note(credentials.verify('ctl-alice', reset.password).ok,
            '1c. the returned password is the one stored');
+      ldapServer.createUser('ctl-gen', {});
+      const generatedSet = actions.usersAction({ action: 'set-password',
+        user: 'ctl-gen', generate: true }, context);
+      note(generatedSet.ok && generatedSet.password &&
+           credentials.passwordResetRequired('ctl-gen'),
+           '1b-ii. a generated set-password must be changed at first use',
+           JSON.stringify(generatedSet.errors || []));
+      ldapServer.createUser('ctl-typed', {});
+      const typed = actions.usersAction({ action: 'set-password',
+        user: 'ctl-typed', password: 'A-long-typed-passphrase' }, context);
+      note(typed.ok && !credentials.passwordResetRequired('ctl-typed'),
+           '1b-iii. and one an administrator typed need not be',
+           JSON.stringify(typed.errors || []));
       let sets = await waitFor('ctl-alice', 2);
       const change1 = sets.map(function (c) {
         return payloadOf(c, CAEP + 'credential-change');
@@ -208,7 +270,7 @@ function childMain() {
       const linked = actions.usersAction({ action: 'issue-password-reset',
                                            user: 'ctl-alice' }, context);
       const linkShape =
-        /^https:\/\/sts\.test\/portal\/reset-password\?user=ctl-alice&token=./;
+        /^https:\/\/sts\.test\/portal\/reset-password\?user=ctl-alice#token=./;
       note(linked.ok && linkShape.test(String(linked.resetUrl || '')),
            '2a. the reset link is absolute on the base the action was given',
            String(linked.resetUrl));
@@ -243,34 +305,49 @@ function childMain() {
       }), '2e. a credential-change (password, revoke) was queued');
 
       // ====================================================================
-      // 3. /portal/reset-password OVER HTTP
+      // 3. THE RESET LINK OVER HTTP. Since #568 the portal is a static
+      // application: the link's page is drawn in the browser from
+      // `GET /account-api/reset-password`, and its form is
+      // `POST /account-api/reset-password` — both taking no token, the
+      // link's `user` and `token` the credential, a JSON body.
       // ====================================================================
       const server = http.createServer(app);
       await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
       const port = server.address().port;
-      const resetPath = '/portal/reset-password';
-      let r = await request(port, 'GET', resetPath + '?user=ctl-alice&token=' +
-                            encodeURIComponent(token));
-      note(r.status === 200 && /Choose a new password/.test(r.text),
-           '3a. a good link draws the form', r.status);
-      r = await request(port, 'GET', resetPath + '?user=ctl-alice&token=' +
-                        encodeURIComponent(token.slice(0, -2) + 'zz'));
+      const resetPath = '/account-api/reset-password';
+      const json = function (r) {
+        try {
+          return JSON.parse(r.text);
+        } catch (e) {
+          // Not JSON: the assertion below names the text.
+          return {};
+        }
+      };
+      let r = await request(port, 'GET', resetPath + '?user=ctl-alice', null,
+                            null, { 'x-link-token': token });
+      note(r.status === 200 && !json(r).refused &&
+           json(r).username === 'ctl-alice',
+           '3a. a good link answers the form\'s view', r.status + ' ' +
+           r.text.slice(0, 200));
+      r = await request(port, 'GET', resetPath + '?user=ctl-alice', null, null,
+                        { 'x-link-token': token.slice(0, -2) + 'zz' });
       note(r.status === 400 && /not valid/.test(r.text),
            '3b. a bad link answers the one sentence', r.status);
-      r = await request(port, 'POST', resetPath,
+      r = await requestJson(port, 'POST', resetPath,
         { user: 'ctl-alice', token: token, password: 'New-Pass-456!',
           confirm: 'Other-Pass-456!' });
       note(r.status === 400 && /do not match/.test(r.text),
            '3c. two different passwords are refused', r.status);
-      r = await request(port, 'POST', resetPath,
+      r = await requestJson(port, 'POST', resetPath,
         { user: 'ctl-alice', token: token, password: 'New-Pass-456!',
           confirm: 'New-Pass-456!' });
-      note(r.status === 200 && /Your password is set/.test(r.text),
+      note(r.status === 200 && json(r).ok === true && json(r).view &&
+           json(r).view.done === true,
            '3d. a good password is set', r.status + ' ' + r.text.slice(0, 80));
       note(credentials.hasPassword('ctl-alice') &&
            !credentials.checkPasswordReset('ctl-alice', token).ok,
            '3e. the entry has a password and the link is spent');
-      r = await request(port, 'POST', resetPath,
+      r = await requestJson(port, 'POST', resetPath,
         { user: 'ctl-alice', token: token, password: 'New-Pass-789!',
           confirm: 'New-Pass-789!' });
       note(r.status === 400, '3f. the spent link is refused', r.status);
@@ -287,22 +364,48 @@ function childMain() {
       ldapServer.createUser('ctl-bob', {});
       const jwk = { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' };
       credentials.addKey('ctl-bob', { credentialId: 'bob-primary',
-        publicKeyJwk: jwk, label: 'desk key' }, 'primary');
+        publicKeyJwk: jwk, label: 'desk key' });
       credentials.addKey('ctl-bob', { credentialId: 'bob-mfa',
-        publicKeyJwk: jwk, label: 'drawer key' }, 'mfa');
+        publicKeyJwk: jwk, label: 'drawer key' });
       let refused = actions.usersAction({ action: 'disable-primary-keys',
                                           user: 'ctl-bob' }, context);
       note(!refused.ok && errorCodes.codeOf(refused) === 'STS-AUTHN-0161',
-           '4a. refused for somebody whose primary key is their only way in',
+           '4a. refused for somebody whose passkeys are their only way in',
            errorCodes.codeOf(refused));
       credentials.setPassword('ctl-bob', 'Bob-Pass-123!');
+      const byPrimary = sessionFor('ctl-bob', ['hwk'], '1',
+        { kind: 'webauthn', id: 'bob-primary' });
+      const byPassword = sessionFor('ctl-bob', ['pwd'], '1',
+        { kind: 'password' });
+      note(!!byPrimary && !!byPassword && live(byPrimary) &&
+           live(byPassword),
+           '4. (precondition) a session the primary key signed in and a ' +
+           'password-only session are both live',
+           'primary=' + live(byPrimary) + ' password=' + live(byPassword));
       const disabledKeys = actions.usersAction({ action: 'disable-primary-keys',
                                                  user: 'ctl-bob' }, context);
       const bobKeys = credentials.keysOf('ctl-bob');
-      note(disabledKeys.ok && bobKeys.length === 1 &&
-           bobKeys[0].role === 'mfa',
-           '4b. every primary key goes and the mfa key stays',
-           JSON.stringify(bobKeys.map(function (k) { return k.role; })));
+      // EVERY PASSKEY GOES (#1135): a key has no role, so until then the
+      // `mfa` key stayed and only the `primary` one went.
+      note(disabledKeys.ok && bobKeys.length === 0,
+           '4b. every passkey goes, a key carrying no role',
+           JSON.stringify(bobKeys.map(function (k) {
+             return k.credentialId;
+           })));
+      note(disabledKeys.ok && disabledKeys.sessionsEnded === 1 &&
+           /1 session it signed in was ended/
+             .test(String(disabledKeys.message)) &&
+           !live(byPrimary) && live(byPassword),
+           '4d. disable-primary-keys ends the session the primary key ' +
+           'signed in and leaves the password-only one',
+           JSON.stringify(disabledKeys).slice(0, 300) + ' primary=' +
+           live(byPrimary) + ' password=' + live(byPassword));
+      const primaryRow = auditRow('admin.mfa.primary-keys.removed',
+                                  'ctl-bob');
+      note(primaryRow && primaryRow.detail &&
+           String(primaryRow.detail.sessionsEnded) === '1',
+           '4e. the audit row counts the session ended',
+           JSON.stringify(primaryRow && primaryRow.detail));
       sets = await waitFor('ctl-bob', 1);
       note(sets.some(function (c) {
         const p = payloadOf(c, CAEP + 'credential-change');
@@ -313,13 +416,29 @@ function childMain() {
       // ====================================================================
       // 5. DISABLE ALL MFA
       // ====================================================================
+      // The drawer key again: 4 took every passkey (#1135).
+      credentials.addKey('ctl-bob', { credentialId: 'bob-mfa',
+        publicKeyJwk: jwk, label: 'drawer key' });
       const begun = credentials.beginTotpEnrolment('ctl-bob', {});
       credentials.confirmTotpEnrolment('ctl-bob', totp.codeAt(begun.secret));
       const codes = credentials.beginBackupCodes('ctl-bob', {});
       credentials.confirmBackupCodes('ctl-bob', codes.handle);
       note(credentials.mechanismsFor('ctl-bob').totp &&
            credentials.mechanismsFor('ctl-bob').backupCodes.present,
-           '5a. the fixture holds an app, an mfa key and recovery codes');
+           '5a. the fixture holds an app, a passkey and recovery codes');
+      const byMfa = sessionFor('ctl-bob', ['pwd', 'hwk'], 'mfa',
+        { kind: 'webauthn', id: 'bob-mfa' });
+      const byTotp = sessionFor('ctl-bob', ['pwd', 'otp'], 'mfa',
+        { kind: 'totp' });
+      const byCode = sessionFor('ctl-bob', ['pwd', 'otp'], 'mfa',
+        { kind: 'backup-code' });
+      note(!!byMfa && !!byTotp && !!byCode && live(byMfa) &&
+           live(byTotp) && live(byCode) && live(byPassword),
+           '5. (precondition) sessions the mfa key, the authenticator ' +
+           'app and a recovery code signed in are live, and the ' +
+           'password-only one still is',
+           'mfa=' + live(byMfa) + ' totp=' + live(byTotp) + ' code=' +
+           live(byCode) + ' password=' + live(byPassword));
       const disabled = actions.usersAction({ action: 'disable-mfa',
                                              user: 'ctl-bob' }, context);
       const after = credentials.mechanismsFor('ctl-bob');
@@ -329,6 +448,22 @@ function childMain() {
            after.password,
            '5b. every second factor is removed and the password stays',
            JSON.stringify(disabled.removed));
+      note(disabled.ok && disabled.sessionsEnded === 3 &&
+           /3 sessions it signed in were ended/
+             .test(String(disabled.message)) &&
+           !live(byMfa) && !live(byTotp) && !live(byCode) &&
+           live(byPassword),
+           '5f. disable-mfa ends the sessions the removed mfa key, the ' +
+           'authenticator app and a recovery code signed in, and leaves ' +
+           'the password-only one',
+           JSON.stringify(disabled).slice(0, 400) + ' mfa=' + live(byMfa) +
+           ' totp=' + live(byTotp) + ' code=' + live(byCode) +
+           ' password=' + live(byPassword));
+      const mfaRow = auditRow('admin.mfa.disabled', 'ctl-bob');
+      note(mfaRow && mfaRow.detail &&
+           String(mfaRow.detail.sessionsEnded) === '3',
+           '5g. the audit row counts the sessions ended',
+           JSON.stringify(mfaRow && mfaRow.detail));
       sets = await waitFor('ctl-bob', 4);
       note(sets.some(function (c) {
         const p = payloadOf(c, CAEP + 'credential-change');
@@ -375,97 +510,134 @@ function childMain() {
                                 redirect_uri: 'https://rp.acc.example/cb',
                                 scope: 'openid', state: 's' }).toString());
         const location = String(got.headers.location || '');
-        return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+        return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
       };
       const cookieOf = function (res) {
-        return [].concat(res.headers['set-cookie'] || []).map(function (one) {
+        // A step's opened page (#572) carries no headers of its own.
+        const lines = [].concat((res.headers || {})['set-cookie'] || []);
+        return lines.map(function (one) {
           return String(one).split(';')[0];
         }).filter(function (one) { return /^sts_session=./.test(one); })[0] ||
           '';
       };
+      // THE SIGN-IN SCREEN IS A STATIC SURFACE OVER `/authn-api` SINCE
+      // #571: the act answers its next step, and a step's page — a page
+      // of the same surface since #572 — is opened as the surface opens it
+      // (`authn_screen.follow()`), in the jar the answer keeps (`jar`).
+      const screen = require(ROOT + '/tests/tools/authn_screen');
+      const signInAt = async function (authnId, fields) {
+        const jar = {};
+        const got = await screen.follow({ port: port, jar: jar,
+          at: '/authn/login?authn=' + authnId,
+          fields: Object.assign({ action: 'login' }, fields) });
+        got.jar = jar;
+        return got;
+      };
+      // An act on the step `page` opened (#572), in its jar.
+      const stepAct = function (page, op, body) {
+        return screen.stepAct({ port: port, jar: page.jar, opened: page,
+                                op: op, body: body || {} });
+      };
+      // The step an act's answer names, opened again in `page`'s jar.
+      const reopen = async function (page, answer) {
+        const got = await screen.openStep({ port: port, jar: page.jar,
+          at: answer.location || page.at });
+        got.jar = page.jar;
+        return got;
+      };
+      const noSession = function (res) {
+        return !cookieOf(res) && !(res.answer && cookieOf(res.answer));
+      };
       let authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-carol', password: 'anything',
-          action: 'login' });
-      const setupId = (r.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1];
-      note(r.status === 200 && /Set up a second factor/.test(r.text) &&
-           setupId && !cookieOf(r),
+      r = await signInAt(authnId, { username: 'ctl-carol',
+                                    password: 'anything' });
+      const setupPage = r;
+      note(r.status === 200 && r.view && r.view.page === 'setup' &&
+           r.view.setup.state === 'choose' && !!r.id && noSession(r),
            '7a. the sign-in draws the set-up step and starts no session',
-           r.status + ' ' + r.text.slice(0, 120));
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'totp' });
-      const shown = (r.text.match(/Or type it in: <code>([^<]+)<\/code>/) ||
-                     [])[1] || '';
+           r.status + ' ' + String(r.text).slice(0, 120));
+      r = await stepAct(setupPage, 'setup/totp');
+      const secretPage = r.next === 'mfa' ? await reopen(setupPage, r) : r;
+      const shown = (secretPage.view && secretPage.view.setup &&
+                     secretPage.view.setup.totp &&
+                     secretPage.view.setup.totp.secret) || '';
       const secret = shown.replace(/\s+/g, '');
-      note(r.status === 200 && secret.length >= 16,
-           '7b. choosing an app shows its secret', r.status);
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'confirm-totp', code: '000000' });
-      note(r.status === 400 && /Scan this/.test(r.text) && !cookieOf(r),
-           '7c. a wrong code keeps the step and the same secret', r.status);
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'confirm-totp',
-          code: totp.codeAt(secret) });
-      note((r.status === 302 || r.status === 303) && !!cookieOf(r) &&
+      note(r.next === 'mfa' && r.step === 'enrol-totp' &&
+           secretPage.view.setup.state === 'totp' && secret.length >= 16 &&
+           /^otpauth:\/\/totp\//.test(secretPage.view.setup.totp.uri),
+           '7b. choosing an app shows its secret, and the otpauth: URI the ' +
+           'browser draws as a QR code (#572)', r.apiStatus);
+      r = await stepAct(setupPage, 'setup/confirm', { code: '000000' });
+      const again = await reopen(setupPage, {});
+      note(r.apiStatus === 400 && r.next === 'refused' && !cookieOf(r) &&
+           again.view && again.view.setup.state === 'totp' &&
+           String(again.view.setup.totp.secret).replace(/\s+/g, '') ===
+             secret,
+           '7c. a wrong code keeps the step and the same secret',
+           r.apiStatus);
+      r = await stepAct(setupPage, 'setup/confirm',
+                        { code: totp.codeAt(secret) });
+      note(r.next === 'redirect' && r.status === 303 && !!cookieOf(r) &&
            credentials.mechanismsFor('ctl-carol').totp,
            '7d. the right code enrols the app and signs them in',
-           r.status + ' ' + String(r.headers.location));
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'confirm-totp',
-          code: totp.codeAt(secret) });
-      note(r.status === 400, '7e. the step is spent', r.status);
+           r.apiStatus + ' ' + String(r.location));
+      r = await stepAct(setupPage, 'setup/confirm',
+                        { code: totp.codeAt(secret) });
+      note(r.apiStatus === 400, '7e. the step is spent', r.apiStatus);
 
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-carol', password: 'anything',
-          action: 'login' });
-      note(r.status === 200 && /one-time code/i.test(r.text) &&
-           !/Set up a second factor/.test(r.text),
+      r = await signInAt(authnId, { username: 'ctl-carol',
+                                    password: 'anything' });
+      note(r.status === 200 && r.view && r.view.page === 'totp',
            '7f. once enrolled, the sign-in asks for the code, not a set-up',
            r.status);
 
-      // A PRIMARY KEY FIRST, so that without the refusal this sign-in would
+      // A PASSKEY FIRST, so that without the refusal this sign-in would
       // go on to a ceremony rather than be refused for having no key.
       credentials.addKey('ctl-carol', { credentialId: 'carol-primary',
         publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
-        label: 'carol key' }, 'primary');
+        label: 'carol key' });
+      // Usernameless sign-in OFF for this one check: it is on by default
+      // since 2026-10-10, and then the screen offers its own passkey
+      // button, which says nothing about this refusal.
+      const passkeyPolicy = require(ROOT + '/common/passkey_policy');
+      passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
+                                                  { allowUsernameless: false }));
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-carol', webauthn_only: '1',
-          action: 'login' });
-      note(r.status === 200 &&
-           /security key on\s+its own is one factor/.test(r.text) &&
-           !/\/authn\/webauthn\.js/.test(r.text) &&
-           !/Set up a second factor/.test(r.text) && !cookieOf(r),
-           '7g. a passwordless sign-in under the requirement is refused',
-           r.status + ' ' + r.text.slice(0, 100));
+      r = await signInAt(authnId, { username: 'ctl-carol',
+                                    webauthn_only: '1' });
+      passkeyPolicy.reset('default');
+      note(r.next === 'refused' &&
+           /security key on\s+its own is one factor/.test(
+             (r.errors || []).join(' ')) && noSession(r),
+           '7g. a passwordless sign-in under the requirement is refused ' +
+           '(next: refused), no ceremony and no set-up step',
+           r.status + ' ' + String(r.text).slice(0, 160));
 
       ldapServer.createUser('ctl-dave', {});
       policyWith({ requireSecondFactor: 'always' });
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-dave', password: 'anything',
-          action: 'login' });
-      const daveSetup = (r.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                         [])[1];
-      note(r.status === 200 && /Set up a second factor/.test(r.text) &&
-           daveSetup,
+      r = await signInAt(authnId, { username: 'ctl-dave',
+                                    password: 'anything' });
+      const davePage = r;
+      note(r.status === 200 && r.view && r.view.page === 'setup' && !!r.id,
            '7h. the realm requirement reaches somebody with no flag',
            r.status);
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: daveSetup, action: 'webauthn' });
-      note(r.status === 200 && /\/authn\/webauthn\.js/.test(r.text),
-           '7i. choosing a security key draws the ceremony', r.status);
+      r = await stepAct(davePage, 'setup/webauthn');
+      const ceremony = r.next === 'mfa' ? await reopen(davePage, r) : r;
+      note(r.step === 'webauthn' && ceremony.status === 200 &&
+           ceremony.view && ceremony.view.webauthn &&
+           ceremony.view.webauthn.mode === 'create',
+           '7i. choosing a security key draws the ceremony', r.apiStatus);
 
       policyWith({ requireSecondFactor: 'always', totpSecondFactor: false });
       config.setOverride('webauthn.enabled', 'false');
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-dave', password: 'anything',
-          action: 'login' });
-      note(r.status === 200 && /switched\s+off/.test(r.text) &&
-           !cookieOf(r),
+      r = await signInAt(authnId, { username: 'ctl-dave',
+                                    password: 'anything' });
+      note(r.next === 'refused' &&
+           /switched\s+off/.test((r.errors || []).join(' ')) &&
+           noSession(r),
            '7j. with both mechanisms off the sign-in is refused, not let ' +
            'through', r.status + ' ' + r.text.slice(0, 100));
       config.clearOverride('webauthn.enabled');
@@ -480,8 +652,23 @@ function childMain() {
       // for anybody, so product enrolled keys for nobody. Found by the
       // protocol suite against a product-mode deployment.
       ldapServer.createUser('ctl-erin', {});
+      const madeInDevelopment = actions.usersAction({ action: 'create',
+        username: 'ctl-gendev', invent: false, credential: 'generate' },
+      context);
+      note(madeInDevelopment.ok && madeInDevelopment.password &&
+           !credentials.passwordResetRequired('ctl-gendev'),
+           '8-i. development: a person created with a generated password ' +
+           'may use it', JSON.stringify(madeInDevelopment.errors || []));
       config.setOverride('global.mode', 'product');
       try {
+        const madeInProduct = actions.usersAction({ action: 'create',
+          username: 'ctl-genprod', invent: false, credential: 'generate',
+          attributes: { cn: 'ctl', givenName: 'ctl', sn: 'genprod',
+                        mail: 'ctl-genprod@example.test' } }, context);
+        note(madeInProduct.ok && madeInProduct.password &&
+             credentials.passwordResetRequired('ctl-genprod'),
+             '8-ii. product: a generated password at creation must be changed',
+             JSON.stringify(madeInProduct.errors || []));
         const erinTotp = credentials.beginTotpEnrolment('ctl-erin', {});
         note(erinTotp.ok, '8a. product mode enrols an authenticator app ' +
              'for somebody who exists', JSON.stringify(erinTotp.errors));
@@ -492,10 +679,10 @@ function childMain() {
              '8b. and refuses one for a name nobody created',
              JSON.stringify(ghostTotp));
         const erinKey = credentials.beginKeyEnrolment('ctl-erin',
-                                                      { role: 'mfa' });
+                                                      {});
         note(erinKey.ok, '8c. it begins a security key enrolment for ' +
              'somebody who exists', JSON.stringify(erinKey.errors));
-        const ghostKey = credentials.beginKeyEnrolment(ghost, { role: 'mfa' });
+        const ghostKey = credentials.beginKeyEnrolment(ghost, {});
         note(!ghostKey.ok &&
              errorCodes.codeOf(ghostKey) === 'STS-AUTHN-0024',
              '8d. and refuses one for a name nobody created',

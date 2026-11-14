@@ -70,8 +70,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
+// The one place this service draws random values (#453). A leaf over
+// `config`, so this require cannot close a cycle.
+import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('./cluster_capabilities');
 import InstanceSlot = require('../common/instance_slot');
@@ -156,7 +158,18 @@ const DECLARED: Record<string, DeclaredSecret> = {
   // pointer its `next` carries must verify on every node.
   'oidfed-page': { bytes: 32, env: 'STS_OIDFED_PAGE_SECRET',
     what: 'The key an OpenID Federation listing\'s or collection\'s page ' +
-          'pointer is MACed with (oidfed/page_pointer.ts).' }
+          'pointer is MACed with (oidfed/page_pointer.ts).' },
+  // #577: the sign-out is answered by one request and its signed-out
+  // document drawn by the next, which may be another node's.
+  'logout-result': { bytes: 32, env: 'STS_LOGOUT_RESULT_SECRET',
+    what: 'The key a sign-out\'s result is MACed with on its way to the ' +
+          'signed-out document (logout/logout.ts).' },
+  // #725: a challenge minted by one node is signed by the browser and
+  // presented to another, and a bound cookie renewed by one is presented
+  // to every other the next moment.
+  'dbsc': { bytes: 32, env: 'STS_DBSC_SECRET',
+    what: 'The key a Device Bound Session Credentials challenge and bound ' +
+          'cookie are MACed with (authn/device_bound_sessions.ts).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is
@@ -206,7 +219,7 @@ class ClusterSecrets {
       log: log,
       errorCodes: errorCodes,
       env: process.env,
-      randomBytes: nodeCrypto.randomBytes,
+      randomBytes: stsCrypto.randomBytes,
       clusterStore: ClusterSecrets.persistenceClusterStore,
       isActiveActive: ClusterSecrets.clusterIsActiveActive
     };

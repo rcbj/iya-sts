@@ -1,0 +1,10 @@
+{
+  "introEnd": "，本頁是通往同樣六列的捷徑——它透過同一個函數寫入，因此在此處和在那裡所做的變更是同一個變更。",
+  "nextToken": "<strong>變更只適用於下一個權杖，不影響任何已簽發的權杖。</strong>有效期在簽署時作為 <code>exp</code> 聲明寫入權杖，因此客戶端手中的權杖此後無法被本頁上的任何操作縮短或延長。這是已簽署聲明的特性，而非此處的限制——要讓已簽發的權杖退出流通，請在",
+  "units": "每個有效期都是<strong>三十秒</strong>的整數倍。這不是格式規則：這些設定本就是為了設得很短並加以觀察，而低於半分鐘時，權杖會在回應寫出與客戶端讀取之間到期，結果就是花一小時去偵錯錯誤的那一半。時鐘偏差上限為 <strong>300 秒</strong>——五分鐘是此處 Kerberos 使用的容許值（<code>krb5.clockSkew</code>），比這更寬的視窗已不再是容許值，而是沒人要求的有效期延長。",
+  "colPerClient": "依客戶端",
+  "skewNote": "<code>oauth2.clockSkewS</code> 是本服務在讀回自己簽署的權杖的每個地方對 <code>exp</code> 和 <code>nbf</code> 套用的容許值：<code>/oauth2/introspect</code>、UserInfo、重新整理授權、權杖交換、四個受保護端點共用的 DPoP 繫結存取權杖檢查，以及每個顯示權杖的主控台畫面上的狀態欄。它從不改變寫入權杖的內容。它刻意與 <code>oauth2.clientAssertionSkewS</code> 分開——後者是依 RFC 7523（<code>private_key_jwt</code> 和 <code>client_secret_jwt</code>）<em>客戶端</em>斷言可偏差的程度：一個關乎別人的時鐘，一個關乎本服務自己的時鐘，想對其中一個嚴格檢查、對另一個寬鬆讀取的部署必須能夠這樣設定。",
+  "idleNote": "RFC 9700 模式的<strong>重新整理閒置逾時</strong>（<code>oauth2.refreshIdleSeconds</code>，見上表）與旁邊的重新整理有效期是不同的問題：它從重新整理鏈中任一權杖最後一次被兌換時算起，而不是從簽發時算起，因此繁忙的客戶端可以無限期保有其授權，而沉寂的客戶端會被切斷。此處的有效期是一道牆，無論鏈有多繁忙都無法重新整理超過它。<strong>授權碼</strong>的有效期不在此設定：它是 <code>oauth2.authorizationCodeTtlS</code>，位於",
+  "notPerClient": "不依客戶端",
+  "accessOutlives": "<strong>存取權杖的有效期至少與重新整理權杖一樣長</strong>（{access} 對 {refresh}）。這是合法的，也會完全依設定簽發，但該授權永遠無法有效續期：當客戶端需要新的存取權杖時，它用來續期的憑證也已到期。這是觀察客戶端發現自己已無退路的好辦法。"
+}

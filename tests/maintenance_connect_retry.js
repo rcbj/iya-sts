@@ -24,6 +24,7 @@
 // waits out the retry delays — about ten seconds in all.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
 const postgres = require('../persistence/persistence_postgres');
 
 const log = require('bunyan').createLogger({
@@ -33,7 +34,11 @@ const log = require('bunyan').createLogger({
 const QUIET = { debug: function () {}, info: function () {},
                 warn: function () {}, error: function () {} };
 
-const TIMEOUT = 'timeout exceeded when trying to connect';
+// What a wait for a pool slot that ran out says since #326, when the pool
+// became Knex's (`KnexTimeoutError`; `pg-pool` said "timeout exceeded when
+// trying to connect").
+const TIMEOUT = 'Knex: Timeout acquiring a connection. The pool is probably ' +
+  'full. Are you missing a .transacting(trx) call?';
 
 // A `pg` whose count query fails `plan` times with `message` first.
 function fakePg(statements, plan) {
@@ -82,20 +87,13 @@ function fakePg(statements, plan) {
 
 function driverWith(statements, plan) {
   log.debug("Entering driverWith().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(statements, plan) };
+  const restore = storeDouble.install(fakePg(statements, plan));
   try {
     log.debug("Leaving driverWith().");
     return postgres.create({
       url: 'postgres://sts_app@localhost:5432/sts', log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
@@ -145,7 +143,8 @@ async function run(t) {
   const c = [];
   const gaveUp = await attempt(driverWith(c, { failures: 100,
                                                message: TIMEOUT }));
-  t.check(gaveUp.error && /timeout exceeded/.test(gaveUp.error.message),
+  t.check(gaveUp.error &&
+          /Timeout acquiring a connection/.test(gaveUp.error.message),
           'C1. the count fails with the connect timeout',
           gaveUp.error ? gaveUp.error.message : gaveUp.out);
   t.equal(counts(c), 5, 'C2. after the first try and four retries');

@@ -47,7 +47,7 @@
 //      process refuses too.
 //
 // Each part in a CHILD PROCESS: A loads the whole protocol stack and listens
-// on a port; C puts a `pg` double in the require cache.
+// on a port; C puts a database double in the require cache.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -335,12 +335,19 @@ function stackChild() {
          'D3. GET /admin-api/realms (the same realmsJson the console ' +
          'answers ?format=json with) carries `retiring` on the stuck realm ' +
          'and null on the others', JSON.stringify(rowD && rowD.retiring));
-    const listPage = admin.realmsView(fakeReq());
-    const detailPage = admin.realmsView(fakeReq({ realm: 'rtg-d' }));
+    // THE PAGES AS THE STATIC CONSOLE DRAWS THEM (#446): GET
+    // /admin-api/realms drawn by its renderer, the list and the realm's own
+    // drill-down.
+    const drawer = require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT);
+    const listDrawn = await drawer.draw('/admin/realms', {});
+    const detailDrawn = await drawer.draw('/admin/realms', { realm: 'rtg-d' });
+    const listPage = { inner: listDrawn.html };
+    const detailPage = { inner: detailDrawn.html };
     note(/removal interrupted/.test(listPage.inner) &&
          /Finish removing rtg-d/.test(listPage.inner) &&
          /Finish removing rtg-d/.test(detailPage.inner) &&
-         detailPage.json.retiring && detailPage.json.retiring.interrupted,
+         rowD.retiring && rowD.retiring.interrupted,
          'D4. /admin/realms marks the row and offers the action that ' +
          'finishes the removal, on the list and on the realm\'s own page',
          (listPage.inner.match(/removal interrupted[^<]*/) || [''])[0]);
@@ -410,12 +417,11 @@ function storeChild() {
       }
       return rows([]);
     }
-    if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-          .test(text)) {
+    if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+          .test(text) || /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       return rows([{ seq: db.log.length }]);
     }
-    if (/^SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq > /
-          .test(text)) {
+    if (/sts:changesSince /.test(text)) {
       return rows(db.log.filter(function (row) {
         return row.seq > Number(p[0]);
       }).slice(0, Number(p[1]) || 500));
@@ -459,9 +465,9 @@ function storeChild() {
   };
   FakePool.prototype.query = FakeClient.prototype.query;
   FakePool.prototype.end = function () { return Promise.resolve(); };
-  const pgPath = require.resolve('pg', { paths: [ROOT] });
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  // In the place of the one door to the store (#326), for the child's life.
+  require(ROOT + '/tests/tools/store_double')
+    .install({ Pool: FakePool, Client: FakeClient });
 
   (async function () {
     process.env.STS_PERSISTENCE_MODE = 'postgres';

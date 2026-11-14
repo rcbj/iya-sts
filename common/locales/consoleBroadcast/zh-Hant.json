@@ -1,0 +1,16 @@
+{
+  "about": "向所有已登入管理主控台、使用者入口網站或報表應用程式的人顯示一則簡短訊息，顯示在他們每個已開啟分頁頂端的橫幅中。它以本服務自己的 Shared Signals 事件，透過每個應用程式的接收端串流傳送，分頁約在 {seconds} 秒內顯示。橫幅十秒後自動關閉。之後開啟的分頁不會顯示。",
+  "notReady": "目前無法傳遞任何內容：",
+  "readOnly": "傳送公告需要 Admin Write。",
+  "message": "訊息",
+  "maxChars": "純文字，最多 {max} 個字元。",
+  "surfaces": "顯示於",
+  "scope.legend": "傳送到",
+  "scope.realm": "此領域（<code>{realm}</code>）",
+  "scope.every": "所有領域（{count} 個）",
+  "scope.only": "它會傳送給已登入此領域 <code>{realm}</code> 的人。",
+  "send": "廣播",
+  "streamsLink": "承載它的接收端串流（Shared Signals）",
+  "banner.heading": "公告",
+  "banner.close": "關閉"
+}

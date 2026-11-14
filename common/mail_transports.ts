@@ -54,6 +54,7 @@ import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import secrets = require('./secrets');
 import crypto = require('./crypto');
+import nodeTls = require('tls');
 import OutboundTls = require('./outbound_tls');
 
 type Json = any;
@@ -203,6 +204,7 @@ class MailTransports {
       },
       secrets: secrets,
       readFile: function (path: string): string {
+        require('./outbound_tls').assertNamedFile(path);
         return fs.readFileSync(path, 'utf8');
       },
       dkimSign: crypto.dkimSign
@@ -359,7 +361,11 @@ class MailTransports {
     });
     try {
       if (cfg.smtpCaFile) {
-        tls.ca = readFile(String(cfg.smtpCaFile));
+        // BESIDE node's store, as this file's header and the setting say
+        // (#1360): `ca` replaces the store, so a relay on a public CA stopped
+        // verifying the moment somebody named a file for a private one.
+        tls.ca = nodeTls.rootCertificates
+          .concat(String(readFile(String(cfg.smtpCaFile))));
       }
       if (cfg.smtpClientCertFile || cfg.smtpClientKeyFile) {
         if (!cfg.smtpClientCertFile || !cfg.smtpClientKeyFile) {

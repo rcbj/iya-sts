@@ -49,14 +49,14 @@ const applications = require('../common/applications');
 // is "not storable" and the grant section passes for the wrong reason.
 require('../ldap/ldap_server');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 const assertionGrant = require('../oauth-oidc/assertion_grant');
 const clientAuth = require('../oauth-oidc/client_auth');
 const samlGrant = require('../oauth-oidc/saml_assertion_grant');
 // This suite's own XML Signature, for `tests/saml_assertion_grant.js`'s reason:
 // a document built by the module that verifies it proves nothing.
-const signer = require('./vendored/saml_xmldsig.js');
+const signer = require('./protocol/saml_xmldsig.js');
 
 // This file's own logger, for the Entering/Leaving lines the code style asks
 // for.

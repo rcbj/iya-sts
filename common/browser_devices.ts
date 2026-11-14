@@ -76,7 +76,6 @@
 // `authn/authn.ts` and `portal/portal_devices.ts` call it.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -106,10 +105,11 @@ const MAX_TOKEN_BYTES = 3900;
 // and the debugger, which only administrators reach.
 /**
  * The clients whose sign-ins never skip the second factor on a remembered
- * browser: the admin console, the user portal and the debugger.
+ * browser: the admin console, the user portal, the reports application and
+ * the debugger.
  */
 const NEVER_SKIP_CLIENTS = ['sts-admin-console', 'sts-user-portal',
-                            'sts-debugger-ui'];
+                            'sts-report', 'sts-debugger-ui'];
 const SECOND_FACTOR_AMR = ['otp', 'hwk', 'swk', 'mfa', 'sms', 'face', 'fpt',
                            'iris', 'retina', 'vbm', 'pin', 'sc'];
 
@@ -385,7 +385,7 @@ class BrowserDevices {
     const claims = {
       iss: this.audience(), aud: this.audience(), sub: String(deviceId),
       owner: String(owner), gen: Number(gen),
-      jti: nodeCrypto.randomBytes(16).toString('base64url'),
+      jti: stsCrypto.randomBytes(16).toString('base64url'),
       iat: now, exp: now + this.lifetimeS()
     };
     const signer = this.deps.signer();

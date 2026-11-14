@@ -1,0 +1,22 @@
+{
+  "endpoints.route./ssf/subjects/add.name": {
+    "en": "65df983c69cc22ac",
+    "text": "Añadir un sujeto a un flujo"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "Añadir o quitar un ancla de confianza de certificados de cliente"
+  },
+  "endpoints.route./admin-api/kerberos/claims/:action.name": {
+    "en": "4c12463f13744211",
+    "text": "Añadir, quitar, borrar o reemplazar un claim de PAC de Kerberos"
+  },
+  "endpoints.route./authn/wallet.name": {
+    "en": "762000c7e5e841a9",
+    "text": "Iniciar sesión con una cartera"
+  },
+  "endpoints.route./authn/wallet/wait.name": {
+    "en": "b5fe1c58e2d72833",
+    "text": "Inicio de sesión con cartera: esperar y finalizar"
+  }
+}

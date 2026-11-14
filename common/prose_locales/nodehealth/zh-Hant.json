@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "此節點並非在 Linux 上執行（{{platform}}），因此沒有 cgroup 檔案可讀取。"
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "{{root}} 沒有 cgroup：沒有 cgroup v2（{{why}}），也沒有 cgroup v1 的 memory 或 cpuacct 控制器。"
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "沒有 cgroup。"
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "無法讀取容器的 CPU 時間：{{source}}——{{why}}。"
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "容器的 CPU 時間能讀取一次，第二次卻無法讀取：{{why}}。"
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "容器可使用 {{vcpus}} 個 vCPU（{{version}}，{{file}}），百分比以此為基準。"
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "此 cgroup（{{version}}）沒有 {{file}}，因此沒有自己的 CPU 配額；百分比以 node 回報可用的 {{cpus}} 個 CPU 為基準（os.availableParallelism()）。"
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "沒有 CPU 配額（{{version}}，{{file}} 表示無）：容器可使用主機提供的所有 CPU，百分比以 node 回報可用的 {{cpus}} 個 CPU 為基準（os.availableParallelism()）。"
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "此 cgroup 沒有節流計數器：沒有配額，就沒有可據以節流的對象。"
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "此 cgroup v1 主機沒有供此程序使用的 memory 控制器。"
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "無法讀取容器的記憶體：{{source}}——{{why}}。"
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "容器可使用 {{mib}} MiB（{{version}}，{{file}}）。"
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "此 cgroup（{{version}}）沒有 {{file}}，因此沒有自己的記憶體限制，也就無法提供百分比。"
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "沒有記憶體限制（{{version}}，{{file}} 表示無），因此無法提供百分比。"
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} 是各程序自己的記憶體；{{file}} 是分頁快取，核心在記憶體吃緊時會先回收它，之後才會終止任何程序。"
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "無法讀取 memory.stat，因此不知道記憶體由哪些部分組成。"
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "來自 ECS 代理程式（/task/stats），因為此處無法讀取 cgroup。限制是容器的限制，依代理程式所回報。"
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "來自 ECS 代理程式（/task/stats），因為此處無法讀取 cgroup。容器沒有自己的限制，因此限制是 ECS「任務」的 {{mib}} MiB。"
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "來自 ECS 代理程式（/task/stats），因為此處無法讀取 cgroup。沒有可供比較的限制。"
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "ECS 代理程式只回報總量。"
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "容器沒有自己的記憶體限制（cgroup v{{version}}），因此限制是 ECS「任務」的 {{mib}} MiB（/task Limits.Memory），百分比以此為基準。"
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "來自 ECS 代理程式（/task/stats），取其最近兩次取樣之間的值，因為此處無法讀取 cgroup；百分比以 ECS「任務」的 {{vcpus}} 個 vCPU 為基準。"
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "來自 ECS 代理程式（/task/stats），取其最近兩次取樣之間的值，因為此處無法讀取 cgroup；該任務未指定 CPU 限制，因此沒有百分比。"
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "ECS 代理程式不回報節流。"
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "容器沒有自己的 CPU 配額（cgroup v{{version}}），因此百分比以 ECS「任務」的 {{vcpus}} 個 vCPU 為基準（/task Limits.CPU）。"
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "無法讀取 {{file}}（{{why}}）"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "其 status 檔案沒有 VmRSS"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "執行緒的常駐大小與 CPU 時間屬於整個程序，因此列在前端程序那一列（pid {{pid}}），此處不再重複"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "其常駐大小與 CPU 時間屬於整個程序，包含每個背景工作執行緒；其堆積數字則屬於其主執行緒"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "前端程序"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "協定偵錯工具 api"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "託管介面背景工作執行緒 {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "協定背景工作執行緒 {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "它回應時未附上其記憶體資訊，因此只顯示其常駐大小，取自 /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}，因此只顯示其常駐大小，取自 /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "它未在 {{ms}}ms 內回應（其記憶體預載模組 debugger_api_status.js 在安裝後會回應）"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "它未在 {{ms}}ms 內回應"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}；執行緒沒有自己的 /proc 項目，因此無法從外部讀取其堆積"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "無法向協定偵錯工具的 api 程序詢問其 pid：{{error}}。"
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "請求與託管介面背景工作是前端程序的「執行緒」（#364），因此其常駐大小與 CPU 時間就是前端程序自身的數字，只在其所在列計算一次。常駐總量是能讀取大小的 {{rss}} 個程序——前端程序與偵錯工具的 api 子程序——的總和，因此兩者共用的分頁（包括 node 本身的程式碼）會各計算一次，總量可能超過容器的 memory.current。堆積數字來自自行回報 process.memoryUsage() 的 {{heap}} 個 V8 isolate：前端程序的主執行緒、每個背景工作執行緒，以及子程序；未及時回應的子程序會顯示取自 /proc 的常駐大小而沒有堆積，未及時回應的背景工作執行緒則列為未回應，因為執行緒沒有自己的 /proc 項目。自 #363 起，後量子簽署與 scrypt 不再有自己的程序：它們在 libuv 的執行緒集區上執行，其記憶體計入提出要求的程序。"
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "未設定 ECS_CONTAINER_METADATA_URI_V4：此節點不是 Amazon ECS 任務（不在 Fargate 或 ECS 容器執行個體上），因此沒有任務中繼資料端點可與 cgroup 交叉檢核。"
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "已設定 ECS_CONTAINER_METADATA_URI_V4，但任務中繼資料端點未在 {{ms}}ms 內回應：{{why}}。"
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "端點有部分未回應：{{whys}}。"
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "端點有部分未回應：{{whys}}。/task/stats 中沒有此容器的統計資料。"
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "端點有部分未回應：{{whys}}。/task/stats 中沒有此容器的統計資料（{{dockerId}}）。"
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "/task/stats 中沒有此容器的統計資料。"
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "/task/stats 中沒有此容器的統計資料（{{dockerId}}）。"
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "ECS 代理程式自己對此容器的數字，作為 cgroup 的交叉檢核：代理程式依自己的排程取樣，因此數值不會精確到位元組或百分比都一致。"
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "這些是節點 {{node}}（其容器）的數字，由其前端程序（pid {{pid}}）繪製。叢集的每個節點都是各自獨立的容器，有各自的數字。"
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "此容器執行所在的機器——在 Fargate 上是 micro-VM；在工作站上是整台工作站。「不是」容器：其可用記憶體與負載完全無法反映容器的限制。"
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "涵蓋尚未消失且有快照的 {{count}} 個節點，包括已過時者（會加以標示）。只有在每個節點都有限制時才會加總限制。"
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "它不存在"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "它不是數字"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "它沒有 usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "沒有 cgroup v1 cpuacct 控制器"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "它回應時未附上其記憶體資訊"
+  }
+}

@@ -25,7 +25,7 @@
 //      option and asks each one afterwards whether it took.
 //
 // The over-network half, against the service itself over LDAPS, is
-// `tests/vendored/sts_credential_signals.js` section c.
+// `tests/protocol/sts_credential_signals.js` section c.
 // ===========================================================================
 const fs = require('fs');
 const path = require('path');

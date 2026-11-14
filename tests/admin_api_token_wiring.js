@@ -35,14 +35,14 @@
 // ---------------------------------------------------------------------------
 // WHAT IT DOES *NOT* TRY TO BE.
 //
-// It is not a test that a token WORKS — `tests/vendored/sts_admin_api_auth.js`
+// It is not a test that a token WORKS — `tests/protocol/sts_admin_api_auth.js`
 // drives the real gate and its refusals, and it already fails loudly on an
 // empty `STS_ADMIN_API_TOKEN`. That job named this bug precisely on the run
 // that found it. What no job could see is the launcher that never gave it one,
 // because a launcher is not something a job can look at.
 //
 // **THE ORDERING IS THE PART WORTH PINNING AND IT IS NOT OBVIOUS.**
-// `applications.js` seeds `sts-management-api` with a secret minted at every
+// `applications.js` seeds `sts-api-client` with a secret minted at every
 // start, readable only THROUGH the API it unlocks. So a secret chosen after
 // the child is up is a secret nobody can present, and the mint that follows it
 // fails with a message about a client secret rather than about ordering. Both

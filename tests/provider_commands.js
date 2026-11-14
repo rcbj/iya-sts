@@ -38,6 +38,23 @@ const log = require('bunyan').createLogger({ name: 'provider_commands',
 
 const ENDPOINT = 'https://rp.test/commands';
 
+// A response model, as the service holds an answer to it.
+function modelOf(operationId, status) {
+  const spec = require('../mgmt-api/admin_api_spec');
+  const adminApi = require('../mgmt-api/admin_api');
+  const document = spec.buildSpec(adminApi.ROUTES, { authRequired: true });
+  let found = null;
+  Object.keys(document.paths).forEach(function (one) {
+    Object.keys(document.paths[one]).forEach(function (method) {
+      if (document.paths[one][method].operationId === operationId) {
+        found = document.paths[one][method];
+      }
+    });
+  });
+  return { schema: found.responses[status].content['application/json'].schema,
+           components: document.components };
+}
+
 function decode(jwt) {
   log.debug("Entering decode().");
   const parts = String(jwt).split('.');
@@ -71,12 +88,14 @@ function instance(clock, sent, answers, streams) {
       },
       fedHttp: {
         deliverForm: function (record, attribute, form) {
+          activity++;
           sent.push({ uri: record[attribute], form: form });
           const answer = answers.length ? answers.shift() :
             { ok: false, status: 500, kind: 'status', why: 'no answer' };
           return Promise.resolve(answer);
         },
         streamEvents: function (record, attribute, form, opts) {
+          activity++;
           sent.push({ uri: record[attribute], form: form, stream: true,
                       lastEventId: opts.lastEventId || '' });
           const plan = streams.shift();
@@ -99,12 +118,37 @@ function json(status, body) {
            body: JSON.stringify(body), why: 'it answered ' + status };
 }
 
+// How often the stand-in relying party has been called; settle() watches it.
+let activity = 0;
+// How long settle() waits after the last call before it calls things done,
+// and the longest it waits in all.
+const QUIET_MS = 150;
+const SETTLE_MAX_MS = 3000;
+
+// A command is dispatched after the minted rows it hands out are committed
+// (`afterMintedCommit()`), and that flush runs on a timer, so a send reaches
+// the stand-in some milliseconds later, not within a few turns of the loop
+// (#828: twenty turns saw nothing sent). So this waits until the stand-in
+// has been quiet for QUIET_MS, and at most SETTLE_MAX_MS.
 async function settle() {
   log.debug("Entering settle().");
   for (let i = 0; i < 20; i++) {
     await new Promise(function (resolve) {
       setImmediate(resolve);
     });
+  }
+  const startedAt = Date.now();
+  let seen = activity;
+  let quietSince = Date.now();
+  while (Date.now() - quietSince < QUIET_MS &&
+         Date.now() - startedAt < SETTLE_MAX_MS) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 5);
+    });
+    if (activity !== seen) {
+      seen = activity;
+      quietSince = Date.now();
+    }
   }
   log.debug("Leaving settle().");
 }
@@ -305,7 +349,22 @@ async function body(t) {
       data: JSON.stringify({ total_accounts: 2 }) }
   ], result: { ok: true, status: 200, ended: true, lastEventId: '3' } });
   const started = c.startTenant('cmd-app', 'audit_tenant', {});
-  await c.executeRun(started.run.id);
+  // startTenant() runs the stream itself once the minted rows it hands out
+  // are committed; calling executeRun() here as well made a second run of
+  // it race the first for the two planned streams (it failed in
+  // single-node, where the commit is slower). So this waits for that run.
+  const runStartedAt = Date.now();
+  while (Date.now() - runStartedAt < SETTLE_MAX_MS) {
+    const now = c.report({}).runs.filter(function (r) {
+      return r.id === started.run.id;
+    })[0];
+    if (now && now.state !== 'running') {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 10);
+    });
+  }
   const runRow = c.report({}).runs.filter(function (r) {
     return r.id === started.run.id;
   })[0];
@@ -334,6 +393,140 @@ async function body(t) {
           !applications.commandMetadataProblem({
             command_endpoint: 'https://rp.test/c?q=1' }),
           '8a. command_endpoint is https with no fragment; a query is fine');
+
+  t.log.info('=== 9. what a relying party wrote, against the closed model ===');
+  // #1353: the integrator's run found `roles` modelled as scalars while every
+  // role is an object, which refused the whole realm's report. This goes through
+  // the real writer and the real report, with a relying party that also sends
+  // what no role should be, so one partner cannot refuse every client's row.
+  answers.push(json(200, {
+    context: { iss: 'https://sts.test', tenant: 'default' },
+    commands_supported: ['metadata', 'audit'],
+    command_endpoint: ENDPOINT, client_id: 'cmd-app',
+    roles: [{ id: 'reader', display: 'Reader' },
+            { id: 'editor', display: 'Editor', description: 'Changes things',
+              stray: { nested: true } },
+            { id: 'bare' }, 'a string', 7, null, { display: 'no id' },
+            { id: { not: 'a string' }, display: 'odd id' }] }));
+  c.send('cmd-app', 'metadata', '', {});
+  await settle();
+  const said = c.learnedFor('cmd-app').roles;
+  t.equal(JSON.stringify(said), JSON.stringify([
+    { id: 'reader', display: 'Reader' },
+    { id: 'editor', display: 'Editor', description: 'Changes things' },
+    { id: 'bare', display: 'bare' }
+  ]), '9a. a role is kept as section 2.2 defines one, and nothing else is');
+  const P = commandsModule.ProviderCommands;
+  t.check(P.lastAccessFrom(1700000000) === 1700000000 &&
+          P.lastAccessFrom('2026-11-05T00:00:00Z') === '2026-11-05T00:00:00Z' &&
+          P.lastAccessFrom({ at: 1 }) === null && P.lastAccessFrom([1]) === null,
+          '9b. last_access is kept only where it is a time');
+  const Ajv = require('ajv');
+  const held = modelOf('getProviderCommands', '200');
+  const validate = new Ajv({ strict: false, allErrors: true }).compile(
+    { allOf: [held.schema], components: held.components });
+  const report = c.report();
+  const row = report.clients.filter(function (one) {
+    return one.clientId === 'cmd-app';
+  })[0];
+  t.check(row && row.learned.roles.length === 3 && validate(report),
+          '9c. the real report, with roles in it, meets the model it is held to',
+          JSON.stringify(validate.errors || []).slice(0, 600));
+  // A row stored before `lastAccessFrom()` was asked at the write, which only
+  // the private writer can still make: it holds what a relying party wrote.
+  c.noteAccount('cmd-app', 'stored-bad-row', 'cmd-alice', 'active', 'audit',
+                { lastAccess: { at: 1 } });
+  c.noteAccount('cmd-app', 'stored-good-row', 'cmd-alice', 'active', 'audit',
+                { lastAccess: 1700000000 });
+  const stored = c.report();
+  const accountOf = function (sub) {
+    return stored.accounts.filter(function (one) {
+      return one.sub === sub;
+    })[0];
+  };
+  t.check(accountOf('stored-bad-row') &&
+          !('lastAccess' in accountOf('stored-bad-row')),
+          '9d. a stored last_access that is not a time is left out of the row');
+  t.equal(accountOf('stored-good-row').lastAccess, 1700000000,
+          '9e. and one that is a time is reported');
+  t.check(validate(stored), '9f. the report with such a row, and with a row ' +
+          'that has no lastAccess, meets the model',
+          JSON.stringify(validate.errors || []).slice(0, 600));
+
+  // AN ACT ANSWERS A ROW WITH NO CODE, AT ANY DEPTH (#1355): this module sends
+  // its own answers, so the strip in AdminApi.sendJson() never reached it, and
+  // POST /admin-api/commands/send-tenant answered 500 for a row that had failed.
+  const sentThrough = function (Api, body) {
+    const answer = {};
+    const res = {
+      req: { method: 'POST' },
+      status: function () {
+        return res;
+      },
+      type: function () {
+        return res;
+      },
+      set: function () {
+        return res;
+      },
+      send: function (text) {
+        answer.text = text;
+      }
+    };
+    const api = Object.create(Api.prototype);
+    api.deps = { log: t.log };
+    api.sendJson(res, 200, body);
+    return JSON.parse(answer.text);
+  };
+  const { ProviderCommandsApi } = require('../oauth-oidc/provider_commands_api');
+  const heldAct = modelOf('sendTenantCommand', '200');
+  const validateAct = new Ajv({ strict: false, allErrors: true })
+    .compile({ allOf: [heldAct.schema], components: heldAct.components });
+  const answered = sentThrough(ProviderCommandsApi, { ok: true, row: deadRow });
+  t.check(deadRow.errorCode === 'STS-OAUTH-0771' && validateAct(answered),
+          '9g. the real dead row, as this API sends it, meets the act\'s model',
+          JSON.stringify(validateAct.errors || []).slice(0, 600));
+  const { ScimClientsApi } = require('../mgmt-api/scim_clients_api');
+  const client = sentThrough(ScimClientsApi, { ok: true, client: {
+    id: 'x', deliveries: [{ errorCode: 'STS-SCIM-0001', why: 'y' }] } });
+  t.check(JSON.stringify(client).indexOf('errorCode') < 0 &&
+          client.client.deliveries[0].why === 'y',
+          '9h. and the SCIM clients\' door takes it off a nested row too');
+
+  t.log.info('=== 10. a token row a v1.0.0 build persisted ===');
+  // #1579's review: v1.0.0's recordJwt() stored `client_id` as the token's
+  // ARRAY `aud` when it named no client_id and no azp, and read it here with
+  // String(); IssuedToken.clientId (a string) dropped it, so the person's
+  // client stopped counting as one they were issued a token for. The row is
+  // the shape v1.0.0 wrote it in, read back from a store as it was.
+  const v100 = instance(clock, [], [], []);
+  v100.deps.stats = function () {
+    return {
+      identityKeyOf: function (name) {
+        return name;
+      },
+      tokenList: function () {
+        return [{ jti: 'v100-aud', kind: 'access_token', sub: 's', iss: 'i',
+          username: 'cmd-alice', client_id: ['cmd-app', 'other-aud'],
+          audience: 'cmd-app other-aud', scope: '', exp: 2000000000,
+          issuedAt: 1000, revoked: false, revocable: true },
+        { jti: 'v100-objects', kind: 'access_token', sub: 's', iss: 'i',
+          username: 'cmd-alice', client_id: [{ x: 1 }], exp: 2000000000,
+          issuedAt: 1000, revoked: false, revocable: true }];
+      }
+    };
+  };
+  const issuedTo = v100.clientsIssuedTo('cmd-alice');
+  t.equal(JSON.stringify(issuedTo), '{"cmd-app":true}',
+          '10a. a v1.0.0 row\'s array client_id counts as its first ' +
+          'audience, as the writer files it now; a list of no strings ' +
+          'counts as no client');
+  const DomainClasses = require('../common/domain_classes');
+  t.equal(DomainClasses.IssuedToken.fromRecord({ client_id: ['a', 'b'] })
+    .clientId, 'a', '10b. IssuedToken.clientId reads that list\'s first ' +
+    'member (the sign-out inventory\'s "for <client>" reads the same field)');
+  t.equal(DomainClasses.IssuedToken.fromRecord({ client_id: 'c' }).clientId,
+          'c', '10c. and a string as it always did');
   log.debug("Leaving body().");
 }
 

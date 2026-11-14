@@ -13,16 +13,19 @@ sts_metadata.ts      reads the router to list what everything else registered
 
 common/              config, helpers, the express app, the counters, the audit
                      log, the application registry, the claim catalogues
-common/vendored/     byte-identical copies of the parent project's PKI and
-                     JSON-LD modules, plus the contexts they read
+common/crypto_impl/  the crypto engines common/crypto.js rests on (X.509,
+                     keys, JWE, XML Signature, bbs-2023), and the contexts
 oauth-oidc/          the authorization server, RFC 9700 mode, DPoP, mTLS,
                      client authentication, the multi-AS profiles
 authn/               the sign-in screen and the WebAuthn relying party
 saml/                the two assertion builders
 ws-trust/            WS-Trust 1.0-1.4
-ws-federation/       WS-Federation 1.2 and the mock relying party
+ws-federation/       WS-Federation 1.2
 kerberos/            the KDC, the acceptor, SPNEGO, and the codec
 ldap/                the embedded directory
+models/              the common-model overlay, and where an emit writes
+                     TypeSpec. See docs/data-model.md. The directory still
+                     enforces nothing
 persistence/         the only place this service writes anything down:
                      memory | ldif (RFC 2849) | postgres
 scim/                /scim/v2, its authentication, its attribute mapping
@@ -56,11 +59,12 @@ after it, so that one sequence decides which handler wins. There is a table of
 the ordering constraints in the root `CLAUDE.md`; each one is a real dependency
 rather than a preference.
 
-**`common/vendored/` is not to be edited.** Those files are byte-identical copies
-of files in the [OAuth2/OIDC Debugger](https://idptools.com), and two of that
-project's tests exist to keep them that way. `contexts/` sits inside that
-directory rather than at the root precisely so that `bbs2023.js` — which resolves
-`path.join(__dirname, 'contexts')` — did not have to be edited when it moved.
+**`common/crypto_impl/` began as copies** of files in the
+[OAuth2/OIDC Debugger](https://idptools.com) and is this service's own code
+now. Most of it is the far end of an exchange with the debugger, so a change
+there is made with care for what the other end does. `contexts/` sits inside
+that directory because `bbs2023.js` resolves `path.join(__dirname,
+'contexts')`.
 
 **`node-ldapjs` is a submodule and must sit inside this package root.** npm
 installs a `file:` dependency as a symlink and node resolves that package's own
@@ -82,9 +86,10 @@ live router so it cannot go stale by omission, but it reports two kinds of drift
 and the parent project's test fails on both: a route registered and undescribed,
 and a description whose path is not registered (what a rename produces).
 
-Coverage notes there must start `full`, `partial` or `mock` and say what is
-missing. A list of fifty specifications that did not mention that this service
-checks no passwords would be the most misleading thing in the repository.
+Coverage notes there must start `full`, `partial` or `minimal` and say what is
+missing. A list of fifty specifications that did not mention that in development
+mode this service checks no passwords would be the most misleading thing in the
+repository.
 
 ## Adding a console page
 
@@ -96,12 +101,13 @@ already written the code that assumed it.
 That is cheap rather than a matter of discipline: every API operation calls the
 *same* action function the console's form posts to, every API GET calls the same
 JSON view the page's `?format=json` answers, and the OpenAPI document is
-generated from the operation table — so an operation cannot exist and be
-undocumented, nor be documented and not exist.
+written in the model and served for the routes that exist — so an operation
+cannot be documented and not exist, and an answer it does not describe is
+not sent.
 
 What no code here can check is a new console control with **no** row. Nothing in
 this service can see a form appear on a page, so the parity is asserted from
-outside by this repository's own `tests/vendored/admin_api.js`, which reads the facts off
+outside by this repository's own `tests/protocol/admin_api.js`, which reads the facts off
 the *service* rather than off a list in the test.
 
 ## Tests

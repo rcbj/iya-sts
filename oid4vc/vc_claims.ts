@@ -85,7 +85,7 @@
 // the instance — and a process without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 // TRUST REALMS: the claim selection below is per realm.
 import realms = require('../common/realms');
 import helpers = require('../common/helpers');
@@ -116,6 +116,7 @@ import countryCodes = require('../common/country_codes');
 // The error codes (common/error_codes.js). A LEAF that requires nothing, so it
 // adds nothing to the short list of what this library may require.
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 
 // One row of the catalogue — see THE CATALOGUE below.
 interface CatalogueRow {
@@ -346,6 +347,49 @@ const VC_ATTRIBUTES: CatalogueRow[] = [
   { ldap: 'labeledURI', claim: ['website'], label: 'Web page',
     // RFC 2079's sections are unnumbered, so there is no `2` to cite.
     schema: 'RFC 2079', from: 'website', ldpTerm: null, byDefault: false },
+  // THE `profile` SCOPE'S LAST FIVE CLAIMS (#1292, 2026-11-03). OpenID
+  // Connect Core 5.4 lists fourteen claims under `profile`, and this
+  // catalogue answered nine: `middle_name`, `profile`, `picture`, `gender`
+  // and `zoneinfo` were in `claims_supported` with nothing behind them, so
+  // the OpenID conformance suite warned that the scope's claims were
+  // missing from UserInfo and from an implicit ID Token
+  // (VerifyScopesReturnedInUserInfoClaims, …InAuthorizationEndpointIdToken:
+  // it wants EVERY claim of a granted scope, whatever claims_supported
+  // says), and rcbj's instruction for certification was the default that
+  // passes. SCHAC's `schacGender` is the one standard type among them; the
+  // other four are this service's own, as #128's are, because inetOrgPerson
+  // defines no middle name, no time zone and no URL attribute but
+  // `labeledURI` (already `website`) — `jpegPhoto` is the photograph, not a
+  // URL to one.
+  { ldap: 'middleName', claim: ['middle_name'], label: 'Middle name',
+    schema: "this service's own (no standard type)", from: 'middle',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'schacGender', claim: ['gender'], label: 'Gender',
+    schema: 'SCHAC 1.5.0 (not RFC 4519)', from: 'gender', ldpTerm: null,
+    byDefault: false,
+    // ISO/IEC 5218 in the directory (SCHAC's syntax), OIDC Core 5.1's
+    // `female` / `male` in the claim, and the standard's own words for its
+    // other two codes, which Core 5.1 allows ("other values MAY be used").
+    // Any other value is passed through unchanged.
+    toClaim: function (value) {
+      helpers.log.debug("Entering toClaim().");
+      const named: Record<string, string> = { '0': 'not known', '1': 'male',
+                                              '2': 'female',
+                                              '9': 'not applicable' };
+      const code = String(value).trim();
+      helpers.log.debug("Leaving toClaim().");
+      return Object.prototype.hasOwnProperty.call(named, code)
+        ? named[code] : String(value);
+    } },
+  { ldap: 'timeZone', claim: ['zoneinfo'], label: 'Time zone',
+    schema: "this service's own (no standard type)", from: 'zoneinfo',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'pictureUrl', claim: ['picture'], label: 'Picture URL',
+    schema: "this service's own (no standard type)", from: 'picture',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'profileUrl', claim: ['profile'], label: 'Profile page URL',
+    schema: "this service's own (no standard type)", from: 'profile',
+    ldpTerm: null, byDefault: false },
   { ldap: 'description', claim: ['description'], label: 'Description',
     schema: 'RFC 4519 2.5', from: null, ldpTerm: null, byDefault: false },
   { ldap: 'employeeStatus', claim: ['employee_status'],
@@ -496,6 +540,14 @@ const UNITS = ['Engineering', 'Operations', 'Research', 'Support', 'Security'];
 const EMPLOYEE_TYPES = ['Full time', 'Contractor', 'Intern', 'Part time'];
 const EMPLOYEE_STATUSES = ['Active', 'On leave', 'Probation'];
 const LOCALES = ['en-US', 'en-GB', 'sv-SE', 'ja-JP', 'pt-BR', 'nl-NL'];
+// The IANA time zones of those locales (#1292), drawn independently: an
+// invented person is not obliged to live where their language is spoken.
+const TIME_ZONES = ['America/New_York', 'Europe/London', 'Europe/Stockholm',
+                    'Asia/Tokyo', 'America/Sao_Paulo', 'Europe/Amsterdam'];
+// ISO/IEC 5218's codes, which `schacGender` holds (#1292): 1 male, 2 female,
+// 9 not applicable. 0 (not known) is never invented — an invented person
+// is known, by definition.
+const GENDER_CODES = ['2', '1', '2', '1', '9'];
 // example.com, example.org and example.net are reserved for exactly this by
 // RFC 2606, so an invented address cannot be somebody's real mailbox.
 const MAIL_DOMAINS = ['example.com', 'example.org', 'example.net'];
@@ -608,10 +660,11 @@ class VcClaims {
   // THROWS, and the throw arrives at issuance time inside a cryptosuite rather
   // than on this page.
   //
-  // The vendored context (contexts/idptools_identity_v1.json) is signed over,
+  // The identity context (contexts/iya_identity_v1.json) is signed over,
   // so it cannot be edited to add a term without invalidating every credential
-  // issued against the old one — which is exactly why it is vendored rather
-  // than fetched. So each row names the term to use in that format or null, and
+  // issued against the old one — which is exactly why it ships with the
+  // service rather than being fetched (#663 renamed it once, and did pay
+  // that price). So each row names the term to use in that format or null, and
   // vc_issuer.ts filters the subject through the context it actually loaded. A
   // selected attribute with no term is simply absent from an ldp_vc credential;
   // the page says which those are, because "the same configuration produces
@@ -641,6 +694,101 @@ class VcClaims {
     log.debug("Leaving VcClaims.selectedRows().");
     return VC_ATTRIBUTES.filter((row) => {
       return state.selection.indexOf(row.ldap.toLowerCase()) >= 0;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN APPLICATION'S OWN SELECTION (#495): `vcCredentialClaimAttributes` on
+  // an OpenID4VCI client's entry, one JSON array of attribute names, drawn on
+  // the Verifiable Credentials sub-tab of its configuration. WHEN IT HOLDS
+  // ONE, IT REPLACES THE REALM'S SELECTION for a credential issued on an
+  // access token issued to that client — the application scope takes
+  // precedence. Absent is the realm's; `[]` is a credential carrying nothing
+  // but its subject identifier.
+  //
+  // THE METADATA STAYS THE REALM'S. OpenID4VCI's Credential Issuer Metadata
+  // is one document per issuer and is not per client, so it advertises the
+  // realm's selection; a client's own selection decides what ITS credentials
+  // carry. A wallet asking for a path (section 5.1.1) is held to what the
+  // metadata advertises at the authorization endpoint, and then given the
+  // advertised rows this client's selection holds.
+  // ---------------------------------------------------------------------------
+  /**
+   * The application attribute holding its own credential claim selection.
+   */
+  static readonly APP_SELECTION_ATTRIBUTE = 'vcCredentialClaimAttributes';
+
+  /**
+   * Checks a list of attribute names against the catalogue.
+   *
+   * @param names - the names offered
+   * @returns `{ ok, names, errors }`, `names` canonically spelled in
+   *   catalogue order
+   */
+  checkNames(names: unknown[]) {
+    const { log } = this.deps;
+    log.debug("Entering VcClaims.checkNames().");
+    const errors = [];
+    const wanted = new Set<string>();
+    (Array.isArray(names) ? names : []).forEach((name) => {
+      const key = String(name == null ? '' : name).trim().toLowerCase();
+      if (!key) {
+        return;
+      }
+      if (!BY_LDAP.has(key)) {
+        errors.push('There is no attribute called "' +
+                    String(name).slice(0, 80) + '" in the catalogue.');
+        return;
+      }
+      wanted.add(key);
+    });
+    const out = VC_ATTRIBUTES.filter((row) => {
+      return wanted.has(row.ldap.toLowerCase());
+    }).map((row) => { return row.ldap; });
+    log.debug("Leaving VcClaims.checkNames(). " + errors.length +
+              " error(s).");
+    return { ok: errors.length === 0, names: out, errors: errors };
+  }
+
+  /**
+   * Returns an application's own credential claim rows, or null when it
+   * holds no selection and the realm's is in force. A value that will not
+   * parse is ignored with a warning, never costing the issuance.
+   *
+   * @param application - the application's view, or null
+   * @returns the rows in catalogue order, or null
+   */
+  applicationRows(application: any): CatalogueRow[] | null {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcClaims.applicationRows().");
+    const attribute = VcClaims.APP_SELECTION_ATTRIBUTE;
+    const raw = application && application.fields
+      ? [].concat(application.fields[attribute] || [])[0] : '';
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      log.debug("Leaving VcClaims.applicationRows(). None.");
+      return null;
+    }
+    let names = null;
+    try {
+      names = JSON.parse(String(raw));
+    } catch (e) {
+      log.debug("Caught in VcClaims.applicationRows(): " +
+                ((e && e.message) || e));
+      names = null;
+    }
+    const checked = Array.isArray(names) ? this.checkNames(names) : null;
+    if (!checked || !checked.ok) {
+      log.warn(errorCodes.tag('STS-REG-0214') + 'vc: the application "' +
+               application.identifier + '" carries ' + attribute + ' that ' +
+               'is not a JSON array of catalogue attribute names; its own ' +
+               'selection is ignored and the realm\'s is issued.');
+      log.debug("Leaving VcClaims.applicationRows(). Refused.");
+      return null;
+    }
+    const keys = checked.names.map((name) => name.toLowerCase());
+    log.debug("Leaving VcClaims.applicationRows(). " + keys.length + ".");
+    return VC_ATTRIBUTES.filter((row) => {
+      return keys.indexOf(row.ldap.toLowerCase()) >= 0;
     });
   }
 
@@ -758,9 +906,7 @@ class VcClaims {
   private randomFor(seedText: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.randomFor().");
-    const digest = crypto.createHash('sha256')
-                         .update(String(seedText), 'utf8')
-                         .digest();
+    const digest = crypto.digest('sha256', String(seedText));
     let state = digest.readUInt32LE(0);
     log.debug("Leaving VcClaims.randomFor().");
     return () => {
@@ -889,7 +1035,16 @@ class VcClaims {
       // Drawn LAST (#128), so every value above is what it was for every
       // person before these two existed.
       honorific: this.pick(random, HONORIFICS),
-      salutation: this.pick(random, SALUTATIONS)
+      salutation: this.pick(random, SALUTATIONS),
+      // Drawn LAST again (#1292), after the two above, so nothing drawn
+      // before them changes: the `profile` scope's last five claims.
+      middle: this.pick(random, GIVEN_NAMES),
+      gender: this.pick(random, GENDER_CODES),
+      zoneinfo: this.pick(random, TIME_ZONES),
+      picture: 'https://www.example.com/~' + username.toLowerCase() +
+               '/photo.jpg',
+      profile: 'https://www.example.com/~' + username.toLowerCase() +
+               '/profile'
     };
     log.debug("Leaving VcClaims.personaFor(). " + username + " is " +
               persona.display +
@@ -1238,9 +1393,10 @@ class VcClaims {
     const { log } = this.deps;
     log.debug("Entering VcClaims.updatedAtOf().");
     const attributes = this.directoryAttributes(name);
-    const stamp = attributes && [].concat(attributes.modifytimestamp ||
-                                          attributes.createtimestamp ||
-                                          [])[0];
+    // The two stamps are DirectoryEntry's (#1579).
+    const stamp = attributes && (DomainMap.fieldOf('DirectoryEntry',
+      'modifyTimestamp', attributes) || DomainMap.fieldOf('DirectoryEntry',
+      'createTimestamp', attributes));
     const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(
       String(stamp || ''));
     if (!m) {
@@ -1442,15 +1598,17 @@ class VcClaims {
    *
    * @param paths - the requested claims paths
    * @param format - the credential format
+   * @param base - optional; the rows in force when not the realm's
+   *   selection (an application's own, #495)
    * @returns the rows
    */
-  rowsForPaths(paths: unknown[], format: string) {
+  rowsForPaths(paths: unknown[], format: string, base?: CatalogueRow[]) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.rowsForPaths(). " + (paths || []).length +
               " path(s), " +
         "format=" + format);
     const wanted = new Set((paths || []).map((path) => this.pathKey(path)));
-    const out = this.selectedRows().filter((row) => {
+    const out = (base || this.selectedRows()).filter((row) => {
       const path = this.pathOfRow(row, format);
       return path && wanted.has(this.pathKey(path));
     });
@@ -1579,6 +1737,9 @@ export = {
   DEFAULT_SELECTION: VcClaims.DEFAULT_SELECTION,
   selectedRows: slot.forward('selectedRows'),
   selectedNames: slot.forward('selectedNames'),
+  APP_SELECTION_ATTRIBUTE: VcClaims.APP_SELECTION_ATTRIBUTE,
+  checkNames: slot.forward('checkNames'),
+  applicationRows: slot.forward('applicationRows'),
   isSelected: slot.forward('isSelected'),
   setSelection: slot.forward('setSelection'),
   resetSelection: slot.forward('resetSelection'),

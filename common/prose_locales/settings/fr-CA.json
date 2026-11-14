@@ -1,0 +1,118 @@
+{
+  "authn.cookieDomain|label": {
+    "en": "d384717cc62561e8",
+    "text": "Domaine des témoins de la session d’authentification unique"
+  },
+  "authn.cookieDomain|description": {
+    "en": "86eb2dd2092690be",
+    "text": "Le Domain avec lequel sont écrits les témoins de la session d’authentification unique — la session elle-même, l’état de navigateur de l’OP, le témoin d’appareil et les témoins des étapes de connexion — afin que des applications sur des écouteurs ayant des noms d’hôtes différents sous un même domaine (auth.example.com, portal.example.com) partagent une même authentification unique. Vide, la valeur par défaut, les écrit en host-only, ce dont a besoin une correspondance qui garde ces applications sur un seul nom d’hôte. AVERTISSEMENT : lorsqu’il est défini, chaque hôte sous le domaine reçoit le témoin de session, y compris ceux que ce service n’exécute pas — définissez-le sur le domaine le plus étroit que partagent vos écouteurs, jamais sur un domaine sous lequel d’autres parties hébergent des services. Définissez webauthn.rpId sur le même domaine, sinon une clé d’accès enregistrée sur un hôte n’est pas utilisable sur un autre."
+  },
+  "oidcRp.renewBeforeExpiryS|description": {
+    "en": "0bae808ab22d9e41",
+    "text": "Combien de temps avant l’expiration de son ID Token ou de son jeton d’accès la console d’administration ou le portail utilisateur les renouvelle avec le grant refresh token, à la prochaine requête de cette session. Le renouvellement a lieu dans la MÊME session — le même témoin, la même page, sans connexion — et la session dure au plus aussi longtemps que le jeton d’actualisation émis à la connexion (oauth2.refreshTokenTtlS, ou le oauthRefreshTokenTtlS propre au client). 0 ne renouvelle qu’une fois qu’ils ont expiré ; une valeur supérieure ou égale à la durée de vie du jeton renouvelle à chaque requête, ce qui permet à un test de l’observer. Lu dans le domaine où la connexion a eu lieu."
+  },
+  "totp.algorithm|description": {
+    "en": "56878a75877d859b",
+    "text": "RFC 6238 section 1.2 définit les trois et désigne HMAC-SHA-1 comme valeur par défaut. **LAISSEZ SHA1 À MOINS DE TESTER PRÉCISÉMENT CECI.** Plusieurs applications d’authentification très répandues — dont Google Authenticator — IGNORENT le paramètre `algorithm` du code QR et calculent toujours SHA-1 ; toute autre valeur produit donc un code qui se balaie parfaitement puis génère des codes que ce service refuse, sans que rien n’indique pourquoi. SHA-1 n’est pas une faiblesse ici : il s’agit d’un MAC à clé sur un compteur, pas d’un condensé résistant aux collisions. Le changer n’affecte que les NOUVEAUX enrôlements — un secret existant est vérifié avec l’algorithme sous lequel il a été enrôlé, celui qui a été indiqué à l’application."
+  },
+  "totp.secretBytes|description": {
+    "en": "985fea890f064ed5",
+    "text": "L’exigence R6 de RFC 4226 section 4 impose au moins 128 bits et en recommande 160, soit les 20 octets ici et la longueur d’une clé HMAC-SHA-1. Une longueur supérieure est autorisée et est recopiée à la main par quiconque ne peut pas balayer le code QR — 20 octets représentent déjà 32 caractères base32."
+  },
+  "keys.kekRef|description": {
+    "en": "a5a5b6e7f2c06fdc",
+    "text": "Le nom par lequel les fournisseurs infonuagique désignent le secret : un nom ou un ARN AWS Secrets Manager, un nom de ressource GCP (projects/<p>/secrets/<s>, avec /versions/latest ajouté si aucune version n’est indiquée), un nom de secret Azure Key Vault, ou un chemin de lecture HashiCorp Vault. Inutilisé par le fournisseur `file`."
+  },
+  "oauth2.revokeRefreshOnLogout|description": {
+    "en": "d6543ad76912e1b1",
+    "text": "Dans tous les modes (#123), lorsqu’une session d’authentification unique de navigateur se termine, chaque jeton d’actualisation émis SUR cette session sans offline_access est révoqué — le SHOULD d’OpenID Connect Back-Channel Logout 1.0 section 2.7, et le MAY de RFC 9700 section 2.2.2. Un jeton auquel offline_access a été accordé est conservé : survivre à la session est la raison d’être de cette portée (OIDC Core section 11). C’est ce qui donne un sens à /oauth2/logout et au wsignout1.0 de WS-Federation pour le back channel : sans cela, la déconnexion supprime le témoin et laisse un identifiant de longue durée entre les mains du client. ACTIVÉ par défaut ; désactivé, ou FALSE sur l’entrée d’un client, reproduit le client qui revient par actualisation. Un jeton est retrouvé par la session sur laquelle il a été ÉMIS."
+  },
+  "devices.browserDevices|description": {
+    "en": "77ffb5429a4923aa",
+    "text": "Activé — la valeur par défaut — une personne peut choisir « Mémoriser ce navigateur » à la connexion ou sur /portal/devices, et le navigateur est enregistré comme un appareil reconnu par un témoin contenant un jeton que ce domaine a signé et chiffré avec des clés qui ne servent à rien d’autre. **C’est un identifiant au PORTEUR et le niveau d’assurance le plus bas du registre** (`bearer`, sous `self-asserted`) : quiconque copie le témoin est ce navigateur jusqu’à ce que la copie soit détectée. Il ne fait donc jamais que RETIRER des soupçons (un navigateur mémorisé n’est pas un appareil nouveau ou non enregistré pour l’évaluation des risques) et n’ajoute jamais de confiance — il n’est jamais conforme, ne satisfait jamais urn:sts:acr:compliant-device, et ne dispense d’un second facteur que là où la politique d’authentification le prévoit. Désactivé, aucun navigateur n’est mémorisé et un témoin déjà émis n’est pas lu."
+  },
+  "devices.browserTokenLifetimeDays|label": {
+    "en": "f145a693f495273f",
+    "text": "Durée de vie du témoin de navigateur mémorisé (jours)"
+  },
+  "devices.browserTokenLifetimeDays|description": {
+    "en": "9609dbce0e0ba3de",
+    "text": "Durée de vie du témoin d’un navigateur mémorisé et du jeton qu’il contient. Le jeton est réémis — avec la génération suivante — à chaque connexion où le navigateur est reconnu : c’est donc la durée pendant laquelle un navigateur peut rester INUTILISÉ avant d’être oublié. 400 est la durée maximale pendant laquelle un navigateur conserve un témoin (RFC 6265bis section 5.6)."
+  },
+  "devices.browserReissueGraceSeconds|description": {
+    "en": "27ce3a774c8c969c",
+    "text": "Pendant ce délai après la réémission du jeton d’un navigateur mémorisé, le jeton qu’il remplace est toujours accepté : deux onglets qui se connectent en même temps portent chacun l’ancien témoin. Au-delà, un ancien jeton est un témoin COPIÉ (browser-token-replayed) : l’appareil est marqué comme compromis et toutes les sessions qu’il détient prennent fin. 0 n’accepte que le plus récent."
+  },
+  "devices.browserTokenCertificateHeader|description": {
+    "en": "fadec6eb34f32d07",
+    "text": "Indique si le jeton d’appareil d’un navigateur mémorisé désigne la chaîne de la clé qui l’a signé. Seul ce service lit ce jeton, et il voyage dans un témoin d’au plus environ 4 Ko : `x5c` (plusieurs kilo-octets) rend donc le jeton trop grand et il n’est pas émis (STS-DEVICE-0043). La clé dédiée n’est pas une feuille certifiée et ne reçoit ni l’un ni l’autre ; la clé `browser-devices` des groupes hybrides l’est. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, environ cent octets ; `x5c` est la chaîne en ligne, la feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans les deux cas, c’est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée par l’autorité de certification émettrice JOSE de ce domaine, ainsi qu’une signature HMAC, ne reçoivent ni l’un ni l’autre. La RFC 7515 section 4.1.5 exige que la récupération de `x5u` utilise TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
+  },
+  "oauth2.sessionManagement|description": {
+    "en": "a1383f70740573d9",
+    "text": "Mettre en œuvre OpenID Connect Session Management 1.0. Activé : le document de découverte nomme check_session_iframe, /oauth2/check_session répond avec l’iframe de l’OP (pouvant être encadrée uniquement par les origines des URI de redirection enregistrées du domaine), chaque réponse d’autorisation OpenID Connect vers une URI de redirection http(s) porte session_state, et l’état de navigateur de l’OP est écrit dans le témoin sts_op_browser_state — lisible par script et, sur un port HTTPS, SameSite=None pour que l’iframe sur la page d’une partie de confiance le reçoive. Les navigateurs qui bloquent les témoins tiers ne l’envoient jamais, et une session expirée ou terminée administrativement n’est pas vue tant que la partie de confiance ne redemande pas. Désactivé, rien de tout cela n’existe."
+  },
+  "oid4vp.signInCrossDevice|description": {
+    "en": "efc0c9399fffd682",
+    "text": "Propose un code QR simple sur la page de connexion par portefeuille, pour un portefeuille sur un autre appareil que la Digital Credentials API du navigateur ne peut atteindre. DÉSACTIVÉ par défaut : seul le navigateur qui a lancé la connexion peut être connecté par celle-ci, et c’est exactement ce qu’exploite un relais — quelqu’un montre son propre code à une victime qui le balaie et connecte le navigateur de l’attaquant. La voie de la Digital Credentials API prouve que le portefeuille est proche du navigateur et n’est pas affectée par ce paramètre."
+  },
+  "scim.authCookie|label": {
+    "en": "5c87761414498d45",
+    "text": "Proposer le témoin de session"
+  },
+  "scim.authCookie|description": {
+    "en": "610bd896bbe13ad7",
+    "text": "Indique si la session de connexion du navigateur dont ce service dispose déjà — celle que crée /authn/login et que partage WS-Federation — authentifie une requête SCIM. RFC 7644 section 2 nomme explicitement les témoins. Il n’y a pas de challenge pour lui, car un serveur ne peut pas demander un témoin dans WWW-Authenticate, et il n’est consulté qu’en l’absence d’en-tête Authorization : une requête qui présente un identifiant est jugée sur cet identifiant plutôt que de se rabattre discrètement."
+  },
+  "risc.autoEmit|description": {
+    "en": "05eb2b820c86f73c",
+    "text": "Activé, une personne supprimée de l’annuaire émet account-purged, `active` passant à false ou à true émet account-disabled ou account-enabled, et une modification de l’adresse courriel ou du numéro de téléphone émet identifier-changed — sur chaque flux qui a demandé le type et qui couvre ce compte, sans que personne n’ait rien saisi. Ces quatre actes atteignent l’annuaire aussi bien par SCIM que par LDAP ou par la console, car l’observateur est placé sur l’ÉCRITURE plutôt que sur une porte particulière. Désactivé rétablit le comportement dans lequel chaque événement RISC était demandé, sur /admin/risc ou par l’API de gestion."
+  },
+  "risc.recycleWindowDays|description": {
+    "en": "6f8f203725c5be50",
+    "text": "Pendant combien de temps, après qu’un compte a libéré une adresse courriel ou un numéro de téléphone — en le quittant, ou en étant purgé alors qu’il le détenait — la reprise de cet identifiant par un autre compte est signalée comme RISC identifier-recycled (section 2.6). La mémoire est celle du registre RISC ; elle est donc aussi bornée par risc.maxAccountsTracked. 0 ne signale rien."
+  },
+  "risc.subjectFormat|description": {
+    "en": "2af0a518f48e1f0a",
+    "text": "LE FORMAT RFC 9493 dans lequel ce service compose un sujet de compte — iss_sub, email, account, opaque, uri, did, phone_number ou aliases (un iss_sub et, s’il en existe une, une adresse courriel) ; un format pour lequel l’entrée de la personne ne détient aucune valeur réelle est envoyé en iss_sub — et c’est le paramètre le plus lourd de conséquences de ce groupe. Un événement RISC concernant un compte ne porte presque rien d’autre que son type et son sujet ; le sujet EST donc le message. iss_sub est l’identifiant qu’un récepteur détient déjà (l’iss et le sub d’un ID Token l’ont indiqué) et c’est la valeur par défaut de ce service ; email est ce qu’attend un récepteur qui indexe sur une adresse, et identifier-recycled existe précisément parce que cette clé n’est pas sûre. Les deux événements d’identifiant de RISC ignorent ce paramètre et utilisent email dans tous les cas, car leur sujet porte l’identifiant qui a changé."
+  },
+  "authn.unauthenticatedSessions|description": {
+    "en": "20dbc99e21691517",
+    "text": "Affiche un troisième bouton sur /authn/login qui ouvre une session pour quelqu’un qui refuse de s’authentifier. La session est réelle — elle a un témoin, elle satisfait un flux déjà en cours, et elle apparaît sur /admin/sessions dans une section qui lui est propre — mais elle est marquée `authenticated: false`, si bien qu’une application exigeant ALL_AUTHENTICATED_USERS la refuse et qu’une application exigeant EVERYBODY ne la refuse pas. C’est le seul endroit de ce service où la différence entre ces deux rôles intégrés est visible. La personne est le principal stable `anonymous`, qui obtient une entrée de l’annuaire comme n’importe qui et peut donc aussi détenir des rôles configurés. Annuler est inchangé et répond toujours access_denied."
+  },
+  "logout.anyUser|description": {
+    "en": "fdef1981804067b1",
+    "text": "Indique si GET|POST /logout honore un paramètre `username` nommant quelqu’un d’autre que la personne que nomme le témoin de session. ACTIVÉ par défaut, et EN MODE DÉVELOPPEMENT il n’accorde rien qui ne soit déjà possible : aucun mot de passe n’y est vérifié sur aucun écran de connexion, si bien que quiconque peut joindre ce port peut déjà DEVENIR cette personne en une requête et se déconnecter lui-même. Ce qu’il apporte, c’est un test sans interface — l’inventaire et la terminaison sont pilotables sans navigateur et sans témoin. **EN MODE PRODUIT, IL EST IGNORÉ** : un mot de passe y est vérifié, si bien que nommer quelqu’un d’autre permettrait à un appelant anonyme de mettre fin aux sessions de n’importe qui et de révoquer ses jetons, et /logout ne nomme que l’appelant connecté quelle que soit cette valeur. Le DÉSACTIVER fait agir /logout sur la seule session de l’appelant et répond 403 à une requête qui nomme un autre nom ; /admin/logout et /admin-api/logout ne sont pas affectés, car ce sont la porte de l’opérateur et ils se trouvent derrière les deux rôles de la console."
+  },
+  "spiffe.azureImdsTrustBundle|description": {
+    "en": "8663ccaf942b67e1",
+    "text": "Le trust_bundle_path de SPIRE, en PEM : des certificats de CA approuvés en plus des racines DigiCert intégrées à SPIRE, pour un infonuagique souverain ou un test."
+  },
+  "persistence.databasePasswordRef|description": {
+    "en": "eb3b145fb77509c9",
+    "text": "L’emplacement du mot de passe, dans le fournisseur que nomme `persistence.databasePasswordProvider` : un CHEMIN pour `file`, un nom ou un ARN pour `aws`, un nom de ressource pour `gcp`, un nom de secret pour `azure`, un chemin de lecture pour `vault`.\n\n**VIDE SIGNIFIE LE MÊME EMPLACEMENT QUE LA CLÉ DE CHIFFREMENT DE CLÉS** — `keys.kekFile` ou `keys.kekRef` — ce qui est la disposition que veulent la plupart des déploiements : un seul fichier monté, ou un seul secret infonuagique, contenant les deux. Ce qui distingue les deux à l’intérieur est `persistence.databasePasswordField`, et un emplacement PARTAGÉ contenant autre chose qu’un objet JSON est REFUSÉ plutôt que lu : ce qui s’y trouve est alors la clé elle-même, et la remettre à une base de données comme mot de passe est précisément l’erreur que ce refus existe pour empêcher."
+  },
+  "persistence.minted|description": {
+    "en": "ce7aa21775e90c3f",
+    "text": "Indique si ce que ce service ÉMET — sessions, jetons d’accès, jetons d’identité et jetons d’actualisation, codes d’autorisation, codes pré-autorisés, artefacts SAML, principaux et tickets Kerberos, caches anti-rejeu, compteurs et journal d’audit — survit à un redémarrage. ACTIVÉ, et il n’a strictement aucun effet sauf si À LA FOIS global.mode vaut « product » ET persistence.mode vaut « postgres ». Le mode développement l’ignore, car la clé de signature y est régénérée à chaque démarrage et un jeton restauré ne se vérifierait contre rien ; le stockage ldif l’ignore aussi et le signale au démarrage, car il écrit des fichiers entiers à chaque vidage et ces lignes changent à chaque requête. Chaque ligne est chiffrée avec la même clé de chiffrement de clés que celle qui protège les clés de signature, car un identifiant de session est une valeur de témoin et un code d’autorisation peut être échangé."
+  },
+  "cells.id|description": {
+    "en": "7c6b14c66e9b5387",
+    "text": "L’identifiant de la cellule à laquelle appartient ce conteneur — un nom court en minuscules tel que `usw2` (`[a-z0-9]{1,16}`). VIDE, la valeur par défaut, correspond au MODE À CELLULE UNIQUE : tout le service est un seul déploiement et chaque stockage se trouve dans une seule base de données, exactement comme avant l’existence des cellules. Un identifiant de cellule n’est jamais publié : aucun jeton, témoin, certificat ou document de métadonnées n’en nomme un. Chaque nœud d’une même cellule doit porter le même identifiant, et chaque cellule d’un même service un identifiant différent."
+  },
+  "mail.transport|label": {
+    "en": "7ab200d2c37a037b",
+    "text": "Transport du courriel"
+  },
+  "mail.transport|description": {
+    "en": "fffcfde3a631945a",
+    "text": "La façon dont un message envoyé par ce service le quitte. `default` est celui du mode : en DÉVELOPPEMENT, le transport de capture, qui conserve le message et l’affiche sur Supervision → Courriel au lieu de l’envoyer ; en PRODUIT, rien (`off`). `smtp` est un relais auto-hébergé (ou le relais SMTP de Google Workspace, ou l’interface SMTP d’Amazon SES — voir mail.smtpPreset), `ses` Amazon SES v2, `acs` Azure Communication Services Email, `gmail` l’API Gmail en tant que boîte aux lettres Workspace. Les trois transports infonuagique nécessitent l’installation de leur SDK (une dépendance homologue optionnelle, comme les SDK des magasins de secrets).\n\n**`capture` est REFUSÉ en mode produit** : un message capturé porte son corps, et un lien de réinitialisation de mot de passe affiché dans la console est un identifiant montré à quiconque peut le lire. Un service en mode produit dont le transport configuré ne peut pas être construit ne démarre pas (STS-MAIL-0002)."
+  },
+  "mail.smtpPreset|description": {
+    "en": "7ba8a4a1513cafa3",
+    "text": "Un relais connu, qui renseigne l’hôte (et le port) lorsque mail.smtpHost est vide. `google-workspace-relay` correspond à smtp-relay.gmail.com:587 avec STARTTLS — Google Cloud n’a pas d’API de courriel transactionnel propre, et ce relais, authentifié par l’adresse IP d’envoi dans la console d’administration Workspace ou par SMTP AUTH, est l’une de ses deux voies natives Google (le transport par l’API Gmail est l’autre). `aws-ses-smtp` correspond à email-smtp.<mail.sesRegion>.amazonaws.com:587, avec les identifiants SMTP de SES comme nom d’utilisateur et mot de passe."
+  },
+  "mail.dkimDomain|description": {
+    "en": "daecbe09eeef7681",
+    "text": "Le d= d’une DKIM-Signature (RFC 6376) que ce service appose sur chaque message qu’il envoie par le transport SMTP. Vide (la valeur par défaut) ne signe rien — ce qui est correct lorsque le relais signe, comme le font SES, Azure et Google Workspace. La signature est produite par common/crypto.js, jamais par la bibliothèque de courriel."
+  }
+}

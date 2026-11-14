@@ -43,7 +43,8 @@
 //
 // **Anybody can authenticate, and everybody's password is the same.** See
 // USER_PASSWORD below for why Kerberos cannot simply check no password the way
-// the rest of this service does not, and findOrCreateUser() for the accounts
+// the rest of this service does not in development mode, and
+// findOrCreateUser() for the accounts
 // that are not in the table until somebody asks for one.
 //
 // **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture
@@ -76,10 +77,10 @@
 
 const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
-// node's own, for the SHA-256 an on-demand RID is derived from (see
-// autoRidFor()). A builtin, so it adds nothing to the parent project's COPY
-// set.
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for the SHA-256 an on-demand RID is derived from (see
+// autoRidFor()). `helpers.js` below already requires it at load, so this
+// adds no file to what this module loads (#453).
+const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
@@ -88,15 +89,15 @@ const config = require('../common/config');
 const mode = require('../common/mode');
 // PER TRUST REALM SINCE 2026-09-15 — the store below is a partition per realm,
 // and this is also what `contextOf()` enters to build one. A LEAF that
-// registers no route, so this cannot move a route or join a cycle, and it was
-// already in the parent project's copy set before that change.
+// registers no route, so this cannot move a route or join a cycle.
 const realms = require('../common/realms');
-// ERROR CODES. A LEAF requiring nothing, already in the parent project's copy
-// set through common/audit.js. Only tag() is used: every failure here happens
+// ERROR CODES. A LEAF requiring nothing, already loaded through
+// common/audit.js. Only tag() is used: every failure here happens
 // while the principal database is built at require time, before a request or
 // an audit ring exists to hold a row.
 const errorCodes = require('../common/error_codes');
 const cacheRegistry = require('../common/cache_registry');
+const DomainClasses = require('../common/domain_classes');
 
 // ---------------------------------------------------------------------------
 // ONE PRINCIPAL DATABASE PER TRUST REALM (2026-09-15).
@@ -130,9 +131,15 @@ const cacheRegistry = require('../common/cache_registry');
 // is for before it looks anything up, which is what makes every reader below
 // right without being told which realm it is in.
 //
-// **WHAT A REALM DOES NOT GET, by rcbj's decision:** a trust with another trust
-// realm. The development-mode second realm and its trust (`krb5.trustedRealm`)
-// stay the DEFAULT realm's, and a realm's KDC holds no `krbtgt/<other realm>`.
+// **TRUSTS ARE RECORDS SINCE #430 (2026-10-19)**, and a trust realm may hold
+// them for another trust realm's Kerberos realm — this paragraph read *what a
+// realm does not get, by rcbj's decision: a trust with another trust realm*.
+// No `krbtgt/<other realm>` is in this database any more: `find()` builds
+// the inter-realm principal from the ambient realm's record in
+// `kerberos/krb5_trusts.ts` (see THE TRUSTS, below). What stays the DEFAULT
+// realm's is the development fixture of a partner's own database
+// (PARTNER.COM), which this KDC answers as in development so a referral can
+// be walked.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -404,7 +411,8 @@ function serviceDomainsFor() {
 // (`ctx.AUTO_SERVICE_PASSWORD`), and it is PUBLISHED by GET /krb5/principals
 // for the same reason USER_PASSWORD is: a debugger whose accounts are unusable
 // without reading the source is worse than one that says what they are. It is
-// what lets a reader decrypt a service ticket this mock issued — the ticket's
+// what lets a reader decrypt a service ticket this service issued — the
+// ticket's
 // own EncTicketPart, the PAC inside it, the four signatures — which is
 // otherwise the one thing a client can never see. The CONFIGURED service
 // accounts keep their own separate passwords, so nothing about this weakens an
@@ -432,42 +440,71 @@ function serviceDomainsFor() {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// The second realm, and the trust between them.
+// The second realm: a development fixture of a PARTNER'S OWN DATABASE.
 //
-// A cross-realm trust is not a configuration flag: it is a SHARED KEY, held as
-// an ordinary principal named krbtgt/<the other realm> in each realm's
-// database. That is the whole mechanism, and it is why a referral works at all
-// — the issuing KDC seals a ticket-granting ticket with a key the OTHER realm's
-// KDC can open, and nothing else passes between them.
+// A cross-realm trust is not a configuration flag: it is a SHARED KEY,
+// `krbtgt/<the other realm>@<this realm>`, held by both KDCs. That is the
+// whole mechanism, and it is why a referral works at all — the issuing KDC
+// seals a ticket-granting ticket with a key the OTHER realm's KDC can open,
+// and nothing else passes between them. **THE KEY IS A TRUST RECORD SINCE
+// #430** (`kerberos/krb5_trusts.ts`), one per partner in the realm's own
+// directory subtree, and the four process-wide settings that built it until
+// then (`krb5.trustedRealm`, `krb5.trustPassword`, `krb5.trustedDomainSid`,
+// `krb5.trustedKrbtgtPassword`) are retired with no shim.
 //
-// This mock serves both realms from one process, which a real deployment never
-// does. The simplification is worth naming because it hides one class of
-// problem (finding the other realm's KDC, which is DNS and SRV records) and
-// none of the protocol.
-//
-// Its own domain SID differs, which is the point of having it: SID filtering
-// across a trust is about whose domain a SID belongs to.
-//
-// **THE DEFAULT TRUST REALM'S ALONE** (2026-09-15). These four are the
-// PROCESS's values, read here at require time outside any realm, and only the
-// default realm's database holds the trust or answers for the second realm.
-// Another trust realm's KDC stands alone: rcbj's decision was that trust realms
-// do not trust each other's Kerberos.
+// What stays HERE is the partner's own side, in development only: the
+// default realm's KDC also answers as PARTNER.COM — its krbtgt, a user and a
+// service — so the whole referral chase is reachable without a second KDC.
+// One process serving two realms from one database is a simplification a
+// real deployment never makes; it hides finding the other realm's KDC (DNS
+// and SRV records) and none of the protocol. Its domain SID differs from this
+// realm's, which is the point of having it: SID filtering across a trust is
+// about whose domain a SID belongs to. A trust between two TRUST REALMS of
+// this process needs none of this — each answers for its own realm.
 // ---------------------------------------------------------------------------
 /**
- * The trusted Kerberos realm the default trust realm's KDC answers for in
- * development, `krb5.trustedRealm`.
+ * The development partner realm the default trust realm's KDC also answers
+ * as, and the partner of the trust record seeded beside it (#430).
  */
-const TRUSTED_REALM = config.value('krb5.trustedRealm');
+const DEV_PARTNER_REALM = 'PARTNER.COM';
 /**
- * The trusted realm's DNS domain.
+ * The development partner realm's DNS domain.
  */
-const TRUSTED_DOMAIN = TRUSTED_REALM.toLowerCase();
-const TRUST_PASSWORD = config.value('krb5.trustPassword');
+const DEV_PARTNER_DOMAIN = DEV_PARTNER_REALM.toLowerCase();
 /**
- * The trusted domain's SID, `krb5.trustedDomainSid`.
+ * The development partner realm's domain SID.
  */
-const TRUSTED_DOMAIN_SID = config.value('krb5.trustedDomainSid');
+const DEV_PARTNER_DOMAIN_SID = 'S-1-5-21-2035427030-2118130302-1178042555';
+
+// ---------------------------------------------------------------------------
+// THE TRUSTS (#430), reached LAZILY and inside a `try`. `krb5_trusts.ts` is
+// required by nothing at load here, so a process loads it only on the first
+// cross-realm name — and a process without it (the parent project's
+// in-process Kerberos jobs copied this file's closure, which kept it out
+// until #1280) has no trusts and says so, rather than failing at load. Its
+// own requires are `common/` leaves already loaded; it reaches this file back
+// lazily, which is why this is not a cycle at load.
+// ---------------------------------------------------------------------------
+let trustsMissingLogged = false;
+
+function trustRegister() {
+  log.debug("Entering trustRegister().");
+  try {
+    const found = require('./krb5_trusts');
+    log.debug("Leaving trustRegister().");
+    return found;
+  } catch (e) {
+    log.debug('Caught in trustRegister(): ' + ((e && e.message) || e));
+    if (!trustsMissingLogged) {
+      trustsMissingLogged = true;
+      log.warn(errorCodes.tag('STS-KRB-0225') + 'krb5: the Kerberos trust ' +
+               'register (kerberos/krb5_trusts) could not be loaded, so ' +
+               'this KDC holds no trust: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving trustRegister(). Not loadable.");
+    return null;
+  }
+}
 
 // [MS-SAMR] section 2.2.1.13's USER_ACCOUNT codes — NOT the LDAP
 // userAccountControl bits, which share most of these names and none of their
@@ -539,8 +576,8 @@ function hostSalt(realm, shortName, dnsDomain) {
 // `definitionsFor(ctx)` returns `{ krbtgt, fixtures, trusted }`, so a realm
 // named ACME.EXAMPLE.COM has `alice@ACME.EXAMPLE.COM` salted
 // `ACME.EXAMPLE.COMalice` and `HTTP/web.acme.example.com`, and only the DEFAULT
-// realm's list carries the trust with krb5.trustedRealm and that realm's own
-// accounts.
+// realm's list carries the development partner realm's own accounts. No list
+// carries a trust key since #430: that is a trust record's.
 function definitionsFor(ctx) {
   log.debug("Entering definitionsFor(). realm=" + ctx.REALM);
   const REALM = ctx.REALM;
@@ -817,73 +854,38 @@ function definitionsFor(ctx) {
                    'act on its behalf',
       pac: { rid: 1122, groups: [RID.DOMAIN_USERS],
              userAccountControl: UAC.NORMAL_ACCOUNT }
-    },
-    {
-      // -----------------------------------------------------------------------
-      // THE TRUST. This one principal IS the cross-realm relationship.
-      //
-      // krbtgt/PARTNER.COM@EXAMPLE.COM: the inter-realm ticket-granting
-      // account. When a client of EXAMPLE.COM asks for a service in
-      // PARTNER.COM, this realm's KDC has no such service and does NOT refuse —
-      // it issues a ticket-granting ticket for krbtgt/PARTNER.COM sealed with
-      // THIS key, and the client presents that to the other realm's KDC. Both
-      // realms hold the same key, which is what makes it openable there and
-      // nowhere else.
-      //
-      // Its salt is name-shaped like any other account, and its etypes are
-      // deliberately AES-only: a trust that still had an RC4 key is the
-      // configuration that breaks on a 2025 domain controller, and the KDC's
-      // etype negotiation for a referral has to be driven by THIS account
-      // rather than by the service the client actually asked for.
-      // -----------------------------------------------------------------------
-      name: ['krbtgt', TRUSTED_REALM],
-      type: 2,
-      password: TRUST_PASSWORD,
-      salt: userSalt(REALM, 'krbtgt'),
-      etypes: [18, 17],
-      description: 'the inter-realm trust with ' + TRUSTED_REALM + ' — a ' +
-          'shared key, held as a principal',
-      pac: {
-        rid: 1112,
-        groups: [RID.DOMAIN_USERS],
-        // ok-as-delegate on the ticket and TRUSTED_FOR_DELEGATION in the PAC
-        // are the same setting seen from the two ends: [MS-SAMR] says this bit
-        // is what makes the KDC set that flag. Keeping them consistent here
-        // means the workflow can show the cause beside the effect.
-        userAccountControl: UAC.NORMAL_ACCOUNT | UAC.TRUSTED_FOR_DELEGATION |
-          UAC.DONT_EXPIRE_PASSWORD
-      }
     }
   ];
 
-  // The trusted realm's own database. It holds the same trust key (the other
-  // half of the relationship), its own ticket-granting service, and a service
-  // to reach — which is the destination a referral is FOR. There is
-  // deliberately NO second copy of the trust key here.
+  // The development partner realm's own database: its own ticket-granting
+  // service, a user and a service to reach — which is the destination a
+  // referral is FOR. There is deliberately NO copy of the trust key here.
   //
-  // The inter-realm account is krbtgt/PARTNER.COM@EXAMPLE.COM — one principal,
-  // whose realm is the ISSUING realm — and both KDCs consult that same entry:
-  // the issuer to seal the referral, and the target because the arriving
-  // ticket's own `realm` field says EXAMPLE.COM, which is what handleTgsReq
-  // looks it up by. Holding a second copy under PARTNER.COM would be two
-  // secrets that have to stay equal, and the failure when they drift is "the
-  // ticket does not decrypt" at the second KDC — a message about a ticket for a
-  // problem about a trust. One entry cannot drift from itself.
+  // The inter-realm key is krbtgt/PARTNER.COM@EXAMPLE.COM — one key, whose
+  // realm is the ISSUING realm — and both sides consult the same TRUST RECORD
+  // for it (#430): the issuer to seal the referral, and the target because
+  // the arriving ticket's own `realm` field says EXAMPLE.COM, which is what
+  // handleTgsReq looks it up by. A second copy would be two secrets that have
+  // to stay equal, and the failure when they drift is "the ticket does not
+  // decrypt" at the second KDC — a message about a ticket for a problem about
+  // a trust. One record cannot drift from itself.
   //
   // What PARTNER.COM does need is its OWN ticket-granting service, whose key is
   // a different secret from the trust: it signs the PAC and seals tickets for
   // its own services. Giving it the trust password would have made the two
   // indistinguishable, and every assertion about which key signed what would
   // have passed for the wrong reason.
+  // Its krbtgt password is a literal of this fixture: the setting that held
+  // it (`krb5.trustedKrbtgtPassword`) was retired by #430 with the other three.
   const TRUSTED_DEFINITIONS = [
     {
-      name: ['krbtgt', TRUSTED_REALM],
+      name: ['krbtgt', DEV_PARTNER_REALM],
       type: 2,
-      password: config.value('krb5.trustedKrbtgtPassword'),
-      salt: userSalt(TRUSTED_REALM, 'krbtgt'),
-      realm: TRUSTED_REALM,
-      description: TRUSTED_REALM + "'s own ticket-granting service — NOT the " +
-                                   "trust key"
+      password: 'partner-krbtgt-password',
+      salt: userSalt(DEV_PARTNER_REALM, 'krbtgt'),
+      realm: DEV_PARTNER_REALM,
+      description: DEV_PARTNER_REALM + "'s own ticket-granting service — NOT " +
+                                       "the trust key"
     },
     {
       // A user native to the trusted realm. Without one, the second realm is
@@ -896,9 +898,9 @@ function definitionsFor(ctx) {
       // realm and the default happen to agree.
       name: ['carol'],
       type: 1,
-      salt: userSalt(TRUSTED_REALM, 'carol'),
-      realm: TRUSTED_REALM,
-      description: 'a user in ' + TRUSTED_REALM + ', so that realm is a ' +
+      salt: userSalt(DEV_PARTNER_REALM, 'carol'),
+      realm: DEV_PARTNER_REALM,
+      description: 'a user in ' + DEV_PARTNER_REALM + ', so that realm is a ' +
                    'realm and not just a target',
       pac: {
         rid: 2104,
@@ -909,13 +911,13 @@ function definitionsFor(ctx) {
       }
     },
     {
-      name: ['HTTP', 'app.' + TRUSTED_DOMAIN],
+      name: ['HTTP', 'app.' + DEV_PARTNER_DOMAIN],
       type: 3,
       password: 'partner-service-password',
-      salt: userSalt(TRUSTED_REALM, 'HTTPapp'),
-      realm: TRUSTED_REALM,
-      description: 'a service in ' + TRUSTED_REALM + ', reachable only by ' +
-                                                     'following a referral',
+      salt: userSalt(DEV_PARTNER_REALM, 'HTTPapp'),
+      realm: DEV_PARTNER_REALM,
+      description: 'a service in ' + DEV_PARTNER_REALM + ', reachable only ' +
+                   'by following a referral',
       pac: {
         rid: 2101,
         groups: [RID.DOMAIN_USERS],
@@ -924,13 +926,11 @@ function definitionsFor(ctx) {
     }
   ];
 
-  // The trust — `krbtgt/<trusted realm>@<this realm>`, the last fixture above —
-  // and the trusted realm's own database are the DEFAULT realm's alone. Another
-  // trust realm's KDC holds no inter-realm key, so a service in another realm's
-  // domain is simply unknown there rather than a referral.
+  // The development partner's own database is the DEFAULT realm's alone.
+  // Another trust realm's KDC reaches a partner only through a trust record
+  // (#430), never through a fixture.
   const fixtures = DEFINITIONS.filter(function (def) {
-    return def !== KRBTGT_DEFINITION &&
-           (ctx.isDefault || String(def.name[0]) !== 'krbtgt');
+    return def !== KRBTGT_DEFINITION;
   });
   log.debug("Leaving definitionsFor().");
   return { krbtgt: KRBTGT_DEFINITION, fixtures: fixtures,
@@ -938,13 +938,14 @@ function definitionsFor(ctx) {
 }
 
 // Which realms this KDC answers for, AS THE AMBIENT TRUST REALM. A real KDC
-// answers for exactly one; the default realm's answers for two so the whole
-// referral chase is reachable without a second container.
+// answers for exactly one; the default realm's answers for two in development
+// so the whole referral chase is reachable without a second KDC.
 //
-// **ONE IN PRODUCT MODE.** The second realm, its krbtgt, its user and the trust
-// are all fixtures (`ctx.SEEDS_DEMO`), so a KDC that went on answering for
-// PARTNER.COM would be answering for a realm it holds nothing in.
-// KDC_ERR_WRONG_REALM is the true answer to a request naming it.
+// **ONE IN PRODUCT MODE.** The second realm, its krbtgt, its user and its
+// service are all fixtures (`ctx.SEEDS_DEMO`), so a KDC that went on answering
+// for PARTNER.COM would be answering for a realm it holds nothing in.
+// KDC_ERR_WRONG_REALM is the true answer to a request naming it. (Its trust
+// RECORD is seeded in development only as well, by `krb5_trusts.ts`.)
 //
 // **ONE, OR NONE, IN ANOTHER TRUST REALM** (2026-09-15): its own name while its
 // Kerberos is on, and nothing while it is off.
@@ -971,7 +972,7 @@ function servedBy(ctx) {
     return [];
   }
   log.debug("Leaving servedBy().");
-  return ctx.isDefault && ctx.SEEDS_DEMO ? [ctx.REALM, TRUSTED_REALM] :
+  return ctx.isDefault && ctx.SEEDS_DEMO ? [ctx.REALM, DEV_PARTNER_REALM] :
                                            [ctx.REALM];
 }
 
@@ -985,8 +986,8 @@ function domainSidFor(realm) {
   log.debug("Entering domainSidFor().");
   const ctx = current();
   log.debug("Leaving domainSidFor().");
-  return ctx.isDefault && realm === TRUSTED_REALM ? TRUSTED_DOMAIN_SID :
-                                                    ctx.DOMAIN_SID;
+  return ctx.isDefault && ctx.SEEDS_DEMO && realm === DEV_PARTNER_REALM ?
+    DEV_PARTNER_DOMAIN_SID : ctx.DOMAIN_SID;
 }
 
 // Which realm a service principal belongs to, decided from its HOST NAME.
@@ -1020,13 +1021,17 @@ function realmForService(nameComponents) {
     return null;
   }
   const host = String(nameComponents[nameComponents.length - 1]).toLowerCase();
-  // No trust exists in product mode (see realmsServed()), nor in any trust
-  // realm but the default, so no host belongs to the trusted realm there and
-  // the name is simply unknown.
-  if (ctx.isDefault && ctx.SEEDS_DEMO &&
-      (host === TRUSTED_DOMAIN || host.endsWith('.' + TRUSTED_DOMAIN))) {
-    log.debug("Leaving realmForService().");
-    return TRUSTED_REALM;
+  // THE TRUST RECORDS' ROUTED SUFFIXES (#430), the most specific match, with
+  // this realm's own domain winning over a suffix no longer than it. What
+  // comes back is the NEXT HOP — the partner whose record routes the host —
+  // which for a transitive trust may not be the service's own realm: that
+  // partner's KDC routes it on.
+  const register = trustRegister();
+  const routed = register ? register.routeHost(host, ctx.DOMAIN) : null;
+  if (routed) {
+    log.debug("Leaving realmForService(). Routed to " + routed.partner +
+              " by the trust record's suffix " + routed.suffix + ".");
+    return routed.partner;
   }
   if (host === ctx.DOMAIN || host.endsWith('.' + ctx.DOMAIN)) {
     log.debug("Leaving realmForService().");
@@ -1415,8 +1420,7 @@ function autoRidFor(nameComponents, realm) {
   const span = AUTO_RID_LIMIT - AUTO_RID_BASE;
   // A label in front of the name, so this digest is never the same bytes as
   // any other SHA-256 of a principal name something else computes.
-  const digest = nodeCrypto.createHash('sha256')
-    .update('sts-krb5-auto-rid:' + key, 'utf8').digest();
+  const digest = stsCrypto.digest('sha256', 'sts-krb5-auto-rid:' + key);
   // 48 bits is an exact integer in a double, and 2^48 mod ~2^30 leaves a bias
   // of about one part in a quarter of a million — nothing a SID can show.
   const start = digest.readUIntBE(0, 6) % span;
@@ -1657,6 +1661,12 @@ function configuredServiceDefinition(ctx) {
   }
   const password = String(config.value('krb5.servicePassword') || '');
   if (!password) {
+    // `passwordRefused`, in both refusals below (2026-10-12): the SPN is
+    // usable and only the PASSWORD is missing or published, which is the case
+    // a product key source answers with a random key of its own
+    // (`krb5_person_keys.ts`, `acceptorKeyMissing()`). The mode is asked
+    // there, not here.
+    account.passwordRefused = true;
     account.reason = 'krb5.servicePassword (KRB5_SERVICE_PASSWORD) ' +
       'is empty, so the ' +
       'account ' + spn + '@' + REALM + ' was not created and ' +
@@ -1667,14 +1677,17 @@ function configuredServiceDefinition(ctx) {
   }
   if (!ctx.SEEDS_DEMO &&
       password === publishedDefault('krb5.servicePassword')) {
+    account.passwordRefused = true;
     account.reason = 'product mode refuses the published default ' +
       'krb5.servicePassword: that value is written in this service\'s ' +
       'source, so a key derived from it would let anybody mint a ticket this ' +
       'acceptor accepts. The ' +
       'account ' + spn + '@' + REALM + ' was NOT created, so ' +
-      'the acceptor on krb5.servicePort and /authn/spnego accept no ticket. ' +
+      'the acceptor at /authn/spnego accepts no ticket. ' +
       'Set KRB5_SERVICE_PASSWORD to the password of that SPN\'s account in ' +
-      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt).';
+      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt), ' +
+      'or leave it and let this KDC key the SPN at random, which a product ' +
+      'service does by itself where it can store the key.';
     log.warn(errorCodes.tag('STS-KRB-0061') + 'krb5: ' + account.reason);
     log.debug('Leaving configuredServiceDefinition(). Published default ' +
               'refused.');
@@ -1777,8 +1790,8 @@ function buildDatabase(ctx) {
     log.info('krb5: product mode, so the fixture accounts (alice, bob, ' +
              'locked, expired, the computer account, the delegation services ' +
              'and their rules' +
-             (ctx.isDefault ? ', and the ' + TRUSTED_REALM + ' realm and ' +
-                              'trust' : '') + ') were NOT ' +
+             (ctx.isDefault ? ', and the ' + DEV_PARTNER_REALM + ' realm ' +
+                              'and its trust record' : '') + ') were NOT ' +
              'created. This KDC holds krbtgt/' + ctx.REALM + ' (a random ' +
              'key kept sealed on the directory) and ' +
              (ctx.serviceAccount.spn || 'no service account') + ' where ' +
@@ -1908,7 +1921,8 @@ function inactiveContext(id, reason) {
     KDC_ETYPES: [], KVNO: null, USER_PASSWORD: null,
     AUTO_SERVICE_PASSWORD: null, SERVICE_DOMAINS: [], DOMAIN_SID: '',
     KRBTGT_PASSWORD: null, KRBTGT_FROM_PASSWORD: false,
-    serviceAccount: { spn: '', available: false, reason: reason },
+    serviceAccount: { spn: '', available: false, reason: reason,
+                      passwordRefused: false },
     krbtgtReason: reason, configuredKeys: new Set(),
     signature: builtFromSignature(realms.get(id))
   };
@@ -1942,7 +1956,8 @@ function buildContext(realm) {
       KRBTGT_PASSWORD: fromPassword ?
         mode.valueInForce('krb5.krbtgtPassword') : null,
       KRBTGT_FROM_PASSWORD: fromPassword,
-      serviceAccount: { spn: '', available: false, reason: '' },
+      serviceAccount: { spn: '', available: false, reason: '',
+                        passwordRefused: false },
       krbtgtReason: '',
       configuredKeys: new Set(),
       signature: builtFromSignature(isDefault ? null : realm)
@@ -2504,9 +2519,10 @@ function signedOutPrincipals() {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE AUTHENTICATOR REPLAY CACHE, DESCRIBED FROM HERE (#74, rule 3ap). It
-// lives in `krb5_service.js`, which is the parent project's and is not edited
-// in this repository, so it is described from outside and NOT COUNTED. That
-// module requires this one, so it is required lazily, when the page is drawn.
+// lives in `krb5_service.js`, which was the parent project's and not edited
+// in this repository until #1280, so it is described from outside and NOT
+// COUNTED (the arrangement stands). That module requires this one, so it is
+// required lazily, when the page is drawn.
 // Its value is the millisecond an authenticator was seen; the window is twice
 // `krb5.clockSkew`.
 // ---------------------------------------------------------------------------
@@ -2537,8 +2553,8 @@ cacheRegistry.register({
   },
   // What the acceptor's own pruneReplayCache() drops — an Authenticator
   // seen more than twice the clock skew ago — in every realm (#49 P5). The
-  // acceptor is the parent project's and may not be edited here; its map is
-  // exported, and this is the same test it applies.
+  // acceptor was the parent project's and not edited here until #1280; its
+  // map is exported, and this is the same test it applies.
   eject: function (now) {
     const service = require('./krb5_service.js');
     return cacheRegistry.realmMapEjector(realms, service.replayCache,
@@ -2633,13 +2649,12 @@ function withKeyCache(principal) {
 // credential store, which is `common/credentials.ts`; this file is required by
 // `krb5_kdc.js` at 15. A require from here to either would register every
 // `/ldap` route ahead of the KDC's own (rule 1). And the source requires THIS
-// file, so a require back closes a cycle. The third reason is not about route
-// order at all and is the one worth keeping: **the parent project's in-process
-// Kerberos jobs load this file, `krb5_kdc.js` and `krb5_service.js` and copy
-// their require closure into an image** — a require from here to the source
-// would drag `common/credentials.ts`, `common/keystore.js` and the directory
-// into that copy set for a feature those jobs never use. With the slot, the
-// closure is exactly what it was.
+// file, so a require back closes a cycle. The third reason is history: **the
+// parent project's in-process Kerberos jobs load this file, `krb5_kdc.js` and
+// `krb5_service.js` and copied their require closure into an image** — a
+// require from here to the source would have dragged `common/credentials.ts`,
+// `common/keystore.js` and the directory into that copy set for a feature
+// those jobs never use (an obligation until #1280; the slot stands).
 //
 // ONE OBJECT, VALIDATED WHOLE, for `admin.js`'s `setLogoutReader()` reason: a
 // source that answered services and not people would give a product KDC a
@@ -2696,6 +2711,51 @@ function personShaped(nameComponents, realm) {
   return ctx.active && !ctx.SEEDS_DEMO && Array.isArray(nameComponents) &&
          nameComponents.length === 1 && !!nameComponents[0] &&
          (realm || ctx.REALM) === ctx.REALM;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGN-IN'S RISK, DECIDED AT THE DOOR (#499; rcbj's decision 2). Asked by
+// the KDC once an AS-REQ's pre-authentication has verified, before a ticket
+// is built: the source (`krb5_person_keys.ts`) assesses the sign-in with the
+// risk engine, records it — so the person's standing is THIS sign-in's, which
+// is what the TGS-REQs after it are decided on — and asks the issuance policy.
+// Answers `{ refused: true, errorCode, eText }` when the policy refused it on
+// risk, and null otherwise. One component, this KDC's own realm; a source
+// without the function (the parent project's in-process jobs have none), or
+// one that threw, refuses nobody — an assessment that could not be made is
+// "no facts", which never denies.
+// ---------------------------------------------------------------------------
+/**
+ * Asks the key source to assess an AS-REQ's sign-in for risk and decide on it,
+ * after pre-authentication verified.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @param detail - `{ indicators, pkinit, hardware, method }` of the
+ *   pre-authentication
+ * @returns `{ refused, errorCode, eText }` when refused on risk, or null
+ */
+async function decideSignIn(nameComponents, realm, detail) {
+  log.debug('Entering decideSignIn().');
+  const ctx = current();
+  if (!keySource || typeof keySource.decideSignIn !== 'function' ||
+      !Array.isArray(nameComponents) || nameComponents.length !== 1 ||
+      !nameComponents[0] || (realm || ctx.REALM) !== ctx.REALM) {
+    log.debug('Leaving decideSignIn(). Not asked.');
+    return null;
+  }
+  let answer = null;
+  try {
+    answer = await keySource.decideSignIn(String(nameComponents[0]),
+                                          detail || {});
+  } catch (e) {
+    log.debug('Caught in decideSignIn(): ' + ((e && e.message) || e));
+    // Unknown never denies: the ticket is decided as it was before #499.
+    answer = null;
+  }
+  log.debug('Leaving decideSignIn(). ' +
+            (answer && answer.refused ? 'Refused.' : 'Not refused.'));
+  return answer && answer.refused ? answer : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2799,6 +2859,23 @@ function preauthProvider() {
   return (keySource && keySource.fast &&
           typeof keySource.fast.openAsRequest === 'function')
     ? keySource.fast : null;
+}
+
+// THE PKINIT PROVIDER (#179), handed over inside the key source beside FAST
+// and for FAST's reason: `krb5_kdc.js` reaches it here and requires nothing
+// new. Null without a key source — the parent project's in-process jobs —
+// so PA-PK-AS-REQ stays unknown padata there, as it always was.
+/**
+ * Returns the PKINIT provider handed over inside the key source.
+ *
+ * @returns the `krb5_pkinit.ts` instance, or null
+ */
+function pkinitProvider() {
+  log.debug('Entering pkinitProvider().');
+  log.debug('Leaving pkinitProvider().');
+  return (keySource && keySource.pkinit &&
+          typeof keySource.pkinit.checkRequest === 'function')
+    ? keySource.pkinit : null;
 }
 
 // The e-texts, one per state the source can report. No em dash and nothing
@@ -2911,10 +2988,89 @@ function directoryUser(name) {
   }
   withKeyCache(record);
   record.keys = new Map(answer.keys);
+  // Keyed now, so not the keyless record certificatePerson() made (#179).
+  record.keyless = false;
   noteKeyed(record);
   attachRetained(record, answer);
   log.debug('Leaving directoryUser(). kvno ' + record.kvno + '.');
   return { principal: record, refusal: null };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON WITH NO KERBEROS KEYS YET, FOR PKINIT (#179, 2026-10-05).
+//
+// `directoryUser()` refuses a person whose keys were never derived — nobody
+// has typed their password at a door that derives them — or were derived
+// from a password they no longer have, and the refusal tells them to sign in
+// once. That is right for a password, and wrong for a CERTIFICATE: PKINIT
+// needs no long-term key at all (the reply key is agreed by Diffie-Hellman),
+// and a person whose only credential is a smart card may never sign in with
+// a password anywhere. So the KDC asks this, for those two states only, when
+// PKINIT is on: the same registered record a keyed person gets — the PAC, the
+// sign-out instant, everything the TGS reads — with NO keys and `keyless`
+// set. The KDC asks only for a request that brings no password: one that
+// does keeps the "sign in once" refusal, the useful sentence for somebody
+// typing one. Any other state (unknown, off, unreadable) is refused as
+// before. Null when the name is not a directory person's.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a directory person whose Kerberos keys are absent or stale as a
+ * keyless principal, for PKINIT; null otherwise.
+ *
+ * @param nameComponents - the client name
+ * @param realm - the Kerberos realm
+ * @returns the principal, `keyless` set, or null
+ */
+function certificatePerson(nameComponents, realm) {
+  log.debug('Entering certificatePerson().');
+  if (!keySource || !personShaped(nameComponents, realm)) {
+    log.debug('Leaving certificatePerson(). Not a directory person.');
+    return null;
+  }
+  const name = String(nameComponents[0]);
+  let answer = null;
+  try {
+    answer = keySource.personKeys(name) || {};
+  } catch (e) {
+    log.debug('Caught in certificatePerson(): ' + ((e && e.message) || e));
+    answer = { state: 'unreadable' };
+  }
+  if (answer.state !== 'none' && answer.state !== 'stale') {
+    log.debug('Leaving certificatePerson(). State ' + answer.state + '.');
+    return null;
+  }
+  const REALM = current().REALM;
+  const key = name + '@' + REALM;
+  let record = principals.get(key);
+  if (!record) {
+    record = register({
+      name: [name],
+      type: 1,
+      realm: REALM,
+      salt: REALM + name,
+      etypes: offeredEtypes(current()),
+      directoryKeys: true,
+      description: 'a person in the directory with no Kerberos keys, ' +
+                   'authenticated by a certificate (PKINIT)',
+      pac: {
+        rid: autoRidFor([name], REALM),
+        groups: [RID.DOMAIN_USERS],
+        userAccountControl: UAC.NORMAL_ACCOUNT,
+        // S-1-18-1 would say a password logon; this one was a certificate,
+        // which is what S-1-18-1's sibling for a key-trust logon is not
+        // either, so the authentication-authority SID is left out.
+        extraSids: ['S-1-5-11']
+      }
+    });
+    principals.set(key, record);
+  }
+  withKeyCache(record);
+  record.keys = new Map();
+  record.keyless = true;
+  log.info('krb5: ' + key + ' has no Kerberos keys (' + answer.state + '); ' +
+           'it may authenticate with a certificate (PKINIT) and nothing else.');
+  log.debug('Leaving certificatePerson().');
+  return record;
 }
 
 // ---------------------------------------------------------------------------
@@ -3110,6 +3266,49 @@ function storedService(nameComponents, realm) {
   return principal;
 }
 
+// ---------------------------------------------------------------------------
+// THE INTER-REALM PRINCIPALS (#430). `undefined` when the name is not an
+// inter-realm krbtgt at all (find() then reads the database as before),
+// `null` when it is one this realm holds no usable record for, and the
+// principal otherwise. A HOT PATH — every krbtgt lookup comes through, this
+// realm's own TGT's included — so no Entering/Leaving pair here, which would
+// drown the log; the register logs the one call that builds a principal.
+// ---------------------------------------------------------------------------
+function trustPrincipalFor(nameComponents, realm, ctx) {
+  if (!Array.isArray(nameComponents) || nameComponents.length !== 2 ||
+      String(nameComponents[0]) !== 'krbtgt') {
+    return undefined;
+  }
+  const lookupRealm = String(realm || ctx.REALM);
+  const other = String(nameComponents[1]);
+  if (other === lookupRealm ||
+      (lookupRealm !== ctx.REALM && other !== ctx.REALM)) {
+    return undefined;
+  }
+  const register = trustRegister();
+  return register ? register.trustPrincipal(nameComponents, lookupRealm,
+                                            ctx.REALM) : null;
+}
+
+/**
+ * Says why an inter-realm `krbtgt/X@R` name has no principal here although a
+ * trust record names it (disabled, or the key is not held); '' otherwise.
+ *
+ * @param nameComponents - `['krbtgt', X]`
+ * @param realm - R
+ * @returns the sentence, or ''
+ */
+function trustUnavailableReason(nameComponents, realm) {
+  log.debug("Entering trustUnavailableReason().");
+  const ctx = current();
+  const register = trustRegister();
+  const why = register && ctx.active ?
+    register.unavailableReason(nameComponents, String(realm || ctx.REALM),
+                               ctx.REALM) : '';
+  log.debug("Leaving trustUnavailableReason().");
+  return why;
+}
+
 // `realm` defaults to the ambient KDC's own, so every single-realm caller
 // works unchanged. A caller that means "in the realm this ticket came from"
 // has to say so — and in handleTgsReq that is the difference between opening a
@@ -3129,6 +3328,16 @@ function find(nameComponents, realm) {
   if (!nameComponents || !nameComponents.length || !ctx.active) {
     log.debug("Leaving find().");
     return null;
+  }
+  // AN INTER-REALM KEY IS A TRUST RECORD'S (#430): `krbtgt/X@R` with X not
+  // R is the outgoing key of this realm's record for X when R is ours, and
+  // the incoming key of its record for R when X is ours. Never the
+  // database's: no inter-realm principal is registered here any more. See
+  // trustPrincipalFor().
+  const interRealm = trustPrincipalFor(nameComponents, realm, ctx);
+  if (interRealm !== undefined) {
+    log.debug("Leaving find(). An inter-realm key.");
+    return interRealm ? withKeyCache(interRealm) : null;
   }
   // A STORED SERVICE KEY WINS over the database, and is asked first. See
   // storedService().
@@ -3431,6 +3640,20 @@ async function longTermKey(principal, etype) {
     return principal.keys.get(etype);
   }
   derivedKeyCount.miss();
+  // A GENERATED TRUST KEY (#430) is put back from the record's material
+  // after the bound cleared this principal's cache; it has no password.
+  if (principal.trustKeyMaterial instanceof Map && !principal.password) {
+    const material = principal.trustKeyMaterial.get(etype);
+    if (material) {
+      principal.keys.set(etype, material);
+      noteKeyed(principal);
+      log.debug("Leaving longTermKey(). A generated trust key.");
+      return material;
+    }
+    throw new Error('krb5: the trust key ' + keyOf(principal) + ' was ' +
+                    'generated without a ' + kcrypto.etypeName(etype) +
+                    ' key');
+  }
   if (principal.directoryKeys) {
     const again = principal.storedServiceKey
       ? storedService(principal.name, principal.realm)
@@ -3706,17 +3929,18 @@ function delegationPolicy() {
   // principal table. In a process with no directory the registry answers
   // empty, and so does this.
   const applications = require('../common/applications');
-  const valuesOf = function (row, attribute) {
-    log.debug("Entering valuesOf().");
-    const raw = row && row.fields ? row.fields[attribute] : undefined;
-    log.debug("Leaving valuesOf().");
+  // A service's delegation is its concepts' (#1579): the Application's
+  // who-for and who-to, the KerberosService's ok-as-delegate.
+  const listOf = function (raw) {
+    log.debug("Entering listOf().");
+    log.debug("Leaving listOf().");
     return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
       raw === '' ? [] : [raw])).map(String).filter(Boolean);
   };
-  const flag = function (row, attribute) {
+  const flag = function (raw) {
     log.debug("Entering flag().");
     log.debug("Leaving flag().");
-    return (valuesOf(row, attribute)[0] || '').toUpperCase() === 'TRUE';
+    return (listOf(raw)[0] || '').toUpperCase() === 'TRUE';
   };
   const suffix = '@' + ctx.REALM;
   const services = (applications.list() || []).filter(function (row) {
@@ -3731,11 +3955,13 @@ function delegationPolicy() {
   };
   services.forEach(function (row) {
     const id = String(row.identifier);
-    const semantics = valuesOf(row, 'appDelegationSemantics')
+    const app = DomainClasses.Application.fromEntry(row.fields || {});
+    const kdc = DomainClasses.KerberosService.fromEntry(row.fields || {});
+    const semantics = listOf(app.delegationSemantics)
       .map(function (one) { return one.toLowerCase(); });
     const impersonates = semantics.indexOf('impersonation') >= 0;
     // CLASSIC — the permission is on THIS account and names what it may reach.
-    valuesOf(row, 'appAllowedToDelegateTo').forEach(function (target) {
+    listOf(app.allowedToDelegateTo).forEach(function (target) {
       const warnings = [];
       if (!impersonates) {
         warnings.push('This account does not allow IMPERSONATION ' +
@@ -3772,7 +3998,7 @@ function delegationPolicy() {
     });
     // RESOURCE-BASED — the permission is on THIS account and names who may
     // act on its behalf, so the pair is built the other way round.
-    valuesOf(row, 'appAllowedToActOnBehalfOf').forEach(function (requester) {
+    listOf(app.allowedToActOnBehalfOf).forEach(function (requester) {
       const warnings = [];
       if (/\//.test(requester) && !known(requester)) {
         warnings.push('This KDC has no principal called ' + requester + '. ' +
@@ -3796,8 +4022,8 @@ function delegationPolicy() {
         note: String(row.description || '')
       });
     });
-    const notDelegated = flag(row, 'appNotDelegated');
-    const okAsDelegate = flag(row, 'krb5TrustedForDelegation');
+    const notDelegated = flag(app.notDelegated);
+    const okAsDelegate = flag(kdc.trustedForDelegation);
     if (notDelegated || impersonates || okAsDelegate) {
       accounts.push({
         principal: id,
@@ -3942,13 +4168,52 @@ module.exports = {
     // for this SPN at /admin/kerberos/principals, which the acceptor prefers
     // over the password-derived account. An account refused for its published
     // password is then keyed anyway, which is the way out that refusal names.
-    const stored = !!ctx.serviceAccount.spn &&
+    let stored = !!ctx.serviceAccount.spn &&
       !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+    // THE KEY SOURCE MAY KEY THE ACCEPTOR ITSELF (2026-10-12): where the
+    // account was refused only for its password, a product key source makes
+    // a random key for the SPN — at once where it is the store's only writer,
+    // under a claim otherwise — so a trust realm that turned Kerberos on after
+    // the start has an acceptor without a restart. The source asks the mode;
+    // an older source without the member leaves this as it was.
+    if (!stored && ctx.serviceAccount.passwordRefused && keySource &&
+        typeof keySource.acceptorKeyMissing === 'function') {
+      try {
+        stored = !!keySource.acceptorKeyMissing(ctx.serviceAccount.spn) &&
+          !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+      } catch (e) {
+        // Reported and treated as no key: the acceptor refuses and says why,
+        // which is what it did before the source could make one.
+        log.error(errorCodes.tag('STS-KRB-0210') + 'krb5: making a key for ' +
+                  'the acceptor\'s SPN ' + ctx.serviceAccount.spn +
+                  ' threw: ' + ((e && e.message) || e));
+        stored = false;
+      }
+    }
     log.debug("Leaving serviceAccount().");
     return { spn: ctx.serviceAccount.spn,
              available: ctx.serviceAccount.available || stored,
              storedKey: stored,
              reason: stored ? '' : ctx.serviceAccount.reason };
+  },
+  // The acceptor's CONFIGURED account in the ambient realm, without asking
+  // the key source (2026-10-12): whether `krb5.servicePassword` built it, and
+  // whether it was refused only for its password. The key source reads it to
+  // decide whether to key the SPN itself, and whether a key it made earlier
+  // still answers — an operator's own password wins over it.
+  /**
+   * Returns the acceptor's configured account in the ambient realm, without
+   * consulting the key source.
+   *
+   * @returns `{ spn, configured, passwordRefused }`
+   */
+  acceptorAccount: function () {
+    log.debug("Entering acceptorAccount().");
+    const ctx = current();
+    log.debug("Leaving acceptorAccount().");
+    return { spn: String(ctx.serviceAccount.spn || ''),
+             configured: !!ctx.serviceAccount.available,
+             passwordRefused: !!ctx.serviceAccount.passwordRefused };
   },
   // The SPN the acceptor holds in the AMBIENT realm, as components — what
   // `krb5_service.js` read once from `krb5.servicePrincipal` until that became
@@ -4007,7 +4272,10 @@ module.exports = {
   lookupUser: lookupUser,
   personDisabled: personDisabled,
   personSecondFactor: personSecondFactor,
+  decideSignIn: decideSignIn,
   preauthProvider: preauthProvider,
+  pkinitProvider: pkinitProvider,
+  certificatePerson: certificatePerson,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,
@@ -4065,6 +4333,48 @@ module.exports = {
     log.debug("Leaving all().");
     return Array.from(principals.values());
   },
+  /**
+   * Every principal in the ambient realm's database, described by its PUBLIC
+   * fields only: the name, the name type, the salt, the enctypes and kvno,
+   * and the flags — what a client can learn from PA-ETYPE-INFO2 and the
+   * replies anyway, and never a key or a password. What the demonstration
+   * document `GET /krb5/principals` listed until #595; `GET
+   * /admin-api/kerberos/principals` lists it now, as `database`, behind the
+   * API's token. Sorted by name, so a page of it is stable.
+   *
+   * @returns the rows
+   */
+  describeAll: function () {
+    log.debug("Entering describeAll().");
+    const rows = module.exports.all().map(function (p) {
+      return {
+        principal: p.name.join('/') + '@' + p.realm,
+        nameType: p.type,
+        salt: p.salt,
+        etypes: supportedEtypes(p).map(function (id) {
+          return { etype: id, name: kcrypto.etypeName(id) };
+        }),
+        requiresPreAuth: !!p.requiresPreAuth,
+        revoked: !!p.revoked,
+        passwordExpired: !!p.passwordExpired,
+        okAsDelegate: !!p.okAsDelegate,
+        kvno: p.kvno,
+        // Created on first sight (development): somebody authenticated as a
+        // name nobody configured.
+        autoCreated: !!p.autoCreated,
+        // A person keyed from their own password: says only where the keys
+        // come from, which are never on the record.
+        directoryKeys: !!p.directoryKeys,
+        description: p.description || ''
+      };
+    });
+    rows.sort(function (a, b) {
+      return a.principal < b.principal ? -1 : a.principal > b.principal ? 1
+        : 0;
+    });
+    log.debug("Leaving describeAll(). " + rows.length);
+    return rows;
+  },
   // The RID an account made at runtime under this name would be given, and
   // the range it is drawn from — see autoRidFor(). Exported so a test can ask
   // two processes the same question without creating anything.
@@ -4097,9 +4407,14 @@ module.exports = {
   s2kparamsMode: s2kparamsMode,
   userSalt: userSalt,
   hostSalt: hostSalt,
-  TRUSTED_REALM: TRUSTED_REALM,
-  TRUSTED_DOMAIN: TRUSTED_DOMAIN,
-  TRUSTED_DOMAIN_SID: TRUSTED_DOMAIN_SID,
+  // The development partner realm's fixture (#430): what the retired
+  // TRUSTED_REALM, TRUSTED_DOMAIN and TRUSTED_DOMAIN_SID named.
+  DEV_PARTNER_REALM: DEV_PARTNER_REALM,
+  DEV_PARTNER_DOMAIN: DEV_PARTNER_DOMAIN,
+  DEV_PARTNER_DOMAIN_SID: DEV_PARTNER_DOMAIN_SID,
+  // The inter-realm principals' source, and why one named is unavailable.
+  trustRegister: trustRegister,
+  trustUnavailableReason: trustUnavailableReason,
   realmsServed: realmsServed,
   domainSidFor: domainSidFor,
   realmForService: realmForService,
@@ -4150,5 +4465,26 @@ module.exports = {
       ? function () { return offeredEtypes(current()); }
       : function () { return current()[pair[1]]; }
   });
+});
+
+// THE HOSTS A CLIENT'S OWN SPN GUESS IS HONOURED FOR, as a page or a header
+// may ADVERTISE them (2026-10-12). `SERVICE_DOMAINS` is the list the KDC
+// registers an `HTTP/<host>` principal for on first sight — and it does that
+// only where `mode.autoCreates()` (see the S_PRINCIPAL_UNKNOWN branch and
+// `krb5_kdc.js`'s `serviceHosts`). In product mode the KDC knows exactly the
+// one SPN `krb5.servicePrincipal` names, so advertising the list there sent a
+// browser at `https://localhost` to ask for `HTTP/localhost`, which it was
+// refused with nothing on the page saying why. A getter rather than a
+// require of `common/mode` in `spnego.js` and `spnego_exchange.js`, which
+// were in the parent project's COPY closure until #1280: this module already
+// asks the mode.
+// Named through a variable, as the properties above are, so the type checker
+// reads it as the same kind of computed property rather than a second export.
+const ADVERTISED_HOSTS_KEY = 'ADVERTISED_SERVICE_HOSTS';
+Object.defineProperty(module.exports, ADVERTISED_HOSTS_KEY, {
+  enumerable: true,
+  get: function () {
+    return mode.autoCreates() ? current().SERVICE_DOMAINS.slice() : [];
+  }
 });
 

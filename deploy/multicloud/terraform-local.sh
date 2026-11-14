@@ -26,6 +26,12 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform-mc}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# is handed, and the shims that take the CR off what docker and the cloud
+# CLIs print. See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${REPO_ROOT}/tests/tools/host-platform.sh"
+
 TF_ENV="${TF_ENV:-${1:-testidpmc}}"
 TF_ACTION="${TF_ACTION:-${2:-plan}}"
 
@@ -33,7 +39,9 @@ if [ -n "${DOCKER:-}" ]; then
   read -r -a DOCKER_CMD <<< "${DOCKER}"
 elif docker info > /dev/null 2>&1; then
   DOCKER_CMD=(docker)
-elif command -v sudo > /dev/null 2>&1; then
+elif [ "${HOST_WINDOWS}" != "1" ] && command -v sudo > /dev/null 2>&1; then
+  # Not on Windows, which has no sudo: a daemon that does not answer there
+  # is Docker Desktop not running.
   DOCKER_CMD=(sudo docker)
 else
   echo "ERROR: docker is required and not reachable." >&2
@@ -45,6 +53,18 @@ trap 'echo "==> Interrupted before terraform started" >&2; exit 130' INT TERM
 PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2> /dev/null || true)}"
 [ -n "${PROJECT}" ] || { echo "ERROR: set GOOGLE_CLOUD_PROJECT." >&2; exit 1; }
 GCLOUD_DIR="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}"
+# gcloud on Windows keeps its configuration under %APPDATA%, not under the
+# Cygwin home, and a CLOUDSDK_CONFIG set for it is a Windows path (#512).
+if [ "${HOST_WINDOWS}" = "1" ];
+then
+  if [ -n "${CLOUDSDK_CONFIG:-}" ];
+  then
+    GCLOUD_DIR="$(cygpath -u "${CLOUDSDK_CONFIG}")"
+  elif [ -n "${APPDATA:-}" ];
+  then
+    GCLOUD_DIR="$(cygpath -u "${APPDATA}")/gcloud"
+  fi
+fi
 [ -f "${GCLOUD_DIR}/application_default_credentials.json" ] || {
   echo "ERROR: no GCP application-default credentials; run: gcloud auth application-default login" >&2
   exit 1
@@ -68,11 +88,23 @@ else
     echo "ERROR: no AWS credentials; sign in (aws sso login, aws login) or export the deployer's key." >&2
     exit 1
   }
+fi
+# On Windows a snapshot of the session, not the live endpoint; the reason is
+# deploy/aws/terraform-local.sh's, beside the same branch (#512).
+if { [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; } &&
+   [ "${HOST_WINDOWS}" = "1" ];
+then
+  echo "==> Windows: handing the container a snapshot of your AWS session; a long apply may outlive it" >&2
+  aws configure export-credentials --format env-no-export |
+    grep -E '^AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)=' \
+    >> "${CREDS_ENV_FILE}"
+elif [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ];
+then
   CREDS_TOKEN_FILE="$(mktemp)"
   chmod 600 "${CREDS_TOKEN_FILE}"
   trap 'rm -f "${CREDS_ENV_FILE}" "${CREDS_TOKEN_FILE}"' EXIT
   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "${CREDS_TOKEN_FILE}"
-  coproc HOST_CREDS { exec node "${REPO_ROOT}/deploy/aws/host-credentials.js" "${CREDS_TOKEN_FILE}"; }
+  coproc HOST_CREDS { exec node "$(hostPath "${REPO_ROOT}/deploy/aws/host-credentials.js")" "$(hostPath "${CREDS_TOKEN_FILE}")"; }
   CREDS_PORT=""
   read -r -t 20 CREDS_PORT <&"${HOST_CREDS[0]}" || true
   [ -n "${CREDS_PORT}" ] || { echo "ERROR: host-credentials.js did not start." >&2; exit 1; }
@@ -103,7 +135,9 @@ for v in TF_STEP IYA_STS_CONFLICTING_ENV TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARG
 done
 
 echo "==> Building ${IMAGE_NAME}" >&2
-"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/multicloud/Dockerfile" "${REPO_ROOT}" > /dev/null
+"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" \
+  -f "$(hostPath "${REPO_ROOT}/deploy/multicloud/Dockerfile")" \
+  "$(hostPath "${REPO_ROOT}")" > /dev/null
 
 CONTAINER_NAME="iya-sts-terraform-mc-${TF_ENV}-$$"
 relay() {
@@ -112,7 +146,7 @@ relay() {
 }
 trap relay INT TERM
 "${DOCKER_CMD[@]}" run --rm --name "${CONTAINER_NAME}" \
-  --env-file "${CREDS_ENV_FILE}" \
+  --env-file "$(hostPath "${CREDS_ENV_FILE}")" \
   "${NETWORK_ARGS[@]}" \
   -e AWS_REGION="${AWS_REGION:-us-west-2}" \
   -e GOOGLE_CLOUD_PROJECT="${PROJECT}" \

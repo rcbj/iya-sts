@@ -1,0 +1,15 @@
+{
+  "sub": "Les demandes d’accès AuthZEN qui vous désignent comme approbateur : le point d’application d’une application s’est vu refuser quelque chose que la politique du domaine permet de demander, et attend l’une des personnes que la politique a désignées. <strong>Approuver n’accorde rien en soi</strong> : l’application redemande, en présentant l’approbation, et la politique du domaine décide à nouveau.",
+  "off": "Les demandes d’accès sont désactivées dans ce domaine.",
+  "none": "Aucune demande d’accès ne vous attend.",
+  "asks": "Un point d’application demande cet accès :",
+  "subject": "Pour",
+  "action": "Action",
+  "resource": "Sur",
+  "application": "Application",
+  "requester": "Demandé par",
+  "waits": "Elle attend jusqu’au {when}.",
+  "approve": "Approuver",
+  "deny": "Refuser",
+  "done": "{status, select, approved {La demande d’accès est approuvée. L’application peut redemander maintenant.} denied {La demande d’accès est refusée.} other {La demande d’accès est {status}.}}"
+}

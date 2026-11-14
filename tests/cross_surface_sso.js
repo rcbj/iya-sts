@@ -45,7 +45,7 @@
 //     the exact defect the cascade was written for.
 //
 // WHY IT IS HERE RATHER THAN IN THE PROTOCOL HALF. `tests/CLAUDE.md`'s first
-// question sends anything about `/admin` to `tests/vendored/`, and the
+// question sends anything about `/admin` to `tests/protocol/`, and the
 // end-to-end flow IS asserted over HTTP there — `sts_portal_sessions.js` drives
 // both surfaces in both realms. What is here is the half that job cannot see:
 // these are assertions about WHICH PARTITION a record is in, and an HTTP caller

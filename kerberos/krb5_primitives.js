@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: krb5_primitives.js
 //
 // ---------------------------------------------------------------------------
@@ -43,6 +45,7 @@ var bunyan = require("bunyan");
 // outside the browser bundles (a node-based test loading this module directly,
 // or the mock KDC) may not have one, so fall back to info rather than failing
 // to load.
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_primitives",
   level: (function () {
@@ -50,11 +53,16 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
-      // A missing log level must not stop the module loading.
+      // A missing log level must not stop the module loading. No logger
+      // exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_primitives log level: " + logLevelProblem);
+}
 
 
 // ---------------------------------------------------------------------------
@@ -84,6 +92,8 @@ var log = bunyan.createLogger({
 // arrives here unconverted, and a caller in the browser has no Buffer at all.
 // ---------------------------------------------------------------------------
 
+// A hot path: called once per field of every message, so no Entering/Leaving
+// pair here — it would drown the log (see the measurement above).
 function toBytes(value) {
   if (value === null || value === undefined) {
     return new Uint8Array(0);
@@ -106,6 +116,8 @@ function toBytes(value) {
 // UTF-8, written out rather than taken from TextEncoder so that the module has
 // the same behaviour wherever it runs. Kerberos principal names and passwords
 // are not ASCII-only in general.
+// A hot path: called once per KerberosString of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function utf8(text) {
   var s = String(text);
   var out = [];
@@ -194,6 +206,7 @@ function fromUtf8(bytes) {
 // etype 23 keys are what they are. No surrogate handling is needed because
 // JavaScript strings are already UTF-16 code units.
 function utf16le(text) {
+  log.debug("Entering utf16le().");
   var s = String(text);
   var out = new Uint8Array(s.length * 2);
   for (var i = 0; i < s.length; i++) {
@@ -201,9 +214,12 @@ function utf16le(text) {
     out[i * 2] = c & 0xff;
     out[i * 2 + 1] = (c >> 8) & 0xff;
   }
+  log.debug("Leaving utf16le().");
   return out;
 }
 
+// A hot path: called once per encoded field of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function concat(list) {
   var total = 0, i;
   for (i = 0; i < list.length; i++) total += list[i].length;
@@ -215,12 +231,16 @@ function concat(list) {
 }
 
 function xor(a, b) {
+  log.debug("Entering xor().");
   var n = Math.min(a.length, b.length);
   var out = new Uint8Array(n);
   for (var i = 0; i < n; i++) out[i] = a[i] ^ b[i];
+  log.debug("Leaving xor().");
   return out;
 }
 
+// A hot path: called once per leaf of every decoded TLV tree, so no
+// Entering/Leaving pair here — it would drown the log.
 function toHex(bytes) {
   var b = toBytes(bytes), s = "";
   for (var i = 0; i < b.length; i++) s += (b[i] < 16 ? "0" : "") +
@@ -228,6 +248,8 @@ function toHex(bytes) {
   return s;
 }
 
+// A hot path: per-call byte plumbing (see the measurement above), so no
+// Entering/Leaving pair here — it would drown the log.
 function fromHex(text) {
   var s = String(text).replace(/[\s:]/g, "");
   if (s.length % 2) {
@@ -249,12 +271,15 @@ function fromHex(text) {
 // is exactly the thing an attacker with a forged ticket would measure, and
 // early-exit is the natural way to write the loop.
 function equalConstantTime(a, b) {
+  log.debug("Entering equalConstantTime().");
   var x = toBytes(a), y = toBytes(b);
   if (x.length !== y.length) {
+    log.debug("Leaving equalConstantTime().");
     return false;
   }
   var diff = 0;
   for (var i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  log.debug("Leaving equalConstantTime().");
   return diff === 0;
 }
 
@@ -333,6 +358,8 @@ function nfold(input, outBits) {
 // message schedule below is common to both.
 // ---------------------------------------------------------------------------
 
+// A hot path: called once per step of every MD4 and MD5 round, so no
+// Entering/Leaving pair here — it would drown the log.
 function rotl(x, n) { return ((x << n) | (x >>> (32 - n))) >>> 0; }
 
 // Length-pad to a multiple of 64 bytes with the bit length appended as a
@@ -359,6 +386,8 @@ function padMdInput(bytes) {
   return padded;
 }
 
+// A hot path: called once per 64-byte block of every MD4 and MD5 input, so
+// no Entering/Leaving pair here — it would drown the log.
 function wordsOfBlock(padded, offset) {
   var X = new Array(16);
   for (var i = 0; i < 16; i++) {
@@ -370,6 +399,7 @@ function wordsOfBlock(padded, offset) {
 }
 
 function digestToBytes(state) {
+  log.debug("Entering digestToBytes().");
   var out = new Uint8Array(state.length * 4);
   for (var i = 0; i < state.length; i++) {
     out[i * 4] = state[i] & 0xff;
@@ -377,6 +407,7 @@ function digestToBytes(state) {
     out[i * 4 + 2] = (state[i] >>> 16) & 0xff;
     out[i * 4 + 3] = (state[i] >>> 24) & 0xff;
   }
+  log.debug("Leaving digestToBytes().");
   return out;
 }
 
@@ -388,6 +419,8 @@ function md4(input) {
   log.debug("Entering md4().");
   var padded = padMdInput(toBytes(input));
   var h = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476];
+  // F, G and H are a hot path: each is called once per step of its round, so
+  // no Entering/Leaving pair on any of them — it would drown the log.
   var F = function (x, y, z) { return ((x & y) | (~x & z)) >>> 0; };
   var G = function (x, y, z) { return ((x & y) | (x & z) | (y & z)) >>> 0; };
   var H = function (x, y, z) { return (x ^ y ^ z) >>> 0; };
@@ -472,11 +505,13 @@ function md5(input) {
 // it does not implement. Block size 64 bytes, same as the SHA-2 family below
 // it.
 function hmacMd5(key, message) {
+  log.debug("Entering hmacMd5().");
   var k = toBytes(key);
   if (k.length > 64) k = md5(k);
   var ipad = new Uint8Array(64), opad = new Uint8Array(64);
   ipad.set(k); opad.set(k);
   for (var i = 0; i < 64; i++) { ipad[i] ^= 0x36; opad[i] ^= 0x5c; }
+  log.debug("Leaving hmacMd5().");
   return md5(concat([opad, md5(concat([ipad, toBytes(message)]))]));
 }
 

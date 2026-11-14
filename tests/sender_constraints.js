@@ -9,7 +9,7 @@
 // ASKING FOR MORE THAN EITHER SPECIFICATION REQUIRES (#34, 2026-09-15).
 //
 // `oauth-oidc/sender_constraints.js` argues the design; this is what holds it.
-// The claim worth testing is not "DPoP works" — `tests/vendored/sts_dpop.js`
+// The claim worth testing is not "DPoP works" — `tests/protocol/sts_dpop.js`
 // does that — but the five settings' own behaviour, and in particular the
 // three things a reader of the code would have to take on trust:
 //
@@ -250,8 +250,9 @@ function checkTheExemption(t) {
             'parties (' + clientId + ')', hosted.join(', '));
   });
   t.equal(sc.MTLS_EXEMPT_CLIENTS.slice().sort().join(','),
-          'sts-admin-console,sts-user-portal',
-          '2b. and the list is the console and the portal, nothing else');
+          'sts-admin-console,sts-report,sts-user-portal',
+          '2b. and the list is the console, the reports application and ' +
+          'the portal, nothing else');
   t.equal(sc.mtlsExemptClient('sts-debugger-ui'), false,
           '2c. THE DEBUGGER IS NOT EXEMPT — it is an ordinary client of this ' +
           'authorization server, configured to meet whatever the realm it ' +
@@ -260,6 +261,55 @@ function checkTheExemption(t) {
           '2d. the console is');
   t.equal(sc.mtlsExemptClient(''), false,
           '2e. and an unnamed client is not');
+
+  // THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446), AND THE PORTAL (#568):
+  // DPoP-bound by a rule about those two clients, with every setting off.
+  t.equal(sc.DPOP_BOUND_PUBLIC_CLIENTS.join(','),
+          'sts-admin-console,sts-user-portal,sts-report',
+          '2e-i. the clients DPoP-bound as public clients are the admin ' +
+          'console, the user portal and the reports application, nothing ' +
+          'else');
+  t.check(hosted.indexOf(sc.DPOP_BOUND_PUBLIC_CLIENTS[0]) >= 0,
+          '2e-ii. and it is one of this service\'s own surfaces');
+  t.equal(sc.dpopBoundPublicClient('sts-admin-console', 'none'), true,
+          '2e-iii. the console declared as a public client is bound');
+  t.equal(sc.dpopBoundPublicClient('sts-admin-console', 'private_key_jwt'),
+          false, '2e-iv. the console as seeded, confidential, is not');
+  t.equal(sc.dpopBoundPublicClient('sts-user-portal', 'none'), true,
+          '2e-v. the portal declared as a public client is bound too (#568)');
+  t.equal(sc.dpopBoundPublicClient('some-other-client', 'none'), false,
+          '2e-vi. and no other public client is');
+  t.equal(sc.dpopBoundPublicClient('any-other-client', 'none'), false,
+          '2e-vi. nor is any other public client');
+  const consoleNoProof = sc.publicClientIssuanceRefusal({
+    clientId: 'sts-admin-console', method: 'none', dpopJkt: '',
+    grant: 'authorization_code' });
+  t.equal(consoleNoProof && consoleNoProof.errorCode, 'STS-OAUTH-0943',
+          '2e-vii. a token request from the public console with no proof ' +
+          'is refused, STS-OAUTH-0943');
+  t.equal(consoleNoProof && consoleNoProof.error, 'invalid_dpop_proof',
+          '2e-viii. as invalid_dpop_proof');
+  t.equal(sc.publicClientIssuanceRefusal({
+    clientId: 'sts-admin-console', method: 'none', dpopJkt: 'a-thumbprint',
+    grant: 'authorization_code' }), null,
+          '2e-ix. and passes once a proof came');
+  t.equal(sc.publicClientIssuanceRefusal({
+    clientId: 'sts-admin-console', method: 'private_key_jwt', dpopJkt: '',
+    grant: 'authorization_code' }), null,
+          '2e-x. the confidential console is asked for no proof');
+  const consoleUnbound = sc.accessTokenRefusal({
+    where: 'a resource', clientBound: true, boundJkt: '' });
+  t.equal(consoleUnbound && consoleUnbound.errorCode, 'STS-OAUTH-0944',
+          '2e-xi. at a resource, an unbound token issued to the public ' +
+          'console is refused, STS-OAUTH-0944');
+  t.equal(sc.accessTokenRefusal({
+    where: 'a resource', clientBound: true, boundJkt: 'a-thumbprint',
+    proofOk: true }), null,
+          '2e-xii. and a bound one passes');
+  t.equal(sc.accessTokenRefusal({
+    where: 'a resource', clientBound: false, boundJkt: '' }), null,
+          '2e-xiii. an unbound token of any other client is not refused by ' +
+          'this rule');
 
   // The exemption is the mutual TLS row's ALONE. The two surfaces carry a
   // DPoP key of their own instead, which is why that half needed no exemption

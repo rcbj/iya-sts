@@ -23,7 +23,7 @@
 // must be defined before it is granted, that a base URI is normalised, that an
 // ungranted scope is refused with `invalid_scope` when the setting is on — all
 // of those are things a caller can drive against the running service, and
-// `tests/vendored/sts_admin_api_operations.js` drives every one of the five
+// `tests/protocol/sts_admin_api_operations.js` drives every one of the five
 // operations. What is here is the two halves that CANNOT be driven:
 //
 //   * **CHOOSING THE GRAPH.** The states worth asserting are the ones a running
@@ -193,6 +193,20 @@ function run(t) {
   t.check(!!applications.permissionNameProblem('read|write'),
           'and one carrying the schema\'s own delimiter is refused, because ' +
           'it could never be read back as the name that was written');
+  t.check(!applications.permissionOperatorCodeProblem('write',
+                                                     'Change widgets'),
+          'a permission whose text names no operator code is accepted');
+  const coded = applications.permissionOperatorCodeProblem('write',
+    'refused at sign-in (STS-AUTHN-0294)');
+  t.check(!!coded,
+          'a description that contains an operator error code is refused: ' +
+          'it is returned on every page that lists the permission');
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(coded),
+          'and the refusal does not repeat the code, because a 400 body is ' +
+          'scanned raw', coded);
+  t.check(!!applications.permissionOperatorCodeProblem('STS-AUTHN-0294', ''),
+          'a name that is itself a code is refused too — it is a legal ' +
+          'scope token, so the scope-token rule would have accepted it');
   t.check(!!applications.permissionBaseProblem('example.com'),
           'a base that is not absolute is refused: it becomes an access ' +
           'token\'s aud, and a relative audience is one nothing can compare ' +
@@ -314,7 +328,7 @@ function run(t) {
   // The third — a resource with permissions and no grants — is reachable over
   // HTTP and is asserted here anyway, because the assertion is that it is IN
   // the answer, and that is a claim about the partition rather than about the
-  // service. `tests/vendored/sts_admin_api_operations.js` drives the operation.
+  // service. `tests/protocol/sts_admin_api_operations.js` drives the operation.
   //
   // The mesh below is deliberately the one shape that tells the two readings
   // apart. `webapp1 -> api1` and `webapp2 -> api1` are two arrows INTO one

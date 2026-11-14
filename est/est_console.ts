@@ -52,10 +52,11 @@ import mode = require('../common/mode');
 import realms = require('../common/realms');
 import core = require('../common/cert_enrollment');
 import monitor = require('../common/enrollment_monitor');
-import keyMaterial = require('../common/vendored/key_material');
+import keyMaterial = require('../common/crypto_impl/key_material');
 import adminViews = require('../admin-core/admin_views');
 import codec = require('./est_codec');
 import InstanceSlot = require('../common/instance_slot');
+import ModelZod = require('../common/model_zod');
 
 /**
  * The enrollment family's name in the core and the monitor, `est`.
@@ -69,13 +70,14 @@ const FAMILY = 'est';
 const EST_ACTIONS = ['issue-server-key', 'revoke-certificate',
                      'add-host-name', 'remove-host-name'];
 
-// The six operations and where they live, for the endpoint list. The same table
-// `est.ts` registers from would be a require of a route module from a view
-// model; the operations are six names fixed by RFC 7030 section 3.2.2, so they
-// are written here and `tests/est_handlers.js` compares the two.
+// The seven operations and where they live, for the endpoint list. The same
+// table `est.ts` registers from would be a require of a route module from a
+// view model; six are names fixed by RFC 7030 section 3.2.2 and the seventh by
+// draft-ietf-lamps-attestation-freshness section 5.1, so they are written here
+// and `tests/est_handlers.js` compares the two.
 /**
- * RFC 7030's six operations, each with its method, section and a description,
- * for the endpoint list.
+ * RFC 7030's six operations and the freshness draft's `nonce`, each with its
+ * method, section and a description, for the endpoint list.
  */
 const OPERATIONS = [
   { name: 'cacerts', method: 'GET', section: '4.1',
@@ -89,35 +91,39 @@ const OPERATIONS = [
   { name: 'csrattrs', method: 'GET', section: '4.5',
     what: 'what a request should carry (unauthenticated)' },
   { name: 'fullcmc', method: 'POST', section: '4.3',
-    what: 'not implemented: answers 501' }
+    what: 'not implemented: answers 501' },
+  // Not RFC 7030's: draft-ietf-lamps-attestation-freshness section 5.1
+  // (#257), which the CSR-attestation draft defers freshness to.
+  { name: 'nonce', method: 'GET, POST',
+    section: 'draft-ietf-lamps-attestation-freshness 5.1',
+    what: 'a freshness nonce for the TPM key attestation in the next ' +
+          'device simpleenroll, bound to the caller and a cookie ' +
+          '(authenticated); empty under a label that reads no attestation' }
 ];
 
-/**
- * The RFC 5280 revocation reasons a revoke may name.
- */
-const REVOCATION_REASONS = ['unspecified', 'keyCompromise', 'cACompromise',
-                            'affiliationChanged', 'superseded',
-                            'cessationOfOperation', 'certificateHold',
-                            'privilegeWithdrawn', 'aACompromise'];
+// EACH ACTION'S BODY IS ITS OPERATION'S IN THE MANAGEMENT API OPENAPI DOCUMENT
+// (#1579): `models/api/management.tsp`, which `/admin-api` already holds the
+// request to. The validator is built from it, so an in-process caller meets
+// the same check, and which members are REQUIRED is the operation's.
+const ACTION_OPERATIONS: Record<string, string> = {
+  'issue-server-key': 'issueEstServerKey',
+  'revoke-certificate': 'revokeEstCertificate',
+  'add-host-name': 'addEstHostName',
+  'remove-host-name': 'removeEstHostName'
+};
 
-const vz = validation.z;
-const vt = validation.types;
-
-// The console form and the API body. Loose because the console posts its CSRF
-// token beside the fields; the API's own ajv schema is strict. Every field is a
-// string of a bounded shape, and which are REQUIRED is decided per action.
-const ACTION_BODY = vz.looseObject({
-  action: vt.opt(vt.token),
-  kind: vt.opt(vt.oneOf(['person', 'application'])),
-  identifier: vt.opt(vt.name),
-  profile: vt.opt(vt.oneOf(core.PROFILE_IDS)),
-  keyAlg: vt.opt(vt.identifier),
-  serialHex: vt.opt(vz.string().min(1).max(80)
-    .regex(/^[0-9A-Fa-f:]+$/, 'must be a hexadecimal serial number')),
-  reason: vt.opt(vt.oneOf(REVOCATION_REASONS)),
-  hostName: vt.opt(vz.string().min(1).max(253)),
-  csrf_token: vt.opt(vt.token)
+const SCHEMAS: Record<string, any> = {};
+Object.keys(ACTION_OPERATIONS).forEach(function (action) {
+  SCHEMAS[action] = ModelZod.body('management', ACTION_OPERATIONS[action]);
 });
+
+/**
+ * The RFC 5280 revocation reasons a revoke may name: the revoke operation's
+ * own list in the model.
+ */
+const REVOCATION_REASONS: string[] = ModelZod.operation('management',
+  'revokeEstCertificate').requestBody.content['application/json'].schema
+  .properties.reason.enum.slice(0);
 
 // What `EstConsole` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -201,18 +207,18 @@ class EstConsole {
   }
 
   /**
-   * Returns the EST settings group's rows.
+   * Returns the page's settings block.
    *
    * @returns the settings
    */
-  settingsJson() {
-    const { log, config } = this.deps;
+  settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering EstConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'EST';
-    })[0];
     log.debug("Leaving EstConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the EST
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/cert-issuance', ['EST']);
   }
 
   // Who is acting, for `createdBy` / `by` and the principal. The console's
@@ -323,11 +329,14 @@ class EstConsole {
       title: 'EST',
       enabled: config.value('est.enabled') !== false,
       specifications: ['RFC 7030', 'RFC 8951', 'RFC 5967', 'RFC 2986',
-                       'RFC 5652', 'RFC 5958'],
+                       'RFC 5652', 'RFC 5958',
+                       'draft-ietf-lamps-csr-attestation-29',
+                       'draft-ietf-lamps-attestation-freshness-08'],
       endpoints: OPERATIONS.map(function (op) {
         return { operation: op.name, method: op.method, section: op.section,
                  what: op.what,
-                 url: base + '/.well-known/est/' + op.name,
+                 url: helpers.rebaseTo(base, 'est') +
+                      '/.well-known/est/' + op.name,
                  labelFormUrl: labelBase ? labelBase + '/' + op.name : null };
       }),
       labelForm: labelBase ? {
@@ -374,12 +383,14 @@ class EstConsole {
         function (id) {
         const urls = {};
         OPERATIONS.forEach(function (op) {
-          urls[op.name] = base + '/.well-known/est/' + id + '/' + op.name;
+          urls[op.name] = helpers.rebaseTo(base, 'est') +
+                          '/.well-known/est/' + id + '/' + op.name;
         });
         return { id: id, needs: id === core.DEVICE_PROFILE
                    ? 'a device entry — the one the request\'s ' +
                      'urn:sts:device: names, or a new one; a TPM key ' +
-                     'attestation in product; simpleenroll only'
+                     'attestation in product, made over a nonce from ' +
+                     '/nonce (#257); simpleenroll only'
                    : core.PROFILE_NEEDS[id] || null,
                  allowed: allowed.indexOf(id) >= 0,
                  isDefault: id === defaultProfile, urls: urls };
@@ -489,68 +500,57 @@ class EstConsole {
    * console's administrator or the management API.
    *
    * @param body - `action` and its fields (`kind`, `identifier`, `profile`,
-   * `keyAlg`, `serialHex`, `reason`, `hostName`)
+   * `keyAlg`, `serial`, `reason`, `hostName`)
    * @param context - `via` (`console` or `api`) and `req`
    * @returns a promise of the outcome, or a refusal with its status
    */
   async estAction(body, context) {
     const { log, validation, core, monitor } = this.deps;
-    const self = this;
     log.debug("Entering EstConsole.estAction(). action=" +
               (body && body.action));
     const ctx = context || {};
     const via = ctx.via === 'console' ? 'console' : 'api';
-    const posted = validation.checkParsed(body || {}, 'body', ACTION_BODY);
+    const action = String((body && body.action) || '');
+    if (!SCHEMAS[action]) {
+      log.debug("Leaving EstConsole.estAction(). Unknown action.");
+      return this.refused('STS-EST-0032', 400, 'Unknown action "' +
+                          action.slice(0, 60) + '". The four are: ' +
+                          EST_ACTIONS.join(', ') + '.');
+    }
+    // What the request carries beside the operation's body: the action (the
+    // path's). Who acts is the context's, never a member (#1579).
+    const fields = Object.assign({}, body || {});
+    delete fields.action;
+    const posted = validation.checkParsed(fields, 'body', SCHEMAS[action]);
     if (!posted.ok) {
       log.debug("Leaving EstConsole.estAction(). Malformed.");
       return this.refused('STS-EST-0031', 400, posted.detail);
     }
     const asked = posted.value;
-    const action = String(asked.action || '');
     const actor = this.actorOf(ctx.req, via);
-    const need = function need(names) {
-      log.debug("Entering need().");
-      const missing = names.filter(function (name) {
-        return !asked[name];
-      });
-      log.debug("Leaving need(). " + missing.length + " missing.");
-      return missing.length ?
-             self.refused('STS-EST-0031', 400, 'The ' + action +
-        ' action needs ' + missing.join(', ') + '.') : null;
-    };
     let result = null;
     if (action === 'issue-server-key') {
-      result = need(['kind', 'identifier']) ||
-               await this.issueServerKey(asked, actor, via);
+      result = await this.issueServerKey(asked, actor, via);
     } else if (action === 'revoke-certificate') {
-      result = need(['serialHex']);
-      if (!result) {
-        const done = await core.revokeEnrolled(asked.serialHex,
-                                               asked.reason || 'unspecified',
-                                               actor, { family: FAMILY });
-        result = done.ok ? Object.assign({}, done, {
-          message: 'The EST certificate ' + done.serialHex + ' of ' +
-                   core.entryUri(done.entry) + ' is revoked (' + done.reason +
-                   ') and on the EST Issuing CA\'s CRL.' }) : done;
-      }
-    } else if (action === 'add-host-name' || action === 'remove-host-name') {
-      result = need(['kind', 'identifier', 'hostName']);
-      if (!result) {
-        const entry = { kind: asked.kind, id: asked.identifier };
-        const adding = action === 'add-host-name';
-        const done = adding ? core.addHostName(entry, asked.hostName, actor)
-                            : core.removeHostName(entry, asked.hostName, actor);
-        result = done.ok ? Object.assign({}, done, {
-          message: 'The host name ' + asked.hostName + ' was ' +
-                   (adding ? (done.unchanged ? 'already registered on '
-                                             : 'registered on ')
-                           : 'removed from ') +
-                   core.entryUri(entry) + '.' }) : done;
-      }
+      const done = await core.revokeEnrolled(asked.serial,
+                                             asked.reason || 'unspecified',
+                                             actor, { family: FAMILY });
+      result = done.ok ? Object.assign({}, done, {
+        message: 'The EST certificate ' + done.serialHex + ' of ' +
+                 core.entryUri(done.entry) + ' is revoked (' + done.reason +
+                 ') and on the EST Issuing CA\'s CRL.' }) : done;
     } else {
-      result = this.refused('STS-EST-0032', 400, 'Unknown action "' +
-                            action.slice(0, 60) + '". The four are: ' +
-                            EST_ACTIONS.join(', ') + '.');
+      // add-host-name or remove-host-name: the four are SCHEMAS' keys.
+      const entry = { kind: asked.kind, id: asked.identifier };
+      const adding = action === 'add-host-name';
+      const done = adding ? core.addHostName(entry, asked.hostName, actor)
+                          : core.removeHostName(entry, asked.hostName, actor);
+      result = done.ok ? Object.assign({}, done, {
+        message: 'The host name ' + asked.hostName + ' was ' +
+                 (adding ? (done.unchanged ? 'already registered on '
+                                           : 'registered on ')
+                         : 'removed from ') +
+                 core.entryUri(entry) + '.' }) : done;
     }
     if (result && result.ok) {
       monitor.record(FAMILY, { operation: action, outcome:

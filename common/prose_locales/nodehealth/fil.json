@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "Hindi tumatakbo sa Linux ang node na ito ({{platform}}), kaya walang cgroup file na mababasa."
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "Walang cgroup sa {{root}}: walang cgroup v2 ({{why}}) at walang cgroup v1 memory o cpuacct controller."
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "Walang cgroup."
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "Hindi mabasa ang CPU time ng container: {{source}} — {{why}}."
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "Nabasa nang isang beses ang CPU time ng container pero hindi sa ikalawang pagkakataon: {{why}}."
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "Maaaring gumamit ang container ng {{vcpus}} vCPU ({{version}}, {{file}}), at doon ibinabatay ang porsiyento."
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "Walang {{file}} ang cgroup na ito ({{version}}), kaya wala itong sariling CPU quota; ang porsiyento ay batay sa {{cpus}} CPU na iniuulat ng node na available (os.availableParallelism())."
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "Walang CPU quota ({{version}}, sinasabi ng {{file}} na wala): maaaring gamitin ng container ang bawat CPU na ibinibigay ng host, at ang porsiyento ay batay sa {{cpus}} CPU na iniuulat ng node na available (os.availableParallelism())."
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "Walang throttling counter ang cgroup: kapag walang quota, walang batayan para mag-throttle."
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "Walang memory controller para sa process na ito ang cgroup v1 host na ito."
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "Hindi mabasa ang memory ng container: {{source}} — {{why}}."
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "Maaaring gumamit ang container ng {{mib}} MiB ({{version}}, {{file}})."
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "Walang {{file}} ang cgroup na ito ({{version}}), kaya wala itong sariling memory limit at walang porsiyentong maibibigay."
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "Walang memory limit ({{version}}, sinasabi ng {{file}} na wala), kaya walang porsiyentong maibibigay."
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "Ang {{anon}} ay ang sariling memory ng mga process; ang {{file}} ay page cache na binabawi ng kernel kapag may pressure bago ito pumatay ng anuman."
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "Hindi mabasa ang memory.stat, kaya hindi alam kung ano ang bumubuo sa memory."
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "Mula sa ECS agent (/task/stats), dahil hindi mabasa rito ang cgroup. Ang limit ay sa container, ayon sa iniuulat ng agent."
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "Mula sa ECS agent (/task/stats), dahil hindi mabasa rito ang cgroup. Walang sariling limit ang container, kaya ang limit ay sa ECS TASK, {{mib}} MiB."
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "Mula sa ECS agent (/task/stats), dahil hindi mabasa rito ang cgroup. Walang limit na mapagbabatayan ng sukat."
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "Ang kabuuan lang ang iniuulat ng ECS agent."
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "Walang sariling memory limit ang container (cgroup v{{version}}), kaya ang limit ay sa ECS TASK, {{mib}} MiB (/task Limits.Memory), at doon ibinabatay ang porsiyento."
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "Mula sa ECS agent (/task/stats), sa pagitan ng huling dalawang sample nito, dahil hindi mabasa rito ang cgroup; ang porsiyento ay batay sa {{vcpus}} vCPU ng ECS TASK."
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "Mula sa ECS agent (/task/stats), sa pagitan ng huling dalawang sample nito, dahil hindi mabasa rito ang cgroup; walang CPU limit na pinangalanan ang task, kaya walang porsiyento."
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "Hindi nag-uulat ng throttling ang ECS agent."
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "Walang sariling CPU quota ang container (cgroup v{{version}}), kaya ang porsiyento ay batay sa {{vcpus}} vCPU ng ECS TASK (/task Limits.CPU)."
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "hindi mabasa ang {{file}} ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "walang VmRSS ang status file nito"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "ang resident size at CPU time ng isang thread ay sa buong process, kaya nasa row ng front process ang mga ito (pid {{pid}}) at hindi inuulit dito"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "ang resident size at CPU time nito ay sa buong process, kasama ang sa bawat worker thread; ang mga heap figure nito ay sa main thread nito"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "front process"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "api ng protocol debugger"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "hosted-surface worker thread {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "protocol worker thread {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "sumagot ito nang wala ang memory nito, kaya ang resident size lang nito ang ipinapakita, mula sa /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}, kaya ang resident size lang nito ang ipinapakita, mula sa /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "hindi ito sumagot sa loob ng {{ms}}ms (sumasagot ang memory preload nito, debugger_api_status.js, kapag naka-install ito)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "hindi ito sumagot sa loob ng {{ms}}ms"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}; walang sariling /proc entry ang isang thread, kaya hindi mabasa ang heap nito mula sa labas nito"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "Hindi matanong ang api process ng protocol debugger para sa pid nito: {{error}}."
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "Ang mga request at hosted-surface worker ay mga THREAD ng front process (#364), kaya ang resident size at CPU time nila ay ang sariling figure ng front process at binibilang nang isang beses, sa row nito. Ang resident total ay ang kabuuan ng {{rss}} process na nabasa ang laki — ang front process at ang api child ng debugger — kaya ang mga page na pinagsasaluhan ng dalawa (kasama ang sariling code ng node) ay binibilang nang isang beses para sa bawat isa at maaari itong lumampas sa memory.current ng container. Ang mga heap figure ay ang {{heap}} V8 isolate na sila mismo ang nag-ulat ng process.memoryUsage(): ang main thread ng front process, bawat worker thread, at ang child; ang child process na hindi sumagot sa oras ay ipinapakita kasama ang resident size nito mula sa /proc at walang heap, at ang worker thread na hindi sumagot ay nakalista bilang hindi sumagot, dahil walang sariling /proc entry ang isang thread. Wala nang sariling process ang post-quantum signing at scrypt mula #363: tumatakbo sila sa thread pool ng libuv, at ang memory nila ay binibilang sa process na humiling."
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "Hindi nakatakda ang ECS_CONTAINER_METADATA_URI_V4: hindi Amazon ECS task ang node na ito (wala ito sa Fargate o sa isang ECS container instance), kaya walang task metadata endpoint na mapagkukumparahan ng cgroup."
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "Nakatakda ang ECS_CONTAINER_METADATA_URI_V4, pero hindi sumagot ang task metadata endpoint sa loob ng {{ms}}ms: {{why}}."
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "Hindi sumagot ang bahagi ng endpoint: {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "Hindi sumagot ang bahagi ng endpoint: {{whys}}. Walang stats para sa container na ito sa /task/stats."
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "Hindi sumagot ang bahagi ng endpoint: {{whys}}. Walang stats para sa container na ito sa /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "Walang stats para sa container na ito sa /task/stats."
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "Walang stats para sa container na ito sa /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "Ang sariling figure ng ECS agent para sa container na ito, bilang cross-check ng cgroup: nagsa-sample ang agent ayon sa sarili nitong iskedyul, kaya hindi sila magtutugma hanggang sa byte o porsiyento."
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "Ito ang mga figure ng node na {{node}} — ang container nito — na iginuhit ng front process nito, pid {{pid}}. Bawat node ng isang cluster ay sariling container, na may sariling mga figure."
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "Ang makinang pinapatakbuhan ng container na ito — sa Fargate, ang micro-VM; sa isang workstation, ang buong workstation. HINDI ang container: walang sinasabi ang free memory at load nito tungkol sa limit ng container."
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "Sa {{count}} node na hindi pa nawawala at may snapshot, kasama ang mga stale na may marka. Pinagsasama lang ang mga limit kapag may limit ang bawat node."
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "wala ito roon"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "hindi ito numero"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "wala itong usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "walang cgroup v1 cpuacct controller"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "sumagot ito nang wala ang memory nito"
+  }
+}

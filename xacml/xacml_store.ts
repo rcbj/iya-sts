@@ -81,8 +81,12 @@
 // before anything listens, and against the directory already installed.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import ModelTables = require('../common/model_tables');
+import DomainClasses = require('../common/domain_classes');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
+import ownMembers = require('../common/own_members');
 // The error-code registry (a leaf). A refused write's code is marked on the
 // RESULT as a non-enumerable property, so the console and `/admin-api` can mark
 // their response with it and no serialisation of the result carries it out.
@@ -120,6 +124,10 @@ interface PolicyRow {
   enabled: boolean;
   isRoot: boolean;
   document: string;
+  // The owning application's identifier (#564), or null for an ordinary
+  // policy; and when that application was deleted, or null.
+  application: string | null;
+  orphanedAt: string | null;
 }
 
 // What `write()` is told besides the document.
@@ -127,6 +135,9 @@ interface WriteOptions {
   isRoot?: boolean;
   enabled?: boolean;
   description?: unknown;
+  // #564. Absent means "keep what the entry already says": see write().
+  application?: string | null;
+  orphanedAt?: string | null;
 }
 
 // What `write()` answers.
@@ -153,44 +164,8 @@ interface XacmlStoreDeps {
 // because this directory is schemaless and a container of entries carrying
 // invented attributes needs to say what they mean somewhere.
 // ---------------------------------------------------------------------------
-const SCHEMA = {
-  objectClasses: [
-    { name: 'xacmlPolicy',
-      what: 'One XACML 3.0 Policy or PolicySet, stored as the document it ' +
-            'was authored as. THIS CONTAINER IS THE POLICY REPOSITORY — an ' +
-            'ldapmodify of xacmlPolicyDocument here changes what the PDP ' +
-            'decides on the next request.' }
-  ],
-  attributes: [
-    { name: 'xacmlPolicyId',
-      what: 'The PolicyId or PolicySetId inside the document. DERIVED at ' +
-            'write time and used for listing and for resolving a ' +
-            'PolicyIdReference; the document is the truth.' },
-    { name: 'xacmlPolicyDocument',
-      what: 'The XACML 3.0 XML. THIS IS THE POLICY. Everything else on the ' +
-            'entry is derived from it.' },
-    { name: 'xacmlVersion',
-      what: 'The Version attribute of the document. Derived.' },
-    { name: 'xacmlKind',
-      what: '"Policy" or "PolicySet". Derived.' },
-    { name: 'xacmlCombiningAlgId',
-      what: 'The rule- or policy-combining algorithm the document names. ' +
-            'Derived, and shown on the console because it is the single ' +
-            'most consequential line in a policy.' },
-    { name: 'xacmlEnabled',
-      what: '"TRUE" or "FALSE". A disabled policy stays in the repository ' +
-            'and is not evaluated. NOT derived — it is the one thing here ' +
-            'that is a fact about the deployment rather than about the ' +
-            'document, which is why it is an attribute rather than a ' +
-            'comment in the XML.' },
-    { name: 'xacmlIsRoot',
-      what: '"TRUE" on the policy the PDP starts from. A repository with no ' +
-            'root decides nothing and says so; a repository with two is ' +
-            'refused at write time rather than picking one.' },
-    { name: 'description',
-      what: "The document's own <Description>, where it has one." }
-  ]
-};
+// The table is written in models/directory/xacml_policy.tsp (#1390).
+const SCHEMA = ModelTables.schema('xacmlPolicy');
 
 // The directory functions, installed by `ldap/ldap_server.js`.
 let directory: PolicyDirectory | null = null;
@@ -272,8 +247,9 @@ const parsedCount = cacheRegistry.register({
 // answers something the moment it starts, and the policy repository follows
 // the same rule for the same reason: a PDP with an empty repository answers
 // NotApplicable to everything, which is indistinguishable from a PDP that is
-// broken. One policy, seeded, makes `GET /xacml/protected?subject=alice`
-// mean something before anybody has authored anything.
+// broken. One policy, seeded, makes `POST /xacml/pdp` about alice — and a
+// remote PEP's `GET /protected?subject=alice` — mean something before
+// anybody has authored anything.
 //
 // IT IS A REAL POLICY AND NOT A PLACEHOLDER. Role-based, in the shape the
 // OASIS RBAC profile takes: a permission is granted to a role, and the role
@@ -373,6 +349,31 @@ class XacmlStore {
    * carries, published on `/admin/ldap/*`.
    */
   static readonly SCHEMA = SCHEMA;
+
+  /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/policies`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/policies']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): the object
+   * class's and each attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering XacmlStore.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('../common/server_prose') =
+      require('../common/server_prose');
+    const out = serverProse.harvest('xacmlPolicies.schema', SCHEMA, ['what']);
+    helpers.log.debug("Leaving XacmlStore.prose(). " + Object.keys(out).length);
+    return out;
+  }
   /**
    * The entry name of the seeded policy, `seeded-rbac`.
    */
@@ -407,7 +408,7 @@ class XacmlStore {
       errorCodes: errorCodes,
       xml: xml,
       sha256Hex: function (text: string): string {
-        return crypto.createHash('sha256').update(text).digest('hex');
+        return crypto.digest('sha256', text, 'hex');
       }
     };
     helpers.log.debug("Leaving XacmlStore.defaultDeps().");
@@ -586,7 +587,6 @@ class XacmlStore {
    * empty when there is no directory
    */
   all(): PolicyRow[] {
-    const self = this;
     const { log } = this.deps;
     log.debug('Entering XacmlStore.all().');
     if (!this.haveDirectory()) {
@@ -594,18 +594,21 @@ class XacmlStore {
       return [];
     }
     const rows = directory.allPolicies().map(function (entry) {
-      const at = self.attributeReader(entry.attributes);
+      const policy = DomainClasses.XacmlPolicy.fromEntry(entry.attributes);
       return {
         name: entry.name,
         dn: entry.dn,
-        id: at('xacmlPolicyId'),
-        kind: at('xacmlKind') || 'Policy',
-        version: at('xacmlVersion') || '1.0',
-        combiningAlgId: at('xacmlCombiningAlgId') || '',
-        description: at('description') || '',
-        enabled: at('xacmlEnabled') !== 'FALSE',
-        isRoot: at('xacmlIsRoot') === 'TRUE',
-        document: at('xacmlPolicyDocument') || ''
+        id: policy.identifier === undefined ? null : policy.identifier,
+        kind: policy.kind || 'Policy',
+        version: policy.version || '1.0',
+        combiningAlgId: policy.combiningAlgorithm || '',
+        description: (policy.description || [])[0] || '',
+        // A missing mark is not FALSE: only one that says so disables it.
+        enabled: policy.enabled !== false,
+        isRoot: policy.isRoot === true,
+        document: policy.document || '',
+        application: policy.application || null,
+        orphanedAt: policy.orphanedAt || null
       };
     });
     log.debug('Leaving XacmlStore.all(). ' + rows.length + ' policy(ies).');
@@ -613,7 +616,8 @@ class XacmlStore {
   }
 
   // -------------------------------------------------------------------------
-  // READING AN ATTRIBUTE BACK, CASE-INSENSITIVELY, BECAUSE LDAP IS.
+  // WHY `all()` READS THROUGH THE CONCEPT, WHICH FINDS AN ATTRIBUTE IN ANY CASE
+  // (#1390; `common/domain_map.ts`).
   //
   // RFC 4512: attribute type names are case-insensitive, and this directory
   // normalises them to lower case on the way in. So an entry written with
@@ -625,34 +629,9 @@ class XacmlStore {
   // `xacmlIsRoot` read as undefined, and the PDP answered NotApplicable to
   // everything — with a repository that plainly had a policy in it and no
   // error anywhere. `federation.js` reads `stored.attributes.fedid` in lower
-  // case for exactly this reason; this does it through one function so that
-  // the fifteen call sites cannot each get it right separately.
+  // case for exactly this reason; a concept does it in one place so that no
+  // read can get it wrong separately.
   // -------------------------------------------------------------------------
-  private attributeReader(attributes: Record<string, any> | null |
-                            undefined): (name: string) => string | null {
-    const self = this;
-    const { log } = this.deps;
-    log.debug("Entering XacmlStore.attributeReader().");
-    const lowered = {};
-    Object.keys(attributes || {}).forEach(function (key) {
-      lowered[key.toLowerCase()] = attributes[key];
-    });
-    log.debug("Leaving XacmlStore.attributeReader().");
-    return function (name) {
-      return self.one(lowered[String(name).toLowerCase()]);
-    };
-  }
-
-  private one(value: unknown): string | null {
-    const { log } = this.deps;
-    log.debug("Entering XacmlStore.one().");
-    if (Array.isArray(value)) {
-      log.debug("Leaving XacmlStore.one().");
-      return value.length ? String(value[0]) : null;
-    }
-    log.debug("Leaving XacmlStore.one().");
-    return value === undefined || value === null ? null : String(value);
-  }
 
   /**
    * Returns one policy entry by name.
@@ -671,6 +650,52 @@ class XacmlStore {
   }
 
   // -------------------------------------------------------------------------
+  // THE POLICIES APPLICATIONS OWN (#564).
+  //
+  // An application's fine-grained policy is an ordinary entry in this
+  // container carrying `xacmlApplication`; the application's own
+  // `appFgaPolicy` is the REFERENCE, and `xacml/fga_policies.ts` follows
+  // that rather than searching. These two answer the questions the
+  // reference cannot: every such policy (the console's list, the pull's
+  // withheld names, the orphans an administrator is left to remove), and
+  // the live one for an identifier.
+  // -------------------------------------------------------------------------
+  /**
+   * Lists every policy an application owns, orphaned ones included.
+   * @returns the rows carrying `xacmlApplication`, by name
+   */
+  fgaPolicies(): PolicyRow[] {
+    const { log } = this.deps;
+    log.debug('Entering XacmlStore.fgaPolicies().');
+    const rows = this.all().filter(function (row) {
+      return !!row.application;
+    }).sort(function (a, b) {
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    log.debug('Leaving XacmlStore.fgaPolicies(). ' + rows.length + '.');
+    return rows;
+  }
+
+  /**
+   * Returns the policy an application owns now: the one carrying its
+   * identifier in `xacmlApplication` and not marked orphaned. An orphan
+   * left by an earlier application of the same identifier is never it.
+   * @param identifier - the application's identifier
+   * @returns the row, or null; the first by name if, against every door
+   * here, there are several
+   */
+  fgaPolicyFor(identifier: string): PolicyRow | null {
+    const { log } = this.deps;
+    log.debug('Entering XacmlStore.fgaPolicyFor().');
+    const found = this.fgaPolicies().filter(function (row) {
+      return row.application === String(identifier) && !row.orphanedAt;
+    })[0] || null;
+    log.debug('Leaving XacmlStore.fgaPolicyFor(). ' +
+              (found ? found.name : 'None.'));
+    return found;
+  }
+
+  // -------------------------------------------------------------------------
   // THE ROOT, AND THE REPOSITORY BEHIND IT.
   //
   // A PDP evaluates ONE document and reaches the rest through
@@ -679,17 +704,29 @@ class XacmlStore {
   // rule like "the only PolicySet" or "the first one", both of which change
   // their answer when somebody adds a second policy and neither of which
   // anybody can see.
+  //
+  // **AN APPLICATION'S FINE-GRAINED POLICY IS NOT A CANDIDATE (#564)**, and
+  // the fallback below is why it has to be said here rather than only at
+  // the write: every application created gets one, ENABLED, so a realm
+  // holding one ordinary policy and one application would hold two enabled
+  // policies and "the only enabled policy" would stop answering — a realm
+  // whose root had been obvious would decide NotApplicable to everything
+  // the moment somebody registered a client. A row carrying
+  // `xacmlApplication` is therefore invisible to both halves, including one
+  // somebody flagged `xacmlIsRoot` with an `ldapmodify`, which `write()`
+  // refuses (STS-FGA-0001) and LDAP cannot be stopped from doing.
   // -------------------------------------------------------------------------
   /**
    * Returns the repository's root: the one enabled policy flagged root, or
-   * the only enabled policy when none is flagged.
+   * the only enabled policy when none is flagged. A policy an application
+   * owns (`xacmlApplication`) is never either.
    * @returns the root row, or null when there is none or more than one
    */
   root(): PolicyRow | null {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.root().');
     const enabled = this.all().filter(function (row) {
-      return row.enabled;
+      return row.enabled && !row.application;
     });
     const roots = enabled.filter(function (row) {
       return row.isRoot;
@@ -721,10 +758,18 @@ class XacmlStore {
   // resolves a `PolicyIdReference` against. Built per decision rather than
   // held, because the directory is the store and a cached map is a second copy
   // of it.
+  //
+  // AN APPLICATION'S FINE-GRAINED POLICY IS LEFT OUT (#564), for two
+  // reasons. Its PolicyId is derived from the application's identifier,
+  // which an application's administrator chose, so a root that references
+  // it would hand that administrator a say in the realm's root decision;
+  // and an orphaned policy and its successor share that PolicyId (both are
+  // derived from the same identifier), so the map would answer for
+  // whichever the directory happened to iterate last.
   /**
    * Builds the map a `PolicyIdReference` is resolved against: every enabled
    * policy that parses, keyed by its PolicyId. A policy that does not parse
-   * is left out and logged.
+   * is left out and logged, and so is every policy an application owns.
    * @returns PolicyId to parsed policy model
    */
   repository(): Record<string, any> {
@@ -733,11 +778,14 @@ class XacmlStore {
     log.debug('Entering XacmlStore.repository().');
     const map = {};
     this.all().forEach(function (row) {
-      if (!row.enabled || !row.id) {
+      if (!row.enabled || !row.id || row.application) {
         return;
       }
       try {
-        map[row.id] = self.parseDocument(row.document);
+        // An own member, `__proto__` included (2026-11-12): the PDP reads a
+        // reference through `common/own_members.ts`, and an assignment of
+        // `__proto__` would make the policy the map's PROTOTYPE instead.
+        ownMembers.put(map, row.id, self.parseDocument(row.document));
       } catch (error) {
         log.debug('Caught in XacmlStore.repository(): ' +
                   ((error && error.message) || error));
@@ -808,6 +856,34 @@ class XacmlStore {
                problems: (error.xacmlDetail && error.xacmlDetail.problems) ||
                          null }, 'STS-XACML-0028');
     }
+    // THE OWNER AND THE ORPHAN MARK ARE KEPT UNLESS THE CALLER SAYS
+    // OTHERWISE (#564). `writePolicy()` REPLACES the entry, and every door
+    // that rewrites a policy — the editor's save, enable and disable, the
+    // root demotion in set-root — passes the document and the flags it read
+    // and nothing else; were they not carried forward here, editing an
+    // application's policy once in the editor would silently turn it into
+    // an ordinary policy, eligible as the root and sent to every remote PEP.
+    // They are facts about the deployment, as `xacmlEnabled` is, so they
+    // live beside it and not in the document.
+    const before = this.all().filter(function (row) {
+      return row.name === name;
+    })[0] || null;
+    const application = settings.application !== undefined
+      ? (settings.application ? String(settings.application) : null)
+      : (before ? before.application : null);
+    const orphanedAt = settings.orphanedAt !== undefined
+      ? (settings.orphanedAt ? String(settings.orphanedAt) : null)
+      : (before ? before.orphanedAt : null);
+    if (settings.isRoot && application) {
+      log.debug('Leaving XacmlStore.write(). An application\'s policy as ' +
+                'the root.');
+      return errorCodes.mark({ ok: false,
+               why: 'Policy "' + name + '" belongs to the application "' +
+                    application + '" (xacmlApplication) and decides that ' +
+                    'application\'s authorization details. It cannot be ' +
+                    'the root of this repository; make an ordinary policy ' +
+                    'the root instead.' }, 'STS-FGA-0001');
+    }
     // TWO ROOTS IS REFUSED AT WRITE TIME rather than reported at decision
     // time, for the reason `root()` gives: a repository with two roots answers
     // arbitrarily, and the moment to say so is while somebody is looking.
@@ -837,6 +913,12 @@ class XacmlStore {
     };
     if (settings.description) {
       attributes.description = String(settings.description);
+    }
+    if (application) {
+      attributes.xacmlApplication = application;
+    }
+    if (orphanedAt) {
+      attributes.xacmlOrphanedAt = orphanedAt;
     }
     const written = directory.writePolicy(name, attributes);
     if (written) {
@@ -951,6 +1033,10 @@ export = {
   installInstance: (instance: XacmlStore): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: XacmlStore.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: XacmlStore.PROSE_ROUTES,
+  prose: XacmlStore.prose,
   SEED_NAME: XacmlStore.SEED_NAME,
   SEED_DOCUMENT: XacmlStore.SEED_DOCUMENT,
   seed: seedFacade,
@@ -959,6 +1045,8 @@ export = {
   setChangeObserver: slot.forward('setChangeObserver'),
   all: slot.forward('all'),
   read: slot.forward('read'),
+  fgaPolicies: slot.forward('fgaPolicies'),
+  fgaPolicyFor: slot.forward('fgaPolicyFor'),
   root: slot.forward('root'),
   repository: slot.forward('repository'),
   write: slot.forward('write'),

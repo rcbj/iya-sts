@@ -8,10 +8,10 @@
 // ===========================================================================
 // WHAT SAMBA'S RAW KERBEROS TESTS FOUND IN THE KDC, HELD IN PROCESS (#204).
 //
-// tests/vendored/sts_kerberos_samba.js runs Samba's python/samba/tests/krb5
+// tests/protocol/sts_kerberos_samba.js runs Samba's python/samba/tests/krb5
 // against a running KDC and is the whole of the check; this file holds the
 // fixes that are cheapest to break without noticing, in a development child
-// whose KDC is driven by `tests/vendored/krb5_wire.js` over an in-process
+// whose KDC is driven by `tests/protocol/krb5_wire.js` over an in-process
 // transport that also keeps the raw replies:
 //
 //   1. ETYPE-INFO2 in KDC_ERR_PREAUTH_REQUIRED lists the request's own
@@ -55,7 +55,7 @@ async function child() {
   const msgs = require(R + '/kerberos/krb5_messages.js');
   const kcrypto = require(R + '/kerberos/krb5_crypto.js');
   const kpac = require(R + '/kerberos/krb5_pac.js');
-  const wire = require(R + '/tests/vendored/krb5_wire.js');
+  const wire = require(R + '/tests/protocol/krb5_wire.js');
   const replies = [];
   const recorded = [];
   const inproc = { label: 'in-process', send: async function (bytes) {

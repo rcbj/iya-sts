@@ -55,6 +55,10 @@ resource "azurerm_role_definition" "deployer" {
       "Microsoft.Resources/deployments/*",
       "Microsoft.Authorization/*/read",
       "Microsoft.Network/*",
+      # Front Door Standard (#1341, environment/frontdoor.tf): its profile,
+      # endpoint, routes, rules and custom domains. Its WAF policy is
+      # `Microsoft.Network/frontDoorWebApplicationFirewallPolicies`, above.
+      "Microsoft.Cdn/*",
       "Microsoft.Compute/*",
       "Microsoft.DBforPostgreSQL/*",
       "Microsoft.Insights/dataCollectionRuleAssociations/*",

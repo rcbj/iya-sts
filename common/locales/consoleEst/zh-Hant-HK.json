@@ -1,0 +1,13 @@
+{
+  "chainNote": "{n} 個證書：EST 簽發 CA、此領域的中繼 CA 與服務根證書 — 即 <code>/cacerts</code> 傳回的內容",
+  "identifierPlaceholder": "用戶名稱或應用程式識別碼",
+  "noHostNames": "此領域中沒有任何項目註冊了證書主機名稱，因此無法簽發 tls-server 或 tls-server-client 證書。",
+  "intro": "<strong>Enrollment over Secure Transport（RFC 7030，以及 RFC 8951）。</strong>客戶端使用密碼、客戶端密碼或此領域簽發的 TLS 客戶端證書進行驗證，傳送 base64 編碼的 PKCS#10 要求，並從此領域的 EST 簽發 CA 取得證書。個人只能為自己註冊，應用程式只能為自身註冊，持有 Admin Write 的人可以為領域中的任何項目註冊。",
+  "profilesNote": "路徑中的標籤指定證書設定檔（<code>/.well-known/est/&lt;profile&gt;/…</code>）；無標籤的路徑簽發 <code>{profile}</code>。",
+  "clientCertificates": "客戶端證書",
+  "hIssue": "使用伺服器產生的金鑰簽發證書",
+  "hHostNames": "證書主機名稱",
+  "hEnrolled": "已註冊的證書",
+  "tileValid": "有效證書",
+  "tileRevokedCertificates": "已撤銷證書"
+}

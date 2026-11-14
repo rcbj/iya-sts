@@ -452,6 +452,105 @@ function checkEdits(t) {
   t.check(!stale.ok && /not there any more/.test(stale.why),
           'a path that no longer resolves is refused rather than guessing',
           stale.why);
+
+  // An empty path points `set-expression-apply` (and its five siblings) at the
+  // document itself, which has no parent to write an expression into. A fuzzed
+  // `path: ""` made that dereference null and the action's catch answered 500
+  // (#1356). It is a refusal now, not a crash, and the document is untouched.
+  const rootExpr = editor.applyEdit(policy, '', 'set-expression-apply',
+                                    { functionId: F1 + 'string-equal' });
+  t.check(!rootExpr.ok && /is the policy itself/.test(rootExpr.why),
+          'an expression edit at the document root is refused, not a crash',
+          rootExpr.why);
+  t.equal(validate.problemsIn(policy).length, 0,
+          'the refused root-expression edit left the policy type-checking');
+
+  // A Match path resolves and has a parent, so the root guard above does
+  // not fire. Replacing the Match with an Apply makes writeTarget() call
+  // writeExpression() on match.value, which throws reading `.kind`
+  // (STS-API-0140, #1419). The fuzzer sent this path with a leading dot;
+  // segmentsOf() drops the empty segment and the path still resolves.
+  const matchPolicy = templates.build('rbac', {}, {
+    name: 'match-slot'
+  }).policy;
+  const matchPath = '.rules.0.target.anyOf.0.allOf.0.matches.0';
+  const beforeMatch = JSON.stringify(matchPolicy);
+  const onMatch = editor.applyEdit(matchPolicy, matchPath,
+                                   'set-expression-apply', {});
+  t.check(!onMatch.ok && /not an expression/.test(onMatch.why),
+          'replacing a Match with an Apply is refused, not a crash',
+          onMatch.why);
+  t.equal(JSON.stringify(matchPolicy), beforeMatch,
+          'the refused Match edit left the policy untouched');
+  let written = null;
+  try {
+    written = xml.writePolicy(matchPolicy);
+  } catch (error) {
+    t.check(false, 'the policy still writes after the refused edit',
+            error.message);
+  }
+  if (written) {
+    t.check(true, 'the policy still writes after the refused edit');
+  }
+
+  // edit-match on the AllOf above that Match. The fuzzer omitted
+  // `value`. An AllOf has no `value`, so `node.value.lexical` threw
+  // (STS-API-0140, #1428). A function with no first argument, and a
+  // Match whose value is missing, are the same read.
+  const allofPath = '.rules.0.target.anyOf.0.allOf.0';
+  const beforeAllof = JSON.stringify(matchPolicy);
+  const onAllof = editor.applyEdit(matchPolicy, allofPath, 'edit-match', {
+    matchId: F1 + 'string-equal',
+    attributeId: 'urn:example:classification',
+    mustBePresent: false
+  });
+  t.check(!onAllof.ok && /not a Match/.test(onAllof.why),
+          'editing an AllOf as a Match is refused, not a crash',
+          onAllof.why);
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(onAllof.why || ''),
+          'the AllOf refusal does not name an operator error code',
+          onAllof.why);
+  t.equal(JSON.stringify(matchPolicy), beforeAllof,
+          'the refused AllOf edit left the policy untouched');
+
+  const bag = editor.applyEdit(matchPolicy, matchPath, 'edit-match', {
+    matchId: F1 + 'string-bag'
+  });
+  t.check(!bag.ok && /cannot be a Match/.test(bag.why),
+          'a function with no value argument is refused, not a crash',
+          bag.why);
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(bag.why || ''),
+          'the function refusal does not name an operator error code',
+          bag.why);
+  t.equal(JSON.stringify(matchPolicy), beforeAllof,
+          'the refused function edit left the policy untouched');
+
+  const bare = templates.build('rbac', {}, { name: 'bare-match' }).policy;
+  const barePath = 'rules.0.target.anyOf.0.allOf.0.matches.0';
+  const bareNode = editor.nodeAt(bare, barePath).node;
+  delete bareNode.value;
+  const beforeBare = JSON.stringify(bare);
+  const noValue = editor.applyEdit(bare, barePath, 'edit-match', {
+    matchId: F1 + 'string-equal'
+  });
+  t.check(!noValue.ok && /needs a value/.test(noValue.why),
+          'a Match with no value is refused when the body omits one',
+          noValue.why);
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(noValue.why || ''),
+          'the empty-Match refusal does not name an operator error code',
+          noValue.why);
+  t.equal(JSON.stringify(bare), beforeBare,
+          'the refused empty Match left the policy untouched');
+
+  const still = editor.applyEdit(matchPolicy, matchPath, 'edit-match', {
+    value: 'kept'
+  });
+  t.check(still.ok, 'a real Match is still edited', still.why || '');
+  const kept = editor.applyEdit(matchPolicy, matchPath, 'edit-match', {});
+  t.check(kept.ok, 'omitting value on a real Match keeps its value',
+          kept.why || '');
+  t.equal(editor.nodeAt(matchPolicy, matchPath).node.value.lexical, 'kept',
+          'the kept value is the one the previous edit wrote');
   log.debug("Leaving checkEdits().");
 }
 
@@ -482,6 +581,46 @@ function checkMatchTypeFollowsFunction(t) {
   }
   t.check(ok, 'so the policy still type-checks after the change');
   log.debug("Leaving checkMatchTypeFollowsFunction().");
+}
+
+// A literal that is not a value of its datatype is refused at the edit,
+// for a Match and for a plain value, and the policy is left as it was. It
+// used to be stored, and only a decision said so, as a syntax-error status
+// that a deny-unless-permit policy turns into a plain Deny.
+function checkIllTypedLiteralsRefused(t) {
+  log.debug("Entering checkIllTypedLiteralsRefused().");
+  const policy = templates.build('rbac', {}, { name: 'literals' }).policy;
+  const path = 'rules.0.target.anyOf.0.allOf.0.matches.0';
+  const before = JSON.stringify(policy);
+  const refused = editor.applyEdit(policy, path, 'edit-match', {
+    matchId: F1 + 'integer-equal', value: 'notanint'
+  });
+  t.check(!refused.ok && /not a valid integer/.test(refused.why || ''),
+          'an integer Match with a non-integer literal is refused',
+          refused.why || '');
+  t.equal(JSON.stringify(policy), before,
+          'the refused Match edit left the policy untouched');
+  const accepted = editor.applyEdit(policy, path, 'edit-match', {
+    matchId: F1 + 'integer-equal', value: '42'
+  });
+  t.check(accepted.ok, 'a valid integer literal is accepted',
+          accepted.why || '');
+  const added = editor.applyEdit(policy, 'rules.0', 'add-condition', {});
+  t.check(added.ok, 'a condition can be added to hold a plain value',
+          added.why || '');
+  const valuePath = 'rules.0.condition.args.0';
+  const located = editor.nodeAt(policy, valuePath);
+  t.equal(located && located.node && located.node.kind, 'value',
+          'the new condition\'s first argument is a plain value');
+  const beforeValue = JSON.stringify(policy);
+  const badValue = editor.applyEdit(policy, valuePath, 'edit-value', {
+    lexical: 'soon', type: 'http://www.w3.org/2001/XMLSchema#dateTime'
+  });
+  t.check(!badValue.ok, 'an edit-value that is not a dateTime is refused',
+          badValue.why || '');
+  t.equal(JSON.stringify(policy), beforeValue,
+          'the refused value edit left the policy untouched');
+  log.debug("Leaving checkIllTypedLiteralsRefused().");
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +662,92 @@ function checkPapActions(t) {
           'an unknown action is refused, and the refusal lists every action ' +
           'there is');
   log.debug("Leaving checkPapActions().");
+}
+
+
+// ---------------------------------------------------------------------------
+// A PATH NAMES THE POLICY'S OWN MEMBERS, AND NOTHING THEY INHERIT (2026-11-12).
+//
+// The fuzz stage of a full run sent `add-rule` a path that walked to
+// `Object.prototype`. The edit "added" the rule there, answered "Rule added.",
+// and every object in the process inherited an enumerable `rules`: every
+// closed response model then refused every answer of every operation, and
+// compiling a new one overflowed the stack. Every such path is refused here,
+// by every kind of edit, directly and through the PAP action the API calls,
+// and nothing anywhere inherits a member afterwards.
+// ---------------------------------------------------------------------------
+function inheritedEnumerables() {
+  log.debug("Entering inheritedEnumerables().");
+  const found = [];
+  [{}, [], Object.create(Object.prototype)].forEach(function (probe) {
+    for (const name in probe) {
+      if (!Object.prototype.hasOwnProperty.call(probe, name)) {
+        found.push(name);
+      }
+    }
+  });
+  log.debug("Leaving inheritedEnumerables().");
+  return found;
+}
+
+function checkPathsStayOwn(t) {
+  log.debug("Entering checkPathsStayOwn().");
+  const hostile = ['__proto__', 'constructor', 'constructor.prototype',
+                   'rules.__proto__', 'rules.0.__proto__',
+                   'rules.0.constructor.prototype', 'rules.constructor',
+                   'rules.length', 'toString', 'hasOwnProperty',
+                   'target.__proto__', 'rules.-1', 'rules.1e0'];
+  const actions = [['add-rule', { effect: 'Deny' }],
+                   ['edit-rule', { id: 'urn:x', effect: 'Deny' }],
+                   ['edit-policy', { description: 'polluted' }],
+                   ['add-target-anyof', { value: 'x',
+                                          attributeId: 'employeeType' }],
+                   ['add-condition', {}],
+                   ['add-rule-obligation', { on: 'Permit' }],
+                   ['remove', {}]];
+  let refusedAll = true;
+  hostile.forEach(function (one) {
+    actions.forEach(function (action) {
+      const policy = templates.build('rbac', {}, { name: 'own' }).policy;
+      const result = editor.applyEdit(policy, one, action[0], action[1]);
+      if (result.ok) {
+        refusedAll = false;
+        t.check(false, action[0] + ' at "' + one + '" is refused',
+                result.what);
+      }
+    });
+  });
+  t.check(refusedAll, 'every edit at a path through an inherited member is ' +
+          'refused (' + hostile.length * actions.length + ' tried)');
+  t.equal(inheritedEnumerables().join(','), '',
+          'and no object in this process inherits a member afterwards');
+
+  const created = pap.combinedAction({
+    action: 'create-from-template', template: 'abac', name: 'pap-own',
+    p_subjectAttribute: 'employeeType', p_subjectValue: 'staff'
+  });
+  t.check(created.ok, 'a policy to edit through the PAP',
+          created.why || created.what);
+  ['__proto__', 'constructor.prototype'].forEach(function (one) {
+    const through = pap.combinedAction({ action: 'add-rule',
+                                         policy: 'pap-own', path: one });
+    t.check(!through.ok, 'the PAP action refuses add-rule at "' + one + '"',
+            through.why || through.what);
+  });
+  t.equal(inheritedEnumerables().join(','), '',
+          'and still nothing inherits a member');
+  t.equal(({}).rules, undefined, 'an empty object has no rules');
+
+  const policy = templates.build('rbac', {}, { name: 'own' }).policy;
+  const count = policy.rules.length;
+  t.check(editor.applyEdit(policy, '', 'add-rule', {}).ok &&
+          policy.rules.length === count + 1,
+          'the root path still takes a rule');
+  t.check(editor.applyEdit(policy, 'rules.0', 'edit-rule',
+                           { id: 'urn:test:own', effect: 'Deny' }).ok,
+          'and an index into its own rules still resolves');
+  pap.combinedAction({ action: 'delete', name: 'pap-own' });
+  log.debug("Leaving checkPathsStayOwn().");
 }
 
 
@@ -665,6 +890,22 @@ function checkVariables(t) {
   t.check(!unknown.ok && /5.24/.test(unknown.why),
           'and naming one this policy does not define is refused, citing the ' +
           'section that says why', unknown.why);
+
+  // A path that resolves but does not name a variable used to store
+  // `undefined`, and writePolicy threw reading `.kind` (#1403).
+  const notAVariable = editor.applyEdit(policy, 'rules.0', 'edit-variable',
+                                        { variableId: 'otherName' });
+  t.check(!notAVariable.ok && /no variable/.test(notAVariable.why),
+          'renaming where the path is not a variable is refused, rather ' +
+          'than writing a definition with no expression',
+          notAVariable.why);
+  const nested = editor.applyEdit(policy, 'variables.v1.attributeId',
+                                  'edit-variable',
+                                  { variableId: 'otherName' });
+  t.check(!nested.ok && /no variable/.test(nested.why),
+          'and a field of a variable is not the variable', nested.why);
+  t.check(!!policy.variables.v1 && !policy.variables.otherName,
+          'and the document is unchanged');
 
   // THE RENAME IS THE INTERESTING ONE: a rename that left the references
   // behind produces a document that does not load, so the store would refuse
@@ -961,12 +1202,14 @@ function run(t) {
   checkMenuAndApiAgree(t);
   checkEdits(t);
   checkMatchTypeFollowsFunction(t);
+  checkIllTypedLiteralsRefused(t);
   checkPolicySets(t);
   checkVariables(t);
   checkSelectorsAndFunctions(t);
   checkOptionalSyntax(t);
   checkCombinerParameters(t);
   checkPapActions(t);
+  checkPathsStayOwn(t);
   log.debug("Leaving run().");
 }
 

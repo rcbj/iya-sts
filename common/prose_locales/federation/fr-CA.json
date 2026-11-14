@@ -1,0 +1,14 @@
+{
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "UNE RÈGLE EN PLUS DE LA POLITIQUE : le domaine de courriel qu’a ENVOYÉ le partenaire (l’adresse mise en correspondance, ou le nom d’utilisateur mis en correspondance lorsque c’est une adresse) doit être l’un de ceux-ci, de même que l’adresse de l’entrée locale lorsqu’elle en a une. Comparaison exacte et insensible à la casse : example.com n’admet pas sub.example.com. Vide : aucune règle de domaine."
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "PERMETTRE AUX SHARED SIGNALS DE CE PARTENAIRE DE NOMMER UNE PERSONNE PAR SON ADRESSE COURRIEL. DÉSACTIVÉ par défaut : un Security Event Token provenant d’un transmetteur ayant l’émetteur de ce partenaire nomme une personne par `iss_sub`, via le federationLink de la personne. Activé, un sujet `email` correspond aussi à l’unique personne ayant cette adresse — une adresse n’est pas un identifiant (OpenID Connect Core section 5.7), donc uniquement pour un partenaire dont ce domaine fait confiance aux adresses."
+  },
+  "fed.schema.attributes.fedAllowUnencrypted.what": {
+    "en": "c3d0a1b2ac50968b",
+    "text": "ACCEPTER UNE ASSERTION EN CLAIR EN MODE PRODUIT. DÉSACTIVÉ par défaut, et désactivé signifie qu’une assertion SAML 2.0 ou WS-Federation, ou un id_token OpenID Connect par form_post, qui n’est PAS chiffré pour la clé de cette relation est refusé (STS-FED-0140). AVERTISSEMENT : l’activer permet au partenaire d’envoyer le NameID, l’adresse courriel, les groupes et tous les autres attributs de la personne EN CLAIR à travers son navigateur — son historique, ses extensions et chaque proxy terminant TLS en chemin. Ne l’activez que pour un partenaire qui ne sait pas chiffrer, et préférez lui demander de le faire. Le mode développement accepte le texte en clair quoi qu’indique ce paramètre."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "heading": "已连接的声明来源",
+  "sub": "另一个身份提供方可以为本服务未持有的有关您的信息作担保。关联之后，请求这些信息的应用会收到该提供方签名的原样信息（OpenID Connect 聚合声明和分布式声明）。关联时会转到该提供方，由您登录并同意。",
+  "none": "本服务没有可提供的声明来源。",
+  "supplies": "提供",
+  "distributed": "，方式是将您在该提供方的令牌交给应用，由应用自行获取。",
+  "aggregated": "，由本服务获取并按提供方的签名原样转交。",
+  "linked": "关联于 {when}。",
+  "linkedStale": "关联于 {when}——<strong>已不可用</strong>；请重新关联。",
+  "link": "关联",
+  "linkAgain": "重新关联",
+  "unlink": "取消关联",
+  "doneUnlinked": "已取消关联。",
+  "doneLinked": "已关联“{provider}”。"
+}

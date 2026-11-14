@@ -33,10 +33,10 @@ var config = {
     //
     // WHAT IT COSTS is what config.js's own row says it costs: there is then NO
     // plain listener left in this process, and `GET /tls/server-certificate`
-    // and `POST /tls/trust` are the two endpoints a caller reaches BEFORE it
-    // trusts anything — so the first fetch of the certificate has to be made
-    // with verification off (`curl -k`). That is the ordinary bootstrap for a
-    // service that regenerates its key every start, and /tls says so.
+    // is the endpoint a caller reaches BEFORE it trusts anything — so the
+    // first fetch of the certificate has to be made with verification off
+    // (`curl -k`). That is the ordinary bootstrap for a service that
+    // regenerates its key every start, and docs/tls.md says so.
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.
@@ -48,7 +48,8 @@ var config = {
     // front of this service they are headers any client can set, and believing
     // them lets a caller choose what this service thinks its own issuer,
     // endpoints and DPoP htu are. Turn it ON behind a reverse proxy — see
-    // GET /tls/forwarded, which shows what arrived and what was believed.
+    // Monitoring → TLS connection, which shows what arrived and what was
+    // believed.
     trustProxy: false
   },
 
@@ -63,18 +64,6 @@ var config = {
     // exercise a client against a server that behaves like a real deployment.
     // GET /oauth2/rfc9700 lists what it does and does not enforce.
     rfc9700: false,
-
-    // RFC 6749 section 4.1.2: a code used twice is refused in every mode
-    // since #187, and this is the opt-in that restores the old development
-    // courtesy (an identical repeat answered with the same tokens). ON HERE
-    // ONLY because the parent project's vendored `oauth2_sts_endpoints.js`
-    // still asserts that courtesy in development mode; remove it once that
-    // job asserts the refusal (rcbj/id-proto-debugger#306). The OpenID
-    // conformance jobs switch it off in their own realms, so they test the
-    // default. env/test.js carries the same line, for the same job:
-    // ./run-tests.sh gives the service that file unless a debug level asks
-    // for this one.
-    codeReplayIdempotent: true,
 
     // OAuth 2.1 (draft-ietf-oauth-v2-1-16). OFF, for the reason above; it
     // turns RFC 9700 mode on as well, and additionally refuses a client that
@@ -184,20 +173,10 @@ var config = {
     seedInternal: true
   },
 
-  // --- SAML --------------------------------------------------------------
-  saml: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Trust ----------------------------------------------------------
-  wstrust: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Federation -----------------------------------------------------
-  wsfed: {
-    entityId: "urn:wstrust:mock:sts"
-  },
+  // --- SAML, WS-Trust, WS-Federation: ONE NAME, NOT A SETTING (#523) ----
+  // Every SAML Issuer, identity provider entityID and the WS-Trust STS's name
+  // are the realm's OAuth issuer, which follows global.publicBaseUrl
+  // (`common/issuer_names.ts`). The settings that named them are retired.
 
   // --- TLS ---------------------------------------------------------------
   tls: {
@@ -207,7 +186,10 @@ var config = {
 
   // --- OID4VCI -----------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",
+    // No walletUrl (2026-10-12): an offer is handed to a wallet APP by its
+    // scheme (oid4vci.walletInvocation). Set walletUrl and
+    // walletIssuancePath ("/vc-issuance-1.html" for the embedded
+    // debugger's web wallet) to offer a web wallet beside it.
     authorizationServer: "",
     batchSize: 4,
     deferredReadyMs: 4000,
@@ -229,8 +211,9 @@ var config = {
   // --- OID4VP ------------------------------------------------------------
   oid4vp: {
     clientId: "sts-verifier",
-    // walletUrl: falls back to oid4vci.walletUrl. Uncomment to point the mock
-    //   Verifier at a different wallet from the issuer's.
+    // walletUrl: falls back to oid4vci.walletUrl, a web wallet offered
+    //   beside the oid4vp.walletInvocation link; walletPresentationPath is
+    //   "/vc-presentation-1.html" for the embedded debugger's.
     kbMaxAgeS: 600,
     claims: "given_name,family_name"
   },
@@ -241,8 +224,6 @@ var config = {
     realm: "EXAMPLE.COM",
     kdcPort:
       88,                                                   // restart to apply
-    servicePort:
-      8888,                                             // restart to apply
     servicePrincipal:
       "HTTP/web.example.com",                      // restart to apply
     clockSkew: 300,
@@ -259,14 +240,6 @@ var config = {
       "krbtgt-mock-password",                        // restart to apply
     domainSid:
       "S-1-5-21-1004336348-1177238915-682003330",         // restart to apply
-    trustedRealm:
-      "PARTNER.COM",                                   // restart to apply
-    trustPassword:
-      "inter-realm-trust-password",                   // restart to apply
-    trustedDomainSid:
-      "S-1-5-21-2035427030-2118130302-1178042555", // restart to apply
-    trustedKrbtgtPassword:
-      "partner-krbtgt-password",              // restart to apply
     s2kparams: "omit"
   },
 
@@ -429,7 +402,7 @@ var config = {
   // --- ACME's refusal throttle ----------------------------------------------
   // THE SAME ONE-ADDRESS PROBLEM AS `security` ABOVE, ONE FAMILY ALONG
   // (2026-09-13). `acme.attemptsPerAddress` counts REFUSED ACME requests from
-  // one address and ships at 120 a window. `tests/vendored/sts_route_inputs.js`
+  // one address and ships at 120 a window. `tests/protocol/sts_route_inputs.js`
   // sends every route a malformed request on purpose, and measured against one
   // instance it leaves 132 refused ACME requests on the runner's address — so
   // the next job to read `/enroll/acme/directory`, `sts_metadata_anonymous.js`,
@@ -441,6 +414,34 @@ var config = {
   // throttle set their own limits inside the realms they create.
   acme: {
     attemptsPerAddress: 5000
+  },
+
+  // --- How many trust realms the suite may leave standing (#368) -----------
+  // realms.maxCount ships at 10, counting the default realm. This suite
+  // LEAVES the realms it creates, and a kept stack has held well over ten,
+  // so the next create would be refused for the cap. 100000 is the setting's
+  // own maximum. It is a LAYER for the test stacks, not the setting:
+  // env/defaults.js still ships 10, and env/local.js — the image default —
+  // does not raise it. A deployment stays at 10 until a service administrator
+  // sets it in the default realm.
+  realms: {
+    maxCount: 100000
+  },
+
+  // --- Paranoid PKI mode ----------------------------------------------------
+  // FORCED OFF IN EVERY APPCONFIG FILE WE PACKAGE (rcbj, 2026-11-10).
+  // `pki.paranoid` ships `auto`, which is on in product mode (#1360) and holds
+  // every certificate this service relies on to the full set of checks, a
+  // revocation check that never ran counting as a refusal. The first product
+  // node built after #1360 (test-idp.iyasec.io, develop 39c8248c8, revocation
+  // off there by #371) refused Secrets Manager's own TLS certificate
+  // (STS-KEYS-0044) and did not start (STS-CORE-0036). Off, every use case
+  // behaves exactly as it did before #1360; a product node logs STS-PKI-0239
+  // once and /admin/pki/trust draws it red. It is a LAYER, not the setting:
+  // `env/defaults.js` still ships `auto`, and STS_PKI_PARANOID or a runtime
+  // override still sets it back.
+  pki: {
+    paranoid: "off"
   },
 
   // --- SPIFFE / SPIRE ------------------------------------------------------

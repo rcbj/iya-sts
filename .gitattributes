@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# EVERY CHECKOUT GETS THE BYTES THE REPOSITORY HOLDS, ON EVERY MACHINE (#512).
+#
+# Git for Windows installs with core.autocrlf=true, which rewrites each text
+# file's LF to CRLF on checkout. Under Cygwin that breaks every script before
+# its first line runs (`$'\r': command not found`), and it breaks the images
+# too, without a word: the build context is the checkout (`COPY . ./`), so
+# each entrypoint, postgres/'s scripts and build-typescript.sh would reach a
+# Linux container with a CR on every line, and a `#!/bin/bash\r` names an
+# interpreter that does not exist.
+#
+# NO CONVERSION RATHER THAN `eol=lf`, because not every file here is LF: the
+# XACML conformance suite under xacml/conformance/ is upstream's, byte for
+# byte, and CRLF there. Normalising it would change files nobody edited, and
+# the test vectors elsewhere are compared byte for byte too. `-text` turns
+# conversion off in both directions whatever a person's autocrlf says, so a
+# Windows checkout is the same bytes as a Linux one. tests/tools/
+# host-platform.sh has the rest of what Cygwin needs.
+* -text

@@ -36,6 +36,8 @@
 // each per process, and the runner shares its process with every other file.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -66,6 +68,28 @@ function fakeDatabase() {
     return typeof value === 'string' ? JSON.parse(value) : value;
   };
   db.query = function (sql, params) {
+    // THE MINTED FLUSH IS ONE STATEMENT SINCE #820, played against this
+    // database's own minted Map (keyed handle\nrealm\nkey, as the double
+    // keys it) and change log by `tools/minted_flush_double.js`.
+    if (flushDouble.isFlush(sql)) {
+      db.statements.push('MINTED_FLUSH');
+      const state = { minted: db.minted, sessions: new Map(),
+                      index: new Set(), changes: [] };
+      const played = flushDouble.play(state, sql);
+      db.minted.forEach(function (row) {
+        if (!row.written_ms) {
+          row.written_ms = Date.now();
+        }
+      });
+      state.changes.forEach(function (one) {
+        db.log.push({ seq: db.log.length + 1, origin: one.origin,
+                      kind: one.kind, realm: one.realm, key: one.key });
+      });
+      if (state.changes.length) {
+        db.changes += 1;
+      }
+      return Promise.resolve(played);
+    }
     const text = String(sql).replace(/\s+/g, ' ').trim();
     const p = params || [];
     db.statements.push(text);
@@ -96,23 +120,49 @@ function fakeDatabase() {
       db.changes += 1;
       return rows([]);
     }
-    if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-          .test(text)) {
+    if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+          .test(text) || /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       return rows([{ seq: db.log.length }]);
     }
-    if (/^SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq > /
-          .test(text)) {
+    if (/sts:changesSince /.test(text)) {
       return rows(db.log.filter(function (row) {
         return row.seq > Number(p[0]);
       }).slice(0, Number(p[1]) || 500));
     }
-    if (/^SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq = /
-          .test(text)) {
+    // `changesAt()` is built with `whereIn` (#677): one bound value a seq.
+    if (/sts:changesAt /.test(text)) {
       return rows(db.log.filter(function (row) {
-        return p[0].map(Number).indexOf(row.seq) >= 0;
+        return p.map(Number).indexOf(row.seq) >= 0;
       }));
     }
     // ---- the directory ----------------------------------------------------
+    // THE FLUSH'S SET-BASED WRITES (2026-10-21): fourteen parallel arrays,
+    // the INSERT's fifteenth the ids of the blind rows it may update.
+    if (/^DELETE FROM sts_ldap_entries WHERE \(realm, dn_key\) IN/
+          .test(text)) {
+      p[0].forEach(function (r, i) {
+        db.entries.delete(eid(r, p[1][i]));
+      });
+      return rows([]);
+    }
+    if (/^(INSERT INTO|UPDATE) sts_ldap_entries/.test(text) &&
+        Array.isArray(p[0])) {
+      const inserting = /^INSERT/.test(text);
+      const blind = new Set(p[14] || []);
+      const written = [];
+      p[0].forEach(function (r, i) {
+        const k = eid(r, p[1][i]);
+        if (inserting ? db.entries.has(k) && !blind.has(r + '\n' + p[1][i])
+                      : !db.entries.has(k)) {
+          return;
+        }
+        db.entries.set(k, { realm: r, dn_key: p[1][i], dn: p[2][i],
+                            attrs: json(p[3][i]), origin: p[4][i],
+                            created_at: p[5][i], modified_at: p[6][i] });
+        written.push({ realm: r, dn_key: p[1][i] });
+      });
+      return Promise.resolve({ rows: written, rowCount: written.length });
+    }
     if (/FROM sts_ldap_entries ORDER BY realm, dn_key$/.test(text)) {
       return rows(Array.from(db.entries.values()));
     }
@@ -163,9 +213,15 @@ function fakeDatabase() {
       return rows([]);
     }
     // ---- the realm registry -----------------------------------------------
-    if (/^SELECT id, name, description, created_at, overrides FROM sts_realms/
+    // The driver's read names `domain` and `retiring_at` too (the realm's
+    // DNS domain, #33; a retiring realm), so the pattern allows them: a
+    // double answering NO rows to the registry read makes the applier
+    // remove every realm this process defined (2026-10-27, found by 5c).
+    if (/^SELECT id, name, description, created_at, overrides(, domain, retiring_at)? FROM sts_realms/
           .test(text)) {
-      return rows(Array.from(db.realms.values()));
+      return rows(Array.from(db.realms.values()).map(function (row) {
+        return Object.assign({ domain: null, retiring_at: null }, row);
+      }));
     }
     if (/^DELETE FROM sts_realms WHERE NOT/.test(text)) {
       const keep = new Set(p[0]);
@@ -223,6 +279,42 @@ function fakeDatabase() {
       return rows([]);
     }
     // ---- minted rows ------------------------------------------------------
+    // A flush's set-based statements since 2026-10-21: each parameter an
+    // array over the rows.
+    if (/^SELECT handle, realm, key, body FROM sts_minted WHERE \(handle/
+        .test(text)) {
+      const found = [];
+      p[0].forEach(function (h, i) {
+        const one = db.minted.get(eid(h, eid(p[1][i], p[2][i])));
+        if (one) {
+          found.push({ handle: h, realm: p[1][i], key: p[2][i],
+                       body: one.body });
+        }
+      });
+      return rows(found);
+    }
+    if (/^INSERT INTO sts_minted .* SELECT u\.h/.test(text)) {
+      const guarded = /WHERE sts_minted.body <> \$7/.test(text);
+      const written = [];
+      p[0].forEach(function (h, i) {
+        const k = eid(h, eid(p[1][i], p[2][i]));
+        const had = db.minted.get(k);
+        if (had && guarded && had.body === p[6]) {
+          return;
+        }
+        db.minted.set(k, { handle: h, realm: p[1][i], key: p[2][i],
+                           body: p[3][i], written_ms: Date.now() });
+        written.push({ handle: h, realm: p[1][i], key: p[2][i] });
+      });
+      return Promise.resolve({ rows: written, rowCount: written.length });
+    }
+    if (/^DELETE FROM sts_minted WHERE \(handle, realm, key\) IN/
+        .test(text)) {
+      p[0].forEach(function (h, i) {
+        db.minted.delete(eid(h, eid(p[1][i], p[2][i])));
+      });
+      return rows([]);
+    }
     if (/^SELECT body FROM sts_minted/.test(text)) {
       const one = db.minted.get(eid(p[0], eid(p[1], p[2])));
       return rows(one ? [{ body: one.body }] : []);
@@ -272,13 +364,12 @@ function fakePg(db) {
   return { Pool: FakePool, Client: FakeClient };
 }
 
-// The `pg` double stays in the require cache for the child's whole life, so
-// `persistence.js` finds it when it creates its own driver in section D.
+// The database double stays in the layer's place (`tests/tools/
+// store_double.js`) for the child's whole life, so `persistence.js` finds it
+// when it creates its own driver in section D.
 function installFakePg(db) {
   log.debug("Entering installFakePg().");
-  const pgPath = require.resolve('pg');
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(db) };
+  storeDouble.install(fakePg(db));
   log.debug("Leaving installFakePg().");
 }
 
@@ -547,8 +638,13 @@ async function sectionD(t, db) {
   db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'directory',
                 realm: 'ghost', key: ghostDn });
   await persistence.syncNow();
-  t.check(!!(dirs.get('ghost') || new Map()).get(ghostDn),
-          'node B\'s entry for its new realm was applied here');
+  // HELD, NOT APPLIED, UNTIL THE REALM'S OWN ROW IS (2026-10-27): applied
+  // resident before the realm was defined here, the entry was forgotten
+  // once the realm made its people windowed, and the next flush deleted it
+  // from the store as a row the shadow held and memory lacked.
+  t.check(!(dirs.get('ghost') || new Map()).get(ghostDn),
+          'node B\'s entry for a realm this process does not define yet is ' +
+          'held, not applied');
 
   // NODE B, writing straight into the table: a realm of its own and a
   // setting, neither of which this process has applied.
@@ -568,6 +664,15 @@ async function sectionD(t, db) {
           'is not a realm this process removed');
   t.equal(String((db.realms.get('lwwa').overrides || {})[runtimeKey]),
           'false', 'and the change itself was written');
+  db.realms.set('ghost', { id: 'ghost', name: 'Ghost', description: '',
+                           created_at: Date.now(), overrides: {} });
+  db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'realms',
+                realm: '', key: 'ghost' });
+  await persistence.syncNow();
+  t.check(!!realms.get('ghost') &&
+          !!(dirs.get('ghost') || new Map()).get(ghostDn),
+          'and once the realm\'s own row has been applied here, the held ' +
+          'entry follows it');
 
   config.setOverride('oid4vci.batchSize', '7');
   await persistence.flush();
@@ -704,6 +809,7 @@ async function armKeystore(dir) {
                    { encoding: 'utf8', mode: 0o600 });
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   keystore.reset();
   keystore.setStore({
@@ -749,6 +855,32 @@ async function sectionE(t, db, dir) {
   t.check(lists.wsfedRealms['urn:rp:1'] &&
           lists.saml2ServiceProviders['urn:sp:2'],
           'and so are the WS-Federation realms and SAML service providers');
+
+  // A CLIENT BOTH COPIES HOLD KEEPS ITS `iss` AND `sub` (run 27,
+  // 2026-11-14): the merge rebuilt the entry from first/last/count, so the
+  // front-channel iframe fell back to the sign-out's issuer and the Logout
+  // Token was dead-lettered STS-OAUTH-0542.
+  const named = 'https://sts.example/realm/r/fcx';
+  const c1 = Object.assign({}, signedIn, { oidcClients: { app1: {
+    first: 1, last: 5, count: 2, iss: named, sub: 'urn:uuid:alice' } } });
+  const c2 = Object.assign({}, signedIn, { oidcClients: { app1: {
+    first: 3, last: 4, count: 1, iss: '', sub: '' } } });
+  [merge(c1, c2), merge(c2, c1)].forEach(function (one, i) {
+    const row = one.oidcClients.app1;
+    t.equal(row.iss + ' ' + row.sub + ' ' + row.first + ' ' + row.last +
+            ' ' + row.count, named + ' urn:uuid:alice 1 5 2',
+            'A CLIENT IN BOTH COPIES KEEPS THE iss AND sub ITS ID TOKEN ' +
+            'NAMED, with the counters merged (' + (i ? 'theirs' : 'mine') +
+            ' first)');
+  });
+  const c3 = Object.assign({}, signedIn, { oidcClients: { app1: {
+    first: 2, last: 9, count: 3, iss: 'https://sts.example/realm/r',
+    sub: 'urn:uuid:alice' } } });
+  t.equal(merge(c1, c3).oidcClients.app1.iss + ' ' +
+          merge(c3, c1).oidcClients.app1.iss,
+          'https://sts.example/realm/r https://sts.example/realm/r',
+          'and the later answer\'s iss wins, noteClient()\'s rule, from ' +
+          'either side');
 
   // The flush, over the real driver: the store declares a tombstone and the
   // session merge, and product mode arms minted persistence.

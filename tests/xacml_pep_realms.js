@@ -25,7 +25,7 @@ const log = require('bunyan').createLogger({ name: 'xacml_pep_realms',
 //      enforcing with it right now.
 //
 // The second is not hypothetical: it is the only state a RUNNING suite
-// produces. `tests/vendored/sts_xacml_remote_pep.js` drives the `xacml-pep/`
+// produces. `tests/protocol/sts_xacml_remote_pep.js` drives the `xacml-pep/`
 // container against a THROWAWAY REALM (`XACML_PEP_REALM`, `pep-e2e` by
 // default), so a registration made by that job has never been in the default
 // realm and never will be — and somebody who ran `./local-run-tests.sh` (a

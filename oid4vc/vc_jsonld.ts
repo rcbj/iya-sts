@@ -27,7 +27,7 @@
 //
 //   https://www.w3.org/ns/credentials/v2
 //   https://www.w3.org/2018/credentials/v1
-//                        common/vendored/contexts/ — the copies bbs2023.js
+//                        common/crypto_impl/contexts/ — the copies bbs2023.js
 //                        reads, so the two loaders cannot disagree
 //   https://www.w3.org/ns/credentials/examples/v2
 //                        credentials_examples_v2.json   57393fbc…ae8e43de85
@@ -51,8 +51,8 @@
 //                        status_list_2021_v1.json       6dd06a52…870e4
 //   https://w3id.org/citizenship/v4rc1
 //                        citizenship_v4rc1.json         5038c738…cf2279d7c
-//   https://idptools.com/contexts/identity/v1
-//                        common/vendored/contexts/, this issuer's own
+//   https://iyasec.io/contexts/identity/v1
+//                        common/crypto_impl/contexts/, this issuer's own
 //
 // The W3C documents are under the W3C Software and Document Licence; the
 // w3id.org ones are the W3C Credentials Community Group's, published under
@@ -92,7 +92,8 @@ interface VcJsonLdDeps {
   readBytes: (file: string) => Buffer;
 }
 
-const VENDORED = path.join(__dirname, '..', 'common', 'vendored', 'contexts');
+const VENDORED = path.join(__dirname, '..', 'common', 'crypto_impl',
+                           'contexts');
 const OWN = path.join(__dirname, 'contexts');
 
 // URL -> [directory, file]. Read once, when first asked for.
@@ -100,8 +101,8 @@ const CONTEXT_FILES: Record<string, [string, string]> = {
   'https://www.w3.org/ns/credentials/v2': [VENDORED, 'credentials_v2.json'],
   'https://www.w3.org/2018/credentials/v1': [VENDORED,
                                              'credentials_v1.json'],
-  'https://idptools.com/contexts/identity/v1': [VENDORED,
-                                                'idptools_identity_v1.json'],
+  'https://iyasec.io/contexts/identity/v1': [VENDORED,
+                                             'iya_identity_v1.json'],
   'https://www.w3.org/ns/credentials/examples/v2': [OWN,
     'credentials_examples_v2.json'],
   'https://w3id.org/security/data-integrity/v1': [OWN,

@@ -59,8 +59,53 @@ function run(t) {
     const expected = kit.oracle(c, facts);
     const got = verdicts.decide({ facts: facts, mode: c.mode,
       protocol: 'OAuth 2.0',
-      settings: { defaultSemantics: c.settingDefault,
-                  actorRole: 'DELEGATION_ACTOR' } }, null, {});
+      settings: kit.settingsFor(c) }, null, {});
+    count += 1;
+    const key = expected.verdict === 'allow'
+      ? 'allow:' + expected.semantics : 'refuse:' + expected.refusal;
+    outcomes[key] = (outcomes[key] || 0) + 1;
+    const same = got.verdict === expected.verdict &&
+      got.chosen === expected.chosen &&
+      (expected.verdict === 'allow'
+        ? got.semantics === expected.semantics &&
+          got.audience === expected.audience
+        : got.refusal === expected.refusal &&
+          !!got.enforced === !!expected.enforced);
+    if (!same) {
+      wrong += 1;
+      if (!firstWrong) {
+        firstWrong = JSON.stringify({ combination: c, expected: expected,
+                                      got: got });
+      }
+    }
+  });
+  // ACROSS A KERBEROS TRUST (#430 Phase 3): every combination of the
+  // cross-realm dimensions, the #186 ones at the classes that meet them.
+  const acrossDims = {
+    mode: ['development', 'product'],
+    across: ['S4U2Self', 'S4U2Proxy-classic', 'S4U2Proxy-rbcd', 'forwarded'],
+    trustEnabled: [true, false],
+    direction: ['bidirectional', 'inbound', 'outbound'],
+    tgtBits: ['', 'enable', 'enable-no', 'enable-quarantined',
+              'within-forest'],
+    selfListed: [false, true], classicSetting: [false, true],
+    foreignTgt: ['', 'deny'],
+    foreignSubject: [false, true], foreignActor: [false, true],
+    foreignTarget: [false, true],
+    actor: ['application', 'unknown'],
+    position: ['target', 'source', 'accepted'],
+    targets: [1, 'unregistered'],
+    protect: ['', 'flag'],
+    requested: ['delegation', 'impersonation']
+  };
+  kit.product(acrossDims, Object.assign({}, fixed, {
+    actorAllowed: ['delegation', 'impersonation'], subjectAllowed: [],
+    relation: '', reach: false, groups: '', mayAct: '',
+    sourceAuthority: true, targetAuthority: true }), function (c) {
+    const facts = kit.combination(c);
+    const expected = kit.oracle(c, facts);
+    const got = verdicts.decide({ facts: facts, mode: c.mode,
+      protocol: 'Kerberos', settings: kit.settingsFor(c) }, null, {});
     count += 1;
     const key = expected.verdict === 'allow'
       ? 'allow:' + expected.semantics : 'refuse:' + expected.refusal;

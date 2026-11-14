@@ -73,7 +73,8 @@
 // `stsIdaVerification` already chose, for this reason. Each value is:
 //
 //   { id, kind, thumbprint, label, added, addedBy, proof,
-//     attestation: { level, format, summary, verifiedAt },
+//     attestation: { level, format, summary, verifiedAt, chainSerials?,
+//                    revocation?, freshness? },
 //     material: { … } }
 //
 //   * `kind` is `x509`, `jwk` or `webauthn` (decision 1). The Native SSO
@@ -181,9 +182,13 @@
 // (a WebAuthn sign-in's, by the derived `stsDeviceCredentialId`) and
 // `holdsAny()` (risk scoring's "does this person own a device", by `owner`,
 // which several entries share — so the index answers ONE of them, which is
-// all that question needs). `listForOwner()` still walks: it wants every
-// device of an owner, the index keeps one entry per value, and its callers
-// are pages and a Native SSO grant, not a per-request path.
+// all that question needs). `listForOwner()` walked until #636 — every
+// device, to keep an owner's — and its callers include a Native SSO grant
+// on a token request and the console's person page, which answered 503 at
+// 6.4M people in a windowed process: it now asks the directory's
+// `deviceEntriesOwnedBy()`, the store's `owner` index there. In a windowed
+// process none of these build the index: each asks the store one indexed
+// question (`ldap_server.js`, `windowedDeviceEntries()`).
 // `ldap_server.js` argues why the index is safe across processes and nodes:
 // it holds nothing the directory does not, and is validated against the
 // directory on every hit.
@@ -193,7 +198,9 @@
 // other per-person store in `common/` is.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import ModelTables = require('./model_tables');
+import Classes = require('./domain_classes');
+import DomainMap = require('./domain_map');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -290,6 +297,15 @@ const DEVICE_KEY_CREDENTIAL_TYPE = 'urn:iya:sts:credential-type:device-key';
 /** The CAEP credential type a Native SSO device secret goes out as. */
 const DEVICE_SECRET_CREDENTIAL_TYPE =
   'urn:iya:sts:credential-type:device-secret';
+// THE ANDROID MARKER (#615): each Android-attested key's id, derived on every
+// write (`write()`), which the Android attestation recheck asks the directory
+// for the holders of. What the recheck reads of each holder is the three
+// attributes below — the id, the keys and the marker — never the whole entry.
+const ANDROID_MARKER_ATTRIBUTE = 'stsDeviceAndroidKey';
+const ANDROID_READ_ATTRIBUTES = ['cn', 'stsdevicekey', 'stsdeviceandroidkey'];
+// How many devices the marker's backfill rewrites between two yields to the
+// event loop.
+const ANDROID_BATCH = 200;
 // JWK members that make a key PRIVATE (RFC 7518 section 6, RFC 8037, and
 // the ML-DSA JOSE draft's `priv` and `seed`): a device key here is public.
 const PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k',
@@ -301,6 +317,14 @@ interface Attestation {
   format: string;
   summary: string;
   verifiedAt: string;
+  // #256: an Android chain's serials, kept so a later status list can be
+  // asked about it, and what the list said (`attestation_revocation.ts`).
+  chainSerials?: string[];
+  revocation?: Json;
+  // #257: a TPM key attestation's freshness — `fresh` (its extraData was a
+  // nonce EST /nonce issued to the same client and cookie, now spent) or
+  // `unproven`, with the reason (`cert_enrollment.ts`).
+  freshness?: { status: string; detail: string };
 }
 
 interface DeviceKey {
@@ -586,8 +610,7 @@ class Devices {
   static hashOf(secret: unknown): string {
     helpers.log.debug("Entering Devices.hashOf().");
     helpers.log.debug("Leaving Devices.hashOf().");
-    return nodeCrypto.createHash('sha256').update(String(secret || ''), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(secret || ''), 'base64url');
   }
 
   private store(operation: string, ...args: any[]): any {
@@ -634,52 +657,75 @@ class Devices {
     }
   }
 
+  // The entry as the domain model says it means (#1390). The secret hash is
+  // named because the device record has always carried it for the Native SSO
+  // check; nothing else asks.
+  private static conceptOf(entry: Json): IyaDomain.Device {
+    helpers.log.debug("Entering Devices.conceptOf().");
+    const held = Classes.Device.fromEntry((entry && entry.attributes) || {},
+                                          { secrets: ['secretHash'] });
+    helpers.log.debug("Leaving Devices.conceptOf().");
+    return held;
+  }
+
+  // ONE ARGUMENT, ON PURPOSE: three callers hand this to `.map()`, which
+  // passes the index second, so an optional second parameter here would be
+  // handed a number for every row but the first.
   private static fromEntry(entry: Json): Device {
     helpers.log.debug("Entering Devices.fromEntry().");
+    const out = Devices.fromConcept(entry, Devices.conceptOf(entry));
+    helpers.log.debug("Leaving Devices.fromEntry().");
+    return out;
+  }
+
+  // ONE CONCEPT PER ENTRY: this runs for every device on every read of the
+  // register. A caller that wants a field of its own from the same entry
+  // makes the concept itself and hands it in.
+  private static fromConcept(entry: Json, d: IyaDomain.Device): Device {
+    helpers.log.debug("Entering Devices.fromConcept().");
     const a = (entry && entry.attributes) || {};
-    // A HOT PATH: once per attribute of every device on every read of the
-    // register, so no Entering/Leaving pair — it would drown the log.
-    const one = function (name: string): string {
-      return String((a[name] || [])[0] || '');
-    };
-    const keys = (a.stsdevicekey || []).map(Devices.parsed)
+    const keys = (d.key || []).map(Devices.parsed)
       .filter(function (k: Json) {
         return k && typeof k.id === 'string' && KEY_KINDS.indexOf(k.kind) >= 0;
       });
-    const enrolment = Devices.parsed(one('stsdeviceenrolment')) || {};
-    helpers.log.debug("Leaving Devices.fromEntry().");
+    const enrolment = Devices.parsed(d.enrolment) || {};
+    const compliance = d.compliance || '';
+    const riskLevel = d.riskLevel || '';
+    helpers.log.debug("Leaving Devices.fromConcept().");
     return {
-      id: one('cn'), dn: String(entry.dn || ''), owner: one('owner'),
+      id: d.identifier || '', dn: String(entry.dn || ''),
+      owner: d.owner || '',
       // Every entry #130 wrote was a Native SSO device of a PERSON and
       // carries neither attribute; that is what an absent one says.
-      ownerKind: one('stsdeviceownerkind') || 'person',
-      label: one('description'),
-      applications: (a.stsdeviceapplication || []).map(String),
+      ownerKind: d.ownerKind || 'person',
+      label: d.description || '',
+      applications: d.applications || [],
       keys: keys,
-      attestation: Devices.levelOf(keys,
-                                   !!Devices.parsed(one('stsdevicebrowser'))),
-      compliance: COMPLIANCE_STATES.indexOf(one('stsdevicecompliance')) >= 0
-        ? one('stsdevicecompliance') : 'unknown',
-      complianceChange: Devices.parsed(one('stsdevicecompliancechange')),
-      status: one('stsdevicestatus') === 'compromised' ? 'compromised'
-                                                       : 'active',
-      statusChange: Devices.parsed(one('stsdevicestatuschange')),
-      riskLevel: RISK_LEVELS.indexOf(one('stsdevicerisklevel')) >= 0
-        ? one('stsdevicerisklevel') : '',
-      riskChange: Devices.parsed(one('stsdeviceriskchange')),
-      platform: one('stsdeviceplatform'),
-      model: one('stsdevicemodel'),
-      os: one('stsdeviceos'),
+      attestation: Devices.levelOf(keys, !!Devices.parsed(d.browser)),
+      compliance: COMPLIANCE_STATES.indexOf(compliance) >= 0
+        ? compliance : 'unknown',
+      complianceChange: Devices.parsed(d.complianceChange),
+      status: d.status === 'compromised' ? 'compromised' : 'active',
+      statusChange: Devices.parsed(d.statusChange),
+      riskLevel: RISK_LEVELS.indexOf(riskLevel) >= 0 ? riskLevel : '',
+      riskChange: Devices.parsed(d.riskChange),
+      platform: d.platform || '',
+      model: d.model || '',
+      os: d.os || '',
       enrolment: {
         method: String(enrolment.method || 'native-sso'),
         at: String(enrolment.at || ''),
         actor: String(enrolment.actor || '')
       },
-      secretHash: one('stsdevicesecrethash'),
-      session: one('stsdevicesession'),
-      lastUsed: one('stsdevicelastused'),
-      created: one('createtimestamp'),
-      browser: Devices.parsed(one('stsdevicebrowser'))
+      secretHash: d.secretHash || '',
+      session: d.session || '',
+      lastUsed: d.lastUsed || '',
+      // The directory's own operational attribute, DirectoryEntry's, read
+      // as one field so that a register read costs no second concept
+      // (#1579).
+      created: String(DomainMap.fieldOf('DirectoryEntry', 'createTimestamp',
+        a) || ''),
+      browser: Devices.parsed(d.browser)
     };
   }
 
@@ -755,6 +801,15 @@ class Devices {
       if (credentialIds.length) {
         attributes.stsDeviceCredentialId = credentialIds;
       }
+      // EACH ANDROID-ATTESTED KEY'S ID, derived the same way (#615): the
+      // keys the Android attestation recheck asks about, so that the
+      // recheck reads the devices HOLDING this attribute — one statement
+      // against the store's `attr_names` index — rather than every device.
+      // A downgrade rewrites the keys, so it takes the id off here.
+      const androidKeys = Devices.androidMarkerOf(device.keys);
+      if (androidKeys.length) {
+        attributes.stsDeviceAndroidKey = androidKeys;
+      }
     }
     if (device.compliance && device.compliance !== 'unknown') {
       attributes.stsDeviceCompliance = [device.compliance];
@@ -796,7 +851,7 @@ class Devices {
                            { name: 'devices.events',
                              counter: eventsCounter,
                              setting: 'devices.eventsKept' });
-    events.set(nodeCrypto.randomUUID(), Object.assign({
+    events.set(stsCrypto.randomUuid(), Object.assign({
       at: this.deps.now(), kind: kind, device: device.id,
       ownerKind: device.ownerKind, method: device.enrolment.method,
       reason: String(reason || '')
@@ -965,10 +1020,34 @@ class Devices {
     const { log } = this.deps;
     log.debug("Entering Devices.listForOwner().");
     const dn = String(ownerDn || '');
-    const out = dn ? this.all().filter(function (one) {
+    const out = dn ? this.ownedEntries(dn).filter(function (one) {
       return Devices.sameDn(one.owner, dn);
     }).sort(Devices.byRecency) : [];
     log.debug("Leaving Devices.listForOwner(). " + out.length + ".");
+    return out;
+  }
+
+  // THE DEVICES THAT MAY BE AN OWNER'S (#636): the directory's
+  // `deviceEntriesOwnedBy()` — in a windowed process the store's `owner`
+  // index under `ou=devices`, one question — and `all()` where the
+  // directory offers no such hook (an in-process test's stand-in). The
+  // caller still filters by owner, so the answer is `all()`'s either way.
+  // `all()` in a windowed process paged every device through the
+  // synchronous bridge, and a page under `ou=devices` costs the whole
+  // directory (`ldap_server.js`, `windowedDeviceEntries()`): the person
+  // page answered 503 at 6.4M people.
+  private ownedEntries(ownerDn: string): Device[] {
+    const { log, credentials } = this.deps;
+    log.debug("Entering Devices.ownedEntries().");
+    const indexed = typeof credentials.deviceStore === 'function' &&
+      credentials.deviceStore('hasHook', ['deviceEntriesOwnedBy']);
+    if (!indexed) {
+      log.debug("Leaving Devices.ownedEntries(). Every device.");
+      return this.all();
+    }
+    const out = (this.store('deviceEntriesOwnedBy', ownerDn) || [])
+      .map(Devices.fromEntry);
+    log.debug("Leaving Devices.ownedEntries(). " + out.length + ".");
     return out;
   }
 
@@ -1032,7 +1111,11 @@ class Devices {
         : String(this.store('applicationDnOf', text(f.application)) || ''))
       : '';
     const needle = text(f.q).toLowerCase();
-    const out = this.all().filter(function (d) {
+    // An owner named: only that owner's devices are read (#636), the
+    // store's `owner` index in a windowed process, where `all()` paged the
+    // whole register.
+    const pool = text(f.owner) ? this.ownedEntries(ownerDn) : this.all();
+    const out = pool.filter(function (d) {
       if (text(f.ownerKind) && d.ownerKind !== text(f.ownerKind)) {
         return false;
       }
@@ -1405,6 +1488,20 @@ class Devices {
     return owner && owner.kind === 'person' ? String(owner.name || '') : '';
   }
 
+  // The owner's identifier where the owner is an APPLICATION, else '' — the
+  // `application` member of the device's Shared Signals subject (#221, the
+  // gap P5 left: until then an application's device was sent with no owner
+  // at all).
+  private applicationOf(device: Device): string {
+    const { log } = this.deps;
+    log.debug("Entering Devices.applicationOf().");
+    const owner = device.ownerKind === 'application'
+      ? this.ownerOf(device.owner) : null;
+    log.debug("Leaving Devices.applicationOf().");
+    return owner && owner.kind === 'application' ? String(owner.name || '')
+                                                 : '';
+  }
+
   // One call to `ssf/account_signals.ts`, fired and forgotten: it never
   // throws and never rejects by contract, and this is belt and braces so a
   // defect there cannot undo a change already written here.
@@ -1433,6 +1530,7 @@ class Devices {
     this.deps.log.debug("Entering Devices.deviceNotice().");
     this.deps.log.debug("Leaving Devices.deviceNotice().");
     return Object.assign({ deviceId: device.id, username: this.personOf(device),
+                           application: this.applicationOf(device),
                            ownerKind: device.ownerKind,
                            deviceLabel: device.label }, extra);
   }
@@ -1462,6 +1560,249 @@ class Devices {
     }
     helpers.log.debug("Leaving Devices.credentialOf().");
     return out;
+  }
+
+  // =========================================================================
+  // ANDROID ATTESTATION REVOKED AFTER THE FACT (#256). `attestation_revocation
+  // .ts`'s recheck asks for every key that is attested by an Android chain
+  // whose serials were kept, and downgrades one a newer status list revokes
+  // or suspends: rcbj's decision 2 — the key is self-asserted with the
+  // reason, the device's level follows its keys, an audit row, and a CAEP
+  // credential-change (`update`) about the key. The device's STATUS is not
+  // touched: a leaked batch key says the attestation proves nothing, not
+  // that this device was compromised.
+  // =========================================================================
+  /**
+   * Lists every key in the realm attested by an Android chain whose serials
+   * were kept, for the status list's recheck.
+   *
+   * @returns `[{ deviceId, keyId, chainSerials }]`
+   */
+  androidAttestedKeys(): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Devices.androidAttestedKeys().");
+    const out: Json[] = [];
+    this.all().forEach(function (device: Device): void {
+      device.keys.forEach(function (key: DeviceKey): void {
+        if (Devices.isAndroidRecheckable(key)) {
+          out.push({ deviceId: device.id, keyId: key.id,
+                     chainSerials: (key.attestation.chainSerials || [])
+                       .slice() });
+        }
+      });
+    });
+    log.debug("Leaving Devices.androidAttestedKeys(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * Says whether a key is one the Android attestation recheck asks about:
+   * attested by an Android chain whose serials were kept.
+   *
+   * @param key - the key
+   * @returns true for such a key
+   */
+  static isAndroidRecheckable(key: DeviceKey): boolean {
+    helpers.log.debug("Entering Devices.isAndroidRecheckable().");
+    const att = key && key.attestation;
+    const out = !!(att && att.level === 'attested' &&
+      // A key linked from an android-key passkey (#903) is rechecked too.
+      (att.format === 'android-key-attestation' ||
+       att.format === 'android-key') &&
+      Array.isArray(att.chainSerials) && att.chainSerials.length);
+    helpers.log.debug("Leaving Devices.isAndroidRecheckable(). " + out);
+    return out;
+  }
+
+  /**
+   * The ids of a device's keys the Android attestation recheck asks about,
+   * sorted: `stsDeviceAndroidKey`, derived on every write (#615).
+   *
+   * @param keys - the device's keys
+   * @returns the key ids, sorted
+   */
+  static androidMarkerOf(keys: DeviceKey[]): string[] {
+    helpers.log.debug("Entering Devices.androidMarkerOf().");
+    const out = (keys || []).filter(function (key) {
+      return Devices.isAndroidRecheckable(key);
+    }).map(function (key) {
+      return String(key.id);
+    }).sort();
+    helpers.log.debug("Leaving Devices.androidMarkerOf(). " + out.length +
+                      ".");
+    return out;
+  }
+
+  // ===========================================================================
+  // THE RECHECK'S DEVICES, READ FROM THE HOLDERS ONLY (#615, 2026-10-13).
+  //
+  // `androidAttestedKeys()` above reads `all()` — every device entry in the
+  // realm copied and parsed — which in a windowed process pages the whole of
+  // `ou=devices` through the synchronous bridge on the front process. This
+  // asks the directory's `holdersAsync()` for the devices carrying
+  // `stsDeviceAndroidKey` — the store's `attr_names` index, a page at a
+  // time, the event loop given back between pages — parses only those
+  // with `fromEntry()`, the register's own reading, and asks
+  // `isAndroidRecheckable()` of each key, as the walk does. Where the
+  // directory offers no `holdersAsync()` the walk answers, as before.
+  // ===========================================================================
+  /**
+   * Lists every key in the realm attested by an Android chain whose serials
+   * were kept, reading only the devices that carry the Android marker.
+   *
+   * @returns a promise of `{ rows: [{ deviceId, keyId, chainSerials }],
+   *   holders, viaHolders }`
+   */
+  async androidAttestedKeysAsync(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Devices.androidAttestedKeysAsync().");
+    if (!this.store('hasHook', 'holdersAsync')) {
+      const walked = this.androidAttestedKeys();
+      log.debug("Leaving Devices.androidAttestedKeysAsync(). Walked: no " +
+                "holder query.");
+      return { rows: walked, holders: null, viaHolders: false };
+    }
+    const holders: Json[] = await this.store('holdersAsync', 'device',
+      ANDROID_MARKER_ATTRIBUTE, ANDROID_READ_ATTRIBUTES) || [];
+    const rows: Json[] = [];
+    holders.forEach(function (holder: Json): void {
+      const device = Devices.fromEntry({ dn: holder.dn,
+                                         attributes: holder.attributes });
+      device.keys.forEach(function (key: DeviceKey): void {
+        if (Devices.isAndroidRecheckable(key)) {
+          rows.push({ deviceId: device.id, keyId: key.id,
+                      chainSerials: (key.attestation.chainSerials || [])
+                        .slice() });
+        }
+      });
+    });
+    log.debug("Leaving Devices.androidAttestedKeysAsync(). " + rows.length +
+              " key(s) of " + holders.length + " device(s).");
+    return { rows: rows, holders: holders.length, viaHolders: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MARKER'S BACKFILL (#615): a device written before the marker existed
+  // carries none. The devices HOLDING A KEY (`stsDeviceKey`) are read — the
+  // population the marker is a subset of — and each whose marker is not
+  // what its keys say is read again by id and written, in the same tick, so
+  // `write()` derives it from what the device holds now rather than from
+  // the page the holder query answered.
+  // ---------------------------------------------------------------------------
+  /**
+   * Puts `stsDeviceAndroidKey` on every device whose keys say it belongs
+   * there and takes it off where they do not.
+   *
+   * @param stillOwner - asked between batches; false stops the backfill
+   * @returns a promise of `{ available, holders, written, failed, stopped }`
+   */
+  async backfillAndroidMarkers(stillOwner?: () => boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Devices.backfillAndroidMarkers().");
+    const out = { available: false, holders: 0, written: 0, failed: 0,
+                  stopped: false };
+    if (!this.store('hasHook', 'holdersAsync')) {
+      log.debug("Leaving Devices.backfillAndroidMarkers(). No holder query.");
+      return out;
+    }
+    out.available = true;
+    const holders: Json[] = await this.store('holdersAsync', 'device',
+      'stsDeviceKey', ANDROID_READ_ATTRIBUTES) || [];
+    out.holders = holders.length;
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const concept = Devices.conceptOf(holder);
+      const read = Devices.fromConcept({ dn: holder.dn,
+                                         attributes: holder.attributes },
+                                       concept);
+      const want = Devices.androidMarkerOf(read.keys);
+      const have = (concept.androidKey || []).slice().sort();
+      if (want.join('\n') !== have.join('\n')) {
+        const fresh = this.byId(read.id);
+        if (fresh && this.write(fresh)) {
+          out.written += 1;
+        } else if (fresh) {
+          out.failed += 1;
+          log.warn(this.deps.errorCodes.tag('STS-DEVICE-0052') + 'devices: ' +
+                   'the Android marker of device ' + read.id + ' could not ' +
+                   'be written.');
+        }
+      }
+      if ((i + 1) % ANDROID_BATCH === 0) {
+        if (stillOwner && !stillOwner()) {
+          out.stopped = true;
+          break;
+        }
+        await new Promise<void>(function (resolve) {
+          setImmediate(resolve);
+        });
+      }
+    }
+    log.debug("Leaving Devices.backfillAndroidMarkers(). " + out.written +
+              " written of " + out.holders + ".");
+    return out;
+  }
+
+  /**
+   * Downgrades one key's Android attestation to self-asserted because
+   * Google's status list revokes or suspends a certificate of its chain,
+   * recomputes the device's level, audits it and sends CAEP
+   * credential-change.
+   *
+   * @param deviceId - the device
+   * @param keyId - the key
+   * @param revocation - `attestation_revocation.consult()`'s answer
+   * @returns `{ ok, changed, level }`, or a refusal
+   */
+  downgradeKeyAttestation(deviceId: unknown, keyId: unknown,
+                          revocation: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering Devices.downgradeKeyAttestation().");
+    const device = this.byId(deviceId);
+    const key = device ? device.keys.filter(function (one: DeviceKey) {
+      return one.id === String(keyId || '');
+    })[0] : null;
+    if (!device || !key) {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Gone.");
+      return this.refuse('STS-DEVICE-0007', 'There is no device "' +
+        String(deviceId || '') + '" with the key "' + String(keyId || '') +
+        '".');
+    }
+    if (!key.attestation || key.attestation.level !== 'attested') {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Not attested.");
+      return { ok: true, changed: false, level: device.attestation };
+    }
+    const r = revocation || {};
+    const why = 'Google\'s Android attestation status list ' +
+      String(r.listVersion || '') + ' marks certificate ' +
+      String(r.serial || '?') + ' of its chain ' +
+      String(r.status || 'revoked').toUpperCase() +
+      (r.reason ? ' (' + String(r.reason) + ')' : '');
+    key.attestation = Object.assign({}, key.attestation, {
+      level: 'self-asserted', verifiedAt: '',
+      summary: (String(key.attestation.summary || '') + ' DOWNGRADED: ' +
+                why + '.').slice(0, 500),
+      revocation: r });
+    const before = device.attestation;
+    device.attestation = Devices.levelOf(device.keys);
+    if (!this.write(device)) {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Not written.");
+      return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
+                         'device ' + device.id + '.');
+    }
+    log.warn(this.deps.errorCodes.tag('STS-DEVICE-0047') + 'devices: the ' +
+             'key ' + key.id + ' of device ' + device.id + ' is no longer ' +
+             'attested: ' + why + '.');
+    this.recordAudit('device.attestation-revoked', 'system', device,
+      'the key ' + key.id + ' of device ' + device.id + ' is self-asserted ' +
+      'now: ' + why, { keyId: key.id, levelBefore: before,
+                       level: device.attestation,
+                       errorCode: 'STS-DEVICE-0047' });
+    this.credentialChanged(device, 'update', key, undefined, 'system',
+                           'Its attestation was revoked: ' + why + '.');
+    log.debug("Leaving Devices.downgradeKeyAttestation(). " +
+              device.attestation + ".");
+    return { ok: true, changed: true, level: device.attestation };
   }
 
   // CAEP credential-change about one of a device's credentials — a key
@@ -1510,14 +1851,22 @@ class Devices {
       return 0;
     }
     let ended = 0;
+    let unread = false;
     try {
-      const ids = authn.sessionsMatching(function (session: Json): boolean {
+      const matched = authn.sessionsMatching(function (session: Json):
+                                              boolean {
         return Array.isArray(session && session.events) &&
           session.events.some(function (e: Json): boolean {
             return !!(e && e.registeredDevice &&
                       e.registeredDevice.id === device.id);
           });
-      }).map(function (session: Json): string {
+      });
+      // Null is an unread page. Ending nobody and then logging that
+      // zero sessions were ended would say the walk finished.
+      if (matched == null) {
+        throw new Error('the sessions could not be read');
+      }
+      const ids = matched.map(function (session: Json): string {
         return String(session.id || '');
       }).filter(Boolean);
       ids.forEach(function (id: string): void {
@@ -1529,6 +1878,11 @@ class Devices {
       log.error(errorCodes.tag('STS-DEVICE-0031') + 'devices: the sessions ' +
                 'device ' + device.id + ' authenticated could not all be ' +
                 'ended: ' + ((e && e.message) || e));
+      unread = true;
+    }
+    if (unread) {
+      log.debug("Leaving Devices.endSessionsFrom(). Unread.");
+      return ended;
     }
     log.info('devices: ' + ended + ' sign-on session(s) device ' +
              device.id + ' authenticated were ended (' + via + ').');
@@ -1778,7 +2132,7 @@ class Devices {
                ', last used ' + victim.lastUsed + ', was removed to make ' +
                'room for a new one.');
     }
-    const secret = nodeCrypto.randomBytes(32).toString('base64url');
+    const secret = stsCrypto.randomBytes(32).toString('base64url');
     const device = Devices.blank(ownerDn, 'person',
       String(spec.label || '').slice(0, MAX_LABEL) || 'a device',
       { method: 'native-sso', at: now, actor: String(spec.username || '') });
@@ -1804,7 +2158,7 @@ class Devices {
     helpers.log.debug("Entering Devices.blank().");
     helpers.log.debug("Leaving Devices.blank().");
     return {
-      id: nodeCrypto.randomUUID(), dn: '', owner: ownerDn,
+      id: stsCrypto.randomUuid(), dn: '', owner: ownerDn,
       ownerKind: ownerKind, label: label, applications: [], keys: [],
       attestation: 'self-asserted', compliance: 'unknown',
       complianceChange: null, status: 'active', statusChange: null,
@@ -2042,7 +2396,7 @@ class Devices {
     const ids = stsCrypto.certificateIdentifiers(pem);
     let notAfter = '';
     try {
-      notAfter = new Date(new nodeCrypto.X509Certificate(pem).validTo)
+      notAfter = new Date(stsCrypto.parseCertificate(pem).validTo)
         .toISOString();
     } catch (e) {
       // A post-quantum certificate node cannot load: its key and its names
@@ -2077,12 +2431,9 @@ class Devices {
             secretMembers.join(', ')) + ', and nothing was stored.');
     }
     const thumbprint = stsCrypto.jwkThumbprint(jwk);
-    const pub: Json = {};
-    Object.keys(jwk).sort().forEach(function (m) {
-      pub[m] = jwk[m];
-    });
     log.debug("Leaving Devices.jwkMaterial().");
-    return { thumbprint: thumbprint, material: { jwk: pub } };
+    return { thumbprint: thumbprint,
+             material: { jwk: Devices.publicJwkMembers(jwk) } };
   }
 
   // The webauthn half: a credential the OWNER already enrolled, linked to
@@ -2172,14 +2523,28 @@ class Devices {
     }
     const now = this.nowIso();
     const key: DeviceKey = {
-      id: 'k-' + nodeCrypto.randomBytes(9).toString('base64url'),
+      id: 'k-' + stsCrypto.randomBytes(9).toString('base64url'),
       kind: kind, thumbprint: read.thumbprint,
       label: label.value || kind + ' key', added: now,
       addedBy: String(actor || ''), proof: proof,
-      attestation: { level: level, format: format,
+      attestation: Object.assign({ level: level, format: format,
                      summary: String(att.summary || '').slice(0, 500),
                      verifiedAt: level === 'attested'
                        ? String(att.verifiedAt || now) : '' },
+                     // #256: an Android chain's serials and what Google's
+                     // status list said of them, as the verifier recorded.
+                     Array.isArray(att.chainSerials)
+                       ? { chainSerials: att.chainSerials.map(String)
+                             .slice(0, 10) } : {},
+                     att.revocation && typeof att.revocation === 'object'
+                       ? { revocation: att.revocation } : {},
+                     // #257: a TPM statement's freshness, as the enrolment
+                     // core decided it.
+                     att.freshness && typeof att.freshness === 'object'
+                       ? { freshness: {
+                             status: String(att.freshness.status || ''),
+                             detail: String(att.freshness.detail || '')
+                               .slice(0, 300) } } : {}),
       material: read.material
     };
     log.debug("Leaving Devices.prepareKey(). " + kind);
@@ -2296,6 +2661,9 @@ class Devices {
                          'the device (it may hold its maximum of entries).');
     }
     this.noteEvent('created', device);
+    if (Devices.androidMarkerOf(device.keys).length) {
+      credentials.noteAndroidRegistration('device ' + device.id);
+    }
     this.recordAudit('device.create', who, device, 'device ' + device.id +
                      ' registered (' + method + ') for ' + device.owner,
                      { method: method, keys: device.keys.length });
@@ -2505,6 +2873,9 @@ class Devices {
       log.debug("Leaving Devices.addKey(). Not stored.");
       return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
                          'the key.');
+    }
+    if (Devices.isAndroidRecheckable(prepared.key)) {
+      credentials.noteAndroidRegistration('a key of device ' + device.id);
     }
     this.recordAudit('device.key-add', String(actor || ''), device,
                      'a ' + prepared.key.kind + ' key was added to device ' +
@@ -2913,8 +3284,7 @@ class Devices {
       } else if (key.kind === 'jwk' && key.material && key.material.jwk) {
         try {
           spkiThumbprints.push(this.deps.stsCrypto.publicKeySpkiThumbprint(
-            nodeCrypto.createPublicKey({ key: key.material.jwk,
-                                         format: 'jwk' })));
+            stsCrypto.publicKeyFromJwk(key.material.jwk)));
         } catch (e) {
           // A JWK node cannot import is matched by its RFC 7638 thumbprint
           // alone.
@@ -2940,7 +3310,15 @@ class Devices {
                  (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0) ||
                  (!!record.x5tSpki &&
                   spkiThumbprints.indexOf(record.x5tSpki) >= 0);
-        }, why, { initiatingEntity: entity });
+        }, why, { initiatingEntity: entity },
+        // Where tokens bound to those keys are filed (#820 part 3).
+        jwkThumbprints.map(function (one: string): string {
+          return 'jkt:' + one;
+        }).concat(certThumbprints.map(function (one: string): string {
+          return 'x5t:' + one;
+        }), spkiThumbprints.map(function (one: string): string {
+          return 'spki:' + one;
+        })));
       }
     } catch (e) {
       log.error(errorCodes.tag('STS-DEVICE-0046') + 'devices: what the keys ' +
@@ -2966,16 +3344,29 @@ class Devices {
   counts(isLive?: (device: Device) => boolean): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.counts().");
+    const out = Devices.emptyCounts();
+    this.all().forEach(function (d) {
+      Devices.tallyInto(out, d, isLive);
+    });
+    log.debug("Leaving Devices.counts(). " + out.total + ".");
+    return out;
+  }
+
+  // The counts with every table at zero, the shape `counts()` and
+  // `countsAsync()` fill.
+  private static emptyCounts(): Json {
+    helpers.log.debug("Entering Devices.emptyCounts().");
     const zero = function (list: string[]): Json {
-      log.debug("Entering zero().");
+      helpers.log.debug("Entering zero().");
       const out: Json = {};
       list.forEach(function (k) {
         out[k] = 0;
       });
-      log.debug("Leaving zero().");
+      helpers.log.debug("Leaving zero().");
       return out;
     };
-    const out: Json = {
+    helpers.log.debug("Leaving Devices.emptyCounts().");
+    return {
       total: 0,
       byOwnerKind: zero(OWNER_KINDS),
       byCompliance: zero(COMPLIANCE_STATES),
@@ -2990,35 +3381,97 @@ class Devices {
       keys: 0,
       nativeSso: { live: 0, ended: 0, none: 0 }
     };
-    // A HOT PATH: several times per device, so no Entering/Leaving pair.
+  }
+
+  // One device added to the counts.
+  // A HOT PATH: once per device counted, so no Entering/Leaving pair.
+  private static tallyInto(out: Json, d: Device,
+                           isLive?: (device: Device) => boolean): void {
     const bump = function (table: Json, key: string): void {
       table[key] = (table[key] || 0) + 1;
     };
-    this.all().forEach(function (d) {
-      out.total += 1;
-      bump(out.byOwnerKind, d.ownerKind);
-      bump(out.byCompliance, d.compliance);
-      bump(out.byAttestation, d.attestation);
-      bump(out.byStatus, d.status);
-      bump(out.byRiskLevel, d.riskLevel || 'unassessed');
-      bump(out.byEnrolment, d.enrolment.method);
-      out.keys += d.keys.length;
-      d.keys.forEach(function (k) {
-        bump(out.byKeyAttestationFormat,
-             (k.attestation && k.attestation.format) || 'none');
-      });
-      Devices.keyKindsOf(d).forEach(function (k) {
-        bump(out.byKeyKind, k);
-      });
-      if (!d.secretHash) {
-        out.nativeSso.none += 1;
-      } else if (d.session && isLive && isLive(d)) {
-        out.nativeSso.live += 1;
-      } else {
-        out.nativeSso.ended += 1;
-      }
+    out.total += 1;
+    bump(out.byOwnerKind, d.ownerKind);
+    bump(out.byCompliance, d.compliance);
+    bump(out.byAttestation, d.attestation);
+    bump(out.byStatus, d.status);
+    bump(out.byRiskLevel, d.riskLevel || 'unassessed');
+    bump(out.byEnrolment, d.enrolment.method);
+    out.keys += d.keys.length;
+    d.keys.forEach(function (k) {
+      bump(out.byKeyAttestationFormat,
+           (k.attestation && k.attestation.format) || 'none');
     });
-    log.debug("Leaving Devices.counts(). " + out.total + ".");
+    Devices.keyKindsOf(d).forEach(function (k) {
+      bump(out.byKeyKind, k);
+    });
+    if (!d.secretHash) {
+      out.nativeSso.none += 1;
+    } else if (d.session && isLive && isLive(d)) {
+      out.nativeSso.live += 1;
+    } else {
+      out.nativeSso.ended += 1;
+    }
+  }
+
+  // THE COUNTS, ASKED OF THE STORE (2026-10-22, #820). `counts()` reads every
+  // device, which in a windowed process is every row of `ou=devices` read
+  // synchronously through the bridge: a request worker held while the
+  // register grows, and through read-your-write every worker behind it.
+  // Where the directory offers the two asynchronous hooks, the total is the
+  // store's count of the container and the tables are tallied from ONE page
+  // of devices (`options.limit`, at most 500, the first by key), with
+  // `prepare(page)` run on that page before anything is tallied (the console
+  // warms the page's sessions there), and liveness asked of that page's
+  // devices only. The answer says so: `windowed`, `counted` (how many the
+  // tables cover) and `complete` (whether they cover the whole register).
+  // Where the hooks are not offered or answer nothing (the whole directory
+  // in memory) it is `counts()`, `complete`, as before.
+  /**
+   * Returns the counts Monitoring → Devices draws, from the store's count and
+   * one page of devices where the directory is a window onto the store.
+   *
+   * @param isLive - whether a device's Native SSO secret is bound to a live
+   *   session
+   * @param options - `limit` (the page, at most 500) and `prepare(page)`, a
+   *   promise run on the page before it is tallied
+   * @returns a promise of the counts
+   */
+  async countsAsync(isLive?: (device: Device) => boolean,
+                    options?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Devices.countsAsync().");
+    const o = options || {};
+    const asked = this.store('hasHook', 'deviceCountAsync') &&
+      this.store('hasHook', 'deviceEntriesPageAsync')
+      ? this.store('deviceCountAsync') : null;
+    if (!asked) {
+      const whole = this.counts(isLive);
+      whole.windowed = false;
+      whole.counted = whole.total;
+      whole.complete = true;
+      log.debug("Leaving Devices.countsAsync(). Read whole.");
+      return whole;
+    }
+    const total = Number(await asked) || 0;
+    const limit = Math.max(1, Math.min(500, Number(o.limit) || 500));
+    const page = await this.store('deviceEntriesPageAsync', 0, limit);
+    const listed: Device[] = ((page && page.entries) || [])
+      .map(Devices.fromEntry);
+    if (typeof o.prepare === 'function') {
+      await o.prepare(listed);
+    }
+    const out = Devices.emptyCounts();
+    listed.forEach(function (d) {
+      Devices.tallyInto(out, d, isLive);
+    });
+    const counted = out.total;
+    out.total = total;
+    out.windowed = true;
+    out.counted = counted;
+    out.complete = counted >= total;
+    log.debug("Leaving Devices.countsAsync(). " + counted + " of " + total +
+              " tallied.");
     return out;
   }
 
@@ -3032,6 +3485,34 @@ class Devices {
    * @param isLive - whether the secret's session is live
    * @returns the view
    */
+  /**
+   * A JWK's members as a device key keeps them: RFC 7517's parameters are
+   * strings, numbers, booleans and lists of strings, and the person proving
+   * the key wrote this object. An object under any member made the realm's
+   * whole device list unanswerable (#1353), so it is left out at the write and
+   * at the read, where a key stored before this still is one.
+   *
+   * @param jwk - the key
+   * @returns its members, sorted, those of a JWK's kinds only
+   */
+  static publicJwkMembers(jwk: Json): Json {
+    helpers.log.debug("Entering Devices.publicJwkMembers().");
+    const pub: Json = {};
+    Object.keys(jwk || {}).sort().forEach(function (m) {
+      const value = jwk[m];
+      const kept = typeof value === 'string' || typeof value === 'boolean' ||
+        (typeof value === 'number' && Number.isFinite(value)) ||
+        (Array.isArray(value) && value.every(function (one) {
+          return typeof one === 'string';
+        }));
+      if (kept) {
+        pub[m] = value;
+      }
+    });
+    helpers.log.debug("Leaving Devices.publicJwkMembers().");
+    return pub;
+  }
+
   static view(device: Device, isLive?: (session: string) => boolean): Json {
     helpers.log.debug("Entering Devices.view().");
     const attestedBy = device.keys.filter(function (k) {
@@ -3043,7 +3524,11 @@ class Devices {
       ownerKind: device.ownerKind, label: device.label,
       applications: device.applications.slice(0),
       keys: device.keys.map(function (k) {
-        return JSON.parse(JSON.stringify(k));
+        const copy = JSON.parse(JSON.stringify(k));
+        if (copy.material && copy.material.jwk) {
+          copy.material.jwk = Devices.publicJwkMembers(copy.material.jwk);
+        }
+        return copy;
       }),
       keyKinds: Devices.keyKindsOf(device),
       attestation: {
@@ -3085,76 +3570,34 @@ class Devices {
    * The object classes and attributes of a device entry, for
    * `/admin/ldap/devices`.
    */
-  static readonly SCHEMA = {
-    objectClasses: [
-      { name: 'device', where: 'RFC 4519 section 3.4', standard: true,
-        what: 'cn, and the standard owner and description.' },
-      { name: 'stsDevice', where: 'this service (#130, #164)',
-        standard: false,
-        what: 'Every stsDevice* attribute below: the owner\'s kind, the ' +
-              'applications, the keys, attestation, compliance, status, ' +
-              'the descriptive labels, the enrolment and Native SSO.' }
-    ],
-    attributes: [
-      { name: 'cn', kind: 'single', what: 'The device id, a UUID.' },
-      { name: 'owner', kind: 'single',
-        what: 'The DN of its one owner: a person or an application.' },
-      { name: 'stsDeviceOwnerKind', kind: 'single',
-        what: 'person or application.' },
-      { name: 'description', kind: 'single', what: 'Its label.' },
-      { name: 'stsDeviceApplication', kind: 'multi',
-        what: 'The DN of every application that used it.' },
-      { name: 'stsDeviceKey', kind: 'multi',
-        what: 'One JSON value per key: id, kind (x509, jwk, webauthn), ' +
-              'thumbprint, label, added, addedBy, proof, attestation and ' +
-              'the public material. Never a secret.' },
-      { name: 'stsDeviceKeyThumbprint', kind: 'multi',
-        what: '<kind>:<thumbprint> per key, derived from stsDeviceKey on ' +
-              'every write so an LDAP filter can find a device by its key.' },
-      { name: 'stsDeviceCredentialId', kind: 'multi',
-        what: 'The credential id of each linked WebAuthn key, derived from ' +
-              'stsDeviceKey on every write so a sign-in finds its device ' +
-              'by index.' },
-      { name: 'stsDeviceAttestation', kind: 'single',
-        what: 'attested when any key\'s attestation was verified, else ' +
-              'self-asserted. Derived on every write.' },
-      { name: 'stsDeviceCompliance', kind: 'single',
-        what: 'compliant or not-compliant; absent is unknown.' },
-      { name: 'stsDeviceComplianceChange', kind: 'single',
-        what: 'JSON: the last compliance change — status, previous, at, ' +
-              'source (admin, mdm, test-control, caep), actor, reason.' },
-      { name: 'stsDeviceStatus', kind: 'single',
-        what: 'compromised; absent is active.' },
-      { name: 'stsDeviceStatusChange', kind: 'single',
-        what: 'JSON: the last status change.' },
-      { name: 'stsDeviceRiskLevel', kind: 'single',
-        what: 'LOW, MEDIUM or HIGH (CAEP\'s risk levels); absent is ' +
-              'unassessed. Set by risk scoring and by a compromise.' },
-      { name: 'stsDeviceRiskChange', kind: 'single',
-        what: 'JSON: the last risk level change — level, previous, at, ' +
-              'source (risk, compromise, admin), actor, reason.' },
-      { name: 'stsDeviceBrowser', kind: 'single',
-        what: 'JSON: a remembered browser\'s state (#265) — the token ' +
-              'generation, when it and the one before were issued, the ' +
-              'browser it was bound to, and when the second factor was ' +
-              'last given on it. No token and no secret.' },
-      { name: 'stsDevicePlatform', kind: 'single',
-        what: 'ios, ipados, android, macos, windows, linux, chromeos or ' +
-              'other.' },
-      { name: 'stsDeviceModel', kind: 'single', what: 'Descriptive.' },
-      { name: 'stsDeviceOs', kind: 'single', what: 'Descriptive.' },
-      { name: 'stsDeviceEnrolment', kind: 'single',
-        what: 'JSON: method (native-sso, admin, portal, est, scep), at, ' +
-              'actor.' },
-      { name: 'stsDeviceSecretHash', kind: 'single', sensitive: true,
-        what: 'SHA-256 of its Native SSO device_secret. Withheld from ' +
-              'every LDAP read.' },
-      { name: 'stsDeviceSession', kind: 'single',
-        what: 'The sign-on session the secret is good for.' },
-      { name: 'stsDeviceLastUsed', kind: 'single',
-        what: 'When it was last used, ISO 8601.' }
-    ]
-  };
+  // The table is written in models/directory/device.tsp (#1390).
+  static readonly SCHEMA = ModelTables.schema('device');
+
+  /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/devices`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/devices']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): each object
+   * class's and attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering Devices.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('./server_prose') =
+      require('./server_prose');
+    const out = serverProse.harvest('devices.schema', Devices.SCHEMA,
+                                    ['what']);
+    helpers.log.debug("Leaving Devices.prose(). " + Object.keys(out).length);
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3196,6 +3639,10 @@ export = {
   keyKindsOf: Devices.keyKindsOf,
   sentence: Devices.sentence,
   SCHEMA: Devices.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: Devices.PROSE_ROUTES,
+  prose: Devices.prose,
   OWNER_KINDS: OWNER_KINDS,
   KEY_KINDS: KEY_KINDS,
   KEY_KIND_FILTERS: KEY_KIND_FILTERS,
@@ -3220,6 +3667,13 @@ export = {
   listFor: slot.forward('listFor'),
   listForOwner: slot.forward('listForOwner'),
   byId: slot.forward('byId'),
+  androidAttestedKeys: slot.forward('androidAttestedKeys'),
+  androidAttestedKeysAsync: slot.forward('androidAttestedKeysAsync'),
+  backfillAndroidMarkers: slot.forward('backfillAndroidMarkers'),
+  isAndroidRecheckable: Devices.isAndroidRecheckable,
+  androidMarkerOf: Devices.androidMarkerOf,
+  ANDROID_MARKER_ATTRIBUTE: ANDROID_MARKER_ATTRIBUTE,
+  downgradeKeyAttestation: slot.forward('downgradeKeyAttestation'),
   bySecret: slot.forward('bySecret'),
   byCredentialId: slot.forward('byCredentialId'),
   holdsAny: slot.forward('holdsAny'),
@@ -3241,6 +3695,7 @@ export = {
   setRiskLevel: slot.forward('setRiskLevel'),
   setBrowserState: slot.forward('setBrowserState'),
   counts: slot.forward('counts'),
+  countsAsync: slot.forward('countsAsync'),
   events: slot.forward('events'),
   timeline: slot.forward('timeline')
 };

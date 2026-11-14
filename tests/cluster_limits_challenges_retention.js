@@ -358,8 +358,10 @@ function childMain() {
       // issueDigestNonce(), put in the store the way replication restores a
       // row.
       const foreignNonce = nodeCrypto.randomBytes(18).toString('base64');
-      realms.handleFor('scim.digestNonces').restore('', foreignNonce,
-                                                    { at: Date.now() });
+      // Under its digest, as the store keeps it since #614.
+      realms.handleFor('scim.digestNonces').restore('',
+        require(ROOT + '/common/crypto').credentialDigest(foreignNonce),
+        { at: Date.now() });
       const first = await scimAuth.authenticateSpent(
         digestRequest(foreignNonce, '00000001'), 'read');
       note(first.ok && first.scheme === 'digest',
@@ -405,7 +407,9 @@ function childMain() {
       const spnego = require(ROOT + '/kerberos/krb5_spnego.js');
       const prim = require(ROOT + '/kerberos/krb5_primitives.js');
       const pendingHandle = realms.handleFor('spnego.pending');
-      const DOOR = '/spnego/protected';
+      // The sign-in's door: the demonstration page `/spnego/protected`,
+      // which this used until #595, is the development companion's now.
+      const DOOR = '/authn/spnego';
       const BALANCER = '10.9.9.9';
       const negotiation = function (client) {
         return { id: nodeCrypto.randomBytes(18).toString('base64url'),
@@ -414,8 +418,10 @@ function childMain() {
                  client: client };
       };
       const pend = function (n) {
-        pendingHandle.restore('', DOOR + '|' + n.id, {
-          at: Date.now(), id: n.id, door: DOOR, address: BALANCER,
+        // Keyed by the cookie value's digest since #614.
+        const idKey = require(ROOT + '/common/crypto').credentialDigest(n.id);
+        pendingHandle.restore('', DOOR + '|' + idKey, {
+          at: Date.now(), id: idKey, door: DOOR, address: BALANCER,
           mechListDer: prim.toHex(n.mechListDer),
           selected: spnego.KRB5_MECH_OID,
           initiatorKey: { etype: 18, key: prim.toHex(n.key) },
@@ -442,7 +448,8 @@ function childMain() {
       pend(alice);
       pend(bob);
       const present = function (n) {
-        return pendingHandle.read('', DOOR + '|' + n.id).present;
+        return pendingHandle.read('', DOOR + '|' +
+          require(ROOT + '/common/crypto').credentialDigest(n.id)).present;
       };
       note(present(alice) && present(bob),
            'D1. TWO NEGOTIATIONS PENDING FROM ONE ADDRESS COEXIST — behind a ' +
@@ -480,7 +487,11 @@ function childMain() {
       // the real continuation does since SPNEGO became per trust realm
       // (2026-09-15). It read `realm: ''` while the store was shared, and a
       // claim in a realm nothing claims in would no longer collide with it.
-      await claims.claim({ scope: 'spnego.continuation', value: carol.id,
+      // The claim's value is the row's id, the cookie's digest since #614 —
+      // the same on every node.
+      await claims.claim({ scope: 'spnego.continuation',
+                           value: require(ROOT + '/common/crypto')
+                             .credentialDigest(carol.id),
                            ttlMs: 60000 });
       const carolAgain = await exchange.negotiate(
         await continuationFor(carol, carol.id, false), { door: DOOR });
@@ -564,8 +575,6 @@ function childMain() {
       replication.reset();
 
       // THE STATEMENT holds both halves of the bound.
-      const pgPath = require.resolve(ROOT + '/node_modules/pg');
-      const previous = require.cache[pgPath];
       const statements = [];
       const FakeClient = function () {};
       FakeClient.prototype.query = function (sql, params) {
@@ -583,18 +592,16 @@ function childMain() {
         return Promise.resolve(new FakeClient());
       };
       FakePool.prototype.end = function () { return Promise.resolve(); };
-      require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                                exports: { Pool: FakePool,
-                                           Client: FakeClient } };
+      // In the place of the one door to the store (#326).
+      const restore = require(ROOT + '/tests/tools/store_double')
+        .install({ Pool: FakePool, Client: FakeClient });
       delete require.cache[require.resolve(ROOT +
         '/persistence/persistence_postgres')];
       const pgDriver = require(ROOT + '/persistence/persistence_postgres')
         .create({ url: 'postgres://sts_app@localhost:5432/sts',
                   log: { debug: function () {}, info: function () {},
                          warn: function () {}, error: function () {} } });
-      if (previous) {
-        require.cache[pgPath] = previous;
-      }
+      restore();
       await pgDriver.purgeChangeLog({ retentionMs: 3600000,
                                      readerTtlMs: 3600000 });
       await pgDriver.purgeChangeLog({ retentionMs: 3600000,
@@ -652,7 +659,11 @@ function bindChild() {
       const d = require(ROOT + '/ldap/ldap_server.js');
       const credentials = require(ROOT + '/common/credentials');
       const persistence = require(ROOT + '/persistence/persistence');
-      const made = d.createUser('bind-limited', { origin: 'test' });
+      // The realm's attribute policy (#396) requires givenName, sn and mail
+      // of every person in product mode, and invents none of them.
+      const made = d.createUser('bind-limited', { origin: 'test',
+        attributes: { givenName: 'Bind', sn: 'Limited',
+                      mail: 'bind-limited@example.com' } });
       const pw = credentials.setPassword('bind-limited',
                                          'Correct-Horse-9-Battery');
       note(made && made.ok && pw && pw.ok, 'F0. a product-mode person to ' +
@@ -776,7 +787,7 @@ function run(t) {
     '(' + bindChild.toString() + ')()'], {
     cwd: ROOT, encoding: 'utf8', timeout: 180000,
     env: Object.assign(bindEnv, { CLCR_OUT: bindOut, CLCR_ROOT: ROOT,
-                                  STS_MODE: 'product', LOG_LEVEL: 'fatal',
+                                  STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', LOG_LEVEL: 'fatal',
                                   STS_LOG_LEVEL: 'fatal' }) });
   let bindFindings = null;
   try {

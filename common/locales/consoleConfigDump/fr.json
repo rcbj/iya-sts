@@ -1,0 +1,7 @@
+{
+  "about": "Tous les paramètres de configuration de cette instance en cours d’exécution : les valeurs globales et ce que définit chaque domaine de confiance. Le serveur masque les mots de passe, les jetons, les clés et toute autre valeur sensible avant qu’ils n’atteignent cette page. Les objets de l’annuaire n’en font pas partie.",
+  "summary": "{total} paramètres, {masked} valeur(s) masquée(s), {realms} autre(s) domaine(s).",
+  "download": "Télécharger le JSON",
+  "thRealm": "Domaine",
+  "thOwn": "Paramètres définis"
+}

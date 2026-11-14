@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "Isang file na naka-mount sa container"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault o OpenBao Transit (hindi kailanman lumalabas dito ang key)"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS (hindi kailanman lumalabas dito ang key)"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS (hindi kailanman lumalabas dito ang key)"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "Azure Key Vault o Managed HSM key (hindi kailanman lumalabas dito ang key)"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "Kung saan binabasa ng serbisyong ito ang mga primordial secret nito — ang key-encryption key na pinagse-seal-an ng lahat ng sine-seal nito, at ang database password — kung talagang nabasa nito ang mga ito, at kung ano ang ginagawa ng store sa kabilang dulo."
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "hindi naka-configure"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "(walang naka-configure na path)"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "(walang naka-configure na secret id)"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "(walang naka-configure na resource name)"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "(walang naka-configure na secret name)"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "(walang naka-configure na vault url)"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "(walang naka-configure na key)"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "(walang naka-configure na key name)"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "(ang default ng SDK)"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "(ang default na endpoint ng SDK)"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "bawat data encryption key, sa KMS"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "bawat data encryption key, sa vault"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "isang client certificate ({{cert}})"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "isang client certificate"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "isang token"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "isang naka-configure na token"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "ang VAULT_TOKEN ng SDK"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "(walang pinangalanan)"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "Hindi JSON object ang file, kaya kinukuha nang buo ang anumang laman nito. Iyon ang raw key file."
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "Mga PANGALAN ng member lang. Kung alin ang kinukuha ng isang secret ay ang sarili nitong field setting."
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "Walang naka-configure na field, kaya ang buong file ang secret na ito."
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "Kahati ng secret na ito ang file ng key-encryption key at hindi JSON object ang file na iyon — kaya ang laman nito ay ang KEY, at TINATANGGIHAN ang pagbasa sa secret na ito sa halip na ibigay ang key na iyon sa isang database."
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "Hindi JSON ang file, kaya ang kabuuan nito ang secret na ito at hindi ginagamit ang field."
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "Walang naka-configure na client certificate, kaya walang ginawang login: ang token ay anumang ibinibigay ng {{token}} o ng VAULT_TOKEN ng SDK."
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "KAYANG MAG-WRITE NG IDENTITY NA ITO. Kaya nitong palitan ang key-encryption key, at hindi na mababasa ang lahat ng naka-seal sa ilalim ng luma."
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "Read-only sa bawat path na itinanong tungkol dito, na siyang dapat sabihin ng policy."
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "Hindi maaabot ng identity na ito ang alinman sa mga path na naka-configure para basahin nito. Tatanggihan ang read sa startup."
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "ang connection string"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "Isang file na naka-mount sa container ({{from}})"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "Isang file na naka-mount sa container, kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "Isang file na naka-mount sa container ({{from}}), kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager, kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager ({{from}}), kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager, kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager ({{from}}), kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault, kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault ({{from}}), kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault, kahati ng key-encryption key"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault ({{from}}), kahati ng key-encryption key"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "Ang file mismo: kung naroon ito, kung sino ang makakabasa nito, at kung kailan ito huling nagbago."
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "Kung may hawak na JSON object ang file, at kung aling mga member ang nasa loob nito — ang mga PANGALAN at hindi kailanman ang mga value."
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "Kung talagang nasa file ang member na naka-configure na kunin ng secret na ito."
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "Ang certificate na ipinapakita ng serbisyong ito sa store, at kung kailan ito mag-e-expire."
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "Ang anchor na pinagve-verify-han ng serbisyong ito sa sariling listener ng store."
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "Kung naka-initialise ang store, kung naka-seal ito, kung anong uri ng seal ang mayroon ito, at kung aling build ito."
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "Ang sariling health summary ng store: ang orasan nito, ang cluster nito, at kung ang node na ito ang aktibo."
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "High availability: kung ang node na ito ang leader, at kung nasaan ang leader."
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "Pag-login sa paraang ginagawa ng read sa startup, at kung ano ang ibinalik ng store."
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "Ang sinasabi ng store tungkol sa token na ginawa ng login na iyon, itinanong sa store sa halip na basahin mula sa login reply."
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "Ang talagang puwedeng gawin ng identity na ito, itinanong sa store: ang mga path na binabasa nito, at isang write na hindi nito dapat magawa."
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "Ang mga secret engine na nakikita ng identity na ito — na mas kaunti kaysa sa mayroon ang store, at dapat lang."
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "Ang KV metadata para sa secret na ito: kung kailan ito isinulat, ilan ang bersyon, at kung alin ang nakukuha ng isang read."
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "Lahat ng alam ng AWS Secrets Manager tungkol sa secret na ito MALIBAN sa value nito: rotation, ang KMS key, ang mga bersyon at ang kanilang mga staging label."
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Ang sinasabi ng Transit tungkol sa key na nagwa-wrap sa mga data key: ang type nito, ang mga bersyon nito, at kung puwede itong lumabas kailanman sa KMS."
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "Ang sinasabi ng AWS KMS tungkol sa key na nagwa-wrap sa mga data key: ang state nito at kung nire-rotate ito ng AWS."
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Ang sinasabi ng Cloud KMS tungkol sa key na nagwa-wrap sa mga data key: ang layunin nito, ang primary version nito at ang rotation schedule nito."
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "Ang sinasabi ng vault tungkol sa key na nagwa-wrap sa mga data key: ang type, laki, mga operasyon, bersyon at rotation nito."
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "Ang sariling metadata ng secret: replication, mga label, rotation at expiry."
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "Ang bersyong makukuha ng isang read: kung naka-enable, naka-disable o nasira na ito."
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "Bawat bersyon ng secret na ito at ang mga property nito — enabled, created, updated, expiry — at hindi kailanman ang value."
+  }
+}

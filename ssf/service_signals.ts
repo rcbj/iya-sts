@@ -56,7 +56,14 @@
 // so the certificate chains to a revoked authority: `revoke`. And a branch
 // rebuilt (`build`, `build-scope`, `build-root`) re-certifies only the
 // realm's own signing keys (`recertifyScope()`), so a person's TLS client
-// certificate is orphaned there too, and is sent `revoke`. The comparison
+// certificate is orphaned there too, and is sent `revoke`.
+//
+// **AN APPLICATION'S CERTIFICATES ARE WALKED THE SAME WAY (#221 P5)** — its
+// RFC 8705 TLS client certificate (an `application:<id>:<random>` slot), its
+// RFC 7523 / 7522 key pair and its ACME, EST and SCEP enrolments (the issued
+// register's `subjectKind: 'application'` rows) — and each is told under the
+// APPLICATION subject (`ssf_subjects.js`) with the same `credential-change`
+// and, for a compromise, the same RISC `credential-compromise`. The comparison
 // decides each case from the tree itself rather than from which button was
 // pressed, so a new act on the hierarchy is covered by calling the pair.
 //
@@ -128,11 +135,14 @@ interface ServiceSignalsDeps {
   now(): number;
 }
 
-// One person-held certificate the tree held before an act.
+// One certificate a person — or, since #221 P5, an application — held in the
+// tree before an act. `application` is set for an application's (and
+// `username` is then its identifier, for the log).
 interface Holding {
   scope: string;
   useCase: string;
   username: string;
+  application?: string;
   // 'slot' (re-mintable: in the register's slots) or 'pair' (issuedKeyPairs).
   kind: string;
   slotKey: string;
@@ -147,6 +157,7 @@ interface Holding {
 interface Notice {
   scope: string;
   username: string;
+  application?: string;
   changeType: string;
   issuer: string;
   serialHex: string;
@@ -385,9 +396,10 @@ class ServiceSignals {
     return name || String(fallback || '');
   }
 
-  // Every certificate a PERSON holds that is live under a scope's current
-  // tree, optionally narrowed to one use case. See the header for what
-  // "live under the current tree" leaves out, and why.
+  // Every certificate a PERSON (or, #221 P5, an APPLICATION) holds that is
+  // live under a scope's current tree, optionally narrowed to one use case.
+  // See the header for what "live under the current tree" leaves out, and
+  // why.
   /**
    * Lists every certificate a person holds that is live under a scope's current
    * tree: a register slot or an issued key pair, not expired, not revoked, and
@@ -455,14 +467,21 @@ class ServiceSignals {
         return;
       }
       const tier = tiers.issuing[uc];
-      const person = tlsClient().holderOfSlot(one.slot);
-      if (!person || !tier ||
+      // A person's slot, or (#221 P5) an application's: the register's
+      // slots name either (`tls_client_certificates.js`'s slotHolder()).
+      const holder = tlsClient().slotHolder(one.slot);
+      const person = holder && holder.kind === 'person' ? holder.id : '';
+      const application = holder && holder.kind === 'application'
+        ? String(holder.id) : '';
+      if ((!person && !application) || !tier ||
           (one.chainPem || [])[0] !== tier.pem ||
           !live(uc, String(one.serialHex || ''), one.notAfter)) {
         return;
       }
       out.push({ scope: String(scopeId), useCase: uc,
-                 username: nameOf(String(one.holderSubject || ''), person),
+                 username: application ||
+                   nameOf(String(one.holderSubject || ''), person),
+                 application: application || undefined,
                  kind: 'slot', slotKey: key,
                  serialHex: rev.normalSerial(one.serialHex),
                  issuer: self.issuerName(tier.pem, tier.subject),
@@ -470,9 +489,13 @@ class ServiceSignals {
     });
     // The issued register: key pairs and ACME, EST and SCEP enrolments.
     (row.issuedKeyPairs || []).forEach(function (one: Json) {
-      if (!one || one.subjectKind !== 'person' || !one.identifier) {
+      const holderKind = one ? String(one.subjectKind || '') : '';
+      if (!one || !one.identifier ||
+          (holderKind !== 'person' && holderKind !== 'application')) {
         return;
       }
+      const application = holderKind === 'application'
+        ? String(one.identifier) : '';
       const uc = String(one.useCase || '');
       if (useCaseId && uc !== useCaseId) {
         return;
@@ -485,8 +508,10 @@ class ServiceSignals {
         return;
       }
       out.push({ scope: String(scopeId), useCase: uc,
-                 username: nameOf(String(one.holderSubject || ''),
-                                  String(one.identifier)),
+                 username: application ||
+                   nameOf(String(one.holderSubject || ''),
+                          String(one.identifier)),
+                 application: application || undefined,
                  kind: 'pair', slotKey: '',
                  serialHex: rev.normalSerial(one.serialHex),
                  issuer: self.issuerName(tier.pem, tier.subject),
@@ -598,6 +623,7 @@ class ServiceSignals {
             (now.chainPem || [])[0] === tier.pem) {
           updated += 1;
           notices.push({ scope: h.scope, username: h.username,
+                         application: h.application,
                          changeType: 'update',
                          issuer: self.issuerName(tier.pem, tier.subject),
                          serialHex: self.deps.revocation()
@@ -610,6 +636,7 @@ class ServiceSignals {
       }
       revoked += 1;
       notices.push({ scope: h.scope, username: h.username,
+                     application: h.application,
                      changeType: 'revoke', issuer: h.issuer,
                      serialHex: h.serialHex, compromised: false });
     });
@@ -705,6 +732,7 @@ class ServiceSignals {
       self.holdingsOf(one.scope, one.useCase || undefined)
         .forEach(function (h: Holding) {
           notices.push({ scope: h.scope, username: h.username,
+                         application: h.application,
                          changeType: 'revoke', issuer: h.issuer,
                          serialHex: h.serialHex, compromised: compromised });
         });
@@ -789,13 +817,18 @@ class ServiceSignals {
     let answer: Promise<number>;
     try {
       answer = realms().run(realm, function (): Promise<number> {
-        const work = [signals.credentialChanged({ username: n.username,
+        // An application's certificate (#221 P5) is told under the
+        // application subject; a person's under theirs.
+        const whose = n.application
+          ? { application: n.application, username: '' }
+          : { username: n.username };
+        const work = [signals.credentialChanged({ ...whose,
           credentialType: 'x509', changeType: n.changeType,
           x509Issuer: n.issuer, x509Serial: n.serialHex,
           initiatingEntity: 'admin', via: String(c.via || '/admin/pki'),
           reasonAdmin: reasonAdmin, reasonUser: reasonUser })];
         if (n.compromised) {
-          work.push(signals.credentialCompromised({ username: n.username,
+          work.push(signals.credentialCompromised({ ...whose,
             credentialType: 'x509', initiatingEntity: 'admin',
             via: String(c.via || '/admin/pki'), reasonAdmin: reasonAdmin,
             reasonUser: 'A certificate authority that vouched for a ' +

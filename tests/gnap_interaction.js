@@ -24,6 +24,10 @@
 //   E. STEP-UP: what a session falls short of and what the screen must
 //      demand; per ticked right; ro.acr recorded on approval; an unmet
 //      step-up denied request_denied, the client told STS-GNAP-0899.
+//      interact.acr (#738): only phrh sets phishingClass and forceKey;
+//      phr with phrh forces a key and either class; a mixed token is
+//      not a demand; absent sets no new flag; unmet after the trip is
+//      request_denied, STS-GNAP-0905. The class is the event's evidence.
 //   F. APPROVAL BY AN ABSENT OWNER: queued from createGrant() with no
 //      interaction, listed only for the owner, approved on a subset,
 //      denied, stepped up, capped (STS-GNAP-0897), timed out and finalized
@@ -35,7 +39,7 @@
 //
 // Why in process (tests/CLAUDE.md's first question): B and F drive the
 // engine with a stubbed caller and move the clock, and D asks the issue
-// stage directly. The HTTP half is `tests/vendored/sts_gnap_interaction.js`.
+// stage directly. The HTTP half is `tests/protocol/sts_gnap_interaction.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -105,6 +109,24 @@ function sessionOf(username, acr) {
   return { id: 'sess-' + username + '-' + acr, user: { username: username },
            authTime: Math.floor(Date.now() / 1000), acr: acr,
            amr: acr === 'mfa' ? ['pwd', 'otp'] : ['pwd'] };
+}
+
+// A session whose acr string is not the class. The event is what earns
+// it: a WebAuthn assertion is phr, and the same assertion with trusted
+// attestation and backupEligible false is also phrh (#738).
+function passkeySession(hardware) {
+  log.debug("Entering passkeySession().");
+  const credential = { kind: 'webauthn', ceremony: 'assertion' };
+  if (hardware) {
+    credential.attestationTrusted = true;
+    credential.backupEligible = false;
+  }
+  log.debug("Leaving passkeySession().");
+  return { id: 'sess-key-' + (hardware ? 'phrh' : 'phr'),
+           user: { username: 'p6-alice' },
+           authTime: Math.floor(Date.now() / 1000), acr: '1', amr: ['swk'],
+           events: [{ authenticated: true, authority: { kind: 'local' },
+                      context: { credential: credential } }] };
 }
 
 function fixtures(t) {
@@ -250,6 +272,25 @@ async function skips(t) {
   t.check(!r.ok && errorCodes.codeOf(r) === 'STS-GNAP-0893',
           'B7. a right needing an acr is never issued with no session ' +
           '(STS-GNAP-0893)', r.why);
+  r = await create('p6-trusted-' + SUFFIX,
+                   ask({ type: T.dflt, actions: ['read'] },
+                       { interact: { start: ['redirect'],
+                                     acr: ['phrh'] } }));
+  t.check(r.ok && r.grant && r.grant.approval === 'pending',
+          'B8. interact.acr phrh is not skipped',
+          JSON.stringify(r.grant ? r.grant.approval : r.why));
+  r = await create('p6-trusted-' + SUFFIX,
+                   ask({ type: T.dflt, actions: ['read'] },
+                       { interact: { start: ['redirect'],
+                                     acr: ['phrh', 'mfa'] } }));
+  t.check(r.ok && r.grant && r.grant.approval === 'skipped',
+          'B9. a mixed interact.acr is not a demand and still skips',
+          JSON.stringify(r.grant ? r.grant.approval : r.why));
+  r = await create('p6-trusted-' + SUFFIX,
+                   ask({ type: T.dflt, actions: ['read'] }, interact));
+  t.check(r.ok && r.grant && r.grant.approval === 'skipped',
+          'B10. interact with no acr still skips a default type',
+          JSON.stringify(r.grant ? r.grant.approval : r.why));
   log.debug("Leaving skips().");
 }
 
@@ -350,6 +391,52 @@ async function stepUp(t) {
           errorCodes.codeOf(told) === 'STS-GNAP-0899',
           'E6. an unmet step-up is denied request_denied, STS-GNAP-0899',
           JSON.stringify({ e: told.gnapError, c: errorCodes.codeOf(told) }));
+  const pwd = { acr: '1', amr: ['pwd'] };
+  let a = approval.assess([], pwd, ['phrh']);
+  t.check(!a.met && a.eapUnmet && a.forceKey && !a.forceMfa &&
+          a.phishingClass === 'phrh' && a.missing.join() === 'phrh',
+          'E7. only phrh forces a hardware key', JSON.stringify(a));
+  a = approval.assess([], pwd, ['phr', 'phrh']);
+  t.check(!a.met && a.eapUnmet && a.forceKey && a.phishingClass === '' &&
+          a.missing.join() === 'phr',
+          'E8. phr and phrh together force a key; either class answers',
+          JSON.stringify(a));
+  a = approval.assess([], pwd, ['phrh', 'mfa']);
+  t.check(a.met && !a.forceKey && a.phishingClass === '' && !a.eapUnmet,
+          'E9. a mixed token is not an EAP demand', JSON.stringify(a));
+  a = approval.assess(['mfa'], pwd);
+  t.check(!a.met && a.forceMfa && !a.forceKey && a.phishingClass === '' &&
+          !a.eapUnmet,
+          'E10. no interact.acr leaves the catalogue step-up as it was',
+          JSON.stringify(a));
+  a = approval.assess([], passkeySession(false), ['phr']);
+  t.check(a.met,
+          'E11. a passkey assertion meets phr from the event, not the ' +
+          'acr string', JSON.stringify(a));
+  a = approval.assess([], passkeySession(false), ['phrh']);
+  t.check(!a.met && a.eapUnmet && a.phishingClass === 'phrh',
+          'E12. the same assertion does not meet phrh', JSON.stringify(a));
+  a = approval.assess([], passkeySession(true), ['phrh']);
+  t.check(a.met, 'E13. a trusted single-device assertion meets phrh',
+          JSON.stringify(a));
+  a = approval.assess([], { acr: 'phr', amr: [], events: [] }, ['phr']);
+  t.check(!a.met && a.eapUnmet,
+          'E14. an acr string of phr with no event does not meet',
+          JSON.stringify(a));
+  const unmetAcr = grantOf({
+    request: { tokens: [{ label: '', access: [{ type: T.dflt }] }],
+               multiple: false, subject: null,
+               interact: { start: ['redirect'], finish: null, hints: {},
+                           acr: ['phrh'] } },
+    interaction: { finish: null, decided: false, approvalId: 'p6acr' } });
+  await g.refuseUnmetStepUp(request(), unmetAcr, sessionOf('p6-alice', '1'),
+                            ['phrh'], 'STS-GNAP-0905');
+  const toldAcr = await g.settle(request(), unmetAcr);
+  t.check(!toldAcr.ok && toldAcr.gnapError === 'request_denied' &&
+          errorCodes.codeOf(toldAcr) === 'STS-GNAP-0905',
+          'E15. an unmet interact.acr is request_denied, STS-GNAP-0905',
+          JSON.stringify({ e: toldAcr.gnapError,
+                           c: errorCodes.codeOf(toldAcr) }));
   log.debug("Leaving stepUp().");
 }
 

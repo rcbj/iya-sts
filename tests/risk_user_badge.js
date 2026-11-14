@@ -45,7 +45,6 @@ function childMain() {
   };
   (async function () {
     require(ROOT + '/common/protocol_stack');
-    const admin = require(ROOT + '/admin-ui/admin');
     const adminViews = require(ROOT + '/admin-core/admin_views');
     const stats = require(ROOT + '/common/admin_stats');
     const helpers = require(ROOT + '/common/helpers');
@@ -58,11 +57,26 @@ function childMain() {
     stats.recordAuthentication({ presented: NAME, protocol: 'test',
                                  method: 'a probe' });
     const sub = String(helpers.subjectForName(NAME));
+    // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/users
+    // (which reads the person's standing first) drawn by its renderer.
+    const WebPages = require(ROOT + '/admin-ui/web_pages');
+    // THE COLOUR IS THE STYLESHEET'S SINCE 2026-11-10: the badge carries its
+    // level as a class (`rb-HIGH`), and `UsersPage.CSS` paints the class, so
+    // "drawn in red" is the class in the markup AND the colour on its rule.
+    const usersCss = require(ROOT + '/admin-ui/web_users').CSS;
+    const toned = function (html, level, colour) {
+      return new RegExp('class="risk-badge rb-' + level + '"').test(html) &&
+        usersCss.indexOf('.rb-' + level + '{background:' + colour) >= 0;
+    };
+    const WebKit = require(ROOT + '/admin-ui/web_kit');
+    const drawer = require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT);
     const draw = async function () {
       const req = { query: { user: NAME }, headers: {}, cookies: {},
                     method: 'GET', path: '/admin/users', url: '/admin/users' };
       const risk = await adminViews.riskFor(req.query);
-      return { page: admin.usersView(req, risk),
+      const drawn = await drawer.draw('/admin/users', { user: NAME });
+      return { page: { inner: drawn.html },
                json: adminViews.userDetailJson(req, NAME, risk) };
     };
     const jsonOf = function (view) {
@@ -72,8 +86,7 @@ function childMain() {
 
     // --- A. never assessed ---------------------------------------------------
     const none = await draw();
-    t.check(/class="risk-badge"/.test(none.page.inner) &&
-            /background:#dadce0/.test(none.page.inner) &&
+    t.check(toned(none.page.inner, 'UNKNOWN', '#dadce0') &&
             />UNKNOWN</.test(none.page.inner) &&
             /has not been assessed/.test(none.page.inner),
             'A1. a person never assessed gets the grey UNKNOWN badge, which ' +
@@ -88,21 +101,23 @@ function childMain() {
       score: 0.12, level: 'LOW', reason: 'the model', lastAssessment: 'a-1',
       updatedAt: at - 60000 }, false);
     const low = await draw();
-    t.check(/background:#188038/.test(low.page.inner) &&
+    t.check(toned(low.page.inner, 'LOW', '#188038') &&
             />LOW</.test(low.page.inner),
             'B1. LOW is drawn in green');
     await riskStore.upsertSubject({ realm: 'default', subject: sub,
       score: 0.91, level: 'HIGH', reason: 'tor-exit, new-country',
       lastAssessment: 'a-2', updatedAt: at }, false);
     const high = await draw();
-    const badge = (/<div class="risk-badge"[\s\S]*?<\/div><\/div>/
+    const badge = (/<div class="risk-badge[^"]*"[\s\S]*?<\/div><\/div>/
       .exec(high.page.inner) || [''])[0];
-    t.check(/background:#d93025/.test(badge) && />HIGH</.test(badge) &&
-            /font-size:3em/.test(badge) && /score 0\.910/.test(badge) &&
+    t.check(toned(badge, 'HIGH', '#d93025') && />HIGH</.test(badge) &&
+            /class="rb-level"/.test(badge) &&
+            usersCss.indexOf('.rb-level{font-size:3em') >= 0 &&
+            /score 0\.910/.test(badge) &&
             /was LOW/.test(badge) && /tor-exit, new-country/.test(badge),
             'B2. HIGH is drawn large in red, with the score, the level it ' +
             'came from and what moved it', badge);
-    t.check(high.page.inner.indexOf('class="risk-badge"') <
+    t.check(high.page.inner.indexOf('class="risk-badge ') <
             high.page.inner.indexOf('class="tiles"'),
             'B3. the badge is the first thing on the page');
     const risk = jsonOf(high.json).risk || {};
@@ -113,7 +128,7 @@ function childMain() {
     await riskStore.upsertSubject({ realm: 'default', subject: sub,
       score: 0.5, level: 'MEDIUM', reason: 'new-asn', lastAssessment: 'a-3',
       updatedAt: at + 1 }, false);
-    t.check(/background:#f9ab00/.test((await draw()).page.inner),
+    t.check(toned((await draw()).page.inner, 'MEDIUM', '#f9ab00'),
             'B5. MEDIUM is drawn in amber');
 
     // --- C. the link -------------------------------------------------------
@@ -129,9 +144,11 @@ function childMain() {
             }),
             'C2. and that page narrows its assessments to them');
     // Without a standing read, no badge: nobody asked.
-    const unread = admin.usersView({ query: { user: NAME }, headers: {},
-      cookies: {}, method: 'GET', path: '/admin/users', url: '/admin/users' });
-    t.check(!/class="risk-badge"/.test(unread.inner),
+    const unread = { inner: WebPages.render('/admin/users',
+      JSON.parse(JSON.stringify(adminViews.usersJson({ query: { user: NAME },
+        headers: {}, cookies: {}, method: 'GET', path: '/admin/users',
+        url: '/admin/users' }))), WebKit.context({ user: NAME }, true)) };
+    t.check(!/class="risk-badge\b/.test(unread.inner),
             'C3. a caller that read no standing draws no badge');
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

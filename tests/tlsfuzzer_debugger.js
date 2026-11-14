@@ -8,7 +8,7 @@
 // ===========================================================================
 // TLSFUZZER AGAINST THE EMBEDDED DEBUGGER'S LISTENER (#212, 2026-09-26).
 //
-// `tests/vendored/sts_tlsfuzzer.js` runs tlsfuzzer against the main port and
+// `tests/protocol/sts_tlsfuzzer.js` runs tlsfuzzer against the main port and
 // LDAPS 636 of a running stack. The third TLS listener this process owns is
 // the embedded debugger's (`debugger.port`), and no test stack binds it: a
 // stack is built from this tree with no debugger tree embedded
@@ -20,7 +20,7 @@
 // api child's start stubbed, because the handshake is the whole of what is
 // under test and the api is reached only after it.
 //
-// The PLAN is the stack job's, from tests/vendored/tlsfuzzer_kit.js, run for
+// The PLAN is the stack job's, from tests/protocol/tlsfuzzer_kit.js, run for
 // the listener `debugger`: every script that applies, every exception with
 // its reason. The client certificates the certificate scripts present are
 // made here with `openssl` and self-signed — the listener asks for one and
@@ -129,7 +129,7 @@ async function run(t) {
 
   const apiProcess = require('../debugger/debugger_api_process');
   const debuggerServer = require('../debugger/debugger_server');
-  const fuzzer = require('./vendored/tlsfuzzer_kit');
+  const fuzzer = require('./protocol/tlsfuzzer_kit');
   // The api child is not what is under test: it is reached only through the
   // handshake, and a real one needs the debugger project's built tree.
   const stubbed = { start: apiProcess.start,

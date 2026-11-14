@@ -1,0 +1,7 @@
+{
+  "extrasNote": "本服務簽發的任何內容都不包含這些宣告，這正是索取它們的價值所在：只有這樣才能看到錢包如何處理無法滿足的請求，以及本驗證方檢查時會說什麼。它們在下面已剔選，這樣儲存上表時會保留它們——取消剔選即可停止索取。",
+  "catalogue2": " 填入憑證所用的目錄相同，但依<strong>宣告</strong>分組，而不是依屬性類型列出。憑證中每個頂層宣告對應一個 Disclosure，因此無論有多少 LDAP 屬性為其提供數據，<code>address</code> 都是一個揭露單位——索取它會同時得到街道、地區、省份、郵遞區號和國家；一個提供六個地址剔選方格的頁面，提供的是線路上並不存在的選擇。",
+  "queryNote": "它由建構真實查詢的同一函數產生，而不是再次走訪上表——與本頁面一致卻與請求不一致的預覽，比沒有預覽更糟。它是下一個 Authorization Request 的 <code>dcql_query</code> 參數，以值傳遞或包含在已簽署的 Request Object 中。",
+  "startNote": "建立下一個 Authorization Request，並回傳其 <code>state</code>、同裝置啟動時將持有者送往的錢包 URL，以及跨裝置 QR 碼所攜帶的 <code>openid4vp://</code> URI。保留預設值的選單索取驗證方的預設值。同一操作是 <code>POST /admin-api/verifications/start</code>。",
+  "lPrefix": "客戶端識別碼前綴"
+}

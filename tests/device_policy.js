@@ -38,7 +38,7 @@
 //      pairwise client and none for an ephemeral one; the DPoP-bound
 //      token's cnf.jkt is the device key's thumbprint, and no second cnf.
 //      (`claims_supported` and introspection are held over HTTP by
-//      `tests/vendored/sts_devices.js`.)
+//      `tests/protocol/sts_devices.js`.)
 //   H. SSF: a pairwise stream is told the pairwise device id, an ephemeral
 //      one no device.
 // ===========================================================================
@@ -336,10 +336,10 @@ function childMain() {
 
       // --- F. the acr ------------------------------------------------
       const COMPLIANT = 'urn:sts:acr:compliant-device';
-      note(stepUp.SUPPORTED.join(' ') === '0 1 mfa ' + COMPLIANT,
+      note(stepUp.SUPPORTED.join(' ') === '0 1 mfa phr phrh ' + COMPLIANT,
            'F1. urn:sts:acr:compliant-device is what acr_values_supported ' +
-           'publishes after the ladder (the discovery documents are held ' +
-           'to it over HTTP)', JSON.stringify(stepUp.SUPPORTED));
+           'publishes after the ladder and the two EAP classes (#723; the ' +
+           'discovery documents are held to it over HTTP)', JSON.stringify(stepUp.SUPPORTED));
       const liveSession = authn.sessionById(live.id);
       const met = stepUp.meets(COMPLIANT, liveSession);
       devices.setCompliance(id, 'not-compliant', 'mdm', 'dpol-mdm');

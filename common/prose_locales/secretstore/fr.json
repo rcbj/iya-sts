@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "Un fichier monté dans le conteneur"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault ou OpenBao Transit (la clé n’en sort jamais)"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS (la clé n’en sort jamais)"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS (la clé n’en sort jamais)"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "Clé Azure Key Vault ou Managed HSM (la clé n’en sort jamais)"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "D’où ce service lit ses secrets primordiaux — la clé de chiffrement de clé sous laquelle est scellé tout ce qu’il scelle, et le mot de passe de la base de données —, s’il les a effectivement lus, et ce que fait le magasin à l’autre extrémité."
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "non configuré"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "(aucun chemin configuré)"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "(aucun identifiant de secret configuré)"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "(aucun nom de ressource configuré)"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "(aucun nom de secret configuré)"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "(aucune URL de coffre configurée)"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "(aucune clé configurée)"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "(aucun nom de clé configuré)"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "(la valeur par défaut du SDK)"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "(le point de terminaison par défaut du SDK)"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "chaque clé de chiffrement des données, dans le KMS"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "chaque clé de chiffrement des données, dans le coffre"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "un certificat client ({{cert}})"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "un certificat client"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "un jeton"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "un jeton configuré"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "le VAULT_TOKEN du SDK"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "(aucun nommé)"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "Le fichier n’est pas un objet JSON, son contenu est donc pris en entier. C’est ce qu’est un fichier de clé brute."
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "Uniquement les NOMS des membres. Celui que prend un secret relève de son propre réglage de champ."
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "Aucun champ n’est configuré, le fichier entier constitue donc ce secret."
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "Ce secret partage le fichier de la clé de chiffrement de clé et ce fichier n’est pas un objet JSON — ce qu’il contient est donc la CLÉ, et la lecture de ce secret est REFUSÉE plutôt que de remettre cette clé à une base de données."
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "Le fichier n’est pas du JSON : la totalité de son contenu constitue donc ce secret et le champ n’est pas utilisé."
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "Aucun certificat client n’est configuré, aucune connexion n’a donc été effectuée : le jeton est celui que fournit {{token}} ou le VAULT_TOKEN du SDK."
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "CETTE IDENTITÉ PEUT ÉCRIRE. Elle pourrait remplacer la clé de chiffrement de clé, et tout ce qui a été scellé sous l’ancienne deviendrait illisible."
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "Lecture seule sur chaque chemin pour lequel la question a été posée, ce que la politique est censée indiquer."
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "Cette identité ne peut atteindre aucun des chemins qu’elle est configurée pour lire. Une lecture au démarrage serait refusée."
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "la chaîne de connexion"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "Un fichier monté dans le conteneur ({{from}})"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "Un fichier monté dans le conteneur, partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "Un fichier monté dans le conteneur ({{from}}), partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager, partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager ({{from}}), partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager, partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager ({{from}}), partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault, partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault ({{from}}), partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault, partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault ({{from}}), partagé avec la clé de chiffrement de clé"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "Le fichier lui-même : s’il est présent, qui peut le lire et quand il a été modifié pour la dernière fois."
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "Si le fichier contient un objet JSON, et quels membres il comporte — les NOMS et jamais les valeurs."
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "Si le membre que ce secret est configuré pour prendre figure réellement dans le fichier."
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "Le certificat que ce service présente au magasin, et sa date d’expiration."
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "L’ancre par rapport à laquelle ce service vérifie l’écouteur propre au magasin."
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "Si le magasin est initialisé, s’il est scellé, quel type de scellement il utilise, et de quelle version il s’agit."
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "Le résumé de santé propre au magasin : son horloge, son cluster, et si ce nœud est le nœud actif."
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "Haute disponibilité : si ce nœud est le leader, et où se trouve le leader."
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "La connexion effectuée de la même manière qu’une lecture au démarrage, et ce que le magasin a renvoyé."
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "Ce que le magasin indique au sujet du jeton produit par cette connexion, demandé au magasin plutôt que lu dans la réponse de connexion."
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "Ce que cette identité peut réellement faire, demandé au magasin : les chemins qu’elle lit, et une écriture qu’elle ne doit pas pouvoir effectuer."
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "Les moteurs de secrets que cette identité peut voir — moins nombreux que ceux dont dispose le magasin, comme il se doit."
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "Les métadonnées KV de ce secret : quand il a été écrit, combien de versions existent, et laquelle une lecture obtient."
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "Tout ce qu’AWS Secrets Manager sait de ce secret SAUF sa valeur : la rotation, la clé KMS, les versions et leurs étiquettes d’étape."
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Ce que Transit indique au sujet de la clé qui enveloppe les clés de données : son type, ses versions, et si elle peut un jour quitter le KMS."
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "Ce qu’AWS KMS indique au sujet de la clé qui enveloppe les clés de données : son état et si AWS en assure la rotation."
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Ce que Cloud KMS indique au sujet de la clé qui enveloppe les clés de données : sa finalité, sa version principale et son calendrier de rotation."
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "Ce que le coffre indique au sujet de la clé qui enveloppe les clés de données : son type, sa taille, ses opérations, sa version et sa rotation."
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "Les métadonnées propres au secret : réplication, étiquettes, rotation et expiration."
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "La version qu’obtiendrait une lecture : si elle est activée, désactivée ou détruite."
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "Chaque version de ce secret et ses propriétés — activée, créée, mise à jour, expiration — et jamais la valeur."
+  }
+}

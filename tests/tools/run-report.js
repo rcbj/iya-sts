@@ -81,7 +81,7 @@
 // launcher built from it, or a throwaway copy it starts on ports of its own —
 // the same jobs, the code you just edited, no submodule bump.
 //
-// WHICH jobs is LISTED, in tests/vendored/MANIFEST.js. It was DERIVED from the
+// WHICH jobs is LISTED, in tests/protocol/MANIFEST.js. It was DERIVED from the
 // parent's own runner until the jobs were vendored on 2026-08-28; that
 // manifest's header says why a derivation stopped being possible.
 //
@@ -109,9 +109,9 @@
 // So the whole set runs unless it is turned off. What that costs is about a
 // minute instead of three seconds, and — until the same day — a parent
 // checkout beside this one. THAT SECOND COST IS GONE: the protocol jobs are
-// VENDORED into tests/vendored/ and are this repository's own files
+// VENDORED into tests/protocol/ and are this repository's own files
 // now, so there is no checkout that can be missing and no job that can
-// silently not run. See tests/vendored/MANIFEST.js for what is copied, what is
+// silently not run. See tests/protocol/MANIFEST.js for what is copied, what is
 // this repository's own, and why the copies are not edited here.
 //
 // `--no-protocol` is the way back to the old default, and the report says so
@@ -122,22 +122,40 @@
 //   node tests/tools/run-report.js [options]
 //
 //   --only=<substr>[,...]  only these test files / job names
+//   --mode-only=<substr>[,...]
+//                          the MODE's own job filter (2026-11-14), the same
+//                          grammar, INTERSECTED with --only: a job runs only
+//                          if both keep it. ./run-tests.sh passes it for a
+//                          mode whose tests/tools/modes.sh stsModeJobFilter()
+//                          names one (`fuzz`: schemathesis) and for that mode
+//                          alone, so an operator's --only still narrows it and
+//                          can never widen it.
 //   --conformance-only     only the protocol jobs MANIFEST.js marks
 //                          `conformance: true` (the OpenID conformance
 //                          suite's) and no in-process file. By the FLAG and
 //                          not by name: `--only=conformance` is a substring,
 //                          and also picked up sts_scim_conformance.
+//   --lanes=<lane>[,...]   only the protocol jobs in these lanes
+//                          (MANIFEST.js's `lane`, `main` when a job names
+//                          none) — exact names, not substrings (#930).
+//   --not-lanes=<lane>[,...]
+//                          every protocol job except those in these lanes.
+//                          The pair is how CI splits the OpenID conformance
+//                          jobs across GitHub jobs that each fit six hours:
+//                          a lane is the unit the jobs already run side by
+//                          side in, so a job added to a lane lands in the CI
+//                          job that runs the lane without a list to edit.
 //   --list                 name the jobs that would run; run none
 //   --protocol[=on|off|only]
 //                          also (or only) run the protocol jobs under
-//                          tests/vendored/ against a service. DEFAULT ON, as
+//                          tests/protocol/ against a service. DEFAULT ON, as
 //                          of 2026-08-28 — see THE DEFAULT IS THE WHOLE SET
 //                          above. `--protocol=off` (or --no-protocol) leaves
 //                          them out.
 //   --no-protocol          the same as --protocol=off.
 //   --parent=<dir>         ACCEPTED AND IGNORED. It named the checkout the
 //                          protocol jobs were read out of, and since they are
-//                          vendored into tests/vendored/ there is no such
+//                          vendored into tests/protocol/ there is no such
 //                          checkout. It is still parsed so that a script or a
 //                          habit passing it does not die on an unknown option;
 //                          tools/vendor-check.js is what takes it now.
@@ -216,7 +234,7 @@
 //                   the appconfig file that service reads (default
 //                   ./env/local.js, resolved by tests/tools/service.js). It is
 //                   the OTHER half of the log level: the vendored modules
-//                   under common/vendored/ build their loggers from this file
+//                   under common/crypto_impl/ build their loggers from this file
 //                   and never see STS_LOG_LEVEL, so a quiet run needs both.
 //                   ./run-coverage.sh sets it from the level.
 //   COVERAGE=true   collect V8 coverage from every job AND from the throwaway
@@ -234,11 +252,11 @@ const bunyan = require('bunyan');
 
 const service = require('./service');
 const trust = require('./trust');
-const manifest = require('../vendored/MANIFEST.js');
+const manifest = require('../protocol/MANIFEST.js');
 const coverage = require('./coverage-report');
 
 // A JOB THAT DECLINES TO RUN says so on a line of its own and exits with
-// this code: `tests/vendored/expectation.js`'s declineToRun(), whose two
+// this code: `tests/protocol/expectation.js`'s declineToRun(), whose two
 // constants these must match (it is a vendored helper, so it is read rather
 // than required here: a require would run nothing, but the rule for that
 // directory is to take nothing from it that a job does not).
@@ -253,7 +271,7 @@ const log = bunyan.createLogger({ name: 'run-report',
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const TESTS_DIR = path.join(REPO_ROOT, 'tests');
-const VENDORED_DIR = path.join(TESTS_DIR, 'vendored');
+const VENDORED_DIR = path.join(TESTS_DIR, 'protocol');
 // A filesystem-safe ISO stamp, the parent project's shape: 2026-08-28T17-45-00.
 const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 
@@ -263,8 +281,9 @@ const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');
-  const opts = { only: [], list: false, protocol: 'on', parent: '',
-                 conformanceOnly: false,
+  const opts = { only: [], modeOnly: [], list: false, protocol: 'on',
+                 parent: '',
+                 conformanceOnly: false, lanes: [], notLanes: [],
                  reportDir: path.join(TESTS_DIR, 'report'),
                  timeoutMs: 300000, timeoutScale: 1, quiet: false,
                  help: false,
@@ -282,6 +301,13 @@ function parseArgs(argv) {
       opts.list = true;
     } else if (a === '--conformance-only') {
       opts.conformanceOnly = true;
+    } else if (a.indexOf('--lanes=') === 0 || a.indexOf('--not-lanes=') === 0) {
+      const into = a.indexOf('--lanes=') === 0 ? opts.lanes : opts.notLanes;
+      a.slice(a.indexOf('=') + 1).split(',').forEach(function (one) {
+        if (one.trim()) {
+          into.push(one.trim());
+        }
+      });
     } else if (a === '--help' || a === '-h') {
       opts.help = true;
     } else if (a === '--quiet') {
@@ -313,6 +339,12 @@ function parseArgs(argv) {
       opts.timeoutMs = Number(a.slice('--timeout='.length));
     } else if (a.indexOf('--timeout-scale=') === 0) {
       opts.timeoutScale = Number(a.slice('--timeout-scale='.length)) || 1;
+    } else if (a.indexOf('--mode-only=') === 0) {
+      a.slice('--mode-only='.length).split(',').forEach(function (p) {
+        if (p.trim()) {
+          opts.modeOnly.push(p.trim());
+        }
+      });
     } else if (a.indexOf('--only=') === 0) {
       a.slice('--only='.length).split(',').forEach(function (p) {
         if (p.trim()) {
@@ -428,7 +460,7 @@ const DEBUGGER_SITE = /localhost:3000|127\.0\.0\.1:3000/;
 const NEEDS_THE_MOCK = /WSTRUST_STS_URL|OID4VCI_ISSUER_URL/;
 
 // ---------------------------------------------------------------------------
-// The protocol jobs, as tests/vendored/MANIFEST.js lists them — the copies of
+// The protocol jobs, as tests/protocol/MANIFEST.js lists them — the copies of
 // the parent's and this repository's own — less the browser jobs when
 // --no-browser asked for that.
 // ---------------------------------------------------------------------------
@@ -453,6 +485,8 @@ function vendoredJobs(options) {
                 conformance: !!entry.conformance,
                 // Needs a SAML interoperability peer (#189-#192); likewise.
                 samlPeer: String(entry.samlPeer || ''),
+                // Needs the test peer (#586); likewise.
+                testPeer: !!entry.testPeer,
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
                 timeoutMs: Number(entry.timeoutMs) || 0,
@@ -476,7 +510,8 @@ function vendoredJobs(options) {
     log.warn('SKIPPING ' + skippedBrowserJobs.length + ' browser job(s) on ' +
              '--no-browser: ' + skippedBrowserJobs.join(', ') + '. The admin ' +
              'console has NO other coverage against this working tree, so ' +
-             'this run says nothing about /admin.');
+             'this run says nothing about /admin — nor about the scripted ' +
+             'device link on /portal/devices.');
   }
   log.debug('Leaving vendoredJobs(). ' + jobs.length + ' job(s).');
   return jobs;
@@ -524,7 +559,7 @@ function checkTestDependencies() {
 // IS THERE A DOCKER DAEMON THIS RUNNER CAN USE?
 //
 // Asked ONCE, and only when a job marked `docker: true` in
-// `tests/vendored/MANIFEST.js` is actually scheduled — there is exactly one,
+// `tests/protocol/MANIFEST.js` is actually scheduled — there is exactly one,
 // and probing for a daemon nobody is going to ask for would be a second of
 // somebody's run spent on nothing.
 //
@@ -653,6 +688,13 @@ function runJob(job, opts) {
   return new Promise(function (resolve) {
     const started = Date.now();
     const stream = fs.createWriteStream(job.logFile, { flags: 'a' });
+    // A spawn that fails (a missing cwd is reported as ENOENT on node)
+    // ends this stream from the error handler, and the close handler ends
+    // it again. The second end is an error event; unhandled, it kills
+    // every other job in the run.
+    stream.on('error', function (e) {
+      log.debug("Caught in runJob(): " + ((e && e.message) || e));
+    });
     stream.write('# ' + job.name + '\n# ' + job.cmd.join(' ') +
                  '\n# cwd=' + job.cwd + '\n\n');
     const child = spawn(job.cmd[0], job.cmd.slice(1), {
@@ -1384,7 +1426,7 @@ function chosenPorts(instance) {
 // one missing token. The coverage job in CI is where that was found.
 //
 // **THE SECRET HAS TO BE PINNED BEFORE THE SERVICE STARTS, WHICH IS WHY THIS
-// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-management-api`
+// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-api-client`
 // with a secret minted at every start, readable only THROUGH the API it
 // unlocks — so a secret chosen after the child is up is a secret nobody can
 // use. `adminApi.clientSecret` exists for exactly this, and its environment
@@ -1434,7 +1476,8 @@ async function mintTheManagementApiToken(url) {
   log.debug('Entering mintTheManagementApiToken().');
   try {
     process.env.STS_ADMIN_API_TOKEN = await adminApiToken.tokenFor(url);
-    log.info('minted an /admin-api access token (admin:read admin:write, ' +
+    log.info('minted an /admin-api access token (admin:read admin:write ' +
+             'admin:security, ' +
              'audience ' + adminApiToken.audienceFor(url) + ')');
   } catch (e) {
     log.error('could not mint an /admin-api access token from ' + url + ': ' +
@@ -1512,8 +1555,9 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // six validators and was killed at 300 s in a full run on a loaded machine
 // (its first driver alone took 78 s) while every case agreed; the other three
 // are the same kind of file. Its signer pass alone was measured at 6-17 min
-// on a machine running other sessions' stacks, so it has 25. A raise only
-// ever lengthens: the larger of this and --timeout wins, exactly as for a
+// on a machine running other sessions' stacks, so it had 25; it took about 28
+// beside a fuzz run and two other stacks (2026-11-10), so it has 45. A raise
+// only ever lengthens: the larger of this and --timeout wins, exactly as for a
 // protocol job.
 // exchange_policy_exhaustive (#186) walks 2,488,320 combinations of the
 // exchange policy's facts against its oracle — about six minutes alone,
@@ -1521,21 +1565,12 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // suite runs; it has 30.
 const UNIT_WATCHDOG_MS = {
   exchange_policy_exhaustive: 1800000,
-  x509_limbo: 1500000,
+  x509_limbo: 2700000,
   nist_pkits: 600000,
   acvp_pqc: 600000,
-  wycheproof: 600000
-};
-
-// LEFT OUT OF THE COVERAGE RUN, FOR NOW (#314, 2026-09-28): reported SKIPPED
-// with the reason there, and run as usual everywhere else. acvp_pqc's
-// SLH-DSA vectors cannot finish under V8 coverage inside even a thirty-minute
-// watchdog (CI runs 36382542145 and 36394938951). The ticket carries the
-// options; take the row out when one is chosen.
-const COVERAGE_LEFT_OUT = {
-  acvp_pqc: 'the NIST ACVP SLH-DSA vectors cannot finish under coverage ' +
-            'instrumentation (#314); the file runs in full in every ' +
-            './run-tests.sh mode and in ./docker-npm-test.sh'
+  wycheproof: 600000,
+  // Its child's own bound is 540s (run 22: 180s was not enough under load).
+  directory_window_requests: 720000
 };
 
 // ---------------------------------------------------------------------------
@@ -1566,7 +1601,16 @@ const COVERAGE_LEFT_OUT = {
 // ---------------------------------------------------------------------------
 const UNIT_ALONE = new Set([
   'request_barrier', 'request_proxy_replay',
-  'request_worker_replacement', 'key_residency'
+  'request_worker_replacement', 'key_residency',
+  // The outbound SCIM client's pacing (S3: requests 250 ms apart, a gap no
+  // shorter than 200 ms) read one gap of 199 ms under the pool in the
+  // cluster mode of the full run on 71607cbd (2026-10-27); alone it holds.
+  'scim_client',
+  // Its C2 counts change-log nudges against 25 ms windows; beside four
+  // other files on a loaded host the windows drift and the count is one
+  // over the ceiling (the single-node mode of the run on d49cd337: 11 for
+  // a ceiling of 10). Alone it holds.
+  'notify_after_commit'
 ]);
 
 async function runScheduled(jobs, runOne, opts) {
@@ -1680,6 +1724,81 @@ async function runScheduled(jobs, runOne, opts) {
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// A TEST PEER FOR A SERVICE THIS RUNNER STARTED (#586).
+//
+// The test peer (tests/peer/) is the far party of the protocols the
+// product-mode jobs drive: a container of the stack under ./run-tests.sh,
+// which names it in STS_TEST_PEER_URL. A run whose SERVICE is a child of this
+// runner — ./run-coverage.sh, a bare run-report.js — has no such container,
+// so the peer is started here the same way: a child of this runner, on a
+// free loopback port, its CA certificate written to a directory of this run
+// that the service (another child, on the same filesystem) reads through
+// `ssf.pushCaFile`, its log beside the service's. A run handed a service
+// (`--service-url`) starts none: whoever started that service decides
+// whether there is a peer, and an AWS target has none on purpose.
+//
+// Answers `{ child, url }`, or null — said, and the jobs that need a peer are
+// then skipped with their reason — when it would not start.
+// ---------------------------------------------------------------------------
+async function startTestPeer(runDir, logsDir) {
+  log.debug('Entering startTestPeer().');
+  const net = require('net');
+  const port = await new Promise(function (resolve, reject) {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', function () {
+      const chosen = probe.address().port;
+      probe.close(function () {
+        resolve(chosen);
+      });
+    });
+  });
+  const caDir = path.join(runDir, 'test-peer');
+  const out = fs.openSync(path.join(logsDir, '00-test-peer.log'), 'a');
+  const child = spawn(process.execPath,
+                      [path.join(TESTS_DIR, 'peer', 'peer.js')], {
+    env: Object.assign({}, process.env, {
+      TEST_PEER_PORT: String(port),
+      TEST_PEER_PUBLIC_HOST: 'localhost',
+      TEST_PEER_NAMES: 'localhost,127.0.0.1',
+      TEST_PEER_CA_DIR: caDir
+    }),
+    stdio: ['ignore', out, out]
+  });
+  const url = 'http://localhost:' + port;
+  const deadline = Date.now() + 30000;
+  let why = 'it never answered /health';
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      why = 'it exited with ' + child.exitCode + ' (see 00-test-peer.log)';
+      break;
+    }
+    try {
+      const r = await fetch(url + '/health');
+      if (r.status === 200) {
+        process.env.STS_TEST_PEER_URL = url;
+        process.env.TEST_PEER_CA_FILE = path.join(caDir, 'ca.crt');
+        log.info('a test peer for the protocol jobs at ' + url + ' (#586), ' +
+                 'its CA certificate at ' + process.env.TEST_PEER_CA_FILE);
+        log.debug('Leaving startTestPeer().');
+        return { child: child, url: url };
+      }
+    } catch (e) {
+      log.debug('Caught in startTestPeer(): ' + ((e && e.message) || e));
+      // Not listening yet: asked again below.
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 250);
+    });
+  }
+  child.kill('SIGKILL');
+  log.warn('the test peer would not start: ' + why + '. The jobs that need ' +
+           'it are skipped, each with the reason.');
+  log.debug('Leaving startTestPeer(). Not started.');
+  return null;
+}
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
@@ -1696,8 +1815,18 @@ async function main() {
 
   // ---- the jobs ---------------------------------------------------------
   const jobs = [];
+  // The mode's own filter (--mode-only), applied after --only, so the two
+  // intersect. Empty keeps everything.
+  const keptByMode = function keptByMode(file) {
+    log.debug('Entering keptByMode().');
+    const kept = !opts.modeOnly.length || opts.modeOnly.some(function (p) {
+      return file.indexOf(p) >= 0;
+    });
+    log.debug('Leaving keptByMode().');
+    return kept;
+  };
   if (wantUnit) {
-    testFiles(opts.only).forEach(function (file) {
+    testFiles(opts.only).filter(keptByMode).forEach(function (file) {
       const name = file.replace(/\.js$/, '');
       jobs.push({ suite: 'unit', name: name, file: file, dir: TESTS_DIR,
                   timeoutMs: UNIT_WATCHDOG_MS[name] || 0 });
@@ -1716,9 +1845,18 @@ async function main() {
         return opts.only.some(function (p) { return j.file.indexOf(p) >= 0; });
       });
     }
+    theirs = theirs.filter(function (j) {
+      return keptByMode(j.file);
+    });
     if (opts.conformanceOnly) {
       theirs = theirs.filter(function (j) {
         return j.conformance;
+      });
+    }
+    if (opts.lanes.length || opts.notLanes.length) {
+      theirs = theirs.filter(function (j) {
+        return (!opts.lanes.length || opts.lanes.indexOf(j.lane) >= 0) &&
+               opts.notLanes.indexOf(j.lane) < 0;
       });
     }
     jobs.push.apply(jobs, theirs);
@@ -1730,7 +1868,9 @@ async function main() {
     // An empty run must never read as a pass — the same rule tests/run.js
     // holds, for the same reason.
     log.error('No jobs to run' + (opts.only.length
-      ? ' matching ' + opts.only.join(', ') : '') + '. Nothing was checked.');
+      ? ' matching ' + opts.only.join(', ') : '') + (opts.modeOnly.length
+      ? ' within this mode\'s own ' + opts.modeOnly.join(', ') : '') +
+      '. Nothing was checked.');
     process.exit(1);
   }
   if (opts.list) {
@@ -1823,7 +1963,7 @@ async function main() {
         logLevel: process.env.STS_LOG_LEVEL || '',
         // The appconfig file that service reads, when the caller named one.
         // STS_LOG_LEVEL alone does NOT quieten a run: the eight vendored
-        // modules under common/vendored/ each build their own bunyan logger at
+        // modules under common/crypto_impl/ each build their own bunyan logger at
         // load from the CONFIG_FILE's logLevel, so a `debug` file goes on
         // writing every canonicalization however low this level is.
         // ./run-coverage.sh picks the file from the level and exports it
@@ -1837,6 +1977,18 @@ async function main() {
                 e.message);
       protocolWhy = e.message;
       instance = null;
+    }
+  }
+
+  // ---- the test peer, when this runner owns the service (#586) ----------
+  let testPeer = null;
+  if (instance && !instance.external && !process.env.STS_TEST_PEER_URL) {
+    try {
+      testPeer = await startTestPeer(runDir, logsDir);
+    } catch (e) {
+      log.warn('could not start a test peer: ' + e.message + '. The jobs ' +
+               'that need it are skipped, each with the reason.');
+      testPeer = null;
     }
   }
 
@@ -1956,18 +2108,6 @@ async function main() {
     // --only); an intended job that did not run is a failure, because the
     // thing it was going to check is unchecked either way and only one of
     // those two words makes somebody look.
-    if (wantCoverage && job.suite === 'unit' &&
-        Object.prototype.hasOwnProperty.call(COVERAGE_LEFT_OUT, job.name)) {
-      // A DELIBERATE EXCLUSION, named and reasoned: see COVERAGE_LEFT_OUT.
-      const why = COVERAGE_LEFT_OUT[job.name];
-      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
-               why);
-      log.debug('Leaving runOne(). Left out of coverage.');
-      return Object.assign({}, job, {
-        status: 'skipped', ms: 0, code: null, assertions: [],
-        failures: [], why: why
-      });
-    }
     if (job.docker && !dockerHere.ok) {
       // A DELIBERATE EXCLUSION — see haveDocker() above for why this one is a
       // skip where everything else here is a failure. The reason travels with
@@ -2027,6 +2167,29 @@ async function main() {
                   'one the interoperability of the SAML profiles with ' +
                   job.samlPeer + ' is unchecked, and what stands is the ' +
                   'local SAML jobs and tests/saml_interop_findings.js.';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      });
+    }
+    if (job.testPeer && !process.env.STS_TEST_PEER_URL) {
+      // A DELIBERATE EXCLUSION, as the two above are (#586): the test peer
+      // is the far party of the protocol this job drives — a resource
+      // server, since the service's own demonstration one is development
+      // only (#585) — and ./run-tests.sh starts it in every local mode,
+      // handing the job STS_TEST_PEER_URL. An AWS target has none.
+      const why = 'no STS_TEST_PEER_URL: this run has no test peer ' +
+                  '(tests/peer/). ./run-tests.sh brings one up in every ' +
+                  'local mode, and this runner starts one beside a service ' +
+                  'it starts itself (./run-coverage.sh); a service handed ' +
+                  'in with --service-url — an AWS target — has none, so in ' +
+                  'this run the resource ' +
+                  'server this job presents its tokens at is unchecked, and ' +
+                  'what stands is the job\'s run in the local modes and ' +
+                  'tests/test_peer.js.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
       log.debug('Leaving runOne(). Not run.');
@@ -2107,7 +2270,7 @@ async function main() {
       job.env = Object.assign({}, process.env, {
         // These jobs read an appconfig file of their own for a log level, and
         // `./env/local.js` resolves against the cwd above — which is
-        // tests/vendored/, where the vendored copy of that file sits.
+        // tests/protocol/, where the vendored copy of that file sits.
         CONFIG_FILE: process.env.PARENT_CONFIG_FILE || './env/local.js',
         // THE MOCK UNDER TEST IS THIS REPOSITORY, WHICH IS THE ONE THING
         // VENDORING CHANGED FOR THESE JOBS.
@@ -2199,7 +2362,7 @@ async function main() {
       // THE TWO TRUST VARIABLES, AND THEY GO LAST SO NOTHING ABOVE CAN SHADOW
       // THEM. `NODE_EXTRA_CA_CERTS` is read by node ONCE at child start, which
       // is why it can only be handed to a job and never set for this runner;
-      // `STS_SPKI_PIN` is read by tests/vendored/browser_flags.js and becomes
+      // `STS_SPKI_PIN` is read by tests/protocol/browser_flags.js and becomes
       // Chrome's --ignore-certificate-errors-spki-list, so the browser jobs
       // are covered by the same two lines as the node ones. An empty
       // object on a plain-http run, which adds nothing rather than adding an
@@ -2343,6 +2506,11 @@ async function main() {
   if (instance && !instance.external) {
     await service.stop(instance, log);
   }
+  // The peer this runner started for that service (#586), after it: nothing
+  // of the peer is measured, and the service may push to it until it stops.
+  if (testPeer) {
+    testPeer.child.kill('SIGTERM');
+  }
 
   // ---- coverage ---------------------------------------------------------
   let coverageLink = '';
@@ -2376,7 +2544,7 @@ async function main() {
     schedule: opts.serial ? { serial: true }
       : { serial: false, unitConcurrency: opts.unitConcurrency },
     tree: describeTree(REPO_ROOT),
-    // The protocol jobs are VENDORED COPIES in tests/vendored/ since
+    // The protocol jobs are VENDORED COPIES in tests/protocol/ since
     // 2026-08-28, so they are at this tree's commit like everything else and
     // there is no second checkout to describe. `parentDir` and `parentTree`
     // are kept as empty strings rather than removed, so that an older
@@ -2451,4 +2619,8 @@ module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
                    // must not inherit, and a test that computed it for
                    // itself would pass while this file read modes.sh
                    // differently — which is the only way this can break.
-                   stackDeploymentVariables: stackDeploymentVariables };
+                   stackDeploymentVariables: stackDeploymentVariables,
+                   // EXPORTED FOR tests/unit_job_environment.js too
+                   // (2026-11-14): `--mode-only` is parsed apart from
+                   // `--only`, which is what lets the two intersect.
+                   parseArgs: parseArgs };

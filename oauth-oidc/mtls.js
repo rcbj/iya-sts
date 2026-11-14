@@ -57,7 +57,8 @@
 // says the binding is to the certificate itself and explicitly permits a
 // self-signed one — the proof is that the same key completed the handshake, not
 // that a CA vouched for it. Refusing an unverified certificate here would break
-// exactly the case the truststore at `/tls/trust` exists to make reachable.
+// exactly the case the truststore (`/admin/tls/trust`) exists to make
+// reachable.
 //
 // ---------------------------------------------------------------------------
 // THE THUMBPRINT IS OF THE DER, AND THAT IS THE WHOLE OF THE INTEROPERABILITY.
@@ -79,7 +80,6 @@
 // another caller nobody updated.
 // ===========================================================================
 
-const crypto = require('crypto');
 // One thumbprint computation for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const { log, b64u } = require('../common/helpers');
@@ -137,7 +137,8 @@ function peerCertificate(req) {
 // reading a constant.
 //
 // THAT IS NO LONGER TRUE. The main listener joined the client truststore that
-// `POST /tls/trust` fills, so a certificate that chains to an anchor is now
+// `POST /admin-api/tls/trust/add` fills, so a certificate that chains to an
+// anchor is now
 // distinguishable from one that chains to nothing. RFC 8705 binding does not
 // care about the difference — it binds to the certificate and section 3
 // explicitly permits a self-signed one — but anything that RESOLVES a
@@ -243,8 +244,8 @@ function peerVerified(req) {
     verified: false, presented: true, error: error,
     why: 'A client certificate was presented and it did NOT verify' +
          (error ? ' (' + error + ')' : '') + '. The commonest cause is that ' +
-         'nothing in the truststore issued it — POST the issuing CA to ' +
-         '/tls/trust — and the next commonest is a chain sent without its ' +
+         'nothing in the truststore issued it — add the issuing CA through ' +
+         '/admin/tls/trust or POST /admin-api/tls/trust/add — and the next commonest is a chain sent without its ' +
          'intermediates, which looks identical from the client side. The ' +
          'certificate is still thumbprinted and still binds a token: RFC ' +
          '8705 section 3 binds to the certificate rather than to anybody\'s ' +
@@ -582,6 +583,62 @@ function declaredRefusal(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT A CLIENT DECLARED THAT MAKES ITS `/admin-api` TOKENS CERTIFICATE-BOUND
+// (#1050, rcbj's decision on #520, 2026-10-27).
+//
+// "Bound tokens only, no bare certificate as a credential": a client whose
+// entry declares `tls_client_auth` or `self_signed_tls_client_auth` AMONG its
+// methods, or `tls_client_certificate_bound_access_tokens: true`, is issued an
+// access token for the management API only bound to a certificate, and that
+// API refuses such a client's token that carries no `x5t#S256`. Among its
+// methods, not as its first one: since 2026-10-01 an entry may declare a
+// secret beside a certificate method, and `declaredRefusal()` above then
+// holds the request to the secret it sent — which is exactly the door an
+// unbound administrative token would have come through.
+//
+// Read off `clientConfigOf()`'s shape (`token_endpoint_auth_methods`, or the
+// one `token_endpoint_auth_method` an older shape names) rather than through
+// `client_auth.declaredMethodsOf()`, because `client_auth.js` requires this
+// file and a require back would close the cycle this library is kept out of.
+// ---------------------------------------------------------------------------
+/**
+ * Names the declaration that makes a client's `/admin-api` access tokens
+ * certificate-bound (#1050), or '' when it declares none.
+ *
+ * @param registered - the client's configuration (`clientConfigOf()`)
+ * @returns `token_endpoint_auth_method=<method>`,
+ *   `tls_client_certificate_bound_access_tokens=true`, or ''
+ */
+function certificateDeclaration(registered) {
+  log.debug("Entering certificateDeclaration().");
+  const r = registered || {};
+  if (!r.known) {
+    log.debug("Leaving certificateDeclaration(). No entry.");
+    return '';
+  }
+  const methods = [].concat(Array.isArray(r.token_endpoint_auth_methods) &&
+                            r.token_endpoint_auth_methods.length
+    ? r.token_endpoint_auth_methods
+    : [r.token_endpoint_auth_method || ''])
+    .map(function (one) {
+      return String(one || '').trim();
+    });
+  const method = methods.filter(function (one) {
+    return CERTIFICATE_METHODS.indexOf(one) >= 0;
+  })[0];
+  if (method) {
+    log.debug("Leaving certificateDeclaration(). " + method);
+    return 'token_endpoint_auth_method=' + method;
+  }
+  if (r.tls_client_certificate_bound_access_tokens === true) {
+    log.debug("Leaving certificateDeclaration(). Bound tokens.");
+    return 'tls_client_certificate_bound_access_tokens=true';
+  }
+  log.debug("Leaving certificateDeclaration(). None.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 8705 SECTION 7.1: IS A REFRESH TOKEN'S CERTIFICATE BINDING CHECKED FOR
 // THIS REQUEST (2026-09-13).
 //
@@ -661,6 +718,7 @@ module.exports = {
   checkBinding: checkBinding,
   CERTIFICATE_METHODS: CERTIFICATE_METHODS,
   declaredRefusal: declaredRefusal,
+  certificateDeclaration: certificateDeclaration,
   refreshBindingApplies: refreshBindingApplies,
   available: available
 };

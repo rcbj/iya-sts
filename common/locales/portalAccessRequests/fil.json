@@ -1,0 +1,15 @@
+{
+  "sub": "Ang mga kahilingan sa access ng AuthZEN na nagtatalaga sa iyo bilang tagapag-apruba: tinanggihan ang enforcement point ng isang application sa isang bagay na pinapayagang hilingin ng patakaran ng realm, at naghihintay ito sa isa sa mga taong itinalaga ng patakaran. <strong>Walang ibinibigay ang pag-apruba nang mag-isa</strong>: muling magtatanong ang application, dala ang pag-apruba, at muling magpapasya ang patakaran ng realm.",
+  "off": "Naka-off ang mga kahilingan sa access sa realm na ito.",
+  "none": "Walang kahilingan sa access na naghihintay sa iyo.",
+  "asks": "Humihiling ng access na ito ang isang enforcement point:",
+  "subject": "Para kay",
+  "action": "Gagawin",
+  "resource": "Sa",
+  "application": "Application",
+  "requester": "Hiniling ng",
+  "waits": "Naghihintay ito hanggang {when}.",
+  "approve": "Aprubahan",
+  "deny": "Tanggihan",
+  "done": "{status, select, approved {Naaprubahan ang kahilingan sa access. Maaari nang muling magtanong ang application.} denied {Tinanggihan ang kahilingan sa access.} other {Ang kahilingan sa access ay {status}.}}"
+}

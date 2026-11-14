@@ -71,13 +71,13 @@
 
 import bunyan = require('bunyan');
 import fs = require('fs');
-import nodeCrypto = require('crypto');
 import path = require('path');
 import stream = require('stream');
 import config = require('../common/config');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+import StagingDirectory = require('../common/staging_directory');
 import riskDatasets = require('./risk_datasets');
 import RiskExpand = require('./risk_expand');
 
@@ -90,18 +90,26 @@ config.registerLogger(log);
 
 type Json = any;
 
-// The package root, which a relative `risk.uploadDirectory` is resolved
-// against — as `persistence.dataDir` is, for its reason: the working
-// directory is whatever the process was started in.
-const ROOT = path.join(__dirname, '..');
-
-// Free space the directory must keep beyond the upload itself: a disk left
-// with nothing is a disk the next log line cannot be written to.
-const RESERVE_BYTES = 16 * 1024 * 1024;
+// Free space the directory must keep beyond the upload itself. The
+// directory, and this reserve, are `common/staging_directory.ts`'s since
+// #1045: a report being built is staged in the same place.
+const RESERVE_BYTES = StagingDirectory.RESERVE_BYTES;
 
 // The fields an upload may carry, whichever door it came through. The
 // console's form adds `csrf_token`, which the door checks.
 /** The fields an upload may carry, whichever door it came through. */
+// The extensions a console upload of each format may carry (#1480). '' is no
+// extension: FIDO and the Tor Project publish theirs under names with none.
+const EXTENSIONS: Record<string, string[]> = {
+  'dbip-city-csv': ['csv'],
+  'dbip-country-csv': ['csv'],
+  'dbip-asn-csv': ['csv'],
+  'ipinfo-lite-csv': ['csv'],
+  'fido-mds3-jwt': ['jwt', 'jws', 'txt', ''],
+  'android-attestation-status-json': ['json'],
+  'ip-list': ['txt', 'list', 'lst', 'netset', 'ipset', '']
+};
+
 const FIELDS = ['dataset', 'format', 'realm', 'version', 'sha256',
                 'publishedAt', 'provider', 'licence', 'attribution',
                 'activate', 'acceptTerms', 'overrideSignature'];
@@ -126,7 +134,7 @@ const MAX_PARTS = 40;
  * can tell its files from another process's.
  */
 const PROCESS_TAG = String(process.pid) + 'x' +
-  nodeCrypto.randomBytes(4).toString('hex');
+  stsCrypto.randomBytes(4).toString('hex');
 const FILE_NAME = /^risk-upload-([a-z0-9]+)-[0-9a-f-]{36}\.part$/;
 
 /** The id of the per-process upload clean-up job. */
@@ -221,9 +229,7 @@ class RiskUpload {
       freeBytes: function (dir: string): Promise<number> {
         log.debug("Entering freeBytes().");
         log.debug("Leaving freeBytes().");
-        return fs.promises.statfs(dir).then(function (s: Json): number {
-          return Number(s.bavail) * Number(s.bsize);
-        });
+        return StagingDirectory.freeBytes(dir);
       },
       scheduler: function (): Json {
         return require('../cluster/scheduler');
@@ -241,9 +247,9 @@ class RiskUpload {
   directory(): string {
     const { log, config } = this.deps;
     log.debug("Entering RiskUpload.directory().");
-    const dir = String(config.value('risk.uploadDirectory') || '');
+    const dir = StagingDirectory.directory(config);
     log.debug("Leaving RiskUpload.directory().");
-    return path.resolve(ROOT, dir || './data/risk-uploads');
+    return dir;
   }
 
   // A refusal, coded.
@@ -298,8 +304,7 @@ class RiskUpload {
     }
     const dir = this.directory();
     try {
-      await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-      await fs.promises.access(dir, fs.constants.W_OK);
+      await StagingDirectory.prepare(dir);
     } catch (e) {
       log.error(errorCodes.tag('STS-RISK-0030') + 'risk: the upload ' +
                 'directory ' + dir + ' cannot be written: ' +
@@ -334,6 +339,41 @@ class RiskUpload {
     }
     log.debug("Leaving RiskUpload.before().");
     return null;
+  }
+
+  // THE FILE'S NAME AGAINST ITS FORMAT (#1480, ASVS 5.0.0 5.2.2). Asked of
+  // the console's form, which is the door that has a name; the API's body is
+  // the file and has none. One compression suffix is set aside, since the
+  // contents decide that. The two formats whose publishers serve them under
+  // no extension at all may have none.
+  /**
+   * The refusal for a file name that does not fit the format, or null.
+   *
+   * @param format - the format the upload names
+   * @param filename - the file name the form sent, if any
+   * @returns the refusal, or null
+   */
+  static nameRefusal(format: unknown, filename: unknown): Json {
+    log.debug("Entering RiskUpload.nameRefusal().");
+    const allowed = EXTENSIONS[String(format || '')];
+    const name = String(filename || '').trim().toLowerCase()
+      .replace(/^.*[\\/]/, '').replace(/\.(?:gz|gzip|zip)$/, '');
+    if (!allowed || !name) {
+      log.debug("Leaving RiskUpload.nameRefusal(). Nothing to compare.");
+      return null;
+    }
+    const cut = name.lastIndexOf('.');
+    const extension = cut < 0 ? '' : name.slice(cut + 1);
+    if (allowed.indexOf(extension) >= 0) {
+      log.debug("Leaving RiskUpload.nameRefusal(). It fits.");
+      return null;
+    }
+    log.debug("Leaving RiskUpload.nameRefusal(). It does not fit.");
+    return RiskUpload.refusal(400, 'STS-RISK-0055', 'A file of the format ' +
+      String(format) + ' is named ' + allowed.filter(Boolean).map(
+        function (one: string): string {
+          return '.' + one;
+        }).join(', ') + ', optionally compressed. Nothing was stored.', true);
   }
 
   // The fields as the importer takes them: strings, trimmed, the three flags
@@ -516,10 +556,36 @@ class RiskUpload {
   private newTarget(): string {
     const { log } = this.deps;
     log.debug("Entering RiskUpload.newTarget().");
-    const name = 'risk-upload-' + PROCESS_TAG + '-' + nodeCrypto.randomUUID() +
+    const name = 'risk-upload-' + PROCESS_TAG + '-' + stsCrypto.randomUuid() +
                  '.part';
     log.debug("Leaving RiskUpload.newTarget().");
     return path.join(this.directory(), name);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE MALWARE SCAN, BEFORE ANYTHING READS THE FILE (ASVS 5.0.0 5.4.3, #1501).
+  // A refused file is removed here, for both doors.
+  // -------------------------------------------------------------------------
+  private async scannedImport(target: string, stored: Json, fields: Json,
+                              door: UploadDoor): Promise<UploadAnswer> {
+    const { log } = this.deps;
+    log.debug("Entering RiskUpload.scannedImport().");
+    const refused = await require('../common/malware_scan').fileRefusal(
+      target, Number(stored.bytes) || 0);
+    if (!refused) {
+      log.debug("Leaving RiskUpload.scannedImport(). On to the import.");
+      return this.importStored(target, stored, fields, door);
+    }
+    this.held.delete(target);
+    await fs.promises.rm(target, { force: true }).catch(function (e: Json) {
+      log.debug("Caught removing a refused upload: " +
+                ((e && e.message) || e));
+      // The clean-up job removes what is left.
+    });
+    log.debug("Leaving RiskUpload.scannedImport(). Refused.");
+    // error-code: none — the scanner's own, STS-CORE-0168 or STS-CORE-0169
+    return RiskUpload.refusal(refused.status, refused.code,
+                              refused.error + ' Nothing was stored.', true);
   }
 
   // -------------------------------------------------------------------------
@@ -559,6 +625,9 @@ class RiskUpload {
       datasets.importVersion(Object.assign({}, f, {
         path: target, fileSha256: stored.sha256, source: door.source,
         sourceUri: '', actor: door.actor,
+        // Both upload doors are an administrator's: a version they removed
+        // may be uploaded again (#1155).
+        reloadDeleted: true,
         onBegun: function (what: Json): void {
           log.debug("Entering onBegun(). " + what.version);
           answer({ status: 202, code: '', body: {
@@ -601,7 +670,7 @@ class RiskUpload {
                   f.dataset + ' failed to import: ' +
                   ((e && e.stack) || e));
         answer(RiskUpload.refusal(500, 'STS-RISK-0037', 'The import failed: ' +
-          ((e && e.message) || e) + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
       }).then(function (): Promise<void> {
         return self.release(target);
       });
@@ -690,7 +759,7 @@ class RiskUpload {
       return RiskUpload.refusal(400, 'STS-RISK-0031', 'The upload is empty. ' +
                                 'Nothing was stored.');
     }
-    const answer = await this.importStored(target, stored, q, door);
+    const answer = await this.scannedImport(target, stored, q, door);
     log.debug("Leaving RiskUpload.receiveRaw(). " + answer.status);
     return answer;
   }
@@ -803,7 +872,7 @@ class RiskUpload {
                                         'empty. Nothing was stored.');
             });
           }
-          return self.importStored(target, s, fields, door);
+          return self.scannedImport(target, s, fields, door);
         }).then(function (a: UploadAnswer | null): void {
           if (a) {
             finish(a);
@@ -833,7 +902,8 @@ class RiskUpload {
         }
         fields[name] = value;
       });
-      parser.on('file', function (name: string, file: stream.Readable): void {
+      parser.on('file', function (name: string, file: stream.Readable,
+                                  info: Json): void {
         if (fileSeen || done) {
           file.resume();
           refuse(400, 'STS-RISK-0031', 'An upload carries one file. ' +
@@ -845,7 +915,9 @@ class RiskUpload {
         // the request while this stream is not consumed.
         file.pause();
         target = self.newTarget();
-        self.fieldsRefusal(fields, door, target).then(function (wrong: Json) {
+        self.fieldsRefusal(fields, door, target).then(function (asked: Json) {
+          const wrong = asked || RiskUpload.nameRefusal(fields.format,
+                                                        info && info.filename);
           if (wrong) {
             file.resume();
             finish(wrong);
@@ -875,7 +947,8 @@ class RiskUpload {
                     'fields could not be checked: ' + ((e && e.stack) || e));
           file.resume();
           finish(RiskUpload.refusal(500, 'STS-RISK-0037', 'The upload ' +
-            'could not be checked: ' + ((e && e.message) || e) + '.', true));
+            'could not be checked: ' +
+            String((e && e.message) || e).replace(/\.+$/, '') + '.', true));
         });
       });
       parser.on('filesLimit', function (): void {

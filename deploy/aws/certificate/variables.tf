@@ -59,6 +59,12 @@ variable "public_hostname" {
   default     = ""
 }
 
+variable "direct_hostname" {
+  description = "The name that reaches the load balancer itself behind CloudFront (environment/cloudfront.tf), which a node must also present. Adding it replaces the certificate, one billed issuance."
+  type        = string
+  default     = ""
+}
+
 variable "public_zone_name" {
   description = "The public Route53 zone `public_hostname` is in, e.g. `iyasec.io`."
   type        = string

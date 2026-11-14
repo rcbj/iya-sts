@@ -138,7 +138,7 @@ async function boot() {
     stats: require(ROOT + '/common/admin_stats'),
     stsCrypto: require(ROOT + '/common/crypto'),
     pqJose: require(ROOT + '/common/pq_jose'),
-    bbs2023: require(ROOT + '/common/vendored/bbs2023.js'),
+    bbs2023: require(ROOT + '/common/crypto_impl/bbs2023.js'),
     cacheRegistry: require(ROOT + '/common/cache_registry')
   };
   const DEFAULT = m.realms.DEFAULT_REALM;
@@ -323,11 +323,28 @@ async function boot() {
              } };
   }
 
+  // THE CLIENT IDENTIFIER A SIGN-IN'S REQUEST IS SIGNED UNDER, and so the
+  // audience a holder proves for (2026-10-12): `oid4vp.signInClientIdPrefix`,
+  // x509_hash by default — the SHA-256 of the Verifier's certificate, made
+  // here first if no sign-in has made it yet, exactly as a start does.
+  async function signInAudience(opts) {
+    const o = opts || {};
+    return m.realms.run(o.realm || DEFAULT, async function () {
+      const req = fakeReq(o.prefix || '');
+      const prefix = m.verifier.signInClientIdPrefix();
+      await m.verifier.prepareSignedClientId(req, prefix);
+      return m.verifier.signedClientId(req, prefix).clientId;
+    });
+  }
+
   // ---------------------------------------------------------------------
   // THE ISSUANCE, as a wallet does it. `opts.format` picks the
   // configuration; `opts.token` overrides the access token; `opts.attestation`
   // is a key attestation JWT for the proof header; `opts.proofType`
-  // `attestation` sends it as the proof itself.
+  // `attestation` sends it as the proof itself; `opts.holders` sends a proof
+  // for each of several holder keys, a batch. `opts.kid` (a DID URL, or a
+  // function of the holder answering one) names the key by `kid` instead of
+  // `jwk` (#693); `opts.keepJwk` sends both.
   // ---------------------------------------------------------------------
   async function issue(username, holder, opts) {
     const o = opts || {};
@@ -354,9 +371,21 @@ async function boot() {
       if (o.attestation) {
         header.key_attestation = o.attestation(cNonce);
       }
-      proofs = { jwt: [jws(header,
-        { aud: base + prefix, iat: Math.floor(Date.now() / 1000),
-          nonce: cNonce }, holder)] };
+      // A BATCH (#670): `opts.holders`, one proof per key, all quoting the
+      // one c_nonce, as OpenID4VCI 1.0 section 8.2's `proofs.jwt` does.
+      const keys = o.holders || [holder];
+      proofs = { jwt: keys.map(function (one) {
+        const h = Object.assign({}, header, { alg: one.alg, jwk: one.jwk });
+        if (o.kid) {
+          h.kid = typeof o.kid === 'function' ? o.kid(one) : o.kid;
+          if (!o.keepJwk) {
+            delete h.jwk;
+          }
+        }
+        return jws(h,
+          { aud: base + prefix, iat: Math.floor(Date.now() / 1000),
+            nonce: cNonce }, one);
+      }) };
     }
     const got = await request('POST', prefix + '/oid4vci/credential', {
       headers: { authorization: 'Bearer ' + accessToken },
@@ -505,36 +534,161 @@ async function boot() {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // THE SIGN-IN SURFACE'S WALLET PAGES (#574): the shells, the views and
+  // the acts at `/authn-api/wallet`, bound as the page binds them — JSON,
+  // this service's Origin, and the X-CSRF-Token of the browser's
+  // `sts_session` cookie, which the shell mints where the browser has none.
+  //
+  // `formLike()` reads an act's JSON answer as the page it replaced was
+  // read: an answer naming an address (`redirect`, `mfa`) is the 303 it
+  // was, `headers.location` that address; anything else keeps its status.
+  // `code` is the code the response was marked with, as before.
+  // ---------------------------------------------------------------------
+  function formLike(r) {
+    const j = r.json || {};
+    const where = j.location || (j.ok && j.go) || '';
+    if (j.ok && where) {
+      return Object.assign({}, r, { status: 303, answer: r,
+        headers: Object.assign({}, r.headers, { location: where }) });
+    }
+    return Object.assign({}, r, { answer: r });
+  }
+
+  function act(who, urlPath, body, opts) {
+    const o = opts || {};
+    const headers = { accept: 'application/json' };
+    if (o.origin !== null) {
+      headers.origin = o.origin === undefined ? origin : o.origin;
+    }
+    const csrf = o.csrf !== undefined ? o.csrf : (who && who.csrf) || '';
+    if (csrf) {
+      headers['x-csrf-token'] = csrf;
+    }
+    return request('POST', urlPath, { browser: who, headers: headers,
+                                      json: body });
+  }
+
+  // A VERIFICATION, STARTED AS `POST /admin-api/verifications/start`
+  // STARTS ONE (#594): through the Verifier's own `startVerification()`, in
+  // the realm `o.realm` names. The demonstration's `/oid4vp/start`, which
+  // these jobs drove until then, left for the development companion. The
+  // answer is read as that page's 302 was: `headers.location` the wallet's
+  // address. `query` is the start's names (`by`, `format`, …) as a query
+  // string or an object.
+  async function verificationStart(query, opts) {
+    const o = opts || {};
+    const asked = {};
+    new URLSearchParams(typeof query === 'string'
+      ? query.replace(/^[^?]*\?/, '') : query || {})
+      .forEach(function (value, name) {
+        asked[name] = value;
+      });
+    const started = await m.realms.run(o.realm || DEFAULT, function () {
+      return m.verifier.startVerification(fakeReq(o.prefix || ''), asked,
+                                          'body');
+    });
+    if (!started.ok) {
+      return { status: started.status, json: started, headers: {} };
+    }
+    return { status: 302, json: started,
+             headers: { location: started.walletUrl } };
+  }
+
+  // The start, as the start page runs it: its shell (the arrival cookie),
+  // its view (the CSRF token), and `POST /authn-api/wallet`; then the wait
+  // page's view. `o.mfa` starts it as a second factor; `o.query` adds
+  // `siop`, `enrol` or `wallet`.
   async function start(who, authnId, opts) {
     const o = opts || {};
     const p = o.prefix || '';
-    const q = o.mfa ? 'mfa=' + encodeURIComponent(o.mfa)
-                    : 'authn=' + encodeURIComponent(authnId);
-    const started = await request('GET', p + '/authn/wallet?' + q,
-                                  { browser: who });
-    if (started.status !== 303) {
-      return { started: started };
+    const fields = Object.assign(o.mfa ? { mfa: o.mfa } : { authn: authnId },
+                                 o.query || {});
+    const q = new URLSearchParams(fields).toString();
+    const shell = await request('GET', p + '/authn/wallet?' + q,
+                                { browser: who });
+    const opened = await request('GET', p + '/authn-api/wallet?' + q,
+                                 { browser: who });
+    if (opened.status !== 200 || !opened.json || !opened.json.ok) {
+      return { started: formLike(opened), shell: shell, opened: opened };
     }
-    const waitPath = started.headers.location;
-    const waiting = await request('GET', waitPath, { browser: who });
-    const link = /id="wallet-open" href="([^"]+)"/.exec(waiting.text);
-    const walletUrl = link ? new URL(unescapeHtml(link[1])) : null;
+    who.csrf = opened.json.csrf;
+    const startedRaw = await act(who, p + '/authn-api/wallet', fields);
+    const started = formLike(startedRaw);
+    if (started.status !== 303) {
+      return { started: started, shell: shell, opened: opened };
+    }
+    const state = startedRaw.json.state;
+    const waitPath = p + startedRaw.json.go;
+    const waiting = await request('GET', p + '/authn-api/wallet/' +
+                                  encodeURIComponent(state), { browser: who });
+    const view = (waiting.json && waiting.json.view) || null;
+    const walletUrl = view && view.sameDevice ? new URL(view.sameDevice)
+                                              : null;
     let requestObject = null;
     if (walletUrl) {
       const ro = await request('GET',
         pathOf(walletUrl.searchParams.get('request_uri')));
       requestObject = decode(ro.text);
     }
-    const dc = /data-request="([^"]+)"/.exec(waiting.text);
-    const dcRequest = dc ? JSON.parse(unescapeHtml(dc[1])) : null;
+    const dcRequest = view ? view.dcRequest : null;
     const u = new URL(waitPath, 'http://x');
-    return { started: started, waitPath: waitPath, waiting: waiting,
+    // Product carries these in the fragment (#1487), as the page reads them.
+    const carried = new URLSearchParams(u.search.slice(1) + '&' +
+                                        u.hash.slice(1));
+    return { started: started, shell: shell, opened: opened,
+             waitPath: waitPath, waiting: waiting, view: view,
              walletUrl: walletUrl, requestObject: requestObject,
              dcRequest: dcRequest,
              dcPayload: dcRequest ? decode(dcRequest.data.request) : null,
-             authn: u.searchParams.get('authn'),
-             mfa: u.searchParams.get('mfa') || '',
-             state: u.searchParams.get('state') };
+             authn: carried.get('authn'),
+             mfa: carried.get('mfa') || '',
+             enrol: carried.get('enrol') || '',
+             state: state, prefix: p };
+  }
+
+  // A FRESH CSRF TOKEN for a browser whose session changed under it — a
+  // sign-in replaces the arrival session, and the token is derived from the
+  // session the cookie names: the start view of a new pending sign-in
+  // answers the token of the cookie the browser holds now.
+  async function refreshCsrf(who, opts) {
+    const o = opts || {};
+    const id = await pendingSignIn({ realm: o.realm });
+    const opened = await request('GET', (o.prefix || '') +
+      '/authn-api/wallet?authn=' + encodeURIComponent(id), { browser: who });
+    who.csrf = (opened.json && opened.json.csrf) || '';
+    return who.csrf;
+  }
+
+  // The ids an act on the transaction names beside it.
+  function idsOf(s) {
+    const out = { authn: s.authn };
+    if (s.mfa) {
+      out.mfa = s.mfa;
+    }
+    if (s.enrol) {
+      out.enrol = '1';
+    }
+    return out;
+  }
+
+  // THE COLLECTION, as the wait page's poll (and a same-device return)
+  // asks for it: `POST …/status`. `o.responseCode` is the code a
+  // same-device wallet sent the person back with.
+  async function collect(who, s, opts) {
+    const o = opts || {};
+    const body = idsOf(s);
+    if (o.responseCode !== undefined) {
+      body.response_code = o.responseCode;
+    }
+    return formLike(await act(who, s.prefix + '/authn-api/wallet/' +
+      encodeURIComponent(s.state) + '/status', body, o));
+  }
+
+  // The `response_code` in a wallet's redirect back to the wait page.
+  function responseCodeOf(redirect) {
+    const m = /[?&]response_code=([^&#]+)/.exec(String(redirect || ''));
+    return m ? decodeURIComponent(m[1]) : undefined;
   }
 
   function vpToken(format, presentation) {
@@ -542,11 +696,46 @@ async function boot() {
                               [presentation] });
   }
 
+  // THE WALLET'S `direct_post`, or — where the request asked for
+  // `direct_post.jwt`, as a sign-in does by default since 2026-10-12
+  // (`oid4vp.signInResponseMode`) — the same answer ENCRYPTED to the
+  // request's ECDH-ES key, as a HAIP wallet sends it. `o.plain` sends it in
+  // the clear whatever was asked, which the Response URI refuses.
   async function respond(s, presentation, opts) {
     const o = opts || {};
+    const vp = o.raw || vpToken(o.format, presentation);
     return request('POST', (o.prefix || '') + '/oid4vp/response', {
-      form: { state: s.requestObject.state,
-              vp_token: o.raw || vpToken(o.format, presentation) } });
+      form: encryptedForm(s.requestObject, { state: s.requestObject.state,
+                                             vp_token: vp }, o) });
+  }
+
+  // What a wallet posts for `fields` under the request's response mode:
+  // the fields themselves for `direct_post`, `{ response }` — a JWE to the
+  // request's key, `o.keyAlg` (ECDH-ES by default), with `vp_token` parsed
+  // back into the object it is — for `direct_post.jwt`.
+  function encryptedForm(requestObject, fields, opts) {
+    const o = opts || {};
+    const ro = requestObject || {};
+    if (ro.response_mode !== 'direct_post.jwt' || o.plain) {
+      return fields;
+    }
+    const payload = Object.assign({}, fields);
+    delete payload.state;
+    if (typeof payload.vp_token === 'string') {
+      try {
+        payload.vp_token = JSON.parse(payload.vp_token);
+      } catch (e) {
+        // A malformed vp_token a test sends on purpose travels as it is.
+        payload.vp_token = String(payload.vp_token);
+      }
+    }
+    const keyAlg = o.keyAlg || 'ECDH-ES';
+    const key = ((ro.client_metadata || {}).jwks || { keys: [] }).keys
+      .filter(function (k) {
+        return k.alg === keyAlg;
+      })[0];
+    return { response: m.stsCrypto.encryptJweCompact(JSON.stringify(payload),
+      { alg: keyAlg, enc: 'A128GCM', jwk: key }) };
   }
 
   // The Digital Credentials API answer, as the page's script posts it.
@@ -576,12 +765,10 @@ async function boot() {
     }
     const response = o.noResponse ? '' : JSON.stringify({
       protocol: o.protocol || s.dcRequest.protocol, data: data });
-    return request('POST', (o.prefix || '') + '/authn/wallet/dc-api', {
-      browser: who,
-      headers: { origin: o.origin === undefined ? origin : o.origin },
-      form: Object.assign({ authn: s.authn, state: s.state,
-                            response: response },
-                          s.mfa ? { mfa: s.mfa } : {}) });
+    // The wait page's runtime sends it to `POST …/dc-api` (#574).
+    return formLike(await act(who, s.prefix + '/authn-api/wallet/' +
+      encodeURIComponent(s.state) + '/dc-api',
+      Object.assign(idsOf(s), { response: response }), o));
   }
 
   function sessionCookie(r) {
@@ -595,7 +782,11 @@ async function boot() {
       const found = who.cookies.sts_session && m.authn.cookieSession(
         { headers: { cookie: 'sts_session=' + who.cookies.sts_session } },
         m.authn.SESSION_COOKIE);
-      return (found && found.session) || null;
+      // AN ARRIVAL SESSION IS NOBODY'S (`authn.ts`, `startArrivalSession()`):
+      // the sign-in screen's shell mints one for a browser without a cookie
+      // since #571, and it holds no principal, so it is no sign-in.
+      return (found && found.session && found.session.chosen !== false)
+        ? found.session : null;
     });
   }
 
@@ -615,9 +806,14 @@ async function boot() {
     decode: decode, browser: browser, request: request, pathOf: pathOf,
     unescapeHtml: unescapeHtml, provision: provision, holderKey: holderKey,
     jws: jws, accessTokenFor: accessTokenFor, fakeReq: fakeReq,
+    signInAudience: signInAudience,
     issue: issue, presentSdJwt: presentSdJwt, presentJwtVc: presentJwtVc,
     presentLdp: presentLdp, present: present, pendingSignIn: pendingSignIn,
-    start: start, vpToken: vpToken, respond: respond,
+    start: start, collect: collect, act: act, formLike: formLike,
+    verificationStart: verificationStart,
+    refreshCsrf: refreshCsrf,
+    responseCodeOf: responseCodeOf, idsOf: idsOf,
+    vpToken: vpToken, respond: respond, encryptedForm: encryptedForm,
     answerDcApi: answerDcApi, sessionCookie: sessionCookie,
     sessionOf: sessionOf, inRealm: inRealm, finish: finish,
     QUERY_IDS: QUERY_IDS, CONFIG_FOR: CONFIG_FOR, client: client

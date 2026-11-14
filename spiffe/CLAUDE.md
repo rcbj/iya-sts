@@ -288,9 +288,13 @@ that up silently.
 
    **`spiffe.autoCreateEntries` OFF IS THE INTERESTING SETTING**, and it is the
    one thing here that must not be quietly removed: with it off, a caller
-   matching no entry gets an EMPTY SVID LIST, which is what a real agent does
-   for an unregistered workload and the only way to run a client's "I have no
-   identity" path.
+   matching no entry is refused PERMISSION_DENIED (`STS-SPIFFE-0146`) at all
+   four fetch methods, which is what the Workload API sections 5.2.1, 5.2.2,
+   6.2.1 and 6.2.2 say and what SPIRE's agent answers ("no identity issued"),
+   and the only way to run a client's "I have no identity" path. A stream
+   whose caller loses every entry ENDS so, as the Broker API's does. It was
+   an EMPTY SVID LIST until #274 (2026-10-07), recorded here as what a real
+   agent does, which it is not.
 
    **THE STREAMS STAY OPEN.** Four Workload API methods are server streams and a
    real client holds `FetchX509SVID` for the life of the process. `serverStream()`
@@ -545,7 +549,7 @@ are in since phase three).
   answered `end` with `call.end()` at once, so a client that sent its one
   message and half-closed got an empty stream while `AttestAgent` went on to
   SPEND THE JOIN TOKEN — every retry then refused as spent.
-  `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  `tests/protocol/sts_spiffe_grpc.js` recorded it as a service defect and
   worked round it; the stream now ends once every handler has answered.
 * **`CreateJoinToken`'s `agent_id` IS AN ALIAS ENTRY, AS IN SPIRE.** It was
   stored and compared with the attesting agent's id, which is always
@@ -596,10 +600,13 @@ copied, and each is the place to look first:
   works against SPIRE must work here.
 * **THE PATH BUILDER (`pki.js`) FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
   critical extension is refused (Go refuses them too; tpm_devid allows a
-  critical subjectAltName on the EK certificate, as SPIRE strips it), and a
-  CA with nameConstraints is refused outright, because the constraints are
-  not evaluated here. A path accepted unchecked would be wrong; one refused
-  says why. Signatures are checked by the vendored `x509.verifyChain()`,
+  critical subjectAltName on the EK certificate, as SPIRE strips it). A CA
+  with nameConstraints is EVALUATED, not refused (#201): `pki.js`'s
+  `pathRuleProblem()` holds every name below it to RFC 5280 section
+  4.2.1.10's permitted and excluded subtrees, and refuses only a name in a
+  form it does not evaluate, as that section requires; x509-limbo and NIST
+  PKITS hold it. A path accepted unchecked would be wrong; one refused says
+  why. Signatures are checked by the vendored `x509.verifyChain()`,
   which reads ML-DSA, SLH-DSA and composite signatures — so a post-quantum
   CA above an x509pop or DevID leaf verifies.
 * **x509pop CHALLENGES A POST-QUANTUM KEY, BEYOND SPIRE.** SPIRE's challenge
@@ -698,6 +705,14 @@ library, wired by `spiffe_server.ts`:
   on loopback or its secure port (`requestConfigured()`), with the token, the
   client certificate and the CA read from FILES — no credential is a setting,
   because settings are drawn, returned by `/admin-api` and persisted.
+  **THE SERVICE IS NOT ROOT SINCE #254 (uid 10001)**, and one selector feels
+  it: `unix`'s `path` and `sha256` (`spiffe.unixDiscoverWorkloadPath`, off by
+  default) read `/proc/<pid>/exe`, which the kernel lets a non-root process
+  read only for a process of its OWN uid. A workload of another user is
+  refused attestation with that selector on, rather than attested without
+  it; uid, gid and the docker attestor's `/proc/<pid>/cgroup` are unaffected.
+  A deployment that needs the path for other users' workloads gives the
+  container `CAP_SYS_PTRACE` and says why.
   `spiffe.k8sSkipKubeletVerification` (SPIRE's `skip_kubelet_verification`)
   is honoured in DEVELOPMENT MODE ONLY since #171 (2026-09-23): the attestor
   asks `common/outbound_tls.ts`'s `skipsVerification()`, which in product
@@ -730,7 +745,9 @@ crosses to a request worker is the caller, already plain.
 
 * **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
   `endpoint:` and `peer:` selectors, and **product does not serve it without a
-  declared network** — see *The Workload API over TCP* below (#166).
+  declared network** — see *The Workload API over TCP* below (#166). Where
+  that declaration cannot be made, the Workload API is a process beside the
+  workload — see *A node-local workload agent* below (#324).
 * **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
   its kernel uid and gid alone; nothing that needs the process is invented.
 * **The socket without the native module** — development serves it
@@ -798,9 +815,106 @@ case:
 
 `tests/spiffe_workload_tcp_product.js` holds all of it — the posture, a real
 bind in both modes with a gRPC client over TCP, the three doors, exact `peer:`;
-`tests/vendored/sts_spiffe_grpc.js` the network's view in both states. The test
+`tests/protocol/sts_spiffe_grpc.js` the network's view in both states. The test
 stacks (`docker-compose-run-tests.yml`) DECLARE their bridge, which only this
 launcher's containers are on, so the product modes exercise the declared path.
+Where the posture is not served, that job asserts the refusal and then runs
+the same checks through a workload agent (#324, below).
+
+### A node-local workload agent, where TCP cannot be honest (#324)
+
+**AWS CANNOT DECLARE THE SECTION 3 CONDITION, AND PUBLISHING 8092 WAS THE
+UNHEALTHY TARGET GROUP.** A Fargate task has one address and every realm
+binds `0.0.0.0`. The SPIFFE gRPC listeners do not read PROXY protocol, so
+the node sees the load balancer as `peer:` for every caller. Neither
+`spiffe.workloadTcpSourceAuthenticated` nor a named `spiffe.grpcHost` can
+be set honestly there. Declaring the setting, teaching the listeners PROXY,
+or matching `peer:` by a prefix would each weaken #166. None of those is
+done. The defaults of `spiffe.workloadPort` (8092) and
+`spiffe.workloadTcpSourceAuthenticated` (false) are unchanged, and the
+local compose stacks still declare their bridge.
+
+**THE WORKLOAD API MOVES NEXT TO THE WORKLOAD.** `workload_agent.ts` is a
+leaf process, not one of the six modules above and not registered by
+`protocol_stack.ts`. It requires node, `@grpc/grpc-js`,
+`@grpc/proto-loader`, pkijs, asn1js, bunyan and `common/error_codes.js`,
+and nothing that would load this service — not `spiffe_peer`, the unix
+attestor, `spiffe_grpc`, `spiffe_api`, `spiffe_id`, `common/config`,
+`common/helpers` or `common/crypto`. Requiring it from a test gets the
+class and no listener. `node spiffe/workload_agent.js` runs only when it
+is the main module. The image compiles it (`build-typescript.sh`); the
+host's `tsc` checks it and writes nothing. The peer-credentials addon is
+the same `native/peercred.node`, built only in an image.
+
+**IT JOINS OVER THE SPIRE SERVER API, WHICH IS THE PORT THAT IS SERVED.**
+`SpiffeApi.issueJoinToken()` is the one mint. `CreateJoinToken` and
+`POST /admin-api/spiffe/agents/join-token` (`createSpiffeJoinToken`) both
+call it, and so does the form on the agents list. The body is optional
+`{ ttl, agentId }`. A `ttl` that was given and is not a positive number
+is `STS-ADMIN-0858`. The cap and an alias stay `STS-SPIFFE-0059` and
+`0084`. The answer is `{ ok, token, expiresAt, agentSpiffeId }` or
+`{ ok: false, errorCode, status, message }`. The token is never logged,
+never an audit detail and never a store key — `joinTokenKey()` is its
+SHA-256, the rule this file already has. The agent reads the token from
+`STS_SPIFFE_JOIN_TOKEN` or `--join-token-file`. A `--join-token` flag is
+refused without the value being repeated, because `ps` shows argv. It
+writes one `AttestAgent` message, waits for the answer, and then
+half-closes. It retries only `UNAVAILABLE`, `PERMISSION_DENIED` and
+`DEADLINE_EXCEEDED`, and it does not log `err.details`. The agent id is
+the one the response names; `JoinTokenAttestor.agentIdFor` is the
+prediction, and the two are the same id.
+
+**THE SOCKET IS UNIX, AND THE CALLER IS THE PROCESS ON IT.** `start()`
+loads the native module before it binds. Without the module it throws
+`STS-SPIFFE-0148` and creates no socket. The directory is 0755, the
+socket is chmod-ed 0666, and an existing socket is unlinked (`ENOENT`
+ignored). Selectors are `unix:uid` and `unix:gid`, plus `unix:user` and
+`unix:group` when the name files have them. No supplementary group and
+no `path:` — `selectorsFor()` is the set a registration entry is written
+against. A peer in another pid namespace (pid 0) is uid and gid only.
+The security header is checked before the process is re-checked, so a
+missing `workload.spiffe.io: true` is `STS-SPIFFE-0003`. A process that
+has exited, whose pid was reused or that has executed another program is
+`PERMISSION_DENIED` (`STS-SPIFFE-0149`, recorded, never sent). A caller
+entitled to nothing is `STS-SPIFFE-0150`, this process's parallel of
+`0146`. The Server API refusing a mint, or not answering, is
+`STS-SPIFFE-0151`. `ValidateJWTSVID` reuses `0031`–`0038`. The two WIT
+methods stay `0029`. A held stream whose re-send fails is `0030` and is
+re-armed, not ended. No code is sent.
+
+**A SIDECAR WAITS FOR `--ready-file`, NOT FOR THE SOCKET (#695).** With
+the option, `main()` writes the agent's SPIFFE ID and a newline to that
+path once `start()` has bound the socket — beside itself and renamed, so a
+reader never sees half an ID — and removes it at SIGTERM and SIGINT. The
+socket exists a moment before the agent is worth calling, and the ID is
+what a workload's entries are parented on, so a workload in another
+container waits for the file. Not being able to write it is
+`STS-SPIFFE-0152`, and the agent stops rather than serve a socket nothing
+will find. `readArgs()` returns it beside `opts` as `readyFile`; the class
+does not know about it. **The AWS suite task runs this agent as a sidecar**
+(`spiffe-agent`, `deploy/aws/suite-callbacks/main.tf`): the service image,
+a bash line that waits for a join token in the shared volume and then
+`exec`s this file. `deploy/aws/CLAUDE.md` (*A realm's SPIFFE port*) argues
+the container; what a workload operator copies from it is the command line.
+
+**THE ROTATION TIMER IS NOT A SCHEDULER JOB.** A stream stays open and is
+written again at half the shortest lifetime the last message carried,
+floored at one second, by `setTimeout` inside `arm()`. `tick()` is the
+sibling that calls `arm()` again. The descriptor is in this process; the
+service's scheduler cannot write it. Bundle streams use a lifetime of
+60. `tests/no_periodic_timers.js` does not name it: the timeout sits in
+`arm`, whose body does not call `arm`, and the call does not name `arm`.
+
+**WHERE IT IS ASSERTED.** `tests/spiffe_workload_agent.js` is the
+in-process half, in a child, and does not weaken
+`tests/spiffe_workload_tcp_product.js`. `tests/protocol/sts_spiffe_grpc.js`
+still asserts the TCP refusal where the posture is not served, and then
+mints a join token, starts this agent and runs the rest of the job
+through its socket — in its own process, or, where `STS_SPIFFE_AGENT_DIR`
+names the AWS suite task's shared directory, the `spiffe-agent` sidecar
+(#695). On the declared bridge the job stays on TCP.
+`deploy/aws/CLAUDE.md` is the publish change: 8181 only. GCP and Azure
+still publish 8092; only AWS has been applied, and their files say so.
 
 ### The `local` entity, verified in product (#104)
 
@@ -907,7 +1021,7 @@ deleting ONE of two registration entries naming an identity leaves it active and
 deleting the second marks it revoked; that a ban and an unban round-trip while
 `spiffeRevokedAt` survives the unban; and that nothing anywhere is ever deleted
 from `ou=users`. Drive it with `@grpc/grpc-js` as a
-CLIENT — which is what `tests/vendored/sts_dpop.js` does by writing its own DPoP client
+CLIENT — which is what `tests/protocol/sts_dpop.js` does by writing its own DPoP client
 rather than importing the wallet's, and for the same reason: if both ends came
 from one implementation, a shared misunderstanding passes and interoperates with
 nobody.
@@ -1045,6 +1159,72 @@ leaving the front process.
 unchanged by any of it: what a handler ANSWERS is not asserted here, only that
 the answer is the same through the codec.
 
+### THE BROKER API'S FetchJWTSVID, CUT AFTER THE ATTESTATION (2026-10-07)
+
+rcbj's decision, for the main event loop and for a race. A registration entry
+made through `/admin-api` is written by the request worker that answered it,
+and the Broker API answered in the front process from the front's copy:
+`sts_spiffe_broker`'s pod entry in single-node was refused
+WORKLOAD_NOT_ENTITLED (STS-SPIFFE-0138) twice on 2026-10-07. The first fix
+(2de5967a) made `referenced()` wait for the workers' writes in the front
+process; that wait is gone from the unary call.
+
+**THE CUT** (`spiffe_broker.ts`, the block above `fetchJwtRequest()`): steps 1
+to 3 — the broker's authentication, the allow list, the reference decoded and
+ATTESTED (pidfds, the kubelet, docker, systemd) — stay in the front process,
+and so do the facts held open until the call ends and their release. The
+entitlement and the minting are the request pool's operation
+`spiffe.broker.FetchJWTSVID` (the `spiffe.<surface>.<method>` shape, so
+`spiffe` in `workers.dispatch` names it), run by `issueForReference()` in a
+worker over what `fetchJwtRequest()` sends: the attested caller (`{ brokered,
+brokerId, selectors }`, plain already), the audiences, the SPIFFE ID asked
+for, the realm whose Broker endpoint the call arrived on, and the broker's
+address for the audit row. `runOperation()`'s barrier is what orders the read
+of the entry after the worker's write of it.
+
+* **WORKLOAD_NOT_ENTITLED is built in the front process** (`notEntitled()`):
+  its `google.rpc.ErrorInfo` rides on gRPC metadata a worker cannot send, so
+  the worker answers `{ ok: false, notEntitled: true }`. Any other failure
+  crosses as `performMethod()`'s does — the numeric status and the message —
+  and `errorFromResult()` rebuilds it.
+* **Not dispatched** (no pool, `spiffe` not named, no worker ready) is answered
+  in place, as before.
+* **A worker that fails is not retried in place** (LDAP's rule — it may have
+  minted and recorded an SVID): UNAVAILABLE, STS-SPIFFE-0145.
+* **The worker table is filled only in a worker**, at the foot of the module
+  (`SpiffeBroker.registerWorkerOperation()`), the rule above.
+
+**THE STREAMS STAY IN THE FRONT PROCESS** (*The five server streams are not
+dispatched*, above, applies to the Broker API's three as well), and
+`catchUpWithWorkers()` is kept for ONE of them: **SubscribeToX509SVID**, whose
+first message is the entitlement — refused from the old copy, the stream ends
+PERMISSION_DENIED and a broker does not reopen it. The two bundle streams do
+not wait: their first message depends on no entry, and a changed bundle is
+re-sent at the next rotation. That wait is bounded at 3 s and asynchronous —
+the call waits, the event loop does not — but it does pull the change log in
+the front process. **It is rcbj's call whether to keep it.**
+
+**WHAT STILL RACES (front reads of a worker's write, single-node with
+workers):** everything `prepareBrokerCall()` and `prepareCall()` read before a
+call is dispatched — `spiffe.brokers` (a broker removed through `/admin-api`
+is honoured until the front process applies the change; `sts_spiffe_broker`'s
+"a broker removed is PERMISSION_DENIED on its next call" is exposed to it), a
+federated bundle (covered only for STS-SPIFFE-0024, by
+`prepareAfterCatchUp()`), and the SPIRE Server API's admin entitlement — and
+whatever the three Broker streams and the Workload API's five streams read on
+their re-sends (eventually consistent: the next rotation reads the applied
+copy). The other direction is covered: what the front process writes as a
+change row moves the pool's generation (`noteLocalWrites()`), and the next
+dispatched read waits for it.
+
+Tests: `tests/kdc_broker_operations.js` section 6 (the operation through a
+pool to a worker-side instance with a stub workload and CA — run outside the
+front's realm and audit source, which a first version of the fixture did not
+do and so let a worker that dropped the realm pass — the SVIDs, the attested
+caller, realm, address and audiences, the SPIFFE ID narrowing, the refusals,
+the failed worker, not dispatched, the table, and `referenced()` not
+waiting); six mutants, all caught.
+
 ## ONE AUTHORITY PER REALM FOR THE CLUSTER (2026-09-14, #46)
 
 `spiffe.authority-agreement`. The X.509 authority is the realm's SPIFFE Issuing
@@ -1130,6 +1310,59 @@ two-certificate path to `pki.pathRuleProblem()` with this surface's own
 cRLSign). Either refusal is `STS-SPIFFE-0144`. Still ONE HOP, as argued above:
 this CA signs leaves directly. C2SP x509-limbo is driven through the same door by
 `tests/x509_limbo.js` (`common/CLAUDE.md`, *3w, ONE SET OF PATH RULES*).
+
+## THE TCP LISTENERS TRUST THE FEDERATED TRUST DOMAINS AT THE HANDSHAKE (#438, 2026-10-13)
+
+The SPIRE Server API and the Broker API ask for a client certificate and do not
+require one, and `spiffe_auth.ts` verifies what arrived itself, against the
+realm's own authorities and its federated trust domains'. The handshake's `ca`
+held only the realm's anchors, so a federated SVID never verified at the TLS
+layer. That did not matter until grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j) began
+answering `getAuthContext()` with `{}` for a certificate OpenSSL did not
+authorize: a federated broker became "none presented"
+(`sts_spiffe_broker`, 2026-10-03). The bump went in on 2026-10-07 with
+`spiffe_auth.ts` reading the certificate off the socket
+(`tlsPeerCertificateOf()`). #438 is the TLS half:
+
+* **`SpiffeGrpc.listenerTrustPem()` is the one answer** to what both listeners
+  trust: the realm's anchors plus every `x509-svid` authority of every federated
+  bundle (`SpiffeCa.federatedX509AuthoritiesPem()`, read through
+  `federatedBundles()`, so a bundle named after a served domain is left out
+  here too). The first build, the re-key on a new Root
+  (`refreshServerApiCredentials()`) and the refresh below all use it.
+* **It follows the federation, wherever the change came from.** `spiffe_ca.ts`
+  announces a realm whose bundles changed (`onFederationChange()`). This covers
+  three sources: a write in this process, and a row arriving through the store's
+  `restore`/`remove` accessors (a reconciler that admits everything and only
+  notes the realm). The second is how a request worker's
+  `BatchCreateFederatedBundle` or `/admin-api` write and another node's reach
+  the front process that holds the sockets. Announcements are coalesced per
+  realm on the next turn. `SpiffeServer.refreshFederatedTrust()` re-applies `ca`
+  in place through `updateSecureContextOptions()`. The certificate, the
+  listeners' policy (#423) and request-but-not-require are kept, and nothing is
+  re-minted. A failure is `STS-SPIFFE-0147`.
+* **AttestAgent's no-SVID bootstrap is unchanged**: `rejectUnauthorized` is a
+  constructor option and nothing here touches it.
+* **A NON-SELF-SIGNED FEDERATED AUTHORITY DOES NOT ANCHOR, and this process
+  cannot make it.** In SPIFFE a bundle authority is an anchor whatever its
+  shape. OpenSSL needs `X509_V_FLAG_PARTIAL_CHAIN` for that, and node's
+  `allowPartialTrustChain` would set it. But `tls.Server`'s
+  `setSecureContext()` copies a fixed option list that leaves it out, and both
+  `http2.createSecureServer()` and grpc-js's `updateSecureContextOptions()` go
+  through it. Measured on node 22.13 and 24.16: refused at construction and
+  after a refresh alike. So the issue's `allowPartialTrustChain` bullet is not
+  built. An SVID under such an authority is unauthorized at the handshake and
+  verified through the socket read.
+* **So the socket read stays, and with it the distinction the issue asked
+  about.** "Did not verify" (expired, signed by nothing held here, the wrong
+  trust domain) and "none was presented" are still two refusals. An empty
+  auth context alone cannot tell them apart, and grpc-js's verdict still
+  decides nothing.
+
+`tests/spiffe_broker.js` holds it over a real handshake: the trust count rising
+and falling on a set, a change-log remove and restore, and a delete; a
+federated SVID that never needs the socket read; and an unknown authority's
+SVID that does, refused UNAUTHENTICATED.
 
 ## A PRESENTED X509-SVID IS LOOKED UP IN THE REVOCATION REGISTER (2026-09-12)
 
@@ -1234,8 +1467,9 @@ administrators of nothing.
 
 ### New settings, each defaulting to the literal it replaced
 
-`spiffe.caSubject` (`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`, the
-self-signed fallback CA and every downstream CA), `spiffe.retainedAuthorities`
+`spiffe.caSubject` (`CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts`
+since #1294, `O=sts` before it; the self-signed fallback CA and every
+downstream CA), `spiffe.retainedAuthorities`
 (4, min 2 — `MAX_RETAINED_AUTHORITIES` is a getter over it so the console's
 report follows), `spiffe.agentSvidTtl` (0, meaning `spiffe.svidTtl`),
 `spiffe.joinTokenTtl` (600), `spiffe.maxJoinTokens` (256, per realm),
@@ -1260,6 +1494,16 @@ same `startRealm('')` — and `recordCaller()` runs inside `prepareCall()`, whic
 is inside the handler and stays in the front process, so the ambient realm there
 is the socket's. A connection key (thumbprint and peer address) is one connection
 to one socket, so no entry could ever have been legitimately shared.
+
+A stream listener is the exception that run does not cover. `AttestAgent` and
+`SyncAuthorizedEntries` register `call.on('data')` and return; grpc-js emits
+the message from the HTTP/2 session, outside that run, so the listener was
+answered in the default realm. A join token minted for another realm was then
+refused as never issued (`STS-SPIFFE-0055`, gRPC status 7) and the workload
+agent could not attest (#324). `bindCallListeners()` wraps `call.on` and the
+other EventEmitter registrations with `realms.bind()` before the handler
+runs. A timer armed inside the run was already in the right realm. Unary
+methods capture the id while the run is on the stack (`methodRequest()`).
 `tests/realm_isolation.js` records a caller in a realm, in a child process, and
 reads the partition back.
 
@@ -1353,9 +1597,11 @@ spellings are copied from SPIRE's source, as #40's were.
   (`entitledEntries()`). Section 4.8's refusals carry a hand-encoded
   `google.rpc.ErrorInfo`. The streams are the Workload API's rotation timer,
   and before each re-send the reference is asked again: a stopped workload
-  ends its stream `NOT_FOUND` (0137). **Not dispatched to a request worker**
-  (`DISPATCHED_SURFACES`): the pidfds and the attestors' state are the front
-  process's. Not done: references to objects other than pods, SPIRE's cluster
+  ends its stream `NOT_FOUND` (0137). **The surface is not in
+  `DISPATCHED_SURFACES`** — the pidfds and the attestors' state are the front
+  process's — **but FetchJWTSVID's second half is dispatched since
+  2026-10-07**, once the reference is attested here: *THE BROKER API'S
+  FetchJWTSVID, CUT AFTER THE ATTESTATION*, under the forty-two. Not done: references to objects other than pods, SPIRE's cluster
   scope and SubjectAccessReview, a Unix socket endpoint, server reflection.
   The broker list is `/admin/spiffe/brokers` and
   `/admin-api/spiffe/brokers[/:action]` (rule 7).
@@ -1363,7 +1609,7 @@ spellings are copied from SPIRE's source, as #40's were.
 `tests/spiffe_attestor_systemd_podman.js`, `tests/spiffe_sigstore.js` (every
 key, certificate, SCT, Rekor entry and TUF repository made at run time) and
 `tests/spiffe_broker.js` (a real mutual-TLS listener in a child process) hold
-it in process; `tests/vendored/sts_spiffe_broker.js` over the network in a
+it in process; `tests/protocol/sts_spiffe_broker.js` over the network in a
 development and a product realm. **The interop run against a real
 `spire-agent` recorded on #40 is still not done.**
 
@@ -1379,3 +1625,88 @@ up for a day would issue SVIDs under an expired authority. The rotation is
 `rotateX509Authority()` / `rotateJwtAuthority()`, the console's, which keeps
 `spiffe.retainedAuthorities` published — or, under the hierarchy, re-issues
 the SPIFFE Issuing CA under the Root, which leaves the bundle unchanged.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /spiffe` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `spiffe/web_spiffe_description.ts` from the `describeSpiffe` catalogs, with `/spiffe/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds the issuing authority's readiness and whether the main port is HTTPS, which `page()` read beside it (`page()`, `listenerRows()`, `methodRows()` and `esc()` went with #584). What is attested is still READ from the view, never asserted. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## THE MESSAGES, REFUSALS AND FACTS ARE THE MODEL'S (#1579)
+
+rcbj's decision on #1579: every protocol family comes into the model, and
+the model describes and validates the wire without reshaping it.
+`models/spiffe/*.tsp` (`models/lib/spiffe_lib.*`) is the source, the image
+build writes `models/generated/spiffe.json`, and `spiffe_model.ts` (a leaf:
+`common/model_tables`, `common/error_codes`, bunyan) reads it.
+
+* **EVERY MESSAGE, METHOD AND ENUM OF THE VENDORED PROTOS IS IN THE MODEL**,
+  converted once from `protos/` and written by hand since: `workload.tsp`,
+  `broker.tsp`, `spire_types.tsp`, `spire_server.tsp`, and `google.tsp` for
+  the well-known types as protobufjs defines them (camelCase — the Struct
+  trap above, stated where a reader of the model meets it). Each field
+  carries its number (`@field`), its oneof and its type; every field is
+  optional, because proto3 has none required. **The build holds the model to
+  the protos** (`checkSpiffe()` against `describeProtos()`, which reads them
+  with protobufjs as the service does): a field's number, name, type,
+  `repeated`, map or oneof, a method's request, response or streaming, an
+  enum's values, a method or a reachable message missing — each stops the
+  image build. **THE PROTOS STAY VERBATIM AND STAY WHAT DECODES THE WIRE**:
+  protobuf decoding is grpc-js's and `@grpc/proto-loader`'s, from these
+  files; the model states, beside them, what this service refuses and
+  answers. That is two writings of the message shapes held equal by the
+  build, which the rule against two copies does not normally allow; the
+  alternative — loading the service definitions from the model's JSON
+  (`loader.fromJSON()`) and keeping the protos only as the specification's
+  text — is rcbj's to decide (#1579).
+* **A REQUEST FIELD'S REFUSAL IS THE MODEL'S** (`@refuse`: when — `empty`,
+  `malformed`, `unexpected` — the gRPC status, the STS code, the sentence,
+  `{reason}` for a malformed SPIFFE ID's clause, the method where one
+  message is shared and each method says it in its own words, and the
+  Broker API's `google.rpc.ErrorInfo` reason). The handler keeps WHERE it
+  reads the field and how (trimmed, blanks dropped — each method as it
+  always did) and asks `rpc.refuseField()`, which marks the call and builds
+  the status error; `SpiffeModel.isEmpty()` is the emptiness the model
+  means. `ValidateJWTSVID`'s two (`spiffe_ca.ts`'s `validateJwtSvid()`) and
+  the Broker API's missing reference (`SpiffeBroker.noReference()`) read the
+  same refusals. **What needs state stays in code and is not a field's
+  refusal**: the entitlement (0146), the authorization table and the access
+  policy, an attestor's verdicts, a join token's spending, the registry's
+  `checkRecord()` (the directory model's), the federated bundle's shadowing
+  rule, and a batch item's per-entry status (`BatchNewX509SVID`'s missing
+  CSR names its entry, which a field's sentence cannot).
+* **THE FACTS THE CODE DECIDES WITH**: the SPIFFE ID grammar (`@idGrammar`:
+  the scheme, both byte bounds, both character classes, the reserved
+  `/spire` prefix — `spiffe_id.ts` keeps the parse, its order and its
+  sentences); an X509-SVID leaf's rules (`@svidRules`, asked in order by
+  `spiffe_auth.ts`'s `leafSvidProblem()`, each clause the refusal's);
+  the `bundle-key-use` registry (`spiffe_ca.ts`'s `checkBundleDocument()`
+  and its sentence) and `jwt-svid-typ` (the header a minted JWT-SVID
+  carries); and each unimplemented method's reason (`@rpc`'s
+  `unimplemented`, which is `spiffe_api.ts`'s `NOT_IMPLEMENTED` and so
+  `GET /spiffe`'s).
+* **ANSWERS ARE HELD, NOT REFUSED.** `spiffe_grpc.ts`'s wrappers hand every
+  message a handler writes — a unary reply, each message of a server stream,
+  a bidirectional stream's challenge and result — to `SpiffeModel.
+  holdReply()` against the method's response message BEFORE protobufjs's
+  `fromObject()` drops what is no field, and every status a call ends with
+  to `holdStatus()` against its service's statuses (the wrapper's refusals
+  and a defect's UNKNOWN) and its method's own. `spiffe_ca.ts` holds the
+  bundle it builds and each JWT-SVID's header and claims to their member
+  sets. A gap is logged under STS-SPIFFE-0154 (an answer) or 0155 (a
+  status), remembered for `SpiffeModel.gaps()`, and the answer is sent
+  unchanged. The per-method status lists were read off the handlers on the
+  day; one a call ends with that nobody listed is the 0155 to close.
+* **NOT IN THE MODEL, AND WHY**: `workload_agent.ts`, the node-local agent
+  (#324), loads nothing of this service and keeps its own SPIFFE ID parser
+  — a STRICTER trust domain pattern, no leading or trailing punctuation —
+  and its own shorter refusal sentences. Reading the model there would
+  change what that agent answers; whether it should is rcbj's call.
+
+`tests/spiffe_model_wire.js` holds the wire, in development and product
+mode, to the record made before the switch (the bundle endpoint, the
+Workload API, the SPIRE Server API on a realm's private Unix socket and the
+Broker API on its mutual-TLS port: every message decoded field by field,
+`bytes` described, each status, details and trailer) and requires that the
+live conversation recorded no gap. `tests/model_spiffe.js` holds the build's
+refusals, that no modelled sentence, bound, character class, leaf rule, key
+use or unimplemented reason is written in `spiffe/` but the model, that
+every recorded answer and status is its model's, and the holding.

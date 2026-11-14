@@ -79,20 +79,44 @@ function world(options) {
     }, o.settings || {}),
     // The store's pool, for the cap (0: no pool, as the memory store).
     storeConnections: Number(o.storeConnections) || 0,
+    // The node's protocol request workers, for the cap's default (0).
+    requestWorkers: Number(o.requestWorkers) || 0,
     realmIds: o.realmIds || ['default', 'acme'],
     claimsDown: false,
     // How many times a scheduler waited for its writes to be written down
     // (the history purge does, between batches — #338).
-    settles: 0
+    settles: 0,
+    // The tick's batch read of the current and previous slot (#883).
+    // Absent, the tick does not ask.
+    readRuns: o.readRuns
   };
 
+  // THE STORE'S `watch()` (#623): every node's scheduler is told of every
+  // row any node — or a test — sets, which is what the change log and a
+  // start's restore do for the real store. Instantly, as the store is.
+  const watchers = [];
+  const watchedMap = function (key) {
+    const m = new Map();
+    const set = m.set.bind(m);
+    m.set = function (k, v) {
+      set(k, v);
+      watchers.forEach(function (fn) {
+        fn(key, v);
+      });
+      return m;
+    };
+    return m;
+  };
   const store = {
     realmMap: function (id) {
       const key = String(id || 'default');
       if (!w.stores.has(key)) {
-        w.stores.set(key, new Map());
+        w.stores.set(key, watchedMap(key));
       }
       return w.stores.get(key);
+    },
+    watch: function (fn) {
+      watchers.push(fn);
     }
   };
 
@@ -177,7 +201,7 @@ function world(options) {
           handlers.onGain(0);
           return;
         }
-        w.campaign(node);
+        w.contend(node);
       },
       holds: function (lease) {
         return !w.clustered || node.held.has(lease);
@@ -234,13 +258,18 @@ function world(options) {
       cronPrev: Scheduler.cronPrev,
       cronNext: Scheduler.cronNext,
       storeConnections: function () { return w.storeConnections; },
+      requestWorkers: function () { return w.requestWorkers; },
       settle: function () {
         w.settles += 1;
         return Promise.resolve(null);
       },
+      readRuns: w.readRuns,
       host: 'host-' + name,
       pid: node.pid,
-      isRequestWorker: function () { return !!no.worker; }
+      isRequestWorker: function () { return !!no.worker; },
+      // Where a cluster run's body goes (#408): a test's stand-in for the
+      // request pool, or none — every run inline, as before #408.
+      runner: no.runner ? function () { return no.runner; } : undefined
     });
     node.kill = function () { node.alive = false; };
     node.wake = function () { node.alive = true; };
@@ -249,7 +278,7 @@ function world(options) {
   };
 
   // A node asks for every role it wants and does not hold.
-  w.campaign = function (node) {
+  w.contend = function (node) {
     if (!node.alive || !w.clustered) {
       return;
     }
@@ -275,7 +304,7 @@ function world(options) {
   };
 
   // The heartbeat: every live node renews what it holds, learns what it
-  // lost, and campaigns.
+  // lost, and contends.
   w.beat = function () {
     w.nodes.forEach(function (node) {
       if (!node.alive || !w.clustered) {
@@ -295,7 +324,7 @@ function world(options) {
           h.onLose();
         }
       });
-      w.campaign(node);
+      w.contend(node);
     });
   };
 
@@ -334,6 +363,8 @@ function world(options) {
   };
 
   w.settle = settle;
+  // The store itself, for a test that fills a partition through it (#623).
+  w.store = store;
 
   w.runRows = function (realmId) {
     const out = [];

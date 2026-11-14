@@ -23,6 +23,13 @@
 //      which the compose healthchecks and the CI wait loop already use;
 //   2. the revocation listener's filter lets /healthcheck through, and still
 //      refuses a path that is neither it nor /pki/...
+//   3. (#312) a successful probe on either is NOT a call on the metrics: it
+//      leaves `calls.total` and the call table where they were and goes up
+//      `calls.healthProbes` instead, while a refused `POST /healthcheck` and
+//      a probe answered 503 ARE calls — the rule `common/audit.js`'s
+//      `QUIET_WHEN_OK` already applied to the audit log. The 503 is handed
+//      to `recordCall()` directly, because the route cannot be made to fail
+//      from here.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -34,6 +41,9 @@ const log = require('bunyan').createLogger({ name: 'healthcheck',
   level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
+
+// Successful probes made on EACH listener in the metrics half.
+const PROBES = 4;
 
 function childScript() {
   log.debug("Entering childScript().");
@@ -51,6 +61,19 @@ function childScript() {
     "        type: res.headers['content-type'] || '',",
     "        cache: res.headers['cache-control'] || '', body: b }); }); })",
     "  .on('error', reject); }); }",
+    "function post(server, p) { return new Promise(function (resolve, reject) {",
+    "  const r = http.request({ host: '127.0.0.1', method: 'POST',",
+    "    port: server.address().port, path: p }, function (res) {",
+    "    res.resume(); res.on('end', function () {",
+    "      resolve({ status: res.statusCode }); }); });",
+    "  r.on('error', reject); r.end(); }); }",
+    "function hcRows(snap) { const out = {};",
+    "  snap.calls.rows.forEach(function (row) {",
+    "    if (row.path === '/healthcheck') { out[row.method] = row.count; } });",
+    "  return out; }",
+    "function counts(snap) { return { total: snap.calls.total,",
+    "  probes: snap.calls.healthProbes, rows: hcRows(snap),",
+    "  byStatus: snap.calls.byStatusClass }; }",
     "(async function () {",
     "  const main = http.createServer(app).listen(0, '127.0.0.1');",
     "  const revocation = http.createServer(function (req, res) {",
@@ -59,6 +82,18 @@ function childScript() {
     "  const out = { main: await get(main, '/healthcheck'),",
     "    listener: await get(revocation, '/healthcheck'),",
     "    other: await get(revocation, '/oauth2/jwks') };",
+    "  const stats = require(" + JSON.stringify(ROOT + '/common/admin_stats') +
+      ");",
+    "  const before = counts(stats.snapshot());",
+    "  for (let i = 0; i < " + PROBES + "; i++) {",
+    "    await get(main, '/healthcheck');",
+    "    await get(revocation, '/healthcheck'); }",
+    "  const quiet = counts(stats.snapshot());",
+    "  out.refused = await post(main, '/healthcheck');",
+    "  stats.recordCall({ method: 'GET', path: '/healthcheck', matched: true,",
+    "    status: 503, durationMs: 1 });",
+    "  out.metrics = { before: before, quiet: quiet,",
+    "    after: counts(stats.snapshot()) };",
     "  process.stdout.write(JSON.stringify(out));",
     "  process.exit(0);",
     "})().catch(function (e) { process.stdout.write(JSON.stringify(",
@@ -94,12 +129,41 @@ function run(t) {
           'the load balancer\'s HTTP check on that port');
   t.equal(out.other.status, 404,
           'and still refuses a path that is neither it nor /pki/...');
+
+  const m = out.metrics || {};
+  const before = m.before || {};
+  const quiet = m.quiet || {};
+  const after = m.after || {};
+  t.equal(quiet.total, before.total,
+          (2 * PROBES) + ' successful probes, on both listeners, leave the ' +
+          'request total where it was (#312)', JSON.stringify(m));
+  t.equal(JSON.stringify(quiet.rows), JSON.stringify(before.rows),
+          'and leave the call table without a /healthcheck row moving',
+          JSON.stringify(m));
+  t.equal(JSON.stringify(quiet.byStatus), JSON.stringify(before.byStatus),
+          'and the status classes untouched', JSON.stringify(m));
+  t.equal(quiet.probes - before.probes, 2 * PROBES,
+          'they go up calls.healthProbes, one each, instead',
+          JSON.stringify(m));
+  t.check(out.refused && out.refused.status >= 400,
+          'POST /healthcheck is refused — the control the next check needs',
+          JSON.stringify(out.refused));
+  t.equal(after.total - quiet.total, 2,
+          'a refused POST and a probe answered 503 ARE calls: a node ' +
+          'reporting itself unhealthy is what should show', JSON.stringify(m));
+  t.equal((after.rows || {}).GET, ((quiet.rows || {}).GET || 0) + 1,
+          'the 503 is on the GET /healthcheck row', JSON.stringify(m));
+  t.check(((after.rows || {}).POST || 0) > ((quiet.rows || {}).POST || 0),
+          'and the refused POST on a row of its own', JSON.stringify(m));
+  t.equal(after.probes, quiet.probes,
+          'and neither is counted as a successful probe', JSON.stringify(m));
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'healthcheck',
   describe: 'GET /healthcheck answers on the main app and through the ' +
-            'plain-HTTP revocation listener, for the load balancer',
+            'plain-HTTP revocation listener, for the load balancer, and a ' +
+            'successful one is not counted as a call on the metrics',
   run: run
 };

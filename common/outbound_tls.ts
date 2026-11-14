@@ -140,6 +140,9 @@ const CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE----
  * product mode refuses plain http and ignores a switch that skips verification.
  */
 class OutboundTls {
+  // What each context built in this process names as its CA (#1360).
+  private static contextAnchors = new WeakMap<object, unknown>();
+
   /**
    * The error code of a CA file setting that names an unusable file:
    * `STS-CORE-0104`.
@@ -281,11 +284,16 @@ class OutboundTls {
                skipped: true };
     }
     const file = String(config.value(family.caFileKey) || '');
+    const signers = OutboundTls.signerAnchors();
     if (!file) {
       log.debug("Leaving OutboundTls.tlsVerdict(). Node's store.");
-      return { ok: true, why: '', errorCode: '', rejectUnauthorized: true,
-               skipped: false,
-               checkServerIdentity: OutboundTls.checkServerIdentity };
+      const none: TlsVerdict = { ok: true, why: '', errorCode: '',
+        rejectUnauthorized: true, skipped: false,
+        checkServerIdentity: OutboundTls.checkServerIdentity };
+      if (signers.length) {
+        none.ca = tls.rootCertificates.concat(signers);
+      }
+      return none;
     }
     const pems = OutboundTls.caFilePems(file);
     if (typeof pems === 'string') {
@@ -348,8 +356,10 @@ class OutboundTls {
       { rejectUnauthorized: true; ca?: string[];
         checkServerIdentity: (host: string, cert: any) => Error | undefined } {
     helpers.log.debug("Entering OutboundTls.verifiedOptions().");
-    const extra = Array.isArray(ca) ? ca
-      : (ca ? String(ca).match(CERTIFICATE) || [] : []);
+    const extra = (Array.isArray(ca) ? ca
+      : (ca ? String(ca).match(CERTIFICATE) || [] : []))
+      .concat(options && options.systemRoots === false ? [] :
+              OutboundTls.signerAnchors());
     const out: any = { rejectUnauthorized: true,
                        checkServerIdentity: OutboundTls.checkServerIdentity };
     if (extra.length) {
@@ -385,11 +395,165 @@ class OutboundTls {
     if (!OutboundTls.installed) {
       OutboundTls.installed = true;
       (tls as any).checkServerIdentity = OutboundTls.checkServerIdentity;
+      OutboundTls.installGate();
       log.info('outbound: every TLS client in this process checks the host ' +
                'as RFC 9525 does and holds the verified chain to the ' +
                'path rules (#201).');
     }
     log.debug("Leaving OutboundTls.installProcessWide().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE GATE ON EVERY OUTBOUND HANDSHAKE, UNDER PARANOID PKI MODE (#1360).
+  //
+  // `checkServerIdentity` is synchronous and revocation is a fetch, so what this
+  // use case asks cannot live there. rcbj's decision is that every dialer is
+  // gated, the cloud SDKs with their own HTTP stacks and gRPC channels included,
+  // with no listed exception. **SO THE GATE IS AT THE ONE FUNCTION THEY ALL END
+  // IN, `tls.connect()`,** rather than an agent handed to each: https, undici,
+  // http2, grpc-js, node-postgres, mysql2, nodemailer and ldapjs each call it, so
+  // a dialer added next year is held to it without knowing it exists, and no
+  // SDK's agent option has to exist for it to be covered.
+  //
+  // **THE SOCKET IS HELD IN TWO WAYS, BECAUSE WRITERS ARE OF TWO KINDS.** A
+  // stream writer (http) writes as soon as it has a socket, and OpenSSL would
+  // flush those bytes the moment the handshake ends: `cork()` keeps them on this
+  // side. A writer that waits for `secureConnect` (undici, http2, pg, nodemailer)
+  // has that one event held back until the verdict. A refusal destroys the socket
+  // with an error, so no byte of the request is ever written.
+  //
+  // **NOT IN FORCE IT IS ONE COMPARISON AND THE SOCKET IS UNTOUCHED**, which is
+  // what keeps a development process exactly as it was. A connection made with
+  // `rejectUnauthorized: false` is not this gate's business: its caller chose, and
+  // it is only marked unauthorized. Two dialers opt out by name, because they
+  // answer the question themselves: the revocation fetch (it IS the question) and
+  // the channel between cells (`cell-peer`).
+  // -------------------------------------------------------------------------
+  private static installGate(): void {
+    const original = tls.connect;
+    // A dialer may hand `tls.connect()` a context it built itself, as mysql2
+    // does, and a context cannot be asked what it was built with. So what it
+    // names is remembered as it is built: its `ca` is still that dialer's own.
+    const originalContext = tls.createSecureContext;
+    (tls as any).createSecureContext = function (...args: any[]) {
+      const context = (originalContext as any).apply(tls, args);
+      if (args[0] && args[0].ca) {
+        OutboundTls.contextAnchors.set(context, args[0].ca);
+      }
+      return context;
+    };
+    (tls as any).connect = function (...args: any[]) {
+      const options = args.filter(function (one) {
+        return one && typeof one === 'object';
+      })[0] || {};
+      let trust: any = null;
+      let inForce = false;
+      if (options.stsOutboundGate !== false) {
+        try {
+          // Lazily: the door requires `pki` and `revocation_status`.
+          trust = require('./certificate_trust');
+          inForce = trust.applies('tls-server-outbound');
+        } catch (e) {
+          // Not yet loadable: a process still starting, whose first dial is
+          // answered by the rules above alone. It is logged, and not fatal.
+          helpers.log.debug("Caught in the outbound gate: " +
+                            ((e && e.message) || e));
+        }
+      }
+      if (inForce) {
+        options.requestOCSP = true;
+        // A FULL HANDSHAKE, ALWAYS. A client resuming a session it kept gets
+        // nothing from `getPeerCertificate()`, so there is nothing to hold, and
+        // undici and https's agents resume on their own: every later request to
+        // a host would be refused as presenting no certificate.
+        delete options.session;
+      }
+      const socket = (original as any).apply(tls, args);
+      if (inForce) {
+        OutboundTls.holdSocket(socket, trust, options);
+      }
+      return socket;
+    };
+  }
+
+  // Holds a socket until the door has answered about what it reached.
+  private static holdSocket(socket: any, trust: any, options: any): void {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.holdSocket().");
+    let staple: Buffer | null = null;
+    socket.once('OCSPResponse', function (response: Buffer) {
+      staple = response && response.length ? response : null;
+    });
+    socket.cork();
+    const emit = socket.emit;
+    let released = false;
+    const realmId = require('./realms').currentId();
+    socket.emit = function (event: string, ...args: any[]) {
+      if (event !== 'secureConnect' || released) {
+        return emit.call(socket, event, ...args);
+      }
+      released = true;
+      const release = function (): void {
+        socket.emit = emit;
+        emit.call(socket, 'secureConnect', ...args);
+        socket.uncork();
+      };
+      if (socket.authorized !== true) {
+        // Its caller's `rejectUnauthorized: false`: see the header.
+        release();
+        return true;
+      }
+      trust.assessPeer('tls-server-outbound', socket.getPeerCertificate(true),
+        { realmId: realmId, staple: staple, pinnedTo: options.ca ||
+            (options.secureContext &&
+             OutboundTls.contextAnchors.get(options.secureContext)),
+          variant: options.stsOutboundVariant }).then(function (verdict: any) {
+        if (socket.destroyed) {
+          return;
+        }
+        if (verdict.ok) {
+          release();
+          return;
+        }
+        log.warn(errorCodes.tag(verdict.code || 'STS-PKI-0242') + 'outbound: ' +
+                 String(options.servername || options.host || 'a peer') +
+                 ' is refused under paranoid PKI mode, before anything was ' +
+                 'sent: ' + verdict.why + ' A self-signed certificate is ' +
+                 'accepted by name in the realm\'s signer truststore: kind ' +
+                 '`accepted` on /admin/pki/trust.');
+        socket.destroy(Object.assign(new Error('the certificate of ' +
+          String(options.servername || options.host || 'the peer') +
+          ' is refused: ' + verdict.why), { code: 'ERR_STS_PEER_REFUSED' }));
+      }, function (e: any) {
+        log.warn(errorCodes.tag('STS-PKI-0242') + 'outbound: the checks of a ' +
+                 'peer could not be made, so it is refused: ' +
+                 ((e && e.message) || e));
+        socket.destroy(Object.assign(new Error('the certificate of the peer ' +
+          'could not be checked'), { code: 'ERR_STS_PEER_REFUSED' }));
+      });
+      return true;
+    };
+    log.debug("Leaving OutboundTls.holdSocket().");
+  }
+
+  // What a realm's signer truststore adds to a dialer's `ca` under paranoid PKI
+  // mode, so an operator names a private CA once (#1360). A dialer that names no
+  // file then has node's store beside it, as one that does.
+  private static signerAnchors(): string[] {
+    helpers.log.debug("Entering OutboundTls.signerAnchors().");
+    let pems: string[] = [];
+    try {
+      const trust = require('./certificate_trust');
+      if (trust.applies('tls-server-outbound')) {
+        pems = require('./signer_truststore')
+          .pemsFor(undefined, 'tls-server-outbound');
+      }
+    } catch (e) {
+      helpers.log.debug("Caught in OutboundTls.signerAnchors(): " +
+                        ((e && e.message) || e));
+    }
+    helpers.log.debug("Leaving OutboundTls.signerAnchors(). " + pems.length);
+    return pems;
   }
 
   private static rulesError(host: string, problem: any): Error {
@@ -519,6 +683,75 @@ class OutboundTls {
 
   // The certificates in a PEM file, or a sentence saying why there are none.
   /**
+   * Says whether a CA file an administrator named may be read (#1481, ASVS
+   * 5.0.0 5.3.2). In product its real path, symbolic links followed, must be
+   * inside a directory `security.fileRoots` lists. A path that does not
+   * exist answers the same as one outside them, so this says nothing about
+   * what is on the disk.
+   *
+   * @param file - the path as configured
+   * @returns whether it may be read
+   */
+  static namedFileAllowed(file: string): boolean {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.namedFileAllowed().");
+    if (!mode.confinesNamedFiles()) {
+      log.debug("Leaving OutboundTls.namedFileAllowed(). Not confined here.");
+      return true;
+    }
+    const nodePath = require('path');
+    const named = String(file || '');
+    let real = '';
+    try {
+      real = nodePath.isAbsolute(named) ? fs.realpathSync(named) : '';
+    } catch (e) {
+      log.debug("Caught in OutboundTls.namedFileAllowed(): " +
+                ((e && e.code) || (e && e.message) || e));
+      // No such file, or none this process may see: the same answer as a
+      // file outside the directories.
+      real = '';
+    }
+    const listed: unknown = config.value('security.fileRoots');
+    const roots = (Array.isArray(listed) ? listed : String(listed || '')
+      .split(',')).map(function (one: unknown) {
+      return String(one).trim();
+    }).filter(Boolean);
+    const allowed = !!real && roots.some(function (root: string) {
+      let base = root;
+      try {
+        base = fs.realpathSync(root);
+      } catch (e) {
+        log.debug("Caught in OutboundTls.namedFileAllowed(): " +
+                  ((e && e.code) || (e && e.message) || e));
+        // A listed directory this image does not have is compared as written.
+      }
+      return real === base || real.indexOf(base + nodePath.sep) === 0;
+    });
+    log.debug("Leaving OutboundTls.namedFileAllowed(). " + allowed);
+    return allowed;
+  }
+
+  /**
+   * Refuses a named file that may not be read, before a caller reads it. The
+   * sentence names the setting and not the path, and is the same whether the
+   * file is outside the directories or does not exist.
+   *
+   * @param file - the path as configured
+   * @returns nothing
+   * @throws when the file may not be read
+   */
+  static assertNamedFile(file: string): void {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.assertNamedFile().");
+    if (!OutboundTls.namedFileAllowed(file)) {
+      log.debug("Leaving OutboundTls.assertNamedFile(). Refused.");
+      throw new Error('that is not a file in a directory security.fileRoots ' +
+                      'lists');
+    }
+    log.debug("Leaving OutboundTls.assertNamedFile().");
+  }
+
+  /**
    * Reads the certificates in a PEM file.
    *
    * @param file - the file's path
@@ -527,6 +760,10 @@ class OutboundTls {
   static caFilePems(file: string): string[] | string {
     const log = helpers.log;
     log.debug("Entering OutboundTls.caFilePems(). " + file);
+    if (!OutboundTls.namedFileAllowed(file)) {
+      log.debug("Leaving OutboundTls.caFilePems(). Not a permitted path.");
+      return 'it is not a file in a directory security.fileRoots lists';
+    }
     let text = '';
     try {
       text = fs.readFileSync(file, 'utf8');

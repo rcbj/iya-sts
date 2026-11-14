@@ -96,6 +96,12 @@ function child() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const client = { client_id: 'txj-client' };
+    // The exchange's audience, registered (#1140): a token is minted only
+    // for an audience an application object holds, in every mode.
+    require(ROOT + '/common/applications').createApplication({
+      identifier: 'txj-api', kind: 'oauth2-resource-server',
+      protocols: ['oauth2'],
+      fields: { oauthAudience: ['https://txj-api.example'] } });
 
     const subject = await post(port, Object.assign({
       grant_type: 'password', username: 'txj-alice', password: 'anything',
@@ -120,13 +126,16 @@ function child() {
          '— it logged one per exchange, reading the word "undefined" as ' +
          'base64', flagged.join(' | '));
 
-    // 2. With openid: an ID Token, still no error.
+    // 2. With openid: an ID Token, still no error. A SELF exchange, with no
+    // audience: since #156 an exchange answers an ID Token only when the
+    // token it issued still carries `openid`, and RFC 9068's audience plan
+    // takes `openid` off a token for a foreign audience.
     flagged.length = 0;
     const withId = await post(port, Object.assign({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
       subject_token: subject.json.access_token,
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
-      audience: 'https://txj-api.example', scope: 'openid profile' },
+      scope: 'openid profile' },
     client));
     note(withId.status === 200 && withId.json.id_token,
          '2a. an exchange with openid answers an ID Token',

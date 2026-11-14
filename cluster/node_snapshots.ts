@@ -58,7 +58,8 @@
 // requires this directory's modules, and the store is open only after start.
 // ===========================================================================
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
@@ -222,8 +223,7 @@ class NodeSnapshots {
         text.indexOf(':') >= 0) {
       IPV4.lastIndex = 0;
       helpers.log.debug("Leaving NodeSnapshots.displayName(). Digested.");
-      return 'node-' + crypto.createHash('sha256').update(text)
-        .digest('hex').slice(0, 8);
+      return 'node-' + crypto.digest('sha256', text, 'hex').slice(0, 8);
     }
     IPV4.lastIndex = 0;
     helpers.log.debug("Leaving NodeSnapshots.displayName().");

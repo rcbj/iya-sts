@@ -1,10 +1,15 @@
 # home/
 
-The front door. One module, two routes, one image:
+The front door. One server module, one page drawn in the browser, one image —
+**a static surface since #579 (2026-10-12)**, the first of #569's public pages
+and the first to follow #570's recipe (`common/CLAUDE.md` 3cl):
 
 | File | What it is |
 |---|---|
-| `home.ts` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
+| `home.ts` | The server half: `GET /` (the shell), `GET /home.js` (the bundle), `GET /home.css` (the card's own rules), `GET /home-api` (the API's index) and `GET /home-api/front` (the page's view), `GET /realms`, and `GET /logo.png`, the only image this service serves. |
+| `web_home_front.ts` | The renderer: the card's body from the view, its band (the logo) for the surface's frame, in the page's language from the `home` catalogs. |
+| `web_home_pages.ts` | The page table (`PAGES`, `render`, `frame`), and the renderers' bundle `home.bundle.js` (`StsHome`) the tests load. |
+| `web_home.ts` | The entry: `new WebSurface(...).start()`. Built to `home-spa.js` — never `home.js`, which is `home.ts` compiled — and served at `/home.js`. |
 | `assets/logo.png` | That image: this project's own logo, a byte-for-byte copy of `docs/logo.png`, the one README.md shows — see below. |
 
 It is a directory of its own rather than a route in `common/`, and the entry
@@ -14,7 +19,8 @@ package root, where there are exactly two modules and both earn it.
 
 ## Its place in the require order (6a)
 
-No constraint. Two EXACT paths (`/` and `/logo.png`) and nothing but the app
+No constraint. Exact paths (`/`, `/home.js`, `/home.css`, `/realms`,
+`/logo.png`) and the `/home-api` prefix, and nothing but the app and libraries
 behind them; first among the route modules — the first `register()` call in
 `common/protocol_stack.ts`, since #50's R1 moved registration out of the
 require — so that the page a person meets first heads the list on
@@ -28,15 +34,19 @@ statement about the router and a useless one about the service: this port
 answers well over a hundred endpoints across sixteen protocol families and none
 of them was discoverable from `/`.
 
-So the page is a **signpost**: the logo, the name, the version, one sentence
-about what this service is, the warning that it verifies nothing, and five
-links — the repository, its issues, the documentation site, and the two
-surfaces on this instance that a person rather than a client goes to, `/admin`
-and `/portal`.
+So the page is a **signpost**: the logo, the name, one sentence
+about what this service is, the warning that it verifies nothing, and six
+links — the repository, its issues, the documentation site, and the three
+surfaces on this instance that a person rather than a client goes to, `/admin`,
+`/portal` and `/report`. The version
+is not on the card since 2026-11-14 (rcbj): the page footer every shell draws
+(`common/page_footer.ts`) carries it, with its build line as the tooltip, and
+a second line here was the version said twice. `GET /home-api/front` still
+answers `version` and `build`.
 
 **IT LISTS NO ENDPOINTS AND MUST NOT START.** `GET /admin/sts-metadata` builds
 that list by walking the running Express router, so it cannot go stale by
-omission, and this repository's own `tests/vendored/sts_metadata.js` fails on drift in
+omission, and this repository's own `tests/protocol/sts_metadata.js` fails on drift in
 either direction. A hand-written set of highlights here would be a second,
 unchecked copy of it — wrong within a month, on the page most likely to be read
 first and least likely to be re-read. `docs/endpoints.md` makes the same
@@ -46,7 +56,7 @@ The same goes for anything else this service already publishes about itself:
 `GET /oauth2/rfc9700`, `GET /spiffe`, `GET /admin/ldap/service`, `GET /tls`. A summary of one
 of those on the front page is a summary that will disagree with it.
 
-## The five links
+## The six links
 
 Three are written out as constants rather than derived. `package.json` carries no
 `repository` member, and adding one so that this page could compute three URLs
@@ -56,11 +66,17 @@ The documentation URL is GitHub Pages' arrangement of the same repository —
 `baseurl: /iya-sts` — so **changing the repository changes all three and that
 baseurl together**.
 
-The fourth and fifth, `/admin` and `/portal`, are **relative on purpose**. This
-service is reached as localhost, as `sts` on a compose network and through a
-published port; `baseUrlOf()` exists because documents carrying absolute URLs
-have to follow the request, and a same-origin link does not have to know any of
-that.
+The fourth, fifth and sixth, `/admin`, `/portal` and `/report`, are **relative
+on purpose**. This service is reached as localhost, as `sts` on a compose
+network and through a published port; `baseUrlOf()` exists because documents
+carrying absolute URLs have to follow the request, and a same-origin link does
+not have to know any of that. **The one exception is #472's**: where the
+console, the portal or reports is on a listener this request did not arrive on,
+the view carries that listener's advertised base instead (`Home.linkTo()`),
+since a relative link would land on a listener that answers it with a 404.
+Reports is one hosted application with `/report-api`
+(`common/hosted_applications.js`), the same arrangement as the portal and
+`/account-api`, so the two cannot be sent to different listeners.
 
 **`/portal` arrived 2026-09-10 and closed a door that had never been opened.**
 The user portal has existed since 2026-09-06, and the only ways to reach it
@@ -72,11 +88,18 @@ row lists none of the portal's pages, for the endpoint rule one section up:
 so a set of highlights here would be a second copy that goes stale the first
 time a page is added there.
 
-**What a sign-in here MEANS is one sentence shared by both rows**, read per
-request, in `signInMeans()`. What a sign-in screen actually CHECKS is a
-property of `global.mode` — `mode.verifiesCredentials()` — rather than of
-either surface, so a copy on each row would disagree the first time somebody
-corrected one of them.
+**`/report` is the sixth link (#956).** It is the reports application, the
+third surface on this instance that a person goes to. The row lists none of
+its pages, for the endpoint rule above. Who may open it — an administrator,
+or a member of the realm's report group — is one sentence on the row;
+`report/CLAUDE.md` (*Who may run one*) is the rule.
+
+**What a sign-in here MEANS is one sentence shared by the three rows**, chosen
+once by `web_home_front.ts`'s `signInMeans()` from the view's
+`mode.verifiesCredentials`, which the server reads per request. What a sign-in
+screen actually CHECKS is a property of `global.mode` —
+`mode.verifiesCredentials()` — rather than of any one surface, so a copy on
+each row would disagree the first time somebody corrected one of them.
 
 **It replaced a clause that was wrong in two ways at once**, and adding the
 portal link is what put the first of them in front of a reader. The console's
@@ -100,10 +123,11 @@ defaults and environment variables, four days after the settings stopped
 existing. `tests/readme_settings.js` is the check that would have caught it and
 now does; `tests/CLAUDE.md` carries the argument.
 
-**What the two rows are told apart by is the ROLE, and that is a real
-difference rather than a missing setting.** The console asks for one of two;
-the portal asks for none, because every page of it is about the person looking
-at it, so saying who you are is the entire question.
+**What the console and the portal are told apart by is the ROLE, and that is a
+real difference rather than a missing setting.** The console asks for one of
+two; the portal asks for none, because every page of it is about the person
+looking at it, so saying who you are is the entire question. Reports is told
+apart by who may open it, which is the sentence on its row.
 
 ## The image
 
@@ -120,7 +144,7 @@ at it, so saying who you are is the entire question.
   down, and a missing decoration is the least important thing that could go
   wrong here. With no image the page is drawn without one and the route answers
   **404 in its own words**. That last part is load-bearing for the link check in
-  `tests/vendored/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
+  `tests/protocol/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
   endpoint answering for itself.
 * **It is this project's own logo (2026-10-01, rcbj)**: `docs/logo.png`, the
   one README.md shows, copied byte for byte (906 × 269, opaque, 22 kB, drawn
@@ -130,12 +154,73 @@ at it, so saying who you are is the entire question.
   ground, so the band behind it is the image's own colour (`#fbfaf8`). Copy
   `docs/logo.png` over it again if the README's logo changes.
 
-## No script and no external resource
+## A static surface since #579
 
-`app.js` sets `script-src 'none'` service-wide and this page needs no exception:
-it has no behaviour. Its one `<style>` block is covered by the
-`style-src 'unsafe-inline'` several pages here already rely on, and the image is
-same-origin, which `img-src 'self' data:` already allows. A page that fetched a
-font from a CDN would need the policy widened for a decoration — so it does not.
-Seven pages here have a script on them and each had to argue for it
-separately (the root `CLAUDE.md` lists them); this is not an eighth.
+Until #579 `homePage()` drew the card on the server with no script at all.
+#569 converts every human-facing page into a static application, and the front
+door went first, being the smallest, to prove #570's foundation. What it is
+now, by the recipe:
+
+* **`GET /` answers the shell** (`ShellDocument.document()` and `serve()`):
+  `/web/card.css` and `/home.css`, the deferred `/home.js`, the language
+  attributes (`PageLocale.shellAttributes()`), `data-sts-prefix` in a realm,
+  and `data-sts-authn` where the sign-in service — the chooser posts to
+  `/authn/language` — is on another listener. **Script is required** (rcbj on
+  #569): the `<noscript>` notice says so and links the documentation, the one
+  link that works with nothing drawn.
+* **The policy is the shell's**: `script-src 'self'`, `style-src 'self'` — the
+  page's old inline `<style>` is `/home.css` now, over the sign-in card's
+  stylesheet, whose centring and width it overrides — `connect-src 'self'`
+  plus the sign-in service's origin where it is elsewhere, `img-src 'self'`
+  for the logo, and `frame-ancestors` re-added by
+  `app.contentSecurityPolicy()` whatever is asked.
+* **`GET /home-api/front` is the page's view, and it has no words**: the
+  name, the version and its build (the tooltip), the mode's two facts, the
+  logo (or `null`, see *The image*), and the six links as `{ id, href,
+  external }`. `GET /home-api` is the index, `/account-api`'s convention: the
+  view's operation `mirrors` `GET /`, and nothing posts. Both `no-store`,
+  because the mode and the listeners can change while the process runs.
+* **The browser draws it in its language** from the `home` catalog namespace,
+  the same messages the server-drawn page used (translated for #539), and the
+  chooser is the surface runtime's. The band with the logo is drawn by the
+  surface's `frame`, above the chooser as before — which is why #579 gave
+  `WebSurface`'s frame the page's `view` in its context.
+* **Held by** `tests/web_surfaces.js` (the round trip, from the row in
+  `tests/tools/web_surfaces.js`: both modes, with and without the image, a
+  console elsewhere, English and French) and `tests/home_static_surface.js`
+  (the shell, its policy and attributes in and out of a realm, the bundle,
+  the API, and the bundle drawing the live view).
+
+## A realm's sign-in appearance (#717, 2026-11-04)
+
+rcbj's D4 on #717: the front door takes a realm's appearance, and **the
+realm's logo replaces this page's image when the realm has one**. The shell
+links `/web/card.css`, so `ShellDocument` already adds the realm's
+`/web/theme.css` and the brand facts, and `WebSurface.put()` already draws
+the brand header — the logo and the display name — above the card
+(`common/CLAUDE.md`, `branding.ts`). What this module adds is that the page
+stays coherent:
+
+* **One logo, never two.** `frontView()` answers `logo: null` where the
+  ambient realm holds a sign-in logo (`realmHasLogo()`, which requires
+  `common/branding.ts` lazily, at the request: that module is registered
+  after this one and its load declares a realm store). The frame then draws
+  no band, and the realm's logo in the header is the only one. A realm with
+  no logo of its own keeps this page's image, a display name alone being
+  drawn above the card beside it. **The view still carries facts**: `logo`
+  is "the image this page draws", and that is now none.
+* **`/home.css` reads the custom properties** — the heading, the links, the
+  quieter text and the rules — each falling back to the literal it
+  replaced, so a realm that set nothing renders exactly as before. The
+  warning's text is pinned to the `#222` it always inherited, because its
+  pale yellow ground is not the realm's to change. The band behind this
+  page's own image keeps the image's colour.
+* **The layouts**: this page's block body replaces the card's flex body, so
+  `WebCardCss.BRAND_CSS`'s split panel and banner would both land as a
+  boxed band inside the page's padding; `/home.css` makes both a
+  full-width band in the accent colour across the top, and `centered` is the
+  header above the card, as on the sign-in screen.
+
+`tests/branding_surfaces.js` holds it: the default realm's shell without a
+theme and its view with the image, a realm's shell with the theme after the
+card and its view and card without the image.

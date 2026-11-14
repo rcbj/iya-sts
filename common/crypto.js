@@ -31,7 +31,7 @@
 // ---------------------------------------------------------------------------
 // WHERE THE XML CODE CAME FROM, AND WHY IT IS NOT WRITTEN HERE.
 //
-// `common/vendored/xmldsig.js` is the parent project's own XML security module,
+// `common/crypto_impl/xmldsig.js` is the parent project's own XML security module,
 // copied here byte-identical under the rule that directory already has. It is
 // not a library somebody found: it is the OTHER END of most of these exchanges.
 // The debugger signs, verifies, encrypts and decrypts with it on its WS-Trust,
@@ -60,7 +60,7 @@
 // ---------------------------------------------------------------------------
 // THIS MODULE IS A LEAF AND MUST STAY ONE.
 //
-// It requires npm packages, `./vendored/xmldsig.js`, and `./config` — and
+// It requires npm packages, `./crypto_impl/xmldsig.js`, and `./config` — and
 // `config.js` requires nothing in this repository, so there is no cycle to
 // close and no route order to disturb. It registers no endpoint, exactly like
 // `oauth-oidc/dpop.ts` (rule 3), and it is BELOW `helpers.js` rather than
@@ -99,9 +99,14 @@ const asn1js = require('asn1js');
 const jwt = require('jsonwebtoken');
 const bunyan = require('bunyan');
 const config = require('./config');
+// Every signature algorithm, once (#1368): the tables below are views of it.
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
+const LazyModule = require('./lazy_module');
+// Which algorithm this realm may sign with or accept (#1368).
+const signaturePolicy = require('./signature_policy');
 const pqJose = require('./pq_jose');
 
-const xmldom = require('@xmldom/xmldom');
+const xmldom = require('./xml_parser');
 // THE FAILURE CODES. A LEAF with no requires, so this file stays one (rule 3r).
 // A verdict that refuses carries its code NON-ENUMERABLY — `errorCodes.mark()`
 // puts it under a Symbol — so no member a caller compares or serialises moves;
@@ -147,7 +152,7 @@ if (!global.XMLSerializer) {
   global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
 /** The vendored XML Signature engine. */
-const xmldsig = require('./vendored/xmldsig.js');
+const xmldsig = require('./crypto_impl/xmldsig.js');
 
 // The namespace URIs this file names. They are also exported by xmldsig.js and
 // are repeated here ONLY as local constants for readability — a caller that
@@ -270,13 +275,22 @@ function directChildByLocal(parent, localName, namespaceUri) {
  * Signs one XML document with an enveloped signature, exclusive c14n.
  *
  * @param xml - the document
- * @param opts - `privateKeyPem` or `privateKey`, `certPem`, `refUri`,
- *   `placement`, `sigAlg`, `includeKeyInfo` and `what`
+ * @param opts - `privateKeyPem` or `privateKey`, `certPem`, `keyInfoXml`,
+ *   `refUri`, `placement`, `sigAlg`, `includeKeyInfo` and `what`
  * @returns the signed document
  */
 function signXml(xml, opts) {
   log.debug("Entering signXml().");
   const options = opts || {};
+  // THE XML SIGN CHOKEPOINT (#1368). `xmlSignatureChoice()` chooses within the
+  // list; this is what holds a caller that named a method itself.
+  if (options.sigAlg) {
+    const unsignable = signaturePolicy.signCause('xml', options.sigAlg);
+    if (unsignable) {
+      log.debug("Leaving signXml(). Not signed here.");
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
+  }
   const what = options.what || 'XML document';
   log.debug('Entering signXml(). what=' + what + ', placement=' +
             (options.placement || PLACEMENT.AFTER_ISSUER));
@@ -330,6 +344,16 @@ function signXml(xml, opts) {
   //     raw r||s XML Signature 1.1 section 6.4.3 specifies, which node's
   //     `ieee-p1363` encoding produces.
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // THE SIGNER'S CHAIN IN KeyInfo (#1064). `keyInfoXml` is the
+  // `ds:X509Data` a signer hands over — `helpers.xmlSignerKeyInfo()`, the
+  // leaf, its chain and the service Root — because this module is a LEAF
+  // (rule 3r) and cannot reach the PKI to complete a chain itself. Without
+  // it the signature carries the certificate alone, as it always did. A
+  // post-quantum signature has no certificate profile and takes none.
+  // -------------------------------------------------------------------
+  const chainKeyInfo = options.includeKeyInfo === false ? ''
+    : String(options.keyInfoXml || '');
   const method = XML_SIGNATURE_METHODS[options.sigAlg] || null;
   const pqMethod = xmldsig.SIG_METHODS[options.sigAlg] &&
     xmldsig.SIG_METHODS[options.sigAlg].postQuantum
@@ -362,6 +386,11 @@ function signXml(xml, opts) {
       sigAlg: options.sigAlg,
       c14nAlg: options.c14nAlg || xmldsig.C14N_EXCLUSIVE,
       keyInfo: options.includeKeyInfo === false ? 'none' : 'x509',
+      // The general engine's buildKeyInfo() answers a caller's keyInfoXml
+      // AS IS and ahead of its `none` check, so it goes in wrapped, and only
+      // when KeyInfo is wanted at all.
+      keyInfoXml: chainKeyInfo
+        ? '<ds:KeyInfo>' + chainKeyInfo + '</ds:KeyInfo>' : undefined,
       certPem: options.certPem,
       refUri: refUri,
       placement: options.placement || PLACEMENT.AFTER_ISSUER,
@@ -377,6 +406,9 @@ function signXml(xml, opts) {
   const signed = xmldsig.signEnveloped(xml, {
     privateKeyPem: options.privateKeyPem,
     certPem: options.certPem,
+    // signEnveloped() wraps a caller's keyInfoXml in ds:KeyInfo itself, and
+    // writes the bare certificate where there is none.
+    keyInfoXml: chainKeyInfo || undefined,
     placement: options.placement || PLACEMENT.AFTER_ISSUER,
     refUri: refUri,
     sigAlg: options.sigAlg,
@@ -413,7 +445,7 @@ function signXml(xml, opts) {
 // DigestMethod it has no row for before it ever calls a verifier. The
 // alternative was a second canonicalizing verifier in this file, which is
 // exactly the drift section 1's header exists to prevent; editing the
-// vendored file is forbidden (`common/vendored/CLAUDE.md`). A registered
+// vendored file is forbidden (`common/crypto_impl/CLAUDE.md`). A registered
 // digest row's `md` is a node hash dressed as forge's, because that is the
 // shape the engine calls.
 //
@@ -458,138 +490,17 @@ function signXml(xml, opts) {
 // accepted and the verdict still says `weak` (as it does for RIPEMD-160,
 // whose 160-bit output is SHA-1's, and which no setting refuses).
 // ===========================================================================
-const XMLDSIG_MORE = 'http://www.w3.org/2001/04/xmldsig-more#';
 const XMLDSIG_MORE_2007 = 'http://www.w3.org/2007/05/xmldsig-more#';
-const XMLDSIG_MORE_2021 = 'http://www.w3.org/2021/04/xmldsig-more#';
-const XMLDSIG11 = 'http://www.w3.org/2009/xmldsig11#';
 const PSS_PARAMS_NS = XMLDSIG_MORE_2007;
 
+// VIEWS OF THE REGISTRY (#1368). The rows stayed as they were, moved there.
 // uri -> { family, hash, keyTypes, label, weak, sha1 }
-const XML_SIGNATURE_METHODS = {};
+const XML_SIGNATURE_METHODS = algorithmRegistry.xmlSignatureMethods();
 // uri -> why it is not verified
-const XML_SIGNATURE_REFUSED = {};
+const XML_SIGNATURE_REFUSED = algorithmRegistry.xmlSignaturesRefused();
 // uri -> { hash, label, weak, sha1 }
-const XML_DIGEST_METHODS = {};
-const XML_DIGEST_REFUSED = {};
-
-// The node digest names, and the ones that are weak. SHA-1 is the one a
-// setting governs; RIPEMD-160 is recorded as weak and accepted.
-const WEAK_HASHES = ['sha1', 'ripemd160'];
-
-// `sha3-256` -> `SHA3-256`, the spelling the method names use; a digest's
-// own label (`digest` true) spells SHA-1 and SHA-256 with the hyphen.
-function hashLabel(hash, digest) {
-  log.debug("Entering hashLabel().");
-  const upper = String(hash).toUpperCase();
-  log.debug("Leaving hashLabel().");
-  return digest ? upper.replace(/^SHA(\d+)$/, 'SHA-$1')
-    .replace('RIPEMD160', 'RIPEMD-160') : upper;
-}
-
-function addSignatureMethod(uri, family, hash, keyTypes, label) {
-  log.debug("Entering addSignatureMethod().");
-  XML_SIGNATURE_METHODS[uri] = {
-    family: family, hash: hash, keyTypes: keyTypes, label: label,
-    weak: WEAK_HASHES.indexOf(String(hash)) >= 0,
-    sha1: hash === 'sha1'
-  };
-  log.debug("Leaving addSignatureMethod().");
-}
-
-[['sha1', DS_NS + 'rsa-sha1'],
- ['sha224', XMLDSIG_MORE + 'rsa-sha224'],
- // RFC 6931's spelling, which Apache Santuario still uses; the same method.
- ['sha224', XMLDSIG_MORE_2007 + 'rsa-sha224'],
- ['sha256', XMLDSIG_MORE + 'rsa-sha256'],
- ['sha384', XMLDSIG_MORE + 'rsa-sha384'],
- ['sha512', XMLDSIG_MORE + 'rsa-sha512'],
- ['ripemd160', XMLDSIG_MORE + 'rsa-ripemd160']].forEach(function (row) {
-  addSignatureMethod(row[1], 'rsa', row[0], ['rsa'],
-                     'RSA-' + hashLabel(row[0]));
-});
-['sha1', 'sha224', 'sha256', 'sha384', 'sha512', 'sha3-224', 'sha3-256',
- 'sha3-384', 'sha3-512', 'ripemd160'].forEach(function (hash) {
-  addSignatureMethod(XMLDSIG_MORE_2007 + hash + '-rsa-MGF1', 'rsa-pss', hash,
-                     ['rsa', 'rsa-pss'],
-                     'RSASSA-PSS ' + hashLabel(hash) + ' with MGF1');
-});
-addSignatureMethod(XMLDSIG_MORE_2007 + 'rsa-pss', 'rsa-pss', 'sha256',
-                   ['rsa', 'rsa-pss'],
-                   'RSASSA-PSS with parameters (RFC 9231 section 2.3.9)');
-[['sha1', XMLDSIG_MORE + 'ecdsa-sha1'],
- ['sha224', XMLDSIG_MORE + 'ecdsa-sha224'],
- ['sha256', XMLDSIG_MORE + 'ecdsa-sha256'],
- ['sha384', XMLDSIG_MORE + 'ecdsa-sha384'],
- ['sha512', XMLDSIG_MORE + 'ecdsa-sha512'],
- ['sha3-224', XMLDSIG_MORE_2021 + 'ecdsa-sha3-224'],
- ['sha3-256', XMLDSIG_MORE_2021 + 'ecdsa-sha3-256'],
- ['sha3-384', XMLDSIG_MORE_2021 + 'ecdsa-sha3-384'],
- ['sha3-512', XMLDSIG_MORE_2021 + 'ecdsa-sha3-512'],
- ['ripemd160', XMLDSIG_MORE_2007 + 'ecdsa-ripemd160']].forEach(function (row) {
-  addSignatureMethod(row[1], 'ecdsa', row[0], ['ec'],
-                     'ECDSA-' + hashLabel(row[0]));
-});
-addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed25519', 'eddsa', null,
-                   ['ed25519'], 'EdDSA Ed25519 (RFC 9231)');
-addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed448', 'eddsa', null,
-                   ['ed448'], 'EdDSA Ed448 (RFC 9231)');
-addSignatureMethod(DS_NS + 'dsa-sha1', 'dsa', 'sha1', ['dsa'], 'DSA-SHA1');
-addSignatureMethod(XMLDSIG11 + 'dsa-sha256', 'dsa', 'sha256', ['dsa'],
-                   'DSA-SHA256 (XMLDSig 1.1)');
-// The post-quantum rows come from the vendored registry, so the two cannot
-// disagree about an identifier. Only the stateless families: HSS/LMS has a
-// row there and no verifier in node.
-Object.keys(xmldsig.SIG_METHODS).forEach(function (uri) {
-  const spec = xmldsig.SIG_METHODS[uri];
-  if (spec.postQuantum && (spec.family === 'mldsa' ||
-                           spec.family === 'slhdsa')) {
-    addSignatureMethod(uri, 'pq', null, [String(spec.alg).toLowerCase()],
-                       spec.label);
-  }
-});
-
-['rsa-md5', 'hmac-md5'].forEach(function (name) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE + name] = 'MD5 is broken and RFC 9231 ' +
-    'says it MUST NOT be used';
-});
-['md2-rsa-MGF1', 'md5-rsa-MGF1'].forEach(function (name) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2007 + name] = 'MD2 and MD5 are broken';
-});
-['rsa-whirlpool', 'ecdsa-whirlpool', 'whirlpool-rsa-MGF1',
- 'ripemd128-rsa-MGF1'].forEach(function (name) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2007 + name] = 'Whirlpool and ' +
-    'RIPEMD-128 are not in node\'s OpenSSL default provider';
-});
-['sha1', 'sha224', 'sha256', 'sha384', 'sha512'].forEach(function (hash) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE + 'esign-' + hash] = 'ESIGN has no ' +
-    'implementation in OpenSSL';
-});
-['eddsa-ed25519ph', 'eddsa-ed25519ctx', 'eddsa-ed448ph'].forEach(
-  function (name) {
-    XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2021 + name] = 'node verifies pure ' +
-      'EdDSA only, not the pre-hashed or context variants';
-  });
-XML_SIGNATURE_REFUSED[xmldsig.HSS_LMS_URI] = 'HSS/LMS is a stateful ' +
-  'hash-based scheme and OpenSSL 3.5 (node 24) has no verifier for it';
-
-[['sha1', DS_NS + 'sha1'],
- ['sha224', XMLDSIG_MORE + 'sha224'],
- ['sha256', XENC_NS + 'sha256'],
- ['sha384', XMLDSIG_MORE + 'sha384'],
- ['sha512', XENC_NS + 'sha512'],
- ['sha3-224', XMLDSIG_MORE_2007 + 'sha3-224'],
- ['sha3-256', XMLDSIG_MORE_2007 + 'sha3-256'],
- ['sha3-384', XMLDSIG_MORE_2007 + 'sha3-384'],
- ['sha3-512', XMLDSIG_MORE_2007 + 'sha3-512'],
- ['ripemd160', XENC_NS + 'ripemd160']].forEach(function (row) {
-  XML_DIGEST_METHODS[row[1]] = {
-    hash: row[0], label: hashLabel(row[0], true),
-    weak: WEAK_HASHES.indexOf(row[0]) >= 0, sha1: row[0] === 'sha1'
-  };
-});
-XML_DIGEST_REFUSED[XMLDSIG_MORE + 'md5'] = 'MD5 is broken';
-XML_DIGEST_REFUSED[XMLDSIG_MORE_2007 + 'whirlpool'] = 'Whirlpool is not in ' +
-  'node\'s OpenSSL default provider';
+const XML_DIGEST_METHODS = algorithmRegistry.xmlDigestMethods();
+const XML_DIGEST_REFUSED = algorithmRegistry.xmlDigestsRefused();
 
 // A node hash with the three members of a forge message digest the vendored
 // engine calls: `create()`, `update(binaryString)`, `digest().getBytes()`.
@@ -674,7 +585,7 @@ function sha1Allowed() {
  * @returns `{ problem, code, weak, sha1 }`, `problem` empty when they are
  *   verified here and policy allows them
  */
-function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
+function xmlAlgorithmVerdict(signatureMethod, digestMethods, opts) {
   log.debug("Entering xmlAlgorithmVerdict(). " + signatureMethod);
   const sig = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
   const out = { problem: '', code: '', weak: false, sha1: false,
@@ -686,6 +597,26 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
       ' is not one this service verifies' + (why ? ': ' + why : '');
     out.code = 'STS-KEYS-0061';
     log.debug("Leaving xmlAlgorithmVerdict(). Unknown SignatureMethod.");
+    return out;
+  }
+  // AN HMAC NEEDS A SHARED KEY (#658), and the only one this service holds
+  // for a signature is a Kerberos token's session key, in a WS-Security
+  // signature whose KeyInfo names that token. Every other caller — a
+  // certificate's signature, the Redirect binding's SigAlg — answers an HMAC
+  // as a method it cannot check, as it did before the HMAC rows existed.
+  if (sig.family === 'hmac' && !(opts && opts.sharedKey)) {
+    out.problem = 'the SignatureMethod "' + signatureMethod + '" is an HMAC, ' +
+      'which needs a shared key; a certificate cannot check one';
+    out.code = 'STS-KEYS-0061';
+    log.debug("Leaving xmlAlgorithmVerdict(). An HMAC with no shared key.");
+    return out;
+  }
+  // THE XML ACCEPT CHOKEPOINT (#1368), before any key operation.
+  const unaccepted = signaturePolicy.acceptCause('xml', signatureMethod);
+  if (unaccepted) {
+    out.problem = unaccepted.message;
+    out.code = unaccepted.code;
+    log.debug("Leaving xmlAlgorithmVerdict(). Not accepted here.");
     return out;
   }
   out.weak = sig.weak;
@@ -700,6 +631,13 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
           ? ': ' + XML_DIGEST_REFUSED[uri] : '');
       out.code = 'STS-KEYS-0061';
       log.debug("Leaving xmlAlgorithmVerdict(). Unknown DigestMethod.");
+      return out;
+    }
+    const digestRefused = signaturePolicy.acceptXmlDigestCause(dig.label);
+    if (digestRefused) {
+      out.problem = digestRefused.message;
+      out.code = digestRefused.code;
+      log.debug("Leaving xmlAlgorithmVerdict(). Digest not accepted here.");
       return out;
     }
     out.weak = out.weak || dig.weak;
@@ -877,6 +815,17 @@ function xmlEcdsaCurveProblem(key) {
   log.debug("Entering xmlEcdsaCurveProblem().");
   const curve = String(((key && key.asymmetricKeyDetails) || {})
     .namedCurve || '');
+  // secp256k1 is at least 256 bits and still not an approved curve (ASVS
+  // 5.0.0 11.6.1): in product it verifies an XML signature only where JOSE's
+  // ES256K is accepted, which is where keys.acceptedSigningAlgorithms or
+  // keys.signingAlgorithms names it (signature_policy.ts).
+  if (curve === 'secp256k1' &&
+      signaturePolicy.acceptCause('jose', 'ES256K') !== null) {
+    log.debug("Leaving xmlEcdsaCurveProblem(). secp256k1 refused.");
+    return 'an ECDSA key on secp256k1, which is not an approved curve and ' +
+      'verifies an XML signature in product mode only where ' +
+      'keys.acceptedSigningAlgorithms lists ES256K';
+  }
   if (XML_ECDSA_CURVES.indexOf(curve) >= 0 || mode.usesBrokenAlgorithms()) {
     log.debug("Leaving xmlEcdsaCurveProblem(). " + curve + " allowed.");
     return '';
@@ -1254,6 +1203,7 @@ function verifyXmlSignature(xml, opts) {
   try {
     result = xmldsig.verifyXml(signatureXml, found ? {
       referencedXml: referencedXml,
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {
         return verifyXmlSignatureValue(signatureMethod, found.key,
           Buffer.from(String(octets), 'binary'),
@@ -1262,7 +1212,8 @@ function verifyXmlSignature(xml, opts) {
     } : {
       // NO KEY ANYWHERE BUT, PERHAPS, AN RSAKeyValue — the engine's own RSA
       // path, which is what it always was.
-      referencedXml: referencedXml
+      referencedXml: referencedXml,
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS
     });
     if (found) {
       result.signerSubject = found.subject;
@@ -1327,6 +1278,589 @@ function verifyXmlSignature(xml, opts) {
   return verdict;
 }
 
+// ===========================================================================
+// A WS-SECURITY MESSAGE SIGNATURE (#521, rcbj 2026-10-28): the signature a
+// WS-Security 1.1 requester puts in its `wsse:Security` header over the SOAP
+// Body and the `wsu:Timestamp`, with the key of an X.509 certificate the
+// header names (the X.509 Token Profile 1.1).
+//
+// It is NOT the shape `verifyXmlSignature()` above checks, and that is why it
+// is a function of its own: that one is an ENVELOPED signature, a child of the
+// one element it covers. This one is a sibling of what it covers — a child of
+// the security header, with one Reference per signed part, each by its
+// `wsu:Id` — so "which element is signed" is answered by the references, and
+// the references are exactly what a signature-wrapping attack rewrites. The
+// guards, each a refusal of its own (STS-KEYS-0159 to 0164):
+//
+//   * THE PARTS ARE FOUND BY POSITION, NEVER BY ID. THE Body is the direct
+//     child of the Envelope; THE Timestamp is the direct child of THE
+//     security header, which is the one direct child of the Header. An id
+//     says which element a Reference means; the position says which element
+//     the RECEIVER will act on. The signature counts only when the two agree:
+//     a Reference to `#body` that resolves to a copy hidden in the header
+//     while the real Body carries a different request is the attack, and it
+//     is refused because the real Body's id is not referenced.
+//   * EVERY ID IN THE DOCUMENT IS UNIQUE, or nothing is verified. The engine
+//     resolves a Reference to the first element carrying its id, so two
+//     elements sharing the Body's id is the other half of the same attack.
+//   * EXCLUSIVE CANONICALIZATION ONLY, for the SignedInfo and for every
+//     Reference (WS-I Basic Security Profile 1.1, R5404 and R5412). The parts
+//     are nested elements, and inclusive c14n of one depends on namespace
+//     declarations its ancestors make, which `verifyXmlSignature()` explains
+//     at length; here there is no reason to accept it.
+//   * EVERY REFERENCE IS A SAME-DOCUMENT `#id`. URI="" (the whole envelope)
+//     covers parts the security header itself rewrites in transit, and
+//     anything else is a fetch.
+//
+// SECTION 1a's ALGORITHM TABLE AND SHA-1 POLICY apply exactly as they do to
+// every XML signature this service checks (`xmlAlgorithmVerdict()`). The key
+// is the CALLER's: `readWsSecuritySignature()` says which certificate the
+// header names — a `wsse:BinarySecurityToken` by reference, or a
+// `wsse:SecurityTokenReference` by thumbprint, by issuer and serial, or by
+// Subject Key Identifier — and `verifyWsSecuritySignature()` verifies with
+// the certificate the caller resolved, and never with one it found itself.
+// Who the certificate IS, whether it is revoked and whether the message is
+// fresh and new are the caller's questions too (`ws-trust/wstrust.ts`).
+// ===========================================================================
+const WSSE_NS = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-wssecurity-secext-1.0.xsd';
+const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-wssecurity-utility-1.0.xsd';
+const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+
+// THE TRANSFORMS A SIGNATURE FROM OUTSIDE MAY NAME (ASVS 5.0.0 1.2.7, 5.0.0
+// 15.3): enveloped-signature and the four canonicalizations this engine
+// performs. The SAML and WS-Federation profiles use no others, and an XPath,
+// XPath Filter 2.0 or XSLT transform is work this service would do on the
+// sender's terms. Every verification of an inbound XML signature passes this
+// list to `xmldsig.verifyXml()`; WS-Security's own reader is narrower still
+// (exclusive canonicalization only, `readWsSecuritySignature()`).
+const XML_ACCEPTED_TRANSFORMS = Object.freeze([
+  xmldsig.TRANSFORM_ENVELOPED,
+  'http://www.w3.org/2001/10/xml-exc-c14n#',
+  'http://www.w3.org/2001/10/xml-exc-c14n#WithComments',
+  'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+  'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
+]);
+
+// The id of an element, in every spelling this document could give one —
+// `wsu:Id` first, which is the WS-Security spelling.
+function wsuIdOf(element) {
+  log.debug("Entering wsuIdOf().");
+  const wsu = element.getAttributeNS
+    ? element.getAttributeNS(WSU_NS, 'Id') : '';
+  log.debug("Leaving wsuIdOf().");
+  return wsu || idOf(element);
+}
+
+// Every id-like attribute value in the document, and which ones appear more
+// than once. `wsu:Id` is in ID_ATTRIBUTES by its local name.
+function duplicateIdsOf(doc) {
+  log.debug("Entering duplicateIdsOf().");
+  const seen = {};
+  const twice = [];
+  const all = doc.getElementsByTagName('*');
+  for (let i = 0; i < all.length; i++) {
+    const attrs = all[i].attributes;
+    for (let j = 0; attrs && j < attrs.length; j++) {
+      const name = attrs[j].localName || attrs[j].name;
+      if (ID_ATTRIBUTES.indexOf(name) < 0) {
+        continue;
+      }
+      const value = String(attrs[j].value || '');
+      if (Object.prototype.hasOwnProperty.call(seen, value)) {
+        if (twice.indexOf(value) < 0) {
+          twice.push(value);
+        }
+      } else {
+        seen[value] = true;
+      }
+    }
+  }
+  log.debug("Leaving duplicateIdsOf(). " + twice.length + " repeated.");
+  return twice;
+}
+
+// The direct children of an element with one local name.
+function directChildrenByLocal(parent, localName) {
+  log.debug("Entering directChildrenByLocal().");
+  const out = [];
+  for (let child = parent ? parent.firstChild : null; child;
+       child = child.nextSibling) {
+    if (child.nodeType === 1 && child.localName === localName) {
+      out.push(child);
+    }
+  }
+  log.debug("Leaving directChildrenByLocal().");
+  return out;
+}
+
+// What the signature's KeyInfo says the key is, in the four forms the X.509
+// Token Profile 1.1 gives a requester (sections 3.2 and 3.3): the token
+// itself by reference, its SHA-1 thumbprint (SOAP Message Security 1.1
+// section 7.2, which names a certificate and signs nothing with SHA-1), its
+// issuer and serial, or its Subject Key Identifier. `{ kind, … }` or
+// `{ problem }`.
+// The Kerberos Token Profile 1.1's six ValueTypes (#658).
+const KERBEROS_TOKEN_TYPE = new RegExp('^http://docs\\.oasis-open\\.org/wss/' +
+  'oasis-wss-kerberos-token-profile-1\\.1#(GSS_)?Kerberosv5_AP_REQ' +
+  '(1510|4120)?$');
+
+function keyReferenceOf(sigEl, security) {
+  log.debug("Entering keyReferenceOf().");
+  const keyInfo = directChildByLocal(sigEl, 'KeyInfo');
+  const str = keyInfo ? directChildByLocal(keyInfo, 'SecurityTokenReference')
+                      : null;
+  if (!str) {
+    log.debug("Leaving keyReferenceOf(). No SecurityTokenReference.");
+    return { problem: 'the signature\'s KeyInfo holds no ' +
+                      'wsse:SecurityTokenReference, so it names no X.509 ' +
+                      'certificate in a form the X.509 Token Profile 1.1 ' +
+                      'gives a requester' };
+  }
+  const reference = directChildByLocal(str, 'Reference');
+  if (reference) {
+    const uri = String(reference.getAttribute('URI') || '');
+    const id = uri.indexOf('#') === 0 ? uri.slice(1) : '';
+    const tokens = directChildrenByLocal(security, 'BinarySecurityToken')
+      .filter(function (one) { return id && wsuIdOf(one) === id; });
+    if (tokens.length !== 1) {
+      log.debug("Leaving keyReferenceOf(). The referenced token is missing.");
+      return { problem: 'the SecurityTokenReference points at "' + uri +
+                        '", which is not a wsse:BinarySecurityToken in this ' +
+                        'security header' };
+    }
+    const valueType = String(tokens[0].getAttribute('ValueType') || '');
+    // #658: a Kerberos token, whose session key the signature is made with.
+    if (KERBEROS_TOKEN_TYPE.test(valueType)) {
+      log.debug("Leaving keyReferenceOf(). A Kerberos token.");
+      return { kind: 'kerberos', id: id, valueType: valueType,
+               tokenB64: String(tokens[0].textContent || '')
+                 .replace(/\s+/g, '') };
+    }
+    if (!/#X509v3$/.test(valueType)) {
+      log.debug("Leaving keyReferenceOf(). Not an X.509 token.");
+      return { problem: 'the referenced wsse:BinarySecurityToken is a "' +
+                        valueType + '", not an X.509 v3 certificate ' +
+                        '(#X509v3)' };
+    }
+    log.debug("Leaving keyReferenceOf(). A BinarySecurityToken.");
+    return { kind: 'token', id: id,
+             certB64: String(tokens[0].textContent || '').replace(/\s+/g,
+                                                                  '') };
+  }
+  const keyIdentifier = directChildByLocal(str, 'KeyIdentifier');
+  if (keyIdentifier) {
+    const valueType = String(keyIdentifier.getAttribute('ValueType') || '');
+    const encoding = String(keyIdentifier.getAttribute('EncodingType') || '');
+    const text = String(keyIdentifier.textContent || '').replace(/\s+/g, '');
+    const hex = /#HexBinary$/.test(encoding)
+      ? text.toLowerCase()
+      : Buffer.from(text, 'base64').toString('hex');
+    // #658: the Kerberos Token Profile's own key identifier, the SHA-1 of
+    // the token, which names a Kerberos token in the same header.
+    if (/#Kerberosv5APREQSHA1$/.test(valueType) && text) {
+      log.debug("Leaving keyReferenceOf(). A Kerberos key identifier.");
+      return { kind: 'kerberos-id', keyIdentifier: text };
+    }
+    if (/#ThumbprintSHA1$/.test(valueType) && hex.length === 40) {
+      log.debug("Leaving keyReferenceOf(). A thumbprint.");
+      return { kind: 'thumbprint', sha1: hex };
+    }
+    if (/#X509SubjectKeyIdentifier$/.test(valueType) && hex) {
+      log.debug("Leaving keyReferenceOf(). A Subject Key Identifier.");
+      return { kind: 'ski', ski: hex };
+    }
+    log.debug("Leaving keyReferenceOf(). An unknown KeyIdentifier.");
+    return { problem: 'the KeyIdentifier is a "' + valueType + '", which ' +
+                      'is not a SHA-1 thumbprint (#ThumbprintSHA1) or a ' +
+                      'Subject Key Identifier (#X509SubjectKeyIdentifier) ' +
+                      'this service reads' };
+  }
+  const data = directChildByLocal(str, 'X509Data');
+  const issuerSerial = data ? directChildByLocal(data, 'X509IssuerSerial')
+                            : null;
+  if (issuerSerial) {
+    const issuerEl = directChildByLocal(issuerSerial, 'X509IssuerName');
+    const serialEl = directChildByLocal(issuerSerial, 'X509SerialNumber');
+    const serial = serialEl ? String(serialEl.textContent || '').trim() : '';
+    if (issuerEl && /^[0-9]+$/.test(serial)) {
+      log.debug("Leaving keyReferenceOf(). An issuer and serial.");
+      return { kind: 'issuer-serial',
+               issuer: String(issuerEl.textContent || '').trim(),
+               serialHex: BigInt(serial).toString(16) };
+    }
+  }
+  log.debug("Leaving keyReferenceOf(). Nothing it reads.");
+  return { problem: 'the SecurityTokenReference names its certificate in no ' +
+                    'form this service reads: a Reference to a ' +
+                    'BinarySecurityToken, a KeyIdentifier (#ThumbprintSHA1 ' +
+                    'or #X509SubjectKeyIdentifier) or an X509IssuerSerial' };
+}
+
+/**
+ * Reads the WS-Security message signature in a SOAP envelope without
+ * verifying it: which parts it covers, which certificate its KeyInfo names,
+ * its algorithms and its Timestamp. Every structural guard against
+ * signature wrapping is applied here, so a reading that is `ok` is one
+ * `verifyWsSecuritySignature()` can be asked about. It answers rather than
+ * throws.
+ *
+ * @param xml - the SOAP envelope
+ * @returns `{ present: false }` when the security header carries no
+ *   signature; otherwise `{ present: true, ok, why, keyReference,
+ *   timestamp: { created, expires }, signatureValue, references,
+ *   signatureMethod, digestMethods }`, a refusal marked with its code
+ */
+function readWsSecuritySignature(xml) {
+  log.debug("Entering readWsSecuritySignature().");
+  let doc;
+  try {
+    doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  } catch (e) {
+    log.debug("Caught in readWsSecuritySignature(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving readWsSecuritySignature(). Not XML.");
+    return { present: false };
+  }
+  const envelope = doc && doc.documentElement;
+  const header = envelope ? directChildByLocal(envelope, 'Header') : null;
+  const securities = directChildrenByLocal(header, 'Security');
+  const security = securities.length === 1 ? securities[0] : null;
+  const signatures = directChildrenByLocal(security, 'Signature')
+    .filter(function (one) { return one.namespaceURI === DS_NS; });
+  if (!security || !signatures.length) {
+    log.debug("Leaving readWsSecuritySignature(). No signature.");
+    return { present: false };
+  }
+  const refuse = function (code, why, extra) {
+    log.debug("Entering refuse(). " + code);
+    log.debug("Leaving refuse().");
+    return errorCodes.mark(Object.assign({ ok: false, present: true,
+                                           why: why }, extra || {}), code);
+  };
+  if (signatures.length > 1) {
+    log.debug("Leaving readWsSecuritySignature(). Two signatures.");
+    return refuse('STS-KEYS-0159', 'the security header carries more than ' +
+                  'one ds:Signature, so it does not say which one the ' +
+                  'requester made');
+  }
+  const sigEl = signatures[0];
+  const repeated = duplicateIdsOf(doc);
+  if (repeated.length) {
+    log.debug("Leaving readWsSecuritySignature(). Repeated ids.");
+    return refuse('STS-KEYS-0160', 'the id' +
+                  (repeated.length === 1 ? ' "' + repeated[0] + '" is'
+                                         : 's "' + repeated.join('", "') +
+                                           '" are') +
+                  ' carried by more than one element, so a Reference to ' +
+                  'it does not say which element was signed');
+  }
+  const signedInfo = directChildByLocal(sigEl, 'SignedInfo', DS_NS);
+  if (!signedInfo) {
+    // A ds:Signature with no SignedInfo signs nothing: it is not a
+    // signature over the request, and is read as none. One shape carries it
+    // on purpose — WS-Trust's `?encrypt=1` test control, which reads the
+    // recipient certificate out of a bare KeyInfo there.
+    log.debug("Leaving readWsSecuritySignature(). A KeyInfo, no SignedInfo.");
+    return { present: false };
+  }
+  const c14nEl = directChildByLocal(signedInfo, 'CanonicalizationMethod',
+                                    DS_NS);
+  const methodEl = directChildByLocal(signedInfo, 'SignatureMethod', DS_NS);
+  const valueEl = directChildByLocal(sigEl, 'SignatureValue', DS_NS);
+  if (!methodEl || !valueEl) {
+    log.debug("Leaving readWsSecuritySignature(). Incomplete.");
+    return refuse('STS-KEYS-0161', 'the ds:Signature has no ' +
+                  'SignatureMethod or SignatureValue');
+  }
+  const c14n = c14nEl ? String(c14nEl.getAttribute('Algorithm') || '') : '';
+  const signatureMethod = String(methodEl.getAttribute('Algorithm') || '');
+  const refs = directChildrenByLocal(signedInfo, 'Reference');
+  const uris = [];
+  const digestMethods = [];
+  for (let i = 0; i < refs.length; i++) {
+    const uri = String(refs[i].getAttribute('URI') || '');
+    const transforms = directChildByLocal(refs[i], 'Transforms', DS_NS);
+    const each = directChildrenByLocal(transforms, 'Transform')
+      .map(function (one) { return String(one.getAttribute('Algorithm')); });
+    const digestEl = directChildByLocal(refs[i], 'DigestMethod', DS_NS);
+    digestMethods.push(digestEl
+      ? String(digestEl.getAttribute('Algorithm') || '') : '');
+    if (uri.indexOf('#') !== 0 || uri.length < 2) {
+      log.debug("Leaving readWsSecuritySignature(). A reference that is " +
+                "not a same-document id.");
+      return refuse('STS-KEYS-0161', 'the Reference "' + uri + '" is not ' +
+                    'a same-document reference by id; a WS-Security ' +
+                    'signature names each part it covers by its wsu:Id');
+    }
+    if (each.length !== 1 || each[0] !== EXC_C14N) {
+      log.debug("Leaving readWsSecuritySignature(). A reference's " +
+                "transforms.");
+      return refuse('STS-KEYS-0162', 'the Reference "' + uri + '" is ' +
+                    'transformed by ' + (each.join(', ') || 'nothing') +
+                    '; a part is signed here only under exclusive XML ' +
+                    'canonicalization (' + EXC_C14N + '), as the Basic ' +
+                    'Security Profile requires');
+    }
+    uris.push(uri.slice(1));
+  }
+  if (c14n !== EXC_C14N) {
+    log.debug("Leaving readWsSecuritySignature(). The SignedInfo's c14n.");
+    return refuse('STS-KEYS-0162', 'the SignedInfo is canonicalized with "' +
+                  c14n + '"; only exclusive XML canonicalization (' +
+                  EXC_C14N + ') is accepted for a WS-Security signature');
+  }
+  const bodies = directChildrenByLocal(envelope, 'Body');
+  const timestamps = directChildrenByLocal(security, 'Timestamp');
+  const body = bodies.length === 1 ? bodies[0] : null;
+  const timestamp = timestamps.length === 1 ? timestamps[0] : null;
+  const bodyId = body ? wsuIdOf(body) : '';
+  const timestampId = timestamp ? wsuIdOf(timestamp) : '';
+  const missing = [];
+  if (!bodyId || uris.indexOf(bodyId) < 0) {
+    missing.push('the SOAP Body');
+  }
+  if (!timestampId || uris.indexOf(timestampId) < 0) {
+    missing.push('the wsu:Timestamp in this security header');
+  }
+  if (missing.length) {
+    log.debug("Leaving readWsSecuritySignature(). A part is not covered.");
+    return refuse('STS-KEYS-0163', 'the signature does not cover ' +
+                  missing.join(' or ') + ' by its wsu:Id — what it ' +
+                  'references (' + (uris.map(function (one) {
+                    return '#' + one;
+                  }).join(', ') || 'nothing') + ') is not the element this ' +
+                  'service acts on, which is the signature-wrapping shape');
+  }
+  // #658: an HMAC is checkable only when the KeyInfo names a Kerberos token,
+  // whose session key is the shared key. The reference is read here for that
+  // one fact; its refusal is still made below, in the order it always was.
+  const named = keyReferenceOf(sigEl, security);
+  const algorithms = xmlAlgorithmVerdict(signatureMethod, digestMethods,
+    { sharedKey: named.kind === 'kerberos' || named.kind === 'kerberos-id' });
+  if (algorithms.problem) {
+    log.debug("Leaving readWsSecuritySignature(). An algorithm.");
+    return refuse(algorithms.code || 'STS-KEYS-0061', algorithms.problem,
+                  { signatureMethod: signatureMethod,
+                    digestMethods: digestMethods,
+                    weak: algorithms.weak, sha1: algorithms.sha1 });
+  }
+  const keyReference = keyReferenceOf(sigEl, security);
+  if (keyReference.problem) {
+    log.debug("Leaving readWsSecuritySignature(). No key named.");
+    return refuse('STS-KEYS-0164', keyReference.problem);
+  }
+  const createdEl = directChildByLocal(timestamp, 'Created');
+  const expiresEl = directChildByLocal(timestamp, 'Expires');
+  log.debug("Leaving readWsSecuritySignature(). Readable.");
+  return {
+    ok: true, present: true, why: '',
+    keyReference: keyReference,
+    timestamp: {
+      created: createdEl ? String(createdEl.textContent || '').trim() : '',
+      expires: expiresEl ? String(expiresEl.textContent || '').trim() : ''
+    },
+    signatureValue: String(valueEl.textContent || '').replace(/\s+/g, ''),
+    references: uris.map(function (one) { return '#' + one; }),
+    signatureMethod: signatureMethod,
+    digestMethods: digestMethods,
+    weak: algorithms.weak,
+    sha1: algorithms.sha1
+  };
+}
+
+/**
+ * Verifies the WS-Security message signature in a SOAP envelope with the
+ * certificate the caller resolved from its KeyInfo — after every guard
+ * `readWsSecuritySignature()` applies. It answers rather than throws.
+ *
+ * @param xml - the SOAP envelope
+ * @param opts - `certPem`: the certificate (PEM or base64 DER) to verify
+ *   with; required, because a key the document chose is no key at all
+ * @returns the reading, with `ok` now meaning the signature value and
+ *   every reference's digest verified; a refusal marked with its code
+ */
+function verifyWsSecuritySignature(xml, opts) {
+  log.debug("Entering verifyWsSecuritySignature().");
+  const options = opts || {};
+  const reading = readWsSecuritySignature(xml);
+  if (!reading.present || !reading.ok) {
+    log.debug("Leaving verifyWsSecuritySignature(). The reading refused it.");
+    return reading;
+  }
+  const found = verificationKeyFrom(options.certPem, '');
+  if (found.problem) {
+    log.debug("Leaving verifyWsSecuritySignature(). No key.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'the signature cannot be checked: ' + found.problem }),
+                           'STS-KEYS-0014');
+  }
+  const doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  const header = directChildByLocal(doc.documentElement, 'Header');
+  const security = directChildByLocal(header, 'Security');
+  const sigEl = directChildByLocal(security, 'Signature', DS_NS);
+  const methodEl = directChildByLocal(
+    directChildByLocal(sigEl, 'SignedInfo', DS_NS), 'SignatureMethod', DS_NS);
+  const pss = (XML_SIGNATURE_METHODS[reading.signatureMethod] || {})
+    .family === 'rsa-pss' &&
+    reading.signatureMethod === XMLDSIG_MORE_2007 + 'rsa-pss'
+    ? pssParameters(methodEl) : null;
+  if (pss && pss.problem) {
+    log.debug("Leaving verifyWsSecuritySignature(). PSS parameters.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'the RSASSA-PSS signature cannot be checked: ' +
+                  pss.problem }), 'STS-KEYS-0061');
+  }
+  const serializer = new xmldom.XMLSerializer();
+  // The engine is handed the one signature, serialized alone, and the whole
+  // envelope to resolve its references in. The ids are unique (the reading
+  // refused otherwise), so each Reference resolves to the element the
+  // reading checked by position.
+  const signatureXml = withoutCertificateText(
+    serializer.serializeToString(sigEl));
+  let result;
+  try {
+    result = xmldsig.verifyXml(signatureXml, {
+      referencedXml: String(xml),
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS,
+      verifier: function (octets, signatureBytes) {
+        return verifyXmlSignatureValue(reading.signatureMethod, found.key,
+          Buffer.from(String(octets), 'binary'),
+          Buffer.from(String(signatureBytes), 'binary'), pss);
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in verifyWsSecuritySignature(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving verifyWsSecuritySignature(). The engine threw.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: (e && e.message) || String(e) }), 'STS-KEYS-0011');
+  }
+  const badReference = (result.references || []).filter(function (one) {
+    return !one.ok;
+  })[0];
+  if (!result.signatureValid) {
+    log.debug("Leaving verifyWsSecuritySignature(). The value.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: false,
+             why: 'the signature value does not verify with the ' +
+                  'certificate the security header names' +
+                  (result.signatureError ? ': ' + result.signatureError
+                                         : '') }), 'STS-KEYS-0012');
+  }
+  if (!result.referencesValid) {
+    log.debug("Leaving verifyWsSecuritySignature(). A digest.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: true, referencesValid: false,
+             why: 'the signature value is genuine but the part ' +
+                  (badReference ? badReference.uri + ' ' : '') + 'was ' +
+                  'altered after it was signed' +
+                  (badReference && badReference.reason
+                    ? ' (' + badReference.reason + ')' : '') }),
+                           'STS-KEYS-0013');
+  }
+  log.debug("Leaving verifyWsSecuritySignature(). Verified.");
+  return Object.assign({}, reading, { ok: true, signatureValid: true,
+                                      referencesValid: true,
+                                      signerSubject: found.subject });
+}
+
+// ---------------------------------------------------------------------------
+// A WS-SECURITY SIGNATURE MADE WITH A KERBEROS TOKEN'S KEY (#658). The
+// Kerberos Token Profile 1.1, section 3.2: a signature whose KeyInfo names a
+// Kerberos token is keyed with that token's session key — the
+// Authenticator's subkey where it carries one, the ticket's session key
+// otherwise — which the acceptor established when it accepted the token.
+// Every guard readWsSecuritySignature() applies is applied first (one
+// signature, unique ids, exclusive c14n, the Body and the Timestamp covered
+// by position); then the method must be an HMAC one, with NO
+// HMACOutputLength (a truncated HMAC is CVE-2009-0217's forgery), and the
+// value is compared in constant time.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a WS-Security signature made with a shared key (an HMAC), the key
+ * a Kerberos token established. It answers rather than throws.
+ *
+ * @param xml - the SOAP envelope
+ * @param opts - `key`: the key bytes
+ * @returns the reading, with `ok` now meaning the HMAC and every reference's
+ *   digest verified; a refusal marked with its code
+ */
+function verifyWsSecurityHmac(xml, opts) {
+  log.debug("Entering verifyWsSecurityHmac().");
+  const options = opts || {};
+  const reading = readWsSecuritySignature(xml);
+  if (!reading.present || !reading.ok) {
+    log.debug("Leaving verifyWsSecurityHmac(). The reading refused it.");
+    return reading;
+  }
+  const row = XML_SIGNATURE_METHODS[String(reading.signatureMethod || '')];
+  if (!row || row.family !== 'hmac' || !options.key ||
+      !Buffer.from(options.key).length) {
+    log.debug("Leaving verifyWsSecurityHmac(). Not an HMAC, or no key.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'a signature keyed by a Kerberos token is an HMAC; this ' +
+                  'one is ' + String(reading.signatureMethod || 'nothing') }),
+                           'STS-KEYS-0061');
+  }
+  const doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  const header = directChildByLocal(doc.documentElement, 'Header');
+  const security = directChildByLocal(header, 'Security');
+  const sigEl = directChildByLocal(security, 'Signature', DS_NS);
+  const methodEl = directChildByLocal(
+    directChildByLocal(sigEl, 'SignedInfo', DS_NS), 'SignatureMethod', DS_NS);
+  if (methodEl && directChildByLocal(methodEl, 'HMACOutputLength')) {
+    log.debug("Leaving verifyWsSecurityHmac(). A truncated HMAC.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'the SignatureMethod carries an HMACOutputLength; a ' +
+                  'truncated HMAC is refused (CVE-2009-0217)' }),
+                           'STS-KEYS-0061');
+  }
+  const key = Buffer.from(options.key);
+  let result;
+  try {
+    result = xmldsig.verifyXml(new xmldom.XMLSerializer()
+      .serializeToString(sigEl), {
+      referencedXml: String(xml),
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS,
+      verifier: function (octets, signatureBytes) {
+        const expected = nodeCrypto.createHmac(row.hash, key)
+          .update(Buffer.from(String(octets), 'binary')).digest();
+        const given = Buffer.from(String(signatureBytes), 'binary');
+        return given.length === expected.length &&
+          nodeCrypto.timingSafeEqual(given, expected);
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in verifyWsSecurityHmac(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyWsSecurityHmac(). The engine threw.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: (e && e.message) || String(e) }), 'STS-KEYS-0011');
+  }
+  if (!result.signatureValid) {
+    log.debug("Leaving verifyWsSecurityHmac(). The value.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: false,
+             why: 'the HMAC does not verify with the Kerberos token\'s ' +
+                  'session key' }), 'STS-KEYS-0012');
+  }
+  if (!result.referencesValid) {
+    const bad = (result.references || []).filter(function (one) {
+      return !one.ok;
+    })[0];
+    log.debug("Leaving verifyWsSecurityHmac(). A digest.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: true, referencesValid: false,
+             why: 'the HMAC is genuine but the part ' +
+                  (bad ? bad.uri + ' ' : '') + 'was altered after it was ' +
+                  'signed' }), 'STS-KEYS-0013');
+  }
+  log.debug("Leaving verifyWsSecurityHmac(). Verified.");
+  return Object.assign({}, reading, { ok: true, signatureValid: true,
+                                      referencesValid: true });
+}
+
 // ---------------------------------------------------------------------------
 // THE SAML HTTP REDIRECT BINDING'S DETACHED SIGNATURE (saml-bindings-2.0-os
 // section 3.4.4.1). It is a signature over the QUERY STRING and not over any
@@ -1358,6 +1892,11 @@ function verifyXmlSignature(xml, opts) {
  */
 function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug('Leaving signQueryString(). Not signed here.');
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
   const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
     xmldsig.SIG_METHODS[sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[sigAlg] : null;
@@ -1820,8 +2359,11 @@ function encryptElement(xml, certPem, opts) {
   opts = opts || {};
   const wrapper = opts.wrapper || 'saml:EncryptedAssertion';
   const cipher = BLOCK_CIPHERS[opts.algorithm] || BLOCK_CIPHERS['aes256-gcm'];
-  const transportName = KEY_TRANSPORTS[opts.keyTransport]
+  const named = KEY_TRANSPORTS[opts.keyTransport]
     ? opts.keyTransport : 'rsa-oaep-mgf1p';
+  // OAEP OVER SHA-1 ONLY WHERE AN OPERATOR ALLOWS IT (#1469, ASVS 5.0.0 11.4.1).
+  const transportName = named === 'rsa-oaep-mgf1p' &&
+    !mode.allowsLegacyHashes() ? 'rsa-oaep' : named;
   const transport = KEY_TRANSPORTS[transportName];
   const wrapName = KEY_WRAPS[opts.keyWrap] ? opts.keyWrap : 'kw-aes256';
   artifact(opts, 'SAML 2.0 ' + wrapper, 'before encryption', xml);
@@ -2378,6 +2920,14 @@ function decryptElement(xml, privateKeyPem, opts) {
               cipher.name + ".");
     return cipherRefused;
   }
+  // AES-CBC IS NOT AUTHENTICATED (#1455, ASVS 5.0.0 11.3.2): product reads only
+  // AES-GCM, and refuses before any key is unwrapped.
+  if (cipher.mode === 'AES-CBC' && !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving decryptElement(). AES-CBC, in product.");
+    return errorCodes.mark({ ok: false, refused: true, algorithm: cipher.name,
+             why: 'the data is encrypted with ' + cipher.name + ', and this ' +
+             'realm reads only AES-GCM in product mode' }, 'STS-KEYS-0195');
+  }
   // WHERE THE CONTENT KEY IS. Inside the EncryptedData's KeyInfo (what this
   // service writes), or — SAML 2.0 core section 2.3.4 allows it — an
   // EncryptedKey BESIDE the EncryptedData inside the same wrapper, or an
@@ -2462,7 +3012,7 @@ function decryptElement(xml, privateKeyPem, opts) {
   // rsa-oaep's digest and MGF, each SHA-1 where absent (section 5.5.2).
   //
   // **rsa-oaep-mgf1p NAMES A DIGEST TOO (#193)**, and until 2026-09-24 this
-  // read it as SHA-1 whatever the EncryptedKey said: section 5.5.1 lets its
+  // read it as SHA-1 whatever the EncryptedKey said: section 5.5.2 lets its
   // DigestMethod be any digest while its mask generation function is FIXED
   // at MGF1 with SHA-1. A SHA-256 one (the W3C interop set's WRAP.2) was
   // unwrapped under the wrong digest and reported as a key encrypted to a
@@ -2502,6 +3052,13 @@ function decryptElement(xml, privateKeyPem, opts) {
                   "OAEP digest " + digest + ".");
         return digestRefused;
       }
+    }
+    if ((mgf1p || digest === 'sha1') && !mode.allowsLegacyHashes()) {
+      log.debug("Leaving decryptElement(). OAEP over SHA-1.");
+      return errorCodes.mark({ ok: false, refused: true,
+        algorithm: transport.name, why: 'the key is wrapped with OAEP over ' +
+        'SHA-1, which this realm does not unwrap unless ' +
+        'crypto.allowLegacyHashes is on' }, 'STS-KEYS-0196');
     }
     oaepHash = digest;
   }
@@ -2725,55 +3282,7 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
  * The one JWS algorithm table: every algorithm this service signs or
  * verifies, with its family, hash and key type.
  */
-const JWS_ALGS = {
-  HS256: { family: 'hmac', hash: 'sha256' },
-  HS384: { family: 'hmac', hash: 'sha384' },
-  HS512: { family: 'hmac', hash: 'sha512' },
-  RS256: { family: 'rsa', hash: 'sha256', kty: 'RSA' },
-  RS384: { family: 'rsa', hash: 'sha384', kty: 'RSA' },
-  RS512: { family: 'rsa', hash: 'sha512', kty: 'RSA' },
-  PS256: { family: 'rsa', hash: 'sha256', kty: 'RSA',
-           padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-           saltLength: 32 },
-  PS384: { family: 'rsa', hash: 'sha384', kty: 'RSA',
-           padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-           saltLength: 48 },
-  PS512: { family: 'rsa', hash: 'sha512', kty: 'RSA',
-           padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-           saltLength: 64 },
-  ES256: { family: 'ec', hash: 'sha256', kty: 'EC', crv: 'P-256',
-           namedCurve: 'prime256v1', sigBytes: 64 },
-  ES384: { family: 'ec', hash: 'sha384', kty: 'EC', crv: 'P-384',
-           namedCurve: 'secp384r1', sigBytes: 96 },
-  ES512: { family: 'ec', hash: 'sha512', kty: 'EC', crv: 'P-521',
-           namedCurve: 'secp521r1', sigBytes: 132 },
-  // RFC 8812. `jsonwebtoken` has no ES256K, so this one is signed here.
-  ES256K: { family: 'ec', hash: 'sha256', kty: 'EC', crv: 'secp256k1',
-            namedCurve: 'secp256k1', sigBytes: 64, ownSigner: true },
-  // RFC 8037. `jsonwebtoken` has no EdDSA either. Ed25519 hashes internally,
-  // so there is no digest to name — which is what `crypto.sign(null, ...)`
-  // means.
-  EdDSA: { family: 'okp', hash: null, kty: 'OKP', crv: 'Ed25519',
-           sigBytes: 64, ownSigner: true }
-};
-
-// The post-quantum and composite algorithms join the same table rather than
-// living in one of their own — `common/pq_jose.js` performs them, and this is
-// what makes them ordinary here: `signJws()` routes to it, `verifyCompactJws()`
-// routes to it, and every metadata list that reads JWS_SIGNING_ALGS gained
-// eleven entries without being touched.
-//
-// `kty: 'AKP'` is RFC 9964's key type for all of them, which is also why they
-// are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
-// oct and not for AKP, so a DPoP proof signed with one could not be bound to
-// anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
-// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; since #150
-// DPoP takes the three JOSE-registered ML-DSA algorithms and refuses the
-// rest by name.)
-pqJose.PQ_ALGS.forEach(function (alg) {
-  JWS_ALGS[alg] = { family: 'pq', hash: null, kty: 'AKP', alg: alg,
-                    ownSigner: true };
-});
+const JWS_ALGS = algorithmRegistry.joseTable(nodeCrypto.constants);
 
 // Every signing algorithm, and the asymmetric ones — the split matters because
 // several specifications say "an asymmetric algorithm, never a MAC and never
@@ -3043,14 +3552,27 @@ function signJws(payload, key, opts) {
 // So the four call paths that can reach a post-quantum `alg` — the ID Token,
 // the signed UserInfo response, a client assertion and an OID4VCI proof —
 // call this instead, and `pq_jose.signAsync()` computes on libuv's thread
-// pool (#363; a pool of forked processes until then). **EVERY OTHER
-// ALGORITHM IS UNCHANGED AND IS NOT DEFERRED**: an RS256 signature is
-// microseconds. Those resolve with the value signJws() computed, which is
-// what lets a caller be written one way and not two.
+// pool (#363; a pool of forked processes until then).
+//
+// **AND SINCE #772 (2026-10-20) A CLASSICAL ONE TOO.** This said "an RS256
+// signature is microseconds" and signed every other algorithm in place. An
+// RSA-2048 private-key operation is closer to a millisecond, and on 8081
+// under a sign-in and password-write load the classical signatures were
+// about 6% of the two request workers — most of them the SETs the
+// transmitter signs, which come through here — while libuv's pool sat idle.
+// So an RSA, ECDSA or EdDSA signature is computed by node's asynchronous
+// `crypto.sign()`, on that pool, over EXACTLY the signing input the
+// synchronous door builds: `jsonwebtoken`'s framing for the rows it signs
+// (`classicalSigningInput()`), `signJws()`'s own for EdDSA and ES256K. Where
+// that framing could differ — a claim convenience `jsonwebtoken` computes,
+// an `alg` or `kid` in the caller's header, a key it would refuse — the
+// signature is made in place by `signJws()`, as before, so that nothing a
+// caller could see changes. HMAC is made in place always: it is a hash.
 // ---------------------------------------------------------------------------
 /**
- * Signs as `signJws()` does, with a post-quantum signature computed on
- * libuv's thread pool; every other algorithm is signed in place.
+ * Signs as `signJws()` does, with the signature computed on libuv's thread
+ * pool for a post-quantum, RSA, ECDSA or EdDSA algorithm (#772); HMAC, and a
+ * call whose framing only `jsonwebtoken` can reproduce, are signed in place.
  *
  * @param payload - the claims
  * @param key - the signing key
@@ -3072,6 +3594,23 @@ function signJwsAsync(payload, key, opts) {
     log.debug('Leaving signJwsAsync(). Refused.');
     return Promise.reject(e);
   }
+  const plan = spec.family === 'pq' ? null
+    : classicalSigningInput(payload, key, algorithm, spec, options);
+  if (plan) {
+    log.debug('Leaving signJwsAsync(). ' + algorithm + ', on libuv.');
+    return new Promise(function (resolve, reject) {
+      nodeCrypto.sign(spec.hash, Buffer.from(plan.input, 'ascii'),
+        nodeParamsFor(spec, plan.key), function (err, signature) {
+          if (err) {
+            log.debug('Caught in signJwsAsync(): ' + ((err && err.message) ||
+                                                     err));
+            reject(err);
+            return;
+          }
+          resolve(plan.input + '.' + b64u(signature));
+        });
+    });
+  }
   if (spec.family !== 'pq') {
     // Not deferred, and the throw is turned into a rejection so that a caller
     // never has to know which algorithms are computed off the thread.
@@ -3090,6 +3629,94 @@ function signJwsAsync(payload, key, opts) {
     .then(function (signature) {
       return input + '.' + b64u(signature);
     });
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNING INPUT `signJws()` WOULD SIGN, FOR A CLASSICAL ALGORITHM, OR
+// NULL WHERE ONLY `signJws()` CAN SAY (#772).
+//
+// For EdDSA and ES256K it is `signJws()`'s own framing, the ownSigner branch.
+// For every other asymmetric row it is `jsonwebtoken` 9's, reproduced: the
+// header `Object.assign({ alg, typ: 'JWT', kid }, options.header)`, the
+// payload copied with `iat` set to its own value or, when that is falsy, the
+// time now, each JSON-stringified and base64url-encoded. The library's own
+// checks are made before it is trusted — a plain object, numeric `iat`,
+// `exp` and `nbf`, a key of the type and curve the algorithm needs, an RSA
+// modulus of at least 2048 bits — and a call that fails one, or that asks
+// for anything beyond `algorithm`, `keyid` and `header`, or names `alg` or
+// `kid` in that header, gets NULL: `signJws()` then signs it in place, and
+// refuses it in place, exactly as before.
+// ---------------------------------------------------------------------------
+function classicalSigningInput(payload, key, algorithm, spec, options) {
+  log.debug('Entering classicalSigningInput(). alg=' + algorithm);
+  if (spec.family === 'hmac') {
+    log.debug('Leaving classicalSigningInput(). HMAC, in place.');
+    return null;
+  }
+  const asked = options || {};
+  const header = asked.header;
+  const plain = function (value) {
+    const proto = value && typeof value === 'object' ?
+      Object.getPrototypeOf(value) : undefined;
+    return proto === Object.prototype || proto === null;
+  };
+  const extra = Object.keys(asked).some(function (name) {
+    return asked[name] !== undefined &&
+           ['algorithm', 'keyid', 'header'].indexOf(name) < 0;
+  });
+  if (extra || !plain(payload) ||
+      (header !== undefined && (!plain(header) || 'alg' in header ||
+                                'kid' in header)) ||
+      (asked.keyid !== undefined && typeof asked.keyid !== 'string') ||
+      ['iat', 'exp', 'nbf'].some(function (claim) {
+        return payload[claim] !== undefined &&
+               typeof payload[claim] !== 'number';
+      })) {
+    log.debug('Leaving classicalSigningInput(). Only signJws() can say.');
+    return null;
+  }
+  if (spec.ownSigner) {
+    const ownHeader = protectedHeaderFor(algorithm, asked);
+    const ownBody = Object.assign({}, payload);
+    if (ownBody.iat === undefined) {
+      ownBody.iat = Math.floor(Date.now() / 1000);
+    }
+    log.debug('Leaving classicalSigningInput(). ' + algorithm +
+              ', signJws()\'s own framing.');
+    return { key: key,
+             input: b64u(Buffer.from(JSON.stringify(ownHeader), 'utf8')) +
+                    '.' +
+                    b64u(Buffer.from(JSON.stringify(ownBody), 'utf8')) };
+  }
+  let keyObject;
+  try {
+    keyObject = privateKeyObject(key);
+  } catch (e) {
+    log.debug('Caught in classicalSigningInput(): ' + ((e && e.message) ||
+                                                      e));
+    log.debug('Leaving classicalSigningInput(). Not a private key here.');
+    return null;
+  }
+  const details = keyObject.asymmetricKeyDetails || {};
+  const wanted = spec.family === 'rsa' ? 'rsa' : 'ec';
+  const curves = { ES256: 'prime256v1', ES384: 'secp384r1',
+                   ES512: 'secp521r1' };
+  if (keyObject.asymmetricKeyType !== wanted ||
+      (wanted === 'rsa' && !(details.modulusLength >= 2048)) ||
+      (wanted === 'ec' && details.namedCurve !== curves[algorithm])) {
+    log.debug('Leaving classicalSigningInput(). A key jsonwebtoken would ' +
+              'judge.');
+    return null;
+  }
+  const jwtHeader = Object.assign({ alg: algorithm, typ: 'JWT',
+                                    kid: asked.keyid }, header);
+  const body = Object.assign({}, payload);
+  body.iat = body.iat || Math.floor(Date.now() / 1000);
+  log.debug('Leaving classicalSigningInput(). ' + algorithm +
+            ', jsonwebtoken\'s framing.');
+  return { key: keyObject,
+           input: b64u(Buffer.from(JSON.stringify(jwtHeader), 'utf8')) + '.' +
+                  b64u(Buffer.from(JSON.stringify(body), 'utf8')) };
 }
 
 // ---------------------------------------------------------------------------
@@ -3120,6 +3747,50 @@ function tokenClockSkew() {
   log.debug("Entering tokenClockSkew().");
   log.debug("Leaving tokenClockSkew().");
   return config.value('oauth2.clockSkewS');
+}
+
+// ---------------------------------------------------------------------------
+// POST-QUANTUM JOSE SIGNING, PER REALM (2026-10-23, rcbj):
+// `keys.postQuantumSigning`.
+//
+// THE ONE READER of the setting, here because this file is where every JWS is
+// verified and it already holds `config` — and it must stay a LEAF, so the
+// filters that apply the answer to a list, a document and a JWK Set live in
+// `helpers.js` and ask this. Read per call, in the ambient realm, never at
+// load: it is a runtime setting, and a realm switched off answers off from
+// its next request.
+//
+// What "post-quantum" means is this file's own table: `family: 'pq'`, which is
+// every algorithm `pq_jose.js` speaks (ML-DSA, SLH-DSA and the composites).
+// The ML-KEM JWE algorithms are not JWS algorithms and are not touched.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm signs, publishes and verifies the
+ * post-quantum and composite JWS algorithms (`keys.postQuantumSigning`, on by
+ * default).
+ *
+ * @returns false only when the setting is off
+ */
+function postQuantumSigningOn() {
+  log.debug("Entering postQuantumSigningOn().");
+  const on = signaturePolicy.postQuantumOn();
+  log.debug("Leaving postQuantumSigningOn(). " + on);
+  return on;
+}
+
+/**
+ * Tells whether a JWS algorithm is one of the post-quantum or composite ones
+ * (`family: 'pq'` in `JWS_ALGS`).
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true for ML-DSA, SLH-DSA and the composite ML-DSA algorithms
+ */
+function isPqJwsAlg(alg) {
+  log.debug("Entering isPqJwsAlg().");
+  const spec = Object.prototype.hasOwnProperty.call(JWS_ALGS, String(alg))
+    ? JWS_ALGS[String(alg)] : null;
+  log.debug("Leaving isPqJwsAlg().");
+  return !!spec && spec.family === 'pq';
 }
 
 // ---------------------------------------------------------------------------
@@ -3330,6 +4001,50 @@ function hmacKeyProblem(spec, key) {
   return '';
 }
 
+/**
+ * Reads a compact JWS WITHOUT verifying it, for the places that must look at a
+ * token before choosing how to treat it. Strict base64url, as the verifier's,
+ * so a token this reads and the verifier refuses cannot exist. Nothing read
+ * here is evidence of anything.
+ *
+ * @param token - the compact JWS
+ * @param options - `complete: true` for the header and signature as well
+ * @returns the claims, or `{ header, payload, signature }`; null where it is
+ *   not a compact JWS with JSON in it
+ */
+function decodeJws(token, options) {
+  log.debug('Entering decodeJws().');
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) {
+    log.debug('Leaving decodeJws(). Not three parts.');
+    return null;
+  }
+  try {
+    const header = JSON.parse(strictBase64url(parts[0], 'JWS protected header')
+      .toString('utf8'));
+    const payload = JSON.parse(strictBase64url(parts[1], 'JWS payload')
+      .toString('utf8'));
+    log.debug('Leaving decodeJws().');
+    return options && options.complete
+      ? { header: header, payload: payload, signature: parts[2] } : payload;
+  } catch (e) {
+    log.debug('Caught in decodeJws(): ' + ((e && e.message) || e));
+    log.debug('Leaving decodeJws(). Not readable.');
+    return null;
+  }
+}
+
+// THE ONE JOSE ACCEPT CHOKEPOINT (#1368). A hot path: asked per signature, so
+// no Entering/Leaving pair, which would drown the log. The code is marked on
+// the Error, never put in its message: callers copy the message into an
+// `error_description`, and a code is never sent (`error_codes.js`, rule 1).
+function refuseUnacceptableJws(alg) {
+  const cause = signaturePolicy.acceptCause('jose', alg);
+  if (cause) {
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+}
+
 function prepareVerification(token, key, options) {
   log.debug('Entering prepareVerification().');
   const parts = String(token || '').split('.');
@@ -3363,6 +4078,10 @@ function prepareVerification(token, key, options) {
       allowed.join(', ') + ' ' + (allowed.length === 1 ? 'is' : 'are') +
       ' accepted here.');
   }
+  // After the caller's own list and before the signature: every JOSE verifier
+  // comes through here or through jwsSignatureValid(), so none can accept what
+  // the realm no longer publishes, whatever list it was handed.
+  refuseUnacceptableJws(header.alg);
   const spec = jwsSpec(header.alg);
   const prepared = {
     header: header,
@@ -3389,6 +4108,14 @@ function prepareVerification(token, key, options) {
 }
 
 // An AKP public key as bytes: a JWK's `pub`, its base64url text, or bytes.
+// The private half's form as `pqPublicBytes()` reads the public half's.
+function pqPrivateBytes(key) {
+  log.debug('Entering pqPrivateBytes().');
+  log.debug('Leaving pqPrivateBytes().');
+  return (key && key.priv) ? Buffer.from(key.priv, 'base64url')
+    : Buffer.from(key);
+}
+
 function pqPublicBytes(key) {
   log.debug('Entering pqPublicBytes().');
   log.debug('Leaving pqPublicBytes().');
@@ -3435,6 +4162,9 @@ function checkPreparedSignature(prepared, key) {
  */
 function jwsSignatureValid(alg, key, signingInput, signature) {
   log.debug('Entering jwsSignatureValid(). alg=' + alg);
+  // GNAP's `jws` and `jwsd` proofs come through here and not through
+  // prepareVerification(), and until #1368 were never asked.
+  refuseUnacceptableJws(alg);
   const spec = jwsSpec(alg);
   const prepared = {
     header: { alg: alg },
@@ -3661,9 +4391,17 @@ function checkJwtClaims(claims, options) {
     log.debug('Leaving checkJwtClaims(). Not yet valid.');
     throw e;
   }
-  if (options.issuer !== undefined && claims.iss !== options.issuer) {
+  // The expected issuer may be a LIST (#565): a provider that publishes more
+  // than one spelling of itself — Google's ID Tokens name
+  // `https://accounts.google.com` or `accounts.google.com` — and a match on
+  // any member is a match, which is jsonwebtoken's rule for an array.
+  if (options.issuer !== undefined &&
+      (Array.isArray(options.issuer)
+        ? options.issuer.indexOf(claims.iss) < 0
+        : claims.iss !== options.issuer)) {
     log.debug('Leaving checkJwtClaims(). Wrong issuer.');
-    throw new Error('jwt issuer invalid. expected: ' + options.issuer);
+    throw new Error('jwt issuer invalid. expected: ' +
+                    [].concat(options.issuer).join(' or '));
   }
   if (options.audience !== undefined) {
     // `aud` may be a string or an array, and the expectation may be either
@@ -5076,8 +5814,14 @@ function kemPrivateKeyFor(alg, key) {
       log.debug('Leaving kemPrivateKeyFor(). Not this alg\'s AKP key.');
       throw new Error('alg "' + alg + '" is decrypted with an AKP key for ' +
                       'that algorithm, and the key held is ' +
-                      (jwk.kty === 'AKP' ? 'for "' + (jwk.alg || '') + '"'
-                        : 'of type "' + (jwk.kty || '(none)') + '"'));
+                      // Each of the three ways this fails is named, rather
+                      // than an AKP key with no alg quoted as for "".
+                      (jwk.kty !== 'AKP'
+                        ? 'of type "' + (jwk.kty || '(none)') + '"'
+                        : jwk.alg !== alg
+                          ? (jwk.alg ? 'for "' + jwk.alg + '"'
+                                     : 'an AKP key naming no algorithm')
+                          : 'that algorithm\'s, with no private part'));
     }
     log.debug('Leaving kemPrivateKeyFor(). AKP.');
     return Buffer.from(String(jwk.priv), 'base64url');
@@ -5480,7 +6224,7 @@ function describeJweKemAlg(alg) {
 // notion of what an `enc` value means. They are together here, over one table,
 // so a third algorithm is one row rather than two edits that have to agree.
 //
-// `common/vendored/jose_jwe.js` is the obvious alternative and is not used
+// `common/crypto_impl/jose_jwe.js` is the obvious alternative and is not used
 // here. This paragraph used to justify that by saying this service used
 // neither ECDH-ES nor the Concat KDF, only RSA-OAEP-256 with AES-GCM — which
 // stopped being true when the table below grew to RFC 7518 section 4 entire
@@ -5613,7 +6357,10 @@ const PBES2_HASH = { 'PBES2-HS256+A128KW': 'sha256',
 // blocks: PBKDF2 is synchronous here, and 2^31 iterations on the token
 // endpoint is a denial of service with a specification citation attached.
 const PBES2_MAX_ITERATIONS = 1000000;
-const PBES2_DEFAULT_ITERATIONS = 8192;
+// OWASP's current figure for PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4).
+const PBES2_DEFAULT_ITERATIONS = 600000;
+// RFC 7518 section 4.8.1.2: "A minimum iteration count of 1000 is RECOMMENDED."
+const PBES2_MIN_ITERATIONS = 1000;
 // JWK curve name -> the name node's OpenSSL knows it by.
 const EC_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                     'P-521': 'secp521r1' };
@@ -5736,8 +6483,22 @@ function openContent(spec, cek, iv, aad, ciphertext, tag) {
 // same two functions rather than node's cipher directly. A compact JWE
 // cannot carry those vectors itself: its AAD is always the protected header.
 // ---------------------------------------------------------------------------
+// AES-CBC IS WITHDRAWN FROM JWE IN PRODUCT (#1486, ASVS 5.0.0 11.3.2), behind
+// `crypto.allowCbcJwe`, at the one door every JWE passes through.
+function refuseCbcJwe(enc) {
+  log.debug('Entering refuseCbcJwe().');
+  const cbc = /CBC/.test(String(enc));
+  if (cbc && !mode.allowsCbcJwe()) {
+    log.debug('Leaving refuseCbcJwe(). Refused.');
+    throw new Error('enc "' + enc + '" is AES-CBC, which needs ' +
+                    'crypto.allowCbcJwe on.');
+  }
+  log.debug('Leaving refuseCbcJwe().');
+}
+
 function jweContentSpec(enc) {
   log.debug('Entering jweContentSpec(). enc=' + enc);
+  refuseCbcJwe(enc);
   const spec = JWE_ENCS[String(enc)];
   if (!spec) {
     log.debug('Leaving jweContentSpec(). Unknown.');
@@ -5942,40 +6703,33 @@ function pbes2Key(alg, password, saltInput, iterations) {
 // The symmetric half of both directions, so that the key a wrap derives and
 // the key an unwrap derives are derived by ONE function. Two copies of the
 // PBES2 salt construction is one copy that will eventually leave out the alg.
-function symmetricKek(alg, secret, header, forEncrypt) {
+function symmetricKek(alg, secret, header, forEncrypt, prepared) {
   log.debug('Entering symmetricKek(). alg=' + alg);
   if (JWE_PBES2_ALGS.indexOf(alg) >= 0) {
-    let salt;
-    let iterations;
-    if (forEncrypt) {
-      salt = nodeCrypto.randomBytes(16);
-      iterations = PBES2_DEFAULT_ITERATIONS;
-      header.p2s = b64u(salt);
-      header.p2c = iterations;
-    } else {
-      if (!header.p2s) {
-        throw new Error('a ' + alg + ' JWE carries its PBKDF2 salt in the ' +
-          'header as `p2s` (RFC 7518 section 4.8.1.1) and this one has none.');
-      }
-      salt = Buffer.from(String(header.p2s), 'base64url');
-      iterations = Math.floor(Number(header.p2c));
-      if (!isFinite(iterations) || iterations < 1) {
-        throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration ' +
-          'count in the header as `p2c` and this one says ' +
-          '"' + header.p2c + '".');
-      }
-      if (iterations > PBES2_MAX_ITERATIONS) {
-        // Refused rather than performed: see PBES2_MAX_ITERATIONS.
-        throw new Error('this JWE asks for ' + iterations + ' PBKDF2 ' +
-          'iterations and this service performs at most ' +
-          PBES2_MAX_ITERATIONS + '. RFC 7518 section 4.8.1.2 leaves the ' +
-          'ceiling to the recipient, and a caller choosing this number is a ' +
-          'caller choosing how long this process blocks.');
-      }
+    // THE KEY WAS DERIVED BEFORE THIS RAN, OFF THE EVENT LOOP (ASVS 5.0.0
+    // 11.4.4). Hundreds of thousands of PBKDF2 iterations here would hold
+    // every other request this thread serves, so the synchronous door does
+    // not derive at all: `encryptJweCompactAsync()` and
+    // `decryptJweCompactAsync()` derive on libuv's thread pool and hand the
+    // key in, and a PBES2 JWE that reaches this without one is refused.
+    if (!prepared || !Buffer.isBuffer(prepared.key)) {
+      log.debug('Leaving symmetricKek(). PBES2 with no derived key.');
+      throw new Error('a ' + alg + ' JWE needs its key derived off the ' +
+        'event loop: this caller must use encryptJweCompactAsync() or ' +
+        'decryptJweCompactAsync().');
     }
-    const key = pbes2Key(alg, secret, salt, iterations);
+    if (forEncrypt) {
+      header.p2s = b64u(prepared.salt);
+      header.p2c = prepared.iterations;
+    } else if (String(header.p2s) !== b64u(prepared.salt) ||
+               Math.floor(Number(header.p2c)) !== prepared.iterations ||
+               prepared.alg !== alg) {
+      log.debug('Leaving symmetricKek(). PBES2 key for another header.');
+      throw new Error('the PBES2 key derived for this JWE does not match ' +
+        'its header.');
+    }
     log.debug('Leaving symmetricKek(). PBES2.');
-    return key;
+    return prepared.key;
   }
   const bytes = secretBytes(secret);
   if (alg === 'dir') {
@@ -6014,7 +6768,8 @@ function wrapCek(alg, recipientJwk, cek, header, options) {
   // with a message about key data.
   // ---------------------------------------------------------------------
   if (JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
-    const kek = symmetricKek(alg, recipientJwk, header, true);
+    const kek = symmetricKek(alg, recipientJwk, header, true,
+                             options && options.pbes2);
     if (alg === 'dir') {
       // RFC 7518 section 4.5: the shared key IS the content encryption key and
       // encrypted_key is empty. The LENGTH is therefore decided by `enc`, and
@@ -6051,6 +6806,10 @@ function wrapCek(alg, recipientJwk, cek, header, options) {
   const publicKey = nodeCrypto.createPublicKey({ key: recipientJwk,
                                                  format: 'jwk' });
 
+  if (alg === 'RSA-OAEP' && !mode.allowsLegacyHashes()) {
+    throw new Error('alg "RSA-OAEP" is OAEP over SHA-1, which needs ' +
+      'crypto.allowLegacyHashes on.');
+  }
   if (alg === 'RSA-OAEP' || alg === 'RSA-OAEP-256') {
     const wrapped = nodeCrypto.publicEncrypt({
       key: publicKey,
@@ -6111,6 +6870,7 @@ function encryptJweCompact(plaintext, opts) {
     log.debug('Leaving encryptJweCompact(). HPKE Integrated Encryption.');
     return out;
   }
+  refuseCbcJwe(options.enc);
   const spec = JWE_ENCS[options.enc];
   if (!spec) {
     log.debug('Leaving encryptJweCompact(). Unknown enc.');
@@ -6233,7 +6993,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
         'or one of the symmetric algorithms with the client_secret as the ' +
         'key.');
     }
-    const kek = symmetricKek(alg, options.secret, header, false);
+    const kek = symmetricKek(alg, options.secret, header, false,
+                             options.pbes2);
     if (alg === 'dir') {
       log.debug('Leaving unwrapCek(). Direct.');
       return kek;
@@ -6284,6 +7045,10 @@ function unwrapCek(header, encryptedKey, options, spec) {
       'this caller was given none.');
   }
 
+  if (alg === 'RSA-OAEP' && !mode.allowsLegacyHashes()) {
+    throw new Error('alg "RSA-OAEP" is OAEP over SHA-1, which needs ' +
+      'crypto.allowLegacyHashes on.');
+  }
   if (JWE_RSA_ALGS.indexOf(alg) >= 0) {
     // The OAEP digest is what the `alg` says and NOT node's default, which is
     // SHA-1 — an unwrap under the wrong digest fails, and it fails in the way
@@ -6430,6 +7195,7 @@ function decryptJweCompact(compact, opts) {
     log.debug('Leaving decryptJweCompact(). HPKE Integrated Encryption.');
     return integrated;
   }
+  refuseCbcJwe(header.enc);
   const allowed = options.allowedEnc || Object.keys(JWE_ENCS);
   if (allowed.indexOf(header.enc) === -1) {
     log.debug('Leaving decryptJweCompact(). Unsupported enc.');
@@ -6502,6 +7268,141 @@ function decryptJweCompact(compact, opts) {
   log.debug('Leaving decryptJweCompact(). ' + plaintext.length +
             ' characters.');
   return { header: header, plaintext: plaintext };
+}
+
+// ---------------------------------------------------------------------------
+// PBES2 OFF THE EVENT LOOP (ASVS 5.0.0 11.4.4).
+//
+// PBES2 stretches a password with PBKDF2 on purpose, and the stretch is the
+// cost: 600,000 iterations of HMAC-SHA-256 is a large fraction of a second.
+// `pbkdf2Sync()` would spend it on the thread that answers every other
+// request, so the two doors below derive with `pbkdf2()`, which runs on
+// libuv's thread pool, and hand the key to the synchronous functions above,
+// which refuse a PBES2 JWE that arrives without one (`symmetricKek()`).
+//
+// The iteration count a SENDER chose is bounded on both sides before anything
+// is derived: below `security.pbes2MinIterations` is too weak to accept, and
+// above PBES2_MAX_ITERATIONS is a caller choosing how much of the pool it
+// spends. RFC 7518 section 4.8.1.2 leaves both to the recipient.
+// ---------------------------------------------------------------------------
+function pbes2MinIterations() {
+  log.debug('Entering pbes2MinIterations().');
+  const value = Math.floor(Number(config.value('security.pbes2MinIterations')));
+  log.debug('Leaving pbes2MinIterations().');
+  return isFinite(value) && value >= PBES2_MIN_ITERATIONS
+    ? Math.min(value, PBES2_MAX_ITERATIONS) : PBES2_MIN_ITERATIONS;
+}
+
+/**
+ * Derives a PBES2 key (RFC 7518 section 4.8.1.1) on libuv's thread pool.
+ *
+ * @param alg - the PBES2 algorithm
+ * @param password - the password
+ * @param saltInput - the `p2s` salt input
+ * @param iterations - the `p2c` count
+ * @returns a promise of the key
+ */
+function pbes2KeyAsync(alg, password, saltInput, iterations) {
+  log.debug('Entering pbes2KeyAsync(). alg=' + alg);
+  const salt = Buffer.concat([Buffer.from(alg, 'utf8'), Buffer.alloc(1),
+                              saltInput]);
+  log.debug('Leaving pbes2KeyAsync().');
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.pbkdf2(secretBytes(password), salt, iterations,
+                      AESKW_BYTES[alg], PBES2_HASH[alg], function (err, key) {
+                        if (err) {
+                          log.debug('Caught in pbes2KeyAsync(): ' +
+                                    ((err && err.message) || err));
+                          reject(err);
+                          return;
+                        }
+                        resolve(key);
+                      });
+  });
+}
+
+/**
+ * Encrypts a plaintext as a compact JWE, deriving a PBES2 key off the event
+ * loop. Takes the options `encryptJweCompact()` takes.
+ *
+ * @param plaintext - the plaintext
+ * @param opts - as `encryptJweCompact()`
+ * @returns a promise of the compact JWE
+ */
+async function encryptJweCompactAsync(plaintext, opts) {
+  log.debug('Entering encryptJweCompactAsync().');
+  const options = opts || {};
+  const alg = options.alg || JWE_ALG;
+  if (JWE_PBES2_ALGS.indexOf(alg) === -1) {
+    log.debug('Leaving encryptJweCompactAsync(). Not PBES2.');
+    return encryptJweCompact(plaintext, options);
+  }
+  // RFC 7518 section 4.8.1.1: a new salt for every encryption.
+  const salt = nodeCrypto.randomBytes(16);
+  const key = await pbes2KeyAsync(alg, options.secret, salt,
+                                  PBES2_DEFAULT_ITERATIONS);
+  log.debug('Leaving encryptJweCompactAsync(). PBES2.');
+  return encryptJweCompact(plaintext, Object.assign({}, options, {
+    pbes2: { alg: alg, salt: salt, iterations: PBES2_DEFAULT_ITERATIONS,
+             key: key } }));
+}
+
+/**
+ * Decrypts a compact JWE, deriving a PBES2 key off the event loop. Takes the
+ * options `decryptJweCompact()` takes, and refuses what it refuses.
+ *
+ * @param compact - the compact JWE
+ * @param opts - as `decryptJweCompact()`
+ * @returns a promise of `{ header, plaintext }`; it rejects where
+ *   `decryptJweCompact()` throws
+ */
+async function decryptJweCompactAsync(compact, opts) {
+  log.debug('Entering decryptJweCompactAsync().');
+  const options = opts || {};
+  const parts = String(compact || '').trim().split('.');
+  let header = null;
+  try {
+    header = JSON.parse(Buffer.from(parts[0] || '', 'base64url')
+      .toString('utf8'));
+  } catch (e) {
+    log.debug('Caught in decryptJweCompactAsync(): ' +
+              ((e && e.message) || e));
+  }
+  const alg = header && typeof header === 'object' ? String(header.alg) : '';
+  // Only a PBES2 JWE this caller would open is derived for: one it is going to
+  // refuse anyway costs nothing, and the refusal is decryptJweCompact()'s.
+  if (parts.length !== 5 || JWE_PBES2_ALGS.indexOf(alg) === -1 ||
+      (options.allowedAlg && options.allowedAlg.indexOf(alg) === -1) ||
+      options.secret === undefined || options.secret === null ||
+      options.secret === '') {
+    log.debug('Leaving decryptJweCompactAsync(). Not derived here.');
+    return decryptJweCompact(compact, options);
+  }
+  if (!header.p2s) {
+    log.debug('Leaving decryptJweCompactAsync(). No p2s.');
+    throw new Error('a ' + alg + ' JWE carries its PBKDF2 salt in the ' +
+      'header as `p2s` (RFC 7518 section 4.8.1.1) and this one has none.');
+  }
+  const salt = Buffer.from(String(header.p2s), 'base64url');
+  const iterations = Math.floor(Number(header.p2c));
+  const floor = pbes2MinIterations();
+  if (!isFinite(iterations) || iterations < floor) {
+    log.debug('Leaving decryptJweCompactAsync(). Too few iterations.');
+    throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration count ' +
+      'in the header as `p2c`, and this service accepts at least ' + floor +
+      '; this one says "' + header.p2c + '".');
+  }
+  if (iterations > PBES2_MAX_ITERATIONS) {
+    log.debug('Leaving decryptJweCompactAsync(). Too many iterations.');
+    throw new Error('this JWE asks for ' + iterations + ' PBKDF2 ' +
+      'iterations and this service performs at most ' +
+      PBES2_MAX_ITERATIONS + '. RFC 7518 section 4.8.1.2 leaves the ' +
+      'ceiling to the recipient.');
+  }
+  const key = await pbes2KeyAsync(alg, options.secret, salt, iterations);
+  log.debug('Leaving decryptJweCompactAsync(). PBES2.');
+  return decryptJweCompact(compact, Object.assign({}, options, {
+    pbes2: { alg: alg, salt: salt, iterations: iterations, key: key } }));
 }
 
 // The Integrated half of `decryptJweCompact()`: the same refusals in the
@@ -6719,7 +7620,7 @@ function certificateIdentifiers(pem) {
 // beside a test stack) collide the same way with no restart at all.
 //
 // So the serial is random — 128 bits, the CA/Browser Forum's number, which is
-// also what `common/vendored/x509.js` already mints for every SPIFFE SVID.
+// also what `common/crypto_impl/x509.js` already mints for every SPIFFE SVID.
 //
 // WHAT THE CONSTANT WAS FOR IS KEPT, because it was a real thing rather than
 // laziness: a person looking at a packet capture, or at two PEM files, could
@@ -6777,9 +7678,9 @@ function certificateSerial(prefixHex) {
 // would be inventing a certificate profile language for two users.
 //
 // A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.ts` issues
-// through `common/vendored/x509.js` because **node-forge cannot sign with an EC
+// through `common/crypto_impl/x509.js` because **node-forge cannot sign with an EC
 // key at all** and SPIFFE issues P-256. That is a capability gap, not a
-// duplication, and `common/vendored/CLAUDE.md` records it.
+// duplication, and `common/crypto_impl/CLAUDE.md` records it.
 // ---------------------------------------------------------------------------
 // A forge key pair over an RSA private key given as PEM (PKCS#1 or PKCS#8 —
 // node reads either and forge is handed PKCS#1, which is what it writes).
@@ -6791,6 +7692,27 @@ function rsaPairFromPem(pem) {
   log.debug("Leaving rsaPairFromPem().");
   return { privateKey: privateKey,
            publicKey: forge.pki.setRsaPublicKey(privateKey.n, privateKey.e) };
+}
+
+// SIGNED BY NODE, NOT BY FORGE (#704). forge's `cert.sign()` computes the
+// RSA signature in JavaScript big-number arithmetic — tens of milliseconds
+// for a 2048-bit key and several times that for a larger one, all of it on
+// the event loop — and `signing.rotate` makes a certificate this way for
+// every RSA signing unit it rotates. This is forge's own `sign()` step for
+// step (the same algorithm OID on both members, the same TBSCertificate)
+// with only the signature itself made by OpenSSL, so the certificate is the
+// one forge would have made, byte for byte under a deterministic padding.
+function signCertificateNatively(cert, privateKeyPem) {
+  log.debug("Entering signCertificateNatively().");
+  cert.md = forge.md.sha256.create();
+  cert.signatureOid = cert.siginfo.algorithmOid =
+    forge.pki.oids.sha256WithRSAEncryption;
+  cert.tbsCertificate = forge.pki.getTBSCertificate(cert);
+  const tbs = Buffer.from(forge.asn1.toDer(cert.tbsCertificate).getBytes(),
+                          'binary');
+  cert.signature = nodeCrypto.sign('sha256', tbs, privateKeyPem)
+                             .toString('binary');
+  log.debug("Leaving signCertificateNatively().");
 }
 
 /**
@@ -6839,11 +7761,12 @@ function selfSignedRsaCertificate(opts) {
   if (options.extensions && options.extensions.length) {
     cert.setExtensions(options.extensions);
   }
-  cert.sign(pair.privateKey, forge.md.sha256.create());
+  const privateKeyPem = forge.pki.privateKeyToPem(pair.privateKey);
+  signCertificateNatively(cert, privateKeyPem);
   const certPem = forge.pki.certificateToPem(cert);
   log.debug('Leaving selfSignedRsaCertificate().');
   return {
-    privateKeyPem: forge.pki.privateKeyToPem(pair.privateKey),
+    privateKeyPem: privateKeyPem,
     publicKeyPem: forge.pki.publicKeyToPem(pair.publicKey),
     certPem: certPem,
     certB64: stripPem(certPem),
@@ -6888,18 +7811,14 @@ function selfSignedRsaCertificate(opts) {
 // `spiffe/spiffe_ca.ts` records for EC keys, one algorithm generation later.
 // ---------------------------------------------------------------------------
 /** The ML-DSA parameter sets' object identifiers. */
-const ML_DSA_OIDS = {
-  'ml-dsa-44': '2.16.840.1.101.3.4.3.17',
-  'ml-dsa-65': '2.16.840.1.101.3.4.3.18',
-  'ml-dsa-87': '2.16.840.1.101.3.4.3.19'
-};
+const ML_DSA_OIDS = algorithmRegistry.mlDsaOids();
 
 // ---------------------------------------------------------------------------
 // WHETHER THIS RUNTIME CAN DO ANY OF IT, WHICH IS A QUESTION ABOUT THE
 // INTERPRETER AND NOT ABOUT THIS SERVICE.
 //
 // ML-DSA reaches node with OpenSSL 3.5, which is node 24 — the version this
-// repository's Dockerfile pins (24.16.0). On anything older
+// repository's Dockerfile pins (24.22.1). On anything older
 // `generateKeyPairSync('ml-dsa-65')` throws `ERR_INVALID_ARG_VALUE: The
 // argument 'type' must be a supported key type`, a sentence that names neither
 // this service, nor the algorithm's real requirement, nor the way out — and it
@@ -6941,7 +7860,7 @@ function mlDsaAvailable() {
                e.message + '). Node ' + process.versions.node +
                ' is linked against OpenSSL ' + process.versions.openssl +
                '; ML-DSA needs OpenSSL 3.5, which is node 24 — this ' +
-               'repository pins 24.16.0 in its Dockerfile. Every ' +
+               'repository pins 24.22.1 in its Dockerfile. Every ' +
                'post-quantum algorithm here needs it since #363, the JOSE ' +
                'ones included (common/pq_native.js).');
     }
@@ -6998,7 +7917,7 @@ function selfSignedMlDsaCertificate(opts) {
                     ' key, so no ML-DSA certificate can be built here. Node ' +
                     process.versions.node + ' is linked against OpenSSL ' +
                     process.versions.openssl + '; ML-DSA needs OpenSSL 3.5, ' +
-                    'which is node 24 — this repository pins 24.16.0, and ' +
+                    'which is node 24 — this repository pins 24.22.1, and ' +
                     'every post-quantum algorithm here needs it (#363).');
   }
   // `any`: the algorithm is a variable, and the overloads want literals.
@@ -7452,6 +8371,23 @@ function certificateThumbprint(certificate, opts) {
  */
 function certificateSpkiThumbprint(certificate) {
   log.debug("Entering certificateSpkiThumbprint().");
+  const spkiDer = certificateSpkiDer(certificate);
+  log.debug("Leaving certificateSpkiThumbprint().");
+  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+}
+
+// The SubjectPublicKeyInfo DER itself, read the way the thumbprint above reads
+// it — asn1js, the bytes as the issuer signed them — so a post-quantum key a
+// node `X509Certificate` cannot load is still a key here (#1713).
+/**
+ * Returns a certificate's SubjectPublicKeyInfo, as the DER the issuer signed.
+ *
+ * @param certificate - the certificate, PEM or base64 DER
+ * @returns the DER
+ * @throws Error for anything that is not a certificate
+ */
+function certificateSpkiDer(certificate) {
+  log.debug("Entering certificateSpkiDer().");
   const text = String(certificate == null ? '' : certificate);
   const first = text.match(
     /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
@@ -7468,7 +8404,7 @@ function certificateSpkiThumbprint(certificate) {
   const spki = fields[versioned ? 6 : 5];
   if (!spki || !spki.idBlock || spki.idBlock.tagNumber !== 16 ||
       !spki.valueBlock || (spki.valueBlock.value || []).length !== 2) {
-    log.debug("Leaving certificateSpkiThumbprint(). Not a certificate.");
+    log.debug("Leaving certificateSpkiDer(). Not a certificate.");
     throw new Error('this is not a DER X.509 certificate with a ' +
                     'SubjectPublicKeyInfo where RFC 5280 puts it.');
   }
@@ -7476,8 +8412,48 @@ function certificateSpkiThumbprint(certificate) {
   const spkiDer = view && view.byteLength
     ? Buffer.from(view.buffer, view.byteOffset, view.byteLength)
     : Buffer.from(spki.toBER(false));
-  log.debug("Leaving certificateSpkiThumbprint().");
-  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+  log.debug("Leaving certificateSpkiDer().");
+  return spkiDer;
+}
+
+// ---------------------------------------------------------------------------
+// A COMPACT JWS VERIFIED WITH THE KEY IN A CERTIFICATE (#1713): what a
+// document whose `x5c[0]` names its signer is checked with. The certificate's
+// SubjectPublicKeyInfo is read by `certificateSpkiDer()` and
+// `publicKeyFromSpki()`, so an ML-DSA leaf this service's own post-quantum
+// Issuing CA certified verifies too: its public key is the BIT STRING's
+// octets (RFC 9881), handed to `verifyCompactJws()` as `{ pub }`. Whether the
+// CERTIFICATE is to be relied on is the validation door's question, never
+// this function's.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a compact JWS with the public key a certificate holds.
+ *
+ * @param token - the compact JWS
+ * @param certificate - the signer's certificate, PEM or base64 DER
+ * @param opts - as for `verifyCompactJws()`; `algorithms` is required
+ * @returns `{ header, claims }`, as `verifyCompactJws()`
+ * @throws Error when the key cannot be read or the signature does not verify
+ */
+function verifyCompactJwsWithCertificate(token, certificate, opts) {
+  log.debug("Entering verifyCompactJwsWithCertificate().");
+  const read = publicKeyFromSpki(certificateSpkiDer(certificate));
+  // A KeyObject, or for a post-quantum key `{ pub }`: what
+  // `verifyCompactJws()` takes for each family.
+  /** @type {any} */
+  let key = read.key;
+  if (read.kind === 'pq') {
+    const decoded = pqcX509.decodeSpki(new Uint8Array(read.spki));
+    key = { pub: Buffer.from(decoded.pub).toString('base64url') };
+  }
+  if (!key) {
+    log.debug("Leaving verifyCompactJwsWithCertificate(). No key.");
+    throw new Error('the certificate holds no key this service can verify ' +
+                    'a signature with.');
+  }
+  const out = verifyCompactJws(token, key, opts);
+  log.debug("Leaving verifyCompactJwsWithCertificate().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -8625,6 +9601,12 @@ function decodeStoredSecret(stored) {
     return null;
   }
   const parts = text.split('$');
+  // `$argon2id$v=19$m=…,t=…,p=…$salt$hash` (#847) is read by its own
+  // decoder; everything below is the scrypt form.
+  if (parts[1] === 'argon2id') {
+    log.debug('Leaving decodeStoredSecret(). An argon2id form.');
+    return decodeArgon2Secret(parts);
+  }
   // `$scrypt$N$r$p$salt$hash` splits to ['', 'scrypt', N, r, p, salt, hash].
   if (parts.length !== 7 || parts[1] !== 'scrypt') {
     log.debug('Leaving decodeStoredSecret(). Not a form this file writes.');
@@ -8651,8 +9633,417 @@ function decodeStoredSecret(stored) {
     return null;
   }
   log.debug('Leaving decodeStoredSecret(). N=' + n + '.');
-  return { N: n, r: r, p: p, salt: salt, expected: expected,
-           keylen: expected.length, maxmem: 128 * n * r * 2 };
+  return { algorithm: 'scrypt', N: n, r: r, p: p, salt: salt,
+           expected: expected, keylen: expected.length,
+           maxmem: 128 * n * r * 2 };
+}
+
+// ---------------------------------------------------------------------------
+// ARGON2ID FOR A PERSON'S PASSWORD (2026-10-22, #847).
+//
+// RFC 9106's argon2id, which the OWASP Password Storage Cheat Sheet puts
+// first, for the passwords the password policy governs. **A PERSON'S
+// PASSWORD ONLY**: `hashSecret()` above stays scrypt for every other secret
+// this service verifies — a client secret, an activation or reset token, a
+// recovery code, an app password — which was rcbj's decision 3 on #847: the
+// password policy governs people's passwords and nothing else.
+//
+// **NODE'S OWN ARGON2.** `crypto.argon2()` and `crypto.argon2Sync()` arrived
+// in node 24.7 (the image runs 24.22.1), so there is no native package to add.
+// The asynchronous one is a CryptoJob, run on libuv's thread pool like
+// `crypto.scrypt()` — the arrangement #363 gave scrypt. A runtime without it
+// (an older node loading this file in-process) writes scrypt instead, said
+// once (STS-KEYS-0155), and refuses to verify an argon2id value
+// (STS-KEYS-0156) rather than guess.
+//
+// **THE STORED FORM IS THE PHC STRING** every argon2 library writes,
+// `$argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>$<salt>$<hash>`, the two
+// base64 fields without padding. It names its own parameters, so a value
+// written under one policy verifies under any later one — the property the
+// scrypt form was made self-describing for — and that is how the upgrade on
+// sign-in (`credentials.ts`) can find what is out of date.
+//
+// **THE FLOORS ARE OWASP'S AND ARE ENFORCED HERE AS WELL AS IN THE POLICY.**
+// m=19 MiB (19456 KiB), t=2, p=1 for argon2id; for scrypt, r=8 and N·p at
+// least what OWASP's table lists for that N (2^17 with p=1, 2^16 with p=2,
+// 2^15 with p=3, 2^14 with p=5, 2^13 with p=10). `passwordHashSpec()` clamps
+// to them, so a value that reached a policy some way its checks did not see
+// cannot make this module write a hash cheaper than OWASP's minimum —
+// `scryptParameters()`'s argument made again. The ceilings bound what a
+// policy may ask for, and what a STORED value may make a verification
+// compute: a hand-written `m=4194304` on an entry must not be a way to make
+// every sign-in allocate four gibibytes.
+// ---------------------------------------------------------------------------
+const ARGON2_SALT_BYTES = 16;
+const ARGON2_TAG_BYTES = 32;
+const ARGON2_VERSION = 19;
+const ARGON2_LIMITS = Object.freeze({
+  memory: Object.freeze({ min: 19456, max: 1048576, dflt: 19456 }),
+  passes: Object.freeze({ min: 2, max: 16, dflt: 2 }),
+  parallelism: Object.freeze({ min: 1, max: 16, dflt: 1 })
+});
+// THE DEFAULT IS SCRYPT AT 2^15, r=8, p=3 (#872, 2026-11-11): one of OWASP's
+// pairs. #889 priced that pair at about 250 ms against the previous 2^15 p=1
+// at about 97 ms; 2^17 p=1 was measured at about 460 ms and was not chosen.
+// p's field minimum stays 1, so a stored hash at p=1 still verifies.
+// `passwordHashSpec()` raises a NEW write to the table. A directory that
+// already holds the cheaper hash pays one extra hash at the next verified
+// sign-in, and only where that hash is weaker (`credentials.ts`).
+const SCRYPT_PASSWORD_LIMITS = Object.freeze({
+  logN: Object.freeze({ min: 13, max: 20, dflt: 15 }),
+  r: Object.freeze({ min: 8, max: 16, dflt: 8 }),
+  p: Object.freeze({ min: 1, max: 16, dflt: 3 })
+});
+// OWASP's scrypt table, by log2 N: the least p it lists at r=8. 2^17 and up
+// need p=1.
+const SCRYPT_OWASP_MIN_P = Object.freeze({ 13: 10, 14: 5, 15: 3, 16: 2 });
+// scrypt first: the default (rcbj, 2026-10-22). argon2id stays selectable.
+const PASSWORD_HASH_ALGORITHMS = Object.freeze(['scrypt', 'argon2id']);
+let warnedNoArgon2 = false;
+
+/**
+ * Returns the least scrypt parallelism OWASP's table lists for a cost.
+ *
+ * @param logN - log2 of scrypt's N
+ * @returns the least p at r=8
+ */
+function scryptOwaspMinP(logN) {
+  log.debug("Entering scryptOwaspMinP().");
+  const n = Number(logN);
+  log.debug("Leaving scryptOwaspMinP().");
+  return n >= 17 ? 1 : (SCRYPT_OWASP_MIN_P[n] || 10);
+}
+
+// Node's argon2, held as `any`: the `@types/node` this repository checks
+// against predates node 24.7, which added it (`pq_native.js`'s reason for
+// the same cast).
+function argon2Api() {
+  log.debug("Entering argon2Api().");
+  const api = /** @type {any} */ (nodeCrypto);
+  log.debug("Leaving argon2Api().");
+  return typeof api.argon2Sync === 'function' &&
+         typeof api.argon2 === 'function' ? api : null;
+}
+
+/**
+ * Says whether this runtime can compute argon2id.
+ *
+ * @returns true on node 24.7 or later
+ */
+function argon2Available() {
+  log.debug("Entering argon2Available().");
+  log.debug("Leaving argon2Available().");
+  return !!argon2Api();
+}
+
+/**
+ * Returns the hash a NEW password is written under, clamped to the floors and
+ * ceilings above: the algorithm and its parameters.
+ *
+ * argon2id, when asked for, where this runtime has it, and scrypt otherwise
+ * (said once, STS-KEYS-0155). An absent spec is scrypt at 2^15, r=8, p=3
+ * (#872).
+ *
+ * @param spec - `{ algorithm, memory, passes, parallelism }` or
+ *   `{ algorithm: 'scrypt', logN, r, p }`
+ * @returns the spec in force
+ */
+function passwordHashSpec(spec) {
+  log.debug("Entering passwordHashSpec().");
+  const asked = spec || {};
+  let algorithm = PASSWORD_HASH_ALGORITHMS.indexOf(asked.algorithm) >= 0
+    ? asked.algorithm : 'scrypt';
+  if (algorithm === 'argon2id' && !argon2Available()) {
+    if (!warnedNoArgon2) {
+      warnedNoArgon2 = true;
+      log.warn(errorCodes.tag('STS-KEYS-0155') +
+               'crypto: this runtime (node ' + process.version + ') has no ' +
+               'argon2, so new passwords are hashed with scrypt at the ' +
+               'policy\'s scrypt parameters instead of argon2id.');
+    }
+    algorithm = 'scrypt';
+  }
+  if (algorithm === 'argon2id') {
+    const L = ARGON2_LIMITS;
+    log.debug("Leaving passwordHashSpec(). argon2id.");
+    return {
+      algorithm: 'argon2id',
+      memory: clampInt(asked.memory, L.memory.min, L.memory.max,
+                       L.memory.dflt),
+      passes: clampInt(asked.passes, L.passes.min, L.passes.max,
+                       L.passes.dflt),
+      parallelism: clampInt(asked.parallelism, L.parallelism.min,
+                            L.parallelism.max, L.parallelism.dflt)
+    };
+  }
+  const S = SCRYPT_PASSWORD_LIMITS;
+  const logN = clampInt(asked.logN, S.logN.min, S.logN.max, S.logN.dflt);
+  const r = clampInt(asked.r, S.r.min, S.r.max, S.r.dflt);
+  // Raised to OWASP's table for this N (#872). The field minimum stays 1,
+  // so a stored hash below the table still verifies; a new hash does not.
+  const askedP = clampInt(asked.p, S.p.min, S.p.max, S.p.dflt);
+  const p = Math.min(S.p.max, Math.max(askedP, scryptOwaspMinP(logN)));
+  log.debug("Leaving passwordHashSpec(). scrypt.");
+  return { algorithm: 'scrypt', logN: logN, r: r, p: p };
+}
+
+// A PHC base64 field: standard alphabet, no padding.
+function phcB64(buf) {
+  log.debug("Entering phcB64().");
+  log.debug("Leaving phcB64().");
+  return buf.toString('base64').replace(/=+$/, '');
+}
+
+function encodeArgon2Secret(spec, salt, tag) {
+  log.debug("Entering encodeArgon2Secret().");
+  log.debug("Leaving encodeArgon2Secret().");
+  return '$argon2id$v=' + ARGON2_VERSION + '$m=' + spec.memory + ',t=' +
+         spec.passes + ',p=' + spec.parallelism + '$' + phcB64(salt) + '$' +
+         phcB64(tag);
+}
+
+// The argon2id form read back, or null for one this file would not write or
+// will not compute. NULL RATHER THAN A THROW, for `decodeStoredSecret()`'s
+// reason. The bounds are RFC 9106's own (m at least 8 KiB per lane, t at
+// least 1) below and this file's ceilings above: a stored value is verified
+// at the cost it names, which may be lower than a NEW hash's floor.
+function decodeArgon2Secret(parts) {
+  log.debug("Entering decodeArgon2Secret().");
+  // ['', 'argon2id', 'v=19', 'm=…,t=…,p=…', salt, hash]
+  if (parts.length !== 6 || parts[2] !== 'v=' + ARGON2_VERSION) {
+    log.debug("Leaving decodeArgon2Secret(). Not the form this file writes.");
+    return null;
+  }
+  const params = /^m=(\d{1,8}),t=(\d{1,3}),p=(\d{1,3})$/.exec(parts[3]);
+  const b64 = /^[A-Za-z0-9+/]+$/;
+  if (!params || !b64.test(parts[4]) || !b64.test(parts[5])) {
+    log.debug("Leaving decodeArgon2Secret(). The fields do not parse.");
+    return null;
+  }
+  const memory = Number(params[1]);
+  const passes = Number(params[2]);
+  const parallelism = Number(params[3]);
+  const salt = Buffer.from(parts[4], 'base64');
+  const expected = Buffer.from(parts[5], 'base64');
+  if (parallelism < 1 || parallelism > ARGON2_LIMITS.parallelism.max ||
+      passes < 1 || passes > ARGON2_LIMITS.passes.max ||
+      memory < 8 * parallelism || memory > ARGON2_LIMITS.memory.max ||
+      salt.length < 8 || expected.length < 4) {
+    log.warn(errorCodes.tag('STS-KEYS-0156') +
+             'crypto: a stored argon2id hash names parameters outside what ' +
+             'this service will compute (m=' + memory + ' KiB, t=' + passes +
+             ', p=' + parallelism + ') and is being treated as no match.');
+    log.debug("Leaving decodeArgon2Secret(). Out of bounds.");
+    return null;
+  }
+  log.debug("Leaving decodeArgon2Secret(). m=" + memory + '.');
+  return { algorithm: 'argon2id', memory: memory, passes: passes,
+           parallelism: parallelism, salt: salt, expected: expected,
+           keylen: expected.length };
+}
+
+function argon2Parameters(plaintext, spec) {
+  log.debug("Entering argon2Parameters().");
+  log.debug("Leaving argon2Parameters().");
+  return {
+    message: Buffer.from(String(plaintext == null ? '' : plaintext), 'utf8'),
+    nonce: Buffer.from(spec.salt),
+    parallelism: spec.parallelism,
+    tagLength: spec.keylen,
+    memory: spec.memory,
+    passes: spec.passes
+  };
+}
+
+// On this thread: the sync doors and the tests.
+function argon2DeriveSync(plaintext, spec) {
+  log.debug("Entering argon2DeriveSync().");
+  const api = argon2Api();
+  if (!api) {
+    log.debug("Leaving argon2DeriveSync(). No argon2 here.");
+    throw new Error('this runtime (node ' + process.version + ') has no ' +
+                    'argon2');
+  }
+  log.debug("Leaving argon2DeriveSync().");
+  return api.argon2Sync('argon2id', argon2Parameters(plaintext, spec));
+}
+
+// On libuv's thread pool: node's asynchronous argon2 is a CryptoJob, the
+// arrangement `deriveAsync()` has for scrypt.
+function argon2DeriveAsync(plaintext, spec) {
+  log.debug("Entering argon2DeriveAsync(). m=" + spec.memory);
+  const api = argon2Api();
+  if (!api) {
+    log.debug("Leaving argon2DeriveAsync(). No argon2 here.");
+    return Promise.reject(new Error('this runtime (node ' + process.version +
+                                    ') has no argon2'));
+  }
+  log.debug("Leaving argon2DeriveAsync(). On libuv.");
+  return new Promise(function (resolve, reject) {
+    api.argon2('argon2id', argon2Parameters(plaintext, spec),
+      function (err, derived) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(Buffer.from(derived));
+      });
+  });
+}
+
+// The scrypt half of a password spec, in the shape `deriveAsync()` takes.
+function scryptPasswordSpec(spec, salt) {
+  log.debug("Entering scryptPasswordSpec().");
+  const n = Math.pow(2, spec.logN);
+  log.debug("Leaving scryptPasswordSpec().");
+  return { N: n, r: spec.r, p: spec.p, salt: salt, keylen: SCRYPT_KEYLEN,
+           maxmem: 2 * 128 * spec.r * (n + spec.p) };
+}
+
+/**
+ * Hashes a PERSON'S PASSWORD under a password-policy spec, on this thread:
+ * argon2id in the PHC form, or scrypt in `$scrypt$N$r$p$salt$hash`.
+ *
+ * Every other secret goes through `hashSecret()`, which stays scrypt.
+ *
+ * @param plaintext - the password
+ * @param spec - the policy's hash spec; see `passwordHashSpec()`
+ * @returns the stored form
+ */
+function hashPassword(plaintext, spec) {
+  log.debug('Entering hashPassword().');
+  const use = passwordHashSpec(spec);
+  if (use.algorithm === 'argon2id') {
+    const salt = nodeCrypto.randomBytes(ARGON2_SALT_BYTES);
+    const one = Object.assign({ salt: salt, keylen: ARGON2_TAG_BYTES }, use);
+    const tag = argon2DeriveSync(plaintext, one);
+    log.debug('Leaving hashPassword(). argon2id.');
+    return encodeArgon2Secret(use, salt, tag);
+  }
+  const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  const s = scryptPasswordSpec(use, salt);
+  const derived = nodeCrypto.scryptSync(String(plaintext == null ? '' :
+                                               plaintext),
+                                        salt, s.keylen,
+                                        { N: s.N, r: s.r, p: s.p,
+                                          maxmem: s.maxmem });
+  log.debug('Leaving hashPassword(). scrypt.');
+  return encodeStoredSecret(s.N, s.r, s.p, salt, derived);
+}
+
+/**
+ * Hashes a person's password as `hashPassword()` does, on libuv's thread
+ * pool.
+ *
+ * @param plaintext - the password
+ * @param spec - the policy's hash spec
+ * @returns a promise of the stored form
+ */
+function hashPasswordAsync(plaintext, spec) {
+  log.debug('Entering hashPasswordAsync().');
+  // Read ONCE, as `hashSecretAsync()` reads its cost once.
+  const use = passwordHashSpec(spec);
+  if (use.algorithm === 'argon2id') {
+    const salt = nodeCrypto.randomBytes(ARGON2_SALT_BYTES);
+    const one = Object.assign({ salt: salt, keylen: ARGON2_TAG_BYTES }, use);
+    log.debug('Leaving hashPasswordAsync(). argon2id, on libuv.');
+    return argon2DeriveAsync(plaintext, one).then(function (tag) {
+      return encodeArgon2Secret(use, salt, tag);
+    });
+  }
+  const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  const s = scryptPasswordSpec(use, salt);
+  log.debug('Leaving hashPasswordAsync(). scrypt, on libuv.');
+  return deriveAsync(plaintext, s).then(function (derived) {
+    return encodeStoredSecret(s.N, s.r, s.p, salt, derived);
+  });
+}
+
+/**
+ * Reads the algorithm and parameters a stored hash names, never its salt or
+ * value.
+ *
+ * @param stored - the stored form
+ * @returns `{ algorithm, memory, passes, parallelism }`,
+ *   `{ algorithm: 'scrypt', logN, r, p }`, or null for one this file did not
+ *   write
+ */
+function storedSecretParameters(stored) {
+  log.debug("Entering storedSecretParameters().");
+  const spec = decodeStoredSecret(stored);
+  if (!spec) {
+    log.debug("Leaving storedSecretParameters(). Unreadable.");
+    return null;
+  }
+  if (spec.algorithm === 'argon2id') {
+    log.debug("Leaving storedSecretParameters(). argon2id.");
+    return { algorithm: 'argon2id', memory: spec.memory, passes: spec.passes,
+             parallelism: spec.parallelism, keylen: spec.keylen };
+  }
+  log.debug("Leaving storedSecretParameters(). scrypt.");
+  return { algorithm: 'scrypt', logN: Math.log2(spec.N), r: spec.r,
+           p: spec.p, keylen: spec.keylen };
+}
+
+/**
+ * Says whether a stored password hash is already in the form a new one would
+ * be written in under this spec: the same algorithm and every parameter the
+ * same. What the upgrade on sign-in asks (#847).
+ *
+ * @param stored - the stored form
+ * @param spec - the policy's hash spec
+ * @returns true when nothing would change by hashing again
+ */
+function storedSecretMatchesSpec(stored, spec) {
+  log.debug("Entering storedSecretMatchesSpec().");
+  const held = storedSecretParameters(stored);
+  const want = passwordHashSpec(spec);
+  if (!held || held.algorithm !== want.algorithm) {
+    log.debug("Leaving storedSecretMatchesSpec(). Another algorithm.");
+    return false;
+  }
+  const same = want.algorithm === 'argon2id'
+    ? held.memory === want.memory && held.passes === want.passes &&
+      held.parallelism === want.parallelism &&
+      held.keylen === ARGON2_TAG_BYTES
+    : held.logN === want.logN && held.r === want.r && held.p === want.p &&
+      held.keylen === SCRYPT_KEYLEN;
+  log.debug("Leaving storedSecretMatchesSpec(). " + same);
+  return same;
+}
+
+/**
+ * Says whether a stored password hash costs strictly less than a new one
+ * under this spec, or names a different algorithm.
+ *
+ * Cost is N·r·p for scrypt and memory·passes for argon2id. An equal cost
+ * with different parameters is not weaker, and an unreadable value is not
+ * weaker. The upgrade on sign-in asks this when the parameters differ
+ * (#872): a stronger hash is not rewritten down, and a change of algorithm
+ * still is.
+ *
+ * @param stored - the stored form
+ * @param spec - the policy's hash spec
+ * @returns true when hashing again would raise the cost, or change algorithm
+ */
+function storedSecretIsWeaker(stored, spec) {
+  log.debug("Entering storedSecretIsWeaker().");
+  const held = storedSecretParameters(stored);
+  const want = passwordHashSpec(spec);
+  if (!held) {
+    log.debug("Leaving storedSecretIsWeaker(). Unreadable.");
+    return false;
+  }
+  if (held.algorithm !== want.algorithm) {
+    log.debug("Leaving storedSecretIsWeaker(). Another algorithm.");
+    return true;
+  }
+  const weaker = want.algorithm === 'argon2id'
+    ? held.memory * held.passes < want.memory * want.passes
+    : Math.pow(2, held.logN) * held.r * held.p <
+      Math.pow(2, want.logN) * want.r * want.p;
+  log.debug("Leaving storedSecretIsWeaker(). " + weaker);
+  return weaker;
 }
 
 /**
@@ -8725,7 +10116,8 @@ function hashSecretAsync(plaintext) {
 // plaintext — and a verification that treated one of those as a scrypt string
 // would refuse a correct password rather than saying it cannot read the value.
 /**
- * Says whether a stored value is one of this service's scrypt forms.
+ * Says whether a stored value is one of this service's hash forms: scrypt,
+ * or argon2id since #847.
  *
  * @param stored - the value
  * @returns true when it is
@@ -8733,11 +10125,13 @@ function hashSecretAsync(plaintext) {
 function isHashedSecret(stored) {
   log.debug("Entering isHashedSecret().");
   log.debug("Leaving isHashedSecret().");
-  return /^\$scrypt\$/.test(String(stored || ''));
+  // argon2id since #847: a person's password may be either.
+  return /^\$(scrypt|argon2id)\$/.test(String(stored || ''));
 }
 
 /**
- * Verifies a secret against a stored scrypt form, in constant time.
+ * Verifies a secret against a stored scrypt or argon2id form, in constant
+ * time.
  *
  * @param plaintext - the presented secret
  * @param stored - the stored form
@@ -8753,11 +10147,22 @@ function verifySecret(plaintext, stored) {
   }
   let derived;
   try {
-    derived = nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
-                                spec.salt, spec.keylen,
-                                { N: spec.N, r: spec.r, p: spec.p,
-                                  maxmem: spec.maxmem });
+    derived = spec.algorithm === 'argon2id'
+      ? argon2DeriveSync(plaintext, spec)
+      : nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
+                              spec.salt, spec.keylen,
+                              { N: spec.N, r: spec.r, p: spec.p,
+                                maxmem: spec.maxmem });
   } catch (e) {
+    log.debug('Caught in verifySecret(): ' + ((e && e.message) || e));
+    if (spec.algorithm === 'argon2id') {
+      // No argon2 in this runtime, or parameters it refused (#847).
+      log.warn(errorCodes.tag('STS-KEYS-0156') +
+               'crypto: a stored argon2id hash could not be computed here ' +
+               'and is being treated as no match: ' + e.message);
+      log.debug('Leaving verifySecret(). Uncomputable argon2id.');
+      return false;
+    }
     // Parameters this node cannot satisfy — a value stored by a build with a
     // higher cost, say. Reported rather than thrown, for decodeStoredSecret()'s
     // reason.
@@ -8792,9 +10197,19 @@ function verifySecretAsync(plaintext, stored) {
     return Promise.resolve(false);
   }
   log.debug('Leaving verifySecretAsync(). On libuv.');
-  return deriveAsync(plaintext, spec).then(function (derived) {
+  const derivation = spec.algorithm === 'argon2id'
+    ? argon2DeriveAsync(plaintext, spec) : deriveAsync(plaintext, spec);
+  return derivation.then(function (derived) {
     return constantTimeEquals(derived, spec.expected);
   }, function (e) {
+    log.debug('Caught in verifySecretAsync(): ' + ((e && e.message) || e));
+    if (spec.algorithm === 'argon2id') {
+      log.warn(errorCodes.tag('STS-KEYS-0156') +
+               'crypto: a stored argon2id hash could not be computed here ' +
+               'and is being treated as no match: ' +
+               ((e && e.message) || e));
+      return false;
+    }
     // Parameters this node cannot satisfy — verifySecret()'s case, answered
     // as it answers it.
     log.warn(errorCodes.tag('STS-KEYS-0005') +
@@ -8831,15 +10246,23 @@ function verifySecretAsync(plaintext, stored) {
 // file's kinds of thing — and the TPM structures they are fed are a codec
 // that stays in `spiffe/spiffe_tpm.ts`.
 //
-// It stays a LEAF: `./vendored/pqc_x509` requires only noble, asn1js and
+// It stays a LEAF: `./crypto_impl/pqc_x509` requires only noble, asn1js and
 // other vendored files.
 // ===========================================================================
-const pqcX509 = require('./vendored/pqc_x509');
+const pqcX509 = require('./crypto_impl/pqc_x509');
+
+// THE BBS SUITE, AT FIRST USE (#348, #1368). It requires `jsonld` at its top,
+// and the two are resident memory in every request worker that never makes a
+// BBS key (`common/lazy_module.ts` argues it). This is the one door to it; a
+// feature module asks `stsCrypto.bbs`.
+/** @type {typeof import('./crypto_impl/bbs2023.js')} */
+const bbs = LazyModule.of('common/crypto_impl/bbs2023.js', function () {
+  return require('./crypto_impl/bbs2023.js');
+}, log);
 
 // The families `verifyRawSignature()` understands.
 /** The families `verifyRawSignature()` understands. */
-const RAW_SIGNATURE_FAMILIES = ['rsa-pkcs1', 'rsa-pss', 'ecdsa', 'eddsa',
-                                'pq'];
+const RAW_SIGNATURE_FAMILIES = algorithmRegistry.RAW_SIGNATURE_FAMILIES;
 
 // The curve sizes an ECDSA r||s signature is padded to.
 const ECDSA_BYTES = { 'prime256v1': 32, 'secp384r1': 48, 'secp521r1': 66 };
@@ -8922,6 +10345,14 @@ async function verifyRawSignature(scheme, key, data, signature) {
     return false;
   }
   try {
+    // The algorithm named and the key's raw bytes, for a caller that holds them
+    // (a Data Integrity proof's AKP key), not an SPKI to read both from.
+    if (s.family === 'pq' && s.alg) {
+      const named = !!(await pqJose.verifyAsync(s.alg, pqPublicBytes(key),
+                                                message, sig));
+      log.debug("Leaving verifyRawSignature(). " + s.alg + " " + named);
+      return named;
+    }
     if (s.family === 'pq') {
       const described = key && key.spki ? key : publicKeyFromSpki(key);
       if (described.kind !== 'pq') {
@@ -8995,6 +10426,12 @@ function signRawSignature(scheme, privateKey, data) {
   const s = scheme || {};
   log.debug("Entering signRawSignature(). " + s.family + "/" +
             (s.hash || ''));
+  if (s.family === 'pq') {
+    const pq = Buffer.from(pqJose.sign(s.alg, pqPrivateBytes(privateKey),
+                                       Buffer.from(data || [])));
+    log.debug("Leaving signRawSignature(). " + s.alg);
+    return pq;
+  }
   const key = privateKey && privateKey.type === 'private' ? privateKey
     : nodeCrypto.createPrivateKey(privateKey && privateKey.kty
         ? { key: privateKey, format: 'jwk' } : privateKey);
@@ -9014,6 +10451,28 @@ function signRawSignature(scheme, privateKey, data) {
   log.debug("Leaving signRawSignature(). Refused.");
   throw new Error('signRawSignature: a ' + (type || 'unknown') + ' key ' +
                   'does not sign ' + String(s.family || 'nothing') + '.');
+}
+
+/**
+ * `signRawSignature()`, with a post-quantum signature made on libuv's thread
+ * pool, where one takes long enough to hold every other request.
+ *
+ * @param scheme - as `signRawSignature()`'s
+ * @param privateKey - the signing key
+ * @param data - the octets to sign
+ * @returns a promise of the signature
+ */
+async function signRawSignatureAsync(scheme, privateKey, data) {
+  const s = scheme || {};
+  log.debug("Entering signRawSignatureAsync(). " + s.family);
+  if (s.family !== 'pq') {
+    log.debug("Leaving signRawSignatureAsync(). In process.");
+    return signRawSignature(s, privateKey, data);
+  }
+  const out = Buffer.from(await pqJose.signAsync(s.alg,
+    pqPrivateBytes(privateKey), Buffer.from(data || [])));
+  log.debug("Leaving signRawSignatureAsync(). " + s.alg);
+  return out;
 }
 
 // HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
@@ -9635,38 +11094,282 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // ===========================================================================
 
 /** The COSE signature algorithms WebAuthn verifies, by identifier. */
-const COSE_SIGNATURE_ALGS = {
-  '-7': { name: 'ES256', family: 'ecdsa', hash: 'sha256', kty: 'EC' },
-  '-35': { name: 'ES384', family: 'ecdsa', hash: 'sha384', kty: 'EC' },
-  '-36': { name: 'ES512', family: 'ecdsa', hash: 'sha512', kty: 'EC' },
-  '-8': { name: 'EdDSA', family: 'eddsa', hash: null, kty: 'OKP' },
-  '-257': { name: 'RS256', family: 'rsa-pkcs1', hash: 'sha256', kty: 'RSA' },
-  '-258': { name: 'RS384', family: 'rsa-pkcs1', hash: 'sha384', kty: 'RSA' },
-  '-259': { name: 'RS512', family: 'rsa-pkcs1', hash: 'sha512', kty: 'RSA' },
-  '-37': { name: 'PS256', family: 'rsa-pss', hash: 'sha256', kty: 'RSA',
-           saltLength: 32 },
-  '-38': { name: 'PS384', family: 'rsa-pss', hash: 'sha384', kty: 'RSA',
-           saltLength: 48 },
-  '-39': { name: 'PS512', family: 'rsa-pss', hash: 'sha512', kty: 'RSA',
-           saltLength: 64 },
-  '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
-  '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
-  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' },
-  '-9': { name: 'ESP256', family: 'ecdsa', hash: 'sha256', kty: 'EC',
-          curve: 'prime256v1' },
-  '-51': { name: 'ESP384', family: 'ecdsa', hash: 'sha384', kty: 'EC',
-           curve: 'secp384r1' },
-  '-52': { name: 'ESP512', family: 'ecdsa', hash: 'sha512', kty: 'EC',
-           curve: 'secp521r1' },
-  '-47': { name: 'ES256K', family: 'ecdsa', hash: 'sha256', kty: 'EC',
-           curve: 'secp256k1' },
-  '-19': { name: 'Ed25519', family: 'eddsa', hash: null, kty: 'OKP',
-           okp: 'ed25519' },
-  '-53': { name: 'Ed448', family: 'eddsa', hash: null, kty: 'OKP',
-           okp: 'ed448' },
-  '-65535': { name: 'RS1', family: 'rsa-pkcs1', hash: 'sha1', kty: 'RSA',
-              insecure: true }
-};
+const COSE_SIGNATURE_ALGS = algorithmRegistry.coseTable();
+
+// ---------------------------------------------------------------------------
+// COSE_Sign1, THE ONE DOOR (#1368). RFC 9052 section 4.4's Sig_structure,
+// signed and checked. A status-list CWT, a `vc+cose` credential and an mdoc's
+// IssuerAuth and DeviceAuth come through here; the CBOR container around the
+// signature stays with their codec, which has the rest of the format to read.
+//
+// WEBAUTHN DOES NOT: a passkey signs authenticatorData, which is no
+// Sig_structure, and WebAuthn keeps its own two lists, so it asks
+// `verifyCoseSignature()`.
+//
+// An ECDSA signature here is IEEE P1363 (RFC 9053 section 2.1), never DER.
+// ---------------------------------------------------------------------------
+// A CBOR head (RFC 8949 section 3), shortest form.
+function cborHead(major, length) {
+  log.debug("Entering cborHead().");
+  const top = major << 5;
+  let out;
+  if (length < 24) {
+    out = Buffer.from([top | length]);
+  } else if (length < 256) {
+    out = Buffer.from([top | 24, length]);
+  } else if (length < 65536) {
+    out = Buffer.alloc(3);
+    out[0] = top | 25;
+    out.writeUInt16BE(length, 1);
+  } else {
+    out = Buffer.alloc(5);
+    out[0] = top | 26;
+    out.writeUInt32BE(length, 1);
+  }
+  log.debug("Leaving cborHead().");
+  return out;
+}
+
+// [ "Signature1", protected, external_aad, payload ].
+function coseSigStructure(protectedBytes, external, payload) {
+  log.debug("Entering coseSigStructure().");
+  const bstr = function (bytes) {
+    const b = Buffer.from(bytes || []);
+    return Buffer.concat([cborHead(2, b.length), b]);
+  };
+  const context = Buffer.from('Signature1', 'ascii');
+  const out = Buffer.concat([cborHead(4, 4), cborHead(3, context.length),
+    context, bstr(protectedBytes), bstr(external), bstr(payload)]);
+  log.debug("Leaving coseSigStructure().");
+  return out;
+}
+
+// What node signs a COSE row with, for every family but the post-quantum one.
+function coseSignParams(spec, key) {
+  log.debug("Entering coseSignParams().");
+  const keyObject = (key && key.type === 'private') ? key
+    : privateKeyFrom((key && key.kty) ? { key: key, format: 'jwk' } : key);
+  const params = { key: keyObject };
+  if (spec.family === 'rsa-pss') {
+    params.padding = nodeCrypto.constants.RSA_PKCS1_PSS_PADDING;
+    params.saltLength = spec.saltLength;
+  }
+  if (spec.family === 'ecdsa') {
+    params.dsaEncoding = 'ieee-p1363';
+  }
+  log.debug("Leaving coseSignParams().");
+  return params;
+}
+
+// THE ONE COSE ACCEPT CHOKEPOINT (#1368), before any key operation. A hot path:
+// no Entering/Leaving pair. The code is marked, never in the message.
+function refuseUnacceptableCose(coseAlg) {
+  const cause = signaturePolicy.acceptCause('cose', String(coseAlg));
+  if (cause) {
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+}
+
+// The row to sign with, or a refusal: a broken algorithm is never signed with.
+function coseSpecToSign(coseAlg) {
+  log.debug("Entering coseSpecToSign(). alg=" + coseAlg);
+  const spec = coseSignatureAlg(coseAlg);
+  if (!spec || spec.insecure) {
+    log.debug("Leaving coseSpecToSign(). Refused.");
+    // error-code: none — a programming error; callers name a listed algorithm
+    throw new Error('COSE: this service does not sign with algorithm ' +
+                    String(coseAlg) + '.');
+  }
+  const cause = signaturePolicy.signCause('cose', String(coseAlg));
+  if (cause) {
+    log.debug("Leaving coseSpecToSign(). Not signed here.");
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+  log.debug("Leaving coseSpecToSign().");
+  return spec;
+}
+
+/**
+ * Signs a COSE_Sign1's Sig_structure.
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param key - the private key: a KeyObject, PEM or JWK, or for a post-quantum
+ *   algorithm its bytes or `{ priv }`
+ * @param protectedBytes - the encoded protected header
+ * @param payload - the payload
+ * @param options - `external`, the external additional authenticated data
+ * @returns the signature
+ */
+function coseSign1Sign(coseAlg, key, protectedBytes, payload, options) {
+  log.debug("Entering coseSign1Sign(). alg=" + coseAlg);
+  const spec = coseSpecToSign(coseAlg);
+  const toBeSigned = coseSigStructure(protectedBytes,
+                                      options && options.external, payload);
+  const signature = spec.family === 'pq'
+    ? Buffer.from(pqJose.sign(spec.name, pqPrivateBytes(key), toBeSigned))
+    : signBytes(spec.hash, toBeSigned, coseSignParams(spec, key));
+  log.debug("Leaving coseSign1Sign().");
+  return signature;
+}
+
+/**
+ * `coseSign1Sign()`, with a post-quantum signature made on libuv's thread pool.
+ *
+ * @param coseAlg - as `coseSign1Sign()`'s
+ * @param key - as `coseSign1Sign()`'s
+ * @param protectedBytes - as `coseSign1Sign()`'s
+ * @param payload - as `coseSign1Sign()`'s
+ * @param options - as `coseSign1Sign()`'s
+ * @returns a promise of the signature
+ */
+async function coseSign1SignAsync(coseAlg, key, protectedBytes, payload,
+                                  options) {
+  log.debug("Entering coseSign1SignAsync(). alg=" + coseAlg);
+  const spec = coseSpecToSign(coseAlg);
+  if (spec.family !== 'pq') {
+    log.debug("Leaving coseSign1SignAsync(). In process.");
+    return coseSign1Sign(coseAlg, key, protectedBytes, payload, options);
+  }
+  const out = Buffer.from(await pqJose.signAsync(spec.name, pqPrivateBytes(key),
+    coseSigStructure(protectedBytes, options && options.external, payload)));
+  log.debug("Leaving coseSign1SignAsync().");
+  return out;
+}
+
+/**
+ * Checks a COSE_Sign1's signature over its Sig_structure.
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param key - the public key, in any form `verifyCoseSignature()` reads
+ * @param protectedBytes - the encoded protected header
+ * @param payload - the payload
+ * @param signature - the signature
+ * @param options - `external`, the external additional authenticated data
+ * @returns true when it verifies
+ */
+function coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
+                         options) {
+  log.debug("Entering coseSign1Verify(). alg=" + coseAlg);
+  refuseUnacceptableCose(coseAlg);
+  const ok = verifyCoseSignature(coseAlg, key,
+    coseSigStructure(protectedBytes, options && options.external, payload),
+    signature, { ecdsaEncoding: 'ieee-p1363' });
+  log.debug("Leaving coseSign1Verify(). " + ok);
+  return ok;
+}
+
+/**
+ * `coseSign1Verify()`, with a post-quantum check made on libuv's thread pool.
+ *
+ * @param coseAlg - as `coseSign1Verify()`'s
+ * @param key - as `coseSign1Verify()`'s
+ * @param protectedBytes - as `coseSign1Verify()`'s
+ * @param payload - as `coseSign1Verify()`'s
+ * @param signature - as `coseSign1Verify()`'s
+ * @param options - as `coseSign1Verify()`'s
+ * @returns a promise of whether it verifies
+ */
+async function coseSign1VerifyAsync(coseAlg, key, protectedBytes, payload,
+                                    signature, options) {
+  log.debug("Entering coseSign1VerifyAsync(). alg=" + coseAlg);
+  refuseUnacceptableCose(coseAlg);
+  const spec = coseSignatureAlg(coseAlg);
+  if (!spec || spec.family !== 'pq' || (key && key.spki !== undefined)) {
+    log.debug("Leaving coseSign1VerifyAsync(). In process.");
+    return coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
+                           options);
+  }
+  const ok = !!(await pqJose.verifyAsync(spec.name, pqPublicBytes(key),
+    coseSigStructure(protectedBytes, options && options.external, payload),
+    Buffer.from(signature || [])));
+  log.debug("Leaving coseSign1VerifyAsync(). " + ok);
+  return ok;
+}
+
+// ---------------------------------------------------------------------------
+// A SIGNATURE ON AN X.509 STRUCTURE (#1368): a foreign CRL or OCSP response. A
+// classical one goes where it always went, the engine's `verifyWithPublicKey()`,
+// which handles RSA, RSASSA-PSS and ECDSA by the AlgorithmIdentifier. The engine
+// has no post-quantum algorithm, so a post-quantum list answered "not signed by
+// this certificate" for every signer it was tried against.
+//
+// `pki.acceptedSignatureAlgorithms` is asked first, before any key is used.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies the signature on a CRL's or OCSP response's TBS bytes.
+ *
+ * @param tbs - the signed bytes
+ * @param signatureValue - the signature, as an asn1js BIT STRING
+ * @param publicKeyInfo - the signer's pkijs PublicKeyInfo
+ * @param signatureAlgorithm - the pkijs AlgorithmIdentifier
+ * @returns a promise of whether it verifies; throws what the engine throws for
+ *   a key it cannot use with the algorithm, which callers read as "not this key"
+ */
+async function verifyX509Signature(tbs, signatureValue, publicKeyInfo,
+                                   signatureAlgorithm) {
+  log.debug("Entering verifyX509Signature().");
+  const oid = String(signatureAlgorithm.algorithmId);
+  const unaccepted = signaturePolicy.acceptX509Cause(oid);
+  if (unaccepted) {
+    log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+    log.debug("Leaving verifyX509Signature(). Not accepted here.");
+    return false;
+  }
+  const entry = pqcX509.algForOid(oid);
+  if (entry && entry.use !== 'kem') {
+    const read = pqcX509.decodeSpki(new Uint8Array(
+      publicKeyInfo.toSchema().toBER(false)));
+    if (!read || read.alg !== entry.id) {
+      log.debug("Leaving verifyX509Signature(). The wrong key for " + entry.id);
+      return false;
+    }
+    const ok = !!(await pqcX509.verify(entry.id,
+      new Uint8Array(signatureValue.valueBlock.valueHexView),
+      new Uint8Array(tbs), read.pub));
+    log.debug("Leaving verifyX509Signature(). " + entry.id + " " + ok);
+    return ok;
+  }
+  // pkijs cannot verify Ed25519 (x509.js). The same OID a CRL signed here
+  // carries (#1401) is checked with the key, as a certificate's is.
+  if (oid === '1.3.101.112') {
+    try {
+      const spki = Buffer.from(publicKeyInfo.toSchema().toBER(false));
+      const key = nodeCrypto.createPublicKey({ key: spki, format: 'der',
+                                               type: 'spki' });
+      const raw = signatureValue.valueBlock
+        ? signatureValue.valueBlock.valueHexView : signatureValue;
+      const ok = nodeCrypto.verify(null, Buffer.from(tbs), key,
+                                   Buffer.from(raw));
+      log.debug("Leaving verifyX509Signature(). Ed25519 " + ok);
+      return ok;
+    } catch (e) {
+      // A key of the wrong type throws. A check reads that as "no".
+      log.debug("Caught in verifyX509Signature(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving verifyX509Signature(). Ed25519 did not verify.");
+      return false;
+    }
+  }
+  const pkijs = require('pkijs');
+  const verified = await pkijs.getCrypto(true).verifyWithPublicKey(tbs,
+    signatureValue, publicKeyInfo, signatureAlgorithm);
+  log.debug("Leaving verifyX509Signature(). " + verified);
+  return verified;
+}
+
+/**
+ * Whether a certificate's signature verifies under a public key. OpenSSL
+ * answers, and throws for a key of the wrong type; callers read that as no.
+ *
+ * @param certificate - an X509Certificate
+ * @param publicKey - the candidate issuer's public key
+ * @returns true when it verifies
+ */
+function certificateSignedWith(certificate, publicKey) {
+  log.debug("Entering certificateSignedWith().");
+  log.debug("Leaving certificateSignedWith().");
+  return certificate.verify(publicKey);
+}
 
 // The COSE entry for an identifier, or null.
 /**
@@ -9729,7 +11432,9 @@ function nodePublicKeyOf(key) {
  * @param data - the bytes signed
  * @param signature - the signature
  * @param opts - `allowInsecure`: accept an algorithm marked insecure (RS1);
- *   refused otherwise
+ *   refused otherwise. `ecdsaEncoding`: `der` (the default, WebAuthn's) or
+ *   `ieee-p1363`, the fixed-width r||s RFC 9053 section 2.1 gives a
+ *   COSE_Sign1 its ECDSA signature in (an mdoc's, #935)
  * @returns true when it verifies
  */
 function verifyCoseSignature(coseAlg, key, data, signature, opts) {
@@ -9796,8 +11501,12 @@ function verifyCoseSignature(coseAlg, key, data, signature, opts) {
     }
     let ok = false;
     if (spec.family === 'ecdsa' && type === 'ec') {
+      // WebAuthn section 6.5.5 sends DER; a COSE_Sign1 proper sends r||s
+      // (RFC 9053 section 2.1), and its caller says so (#935).
+      const encoding = opts && opts.ecdsaEncoding === 'ieee-p1363'
+        ? 'ieee-p1363' : 'der';
       ok = nodeCrypto.verify(spec.hash, message,
-                             { key: publicKey, dsaEncoding: 'der' }, sig);
+                             { key: publicKey, dsaEncoding: encoding }, sig);
     } else if (spec.family === 'eddsa' &&
                (type === 'ed25519' || type === 'ed448')) {
       ok = nodeCrypto.verify(null, message, publicKey, sig);
@@ -10057,11 +11766,26 @@ function tpmParseSignature(bytes) {
       const hash = r.u16();
       const rr = r.sized();
       const ss = r.sized();
+      // DER's INTEGER is MINIMAL (#904): no leading zero byte unless the
+      // next byte's top bit is set, where one is required to keep the value
+      // positive. A zero always put in front made about three genuine
+      // signatures in four invalid DER, which OpenSSL refuses on verify, and
+      // a TPM that zero-pads r or s to the curve size made it worse.
       const integer = function (b) {
         log.debug("Entering integer().");
+        let start = 0;
+        while (start < b.length - 1 && b[start] === 0) {
+          start++;
+        }
+        let body = b.subarray(start);
+        if (!body.length) {
+          body = Buffer.from([0]);
+        }
+        if (body[0] & 0x80) {
+          body = Buffer.concat([Buffer.from([0]), body]);
+        }
         log.debug("Leaving integer().");
-        return new asn1js.Integer({ valueHex: new Uint8Array(
-          Buffer.concat([Buffer.from([0]), b])) });
+        return new asn1js.Integer({ valueHex: new Uint8Array(body) });
       };
       const der = new asn1js.Sequence({ value: [integer(rr), integer(ss)] })
         .toBER(false);
@@ -10250,14 +11974,58 @@ function androidKeyDescription(extnValue) {
 //     certs SEQUENCE SIZE (1..MAX) OF LimitedCertChoices OPTIONAL }
 //   AttestationStatement ::= SEQUENCE { type OBJECT IDENTIFIER, stmt ANY }
 //
-// and LimitedCertChoices is a Certificate or an `other [3]`. Revision 29
-// defines NO statement format (section 4.2); the TPM 2.0 one this service
-// verifies is the TCG's `tcg-attest-tpm-certify` (2.23.133.20.1), whose
-// syntax the draft carried in its appendix A.2.3 until revision 21:
+// and LimitedCertChoices is a Certificate or an `other [3]`. (Figure 2 of
+// revision 29 ends `certs ... OPTIONAL,` with a trailing comma, which is not
+// valid ASN.1; the structure is read as written above.) An
+// AttestationStatement is exactly TWO elements: revision 20's
+// EvidenceStatement carried a third, `hint IA5String OPTIONAL`, and revision
+// 29 has none, so a three-element statement is refused rather than read.
+//
+// RE-CHECKED ON 2026-10-06 (#257), AND NO CURRENT DOCUMENT DEFINES THE TPM
+// STATEMENT. Revision 29 defines no statement format (section 4.2) and
+// leaves the OID and syntax to "specification authors who define an
+// attestation-statement format". Revision 21 removed appendix A.2, the TPM
+// 2.0 example, and revisions 22 to 29 carry no TPM text; the working group's
+// sample-data repository (lamps-wg/csr-attestation-examples) holds only a
+// README, and no TCG profile of the statement was found (the TCG's OID
+// registry was not reachable to check). So the TPM 2.0 statement verified is
+// the TCG's `tcg-attest-tpm-certify` (2.23.133.20.1) in the one syntax ever
+// published, revision 20's appendix A.2.3:
 //
 //   Tcg-csr-tpm-certify ::= SEQUENCE {
 //     tpmSAttest OCTET STRING, signature OCTET STRING,
 //     tpmTPublic OCTET STRING OPTIONAL }
+//
+// rcbj's rule is that a disagreement between a specification and itself is
+// FLAGGED, not resolved silently, and revision 20 disagrees with itself (the
+// list is on #257 too):
+//
+//   1. A.2.2 writes `tcg-kp-AIKCertificate ::= { id-tcg 8 3 }` where the
+//      module defines only `tcg`; the value read is 2.23.133.8.3, the TCG EK
+//      Credential Profile's (`device_attestation.ts`'s OID_TCG_AIK).
+//   2. A.1's statement set names the type `Tcg-attest-tpm-certify`; A.2.3
+//      defines `Tcg-csr-tpm-certify`. Only the OID is on the wire.
+//   3. Section 5 says the A.2 example carries the hint
+//      "tpmverifier.example.com"; A.2.3 has no hint, and revision 29's
+//      AttestationStatement has no hint field. Revision 29 is followed.
+//   4. A.2.5.5 says TPM2_Certify yields "TPM2B_ATTEST" and TPM2_ReadPublic
+//      "TPM2B_PUBLIC" (both SIZED), while A.2.3's fields are named for
+//      TPMS_ATTEST and TPMT_PUBLIC (both bare). BOTH spellings are read
+//      (`tpm2bContents()`), and the reading is unambiguous: a TPMS_ATTEST
+//      begins with TPM_GENERATED_VALUE (0xff544347), whose first two octets
+//      are no plausible size, and a TPMT_PUBLIC with its type, which equals
+//      its own length minus two only for a 3- or 37-octet structure no key
+//      has.
+//   5. A.2.5.5 lists TPM2_Certify's inputs as the key and the AK and OMITS
+//      qualifyingData — the input that becomes extraData, and the only place
+//      a freshness nonce can be.
+//   6. Revision 29 section 4.3 says an attestation-format specification
+//      "should mandate the precise mechanism for nonce selection", and none
+//      exists for this one. This service's rule, which
+//      draft-ietf-lamps-attestation-freshness section 8 ("MUST use the
+//      received nonce") implies: extraData IS the nonce's octets, with no
+//      transformation (`common/cert_enrollment.ts`, #257).
+//   7. The trailing comma in revision 29's Figure 2, above.
 //
 // These answer the structures; `common/device_attestation.ts` verifies them.
 /** The id-aa-attestation attribute's OID. */
@@ -10331,10 +12099,11 @@ function csrAttestationBundle(der) {
 }
 
 // A TPM2B's contents when `bytes` is exactly one TPM2B (a big-endian size
-// then that many bytes), else `bytes` unchanged. The draft's appendix said
+// then that many bytes), else `bytes` unchanged. Revision 20's appendix said
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
 // while the signature and the Name are over the contents, so both spellings
-// are read, as WebAuthn's tpm format reads `sig` both ways.
+// are read, as WebAuthn's tpm format reads `sig` both ways (disagreement 4
+// above).
 /**
  * Returns a TPM2B's contents when the bytes are exactly one TPM2B, else the
  * bytes unchanged.
@@ -10756,7 +12525,7 @@ function sha512Hex(bytes) {
 // has no post-quantum algorithm registered; when one is, it is a row below.
 // ===========================================================================
 /** The DKIM algorithms this service signs with. */
-const DKIM_ALGORITHMS = ['rsa-sha256', 'ed25519-sha256'];
+const DKIM_ALGORITHMS = algorithmRegistry.dkimAlgorithms();
 
 // The headers signed when present, in this order (section 5.4.1's list, less
 // the ones this service never writes). `From` is REQUIRED (section 5.4) and
@@ -11176,16 +12945,5425 @@ function randomString(alphabet, length) {
   return out;
 }
 
+// ===========================================================================
+// SECTION 14 — HTTP MESSAGE SIGNATURES (RFC 9421) AND CONTENT-DIGEST (RFC
+// 9530) (#178, 2026-10-05).
+//
+// An HTTP signature is a signature over a string that neither party
+// transmits. The signer builds it out of the message, the verifier builds it
+// again out of the message it RECEIVED, and the two strings must agree byte
+// for byte. Two callers use it:
+//
+//   * GNAP's `httpsig` key proof (RFC 9635 section 7.3.1), from
+//     `gnap/gnap_proof.ts`. GNAP decides the tag, the required components
+//     and the key.
+//   * The FAPI 2.0 HTTP Signatures profile at this service's OAuth resource
+//     servers (signed requests in, signed responses out), from
+//     `oauth-oidc/http_signatures.ts`. That module decides the same things for
+//     `fapi-2-request` and `fapi-2-response`.
+//
+// It was `gnap/gnap_httpsig.ts` until #178, when rcbj's rule moved it here.
+// The rule, as he restated it on 2026-10-05, is: "All crypto operations
+// across all protocols and use cases are to be centralized in a common
+// module." The GNAP file signed, verified, MACed and hashed on node's
+// OpenSSL in a directory of its own. This section is that code, unchanged in
+// what it builds and refuses, with four differences:
+//
+//   1. `;req` (section 2.4) is IMPLEMENTED rather than refused, because a
+//      FAPI response signature must cover the request's `@method`,
+//      `@target-uri`, `content-digest` and, when the request was signed, its
+//      `signature` and `signature-input`. A response message carries the
+//      request it answers as `message.request`. `httpsigRequestTarget()`
+//      below says what is still refused.
+//   2. Every JWS algorithm this service speaks is admitted under section
+//      3.3.7, read off `JWS_ALGS` rather than listed again. That includes
+//      ES256K and the post-quantum and composite algorithms (ML-DSA, SLH-DSA,
+//      ML-DSA + traditional), which are signed and verified by
+//      `jwsSignatureOver()` and `jwsSignatureValid()`, the same functions that
+//      do it for a JWS. Section 3.3.7's rule holds for all of them: the
+//      signature base is the JWS Signing Input as-is, and the `alg` signature
+//      parameter is never used with a JWS name.
+//   3. A key may be a JWK as well as a KeyObject or bytes, so a caller holding
+//      a client's registered JWKS does not convert keys itself. An RSA public
+//      key goes through `rsaKeyProblem()` like every other RSA verification
+//      here: the exponent, the ROCA fingerprint and the 2048-bit floor.
+//   4. The error codes are STS-KEYS-0107 to 0154. STS-GNAP-0200 to 0246 are
+//      retired, with the same meanings in the same order, because a code is
+//      never renumbered or reused.
+//
+// The rest of the original header still applies, and is kept here:
+//
+// THE SIGNATURE BASE IS THE WHOLE GAME. Section 2 is a list of
+// canonicalization rules, and each is implemented where it is stated and
+// cited by number:
+//
+//   * a field value is STRIPPED, has obsolete line folding replaced by one
+//     space, and repeated field lines are joined with exactly ", " (2.1);
+//   * `@authority` and `@scheme` are LOWERCASED and the default port omitted
+//     (2.2.3, 2.2.4), while `@method` is NOT, because the method is
+//     case-sensitive (2.2.1);
+//   * `@path` and `@query` are the RAW, still-percent-encoded text of the
+//     target URI (2.2.6, 2.2.7), and an absent query is `?`, not the empty
+//     string;
+//   * `@query-param` is DECODED AND RE-ENCODED (2.2.8), so that `+` and `%20`
+//     sign alike, and a parameter named twice is an ERROR rather than the
+//     first one, since that ambiguity is exactly the one an attacker would
+//     choose;
+//   * `;sf` and `;key=` re-serialize through `common/structured_fields.ts`
+//     (2.1.1, 2.1.2) and `;bs` wraps each field line as a Byte Sequence
+//     (2.1.3);
+//   * a component identifier may appear ONCE (2.5 step 2.1), and equality
+//     ignores parameter ORDER while serialization preserves it (2).
+//
+// `@signature-params` is always the last line and is never in the covered
+// list, because it is what makes a signature cover its own metadata (2.3).
+//
+// WHAT IS REFUSED RATHER THAN IMPLEMENTED: `;tr` (2.1.4, because the message
+// model here has no trailer section); `@status` on a REQUEST (2.2.9); `;req`
+// on a request, or on a response with no request given (2.4); and `;sf` or
+// `;key=` on a field whose Structured Field type is not known (2.1.1; callers
+// name further types with `options.fieldTypes`).
+//
+// REPRESENTATION CHOICES THAT DECIDE INTEROPERABILITY: ECDSA signatures are
+// r||s at the curve's coordinate size and never DER (3.3.4). RSASSA-PSS uses
+// a salt as long as the hash. An HMAC is compared in constant time. RSA keys
+// under 2048 bits and HMAC secrets shorter than their hash are refused (RFC
+// 7518 sections 3.3 and 3.2), so the HTTP names offer no downgrade the JWS
+// names do not (section 7.3.6).
+//
+// THE REFUSAL SHAPE is `{ ok: false, errorCode, why }`, MARKED with the code,
+// never a response. The client-facing error is the caller's to choose: the
+// same failed signature is GNAP's `invalid_client` at a grant endpoint and a
+// 401 at a FAPI resource server.
+//
+// It stays a LEAF: `./structured_fields` requires only `config` and
+// `instance_slot`.
+// ===========================================================================
+const sf = require('./structured_fields');
+
+// RFC 9530 section 7.2: only the two "Active" algorithms. The "Deprecated"
+// ones MUST NOT be used where the digest is signed for authenticity (section
+// 5), which is the only reason this service computes one. So they are
+// unknown, and an unknown algorithm is ignored by the verifier, as section 2
+// allows.
+const DIGEST_ALGORITHMS = {
+  'sha-256': 'sha256',
+  'sha-512': 'sha512'
+};
+
+// The derived components of section 2.2 and whether each belongs to a request
+// or a response message.
+const DERIVED = {
+  '@method': 'request',
+  '@target-uri': 'request',
+  '@authority': 'request',
+  '@scheme': 'request',
+  '@request-target': 'request',
+  '@path': 'request',
+  '@query': 'request',
+  '@query-param': 'request',
+  '@status': 'response'
+};
+
+// Fields whose Structured Field type is known, so that `;sf` and `;key=` can
+// be honoured (RFC 9421 section 2.1.1). Each row cites the document defining
+// the type.
+const KNOWN_FIELD_TYPES = {
+  'signature': 'dictionary',            // RFC 9421 section 4.2
+  'signature-input': 'dictionary',      // RFC 9421 section 4.1
+  'accept-signature': 'dictionary',     // RFC 9421 section 5.1
+  'content-digest': 'dictionary',       // RFC 9530 section 2
+  'repr-digest': 'dictionary',          // RFC 9530 section 3
+  'want-content-digest': 'dictionary',  // RFC 9530 section 4
+  'want-repr-digest': 'dictionary',     // RFC 9530 section 4
+  'client-cert': 'item',                // RFC 9440 section 2.2
+  'client-cert-chain': 'list',          // RFC 9440 section 2.3
+  'priority': 'dictionary',             // RFC 9218 section 4
+  'cache-status': 'list',               // RFC 9211 section 2
+  'proxy-status': 'list'                // RFC 9209 section 2
+};
+
+// The six registered metadata parameters (section 6.3.2) have types, and a
+// parameter of the wrong type is a signature a conforming verifier cannot
+// read: `created="1618884473"` is a String and not a timestamp.
+const PARAM_TYPES = {
+  created: 'integer',
+  expires: 'integer',
+  nonce: 'string',
+  alg: 'string',
+  keyid: 'string',
+  tag: 'string'
+};
+
+// The algorithms. Section 3.3's "HTTP Signature Algorithms" registry is listed
+// here. The JWS names of section 3.3.7 are derived from JWS_ALGS just below,
+// so an algorithm added to that table is an HTTP signature algorithm too,
+// with no second list to forget.
+const HTTP_SIGNATURE_ALGORITHMS = algorithmRegistry.httpSignatureAlgorithms();
+
+// Section 3.3.7: "JSON Web Signature (JWS) algorithms". One row per JWS_ALGS
+// row, in the shape the checks below read. The post-quantum and composite
+// rows are kind 'jws-pq', signed and verified by the JWS functions
+// themselves.
+Object.keys(JWS_ALGS).forEach(function (alg) {
+  const spec = JWS_ALGS[alg];
+  const cite = 'RFC 9421 section 3.3.7, ' + alg;
+  let row;
+  if (spec.family === 'hmac') {
+    row = { kind: 'hmac', hash: spec.hash,
+            minKeyBytes: nodeCrypto.createHash(spec.hash).digest().length };
+  } else if (spec.family === 'rsa') {
+    row = spec.padding !== undefined
+      ? { kind: 'rsa-pss', hash: spec.hash, saltLength: spec.saltLength }
+      : { kind: 'rsa-v1_5', hash: spec.hash };
+  } else if (spec.family === 'ec') {
+    row = { kind: 'ecdsa', hash: spec.hash, curve: spec.namedCurve,
+            coordinateBytes: spec.sigBytes / 2 };
+  } else if (spec.family === 'okp') {
+    // RFC 8037 section 3.1: EdDSA names both curves.
+    row = { kind: 'eddsa', curves: ['ed25519', 'ed448'] };
+  } else {
+    row = { kind: 'jws-pq' };
+  }
+  HTTP_SIGNATURE_ALGORITHMS[alg] = Object.assign(row,
+    { registry: 'jws', jws: alg, spec: cite });
+});
+
+/** The Content-Digest algorithms this section computes and checks. */
+const CONTENT_DIGEST_ALGORITHMS = Object.keys(DIGEST_ALGORITHMS);
+
+// ---------------------------------------------------------------------------
+// THE ONE PLACE A REFUSAL IS MADE. Logged at warn with the code at the front
+// of the line — a failed proof is an operator's question before it is
+// anything else — and marked, per the subsystem contract.
+// ---------------------------------------------------------------------------
+function httpsigRefuse(code, why) {
+  log.debug("Entering httpsigRefuse().");
+  const result = { ok: false, errorCode: code, why: why };
+  log.warn(errorCodes.tag(code) + why);
+  log.debug("Leaving httpsigRefuse().");
+  return errorCodes.mark(result, code);
+}
+
+function httpsigIsRefusal(value) {
+  log.debug("Entering httpsigIsRefusal().");
+  log.debug("Leaving httpsigIsRefusal().");
+  return !!value && value.ok === false;
+}
+
+function httpsigBodyBytes(body) {
+  log.debug("Entering httpsigBodyBytes().");
+  if (body === undefined || body === null) {
+    log.debug("Leaving httpsigBodyBytes(). No content.");
+    return Buffer.alloc(0);
+  }
+  if (Buffer.isBuffer(body)) {
+    log.debug("Leaving httpsigBodyBytes(). Buffer.");
+    return body;
+  }
+  if (body instanceof Uint8Array) {
+    log.debug("Leaving httpsigBodyBytes(). Uint8Array.");
+    return Buffer.from(body);
+  }
+  log.debug("Leaving httpsigBodyBytes(). String.");
+  return Buffer.from(String(body), 'utf8');
+}
+
+// `algorithm` may be one name or an array of names, in which case every
+// member is computed — section 2's second example, and what a client
+// supporting a population of verifiers sends. It THROWS on an unknown name,
+// carrying the code: an unsupported algorithm here is the caller's own
+// configuration, not anything a client sent.
+/**
+ * Computes a Content-Digest field value for a body.
+ *
+ * @param body - the body's bytes
+ * @param algorithm - one algorithm name, or an array of them, each computed
+ * @returns the serialized Dictionary
+ * @throws Error, carrying its code, for an unknown algorithm name
+ */
+function contentDigest(body, algorithm) {
+  log.debug("Entering contentDigest().");
+  const names = Array.isArray(algorithm) ? algorithm
+                                         : [algorithm === undefined ?
+                                            'sha-256' : algorithm];
+  const bytes = httpsigBodyBytes(body);
+  const dictionary = [];
+  for (let k = 0; k < names.length; k++) {
+    const hash = DIGEST_ALGORITHMS[names[k]];
+    if (!hash) {
+      const why = 'Content-Digest cannot be computed with "' +
+                  String(names[k]) +
+                  '": only sha-256 and sha-512, the two Active algorithms ' +
+                  'of the RFC 9530 registry, are supported.';
+      log.warn(errorCodes.tag('STS-KEYS-0107') + why);
+      const err = /** @type {any} */ (new Error(why));
+      err.errorCode = 'STS-KEYS-0107';
+      errorCodes.mark(err, 'STS-KEYS-0107');
+      log.debug("Leaving contentDigest(). Unsupported " +
+                "algorithm.");
+      throw err;
+    }
+    dictionary.push([names[k], {
+      type: 'bytes',
+      value: nodeCrypto.createHash(hash).update(bytes).digest(),
+      params: []
+    }]);
+  }
+  log.debug("Leaving contentDigest().");
+  return sf.serializeDictionary(dictionary);
+}
+
+// Section 2 read with GNAP's requirement (RFC 9635 section 7.3.1: "The
+// verifier MUST validate this field value"): EVERY member whose algorithm is
+// accepted must match, and at least one must be present. "Any one matches"
+// would let a client send a correct sha-256 beside a wrong sha-512 and have a
+// verifier that prefers sha-512 accept a body the sha-512 does not describe.
+/**
+ * Verifies a Content-Digest field against a body: every member whose
+ * algorithm is accepted must match, and at least one must be present.
+ *
+ * @param headerValue - the Content-Digest field value
+ * @param body - the body's bytes
+ * @param options - `accepted`, the algorithms accepted (sha-256 and
+ *   sha-512 by default)
+ * @returns `{ ok: true, algorithms }` naming those matched, or a refusal
+ */
+function verifyContentDigest(headerValue, body, options) {
+  log.debug("Entering verifyContentDigest().");
+  const accepted = (options && Array.isArray(options.accepted))
+    ? options.accepted : ['sha-256', 'sha-512'];
+  for (let k = 0; k < accepted.length; k++) {
+    if (!DIGEST_ALGORITHMS[accepted[k]]) {
+      log.debug("Leaving verifyContentDigest(). Unsupported " +
+                "accepted algorithm.");
+      return httpsigRefuse('STS-KEYS-0107',
+                         'The verifier was configured to accept the ' +
+                         'Content-Digest algorithm "' +
+                         String(accepted[k]) + '", which is not supported; ' +
+                         'only sha-256 and sha-512 are.');
+    }
+  }
+  const text = Array.isArray(headerValue) ? headerValue.join(', ') :
+               headerValue;
+  if (typeof text !== 'string' || text.trim() === '') {
+    log.debug("Leaving verifyContentDigest(). Absent.");
+    return httpsigRefuse('STS-KEYS-0108',
+                       'The message has no Content-Digest field to ' +
+                       'validate against its content (RFC 9530 section 2).');
+  }
+  let dictionary;
+  try {
+    dictionary = sf.parseDictionary(text);
+  } catch (e) {
+    log.debug("Caught in verifyContentDigest(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving verifyContentDigest(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0109',
+                       'The Content-Digest field is not a Structured Field ' +
+                       'Dictionary: ' + e.message);
+  }
+  const bytes = httpsigBodyBytes(body);
+  const matched = [];
+  for (let k = 0; k < dictionary.length; k++) {
+    const name = dictionary[k][0];
+    if (accepted.indexOf(name) < 0) {
+      // Not accepted, or not an algorithm this module knows: ignored, as RFC
+      // 9530 section 2 allows. It still had to PARSE — a malformed member
+      // anywhere makes the whole field malformed (RFC 8941 section 4.2).
+      continue;
+    }
+    const member = dictionary[k][1];
+    if (!member || member.type !== 'bytes') {
+      log.debug("Leaving verifyContentDigest(). Not a byte " +
+                "sequence.");
+      return httpsigRefuse('STS-KEYS-0110',
+                         'The Content-Digest member "' + name + '" is a ' +
+                         (member ? member.type : 'nothing') +
+                         ', not the Byte Sequence RFC 9530 section 2 ' +
+                         'requires.');
+    }
+    const expected = nodeCrypto.createHash(DIGEST_ALGORITHMS[name])
+                               .update(bytes)
+                               .digest();
+    if (expected.length !== member.value.length ||
+        !nodeCrypto.timingSafeEqual(expected, member.value)) {
+      log.debug("Leaving verifyContentDigest(). Mismatch.");
+      return httpsigRefuse('STS-KEYS-0111',
+                         'The Content-Digest member "' + name +
+                         '" does not match the content: the body was ' +
+                         'changed, or the digest was computed over ' +
+                         'something other than the bytes sent.');
+    }
+    matched.push(name);
+  }
+  if (matched.length === 0) {
+    log.debug("Leaving verifyContentDigest(). No accepted " +
+              "algorithm.");
+    return httpsigRefuse('STS-KEYS-0112',
+                       'The Content-Digest field carries no digest in an ' +
+                       'accepted algorithm (' + accepted.join(', ') +
+                       '); it carries ' +
+                       (dictionary.length ?
+                        dictionary.map((p) => { return p[0]; }).join(', ')
+                                          : 'no members') + '.');
+  }
+  log.debug("Leaving verifyContentDigest(). " +
+            matched.join(', '));
+  return { ok: true, algorithms: matched };
+}
+
+// ===========================================================================
+// COMPONENT IDENTIFIERS.
+// ===========================================================================
+
+// A JavaScript value handed in as a parameter, turned into a bare item. A
+// value that is already a bare item is kept, so a caller that needs a Token
+// rather than a String can say so.
+function httpsigBareItem(value) {
+  log.debug("Entering httpsigBareItem().");
+  let bare = null;
+  if (value && typeof value === 'object' && !Buffer.isBuffer(value) &&
+      typeof value.type === 'string' && 'value' in value) {
+    bare = { type: value.type, value: value.value };
+  } else if (typeof value === 'boolean') {
+    bare = { type: 'boolean', value: value };
+  } else if (Buffer.isBuffer(value)) {
+    bare = { type: 'bytes', value: value };
+  } else if (typeof value === 'number') {
+    bare = { type: Number.isInteger(value) ? 'integer' : 'decimal',
+             value: value };
+  } else if (typeof value === 'string') {
+    bare = { type: 'string', value: value };
+  }
+  log.debug("Leaving httpsigBareItem(). " +
+            (bare ? bare.type : 'not a bare item'));
+  return bare;
+}
+
+// Parameters from either an ordered [[key, value]] array or a plain object
+// (in its insertion order). Duplicate keys are last-wins in the first
+// position, which is what a PARSER would have made of the same text (RFC 8941
+// section 4.2.3.2) — so a signer cannot build an identifier no verifier could
+// parse back to itself. THROWS on a value that is not a bare item; callers
+// map it.
+function httpsigParamsFrom(input) {
+  log.debug("Entering httpsigParamsFrom().");
+  if (input === undefined || input === null) {
+    log.debug("Leaving httpsigParamsFrom(). None.");
+    return [];
+  }
+  const pairs = Array.isArray(input) ? input :
+                Object.keys(input).map((key) => {
+    return [key, input[key]];
+  });
+  const out = [];
+  pairs.forEach((pair) => {
+    if (!Array.isArray(pair) || pair.length !== 2) {
+      throw new Error('each parameter must be a [key, value] pair');
+    }
+    if (pair[1] === undefined) {
+      // An object member present but undefined is how a caller writes "no
+      // such parameter" ({ expires: undefined }); section 2.3 step 5 skips
+      // parameters "not available or not used", so it is skipped too.
+      return;
+    }
+    sf.serializeKey(pair[0]);
+    const bare = httpsigBareItem(pair[1]);
+    if (!bare) {
+      throw new Error('the parameter "' + pair[0] + '" has a value that is ' +
+                      'not a Structured Field bare item');
+    }
+    sf.serializeBareItem(bare);
+    let at = -1;
+    for (let k = 0; k < out.length; k++) {
+      if (out[k][0] === pair[0]) {
+        at = k;
+      }
+    }
+    if (at >= 0) {
+      out[at][1] = bare;
+    } else {
+      out.push([pair[0], bare]);
+    }
+  });
+  log.debug("Leaving httpsigParamsFrom(). " + out.length +
+            " parameter(s).");
+  return out;
+}
+
+// A component identifier from any of the forms a caller may write:
+//
+//   '@method'                              a bare NAME, no parameters
+//   '"@query-param";name="Pet"'            a serialized identifier (it begins
+//                                          with a DQUOTE, which no name can)
+//   { name: 'signature', params: { key: 'old' } }
+//   { type: 'string', value: 'x', params: [[...]] }   a parsed sf-string item
+//
+// The NAME rule is section 2.1's: a field name is used LOWERCASED, and a name
+// that is not is refused rather than lowercased, because silently lowercasing
+// it would sign a component the signer did not name.
+function httpsigComponentItem(component) {
+  log.debug("Entering httpsigComponentItem().");
+  let item;
+  try {
+    if (typeof component === 'string' && component[0] === '"') {
+      item = sf.parseItem(component);
+    } else if (typeof component === 'string') {
+      item = { type: 'string', value: component, params: [] };
+    } else if (component && typeof component === 'object' &&
+               component.type === 'string') {
+      item = { type: 'string', value: component.value,
+               params: httpsigParamsFrom(component.params) };
+    } else if (component && typeof component === 'object' &&
+               typeof component.name === 'string') {
+      item = { type: 'string', value: component.name,
+               params: httpsigParamsFrom(component.params) };
+    } else {
+      throw new Error('it is not a name, a serialized identifier or a ' +
+                      '{name, params} object');
+    }
+    if (item.type !== 'string') {
+      throw new Error('a component name is an sf-string (RFC 9421 section ' +
+                      '2.5), and this is a ' + item.type);
+    }
+    sf.serializeItem(item);
+  } catch (e) {
+    log.debug("Caught in httpsigComponentItem(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigComponentItem(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0113',
+                       'A covered component identifier is malformed: ' +
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
+  }
+  const name = item.value;
+  const fieldName = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
+  if (!(name[0] === '@' && name.length > 1) && !fieldName.test(name)) {
+    log.debug("Leaving httpsigComponentItem(). Bad name.");
+    return httpsigRefuse('STS-KEYS-0113',
+                       'The component name "' + name +
+                       '" is neither a derived component name nor a ' +
+                       'lowercased HTTP field name (RFC 9421 sections 2.1 ' +
+                       'and 2.2).');
+  }
+  log.debug("Leaving httpsigComponentItem(). " + name);
+  return { ok: true, item: item };
+}
+
+// Two identifiers are the same when the names are equal and the parameters
+// are equal AS A SET — section 2: `"foo";bar;baz` and `"foo";baz;bar` "cannot
+// be in the same message".
+function httpsigIdentityOf(item) {
+  log.debug("Entering httpsigIdentityOf().");
+  const params = (item.params || []).map((pair) => {
+    return sf.serializeParams([pair]);
+  }).sort();
+  log.debug("Leaving httpsigIdentityOf().");
+  return JSON.stringify([item.value, params]);
+}
+
+// The header lines of a named field, as an array of strings, or null when the
+// field is absent. A header value may be one combined string or an array of
+// the separate field lines — the second form is needed only for `;bs`, which
+// wraps each line on its own (section 2.1.3).
+function httpsigFieldLines(message, name) {
+  log.debug("Entering httpsigFieldLines(). " + name);
+  const headers = message && message.headers;
+  if (!headers || typeof headers !== 'object') {
+    log.debug("Leaving httpsigFieldLines(). No headers.");
+    return null;
+  }
+  let raw;
+  const keys = Object.keys(headers);
+  for (let k = 0; k < keys.length; k++) {
+    if (keys[k].toLowerCase() === name) {
+      raw = headers[keys[k]];
+    }
+  }
+  if (raw === undefined || raw === null) {
+    log.debug("Leaving httpsigFieldLines(). Absent.");
+    return null;
+  }
+  const lines = (Array.isArray(raw) ? raw : [raw]).map(String);
+  log.debug("Leaving httpsigFieldLines(). " + lines.length +
+            " line(s).");
+  return lines.length ? lines : null;
+}
+
+// Section 2.1 steps 2 and 3: strip the ends, and replace obsolete line
+// folding (OWS CRLF RWS, RFC 9112 section 5.2) with a single space.
+function httpsigNormalizeLine(line) {
+  log.debug("Entering httpsigNormalizeLine().");
+  log.debug("Leaving httpsigNormalizeLine().");
+  return line.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
+             .replace(/[ \t]*\r?\n[ \t]+/g, ' ');
+}
+
+// The parts of the target URI, read out of the RAW string, because section
+// 2.2.6 and 2.2.7 want the path and query "before decoding any
+// percent-encoded octets" and a WHATWG URL object re-encodes and resolves dot
+// segments. The URL parser is used for what it is right about — that the
+// string is absolute, and the host normalization of 2.2.3.
+function httpsigTargetParts(message) {
+  log.debug("Entering httpsigTargetParts().");
+  const raw = message && message.targetUri;
+  if (typeof raw !== 'string') {
+    log.debug("Leaving httpsigTargetParts(). No target URI.");
+    return null;
+  }
+  const m = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(?:\?([^#]*))?(?:#.*)?$/.exec(raw);
+  if (!m) {
+    log.debug("Leaving httpsigTargetParts(). Not absolute.");
+    return null;
+  }
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (e) {
+    log.debug("Caught in httpsigTargetParts(): " +
+              ((e && e.message) || e));
+    // Not a URI the WHATWG parser accepts; the caller refuses with the code
+    // for a missing target, which is what this is to a signature base.
+    log.debug("Leaving httpsigTargetParts(). Unparseable: " + e.message);
+    return null;
+  }
+  const scheme = m[1].toLowerCase();
+  let authority = url.host.toLowerCase();
+  // WHATWG omits the default port for http and https only; section 2.2.3 says
+  // the default port of the SCHEME is omitted, and those are the two schemes
+  // an HTTP request has.
+  const hashAt = raw.indexOf('#');
+  log.debug("Leaving httpsigTargetParts().");
+  return {
+    targetUri: hashAt >= 0 ? raw.slice(0, hashAt) : raw,
+    scheme: scheme,
+    authority: authority,
+    path: m[3] === '' ? '/' : m[3],
+    query: m[4] === undefined ? null : m[4]
+  };
+}
+
+// ---------------------------------------------------------------------------
+// `@query-param`, section 2.2.8: the WHATWG application/x-www-form-urlencoded
+// PARSER (section 5.1 of the URL Standard), then the "percent-encode after
+// encoding" step with the urlencoded percent-encode set and WITHOUT
+// space-as-plus — which is why the RFC's example turns `with+plus+whitespace`
+// into `with%20plus%20whitespace`. That set leaves exactly ASCII
+// alphanumerics and `*-._` unencoded.
+// ---------------------------------------------------------------------------
+function httpsigPercentDecode(text) {
+  log.debug("Entering httpsigPercentDecode().");
+  const bytes = Buffer.from(text, 'utf8');
+  const out = [];
+  for (let k = 0; k < bytes.length; k++) {
+    const b = bytes[k];
+    if (b === 0x25 && k + 2 < bytes.length &&
+        /^[0-9A-Fa-f]{2}$/.test(String.fromCharCode(bytes[k + 1],
+                                                    bytes[k + 2]))) {
+      out.push(parseInt(String.fromCharCode(bytes[k + 1], bytes[k + 2]), 16));
+      k += 2;
+    } else {
+      out.push(b);
+    }
+  }
+  log.debug("Leaving httpsigPercentDecode().");
+  return Buffer.from(out).toString('utf8');
+}
+
+function httpsigUrlencode(text) {
+  log.debug("Entering httpsigUrlencode().");
+  const bytes = Buffer.from(text, 'utf8');
+  let out = '';
+  for (let k = 0; k < bytes.length; k++) {
+    const c = String.fromCharCode(bytes[k]);
+    if (/^[A-Za-z0-9*\-._]$/.test(c)) {
+      out += c;
+    } else {
+      out += '%' + bytes[k].toString(16).toUpperCase().padStart(2, '0');
+    }
+  }
+  log.debug("Leaving httpsigUrlencode().");
+  return out;
+}
+
+function httpsigQueryParams(query) {
+  log.debug("Entering httpsigQueryParams().");
+  const out = [];
+  (query || '').split('&').forEach((sequence) => {
+    if (sequence === '') {
+      return;
+    }
+    const eq = sequence.indexOf('=');
+    const name = eq >= 0 ? sequence.slice(0, eq) : sequence;
+    const value = eq >= 0 ? sequence.slice(eq + 1) : '';
+    out.push([httpsigUrlencode(httpsigPercentDecode(name.replace(/\+/g,
+                                    ' '))),
+              httpsigUrlencode(httpsigPercentDecode(value.replace(/\+/g,
+                                    ' ')))]);
+  });
+  log.debug("Leaving httpsigQueryParams(). " + out.length +
+            " parameter(s).");
+  return out;
+}
+
+// Which parameters a component may carry. A parameter outside this list is
+// "not understood" (section 2.5 step 2.5, first bullet) and is an error.
+function httpsigCheckParams(name, params, allowed) {
+  log.debug("Entering httpsigCheckParams(). " + name);
+  for (let k = 0; k < params.length; k++) {
+    const key = params[k][0];
+    const value = params[k][1];
+    if (allowed.indexOf(key) < 0) {
+      log.debug("Leaving httpsigCheckParams(). Not understood.");
+      return httpsigRefuse('STS-KEYS-0114',
+                         'The parameter "' + key +
+                         '" is not understood on the component "' +
+                         name + '" (RFC 9421 section 2.5 step 2.5).');
+    }
+    const isFlag = key === 'sf' || key === 'bs' || key === 'req' ||
+                   key === 'tr';
+    if (isFlag && !(value.type === 'boolean' && value.value === true)) {
+      // A false flag would make `"x";sf=?0` a second identifier for the value
+      // `"x"` already names — two identifiers, one value, and a signature
+      // over one standing for the other.
+      log.debug("Leaving httpsigCheckParams(). Flag not true.");
+      return httpsigRefuse('STS-KEYS-0114',
+                         'The parameter "' + key + '" on "' + name +
+                         '" is a Boolean flag and is only meaningful as ' +
+                         'true (RFC 9421 sections 2.1 and 6.5.2).');
+    }
+    if ((key === 'key' || key === 'name') && value.type !== 'string') {
+      log.debug("Leaving httpsigCheckParams(). Not a string.");
+      return httpsigRefuse('STS-KEYS-0114',
+                         'The parameter "' + key + '" on "' + name +
+                         '" must be a String, not a ' + value.type +
+                         ' (RFC 9421 sections 2.1.2 and 2.2.8).');
+    }
+  }
+  log.debug("Leaving httpsigCheckParams().");
+  return null;
+}
+
+function httpsigDerivedValue(message, name, params) {
+  log.debug("Entering httpsigDerivedValue(). " + name);
+  if (!Object.prototype.hasOwnProperty.call(DERIVED, name)) {
+    log.debug("Leaving httpsigDerivedValue(). Unknown.");
+    return httpsigRefuse('STS-KEYS-0116',
+                       'The derived component "' + name +
+                       '" is not one this verifier understands (RFC 9421 ' +
+                       'sections 2.2 and 2.5).');
+  }
+  const problem = httpsigCheckParams(name, params,
+                                   name === '@query-param' ? ['name', 'req'] :
+                                   ['req']);
+  if (problem) {
+    log.debug("Leaving httpsigDerivedValue(). Parameters.");
+    return problem;
+  }
+  const isResponse = message && message.status !== undefined &&
+                     message.status !== null;
+  if ((DERIVED[name] === 'response') !== isResponse) {
+    log.debug("Leaving httpsigDerivedValue(). Wrong message kind.");
+    return httpsigRefuse('STS-KEYS-0117',
+                       name === '@status'
+                    ? '@status MUST NOT be used in a request message (RFC ' +
+                       '9421 section 2.2.9).'
+                    : 'The component "' + name + '" targets a request, and ' +
+                       'this message is a response (RFC 9421 section 2.2).');
+  }
+  if (name === '@status') {
+    const status = message.status;
+    if (!Number.isInteger(status) || status < 100 || status > 999) {
+      log.debug("Leaving httpsigDerivedValue(). Bad status.");
+      return httpsigRefuse('STS-KEYS-0117',
+                         'The response status "' + String(status) +
+                         '" is not a three-digit integer (RFC 9421 section ' +
+                         '2.2.9).');
+    }
+    log.debug("Leaving httpsigDerivedValue(). @status");
+    return { ok: true, value: String(status) };
+  }
+  if (name === '@method') {
+    if (typeof message.method !== 'string' || message.method === '') {
+      log.debug("Leaving httpsigDerivedValue(). No method.");
+      return httpsigRefuse('STS-KEYS-0118',
+                         'The request has no method to derive @method from.');
+    }
+    log.debug("Leaving httpsigDerivedValue(). @method");
+    return { ok: true, value: message.method };
+  }
+  const parts = httpsigTargetParts(message);
+  if (!parts) {
+    log.debug("Leaving httpsigDerivedValue(). No target.");
+    return httpsigRefuse('STS-KEYS-0118',
+                       'The request has no absolute target URI to derive ' +
+                       name + ' from (RFC 9421 section 2.2.2); got ' +
+                       JSON.stringify(message && message.targetUri) + '.');
+  }
+  let value;
+  switch (name) {
+    case '@target-uri':
+      value = parts.targetUri;
+      break;
+    case '@authority':
+      value = parts.authority;
+      break;
+    case '@scheme':
+      value = parts.scheme;
+      break;
+    case '@request-target':
+      value = typeof message.requestTarget === 'string'
+        ? message.requestTarget
+        : parts.path + (parts.query === null ? '' : '?' + parts.query);
+      break;
+    case '@path':
+      value = parts.path;
+      break;
+    case '@query':
+      value = '?' + (parts.query === null ? '' : parts.query);
+      break;
+    default: {
+      const wanted = sf.paramValue(params, 'name');
+      if (wanted === undefined) {
+        log.debug("Leaving httpsigDerivedValue(). No name.");
+        return httpsigRefuse('STS-KEYS-0119',
+                           '@query-param requires a name parameter (RFC ' +
+                           '9421 section 2.2.8).');
+      }
+      const matches = httpsigQueryParams(parts.query).filter((pair) => {
+        return pair[0] === wanted;
+      });
+      if (matches.length === 0) {
+        log.debug("Leaving httpsigDerivedValue(). Query parameter " +
+                  "absent.");
+        return httpsigRefuse('STS-KEYS-0119',
+                           'The query parameter "' + wanted +
+                           '" named as a covered component does not occur ' +
+                           'in the target URI (RFC 9421 section 2.2.8).');
+      }
+      if (matches.length > 1) {
+        log.debug("Leaving httpsigDerivedValue(). Query parameter " +
+                  "repeated.");
+        return httpsigRefuse('STS-KEYS-0120',
+                           'The query parameter "' + wanted + '" occurs ' +
+                           matches.length +
+                           ' times; a parameter that occurs more than once ' +
+                           'MUST NOT be covered by name (RFC 9421 section ' +
+                           '2.2.8).');
+      }
+      value = matches[0][1];
+    }
+  }
+  log.debug("Leaving httpsigDerivedValue(). " + name);
+  return { ok: true, value: value };
+}
+
+function httpsigFieldValue(message, name, params, options) {
+  log.debug("Entering httpsigFieldValue(). " + name);
+  const problem = httpsigCheckParams(name, params, ['sf', 'key', 'bs', 'req',
+                                   'tr']);
+  if (problem) {
+    log.debug("Leaving httpsigFieldValue(). Parameters.");
+    return problem;
+  }
+  if (sf.param(params, 'tr') !== undefined) {
+    log.debug("Leaving httpsigFieldValue(). Trailer.");
+    return httpsigRefuse('STS-KEYS-0121',
+                       'The component "' + name +
+                       '";tr names a trailer field, and trailers are not ' +
+                       'part of the message this verifier is given (RFC ' +
+                       '9421 section 2.1.4).');
+  }
+  const bs = sf.param(params, 'bs') !== undefined;
+  const key = sf.paramValue(params, 'key');
+  const strict = sf.param(params, 'sf') !== undefined;
+  if (bs && (strict || key !== undefined)) {
+    log.debug("Leaving httpsigFieldValue(). Incompatible.");
+    return httpsigRefuse('STS-KEYS-0122',
+                       'The component "' + name + '" combines ;bs with ' +
+                       (strict ? ';sf' : ';key') + ', which are mutually ' +
+                       'incompatible (RFC 9421 sections 2.1 and 2.5 step ' +
+                       '2.5).');
+  }
+  const lines = httpsigFieldLines(message, name);
+  if (!lines) {
+    log.debug("Leaving httpsigFieldValue(). Absent.");
+    return httpsigRefuse('STS-KEYS-0123',
+                       'The HTTP field "' + name +
+                       '" is a covered component and is not present in the ' +
+                       'message (RFC 9421 section 2.5).');
+  }
+  const normalized = lines.map((line) => httpsigNormalizeLine(line));
+  if (bs) {
+    log.debug("Leaving httpsigFieldValue(). bs.");
+    return {
+      ok: true,
+      value: sf.serializeList(normalized.map((line) => {
+        return { type: 'bytes', value: Buffer.from(line, 'latin1'),
+                 params: [] };
+      }))
+    };
+  }
+  const combined = normalized.join(', ');
+  if (!strict && key === undefined) {
+    log.debug("Leaving httpsigFieldValue(). Plain.");
+    return { ok: true, value: combined };
+  }
+  const types = Object.assign({}, KNOWN_FIELD_TYPES,
+                              (options && options.fieldTypes) || {});
+  const type = types[name];
+  if (!type || (key !== undefined && type !== 'dictionary')) {
+    log.debug("Leaving httpsigFieldValue(). Type unknown.");
+    return httpsigRefuse('STS-KEYS-0124',
+                       'The component "' + name + '" asks for ' +
+                       (key !== undefined ? ';key' : ';sf') +
+                       ', and "' + name + '" is ' +
+                       (type ? 'a Structured Field ' + type +
+                               ', not a Dictionary'
+                             : 'not a Structured Field type this ' +
+                               'verifier knows') +
+                       ' (RFC 9421 sections 2.1.1 and 2.1.2).');
+  }
+  let value;
+  try {
+    if (key !== undefined) {
+      const member = sf.member(sf.parseDictionary(combined), key);
+      if (member === undefined) {
+        log.debug("Leaving httpsigFieldValue(). Key absent.");
+        return httpsigRefuse('STS-KEYS-0125',
+                           'The Dictionary field "' + name +
+                           '" has no member "' + key + '", which is a ' +
+                           'covered component (RFC 9421 section 2.1.2).');
+      }
+      value = member.type === 'innerList' ? sf.serializeInnerList(member)
+                                          : sf.serializeItem(member);
+    } else if (type === 'dictionary') {
+      value = sf.serializeDictionary(sf.parseDictionary(combined));
+    } else if (type === 'list') {
+      value = sf.serializeList(sf.parseList(combined));
+    } else {
+      value = sf.serializeItem(sf.parseItem(combined));
+    }
+  } catch (e) {
+    log.debug("Caught in httpsigFieldValue(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigFieldValue(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0126',
+                       'The field "' + name +
+                       '" does not parse as a Structured Field ' + type +
+                       ': ' + e.message);
+  }
+  log.debug("Leaving httpsigFieldValue(). Strict.");
+  return { ok: true, value: value };
+}
+
+// WHICH MESSAGE A COMPONENT IS READ FROM, AND WITH WHICH PARAMETERS. Without
+// `;req` it is the message itself. With it, section 2.4 says the component
+// "is to be derived from the request message" a response answers. Two cases
+// are refused rather than guessed at:
+//
+//   * `;req` on a REQUEST. Section 2.4: a signature targeting a request
+//     "MUST NOT" use it. Reading the request's own value would sign the same
+//     component under two identifiers.
+//   * `;req` on a response whose request the caller did not supply. Deriving
+//     the value from the response instead would sign the wrong message's value,
+//     and it would verify.
+//
+// `@status;req` falls to the derived-component check, because a request has
+// no status (section 2.2.9).
+function httpsigRequestTarget(message, name, params) {
+  log.debug("Entering httpsigRequestTarget(). " + name);
+  if (sf.param(params, 'req') === undefined) {
+    log.debug("Leaving httpsigRequestTarget(). The message itself.");
+    return { ok: true, message: message, params: params };
+  }
+  const isResponse = message && message.status !== undefined &&
+                     message.status !== null;
+  if (!isResponse) {
+    log.debug("Leaving httpsigRequestTarget(). ;req on a request.");
+    return httpsigRefuse('STS-KEYS-0115',
+                         'The component "' + name + '";req names a value ' +
+                         'from the request a RESPONSE answers, and this ' +
+                         'message is a request; a signature targeting a ' +
+                         'request MUST NOT use ;req (RFC 9421 section 2.4).');
+  }
+  const request = message.request;
+  if (!request || typeof request !== 'object' ||
+      (request.status !== undefined && request.status !== null)) {
+    log.debug("Leaving httpsigRequestTarget(). No related request.");
+    return httpsigRefuse('STS-KEYS-0154',
+                         'The component "' + name + '";req names a value ' +
+                         'from the request this response answers, and no ' +
+                         'request message was given to read it from (RFC ' +
+                         '9421 section 2.4).');
+  }
+  log.debug("Leaving httpsigRequestTarget(). The related request.");
+  return { ok: true, message: request,
+           params: params.filter((pair) => { return pair[0] !== 'req'; }) };
+}
+
+// A component's canonical value, or a refusal. `identifier` is the serialized
+// component identifier the value is written after in a signature base.
+/**
+ * Returns a component's canonical value in a message, with its serialized
+ * component identifier.
+ *
+ * @param message - the HTTP message
+ * @param component - the component
+ * @param options - per-call options, such as extra field types
+ * @returns `{ ok: true, value, identifier }`, or a refusal
+ */
+function httpSignatureComponentValue(message, component, options) {
+  log.debug("Entering httpSignatureComponentValue().");
+  const normalized = httpsigComponentItem(component);
+  if (httpsigIsRefusal(normalized)) {
+    log.debug("Leaving httpSignatureComponentValue(). Identifier.");
+    return normalized;
+  }
+  const item = normalized.item;
+  const name = item.value;
+  if (name === '@signature-params') {
+    log.debug("Leaving httpSignatureComponentValue(). @signature-params.");
+    return httpsigRefuse('STS-KEYS-0127',
+                       '@signature-params MUST NOT be listed among the ' +
+                       'covered components; it is always the last line of ' +
+                       'the signature base (RFC 9421 section 2.3).');
+  }
+  // `;req` (section 2.4): the value comes from the REQUEST this response
+  // answers, which the caller hands in as `message.request`. The identifier
+  // keeps the flag, because it is part of what is signed. The value is derived
+  // from the request with the flag taken off, so `"@method";req` reads the
+  // request's @method exactly as `"@method"` would on the request itself.
+  const req = httpsigRequestTarget(message, name, item.params);
+  if (httpsigIsRefusal(req)) {
+    log.debug("Leaving httpSignatureComponentValue(). ;req.");
+    return req;
+  }
+  const result = name[0] === '@'
+    ? httpsigDerivedValue(req.message, name, req.params)
+    : httpsigFieldValue(req.message, name, req.params, options);
+  if (httpsigIsRefusal(result)) {
+    log.debug("Leaving httpSignatureComponentValue(). Refused.");
+    return result;
+  }
+  // Section 2: a component value MUST NOT contain a newline; section 2.5 step
+  // 4: the base is ASCII. Both are checked on the VALUE, so the refusal can
+  // name the component that broke them.
+  if (/[\r\n]/.test(result.value) || /[^\x20-\x7e\t]/.test(result.value)) {
+    log.debug("Leaving httpSignatureComponentValue(). Not printable ASCII.");
+    return httpsigRefuse('STS-KEYS-0128',
+                       'The value of the component "' + name +
+                       '" contains a newline or a character outside ASCII, ' +
+                       'which a signature base may not (RFC 9421 sections ' +
+                       '2 and 2.5 step 4); ;bs exists for such a field.');
+  }
+  log.debug("Leaving httpSignatureComponentValue().");
+  return { ok: true, value: result.value, identifier: sf.serializeItem(item),
+           item: item };
+}
+
+// ===========================================================================
+// THE SIGNATURE BASE, SECTION 2.5, AND THE SIGNATURE PARAMETERS, SECTION 2.3.
+// ===========================================================================
+
+function httpsigCheckSignatureParams(params) {
+  log.debug("Entering httpsigCheckSignatureParams().");
+  for (let k = 0; k < params.length; k++) {
+    const wanted = PARAM_TYPES[params[k][0]];
+    if (wanted && params[k][1].type !== wanted) {
+      log.debug("Leaving httpsigCheckSignatureParams(). Wrong type.");
+      return httpsigRefuse('STS-KEYS-0129',
+                         'The signature parameter "' + params[k][0] +
+                         '" must be ' +
+                         (wanted === 'integer' ? 'an Integer' : 'a String') +
+                         ', not a ' +
+                         params[k][1].type + ' (RFC 9421 section 2.3).');
+    }
+    if (wanted === 'integer' && params[k][1].value < 0) {
+      log.debug("Leaving httpsigCheckSignatureParams(). Negative time.");
+      return httpsigRefuse('STS-KEYS-0129',
+                         'The signature parameter "' + params[k][0] +
+                         '" is a negative UNIX timestamp (RFC 9421 section ' +
+                         '2.3).');
+    }
+  }
+  log.debug("Leaving httpsigCheckSignatureParams().");
+  return null;
+}
+
+// `covered` is either an Inner List (whose own `params` are used when
+// `signatureParams` is not given — which is what a PARSED Signature-Input
+// member is) or an array of components in any form `componentItem()` reads.
+// `signatureParams` is an ordered [[key, value]] array or a plain object.
+/**
+ * Builds the signature base (RFC 9421 section 2.5) over the covered
+ * components.
+ *
+ * @param message - the HTTP message
+ * @param covered - an Inner List, or an array of components
+ * @param signatureParams - an ordered `[[key, value]]` array or a plain
+ *   object; an Inner List's own `params` when absent
+ * @param options - per-call options, such as extra field types
+ * @returns `{ ok: true, base, signatureParams, components }`, or a refusal
+ */
+function httpSignatureBase(message, covered, signatureParams, options) {
+  log.debug("Entering httpSignatureBase().");
+  let components;
+  let paramsInput = signatureParams;
+  if (covered && covered.type === 'innerList' &&
+      Array.isArray(covered.value)) {
+    components = covered.value;
+    if (paramsInput === undefined) {
+      paramsInput = covered.params;
+    }
+  } else if (Array.isArray(covered)) {
+    components = covered;
+  } else {
+    log.debug("Leaving httpSignatureBase(). No component list.");
+    return httpsigRefuse('STS-KEYS-0113',
+                       'The covered components must be an array or an ' +
+                       'Inner List.');
+  }
+  let params;
+  try {
+    params = httpsigParamsFrom(paramsInput);
+  } catch (e) {
+    log.debug("Caught in httpSignatureBase(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpSignatureBase(). Parameters.");
+    return httpsigRefuse('STS-KEYS-0129',
+                       'The signature parameters cannot be serialized: ' +
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
+  }
+  const paramProblem = httpsigCheckSignatureParams(params);
+  if (paramProblem) {
+    log.debug("Leaving httpSignatureBase(). Parameter types.");
+    return paramProblem;
+  }
+  const items = [];
+  const lines = [];
+  const seen = {};
+  for (let k = 0; k < components.length; k++) {
+    const normalized = httpsigComponentItem(components[k]);
+    if (httpsigIsRefusal(normalized)) {
+      log.debug("Leaving httpSignatureBase(). Identifier.");
+      return normalized;
+    }
+    const identity = httpsigIdentityOf(normalized.item);
+    if (seen[identity]) {
+      log.debug("Leaving httpSignatureBase(). Duplicate.");
+      return httpsigRefuse('STS-KEYS-0130',
+                         'The component ' +
+                         sf.serializeItem(normalized.item) + ' is covered ' +
+                         'more than once; each component identifier MUST ' +
+                         'occur only once (RFC 9421 sections 2 and 2.5 ' +
+                         'step 2.1).');
+    }
+    seen[identity] = true;
+    const cv = httpSignatureComponentValue(message, normalized.item, options);
+    if (httpsigIsRefusal(cv)) {
+      log.debug("Leaving httpSignatureBase(). Component refused.");
+      return cv;
+    }
+    items.push(normalized.item);
+    lines.push(cv.identifier + ': ' + cv.value);
+  }
+  const serializedParams = sf.serializeInnerList(
+      { type: 'innerList', value: items, params: params });
+  lines.push('"@signature-params": ' + serializedParams);
+  log.debug("Leaving httpSignatureBase(). " + items.length +
+            " component(s).");
+  return {
+    ok: true,
+    base: lines.join('\n'),
+    signatureParams: serializedParams,
+    components: items,
+    params: params
+  };
+}
+
+function httpsigAlgorithmNamed(name) {
+  log.debug("Entering httpsigAlgorithmNamed().");
+  log.debug("Leaving httpsigAlgorithmNamed().");
+  return typeof name === 'string' &&
+         Object.prototype.hasOwnProperty.call(HTTP_SIGNATURE_ALGORITHMS, name)
+    ? HTTP_SIGNATURE_ALGORITHMS[name] : null;
+}
+
+// THE KEY A CALLER HANDED IN, IN THE FORM THE PRIMITIVE TAKES. A KeyObject
+// or bytes pass through unchanged. A JWK is read here, so a caller holding a
+// client's registered JWKS or a realm signer's JWK does not convert it: `oct`
+// becomes the secret's bytes, `AKP` stays a JWK (or becomes its `priv` seed
+// when signing) for `pq_jose`, and anything else becomes a KeyObject. A
+// public JWK whose `use` or `key_ops` says it is not for verification is
+// refused, as `verifyCompactJws()` refuses it (RFC 7517 sections 4.2 and
+// 4.3). Throws on a JWK node cannot read; `httpsigCheckKey()` maps that.
+function httpsigKeyOf(entry, key, purpose) {
+  log.debug("Entering httpsigKeyOf(). " + purpose);
+  const isJwk = key && typeof key === 'object' && !Buffer.isBuffer(key) &&
+                !(key instanceof Uint8Array) &&
+                !(key instanceof nodeCrypto.KeyObject) &&
+                typeof key.kty === 'string';
+  if (!isJwk) {
+    log.debug("Leaving httpsigKeyOf(). Not a JWK.");
+    return key;
+  }
+  if (purpose === 'verify') {
+    const misuse = jwkUseProblem(key);
+    if (misuse) {
+      log.debug("Leaving httpsigKeyOf(). " + misuse);
+      throw new Error('the JWK is ' + misuse);
+    }
+  }
+  if (key.kty === 'oct') {
+    log.debug("Leaving httpsigKeyOf(). A secret.");
+    return Buffer.from(String(key.k || ''), 'base64url');
+  }
+  if (key.kty === 'AKP') {
+    if (purpose === 'sign' && typeof key.priv !== 'string') {
+      log.debug("Leaving httpsigKeyOf(). A public AKP key, to sign.");
+      throw new Error('an AKP JWK with no "priv" member, which is a public ' +
+                      'key and cannot sign');
+    }
+    log.debug("Leaving httpsigKeyOf(). An AKP key.");
+    return purpose === 'sign' ? Buffer.from(key.priv, 'base64url') : key;
+  }
+  const made = purpose === 'sign'
+    ? nodeCrypto.createPrivateKey({ key: key, format: 'jwk' })
+    : nodeCrypto.createPublicKey({ key: key, format: 'jwk' });
+  log.debug("Leaving httpsigKeyOf(). A " + made.asymmetricKeyType + " key.");
+  return made;
+}
+
+// Is this key material appropriate for this algorithm (section 3.1 step 1,
+// section 3.2 step 8)? A key of the wrong family is refused BEFORE node is
+// asked, because node's answer to an Ed25519 key under an RSA algorithm is an
+// exception whose text names neither. Returns null, or a refusal.
+function httpsigCheckKey(name, entry, key, purpose) {
+  log.debug("Entering httpsigCheckKey(). " + name + " " + purpose);
+  if (entry.kind === 'jws-pq') {
+    // `pq_jose` signs with the private seed or key as bytes, and verifies
+    // with an AKP JWK or the public key's bytes. Its own checks (the seed's
+    // length, the signature's) answer the rest.
+    const bytes = Buffer.isBuffer(key) || key instanceof Uint8Array;
+    const akp = !!key && typeof key === 'object' && key.kty === 'AKP' &&
+                (key.alg === undefined || key.alg === name);
+    if (purpose === 'sign' ? !bytes : !(bytes || akp)) {
+      log.debug("Leaving httpsigCheckKey(). Not a post-quantum key.");
+      return httpsigRefuse('STS-KEYS-0131',
+                           name + ' needs ' + (purpose === 'sign'
+                             ? 'its private key as bytes'
+                             : 'an AKP JWK for ' + name + ' or the public ' +
+                               'key as bytes') +
+                           ', and the key given is not one (RFC 9964).');
+    }
+    log.debug("Leaving httpsigCheckKey(). Post-quantum.");
+    return null;
+  }
+  if (entry.kind === 'hmac') {
+    let length = -1;
+    if (Buffer.isBuffer(key) || key instanceof Uint8Array) {
+      length = key.length;
+    } else if (key instanceof nodeCrypto.KeyObject && key.type === 'secret') {
+      length = key.symmetricKeySize;
+    }
+    if (length < 0) {
+      log.debug("Leaving httpsigCheckKey(). Not a secret.");
+      return httpsigRefuse('STS-KEYS-0131',
+                           name + ' needs a shared secret (a Buffer), and ' +
+                           'the key given is not one.');
+    }
+    if (length < entry.minKeyBytes) {
+      log.debug("Leaving httpsigCheckKey(). Secret too short.");
+      return httpsigRefuse('STS-KEYS-0131',
+                           name + ' needs a secret of at least ' +
+                           entry.minKeyBytes + ' octets, the size of its ' +
+                           'hash; this one has ' + length + ' (RFC 7518 ' +
+                           'section 3.2).');
+    }
+    log.debug("Leaving httpsigCheckKey(). Secret.");
+    return null;
+  }
+  if (!(key instanceof nodeCrypto.KeyObject) || key.type === 'secret' ||
+      (purpose === 'sign' && key.type !== 'private')) {
+    log.debug("Leaving httpsigCheckKey(). Not an asymmetric key.");
+    return httpsigRefuse('STS-KEYS-0131',
+                         name + ' needs ' +
+                         (purpose === 'sign' ? 'a private' : 'a public') +
+                         ' asymmetric KeyObject, and the key given is not ' +
+                         'one.');
+  }
+  const type = key.asymmetricKeyType;
+  const details = key.asymmetricKeyDetails || {};
+  let problem = null;
+  if (entry.kind === 'rsa-v1_5' || entry.kind === 'rsa-pss') {
+    if (type !== 'rsa' && !(type === 'rsa-pss' && entry.kind === 'rsa-pss')) {
+      problem = 'is a ' + type + ' key, not an RSA key' +
+                (type === 'rsa-pss' ? ' usable for PKCS#1 v1.5' : '');
+    } else if (!(details.modulusLength >= 2048)) {
+      problem = 'is an RSA key of ' + details.modulusLength +
+                ' bits, under the 2048 RFC 7518 section 3.3 requires';
+    } else if (type === 'rsa-pss' && details.hashAlgorithm &&
+               details.hashAlgorithm !== entry.hash) {
+      problem = 'is an RSASSA-PSS key restricted to ' + details.hashAlgorithm;
+    } else if (purpose === 'verify') {
+      // The checks every RSA verification here makes (#202): an exponent
+      // or a modulus that makes a forgery.
+      const weak = rsaKeyProblem(key, 2048);
+      if (weak) {
+        problem = 'is ' + weak;
+      }
+    }
+  } else if (entry.kind === 'ecdsa') {
+    if (type !== 'ec' || details.namedCurve !== entry.curve) {
+      problem = 'is a ' + type +
+                (details.namedCurve ? ' ' + details.namedCurve : '') +
+                ' key, not an EC key on ' + entry.curve;
+    }
+  } else if (entry.kind === 'eddsa') {
+    if (entry.curves.indexOf(type) < 0) {
+      problem = 'is a ' + type + ' key, not ' + entry.curves.join(' or ');
+    }
+  }
+  if (problem) {
+    log.debug("Leaving httpsigCheckKey(). " + problem);
+    return httpsigRefuse('STS-KEYS-0131',
+                         'The key for ' + name + ' ' + problem + ' (' +
+                         entry.spec + ').');
+  }
+  log.debug("Leaving httpsigCheckKey().");
+  return null;
+}
+
+// HTTP_SIGN, section 3.3. Throws whatever the primitive throws; callers map
+// it. A post-quantum or composite JWS algorithm is signed by
+// `jwsSignatureOver()`, the function that signs it inside a JWS.
+function httpsigRawSign(entry, key, data) {
+  log.debug("Entering httpsigRawSign(). " + entry.kind);
+  let out;
+  switch (entry.kind) {
+    case 'jws-pq':
+      out = jwsSignatureOver(entry.jws, key, data);
+      break;
+    case 'hmac':
+      out = nodeCrypto.createHmac(entry.hash, key).update(data).digest();
+      break;
+    case 'rsa-v1_5':
+      out = nodeCrypto.sign(entry.hash, data, key);
+      break;
+    case 'rsa-pss':
+      out = nodeCrypto.sign(entry.hash, data, {
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: entry.saltLength
+      });
+      break;
+    case 'ecdsa':
+      out = nodeCrypto.sign(entry.hash, data,
+                            { key: key, dsaEncoding: 'ieee-p1363' });
+      break;
+    default:
+      out = nodeCrypto.sign(null, data, key);
+  }
+  log.debug("Leaving httpsigRawSign().");
+  return out;
+}
+
+// HTTP_VERIFY, section 3.3. The HMAC comparison is constant-time, and a
+// length difference is a plain false: `timingSafeEqual` throws on unequal
+// lengths, and an exception there would be a different code path an
+// attacker can time. A post-quantum or composite JWS algorithm is verified
+// by `jwsSignatureValid()`.
+function httpsigRawVerify(entry, key, data, signature) {
+  log.debug("Entering httpsigRawVerify(). " + entry.kind);
+  let ok;
+  switch (entry.kind) {
+    case 'jws-pq':
+      ok = jwsSignatureValid(entry.jws, key, data, signature);
+      break;
+    case 'hmac': {
+      const expected = nodeCrypto.createHmac(entry.hash, key)
+                                 .update(data)
+                                 .digest();
+      ok = expected.length === signature.length &&
+           nodeCrypto.timingSafeEqual(expected, signature);
+      break;
+    }
+    case 'rsa-v1_5':
+      ok = nodeCrypto.verify(entry.hash, data, key, signature);
+      break;
+    case 'rsa-pss':
+      ok = nodeCrypto.verify(entry.hash, data, {
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: entry.saltLength
+      }, signature);
+      break;
+    case 'ecdsa':
+      // r||s at the coordinate size and nothing else: a DER signature, or one
+      // of the other curve's length, is not this algorithm's output (3.3.4).
+      ok = signature.length === 2 * entry.coordinateBytes &&
+           nodeCrypto.verify(entry.hash, data,
+                             { key: key, dsaEncoding: 'ieee-p1363' },
+                             signature);
+      break;
+    default:
+      ok = nodeCrypto.verify(null, data, key, signature);
+  }
+  log.debug("Leaving httpsigRawVerify(). " + ok);
+  return !!ok;
+}
+
+// ===========================================================================
+// SIGNING, SECTION 3.1, AND PUTTING A SIGNATURE IN A MESSAGE, SECTION 4.
+// ===========================================================================
+
+// options: { label, components, params, key, algorithm, fieldTypes }
+//
+// `algorithm` may be an HTTP registry name or a JWS name; when it is absent
+// the `alg` parameter names it. It is never INVENTED into the parameters:
+// whether the signature carries `alg` is the signer's decision (GNAP forbids
+// it), so the parameters are exactly what the caller passed, in the caller's
+// order.
+/**
+ * Signs a message (section 3.1). The parameters are exactly what the caller
+ * passed, in its order; `alg` is never added.
+ *
+ * @param message - the HTTP message
+ * @param options - `{ label, components, params, key, algorithm, fieldTypes
+ *   }`
+ * @returns `{ ok: true, label, algorithm, signatureInput, ... }`, or a
+ *   refusal
+ */
+function signHttpMessage(message, options) {
+  log.debug("Entering signHttpMessage().");
+  const opts = options || {};
+  try {
+    sf.serializeKey(opts.label);
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). Label.");
+    return httpsigRefuse('STS-KEYS-0132',
+                       'The signature label ' + JSON.stringify(opts.label) +
+                       ' is not a valid Dictionary key (RFC 9421 section ' +
+                       '4.1): ' + e.message);
+  }
+  let params;
+  try {
+    params = httpsigParamsFrom(opts.params);
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). Parameters.");
+    return httpsigRefuse('STS-KEYS-0129',
+                       'The signature parameters cannot be serialized: ' +
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
+  }
+  const algParam = sf.paramValue(params, 'alg');
+  const name = opts.algorithm !== undefined ? opts.algorithm : algParam;
+  if (name === undefined) {
+    log.debug("Leaving signHttpMessage(). No algorithm.");
+    return httpsigRefuse('STS-KEYS-0133',
+                       'No signature algorithm was named, by the caller or ' +
+                       'by an alg parameter (RFC 9421 section 3.1 step 1).');
+  }
+  const entry = httpsigAlgorithmNamed(name);
+  if (!entry) {
+    log.debug("Leaving signHttpMessage(). Unknown algorithm.");
+    return httpsigRefuse('STS-KEYS-0134',
+                       'The signature algorithm ' + JSON.stringify(name) +
+                       ' is not supported; the supported ones are ' +
+                       Object.keys(HTTP_SIGNATURE_ALGORITHMS).join(', ') + '.');
+  }
+  const unsignable = signaturePolicy.signCause('httpsig', name);
+  if (unsignable) {
+    log.debug("Leaving signHttpMessage(). Not signed here.");
+    return httpsigRefuse(unsignable.code, unsignable.message);
+  }
+  if (algParam !== undefined &&
+      (entry.registry === 'jws' || algParam !== name)) {
+    log.debug("Leaving signHttpMessage(). alg conflict.");
+    return httpsigRefuse('STS-KEYS-0135',
+                       entry.registry === 'jws'
+                    ? 'The JWS algorithm ' + name + ' cannot be signalled ' +
+                       'with the alg signature parameter (RFC 9421 section ' +
+                       '3.3.7).'
+                    : 'The alg parameter "' + algParam + '" names a ' +
+                       'different algorithm from the one signing, ' +
+                       name + ' (RFC 9421 section 3.2 step 6.5).');
+  }
+  let signingKey;
+  try {
+    signingKey = httpsigKeyOf(entry, opts.key, 'sign');
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). The key cannot be read.");
+    return httpsigRefuse('STS-KEYS-0131',
+                         'The key for ' + name + ' cannot be read: ' +
+                         String((e && e.message) || e).replace(/\.+$/, '') +
+                         '.');
+  }
+  const keyProblem = httpsigCheckKey(name, entry, signingKey, 'sign');
+  if (keyProblem) {
+    log.debug("Leaving signHttpMessage(). Key.");
+    return keyProblem;
+  }
+  const built = httpSignatureBase(message, opts.components || [], params,
+                                   opts);
+  if (httpsigIsRefusal(built)) {
+    log.debug("Leaving signHttpMessage(). Base.");
+    return built;
+  }
+  let signatureBytes;
+  try {
+    signatureBytes = httpsigRawSign(entry, signingKey, Buffer.from(built.base,
+                                  'ascii'));
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). Primitive threw.");
+    return httpsigRefuse('STS-KEYS-0136',
+                       'Signing with ' + name +
+                       ' failed inside the cryptographic library: ' +
+                       e.message);
+  }
+  log.debug("Leaving signHttpMessage(). " + opts.label);
+  return {
+    ok: true,
+    label: opts.label,
+    algorithm: name,
+    signatureInput: opts.label + '=' + built.signatureParams,
+    signature: opts.label + '=' +
+               sf.serializeItem({ type: 'bytes', value: signatureBytes,
+                                  params: [] }),
+    signatureParams: built.signatureParams,
+    base: built.base,
+    signatureBytes: signatureBytes
+  };
+}
+
+function httpsigHeaderKeyFor(headers, name) {
+  log.debug("Entering httpsigHeaderKeyFor().");
+  const keys = Object.keys(headers);
+  for (let k = 0; k < keys.length; k++) {
+    if (keys[k].toLowerCase() === name) {
+      log.debug("Leaving httpsigHeaderKeyFor().");
+      return keys[k];
+    }
+  }
+  log.debug("Leaving httpsigHeaderKeyFor().");
+  return name;
+}
+
+// A NEW message with `result`'s two members appended to the message's
+// Signature-Input and Signature fields — the shape of RFC 9635 section
+// 7.3.1.1, where the key-rotation signature is added beside the old key's and
+// covers it.
+//
+// It APPENDS TEXT rather than re-serializing what was there. A later
+// signature may cover the whole `signature-input` field without `;key`, and
+// that covers its bytes as sent; re-serializing the existing members would
+// change those bytes under a signature that has already been made. The
+// existing value is still PARSED first, because appending to a malformed
+// field makes one nobody can read, and a label already present in either
+// field is refused — section 4 says a label MUST be unique, and a second
+// member under it would replace the first for every last-wins parser.
+/**
+ * Returns a new message with a signature's two members appended to its
+ * Signature-Input and Signature fields, as text, so bytes already signed do
+ * not change (RFC 9635 section 7.3.1.1). A label already present is refused.
+ *
+ * @param message - the HTTP message
+ * @param result - what `sign()` returned
+ * @returns `{ ok: true, message }`, or a refusal
+ */
+function appendHttpSignature(message, result) {
+  log.debug("Entering appendHttpSignature().");
+  if (!result || result.ok !== true ||
+      typeof result.signatureInput !== 'string' ||
+      typeof result.signature !== 'string') {
+    log.debug("Leaving appendHttpSignature(). Not a signature.");
+    return httpsigRefuse('STS-KEYS-0137',
+                       'Only a successful sign() result can be appended to ' +
+                       'a message.');
+  }
+  const headers = Object.assign({}, (message && message.headers) || {});
+  const fields = [['signature-input', result.signatureInput],
+                  ['signature', result.signature]];
+  for (let k = 0; k < fields.length; k++) {
+    const lines = httpsigFieldLines({ headers: headers }, fields[k][0]);
+    if (!lines) {
+      continue;
+    }
+    let dictionary;
+    try {
+      dictionary = sf.parseDictionary(lines.join(', '));
+    } catch (e) {
+      log.debug("Caught in appendHttpSignature(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving appendHttpSignature(). Existing field " +
+                "malformed.");
+      return httpsigRefuse('STS-KEYS-0138',
+                         'The message\'s existing ' + fields[k][0] +
+                         ' field is not a Dictionary, so nothing can be ' +
+                         'appended to it: ' + e.message);
+    }
+    if (sf.member(dictionary, result.label) !== undefined) {
+      log.debug("Leaving appendHttpSignature(). Label taken.");
+      return httpsigRefuse('STS-KEYS-0137',
+                         'The label "' + result.label +
+                         '" is already used in the message\'s ' +
+                         fields[k][0] +
+                         ' field; a signature label MUST be unique (RFC ' +
+                         '9421 section 4).');
+    }
+  }
+  fields.forEach((field) => {
+    const headerKey = httpsigHeaderKeyFor(headers, field[0]);
+    const existing = headers[headerKey];
+    if (existing === undefined || existing === null) {
+      headers[headerKey] = field[1];
+    } else if (Array.isArray(existing)) {
+      headers[headerKey] = existing.concat([field[1]]);
+    } else {
+      headers[headerKey] = String(existing) + ', ' + field[1];
+    }
+  });
+  log.debug("Leaving appendHttpSignature(). " + result.label);
+  return { ok: true,
+           message: Object.assign({}, message, { headers: headers }) };
+}
+
+// ===========================================================================
+// PARSING THE TWO FIELDS, SECTIONS 4.1, 4.2 AND 3.2 STEPS 1 TO 3.
+// ===========================================================================
+
+function httpsigParseField(message, name) {
+  log.debug("Entering httpsigParseField(). " + name);
+  const lines = httpsigFieldLines(message, name);
+  if (!lines) {
+    log.debug("Leaving httpsigParseField(). Absent.");
+    return { ok: true, dictionary: [] };
+  }
+  const duplicates = [];
+  let dictionary = [];
+  try {
+    // Line by line as well as combined: a label repeated on two field lines
+    // is just as much a second signature under one name as one repeated
+    // within a line (section 4.1: "unique across all field values").
+    dictionary = sf.parseDictionary(lines.join(', '), {
+      onDuplicate: (key) => {
+        log.debug("Entering onDuplicate().");
+        duplicates.push(key);
+        log.debug("Leaving onDuplicate().");
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in httpsigParseField(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigParseField(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0138',
+                       'The ' + name + ' field is not a Structured Field ' +
+                       'Dictionary (RFC 9421 section 4): ' + e.message);
+  }
+  if (duplicates.length) {
+    log.debug("Leaving httpsigParseField(). Duplicate label.");
+    return httpsigRefuse('STS-KEYS-0139',
+                       'The ' + name + ' field uses the label "' +
+                       duplicates[0] + '" more than once; labels MUST be ' +
+                       'unique across all field values (RFC 9421 sections ' +
+                       '4.1 and 4.2).');
+  }
+  log.debug("Leaving httpsigParseField(). " +
+            dictionary.length + " member(s).");
+  return { ok: true, dictionary: dictionary };
+}
+
+function httpsigParamsObject(params) {
+  log.debug("Entering httpsigParamsObject().");
+  const out = {};
+  (params || []).forEach((pair) => {
+    out[pair[0]] = pair[1].value;
+  });
+  log.debug("Leaving httpsigParamsObject().");
+  return out;
+}
+
+// Every signature the message carries, in Signature-Input order:
+// { ok: true, signatures: [{ label, components, componentIds, params,
+//   paramList, signature, serializedParams }] }, or a refusal.
+/**
+ * Parses every signature a message carries, in Signature-Input order.
+ *
+ * @param message - the HTTP message
+ * @returns `{ ok: true, signatures }`, each with its label, components,
+ *   parameters and signature, or a refusal
+ */
+function parseHttpSignatures(message) {
+  log.debug("Entering parseHttpSignatures().");
+  const inputs = httpsigParseField(message, 'signature-input');
+  if (httpsigIsRefusal(inputs)) {
+    log.debug("Leaving parseHttpSignatures(). Signature-Input.");
+    return inputs;
+  }
+  const values = httpsigParseField(message, 'signature');
+  if (httpsigIsRefusal(values)) {
+    log.debug("Leaving parseHttpSignatures(). Signature.");
+    return values;
+  }
+  if (inputs.dictionary.length === 0 && values.dictionary.length === 0) {
+    log.debug("Leaving parseHttpSignatures(). None.");
+    return httpsigRefuse('STS-KEYS-0140',
+                       'The message carries no HTTP message signature: it ' +
+                       'has no Signature-Input and no Signature field (RFC ' +
+                       '9421 section 4).');
+  }
+  const labels = {};
+  inputs.dictionary.forEach((pair) => { labels[pair[0]] = true; });
+  values.dictionary.forEach((pair) => { labels[pair[0]] = true; });
+  const out = [];
+  const allLabels = Object.keys(labels);
+  for (let k = 0; k < allLabels.length; k++) {
+    const label = allLabels[k];
+    const input = sf.member(inputs.dictionary, label);
+    const value = sf.member(values.dictionary, label);
+    if (input === undefined || value === undefined) {
+      log.debug("Leaving parseHttpSignatures(). Label mismatch.");
+      return httpsigRefuse('STS-KEYS-0141',
+                         'The signature label "' + label +
+                         '" is present in the ' +
+                         (input === undefined ? 'Signature'
+                                              : 'Signature-Input') +
+                         ' field and not in the ' +
+                         (input === undefined ? 'Signature-Input'
+                                              : 'Signature') +
+                         ' field; the presence of a label in one field but ' +
+                         'not the other is an error (RFC 9421 section 4).');
+    }
+    const componentsAreStrings = input.type === 'innerList' &&
+                                 input.value.every((item) => {
+      return item.type === 'string';
+    });
+    if (!componentsAreStrings || value.type !== 'bytes') {
+      log.debug("Leaving parseHttpSignatures(). Member types.");
+      return httpsigRefuse('STS-KEYS-0142',
+                         !componentsAreStrings
+                      ? 'The Signature-Input member "' + label + '" is not ' +
+                         'an Inner List of String component identifiers ' +
+                         '(RFC 9421 section 4.1).'
+                      : 'The Signature member "' + label +
+                         '" is not a Byte Sequence (RFC 9421 section 4.2).');
+    }
+    out.push({
+      label: label,
+      components: input.value,
+      componentIds: input.value.map((item) => {
+        return sf.serializeItem(item);
+      }),
+      params: httpsigParamsObject(input.params),
+      paramList: input.params,
+      signature: value.value,
+      serializedParams: sf.serializeInnerList(input)
+    });
+  }
+  // Signature-Input order, which is the order a reader of the message sees.
+  out.sort((a, b) => {
+    return httpsigIndexOfLabel(inputs.dictionary, a.label) -
+           httpsigIndexOfLabel(inputs.dictionary, b.label);
+  });
+  log.debug("Leaving parseHttpSignatures(). " + out.length +
+            " signature(s).");
+  return { ok: true, signatures: out };
+}
+
+function httpsigIndexOfLabel(dictionary, label) {
+  log.debug("Entering httpsigIndexOfLabel().");
+  for (let k = 0; k < dictionary.length; k++) {
+    if (dictionary[k][0] === label) {
+      log.debug("Leaving httpsigIndexOfLabel().");
+      return k;
+    }
+  }
+  log.debug("Leaving httpsigIndexOfLabel().");
+  return -1;
+}
+
+// ===========================================================================
+// VERIFYING, SECTION 3.2, WITH THE APPLICATION REQUIREMENTS OF 3.2.1.
+// ===========================================================================
+
+// options:
+//   label             verify only this signature (it must be present)
+//   keyFor(parsed)    -> { key, algorithm } | null; `parsed` is a
+//                     parseSignatures() entry. REQUIRED: section 3.2 step 5
+//                     says an unknown or untrusted key MUST fail.
+//   now               seconds; defaults to the clock
+//   maxAgeS           created must be within this many seconds of now
+//   skewS             how far in the FUTURE created may be; defaults to
+//   maxAgeS requireCreated    refuse a signature with no created (implied by
+//   maxAgeS) requireComponents components that MUST be covered
+//   requireTag        the tag parameter's required value
+//   forbidAlgParam    refuse any signature carrying alg (RFC 9635 7.3.1)
+//   allowedAlgorithms the algorithms policy allows (section 3.2 step 6.1)
+//   require           'all' (default): every candidate must verify;
+//                     'any': one verifying candidate is enough (RFC 9635
+//                     section 7.3.1's "until it finds (at least) one")
+//   fieldTypes        extra Structured Field types for ;sf and ;key
+//
+// Candidates are the labelled signature, else every signature with the
+// required tag, else every signature. The default is 'all' because a verifier
+// that quietly passed over a failing signature has made a policy decision its
+// caller did not.
+/**
+ * Verifies a message's signatures (section 3.2) against the keys
+ * `options.keyFor()` names; an unknown key fails.
+ *
+ * By default every candidate signature must verify.
+ *
+ * @param message - the HTTP message
+ * @param options - `label`, `keyFor`, `now`, `maxAgeS`, `skewS`,
+ *   `requireCreated`, `requireComponents`, `requireTag`, `forbidAlgParam`,
+ *   `allowedAlgorithms`, `require` (`all` or `any`) and `fieldTypes`
+ * @returns `{ ok: true, verified }`, or a refusal
+ */
+function verifyHttpMessage(message, options) {
+  log.debug("Entering verifyHttpMessage().");
+  const opts = options || {};
+  const now = opts.now !== undefined ? opts.now
+                                     : Math.floor(Date.now() / 1000);
+  const parsed = parseHttpSignatures(message);
+  if (httpsigIsRefusal(parsed)) {
+    log.debug("Leaving verifyHttpMessage(). Parse.");
+    return parsed;
+  }
+  let candidates = parsed.signatures;
+  if (opts.label !== undefined) {
+    candidates =
+        candidates.filter((s) => { return s.label === opts.label; });
+    if (candidates.length === 0) {
+      log.debug("Leaving verifyHttpMessage(). Label absent.");
+      return httpsigRefuse('STS-KEYS-0143',
+                         'The message carries no signature labelled "' +
+                         String(opts.label) +
+                         '" (RFC 9421 section 3.2 step 1.1).');
+    }
+  } else if (opts.requireTag !== undefined) {
+    candidates = candidates.filter((s) => {
+      return s.params.tag === opts.requireTag;
+    });
+    if (candidates.length === 0) {
+      log.debug("Leaving verifyHttpMessage(). No signature with the tag.");
+      return httpsigRefuse('STS-KEYS-0144',
+                         'No signature in the message carries tag="' +
+                         String(opts.requireTag) +
+                         '"; the tags present are ' + JSON.stringify(
+                        parsed.signatures.map((s) => {
+                      return s.params.tag === undefined ? null : s.params.tag;
+                    })) + ' (RFC 9421 section 3.2.1).');
+    }
+  }
+  const verified = [];
+  let firstFailure = null;
+  for (let k = 0; k < candidates.length; k++) {
+    const result = httpsigVerifyOne(message, candidates[k], opts, now);
+    if (result.ok) {
+      verified.push(result);
+    } else if (opts.require !== 'any') {
+      log.debug("Leaving verifyHttpMessage(). " + candidates[k].label +
+                " refused.");
+      return result;
+    } else if (!firstFailure) {
+      firstFailure = result;
+    }
+  }
+  if (verified.length === 0) {
+    log.debug("Leaving verifyHttpMessage(). None verified.");
+    return firstFailure;
+  }
+  log.debug("Leaving verifyHttpMessage(). " + verified.length +
+            " verified.");
+  return { ok: true, verified: verified };
+}
+
+function httpsigVerifyOne(message, parsed, opts, now) {
+  log.debug("Entering httpsigVerifyOne(). " + parsed.label);
+  const p = parsed.params;
+  const paramProblem = httpsigCheckSignatureParams(parsed.paramList);
+  if (paramProblem) {
+    log.debug("Leaving httpsigVerifyOne(). Parameter types.");
+    return paramProblem;
+  }
+  if (opts.requireTag !== undefined && p.tag !== opts.requireTag) {
+    log.debug("Leaving httpsigVerifyOne(). Tag.");
+    return httpsigRefuse('STS-KEYS-0144',
+                       'The signature "' + parsed.label + '" carries ' +
+                       (p.tag === undefined ? 'no tag' : 'tag="' + p.tag +
+                        '"') +
+                       ' and tag="' + opts.requireTag +
+                       '" is required (RFC 9421 section 3.2.1).');
+  }
+  if (opts.forbidAlgParam && p.alg !== undefined) {
+    log.debug("Leaving httpsigVerifyOne(). alg present.");
+    return httpsigRefuse('STS-KEYS-0145',
+                       'The signature "' + parsed.label +
+                       '" carries the alg parameter, which this ' +
+                       'application forbids (RFC 9635 section 7.3.1: "The ' +
+                       'explicit alg signature parameter MUST NOT be ' +
+                       'included").');
+  }
+  if ((opts.requireCreated ||
+       opts.maxAgeS !== undefined) && p.created === undefined) {
+    log.debug("Leaving httpsigVerifyOne(). No created.");
+    return httpsigRefuse('STS-KEYS-0146',
+                       'The signature "' + parsed.label +
+                       '" has no created parameter, and its age must be ' +
+                       'checked (RFC 9421 section 3.2.1).');
+  }
+  if (p.created !== undefined && opts.maxAgeS !== undefined) {
+    const skew = opts.skewS !== undefined ? opts.skewS : opts.maxAgeS;
+    if (now - p.created > opts.maxAgeS) {
+      log.debug("Leaving httpsigVerifyOne(). Stale.");
+      return httpsigRefuse('STS-KEYS-0147',
+                         'The signature "' + parsed.label + '" was created ' +
+                         (now - p.created) +
+                         ' seconds ago, more than the ' + opts.maxAgeS +
+                         ' allowed.');
+    }
+    if (p.created - now > skew) {
+      log.debug("Leaving httpsigVerifyOne(). Future.");
+      return httpsigRefuse('STS-KEYS-0148',
+                         'The signature "' + parsed.label +
+                         '" claims to be created ' + (p.created -
+                     now) + ' seconds in the future, more than the ' + skew +
+                         ' of clock skew allowed.');
+    }
+  }
+  if (p.expires !== undefined && now >= p.expires) {
+    log.debug("Leaving httpsigVerifyOne(). Expired.");
+    return httpsigRefuse('STS-KEYS-0149',
+                       'The signature "' + parsed.label + '" expired ' +
+                       (now - p.expires) +
+                       ' seconds ago (RFC 9421 section 2.3, expires).');
+  }
+  const required = opts.requireComponents || [];
+  const covered = {};
+  parsed.components.forEach((item) => {
+    covered[httpsigIdentityOf(item)] = true;
+  });
+  for (let k = 0; k < required.length; k++) {
+    const wanted = httpsigComponentItem(required[k]);
+    if (httpsigIsRefusal(wanted)) {
+      log.debug("Leaving httpsigVerifyOne(). Required component " +
+                "malformed.");
+      return wanted;
+    }
+    if (!covered[httpsigIdentityOf(wanted.item)]) {
+      log.debug("Leaving httpsigVerifyOne(). Required component " +
+                "missing.");
+      return httpsigRefuse('STS-KEYS-0150',
+                         'The signature "' + parsed.label +
+                         '" does not cover the required component ' +
+                         sf.serializeItem(wanted.item) + '; it covers (' +
+                         parsed.componentIds.join(' ') +
+                         ') (RFC 9421 section 3.2 step 4).');
+    }
+  }
+  let keyed = null;
+  try {
+    keyed = typeof opts.keyFor === 'function' ? opts.keyFor(parsed) : null;
+  } catch (e) {
+    log.debug("Caught in httpsigVerifyOne(): " +
+              ((e && e.message) || e));
+    // A key lookup that throws is a key this verifier does not have; the
+    // refusal below carries the reason rather than the process carrying the
+    // exception.
+    log.debug("keyFor() threw: " + e.message);
+    keyed = null;
+  }
+  if (!keyed || keyed.key === undefined || keyed.key === null) {
+    log.debug("Leaving httpsigVerifyOne(). No key.");
+    return httpsigRefuse('STS-KEYS-0151',
+                       'No verification key is known for the signature "' +
+                       parsed.label + '"' +
+                       (p.keyid !== undefined ? ' (keyid="' + p.keyid +
+                        '")' : '') +
+                       '; an unknown or untrusted key MUST fail (RFC 9421 ' +
+                       'section 3.2 step 5).');
+  }
+  const fromKey = keyed.algorithm;
+  const fromParam = p.alg;
+  if (fromParam !== undefined) {
+    const paramEntry = httpsigAlgorithmNamed(fromParam);
+    if (!paramEntry || paramEntry.registry !== 'http') {
+      log.debug("Leaving httpsigVerifyOne(). alg parameter unknown.");
+      return httpsigRefuse('STS-KEYS-0134',
+                         'The alg parameter "' + fromParam + '" is not an ' +
+                         'algorithm in the HTTP Signature Algorithms ' +
+                         'registry this verifier supports (RFC 9421 ' +
+                         'sections 2.3 and 3.3.7).');
+    }
+    if (fromKey !== undefined && fromKey !== fromParam) {
+      log.debug("Leaving httpsigVerifyOne(). alg conflict.");
+      return httpsigRefuse('STS-KEYS-0135',
+                         'The signature "' + parsed.label + '" says alg="' +
+                         fromParam + '" and its key is for ' +
+                         fromKey + '; when the algorithm is stated in more ' +
+                         'than one place they MUST agree (RFC 9421 section ' +
+                         '3.2 step 6.5).');
+    }
+  }
+  const name = fromKey !== undefined ? fromKey : fromParam;
+  if (name === undefined) {
+    log.debug("Leaving httpsigVerifyOne(). No algorithm.");
+    return httpsigRefuse('STS-KEYS-0133',
+                       'No algorithm could be determined for the signature ' +
+                       '"' + parsed.label +
+                       '": the key names none and the signature carries no ' +
+                       'alg parameter (RFC 9421 section 3.2 step 6).');
+  }
+  const entry = httpsigAlgorithmNamed(name);
+  if (!entry) {
+    log.debug("Leaving httpsigVerifyOne(). Unknown algorithm.");
+    return httpsigRefuse('STS-KEYS-0134',
+                       'The signature algorithm ' + JSON.stringify(name) +
+                       ' is not supported.');
+  }
+  // THE ONE HTTP SIGNATURE ACCEPT CHOKEPOINT (#1368): OAuth's and GNAP's both
+  // come through here. It had no gate until then.
+  const unacceptable = signaturePolicy.acceptCause('httpsig', name);
+  if (unacceptable) {
+    log.debug("Leaving httpsigVerifyOne(). Not accepted here.");
+    return httpsigRefuse(unacceptable.code, unacceptable.message);
+  }
+  if (Array.isArray(opts.allowedAlgorithms) &&
+      opts.allowedAlgorithms.indexOf(name) < 0) {
+    log.debug("Leaving httpsigVerifyOne(). Not allowed.");
+    return httpsigRefuse('STS-KEYS-0152',
+                       'The algorithm ' + name +
+                       ' is not one this verifier allows (' +
+                       opts.allowedAlgorithms.join(', ') +
+                       ') (RFC 9421 section 3.2 step 6.1).');
+  }
+  let verifyingKey;
+  try {
+    verifyingKey = httpsigKeyOf(entry, keyed.key, 'verify');
+  } catch (e) {
+    log.debug("Caught in httpsigVerifyOne(): " + ((e && e.message) || e));
+    log.debug("Leaving httpsigVerifyOne(). The key cannot be read.");
+    return httpsigRefuse('STS-KEYS-0131',
+                         'The key for ' + name + ' cannot be read: ' +
+                         String((e && e.message) || e).replace(/\.+$/, '') +
+                         '.');
+  }
+  const keyProblem = httpsigCheckKey(name, entry, verifyingKey, 'verify');
+  if (keyProblem) {
+    log.debug("Leaving httpsigVerifyOne(). Key.");
+    return keyProblem;
+  }
+  const built = httpSignatureBase(message, parsed.components,
+                                   parsed.paramList,
+                                   opts);
+  if (httpsigIsRefusal(built)) {
+    log.debug("Leaving httpsigVerifyOne(). Base.");
+    return built;
+  }
+  let good;
+  try {
+    good = httpsigRawVerify(entry, verifyingKey, Buffer.from(built.base, 'ascii'),
+                          parsed.signature);
+  } catch (e) {
+    log.debug("Caught in httpsigVerifyOne(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigVerifyOne(). Primitive threw.");
+    return httpsigRefuse('STS-KEYS-0136',
+                       'Verifying with ' + name + ' failed inside the ' +
+                       'cryptographic library: ' + e.message);
+  }
+  if (!good) {
+    log.debug("Leaving httpsigVerifyOne(). Bad signature.");
+    return httpsigRefuse('STS-KEYS-0153',
+                       'The signature "' + parsed.label +
+                       '" does not verify with ' + name +
+                       ' over the signature base rebuilt from the message: ' +
+                       'the message was changed, or it was signed with a ' +
+                       'different key (RFC 9421 section 3.2 step 8).');
+  }
+  log.debug("Leaving httpsigVerifyOne(). " + parsed.label +
+            " verified.");
+  return {
+    ok: true,
+    label: parsed.label,
+    algorithm: name,
+    keyid: p.keyid,
+    components: parsed.componentIds,
+    params: p,
+    base: built.base
+  };
+}
+
+
+// ===========================================================================
+// SECTION 15 — DIGESTS, KEY DERIVATION AND KEY IMPORT, BY NAME (#178,
+// 2026-10-05).
+//
+// rcbj's rule, restated on 2026-10-05: "All crypto operations across all
+// protocols and use cases are to be centralized in a common module." It
+// covers more than signatures. A digest, an HKDF, the import of a public key
+// from a JWK and the export of one as SubjectPublicKeyInfo are cryptographic
+// operations too, and a feature module that calls node's `crypto` for one of
+// them is a second place that decides an algorithm. These are the small
+// operations `gnap/` did on node directly until #178. #453 moves the rest of
+// the service onto them, and onto the functions above.
+//
+// Each one names its algorithm from a closed list, so an unknown name is a
+// thrown Error at the caller's own line rather than whatever node makes of it.
+// ===========================================================================
+
+// The digests a caller may ask for by name: SHA-2, SHA-3 and the two BLAKE2
+// functions, by node's names. RFC 9635 section 4.2.3's interaction hash may
+// name any of them through IANA's "Named Information Hash Algorithm"
+// registry (`gnap/gnap_request.ts`'s HASH_METHODS). SHA-1 is not here:
+// nothing new may choose it, and the callers that still meet it (a SPIRE
+// fingerprint, a certificate thumbprint) have functions of their own that say
+// why.
+const DIGESTS = ['sha256', 'sha384', 'sha512', 'sha3-224', 'sha3-256',
+                 'sha3-384', 'sha3-512', 'blake2s256', 'blake2b512'];
+// HKDF (RFC 5869) is defined over an HMAC, so it takes the SHA-2 names only.
+const HKDF_DIGESTS = ['sha256', 'sha384', 'sha512'];
+
+// HOT PATH: a digest is computed per request in several places (a token's
+// index, a GNAP key's identity), so no Entering/Leaving pair. It would drown
+// the log.
+/**
+ * Returns the digest of a value under a named algorithm.
+ *
+ * @param algorithm - one of DIGESTS: SHA-2, SHA-3 or BLAKE2, by node's name
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url` for a string; a Buffer
+ *   when absent
+ * @returns {any} the digest: a string when an encoding is named, a Buffer
+ *   when not
+ * @throws Error for an algorithm outside the list
+ */
+function digest(algorithm, data, encoding) {
+  if (DIGESTS.indexOf(algorithm) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: digest() computes ' + DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const hash = nodeCrypto.createHash(algorithm)
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? hash.digest(encoding) : hash.digest();
+}
+
+// THE KERBEROS TOKEN PROFILE'S KEY IDENTIFIER (#658). The Web Services
+// Security Kerberos Token Profile 1.1 section 3.2 names a Kerberos token in a
+// SecurityTokenReference by `#Kerberosv5APREQSHA1`: the base64 SHA-1 of the
+// token's bytes. It is an IDENTIFIER that the profile fixes, compared for
+// equality and never trusted for integrity — the AP-REQ it names carries its
+// own, under the ticket's session key — so SHA-1 is not a choice made here
+// and `digest()`'s list, which refuses it to anything new, is not widened.
+/**
+ * Returns the Kerberos Token Profile 1.1 key identifier of a Kerberos token:
+ * the base64 SHA-1 of its bytes.
+ *
+ * @param bytes - the token as carried (an AP-REQ or its GSS wrapping)
+ * @returns the base64 identifier
+ */
+function kerberosTokenKeyIdentifier(bytes) {
+  log.debug("Entering kerberosTokenKeyIdentifier().");
+  const out = nodeCrypto.createHash('sha1').update(Buffer.from(bytes || []))
+    .digest('base64');
+  log.debug("Leaving kerberosTokenKeyIdentifier().");
+  return out;
+}
+
+// The name a store keeps for a credential it only looks up, spends or
+// compares (#614): a bearer value an authorization code, a device code, a
+// `request_uri`, an artifact handle, a nonce or a token is held as its SHA-256
+// and never as itself, so a heap snapshot, a replicated change or a sealed
+// row yields nothing that can be presented. Plain SHA-256 is enough because
+// every value hashed here is a high-entropy random value or a signed token;
+// a guessable secret (a password, a PIN) is never a credential in this sense
+// and goes through scrypt. `used_assertions.keyOf()`, GNAP's `digest()` and
+// `vc_offers.deferredTokenKey()` predate it and say the same thing.
+/**
+ * Returns the base64url SHA-256 a store keeps in place of a credential.
+ *
+ * @param value - the credential as presented or issued
+ * @returns {string} 43 characters of base64url
+ */
+function credentialDigest(value) {
+  log.debug("Entering credentialDigest().");
+  const out = digest('sha256', String(value === undefined || value === null
+    ? '' : value), 'base64url');
+  log.debug("Leaving credentialDigest().");
+  return out;
+}
+
+// RFC 5869 HKDF in one call, for a caller deriving a purpose-bound key from a
+// realm secret (GNAP's macaroon and biscuit root keys, `gnap_tokens.ts`). The
+// extract and expand steps above are JWE's, kept apart because HPKE calls
+// them separately.
+/**
+ * Derives key material with HKDF (RFC 5869).
+ *
+ * @param algorithm - `sha256`, `sha384` or `sha512`
+ * @param ikm - the input keying material
+ * @param salt - the salt; empty when absent
+ * @param info - the context, bytes or a UTF-8 string
+ * @param length - the octets wanted
+ * @returns the output keying material
+ * @throws Error for an algorithm outside the list
+ */
+function hkdf(algorithm, ikm, salt, info, length) {
+  log.debug("Entering hkdf(). " + algorithm + " " + length);
+  if (HKDF_DIGESTS.indexOf(algorithm) < 0) {
+    log.debug("Leaving hkdf(). Unknown algorithm.");
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: hkdf() uses ' + HKDF_DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const out = Buffer.from(nodeCrypto.hkdfSync(algorithm,
+    Buffer.from(ikm || []), Buffer.from(salt || []),
+    typeof info === 'string' ? Buffer.from(info, 'utf8')
+                             : Buffer.from(info || []),
+    length));
+  log.debug("Leaving hkdf().");
+  return out;
+}
+
+/**
+ * Imports a public key from a JWK (RSA, EC or OKP).
+ *
+ * @param jwk - the JWK; private members are ignored
+ * @returns the public KeyObject
+ * @throws Error when node cannot read the JWK
+ */
+function publicKeyFromJwk(jwk) {
+  log.debug("Entering publicKeyFromJwk(). " + (jwk && jwk.kty));
+  const key = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+  log.debug("Leaving publicKeyFromJwk().");
+  return key;
+}
+
+/**
+ * Returns the public half of a private key (a KeyObject or a PEM), or the
+ * public key itself.
+ *
+ * @param key - the key
+ * @returns the public KeyObject
+ */
+function publicKeyOf(key) {
+  log.debug("Entering publicKeyOf().");
+  const out = key && key.type === 'public' ? key
+                                           : nodeCrypto.createPublicKey(key);
+  log.debug("Leaving publicKeyOf().");
+  return out;
+}
+
+// The SubjectPublicKeyInfo of a key, for comparing two keys by value: the
+// key a certificate holds against the key a JWK names (`gnap_proof.ts`).
+/**
+ * Returns a public key's SubjectPublicKeyInfo as DER.
+ *
+ * @param key - a public or private KeyObject, or a PEM
+ * @returns the DER
+ */
+function spkiDerOf(key) {
+  log.debug("Entering spkiDerOf().");
+  const der = publicKeyOf(key).export({ type: 'spki', format: 'der' });
+  log.debug("Leaving spkiDerOf().");
+  return Buffer.from(der);
+}
+
+// ===========================================================================
+// SECTION 17 — THE REST OF THE SERVICE'S OPERATIONS (#453, 2026-10-07).
+//
+// rcbj's rule of 2026-10-05 again: "All crypto operations across all
+// protocols and use cases are to be centralized in a common module." Section
+// 15 gave `gnap/` what it needed; #453 moved every other feature module off
+// node's `crypto` — 130 files on the day — and these are the operations they
+// still did directly: a certificate parsed, a private key imported, a key
+// pair generated, an HMAC, a one-shot signature and its check, and the
+// SHA-1 that a handful of specifications still name. `tests/
+// crypto_centralised.js` fails on a `require('crypto')` anywhere else.
+//
+// Each takes its algorithm from a closed list, as section 15's do, so a
+// feature module cannot choose one this file has not written down.
+// ===========================================================================
+
+// SHA-1 is in no list a caller may choose from (section 15's DIGESTS). Where
+// a SPECIFICATION fixes it, the caller names which one, and the purpose is
+// the argument for it. A new purpose is a new row here, and the row says
+// which text requires it.
+/** The purposes SHA-1 is computed for, each the text that fixes it. */
+const SHA1_PURPOSES = Object.freeze({
+  // SAML 2.0 Bindings 3.6.4 and SAML 1.1 Bindings 4.1.1.7: an artifact's
+  // SourceID is the SHA-1 of the issuer's entity id (or its source URL).
+  'saml-artifact-source-id': 'SAML 2.0 Bindings 3.6.4, SAML 1.1 4.1.1.7',
+  // RFC 9562 section 5.5: a name-based UUID, version 5, is SHA-1.
+  'uuid-v5': 'RFC 9562 section 5.5',
+  // RFC 5280 section 4.2.1.2 method (1): a key identifier is the SHA-1 of
+  // the subjectPublicKey BIT STRING.
+  'key-identifier': 'RFC 5280 section 4.2.1.2',
+  // RFC 6960 section 4.1.1: an OCSP CertID's issuerNameHash and
+  // issuerKeyHash under the hash it names; SHA-1 is what every client sends.
+  'ocsp-cert-id': 'RFC 6960 section 4.1.1',
+  // RFC 4556 section 3.2.1 item 6: PKINIT's paChecksum MUST be present and is
+  // SHA-1, and RFC 8636 section 9 leaves it so. `kerberos/krb5_pkinit.ts` says
+  // what the request's security rests on instead.
+  'pkinit-pachecksum': 'RFC 4556 section 3.2.1, RFC 8636 section 9',
+  // RFC 5019 section 6.2 RECOMMENDS an OCSP response's ETag be the hex
+  // SHA-1 of the response. Opaque to the client, which only compares it.
+  'ocsp-etag': 'RFC 5019 section 6.2',
+  // A certificate's SHA-1 fingerprint, DRAWN for an operator comparing it
+  // with what older tooling prints. Never compared by this service.
+  'certificate-fingerprint': 'display only',
+  // SPIRE's agent path for a node attestor, which hashes with SHA-1 so the
+  // SPIFFE ID matches the one SPIRE itself mints for the same node.
+  'spire-agent-path': 'SPIRE server node attestor agent paths'
+});
+
+// HOT PATH: a certificate fingerprint is drawn per row of a console list,
+// so no Entering/Leaving pair. It would drown the log.
+/**
+ * Returns the SHA-1 of a value, for one of the purposes a specification
+ * fixes it for.
+ *
+ * @param purpose - a key of SHA1_PURPOSES
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url`; a Buffer when absent
+ * @returns {any} the digest
+ * @throws Error for a purpose not in the list
+ */
+function sha1Digest(purpose, data, encoding) {
+  if (!Object.prototype.hasOwnProperty.call(SHA1_PURPOSES, purpose)) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: sha1Digest() is for ' +
+                    Object.keys(SHA1_PURPOSES).join(', ') +
+                    ', not "' + purpose + '"');
+  }
+  const hash = nodeCrypto.createHash('sha1')
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? hash.digest(encoding) : hash.digest();
+}
+
+// An HMAC, by name, over the SHA-2 functions. (HOTP's HMAC-SHA-1 is
+// `hotpCode()`'s, and RFC 4226 is its argument.)
+const HMAC_DIGESTS = ['sha256', 'sha384', 'sha512'];
+
+// HOT PATH: a CSRF token is MACed on every form drawn and posted, so no
+// Entering/Leaving pair.
+/**
+ * Returns the HMAC of a value under a key.
+ *
+ * @param algorithm - `sha256`, `sha384` or `sha512`
+ * @param key - the key: bytes, a string, or a secret KeyObject
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url`; a Buffer when absent
+ * @returns {any} the MAC
+ * @throws Error for an algorithm outside the list
+ */
+function hmac(algorithm, key, data, encoding) {
+  if (HMAC_DIGESTS.indexOf(algorithm) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: hmac() uses ' + HMAC_DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const mac = nodeCrypto.createHmac(algorithm, key)
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? mac.digest(encoding) : mac.digest();
+}
+
+// HOT PATH: a presented client certificate is parsed on every request over
+// mutual TLS, and a console page parses one per row, so no Entering/Leaving
+// pair. It throws exactly what node's constructor throws, because every
+// caller already handles that.
+/**
+ * Parses a certificate.
+ *
+ * @param input - PEM text, DER bytes, or an already parsed certificate
+ * @returns the X509Certificate
+ * @throws Error when the input is not a certificate
+ */
+/**
+ * The RSA public key of a certificate, as the `n` and `e` of a JWK.
+ *
+ * @param certPem - a PEM certificate holding an RSA key
+ * @returns `{ n, e }`, each base64url
+ */
+function rsaPublicJwkOf(certPem) {
+  log.debug('Entering rsaPublicJwkOf().');
+  const jwk = publicKeyOf(certPem).export({ format: 'jwk' });
+  log.debug('Leaving rsaPublicJwkOf().');
+  return { n: jwk.n, e: jwk.e };
+}
+
+function parseCertificate(input) {
+  if (input instanceof nodeCrypto.X509Certificate) {
+    return input;
+  }
+  return new nodeCrypto.X509Certificate(input);
+}
+
+/**
+ * Answers whether a value is a parsed certificate.
+ *
+ * @param value - anything
+ * @returns true for an X509Certificate
+ */
+function isParsedCertificate(value) {
+  return value instanceof nodeCrypto.X509Certificate;
+}
+
+/**
+ * Imports a private key.
+ *
+ * @param input - anything node's `createPrivateKey()` takes: a PEM, a
+ *   `{ key, format, type }` object, a private JWK as `{ key, format: 'jwk' }`,
+ *   or a private KeyObject (returned as it is)
+ * @returns the private KeyObject
+ * @throws Error when the input is not a private key
+ */
+function privateKeyFrom(input) {
+  log.debug("Entering privateKeyFrom().");
+  const key = input && input.type === 'private' &&
+              input instanceof nodeCrypto.KeyObject
+    ? input
+    : nodeCrypto.createPrivateKey(input);
+  log.debug("Leaving privateKeyFrom().");
+  return key;
+}
+
+/**
+ * Answers whether a value is a key object (public, private or secret).
+ *
+ * @param value - anything
+ * @returns true for a KeyObject
+ */
+function isKeyObject(value) {
+  return value instanceof nodeCrypto.KeyObject;
+}
+
+// The kinds of key pair a caller may generate here. ML-DSA and ML-KEM are
+// `pq_native.js`'s and `generateSigningJwkPair()`'s; DSA and plain DH are
+// not on the list, and PKINIT's groups are section 16's.
+const KEY_PAIR_TYPES = ['rsa', 'rsa-pss', 'ec', 'ed25519', 'ed448',
+                        'x25519', 'x448'];
+
+/**
+ * Refuses a key pair type outside KEY_PAIR_TYPES.
+ *
+ * @param type - the type asked for
+ * @throws Error for a type outside the list
+ */
+function checkKeyPairType(type) {
+  if (KEY_PAIR_TYPES.indexOf(type) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: a key pair is one of ' +
+                    KEY_PAIR_TYPES.join(', ') + ', not "' + type + '"');
+  }
+}
+
+/**
+ * Generates a key pair synchronously.
+ *
+ * @param type - one of KEY_PAIR_TYPES
+ * @param options - node's options for that type (modulusLength,
+ *   namedCurve, publicKeyEncoding, privateKeyEncoding, ...)
+ * @returns {any} `{ publicKey, privateKey }`, KeyObjects or encoded as the
+ *   options ask
+ */
+function generateKeyPairSync(type, options) {
+  log.debug("Entering generateKeyPairSync(). " + type);
+  checkKeyPairType(type);
+  const pair = nodeCrypto.generateKeyPairSync(
+    /** @type {any} */ (type), /** @type {any} */ (options || {}));
+  log.debug("Leaving generateKeyPairSync().");
+  return pair;
+}
+
+// libuv's thread pool rather than this thread: an RSA key of 3072 bits or
+// more takes long enough to stall every request behind it.
+/**
+ * Generates a key pair on libuv's thread pool.
+ *
+ * @param type - one of KEY_PAIR_TYPES
+ * @param options - as for `generateKeyPairSync()`
+ * @returns {Promise<any>} a promise of `{ publicKey, privateKey }`
+ */
+function generateKeyPairAsync(type, options) {
+  log.debug("Entering generateKeyPairAsync(). " + type);
+  checkKeyPairType(type);
+  log.debug("Leaving generateKeyPairAsync().");
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.generateKeyPair(/** @type {any} */ (type),
+      /** @type {any} */ (options || {}),
+      function (err, publicKey, privateKey) {
+        if (err) {
+          log.debug("Caught in generateKeyPairAsync(): " +
+                    ((err && err.message) || err));
+          reject(err);
+          return;
+        }
+        resolve({ publicKey: publicKey, privateKey: privateKey });
+      });
+  });
+}
+
+// The hashes a one-shot signature is made under (`null` for EdDSA and
+// ML-DSA, whose algorithms fix their own), and the wider list one is
+// CHECKED under: SHA-1 is verified where a peer's protocol still sends it
+// (WebAuthn's RS1, a SCEP client's PKCS#7) and this service never signs
+// with it.
+const SIGN_HASHES = [null, 'sha256', 'sha384', 'sha512'];
+const VERIFY_HASHES = [null, 'sha1', 'sha256', 'sha384', 'sha512'];
+
+/**
+ * Normalises and checks a one-shot signature's hash name.
+ *
+ * @param hash - the name, or null/undefined
+ * @param allowed - the list it must be in
+ * @returns the name, or null
+ * @throws Error for a name outside the list
+ */
+function signatureHash(hash, allowed) {
+  const name = hash === undefined || hash === null || hash === ''
+    ? null
+    : String(hash).toLowerCase().replace(/^sha-/, 'sha');
+  if (allowed.indexOf(name) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    // or a hash it has already matched against a table of its own
+    throw new Error('crypto: a signature hash is one of ' +
+                    allowed.join(', ') + ', not "' + hash + '"');
+  }
+  return name;
+}
+
+// HOT PATH: signatures are made per token and per response, so no
+// Entering/Leaving pair. It is node's `crypto.sign()` with the hash checked.
+/**
+ * Signs bytes with a private key (node's one-shot `sign()`).
+ *
+ * @param hash - `sha256`, `sha384`, `sha512`, or null for EdDSA and ML-DSA
+ * @param data - the bytes
+ * @param key - a private KeyObject, a PEM, or `{ key, dsaEncoding,
+ *   padding, saltLength }`
+ * @returns the signature
+ * @throws Error for a hash outside the list, or what node throws
+ */
+function signBytes(hash, data, key) {
+  return nodeCrypto.sign(signatureHash(hash, SIGN_HASHES),
+    Buffer.from(data), key);
+}
+
+// HOT PATH, as signBytes(). It throws what node throws for an unusable key,
+// which is what every caller was written against.
+/**
+ * Checks a signature over bytes (node's one-shot `verify()`).
+ *
+ * @param hash - as for signBytes(), and `sha1`
+ * @param data - the bytes signed
+ * @param key - a public KeyObject, a PEM, or `{ key, dsaEncoding,
+ *   padding, saltLength }`
+ * @param signature - the signature
+ * @returns true when it verifies
+ * @throws Error for a hash outside the list, or what node throws
+ */
+function signatureValid(hash, data, key, signature) {
+  return nodeCrypto.verify(signatureHash(hash, VERIFY_HASHES),
+    Buffer.from(data), key, Buffer.from(signature));
+}
+
+/**
+ * Answers whether this build of node computes a named digest.
+ *
+ * @param name - node's name for it
+ * @returns true when it does
+ */
+function digestSupported(name) {
+  log.debug("Entering digestSupported(). " + name);
+  const yes = nodeCrypto.getHashes().indexOf(String(name)) >= 0;
+  log.debug("Leaving digestSupported().");
+  return yes;
+}
+
+/** The OpenSSL option that refuses TLS renegotiation on a server socket. */
+const TLS_NO_RENEGOTIATION = nodeCrypto.constants.SSL_OP_NO_RENEGOTIATION;
+
+// ---------------------------------------------------------------------------
+// #453 SWEEP GROUP REGIONS. Each group of the sweep added what it needed
+// between its own two markers, so the groups merged without touching one
+// another's lines.
+// ---------------------------------------------------------------------------
+
+// --- #453 group A (gnap token libraries): begin ---
+
+// ===========================================================================
+// GNAP'S THREE TOKEN LIBRARIES, HELD HERE AND NOWHERE ELSE (#453, rcbj's
+// decision of 2026-10-05).
+//
+// The `macaroon`, `biscuit` and `zcap` GNAP token formats each sit on a
+// library that does its format's cryptography: `macaroon` (the HMAC-SHA256
+// caveat chain), `@biscuit-auth/biscuit-wasm` (Ed25519 block signatures,
+// inside WebAssembly) and `jsonld-signatures` with the Digital Bazaar ZCAP
+// and Ed25519 packages. Until #453 `gnap/token_*.ts` required them directly.
+// Now THIS FILE is the only module that requires any of them, and what
+// `gnap/` keeps is the format's grammar — the caveat grammar and the access
+// model of a macaroon, the Datalog of a biscuit, the capability document of
+// a zcap — handed in here as data or as a callback that builds data.
+//
+// **WHAT WRAPPING DOES NOT CHANGE: the macaroon and biscuit computations are
+// still the libraries' own.** The macaroon library has no hook for supplying
+// the HMAC, and the biscuit engine none for an external Ed25519 signer, so
+// both still compute inside the library. What moved is where KEYS are
+// handled (a root key is checked and a KeyObject turned into the library's
+// key object here, so `gnap/` never holds the library's key types), where
+// the algorithms and key sizes are decided (`MACAROON_MIN_ROOT_KEY_BYTES`,
+// Ed25519 for a biscuit), and who may call the library at all. Reimplementing
+// a format's cryptography here stays a later option (most worth it for the
+// macaroon's small HMAC chain).
+//
+// **THE ZCAP COMPATIBILITY SUITE IS THE EXCEPTION, AND THE SIGNATURE IS
+// MADE HERE.** `Ed25519Signature2020` takes a `signer` (`sign({ data })`)
+// and a `verifier` (`verify({ data, signature })`) in place of a key pair —
+// confirmed against the installed `@digitalbazaar/ed25519-signature-2020`
+// 5.4.0, whose `sign()` calls `this.signer.sign({ data: verifyData })` and
+// whose `verifySignature()` uses `this.verifier` when one is set. So the
+// library only canonicalises (URDNA2015) and hashes, and the Ed25519
+// signature over its bytes is `signRawSignature()` / `verifyRawSignature()`
+// here: the private key never reaches the library. Ed25519 is
+// deterministic, so a capability signed this way is BYTE-IDENTICAL to one
+// the library signed with the key pair it used to be handed (probed on
+// 2026-10-07: the same JSON, and the same answers for a good proof, an
+// altered capability and a proof naming another key).
+//
+// The three JCS suites (`eddsa-jcs-2022` and the two post-quantum ones) were
+// already made and checked by `oid4vc/vc_data_integrity.ts` through this
+// file, wrapped by `gnap/token_zcap.ts` in a jsonld-signatures suite object.
+// That stays: REUSING it is the alternative #453 asked to be checked, and it
+// is the one that keeps those tokens byte-compatible, because it IS the
+// implementation that made them. This file may not require it (a leaf), so
+// `token_zcap.ts` builds that suite object and hands it in; jsonld-signatures
+// hands a `-jcs-` proof to the suite untouched, so here it only runs the
+// ZCAP purpose (chain, root, controller) around it.
+//
+// Every library is loaded LAZILY, once, by the first call that needs it —
+// never when this file is required — so a process that never sees a GNAP
+// token pays nothing. A failed load is forgotten so a later call may try
+// again (a file briefly unreadable during a deploy should not disable a
+// format for the life of the process).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// MACAROONS (`macaroon` 3, libmacaroons v2).
+// ---------------------------------------------------------------------------
+
+/** The shortest macaroon root key accepted, in bytes. */
+const MACAROON_MIN_ROOT_KEY_BYTES = 32;
+
+/** @type {any} */
+let macaroonLibrary = null;
+
+// The npm `macaroon` package, required at the first use.
+function macaroonLib() {
+  log.debug("Entering macaroonLib().");
+  if (!macaroonLibrary) {
+    macaroonLibrary = require('macaroon');
+  }
+  log.debug("Leaving macaroonLib().");
+  return macaroonLibrary;
+}
+
+/**
+ * Answers whether a value is a usable macaroon root key: bytes, at least
+ * `MACAROON_MIN_ROOT_KEY_BYTES` long.
+ *
+ * @param rootKey - the candidate
+ * @returns true when it is usable
+ */
+function macaroonRootKeyUsable(rootKey) {
+  log.debug("Entering macaroonRootKeyUsable().");
+  const ok = rootKey instanceof Uint8Array &&
+    rootKey.length >= MACAROON_MIN_ROOT_KEY_BYTES;
+  log.debug("Leaving macaroonRootKeyUsable(). " + ok);
+  return ok;
+}
+
+// A library macaroon as plain data — what the v2 serialiser in
+// `gnap/token_macaroon.ts` reads — so the library's object never leaves
+// this file. The getters already copy, so nothing here aliases its state.
+function macaroonView(mac) {
+  log.debug("Entering macaroonView().");
+  const view = {
+    location: mac.location,
+    identifier: mac.identifier,
+    caveats: mac.caveats,
+    signature: mac.signature
+  };
+  log.debug("Leaving macaroonView().");
+  return view;
+}
+
+/**
+ * Mints a version 2 macaroon: an identifier and first-party caveats chained
+ * under HMAC-SHA256 from a root key.
+ *
+ * @param rootKey - the root key, at least `MACAROON_MIN_ROOT_KEY_BYTES`
+ * @param identifier - the macaroon's identifier
+ * @param location - its location hint
+ * @param caveats - the first-party caveats, in order
+ * @returns `{ location, identifier, caveats, signature }`
+ * @throws Error for an unusable root key, or what the library throws
+ */
+function macaroonMint(rootKey, identifier, location, caveats) {
+  log.debug("Entering macaroonMint(). " + (caveats || []).length +
+            " caveat(s).");
+  if (!macaroonRootKeyUsable(rootKey)) {
+    log.debug("Leaving macaroonMint(). Root key unusable.");
+    // error-code: none — the caller checks macaroonRootKeyUsable() first
+    // and refuses with its own code; this is the backstop
+    throw new Error('a macaroon root key must be at least ' +
+                    MACAROON_MIN_ROOT_KEY_BYTES + ' bytes');
+  }
+  const mac = macaroonLib().newMacaroon({
+    identifier: identifier,
+    location: location,
+    rootKey: rootKey,
+    version: 2
+  });
+  (caveats || []).forEach(function (c) {
+    mac.addFirstPartyCaveat(c);
+  });
+  const view = macaroonView(mac);
+  log.debug("Leaving macaroonMint().");
+  return view;
+}
+
+/**
+ * Reads a libmacaroons v2 binary macaroon WITHOUT verifying it.
+ *
+ * @param bytes - the serialised macaroon
+ * @returns `{ location, identifier, caveats, signature }`
+ * @throws Error when the bytes are not a v2 macaroon (the library's text)
+ */
+function macaroonImport(bytes) {
+  log.debug("Entering macaroonImport().");
+  const view = macaroonView(
+      macaroonLib().importMacaroon(new Uint8Array(bytes)));
+  log.debug("Leaving macaroonImport().");
+  return view;
+}
+
+/**
+ * Verifies a macaroon's HMAC chain under its root key. Every first-party
+ * caveat is accepted while the chain is walked: what a caveat MEANS is the
+ * caller's grammar, read once the chain is known to be good.
+ *
+ * @param bytes - the serialised macaroon
+ * @param rootKey - the root key
+ * @returns true when the chain verifies
+ */
+function macaroonVerify(bytes, rootKey) {
+  log.debug("Entering macaroonVerify().");
+  if (!macaroonRootKeyUsable(rootKey)) {
+    log.debug("Leaving macaroonVerify(). Root key unusable.");
+    return false;
+  }
+  try {
+    macaroonLib().importMacaroon(new Uint8Array(bytes))
+      .verify(rootKey, function () {
+        return null;
+      }, []);
+  } catch (e) {
+    log.debug("Caught in macaroonVerify(): " + ((e && e.message) || e));
+    log.debug("Leaving macaroonVerify(). The chain does not verify.");
+    return false;
+  }
+  log.debug("Leaving macaroonVerify(). Verified.");
+  return true;
+}
+
+/**
+ * Appends first-party caveats to a macaroon: the attenuation anybody holding
+ * one can make, keyed by its current signature and needing no root key.
+ *
+ * @param bytes - the serialised macaroon
+ * @param caveats - the caveats to append, in order
+ * @returns `{ location, identifier, caveats, signature }` of the result
+ * @throws Error when the bytes are not a v2 macaroon, or what the library
+ *   throws
+ */
+function macaroonAttenuate(bytes, caveats) {
+  log.debug("Entering macaroonAttenuate(). " + (caveats || []).length +
+            " caveat(s).");
+  const mac = macaroonLib().importMacaroon(new Uint8Array(bytes)).clone();
+  (caveats || []).forEach(function (c) {
+    mac.addFirstPartyCaveat(c);
+  });
+  const view = macaroonView(mac);
+  log.debug("Leaving macaroonAttenuate().");
+  return view;
+}
+
+// ---------------------------------------------------------------------------
+// ZCAP-LD DELEGATIONS (`@digitalbazaar/zcap`, `jsonld-signatures`, and the
+// Ed25519 2020 suite and key class). The ZCAP and Ed25519 packages are ES
+// modules, loaded by dynamic import; `import()` stays a real dynamic import
+// in this CommonJS file.
+// ---------------------------------------------------------------------------
+
+/** The compatibility proof suite, signed and verified here. */
+const ZCAP_LEGACY_SUITE = 'Ed25519Signature2020';
+const ZCAP_SUITE_CONTEXT_URL =
+  'https://w3id.org/security/suites/ed25519-2020/v1';
+const ZCAP_SECURITY_V2_URL = 'https://w3id.org/security/v2';
+
+/** @type {Promise<any> | null} */
+let zcapLoading = null;
+
+// The libraries, once. A failure clears the promise so a later call may try
+// again.
+function zcapLibraries() {
+  log.debug("Entering zcapLibraries().");
+  if (!zcapLoading) {
+    zcapLoading = Promise.all([
+      import('@digitalbazaar/zcap'),
+      import('@digitalbazaar/ed25519-signature-2020'),
+      import('@digitalbazaar/ed25519-verification-key-2020')
+    ]).then(function (/** @type {any[]} */ mods) {
+      const security = require('@digitalbazaar/security-context');
+      return {
+        jsigs: require('jsonld-signatures'),
+        zcap: mods[0],
+        Ed25519Signature2020: mods[1].Ed25519Signature2020,
+        suiteContext: mods[1].suiteContext,
+        Ed25519VerificationKey2020: mods[2].Ed25519VerificationKey2020,
+        securityContexts: security.contexts
+      };
+    }).catch(function (e) {
+      log.debug("Caught in zcapLibraries(): " + ((e && e.message) || e));
+      zcapLoading = null;
+      throw e;
+    });
+  }
+  log.debug("Leaving zcapLibraries().");
+  return zcapLoading;
+}
+
+/**
+ * Loads the ZCAP libraries, once, so a caller can refuse a load failure in
+ * its own words before it does anything else.
+ *
+ * @returns a promise that rejects with the load's error
+ */
+async function zcapReady() {
+  log.debug("Entering zcapReady().");
+  await zcapLibraries();
+  log.debug("Leaving zcapReady().");
+}
+
+// An Ed25519VerificationKey2020 for a public KeyObject — the library's key
+// class, built from the key's JWK `x` and never leaving this file.
+async function zcapPublicPair(lib, keyId, controller, publicKey) {
+  log.debug("Entering zcapPublicPair().");
+  const jwk = publicKey.export({ format: 'jwk' });
+  const pair = await lib.Ed25519VerificationKey2020.fromJsonWebKey({
+    id: keyId, controller: controller, type: 'JsonWebKey',
+    publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }
+  });
+  log.debug("Leaving zcapPublicPair().");
+  return pair;
+}
+
+/**
+ * The Ed25519VerificationKey2020 verification method a compatibility-suite
+ * controller document lists for a key.
+ *
+ * @param keyId - the method's id, `<controller>#<fragment>`
+ * @param controller - the controller document's URL
+ * @param publicKey - an Ed25519 public KeyObject
+ * @returns the method, without a `@context`
+ */
+async function zcapVerificationMethod(keyId, controller, publicKey) {
+  log.debug("Entering zcapVerificationMethod().");
+  const lib = await zcapLibraries();
+  const pair = await zcapPublicPair(lib, keyId, controller, publicKey);
+  const method = pair.export({ publicKey: true, includeContext: false });
+  log.debug("Leaving zcapVerificationMethod().");
+  return method;
+}
+
+// THE SIGNER AND THE VERIFIER THE COMPATIBILITY SUITE IS HANDED (see the
+// header): the library canonicalises, this file signs and checks.
+function zcapEd25519Signer(keyId, privateKey) {
+  log.debug("Entering zcapEd25519Signer().");
+  log.debug("Leaving zcapEd25519Signer().");
+  return {
+    id: keyId,
+    algorithm: 'Ed25519',
+    sign: async function sign(/** @type {any} */ options) {
+      log.debug("Entering sign().");
+      const out = signRawSignature({ family: 'eddsa' }, privateKey,
+                                   options.data);
+      log.debug("Leaving sign().");
+      return new Uint8Array(out);
+    }
+  };
+}
+
+function zcapEd25519Verifier(keyId, publicKey) {
+  log.debug("Entering zcapEd25519Verifier().");
+  log.debug("Leaving zcapEd25519Verifier().");
+  return {
+    id: keyId,
+    algorithm: 'Ed25519',
+    verify: async function verify(/** @type {any} */ options) {
+      log.debug("Entering verify().");
+      const ok = await verifyRawSignature({ family: 'eddsa' }, publicKey,
+                                          options.data, options.signature);
+      log.debug("Leaving verify(). " + ok);
+      return ok;
+    }
+  };
+}
+
+// THE OFFLINE DOCUMENT LOADER. Nothing is fetched: it serves the ONE root
+// capability `rootTarget` derives, the ZCAP context (the zcap package's own
+// loader) and — for the compatibility suite only — that suite's context,
+// security v2 (jsonld-signatures FRAMES a non-DID controller document with
+// it), the controller document and the one verification method. Any other
+// URL throws, so a proof naming another key or a chain to another root is a
+// load failure and so a verification failure. A JCS suite needs none of the
+// compatibility documents: its signature is not over JSON-LD and its
+// controller document is handed to the purpose.
+function zcapLoader(lib, rootController, rootTarget, legacy) {
+  log.debug("Entering zcapLoader().");
+  const root = lib.zcap.createRootCapability({
+    controller: rootController, invocationTarget: rootTarget });
+  function answer(documentUrl, document) {
+    log.debug("Entering answer().");
+    log.debug("Leaving answer().");
+    return { contextUrl: null, documentUrl: documentUrl, document: document,
+             tag: 'static' };
+  }
+  log.debug("Leaving zcapLoader().");
+  return lib.zcap.extendDocumentLoader(async function offlineLoader(
+      /** @type {string} */ documentUrl) {
+    log.debug("Entering offlineLoader().");
+    if (legacy) {
+      if (documentUrl === ZCAP_SUITE_CONTEXT_URL) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      lib.suiteContext.contexts.get(ZCAP_SUITE_CONTEXT_URL));
+      }
+      if (documentUrl === ZCAP_SECURITY_V2_URL) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      lib.securityContexts.get(ZCAP_SECURITY_V2_URL));
+      }
+      if (documentUrl === legacy.controller) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl, legacy.controllerDocument);
+      }
+      if (documentUrl === legacy.keyId) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      legacy.pair.export({ publicKey: true,
+                                           includeContext: true }));
+      }
+    }
+    if (documentUrl === root.id) {
+      log.debug("Leaving offlineLoader().");
+      return answer(documentUrl, root);
+    }
+    log.debug("Leaving offlineLoader().");
+    throw new Error('the offline ZCAP document loader serves no document ' +
+                    'at ' + documentUrl);
+  });
+}
+
+/**
+ * Signs a capability as ONE ZCAP delegation from the root capability its
+ * `invocationTarget` derives, which `controller` controls.
+ *
+ * `options`: `cryptosuite`; `controller` and `keyId`; and either, for
+ * `Ed25519Signature2020`, `privateKey` (an Ed25519 KeyObject), `date` and
+ * `controllerDocument` (served by the offline loader), or, for a JCS suite,
+ * `suite` — the caller's jsonld-signatures suite object, which makes the
+ * proof through `oid4vc/vc_data_integrity.ts`.
+ *
+ * @param capability - the unsigned capability
+ * @param options - as above
+ * @returns a promise of the signed capability
+ * @throws Error (rejects) with the libraries' reason when they refuse
+ */
+async function zcapDelegate(capability, options) {
+  const o = options || {};
+  log.debug("Entering zcapDelegate(). " + o.cryptosuite);
+  const lib = await zcapLibraries();
+  let suite;
+  let legacy = null;
+  if (o.cryptosuite === ZCAP_LEGACY_SUITE) {
+    legacy = {
+      controller: o.controller, keyId: o.keyId,
+      controllerDocument: o.controllerDocument,
+      pair: await zcapPublicPair(lib, o.keyId, o.controller,
+                                 nodeCrypto.createPublicKey(o.privateKey))
+    };
+    suite = new lib.Ed25519Signature2020({
+      signer: zcapEd25519Signer(o.keyId, o.privateKey), date: o.date });
+  } else {
+    suite = o.suite;
+  }
+  const signed = await lib.jsigs.sign(capability, {
+    suite: suite,
+    purpose: new lib.zcap.CapabilityDelegation(
+        { parentCapability: capability.parentCapability }),
+    documentLoader: zcapLoader(lib, o.controller,
+                               capability.invocationTarget, legacy)
+  });
+  log.debug("Leaving zcapDelegate().");
+  return signed;
+}
+
+/**
+ * Verifies a capability's delegation proof: one link from the root
+ * capability `rootTarget` derives, controlled by `controller`.
+ *
+ * `options`: `cryptosuite`; `controller`, `keyId`, `controllerDocument`;
+ * `rootTarget`, `expectedRootCapability`, `date`; and `publicKey` (an
+ * Ed25519 KeyObject) for `Ed25519Signature2020`, or `suite` for a JCS suite.
+ * The compatibility suite's controller document is LOADED (from the offline
+ * loader); a JCS suite's is handed to the purpose.
+ *
+ * @param doc - the capability
+ * @param options - as above
+ * @returns a promise of jsonld-signatures' `{ verified, error }`; a throw
+ *   is answered as `{ verified: false, error }`
+ */
+async function zcapVerifyDelegation(doc, options) {
+  const o = options || {};
+  log.debug("Entering zcapVerifyDelegation(). " + o.cryptosuite);
+  let result;
+  try {
+    const lib = await zcapLibraries();
+    let verifyOptions;
+    if (o.cryptosuite === ZCAP_LEGACY_SUITE) {
+      const legacy = {
+        controller: o.controller, keyId: o.keyId,
+        controllerDocument: o.controllerDocument,
+        pair: await zcapPublicPair(lib, o.keyId, o.controller, o.publicKey)
+      };
+      verifyOptions = {
+        suite: new lib.Ed25519Signature2020({
+          verifier: zcapEd25519Verifier(o.keyId, o.publicKey) }),
+        purpose: new lib.zcap.CapabilityDelegation({
+          expectedRootCapability: o.expectedRootCapability,
+          allowTargetAttenuation: true,
+          date: o.date
+        }),
+        documentLoader: zcapLoader(lib, o.controller, o.rootTarget, legacy)
+      };
+    } else {
+      verifyOptions = {
+        suite: o.suite,
+        purpose: new lib.zcap.CapabilityDelegation({
+          expectedRootCapability: o.expectedRootCapability,
+          allowTargetAttenuation: true,
+          date: o.date,
+          controller: o.controllerDocument
+        }),
+        documentLoader: zcapLoader(lib, o.controller, o.rootTarget, null)
+      };
+    }
+    result = await lib.jsigs.verify(doc, verifyOptions);
+  } catch (e) {
+    log.debug("Caught in zcapVerifyDelegation(): " + ((e && e.message) || e));
+    // jsigs reports through `result`; a throw is malformed input it could
+    // not even start on, which is the same answer for the caller.
+    result = { verified: false, error: e };
+  }
+  log.debug("Leaving zcapVerifyDelegation(). " +
+            !!(result && result.verified));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// BISCUITS (`@biscuit-auth/biscuit-wasm`, Biscuit v3).
+//
+// THE LOADER, AND WHY IT IS NOT `require()`. The package is built with
+// wasm-pack's `bundler` target: its entry point is `import * as wasm from
+// "./biscuit_bg.wasm"`, which only a bundler resolves, and its exports map
+// has an `import` condition and nothing else, so `require()` and `import()`
+// of the package both fail in node. `biscuitInstantiate()` does what a
+// bundler would: compile `module/biscuit_bg.wasm`, build the import object
+// by importing every module `WebAssembly.Module.imports()` names (relative
+// to `module/`), instantiate, hand the instance to the glue with
+// `__wbg_set_wasm()` and call `__wbindgen_start()`. The package directory is
+// found by walking this file's own `module.paths`, as `require` would,
+// because the exports map hides `package.json` from `require.resolve`; from
+// `common/` that reaches the package root's `node_modules`.
+//
+// WHY THE WHOLE LOADER MOVED HERE rather than only the key handling: the
+// handle the loader produces IS the library — the key classes, the token
+// parser and the builders are all members of it — so a loader left in
+// `gnap/` would be a second holder of the library and a second place keys
+// could be turned into its key objects. What stays in `gnap/token_biscuit.ts`
+// is everything that is not the library: the Datalog it writes and the
+// queries it reads the model back with, handed in as source, parameters and
+// rule text. The library's objects (tokens, authorizers, builders) are made,
+// used and FREED here, inside one call each.
+//
+// `__wbindgen_start()` prints "biscuit-wasm loading" through `console.log`.
+// It is synchronous, so `console.log` is replaced for exactly that call and
+// put back in a `finally`; the line goes to the debug log instead of stdout.
+//
+// **Load the module once per process**: a second instance in the same
+// process is not supported, which is one more reason there is one holder.
+// ---------------------------------------------------------------------------
+
+const BISCUIT_PACKAGE = '@biscuit-auth/biscuit-wasm';
+
+// The run limits of the priming evaluation below — `gnap/token_biscuit.ts`'s
+// LIMITS, the bound on every real evaluation, which it passes on each call.
+// The prime's answer is discarded, so these only bound its cost.
+const BISCUIT_PRIME_LIMITS = { max_facts: 10000, max_iterations: 100,
+                               max_time_micro: 250000 };
+
+/** @type {Promise<any> | null} */
+let biscuitLoading = null;
+
+// Where the package is installed, walking the directories `require` would.
+function biscuitPackageDir() {
+  log.debug("Entering biscuitPackageDir().");
+  const fs = require('fs');
+  const path = require('path');
+  // `module` is typed as this file's exports by the checker; its `paths`
+  // are node's, the node_modules directories `require` walks from here.
+  const dirs = /** @type {any} */ (module).paths || [];
+  for (let i = 0; i < dirs.length; i++) {
+    const candidate = path.join(dirs[i], BISCUIT_PACKAGE);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) {
+      log.debug("Leaving biscuitPackageDir().");
+      return candidate;
+    }
+  }
+  log.debug("Leaving biscuitPackageDir(). Not installed.");
+  return null;
+}
+
+// THE FIRST RULE-APPLYING EVALUATION AFTER LOAD, ABSORBED HERE (#432,
+// 2026-10-03). The library's first evaluation that applies a rule can be
+// refused on its run limits whatever the budget; later ones measure
+// correctly. So the load runs ONE throwaway evaluation that applies a rule,
+// before any token is judged, and discards its answer. The limits are not
+// raised: no budget changes the first answer, and every later evaluation is
+// bounded as before, so the bound on a hostile block stands.
+function biscuitPrime(bg) {
+  log.debug("Entering biscuitPrime().");
+  /** @type {any} */
+  let authorizer = null;
+  try {
+    const builder = new bg.AuthorizerBuilder();
+    builder.addCode('prime(1); primed($x) <- prime($x); allow if true;');
+    authorizer = builder.buildUnauthenticated();
+    authorizer.authorizeWithLimits(BISCUIT_PRIME_LIMITS);
+    log.debug("Leaving biscuitPrime(). It did not time out this time.");
+  } catch (e) {
+    // Expected: the first evaluation may be refused (see above). Anything
+    // else is logged and left — the evaluations that matter report their
+    // own refusals.
+    log.debug("Caught in biscuitPrime(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitPrime(). Primed.");
+  } finally {
+    if (authorizer) {
+      authorizer.free();
+    }
+  }
+}
+
+// The library's errors are plain objects; a string for the debug log.
+function biscuitErrorText(e) {
+  log.debug("Entering biscuitErrorText().");
+  if (e instanceof Error) {
+    log.debug("Leaving biscuitErrorText().");
+    return e.message;
+  }
+  try {
+    log.debug("Leaving biscuitErrorText().");
+    return JSON.stringify(e);
+  } catch (err) {
+    log.debug("Caught in biscuitErrorText(): " +
+              ((err && err.message) || err));
+    log.debug("Leaving biscuitErrorText().");
+    // A cyclic or exotic value: String() is the best available description.
+    return String(e);
+  }
+}
+
+async function biscuitInstantiate() {
+  log.debug("Entering biscuitInstantiate().");
+  const fs = require('fs');
+  const path = require('path');
+  const url = require('url');
+  const dir = biscuitPackageDir();
+  if (!dir) {
+    log.debug("Leaving biscuitInstantiate(). Package not installed.");
+    throw new Error(BISCUIT_PACKAGE + ' is not installed');
+  }
+  const moduleDir = path.join(dir, 'module');
+  /** @type {any} */
+  const wasmBytes = fs.readFileSync(path.join(moduleDir, 'biscuit_bg.wasm'));
+  const compiled = await WebAssembly.compile(wasmBytes);
+  /** @type {Record<string, any>} */
+  const imports = {};
+  const wanted = WebAssembly.Module.imports(compiled);
+  for (let i = 0; i < wanted.length; i++) {
+    const name = wanted[i].module;
+    if (!imports[name]) {
+      imports[name] = await import(url.pathToFileURL(
+          path.join(moduleDir, name)).href);
+    }
+  }
+  const bg = imports['./biscuit_bg.js'];
+  if (!bg || typeof bg.__wbg_set_wasm !== 'function') {
+    log.debug("Leaving biscuitInstantiate(). Glue module not found.");
+    throw new Error('the biscuit glue module ./biscuit_bg.js was not ' +
+                    'among the WASM imports');
+  }
+  const instance = await WebAssembly.instantiate(compiled, imports);
+  /** @type {any} */
+  const exported = instance.exports;
+  bg.__wbg_set_wasm(exported);
+  if (typeof exported.__wbindgen_start === 'function') {
+    const original = console.log;
+    console.log = function () {
+      log.debug('biscuit-wasm: ' + Array.prototype.join.call(arguments, ' '));
+    };
+    try {
+      exported.__wbindgen_start();
+    } finally {
+      console.log = original;
+    }
+  }
+  biscuitPrime(bg);
+  log.debug("Leaving biscuitInstantiate(). Loaded.");
+  return bg;
+}
+
+// The one lazy load, shared by every call; a failure allows a new attempt.
+function biscuitLibrary() {
+  log.debug("Entering biscuitLibrary().");
+  if (!biscuitLoading) {
+    biscuitLoading = biscuitInstantiate().catch(function (e) {
+      log.debug("Caught in biscuitLibrary(): " + ((e && e.message) || e));
+      biscuitLoading = null;
+      throw e;
+    });
+  }
+  log.debug("Leaving biscuitLibrary().");
+  return biscuitLoading;
+}
+
+/**
+ * Loads the biscuit WebAssembly library, once, so a caller can refuse a
+ * load failure in its own words before it does anything else.
+ *
+ * @returns a promise that rejects with the load's error
+ */
+async function biscuitReady() {
+  log.debug("Entering biscuitReady().");
+  await biscuitLibrary();
+  log.debug("Leaving biscuitReady().");
+}
+
+// An Ed25519 KeyObject's raw `d` (private) or `x` (public), or null: the
+// one key kind a biscuit root key is here.
+function biscuitRawKey(keyObject, member) {
+  log.debug("Entering biscuitRawKey().");
+  if (!keyObject || typeof keyObject.export !== 'function' ||
+      keyObject.asymmetricKeyType !== 'ed25519') {
+    log.debug("Leaving biscuitRawKey().");
+    return null;
+  }
+  const jwk = keyObject.export({ format: 'jwk' });
+  log.debug("Leaving biscuitRawKey().");
+  return jwk[member] ? Buffer.from(jwk[member], 'base64url') : null;
+}
+
+// The token, verified under the root public key; `{ ok:false, stage }` for
+// a key that is not an Ed25519 public KeyObject ('key') or a token that does
+// not parse or verify ('parse'). The caller frees `token`.
+function biscuitParse(bg, value, publicKey) {
+  log.debug("Entering biscuitParse().");
+  const x = biscuitRawKey(publicKey, 'x');
+  if (!x) {
+    log.debug("Leaving biscuitParse(). Public key unusable.");
+    return { ok: false, stage: 'key', error: null };
+  }
+  try {
+    const root = bg.PublicKey.fromBytes(new Uint8Array(x),
+                                        bg.SignatureAlgorithm.Ed25519);
+    const token = bg.Biscuit.fromBase64(value, root);
+    log.debug("Leaving biscuitParse(). Parsed.");
+    return { ok: true, token: token };
+  } catch (e) {
+    log.debug("Caught in biscuitParse(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitParse(). Refused.");
+    return { ok: false, stage: 'parse', error: e };
+  }
+}
+
+/**
+ * Mints a biscuit whose authority block is the caller's Datalog, sealed
+ * with an Ed25519 root key.
+ *
+ * `prepare()` builds the block (`{ source, params }`); it is called inside
+ * the library step, so a throw from it is answered as the library's.
+ *
+ * @param privateKey - an Ed25519 private KeyObject
+ * @param prepare - builds `{ source, params }`
+ * @returns a promise of `{ ok: true, value, revocationIds }`, or
+ *   `{ ok: false, stage, error }` — stage `key` (not an Ed25519 private
+ *   KeyObject), `load` (the library could not be loaded) or `library`
+ */
+async function biscuitMint(privateKey, prepare) {
+  log.debug("Entering biscuitMint().");
+  const d = biscuitRawKey(privateKey, 'd');
+  if (!d) {
+    log.debug("Leaving biscuitMint(). Private key unusable.");
+    return { ok: false, stage: 'key', error: null };
+  }
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitMint(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitMint(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  try {
+    const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
+                                         bg.SignatureAlgorithm.Ed25519);
+    const p = prepare();
+    const builder = bg.Biscuit.builder();
+    builder.addCodeWithParameters(p.source, p.params, {});
+    const token = builder.build(root);
+    const value = token.toBase64();
+    // One revocation identifier per block, the authority block's first.
+    const revocationIds = [].concat(token.getRevocationIdentifiers() || [])
+      .map(function (/** @type {unknown} */ one) {
+        return String(one);
+      });
+    token.free();
+    log.debug("Leaving biscuitMint(). Minted.");
+    return { ok: true, value: value, revocationIds: revocationIds };
+  } catch (e) {
+    log.debug("Caught in biscuitMint(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitMint(). Library failure.");
+    return { ok: false, stage: 'library', error: e };
+  }
+}
+
+/**
+ * Verifies a biscuit under its root public key and runs an authorizer over
+ * it: the caller's Datalog facts and policies, then each query in order,
+ * then the authorization itself, every evaluation bounded by `limits`.
+ *
+ * A query that throws stops the run (the queries after it and the
+ * authorization are not run). The library's errors come back as they were
+ * thrown, for the caller to read (`RunLimit`, `FailedLogic`).
+ *
+ * @param value - the token, URL-safe base64
+ * @param publicKey - an Ed25519 public KeyObject
+ * @param run - `{ authorizer, queries, limits }`: `authorizer()` builds
+ *   `{ source, params }` (called inside the build step), `queries` the
+ *   rule texts, `limits` the run limits
+ * @returns a promise of `{ ok: false, stage, error }` — stage `key`,
+ *   `load`, `parse` or `build` — or `{ ok: true, rows, queryError,
+ *   authorizeError, blocks }`: `rows[i]` the terms of each fact query `i`
+ *   produced; `authorizeError` undefined when authorization was not run,
+ *   null when it passed
+ */
+async function biscuitAuthorize(value, publicKey, run) {
+  log.debug("Entering biscuitAuthorize().");
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitAuthorize(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitAuthorize(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  const parsed = biscuitParse(bg, value, publicKey);
+  if (!parsed.ok) {
+    log.debug("Leaving biscuitAuthorize(). " + parsed.stage);
+    return parsed;
+  }
+  const token = parsed.token;
+  /** @type {any} */
+  let authorizer = null;
+  try {
+    try {
+      const p = run.authorizer();
+      const builder = new bg.AuthorizerBuilder();
+      builder.addCodeWithParameters(p.source, p.params, {});
+      authorizer = builder.buildAuthenticated(token);
+    } catch (e) {
+      log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+      log.debug("Leaving biscuitAuthorize(). Authorizer not built.");
+      return { ok: false, stage: 'build', error: e };
+    }
+    const rows = [];
+    let queryError = null;
+    const queries = run.queries || [];
+    for (let i = 0; i < queries.length; i++) {
+      try {
+        rows.push(authorizer.queryWithLimits(bg.Rule.fromString(queries[i]),
+                                             run.limits)
+          .map(function (/** @type {any} */ f) {
+            return f.terms();
+          }));
+      } catch (e) {
+        log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+        queryError = e;
+        break;
+      }
+    }
+    let authorizeError;
+    if (!queryError) {
+      try {
+        authorizer.authorizeWithLimits(run.limits);
+        authorizeError = null;
+      } catch (e) {
+        log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+        authorizeError = e;
+      }
+    }
+    const blocks = token.countBlocks();
+    log.debug("Leaving biscuitAuthorize(). blocks=" + blocks);
+    return { ok: true, rows: rows, queryError: queryError,
+             authorizeError: authorizeError, blocks: blocks };
+  } finally {
+    if (authorizer) {
+      authorizer.free();
+    }
+    token.free();
+  }
+}
+
+/**
+ * Appends a block to a biscuit — the attenuation a resource server makes
+ * without the authorization server. The token is verified first: the
+ * library will not open one it has not verified.
+ *
+ * `prepare()` is called once the token has parsed, and answers the block
+ * (`{ source, params }`) or `{ refusal }`, which is passed back untouched.
+ *
+ * @param value - the token, URL-safe base64
+ * @param publicKey - an Ed25519 public KeyObject
+ * @param prepare - builds the block, or refuses
+ * @returns a promise of `{ ok: true, value }`, or `{ ok: false, stage,
+ *   error }` — stage `key`, `load`, `parse` or `library` — or
+ *   `{ ok: false, stage: 'prepare', refusal }`
+ */
+async function biscuitAttenuate(value, publicKey, prepare) {
+  log.debug("Entering biscuitAttenuate().");
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitAttenuate(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitAttenuate(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  const parsed = biscuitParse(bg, value, publicKey);
+  if (!parsed.ok) {
+    log.debug("Leaving biscuitAttenuate(). " + parsed.stage);
+    return parsed;
+  }
+  try {
+    const block = prepare();
+    if (block.refusal) {
+      log.debug("Leaving biscuitAttenuate(). Refused by the caller.");
+      return { ok: false, stage: 'prepare', refusal: block.refusal };
+    }
+    let out;
+    try {
+      const builder = bg.Biscuit.block_builder();
+      builder.addCodeWithParameters(block.source, block.params, {});
+      const next = parsed.token.appendBlock(builder);
+      out = next.toBase64();
+      next.free();
+    } catch (e) {
+      log.debug("Caught in biscuitAttenuate(): " + biscuitErrorText(e));
+      log.debug("Leaving biscuitAttenuate(). Library refused.");
+      return { ok: false, stage: 'library', error: e };
+    }
+    log.debug("Leaving biscuitAttenuate(). Appended.");
+    return { ok: true, value: out };
+  } finally {
+    parsed.token.free();
+  }
+}
+
+// --- #453 group A: end ---
+
+// (separator between group regions)
+
+// --- #453 group B (common, keys and certificates): begin ---
+
+// THE OCSP CertID HASHES (RFC 6960 section 4.1.1), under the hash the
+// REQUESTER named. `pki_revocation.js` compares a request's issuerNameHash
+// and issuerKeyHash with its own authority's, computed under that hash rather
+// than against a stored value, because a responder that only knew SHA-1 would
+// answer `unknown` to every modern client — and one that only knew SHA-256
+// would answer it to every old one. So SHA-1 is on this list, under the
+// `ocsp-cert-id` purpose, and nothing outside the four is computed. The
+// names are Web Crypto's spelling, which is what that file's OID table maps
+// to. It was Web Crypto's asynchronous digest until #453; this is node's
+// one-shot over the same bytes, so the hashes are the same.
+const OCSP_CERT_ID_HASHES = Object.freeze({
+  'SHA-1': null,
+  'SHA-256': 'sha256',
+  'SHA-384': 'sha384',
+  'SHA-512': 'sha512'
+});
+
+/**
+ * Returns an OCSP CertID hash (RFC 6960 section 4.1.1) of a value under the
+ * hash a request named.
+ *
+ * @param hashName - `SHA-1`, `SHA-256`, `SHA-384` or `SHA-512`
+ * @param data - the bytes (a Buffer, a typed array or an ArrayBuffer)
+ * @returns the digest
+ * @throws Error for a hash outside the list
+ */
+function ocspCertIdHash(hashName, data) {
+  log.debug("Entering ocspCertIdHash(). " + hashName);
+  if (!Object.prototype.hasOwnProperty.call(OCSP_CERT_ID_HASHES, hashName)) {
+    log.debug("Leaving ocspCertIdHash(). Unknown hash.");
+    // error-code: none — a programming error; the caller maps a closed OID
+    // table onto these names and answers `unknown` for anything else
+    throw new Error('crypto: an OCSP CertID hash is one of ' +
+                    Object.keys(OCSP_CERT_ID_HASHES).join(', ') +
+                    ', not "' + hashName + '"');
+  }
+  const bytes = Buffer.from(/** @type {any} */ (data || []));
+  const name = OCSP_CERT_ID_HASHES[hashName];
+  const out = name === null ? sha1Digest('ocsp-cert-id', bytes)
+                            : digest(name, bytes);
+  log.debug("Leaving ocspCertIdHash().");
+  return out;
+}
+
+// pkijs SIGNS A CRL AND AN OCSP RESPONSE THROUGH A WEB CRYPTO ENGINE, and the
+// engine is node's own Web Crypto implementation. Until #453
+// `pki_revocation.js` handed pkijs the global `crypto` itself; it is the
+// same object as `nodeCrypto.webcrypto` on every node this service runs on
+// (globalThis.crypto has been it since node 19), and this file is now the
+// one place that hands it over. Throws what pkijs throws, which the caller
+// logs under its own code.
+/**
+ * Installs node's Web Crypto implementation as pkijs's engine, which is
+ * what pkijs signs CRLs and OCSP responses with.
+ *
+ * @param pkijs - the pkijs module
+ * @returns true when installed; false where node offers no Web Crypto
+ */
+function installPkijsWebCrypto(pkijs) {
+  log.debug("Entering installPkijsWebCrypto().");
+  const webcrypto = /** @type {any} */ (nodeCrypto.webcrypto);
+  if (!webcrypto || !webcrypto.subtle) {
+    log.debug("Leaving installPkijsWebCrypto(). No Web Crypto.");
+    return false;
+  }
+  // `any`: pkijs's declared engine interface lags its own class.
+  pkijs.setEngine('webcrypto', /** @type {any} */ (
+    new pkijs.CryptoEngine({ name: 'webcrypto', crypto: webcrypto })));
+  log.debug("Leaving installPkijsWebCrypto().");
+  return true;
+}
+
+// The Web Crypto algorithms an authority's key is imported for, to sign a
+// CRL or an OCSP response with pkijs. The caller derives the parameters from
+// the AUTHORITY'S key (`pki_revocation.js`'s signingParamsFor()); this list
+// is what may be asked for.
+const PKCS8_SIGNING_ALGORITHMS = ['ECDSA', 'Ed25519', 'RSA-PSS',
+                                  'RSASSA-PKCS1-v1_5'];
+
+/**
+ * Imports a PKCS#8 private key as a non-extractable Web Crypto signing key,
+ * for pkijs to sign a CRL or an OCSP response with.
+ *
+ * @param pkcs8 - the DER (an ArrayBuffer or a Buffer)
+ * @param algorithm - the Web Crypto import parameters; `name` is one of
+ *   PKCS8_SIGNING_ALGORITHMS
+ * @returns {Promise<any>} a promise of the CryptoKey
+ * @throws Error for an algorithm outside the list
+ */
+function importPkcs8SigningKey(pkcs8, algorithm) {
+  log.debug("Entering importPkcs8SigningKey(). " +
+            (algorithm && algorithm.name));
+  if (!algorithm ||
+      PKCS8_SIGNING_ALGORITHMS.indexOf(algorithm.name) < 0) {
+    log.debug("Leaving importPkcs8SigningKey(). Unknown algorithm.");
+    // error-code: none — a programming error; the caller derives the name
+    // from a closed table of key kinds
+    throw new Error('crypto: a PKCS#8 signing key is imported for ' +
+                    PKCS8_SIGNING_ALGORITHMS.join(', ') + ', not "' +
+                    (algorithm && algorithm.name) + '"');
+  }
+  log.debug("Leaving importPkcs8SigningKey().");
+  return /** @type {any} */ (nodeCrypto.webcrypto).subtle.importKey(
+    'pkcs8', pkcs8, algorithm, false, ['sign']);
+}
+
+// COMPARE TWO BYTE STRINGS IN CONSTANT TIME. `constantTimeEquals()` above
+// compares two SECRETS given as text — it reads each through `String()`, so
+// two Buffers would be compared as their UTF-8 decodings, and two different
+// byte strings that decode to the same replacement characters would compare
+// equal. This one takes bytes as bytes: a digest against a digest, an AAD
+// binding against what was unwrapped. A length difference is a plain false
+// (node's `timingSafeEqual()` throws on one), found in variable time, which
+// is not a hole for the reason `constantTimeEquals()` gives.
+// HOT PATH: a presented secret's digest is compared per enrollment request,
+// so no Entering/Leaving pair.
+/**
+ * Compares two byte strings in constant time; only a length difference is
+ * found in variable time.
+ *
+ * @param a - one value (a Buffer or a typed array)
+ * @param b - the other
+ * @returns true when they are the same bytes
+ */
+function bytesEqualConstantTime(a, b) {
+  const left = Buffer.from(/** @type {any} */ (a || []));
+  const right = Buffer.from(/** @type {any} */ (b || []));
+  return left.length === right.length &&
+         nodeCrypto.timingSafeEqual(left, right);
+}
+
+// --- #453 group B: end ---
+
+// (separator between group regions)
+
+// --- #453 group C (common, cluster, persistence, ldap, risk): begin ---
+
+// --- #453 group C: end ---
+
+// (separator between group regions)
+
+// --- #453 group D (oauth-oidc, federation, saml, ssf, portal): begin ---
+
+// A SAML ARTIFACT'S SourceID (SAML 2.0 Bindings 3.6.4, SAML 1.1 Bindings
+// 4.1.1.7): the SHA-1 of the issuer's identifier — the entityID in 2.0, the
+// providerID in 1.1 — read as UTF-8. It is an INDEX, not a security hash: it
+// lets a party holding artifacts from several identity providers tell whose
+// one it holds without asking anybody.
+//
+// It is one function rather than a sha1Digest() call at each site because
+// four sites compute it — `saml/saml2_sso.ts` and `saml/saml11_sso.ts` each
+// MINT an artifact with it and then CHECK a presented artifact against it
+// (#160) — and the mint and the check must agree to the byte or every
+// artifact this service issued reads as foreign. One definition is what makes
+// that agreement structural rather than a matter of four call sites being
+// spelled alike. The two versions differ in where the 20 bytes sit in the
+// artifact, never in how they are computed, so that stays with each caller.
+//
+// HOT PATH: computed for every artifact minted and every one resolved, so no
+// Entering/Leaving pair. It would drown the log.
+/**
+ * Returns a SAML artifact's SourceID: the SHA-1 of the issuer's entityID
+ * (2.0) or providerID (1.1), as UTF-8.
+ *
+ * @param issuerId - the entityID or providerID
+ * @returns the 20 bytes
+ */
+function samlArtifactSourceId(issuerId) {
+  return sha1Digest('saml-artifact-source-id', String(issuerId));
+}
+
+// --- #453 group D: end ---
+
+// (separator between group regions)
+
+// --- #453 group E (oid4vc, oidfed, authn, admin, pki): begin ---
+
+// WebAuthn's TPM attestation (Level 3 section 8.3) asks that certInfo's
+// extraData be the hash of attToBeSigned "using the hash algorithm employed
+// in alg" — the statement's own COSE algorithm, whose signature was checked
+// a step before. So the hash is not the caller's choice: it is the one
+// COSE_SIGNATURE_ALGS (section 10) names for that algorithm, SHA-1 for RS1
+// among them, which `verifyCoseSignature()` has already refused unless the
+// realm allowed insecure algorithms. An algorithm that fixes no separate
+// hash (EdDSA, ML-DSA) answers null, and the caller reports the mismatch.
+/**
+ * Returns the digest of bytes under the hash a COSE signature algorithm
+ * names (WebAuthn TPM attestation's extraData).
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param data - the bytes
+ * @returns {Buffer|null} the digest, or null when the algorithm is not in
+ *   COSE_SIGNATURE_ALGS or names no hash of its own
+ */
+function coseAlgorithmDigest(coseAlg, data) {
+  log.debug("Entering coseAlgorithmDigest(). alg=" + coseAlg);
+  const spec = COSE_SIGNATURE_ALGS[String(coseAlg)];
+  if (!spec || !spec.hash) {
+    log.debug("Leaving coseAlgorithmDigest(). No hash of its own.");
+    return null;
+  }
+  const out = nodeCrypto.createHash(spec.hash).update(Buffer.from(data))
+    .digest();
+  log.debug("Leaving coseAlgorithmDigest(). " + spec.hash);
+  return out;
+}
+
+// --- #453 group E: end ---
+
+// (separator between group regions)
+
+// --- #453 group F (spiffe, scep, est, acme, scim, kerberos, tls): begin ---
+
+// Group F's operations: SPIFFE, SCEP, EST, ACME, SCIM, Kerberos and TLS.
+// Everything else those modules did is section 13's, 15's or 17's.
+
+// RFC 5652 section 11.2: a SignedData's messageDigest attribute is the digest
+// of the encapsulated content under the SignerInfo's digestAlgorithm. SCEP's
+// pkiMessage is the one CMS this service verifies such an attribute in
+// (`scep/scep_cms.ts`), and its digest table is SHA-2 only (its decision 1),
+// so this takes section 15's DIGESTS and never SHA-1.
+/**
+ * Checks a CMS messageDigest signed attribute against the content it names.
+ *
+ * @param algorithm - the SignerInfo's digest, one of section 15's DIGESTS
+ * @param content - the encapsulated content
+ * @param claimed - the messageDigest attribute's octets; null when absent
+ * @returns true when the attribute is the content's digest
+ * @throws Error for an algorithm outside DIGESTS
+ */
+function cmsMessageDigestMatches(algorithm, content, claimed) {
+  log.debug("Entering cmsMessageDigestMatches(). " + algorithm);
+  const computed = digest(algorithm, content || Buffer.alloc(0));
+  if (!claimed) {
+    log.debug("Leaving cmsMessageDigestMatches(). No attribute.");
+    return false;
+  }
+  const ok = bytesEqualConstantTime(claimed, computed);
+  log.debug("Leaving cmsMessageDigestMatches(). " + ok);
+  return ok;
+}
+
+// SCEP's content ciphers. RFC 8894 section 3.5.2 still permits DES-EDE3-CBC,
+// a 64-bit block cipher (Sweet32), and `scep/scep_cms.ts` refuses it badAlg
+// before it gets here (its decision 2); this list is the same refusal said
+// again where the cipher is run, so nothing can reach a weaker one.
+const SCEP_CONTENT_CIPHERS = ['aes-128-cbc', 'aes-192-cbc', 'aes-256-cbc'];
+
+/**
+ * Refuses a SCEP content cipher outside SCEP_CONTENT_CIPHERS.
+ *
+ * @param cipher - node's name for it
+ * @throws Error for a cipher outside the list
+ */
+function checkScepContentCipher(cipher) {
+  if (SCEP_CONTENT_CIPHERS.indexOf(cipher) < 0) {
+    // error-code: none — a programming error; the caller names a cipher from
+    // its own table, which is inside this list
+    throw new Error('crypto: a SCEP content cipher is one of ' +
+                    SCEP_CONTENT_CIPHERS.join(', ') + ', not "' + cipher +
+                    '"');
+  }
+}
+
+/**
+ * Encrypts a SCEP envelope's content (an EnvelopedData's
+ * encryptedContent), with CBC's PKCS#7 padding.
+ *
+ * @param cipher - one of SCEP_CONTENT_CIPHERS
+ * @param key - the content-encryption key
+ * @param iv - the sixteen-byte IV
+ * @param plaintext - the content
+ * @returns the ciphertext
+ * @throws Error for a cipher outside the list, or what node throws
+ */
+function scepContentEncrypt(cipher, key, iv, plaintext) {
+  log.debug("Entering scepContentEncrypt(). " + cipher);
+  checkScepContentCipher(cipher);
+  const c = nodeCrypto.createCipheriv(cipher, key, iv);
+  const out = Buffer.concat([c.update(plaintext), c.final()]);
+  log.debug("Leaving scepContentEncrypt().");
+  return out;
+}
+
+// It throws what node throws for a padding that does not check, because the
+// caller (`ScepCms.readEnvelope()`) catches it and gives a wrong key and a bad
+// padding ONE answer — the implicit rejection its decision 3 argues.
+/**
+ * Decrypts a SCEP envelope's content.
+ *
+ * @param cipher - one of SCEP_CONTENT_CIPHERS
+ * @param key - the content-encryption key
+ * @param iv - the sixteen-byte IV
+ * @param ciphertext - the encryptedContent
+ * @returns the plaintext
+ * @throws Error for a cipher outside the list, or what node throws
+ */
+function scepContentDecrypt(cipher, key, iv, ciphertext) {
+  log.debug("Entering scepContentDecrypt(). " + cipher);
+  checkScepContentCipher(cipher);
+  const d = nodeCrypto.createDecipheriv(cipher, key, iv);
+  const out = Buffer.concat([d.update(ciphertext), d.final()]);
+  log.debug("Leaving scepContentDecrypt().");
+  return out;
+}
+
+// CMS key transport (RFC 5652 section 6.2.1) with RSA: RSAES-PKCS1-v1_5
+// (RFC 8017 section 7.2), which every SCEP client in the field sends, and
+// RSAES-OAEP (RFC 3560). OAEP's hash is the sender's choice and SHA-1 is its
+// default (RFC 8017 appendix A.2.1): SHA-1 in OAEP is a mask generator, not
+// a signature, and no collision on it opens an envelope. v1.5 decryption is
+// the Marvin attack's target (CVE-2023-46809); node 24 has OpenSSL's IMPLICIT
+// REJECTION, and a runtime without it throws `ERR_INVALID_ARG_VALUE`, which
+// the caller looks for — so what node throws is thrown unchanged.
+const CMS_KEY_TRANSPORTS = ['rsaes-pkcs1-v1_5', 'rsaes-oaep'];
+const CMS_OAEP_HASHES = ['sha1', 'sha256', 'sha384', 'sha512'];
+
+/**
+ * Unwraps a CMS content-encryption key with an RSA private key.
+ *
+ * @param transport - `rsaes-pkcs1-v1_5` or `rsaes-oaep`
+ * @param privateKey - the recipient's private key (a PEM or a KeyObject)
+ * @param encryptedKey - the KeyTransRecipientInfo's encryptedKey
+ * @param oaepHash - for OAEP, one of CMS_OAEP_HASHES
+ * @returns the content-encryption key
+ * @throws Error for a transport or hash outside the lists, or what node
+ *   throws
+ */
+function cmsKeyTransportDecrypt(transport, privateKey, encryptedKey,
+                                oaepHash) {
+  log.debug("Entering cmsKeyTransportDecrypt(). " + transport);
+  if (CMS_KEY_TRANSPORTS.indexOf(transport) < 0) {
+    log.debug("Leaving cmsKeyTransportDecrypt(). Unknown transport.");
+    // error-code: none — a programming error; the caller names a constant
+    throw new Error('crypto: a CMS key transport is one of ' +
+                    CMS_KEY_TRANSPORTS.join(', ') + ', not "' + transport +
+                    '"');
+  }
+  if (transport === 'rsaes-pkcs1-v1_5') {
+    const key = nodeCrypto.privateDecrypt({
+      key: privateKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+    }, encryptedKey);
+    log.debug("Leaving cmsKeyTransportDecrypt(). PKCS#1 v1.5.");
+    return key;
+  }
+  if (CMS_OAEP_HASHES.indexOf(oaepHash) < 0) {
+    log.debug("Leaving cmsKeyTransportDecrypt(). Unknown OAEP hash.");
+    // error-code: none — a programming error; the caller maps the OID through
+    // a table inside this list
+    throw new Error('crypto: an OAEP hash is one of ' +
+                    CMS_OAEP_HASHES.join(', ') + ', not "' + oaepHash + '"');
+  }
+  const key = nodeCrypto.privateDecrypt({
+    key: privateKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: oaepHash
+  }, encryptedKey);
+  log.debug("Leaving cmsKeyTransportDecrypt(). OAEP " + oaepHash + ".");
+  return key;
+}
+
+// The reply side is RSAES-PKCS1-v1_5 only: it is what every SCEP client
+// decrypts, forge and OpenSSL's PKCS7 included, and ENCRYPTING with v1.5
+// gives no oracle — the attack is on the party that decrypts.
+/**
+ * Wraps a CMS content-encryption key to an RSA public key with
+ * RSAES-PKCS1-v1_5.
+ *
+ * @param publicKey - the recipient's public key (a KeyObject or a PEM)
+ * @param contentKey - the content-encryption key
+ * @returns the encryptedKey
+ * @throws what node throws for a key that is not RSA
+ */
+function cmsKeyTransportEncrypt(publicKey, contentKey) {
+  log.debug("Entering cmsKeyTransportEncrypt().");
+  const wrapped = nodeCrypto.publicEncrypt({
+    key: publicKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+  }, contentKey);
+  log.debug("Leaving cmsKeyTransportEncrypt().");
+  return wrapped;
+}
+
+// A TPM 2.0 object's Name is nameAlg ‖ H_nameAlg(TPMT_PUBLIC) (Library Part
+// 1, section 16), and nameAlg is the TPM's choice: SHA-1 is a TPM_ALG_ID a
+// TPM may name (TPM_HASHES above), so computing a Name with it is what the
+// specification fixes, not a choice made here. `tpmName()` does it for a
+// parsed public area; `spiffe/spiffe_tpm.ts` hashes its own and compares a
+// Name against another's algorithm, so it needs the hash on its own.
+/**
+ * Hashes bytes under one of the TPM's name algorithms.
+ *
+ * @param hash - a value of TPM_HASHES (`sha1`, `sha256`, `sha384`,
+ *   `sha512`)
+ * @param bytes - what is hashed (a TPMT_PUBLIC)
+ * @returns the digest
+ * @throws Error for a hash outside TPM_HASHES
+ */
+function tpmNameDigest(hash, bytes) {
+  log.debug("Entering tpmNameDigest(). " + hash);
+  const known = Object.keys(TPM_HASHES).some(function (id) {
+    return TPM_HASHES[id] === hash;
+  });
+  if (!known) {
+    log.debug("Leaving tpmNameDigest(). Unknown.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM hash algorithm ' + hash + ' is not supported');
+  }
+  const out = nodeCrypto.createHash(hash).update(bytes).digest();
+  log.debug("Leaving tpmNameDigest().");
+  return out;
+}
+
+// SPIRE sizes a credential-activation secret by the EK's name hash, so the
+// `tpm_devid` attestor asks for that size by TPM_ALG_ID.
+/**
+ * Returns the digest size, in octets, of a TPM_ALG_ID hash.
+ *
+ * @param algId - the TPM_ALG_ID
+ * @returns the size
+ * @throws Error for one not in TPM_HASHES, as `tpmHashName()` does
+ */
+function tpmDigestSize(algId) {
+  log.debug("Entering tpmDigestSize(). alg=" + algId);
+  const size = nodeCrypto.createHash(tpmHashName(algId)).digest().length;
+  log.debug("Leaving tpmDigestSize(). " + size);
+  return size;
+}
+
+// RFC 7616 (HTTP Digest Access Authentication) section 3.2 names its own
+// algorithms: SHA-256, SHA-512-256 and MD5. MD5 is there because most of
+// the installed base of Digest clients speaks nothing else; SCIM offers it
+// only when `scim.digestMd5` is set, in development (#182), and the digest
+// is a hash over a password a client proves knowledge of, not a signature.
+const HTTP_DIGEST_HASHES = ['sha256', 'sha512-256', 'md5'];
+
+// It runs once per Digest challenge and answer, so it logs as an ordinary
+// function. The text is passed to node as given, so an absent one throws
+// where the caller always met it.
+/**
+ * Computes an RFC 7616 digest (H() or KD()'s hash) as lowercase hex.
+ *
+ * @param hash - one of HTTP_DIGEST_HASHES, by node's name
+ * @param text - the string hashed, read as UTF-8
+ * @returns the digest, hex
+ * @throws Error for a hash outside the list
+ */
+function httpDigestHash(hash, text) {
+  log.debug("Entering httpDigestHash(). " + hash);
+  if (HTTP_DIGEST_HASHES.indexOf(hash) < 0) {
+    log.debug("Leaving httpDigestHash(). Unknown.");
+    // error-code: none — a programming error; the caller's table is inside
+    // this list
+    throw new Error('crypto: an HTTP Digest hash is one of ' +
+                    HTTP_DIGEST_HASHES.join(', ') + ', not "' + hash + '"');
+  }
+  const out = nodeCrypto.createHash(hash).update(text, 'utf8').digest('hex');
+  log.debug("Leaving httpDigestHash().");
+  return out;
+}
+
+// --- #453 group F: end ---
+
+// ===========================================================================
+// SECTION 16 — PKINIT: CMS SIGNED DATA, DIFFIE-HELLMAN AND THE AS REPLY KEY
+// (#179, 2026-10-05).
+//
+// RFC 4556 authenticates a Kerberos AS-REQ with a certificate: the client
+// SIGNS an AuthPack in a CMS SignedData, the KDC verifies it, both sides run
+// a Diffie-Hellman exchange, and the AS reply key is DERIVED from the agreed
+// secret. Every one of those is a cryptographic operation, so every one of
+// them is here, for rcbj's rule of 2026-10-05 ("all crypto operations across
+// all protocols and use cases are to be centralized in a common module"):
+// `kerberos/krb5_pkinit.ts` decides what to accept, and asks this section
+// to read, verify, agree, derive and sign.
+//
+//   * CMS SignedData (RFC 5652), READ AND VERIFIED: the client's
+//     signedAuthPack — one SignerInfo, the content-type and message-digest
+//     signed attributes, a signature over the signed attributes AS THEY
+//     ARRIVED (`scep/scep_cms.ts`'s fourth decision, for its reason). An
+//     anonymous request (RFC 8062 section 4.1.1) carries a SignedData with
+//     no SignerInfo and no certificate, which `pkinitReadSignedData()` reads
+//     and the caller recognises.
+//   * CMS SignedData, WRITTEN: the KDC's dhSignedData over a KDCDHKeyInfo,
+//     signed with the realm's KDC key — RSA PKCS #1 v1.5 or ECDSA, SHA-256 —
+//     with the certificate chain minus the Root (RFC 4556 section 3.2.3.1
+//     item 6: "MUST NOT contain root CA certificates").
+//   * THE DIGESTS ARE SHA-256, SHA-384 AND SHA-512. RFC 4556 predates
+//     SHA-2's ubiquity and RFC 8636 section 4 is how a KDC says it refuses
+//     the older ones: KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED with
+//     TD-CMS-DIGEST-ALGORITHMS, the list from `PKINIT_CMS_DIGEST_OIDS`.
+//     SHA-1 and MD5 are refused in both modes.
+//   * MODP DIFFIE-HELLMAN over RFC 3526's groups 14 to 18, and RFC 5349's
+//     ECDH over P-256, P-384 and P-521. GROUP 2 (1024 bits) IS REFUSED,
+//     although RFC 4556 section 3.2.1 makes it a MUST: RFC 3766 puts it near
+//     80 bits, and MIT's own client has refused it since 1.17 (its
+//     `pkinit_dh_min_bits` defaults to 2048). The refusal is
+//     KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED with TD-DH-PARAMETERS listing
+//     what is taken, which is how a client learns to retry.
+//   * NO RSA KEY TRANSPORT (RFC 4556 section 3.2.3.2), which #179 excludes:
+//     the reply key encrypted to the client's RSA key has no forward secrecy,
+//     and the Marvin attack is about exactly that decryption. A request
+//     without a clientPublicValue is the caller's refusal,
+//     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED.
+//   * THE REPLY KEY: RFC 4556 section 3.2.3.1's `octetstring2key()` (SHA-1
+//     in counter mode), and RFC 8636 section 6's KDFs — SP 800-56A's one-step
+//     KDF over SHA-1, SHA-256, SHA-384 or SHA-512 with an ASN.1 OtherInfo
+//     that binds the AS-REQ and the PA-PK-AS-REP into the key. The OtherInfo
+//     is a Kerberos structure and `kerberos/krb5_pkinit_codec.ts` encodes it;
+//     what is here is the hashing. Both are held to RFC 8636 section 8's
+//     vectors by `tests/kerberos_pkinit.js`.
+//
+// **POST-QUANTUM.** No post-quantum PKINIT is standardised. The two places
+// one would go are named here so the next reader does not have to find them:
+// the KEY AGREEMENT (`pkinitKeyAgreement()`) is the quantum-exposed part — a
+// recorded exchange is broken by whoever can later solve the discrete log —
+// and an ML-KEM encapsulation to a key in the clientPublicValue would replace
+// it, with the reply key derived from the shared secret through the same RFC
+// 8636 KDF; and the SIGNATURES (`pkinitVerifySignedData()`,
+// `pkinitSignedData()`) would take ML-DSA through CMS (RFC 9882) where the
+// table `PKINIT_CMS_SIGNATURES` lists the classical ones. Neither is offered
+// until a client exists to send it.
+//
+// It stays a LEAF: node's `crypto` and `asn1js`, nothing of this service.
+// ===========================================================================
+
+// The OIDs PKINIT's CMS uses.
+/** The object identifiers PKINIT's CMS and key agreement use. */
+const PKINIT_OID = {
+  signedData: '1.2.840.113549.1.7.2',
+  contentType: '1.2.840.113549.1.9.3',
+  messageDigest: '1.2.840.113549.1.9.4',
+  authData: '1.3.6.1.5.2.3.1',
+  dhKeyData: '1.3.6.1.5.2.3.2',
+  dhPublicNumber: '1.2.840.10046.2.1',
+  ecPublicKey: '1.2.840.10045.2.1'
+};
+
+// The digests a CMS signature here may be made over, by OID, in the order
+// the KDC prefers them — the order TD-CMS-DIGEST-ALGORITHMS lists.
+/**
+ * The CMS digest algorithms PKINIT accepts, by OID, in preference order.
+ */
+const PKINIT_CMS_DIGEST_OIDS = {
+  '2.16.840.1.101.3.4.2.1': { id: 'sha256', label: 'SHA-256' },
+  '2.16.840.1.101.3.4.2.2': { id: 'sha384', label: 'SHA-384' },
+  '2.16.840.1.101.3.4.2.3': { id: 'sha512', label: 'SHA-512' }
+};
+// The ones a client may send and is told no about, by name.
+const PKINIT_REFUSED_DIGESTS = {
+  '1.3.14.3.2.26': 'SHA-1',
+  '1.2.840.113549.2.5': 'MD5'
+};
+
+// A SignerInfo's signatureAlgorithm: the key it needs and, where the OID
+// names one, the digest it must agree with. `rsaEncryption` names none and
+// takes the SignerInfo's digestAlgorithm, which is what OpenSSL — and so
+// MIT's client — writes. RSASSA-PSS and EdDSA are not in PKINIT's use and
+// are refused as unknown.
+/**
+ * The CMS signature algorithms PKINIT verifies, by OID, with the key type
+ * each needs and the digest an OID names.
+ */
+const PKINIT_CMS_SIGNATURES = algorithmRegistry.cmsSignatures();
+
+// The key-agreement groups, in the order the KDC prefers them — the order
+// TD-DH-PARAMETERS lists. The curves first: P-256 is faster than any MODP
+// group and stronger than group 14. `node` is node's name for each.
+/**
+ * The Diffie-Hellman groups PKINIT agrees over, in preference order:
+ * RFC 5349's curves, then RFC 3526's MODP groups 14 to 18.
+ */
+const PKINIT_DH_GROUPS = [
+  { id: 'P-256', kind: 'ec', oid: '1.2.840.10045.3.1.7', node: 'prime256v1',
+    bits: 256, label: 'ECDH on P-256 (RFC 5349)' },
+  { id: 'P-384', kind: 'ec', oid: '1.3.132.0.34', node: 'secp384r1',
+    bits: 384, label: 'ECDH on P-384 (RFC 5349)' },
+  { id: 'P-521', kind: 'ec', oid: '1.3.132.0.35', node: 'secp521r1',
+    bits: 521, label: 'ECDH on P-521 (RFC 5349)' },
+  { id: 'modp14', kind: 'modp', node: 'modp14', bits: 2048,
+    label: 'RFC 3526 group 14 (2048-bit MODP)' },
+  { id: 'modp15', kind: 'modp', node: 'modp15', bits: 3072,
+    label: 'RFC 3526 group 15 (3072-bit MODP)' },
+  { id: 'modp16', kind: 'modp', node: 'modp16', bits: 4096,
+    label: 'RFC 3526 group 16 (4096-bit MODP)' },
+  { id: 'modp17', kind: 'modp', node: 'modp17', bits: 6144,
+    label: 'RFC 3526 group 17 (6144-bit MODP)' },
+  { id: 'modp18', kind: 'modp', node: 'modp18', bits: 8192,
+    label: 'RFC 3526 group 18 (8192-bit MODP)' }
+];
+
+// RFC 8636 section 6's KDFs, strongest first — the order the KDC picks from
+// the client's unordered set.
+/**
+ * RFC 8636's key derivation functions, strongest first.
+ */
+const PKINIT_KDFS = [
+  { oid: '1.3.6.1.5.2.3.6.3', hash: 'sha512',
+    label: 'id-pkinit-kdf-ah-sha512' },
+  { oid: '1.3.6.1.5.2.3.6.4', hash: 'sha384',
+    label: 'id-pkinit-kdf-ah-sha384' },
+  { oid: '1.3.6.1.5.2.3.6.2', hash: 'sha256',
+    label: 'id-pkinit-kdf-ah-sha256' },
+  { oid: '1.3.6.1.5.2.3.6.1', hash: 'sha1', label: 'id-pkinit-kdf-ah-sha1' }
+];
+
+// ---------------------------------------------------------------------------
+// A HANDFUL OF DER WRITERS. The structures written here are small and fixed,
+// and writing the bytes is plainer than building asn1js objects to write
+// them: a definite-length TLV, an INTEGER from unsigned bytes, a SET OF
+// sorted as DER requires.
+// ---------------------------------------------------------------------------
+function pkinitDerLength(n) {
+  log.debug("Entering pkinitDerLength().");
+  if (n < 0x80) {
+    log.debug("Leaving pkinitDerLength().");
+    return Buffer.from([n]);
+  }
+  const bytes = [];
+  let rest = n;
+  while (rest > 0) {
+    bytes.unshift(rest & 0xff);
+    rest = Math.floor(rest / 256);
+  }
+  log.debug("Leaving pkinitDerLength().");
+  return Buffer.from([0x80 | bytes.length].concat(bytes));
+}
+
+function pkinitTlv(tag, content) {
+  log.debug("Entering pkinitTlv().");
+  const body = Buffer.concat((Array.isArray(content) ? content : [content])
+    .map(function (one) { return Buffer.from(one); }));
+  log.debug("Leaving pkinitTlv().");
+  return Buffer.concat([Buffer.from([tag]), pkinitDerLength(body.length),
+                        body]);
+}
+
+function pkinitOidDer(dotted) {
+  log.debug("Entering pkinitOidDer(). " + dotted);
+  const arcs = String(dotted).split('.').map(function (one) {
+    return BigInt(one);
+  });
+  const out = [];
+  const writeArc = function (arc) {
+    const septets = [Number(arc & 0x7fn)];
+    let rest = arc >> 7n;
+    while (rest > 0n) {
+      septets.unshift(Number(rest & 0x7fn) | 0x80);
+      rest >>= 7n;
+    }
+    out.push.apply(out, septets);
+  };
+  writeArc(arcs[0] * 40n + arcs[1]);
+  arcs.slice(2).forEach(writeArc);
+  log.debug("Leaving pkinitOidDer().");
+  return pkinitTlv(0x06, Buffer.from(out));
+}
+
+// An unsigned big-endian value as a DER INTEGER: leading zeros dropped, one
+// put back where the top bit would read as a sign.
+function pkinitUnsignedIntegerDer(bytes) {
+  log.debug("Entering pkinitUnsignedIntegerDer().");
+  let value = Buffer.from(bytes || []);
+  let start = 0;
+  while (start < value.length - 1 && value[start] === 0) {
+    start++;
+  }
+  value = value.subarray(start);
+  if (!value.length) {
+    value = Buffer.from([0]);
+  }
+  if (value[0] & 0x80) {
+    value = Buffer.concat([Buffer.from([0]), value]);
+  }
+  log.debug("Leaving pkinitUnsignedIntegerDer().");
+  return pkinitTlv(0x02, value);
+}
+
+// DER's SET OF: the elements sorted by their encodings (X.690 11.6).
+function pkinitSetOf(elements) {
+  log.debug("Entering pkinitSetOf().");
+  const sorted = elements.map(function (one) {
+    return Buffer.from(one);
+  }).sort(Buffer.compare);
+  log.debug("Leaving pkinitSetOf().");
+  return pkinitTlv(0x31, sorted);
+}
+
+// ---------------------------------------------------------------------------
+// READING, WITH asn1js. One value and nothing after it, as `scep_cms.ts`
+// reads: bytes nobody signed riding behind a signed structure are bytes two
+// readers disagree about.
+// ---------------------------------------------------------------------------
+function pkinitReadOne(bytes, what) {
+  log.debug("Entering pkinitReadOne(). " + what);
+  const buf = Buffer.from(bytes || []);
+  let parsed = null;
+  try {
+    parsed = buf.length ? asn1js.fromBER(new Uint8Array(buf).buffer) : null;
+  } catch (e) {
+    log.debug("Caught in pkinitReadOne(): " + ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || parsed.offset === -1 || parsed.offset !== buf.length ||
+      parsed.result.error) {
+    log.debug("Leaving pkinitReadOne(). Not one value.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: ' + what + ' is not one BER value');
+  }
+  log.debug("Leaving pkinitReadOne().");
+  return parsed.result;
+}
+
+// HOT PATH helpers for the tree walk below: called per node of every
+// SignedData, so no Entering/Leaving pair. It would drown the log.
+function pkinitKids(node) {
+  return node && node.valueBlock && Array.isArray(node.valueBlock.value)
+    ? node.valueBlock.value : [];
+}
+
+// HOT PATH: per node of every SignedData, as pkinitKids() above.
+function pkinitIs(node, tagClass, tagNumber) {
+  return !!(node && node.idBlock && node.idBlock.tagClass === tagClass &&
+            node.idBlock.tagNumber === tagNumber);
+}
+
+// HOT PATH: per node of every SignedData, as pkinitKids() above.
+function pkinitRaw(node) {
+  return Buffer.from(node.valueBeforeDecodeView);
+}
+
+// HOT PATH: per node of every SignedData, as pkinitKids() above.
+function pkinitOidOf(node) {
+  return pkinitIs(node, 1, 6) ? String(node.valueBlock.toString()) : '';
+}
+
+// The octets of an OCTET STRING, primitive or BER-constructed, or of an
+// implicitly tagged one. HOT PATH: per node, as pkinitKids() above.
+function pkinitOctets(node) {
+  if (!node || !node.idBlock) {
+    return null;
+  }
+  if (node.idBlock.isConstructed ||
+      (node.valueBlock && node.valueBlock.isConstructed)) {
+    const parts = [];
+    const kids = pkinitKids(node);
+    for (let i = 0; i < kids.length; i++) {
+      const one = pkinitOctets(kids[i]);
+      if (one === null) {
+        return null;
+      }
+      parts.push(one);
+    }
+    return Buffer.concat(parts);
+  }
+  const view = node.valueBlock && node.valueBlock.valueHexView;
+  return view ? Buffer.from(view) : null;
+}
+
+// A certificate's issuer Name and serialNumber, as their encodings, and its
+// subjectKeyIdentifier when it has one: what a SignerIdentifier is matched
+// against.
+/**
+ * Reads a certificate's issuer, serial number and subject key identifier as
+ * their DER encodings, for matching a CMS SignerIdentifier.
+ *
+ * @param certDer - the certificate
+ * @returns `{ issuer, serial, ski }`; `ski` is null when absent
+ * @throws Error when it is not a certificate
+ */
+function pkinitCertificateIds(certDer) {
+  log.debug("Entering pkinitCertificateIds().");
+  const cert = pkinitReadOne(certDer, 'a certificate');
+  const tbs = pkinitKids(cert)[0];
+  const fields = pkinitKids(tbs);
+  const i = pkinitIs(fields[0], 3, 0) ? 1 : 0;
+  const serial = fields[i];
+  const issuer = fields[i + 2];
+  if (!pkinitIs(serial, 1, 2) || !pkinitIs(issuer, 1, 16)) {
+    log.debug("Leaving pkinitCertificateIds(). Not a certificate.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: not an X.509 certificate');
+  }
+  let ski = null;
+  const extensions = fields.filter(function (one) {
+    return pkinitIs(one, 3, 3);
+  })[0];
+  pkinitKids(pkinitKids(extensions)[0]).forEach(function (ext) {
+    const parts = pkinitKids(ext);
+    if (pkinitOidOf(parts[0]) === '2.5.29.14') {
+      const wrapped = pkinitOctets(parts[parts.length - 1]);
+      try {
+        ski = pkinitOctets(pkinitReadOne(wrapped, 'a subjectKeyIdentifier'));
+      } catch (e) {
+        log.debug("Caught in pkinitCertificateIds(): " +
+                  ((e && e.message) || e));
+        ski = null;
+      }
+    }
+  });
+  log.debug("Leaving pkinitCertificateIds().");
+  return { issuer: pkinitRaw(issuer), serial: pkinitRaw(serial), ski: ski };
+}
+
+// ---------------------------------------------------------------------------
+// READ A SignedData: `{ eContentType, eContent, certificates, signerInfos }`,
+// each SignerInfo with its sid, digest, signature algorithm, the signed
+// attributes as they arrived and the two this section checks. Throws when it
+// is not one.
+// ---------------------------------------------------------------------------
+/**
+ * Reads a CMS ContentInfo holding a SignedData: the encapsulated content,
+ * the certificates and each SignerInfo with its signed attributes as they
+ * arrived.
+ *
+ * @param contentInfoDer - the ContentInfo
+ * @returns `{ eContentType, eContent, certificates, signerInfos }`
+ * @throws Error when it is not a SignedData
+ */
+function pkinitReadSignedData(contentInfoDer) {
+  log.debug("Entering pkinitReadSignedData().");
+  const info = pkinitReadOne(contentInfoDer, 'the ContentInfo');
+  const top = pkinitKids(info);
+  if (!pkinitIs(info, 1, 16) ||
+      pkinitOidOf(top[0]) !== PKINIT_OID.signedData ||
+      !pkinitIs(top[1], 3, 0)) {
+    log.debug("Leaving pkinitReadSignedData(). Not a SignedData.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: the ContentInfo does not hold a SignedData');
+  }
+  const signed = pkinitKids(pkinitKids(top[1])[0]);
+  const encap = pkinitKids(signed[2]);
+  const eContentType = pkinitOidOf(encap[0]);
+  const eContent = encap[1] && pkinitIs(encap[1], 3, 0)
+    ? pkinitOctets(pkinitKids(encap[1])[0]) : null;
+  let at = 3;
+  const certificates = [];
+  if (signed[at] && pkinitIs(signed[at], 3, 0)) {
+    pkinitKids(signed[at]).forEach(function (one) {
+      if (pkinitIs(one, 1, 16)) {
+        certificates.push(pkinitRaw(one));
+      }
+    });
+    at++;
+  }
+  if (signed[at] && pkinitIs(signed[at], 3, 1)) {
+    at++;
+  }
+  const signerSet = signed[at];
+  if (!eContentType || !pkinitIs(signerSet, 1, 17) ||
+      signed.length !== at + 1) {
+    log.debug("Leaving pkinitReadSignedData(). Malformed.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: the SignedData is not well formed');
+  }
+  const signerInfos = pkinitKids(signerSet).map(function (si) {
+    const f = pkinitKids(si);
+    const sid = f[1];
+    let k = 3;
+    let signedAttrsRaw = null;
+    const attrs = {};
+    if (f[k] && pkinitIs(f[k], 3, 0)) {
+      signedAttrsRaw = pkinitRaw(f[k]);
+      pkinitKids(f[k]).forEach(function (attr) {
+        const parts = pkinitKids(attr);
+        const type = pkinitOidOf(parts[0]);
+        const values = pkinitKids(parts[1]);
+        if (values.length !== 1) {
+          // error-code: none — a reader; the caller refuses what does not decode
+          throw new Error('pkinit: a signed attribute has ' + values.length +
+                          ' values');
+        }
+        if (type === PKINIT_OID.contentType) {
+          attrs.contentType = pkinitOidOf(values[0]);
+        } else if (type === PKINIT_OID.messageDigest) {
+          attrs.messageDigest = pkinitOctets(values[0]);
+        }
+      });
+      k++;
+    }
+    return {
+      sid: pkinitIs(sid, 3, 0)
+        ? { ski: pkinitOctets(sid) }
+        : { issuer: pkinitRaw(pkinitKids(sid)[0]),
+            serial: pkinitRaw(pkinitKids(sid)[1]) },
+      digestAlg: pkinitOidOf(pkinitKids(f[2])[0]),
+      signedAttrsRaw: signedAttrsRaw,
+      contentTypeAttr: attrs.contentType || '',
+      messageDigestAttr: attrs.messageDigest || null,
+      signatureAlg: pkinitOidOf(pkinitKids(f[k])[0]),
+      signature: pkinitOctets(f[k + 1])
+    };
+  });
+  log.debug("Leaving pkinitReadSignedData(). " + certificates.length +
+            " certificate(s), " + signerInfos.length + " signer(s).");
+  return { eContentType: eContentType, eContent: eContent,
+           certificates: certificates, signerInfos: signerInfos };
+}
+
+// Does a SignerIdentifier name this certificate?
+/**
+ * Says whether a SignerInfo's identifier names a certificate.
+ *
+ * @param sid - the `sid` of a `pkinitReadSignedData()` signer
+ * @param certDer - the certificate
+ * @returns true when it does
+ */
+function pkinitSignerIdentifies(sid, certDer) {
+  log.debug("Entering pkinitSignerIdentifies().");
+  let ids = null;
+  try {
+    ids = pkinitCertificateIds(certDer);
+  } catch (e) {
+    log.debug("Caught in pkinitSignerIdentifies(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving pkinitSignerIdentifies(). Not a certificate.");
+    return false;
+  }
+  const same = sid.ski
+    ? !!ids.ski && ids.ski.equals(Buffer.from(sid.ski))
+    : ids.issuer.equals(Buffer.from(sid.issuer)) &&
+      ids.serial.equals(Buffer.from(sid.serial));
+  log.debug("Leaving pkinitSignerIdentifies(). " + same);
+  return same;
+}
+
+// ---------------------------------------------------------------------------
+// VERIFY a SignedData's one signature with the signer's certificate.
+// Answers `{ ok: true, digest }` or `{ ok: false, reason, why }`, the reason
+// being which RFC 4556 error the caller sends: `digest`
+// (KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED) or `signature`
+// (KDC_ERR_INVALID_SIG).
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a SignedData's one signature with the signer's certificate: the
+ * digest, the content-type and message-digest attributes and the signature
+ * over the signed attributes as they arrived.
+ *
+ * @param signed - a `pkinitReadSignedData()` answer
+ * @param certDer - the signer's certificate
+ * @returns `{ ok: true, digest }`, or `{ ok: false, reason, why }` with a
+ *   reason of `digest` or `signature`
+ */
+function pkinitVerifySignedData(signed, certDer) {
+  log.debug("Entering pkinitVerifySignedData().");
+  const signer = signed.signerInfos[0];
+  if (signed.signerInfos.length !== 1) {
+    log.debug("Leaving pkinitVerifySignedData(). Not one signer.");
+    return { ok: false, reason: 'signature',
+             why: 'the SignedData has ' + signed.signerInfos.length +
+                  ' SignerInfos; RFC 4556 section 3.2.1 item 4 requires one' };
+  }
+  const digest = PKINIT_CMS_DIGEST_OIDS[signer.digestAlg];
+  if (!digest) {
+    log.debug("Leaving pkinitVerifySignedData(). Digest refused.");
+    return { ok: false, reason: 'digest',
+             why: 'the AuthPack is signed over ' +
+                  (PKINIT_REFUSED_DIGESTS[signer.digestAlg] ||
+                   'an unknown digest (' + signer.digestAlg + ')') +
+                  '; this KDC accepts SHA-256, SHA-384 and SHA-512' };
+  }
+  let x509 = null;
+  try {
+    x509 = new nodeCrypto.X509Certificate(Buffer.from(certDer));
+  } catch (e) {
+    log.debug("Caught in pkinitVerifySignedData(): " + ((e && e.message) || e));
+    x509 = null;
+  }
+  const keyType = x509 ? x509.publicKey.asymmetricKeyType : '';
+  const sig = PKINIT_CMS_SIGNATURES[signer.signatureAlg];
+  if (!x509 || !sig || sig.key !== keyType ||
+      (sig.digest && sig.digest !== digest.id)) {
+    log.debug("Leaving pkinitVerifySignedData(). Signature algorithm.");
+    return { ok: false, reason: 'signature',
+             why: 'the signature algorithm (' + signer.signatureAlg + ') is ' +
+                  'not one this KDC verifies, or does not agree with the ' +
+                  'digest or with the ' + (keyType || 'unreadable') +
+                  ' key in the signer\'s certificate' };
+  }
+  if (!signer.signedAttrsRaw || signer.contentTypeAttr !==
+      signed.eContentType) {
+    log.debug("Leaving pkinitVerifySignedData(). content-type attribute.");
+    // RFC 4556 section 3.2.1 item 2: "the signed attribute content-type MUST
+    // be present in this SignedData instance".
+    return { ok: false, reason: 'signature',
+             why: 'the SignedData carries no content-type signed attribute ' +
+                  'naming its content (' + signed.eContentType + ')' };
+  }
+  const computed = nodeCrypto.createHash(digest.id)
+    .update(signed.eContent || Buffer.alloc(0)).digest();
+  const claimed = signer.messageDigestAttr;
+  if (!claimed || claimed.length !== computed.length ||
+      !nodeCrypto.timingSafeEqual(claimed, computed)) {
+    log.debug("Leaving pkinitVerifySignedData(). message-digest.");
+    return { ok: false, reason: 'signature',
+             why: 'the message-digest signed attribute is not the ' +
+                  digest.label + ' of the AuthPack' };
+  }
+  const signedBytes = Buffer.from(signer.signedAttrsRaw);
+  signedBytes[0] = 0x31;
+  let verified = false;
+  try {
+    verified = nodeCrypto.verify(digest.id, signedBytes, x509.publicKey,
+                                 signer.signature || Buffer.alloc(0));
+  } catch (e) {
+    log.debug("Caught in pkinitVerifySignedData(): " + ((e && e.message) || e));
+    verified = false;
+  }
+  if (!verified) {
+    log.debug("Leaving pkinitVerifySignedData(). Does not verify.");
+    return { ok: false, reason: 'signature',
+             why: 'the signature over the AuthPack does not verify with the ' +
+                  'signer\'s certificate' };
+  }
+  log.debug("Leaving pkinitVerifySignedData(). " + digest.label + ", " +
+            sig.label);
+  return { ok: true, digest: digest.id };
+}
+
+// ---------------------------------------------------------------------------
+// WRITE a SignedData: one signer, SHA-256, the content-type and
+// message-digest signed attributes, the signer's certificate and the chain
+// handed in (the caller leaves the Root out). RSA keys sign PKCS #1 v1.5 and
+// say `rsaEncryption`, as OpenSSL writes it; EC keys sign ECDSA.
+// ---------------------------------------------------------------------------
+/**
+ * Writes a CMS ContentInfo holding a SignedData over `content`, signed with
+ * SHA-256 by an RSA or EC key, carrying the given certificates — or, with no
+ * `privateKey`, RFC 8062's unsigned SignedData, with no signer and no
+ * certificate.
+ *
+ * @param opts - `contentType` (an OID), `content` (bytes), `signerCertDer`,
+ *   `chainDers` (more certificates, the Root left out) and `privateKey`
+ * @returns the ContentInfo's DER
+ * @throws Error for a key that is neither RSA nor EC
+ */
+function pkinitSignedData(opts) {
+  log.debug("Entering pkinitSignedData(). " + opts.contentType);
+  const content = Buffer.from(opts.content);
+  const sha256 = pkinitTlv(0x30, [pkinitOidDer('2.16.840.1.101.3.4.2.1')]);
+  if (!opts.privateKey) {
+    // RFC 8062 section 4.1.1's anonymous AuthPack: "the signerInfos field of
+    // the SignedData ... is empty, and the certificates field is absent".
+    log.debug("Leaving pkinitSignedData(). Unsigned.");
+    return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.signedData),
+      pkinitTlv(0xa0, [pkinitTlv(0x30, [
+        pkinitUnsignedIntegerDer([3]),
+        pkinitSetOf([sha256]),
+        pkinitTlv(0x30, [pkinitOidDer(opts.contentType),
+                         pkinitTlv(0xa0, [pkinitTlv(0x04, content)])]),
+        pkinitTlv(0x31, [])])])]);
+  }
+  const key = nodeCrypto.createPrivateKey(opts.privateKey);
+  const kind = key.asymmetricKeyType;
+  if (kind !== 'rsa' && kind !== 'ec') {
+    log.debug("Leaving pkinitSignedData(). Unsupported key.");
+    // error-code: none — a programming error; the KDC key is RSA or EC
+    throw new Error('pkinit: a KDC signs with RSA or EC, not ' + kind);
+  }
+  const signatureAlg = kind === 'rsa'
+    ? pkinitTlv(0x30, [pkinitOidDer('1.2.840.113549.1.1.1'),
+                       Buffer.from([0x05, 0x00])])
+    : pkinitTlv(0x30, [pkinitOidDer('1.2.840.10045.4.3.2')]);
+  const attrs = [
+    pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.contentType),
+                     pkinitSetOf([pkinitOidDer(opts.contentType)])]),
+    pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.messageDigest),
+                     pkinitSetOf([pkinitTlv(0x04,
+                       nodeCrypto.createHash('sha256').update(content)
+                         .digest())])])
+  ];
+  const signedAttrs = pkinitSetOf(attrs);
+  const signature = nodeCrypto.sign('sha256', signedAttrs, key);
+  const ids = pkinitCertificateIds(opts.signerCertDer);
+  const signerInfo = pkinitTlv(0x30, [
+    pkinitUnsignedIntegerDer([1]),
+    pkinitTlv(0x30, [ids.issuer, ids.serial]),
+    sha256,
+    Buffer.concat([Buffer.from([0xa0]), signedAttrs.subarray(1)]),
+    signatureAlg,
+    pkinitTlv(0x04, signature)
+  ]);
+  const certificates = [opts.signerCertDer].concat(opts.chainDers || []);
+  const signedData = pkinitTlv(0x30, [
+    // Version 3: the content is not id-data (RFC 5652 section 5.1).
+    pkinitUnsignedIntegerDer([3]),
+    pkinitSetOf([sha256]),
+    pkinitTlv(0x30, [pkinitOidDer(opts.contentType),
+                     pkinitTlv(0xa0, [pkinitTlv(0x04, content)])]),
+    pkinitTlv(0xa0, certificates.map(function (one) {
+      return Buffer.from(one);
+    })),
+    pkinitSetOf([signerInfo])
+  ]);
+  log.debug("Leaving pkinitSignedData().");
+  return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.signedData),
+                          pkinitTlv(0xa0, [signedData])]);
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY AGREEMENT. The client's SubjectPublicKeyInfo names the group and
+// carries its public value; the KDC makes an ephemeral key in the same
+// group, computes the shared secret and answers its own public value in the
+// form KDCDHKeyInfo's BIT STRING carries (RFC 3279: a DER INTEGER for MODP,
+// the uncompressed point for a curve). Answers `{ ok: true, group, secret,
+// kdcPublicValue }` or `{ ok: false, reason: 'params' | 'value', why }`;
+// `params` is KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED.
+//
+// **THE SHARED SECRET IS PADDED TO THE MODULUS** (RFC 4556 section 3.2.3.1:
+// "padded with leading zeros such that the size of DHSharedSecret in octets
+// is the same as that of the modulus"), which node does not promise. An ECDH
+// secret is the x-coordinate at the field's size (RFC 5349 section 4), which
+// node does.
+//
+// **THE CLIENT'S VALUE IS CHECKED** before it is used: 1 < y < p - 1 for a
+// MODP group, whose primes are safe primes so that the range check is the
+// small-subgroup check; a point on the curve for ECDH, which node refuses
+// otherwise.
+// ---------------------------------------------------------------------------
+/**
+ * Runs the KDC's half of a PKINIT Diffie-Hellman exchange against the
+ * client's SubjectPublicKeyInfo: the group checked against
+ * `PKINIT_DH_GROUPS`, the client's value checked, an ephemeral key made.
+ *
+ * @param clientSpkiDer - the AuthPack's clientPublicValue
+ * @returns `{ ok: true, group, secret, kdcPublicValue }`, or `{ ok: false,
+ *   reason, why }` with a reason of `params` or `value`
+ */
+function pkinitKeyAgreement(clientSpkiDer) {
+  log.debug("Entering pkinitKeyAgreement().");
+  let spki;
+  try {
+    spki = pkinitReadOne(clientSpkiDer, 'the clientPublicValue');
+  } catch (e) {
+    log.debug("Caught in pkinitKeyAgreement(): " + ((e && e.message) || e));
+    log.debug("Leaving pkinitKeyAgreement(). Unreadable.");
+    return { ok: false, reason: 'params',
+             why: 'the clientPublicValue is not a SubjectPublicKeyInfo' };
+  }
+  const algorithm = pkinitKids(pkinitKids(spki)[0]);
+  const bits = pkinitKids(spki)[1];
+  const oid = pkinitOidOf(algorithm[0]);
+  const publicBits = bits && pkinitIs(bits, 1, 3) && bits.valueBlock &&
+                     bits.valueBlock.valueHexView
+    ? Buffer.from(bits.valueBlock.valueHexView) : null;
+  if (!publicBits) {
+    log.debug("Leaving pkinitKeyAgreement(). No public value.");
+    return { ok: false, reason: 'params',
+             why: 'the clientPublicValue carries no public key' };
+  }
+  if (oid === PKINIT_OID.ecPublicKey) {
+    const curveOid = pkinitOidOf(algorithm[1]);
+    const group = PKINIT_DH_GROUPS.filter(function (one) {
+      return one.kind === 'ec' && one.oid === curveOid;
+    })[0];
+    if (!group) {
+      log.debug("Leaving pkinitKeyAgreement(). Curve refused.");
+      return { ok: false, reason: 'params',
+               why: 'ECDH on the curve ' + (curveOid || '(not named)') +
+                    ' is not accepted; this KDC agrees on P-256, P-384 and ' +
+                    'P-521' };
+    }
+    const ecdh = nodeCrypto.createECDH(group.node);
+    ecdh.generateKeys();
+    let secret;
+    try {
+      secret = ecdh.computeSecret(publicBits);
+    } catch (e) {
+      log.debug("Caught in pkinitKeyAgreement(): " + ((e && e.message) || e));
+      log.debug("Leaving pkinitKeyAgreement(). Not a point on the curve.");
+      return { ok: false, reason: 'value',
+               why: 'the client\'s ECDH public value is not a point on ' +
+                    group.id };
+    }
+    log.debug("Leaving pkinitKeyAgreement(). " + group.id);
+    return { ok: true, group: group, secret: Buffer.from(secret),
+             kdcPublicValue: Buffer.from(ecdh.getPublicKey(null,
+                                                            'uncompressed')) };
+  }
+  if (oid !== PKINIT_OID.dhPublicNumber) {
+    log.debug("Leaving pkinitKeyAgreement(). Not DH.");
+    return { ok: false, reason: 'params',
+             why: 'the clientPublicValue is a ' + (oid || 'unnamed') +
+                  ' key, not Diffie-Hellman (dhpublicnumber) or ECDH ' +
+                  '(id-ecPublicKey)' };
+  }
+  const domain = pkinitKids(algorithm[1]).map(function (one) {
+    return pkinitIs(one, 1, 2) ? Buffer.from(one.valueBlock.valueHexView)
+                               : null;
+  });
+  const stripped = function (buf) {
+    log.debug("Entering stripped().");
+    let i = 0;
+    while (buf && i < buf.length - 1 && buf[i] === 0) {
+      i++;
+    }
+    log.debug("Leaving stripped().");
+    return buf ? buf.subarray(i) : Buffer.alloc(0);
+  };
+  const p = stripped(domain[0]);
+  const g = stripped(domain[1]);
+  const group = PKINIT_DH_GROUPS.filter(function (one) {
+    if (one.kind !== 'modp') {
+      return false;
+    }
+    const known = nodeCrypto.getDiffieHellman(one.node);
+    return stripped(known.getPrime()).equals(p) &&
+           stripped(known.getGenerator()).equals(g);
+  })[0];
+  if (!group) {
+    log.debug("Leaving pkinitKeyAgreement(). Group refused.");
+    return { ok: false, reason: 'params',
+             why: 'the Diffie-Hellman group (' + (p.length * 8) + '-bit ' +
+                  'modulus) is not one of RFC 3526\'s groups 14 to 18; ' +
+                  'group 2 and any group of the client\'s own are refused' };
+  }
+  const dh = nodeCrypto.getDiffieHellman(group.node);
+  const prime = BigInt('0x' + dh.getPrime().toString('hex'));
+  let y;
+  try {
+    const intNode = pkinitReadOne(publicBits, 'the DH public value');
+    y = pkinitIs(intNode, 1, 2)
+      ? BigInt('0x' + (Buffer.from(intNode.valueBlock.valueHexView)
+                         .toString('hex') || '0'))
+      : -1n;
+  } catch (e) {
+    log.debug("Caught in pkinitKeyAgreement(): " + ((e && e.message) || e));
+    y = -1n;
+  }
+  if (y <= 1n || y >= prime - 1n) {
+    log.debug("Leaving pkinitKeyAgreement(). Value out of range.");
+    return { ok: false, reason: 'value',
+             why: 'the client\'s Diffie-Hellman public value is outside ' +
+                  '1 < y < p - 1' };
+  }
+  dh.generateKeys();
+  const modulusBytes = dh.getPrime().length;
+  const yBytes = Buffer.from(y.toString(16).padStart(modulusBytes * 2, '0'),
+                             'hex');
+  const raw = Buffer.from(dh.computeSecret(yBytes));
+  const secret = Buffer.concat([Buffer.alloc(Math.max(0,
+                                  modulusBytes - raw.length)), raw]);
+  log.debug("Leaving pkinitKeyAgreement(). " + group.id);
+  return { ok: true, group: group, secret: secret,
+           kdcPublicValue: pkinitUnsignedIntegerDer(dh.getPublicKey()) };
+}
+
+// The groups this KDC takes, as the AlgorithmIdentifiers TD-DH-PARAMETERS
+// lists (RFC 4556 section 3.2.2; RFC 3279 section 2.3.3 for a MODP group,
+// its DomainParameters p, g and q; RFC 5349 section 4 for a curve).
+/**
+ * Returns the AlgorithmIdentifiers of the groups this KDC agrees over, in
+ * preference order, for TD-DH-PARAMETERS.
+ *
+ * @returns the DER of each
+ */
+function pkinitDhParameters() {
+  log.debug("Entering pkinitDhParameters().");
+  const out = PKINIT_DH_GROUPS.map(function (group) {
+    if (group.kind === 'ec') {
+      return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.ecPublicKey),
+                              pkinitOidDer(group.oid)]);
+    }
+    const dh = nodeCrypto.getDiffieHellman(group.node);
+    const p = BigInt('0x' + dh.getPrime().toString('hex'));
+    const q = (p - 1n) / 2n;
+    return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.dhPublicNumber),
+      pkinitTlv(0x30, [pkinitUnsignedIntegerDer(dh.getPrime()),
+                       pkinitUnsignedIntegerDer(dh.getGenerator()),
+                       pkinitUnsignedIntegerDer(Buffer.from(
+                         q.toString(16).padStart(dh.getPrime().length * 2,
+                                                 '0'), 'hex'))])]);
+  });
+  log.debug("Leaving pkinitDhParameters().");
+  return out;
+}
+
+// The digests this KDC accepts in a SignedData, as AlgorithmIdentifiers, for
+// TD-CMS-DIGEST-ALGORITHMS (RFC 8636 section 4).
+/**
+ * Returns the AlgorithmIdentifiers of the CMS digests this KDC accepts, in
+ * preference order, for TD-CMS-DIGEST-ALGORITHMS.
+ *
+ * @returns the DER of each
+ */
+function pkinitDigestAlgorithms() {
+  log.debug("Entering pkinitDigestAlgorithms().");
+  log.debug("Leaving pkinitDigestAlgorithms().");
+  return Object.keys(PKINIT_CMS_DIGEST_OIDS).map(function (oid) {
+    return pkinitTlv(0x30, [pkinitOidDer(oid)]);
+  });
+}
+
+// RFC 4556 section 3.2.1 item 6: paChecksum is the SHA-1 of the
+// KDC-REQ-BODY. SHA-1 because the RFC fixes it, and only as a binding of the
+// request to the signed AuthPack: the reply key's binding to the exchange is
+// RFC 8636's KDF, whose OtherInfo covers the whole AS-REQ.
+/**
+ * Computes RFC 4556's paChecksum, the SHA-1 of the KDC-REQ-BODY, and
+ * compares it with the one a request carries in constant time.
+ *
+ * @param reqBodyBytes - the KDC-REQ-BODY as it arrived
+ * @param claimed - the PKAuthenticator's paChecksum
+ * @returns true when they agree
+ */
+function pkinitPaChecksumMatches(reqBodyBytes, claimed) {
+  log.debug("Entering pkinitPaChecksumMatches().");
+  const computed = sha1Digest('pkinit-pachecksum',
+                              Buffer.from(reqBodyBytes || []));
+  const given = Buffer.from(claimed || []);
+  log.debug("Leaving pkinitPaChecksumMatches().");
+  return given.length === computed.length &&
+         nodeCrypto.timingSafeEqual(given, computed);
+}
+
+// The key-generation seed length of an AS reply key's enctype, which is its
+// key length for every enctype this KDC uses: random-to-key is the identity
+// for the AES enctypes (RFC 3962, RFC 8009) and for rc4-hmac (RFC 4757).
+function pkinitSeedBytes(etype) {
+  log.debug("Entering pkinitSeedBytes(). " + etype);
+  const profile = KRB5_PRF_ETYPES[etype];
+  if (!profile) {
+    log.debug("Leaving pkinitSeedBytes(). Unknown enctype.");
+    // error-code: none — the caller chose the enctype from this KDC's list
+    throw new Error('pkinit: no reply key of enctype ' + etype +
+                    ' is derived here');
+  }
+  log.debug("Leaving pkinitSeedBytes().");
+  return profile.keyBytes;
+}
+
+/**
+ * RFC 4556 section 3.2.3.1's `octetstring2key()`: the SHA-1 of a counter
+ * octet and the input, in counter mode, truncated to the enctype's key
+ * length, as the AS reply key.
+ *
+ * @param etype - the reply key's enctype
+ * @param x - DHSharedSecret, with n_c and n_k when DH keys are reused
+ * @returns `{ etype, key }`
+ */
+function pkinitOctetString2Key(etype, x) {
+  log.debug("Entering pkinitOctetString2Key(). " + etype);
+  const size = pkinitSeedBytes(etype);
+  const parts = [];
+  let have = 0;
+  for (let counter = 0; have < size; counter++) {
+    const block = nodeCrypto.createHash('sha1')
+      .update(Buffer.from([counter & 0xff])).update(Buffer.from(x)).digest();
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving pkinitOctetString2Key().");
+  return { etype: Number(etype),
+           key: new Uint8Array(Buffer.concat(parts).subarray(0, size)) };
+}
+
+/**
+ * RFC 8636 section 6's KDF: SP 800-56A's one-step KDF, H(counter || Z ||
+ * OtherInfo) in counter mode, truncated to the enctype's key length, as the
+ * AS reply key.
+ *
+ * @param kdfOid - one of `PKINIT_KDFS`
+ * @param z - the Diffie-Hellman shared secret, padded to the modulus
+ * @param otherInfo - the DER OtherInfo (`krb5_pkinit_codec.ts` builds it)
+ * @param etype - the reply key's enctype
+ * @returns `{ etype, key }`
+ * @throws Error for a KDF not in the table
+ */
+function pkinitKdf(kdfOid, z, otherInfo, etype) {
+  log.debug("Entering pkinitKdf(). " + kdfOid + " " + etype);
+  const kdf = PKINIT_KDFS.filter(function (one) {
+    return one.oid === String(kdfOid);
+  })[0];
+  if (!kdf) {
+    log.debug("Leaving pkinitKdf(). Unknown KDF.");
+    // error-code: none — the caller chose the KDF from `PKINIT_KDFS`
+    throw new Error('pkinit: ' + kdfOid + ' is not a KDF of RFC 8636');
+  }
+  const size = pkinitSeedBytes(etype);
+  const parts = [];
+  let have = 0;
+  for (let counter = 1; have < size; counter++) {
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(counter >>> 0, 0);
+    const block = nodeCrypto.createHash(kdf.hash).update(c)
+      .update(Buffer.from(z)).update(Buffer.from(otherInfo)).digest();
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving pkinitKdf(). " + kdf.label);
+  return { etype: Number(etype),
+           key: new Uint8Array(Buffer.concat(parts).subarray(0, size)) };
+}
+
+// ===========================================================================
+// SECTION 18 — CERTIFICATE FIELD CHECKS (#1360, 2026-11-06).
+//
+// Everything decidable from the bytes of ONE certificate and the role it is
+// asked to play. The door (`common/certificate_trust.ts`) composes these with
+// a path, a truststore and revocation, which this leaf may not reach: a chain
+// needs anchors from a store and a revocation answer dials. `pki.js` asks
+// them as the last rule of a path (`pathRuleProblem()`'s `opts.leaf`) and for
+// who may enter a truststore (`anchorProblem()`), so there is one reading of
+// what a keyUsage bit or an extendedKeyUsage means across the service.
+//
+// **THE CHECKS ARE THE CHECK, NOT THE MODE.** `rsaKeyProblem()` and
+// `xmlEcdsaCurveProblem()` wave a short key or an odd curve through in
+// development, which is right for what THEY are asked. A caller reaches this
+// section only because somebody decided these checks apply, and paranoid
+// forced on in development has to refuse the same certificate product does,
+// so the size and the curve are asked here outright. What `rsaKeyProblem()`
+// still answers (the exponent, ROCA) it answers in every mode.
+//
+// **A DN IS NOT COMPARED HERE.** `common/certificate_subject.js` holds the one
+// comparison and it requires this module, so `certificateNameMatches()` is
+// about the subjectAltName forms RFC 9525 names and the door compares a DN.
+//
+// **PARSED SYNCHRONOUSLY, WITH pkijs ONLY FOR THE EXTENSIONS.** The vendored
+// `describeCertificate()` is asynchronous because of its key import and its
+// digests, and two doors the door serves are synchronous.
+// ===========================================================================
+
+const CERTIFICATE_ROLES = Object.freeze(['leaf', 'intermediate', 'anchor']);
+const KEY_USAGE_BITS = Object.freeze([
+  'digitalSignature', 'nonRepudiation', 'keyEncipherment', 'dataEncipherment',
+  'keyAgreement', 'keyCertSign', 'cRLSign', 'encipherOnly', 'decipherOnly']);
+// The one table of the extended key usages a use case asks by name.
+const EKU = Object.freeze({
+  any: '2.5.29.37.0',
+  serverAuth: '1.3.6.1.5.5.7.3.1',
+  clientAuth: '1.3.6.1.5.5.7.3.2',
+  codeSigning: '1.3.6.1.5.5.7.3.3',
+  ocspSigning: '1.3.6.1.5.5.7.3.9',
+  pkinitClientAuth: '1.3.6.1.5.2.3.4',
+  msSmartCardLogon: '1.3.6.1.4.1.311.20.2.2',
+  tcgAik: '2.23.133.8.3',
+  mdocDs: '1.0.18013.5.1.2'
+});
+// Every extension a path rule reads, and so may be accepted marked critical.
+// `pki.js`'s path rules read this same list.
+const CERTIFICATE_UNDERSTOOD_CRITICAL = Object.freeze([
+  '2.5.29.14', '2.5.29.15', '2.5.29.17', '2.5.29.19', '2.5.29.30',
+  '2.5.29.35', '2.5.29.37', '2.5.29.32', '2.5.29.33', '2.5.29.36',
+  '2.5.29.54']);
+// One code per check, so an operator learns WHICH field refused.
+const FIELD_CHECK_CODES = Object.freeze({
+  expired: 'STS-KEYS-0168',
+  'not-yet-valid': 'STS-KEYS-0169',
+  'basic-constraints': 'STS-KEYS-0170',
+  'key-usage': 'STS-KEYS-0171',
+  'extended-key-usage': 'STS-KEYS-0172',
+  'signature-strength': 'STS-KEYS-0173',
+  'key-strength': 'STS-KEYS-0174',
+  'critical-extensions': 'STS-KEYS-0175'
+});
+const CERT_MD_SIGNATURES = ['1.2.840.113549.1.1.2', '1.2.840.113549.1.1.4'];
+const CERT_SHA1_SIGNATURES = ['1.2.840.113549.1.1.5', '1.3.14.3.2.29',
+                              '1.2.840.10045.4.1', '1.2.840.10040.4.3'];
+const CERT_RSASSA_PSS = '1.2.840.113549.1.1.10';
+const CERT_SHA1 = '1.3.14.3.2.26';
+const CERT_MINIMUM_RSA_BITS = 2048;
+const CERT_EDWARDS_KEYS = ['ed25519', 'ed448'];
+
+// The first value of an extension's OCTET STRING, or an Error for bytes that
+// are not BER.
+function certificateExtensionNode(ext) {
+  log.debug("Entering certificateExtensionNode().");
+  const parsed = asn1js.fromBER(
+    new Uint8Array(ext.extnValue.valueBlock.valueHexView));
+  if (parsed.offset === -1) {
+    log.debug("Leaving certificateExtensionNode(). Not BER.");
+    // error-code: none — the caller reports it as the check it was reading
+    throw new Error('the extension ' + ext.extnID + ' is not DER');
+  }
+  log.debug("Leaving certificateExtensionNode().");
+  // A cast for asn1js's declared union, which names no member every block has.
+  return /** @type {any} */ (parsed.result);
+}
+
+// What an IP address in a subjectAltName's OCTET STRING reads as.
+function certificateIpText(bytes) {
+  log.debug("Entering certificateIpText().");
+  const raw = Buffer.from(bytes);
+  if (raw.length === 4) {
+    log.debug("Leaving certificateIpText(). IPv4.");
+    return Array.from(raw).join('.');
+  }
+  const groups = [];
+  for (let i = 0; i + 1 < raw.length; i += 2) {
+    groups.push(raw.readUInt16BE(i).toString(16));
+  }
+  log.debug("Leaving certificateIpText().");
+  return groups.join(':');
+}
+
+// Which of the weak hashes a certificate's own signature names: 'md', 'sha1'
+// or ''. RSASSA-PSS names its hash in its parameters, and SHA-1 when they
+// name none (RFC 4055 section 3.1).
+function certificateWeakSignature(signatureAlgorithm) {
+  log.debug("Entering certificateWeakSignature().");
+  const oid = signatureAlgorithm.algorithmId;
+  let weak = '';
+  if (CERT_MD_SIGNATURES.indexOf(oid) !== -1) {
+    weak = 'md';
+  } else if (CERT_SHA1_SIGNATURES.indexOf(oid) !== -1) {
+    weak = 'sha1';
+  } else if (oid === CERT_RSASSA_PSS) {
+    let hash = CERT_SHA1;
+    const fields = (signatureAlgorithm.algorithmParams &&
+                    signatureAlgorithm.algorithmParams.valueBlock &&
+                    signatureAlgorithm.algorithmParams.valueBlock.value) || [];
+    fields.forEach(function (field) {
+      if (field.idBlock && field.idBlock.tagNumber === 0 &&
+          field.valueBlock.value && field.valueBlock.value[0] &&
+          field.valueBlock.value[0].valueBlock.value[0]) {
+        hash = field.valueBlock.value[0].valueBlock.value[0].getValue();
+      }
+    });
+    weak = hash === CERT_SHA1 ? 'sha1' : '';
+  }
+  log.debug("Leaving certificateWeakSignature(). " + (weak || 'neither'));
+  return weak;
+}
+
+/**
+ * Reads one certificate's facts: the one reader every page, the inventory and
+ * the field checks use.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns `{ subject, issuer, serialHex, notBefore, notAfter, selfIssued,
+ *   ca, hasBasicConstraints, pathLen, keyUsage, eku, san, critical,
+ *   fingerprint256, spkiSha256, sigAlg, weakSignature, keyAlg, keyBits,
+ *   curve, spkiOid }`; `keyUsage` and `eku` are null where the extension is
+ *   absent, which is not the same as empty
+ * @throws Error when the input is not a certificate
+ */
+function certificateFacts(cert) {
+  log.debug("Entering certificateFacts().");
+  const parsed = parseCertificate(cert);
+  const pkijs = require('pkijs');
+  const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+  const facts = {
+    subject: certificateIdentifiers(parsed.toString()).subject,
+    issuer: certificateIdentifiers(parsed.toString()).issuer,
+    serialHex: String(parsed.serialNumber || '').toLowerCase(),
+    notBefore: Date.parse(parsed.validFrom),
+    notAfter: Date.parse(parsed.validTo),
+    selfIssued: parsed.subject === parsed.issuer,
+    ca: false, hasBasicConstraints: false, pathLen: null,
+    keyUsage: null, eku: null,
+    san: { dns: [], email: [], uri: [], ip: [] },
+    critical: [],
+    fingerprint256: String(parsed.fingerprint256 || ''),
+    spkiSha256: '',
+    sigAlg: pk.signatureAlgorithm.algorithmId,
+    weakSignature: certificateWeakSignature(pk.signatureAlgorithm),
+    keyAlg: '', keyBits: 0, curve: '',
+    spkiOid: pk.subjectPublicKeyInfo.algorithm.algorithmId
+  };
+  (pk.extensions || []).forEach(function (ext) {
+    if (ext.critical) {
+      facts.critical.push(ext.extnID);
+    }
+    if (ext.extnID === '2.5.29.19') {
+      const node = certificateExtensionNode(ext);
+      facts.hasBasicConstraints = true;
+      (node.valueBlock.value || []).forEach(function (field) {
+        if (field instanceof asn1js.Boolean) {
+          facts.ca = !!field.getValue();
+        } else if (field instanceof asn1js.Integer) {
+          facts.pathLen = field.valueBlock.valueDec;
+        }
+      });
+    } else if (ext.extnID === '2.5.29.15') {
+      const raw = Buffer.from(
+        certificateExtensionNode(ext).valueBlock.valueHexView || []);
+      facts.keyUsage = KEY_USAGE_BITS.filter(function (name, bit) {
+        return raw.length > (bit >> 3) &&
+               ((raw[bit >> 3] >> (7 - (bit & 7))) & 1) === 1;
+      });
+    } else if (ext.extnID === '2.5.29.37') {
+      facts.eku = (certificateExtensionNode(ext).valueBlock.value || [])
+        .map(function (purpose) {
+          return purpose.getValue();
+        });
+    } else if (ext.extnID === '2.5.29.17') {
+      (certificateExtensionNode(ext).valueBlock.value || [])
+        .forEach(function (name) {
+          const tag = name.idBlock.tagNumber;
+          const raw = Buffer.from(name.valueBlock.valueHexView || []);
+          if (tag === 1) {
+            facts.san.email.push(raw.toString('latin1'));
+          } else if (tag === 2) {
+            facts.san.dns.push(raw.toString('latin1'));
+          } else if (tag === 6) {
+            facts.san.uri.push(raw.toString('latin1'));
+          } else if (tag === 7) {
+            facts.san.ip.push(certificateIpText(raw));
+          }
+        });
+    }
+  });
+  try {
+    const key = parsed.publicKey;
+    const details = key.asymmetricKeyDetails || {};
+    facts.keyAlg = String(key.asymmetricKeyType || '');
+    facts.keyBits = Number(details.modulusLength || 0);
+    facts.curve = String(details.namedCurve || '');
+    facts.spkiSha256 = sha256Hex(
+      key.export({ type: 'spki', format: 'der' }));
+  } catch (e) {
+    // A key node's OpenSSL cannot read (a composite, say): it is named by its
+    // algorithm's OID, and `certificateFieldProblem()` asks the post-quantum
+    // registry about it.
+    log.debug("Caught in certificateFacts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving certificateFacts().");
+  return facts;
+}
+
+// Is this key strong enough to rely on, whatever mode the realm is in: '' or a
+// sentence.
+function certificateKeyStrengthProblem(parsed, facts) {
+  log.debug("Entering certificateKeyStrengthProblem().");
+  let problem = '';
+  if (!facts.keyAlg) {
+    if (!pqcX509.algForOid(facts.spkiOid)) {
+      problem = 'its public key (' + facts.spkiOid + ') is not one this ' +
+                'service can read';
+    }
+  } else if (facts.keyAlg === 'rsa' || facts.keyAlg === 'rsa-pss') {
+    problem = rsaKeyProblem(parsed.publicKey, 0);
+    if (!problem && facts.keyBits < CERT_MINIMUM_RSA_BITS) {
+      problem = 'a ' + facts.keyBits + '-bit RSA key, where ' +
+                CERT_MINIMUM_RSA_BITS + ' bits or more are required';
+    }
+  } else if (facts.keyAlg === 'ec') {
+    if (XML_ECDSA_CURVES.indexOf(facts.curve) === -1) {
+      problem = 'an EC key on the curve "' + facts.curve + '", which is not ' +
+                'one this service relies on';
+    }
+  } else if (CERT_EDWARDS_KEYS.indexOf(facts.keyAlg) === -1 &&
+             !pqcX509.algForOid(facts.spkiOid)) {
+    problem = 'a ' + facts.keyAlg + ' key, which is not one this service ' +
+              'relies on';
+  }
+  log.debug("Leaving certificateKeyStrengthProblem(). " + (problem || 'ok'));
+  return problem;
+}
+
+/**
+ * Holds one certificate to the role it is asked to play and answers every
+ * check that failed. Pure: no store, no setting and no network, and `now` is
+ * the caller's. The door reads this, because a verdict names every check
+ * rather than the first to fail.
+ *
+ * In order: validity, basicConstraints, keyUsage, extendedKeyUsage, the
+ * signature's hash, the key, and critical extensions. A keyUsage absent
+ * permits everything (RFC 5280 section 4.2.1.3). An extendedKeyUsage absent
+ * is refused only where the use case's specification requires it, and present
+ * it must name a purpose asked, or anyExtendedKeyUsage where presence is not
+ * what is required.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param options - `{ role, now, skewMs, keyUsage (any of; empty asks
+ *   nothing), eku: { oids, required } | null, mayBeCa, allowSha1,
+ *   allowCritical (OIDs), validityAt }`; `validityAt` replaces `now` for the
+ *   window alone, which is sigstore's rule
+ * @returns an array of `{ check, code, why }`, empty when all hold
+ * @throws Error when the input is not a certificate
+ */
+function certificateFieldProblems(cert, options) {
+  log.debug("Entering certificateFieldProblems().");
+  const opts = options || {};
+  const role = opts.role || 'leaf';
+  const parsed = parseCertificate(cert);
+  const facts = certificateFacts(parsed);
+  const problems = [];
+  const refuse = function (check, code, why) {
+    log.debug("Entering refuse(). " + check);
+    problems.push({ check: check, code: code,
+                    why: '"' + facts.subject + '" ' + why });
+    log.debug("Leaving refuse().");
+  };
+  let now = opts.now === undefined ? Date.now() : Number(opts.now);
+  if (opts.validityAt !== undefined) {
+    now = Number(opts.validityAt);
+  }
+  // A certificate's times are whole seconds, so it is valid through the whole
+  // second its notAfter names: `pathValidityProblem()`'s rule.
+  now = Math.floor(now / 1000) * 1000;
+  const skewMs = Number(opts.skewMs || 0);
+  if (now - skewMs > facts.notAfter) {
+    refuse('validity', FIELD_CHECK_CODES.expired,
+           'expired at ' + parsed.validTo);
+  } else if (now + skewMs < facts.notBefore) {
+    refuse('validity', FIELD_CHECK_CODES['not-yet-valid'],
+           'is not valid until ' + parsed.validFrom);
+  }
+  if (role !== 'leaf' && !facts.ca) {
+    refuse('basic-constraints', FIELD_CHECK_CODES['basic-constraints'],
+           'is not a certificate authority (basicConstraints cA)');
+  } else if (role === 'leaf' && facts.ca && !opts.mayBeCa) {
+    refuse('basic-constraints', FIELD_CHECK_CODES['basic-constraints'],
+           'is a certificate authority used as an end entity');
+  }
+  const asked = opts.keyUsage || [];
+  if (facts.keyUsage && asked.length &&
+      !asked.some(function (bit) {
+        return facts.keyUsage.indexOf(bit) !== -1;
+      })) {
+    refuse('key-usage', FIELD_CHECK_CODES['key-usage'],
+           'does not permit ' + asked.join(' or ') + ' (keyUsage: ' +
+           (facts.keyUsage.join(', ') || 'empty') + ')');
+  }
+  if (opts.eku && (opts.eku.oids || []).length) {
+    const named = opts.eku.oids.some(function (oid) {
+      return !!facts.eku && facts.eku.indexOf(oid) !== -1;
+    });
+    const anyPurpose = !!facts.eku && !opts.eku.required &&
+                       facts.eku.indexOf(EKU.any) !== -1;
+    if (!facts.eku && opts.eku.required) {
+      refuse('extended-key-usage', FIELD_CHECK_CODES['extended-key-usage'],
+             'carries no extendedKeyUsage, where ' +
+             opts.eku.oids.join(' or ') + ' is required');
+    } else if (facts.eku && !named && !anyPurpose) {
+      refuse('extended-key-usage', FIELD_CHECK_CODES['extended-key-usage'],
+             'has an extendedKeyUsage that does not name ' +
+             opts.eku.oids.join(' or '));
+    }
+  }
+  if (facts.weakSignature === 'md' ||
+      (facts.weakSignature === 'sha1' && !opts.allowSha1)) {
+    refuse('signature-strength', FIELD_CHECK_CODES['signature-strength'],
+           'is signed with a broken hash (' + facts.sigAlg + ')');
+  }
+  const weakKey = certificateKeyStrengthProblem(parsed, facts);
+  if (weakKey) {
+    refuse('key-strength', FIELD_CHECK_CODES['key-strength'],
+           'holds ' + weakKey);
+  }
+  const allowed = opts.allowCritical || [];
+  const unread = facts.critical.filter(function (oid) {
+    return CERTIFICATE_UNDERSTOOD_CRITICAL.indexOf(oid) === -1 &&
+           allowed.indexOf(oid) === -1;
+  });
+  if (unread.length) {
+    refuse('critical-extensions', FIELD_CHECK_CODES['critical-extensions'],
+           'carries a critical extension nothing here reads (' +
+           unread.join(', ') + ')');
+  }
+  log.debug("Leaving certificateFieldProblems(). " + problems.length + ".");
+  return problems;
+}
+
+/**
+ * The first of `certificateFieldProblems()`, for a caller who only asks
+ * whether the certificate may play the role.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param options - as `certificateFieldProblems()`
+ * @returns null, or `{ check, code, why }`
+ * @throws Error when the input is not a certificate
+ */
+function certificateFieldProblem(cert, options) {
+  log.debug("Entering certificateFieldProblem().");
+  const problems = certificateFieldProblems(cert, options);
+  log.debug("Leaving certificateFieldProblem().");
+  return problems.length ? problems[0] : null;
+}
+
+/**
+ * Answers whether a certificate's subjectAltName names what a caller expects
+ * (RFC 9525: never the common name). A DN is compared by the door, through
+ * `common/certificate_subject.js`, which requires this module.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param expected - `{ dns, ip, uri, email }`; every member given must match
+ * @returns true when each member given matches, false when nothing was given
+ * @throws Error when the input is not a certificate
+ */
+function certificateNameMatches(cert, expected) {
+  log.debug("Entering certificateNameMatches().");
+  const asked = expected || {};
+  const parsed = parseCertificate(cert);
+  const facts = certificateFacts(parsed);
+  const members = ['dns', 'ip', 'uri', 'email'].filter(function (member) {
+    return !!asked[member];
+  });
+  const matched = members.every(function (member) {
+    const value = String(asked[member]);
+    if (member === 'dns') {
+      return !!parsed.checkHost(value, { subject: 'never' });
+    }
+    if (member === 'ip') {
+      return !!parsed.checkIP(value);
+    }
+    if (member === 'email') {
+      return !!parsed.checkEmail(value, { subject: 'never' });
+    }
+    return facts.san.uri.indexOf(value) !== -1;
+  });
+  log.debug("Leaving certificateNameMatches(). " + matched);
+  return members.length > 0 && matched;
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
  * XML Signature and Encryption, JWS and JWE, keys and certificates, password
  * hashing, the key-encryption key, raw signatures, TPM and attestation
- * structures, the Kerberos PRF, DKIM and random values. A leaf library that
+ * structures, the Kerberos PRF, DKIM, random values, HTTP Message
+ * Signatures with Content-Digest, and PKINIT's CMS, key agreement and reply
+ * key. A leaf library that
  * may never require `helpers` back.
  * @namespace
  */
 module.exports = {
+  // --- section 18: certificate field checks (#1360) ---
+  CERTIFICATE_ROLES: CERTIFICATE_ROLES,
+  KEY_USAGE_BITS: KEY_USAGE_BITS,
+  EKU: EKU,
+  CERTIFICATE_UNDERSTOOD_CRITICAL: CERTIFICATE_UNDERSTOOD_CRITICAL,
+  FIELD_CHECK_CODES: FIELD_CHECK_CODES,
+  certificateFacts: certificateFacts,
+  certificateFieldProblems: certificateFieldProblems,
+  certificateFieldProblem: certificateFieldProblem,
+  certificateNameMatches: certificateNameMatches,
+  // --- section 17: the rest of the service's operations (#453) ---
+  SHA1_PURPOSES: SHA1_PURPOSES,
+  sha1Digest: sha1Digest,
+  HMAC_DIGESTS: HMAC_DIGESTS,
+  hmac: hmac,
+  parseCertificate: parseCertificate,
+  decodeJws: decodeJws,
+  verifyX509Signature: verifyX509Signature,
+  certificateSignedWith: certificateSignedWith,
+  signaturePolicy: signaturePolicy,
+  bbs: bbs,
+  signRawSignatureAsync: signRawSignatureAsync,
+  coseSign1Sign: coseSign1Sign,
+  coseSign1SignAsync: coseSign1SignAsync,
+  coseSign1Verify: coseSign1Verify,
+  coseSign1VerifyAsync: coseSign1VerifyAsync,
+  rsaPublicJwkOf: rsaPublicJwkOf,
+  isParsedCertificate: isParsedCertificate,
+  privateKeyFrom: privateKeyFrom,
+  isKeyObject: isKeyObject,
+  KEY_PAIR_TYPES: KEY_PAIR_TYPES,
+  generateKeyPairSync: generateKeyPairSync,
+  generateKeyPairAsync: generateKeyPairAsync,
+  signBytes: signBytes,
+  signatureValid: signatureValid,
+  digestSupported: digestSupported,
+  TLS_NO_RENEGOTIATION: TLS_NO_RENEGOTIATION,
+  // --- #453 group A exports: begin ---
+  // GNAP's three token libraries, held here and nowhere else (#453).
+  MACAROON_MIN_ROOT_KEY_BYTES: MACAROON_MIN_ROOT_KEY_BYTES,
+  macaroonRootKeyUsable: macaroonRootKeyUsable,
+  macaroonMint: macaroonMint,
+  macaroonImport: macaroonImport,
+  macaroonVerify: macaroonVerify,
+  macaroonAttenuate: macaroonAttenuate,
+  ZCAP_LEGACY_SUITE: ZCAP_LEGACY_SUITE,
+  zcapReady: zcapReady,
+  zcapVerificationMethod: zcapVerificationMethod,
+  zcapDelegate: zcapDelegate,
+  zcapVerifyDelegation: zcapVerifyDelegation,
+  biscuitReady: biscuitReady,
+  biscuitMint: biscuitMint,
+  biscuitAuthorize: biscuitAuthorize,
+  biscuitAttenuate: biscuitAttenuate,
+  // --- #453 group A exports: end ---
+  //
+  // --- #453 group B exports: begin ---
+  OCSP_CERT_ID_HASHES: OCSP_CERT_ID_HASHES,
+  ocspCertIdHash: ocspCertIdHash,
+  installPkijsWebCrypto: installPkijsWebCrypto,
+  PKCS8_SIGNING_ALGORITHMS: PKCS8_SIGNING_ALGORITHMS,
+  importPkcs8SigningKey: importPkcs8SigningKey,
+  bytesEqualConstantTime: bytesEqualConstantTime,
+  // --- #453 group B exports: end ---
+  //
+  // --- #453 group C exports: begin ---
+  // --- #453 group C exports: end ---
+  //
+  // --- #453 group D exports: begin ---
+  samlArtifactSourceId: samlArtifactSourceId,
+  // --- #453 group D exports: end ---
+  //
+  // --- #453 group E exports: begin ---
+  coseAlgorithmDigest,
+  // --- #453 group E exports: end ---
+  //
+  // --- #453 group F exports: begin ---
+  cmsMessageDigestMatches: cmsMessageDigestMatches,
+  SCEP_CONTENT_CIPHERS: SCEP_CONTENT_CIPHERS,
+  scepContentEncrypt: scepContentEncrypt,
+  scepContentDecrypt: scepContentDecrypt,
+  CMS_KEY_TRANSPORTS: CMS_KEY_TRANSPORTS,
+  CMS_OAEP_HASHES: CMS_OAEP_HASHES,
+  cmsKeyTransportDecrypt: cmsKeyTransportDecrypt,
+  cmsKeyTransportEncrypt: cmsKeyTransportEncrypt,
+  tpmNameDigest: tpmNameDigest,
+  tpmDigestSize: tpmDigestSize,
+  HTTP_DIGEST_HASHES: HTTP_DIGEST_HASHES,
+  httpDigestHash: httpDigestHash,
+  // --- #453 group F exports: end ---
+  //
+  // --- section 16: PKINIT's CMS, key agreement and reply key (#179) ---
+  PKINIT_OID: PKINIT_OID,
+  PKINIT_CMS_DIGEST_OIDS: PKINIT_CMS_DIGEST_OIDS,
+  PKINIT_CMS_SIGNATURES: PKINIT_CMS_SIGNATURES,
+  PKINIT_DH_GROUPS: PKINIT_DH_GROUPS,
+  PKINIT_KDFS: PKINIT_KDFS,
+  pkinitCertificateIds: pkinitCertificateIds,
+  pkinitReadSignedData: pkinitReadSignedData,
+  pkinitSignerIdentifies: pkinitSignerIdentifies,
+  pkinitVerifySignedData: pkinitVerifySignedData,
+  pkinitSignedData: pkinitSignedData,
+  pkinitKeyAgreement: pkinitKeyAgreement,
+  pkinitDhParameters: pkinitDhParameters,
+  pkinitDigestAlgorithms: pkinitDigestAlgorithms,
+  pkinitPaChecksumMatches: pkinitPaChecksumMatches,
+  pkinitOctetString2Key: pkinitOctetString2Key,
+  pkinitKdf: pkinitKdf,
+  // --- section 15: digests, key derivation and key import (#178) ---
+  DIGESTS: DIGESTS,
+  digest: digest,
+  kerberosTokenKeyIdentifier: kerberosTokenKeyIdentifier,
+  credentialDigest: credentialDigest,
+  hkdf: hkdf,
+  publicKeyFromJwk: publicKeyFromJwk,
+  certificateSpkiDer: certificateSpkiDer,
+  verifyCompactJwsWithCertificate: verifyCompactJwsWithCertificate,
+  publicKeyOf: publicKeyOf,
+  spkiDerOf: spkiDerOf,
+  // --- section 14: HTTP Message Signatures and Content-Digest (#178) ---
+  HTTP_SIGNATURE_ALGORITHMS: HTTP_SIGNATURE_ALGORITHMS,
+  CONTENT_DIGEST_ALGORITHMS: CONTENT_DIGEST_ALGORITHMS,
+  HTTP_SIGNATURE_FIELD_TYPES: KNOWN_FIELD_TYPES,
+  contentDigest: contentDigest,
+  verifyContentDigest: verifyContentDigest,
+  httpSignatureComponentValue: httpSignatureComponentValue,
+  httpSignatureBase: httpSignatureBase,
+  signHttpMessage: signHttpMessage,
+  appendHttpSignature: appendHttpSignature,
+  parseHttpSignatures: parseHttpSignatures,
+  verifyHttpMessage: verifyHttpMessage,
   // --- section 13: random values (#65) ---
   RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
   installForgeRandom: installForgeRandom,
@@ -11212,6 +18390,9 @@ module.exports = {
   PLACEMENT: PLACEMENT,
   signXml: signXml,
   verifyXmlSignature: verifyXmlSignature,
+  readWsSecuritySignature: readWsSecuritySignature,
+  verifyWsSecuritySignature: verifyWsSecuritySignature,
+  verifyWsSecurityHmac: verifyWsSecurityHmac,
   signQueryString: signQueryString,
   verifyQueryString: verifyQueryString,
   idOf: idOf,
@@ -11256,6 +18437,8 @@ module.exports = {
   jwsSpec: jwsSpec,
   protectedHeaderFor: protectedHeaderFor,
   verifyCompactJws: verifyCompactJws,
+  postQuantumSigningOn: postQuantumSigningOn,
+  isPqJwsAlg: isPqJwsAlg,
   // The byte-level halves of the JOSE doors (#202): what external test
   // vectors are held to. See each function's head.
   jwsSignatureValid: jwsSignatureValid,
@@ -11290,10 +18473,13 @@ module.exports = {
   // same key for three different key sizes, and nothing about a round trip can
   // see that.
   pbes2Key: pbes2Key,
+  pbes2KeyAsync: pbes2KeyAsync,
   JWE_SYMMETRIC_ALGS: JWE_SYMMETRIC_ALGS,
   JWE_ENCS: JWE_ENCS,
   encryptJweCompact: encryptJweCompact,
   decryptJweCompact: decryptJweCompact,
+  encryptJweCompactAsync: encryptJweCompactAsync,
+  decryptJweCompactAsync: decryptJweCompactAsync,
   // --- post-quantum and HPKE key establishment (section 4a, #82) ---
   // The families, each a list of `alg` values: ML-KEM (pqc-kem-05), HPKE
   // (both drafts), the Integrated subset (no `enc`), the post-quantum subset
@@ -11404,6 +18590,18 @@ module.exports = {
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,
   isHashedSecret: isHashedSecret,
+  // --- a person's password (#847): argon2id or scrypt, by the policy ---
+  PASSWORD_HASH_ALGORITHMS: PASSWORD_HASH_ALGORITHMS,
+  ARGON2_LIMITS: ARGON2_LIMITS,
+  SCRYPT_PASSWORD_LIMITS: SCRYPT_PASSWORD_LIMITS,
+  scryptOwaspMinP: scryptOwaspMinP,
+  argon2Available: argon2Available,
+  passwordHashSpec: passwordHashSpec,
+  hashPassword: hashPassword,
+  hashPasswordAsync: hashPasswordAsync,
+  storedSecretParameters: storedSecretParameters,
+  storedSecretMatchesSpec: storedSecretMatchesSpec,
+  storedSecretIsWeaker: storedSecretIsWeaker,
   // --- section 8: raw signatures and TPM 2.0 (#40) ---
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,

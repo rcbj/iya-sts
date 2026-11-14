@@ -82,10 +82,14 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
+import loopSlices = require('../common/loop_slices');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import stats = require('../common/admin_stats');
 import stsCrypto = require('../common/crypto');
+// Where a revoked grant is SAID, so a refresh grant waits for it (the
+// review of #879). A leaf over `helpers`.
+import RevokingWrites = require('../common/revoking_writes');
 
 type Json = any;
 type Req = any;
@@ -709,6 +713,9 @@ class GrantManagement {
       return { ok: false };
     }
     grants.delete(held.id);
+    // Its refresh tokens ask the grant register; a refresh on a worker that
+    // has not seen this delete must wait for it (the review of #879).
+    RevokingWrites.note('grant ' + held.id.slice(0, 8) + '… revoked');
     // WHO ENDED IT, for CAEP (#239): the client's DELETE acts for the person
     // who granted it (`user`); every other door is the console's or the
     // management API's (`admin`).
@@ -833,36 +840,79 @@ class GrantManagement {
 
   // What the console and `/admin-api` list: every grant in the realm, the
   // newest first, optionally one client's. Never a token.
+  //
+  // THE TOKEN COUNTS IN ONE PASS (2026-10-22, #820). Each grant walked every
+  // row of `issued` to count its own — grants times tokens, about a million
+  // of each on 8081. The rows are counted by grant once, and each grant reads
+  // its count from the map.
+  //
+  // `bare` leaves the grant resource off each row — `created_at` is still
+  // set, for the order — so a caller that pages first can decorate only the
+  // page it shows (`decorate()`), as `/admin-api/grants` does.
   /**
    * Lists every grant in the realm, newest first, never with a token.
    *
    * @param clientId - only this client's grants
+   * @param options - `bare`: leave the grant resource off each row
    * @returns the grant rows
    */
-  list(clientId?: string): Json[] {
+  list(clientId?: string, options?: Json): Json[] {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.list().");
+    const bare = !!(options && options.bare);
+    const counts = new Map<string, number>();
+    issued.forEach(function (row: Json): void {
+      if (row && row.grant) {
+        const id = String(row.grant);
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    });
     const out: Json[] = [];
     const self = this;
     grants.forEach(function (record: Json): void {
       if (clientId && record.clientId !== clientId) {
         return;
       }
-      let tokens = 0;
-      issued.forEach(function (row: Json): void {
-        if (row && row.grant === record.id) {
-          tokens += 1;
-        }
-      });
-      out.push(Object.assign({ grantId: record.id, clientId: record.clientId,
-                               subject: record.sub, generation: record.gen,
-                               tokens: tokens },
-                             self.resourceOf(record)));
+      const row: Json = { grantId: record.id, clientId: record.clientId,
+                          subject: record.sub, generation: record.gen,
+                          tokens: counts.get(String(record.id)) || 0 };
+      if (bare) {
+        row.created_at = Math.floor(Number(record.createdAt) / 1000);
+        out.push(row);
+        return;
+      }
+      out.push(Object.assign(row, self.resourceOf(record)));
     });
     out.sort(function (a: Json, b: Json): number {
       return Number(b.created_at) - Number(a.created_at);
     });
     log.debug("Leaving GrantManagement.list(). " + out.length);
+    return out;
+  }
+
+  // A `bare` row of `list()` with its grant resource, as `list()` without
+  // `bare` would have answered it: the grant read again by its id. A grant
+  // gone since is answered as the bare row.
+  /**
+   * Adds the grant resource to one row `list(…, { bare: true })` answered.
+   *
+   * @param row - the bare row
+   * @returns the row with its grant resource
+   */
+  decorate(row: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering GrantManagement.decorate().");
+    const record = grants.get(String(row && row.grantId));
+    if (!record) {
+      log.debug("Leaving GrantManagement.decorate(). Gone.");
+      return Object.assign({}, row);
+    }
+    const out = Object.assign({ grantId: row.grantId, clientId: row.clientId,
+                                subject: row.subject,
+                                generation: row.generation,
+                                tokens: row.tokens },
+                              this.resourceOf(record));
+    log.debug("Leaving GrantManagement.decorate().");
     return out;
   }
 
@@ -872,32 +922,36 @@ class GrantManagement {
   // ---------------------------------------------------------------------------
   /**
    * Purges token rows past their expiry and grants past their last token's. The
-   * scheduler job's body.
+   * scheduler job's body. Each register is walked in slices, a turn of the
+   * event loop between them (#704, `common/loop_slices.js`); the deletes
+   * follow each walk, as before.
    *
-   * @returns `{ summary }` for the scheduler
+   * @returns a promise of `{ summary }` for the scheduler
    */
-  purge(): Json {
+  async purge(): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering GrantManagement.purge().");
     const at = now();
     const rows: string[] = [];
-    issued.forEach(function (row: Json, jti: string): void {
-      if (!row || Number(row.forget) <= at) {
-        rows.push(jti);
-      }
-    });
+    await loopSlices.walkInSlices(issued.realmMap(),
+      function (row: Json, jti: string): void {
+        if (!row || Number(row.forget) <= at) {
+          rows.push(jti);
+        }
+      });
     rows.forEach(function (jti: string): void {
       issued.delete(jti);
     });
     const skewS = Math.max(0, Number(this.deps.config.value(
       'oauth2.clockSkewS')));
     const gone: string[] = [];
-    grants.forEach(function (record: Json, id: string): void {
-      if (Number(record.expiresAt) > 0 &&
-          (Number(record.expiresAt) + skewS) * 1000 <= at) {
-        gone.push(id);
-      }
-    });
+    await loopSlices.walkInSlices(grants.realmMap(),
+      function (record: Json, id: string): void {
+        if (Number(record.expiresAt) > 0 &&
+            (Number(record.expiresAt) + skewS) * 1000 <= at) {
+          gone.push(id);
+        }
+      });
     gone.forEach(function (id: string): void {
       grants.delete(id);
     });
@@ -930,7 +984,7 @@ class GrantManagement {
         return 3600000;
       },
       manual: true,
-      run: function (): Json {
+      run: function (): Promise<Json> {
         return self.purge();
       }
     });
@@ -1136,6 +1190,7 @@ export = {
   resourceOf: slot.forward('resourceOf'),
   metadata: slot.forward('metadata'),
   list: slot.forward('list'),
+  decorate: slot.forward('decorate'),
   act: slot.forward('act'),
   purge: slot.forward('purge')
 };

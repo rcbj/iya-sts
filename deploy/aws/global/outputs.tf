@@ -34,6 +34,14 @@ output "secret_arns" {
   value       = local.secret_arns
 }
 
+# The primary cell's CloudFront distribution sends it as a header (#1341);
+# every cell's nodes read the replica named in `secret_arns` instead.
+output "edge_secret" {
+  description = "CloudFront's origin secret, for the primary cell's distribution."
+  value       = random_password.edge_secret.result
+  sensitive   = true
+}
+
 output "master_secret_arn" {
   description = "The global database's master password, in the primary cell's region only; read by that cell's global-schema-init."
   value       = aws_secretsmanager_secret.db_master.arn

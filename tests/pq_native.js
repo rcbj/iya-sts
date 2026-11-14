@@ -15,7 +15,10 @@
 //
 //   A. THE SAME KEYS. From one seed, the same ML-DSA and ML-KEM public and
 //      expanded secret keys as noble; so a key product mode stored before
-//      #363 is the same key after it.
+//      #363 is the same key after it. Node 24.22.1 exports the private key
+//      as the seed only, and pq_native expands it with this same noble
+//      keygen. The secret-key bytes are then noble against itself; the
+//      public key is still OpenSSL against noble.
 //   B. INTEROPERATION BOTH WAYS. noble verifies our signatures and we verify
 //      noble's, with and without a context string, for all three ML-DSA
 //      sets and every SLH-DSA set; each decapsulates the other's ML-KEM

@@ -13,6 +13,8 @@
 #   STS_ACM_CERTIFICATE_ARN   the certificate to export (environment/dns.tf)
 #   STS_TLS_DIR               the shared volume both containers mount
 #   AWS_REGION                the region the certificate is in
+#   STS_TLS_OWNER             uid:gid the node runs as, who must read the
+#                             key (#254; 10001:10001 if unset, the image's)
 #
 # It writes exactly the two files `tls.certificateFile` and `tls.keyFile`
 # name:
@@ -44,6 +46,7 @@ set -euo pipefail
 
 OUT="${STS_TLS_DIR:-/var/run/sts-tls}"
 ATTEMPTS="${STS_CERT_EXPORT_ATTEMPTS:-20}"
+OWNER="${STS_TLS_OWNER:-10001:10001}"
 
 work="$(mktemp -d)"
 passfile="${work}/passphrase"
@@ -100,6 +103,14 @@ jq -r '.CertificateChain' "${bundle}" >> "${OUT}/certificate.pem"
 jq -r '.PrivateKey' "${bundle}" |
   openssl pkey -passin "file:${passfile}" -out "${OUT}/key.pem"
 
+# THE KEY IS THE NODE'S, NOT THIS CONTAINER'S (#254, 2026-10-06). This
+# container runs as root and the node, since that change, as uid 10001 — so a
+# key left root's and 0400 is a key the node cannot open, and it would fail to
+# start on EACCES. Handed to the node's user and kept 0400: readable by the one
+# process that serves it and by nobody else in the task. The certificate is
+# public and stays 0444; it is given the same owner only so the two files are
+# not told apart by anything but their mode.
+chown "${OWNER}" "${OUT}/certificate.pem" "${OUT}/key.pem"
 chmod 0444 "${OUT}/certificate.pem"
 chmod 0400 "${OUT}/key.pem"
 

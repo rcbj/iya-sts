@@ -263,7 +263,7 @@ function checkDispatchEverything(t) {
   withSettings('*', '/scim,/xacml,/admin-api', function () {
     ['/oauth2/authorize', '/saml2/sso', '/saml11/sso', '/wsfed', '/wstrust',
      '/scim/v2/Users', '/admin', '/admin-api/config', '/portal', '/xacml/pdp',
-     '/krb5/principals', '/spiffe/bundle', '/ssf/streams', '/federation/acs/x',
+     '/KdcProxy', '/spiffe/bundle', '/ssf/streams', '/federation/acs/x',
      '/logout', '/'].forEach(function (url) {
       t.check(pool.dispatched(url) === true,
               '"*" dispatches ' + url, String(pool.dispatched(url)));
@@ -275,8 +275,8 @@ function checkDispatchEverything(t) {
             'proxied it would describe the unix socket between the front ' +
             'process and a worker — which is not a fact about the caller',
             String(pool.dispatched('/tls')));
-    t.check(pool.dispatched('/tls/trust') === false,
-            'nor anything under it', String(pool.dispatched('/tls/trust')));
+    t.check(pool.dispatched('/tls/sign-in') === false,
+            'nor anything under it', String(pool.dispatched('/tls/sign-in')));
 
     // ---------------------------------------------------------------------
     // AND SPIFFE **IS** DISPATCHED, which is an assertion about a fix rather
@@ -333,6 +333,23 @@ function checkDispatchEverything(t) {
             'pool routes on req.originalUrl, which keeps the realm prefix',
             pool.mutationKeyOf({ method: 'PATCH' },
                                '/realm/acme/scim/v2/Groups/abc'));
+    // 2026-10-21: a read whose answer a worker keeps (the users page's
+    // population, the console's totals) is keyed on its path, whoever
+    // asks, so a renewed console token finds the worker keeping it.
+    const keptOne = pool.mutationKeyOf({ method: 'GET',
+      headers: { authorization: 'Bearer one' } }, '/admin-api/users?page=2');
+    const keptTwo = pool.mutationKeyOf({ method: 'GET',
+      headers: { authorization: 'Bearer two' } }, '/admin-api/users?page=3');
+    const keptRealm = pool.mutationKeyOf({ method: 'GET', headers: {} },
+                                         '/realm/acme/admin-api/status');
+    const notKept = pool.mutationKeyOf({ method: 'GET',
+      headers: { authorization: 'Bearer one' } }, '/admin-api/config');
+    t.check(keptOne === 'k:/admin-api/users' && keptTwo === keptOne &&
+            keptRealm === 'k:/realm/acme/admin-api/status' &&
+            /^c:/.test(notKept),
+            'a read whose answer a worker keeps is keyed on its path, ' +
+            'whatever credential asks; any other read on its credential',
+            JSON.stringify([keptOne, keptTwo, keptRealm, notKept]));
     t.check(pool.mutationKeyOf({ method: 'POST' }, '/scim/v2/Users') === '',
             'while a COLLECTION write still fans out: keying a create on its ' +
             'path would put the whole load on one worker',

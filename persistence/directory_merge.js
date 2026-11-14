@@ -76,7 +76,8 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
                 'stsactivationexpires', 'appregistrationjson',
                 'stsapppassword', 'stsidaverification',
-                'stsselfissuedsubject', 'stsdevicesecrethash',
+                'stsselfissuedsubject', 'stspublisheddid',
+                'stsdevicesecrethash',
                 'stsdevicesession', 'stscibausercode',
                 // A device's records of its last compliance and status
                 // change, and its enrolment (#164): each one JSON value.
@@ -95,7 +96,12 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
  * minus what mine removed, plus what mine added.
  */
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
-               'description', 'oauthconsent', 'stswebauthncredential',
+               'description', 'oauthconsent', 'oauthconsentapplied',
+               'stswebauthncredential',
+               // The Android marker (#615), derived from the keys above on
+               // every write of them: merged as they are, so a key two
+               // nodes registered at once is marked on both counts.
+               'stsandroidattestedcredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
                'federationrelationship', 'federationlink',
@@ -104,6 +110,12 @@ const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                // different keys at once must both survive.
                'stsdevicekey', 'stsdevicekeythumbprint',
                'stsdevicecredentialid',
+               // And each Android-attested key's id (#615), derived as the
+               // credential ids are.
+               'stsdeviceandroidkey',
+               // A service account's owners (#600): two nodes adding
+               // different owners at once must both survive.
+               'stsserviceaccountowner',
                // A subordinate's OpenID Federation event history (#137):
                // appended by whichever node records an event, so two
                // appends at once must both survive.

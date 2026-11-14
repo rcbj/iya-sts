@@ -15,7 +15,7 @@
 // run out redeems the refresh token and writes the new ones onto THE SAME
 // SESSION. The end-to-end half — a real refresh token grant over the loopback
 // back channel, a page answered 200 on the same cookie — is
-// `tests/vendored/sts_hosted_surface_renewal.js`. What is here is what that job
+// `tests/protocol/sts_hosted_surface_renewal.js`. What is here is what that job
 // cannot choose:
 //
 //   1. WHAT A SESSION IS MADE WITH. A renewable session's expiry is its renewal
@@ -32,9 +32,10 @@
 //      endpoint will not produce on demand.
 //   5. THE RENEWAL ITSELF writes onto the same record, and what it keeps.
 //   6. THE REGISTRATION ORDER, as source: middleware applies only to routes
-//      added after it (rule 1), and a renewal registered below the console's
-//      gate would run after the gate had already sent the browser away —
-//      which no request can tell from a renewal that is not registered at all.
+//      added after it (rule 1), and a renewal registered below the portal's
+//      first route would run after that route had answered — which no request
+//      can tell from a renewal that is not registered at all. (The console
+//      renewed on the server too until the cutover, #446.)
 //
 // In process, with no port: `authn.js` is called directly with a stub `res`,
 // for `tests/cross_surface_sso.js`'s reason.
@@ -409,34 +410,19 @@ function firstIndex(source, patterns) {
 
 function checkRegistration(t) {
   log.debug("Entering checkRegistration().");
-  t.log.info('both surfaces register the renewal above everything that reads ' +
-             'the session');
-  const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                          'admin.ts'), 'utf8');
-  const renewAdmin = admin.indexOf("app.use('/admin', " +
-                                   "oidcRp.renewal('admin'))");
-  // Indented since #50: the console registers its routes from a method.
-  const firstAdmin = firstIndex(admin, [/^\s*app\.use\('\/admin', function/m,
-                                        /^\s*app\.(get|post|all)\('\/admin/m]);
-  t.check(renewAdmin >= 0, 'the console registers oidcRp.renewal(\'admin\')');
-  t.check(renewAdmin >= 0 && firstAdmin > renewAdmin,
-          'ABOVE the console gate and every /admin route (rule 1)',
-          'renewal at ' + renewAdmin + ', first /admin handler at ' +
-          firstAdmin);
-
+  t.log.info('neither hosted surface renews on the server any more');
+  // THE CONSOLE RENEWS NOTHING ON THE SERVER since the cutover (#446), and
+  // the PORTAL since it became a static application too (#568): each holds
+  // its own tokens in the browser and refreshes them there
+  // (`common/web_spa_client.ts`). A renewal still registered on /portal
+  // would renew a relying-party session nothing makes any more. The library
+  // the checks above hold is the embedded debugger's still.
   const portal = fs.readFileSync(path.join(__dirname, '..', 'portal',
                                            'portal.ts'), 'utf8');
-  const renewPortal = portal.indexOf("app.use(BASE, oidcRp.renewal('portal'))");
-  const firstPortal = firstIndex(portal,
-                                 [/^\s*app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)(?!BASE, function \(req, res, next\) \{\n\s*log\.debug\("Entering the portal's cell placement)/m]);
-  // The one registration allowed above the renewal is the cell placement
-  // (#98): it reads no session of this cell's, it relays a request whose
-  // person lives in another cell, and a renewal run here first would renew a
-  // projection the home cell is the authority for.
-  t.check(renewPortal >= 0, 'the portal registers oidcRp.renewal(\'portal\')');
-  t.check(renewPortal >= 0 && firstPortal > renewPortal,
-          'ABOVE the first /portal route (rule 1)',
-          'renewal at ' + renewPortal + ', first route at ' + firstPortal);
+  t.check(portal.indexOf("oidcRp.renewal('portal')") < 0 &&
+          portal.indexOf('requireSignIn(') < 0,
+          'the portal registers no oidcRp.renewal(\'portal\') and has no ' +
+          'relying-party sign-in of its own (#568)');
   log.debug("Leaving checkRegistration().");
 }
 

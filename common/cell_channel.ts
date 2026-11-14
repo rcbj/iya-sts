@@ -64,11 +64,13 @@
 import https = require('https');
 import tls = require('tls');
 import dns = require('dns');
-import nodeCrypto = require('crypto');
 import bunyan = require('bunyan');
 import config = require('./config');
 import errorCodes = require('./error_codes');
 import cells = require('./cells');
+// This service's one cryptographic module (#453), for the inter-cell leaf's
+// key pair. A leaf that requires nothing here.
+import stsCrypto = require('./crypto');
 
 const log = bunyan.createLogger({ name: 'sts-cell-channel' });
 
@@ -116,6 +118,13 @@ interface Leaf {
   chainPem: string[];
   notAfterMs: number;
   mintedAt: number;
+  // What the leaf was issued under: the `cell` Issuing CA (base64 DER) and
+  // the service Root (PEM) as they stood when it was minted. A Root
+  // replaced since (`POST /admin-api/pki/build-root`) rebuilds both, and a
+  // leaf from the old branch is refused by every peer that has the new one
+  // (STS-CELL-0032) — so a change to either makes the leaf stale.
+  caDerB64: string;
+  rootPem: string;
 }
 
 /**
@@ -182,7 +191,8 @@ class CellChannel {
                       'built, so no inter-cell certificate can be issued: ' +
                       (scoped.errors || []).join(' '));
     }
-    const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const pair = stsCrypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'P-256' });
     const publicKeyPem = pair.publicKey.export({ type: 'spki',
                                                  format: 'pem' }).toString();
     const keyPem = pair.privateKey.export({ type: 'pkcs8',
@@ -192,11 +202,11 @@ class CellChannel {
     const now = Date.now();
     const issued = await pki.issueUnder(pki.PROCESS_SCOPE, 'cell', {
       publicKeyPem: publicKeyPem,
-      // `CN`, the encoder's own name for the attribute (common/vendored/
+      // `CN`, the encoder's own name for the attribute (common/crypto_impl/
       // x509.js, DN_ATTRS). It read `commonName` until the `cells` mode's
       // first run (2026-09-28), which the encoder refuses — "Unknown DN
       // attribute" — so no cell ever held a leaf and every peer answered
-      // unreachable (STS-CELL-0031); tests/vendored/sts_cells_map.js.
+      // unreachable (STS-CELL-0031); tests/protocol/sts_cells_map.js.
       subject: [{ name: 'CN', value: 'cell ' + id + ' ' + host }],
       profile: 'tls-server',
       notBefore: now - 60 * 1000,
@@ -218,12 +228,15 @@ class CellChannel {
                       'certificate could not be issued: ' +
                       ((issued && issued.errors) || []).join(' '));
     }
+    const caDer = this.cellCaDer();
     const leaf: Leaf = {
       keyPem: keyPem,
       certPem: issued.certificatePem,
       chainPem: issued.issuerChainPem,
       notAfterMs: new Date(issued.notAfter).getTime(),
-      mintedAt: now
+      mintedAt: now,
+      caDerB64: caDer ? caDer.toString('base64') : '',
+      rootPem: this.rootPem()
     };
     log.info('cells: this process holds an inter-cell certificate for cell ' +
              '"' + id + '" as ' + host + ', until ' + issued.notAfter + '.');
@@ -241,7 +254,8 @@ class CellChannel {
     log.debug("Entering CellChannel.ensureLeaf().");
     const now = Date.now();
     if (this.leaf && now < this.leaf.mintedAt +
-        (this.leaf.notAfterMs - this.leaf.mintedAt) / 2) {
+        (this.leaf.notAfterMs - this.leaf.mintedAt) / 2 &&
+        this.underCurrentAuthority(this.leaf)) {
       log.debug("Leaving CellChannel.ensureLeaf(). Held.");
       return this.leaf;
     }
@@ -262,6 +276,21 @@ class CellChannel {
     }
     log.debug("Leaving CellChannel.ensureLeaf(). Minting.");
     return this.minting;
+  }
+
+  // Whether a leaf was issued under the `cell` Issuing CA and the service
+  // Root this process holds NOW. Both are read from the PKI's row, which a
+  // Root replaced on any node rewrites, so a cell whose leaf is from the
+  // replaced branch mints a new one at its next dial or refused peer
+  // (2026-10-12: a full run's build-root left the two cells refusing each
+  // other for the rest of the run).
+  private underCurrentAuthority(leaf: Leaf): boolean {
+    log.debug("Entering CellChannel.underCurrentAuthority().");
+    const caDer = this.cellCaDer();
+    const current = (caDer ? caDer.toString('base64') : '') ===
+                    leaf.caDerB64 && this.rootPem() === leaf.rootPem;
+    log.debug("Leaving CellChannel.underCurrentAuthority(). " + current);
+    return current;
   }
 
   // The service Root, the one anchor either side verifies the other against.
@@ -306,7 +335,10 @@ class CellChannel {
     log.debug("Leaving CellChannel.serverContextOptions().");
     return Object.assign(policy, {
       key: leaf.keyPem,
-      cert: [leaf.certPem].concat(leaf.chainPem).join('\n'),
+      // The leaf, its chain and the Root (#1064), as every listener here
+      // presents them — tls_server.js's presentedBundlePem().
+      cert: tlsServer.presentedBundlePem({ certPem: leaf.certPem,
+                                           chainPem: leaf.chainPem }),
       ca: [this.rootPem()]
     });
   }
@@ -331,6 +363,15 @@ class CellChannel {
       this.lastFailure = why;
       log.warn(errorCodes.tag('STS-CELL-0032') + 'cells: an inter-cell ' +
                'peer was refused: ' + why);
+      // A refusal is how a listener learns its own leaf and anchor may be
+      // from a replaced branch: the peer that dialled holds the new one. Not
+      // awaited — this answer stands; the peer's retry meets the new context.
+      if (this.leaf && !this.underCurrentAuthority(this.leaf)) {
+        this.ensureLeaf().catch(function (err: any) {
+          log.debug("Caught in CellChannel.peerCellOf(): " +
+                    ((err && err.message) || err));
+        });
+      }
       return '';
     };
     if (!socket || !socket.authorized) {
@@ -340,6 +381,16 @@ class CellChannel {
                            'no certificate') + ')');
     }
     const cert = socket.getPeerCertificate(true);
+    // UNDER PARANOID PKI MODE (#1360): the rules, clientAuth and serverAuth, and
+    // this service's own register, which has no network to wait for. It is the
+    // synchronous door, in both directions of the channel.
+    const trust = require('./certificate_trust');
+    const held = trust.applies('cell-peer') ?
+      trust.holdPeer('cell-peer', cert, { register: true }) : { ok: true };
+    if (!held.ok) {
+      log.debug("Leaving CellChannel.peerCellOf(). Paranoid: " + held.check);
+      return refuse('its certificate is refused for this channel: ' + held.why);
+    }
     const caDer = this.cellCaDer();
     const issuer = cert && cert.issuerCertificate;
     if (!caDer || !issuer || !issuer.raw ||
@@ -752,7 +803,9 @@ class CellChannel {
               ca: [self.rootPem()],
               minVersion: 'TLSv1.3',
               timeout: timeout,
-              agent: false
+              agent: false,
+              // `cell-peer` holds this one, in `peerCellOf()` (#1360).
+              ...({ stsOutboundGate: false } as any)
             }, function (response: any) {
               const answered = self.peerCellOf(response.socket, cellId);
               if (!answered) {

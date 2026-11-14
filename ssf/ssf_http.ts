@@ -211,8 +211,8 @@ interface SsfHttpDeps {
   PORT: unknown;
   loopbackHost(): string;
   hostForUrl(host: string): string;
-  pinnedBaseUrl(): string;
-  baseUrlOf(req: any): string;
+  pinnedBaseUrl(app?: string): string;
+  baseUrlOf(req: any, app?: string): string;
   userAgent: string;
   // `tls/tls_server.js`, required when first asked for. See `pushSet()`.
   loadTlsServer(): {
@@ -423,7 +423,7 @@ class SsfHttp {
   ownBaseUrl(): string {
     const { log, pinnedBaseUrl, realms } = this.deps;
     log.debug("Entering SsfHttp.ownBaseUrl().");
-    const pinned = pinnedBaseUrl();
+    const pinned = pinnedBaseUrl('ssf');
     const out = (pinned || this.loopbackOrigin()) + realms.currentPrefix();
     log.debug("Leaving SsfHttp.ownBaseUrl(). " + out);
     return out;
@@ -456,7 +456,9 @@ class SsfHttp {
                        : configured.replace(/\/+$/, '') +
                          realms.currentPrefix();
     } else {
-      value = req ? baseUrlOf(req) : this.ownBaseUrl();
+      // The transmitter's own base (#472), whichever application's request
+      // raised the event.
+      value = req ? baseUrlOf(req, 'ssf') : this.ownBaseUrl();
     }
     log.debug("Leaving SsfHttp.transmitterIssuer(). " + value);
     return value;
@@ -612,8 +614,36 @@ class SsfHttp {
    */
   pushSet(url: unknown, token: unknown,
           options?: PushOptions | null): Promise<PushResult> {
-    const { log, loadTlsServer, userAgent } = this.deps;
+    const { log } = this.deps;
+    const self = this;
     log.debug("Entering SsfHttp.pushSet().");
+    // THE ADDRESS IS VETTED AS EVERY OTHER OUTBOUND DIAL'S IS (#1492, ASVS 5.0.0
+    // 1.3.6): a stream client names this URL. This service's own receivers are
+    // the one exception, already pinned by certificate below.
+    if (!this.pushAllowed() || this.urlVerdict(url).why ||
+        this.isOwnLoopback(url)) {
+      log.debug("Leaving SsfHttp.pushSet(). Nothing to vet.");
+      return this.dialPush(url, token, options, null);
+    }
+    const federationHttp = require('../federation/federation_http');
+    log.debug("Leaving SsfHttp.pushSet(). Vetting the address.");
+    return federationHttp.vetHost(new URL(String(url).trim()).hostname)
+      .then(function (vetted: any) {
+        if (!vetted.ok) {
+          return { ok: false, status: 0, err: '', description: '',
+            errorCode: 'STS-SSF-0158',
+            why: 'the delivery endpoint cannot be dialled: ' + vetted.why };
+        }
+        return self.dialPush(url, token, options, vetted);
+      });
+  }
+
+  // The push itself, once the address has been vetted.
+  private dialPush(url: unknown, token: unknown,
+                   options: PushOptions | null | undefined,
+                   vetted: any): Promise<PushResult> {
+    const { log, loadTlsServer, userAgent } = this.deps;
+    log.debug("Entering SsfHttp.dialPush().");
     const opts = options || {};
     if (!this.pushAllowed()) {
       log.debug("Leaving SsfHttp.pushSet(). ssf.pushDelivery is off.");
@@ -810,6 +840,10 @@ class SsfHttp {
         requestOptions.checkServerIdentity = policy.checkServerIdentity;
       }
       try {
+        if (vetted && vetted.address) {
+          requestOptions.lookup = require('../federation/federation_http')
+            .pinnedLookup(vetted);
+        }
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
           const status = response.statusCode || 0;
@@ -936,6 +970,186 @@ class SsfHttp {
                e.message + (selfSigned
             ? '. Name the receiver\'s CA in ssf.pushCaFile to push to a ' +
               'receiver whose certificate nothing here trusts.' : '') });
+      });
+      request.write(body);
+      request.end();
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // THIS SERVICE'S OWN TWO RECEIVERS COLLECTING FROM THIS SERVICE'S OWN POLL
+  // ENDPOINT (#771, 2026-10-20). RFC 8936 turns the direction round: the
+  // RECEIVER dials, and what it dials is the transmitter. So this is not a
+  // push and `ssf.pushDelivery` does not govern it — that setting is about
+  // POSTing an event OUT to an address a receiver chose, and this request
+  // goes to one address only, this process's own loopback origin, which is
+  // refused here for anything else.
+  //
+  // **THE SAME PIN AS `pushSet()`**, for the same reason and in the same
+  // three forms: the trust anchor while there is one, this process's own leaf
+  // for a supplied certificate with none (#311), and plain http only where
+  // the listener is http. A redirect is not followed and the answer is
+  // bounded by `ssf.pushMaxResponseBytes` times the batch, since a poll's
+  // answer carries many SETs where a push's carries none.
+  // -------------------------------------------------------------------------
+  /**
+   * Polls this service's own RFC 8936 endpoint, on the loopback origin only,
+   * as one of its own two receivers.
+   *
+   * @param url - the poll endpoint, on `loopbackOrigin()`
+   * @param request - the RFC 8936 poll request
+   * @param authorizationHeader - the receiver's credential
+   * @param maxEvents - the batch asked for, which bounds the answer's size
+   * @returns a promise of `{ ok, status, json, why, errorCode }`; it never
+   * rejects
+   */
+  pollOwn(url: unknown, request: unknown, authorizationHeader: string,
+          maxEvents: number): Promise<{ ok: boolean; status: number;
+            json: any; why: string; errorCode?: string }> {
+    const { log, loadTlsServer, userAgent } = this.deps;
+    log.debug("Entering SsfHttp.pollOwn().");
+    if (!this.isOwnLoopback(url)) {
+      log.debug("Leaving SsfHttp.pollOwn(). Not this process.");
+      return Promise.resolve({ ok: false, status: 0, json: null,
+        errorCode: 'STS-SSF-0142',
+        why: 'pollOwn() dials this process\'s own loopback origin and ' +
+             'nothing else, and ' + String(url) + ' is not it' });
+    }
+    const target = new URL(String(url).trim());
+    const secure = target.protocol === 'https:';
+    let anchor = '';
+    let ownLeaf = '';
+    if (secure) {
+      try {
+        anchor = String(loadTlsServer().serverCertificate().trustAnchorPem ||
+                        '');
+        ownLeaf = String(loadTlsServer().serverCertificate().fingerprint256 ||
+                         '');
+      } catch (e) {
+        log.debug("Caught in SsfHttp.pollOwn(): " + ((e && e.message) || e));
+        log.debug("Leaving SsfHttp.pollOwn(). No server certificate.");
+        return Promise.resolve({ ok: false, status: 0, json: null,
+          errorCode: 'STS-SSF-0035',
+          why: 'this service\'s own TLS certificate could not be read to ' +
+               'verify the connection against: ' + ((e && e.message) || e) });
+      }
+    }
+    const body = Buffer.from(JSON.stringify(request || {}), 'utf8');
+    const headers: Record<string, string | number> = {
+      'Content-Type': 'application/json',
+      'Content-Length': body.length,
+      'Accept': 'application/json',
+      'User-Agent': userAgent,
+      'Authorization': String(authorizationHeader || '')
+    };
+    const limit = this.maxBodyBytes() * Math.max(1, Number(maxEvents) || 1);
+    const timeoutMs = this.timeoutMs();
+    log.debug("Leaving SsfHttp.pollOwn(). Dialling " + target.origin + '.');
+    return new Promise(function (resolve) {
+      const done = function (result: { ok: boolean; status: number;
+          json: any; why: string; errorCode?: string }): void {
+        log.debug("Entering done().");
+        resolve(result);
+        log.debug("Leaving done().");
+      };
+      const requestOptions: https.RequestOptions = {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || (secure ? 443 : 80),
+        path: target.pathname + target.search,
+        method: 'POST',
+        headers: headers,
+        rejectUnauthorized: secure,
+        ca: anchor ? [anchor] : undefined
+      };
+      // Pinned: the anchor with the name check skipped (the certificate
+      // names this service and the connection names the loopback address),
+      // or exactly this process's own leaf. See pushSet().
+      if (secure) {
+        requestOptions.checkServerIdentity = function (host: string,
+            cert: { fingerprint256?: string }) {
+          const norm = function (f: string): string {
+            return String(f || '').replace(/:/g, '').toLowerCase();
+          };
+          if (anchor) {
+            return undefined;
+          }
+          return ownLeaf && norm(cert && cert.fingerprint256) === norm(ownLeaf)
+            ? undefined
+            : new Error('the loopback peer did not present this ' +
+                        'process\'s own certificate');
+        };
+      }
+      let request = null;
+      try {
+        request = (secure ? https : http).request(requestOptions,
+                                                  function (response) {
+          const status = response.statusCode || 0;
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          let overflowed = false;
+          response.on('data', function (chunk: Buffer) {
+            if (overflowed) {
+              return;
+            }
+            bytes += chunk.length;
+            if (bytes > limit) {
+              overflowed = true;
+              response.destroy();
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('end', function () {
+            if (overflowed) {
+              return done({ ok: false, status: status, json: null,
+                errorCode: 'STS-SSF-0037',
+                why: 'it answered with more than ' + limit + ' bytes' });
+            }
+            let json = null;
+            try {
+              json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            } catch (e) {
+              log.debug("Caught in a callback in pollOwn(): " +
+                        ((e && e.message) || e));
+              json = null;
+            }
+            if (status === 200 && json && typeof json === 'object') {
+              return done({ ok: true, status: status, json: json, why: '' });
+            }
+            return done({ ok: false, status: status, json: json,
+              errorCode: 'STS-SSF-0143',
+              why: 'it answered ' + status + (json && json.err
+                ? ': ' + String(json.err) + ' — ' +
+                  String(json.description || '').slice(0, 300) : '') });
+          });
+          response.on('error', function (e) {
+            log.debug("Caught in a callback in pollOwn(): " +
+                      ((e && e.message) || e));
+            done({ ok: false, status: status, json: null,
+              errorCode: 'STS-SSF-0040',
+              why: 'the response failed: ' + e.message });
+          });
+        });
+      } catch (e) {
+        log.debug("Caught in a callback in pollOwn(): " +
+                  ((e && e.message) || e));
+        return done({ ok: false, status: 0, json: null,
+          errorCode: 'STS-SSF-0041',
+          why: 'the request could not be built: ' + e.message });
+      }
+      request.setTimeout(timeoutMs, function () {
+        request.destroy();
+        done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0042',
+          why: 'it did not answer within ' + timeoutMs +
+               'ms (ssf.pushTimeoutMs)' });
+      });
+      request.on('error', function (e) {
+        log.debug("Caught in a callback in pollOwn(): " +
+                  ((e && e.message) || e));
+        done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0043',
+          why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') +
+               e.message });
       });
       request.write(body);
       request.end();
@@ -1097,7 +1311,7 @@ class SsfHttp {
   // PUSH ONE SET, TRYING AGAIN WHERE `ssf.pushRetries` SAYS TO (2026-09-12).
   //
   // `ssf/CLAUDE.md` argues why this service does not retry, and **the default
-  // is still 0, which is exactly that**: a mock that retried would make a
+  // is still 0, which is exactly that**: a service that retried would make a
   // receiver's one-shot failure invisible. A deployment is the other case — a
   // receiver that restarts for thirty seconds should not lose every event sent
   // in them — so the count is a setting rather than a rewrite of the
@@ -1243,5 +1457,6 @@ export = {
   PUSH_TRANSPORT: PUSH_TRANSPORT,
   allowedHosts: slot.forward('allowedHosts'),
   urlProblem: slot.forward('urlProblem'),
-  pushSet: slot.forward('pushSet')
+  pushSet: slot.forward('pushSet'),
+  pollOwn: slot.forward('pollOwn')
 };

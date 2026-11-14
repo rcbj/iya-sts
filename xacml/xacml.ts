@@ -6,7 +6,8 @@
 // File: xacml.ts
 //
 // ---------------------------------------------------------------------------
-// THE XACML SURFACE: A DECISION ENDPOINT, THE REPOSITORY, AND AN EMBEDDED PEP.
+// THE XACML SURFACE: A DECISION ENDPOINT, THE REPOSITORY, AND THE DOORS A
+// REMOTE PEP USES.
 //
 // The engine modules in this directory are libraries with no DOM, no HTTP and
 // no store. This file is the only one that registers a PROTOCOL route
@@ -19,30 +20,29 @@
 //   GET  /xacml            what this surface is, and what it decides against
 //   POST /xacml/pdp        a decision. JSON Profile in, JSON Profile out.
 //   GET  /xacml/policies   the repository, as the PDP sees it
-//   GET  /xacml/protected  THE EMBEDDED PEP — a resource this service guards
-//                          with its own PDP
 //
 // and, in the PHASE FIVE section further down, the three `/xacml/pep/*`
 // endpoints a remote PEP uses and `POST /xacml/pip`.
 //
 // ---------------------------------------------------------------------------
-// THE EMBEDDED PEP IS THE POINT OF THE LAST ONE, AND IT IS NOT A DEMO PAGE.
+// THE DEMONSTRATION PEP IS THE REMOTE ONE'S `GET /protected` (#596).
 //
-// A PDP endpoint answers questions in the abstract; a PEP is where a decision
-// stops being an opinion. `/xacml/protected` builds a request out of the
-// caller — who they are, what they asked for, how they asked for it — asks the
-// PDP, and then ENFORCES the answer, including the part everybody skips: an
-// obligation it cannot discharge turns a Permit into a refusal (section 7.2).
-//
-// It is also where `xacml.pepBias` lives, and that setting is the reason this
-// exists as a real component rather than a canned response. XACML lets a PEP
-// be deny-biased or permit-biased, the two agree on every Permit and every
-// Deny, and they differ on exactly the answer nobody tests: Indeterminate and
-// NotApplicable. Being able to flip it and watch the same policy produce two
-// different outcomes is the thing a debugger is for.
+// `GET /xacml/protected` stood here until #596 (2026-10-12; #591 P5): a
+// resource this service guarded with its own PDP, building a request out of
+// `?subject=`, `?resource=` and `?action=`, enforcing the answer under
+// `xacml.pepBias` and refusing a Permit whose obligation it could not
+// discharge (section 7.2). The runtime ships no demonstration code, and the
+// `xacml-pep` container (`rust/bins/xacml-pep`, `xacml-pep/CLAUDE.md`) already
+// was that PEP — the same builder, the same three parameters, the same bias
+// as a PEP-side option (`PEP_BIAS`) and the same obligation rule — in the
+// place a PEP actually lives: another process, holding pulled policy. Both
+// went, and `xacml.pepBias` with them. `enforce()` below stays, for the
+// console's what-if on `/admin/xacml/decide`, and takes the bias as an
+// argument; `tests/xacml_pep.js` holds it and the remote PEP's
+// `enforce.rs` to one table.
 //
 // ---------------------------------------------------------------------------
-// ALL FOUR REQUIRE A CLIENT CERTIFICATE NOW, AND THIS BLOCK USED TO SAY THE
+// ALL THREE REQUIRE A CLIENT CERTIFICATE NOW, AND THIS BLOCK USED TO SAY THE
 // OPPOSITE.
 //
 // What stood here was an argument for authenticating nobody, and half of it is
@@ -57,7 +57,8 @@
 //
 // **WHAT CHANGED IS THAT "NOT A BOUNDARY" WAS BEING READ AS "NOT WORTH
 // GUARDING", AND THOSE ARE DIFFERENT SENTENCES.** Three of these four endpoints
-// do something an anonymous caller should not get for free:
+// did something an anonymous caller should not get for free (the third,
+// `GET /xacml/protected`, is the remote PEP's since #596):
 //
 //   * `GET /xacml/policies` publishes the repository, and since the access and
 //     issuance PEPs were embedded, the documents in it are the ones this
@@ -65,14 +66,14 @@
 //     policy and publishing the exact conditions under which a service lets
 //     people in are not the same act. `GET /xacml/pep/policies` reached this
 //     conclusion first and its comment carries the long form.
-//   * `GET /xacml/protected` ENFORCES, and it names its own subject from a
-//     query parameter — so unguarded it is an oracle anybody can drive to map
-//     the policy by asking about one subject at a time.
+//   * `GET /xacml/protected` ENFORCED, and it named its own subject from a
+//     query parameter — so unguarded it was an oracle anybody could drive to
+//     map the policy by asking about one subject at a time.
 //   * `POST /xacml/pdp` evaluates an arbitrary document against the repository
 //     on this service's thread, which is the ordinary reason a decision
 //     endpoint asks who is calling.
 //
-// `GET /xacml` is here because it describes the other three, and because a
+// `GET /xacml` is here because it describes the other two, and because a
 // surface with one door left open is a surface whose gate somebody will read as
 // advisory. Its refusal names the group and the setting, so the page's job —
 // telling a caller how this works — survives being refused.
@@ -116,6 +117,20 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+
+// THE DOOR A TRUST ANCHOR GOES IN BY, as this surface's prose names it: the
+// management API's gated operation, in every mode since #597 deleted the
+// open `POST /tls/trust` (#585 had made it a development demonstration).
+/**
+ * Names the door a client certificate's issuing CA is added by.
+ *
+ * @returns the management API operation
+ */
+function trustAnchorDoor(): string {
+  helpers.log.debug("Entering trustAnchorDoor().");
+  helpers.log.debug("Leaving trustAnchorDoor().");
+  return 'POST /admin-api/tls/trust/add';
+}
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 
@@ -142,9 +157,6 @@ import json = require('./xacml_json');
 import pdp = require('./xacml_pdp');
 import store = require('./xacml_store');
 import pip = require('./xacml_pip');
-// THE ONE REQUEST BUILDER (#306).
-import xacmlRequest = require('./xacml_request');
-const { AuthorizationRequest } = xacmlRequest;
 // The datatype table, for `POST /xacml/pip` alone: a resolver answers with
 // PARSED values and a caller's engine wants the LEXICAL form its own parser
 // reads. A LEAF (rule 3) that registers nothing and requires nothing that
@@ -175,6 +187,8 @@ import accessGate = require('../common/access_gate');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import realms = require('../common/realms');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // THE CONSOLE PAGES. Required from here rather than from
 // `common/protocol_stack.ts` so that the require order has ONE line for this
 // family: this module is 23c and the pages are part of it. Requiring them
@@ -220,8 +234,8 @@ type Handler = (req: Req, res: Res) => unknown;
 
 // The routes' own table of what an express app offers.
 interface RouteTable {
-  get(path: string, handler: Handler): unknown;
-  post(path: string, handler: Handler): unknown;
+  get(path: string, ...handlers: Handler[]): unknown;
+  post(path: string, ...handlers: Handler[]): unknown;
 }
 
 // What `callerIdentity()` answers: what the connection carried, never a
@@ -236,6 +250,9 @@ interface CallerIdentity {
   why: string;
   revocationRefused?: boolean;
   revocation?: any;
+  // An outside authority's certificate stored on no entry ('NOT_STORED') or
+  // on several ('STORED_TWICE'), so its `dn` is empty (#1061).
+  unmapped?: string;
 }
 
 // What `xacmlAccess()` and `pepAccess()` answer.
@@ -304,9 +321,35 @@ interface XacmlSurfaceDeps {
   monitor: typeof monitor;
   roles: typeof roles;
   accessGate: typeof accessGate;
+  // `common/tls_client_certificates.js`, the one mapping from a verified
+  // certificate to an entry (#1061), required when a certificate is read.
+  loadTlsClientCertificates(): { checkSocket(socket: any,
+                                             options?: any): any;
+                                 checkCertificate(input: any,
+                                                  options?: any): any };
+  // `common/revocation_status.js`'s register-only verdict, for a
+  // certificate read without a handshake (#1189), required when asked.
+  loadRevocationStatus(): { localVerdictFor(input: any): any };
+  // `authzen/authzen_caller.ts`, required when a remote PEP pulls the edge
+  // caller list (#1189): the caller checks the list is the outcome of.
+  loadAuthzenCaller(): any;
+  // The certificate a DER is, in the shape `getPeerCertificate()` hands
+  // back (`X509Certificate.toLegacyObject()`), so the door names it from
+  // exactly the object a handshake would have given it.
+  legacyCertificateOf(der: Buffer): any;
   // Required at the moment a nudge is due, never at load.
   loadBarrier(): Barrier;
   loadPersistence(): CommitWaiter;
+  // Required when a remote PEP pulls the AuthZEN catalogue (#1179), never at
+  // load: the application registry the catalogue lives on, and the grammar
+  // `authzen/authzen.ts` reads it with — so the edge PDP is sent exactly the
+  // rows the service maps a request with.
+  loadApplications(): { get(identifier: string): any;
+                        applicationsEnforcingFga(): string[] };
+  loadAuthzenCatalogue(): { rowsOf(values: unknown):
+                              { rows: any[]; problems: string[] };
+                            valueOf(row: any): string };
+  sha256Base64(text: string): string;
 }
 
 // The role those four endpoints require. Named once here rather than written
@@ -365,8 +408,8 @@ const PIP_MAX_DESIGNATORS = 50;
 
 /**
  * The XACML protocol surface: the decision endpoint, the policy
- * repository as the PDP sees it, the embedded PEP at `/xacml/protected`,
- * the remote PEP endpoints and `POST /xacml/pip`.
+ * repository as the PDP sees it, the remote PEP endpoints and
+ * `POST /xacml/pip`.
  *
  * No decision logic lives here; it reads a request, hands it to
  * `xacml_pdp.js` and writes what comes back.
@@ -419,11 +462,46 @@ class XacmlSurface {
       monitor: monitor,
       roles: roles,
       accessGate: accessGate,
+      loadTlsClientCertificates: function () {
+        return require('../common/tls_client_certificates');
+      },
+      loadRevocationStatus: function (): any {
+        helpers.log.debug("Entering loadRevocationStatus().");
+        helpers.log.debug("Leaving loadRevocationStatus().");
+        return require('../common/revocation_status');
+      },
+      loadAuthzenCaller: function (): any {
+        helpers.log.debug("Entering loadAuthzenCaller().");
+        const callers = require('../authzen/authzen_caller');
+        helpers.log.debug("Leaving loadAuthzenCaller().");
+        return new callers.AuthzenCaller(callers.AuthzenCaller.defaultDeps());
+      },
+      legacyCertificateOf: function (der: Buffer): any {
+        helpers.log.debug("Entering legacyCertificateOf().");
+        helpers.log.debug("Leaving legacyCertificateOf().");
+        return require('../common/crypto').parseCertificate(der)
+          .toLegacyObject();
+      },
       loadBarrier: function (): Barrier {
         return require('../cluster/cluster_barrier');
       },
       loadPersistence: function (): CommitWaiter {
         return require('../persistence/persistence');
+      },
+      loadApplications: function (): any {
+        helpers.log.debug("Entering loadApplications().");
+        helpers.log.debug("Leaving loadApplications().");
+        return require('../common/applications');
+      },
+      loadAuthzenCatalogue: function (): any {
+        helpers.log.debug("Entering loadAuthzenCatalogue().");
+        helpers.log.debug("Leaving loadAuthzenCatalogue().");
+        return require('../authzen/authzen_catalogue');
+      },
+      sha256Base64: function (text: string): string {
+        helpers.log.debug("Entering sha256Base64().");
+        helpers.log.debug("Leaving sha256Base64().");
+        return require('../common/crypto').digest('sha256', text, 'base64');
       }
     };
   }
@@ -480,14 +558,14 @@ class XacmlSurface {
   // ===========================================================================
   // MAY THIS CALLER REACH THE XACML SURFACE AT ALL?
   //
-  // The four endpoints above this file's own PHASE FIVE section — `GET /xacml`,
-  // `POST /xacml/pdp`, `GET /xacml/policies` and `GET /xacml/protected` — go
-  // through here. It is `pepAccess()`'s sibling and rests on the SAME four-step
-  // chain, which is described once, below, at MAY THIS CALLER REACH THE
-  // REMOTE-PEP ENDPOINTS AT ALL: a chain built to an anchor in this service's
-  // truststore, a DN resolved to a directory entry, the roles that entry holds,
-  // and a policy decision. Every link is a real check and none of them is
-  // permissive.
+  // The three endpoints above this file's own PHASE FIVE section — `GET
+  // /xacml`, `POST /xacml/pdp` and `GET /xacml/policies` — go through here
+  // (`GET /xacml/protected` did until #596). It is `pepAccess()`'s sibling
+  // and rests on the SAME four-step chain, which is described once, below,
+  // at MAY THIS CALLER REACH THE REMOTE-PEP ENDPOINTS AT ALL: a chain built to
+  // an anchor in this service's truststore, a DN resolved to a directory
+  // entry, the roles that entry holds, and a policy decision. Every link is
+  // a real check and none of them is permissive.
   //
   // **THE ROLE AND THE RESOURCE ARE BOTH DIFFERENT, AND NEITHER IS AN
   // ACCIDENT.** `XACML_USER` rather than `REMOTE_PEPS`, because admitting
@@ -551,6 +629,9 @@ class XacmlSurface {
                       errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
     } else if (!identity.verified) {
       errorCodes.mark(res, 'STS-XACML-0004');
+    } else if (identity.unmapped) {
+      errorCodes.mark(res, identity.unmapped === 'STORED_TWICE'
+        ? 'STS-XACML-0178' : 'STS-XACML-0177');
     } else if (held.indexOf(XACML_USER_ROLE) < 0) {
       errorCodes.mark(res, 'STS-XACML-0005');
     } else {
@@ -559,8 +640,11 @@ class XacmlSurface {
     self.fail(res, 403, 'access_denied',
       'The access policy refused this request. ' + policy.why +
       ' The XACML endpoints are reached by presenting a client certificate ' +
-      'this service VERIFIES — the issuing CA goes in with POST /tls/trust — ' +
-      'whose subject resolves to a directory entry that is a member of the ' +
+      'this service VERIFIES — the issuing CA goes in with ' +
+      trustAnchorDoor() + ' — ' +
+      'and that is STORED, byte for byte, in userCertificate on the ' +
+      'caller\'s directory entry (one this service issued names its ' +
+      'person instead), an entry that is a member of the ' +
       'group named by roles.xacmlUserGroup ("' +
       String(config.value('roles.xacmlUserGroup') || '') +
       '"), which is what ' +
@@ -568,7 +652,10 @@ class XacmlSurface {
       'group from the one /xacml/pep/* requires (roles.remotePepGroup), on ' +
       'purpose: those endpoints hand out the documents this service enforces ' +
       'its own access with. This caller ' +
-      (identity.verified
+      (identity.verified && identity.unmapped
+        ? 'presented a certificate that VERIFIED and resolved to no ' +
+          'entry: ' + identity.why + '.'
+        : identity.verified
         ? 'presented a certificate that VERIFIED, resolved to "' + name +
           '", and holds ' + (held.length ? held.join(', ') : 'no role') + '.'
         : (identity.authenticated
@@ -596,9 +683,12 @@ class XacmlSurface {
    * With no root policy the answer is NotApplicable with a note; a root
    * policy that does not load is an Indeterminate marked STS-XACML-0012.
    * @param request - the request, in the shapes of `xacml_model.js`
+   * @param options - optional; `resolve: false` decides on the request's own
+   *   attributes alone, with no PIP (#563: an AuthZEN subject of a type this
+   *   realm does not resolve is not a directory person)
    * @returns the PDP's response
    */
-  decide(request: any): any {
+  decide(request: any, options?: { resolve?: boolean }): any {
     const { log, config, errorCodes, model, pdp, store, pip } = this.deps;
     log.debug('Entering XacmlSurface.decide().');
     const root = store.root();
@@ -632,12 +722,47 @@ class XacmlSurface {
                obligations: [], advice: [], policyIdentifiers: [] },
                'STS-XACML-0012');
     }
+    const answer = this.decidePolicy(policy, request, {
+      repository: store.repository(),
+      resolve: !(options && options.resolve === false)
+    });
+    log.debug('Leaving XacmlSurface.decide(). ' + answer.decision);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DECISION AGAINST A GIVEN, PARSED POLICY (#564). `decide()` above is
+  // this with the realm's root and the root's PolicyIdReference map; an
+  // application's fine-grained policy is decided with THAT policy alone
+  // (`xacml/fga_pep.ts`, and AuthZEN in P4), never the root and never the
+  // map — its PolicyId is chosen by whoever named the application, and the
+  // store leaves owned policies out of the map for that reason
+  // (`xacml_store.ts`'s `repository()`). One function, so the two cannot
+  // come to differ about `returnPolicyIdList`, the PIP or what an
+  // Indeterminate through a fault is marked with.
+  // ---------------------------------------------------------------------------
+  /**
+   * Decides a parsed request against a given parsed policy.
+   *
+   * @param policy - the policy or policy set, as `parseDocument()` answers it
+   * @param request - the request, in the shapes of `xacml_model.js`
+   * @param options - `repository` (the PolicyIdReference map, or null for
+   *   none) and `resolve` (false decides on the request's own attributes,
+   *   with no PIP)
+   * @returns the PDP's response; an Indeterminate reached through a
+   *   processing or syntax error is marked STS-XACML-0013
+   */
+  decidePolicy(policy: any, request: any,
+               options?: { repository?: any; resolve?: boolean }): any {
+    const { log, config, errorCodes, model, pdp, pip } = this.deps;
+    log.debug('Entering XacmlSurface.decidePolicy().');
+    const opts = options || {};
     if (config.value('xacml.returnPolicyIdList') === true) {
       request.returnPolicyIdList = true;
     }
     const answer = pdp.evaluate(policy, request, {
-      repository: store.repository(),
-      resolver: pip.resolverFor(request)
+      repository: opts.repository || null,
+      resolver: opts.resolve === false ? null : pip.resolverFor(request)
     });
     // AN INDETERMINATE THE ENGINE REACHED THROUGH A PROCESSING OR SYNTAX ERROR
     // is a fault somebody has to fix, where a missing attribute is an answer
@@ -648,7 +773,7 @@ class XacmlSurface {
          answer.status.code === model.STATUS.SYNTAX_ERROR)) {
       errorCodes.mark(answer, 'STS-XACML-0013');
     }
-    log.debug('Leaving XacmlSurface.decide(). ' + answer.decision);
+    log.debug('Leaving XacmlSurface.decidePolicy(). ' + answer.decision);
     return answer;
   }
 
@@ -669,21 +794,22 @@ class XacmlSurface {
   //      one it knows about, below — and refuses on any other, loudly.
   // ---------------------------------------------------------------------------
   /**
-   * Applies this service's PEP bias and obligation rule to a decision
-   * (section 7.2).
+   * Applies a PEP bias and the obligation rule to a decision (section 7.2).
    *
-   * `xacml.pepBias` chooses deny-biased (the default) or permit-biased. An
+   * `bias` chooses deny-biased (the default, and every embedded PEP's) or
+   * permit-biased — an ARGUMENT since #596, when `xacml.pepBias` went with
+   * the demonstration PEP it governed; the remote PEP's is `PEP_BIAS`. An
    * obligation this PEP cannot discharge turns an allowed access into a
    * refusal; only `urn:sts:xacml:obligation:log` is dischargeable.
    * @param answer - the PDP's response
+   * @param asked - `permit-biased`, or anything else for deny-biased
    * @returns whether access is allowed, the bias, why, and the obligations
    *   discharged and not dischargeable
    */
-  enforce(answer: any): Enforcement {
-    const { log, config, model } = this.deps;
+  enforce(answer: any, asked?: string): Enforcement {
+    const { log, model } = this.deps;
     log.debug('Entering XacmlSurface.enforce(). decision=' + answer.decision);
-    const bias = config.value('xacml.pepBias') === 'permit-biased'
-      ? 'permit-biased' : 'deny-biased';
+    const bias = asked === 'permit-biased' ? 'permit-biased' : 'deny-biased';
     const discharged = [];
     const undischargeable = [];
     (answer.obligations || []).forEach(function (obligation) {
@@ -724,12 +850,210 @@ class XacmlSurface {
   }
 
   // ===========================================================================
+  // THE AUTHZEN CATALOGUE A REMOTE PEP PULLS (#1179).
+  //
+  // The `xacml-pep` container answers AuthZEN Access Evaluation itself, as an
+  // edge PDP over the policy it pulled — and a request is mapped onto XACML
+  // by the realm's ATTRIBUTE CATALOGUE (`authzen/authzen_catalogue.ts`). Two
+  // places mapping one request differently is the drift the pull exists to
+  // prevent, so the catalogue travels with the policies: what is sent is
+  // exactly what `authzen/authzen.ts`'s `rows()` maps with, read through the
+  // same `rowsOf()` off the same `sts-authzen-api` object, and the realm's
+  // settings that change the MAPPING or the answer (`authzen.enabled` with
+  // `xacml.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
+  // `authzen.maxEvaluations`, `authzen.maxBodyBytes`,
+  // `authzen.returnReasons`) beside them, so the container's answer follows
+  // the realm's switches rather than a second copy of them.
+  //
+  // **ITS OWN SYNC TOKEN, NOT THE POLICIES'.** A digest of exactly what is
+  // sent, so a catalogue change and a policy change are two different
+  // events, and `/xacml/pep/policies`' token — which heartbeats compare — is
+  // untouched (rcbj on #1179: that endpoint stays as it is).
+  //
+  // **A VALUE THAT IS NOT A ROW IS LEFT OUT AND COUNTED**, never sent: the
+  // service leaves it out of the mapping too, so the edge maps that property
+  // as undeclared exactly as the service does. Its text is not sent.
+  //
+  // **AND THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564,
+  // P7; rcbj's decision of 2026-10-30, extending decision 4).** An
+  // evaluation about one of them is decided HERE, against the application's
+  // own policy, which `/xacml/pep/policies` withholds — so the edge cannot
+  // decide it, and forwards it to this realm's `/access/v1/evaluation`.
+  // `fgaApplications` is how it tells which: an additive member, inside the
+  // digest, so switching `appFgaEnforced` moves the token and the edge pulls
+  // again on its next poll. Only the identifiers travel, never a policy. A
+  // registry that cannot be read is NOT an empty list (that would send every
+  // enforcing application to the root): the whole catalogue is refused with
+  // a 500 (`STS-FGA-0108`), and the edge keeps the one it holds.
+  // ===========================================================================
+  /**
+   * The AuthZEN catalogue a remote PEP pulls, and its sync token, for the
+   * realm the request is answered in.
+   *
+   * @returns `{ token, body }`, or `{ token: '', body: null, unreadable }`
+   *   when which applications enforce fine-grained authorization cannot be
+   *   read
+   */
+  authzenCatalogue(): { token: string; body: any; unreadable?: string } {
+    const { log, config, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.authzenCatalogue().');
+    const grammar = this.deps.loadAuthzenCatalogue();
+    let object: any = null;
+    try {
+      object = this.deps.loadApplications().get('sts-authzen-api');
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.authzenCatalogue(): ' +
+                ((e && e.message) || e));
+      object = null;
+    }
+    const values = object && object.fields
+      ? object.fields.authzenAttribute : null;
+    const read = grammar.rowsOf(values);
+    if (read.problems.length) {
+      log.warn(errorCodes.tag('STS-AUTHZEN-0060') + 'xacml: the AuthZEN ' +
+               'catalogue a remote PEP pulled left out ' +
+               read.problems.length + ' value(s) of authzenAttribute that ' +
+               'are not rows; the edge maps those properties as undeclared, ' +
+               'as this service does.');
+    }
+    const rows = read.rows.map(function (row: any) {
+      return JSON.parse(grammar.valueOf(row));
+    });
+    const types = config.value('authzen.resolveSubjectTypes');
+    const settings = {
+      enabled: config.value('authzen.enabled') !== false &&
+               config.value('xacml.enabled') !== false && !!object,
+      resolveSubjectTypes: (Array.isArray(types) ? types
+        : String(types || '').split(','))
+        .map(function (one: unknown) {
+          return String(one).trim();
+        }).filter(Boolean),
+      batchEnabled: config.value('authzen.batchEnabled') !== false,
+      maxEvaluations: Number(config.value('authzen.maxEvaluations')),
+      maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
+      returnReasons: config.value('authzen.returnReasons') === true
+    };
+    let fgaApplications: string[] = [];
+    try {
+      fgaApplications = this.deps.loadApplications()
+        .applicationsEnforcingFga();
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.authzenCatalogue(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-FGA-0108') + 'xacml: which ' +
+                'applications enforce fine-grained authorization could not ' +
+                'be read, so the AuthZEN catalogue is not sent: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving XacmlSurface.authzenCatalogue(). Unreadable.');
+      return { token: '', body: null,
+               unreadable: String((e && e.message) || e) };
+    }
+    const realm = String(realms.currentId() || '');
+    const token = this.deps.sha256Base64(JSON.stringify({
+      realm: realm, apiObject: !!object, rows: rows, settings: settings,
+      fgaApplications: fgaApplications }))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const body = {
+      syncToken: token,
+      realm: realm,
+      apiObject: object ? 'sts-authzen-api' : null,
+      rows: rows,
+      leftOut: read.problems.length,
+      settings: settings,
+      fgaApplications: fgaApplications,
+      note: 'The AuthZEN attribute catalogue of this realm: the rows of ' +
+            'authzenAttribute on sts-authzen-api, read as this service ' +
+            'reads them for POST /access/v1/evaluation, and the settings ' +
+            'that change the mapping or the answer. An edge PDP maps a ' +
+            'request with exactly these, or not at all. fgaApplications ' +
+            'names the applications that enforce fine-grained ' +
+            'authorization: an evaluation about one of them is decided by ' +
+            'this service alone, so an edge PDP forwards it here.'
+    };
+    log.debug('Leaving XacmlSurface.authzenCatalogue(). ' + rows.length +
+              ' row(s).');
+    return { token: token, body: body };
+  }
+
+  // ===========================================================================
+  // THE AUTHZEN CALLERS A REMOTE PEP PULLS (#1189).
+  //
+  // The edge PDP admitted callers off a list its operator wrote
+  // (`PEP_AUTHZEN_CALLERS`) until rcbj's decision on #1189: it admits by the
+  // service's own answer, pulled. What is sent is `authzen_caller.ts`'s
+  // `edgeCallers()` — for every caller the access-control policy admits to
+  // `/access/v1/*` NOW, the name a policy sees as
+  // `urn:sts:xacml:authzen:caller`, the SHA-256 of the DER of each
+  // certificate this service's door would resolve to that name, its
+  // application scope and the endpoints it is admitted to. That function
+  // argues what is a candidate and what is left out.
+  //
+  // **THE ACCEPTED COST, rcbj's words on #1189: anybody holding REMOTE_PEPS
+  // can read who may ask the PDP.** The gate is the pull's own
+  // (`pepAccess()`), and nothing but the names, the digests and the scopes
+  // is sent: no certificate, no attribute, no group.
+  //
+  // **ITS OWN SYNC TOKEN, A DIGEST OF EXACTLY WHAT IS SENT**, beside the
+  // catalogue's and apart from the policies' (which heartbeats compare), so
+  // it MOVES WITH: a member added to or taken out of `roles.authzenPepGroup`;
+  // a certificate stored on or taken off an entry, issued, expired or
+  // revoked in the register; a scope (`stsAuthzenApplication`) set; the
+  // realm's `authzen.callerAuthentication`; and any change to the
+  // access-control policy that changes its answer about a caller. Nothing
+  // is pushed: it CONVERGES ON THE EDGE'S POLL, and a caller removed here is
+  // admitted there until the next one.
+  // ===========================================================================
+  /**
+   * The AuthZEN callers a remote PEP's edge PDP admits, and their sync
+   * token, for the realm the request is answered in.
+   *
+   * @returns `{ token, body }`
+   */
+  authzenCallers(): { token: string; body: any } {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.authzenCallers().');
+    const read = this.deps.loadAuthzenCaller().edgeCallers();
+    const realm = String(realms.currentId() || '');
+    const sent = {
+      realm: realm,
+      door: read.door,
+      role: 'AUTHZEN_PEPS',
+      group: read.group,
+      callers: read.callers,
+      truncated: !!read.truncated,
+      counts: { members: read.members, read: read.candidates,
+                unlocated: read.unlocated, unnamed: read.unnamed,
+                notAdmitted: read.notAdmitted, unreadable: read.unreadable }
+    };
+    const token = this.deps.sha256Base64(JSON.stringify(sent))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const body = Object.assign({ syncToken: token }, sent, {
+      note: read.door === 'mtls'
+        ? 'The callers this realm admits to its AuthZEN API now: each the ' +
+          'name a policy sees as urn:sts:xacml:authzen:caller, the SHA-256 ' +
+          'of the DER of every certificate this service would resolve to ' +
+          'it, its application scope, and the endpoints the access-control ' +
+          'policy admits it to. An edge PDP admits by exactly these.'
+        : 'This realm\'s callers authenticate by ' + read.door + ' ' +
+          '(authzen.callerAuthentication), which a certificate alone does ' +
+          'not meet, so no caller is listed and an edge PDP admits nobody.'
+    });
+    log.debug('Leaving XacmlSurface.authzenCallers(). ' +
+              read.callers.length + ' caller(s).');
+    return { token: token, body: body };
+  }
+
+  // ===========================================================================
   // PHASE FIVE: THE REMOTE PEP. THREE ENDPOINTS, AND THE PULL IS THE CONTRACT.
   //
   //   POST /xacml/pep/register   a PEP says it exists, over mutual TLS
   //   GET  /xacml/pep/policies   the repository, for a PEP to LOAD and
   //                              evaluate
   //   POST /xacml/pep/heartbeat  what it has enforced, and what it holds
+  //
+  // and, beside the policies since #1179, `GET /xacml/pep/authzen-catalogue`,
+  // the AuthZEN attribute catalogue the container's edge PDP maps with —
+  // additive, behind the same gate, with a sync token of its own.
   //
   // ---------------------------------------------------------------------------
   // WHY THE PEP PULLS AND THIS SERVICE DOES NOT PUSH.
@@ -852,8 +1176,19 @@ class XacmlSurface {
   // false`, because that is `xacml.pepRequireCertificate`'s decision and not
   // this function's.
   // ---------------------------------------------------------------------------
-  private callerIdentity(req: Req): CallerIdentity {
-    const { log, mtls, peps } = this.deps;
+  // PUBLIC SINCE #563: the AuthZEN door (`authzen/authzen_caller.ts`) asks
+  // the same question of the same connection, and a second reading of a
+  // certificate there would be how one certificate came to name two
+  // entries on two surfaces.
+  /**
+   * Reads what a connection's client certificate says about its caller:
+   * whether one arrived, whether it verified, and the entry it names.
+   *
+   * @param req - the request
+   * @returns the caller's identity, never a verdict
+   */
+  callerIdentity(req: Req): CallerIdentity {
+    const { log, mtls } = this.deps;
     log.debug('Entering XacmlSurface.callerIdentity().');
     const certificate = mtls.peerCertificate(req);
     if (!certificate) {
@@ -873,11 +1208,19 @@ class XacmlSurface {
     // caller chose for itself, and the identity resolution below must not rest
     // on one.
     const verdict = mtls.peerVerified(req);
-    // The DN and the common name come from `certificatePlan()`, across the
-    // register's slot — this service already has exactly one answer to "what
-    // identity is this certificate" and a second one written here would be how
-    // a PEP ends up filed under two names on two pages.
-    const named = peps.certificateIdentity(certificate);
+    let gate: any = null;
+    if (verdict.verified) {
+      try {
+        gate = this.deps.loadTlsClientCertificates()
+          .checkSocket(req.socket, { stored: true });
+      } catch (e) {
+        log.debug('Caught in XacmlSurface.callerIdentity(): ' +
+                  ((e && e.message) || e));
+        gate = null;
+      }
+    }
+    const { named, unmapped } = this.namedBy(certificate, verdict.verified,
+                                             gate && gate.identity);
     const identity = {
       authenticated: true,
       verified: verdict.verified,
@@ -894,9 +1237,131 @@ class XacmlSurface {
       // certificate-bound token with, so the two spellings cannot drift.
       thumbprint: mtls.presentedThumbprint(req),
       dn: named.dn,
-      commonName: named.commonName
+      commonName: named.commonName,
+      unmapped: unmapped || undefined
     };
+    if (unmapped) {
+      identity.why = 'the certificate is from an outside certificate ' +
+        'authority and is ' + (unmapped === 'STORED_TWICE'
+          ? 'stored on more than one entry here, so it names nobody'
+          : 'not stored in userCertificate on any entry here (an outside ' +
+            'certificate names only the entry it is stored on; a renewed ' +
+            'one is stored again)');
+    }
     log.debug('Leaving XacmlSurface.callerIdentity(). dn=' + identity.dn);
+    return identity;
+  }
+
+  // THE NAMING HALF OF THE DOOR, shared by `callerIdentity()` (a handshake)
+  // and `certificateCaller()` (a certificate in hand, #1189), so the two
+  // cannot name one certificate differently.
+  //
+  // The DN and the common name come from `certificatePlan()`, across the
+  // register's slot — this service already has exactly one answer to "what
+  // identity is this certificate" and a second one written here would be how
+  // a PEP ends up filed under two names on two pages.
+  //
+  // AN OUTSIDE AUTHORITY'S CERTIFICATE IS THE ENTRY IT IS STORED ON (#1061,
+  // rcbj 2026-10-27). `certificatePlan()` names an entry from the
+  // certificate's common name — and for a certificate THIS service issued
+  // that is the person's own name, which its authority wrote, so it stays.
+  // An outside authority could write anybody's, so its certificate is,
+  // byte for byte, the one entry of this realm storing it in
+  // `userCertificate`, through the one mapping every door asks; stored on
+  // no entry or on several, it resolves to NO name, and the policy below
+  // refuses a caller with none.
+  private namedBy(certificate: any, verified: boolean, found: any):
+      { named: { dn: string; commonName: string; subject: string };
+        unmapped: string } {
+    const { log, peps } = this.deps;
+    log.debug('Entering XacmlSurface.namedBy().');
+    let named = peps.certificateIdentity(certificate);
+    let unmapped = '';
+    if (verified && found && !found.issuedHere && found.outside === true) {
+      if (found.accepted && found.dn) {
+        named = { dn: String(found.dn),
+                  commonName: String(found.username || ''),
+                  subject: named.subject };
+      } else {
+        unmapped = String(found.error || 'NOT_STORED');
+        named = { dn: '', commonName: '', subject: named.subject };
+      }
+    }
+    log.debug('Leaving XacmlSurface.namedBy(). dn=' + named.dn);
+    return { named: named, unmapped: unmapped };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DOOR, FOR A CERTIFICATE IN HAND (#1189).
+  //
+  // `callerIdentity()` reads a handshake; the AuthZEN callers a remote PEP
+  // pulls are worked out from the certificates a caller HOLDS, before any
+  // handshake, and must be named exactly as that door would name them. So
+  // this is the same three steps over the leaf's DER: the chain is taken
+  // as verified (that is the edge's own question, against
+  // `PEP_AUTHZEN_CLIENT_CA`), then the gate `mtls.peerVerified()` applies
+  // to a certificate this service issued (`checkCertificate()`, the one
+  // `checkSocket()` asks) and the register's revocation verdict, then the
+  // naming above with the stored lookup. A certificate the door would
+  // refuse comes back `verified: false`, and one it would resolve to
+  // nobody with no `dn`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads a certificate's DER as the certificate door would read it on a
+   * handshake that verified: whether it is accepted, and the entry it names.
+   *
+   * @param der - the leaf certificate's DER
+   * @returns the caller's identity, never a verdict
+   */
+  certificateCaller(der: Buffer): CallerIdentity {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.certificateCaller().');
+    const input = { leaf: der, chain: [], verified: true };
+    const refused = function (why: string): CallerIdentity {
+      log.debug('Entering refused().');
+      log.debug('Leaving refused().');
+      return { authenticated: true, verified: false, subject: '',
+               thumbprint: '', dn: '', commonName: '', why: why };
+    };
+    let certificate: any = null;
+    try {
+      certificate = self.deps.legacyCertificateOf(der);
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.certificateCaller(): ' +
+                ((e && e.message) || e));
+      certificate = null;
+    }
+    if (!certificate) {
+      log.debug('Leaving XacmlSurface.certificateCaller(). Unreadable.');
+      return refused('the certificate could not be read');
+    }
+    const certificates = self.deps.loadTlsClientCertificates();
+    const issued = certificates.checkCertificate(input, {});
+    if (!issued.ok) {
+      log.debug('Leaving XacmlSurface.certificateCaller(). The gate ' +
+                'refused it.');
+      return refused(String(issued.why || issued.error || 'refused'));
+    }
+    const verdict = self.deps.loadRevocationStatus().localVerdictFor(input);
+    if (verdict && verdict.refused) {
+      log.debug('Leaving XacmlSurface.certificateCaller(). Revoked.');
+      return Object.assign(refused(String(verdict.why || 'revoked')),
+                           { revocationRefused: true, revocation: verdict });
+    }
+    const stored = certificates.checkCertificate(input, { stored: true });
+    const { named, unmapped } = self.namedBy(certificate, true,
+                                             stored && stored.identity);
+    const identity: CallerIdentity = {
+      authenticated: true, verified: true, subject: named.subject,
+      thumbprint: '', dn: named.dn, commonName: named.commonName,
+      why: unmapped ? 'the certificate is from an outside certificate ' +
+        'authority and is ' + (unmapped === 'STORED_TWICE'
+          ? 'stored on more than one entry here' : 'stored on no entry here')
+        : 'named as a verified handshake would name it',
+      unmapped: unmapped || undefined
+    };
+    log.debug('Leaving XacmlSurface.certificateCaller(). dn=' + identity.dn);
     return identity;
   }
 
@@ -908,7 +1373,7 @@ class XacmlSurface {
   // different part of this service answers:
   //
   //   1. WAS A CHAIN BUILT? `mtls.peerVerified()` — did what arrived verify
-  //      against an anchor in the truststore `POST /tls/trust` fills. A
+  //      against an anchor in the truststore `/admin-api/tls/trust` fills. A
   //      certificate that verified against nothing is a name the caller chose
   //      for itself, and everything below would be reading it.
   //   2. WHICH ENTRY IS THAT? `peps.certificateIdentity()` across the
@@ -981,6 +1446,9 @@ class XacmlSurface {
                       errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
     } else if (!identity.verified) {
       errorCodes.mark(res, 'STS-XACML-0008');
+    } else if (identity.unmapped) {
+      errorCodes.mark(res, identity.unmapped === 'STORED_TWICE'
+        ? 'STS-XACML-0180' : 'STS-XACML-0179');
     } else if (held.indexOf(REMOTE_PEP_ROLE) < 0) {
       errorCodes.mark(res, 'STS-XACML-0009');
     } else {
@@ -990,13 +1458,17 @@ class XacmlSurface {
       'The access policy refused this request. ' + policy.why +
       ' A remote Policy Enforcement Point reaches these endpoints by ' +
       'presenting a client certificate this service VERIFIES — the issuing ' +
-      'CA goes in with POST /tls/trust — whose subject resolves to a ' +
-      'directory entry that is a member of the group named by ' +
+      'CA goes in with ' + trustAnchorDoor() + ' — and that is STORED, ' +
+      'byte for byte, in userCertificate on the PEP\'s directory entry, ' +
+      'an entry that is a member of the group named by ' +
       'roles.remotePepGroup ("' +
       String(config.value('roles.remotePepGroup') || '') +
       '"), which is what ' +
       'grants the built-in ' + REMOTE_PEP_ROLE + ' role. This caller ' +
-      (identity.verified
+      (identity.verified && identity.unmapped
+        ? 'presented a certificate that VERIFIED and resolved to no ' +
+          'entry: ' + identity.why + '.'
+        : identity.verified
         ? 'presented a certificate that VERIFIED, resolved to "' + name +
           '", and holds ' + (held.length ? held.join(', ') : 'no role') + '.'
         : (identity.authenticated
@@ -1548,6 +2020,46 @@ class XacmlSurface {
   }
 
   // ---------------------------------------------------------------------------
+  // WHAT A REMOTE PEP IS SENT: the body of `GET /xacml/pep/policies`, as a
+  // method so the filter is one piece of code a test can hold (#564) rather
+  // than an expression inside a handler behind mutual TLS. The route's own
+  // comment argues each exclusion.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns what `GET /xacml/pep/policies` sends: every enabled policy
+   * except this service's own two (by setting) and every policy an
+   * application owns (`xacmlApplication`), and the names of those withheld.
+   *
+   * @returns `{ root, policies, withheld }`
+   */
+  pepPull(): { root: string | null; policies: any[]; withheld: string[] } {
+    const { log, config, store } = this.deps;
+    log.debug("Entering XacmlSurface.pepPull().");
+    const root = store.root();
+    const internal = [config.value('xacml.accessPolicy') || 'access-control',
+                      config.value('xacml.issuancePolicy') || 'role-issuance']
+      .map(function (one) { return String(one).toLowerCase(); });
+    const withheld = [];
+    const policies = store.all().filter(function (row) {
+      if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
+          row.application) {
+        withheld.push(row.name);
+        return false;
+      }
+      return row.enabled;
+    }).map(function (row) {
+      return { name: row.name, policyId: row.id, kind: row.kind,
+               version: row.version, combiningAlgId: row.combiningAlgId,
+               isRoot: !!(root && root.name === row.name),
+               description: row.description, document: row.document };
+    });
+    log.debug("Leaving XacmlSurface.pepPull(). " + policies.length +
+              " sent, " + withheld.length + " withheld.");
+    return { root: root ? root.name : null, policies: policies,
+             withheld: withheld };
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /xacml — what this surface is.
   // ---------------------------------------------------------------------------
   /**
@@ -1577,13 +2089,11 @@ class XacmlSurface {
         }).length,
         root: root ? root.name : null
       },
-      pep: { embeddedAt: baseUrlOf(req) + '/xacml/protected',
-             bias: config.value('xacml.pepBias') },
-      // THE EMBEDDED PEP'S BIAS IS NOT REPORTED HERE FOR THE REMOTE ONES, and
-      // the omission is deliberate: `xacml.pepBias` governs the endpoint above
-      // and nothing else. A remote PEP is a separate process with its own
-      // configuration and reports the bias it is actually running with on every
-      // heartbeat, which is what /admin/xacml/peps shows.
+      // NO PEP'S BIAS IS REPORTED HERE (#596: the demonstration PEP and its
+      // `xacml.pepBias` moved to the remote PEP). A remote PEP is a separate
+      // process with its own configuration and reports the bias it is
+      // actually running with on every heartbeat, which is what
+      // /admin/xacml/peps shows.
       remotePeps: {
         enabled: self.remotePepsEnabled(),
         registerAt: baseUrlOf(req) + '/xacml/pep/register',
@@ -1622,9 +2132,6 @@ class XacmlSurface {
         { method: 'GET', path: '/xacml/policies',
           what: 'the repository as the PDP sees it, documents included',
           requires: XACML_USER_ROLE },
-        { method: 'GET', path: '/xacml/protected',
-          what: 'the embedded PEP: a resource guarded by this PDP',
-          requires: XACML_USER_ROLE },
         { method: 'POST', path: '/xacml/pep/register',
           what: 'a remote PEP registers, over mutual TLS',
           requires: REMOTE_PEP_ROLE },
@@ -1647,8 +2154,8 @@ class XacmlSurface {
       // rather than only in the refusal they get for not having it.
       access: {
         mechanism: 'a client certificate this service verifies against an ' +
-                   'anchor in its own truststore (POST /tls/trust), whose ' +
-                   'subject DN resolves to a directory entry',
+                   'anchor in its own truststore (' + trustAnchorDoor() +
+                   '), whose subject DN resolves to a directory entry',
         xacmlUserGroup: String(config.value('roles.xacmlUserGroup') || ''),
         remotePepGroup: String(config.value('roles.remotePepGroup') || ''),
         enforced: config.value('xacml.enforceAccess') !== false,
@@ -1782,6 +2289,10 @@ class XacmlSurface {
           enabled: row.enabled,
           isRoot: !!(root && root.name === row.name),
           description: row.description,
+          // #564: the application that owns it, and since when it has been
+          // orphaned; null for an ordinary policy.
+          application: row.application || null,
+          orphanedAt: row.orphanedAt || null,
           document: row.document };
         // A policy that does not load is reported HERE rather than only when a
         // decision meets it, because the moment somebody is looking at the list
@@ -1807,122 +2318,6 @@ class XacmlSurface {
          }, null, 2));
       log.debug('Leaving GET /xacml/policies. ' + rows.length +
                 ' policy(ies).');
-    });
-
-    // -------------------------------------------------------------------------
-    // GET /xacml/protected — THE EMBEDDED PEP.
-    //
-    // Builds a request out of the caller, asks the PDP, and enforces the
-    // answer. The three query parameters are what a PEP would ordinarily get
-    // from its own context; here they are supplied so that one endpoint can
-    // exercise a whole policy without a client having to be written.
-    // -------------------------------------------------------------------------
-    app.get('/xacml/protected', function (req, res) {
-      log.debug('Entering GET /xacml/protected.');
-      if (self.offCheck(res)) {
-        log.debug('Leaving GET /xacml/protected. Off.');
-        return;
-      }
-      // ---------------------------------------------------------------------
-      // TWO GATES ON ONE ENDPOINT, AND THEY ARE ABOUT TWO DIFFERENT PEOPLE.
-      //
-      // This one asks whether the CALLER may drive the embedded PEP at all. The
-      // enforcement below asks whether the SUBJECT NAMED IN `?subject=` may
-      // reach the resource — which is the thing this endpoint exists to
-      // demonstrate and is not an authentication of anybody.
-      //
-      // Keeping them apart is what stops the demonstration from being ruined by
-      // the gate: an admitted caller can still ask about `?subject=nobody` and
-      // watch the PEP refuse, because the answer is about the subject and the
-      // admission was about the connection. Conflating them would turn this
-      // into an endpoint that reports what the caller already knows.
-      // ---------------------------------------------------------------------
-      if (!self.xacmlAccess(req, res, accessGate.ACTION.READ,
-                            'an embedded PEP enforcement').allowed) {
-        log.debug('Leaving GET /xacml/protected. The access policy refused.');
-        return;
-      }
-      const subject = String(req.query.subject || '');
-      const resource = String(req.query.resource ||
-                              baseUrlOf(req) + '/xacml/protected');
-      const action = String(req.query.action || 'GET');
-      // THROUGH THE ONE BUILDER (#306), in the four categories and the
-      // order this demonstration always sent — an empty subject category
-      // when `?subject=` names nobody.
-      const built = new AuthorizationRequest({ includeInResult: true });
-      [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.RESOURCE,
-       model.CATEGORY.ACTION, model.CATEGORY.ENVIRONMENT]
-        .forEach(function (id) {
-          built.category(id);
-        });
-      if (subject) {
-        built.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
-      }
-      const request = built.target(resource, model.TYPE.ANYURI)
-        .requestedAction(action).build();
-      const answer = self.decide(request);
-      const enforcement = self.enforce(answer);
-      // ---------------------------------------------------------------------
-      // COUNTED HERE AND DELIBERATELY NOT INSIDE `enforce()`.
-      //
-      // `enforce()` looks like the obvious funnel and is the wrong one:
-      // `/admin/xacml/decide` calls it too, to show a reader what the embedded
-      // PEP WOULD do with the decision they just asked about. That is a
-      // what-if, not a request anybody guarded — counting it would put a
-      // console page's own experiments into the figure an operator reads to
-      // find out how much traffic authorization is actually seeing, and the
-      // number would grow every time somebody looked at it.
-      //
-      // So the count is at the one place a real request was enforced.
-      // ---------------------------------------------------------------------
-      monitor.record('protected', { decision: answer.decision,
-                                    allowed: enforcement.allowed,
-                                    undischargeable:
-                                      (enforcement.undischargeable ||
-                                       []).length > 0 });
-      audit.audit({
-        action: 'xacml.enforcement',
-        actor: subject,
-        protocol: 'XACML',
-        detail: 'The embedded PEP got ' + answer.decision + ' and ' +
-                (enforcement.allowed ? 'allowed' : 'refused') + ' access to ' +
-                resource + ' (' + enforcement.bias + ').'
-      });
-      const body: Record<string, unknown> = {
-        decision: answer.decision,
-        allowed: enforcement.allowed,
-        bias: enforcement.bias,
-        why: enforcement.why,
-        status: answer.status,
-        obligations: (answer.obligations || []).map(function (one) {
-          return { id: one.id, discharged: enforcement.discharged
-            .indexOf(one.id) >= 0 };
-        }),
-        advice: (answer.advice || []).map(function (one) {
-          return one.id;
-        }),
-        request: { subject: subject || null, resource: resource,
-                   action: action },
-        applicablePolicies: answer.policyIdentifiers || []
-      };
-      if (answer.note) {
-        body.note = answer.note;
-      }
-      if (!enforcement.allowed) {
-        errorCodes.mark(res, (enforcement.undischargeable || []).length &&
-                             answer.decision === model.DECISION.PERMIT
-          ? 'STS-XACML-0015' : 'STS-XACML-0014');
-      }
-      // A fault behind the decision is the more specific condition, and the
-      // last mark wins.
-      if (errorCodes.codeOf(answer)) {
-        errorCodes.mark(res, errorCodes.codeOf(answer));
-      }
-      res.status(enforcement.allowed ? 200 : 403)
-         .type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify(body, null, 2));
-      log.debug('Leaving GET /xacml/protected. ' +
-                (enforcement.allowed ? 'Allowed.' : 'Refused.'));
     });
 
     // -------------------------------------------------------------------------
@@ -1956,8 +2351,11 @@ class XacmlSurface {
         // way. A plain-HTTP listener cannot carry a certificate at all, however
         // good the client's; an https one can, and a client that sent none
         // simply did not.
+        // A TLS socket has the method and a plain one does not: the question
+        // asked of the socket is which of the two it is.
         const plain = !(req.socket &&
-                        typeof req.socket.getPeerCertificate === 'function');
+                        typeof (req.socket as import('tls').TLSSocket)
+                          .getPeerCertificate === 'function');
         log.debug('Leaving POST /xacml/pep/register. No client certificate.');
         errorCodes.mark(res, plain ? 'STS-XACML-0017' : 'STS-XACML-0018');
         self.fail(res, 401, 'invalid_client', plain
@@ -2178,23 +2576,23 @@ class XacmlSurface {
       // of their own has made THAT one internal, and a stored flag would still
       // be on the old one. Reading the settings is reading the same answer
       // `xacml_access_pep.ts` and `xacml_role_pep.ts` read.
+      //
+      // **AND EVERY POLICY AN APPLICATION OWNS (#564), BY ITS FLAG**, which
+      // is the opposite choice for the opposite reason: ownership is not a
+      // setting that can be pointed elsewhere, it is a fact the entry
+      // carries (`xacmlApplication`), written with the policy. Such a policy
+      // decides the authorization details of its application's types, which
+      // only this service is asked about (rcbj's decision 4: fine-grained
+      // authorization is decided here, at the AuthZEN endpoint); a remote PEP
+      // that loaded it beside the root would hold a document it is never
+      // asked to evaluate, and a PolicySet root there could reference it by
+      // a PolicyId an application's administrator chose. Named, as the two
+      // above are. An embedded FGA PDP in the remote PEP is future work and
+      // would be a pull of its own, not this one.
       // =======================================================================
-      const internal = [config.value('xacml.accessPolicy') || 'access-control',
-                        config.value('xacml.issuancePolicy') || 'role-issuance']
-        .map(function (one) { return String(one).toLowerCase(); });
-      const withheld = [];
-      const rows = store.all().filter(function (row) {
-        if (internal.indexOf(String(row.name).toLowerCase()) >= 0) {
-          withheld.push(row.name);
-          return false;
-        }
-        return row.enabled;
-      }).map(function (row) {
-        return { name: row.name, policyId: row.id, kind: row.kind,
-                 version: row.version, combiningAlgId: row.combiningAlgId,
-                 isRoot: !!(root && root.name === row.name),
-                 description: row.description, document: row.document };
-      });
+      const pulled = self.pepPull();
+      const rows = pulled.policies;
+      const withheld = pulled.withheld;
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
          .set('ETag', '"' + token + '"')
          .send(JSON.stringify({
@@ -2221,13 +2619,114 @@ class XacmlSurface {
                  'process can supply. Enforced elsewhere they would answer ' +
                  'NotApplicable to everything, which a deny-biased PEP turns ' +
                  'into a refusal of everything. They are readable at GET ' +
-                 '/xacml/policies.' +
+                 '/xacml/policies. So is every policy an application owns ' +
+                 '(xacmlApplication): it decides that application\'s ' +
+                 'authorization details, which only this service is asked ' +
+                 'about.' +
                  (withheld.length
                    ? ' Withheld here: ' + withheld.join(', ') + '.'
                    : '')
          }, null, 2));
       log.debug('Leaving GET /xacml/pep/policies. ' + rows.length +
                 ' policy(ies).');
+    });
+
+    // -------------------------------------------------------------------------
+    // GET /xacml/pep/authzen-catalogue — THE AUTHZEN CATALOGUE, FOR A REMOTE
+    // PEP'S EDGE PDP (#1179).
+    //
+    // ADDITIVE: `/xacml/pep/policies` above is unchanged and so is every
+    // other endpoint here (rcbj on #1179). The same gate as the pull —
+    // `pepAccess()`, `REMOTE_PEPS` on resource `xacml-pep-api` — because it
+    // is the pull's other half: what the pulled policies are asked in terms
+    // of. The same `?since=` and ETag, over a token of its own
+    // (`authzenCatalogue()` argues both).
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/authzen-catalogue', function (req, res) {
+      log.debug('Entering GET /xacml/pep/authzen-catalogue.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP AuthZEN catalogue pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. The access ' +
+                  'policy refused.');
+        return;
+      }
+      const catalogue = self.authzenCatalogue();
+      if (!catalogue.body) {
+        // NOT SENT RATHER THAN SENT WITHOUT THE FGA LIST (#564, P7): a
+        // catalogue naming no enforcing application would have the edge
+        // decide those from the root. A 500 keeps the edge on what it holds.
+        errorCodes.mark(res, 'STS-FGA-0108');
+        res.status(500).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({
+             error: 'server_error',
+             error_description: 'Which applications enforce fine-grained ' +
+               'authorization could not be read, so the AuthZEN catalogue ' +
+               'is not sent; keep the one held.'
+           }, null, 2));
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. The FGA ' +
+                  'applications could not be read.');
+        return;
+      }
+      const since = String(req.query.since || '');
+      if (since && since === catalogue.token) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + catalogue.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + catalogue.token + '"')
+         .send(JSON.stringify(catalogue.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/authzen-catalogue. ' +
+                catalogue.body.rows.length + ' row(s).');
+    });
+
+    // -------------------------------------------------------------------------
+    // GET /xacml/pep/authzen-callers — WHO MAY ASK A REMOTE PEP'S EDGE PDP
+    // (#1189).
+    //
+    // ADDITIVE, as the catalogue was: `/xacml/pep/policies` and
+    // `/xacml/pep/authzen-catalogue` are unchanged. The same gate —
+    // `pepAccess()`, REMOTE_PEPS on resource `xacml-pep-api` — the same
+    // `?since=` and ETag over a token of its own, and `no-store`
+    // (`authzenCallers()` argues what is sent and when the token moves).
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/authzen-callers', function (req, res) {
+      log.debug('Entering GET /xacml/pep/authzen-callers.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/authzen-callers. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP AuthZEN caller pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/authzen-callers. The access ' +
+                  'policy refused.');
+        return;
+      }
+      const callers = self.authzenCallers();
+      const since = String(req.query.since || '');
+      if (since && since === callers.token) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + callers.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/authzen-callers. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + callers.token + '"')
+         .send(JSON.stringify(callers.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/authzen-callers. ' +
+                callers.body.callers.length + ' caller(s).');
     });
 
     // -------------------------------------------------------------------------
@@ -2454,13 +2953,12 @@ class XacmlSurface {
         // service reads a body with — so the ceiling is one number in one
         // place.
         //
-        // **ENTITY EXPANSION IS NOT A HAZARD HERE AND THAT IS MEASURED RATHER
-        // THAN ASSUMED.** `@xmldom/xmldom` resolves no entity declared in a
-        // DTD, internal or external: a billion-laughs document and an `<!ENTITY
-        // xxe SYSTEM "file:///etc/passwd">` both come back as *entity not
-        // found*, refused as not well-formed. So there is no expansion limit to
-        // set and no external resolver to disable — and this paragraph is here
-        // so the next person to look does not have to run the probe again.
+        // **ENTITY EXPANSION IS NOT A HAZARD HERE.** `common/xml_parser.js`,
+        // which `validation.parseXml()` parses with, refuses a document that
+        // carries a `<!DOCTYPE>` or an `<!ENTITY>` before the parser sees it
+        // (ASVS 5.0.0 1.5.2), so a billion-laughs document and an `<!ENTITY
+        // xxe SYSTEM "file:///etc/passwd">` are both refused, and there is no
+        // expansion limit to set and no external resolver to disable.
         // ---------------------------------------------------------------------
         const parsed = validation.parseXml(raw, 'PIP query',
                                            { max: validation.CAP.LARGE });
@@ -2648,128 +3146,40 @@ class XacmlSurface {
         return res.status(400).type('text/plain')
                   .send(askedFormat.detail + '\n');
       }
-      if (String(req.query.format || '').toLowerCase() === 'json') {
+      // THE JSON FORM, to the byte as before — `?format=json` — or by an
+      // Accept preferring JSON where the query names no format (#584).
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
         res.status(200).set('Cache-Control', 'no-store').json(info);
         log.debug('Leaving GET /xacml. JSON.');
         return;
       }
-      const rows = info.endpoints.map(function (row) {
-        return '<tr><td><code>' + xmlEscape(row.method) +
-          '</code></td><td><code>' +
-          xmlEscape(row.path) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td><td><code>' + xmlEscape(row.requires) + '</code></td></tr>';
-      }).join('');
-      const later = info.notYetHere.map(function (one) {
-        return '<li>' + xmlEscape(one) + '</li>';
-      }).join('');
-      res.status(200).type('text/html').set('Cache-Control', 'no-store').send(
-        '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-        '<title>XACML 3.0</title><style>' +
-        'body{font-family:system-ui,sans-serif;' +
-        'margin:2rem;max-width:52rem;line-height:1.5}table{border-collapse:' +
-        'collapse;margin:1rem 0}td,th{border:1px solid #ccc;' +
-        'padding:.35rem .6rem;' +
-        'text-align:left}code{font-size:.9em}</style></head><body>' +
-        '<h1>XACML 3.0</h1>' +
-        '<p>This service is a Policy Decision Point. Policies live in ' +
-        '<code>ou=policies</code> in the embedded directory — that ' +
-        'container <strong>is</strong> the repository rather than a copy of ' +
-        'one — and the Policy Information Point reads attributes off the ' +
-        'subject&rsquo;s own directory entry.</p>' +
-        '<p>' + (info.enabled ? 'XACML is <strong>on</strong>.'
-                              : 'XACML is <strong>off</strong> ' +
-                                '(<code>xacml.enabled</code>); these ' +
-                                'endpoints answer 501.') + '</p>' +
-        '<p>The repository holds ' + info.repository.policies +
-        ' policy(ies), ' +
-        info.repository.enabledPolicies + ' enabled, and the root is ' +
-        (info.repository.root
-          ? '<code>' + xmlEscape(info.repository.root) + '</code>.'
-          : '<strong>not set</strong>, so every decision is NotApplicable.') +
-        '</p>' +
-        '<table><tr><th>Method</th><th>Path</th><th>What</th><th>Requires' +
-        '</th></tr>' + rows + '</table>' +
-        '<h2>Getting in</h2>' +
-        '<p>' + (info.access.enforced
-          ? 'Every endpoint above requires a <strong>client ' +
-            'certificate</strong> this service verifies against an anchor ' +
-            'in its own truststore (<code>POST /tls/trust</code>). The ' +
-            'subject DN is resolved to a directory entry, and that ' +
-            'entry&rsquo;s group membership is what grants the role in the ' +
-            'last column: <code>' +
-            xmlEscape(info.access.xacmlUserGroup ||
-                      '(none — nobody holds it)') +
-            '</code> grants <code>XACML_USER</code> and <code>' +
-            xmlEscape(info.access.remotePepGroup ||
-                      '(none — nobody holds it)') +
-            '</code> grants <code>REMOTE_PEPS</code>. <strong>The ' +
-            'certificate says who and the group says whether</strong> ' +
-            '&mdash; a perfectly valid certificate for a common name in ' +
-            'neither group is fully authenticated and still refused.'
-          : 'Access enforcement is <strong>off</strong> ' +
-            '(<code>xacml.enforceAccess</code>), so every endpoint above ' +
-            'answers without a credential. The roles in the last column ' +
-            'are what would be required with it on.') + '</p>' +
-        '<h2>The embedded PEP</h2>' +
-        '<p><code>GET /xacml/protected?subject=&hellip;&amp;resource=&hellip;' +
-        '&amp;action=&hellip;</code> asks this PDP and then ' +
-        '<em>enforces</em> the answer. It is <code>' +
-        xmlEscape(info.pep.bias) + '</code>: the ' +
-        'two biases agree on every Permit and every Deny and differ on ' +
-        'Indeterminate and NotApplicable, which is the case worth looking ' +
-        'at. An obligation it cannot discharge turns a Permit into a ' +
-        'refusal, which is section 7.2 and is the part implementations ' +
-        'skip.</p>' +
-        '<h2>Remote enforcement points</h2>' +
-        '<p>' + (info.remotePeps.enabled
-          ? 'A Policy Enforcement Point in another process registers at ' +
-            '<code>/xacml/pep/register</code>, <strong>pulls</strong> the ' +
-            'enabled policies from <code>/xacml/pep/policies</code> and ' +
-            'evaluates them itself with its own copy of this engine. ' +
-            info.remotePeps.registered +
-            ' registered. The repository&rsquo;s ' +
-            'sync token is <code>' + xmlEscape(info.remotePeps.syncToken) +
-            '</code>; pass it as <code>?since=</code> and an unchanged ' +
-            'repository answers 304.'
-          : 'Remote Policy Enforcement Points are <strong>off</strong> ' +
-            '(<code>xacml.remotePeps</code>); those three endpoints ' +
-            'answer 501.') +
-        '</p><h2>The Policy Information Point, over HTTP</h2><p>A remote ' +
-        'PEP holds the engine but <strong>not the directory</strong>, so a ' +
-        'designator the request did not carry resolves to an empty bag out ' +
-        'there and to a real value here &mdash; the same policy deciding ' +
-        'two ways in two enforcement points. <code>POST /xacml/pip</code> ' +
-        'closes that.</p><p>XACML defines no PIP protocol, so this invents ' +
-        'as little as possible: both directions are <strong>XACML&rsquo;s ' +
-        'own XML</strong>. ' +
-        'Send a <code>&lt;PIPRequest&gt;</code> carrying the ' +
-        '<code>&lt;Request&gt;</code> you are deciding &mdash; which is what ' +
-        'names the subject &mdash; and one ' +
-        '<code>&lt;AttributeDesignator&gt;</code> per attribute wanted. What ' +
-        'comes back is <code>&lt;Attributes&gt;</code> <em>in the shape a ' +
-        '<code>&lt;Request&gt;</code> carries them</em>, so a PEP splices it ' +
-        'into its own request and evaluates &mdash; after which its engine ' +
-        'finds the values where a designator looks for them, which is ' +
-        'exactly what happens in this process when the embedded PDP asks ' +
-        'the embedded PIP.</p><p>An unresolved designator comes back as an ' +
-        '<strong>absent</strong> <code>&lt;Attribute&gt;</code> rather than ' +
-        'an empty one: that is what a request that never carried it looks ' +
-        'like, so a PEP needs no branch for it. <code>MustBePresent</code> ' +
-        'is read and deliberately <em>not</em> applied &mdash; what an ' +
-        'empty bag means is settled by the designator and the function it ' +
-        'is handed to, both in your engine. The five reasons a bag can be ' +
-        'empty come back in <code>&lt;Unresolved&gt;</code>, in this ' +
-        'service&rsquo;s own namespace so that a PEP reading only the XACML ' +
-        'core namespace never sees it.</p><p>The pull <em>is</em> the ' +
-        'contract. When the repository changes this service also POSTs a ' +
-        'few bytes to each registered PEP that gave a notify URL, saying ' +
-        'only that something changed &mdash; an optimisation over the ' +
-        'polling interval and never a replacement for it, so a PEP that is ' +
-        'never nudged still converges.</p><h2>Not here ' +
-        'yet</h2><ul>' + later + '</ul>' +
-        '<p><a href="?format=json">This document as JSON</a></p>' +
-        '</body></html>');
-      log.debug('Leaving GET /xacml. HTML.');
+      // THE PAGE IS A STATIC SURFACE'S SHELL SINCE #584, drawn in the
+      // browser (`web_xacml_description.ts`) from the document above and
+      // the truststore door — behind the gate above, as its script is
+      // below. `/xacml/pdp`, `/xacml/policies`, `/xacml/pep/*` and
+      // `/xacml/pip` are unchanged.
+      DescriptionPages.send(req, res, { base: '/xacml', title: 'XACML 3.0',
+        view: { kind: 'xacml', document: info,
+                trustAnchorDoor: trustAnchorDoor() } });
+      log.debug('Leaving GET /xacml. The shell.');
+    });
+
+    // THE PAGE'S SCRIPT (#584), on this application's own path (#472) and
+    // BEHIND THE SAME GATE AS THE PAGE: the description pages' bundle is no
+    // secret, but a part of this surface answered to a caller the page
+    // refuses is a part outside the gate, and the gate is what this family
+    // is held to (`xacml/CLAUDE.md`). Its refusal is the page's.
+    app.get(DescriptionPages.scriptPath('/xacml'), function (req, res) {
+      log.debug('Entering GET /xacml/description.js.');
+      if (!self.xacmlAccess(req, res, accessGate.ACTION.READ,
+                            'the XACML surface description').allowed) {
+        log.debug('Leaving GET /xacml/description.js. The access policy ' +
+                  'refused.');
+        return;
+      }
+      DescriptionPages.script(req, res);
+      log.debug('Leaving GET /xacml/description.js.');
     });
 
     log.debug("Leaving XacmlSurface.registerRoutes().");
@@ -2813,7 +3223,18 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   decide: slot.forward('decide'),
   enforce: slot.forward('enforce'),
+  // The connection's client certificate, read once for every surface that
+  // admits a caller by one (#563, `authzen/authzen_caller.ts`).
+  callerIdentity: slot.forward('callerIdentity'),
+  // The same door for a certificate in hand, for the edge caller list a
+  // remote PEP pulls (#1189, `authzen_caller.ts`'s `edgeCallers()`).
+  certificateCaller: slot.forward('certificateCaller'),
+  // A decision against a given policy alone (#564): an application's
+  // fine-grained policy is never the root.
+  decidePolicy: slot.forward('decidePolicy'),
   description: slot.forward('description'),
+  // What a remote PEP's pull is sent, and what it is not (#564).
+  pepPull: slot.forward('pepPull'),
   enabled: slot.forward('enabled'),
   // The designator cap a PIP query is held to, for
   // `tests/scan_and_rate_limits.js` (2026-09-12).

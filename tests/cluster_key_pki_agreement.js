@@ -19,7 +19,10 @@
 //   * a revocation, or an issued serial, recorded on one node is not thrown
 //     out of the store by another node's save of an older copy, a released
 //     hold stays released, a CA tier is first writer wins;
-//   * a CRL number only goes up across nodes whose clocks disagree.
+//   * a CRL number only goes up across nodes whose clocks disagree;
+//   * and, with the cluster off (#704), a key-set row another process
+//     re-sealed under a new data key reaches this one before the old key
+//     is destroyed.
 //
 // ---------------------------------------------------------------------------
 // HOW TWO "NODES" LIVE IN ONE PROCESS. A node's state is module state —
@@ -252,6 +255,78 @@ async function offSection(t, kek) {
   log.debug("Leaving offSection().");
 }
 
+// 0b. A RE-SEALED KEY-SET ROW REACHES THE OTHER PROCESS WITH THE CLUSTER OFF
+// (#704). `keys.data-key-reencrypt` re-seals the rows the RUNNING process
+// holds (`resealOwnRows()`) and writes them; until #704 a process where the
+// store does not arbitrate never read a key row, so its copy stayed under the
+// superseded data key and, once the pass destroyed that key, it could no
+// longer open its signing keys. Here A is the process that runs the pass and
+// B any other (a request worker, or the front when a worker ran it), and the
+// last step is what B's purge of its plaintext would meet in service.
+async function resealSection(t) {
+  log.debug("Entering resealSection().");
+  t.log.info('=== 0b. cluster.mode=off: a re-sealed key row reaches every ' +
+             'process (#704) ===');
+  process.env.STS_CLUSTER_MODE = 'off';
+  const savedLead = process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS;
+  process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS = '0';
+  try {
+    const store = sharedStore(1);
+    const a = await startNode(store, { adopted: [], published: [] });
+    const set = keySet('resealed');
+    a.remember('reseal', set);
+    await a.settleAll();
+    const b = await startNode(store, { adopted: [], published: [] });
+    t.check(!b.arbitrates() &&
+            b.storedFor('reseal').certB64 === set.certB64,
+            'B started after A and holds the same set, sealed as the row is');
+    const before = store.rows.get('reseal');
+    const oldDek = crypto.dekIdOf(before);
+    const turned = a.rotateDeks({ reason: 'test' });
+    t.check(turned.ok && turned.rotated.length >= 1,
+            'A rotates its data keys', JSON.stringify(turned));
+    await a.settleDeks();
+    t.check(a.resealOwnRows() >= 1, 'A re-seals the key-set row it holds');
+    await a.settleAll();
+    const after = store.rows.get('reseal');
+    t.check(after !== before && crypto.dekIdOf(after) !== oldDek,
+            'and the row in the store now names the new data key');
+    const applied = await b.applyStoredChange('reseal');
+    t.check(applied && applied.resealed === true && !applied.adopted,
+            'B, applying the change row, takes the re-sealed row: the same ' +
+            'set, so nothing is adopted between sets',
+            JSON.stringify(applied));
+    t.equal(a.destroyDeks([oldDek]), 1,
+            'the superseded key is destroyed, as the pass does at a count ' +
+            'of zero');
+    await a.settleAll();
+    await b.refreshDekRows();
+    b.purgeFor('reseal');
+    const opened = b.storedFor('reseal');
+    t.check(!!opened && opened.certB64 === set.certB64,
+            'AND B STILL OPENS ITS SIGNING KEYS once its plaintext is purged ' +
+            '— before #704 its copy was under the destroyed key, and every ' +
+            'signature in that process threw until it restarted');
+    // A DIFFERENT set is still not adopted with the cluster off: that is the
+    // pool's key channel's to decide (offSection, above).
+    a.remember('reseal', keySet('another'));
+    await a.settleAll();
+    const other = await b.applyStoredChange('reseal');
+    t.check(!other.adopted && !other.resealed &&
+            b.storedFor('reseal').certB64 === set.certB64,
+            'a row holding ANOTHER set is not taken where the store does ' +
+            'not arbitrate', JSON.stringify(other));
+  } finally {
+    process.env.STS_CLUSTER_MODE = 'active-active';
+    if (savedLead === undefined) {
+      delete process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS;
+    } else {
+      process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS = savedLead;
+    }
+  }
+  log.debug("Leaving resealSection().");
+}
+
 async function keysSection(t, kek) {
   log.debug("Entering keysSection().");
   t.log.info('=== 1. a cold start of two nodes ends with ONE key set ===');
@@ -354,6 +429,137 @@ async function keysSection(t, kek) {
           deferred);
   await b.settleAll();
   log.debug("Leaving keysSection().");
+}
+
+// A generation minted from a set that already lost must not become the row.
+// Single-node does not merge (`cluster.mode=off`); the request pool adopts a
+// confirmed publish, and `replaceKeySet()` marks every generation confirmed.
+// The pool refuses that publish by the same `supersedes()` rule this section
+// holds the store to. `sts_saml_interop_pysaml2` failed when the losing set's
+// generation 1 replaced the certificate the peer had already fetched.
+async function lineageSection(t, kek) {
+  log.debug("Entering lineageSection().");
+  t.log.info('=== 5b. a generation of a set that lost does not win ===');
+  const probe = freshNode(['keystore']).keystore;
+  const held = { certB64: 'cert-a', generations: { generation: 0 } };
+  const same = { certB64: 'cert-a',
+                 generations: { generation: 1, parentCerts: ['cert-a'] } };
+  const child = { certB64: 'cert-b',
+                  generations: { generation: 1, parentCerts: ['cert-a'] } };
+  const retired = { certB64: 'cert-b',
+                    generations: { generation: 1,
+                                   standby: [{ certB64: 'cert-a' }] } };
+  const stranger = { certB64: 'cert-b',
+                     generations: { generation: 1, parentCerts: ['cert-b'] } };
+  t.check(probe.supersedes(same, held),
+          'a later generation of the same birth certificate supersedes it');
+  t.check(probe.supersedes(child, held),
+          'a later generation that names the held certificate as a parent ' +
+          'supersedes it');
+  t.check(probe.supersedes(retired, held),
+          'a promotion that left the held certificate on standby supersedes ' +
+          'it');
+  t.check(!probe.supersedes(stranger, held),
+          'a later generation of another set does not supersede the one held');
+  t.check(probe.strangerGeneration(held, stranger),
+          'that generation is a stranger');
+  t.check(!probe.strangerGeneration(held, same) &&
+          !probe.strangerGeneration(null, stranger),
+          'the same set, and a first publish, are not strangers');
+
+  const store = sharedStore(80);
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+  const setA = keySet('line-a');
+  const setB = keySet('line-b');
+  a.remember('lineage', setA);
+  await a.settleAll();
+  b.remember('lineage', setB);
+  await sleep(20);
+  const bumped = keySet('line-b-next', {
+    certPem: setB.certPem,
+    certB64: setB.certB64,
+    generations: { generation: 1, parentCerts: [setB.certB64], standby: [] }
+  });
+  const replaced = b.replaceKeySet('lineage', bumped,
+    'a next key minted from the set this process generated');
+  t.equal(replaced.ok, true,
+          'the losing process accepts a higher generation of its own set');
+  await Promise.all([a.settleAll(), b.settleAll()]);
+  const stored = opened(kek, store.rows.get('lineage'));
+  t.equal(stored.certB64, setA.certB64,
+          'THE ROW STAYS THE FIRST WRITER\'S SET — generation 1 of the set ' +
+          'that lost does not replace it');
+  t.equal(a.generationOf(stored), 0,
+          'and the row\'s generation is still the first writer\'s');
+  t.equal(b.storedFor('lineage').certB64, setA.certB64,
+          'the process that minted the stranger generation holds the winner');
+
+  const gen1 = keySet('line-a-next', {
+    certPem: setA.certPem,
+    certB64: setA.certB64,
+    generations: { generation: 1, parentCerts: [setA.certB64], standby: [] }
+  });
+  const minted = a.replaceKeySet('lineage', gen1, 'a next key of the winner');
+  t.equal(minted.ok, true,
+          'a later generation of the winning set is accepted');
+  await a.settleAll();
+  const afterMint = opened(kek, store.rows.get('lineage'));
+  t.equal(afterMint.certB64, setA.certB64,
+          'a next-key mint keeps the birth certificate');
+  t.equal(a.generationOf(afterMint), 1, 'and the generation is the new one');
+
+  const gen2 = keySet('line-a-rotated', {
+    generations: { generation: 2, parentCerts: [setA.certB64], standby: [] }
+  });
+  const rotated = a.replaceKeySet('lineage', gen2,
+    'a promotion of the winning set');
+  t.equal(rotated.ok, true,
+          'a rotation that names the held certificate wins');
+  await a.settleAll();
+  const afterRotate = opened(kek, store.rows.get('lineage'));
+  t.equal(afterRotate.certB64, gen2.certB64, 'the rotated certificate is the ' +
+          'row');
+  t.equal(a.generationOf(afterRotate), 2, 'at generation 2');
+
+  const pool = fs.readFileSync(path.join(COMMON, 'request_pool.js'), 'utf8');
+  const strangerAt = pool.indexOf('keystore.strangerGeneration(');
+  const confirmedAt = pool.indexOf('published.confirmed || newer');
+  t.check(strangerAt >= 0 && confirmedAt > strangerAt,
+          'receivePublishedKeys refuses a stranger generation before a ' +
+          'confirmed publish is adopted');
+
+  // A CONFIRMED OFFER KEEPS WHAT THE SET HAS GAINED (2026-11-05): a worker
+  // that read the row before the groups were written, adopted whole, took them
+  // from every process (sts_signer_groups, single-node).
+  const rows = [{ group: 'tokens', slot: 's1', alg: 'RS256', kind: 'classical',
+                  publicJwk: { kid: 'sts-g-tokens-1' } }];
+  const bare = keySet('groups-set');
+  const grown = Object.assign({}, bare, { signerGroups: rows });
+  const filled = a.withHeldMembers(bare, grown);
+  t.equal(JSON.stringify(filled.signerGroups), JSON.stringify(rows),
+          'a confirmed offer of the same set keeps the held signer groups');
+  t.equal(bare.signerGroups, undefined, 'and the offer itself is not changed');
+  t.check(a.withHeldMembers(grown, bare) === grown,
+          'an offer that lacks nothing is adopted as it came');
+  const otherSet = keySet('groups-other');
+  t.check(a.withHeldMembers(otherSet, grown) === otherSet,
+          'another set takes nothing from the held one');
+  t.check(pool.indexOf('keystore.withHeldMembers(published.blob, heldBlob)') > 0,
+          'receivePublishedKeys fills a confirmed offer before adopting it');
+
+  store.rows.set('joined', sealedRows.sealRowIn(store, kek, 'joined',
+    'signing-keys', JSON.stringify(grown)));
+  const next = await startNode(store, { adopted: [], published: [] });
+  next.replaceKeySet('joined', Object.assign({}, bare, {
+    generations: { generation: 1, parentCerts: [bare.certB64], standby: [] }
+  }), 'a next key minted from a view without the groups');
+  await next.settleAll();
+  const row = opened(kek, store.rows.get('joined'));
+  t.equal(next.generationOf(row), 1, 'the next-key mint wins the row');
+  t.equal(JSON.stringify(row.signerGroups), JSON.stringify(rows),
+          'and the row keeps the signer groups it held');
+  log.debug("Leaving lineageSection().");
 }
 
 async function mergeSection(t, kek) {
@@ -631,6 +837,98 @@ async function crlSection(t) {
           'with ONE leading zero byte — and nothing of whatever else shared ' +
           'the allocation pool');
   log.debug("Leaving crlSection().");
+}
+
+// A CERTIFICATE'S REVOCATION SURVIVES A STORE THAT REFUSED IT (rcbj,
+// 2026-11-06: "we can't have lost revoked certificates"). `revoke()` answers
+// at once and the row is written behind it, so each link is asserted with a
+// store that really refuses: the write's failure is reported (which is what
+// `persistence.commitThrough()` turns into the request's 503,
+// `tests/answer_after_commit.js` F), nothing has reached the store, the retry
+// lands it, a process started afterwards reads it from the store alone, and a
+// node holding a copy from before it cannot write it away.
+async function revocationDurabilitySection(t) {
+  log.debug("Entering revocationDurabilitySection().");
+  t.log.info('=== 12b. a revocation the store refused is not lost ===');
+  const REALM = 'revocation-durability';
+  const FIRST = '7e57ab1e01';
+  const SECOND = '7e57ab1e02';
+  const THIRD = '7e57ab1e03';
+  const store = sharedStore(1);
+  const merge = store.mergeKeys;
+  const save = store.saveKeys;
+  let refusing = false;
+  const refused = function () {
+    log.debug("Entering refused().");
+    log.debug("Leaving refused().");
+    return Promise.reject(new Error('the key table refused on purpose'));
+  };
+  store.mergeKeys = function (realm, cipher, decide) {
+    log.debug("Entering the refusing mergeKeys().");
+    log.debug("Leaving the refusing mergeKeys().");
+    return refusing ? refused() : merge(realm, cipher, decide);
+  };
+  store.saveKeys = function (realm, material) {
+    log.debug("Entering the refusing saveKeys().");
+    log.debug("Leaving the refusing saveKeys().");
+    return refusing ? refused() : save(realm, material);
+  };
+  const started = async function () {
+    log.debug("Entering started().");
+    const node = freshNode(['keystore', 'pki', 'pki_revocation']);
+    node.keystore.setStore(store);
+    await node.keystore.start();
+    log.debug("Leaving started().");
+    return node;
+  };
+  const a = await started();
+  const built = await a.pki.buildChain(REALM, { keyAlg: 'ec-p256' });
+  t.check(built.ok, 'the certificate authority is built', built.errors);
+  await a.keystore.settleAll();
+  // A NODE THAT READ THE STORE BEFORE ANY REVOCATION: its copy is stale.
+  const stale = await started();
+
+  refusing = true;
+  const answered = a.pki_revocation.revoke(REALM, 'jose', {
+    serialHex: FIRST, reason: 'keyCompromise' });
+  t.check(answered.ok && !!a.pki_revocation.isRevoked(REALM, 'jose', FIRST),
+          'this process holds the revocation at once', answered);
+  const outcomes = await a.keystore.settleAll();
+  t.check((outcomes || []).some(function (one) {
+    return one && one.ok === false && one.error;
+  }), 'A WRITE THE STORE REFUSED IS REPORTED, which is what a request waiting ' +
+      'on the commit is answered 503 for', outcomes);
+  t.check(a.keystore.failing() === true,
+          'and the keystore says a failed row is waiting');
+  const before = await started();
+  t.check(!before.pki_revocation.isRevoked(REALM, 'jose', FIRST),
+          'the store really does not hold it yet, so what follows proves ' +
+          'something');
+  a.pki_revocation.revoke(REALM, 'jose', { serialHex: SECOND,
+                                           reason: 'keyCompromise' });
+  await a.keystore.settleAll();
+
+  refusing = false;
+  a.keystore.retryFailed();
+  await a.keystore.settleAll();
+  t.check(a.keystore.failing() === false,
+          'the retry lands, with nobody revoking anything again');
+  const after = await started();
+  t.check(!!after.pki_revocation.isRevoked(REALM, 'jose', FIRST) &&
+          !!after.pki_revocation.isRevoked(REALM, 'jose', SECOND),
+          'A PROCESS STARTED AFTERWARDS READS BOTH FROM THE STORE, the second ' +
+          'made while the first was still failing');
+
+  stale.pki_revocation.revoke(REALM, 'jose', { serialHex: THIRD,
+                                               reason: 'keyCompromise' });
+  await stale.keystore.settleAll();
+  const last = await started();
+  t.check(!!last.pki_revocation.isRevoked(REALM, 'jose', FIRST) &&
+          !!last.pki_revocation.isRevoked(REALM, 'jose', SECOND) &&
+          !!last.pki_revocation.isRevoked(REALM, 'jose', THIRD),
+          'AND A NODE WRITING FROM A COPY OLDER THAN THEM DOES NOT WRITE THEM ' +
+          'AWAY: the store ends up holding all three');
+  log.debug("Leaving revocationDurabilitySection().");
 }
 
 async function spiffeSection(t) {
@@ -1098,12 +1396,15 @@ async function run(t) {
   // and it resolves only on a postgres store; no store is opened for it.
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   process.env.STS_CLUSTER_MODE = 'active-active';
   process.env.STS_PERSISTENCE_MODE = 'postgres';
   try {
     await offSection(t, kek);
+    await resealSection(t);
     await keysSection(t, kek);
+    await lineageSection(t, kek);
     await mergeSection(t, kek);
     await publishedNotRevokedSection(t, kek);
     await unadoptedMergeSection(t, kek);
@@ -1112,6 +1413,7 @@ async function run(t) {
     await broadcastNudgeSection(t, kek);
     await buildSection(t);
     await crlSection(t);
+    await revocationDurabilitySection(t);
     await spiffeSection(t);
   } finally {
     Object.keys(saved).forEach(function (name) {

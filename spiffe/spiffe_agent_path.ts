@@ -34,7 +34,7 @@
 // has there, which is worse than refusing to start it.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 
@@ -99,12 +99,10 @@ const FUNCTIONS: Record<string, (...args: any[]) => any> = {
     return String(s).replace(/\s+/g, '');
   },
   sha1sum: function (s) {
-    return nodeCrypto.createHash('sha1').update(String(s), 'utf8')
-      .digest('hex');
+    return stsCrypto.sha1Digest('spire-agent-path', String(s), 'hex');
   },
   sha256sum: function (s) {
-    return nodeCrypto.createHash('sha256').update(String(s), 'utf8')
-      .digest('hex');
+    return stsCrypto.digest('sha256', String(s), 'hex');
   },
   b64enc: function (s) {
     return Buffer.from(String(s), 'utf8').toString('base64');

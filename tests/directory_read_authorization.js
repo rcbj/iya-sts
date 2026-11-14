@@ -83,6 +83,16 @@ const APP = 'readauth-app-' + STAMP;
 const PASSWORD = 'Ra-' + STAMP + '-Correct.Horse.Battery.Staple.42';
 const WIDENED = 'objectClass,cn,uid,mail';
 
+// The realm's attribute policy (#396) requires givenName, sn and mail of every
+// person in product mode, and invents none of them.
+function personOptions(name) {
+  log.debug("Entering personOptions().");
+  log.debug("Leaving personOptions().");
+  return { invent: false,
+           attributes: { givenName: 'Readauth', sn: name,
+                         mail: name + '@readauth.test' } };
+}
+
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
@@ -102,7 +112,8 @@ function withSettings(pairs, fn) {
 function product(fn) {
   log.debug("Entering product().");
   log.debug("Leaving product().");
-  return withSettings({ 'global.mode': 'product' }, fn);
+  return withSettings({ 'global.mode': 'product',
+                        'authn.allowOptionalSecondFactor': 'true' }, fn);
 }
 
 function search(boundDn, base, filter, scope, attributes) {
@@ -413,8 +424,8 @@ function administrators(t, dns, made) {
   t.check(made.realm, 'precondition: a throwaway realm was created',
           JSON.stringify(created));
   const inside = realms.run(realms.get(REALM), function () {
-    ldap.createUser(REALM_ADMIN, { invent: false });
-    ldap.createUser(OTHER, { invent: false });
+    ldap.createUser(REALM_ADMIN, personOptions(REALM_ADMIN));
+    ldap.createUser(OTHER, personOptions(OTHER));
     return { admin: ldap.objectFor(REALM_ADMIN).entry.dn,
              other: ldap.objectFor(OTHER).entry.dn,
              users: ldap.usersDn(),
@@ -477,6 +488,7 @@ function inAChild(mode) {
   const result = childProcess.spawnSync(process.execPath, ['-e',
     'require(' + JSON.stringify(__filename) + ').overTheSocket()'], {
     env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_MODE: mode,
+                                STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true',
                                 STS_HOST: '127.0.0.1', LDAP_PORT: '0',
                                 LDAPS_PORT: '0', READAUTH_REPORT: out }),
     encoding: 'utf8', timeout: 120000, cwd: ROOT
@@ -550,7 +562,7 @@ async function overTheSocket() {
     const ldapjs = require('ldapjs');
     const product = config.value('global.mode') === 'product';
     [READER, OTHER, ADMIN].forEach(function (name) {
-      ldap.createUser(name, { invent: false });
+      ldap.createUser(name, personOptions(name));
       credentials.setPassword(name, PASSWORD);
     });
     const reader = ldap.objectFor(READER).entry.dn;

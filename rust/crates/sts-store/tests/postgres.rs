@@ -140,7 +140,7 @@ async fn the_postgres_store() {
         .create("acme", "Acme", "", "", &Map::new(), false)
         .unwrap();
     a.settings
-        .set_override("saml2.entityId", json!("urn:pg"))
+        .set_override("saml.organizationName", json!("urn:pg"))
         .unwrap();
     a.persistence.config_changed(None);
     flush(&a).await;
@@ -151,7 +151,10 @@ async fn the_postgres_store() {
         (restored.entries, restored.realms, restored.overrides),
         (1, 1, 1)
     );
-    assert_eq!(b.settings.value_of("saml2.entityId").as_str(), "urn:pg");
+    assert_eq!(
+        b.settings.value_of("saml.organizationName").as_str(),
+        "urn:pg"
+    );
 
     // Two nodes change one group from the same base: both members survive.
     let key = "cn=admins,dc=example,dc=com";
@@ -178,7 +181,7 @@ async fn the_postgres_store() {
 
     // Two settings of one realm, changed on two nodes: both kept.
     a.lifecycle
-        .set_override("acme", "saml2.entityId", json!("urn:a"))
+        .set_override("acme", "saml.organizationName", json!("urn:a"))
         .unwrap();
     flush(&a).await;
     b.lifecycle
@@ -186,7 +189,7 @@ async fn the_postgres_store() {
         .unwrap();
     flush(&b).await;
     let realms = raw.load_realms().await.unwrap().unwrap();
-    assert_eq!(realms[0]["overrides"]["saml2.entityId"], "urn:a");
+    assert_eq!(realms[0]["overrides"]["saml.organizationName"], "urn:a");
     assert_eq!(realms[0]["overrides"]["wsfed.entityId"], "urn:b");
 
     // The cluster tables.

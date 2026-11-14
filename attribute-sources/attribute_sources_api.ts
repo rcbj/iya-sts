@@ -12,6 +12,8 @@
 // table, as it does the Claims Provider operations'.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -25,6 +27,10 @@ interface AttributeSourcesApiDeps {
   parseBody: typeof helpers.parseBody;
   errorCodes: typeof errorCodes;
   loadSources(): Json;
+  // The page's module, for the one view the page and the GET both answer
+  // (#446). Lazily, as `loadSources` is: this module is built before the
+  // console's pages are.
+  loadPage(): Json;
 }
 
 const BASE = '/admin-api';
@@ -126,6 +132,9 @@ class AttributeSourcesApi {
       errorCodes: errorCodes,
       loadSources: function (): Json {
         return require('./attribute_sources');
+      },
+      loadPage: function (): Json {
+        return require('./attribute_sources_admin');
       }
     };
   }
@@ -148,7 +157,12 @@ class AttributeSourcesApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering AttributeSourcesApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -164,38 +178,39 @@ class AttributeSourcesApi {
    * @returns the route rows
    */
   buildRoutes(): Json[] {
-    const { log, parseBody, errorCodes, loadSources } = this.deps;
+    const { log, parseBody, errorCodes, loadSources,
+            loadPage } = this.deps;
     const self = this;
     log.debug("Entering AttributeSourcesApi.buildRoutes().");
     const idOnly = { type: 'object', properties: { id: SOURCE_PROPERTIES.id },
                      required: ['id'], examples: [{ id: 'hr-db' }],
                      additionalProperties: false };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/attribute-sources',
         tag: 'Directory', operationId: 'getAttributeSources',
-        summary: 'The SQL databases this realm reads people\'s attributes ' +
-                 'from (#94)',
-        description: 'Everything /admin/attribute-sources draws: each ' +
-          'source (its database, the row it reads, the columns it writes ' +
-          'onto which attributes, when it reads and what a failure does) ' +
-          'with its status, and the rules a definition is held to. Never a ' +
-          'password.',
         mirrors: 'GET /admin/attribute-sources',
-        responseDescription: 'The register.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`sources`, `dialects`, `modes`, ' +
-                                       '`hostPatterns`, `refused`.' },
-        handler: function (req: Req, res: Res): void {
+        parameters: [
+          { name: 'sourcesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [1] },
+            description: 'Which page of `sources` to return, answered by ' +
+                         '`sourcesPaging` (#313).' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [10] },
+            description: 'Rows per page. Capped, like every list here.' }
+        ],
+        handler: function (req, res): void {
           log.debug("Entering the management API attribute sources " +
                     "endpoint.");
-          self.sendJson(res, 200, loadSources().view());
+          self.sendJson(res, 200,
+                        loadPage().attributeSourcesView(req.query));
           log.debug("Leaving the management API attribute sources " +
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/attribute-sources/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/attribute-sources/:action',
         tag: 'Directory', mirrors: 'POST /admin/attribute-sources',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API attribute sources action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -224,88 +239,14 @@ class AttributeSourcesApi {
           });
         },
         actions: [
-          { action: 'add-source', operationId: 'addAttributeSource',
-            summary: 'Add an attribute source',
-            description: 'A database this realm reads people\'s attributes ' +
-              'from. Refused for an attribute another source writes, one ' +
-              'no outside source may write, a host ' +
-              'attributeSources.hostPatterns does not allow, or a name ' +
-              'that is not an identifier. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: SOURCE_PROPERTIES,
-              required: ['id', 'dialect', 'host', 'database', 'user',
-                         'table', 'keyColumn', 'columns'],
-              examples: [{ id: 'hr-db', dialect: 'postgres',
-                           host: 'db.example.com', database: 'hr',
-                           user: 'iya_reader', passwordProvider: 'vault',
-                           passwordRef: 'secret/hr-db',
-                           table: 'people', keyColumn: 'login',
-                           keyAttribute: 'uid',
-                           columns: { cost_center: 'costCenter',
-                                      grade: 'employeeType' },
-                           refresh: ['sign-in', 'schedule'] }],
-              additionalProperties: false
-            },
-            responseDescription: 'The source as stored.' },
-          { action: 'update-source', operationId: 'updateAttributeSource',
-            summary: 'Change an attribute source',
-            description: 'The members given replace the source\'s; the rest ' +
-              'are kept. Checked as add-source is. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: SOURCE_PROPERTIES,
-              required: ['id'],
-              examples: [{ id: 'hr-db', onFailure: 'refuse' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The source as stored.' },
-          { action: 'remove-source', operationId: 'removeAttributeSource',
-            summary: 'Remove an attribute source',
-            description: 'It leaves the register; what it wrote on people\'s ' +
-              'entries stays. Audited.',
-            requestBodyRequired: true,
-            requestBody: idOnly,
-            responseDescription: 'What was removed.' },
-          { action: 'test-source', operationId: 'testAttributeSource',
-            summary: 'Connect to a source and read one row, writing nothing',
-            description: 'Reads the row for a person (by `username`, whose ' +
-              'key attribute is used) or for a `key` given outright, and ' +
-              'returns it. Nothing is written.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { id: SOURCE_PROPERTIES.id,
-                            username: { type: 'string', maxLength: 256 },
-                            key: { type: 'string', maxLength: 1024 } },
-              required: ['id'],
-              examples: [{ id: 'hr-db', username: 'alice' }],
-              additionalProperties: false
-            },
-            responseDescription: '`found` and the `row`.' },
-          { action: 'refresh-source', operationId: 'refreshAttributeSource',
-            summary: 'Read every person from a source now',
-            description: 'Queues the scheduled refresh for this source, ' +
-              'which reads the realm\'s people a page at a time. Audited.',
-            requestBodyRequired: true,
-            requestBody: idOnly,
-            responseDescription: 'The scheduler run, in `runId`.' },
+          { action: 'add-source', operationId: 'addAttributeSource' },
+          { action: 'update-source', operationId: 'updateAttributeSource' },
+          { action: 'remove-source', operationId: 'removeAttributeSource' },
+          { action: 'test-source', operationId: 'testAttributeSource' },
+          { action: 'refresh-source', operationId: 'refreshAttributeSource' },
           { action: 'refresh-person',
-            operationId: 'refreshAttributeSourcePerson',
-            summary: 'Read one person from the sources now',
-            description: 'From every source that allows on-demand, or the ' +
-              'one named by `id`. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { username: { type: 'string', maxLength: 256 },
-                            id: SOURCE_PROPERTIES.id },
-              required: ['username'],
-              examples: [{ username: 'alice' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What changed, and which sources failed.' }
-        ] }
+            operationId: 'refreshAttributeSourcePerson' }
+        ] })
     ];
     log.debug("Leaving AttributeSourcesApi.buildRoutes().");
     return ROUTES;

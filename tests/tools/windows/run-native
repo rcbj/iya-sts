@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/tools/windows/run-native
+#
+# ---------------------------------------------------------------------------
+# A NATIVE WINDOWS PROGRAM, WITH THE CR OF EVERY CRLF IT PRINTS REMOVED (#512).
+#
+#   tests/tools/windows/run-native <program> [arguments...]
+#
+# Called by the shims beside it (docker, aws, gcloud, az), which
+# tests/tools/host-platform.sh puts first on PATH under Cygwin and never on
+# Linux. tests/tools/host-platform.sh says why the CR has to go; this file
+# is how.
+#
+# THE REAL PROGRAM IS FOUND ON PATH WITH THIS DIRECTORY TAKEN OUT OF IT, so a
+# shim never finds itself. Cygwin's lookup adds `.exe` on its own (docker.exe,
+# aws.exe); a program Windows installs only as a batch file (gcloud.cmd,
+# az.cmd when its bash wrapper is absent) is found by name and run through
+# cmd.exe, which takes the simple arguments the launchers give it.
+#
+# ONLY STDOUT, ONLY WHEN IT IS NOT A TERMINAL, AND ONLY A TRAILING CR. A
+# terminal shows a CRLF correctly and a TTY-attached `docker run -it` must
+# keep its terminal, so that case is a plain exec. `s/\r$//` leaves alone the
+# bare CRs a progress display rewrites its line with. `sed -u` passes each
+# line on as it arrives, so the log of a long `docker compose up` still
+# streams rather than arriving in 4 KB blocks, and the program's own exit
+# status is the one returned (PIPESTATUS), not sed's.
+#
+# A BYTE STREAM IS NEVER FILTERED: `docker save`, `docker export` and
+# `docker cp ... -` write tar to stdout, which a line edit would corrupt. No
+# launcher does any of them today; the case is here so the first one that
+# does is not a mystery.
+# ---------------------------------------------------------------------------
+set -u
+
+name="$1"
+shift
+
+here="$(cd "$(dirname "$0")" && pwd)"
+search=""
+IFS=: read -r -a dirs <<< "${PATH}"
+for dir in "${dirs[@]}";
+do
+  if [ "${dir}" != "${here}" ];
+  then
+    search="${search:+${search}:}${dir}"
+  fi
+done
+
+real="$(PATH="${search}"; type -P "${name}" || true)"
+if [ -n "${real}" ];
+then
+  cmd=("${real}")
+else
+  real="$(PATH="${search}"; type -P "${name}.cmd" || true)"
+  if [ -z "${real}" ];
+  then
+    echo "${name}: not found on PATH (looked for ${name}.exe and" \
+         "${name}.cmd; tests/tools/windows/ holds only shims)." >&2
+    exit 127
+  fi
+  cmd=(cmd.exe /d /c "$(cygpath -w -- "${real}")")
+fi
+
+binary=0
+if [ "${name}" = "docker" ];
+then
+  case "${1:-}" in
+    save|export|cp)
+      binary=1
+      ;;
+  esac
+fi
+
+if [ -t 1 ] || [ "${binary}" = "1" ];
+then
+  exec "${cmd[@]}" "$@"
+fi
+"${cmd[@]}" "$@" | sed -u 's/\r$//'
+exit "${PIPESTATUS[0]}"

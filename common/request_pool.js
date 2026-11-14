@@ -100,9 +100,11 @@ const workerThreads = require('worker_threads');
 // The channel's other half (#364): a message a thread posts has its Buffers
 // turned back into Buffers here, as the thread does for what it receives.
 const WorkerChannel = require('./worker_channel');
-const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('./crypto');
 // A LEAF (rule 3) — it registers no route, so requiring it here cannot move one
 // and cannot join a cycle. It is the shared-key registry this file arbitrates;
 // see keystore.js's block above storedFor().
@@ -110,12 +112,20 @@ const keystore = require('./keystore');
 // A LEAF with no requires: the failure codes on the log lines and the 502s and
 // 503s below. See common/error_codes.js.
 const errorCodes = require('./error_codes');
+// Which listener a request arrived on (#472), for LISTENER_HEADER. A LEAF: it
+// requires the settings, the realms and the catalogue of applications.
+const listenerMap = require('./listener_map');
 // Who a request came from, a LEAF (config, net, bunyan). See the
 // `x-forwarded-for` line in proxy() below.
 const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// A LEAF: where a dispatched request's time goes (#820).
+const requestPhases = require('./request_phases');
+// The HTTP/2 authority rule (#407): a leaf (node, express, the error-code
+// table).
+const Http2Express = require('./http2_express');
 // A LEAF (config, error_codes, node's own modules): every process's heap
 // budget, which fork() hands each worker, and the container's OOM-kill count,
 // which reap() reads for a worker that was SIGKILLed (#341).
@@ -187,6 +197,87 @@ let finishedTickets = new Set();
 // a lost announcement makes unreliable.
 const finishedAt = new Map();
 let ticketWaiters = [];
+
+// ---------------------------------------------------------------------------
+// WHAT EACH TICKET WAS, FOR THE LINE THAT DROPS ONE (#620, 2026-10-14).
+//
+// STS-WORKER-0008 said how many tickets it dropped and nothing else, so six
+// of them under a bulk load on 8081 left nothing to go on but timestamps: not
+// the request, not the worker, not whether that worker had announced anything
+// at all since. Those are the two causes the line names, and they are told
+// apart by exactly that last fact — a worker that has said NOTHING since it
+// answered is stalled or stuck in a flush; one that has announced since
+// without naming the ticket has lost it.
+//
+// ticket -> { what, entry, dispatchedAt, answeredAt, heardAtAnswer }.
+// Written at dispatch and forgotten wherever the ticket is, so it holds what
+// `outstanding` holds and no more. `what` is the method and path (no query
+// string) or the operation's kind — never a body, an identity or a header.
+// ---------------------------------------------------------------------------
+const ticketInfo = new Map();
+
+// Forgets a ticket's description; called beside every `outstanding.delete()`.
+// And its CLIENT KEYS (2026-10-22, #820): every way a ticket ends — announced,
+// abandoned, reaped, its worker gone — passes here, so this is the one place
+// a key's set of outstanding tickets is kept honest. See clientStateFor().
+function forgetTicket(ticket) {
+  log.debug("Entering forgetTicket().");
+  const info = ticketInfo.get(ticket);
+  if (info && info.keys) {
+    for (let i = 0; i < info.keys.length; i++) {
+      const state = clientStates.get(info.keys[i]);
+      if (state) {
+        state.tickets.delete(ticket);
+      }
+    }
+  }
+  spilledTickets.delete(ticket);
+  ticketInfo.delete(ticket);
+  log.debug("Leaving forgetTicket().");
+}
+
+// One dropped ticket, in a phrase: what it was, which worker answered it, how
+// long ago, and whether that worker has announced anything since. `now` is
+// reapStuckTickets()' clock, which a test moves; absent, it is the time.
+/**
+ * Describes one outstanding ticket for STS-WORKER-0008.
+ *
+ * @param ticket - the ticket number
+ * @param now - optional; the current time in milliseconds
+ * @returns the description
+ */
+function describeTicket(ticket, now) {
+  log.debug("Entering describeTicket().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving describeTicket(). Nothing recorded.");
+    return 'ticket ' + ticket + ' (not recorded)';
+  }
+  // THE ENTRY ITSELF, not a pid looked up in the table: a worker that died
+  // has had its tickets released by reap(), so the owner of a ticket reaped
+  // here is one that is still running.
+  const owner = info.entry;
+  const at = now || Date.now();
+  const secs = function (since) {
+    return since ? ((at - since) / 1000).toFixed(1) + 's' : '?';
+  };
+  const heard = (owner.announcements || 0) - info.heardAtAnswer;
+  let state;
+  if (heard > 0) {
+    state = 'that worker has announced ' + heard + ' commit(s) since without ' +
+      'naming it (last ' + secs(owner.lastAnnouncedAt) + ' ago): LOST';
+  } else {
+    state = 'that worker has announced nothing since (' +
+      (owner.lastAnnouncedAt
+        ? 'last ' + secs(owner.lastAnnouncedAt) + ' ago'
+        : 'never') +
+      ', ' + (owner.inFlight || 0) + ' in flight): STALLED or a slow flush';
+  }
+  log.debug("Leaving describeTicket().");
+  return 'ticket ' + ticket + ' ' + info.what + ' on ' +
+    (owner.pool || PROTOCOL_POOL) + ' worker ' + owner.pid + ', answered ' + secs(info.answeredAt) +
+    ' ago (dispatched ' + secs(info.dispatchedAt) + ' ago); ' + state;
+}
 
 // The highest ticket for which EVERY earlier ticket is confirmed too. A reader
 // is satisfied when this reaches the number it arrived at.
@@ -291,15 +382,28 @@ function releaseTicketWaiters() {
     return;
   }
   const lowest = new Map();
+  // A keyed reader (session mode, #820) is answered from its keys' tickets,
+  // once per worker and key set, as the global readers are once per worker.
+  const lowestKeyed = new Map();
   ticketWaiters = ticketWaiters.filter(function (w) {
     if (w.settled) {
       return false;
     }
-    const key = w.servedBy || null;
-    if (!lowest.has(key)) {
-      lowest.set(key, lowestBlocking(key));
+    let blocking;
+    if (w.keys) {
+      const id = (w.servedBy ? w.servedBy.pid : '') + '|' + w.keys.join('\n');
+      if (!lowestKeyed.has(id)) {
+        lowestKeyed.set(id, lowestBlockingFor(w.keys, w.servedBy));
+      }
+      blocking = lowestKeyed.get(id);
+    } else {
+      const key = w.servedBy || null;
+      if (!lowest.has(key)) {
+        lowest.set(key, lowestBlocking(key));
+      }
+      blocking = lowest.get(key);
     }
-    if (lowest.get(key) > w.need) {
+    if (blocking > w.need) {
       w.resolve();
       return false;
     }
@@ -327,6 +431,1056 @@ function dropSettledWaiter() {
   log.debug("Leaving dropSettledWaiter(). Compacted.");
 }
 
+// ---------------------------------------------------------------------------
+// SESSION READ-YOUR-WRITE: A REQUEST WAITS FOR ITS OWN CLIENT'S WRITES, NOT
+// EVERYBODY'S (2026-10-22, #820).
+//
+// The barrier above was GLOBAL: every dispatched request waited for every
+// ticket answered before it on another worker, and for its worker to reach the
+// generation every worker's writes had moved. Under a sign-in load on 8081
+// that was 17–26 ms p50 of `/oauth2/authorize` and `/oauth2/token` and about
+// 72 ms of a 790 ms sign-in, nearly all of it spent waiting for writes made by
+// OTHER browsers. Turning the barrier off was not the answer: about one code
+// exchange in five then found "unknown code", a code another worker had just
+// written.
+//
+// What a client depends on is narrower, and it is Bayou's session guarantee
+// read-your-writes: a request must see the writes made by earlier requests of
+// the SAME client. So, with `workers.readYourWrite` at `session` (rcbj, on
+// #820):
+//
+// * **A CLIENT IS NAMED BY THE KEYS THE POOL ALREADY ROUTES BY** —
+//   clientKeysOf(): every session cookie it carries (`s:<sid>`), its pool pin
+//   (`p:<pid>`) and a flow it carries in the URL (`authn:<id>` …). ALL of
+//   them, not affinityKeyOf()'s first: a browser that signed in still sends
+//   the pin and the flow its pre-sign-in writes were made under, so waiting
+//   for the union is what carries a client across its own key changes.
+// * **A TICKET IS FILED UNDER THE KEYS ITS REQUEST CARRIED AND THE KEYS ITS
+//   ANSWER HANDED OUT** (learnTicketKeys(), the same Set-Cookie and Location
+//   reading learn() does for routing): the sign-in that mints a session is
+//   that session's write, though the request that made it had no session yet.
+// * **A KEYED REQUEST WAITS FOR ITS KEYS' FINISHED TICKETS ONLY**
+//   (lowestBlockingFor()), and for its worker to reach only the generation its
+//   keys' writes reached ON OTHER WORKERS (sessionWanted()) — a write the
+//   chosen worker made itself is in its memory, lowestBlocking()'s argument.
+// * **A REQUEST WITH NO KEY KEEPS THE GLOBAL WAIT, UNCHANGED.** That is every
+//   back channel — a client's server redeeming a code at `/oauth2/token`,
+//   SCIM, `/admin-api` with a bearer token and no cookie. A refresh grant
+//   is the exception below: it is keyed by its token (#879).
+// * **A POOL PIN THE ROUTE DID NOT HONOUR IS NO KEY.** `p:<pid>` names a
+//   worker, shared by every client pinned there, and this service's own back
+//   channel (`oidc_rp.ts`) sends one to reach the worker that minted a code a
+//   DIFFERENT client (the browser) wrote. Landing on that worker, the code is
+//   in its memory; landing anywhere else (the worker is gone) it is not, so
+//   the request is served globally (sessionKeysFor()).
+// * **WHAT THE FRONT PROCESS WRITES ITSELF IS EVERYBODY'S** (frontGeneration):
+//   those writes carry no ticket and so no key, and they are rare.
+//
+// What is given up, and `docs/configuration.md` says so: a request does not
+// wait for ANOTHER BROWSER's write; a console page reads another session's
+// writes only once the workers converge, half a second to a second. A
+// request that carried no key — a back channel, SCIM, an API call, a
+// dispatched LDAP operation — is everybody's write (SHARED_KEY, below), so
+// a browser waits for it. A refresh grant this process could read is not
+// one of those (#879). `global` is the old barrier, whole.
+//
+// BOUNDED WITHOUT A TIMER (the root CLAUDE.md, *Anything periodic is a
+// scheduler job*): at most CLIENT_KEYS_MAX keys, least recently used first;
+// a key is dropped when it holds no ticket and every other worker has passed
+// its writes (pruneClientStates(), a few of the oldest on every dispatch);
+// and a key evicted while it still matters SPILLS — its tickets and its
+// generation become every keyed request's (spilledTickets,
+// spilledGeneration), so an eviction costs waiting, never a stale read.
+// ---------------------------------------------------------------------------
+const CLIENT_KEYS_MAX = 20000;
+// THE WRITES NO BROWSER MADE (2026-10-22, the full run). A request with no
+// client key — a relying party's server, an API caller — writes what a
+// browser's request then reads: a GNAP grant before its interaction start
+// URI, a pushed request before the authorize that names it, a SIOP or
+// OpenID4VP request object, a CIBA request, a client registered by DCR. In
+// `session` mode as first written a keyed request waited only for its own
+// keys, so it could read a worker that had not heard of any of those, and
+// thirteen single-node jobs failed (sts_gnap_interaction, sts_siop,
+// sts_userinfo_protected, sts_consent_withdrawal, …). So such a request's
+// ticket is filed under SHARED_KEY as well, and every keyed request waits
+// for SHARED_KEY with its own keys: a browser waits for every keyless
+// write, and still not for another browser's. A refresh grant keyed by its
+// token is not filed there (#879, THE REFRESH GRANT, below), so neither a
+// browser nor the next refresh of a different token waits for it.
+const SHARED_KEY = '*';
+// How many of the oldest keys each dispatch looks at to drop.
+const CLIENT_KEYS_PRUNED_PER_DISPATCH = 4;
+// key -> { tickets: Set<ticket>, writes: Map<worker pid, generation> }, in
+// least-recently-used order.
+const clientStates = new Map();
+const spilledTickets = new Set();
+let spilledGeneration = 0;
+let frontGeneration = 0;
+let clientEvictions = 0;
+let sessionDispatches = 0;
+let globalDispatches = 0;
+
+// ---------------------------------------------------------------------------
+// THE CODE EXCHANGE, KEYED BY ITS CODE (2026-10-22, #820).
+//
+// Once the barrier became per client, `POST /oauth2/token` got slower: 43 ms
+// to 70 ms p50 waiting on 8081, while `GET /oauth2/authorize` fell from 36 to
+// 9 ms and `/authn-api/pending` from 25 to 0. The code exchange comes from
+// the relying party's SERVER. It carries no cookie, and its code is in the
+// form BODY, which the barrier is decided before reading. So it took the
+// global wait, now shared with every other back channel.
+//
+// What the exchange depends on is narrow: the write that minted its code,
+// and the session and sign-in writes that code was minted from. So:
+//
+// * **AN ANSWER WHOSE `Location` CARRIES `code=` IN ITS QUERY FILES ITS
+//   TICKET UNDER `code:<value>`** (learnTicketKeys()). That is the
+//   authorization code redirect. The code key also INHERITS what is
+//   outstanding under the request's own keys at that moment: their tickets,
+//   and the generations their writes reached on each worker
+//   (inheritIntoCodeKey()). A ticket filed under the code key is in its
+//   `info.keys`, so forgetTicket() and noteCommittedFor() keep the code
+//   key's state as honest as any other key's.
+// * **A `POST` TO THE TOKEN ENDPOINT THAT WOULD WAIT GLOBALLY IS READ
+//   FIRST, IF IT IS SMALL AND PLAIN**: a form body, a `content-length` of at
+//   most CODE_BODY_MAX and no transfer or content encoding
+//   (codeExchangeCandidate()). The body is held whole (readCodeExchangeBody())
+//   and handed to proxy() as it arrived. Its bytes are signed and hashed by
+//   HTTP message signatures (#178), DPoP and client authentication, so they
+//   must reach the worker byte for byte. Any other body is not buffered at
+//   all; it streams as before.
+// * **IT IS KEYED BY ITS CODE ONLY IF THE POOL KNOWS THAT CODE**: an
+//   `authorization_code` grant naming one `code` this pool holds state for
+//   (codeKeysOf()). A refresh grant is keyed by its token instead (#879,
+//   below).
+// * **AN UNKNOWN CODE IS NEVER "WAIT FOR NOTHING"; IT IS THE GLOBAL WAIT,
+//   EXACTLY AS BEFORE.** The code may have come in a `form_post` body or a
+//   fragment, been minted by the front process, or come from another node.
+//   The pool learnt none of those, so it knows nothing it could wait for.
+//
+// Bounded like every other key: it is a key in `clientStates`, under the
+// same LRU, and an eviction spills it. One thing is added. A code key that
+// pruneClientStates() drops is SETTLED: no ticket outstanding, and every
+// other worker past its writes. Forgetting it would turn the exchange that
+// arrives a moment later into a global wait for nothing. So its name is kept
+// in `settledCodes`, a bounded set of names with no state, and an exchange
+// naming it is keyed and waits only for what every keyed request waits for
+// (the front process's writes and anything spilled). A name evicted from
+// `settledCodes` simply makes that code unknown again, which is global.
+// ---------------------------------------------------------------------------
+// The largest token request body read before the barrier. A code exchange
+// is a few hundred bytes; a client assertion or an attestation makes it a
+// few kilobytes.
+const CODE_BODY_MAX = 16 * 1024;
+// The token endpoint: the default authorization server's, a named one's
+// (`/<as>/oauth2/token`), and either under a realm. The pool reads
+// `originalUrl`, which keeps the `/realm/<id>` prefix app.js strips.
+const TOKEN_PATH = /^(?:\/realm\/[^/]+)?(?:\/[^/]+)?\/oauth2\/token$/;
+// Code keys pruned once settled, oldest first; see above.
+const settledCodes = new Set();
+let codeKeyedDispatches = 0;
+let codeKeysLearnt = 0;
+
+// ---------------------------------------------------------------------------
+// THE REFRESH GRANT, KEYED BY ITS TOKEN (2026-11-11, #879).
+//
+// About half of `/oauth2/token` in the soak is `grant_type=refresh_token`.
+// It carried no cookie, so once the barrier was per client it took the
+// global wait: every other browser's sign-in, and every other back channel.
+// The token in the body is usually hours old. The one write it must not
+// miss is a rotation of THAT token that this process has not finished with,
+// because a replay the worker cannot yet see is redeemed as a second use
+// and the family is revoked.
+//
+// * **A SMALL, PLAIN REFRESH GRANT IS KEYED BY `rt:<digest>`** whether or
+//   not this process has seen that token before (refreshKeysOf()). The
+//   same body read as a code exchange. It waits for that key, for
+//   SHARED_KEY (a keyless write, which is where an issuance this process
+//   could not read is filed) and for REVOKE_KEY (every write that ended
+//   what a refresh token rests on, below). It is NOT filed under
+//   SHARED_KEY, so the next refresh of another token does not wait for it,
+//   and neither does a browser.
+// * **THE KEY IS A DIGEST OF THE TOKEN, NEVER THE TOKEN** (refreshKeyOf(),
+//   the review of #879). The key table lives as long as the process and is
+//   what a heap snapshot or a debugger reads first; a refresh token is a
+//   bearer credential good for hours. `crypto.credentialDigest()` (SHA-256)
+//   is the one place it is hashed, as the opaque access-token store hashes
+//   its handles.
+// * **AN ANSWER FROM THE TOKEN ENDPOINT WHOSE JSON CARRIES `refresh_token`
+//   FILES ITS TICKET UNDER ITS KEY** (learnRefreshToken()), inheriting
+//   the tickets and write generations outstanding under the request's own
+//   keys except SHARED_KEY (inheritIntoRefreshKey()). The client's next
+//   refresh of the new token waits for the response that minted it. The
+//   body is buffered only when it is a 200 JSON of a declared length of at
+//   most REFRESH_LEARN_MAX, and the same bytes are what the client is sent.
+// * **A TOKEN THIS PROCESS NEVER SAW IS THAT KEY, EMPTY.** Nothing
+//   outstanding under it means no rotation of it is unfinished here:
+//   pruning drops a key only once its tickets are gone and every other
+//   worker has passed its writes. That is "unknown = old". It is never
+//   "wait for nothing" while a write for it is still in the table, and a
+//   token response this process could not read (too large, unframed, not
+//   JSON) is filed under SHARED_KEY so the grant still waits for it
+//   (noteUnlearntRefresh()).
+// * **A GRANT THIS PROCESS CANNOT READ STAYS GLOBAL.** More than one
+//   refresh token, a token longer than REFRESH_TOKEN_MAX, a body over
+//   CODE_BODY_MAX, a chunked or encoded body, HTTP/2 with no length. The
+//   same rule as an unknown code.
+//
+// ~~A sign-out is a browser's write, not this token's. The refresh grant
+// sees it when the workers converge.~~ **REVERSED BY THE REVIEW OF #879
+// (2026-11-13)**: in product that let a refresh routed to a lagging worker
+// be issued new tokens from a session signed out a moment before. A
+// sign-out, and every other write that ends what a refresh token rests on,
+// is now filed under REVOKE_KEY, which every refresh grant waits for — see
+// THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF, below. 8081 was not
+// re-measured.
+// ---------------------------------------------------------------------------
+// The largest token RESPONSE buffered to read `refresh_token` out of it.
+// The grant's own body stays at CODE_BODY_MAX; a token response also
+// carries the access token and the ID token.
+const REFRESH_LEARN_MAX = 64 * 1024;
+// The longest refresh token used as a key. A longer one stays the global
+// wait: the form that carries it is then past CODE_BODY_MAX anyway.
+const REFRESH_TOKEN_MAX = 12 * 1024;
+let refreshKeyedDispatches = 0;
+let refreshKeysLearnt = 0;
+
+// ---------------------------------------------------------------------------
+// THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF (2026-11-13, the review of
+// #879).
+//
+// Keyed by its token, a refresh grant stopped waiting for browsers' writes,
+// and one kind of browser write is exactly what it must wait for: one that
+// ENDS what the refresh token rests on. A sign-out of its session, a global
+// logout, a token revoked at `/oauth2/revoke` or on the console, a refresh
+// family revoked (a replay detected on another worker), a disabled account,
+// a Grant Management grant revoked, a consent withdrawn. The old global
+// wait held a refresh for every one of them; keyed, a refresh routed to a
+// worker that had not applied the sign-out was issued a new token set from
+// a session that had ended.
+//
+// * **REVOKE_KEY IS ONE KEY, AND ONLY TOKEN-ENDPOINT REQUESTS WAIT FOR IT.**
+//   A refresh grant keyed by its token waits for its key, SHARED_KEY and
+//   REVOKE_KEY; so does a code exchange keyed by its code, for the same
+//   reason (a code minted from a session signed out since), and a token
+//   request that carries a browser's cookie (the console's and the
+//   portal's own refreshes). A browser's ordinary request does NOT wait for
+//   it, so a sign-out holds no other browser — #879's gain for every
+//   unrelated browser write stands, and so does #820's.
+// * **A TICKET IS FILED UNDER IT TWO WAYS, and either is enough:**
+//   - **BY ITS PATH, AT DISPATCH** (revokingRequest()): every method on a
+//     sign-out path (`/logout`, `/oauth2/logout`, `/saml2/slo`, any
+//     `logout`, `slo` or `signout` segment, WS-Federation's `wsignout1.0`
+//     and `wsignoutcleanup1.0`), a write to `/oauth2/revoke` and
+//     `/oauth2/grants`, any write to `/admin-api`, `/account-api`, `/scim`
+//     and `/ssf`, and any DELETE. Coarse on purpose: it is the backstop for
+//     a door nobody taught to say so, and what it costs is a refresh
+//     waiting for an administrator's write.
+//   - **BY ITS ANSWER** (REVOKING_HEADER): the funnels that end a session,
+//     a token, a family, a grant or an account say so through
+//     `common/revoking_writes.ts`, and the worker sets the header on the
+//     answer in flight. This catches what no path names — a sign-in that
+//     replaces another session in the same browser, a disabled account, a
+//     refresh replay that revokes its family. It is filed when the answer's
+//     headers arrive, before the client is sent a byte, and a ticket only
+//     blocks once finished, so it is always in time.
+// * **WHAT A REVOKING TICKET COSTS**: a token request that arrives after
+//   it was answered waits until it is announced and the worker it lands on
+//   has reached the generation it wrote — the same wait a browser has
+//   always had for its own write.
+// * **WHAT IT CANNOT SEE**: a revocation made after its answer's headers
+//   had gone (`STS-WORKER-0052`, logged by the worker), and one made by a
+//   cluster job's body, which has no answer — a session expiry, which a
+//   refresh reads as ended whatever any worker has applied.
+// ---------------------------------------------------------------------------
+const REVOKE_KEY = '!revoke';
+// The answer header a worker marks a revoking answer with. Spelled here, in
+// `request_worker.ts` and in `common/revoking_writes.ts`;
+// `tests/revoking_writes.js` compares the three.
+const REVOKING_HEADER = 'x-sts-pool-revoking';
+// A path whose every request may end a session: a sign-out door.
+const SIGN_OUT_PATH = /(?:^|\/)(?:logout|slo|signout|sign-out)(?:\/|$)/i;
+// WS-Federation's sign-out is a query on `/wsfed`.
+const WSFED_PATH = /(?:^|\/)wsfed$/;
+const WSFED_SIGN_OUT = /(?:^|&)wa=wsignout(?:cleanup)?1\.0(?:&|$)/;
+// A write to one of these may revoke a token, a grant, a session or an
+// account. A realm's prefix and a named authorization server's are allowed.
+const REVOKING_WRITE_PATH = new RegExp(
+  '^(?:/realm/[^/]+)?(?:' +
+  '(?:/[^/]+)?/oauth2/(?:revoke|grants)|' +
+  '/(?:admin-api|account-api|scim|ssf)' +
+  ')(?:/|$)');
+let revokingDispatches = 0;
+let revokingAnswers = 0;
+let revokeWaits = 0;
+
+/**
+ * Returns a client key's state, most recently used from now.
+ *
+ * @param key - the client key
+ * @param create - whether to make one when there is none
+ * @returns the state, or null
+ */
+function clientStateFor(key, create) {
+  log.debug("Entering clientStateFor().");
+  let state = clientStates.get(key);
+  if (state) {
+    clientStates.delete(key);
+    clientStates.set(key, state);
+    log.debug("Leaving clientStateFor(). Held.");
+    return state;
+  }
+  if (!create) {
+    log.debug("Leaving clientStateFor(). None.");
+    return null;
+  }
+  state = { tickets: new Set(), writes: new Map() };
+  clientStates.set(key, state);
+  while (clientStates.size > CLIENT_KEYS_MAX) {
+    const oldest = clientStates.keys().next().value;
+    spillClientState(clientStates.get(oldest));
+    clientStates.delete(oldest);
+    clientEvictions++;
+  }
+  log.debug("Leaving clientStateFor(). Made.");
+  return state;
+}
+
+// A key forgotten while it still had something to wait for hands it to every
+// keyed request instead — the safe direction. A clean key spills nothing.
+function spillClientState(state) {
+  log.debug("Entering spillClientState().");
+  state.tickets.forEach(function (t) {
+    spilledTickets.add(t);
+  });
+  state.writes.forEach(function (gen) {
+    if (gen > spilledGeneration) {
+      spilledGeneration = gen;
+    }
+  });
+  log.debug("Leaving spillClientState().");
+}
+
+/**
+ * The client keys a request carries, in this pool: every session cookie, the
+ * pool's pin cookie and every flow the URL names.
+ *
+ * @param req - the request
+ * @param pool - the pool, which decides the pin cookie read
+ * @returns the keys, perhaps none
+ */
+function clientKeysOf(req, pool) {
+  log.debug("Entering clientKeysOf().");
+  const keys = [];
+  const pinCookie = poolCookieFor(pool);
+  const header = req.headers && req.headers.cookie;
+  if (header) {
+    const parts = String(header).split(';');
+    for (let i = 0; i < parts.length; i++) {
+      const bit = parts[i].trim();
+      const named = sessionCookieName(bit);
+      if (named) {
+        const sid = sidOfCookieValue(bit.slice(named.length + 1));
+        if (sid) {
+          keys.push('s:' + sid);
+        }
+      } else if (bit.indexOf(pinCookie + '=') === 0) {
+        const pin = bit.slice(pinCookie.length + 1);
+        if (pin) {
+          keys.push('p:' + pin);
+        }
+      }
+    }
+  }
+  const url = String(req.originalUrl || req.url || '');
+  const q = url.indexOf('?');
+  if (q >= 0) {
+    const query = url.slice(q + 1);
+    for (let i = 0; i < FLOW_PARAMS.length; i++) {
+      const found = flowParam(query, FLOW_PARAMS[i]);
+      if (found) {
+        keys.push(FLOW_PARAMS[i] + ':' + found);
+      }
+    }
+  }
+  log.debug("Leaving clientKeysOf(). " + keys.length + " key(s).");
+  return keys.filter(function (k, i) {
+    return keys.indexOf(k) === i;
+  });
+}
+
+/**
+ * The client keys a dispatched request is held to in `session` mode, or
+ * null for the global wait: no key at all, or a pin the route did not honour.
+ *
+ * @param req - the request
+ * @param pool - its pool
+ * @param entry - the worker it was routed to
+ * @returns the keys, or null
+ */
+function sessionKeysFor(req, pool, entry) {
+  log.debug("Entering sessionKeysFor().");
+  const keys = clientKeysOf(req, pool);
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf('p:') === 0 &&
+        String(entry.pid) !== keys[i].slice(2)) {
+      log.debug("Leaving sessionKeysFor(). A pin not honoured: global.");
+      return null;
+    }
+  }
+  log.debug("Leaving sessionKeysFor().");
+  return keys.length ? keys : null;
+}
+
+// Files a ticket under more client keys — its request's at dispatch, and those
+// its answer handed out (learnTicketKeys()).
+function fileTicketUnder(ticket, keys) {
+  log.debug("Entering fileTicketUnder().");
+  const info = ticketInfo.get(ticket);
+  if (!info || !keys || !keys.length) {
+    log.debug("Leaving fileTicketUnder(). Nothing to file.");
+    return;
+  }
+  if (!info.keys) {
+    info.keys = [];
+  }
+  for (let i = 0; i < keys.length; i++) {
+    if (info.keys.indexOf(keys[i]) < 0) {
+      info.keys.push(keys[i]);
+    }
+    clientStateFor(keys[i], true).tickets.add(ticket);
+  }
+  log.debug("Leaving fileTicketUnder().");
+}
+
+/**
+ * Files a ticket under the session cookies and flows its answer hands the
+ * client, so the client's next request, carrying them, waits for it.
+ *
+ * @param ticket - the request's ticket, or undefined
+ * @param answer - the worker's response
+ */
+function learnTicketKeys(ticket, answer) {
+  log.debug("Entering learnTicketKeys().");
+  if (!ticket || !answer || !answer.headers) {
+    log.debug("Leaving learnTicketKeys().");
+    return;
+  }
+  const keys = [];
+  const setCookie = answer.headers['set-cookie'];
+  if (setCookie) {
+    const list = Array.isArray(setCookie) ? setCookie : [setCookie];
+    for (let i = 0; i < list.length; i++) {
+      const bit = String(list[i]).split(';')[0].trim();
+      const named = sessionCookieName(bit);
+      if (named) {
+        const sid = sidOfCookieValue(bit.slice(named.length + 1));
+        if (sid) {
+          keys.push('s:' + sid);
+        }
+      }
+    }
+  }
+  const location = answer.headers.location;
+  let code = '';
+  if (location) {
+    const q = String(location).indexOf('?');
+    if (q >= 0) {
+      // The query only: a fragment is not part of it, and a code carried in
+      // one is not learnt (it is the global wait, see THE CODE EXCHANGE).
+      const query = String(location).slice(q + 1).split('#')[0];
+      for (let i = 0; i < FLOW_PARAMS.length; i++) {
+        const found = flowParam(query, FLOW_PARAMS[i]);
+        if (found) {
+          keys.push(FLOW_PARAMS[i] + ':' + found);
+        }
+      }
+      code = flowParam(query, 'code');
+    }
+  }
+  fileTicketUnder(ticket, keys);
+  // AFTER the keys above are filed, so a session cookie this answer handed
+  // out is one of the keys the code inherits from.
+  if (code) {
+    inheritIntoCodeKey(ticket, 'code:' + code);
+  }
+  log.debug("Leaving learnTicketKeys().");
+}
+
+/**
+ * Files an authorization code redirect's ticket under the code's key, with
+ * everything outstanding under the request's own keys: their tickets, and
+ * the generations their writes reached on each worker. See THE CODE
+ * EXCHANGE, KEYED BY ITS CODE.
+ *
+ * @param ticket - the redirect's ticket
+ * @param codeKey - `code:<value>`
+ */
+function inheritIntoCodeKey(ticket, codeKey) {
+  log.debug("Entering inheritIntoCodeKey().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving inheritIntoCodeKey(). No such ticket.");
+    return;
+  }
+  // A copy: fileTicketUnder() below adds the code key to `info.keys`.
+  const own = (info.keys || []).filter(function (k) {
+    return k !== codeKey;
+  });
+  const state = clientStateFor(codeKey, true);
+  codeKeysLearnt++;
+  for (let i = 0; i < own.length; i++) {
+    const from = clientStates.get(own[i]);
+    if (!from) {
+      // Evicted, and so spilled: every keyed request waits for it already.
+      continue;
+    }
+    // Each inherited ticket is filed under the code key properly, so the
+    // code key is told when it commits (noteCommittedFor()) and loses it
+    // when it ends (forgetTicket()).
+    Array.from(from.tickets).forEach(function (t) {
+      fileTicketUnder(t, [codeKey]);
+    });
+    from.writes.forEach(function (gen, pid) {
+      if (!((state.writes.get(pid) || 0) >= gen)) {
+        state.writes.set(pid, gen);
+      }
+    });
+  }
+  fileTicketUnder(ticket, [codeKey]);
+  log.debug("Leaving inheritIntoCodeKey(). " + own.length +
+            " key(s) inherited.");
+}
+
+/**
+ * Files a token response's ticket under the refresh token it handed out,
+ * with everything outstanding under the request's own keys except
+ * SHARED_KEY. See THE REFRESH GRANT, KEYED BY ITS TOKEN.
+ *
+ * @param ticket - the token response's ticket
+ * @param refreshKey - `rt:<digest>` (refreshKeyOf())
+ */
+function inheritIntoRefreshKey(ticket, refreshKey) {
+  log.debug("Entering inheritIntoRefreshKey().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving inheritIntoRefreshKey(). No such ticket.");
+    return;
+  }
+  // SHARED_KEY is every keyless write. Copying it onto this token would
+  // make the next refresh of it wait for all of them twice, and would pin
+  // those tickets to a key that stands for one family.
+  const own = (info.keys || []).filter(function (k) {
+    return k !== refreshKey && k !== SHARED_KEY;
+  });
+  const state = clientStateFor(refreshKey, true);
+  refreshKeysLearnt++;
+  for (let i = 0; i < own.length; i++) {
+    const from = clientStates.get(own[i]);
+    if (!from) {
+      // Evicted, and so spilled: every keyed request waits for it already.
+      continue;
+    }
+    Array.from(from.tickets).forEach(function (t) {
+      fileTicketUnder(t, [refreshKey]);
+    });
+    from.writes.forEach(function (gen, pid) {
+      if (!((state.writes.get(pid) || 0) >= gen)) {
+        state.writes.set(pid, gen);
+      }
+    });
+  }
+  fileTicketUnder(ticket, [refreshKey]);
+  log.debug("Leaving inheritIntoRefreshKey(). " + own.length +
+            " key(s) inherited.");
+}
+
+/**
+ * Files a token response's ticket under the refresh token its JSON names.
+ *
+ * @param ticket - the token response's ticket
+ * @param buf - the response body, the bytes the client is also sent
+ * @returns whether the body was read as a token response. False means a
+ *   refresh token may have been issued and was not keyed, so the caller
+ *   files the ticket under SHARED_KEY.
+ */
+function learnRefreshToken(ticket, buf) {
+  log.debug("Entering learnRefreshToken().");
+  let parsed;
+  try {
+    parsed = JSON.parse(buf.toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in learnRefreshToken(): " + ((e && e.message) || e));
+    log.debug("Leaving learnRefreshToken(). Not JSON.");
+    return false;
+  }
+  const token = parsed && parsed.refresh_token;
+  if (typeof token !== 'string' || token.length === 0) {
+    // A token response that names no refresh token issued none.
+    log.debug("Leaving learnRefreshToken(). No refresh token.");
+    return true;
+  }
+  if (token.length > REFRESH_TOKEN_MAX) {
+    log.debug("Leaving learnRefreshToken(). Too long to be a key.");
+    return false;
+  }
+  inheritIntoRefreshKey(ticket, refreshKeyOf(token));
+  log.debug("Leaving learnRefreshToken().");
+  return true;
+}
+
+// A token response this process could not read may still have issued a
+// refresh token. The next refresh waits for SHARED_KEY, so the ticket is
+// filed there. One already filed there gains nothing.
+function noteUnlearntRefresh(ticket) {
+  log.debug("Entering noteUnlearntRefresh().");
+  fileTicketUnder(ticket, [SHARED_KEY]);
+  log.debug("Leaving noteUnlearntRefresh().");
+}
+
+// Whether a token response is small enough to read `refresh_token` out of
+// before the client is sent it. Runs on every proxied answer, so no
+// Entering/Leaving pair, for the reason route() has none.
+function refreshAnswerCandidate(req, answer) {
+  if (!answer || !answer.headers || answer.statusCode !== 200) {
+    return false;
+  }
+  if (req.method !== 'POST') {
+    return false;
+  }
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  if (!TOKEN_PATH.test(path)) {
+    return false;
+  }
+  const type = String(answer.headers['content-type'] || '').split(';')[0]
+    .trim().toLowerCase();
+  if (type !== 'application/json') {
+    return false;
+  }
+  if (answer.headers['content-encoding'] ||
+      answer.headers['transfer-encoding']) {
+    return false;
+  }
+  const declared = String(answer.headers['content-length'] === undefined
+    ? '' : answer.headers['content-length']).trim();
+  return /^[0-9]{1,7}$/.test(declared) && Number(declared) > 0 &&
+    Number(declared) <= REFRESH_LEARN_MAX;
+}
+
+/**
+ * Holds a token response's body, then sends the client those same bytes.
+ * `done` is called with the buffer when it was within REFRESH_LEARN_MAX,
+ * and with null when it was not, before the bytes are sent.
+ *
+ * @param answer - the worker's response
+ * @param res - the client's response
+ * @param done - called once with the buffer, or null
+ */
+function bufferRefreshAnswer(answer, res, done) {
+  log.debug("Entering bufferRefreshAnswer().");
+  const chunks = [];
+  let size = 0;
+  let over = false;
+  let settled = false;
+  const finishRead = function () {
+    log.debug("Entering finishRead().");
+    if (settled) {
+      log.debug("Leaving finishRead(). Already settled.");
+      return;
+    }
+    settled = true;
+    const buf = Buffer.concat(chunks);
+    done(over ? null : buf);
+    if (!res.destroyed && !res.writableEnded) {
+      res.end(buf);
+    }
+    log.debug("Leaving finishRead().");
+  };
+  // `end` before `data`. A body already buffered emits both in the turn
+  // `data` is attached, and an `end` listener registered after that has
+  // missed it: the client would never be sent the bytes, and the ticket
+  // would never be armed.
+  answer.on('end', finishRead);
+  answer.on('data', function (chunk) {
+    chunks.push(chunk);
+    size += chunk.length;
+    if (size > REFRESH_LEARN_MAX) {
+      over = true;
+    }
+  });
+  log.debug("Leaving bufferRefreshAnswer().");
+}
+
+// Whether a request might be a code exchange or a refresh grant worth
+// reading before the barrier: a POST to the token endpoint with a small,
+// plain form body of a declared length. HTTP/2 may send no
+// `content-length`; such a body is not read first, and the request waits
+// globally. A HOT PATH — every request that would wait globally in
+// `session` mode asks — so no Entering/Leaving pair, for the reason
+// route() has none.
+function codeExchangeCandidate(req) {
+  if (req.method !== 'POST') {
+    return false;
+  }
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  if (!TOKEN_PATH.test(path)) {
+    return false;
+  }
+  const h = req.headers || {};
+  if (h['transfer-encoding'] || h['content-encoding']) {
+    return false;
+  }
+  const type = String(h['content-type'] || '').split(';')[0].trim()
+    .toLowerCase();
+  if (type !== 'application/x-www-form-urlencoded') {
+    return false;
+  }
+  const length = h['content-length'];
+  const declared = String(length === undefined ? '' : length).trim();
+  return /^[0-9]{1,6}$/.test(declared) && Number(declared) <= CODE_BODY_MAX;
+}
+
+/**
+ * Reads a code exchange's body before the barrier is decided, holding the
+ * chunks exactly as they arrived. Stops at CODE_BODY_MAX whatever the
+ * declared length said, pausing the request with the rest unread.
+ *
+ * @param req - the request
+ * @param res - its response, whose `close` before the end means the client
+ *   went away
+ * @param done - called once: `{ chunks, ended }`, or null when the client
+ *   went away or the request failed
+ */
+function readCodeExchangeBody(req, res, done) {
+  log.debug("Entering readCodeExchangeBody().");
+  const chunks = [];
+  let bytes = 0;
+  let settled = false;
+  const settle = function (outcome) {
+    log.debug("Entering settle().");
+    if (settled) {
+      log.debug("Leaving settle(). Already settled.");
+      return;
+    }
+    settled = true;
+    req.removeListener('data', onData);
+    req.removeListener('end', onEnd);
+    req.removeListener('aborted', onGone);
+    req.removeListener('error', onError);
+    res.removeListener('close', onGone);
+    log.debug("Leaving settle().");
+    done(outcome);
+  };
+  const onData = function (chunk) {
+    log.debug("Entering onData().");
+    chunks.push(chunk);
+    bytes += chunk.length;
+    if (bytes > CODE_BODY_MAX) {
+      // More than the declared length allowed (an HTTP/2 client may say one
+      // thing and send another). Paused, not read further: proxy() writes
+      // what is held and streams the rest, and the request waits globally.
+      req.pause();
+      settle({ chunks: chunks, ended: false });
+    }
+    log.debug("Leaving onData().");
+  };
+  const onEnd = function () {
+    log.debug("Entering onEnd().");
+    settle({ chunks: chunks, ended: true });
+    log.debug("Leaving onEnd().");
+  };
+  const onGone = function () {
+    log.debug("Entering onGone().");
+    settle(null);
+    log.debug("Leaving onGone().");
+  };
+  const onError = function (e) {
+    log.debug("Entering onError().");
+    log.debug("Caught in readCodeExchangeBody(): " +
+              ((e && e.message) || e));
+    // A request stream that failed has nothing to send a worker. The same
+    // answer as a client that went away: nothing is dispatched, and no
+    // ticket was ever taken.
+    settle(null);
+    log.debug("Leaving onError().");
+  };
+  req.on('data', onData);
+  req.on('end', onEnd);
+  req.on('aborted', onGone);
+  req.on('error', onError);
+  res.on('close', onGone);
+  log.debug("Leaving readCodeExchangeBody().");
+}
+
+/**
+ * The keys a code exchange is held to: `['code:<value>']` when the body is a
+ * whole `authorization_code` grant naming one code this pool knows, else
+ * null for the global wait.
+ *
+ * @param body - what readCodeExchangeBody() handed over
+ * @returns the keys, or null
+ */
+function codeKeysOf(body) {
+  log.debug("Entering codeKeysOf().");
+  if (!body || !body.ended) {
+    log.debug("Leaving codeKeysOf(). Not read whole.");
+    return null;
+  }
+  let form;
+  try {
+    form = new URLSearchParams(Buffer.concat(body.chunks).toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in codeKeysOf(): " + ((e && e.message) || e));
+    // Not a form this process can read. The worker answers it as it
+    // always did; the wait is the global one.
+    log.debug("Leaving codeKeysOf(). Unreadable.");
+    return null;
+  }
+  const grants = form.getAll('grant_type');
+  const codes = form.getAll('code');
+  if (grants.length !== 1 || grants[0] !== 'authorization_code' ||
+      codes.length !== 1 || !codes[0]) {
+    log.debug("Leaving codeKeysOf(). Not one authorization code.");
+    return null;
+  }
+  const key = 'code:' + codes[0];
+  if (clientStateFor(key, false)) {
+    log.debug("Leaving codeKeysOf(). Held.");
+    return [key];
+  }
+  if (settledCodes.has(key)) {
+    // A code is redeemed once; a second exchange of it is global.
+    settledCodes.delete(key);
+    log.debug("Leaving codeKeysOf(). Settled.");
+    return [key];
+  }
+  log.debug("Leaving codeKeysOf(). Unknown: global.");
+  return null;
+}
+
+/**
+ * The key a refresh token is held under: `rt:` and the token's SHA-256,
+ * through the one crypto module, so the token itself is never a key in this
+ * process's tables (the review of #879). See THE REFRESH GRANT, KEYED BY ITS
+ * TOKEN.
+ *
+ * @param token - the refresh token
+ * @returns the key
+ */
+function refreshKeyOf(token) {
+  log.debug("Entering refreshKeyOf().");
+  const key = 'rt:' + stsCrypto.credentialDigest(String(token));
+  log.debug("Leaving refreshKeyOf().");
+  return key;
+}
+
+/**
+ * The client keys the session barrier holds, oldest first: names only, for
+ * a test that must see no refresh token among them.
+ *
+ * @returns the keys
+ */
+function clientKeyNames() {
+  log.debug("Entering clientKeyNames().");
+  const names = Array.from(clientStates.keys());
+  log.debug("Leaving clientKeyNames(). " + names.length);
+  return names;
+}
+
+// Whether a request may end what a refresh token rests on, by its method and
+// path alone: see THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF. A HOT PATH —
+// every dispatched request asks — so no Entering/Leaving pair, for the reason
+// route() has none.
+function revokingRequest(req) {
+  const method = String((req && req.method) || 'GET').toUpperCase();
+  const url = String((req && (req.originalUrl || req.url)) || '');
+  const q = url.indexOf('?');
+  const path = q >= 0 ? url.slice(0, q) : url;
+  if (SIGN_OUT_PATH.test(path)) {
+    return true;
+  }
+  if (q >= 0 && WSFED_PATH.test(path) &&
+      WSFED_SIGN_OUT.test(url.slice(q + 1))) {
+    return true;
+  }
+  if (method === 'DELETE') {
+    return true;
+  }
+  if (READ_ONLY_METHODS[method]) {
+    return false;
+  }
+  return REVOKING_WRITE_PATH.test(path);
+}
+
+// Whether a request is a POST to a token endpoint: what waits for REVOKE_KEY
+// when it is keyed by a browser's cookie. Hot path, for route()'s reason.
+function tokenRequest(req) {
+  if (!req || req.method !== 'POST') {
+    return false;
+  }
+  const url = String(req.originalUrl || req.url || '');
+  return TOKEN_PATH.test(url.split('?')[0]);
+}
+
+/**
+ * The keys a refresh grant is held to: `[refreshKeyOf(token)]` when the
+ * body is a whole `refresh_token` grant naming one token short enough to be
+ * a key, else null for the global wait. An unknown token is still that key. See
+ * THE REFRESH GRANT, KEYED BY ITS TOKEN.
+ *
+ * @param body - what readCodeExchangeBody() handed over
+ * @returns the keys, or null
+ */
+function refreshKeysOf(body) {
+  log.debug("Entering refreshKeysOf().");
+  if (!body || !body.ended) {
+    log.debug("Leaving refreshKeysOf(). Not read whole.");
+    return null;
+  }
+  let form;
+  try {
+    form = new URLSearchParams(Buffer.concat(body.chunks).toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in refreshKeysOf(): " + ((e && e.message) || e));
+    log.debug("Leaving refreshKeysOf(). Unreadable.");
+    return null;
+  }
+  const grants = form.getAll('grant_type');
+  const tokens = form.getAll('refresh_token');
+  if (grants.length !== 1 || grants[0] !== 'refresh_token' ||
+      tokens.length !== 1 || !tokens[0] ||
+      tokens[0].length > REFRESH_TOKEN_MAX) {
+    log.debug("Leaving refreshKeysOf(). Not one refresh token.");
+    return null;
+  }
+  log.debug("Leaving refreshKeysOf(). Held.");
+  return [refreshKeyOf(tokens[0])];
+}
+
+// Remembers a pruned code key's name, so its exchange stays keyed; see THE
+// CODE EXCHANGE, KEYED BY ITS CODE. Bounded as the key table is.
+function noteSettledCode(key) {
+  log.debug("Entering noteSettledCode().");
+  settledCodes.delete(key);
+  settledCodes.add(key);
+  while (settledCodes.size > CLIENT_KEYS_MAX) {
+    settledCodes.delete(settledCodes.values().next().value);
+  }
+  log.debug("Leaving noteSettledCode().");
+}
+
+// A ticket announced committed by `entry`: each of its keys has a write on
+// that worker no later than the worker's last writing announcement. That
+// generation, not one this announcement's own `wrote` says, because a write
+// can commit in a flush that does not yet name its ticket (the response had
+// not finished), and the later announcement that does may write nothing.
+function noteCommittedFor(ticket, entry) {
+  log.debug("Entering noteCommittedFor().");
+  const info = ticketInfo.get(ticket);
+  const gen = entry.wroteGeneration || 0;
+  if (!info || !info.keys || !gen) {
+    log.debug("Leaving noteCommittedFor().");
+    return;
+  }
+  for (let i = 0; i < info.keys.length; i++) {
+    const state = clientStates.get(info.keys[i]);
+    if (state && !((state.writes.get(entry.pid) || 0) >= gen)) {
+      state.writes.set(entry.pid, gen);
+    }
+  }
+  log.debug("Leaving noteCommittedFor().");
+}
+
+/**
+ * The generation a worker must reach before serving a keyed request: what
+ * the keys' writes on OTHER workers reached, what the front process wrote
+ * itself, and whatever was spilled.
+ *
+ * @param keys - the request's client keys
+ * @param entry - the worker it is going to
+ * @returns the generation
+ */
+function sessionWanted(keys, entry) {
+  log.debug("Entering sessionWanted().");
+  let wanted = Math.max(frontGeneration, spilledGeneration);
+  for (let i = 0; i < keys.length; i++) {
+    const state = clientStates.get(keys[i]);
+    if (!state) {
+      continue;
+    }
+    state.writes.forEach(function (gen, pid) {
+      if (pid !== entry.pid && gen > wanted) {
+        wanted = gen;
+      }
+    });
+  }
+  log.debug("Leaving sessionWanted(). " + wanted);
+  return wanted;
+}
+
+// The lowest finished, unannounced ticket of these keys (or spilled) that a
+// reader served by `servedBy` must wait for, or Infinity.
+function lowestBlockingFor(keys, servedBy) {
+  log.debug("Entering lowestBlockingFor().");
+  let lowest = Infinity;
+  const consider = function (t) {
+    if (t < lowest && finishedTickets.has(t) && outstanding.has(t) &&
+        !(servedBy && servedBy.tickets && servedBy.tickets.has(t))) {
+      lowest = t;
+    }
+  };
+  for (let i = 0; i < keys.length; i++) {
+    const state = clientStates.get(keys[i]);
+    if (state) {
+      state.tickets.forEach(consider);
+    }
+  }
+  spilledTickets.forEach(consider);
+  log.debug("Leaving lowestBlockingFor().");
+  return lowest;
+}
+
+// Drops the oldest keys that no longer make anybody wait: no ticket, and
+// every other worker already past their writes. A few per dispatch, so the
+// table drains under traffic with no timer and no walk.
+function pruneClientStates() {
+  log.debug("Entering pruneClientStates().");
+  let looked = 0;
+  const it = clientStates.keys();
+  const gone = [];
+  while (looked < CLIENT_KEYS_PRUNED_PER_DISPATCH) {
+    const next = it.next();
+    if (next.done) {
+      break;
+    }
+    looked++;
+    const state = clientStates.get(next.value);
+    if (state.tickets.size) {
+      continue;
+    }
+    let passed = true;
+    state.writes.forEach(function (gen, pid) {
+      workers.forEach(function (w) {
+        if (w.pid !== pid && !(w.generation >= gen)) {
+          passed = false;
+        }
+      });
+    });
+    if (passed) {
+      gone.push(next.value);
+    }
+  }
+  gone.forEach(function (key) {
+    clientStates.delete(key);
+    // A settled code key keeps its name, so the exchange that names it is
+    // still keyed (#820, THE CODE EXCHANGE, KEYED BY ITS CODE).
+    if (key.indexOf('code:') === 0) {
+      noteSettledCode(key);
+    }
+  });
+  log.debug("Leaving pruneClientStates(). " + gone.length + " dropped.");
+}
+
 // A ticket for a request about to be sent to `entry`. Cleared when that worker
 // reports a commit — see receiveCommitted(), which clears everything the worker
 // owes, because its flush covers every request it has finished.
@@ -334,9 +1488,13 @@ function dropSettledWaiter() {
  * Issues a read-barrier ticket for a request about to be sent to a worker.
  *
  * @param entry - the worker's table entry
+ * @param what - optional; the method and path, or the operation's kind, named
+ *   should the ticket ever be dropped (STS-WORKER-0008)
+ * @param keys - optional; the client keys it is filed under in `session`
+ *   mode (see SESSION READ-YOUR-WRITE, above)
  * @returns the ticket number, or undefined when read-your-write is off
  */
-function dispatchTicket(entry) {
+function dispatchTicket(entry, what, keys) {
   log.debug("Entering dispatchTicket().");
   if (!readYourWrite()) {
     log.debug("Leaving dispatchTicket().");
@@ -344,8 +1502,14 @@ function dispatchTicket(entry) {
   }
   issuedTickets++;
   outstanding.add(issuedTickets);
+  // What it is, for STS-WORKER-0008 should it ever be dropped (#620).
+  ticketInfo.set(issuedTickets, { what: String(what || 'a request'),
+                                  entry: entry,
+                                  dispatchedAt: Date.now(),
+                                  answeredAt: 0, heardAtAnswer: 0 });
   if (!entry.tickets) { entry.tickets = new Set(); }
   entry.tickets.add(issuedTickets);
+  fileTicketUnder(issuedTickets, keys);
   log.debug("Leaving dispatchTicket().");
   return issuedTickets;
 }
@@ -380,6 +1544,13 @@ function ticketFinished(entry, ticket) {
   }
   finishedTickets.add(ticket);
   finishedAt.set(ticket, Date.now());
+  const info = ticketInfo.get(ticket);
+  if (info) {
+    info.answeredAt = Date.now();
+    // How many announcements this worker had made when it answered: the
+    // difference later is what describeTicket() tells the two causes by.
+    info.heardAtAnswer = entry.announcements || 0;
+  }
   log.debug("Leaving ticketFinished().");
 }
 
@@ -430,6 +1601,7 @@ function ticketAbandoned(entry, ticket) {
   outstanding.delete(ticket);
   finishedTickets.delete(ticket);
   finishedAt.delete(ticket);
+  forgetTicket(ticket);
   if (entry && entry.tickets) {
     entry.tickets.delete(ticket);
   }
@@ -462,6 +1634,10 @@ function ticketAbandoned(entry, ticket) {
 // ---------------------------------------------------------------------------
 const REAP_AFTER_MS = 30000;
 let reaped = 0;
+// How many dropped tickets one STS-WORKER-0008 line describes; the rest are
+// counted. Enough to show a pattern, few enough that a backlog of thousands
+// is still one readable line.
+const REAP_DESCRIBED = 5;
 
 // `at` is the clock, and it is a parameter for one reason: the threshold is
 // thirty seconds and a test that waited thirty seconds to assert one `if` is a
@@ -498,10 +1674,15 @@ function reapStuckTickets(need, clock) {
     log.debug('Leaving reapStuckTickets(). Nothing old enough.');
     return;
   }
+  // WHAT THEY WERE, described before they are forgotten (#620).
+  const described = gone.slice(0, REAP_DESCRIBED).map(function (t) {
+    return describeTicket(t, now);
+  });
   gone.forEach(function (t) {
     outstanding.delete(t);
     finishedTickets.delete(t);
     finishedAt.delete(t);
+    forgetTicket(t);
     workers.forEach(function (entry) {
       if (entry.tickets) {
         entry.tickets.delete(t);
@@ -534,7 +1715,11 @@ function reapStuckTickets(need, clock) {
            'after waiting the full barrier bound for each — so this changes ' +
            'no answer and removes that wait. Either a worker lost an ' +
            'announcement (see ticketAbandoned()) or its flush has been ' +
-           'running longer than that, which a bulk load can do.');
+           'running longer than that, which a bulk load can do. Dropped: ' +
+           described.join('; ') +
+           (gone.length > described.length
+             ? '; and ' + (gone.length - described.length) + ' more'
+             : '') + '.');
   log.debug('Leaving reapStuckTickets(). ' + gone.length + ' dropped.');
 }
 
@@ -580,16 +1765,23 @@ function warnSparingly(code, message) {
  * Resolves at once when read-your-write is off or nothing blocks; a timeout
  * is logged and the read is served anyway.
  * @param servedBy - the worker entry that will serve the read
+ * @param keys - optional; the reader's client keys in `session` mode, when
+ *   only those keys' tickets (and any spilled) are waited for — see SESSION
+ *   READ-YOUR-WRITE, above dispatchTicket()
  * @returns a promise that resolves when the reader may go on
  */
-function awaitCommitConfirmations(servedBy) {
+function awaitCommitConfirmations(servedBy, keys) {
   log.debug("Entering awaitCommitConfirmations().");
   if (!readYourWrite()) {
     log.debug("Leaving awaitCommitConfirmations().");
     return Promise.resolve();
   }
   const need = issuedTickets;
-  if (!blockedBelow(need, servedBy)) {
+  const keyed = keys && keys.length ? keys : null;
+  const blocked = keyed
+    ? lowestBlockingFor(keyed, servedBy) <= need
+    : blockedBelow(need, servedBy);
+  if (!blocked) {
     log.debug("Leaving awaitCommitConfirmations().");
     return Promise.resolve();
   }
@@ -597,7 +1789,8 @@ function awaitCommitConfirmations(servedBy) {
   return new Promise(/** @param {(value?: any) => void} resolve */
                      function (resolve) {
     let done = false;
-    const waiter = { need: need, servedBy: servedBy, resolve: function () {
+    const waiter = { need: need, servedBy: servedBy, keys: keyed,
+                     resolve: function () {
       log.debug("Entering resolve().");
       if (done) {
         log.debug("Leaving resolve().");
@@ -608,6 +1801,8 @@ function awaitCommitConfirmations(servedBy) {
       log.debug("Leaving resolve().");
     } };
     ticketWaiters.push(waiter);
+    // Counted (#626): a reader that actually waited, for stats().
+    ticketWaits++;
     setTimeout(function () {
       if (!done) {
         // SETTLED BEFORE ANYTHING ELSE, so that the release reapStuckTickets()
@@ -724,6 +1919,12 @@ const PEER_CERT_HEADER = 'x-sts-peer-certificate';
  */
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
+// The headers `app.js`'s enterRealm() writes on a response before this module
+// sees it, which a dispatched answer replaces whole — present or ABSENT. See
+// proxy(); `tests/proxy_early_headers.js` holds this list to that function.
+const WORKER_DECIDES = ['x-content-type-options', 'x-frame-options',
+                        'content-security-policy'];
+
 // THE TICKET THIS REQUEST WAS DISPATCHED UNDER, told to the worker so that the
 // worker can say which tickets its flush covered — see receiveCommitted().
 // Stripped from what the client sent, exactly like the two above: nothing a
@@ -734,6 +1935,14 @@ const POOL_TICKET_HEADER = 'x-sts-pool-ticket';
  * verified; stripped from what a client sends.
  */
 const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
+
+// WHICH LISTENER THE REQUEST ARRIVED ON (#472), told to the worker so that its
+// own copy of `app.js`'s `enterListener()` asks the same question the front
+// process did, and so that `helpers.baseUrlOf()` knows where it was asked.
+// Stripped from what the client sent first, as the certificate is: a client
+// that could set it could claim to have come in on a listener that answers
+// an application this one does not.
+const LISTENER_HEADER = 'x-sts-listener';
 
 // ---------------------------------------------------------------------------
 // AND THE ONE THAT TELLS A HOSTED-SURFACE WORKER WHERE ITS BACK CHANNEL GOES
@@ -1001,6 +2210,14 @@ const affinities = {};
 affinities[PROTOCOL_POOL] = new Map();
 affinities[SURFACE_POOL] = new Map();
 
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const AFFINITY_SENTENCES = Object.freeze({
+  lifetime: 'No expiry: forgotten when its worker exits; the oldest goes ' +
+    'first when a pool holds {{max}}. Front process only.'
+});
+
 // Described to `/admin/caches` (#74, rule 3ap), one row per pin across both
 // pools. Only the FRONT process fills these, so a request worker drawing the
 // page lists none. Keys are session ids and flow values, shown digested.
@@ -1018,9 +2235,13 @@ const affinityCount = cacheRegistry.register({
   },
   bound: 'Enforced: 5000 per pool, the oldest dropped; a dropped pin is ' +
     'simply routed afresh.',
+  sentences: AFFINITY_SENTENCES,
   lifetime: function () {
-    return 'No expiry: forgotten when its worker exits; the oldest goes ' +
-      'first when a pool holds ' + AFFINITY_MAX + '. Front process only.';
+    // Lazily: this module is loaded long before what server_prose.ts
+    // requires.
+    const serverProse = require('./server_prose');
+    return serverProse.fill(AFFINITY_SENTENCES.lifetime,
+                            { max: AFFINITY_MAX });
   },
   entries: function () {
     const out = [];
@@ -1047,6 +2268,69 @@ quickExits[SURFACE_POOL] = 0;
 const givenUp = {};
 givenUp[PROTOCOL_POOL] = false;
 givenUp[SURFACE_POOL] = false;
+// THE COOL-DOWN AFTER A GIVE-UP (#333). `attempt` is how many cool-downs
+// have already failed (the wait doubles), `at` is when the next try is due,
+// `timer` is that one wait, and `probing` is the try itself: routing still
+// treats the pool as given up, and forking is allowed again for one run of
+// QUICK_EXIT_LIMIT. See armGiveUpRetry().
+const giveUpState = {};
+giveUpState[PROTOCOL_POOL] = { attempt: 0, at: 0, delay: 0, timer: null,
+                               probing: false };
+giveUpState[SURFACE_POOL] = { attempt: 0, at: 0, delay: 0, timer: null,
+                              probing: false };
+// The longest a cool-down grows to. An hour is long enough that a broken
+// configuration is not forking, and short enough that a node which recovers
+// is not left on one thread until somebody restarts it.
+const GIVE_UP_RETRY_CAP_MS = 60 * 60 * 1000;
+// `workers.giveUpRetryMs`'s default, which the row in config.js also
+// carries: five minutes. Used where the setting cannot be read.
+const GIVE_UP_RETRY_DEFAULT_MS = 300000;
+
+// How long the pool waits before trying again. `attempt` 0 is the setting;
+// each failed attempt doubles it, and the cap above is the ceiling. 0 — the
+// setting, or a base that is not a positive number — means it does not try
+// again. A decision over its arguments, so a test does not wait an hour to
+// see the doubling.
+/**
+ * Returns the cool-down before the next give-up retry, in milliseconds.
+ *
+ * @param attempt - how many cool-downs have already failed
+ * @param baseMs - `workers.giveUpRetryMs`; 0 means do not retry
+ * @returns the wait, or 0 when retrying is off
+ */
+function giveUpRetryDelay(attempt, baseMs) {
+  log.debug("Entering giveUpRetryDelay().");
+  const base = Number(baseMs);
+  if (!(base > 0)) {
+    log.debug("Leaving giveUpRetryDelay(). Off.");
+    return 0;
+  }
+  const n = attempt > 0 ? Math.min(attempt, 6) : 0;
+  const delay = Math.min(base * Math.pow(2, n), GIVE_UP_RETRY_CAP_MS);
+  log.debug("Leaving giveUpRetryDelay(). " + delay + ".");
+  return delay;
+}
+
+// The setting, read when a cool-down is armed and when the setting changes
+// (applyGiveUpRetrySetting()). 0 is legal and means the pool stays given
+// up, so it is not read as `value || default`.
+function giveUpRetryBaseMs() {
+  log.debug("Entering giveUpRetryBaseMs().");
+  let n = GIVE_UP_RETRY_DEFAULT_MS;
+  try {
+    n = Number(config.value('workers.giveUpRetryMs'));
+  } catch (e) {
+    log.debug("Caught in giveUpRetryBaseMs(): " + ((e && e.message) || e));
+    // No configuration at all — an in-process job that loaded this module
+    // on its own. The default is the same five minutes the row carries.
+    n = GIVE_UP_RETRY_DEFAULT_MS;
+  }
+  if (!(n >= 0)) {
+    n = GIVE_UP_RETRY_DEFAULT_MS;
+  }
+  log.debug("Leaving giveUpRetryBaseMs(). " + n + ".");
+  return n;
+}
 // How many dead workers each pool has replaced, for stats(). See
 // replacementFor().
 const replaced = {};
@@ -1644,10 +2928,12 @@ function surfacePrefixes() {
 // **A POOL OF NONE IS NOT A POOL.** With `workers.surfaceCount` at 0 the
 // surfaces go to the protocol pool, which is where they always went. And a
 // surface pool that GAVE UP — workers that could not start — hands them back
-// to the protocol pool too, rather than refusing them for the life of the
-// process: it is a decision taken once, logged loudly at `STS-WORKER-0023`,
-// and stable from then on, so it is not the timing-dependent half-dispatch the
-// header at the top of this file refuses.
+// to the protocol pool too, rather than refusing them while it is given up.
+// The give-up is logged at `STS-WORKER-0023` and the routing stays on that
+// answer until a worker actually comes up (`armGiveUpRetry()`, #333), so it
+// is not the timing-dependent half-dispatch the header at the top of this
+// file refuses: a cool-down try forks while the pool is still given up, and
+// the paths move only when that worker reports ready.
 // ---------------------------------------------------------------------------
 /**
  * Chooses the pool a dispatched request goes to.
@@ -1785,14 +3071,89 @@ function poolFor(url) {
 // **AND NODE HEALTH'S (#329, 2026-09-28)**, for the same reason: it lists
 // every process of the node, and only the front process knows the workers and
 // can ask them. A worker drawing it would list itself alone.
+//
+// **AND THE SCHEDULER'S (#617, 2026-10-14).** `/admin/scheduler` and
+// `GET /admin-api/scheduler` (with its `/run` and `/step-down` acts) are
+// answered from the run store, and a request worker no longer reads that
+// store back at its start: it was 42,740 of the 52,234 rows each of 8081's
+// processes restored, for a page only an administrator opens. So the page is
+// the front process's, which catches up (the barrier below) before it
+// answers. Since #883 that front restores the rows with no expiry and asks
+// the store for a bounded newest window; it does not hold the finished
+// interval history. `cluster/scheduler.ts` and `common/realms.js`
+// (`restoreInWorkers`, `restoreExpiring`) carry the rest.
+//
+// **AND MONITORING → TLS CONNECTION'S (#597, 2026-10-12)**, `/tls`'s own
+// argument moved with the view `GET /tls` and `GET /tls/forwarded` drew:
+// what the SERVER saw of the connection the request arrived on. Answered
+// by a worker it would describe the unix socket from the front process.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
+                          '/admin/tls-connection',
+                          '/admin-api/tls-connection',
                           '/admin/debugger', '/admin-api/debugger',
                           '/admin/spiffe/brokers',
                           '/admin-api/spiffe/brokers',
                           '/admin/worker-pools', '/admin-api/worker-pools',
                           '/admin/node-health', '/admin-api/node-health',
-                          '/admin/listeners', '/admin-api/listeners'];
+                          '/admin/listeners', '/admin-api/listeners',
+                          '/admin/scheduler', '/admin-api/scheduler'];
+
+// ---------------------------------------------------------------------------
+// THE LIVENESS PROBE IS ANSWERED HERE, AT ONCE, AND WAITS FOR NOTHING (#624,
+// 2026-10-14).
+//
+// `GET /healthcheck` was dispatched like any other path (`workers.dispatch`
+// defaults to `*`), so a probe paid everything a dispatched read pays before
+// a worker even saw it: the ticket wait (awaitCommitConfirmations(), 2,000 ms
+// at most), the worker's read barrier (barrier(), 5,000 ms at most), a place
+// in that worker's `workers.maxSockets` queue, and whatever the worker's event
+// loop was doing. The compose healthcheck gives up at 5 s. Under the 1M → 10M
+// LDAP bulk load on 8081 two probes were held about 5 s at the front — worker
+// 4 missed a read barrier (STS-WORKER-0027) at the very moment each was
+// finally sent — so their clients had gone before proxy() ran, and proxy()'s
+// own block on that says what it then cost.
+//
+// **WHAT THE PATH IS DOCUMENTED TO MEAN DECIDES WHERE IT IS ANSWERED.**
+// `sts_metadata.ts` and `docs/docker-compose.md` both say *liveness only*: it
+// answers 200 with a JSON message and reads no state. A question that reads no
+// state has nothing to be stale about, so it needs neither barrier, and the
+// process that answers it should be the one a restart would replace — the
+// one holding the listener. That is this process. So it is never dispatched
+// (dispatched() below) and, kept here, it skips the catch-up every other kept
+// request runs (middleware()). What it still proves is that this process
+// accepts a connection and its event loop turns, which is what liveness is.
+//
+// **IT DOES NOT REPORT ON THE WORKERS, AND THAT IS DELIBERATE.** A worker that
+// dies is replaced by reap(); a pool that has given up refuses its paths with
+// STS-WORKER-0028 and says why in the log; a busy one is Monitoring → Node
+// Health's business. Restarting the container because one worker was slow is
+// the outcome the 10-retry healthcheck exists to avoid.
+//
+// Matched like every other list here: at a segment boundary, after a realm
+// prefix, so `/realm/<id>/healthcheck` is answered the same way. The cluster
+// barrier (`cluster/cluster_barrier.js`) is not this file's and still runs.
+// ---------------------------------------------------------------------------
+const ANSWERED_AT_ONCE = ['/healthcheck'];
+
+// ---------------------------------------------------------------------------
+// **AND `OPTIONS *` (#1304, 2026-11-04).** The asterisk form (RFC 9112
+// section 3.2.4; `:path: *` in HTTP/2, RFC 9113 section 8.3.1) names no
+// resource: it asks about the server as a whole (RFC 9110 section 9.3.7), and
+// the answer is the CORS preflight's 204, which reads no state. So it is the
+// liveness probe's case — the process holding the listener answers, with no
+// catch-up — and no dispatch prefix can name it: `*` in `workers.dispatch`
+// means every PATH, and `*` is not one. It was dispatched like any path until
+// #1304, which found it paying a worker's barriers for an answer this process
+// gives alike. It carries no realm prefix, so it is always the default
+// realm's.
+// ---------------------------------------------------------------------------
+function answeredAtOnce(url) {
+  log.debug("Entering answeredAtOnce().");
+  const yes = String(url || '') === '*' || matchesAny(url, ANSWERED_AT_ONCE);
+  log.debug("Leaving answeredAtOnce().");
+  return yes;
+}
 
 /**
  * Tells whether a request is handled in a request worker rather than here.
@@ -1814,7 +3175,7 @@ function dispatched(url) {
     log.debug("Leaving dispatched().");
     return false;
   }
-  if (matchesAny(url, NEVER_DISPATCHED)) {
+  if (matchesAny(url, NEVER_DISPATCHED) || answeredAtOnce(url)) {
     log.debug("Leaving dispatched().");
     return false;
   }
@@ -1933,6 +3294,12 @@ function receiveCommitted(entry, committed) {
     if (wasCurrent) {
       entry.generation = generation;
     }
+    // THE GENERATION OF THIS WORKER'S LAST WRITE, which the client keys of
+    // every ticket it names from now on are held to (#820, noteCommittedFor()).
+    entry.wroteGeneration = generation;
+    // AND WHAT IT WAS (#626): windowed directory keys a write may be handed
+    // in place of the pull, or shared. See staleKeysFor().
+    noteWriteKinds(entry.pid, committed.windowedKeys);
   }
   // EVERY TICKET THIS WORKER OWED IS SATISFIED: it has just told us the
   // sequence its flush reached, and its flush covers everything it had
@@ -1947,6 +3314,10 @@ function receiveCommitted(entry, committed) {
   // flush started, because each one carried its ticket in a header — so this is
   // an exact set rather than a count compared against an ordinal this process
   // guessed. See ticketFinished() above for what the guess cost.
+  // Counted for describeTicket() (#620): an announcement is evidence that
+  // this worker is alive and announcing, whatever it names.
+  entry.announcements = (entry.announcements || 0) + 1;
+  entry.lastAnnouncedAt = Date.now();
   const covered = (committed || {}).tickets;
   if (Array.isArray(covered) && entry.tickets) {
     covered.forEach(function (t) {
@@ -1954,9 +3325,11 @@ function receiveCommitted(entry, committed) {
       if (!entry.tickets.has(ticket)) {
         return;
       }
+      noteCommittedFor(ticket, entry);
       outstanding.delete(ticket);
       finishedTickets.delete(ticket);
       finishedAt.delete(ticket);
+      forgetTicket(ticket);
       entry.tickets.delete(ticket);
     });
   }
@@ -1996,17 +3369,51 @@ function receivePublishedKeys(entry, published) {
   // and the two arbiters would disagree for as long as they kept exchanging
   // it. The store decides for every node; this channel only carries it.
   // -------------------------------------------------------------------------
-  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation, not a race: the
-  // higher generation is the set every process moves to, as the store's own
-  // merge decides (`keystore.js`, decideKeys()).
-  const newer = heldBlob &&
-    keystore.generationOf(published.blob) > keystore.generationOf(heldBlob);
+  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation of the set
+  // already held, not any larger counter (`keystore.supersedes()`). A
+  // worker that lost first-generator-wins and then minted `next` keys from
+  // its own set publishes that generation marked confirmed
+  // (`replaceKeySet()`). Adopting it replaced the winning key pair after a
+  // peer had fetched metadata for the winner, and every later SAML response
+  // failed to verify (`sts_saml_interop_pysaml2`, single-node, where the
+  // store does not arbitrate and this channel is the only agreement).
+  //
+  // A confirmed publish whose generation is NOT higher still adopts. That
+  // is the store's winner replacing a local generation of a set the store
+  // refused (`adoptStoredKeys()`). The two messages have the same shape, so
+  // a confirmed generation that is lower stays adopted: rolling a held
+  // generation back is the store's answer. The front process's own
+  // publisher broadcasts what it holds without this check; the mint this
+  // refuses is a worker's publish, which is where `signing.rotate` runs.
+  const newer = keystore.supersedes(published.blob, heldBlob);
+  if (keystore.strangerGeneration(heldBlob, published.blob)) {
+    // The refused set may be the only copy of the signer groups. They
+    // join the set this process keeps; the rest of the offer does not.
+    const joined = offeredSignerGroups(heldBlob, published.blob);
+    if (joined) {
+      keystore.adoptShared(realmId, joined);
+      broadcastKeys(realmId, joined, entry);
+    }
+    sendKeys(entry, realmId);
+    log.warn('request_pool: worker ' + (entry && entry.pid) + ' offered a ' +
+             'newer generation of a key set the "' + realmId + '" realm did ' +
+             'not choose; this process kept the set it holds and told the ' +
+             'worker.');
+    log.debug("Leaving receivePublishedKeys().");
+    return;
+  }
   if (published.confirmed || newer) {
-    keystore.adoptShared(realmId, published.blob);
+    // What this set has gained since the worker read the row stays in it, and
+    // the worker is told, because a broadcast skips the publisher.
+    const kept = keystore.withHeldMembers(published.blob, heldBlob);
+    keystore.adoptShared(realmId, kept);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +
              '; every process here now uses it.');
-    broadcastKeys(realmId, published.blob, entry);
+    broadcastKeys(realmId, kept, entry);
+    if (kept !== published.blob) {
+      sendKeys(entry, realmId);
+    }
     log.debug("Leaving receivePublishedKeys().");
     return;
   }
@@ -2036,8 +3443,40 @@ function receivePublishedKeys(entry, published) {
   // are the one window in which two processes disagree, and anything signed in
   // it is lost. That is the price of a synchronous property read that cannot
   // await, and it is written down rather than discovered.
+  //
+  // SIGNER GROUPS ARE THE EXCEPTION (2026-11-01). `joinSignerGroups()`
+  // publishes the worker's blob plus the groups it just made. That blob is
+  // often a generation behind this one — `signing.rotate` has already
+  // minted `next` — so `enriches()` refuses it and the groups never reach
+  // the JWKS. `sts_signer_groups` polled for three minutes and saw none,
+  // and the realm it left behind still published certificates the CRL had
+  // revoked (`sts_pki_distribution_points`). The groups join the set held
+  // here. The rest of the offer is still refused, and the worker is sent
+  // the set this process kept.
+  const joined = offeredSignerGroups(heldBlob, published.blob);
+  if (joined) {
+    keystore.adoptShared(realmId, joined);
+    broadcastKeys(realmId, joined, entry);
+  }
   sendKeys(entry, realmId);
   log.debug("Leaving receivePublishedKeys().");
+}
+
+// Signer groups carried by a publish this process is not adopting. Null
+// when there is nothing to join: no held set, no groups offered, or the
+// held set already has its own. The offered groups are keys of their own
+// and are copied onto the held blob; nothing else from the offer is.
+function offeredSignerGroups(heldBlob, offeredBlob) {
+  log.debug("Entering offeredSignerGroups().");
+  const offered = offeredBlob && offeredBlob.signerGroups;
+  const heldRows = heldBlob && heldBlob.signerGroups;
+  if (!heldBlob || !offered || !offered.length ||
+      (heldRows && heldRows.length)) {
+    log.debug("Leaving offeredSignerGroups(). Nothing to join.");
+    return null;
+  }
+  log.debug("Leaving offeredSignerGroups().");
+  return Object.assign({}, heldBlob, { signerGroups: offered });
 }
 
 // ---------------------------------------------------------------------------
@@ -2541,6 +3980,15 @@ function maxSocketsPerWorker() {
 // the same stream as everything else (forwarded through this thread's event
 // loop, which is node's design for worker threads).
 // ---------------------------------------------------------------------------
+// The front process's arbiter of its workers' directory create claims
+// (#628). Required at its first use, for the reason every require of a
+// protocol module in this file is lazy: this file loads above them.
+function createArbiter() {
+  log.debug("Entering createArbiter().");
+  log.debug("Leaving createArbiter().");
+  return require('../ldap/directory_create_arbiter').arbiter;
+}
+
 function startThread(file, socket, options) {
   log.debug("Entering startThread().");
   const worker = new workerThreads.Worker(file, {
@@ -2624,7 +4072,13 @@ function fork(pool, slot) {
     // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
-    env: Object.assign({}, process.env, {
+    //
+    // AND THE SECRETS THIS PROCESS WAS DELIVERED AS FILES (#254), which it
+    // holds at config.js's environment layer and never in `process.env`: the
+    // thread's copy is the one place they become variables, inside this
+    // process, where no `/proc/<pid>/environ` shows them.
+    env: Object.assign({}, process.env,
+                       require('./delivered_secrets').workerEnvironment(), {
       STS_REQUEST_WORKER: '1',
       STS_REQUEST_WORKER_POOL: which,
       STS_REQUEST_WORKER_SLOT: typeof slot === 'number'
@@ -2744,14 +4198,58 @@ function fork(pool, slot) {
 
   const settled = new Promise(function (resolve) {
     child.on('message', /** @param {any} message */ function (message) {
+      // ---------------------------------------------------------------------
+      // A DIRECTORY CREATE'S CLAIM, decided by this process for its own
+      // workers (#628): `ldap/directory_create_arbiter.ts`.
+      //
+      // **FIRST, BEFORE ANY OTHER FIELD IS LOOKED AT (#665, 2026-10-17).**
+      // This was below the `committed` test, and a worker's release of a
+      // claim whose create SUCCEEDED is `{ createClaim, op: 'release',
+      // committed: true }` — so it was taken for a commit announcement,
+      // handed to receiveCommitted(), and never reached the arbiter. Every
+      // create a worker made kept its name claimed for the claim's whole
+      // lifetime (two minutes), and the next create of that name waited five
+      // seconds and was refused 409 STS-LDAP-0092: a duplicate the
+      // directory should have called "exists" (400), or a console account a
+      // second job creates. Only a refused create's release (`committed:
+      // false`) got through. A message that names its kind goes to that
+      // kind's owner whatever else it carries. The test that drives this
+      // handler with the real arbiter and a worker thread is
+      // `tests/directory_create_worker_release.js`.
+      // ---------------------------------------------------------------------
+      if (message && message.createClaim) {
+        createArbiter().receive(entry, message);
+        return;
+      }
       if (message && message.ready) {
         entry.ready = true;
         quickExits[entry.pool] = 0;
+        // A GIVE-UP CLEARS WHEN A WORKER IS ACTUALLY UP (#333), not when the
+        // cool-down's try is forked: until this line the paths stay on the
+        // front process, and the rest of the pool is forked from here.
+        if (givenUp[entry.pool]) {
+          recoverFromGiveUp(entry.pool);
+        }
         log.info('request_pool: ' + entry.pool + ' worker ' + entry.pid +
                  ' is ready on ' + entry.socket + '. ' +
                  readyWorkers(entry.pool).length + ' of ' + size(entry.pool) +
                  ' serving.');
         resolve(entry);
+        return;
+      }
+      // SLOW, NOT FAILED (#820): past `workers.startTimeoutMs` a worker
+      // says it is still starting. It is neither ended nor replaced — a
+      // `terminate()` mid-restore and a second restore beside it are what
+      // ran 8081 out of heap — and the pool stops waiting for it: it joins
+      // when it reports ready, through the branch above. A worker that does
+      // not come up at all says so later, as a failure, below.
+      if (message && message.ready === false && message.slow) {
+        entry.slow = true;
+        log.warn(errorCodes.tag('STS-WORKER-0051') +
+                 'request_pool: ' + entry.pool + ' worker ' + entry.pid +
+                 ' is slow to start: ' + message.error + '. It is left to ' +
+                 'finish, not replaced, and joins the pool when it is ready.');
+        resolve(null);
         return;
       }
       if (message && message.ready === false) {
@@ -2803,6 +4301,25 @@ function fork(pool, slot) {
         receivePoolStatus(entry, message);
         return;
       }
+      if (message && message.collectGarbage) {
+        receiveCollectGarbage(entry, message);
+        return;
+      }
+      // A CLUSTER JOB'S BODY ANSWERED, ITS LOOP'S DELAY, AND A DIRECTORY
+      // SIGN-OUT WITH NO RESPONSE TO RIDE ON (#408): see schedulerRunner().
+      if (message && message.schedulerRunDone) {
+        receiveSchedulerRunDone(entry, message);
+        return;
+      }
+      if (message && message.loopLag) {
+        entry.loopLag = { p99Ms: Number(message.loopLag.p99Ms) || 0,
+                          at: Date.now() };
+        return;
+      }
+      if (message && message.ldapDrop) {
+        closeDirectoryConnections(message.ldapDrop);
+        return;
+      }
       if (message && message.status) {
         entry.served = message.served;
       }
@@ -2823,12 +4340,231 @@ function fork(pool, slot) {
   return entry;
 }
 
+// ---------------------------------------------------------------------------
+// A GIVE-UP IS NOT FOR THE LIFE OF THE PROCESS (#333).
+//
+// Measured on testidp: three request workers each took longer than
+// `workers.startTimeoutMs` to restore the store, the pool gave up, and the
+// node served on its front process's one thread until somebody restarted
+// it. The starts were slow, not broken — the same workers come up once the
+// database is warm or the simultaneous restores are done. Forking again at
+// once would repeat the storm. Waiting for a restart leaves a healthy node
+// single-threaded.
+//
+// So the give-up arms ONE wait (`workers.giveUpRetryMs`, five minutes,
+// doubling up to an hour). When it fires, one worker is tried, and the
+// three-failure bound applies to that try alone. Routing does not change
+// for the try: `givenUp` stays set, so every dispatched path is still
+// answered here, and the try cannot be the half-dispatch the header
+// refuses. A worker that reports ready clears the give-up and the rest of
+// the pool is forked through the start gate. A try that fails waits longer.
+// `0` is the old behaviour: given up until this process restarts.
+//
+// **A RETRY DELAY, NOT A SCHEDULER JOB.** It is armed when this process's
+// pool gives up and cleared when a worker comes up or the process stops.
+// Nothing else needs it, it does not repeat on its own, and the scheduler
+// cannot fork this process's workers. The same shape as the batch lane's
+// wait. The timer is unref'd, so it does not hold a stopping process open.
+// ---------------------------------------------------------------------------
+function clearGiveUpRetry(pool) {
+  log.debug("Entering clearGiveUpRetry().");
+  const state = giveUpState[pool];
+  if (state && state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+  log.debug("Leaving clearGiveUpRetry().");
+}
+
+// The first free slot in the pool, counting workers and forks still queued.
+function freeSlot(pool) {
+  log.debug("Entering freeSlot().");
+  const wanted = size(pool);
+  const taken = workers.concat(queuedForks()).filter(function (one) {
+    return (one.pool || PROTOCOL_POOL) === pool;
+  }).map(function (one) {
+    return one.slot;
+  });
+  let slot = 0;
+  const limit = wanted > 0 ? wanted : 1;
+  for (let i = 0; i < limit; i++) {
+    if (taken.indexOf(i) < 0) {
+      slot = i;
+      break;
+    }
+  }
+  log.debug("Leaving freeSlot(). " + slot + ".");
+  return slot;
+}
+
+/**
+ * Arms the cool-down before the next give-up retry, or does nothing when
+ * `workers.giveUpRetryMs` is 0 or a wait is already armed.
+ *
+ * @param pool - the pool name
+ */
+function armGiveUpRetry(pool) {
+  log.debug("Entering armGiveUpRetry().");
+  // A give-up is what makes the setting matter, so this is where the pool
+  // starts listening for it to change (#695) — in the process that runs
+  // the pools, whatever started them.
+  observeGiveUpRetrySetting();
+  const state = giveUpState[pool];
+  if (stopped || !givenUp[pool] || !state || state.timer || state.probing) {
+    log.debug("Leaving armGiveUpRetry(). Not armed.");
+    return;
+  }
+  const delay = giveUpRetryDelay(state.attempt, giveUpRetryBaseMs());
+  if (!(delay > 0)) {
+    log.debug("Leaving armGiveUpRetry(). Off.");
+    return;
+  }
+  state.at = Date.now() + delay;
+  state.delay = delay;
+  // WARN, NOT ERROR (#695): the give-up itself was the error, logged where
+  // it happened; this is the scheduled recovery from it.
+  log.warn(errorCodes.tag('STS-WORKER-0050') +
+    'request_pool: the ' + pool + ' pool will try one worker again in ' +
+    Math.round(delay / 1000) + 's (workers.giveUpRetryMs, attempt ' +
+    (state.attempt + 1) + '). Until one comes up, ' +
+    (pool === SURFACE_POOL
+      ? 'the hosted surfaces stay on the protocol workers.'
+      : 'every request stays in the process that holds the sockets.'));
+  state.timer = setTimeout(function () {
+    state.timer = null;
+    state.at = 0;
+    state.delay = 0;
+    if (stopped || !givenUp[pool]) {
+      return;
+    }
+    beginGiveUpRetry(pool);
+  }, delay);
+  if (state.timer.unref) {
+    state.timer.unref();
+  }
+  log.debug("Leaving armGiveUpRetry(). In " + delay + " ms.");
+}
+
+/**
+ * Applies a change to `workers.giveUpRetryMs` to the pools that have
+ * already given up (#695). The setting is `runtime: true`, but it was read
+ * only when a give-up armed a wait, so a pool that gave up while it was 0
+ * stayed given up whatever it was changed to. Now a positive value arms
+ * the wait such a pool lacks, and 0 cancels a wait that has not fired. A
+ * wait already armed keeps its length; the next one reads the new value.
+ * A try already under way (`probing`) is left to finish.
+ */
+function applyGiveUpRetrySetting() {
+  log.debug("Entering applyGiveUpRetrySetting().");
+  const off = !(giveUpRetryBaseMs() > 0);
+  Object.keys(giveUpState).forEach(function (pool) {
+    const state = giveUpState[pool];
+    if (stopped || !givenUp[pool] || !state || state.probing) {
+      return;
+    }
+    if (off && state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+      state.at = 0;
+      state.delay = 0;
+      log.warn(errorCodes.tag('STS-WORKER-0050') + 'request_pool: the ' +
+               pool + ' pool will not try a worker again: ' +
+               'workers.giveUpRetryMs is now 0, so it stays given up ' +
+               'until this process restarts.');
+    } else if (!off) {
+      armGiveUpRetry(pool);
+    }
+  });
+  log.debug("Leaving applyGiveUpRetrySetting().");
+}
+
+// Asked once, at the first give-up (armGiveUpRetry()).
+let giveUpRetryObserved = false;
+
+function observeGiveUpRetrySetting() {
+  log.debug("Entering observeGiveUpRetrySetting().");
+  if (giveUpRetryObserved || typeof config.onOverridesChanged !==
+      'function') {
+    log.debug("Leaving observeGiveUpRetrySetting(). Already, or none.");
+    return;
+  }
+  giveUpRetryObserved = true;
+  config.onOverridesChanged(function (keys) {
+    if ([].concat(keys || []).indexOf('workers.giveUpRetryMs') >= 0) {
+      applyGiveUpRetrySetting();
+    }
+  });
+  log.debug("Leaving observeGiveUpRetrySetting().");
+}
+
+// The cool-down has elapsed. One worker, and the three-failure bound
+// applies to it and to the replacements reap() forks while `probing`.
+function beginGiveUpRetry(pool) {
+  log.debug("Entering beginGiveUpRetry().");
+  const state = giveUpState[pool];
+  if (stopped || !givenUp[pool] || !state) {
+    log.debug("Leaving beginGiveUpRetry(). No longer given up.");
+    return;
+  }
+  if (!(size(pool) > 0)) {
+    log.debug("Leaving beginGiveUpRetry(). The pool is sized at 0.");
+    return;
+  }
+  state.probing = true;
+  quickExits[pool] = 0;
+  const slot = freeSlot(pool);
+  log.info('request_pool: trying one ' + pool + ' worker again after the ' +
+           'give-up, in slot ' + slot + '.');
+  queueFork(pool, slot);
+  log.debug("Leaving beginGiveUpRetry().");
+}
+
+// A worker of a given-up pool reported ready. The paths may move, and the
+// slots still empty are forked. The cool-down's backoff goes back to the
+// setting: this start succeeded.
+function recoverFromGiveUp(pool) {
+  log.debug("Entering recoverFromGiveUp().");
+  if (!givenUp[pool]) {
+    log.debug("Leaving recoverFromGiveUp(). Not given up.");
+    return;
+  }
+  givenUp[pool] = false;
+  const state = giveUpState[pool];
+  state.probing = false;
+  state.attempt = 0;
+  state.at = 0;
+  clearGiveUpRetry(pool);
+  const wanted = size(pool);
+  const held = workers.filter(function (one) {
+    return (one.pool || PROTOCOL_POOL) === pool;
+  }).length + queuedForks().filter(function (one) {
+    return one.pool === pool;
+  }).length;
+  let more = 0;
+  for (let i = held; i < wanted; i++) {
+    queueFork(pool, freeSlot(pool));
+    more++;
+  }
+  log.info('request_pool: a ' + pool + ' worker came up after the pool had ' +
+           'given up, so the pool is forking again' +
+           (more ? ' (' + more + ' more).' : '.'));
+  log.debug("Leaving recoverFromGiveUp().");
+}
+
 // A worker that has gone. Unlike the computation pool there is nothing to
 // reject: a request in flight is an open socket, and the proxy below fails it
 // when the connection drops, with the pid in the sentence.
 function reap(entry, code, reason) {
   log.debug('Entering reap(). pid=' + entry.pid);
   workers = workers.filter(function (one) { return one !== entry; });
+  // THE CLUSTER RUNS IT WAS RUNNING FAIL NOW (#408), under their own code,
+  // rather than waiting out their time limits for an answer nothing will
+  // send. Their claims lapse as any run's does.
+  failSchedulerRunsOf(entry, code, reason);
+  // ITS DIRECTORY CREATE CLAIMS GO BACK NOW (#628): it will never give them
+  // back itself, and a name it held would otherwise wait out the claim's
+  // lifetime.
+  createArbiter().workerExited(entry);
   // ITS AGENT GOES WITH IT. The agent holds sockets to a socket PATH that has
   // just stopped being served, and a worker replaced often enough — a crash
   // loop is the case — would otherwise leave one agent per dead worker for
@@ -2868,6 +4604,7 @@ function reap(entry, code, reason) {
       outstanding.delete(t);
       finishedTickets.delete(t);
       finishedAt.delete(t);
+      forgetTicket(t);
     });
     entry.tickets.clear();
     if (answered) {
@@ -2926,27 +4663,45 @@ function reap(entry, code, reason) {
     log.info('request_pool: ' + pool + ' worker ' + entry.pid + ' ' + how +
              '.');
   }
-  if (quickExits[pool] >= QUICK_EXIT_LIMIT && !givenUp[pool] && !stopped) {
-    givenUp[pool] = true;
-    // WHERE THE WORK GOES NOW IS THE ONE THING THE TWO POOLS SAY DIFFERENTLY:
-    // the protocol pool's paths come back to this process, which is what
-    // workers.requestCount=0 means; the surface pool's go to the protocol
-    // pool, which is what workers.surfaceCount=0 means. See poolFor().
-    log.error(errorCodes.tag('STS-WORKER-0023') +
-      'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
-      'row failed to start (never ready, or gone within ' + QUICK_EXIT_MS +
-      'ms without serving anything), so this service has STOPPED FORKING ' +
-      'THEM and ' +
-      (pool === SURFACE_POOL
-        ? 'is sending the hosted surfaces to the protocol workers — which ' +
-          'is what workers.surfaceCount=0 means'
-        : 'is handling every request in the process that holds the sockets ' +
-          '— which is what workers.requestCount=0 means: correct, and on ' +
-          'one thread') +
-      '. A worker that cannot start is usually a CONFIG_FILE it cannot ' +
-      'read, a port a protocol module tried to bind, or a machine out of ' +
-      'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
-      'which.');
+  if (quickExits[pool] >= QUICK_EXIT_LIMIT && !stopped) {
+    const retry = giveUpState[pool];
+    if (!givenUp[pool]) {
+      givenUp[pool] = true;
+      // WHERE THE WORK GOES NOW IS THE ONE THING THE TWO POOLS SAY
+      // DIFFERENTLY: the protocol pool's paths come back to this process,
+      // which is what workers.requestCount=0 means; the surface pool's go
+      // to the protocol pool, which is what workers.surfaceCount=0 means.
+      // See poolFor(). The cool-down (#333) does not move them back until
+      // a worker reports ready.
+      const again = giveUpRetryDelay(0, giveUpRetryBaseMs());
+      log.error(errorCodes.tag('STS-WORKER-0023') +
+        'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
+        'row failed to start (never ready, or gone within ' + QUICK_EXIT_MS +
+        'ms without serving anything), so this service has STOPPED FORKING ' +
+        'THEM and ' +
+        (pool === SURFACE_POOL
+          ? 'is sending the hosted surfaces to the protocol workers — which ' +
+            'is what workers.surfaceCount=0 means'
+          : 'is handling every request in the process that holds the ' +
+            'sockets — which is what workers.requestCount=0 means: correct, ' +
+            'and on one thread') +
+        (again
+          ? '. It tries one worker again after a cool-down, and a worker ' +
+            'that comes up clears this'
+          : '. workers.giveUpRetryMs is 0, so it stays given up until this ' +
+            'process restarts') +
+        '. A worker that cannot start is usually a CONFIG_FILE it cannot ' +
+        'read, a port a protocol module tried to bind, or a machine out of ' +
+        'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
+        'which.');
+      armGiveUpRetry(pool);
+    } else if (retry.probing) {
+      // THIS ATTEMPT FAILED TOO. The three tries are spent, so the paths
+      // stay where the give-up put them and the next wait is longer.
+      retry.probing = false;
+      retry.attempt++;
+      armGiveUpRetry(pool);
+    }
   }
   replaceIfWanted(entry);
   log.debug('Leaving reap().');
@@ -3076,10 +4831,12 @@ function useOomCounter(fn) {
 // **NOT WHILE STOPPING, NOT AFTER GIVING UP, AND NEVER PAST THE CONFIGURED
 // SIZE.** stop() sets `stopped` before its workers exit, so a drain forks
 // nothing. A pool that has given up (QUICK_EXIT_LIMIT failed starts in a row)
-// stays given up — a worker that cannot start is a configuration or a machine
-// out of memory, and forking it for ever would turn a slow service into one
-// that does nothing but fork. And a pool already holding `size()` workers
-// forks nothing, whatever died.
+// does not keep forking — a worker that cannot start is a configuration or a
+// machine out of memory, and forking it for ever would turn a slow service
+// into one that does nothing but fork. It tries again after a cool-down
+// (#333, `armGiveUpRetry()`), and only that try (`probing`) may replace a
+// worker while the pool is still given up. And a pool already holding
+// `size()` workers forks nothing, whatever died.
 //
 // A decision over its arguments, exported for tests/request_worker_
 // replacement.js; `state` defaults to this module's own.
@@ -3087,11 +4844,12 @@ function useOomCounter(fn) {
 /**
  * Decides whether a dead worker is replaced, and in which slot.
  *
- * Not while stopping, not after the pool gave up, and never past the
- * configured size.
+ * Not while stopping, not after the pool gave up (unless that give-up is
+ * in its cool-down try), and never past the configured size.
  * @param dead - the dead worker's entry
  * @param live - the worker table
- * @param state - optional overrides `{ stopped, givenUp, wanted }`, for tests
+ * @param state - optional overrides `{ stopped, givenUp, probing, wanted }`,
+ *   for tests
  * @returns `{ replace, pool, slot }`, or `{ replace: false, pool, why }`
  */
 function replacementFor(dead, live, state) {
@@ -3100,12 +4858,14 @@ function replacementFor(dead, live, state) {
   const s = state || {};
   const isStopped = s.stopped === undefined ? stopped : s.stopped;
   const hasGivenUp = s.givenUp === undefined ? givenUp[pool] : s.givenUp;
+  const probing = s.probing === undefined ? giveUpState[pool].probing
+                                         : s.probing;
   const wanted = s.wanted === undefined ? size(pool) : s.wanted;
   if (isStopped) {
     log.debug("Leaving replacementFor(). Stopping.");
     return { replace: false, pool: pool, why: 'the pool is stopping' };
   }
-  if (hasGivenUp) {
+  if (hasGivenUp && !probing) {
     log.debug("Leaving replacementFor(). Given up.");
     return { replace: false, pool: pool,
              why: 'the ' + pool + ' pool has given up on its workers' };
@@ -3205,9 +4965,10 @@ function replaceIfWanted(dead) {
 // task's memory limit, and it was reached only while they were starting.
 //
 // So every fork after start() goes through this gate, replacements included.
-// At most `workers.startConcurrency` workers (default 1) are between their
-// fork and their first answer. The next one is forked when one of those
-// settles: it reported ready, it reported that it could not start, its
+// At most `workers.startConcurrency` workers are between their fork and
+// their first answer (1 until #639; the default is now the automatic width
+// below, which starts the first alone). The next one is forked when one of
+// those settles: it reported ready, it reported that it could not start, its
 // channel failed, or it exited. That is `entry.settled`, which fork() already
 // resolves in each of those cases.
 //
@@ -3240,9 +5001,94 @@ function replaceIfWanted(dead) {
 let forkQueue = [];
 let startsInFlight = 0;
 
+// ---------------------------------------------------------------------------
+// AS MANY AT ONCE AS THE NODE'S MEMORY HOLDS (#639, 2026-10-15).
+//
+// The gate's reason is memory, and since #613, #617 and #638 a start no
+// longer restores the store into the worker's heap: it reads its RESIDENT
+// entries and its minted rows (about 1,200 and 11,700 on the 50.2M-entry
+// stack), and asks the store for the rest when it is asked. At one at a time
+// six workers took 17 of that stack's 23 seconds to all serve, each about
+// 2.9 s of which nothing depended on the one before. So the default,
+// `workers.startConcurrency` 0, is no longer a guess:
+//
+//   * **THE FIRST START IS MEASURED.** It goes alone, as it always did (the
+//     listener waits for it), and what it added to the PROCESS's resident set
+//     — every worker is a thread of it — between its fork and its settling is
+//     what one start costs, floored at MIN_START_BYTES.
+//   * **THE REST GO AS MANY AT ONCE AS THE ROOM LEFT HOLDS**, each priced at
+//     one and a half measured starts for the garbage a start makes and drops:
+//     the room is the container's limit (`process_memory.ts`'s budget, the
+//     cgroup's or the ECS task's) less what the process holds now and less a
+//     reserve of 15% and at least 256 MiB, or, with no limit visible,
+//     `process.availableMemory()` less the same reserve. Never fewer than
+//     one, never more than START_WIDTH_MAX. Asked again whenever a fork is
+//     due, so a node that has filled up narrows the gate itself.
+//
+// The steady state is the same either way: every worker ends up holding what
+// it holds. What the width decides is how many starts' TRANSIENT memory is
+// in the air at once, which is #342's failure, and the room is measured
+// rather than assumed. A positive setting is a fixed width, as before.
+// ---------------------------------------------------------------------------
+const MIN_START_BYTES = 128 * 1024 * 1024;
+const START_WIDTH_MAX = 64;
+const MIB = 1024 * 1024;
+// What the first start under the automatic width cost, once measured.
+let measuredStartBytes = 0;
+// The resident set at the measured start's fork, while it is starting.
+let measuringFrom = 0;
+
+/**
+ * How many starts fit at once in the room a node has: a decision over its
+ * arguments.
+ *
+ * @param m - `perStartBytes` (what one start added), `limitBytes` (the
+ *   container's limit, or 0/null for none), `rssBytes` (the process's
+ *   resident set now) and `availableBytes` (`process.availableMemory()`)
+ * @returns the width, between 1 and START_WIDTH_MAX
+ */
+function startWidthFor(m) {
+  log.debug("Entering startWidthFor().");
+  const per = Math.max(Number(m.perStartBytes) || 0, MIN_START_BYTES) * 1.5;
+  const limit = Number(m.limitBytes) || 0;
+  const reserve = Math.max(0.15 * (limit || Number(m.availableBytes) || 0),
+                           256 * MIB);
+  const room = limit > 0
+    ? limit - (Number(m.rssBytes) || 0) - reserve
+    : (Number(m.availableBytes) || 0) - reserve;
+  const width = Math.floor(room / per);
+  log.debug("Leaving startWidthFor(). " + width);
+  return Math.max(1, Math.min(START_WIDTH_MAX, width));
+}
+
+// The automatic width now: one until the first start is measured, then what
+// the room holds.
+function automaticWidth() {
+  log.debug("Entering automaticWidth().");
+  if (!measuredStartBytes) {
+    log.debug("Leaving automaticWidth(). The first start goes alone.");
+    return 1;
+  }
+  let limit = 0;
+  try {
+    limit = Number(processMemory.budget().limitBytes) || 0;
+  } catch (e) {
+    log.debug("Caught in automaticWidth(): " + ((e && e.message) || e));
+    // No budget could be derived: the available memory decides.
+    limit = 0;
+  }
+  const available = typeof process.availableMemory === 'function'
+    ? process.availableMemory() : os.freemem();
+  log.debug("Leaving automaticWidth().");
+  return startWidthFor({ perStartBytes: measuredStartBytes,
+                         limitBytes: limit,
+                         rssBytes: process.memoryUsage().rss,
+                         availableBytes: available });
+}
+
 /**
  * Reads `workers.startConcurrency`: how many workers of both pools may be
- * starting at once.
+ * starting at once. 0 (the default) is the automatic width above.
  *
  * @returns the count, at least 1; 1 with no configuration
  */
@@ -3254,11 +5100,30 @@ function startConcurrency() {
   } catch (e) {
     log.debug("Caught in startConcurrency(): " + ((e && e.message) || e));
     // No configuration at all (an in-process test): one at a time, which is
-    // the default and the conservative answer.
+    // the conservative answer.
     n = 1;
+  }
+  if (n === 0) {
+    log.debug("Leaving startConcurrency(). Automatic.");
+    return automaticWidth();
   }
   log.debug("Leaving startConcurrency().");
   return n >= 1 ? n : 1;
+}
+
+// Whether the width is the automatic one (the setting at 0).
+function automaticStarts() {
+  log.debug("Entering automaticStarts().");
+  let n = 1;
+  try {
+    n = parseInt(config.value('workers.startConcurrency'), 10);
+  } catch (e) {
+    log.debug("Caught in automaticStarts(): " + ((e && e.message) || e));
+    // No configuration: the fixed width of one.
+    n = 1;
+  }
+  log.debug("Leaving automaticStarts().");
+  return n === 0;
 }
 
 // The forks still waiting, as `{ pool, slot }`, for replacementFor()'s count.
@@ -3295,7 +5160,10 @@ function pumpForks() {
   log.debug("Entering pumpForks().");
   while (forkQueue.length && startsInFlight < startConcurrency()) {
     const next = forkQueue.shift();
-    if (stopped || givenUp[next.pool]) {
+    // A GIVE-UP'S OWN TRY IS FORKED (#333). Every other queued fork is
+    // dropped, so a cool-down cannot drain into a fork storm of whatever
+    // was still waiting from the failed start.
+    if (stopped || (givenUp[next.pool] && !giveUpState[next.pool].probing)) {
       log.info('request_pool: a queued ' + next.pool + ' worker (slot ' +
                next.slot + ') is not forked: ' +
                (stopped ? 'the pool is stopping'
@@ -3316,11 +5184,30 @@ function pumpForks() {
       continue;
     }
     startsInFlight++;
+    // THE START THAT IS MEASURED (#639): the first under the automatic
+    // width, alone by construction (the width is 1 until it is measured).
+    const measuring = automaticStarts() && !measuredStartBytes &&
+      !measuringFrom && startsInFlight === 1;
+    if (measuring) {
+      measuringFrom = process.memoryUsage().rss;
+    }
     log.info('request_pool: ' + next.pool + ' worker ' + entry.pid +
              ' (slot ' + next.slot + ') forked; ' + startsInFlight +
              ' starting, ' + forkQueue.length + ' queued behind it.');
     entry.settled.then(function (settled) {
       startsInFlight = Math.max(0, startsInFlight - 1);
+      if (measuring) {
+        const grew = process.memoryUsage().rss - measuringFrom;
+        measuringFrom = 0;
+        if (settled) {
+          measuredStartBytes = Math.max(grew, MIN_START_BYTES);
+          log.info('request_pool: a worker\'s start added ' +
+                   Math.round(grew / MIB) + ' MiB to this process; the ' +
+                   'rest start ' + startConcurrency() + ' at a time ' +
+                   '(workers.startConcurrency 0: as many as the node\'s ' +
+                   'memory holds, #639).');
+        }
+      }
       next.resolve(settled);
       pumpForks();
     });
@@ -3382,9 +5269,14 @@ function leastLoaded(pool, among) {
   // is answered correctly either way — so the numbers the decision was made on
   // are logged beside the decision. This is the line that found the fanout
   // sending everything to one worker.
-  log.debug('leastLoaded(): ' + live.map(function (one) {
-    return one.pid + '(' + one.inFlight + '/' + one.served + ')';
-  }).join(' ') + ' -> ' + (chosen ? chosen.pid : '(none)'));
+  //
+  // Built only when it will be written (#627): this runs for every request
+  // and operation the pool routes.
+  if (log.debug()) {
+    log.debug('leastLoaded(): ' + live.map(function (one) {
+      return one.pid + '(' + one.inFlight + '/' + one.served + ')';
+    }).join(' ') + ' -> ' + (chosen ? chosen.pid : '(none)'));
+  }
   log.debug("Leaving leastLoaded().");
   return chosen;
 }
@@ -3456,7 +5348,7 @@ const POOL_COOKIE = 'sts_pool';
 // only. The protocol pool keeps the old name, so every browser and every
 // back channel that already carries `sts_pool` means what it meant.
 //
-// `tests/vendored/sts_metadata_anonymous.js` reads POOL_COOKIE's spelling out
+// `tests/protocol/sts_metadata_anonymous.js` reads POOL_COOKIE's spelling out
 // of this file to exempt it on metadata documents; this one needs no such
 // exemption, because no metadata document is under a surface prefix.
 /**
@@ -3543,8 +5435,33 @@ function credentialKeyOf(req) {
     return '';
   }
   log.debug("Leaving credentialKeyOf().");
-  return 'c:' + nodeCrypto.createHash('sha256').update(String(said))
-    .digest('base64url').slice(0, 22);
+  return 'c:' + stsCrypto.digest('sha256', String(said), 'base64url')
+    .slice(0, 22);
+}
+
+// THE READS WHOSE ANSWERS ARE KEPT PER PROCESS, by path, realm prefix and
+// all (`/realm/acme/admin-api/users` is that realm's own population).
+const KEPT_READ_PATHS = [/(?:^|\/)admin-api\/users$/,
+                         /(?:^|\/)admin-api\/mfa$/,
+                         /(?:^|\/)admin-api\/status$/];
+
+/**
+ * The affinity key of a read whose answer a worker keeps, or ''.
+ *
+ * @param path - the request path, without its query
+ * @returns `k:<path>`, or `''`
+ */
+function keptReadKeyOf(path) {
+  log.debug("Entering keptReadKeyOf().");
+  const text = String(path || '');
+  for (let i = 0; i < KEPT_READ_PATHS.length; i++) {
+    if (KEPT_READ_PATHS[i].test(text)) {
+      log.debug("Leaving keptReadKeyOf(). Kept.");
+      return 'k:' + text;
+    }
+  }
+  log.debug("Leaving keptReadKeyOf().");
+  return '';
 }
 
 /**
@@ -3557,11 +5474,21 @@ function credentialKeyOf(req) {
  */
 function mutationKeyOf(req, url) {
   log.debug("Entering mutationKeyOf().");
+  const path = String(url || '').split('?')[0];
   if (!mayWrite(req.method)) {
+    // A READ WHOSE ANSWER A WORKER KEEPS (2026-10-21) goes to the worker
+    // keeping it, whoever asks: `/admin-api/users`' population and
+    // `/admin-api/status`' totals are built per process (25 s and 20 s on
+    // 8081) and kept there, so a console whose token was renewed — a new
+    // credential key, maybe a new worker — waited for a second build.
+    const kept = keptReadKeyOf(path);
+    if (kept) {
+      log.debug("Leaving mutationKeyOf(). Kept answer.");
+      return kept;
+    }
     log.debug("Leaving mutationKeyOf().");
     return credentialKeyOf(req);
   }
-  const path = String(url || '').split('?')[0];
   for (let i = 0; i < RESOURCE_PATHS.length; i++) {
     const found = RESOURCE_PATHS[i].exec(path);
     if (found) {
@@ -3777,9 +5704,12 @@ function remember(key, entry) {
 // `among` narrows a NEW choice to those workers — the batch lane — and never
 // overrides a binding the key already holds. See the batch lane's header.
 function workerFor(key, pool, among) {
-  log.debug('Entering workerFor(). key=' +
-            (key ? key.split(':')[0] : '(none)') + ' pool=' +
-            (pool || PROTOCOL_POOL));
+  // Hot (#627): every routed request; the split is built only to be logged.
+  if (log.debug()) {
+    log.debug('Entering workerFor(). key=' +
+              (key ? key.split(':')[0] : '(none)') + ' pool=' +
+              (pool || PROTOCOL_POOL));
+  }
   const candidates = among && among.length ? among : null;
   if (!key) {
     // Either this path fans out by policy, or it is the first hop of a flow and
@@ -3968,6 +5898,63 @@ function startOrder(forks) {
   return forks;
 }
 
+// Set when `start()` was asked early and the coordination check waits for
+// `confirmCoordination()`.
+let coordinationDeferred = false;
+
+// THE REFUSAL OF DISPATCH WITHOUT COORDINATION, as an Error, or null when
+// the store coordinates: `start()`'s check, and `confirmCoordination()`'s
+// for a pool started early.
+function coordinationRefusal(wants) {
+  log.debug("Entering coordinationRefusal().");
+  // Required HERE rather than at the top of the file: `persistence` is above
+  // every protocol module in the require order and this file is loaded by
+  // app.js, so a top-level require would pull the store into the router's
+  // position. By the time start() runs, it is a cache hit.
+  const persistence = require('../persistence/persistence');
+  const state = persistence.status();
+  if (!state.coordinates) {
+    const why = state.enabled
+      ? 'the store is "' + state.mode + '", which this build cannot ' +
+        'coordinate through (it needs a change log — see ' +
+        'persistence_replication.js\'s supports())'
+      : 'nothing is being persisted (persistence.mode is "' + state.mode +
+        '")';
+    log.debug("Leaving coordinationRefusal(). Refused.");
+    return new Error(errorCodes.tag('STS-WORKER-0024') +
+      'request_pool: ' + wants.length + ' entry/entries in ' +
+      'workers.dispatch are configured to be handled in a request worker (' +
+      wants.join(', ') + ') and THIS PROCESS IS NOT COORDINATING: ' + why +
+      '. Every worker would hold its own private copy of the directory, ' +
+      'the sessions and the settings, and a request answered by one would ' +
+      'not see what another had written — which does not fail, it answers ' +
+      'wrongly and intermittently. Configure a coordinating store ' +
+      '(persistence.mode postgres with persistence.coordinate on), or ' +
+      'clear workers.dispatch.');
+  }
+  log.info('request_pool: coordinating through the ' + state.mode + ' ' +
+           'store, so a worker sees what the others write.');
+  log.debug("Leaving coordinationRefusal().");
+  return null;
+}
+
+/**
+ * For a pool `start()` was asked to start early: the coordination check it
+ * deferred, asked now that this process coordinates. Resolves for a pool
+ * started the ordinary way.
+ *
+ * @returns a promise that rejects with `start()`'s STS-WORKER-0024 refusal
+ */
+function confirmCoordination() {
+  log.debug("Entering confirmCoordination().");
+  const wants = dispatchList();
+  const refused = coordinationDeferred && wants.length
+    ? coordinationRefusal(wants) : null;
+  coordinationDeferred = false;
+  log.debug("Leaving confirmCoordination().");
+  return refused ? Promise.reject(refused) : Promise.resolve();
+}
+
 // **SINCE #342 (2026-09-29) THE WORKERS ARE FORKED ONE AT A TIME** through
 // the start gate above queueFork(), and the promise resolves once the first
 // worker of each pool has settled rather than when all have.
@@ -3978,12 +5965,15 @@ function startOrder(forks) {
  *
  * Rejects when anything is dispatched while the store does not coordinate,
  * or when the surface pool's configuration is fatal.
+ * @param opts - optional; `early: true` when the front process starts the
+ *   pool before its own minted restore (2026-10-21), which defers the
+ *   coordination check to `confirmCoordination()`
  * @returns a promise of `{ started, wanted, pending, all, pools }`:
  *   `started` workers ready so far, `pending` of the initial set not yet
  *   settled, and `all` a promise of `{ started, wanted, pools }` once every
  *   one of the initial set has
  */
-function start() {
+function start(opts) {
   log.debug('Entering start().');
   if (starting) {
     log.debug('Leaving start(). Already starting.');
@@ -4057,36 +6047,26 @@ function start() {
   // first time somebody added a third kind of dispatchable thing.
   // ---------------------------------------------------------------------
   const wants = dispatchList();
-  if (wants.length) {
-    // Required HERE rather than at the top of the file: `persistence` is above
-    // every protocol module in the require order and this file is loaded by
-    // app.js, so a top-level require would pull the store into the router's
-    // position. By the time start() runs, it is a cache hit.
-    const persistence = require('../persistence/persistence');
-    const state = persistence.status();
-    if (!state.coordinates) {
-      const why = state.enabled
-        ? 'the store is "' + state.mode + '", which this build cannot ' +
-          'coordinate through (it needs a change log — see ' +
-          'persistence_replication.js\'s supports())'
-        : 'nothing is being persisted (persistence.mode is "' + state.mode +
-          '")';
-      starting = Promise.reject(new Error(errorCodes.tag('STS-WORKER-0024') +
-        'request_pool: ' + wants.length + ' entry/entries in ' +
-        'workers.dispatch are configured to be handled in a request worker (' +
-        wants.join(', ') + ') and THIS PROCESS IS NOT COORDINATING: ' + why +
-        '. Every worker would hold its own private copy of the directory, ' +
-        'the sessions and the settings, and a request answered by one would ' +
-        'not see what another had written — which does not fail, it answers ' +
-        'wrongly and intermittently. Configure a coordinating store ' +
-        '(persistence.mode postgres with persistence.coordinate on), or ' +
-        'clear workers.dispatch.'));
+  // **STARTED EARLY, THE CHECK WAITS (2026-10-21).** The front process may
+  // start the pool while it restores what it minted (`server.js`), so that
+  // the first worker's restore runs beside its own rather than after it:
+  // two restores of 2.1 million rows on 8081, 34 s and then 32 s, made a
+  // start 75 s long. Coordination begins only after the front's restore, so
+  // it cannot be asked yet; `confirmCoordination()` asks it once the front
+  // is coordinating, before anything is dispatched or bound, and refuses
+  // the start with the same error.
+  if (wants.length && opts && opts.early) {
+    coordinationDeferred = true;
+    log.info('request_pool: started beside this process\'s own restore; ' +
+             'the store\'s coordination is confirmed before the listener ' +
+             'binds.');
+  } else if (wants.length) {
+    const refused = coordinationRefusal(wants);
+    if (refused) {
+      starting = Promise.reject(refused);
       log.debug("Leaving start().");
       return starting;
     }
-    log.info('request_pool: coordinating through the ' + state.mode + ' ' +
-             'store, so a worker sees what the others write.');
-
   }
   // THE SURFACE POOL'S OWN REFUSAL, for the same class of reason and in the
   // same shape. See surfacePoolProblem().
@@ -4117,7 +6097,7 @@ function start() {
   // and the refusal is an ERROR (STS-KEYS-0038) that every product start logged
   // for a key nobody needed — the operator's KEK is already in place.
   if (!keystore.hasEphemeralKek() && !keystore.persists()) {
-    const generated = nodeCrypto.randomBytes(32).toString('hex');
+    const generated = stsCrypto.randomBytes(32).toString('hex');
     if (keystore.useEphemeralKek(generated)) {
       log.info('request_pool: a per-run key-encryption key was generated, so ' +
                'every worker seals and opens the same minted rows. Nothing ' +
@@ -4310,22 +6290,67 @@ function start() {
 // for more.
 // ---------------------------------------------------------------------------
 /**
- * Tells whether the read barrier is on (`workers.readYourWrite`).
+ * Tells whether the read barrier is on (`workers.readYourWrite`), in either
+ * of its two modes.
  *
- * @returns the setting; false with no configuration
+ * @returns true for `session` and `global`; false for off or with no
+ *   configuration
  */
 function readYourWrite() {
   log.debug("Entering readYourWrite().");
+  log.debug("Leaving readYourWrite().");
+  return readYourWriteMode() !== 'off';
+}
+
+// ---------------------------------------------------------------------------
+// THE SETTING IS A MODE SINCE 2026-10-22 (#820), AND ITS OLD TWO VALUES KEEP
+// THEIR MEANING. `session` (the default) and `global` are the two barriers
+// (see SESSION READ-YOUR-WRITE, above dispatchTicket()); `off` is none. A
+// boolean `true` — a stored override, an appconfig file, a test's stub — is
+// `session`, and `false` is `off`, so nothing written before the mode existed
+// has to be rewritten. Anything else is `session`, the value that cannot
+// serve a caller its own write stale.
+// ---------------------------------------------------------------------------
+/**
+ * Answers the read-your-write mode in force.
+ *
+ * @returns `'session'`, `'global'` or `'off'`; `'off'` with no configuration
+ */
+function readYourWriteMode() {
+  log.debug("Entering readYourWriteMode().");
+  let raw;
   try {
-    log.debug("Leaving readYourWrite().");
-    return !!config.value('workers.readYourWrite');
+    raw = config.value('workers.readYourWrite');
   } catch (e) {
-    log.debug("Caught in readYourWrite(): " + ((e && e.message) || e));
-    log.debug("Leaving readYourWrite().");
+    log.debug("Caught in readYourWriteMode(): " + ((e && e.message) || e));
+    log.debug("Leaving readYourWriteMode().");
     // No configuration at all — the parent project's in-process jobs, npm
     // test. Off is the answer that changes nothing.
-    return false;
+    return 'off';
   }
+  log.debug("Leaving readYourWriteMode().");
+  return readYourWriteModeOf(raw);
+}
+
+/**
+ * Reads a value of `workers.readYourWrite` as a mode.
+ *
+ * @param raw - the setting's value: a mode, a boolean, or its text
+ * @returns `'session'`, `'global'` or `'off'`
+ */
+function readYourWriteModeOf(raw) {
+  log.debug("Entering readYourWriteModeOf().");
+  if (raw === undefined || raw === null || raw === false) {
+    log.debug("Leaving readYourWriteModeOf().");
+    return 'off';
+  }
+  const text = String(raw).trim().toLowerCase();
+  if (/^(off|false|no|0|)$/.test(text)) {
+    log.debug("Leaving readYourWriteModeOf().");
+    return 'off';
+  }
+  log.debug("Leaving readYourWriteModeOf().");
+  return text === 'global' ? 'global' : 'session';
 }
 
 // Bumped when a request that may have written completes. Workers carry the
@@ -4383,9 +6408,12 @@ let localWritesSeen = -1;
  *
  * The first sample only sets the baseline.
  * @param written - this process's committed change-row count
+ * @param kinds - optional; `localWriteKinds()`'s answer, saying whether
+ *   those rows were only windowed directory rows (#626) — absent is
+ *   "shared", which sends the next write through the whole barrier
  * @returns true when the generation moved
  */
-function noteLocalWrites(written) {
+function noteLocalWrites(written, kinds) {
   log.debug("Entering noteLocalWrites().");
   if (!readYourWrite()) {
     log.debug("Leaving noteLocalWrites().");
@@ -4406,6 +6434,12 @@ function noteLocalWrites(written) {
   const added = count - localWritesSeen;
   localWritesSeen = count;
   generation++;
+  // EVERYBODY'S (#820): the front process's own writes carry no ticket and
+  // so no client key, so a keyed request waits for them as every request did.
+  frontGeneration = generation;
+  // WHAT THEY WERE (#626): this process's own rows are named like a
+  // worker's, under no worker's pid, so every worker is handed them.
+  noteWriteKinds(null, kinds && kinds.windowedKeys);
   log.debug('noteLocalWrites(): this process committed ' + added +
             ' change row(s) of its own; the generation is now ' + generation +
             ', so every worker catches up before it answers again.');
@@ -4428,6 +6462,232 @@ function localWriteCount() {
     // No store, or none that counts. Nothing to notice, which is the honest
     // answer for a process that cannot have written a change row.
     return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A DISPATCHED LDAP WRITE SKIPS THE CHANGE-LOG PULL WHERE THE PULL COULD NOT
+// CHANGE ITS ANSWER (#626, 2026-10-14).
+//
+// runOperation() sent every operation through the read barrier: the ticket
+// wait, then — when the worker was behind the generation — a `syncNow()` in
+// that worker, a change-log pull, before the handler ran. Under a bulk add
+// from several connections spread over several workers every add finds the
+// others ahead, so every add paid a pull first: two channel hops and two
+// or more store round trips, more with more workers.
+//
+// What those other workers wrote was, almost always, PEOPLE — rows of a
+// WINDOWED directory key (`ldap/directory_window.ts`: strictly under a
+// realm's `ou=users` or `ou=devices`). A worker reads such a key from the
+// store whenever it does not hold it, and since #351 a write is answered
+// only after its commit, so a key not held is never stale. The pull matters
+// for a key the worker DOES hold — its LRU, a copy handed out, an absence
+// it remembered — which may be older than the store. And for anything
+// that is not a windowed row at all: a group, a policy, a role, a realm, a
+// setting, a key set, a minted session, all of which a worker holds whole
+// and learns of only from the pull.
+//
+// So the barrier is narrowed, for a write, to exactly that:
+//
+//   * EVERY ANNOUNCEMENT SAYS WHAT IT COMMITTED (`commit_announcer.ts`,
+//     `windowedKeys`): the realm and key of each windowed directory row,
+//     when that is all it committed bar the per-process tallies the barrier
+//     never waited for (`minted-own`). Anything else — or an announcement
+//     that does not say — is SHARED and moves `lastSharedGeneration`. This
+//     process's own writes are classified the same way (`localWriteKinds()`).
+//   * THE KEYS ARE KEPT, a record per announcement (`keyLog`), until every
+//     protocol worker is past them; bounded, and a worker whose position
+//     has fallen off the front (`keyLogFloor`) is sent through the barrier.
+//   * A WRITE IN `BARRIER_FREE_WRITES` sent to a worker that is behind only
+//     on such rows — nothing shared since it last synced — is sent WITHOUT
+//     the pull, carrying the keys written by every OTHER process since it
+//     last synced or was last handed keys (`staleKeys`). The worker applies
+//     them before the handler runs (`persistence.applyStaleKeys()`): each
+//     row read by key and the held copy forgotten, or marked stale when it
+//     is busy there, with the directory's indexes told — the windowed branch
+//     of the pull's own applier, key for key. Where it cannot (no window, a
+//     store it cannot read) it pulls after all. Every operation that reaches
+//     the worker after that one waits for the keys (`request_worker.ts`).
+//   * EVERYTHING ELSE IS UNCHANGED. A read — search, compare, bind — takes
+//     the barrier as before; so does a write to a worker behind on anything
+//     shared, or with more than OPERATION_KEYS_LIMIT keys to apply. The
+//     ticket wait still runs first for a write: a ticket answered and not
+//     yet announced is a write whose kind nobody has been told. (An LDAP
+//     operation's announcement is sent before its answer on one ordered
+//     channel, so under an LDAP load nothing blocks and it does not wait.)
+//
+// **WHY THE ANSWER CANNOT DIFFER FROM THE BARRIER'S.** After the keys are
+// applied, the worker holds, for every row this node's processes announced
+// up to the generation the write was sent at, what the pull would have left
+// it holding: a windowed key it held is gone (or marked stale, exactly as
+// the pull marks a busy one), read from the store when next asked for, and
+// every other row is one it had already synced. What the pull would have
+// applied beyond that is another NODE's rows, which the generation never
+// covered (`cluster/CLAUDE.md`'s barrier is that one), and the per-process
+// tallies, which it never waited for. The uniqueness refusal is unchanged
+// on top of that: `claimingTheAdd()` still holds the DN and the names across
+// processes in the front process, and catches the front up after the claim.
+//
+// The worker is NOT counted as synced (`entry.generation` stays where it
+// was): it has applied keys, not the log, and an HTTP request answered there
+// is not gated behind them. `entry.keysThrough` records how far its keys go,
+// so the next write is handed only what is new.
+// ---------------------------------------------------------------------------
+const BARRIER_FREE_WRITES = { 'ldap.add': true, 'ldap.modify': true,
+                              'ldap.del': true, 'ldap.modifyDN': true };
+// The keys kept, at most; past it the oldest records go and the floor rises.
+const KEY_LOG_LIMIT = 4096;
+// The keys one write may be handed; past it the pull is the cheaper catch-up.
+const OPERATION_KEYS_LIMIT = 512;
+// The generation of the latest announced write that was not only windowed
+// directory rows.
+let lastSharedGeneration = 0;
+// `{ gen, pid, keys: [[realm, key], ...] }`, in generation order; `pid` is
+// the announcing worker's, or null for this process.
+let keyLog = [];
+let keyLogSize = 0;
+// No record at or below this generation is kept any longer.
+let keyLogFloor = 0;
+// How each write was sent (#626), for stats(): current, keyed or synced.
+let writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
+// Sync rounds started, every kind of caller, for stats().
+let syncRounds = 0;
+// Readers that waited on a ticket at all (#626), for stats().
+let ticketWaits = 0;
+// Where this process's own committed rows were last classified up to.
+let localChangeMark = null;
+let localChangeMarked = false;
+
+/**
+ * Records what an announced write committed (#626): its windowed directory
+ * keys, or — for anything else, or an announcement that does not say —
+ * that it was shared. Called just after the generation moved for it.
+ *
+ * @param pid - the announcing worker's pid, or null for this process
+ * @param keys - `[{ realm, key }]`, or anything else for "shared"
+ */
+function noteWriteKinds(pid, keys) {
+  log.debug("Entering noteWriteKinds().");
+  if (!Array.isArray(keys)) {
+    lastSharedGeneration = generation;
+    log.debug("Leaving noteWriteKinds(). Shared at " + generation + ".");
+    return;
+  }
+  const list = [];
+  keys.forEach(function (one) {
+    if (one && one.realm !== undefined && one.key) {
+      list.push([String(one.realm), String(one.key)]);
+    }
+  });
+  if (list.length) {
+    keyLog.push({ gen: generation, pid: pid, keys: list });
+    keyLogSize += list.length;
+    trimKeyLog();
+  }
+  log.debug("Leaving noteWriteKinds(). " + list.length + " key(s) at " +
+            generation + ".");
+}
+
+// How far a worker's windowed keys are current: synced, or handed keys.
+function keyPositionOf(entry) {
+  log.debug("Entering keyPositionOf().");
+  log.debug("Leaving keyPositionOf().");
+  return Math.max(Number(entry.generation) || 0,
+                  Number(entry.keysThrough) || 0);
+}
+
+// Drops the records every protocol worker is past, then the oldest past the
+// bound, raising the floor over each: a worker not past a dropped record
+// can no longer be handed it, and goes through the barrier.
+function trimKeyLog() {
+  log.debug("Entering trimKeyLog().");
+  let low = generation;
+  readyWorkers(PROTOCOL_POOL).forEach(function (one) {
+    low = Math.min(low, keyPositionOf(one));
+  });
+  while (keyLog.length &&
+         (keyLog[0].gen <= low || keyLogSize > KEY_LOG_LIMIT)) {
+    const gone = keyLog.shift();
+    keyLogSize -= gone.keys.length;
+    keyLogFloor = Math.max(keyLogFloor, gone.gen);
+  }
+  log.debug("Leaving trimKeyLog(). " + keyLog.length + " record(s).");
+}
+
+/**
+ * The keys a write may be sent with in place of the pull, or null when it
+ * must take the barrier (#626): a kind not in BARRIER_FREE_WRITES, a shared
+ * write since the worker last synced, a key log that no longer reaches
+ * back to where the worker is, or too many keys.
+ *
+ * @param entry - the worker's table entry
+ * @param kind - the operation kind
+ * @param wanted - the generation the write is sent at
+ * @returns `[{ realm, key }]` (possibly empty), or null
+ */
+function staleKeysFor(entry, kind, wanted) {
+  log.debug("Entering staleKeysFor(). kind=" + kind);
+  if (!BARRIER_FREE_WRITES[kind]) {
+    log.debug("Leaving staleKeysFor(). Not a write that may skip it.");
+    return null;
+  }
+  if (lastSharedGeneration > (Number(entry.generation) || 0)) {
+    log.debug("Leaving staleKeysFor(). Behind on a shared write.");
+    return null;
+  }
+  const from = keyPositionOf(entry);
+  if (keyLogFloor > from) {
+    log.debug("Leaving staleKeysFor(). The key log no longer reaches back.");
+    return null;
+  }
+  const seen = new Set();
+  const keys = [];
+  for (let i = 0; i < keyLog.length; i++) {
+    const record = keyLog[i];
+    // ITS OWN WRITES are in its memory already — the exemption
+    // blockedBelow() and receiveCommitted() make for the worker that wrote.
+    if (record.gen <= from || record.gen > wanted ||
+        record.pid === entry.pid) {
+      continue;
+    }
+    for (let k = 0; k < record.keys.length; k++) {
+      const ck = record.keys[k][0] + '\n' + record.keys[k][1];
+      if (!seen.has(ck)) {
+        seen.add(ck);
+        keys.push({ realm: record.keys[k][0], key: record.keys[k][1] });
+      }
+    }
+    if (keys.length > OPERATION_KEYS_LIMIT) {
+      log.debug("Leaving staleKeysFor(). Too many keys; the pull it is.");
+      return null;
+    }
+  }
+  log.debug("Leaving staleKeysFor(). " + keys.length + " key(s).");
+  return keys;
+}
+
+// What this process committed since it last asked, by kind (#626): the
+// first ask only sets the mark, as noteLocalWrites()'s first sample does.
+// Null — "shared" — when the store says nothing.
+function localWriteKinds() {
+  log.debug("Entering localWriteKinds().");
+  try {
+    const persistence = require('../persistence/persistence');
+    if (!localChangeMarked) {
+      localChangeMarked = true;
+      localChangeMark = persistence.committedChangeMark();
+      log.debug("Leaving localWriteKinds(). The mark is set.");
+      return { windowedKeys: [] };
+    }
+    const since = persistence.committedChangesSince(localChangeMark);
+    localChangeMark = since.mark;
+    log.debug("Leaving localWriteKinds().");
+    return since;
+  } catch (e) {
+    log.debug("Caught in localWriteKinds(): " + ((e && e.message) || e));
+    log.debug("Leaving localWriteKinds(). Unknown.");
+    // No store that classifies: anything this process wrote is shared.
+    return null;
   }
 }
 
@@ -4562,7 +6822,14 @@ function startSyncRound(entry, wanted) {
   log.debug('Entering startSyncRound(). pid=' + entry.pid + ' want=' +
             wanted);
   const id = nextSyncId++;
-  const round = { wanted: wanted, settled: false, promise: null };
+  syncRounds++;
+  // WHAT THE ROUND COVERS IS THE GENERATION NOW, not only what was asked for
+  // (#820): a round started now reads a target covering every write already
+  // announced — the sharing rule above. A session-mode reader asks for less
+  // than the generation, and stamping only that would leave the worker looking
+  // behind to the next global reader for writes this round already pulled.
+  const round = { wanted: Math.max(wanted, generation), settled: false,
+                  promise: null };
   // SET BEFORE THE MESSAGE IS SENT, because a channel that refuses it settles
   // the round synchronously below, and a round recorded after it had settled
   // would read as running to every reader after it.
@@ -4695,6 +6962,14 @@ function middleware(options) {
         next();
         return;
       }
+      // THE LIVENESS PROBE CATCHES UP ON NOTHING (#624): it reads no state,
+      // and the wait below is up to 2,000 ms plus a store round trip, which a
+      // probe with a 5 s timeout cannot afford on a busy node. See
+      // ANSWERED_AT_ONCE, and `OPTIONS *` beside it (answeredAtOnce()).
+      if (answeredAtOnce(req.originalUrl || req.url)) {
+        next();
+        return;
+      }
       // Required HERE rather than at the top of the file, for the reason
       // start() gives below: this file is loaded by app.js, above every
       // protocol module, so a top-level require would pull the store into the
@@ -4803,8 +7078,12 @@ function middleware(options) {
       // express because the generation does not move until it has. Without it a
       // reader that arrives inside that window never waits at all — measured as
       // stale reads with zero barrier timeouts.
+      // WHEN IT ARRIVED, for where its time goes (#820): the waits below
+      // and the worker's answer are measured from here.
+      const timing = { arrived: Date.now(), ticketDone: 0, barrierDone: 0 };
       if (!readYourWrite()) {
-        proxy(entry, req, res, generation);
+        timing.ticketDone = timing.barrierDone = timing.arrived;
+        proxy(entry, req, res, generation, undefined, timing);
         return;
       }
       // ONE TICKET PER DISPATCHED REQUEST, TAKEN BEFORE IT IS SENT. Anything
@@ -4816,21 +7095,112 @@ function middleware(options) {
       // can confirm until it has finished. So this waits for everything
       // dispatched BEFORE it, and only then registers itself as outstanding
       // for everything that comes after.
-      awaitCommitConfirmations(entry).then(function () {
-        const ticket = dispatchTicket(entry);
-        // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
-        // the generation is read — a bump after this line would be a bump this
-        // request does not wait for. See noteLocalWrites().
-        noteLocalWrites(localWriteCount());
-        const wanted = generation;
-        if (entry.generation >= wanted) {
-          proxy(entry, req, res, wanted, ticket);
-          return;
-        }
-        return barrier(entry, wanted).then(function () {
-          proxy(entry, req, res, wanted, ticket);
+      // SESSION OR GLOBAL (#820): a request carrying client keys waits for
+      // its own client's writes only — see SESSION READ-YOUR-WRITE, above
+      // dispatchTicket(). `keys` null is today's global wait, unchanged.
+      const session = readYourWriteMode() === 'session';
+      const keys = session ? sessionKeysFor(req, pool, entry) : null;
+      if (keys) {
+        sessionDispatches++;
+        pruneClientStates();
+        // A token request a browser's cookie keys (the console's and the
+        // portal's own refreshes) waits for REVOKE_KEY too. See THE WRITES
+        // A REFRESH MUST NOT ANSWER AHEAD OF.
+        waitThenProxy(keys, null, false, tokenRequest(req));
+        return;
+      }
+      // A CODE EXCHANGE IS READ BEFORE IT WAITS (#820): keyed by its code
+      // when the pool knows the code, global otherwise. See THE CODE
+      // EXCHANGE, KEYED BY ITS CODE, above. The body read goes into the
+      // ticket phase of `timing`, which starts at arrival.
+      if (session && codeExchangeCandidate(req)) {
+        readCodeExchangeBody(req, res, function (body) {
+          if (!body) {
+            // The client went away, or its request failed, before the body
+            // was in. Nothing was dispatched and no ticket was taken.
+            log.debug('request_pool: ' + req.method + ' ' + req.url +
+                      ' was not sent to a worker: its body did not arrive.');
+            if (!res.destroyed && !res.writableEnded) {
+              res.destroy();
+            }
+            return;
+          }
+          const codeKeys = codeKeysOf(body);
+          if (codeKeys) {
+            codeKeyedDispatches++;
+            pruneClientStates();
+            // A code redemption is still a back channel's write: filed
+            // under SHARED_KEY as well as its code. It waits for REVOKE_KEY:
+            // a code minted from a session signed out since is not redeemed
+            // ahead of the sign-out.
+            waitThenProxy(codeKeys, body, true, true);
+            return;
+          }
+          const refreshKeys = refreshKeysOf(body);
+          if (refreshKeys) {
+            refreshKeyedDispatches++;
+            pruneClientStates();
+            // NOT filed under SHARED_KEY. It waits for that key, so an
+            // issuance this process could not read still holds it, and
+            // the next refresh of another token does not wait for this
+            // one. See THE REFRESH GRANT, KEYED BY ITS TOKEN. It waits for
+            // REVOKE_KEY: a sign-out, a revocation or a disabled account
+            // answered before it is not answered ahead of (the review of
+            // #879).
+            waitThenProxy(refreshKeys, body, false, true);
+            return;
+          }
+          globalDispatches++;
+          waitThenProxy(null, body, true, false);
         });
-      });
+        return;
+      }
+      globalDispatches++;
+      waitThenProxy(null, null, true, false);
+
+      // THE WAITS AND THE DISPATCH, for keys already decided (null: global)
+      // and a body already read (null: streamed from `req`). `shared`: this
+      // request's write is a back channel's — no browser's own — and is
+      // filed under SHARED_KEY too, so every keyed request waits for it.
+      // `revokeWait`: a keyed token request, which waits for REVOKE_KEY as
+      // well. A request that may end what a refresh token rests on is filed
+      // under REVOKE_KEY (revokingRequest()); its answer may file it there
+      // too (REVOKING_HEADER, in proxy()). A HOT PATH, for route()'s reason.
+      function waitThenProxy(keys, body, shared, revokeWait) {
+        // A keyed request waits for its keys AND for SHARED_KEY: the
+        // writes of requests no browser made (see SHARED_KEY).
+        let waitKeys = keys ? keys.concat([SHARED_KEY]) : null;
+        if (waitKeys && revokeWait) {
+          waitKeys.push(REVOKE_KEY);
+          revokeWaits++;
+        }
+        let fileKeys = shared ? (keys || []).concat([SHARED_KEY]) : keys;
+        if (session && revokingRequest(req)) {
+          fileKeys = (fileKeys || []).concat([REVOKE_KEY]);
+          revokingDispatches++;
+        }
+        awaitCommitConfirmations(entry, waitKeys).then(function () {
+          timing.ticketDone = Date.now();
+          const ticket = dispatchTicket(entry, req.method + ' ' +
+            String(req.originalUrl || req.url || '').split('?')[0],
+            fileKeys);
+          // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST,
+          // before the generation is read — a bump after this line would be
+          // a bump this request does not wait for. See noteLocalWrites().
+          noteLocalWrites(localWriteCount(), localWriteKinds());
+          const wanted = waitKeys ? sessionWanted(waitKeys, entry)
+            : generation;
+          if (entry.generation >= wanted) {
+            timing.barrierDone = timing.ticketDone;
+            proxy(entry, req, res, wanted, ticket, timing, body);
+            return;
+          }
+          return barrier(entry, wanted).then(function () {
+            timing.barrierDone = Date.now();
+            proxy(entry, req, res, wanted, ticket, timing, body);
+          });
+        });
+      }
     }
   };
 }
@@ -4850,8 +7220,43 @@ const PROMPT_HEADERS_BYTES = 5 * 1024 * 1024;
 // above it and is simply never repeated.
 const REPLAY_BODY_BYTES = 1024 * 1024;
 
+// The largest header block proxy() reads back from a worker's ANSWER (#1225).
+// Node's HTTP parser refuses a block past 16 KiB by default, and on this hop
+// that refusal was a 502 naming STS-WORKER-0030 — "the request worker went
+// away" — for an answer the worker had produced correctly: on 8081 a SAML 2.0
+// Response on the Redirect binding, signed and with its assertion encrypted,
+// is 19,633 characters in its `Location`. The hop is between this process and
+// its own thread, so it must not be what decides how large an answer's
+// headers may be; with no request workers the same answer is delivered.
+// A MEBIBYTE, NOT A SETTING: it bounds memory on a trusted hop rather than
+// anything a client sends (the listener's own limit on REQUEST headers is
+// unchanged), and nothing this service builds comes near it — a Redirect
+// message is warned about from saml2.redirectWarnLength (8000) on.
+const WORKER_ANSWER_MAX_HEADER_BYTES = 1024 * 1024;
+
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
+
+// One answered request's phases, to `request_phases.js` (#820, #887): the
+// front's ticket and barrier, how long it waited to be given a socket, and
+// from that socket until the worker's middleware — what one `queue` number
+// used to cover. The worker reports the rest. Hot path: every dispatched
+// request. No Entering/Leaving pair.
+function notePhases(req, timing, answeredAt, worker, socketAt, askedAt) {
+  const waits = requestPhases.connectionWaits(askedAt, socketAt,
+    worker && worker.arrived);
+  requestPhases.record(requestPhases.routeOf(req.method,
+                                             req.originalUrl || req.url), {
+    ticket: timing.ticketDone - timing.arrived,
+    barrier: timing.barrierDone - timing.ticketDone,
+    connect: waits.connect,
+    loop: waits.loop,
+    handler: worker ? worker.handler : undefined,
+    commit: worker ? worker.commit : undefined,
+    bridge: worker ? worker.bridge : undefined,
+    total: answeredAt - timing.arrived
+  });
+}
 
 /**
  * Streams one request to a worker and the answer back, copying no body.
@@ -4861,10 +7266,63 @@ let replayCount = 0;
  * @param res - the response
  * @param atGeneration - the generation the worker was brought to
  * @param ticket - the request's read-barrier ticket
+ * @param timing - when it arrived and its waits ended, for
+ *   `request_phases.js` (#820); optional
+ * @param body - optional; what readCodeExchangeBody() already read of the
+ *   request's body, `{ chunks, ended }`, written to the worker first and
+ *   unchanged, with the rest (when not ended) streamed from `req` (#820)
  */
-function proxy(entry, req, res, atGeneration, ticket) {
+function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
+  // -------------------------------------------------------------------------
+  // A CLIENT THAT LEFT WHILE THE REQUEST WAITED IS NOT SENT TO THE WORKER AT
+  // ALL (#624, 2026-10-14).
+  //
+  // The middleware holds a request for the ticket wait and the read barrier
+  // BEFORE calling this — up to 2,000 ms and 5,000 ms — and the handlers at
+  // the foot of this function, which are what notice a client going away,
+  // are hung only here. A client that left during the wait had already
+  // emitted every event they listen for: the response's `close`, and the
+  // request's `end`, which a destroyed request never emits (measured on node
+  // 22: a GET whose client left before anything read it is `destroyed` and
+  // `complete`, and `end` never comes). So, before this check:
+  //
+  //   * `upstream.end()` was never called, and node sends a client request's
+  //     headers only with its first write or its end — the worker was handed
+  //     a connection with NOTHING on it;
+  //   * the worker's HTTP parser, not its app, answered it: a 408 when
+  //     `headersTimeout` (70 s, request_worker.ts) ran out, noticed on node's
+  //     30 s connection check — so 70 to 100 s later, holding one of the
+  //     worker's `workers.maxSockets` places and an `inFlight` all that time;
+  //   * that 408 arrived here as an answer, so finish() ARMED the ticket — and
+  //     the worker, which never saw a request, never ran a handler and had no
+  //     `finish` or `close` to announce it from, never named it.
+  //
+  // That is exactly the pair STS-WORKER-0008 reported twice on 8081 under the
+  // 10M LDAP load (#624): `GET /healthcheck … answered 31.0s ago (dispatched
+  // 132.0s ago); that worker has announced 6 commit(s) since without naming
+  // it: LOST`, each dispatched as worker 4 missed a read barrier, answered
+  // 93 to 96 s after it was finally sent, and every read on the other worker
+  // paying the 2,000 ms bound until it was dropped thirty seconds later.
+  //
+  // **A REQUEST NOBODY IS WAITING FOR IS ONE NOBODY IS OWED**, which is
+  // ticketAbandoned()'s argument and why the ticket is dropped rather than
+  // armed: no byte of it reaches a worker, so no handler runs and nothing can
+  // have been written. `res.destroyed` and `res.closed` are what node sets
+  // when the client's socket went; a response this process already ended is
+  // not proxied either.
+  // -------------------------------------------------------------------------
+  if (res.destroyed || res.closed || res.writableEnded) {
+    if (ticket) {
+      ticketAbandoned(entry, ticket);
+    }
+    log.debug('request_pool: ' + req.method + ' ' + req.url + ' was not ' +
+              'sent to worker ' + entry.pid + ': its client went away while ' +
+              'it waited for the read barrier.');
+    log.debug('Leaving proxy(). The client had gone.');
+    return;
+  }
   const wrote = mayWrite(req.method);
   entry.inFlight++;
   // For the pool's response time (#327); see noteAnswered().
@@ -4877,6 +7335,15 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // WHETHER THIS PROCESS ENDED THE UPSTREAM REQUEST ITSELF, because the client
   // went away first. See the response's `close` handler at the foot.
   let clientGone = false;
+  // When the worker's answer arrived, and the phases it reported (#820).
+  let answeredAt = 0;
+  let workerPhases = null;
+  // When the front asked the agent for a socket, and when the agent gave
+  // it one (#887). A request past `workers.maxSockets` waits in the agent
+  // between the two. The first ask stands; a retry's later socket replaces
+  // the first, so the wait runs until the connection that answered.
+  let askedAt = 0;
+  let socketAt = 0;
   const finish = function (lost) {
     log.debug("Entering finish().");
     if (!done) {
@@ -4885,6 +7352,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
       entry.served++;
       if (!lost) {
         noteAnswered(entry.pool, Date.now() - dispatchedAt);
+        if (timing && answeredAt) {
+          notePhases(req, timing, answeredAt, workerPhases, socketAt, askedAt);
+        }
       }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
       // Taking it on `finish` left a window the client could drive straight
@@ -4931,6 +7401,30 @@ function proxy(entry, req, res, atGeneration, ticket) {
   };
 
   const headers = Object.assign({}, req.headers);
+  // AN HTTP/2 REQUEST'S AUTHORITY IS ITS HOST, AND THE TWO MAY NOT DISAGREE
+  // (#407; RFC 9113 section 8.3.1). The app's own `init` has already applied
+  // this (common/http2_express.ts), so a request refused here is one that
+  // reached the pool some other way; the rule is asked again rather than
+  // trusted, because the worker believes the `host` this process sends it.
+  if (Http2Express.hostProblem(headers)) {
+    if (ticket) {
+      ticketAbandoned(entry, ticket);
+    }
+    Http2Express.refuseHostMismatch(res);
+    log.debug('Leaving proxy(). :authority and host disagree.');
+    return;
+  }
+  // AN HTTP/2 REQUEST'S PSEUDO-HEADERS STAY ON ITS HOP (#407). Node hands
+  // `:method`, `:path`, `:scheme` and `:authority` over in `req.headers`, and
+  // a name starting with a colon is not an HTTP/1.1 field name: node's
+  // client throws ERR_INVALID_HTTP_TOKEN on it, so every HTTP/2 request a
+  // worker would have answered failed here. The method and path go on the
+  // request line below; the authority went into `host` above.
+  Object.keys(headers).forEach(function (name) {
+    if (name.charAt(0) === ':') {
+      delete headers[name];
+    }
+  });
 
   // ---------------------------------------------------------------------
   // THE CLIENT'S HOP-BY-HOP HEADERS STAY ON THE CLIENT'S HOP, AND THIS HOP
@@ -4987,6 +7481,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // ---------------------------------------------------------------------
   delete headers[PEER_CERT_HEADER];
   delete headers[PEER_AUTHORIZED_HEADER];
+  delete headers[LISTENER_HEADER];
+  headers[LISTENER_HEADER] = listenerMap.listenerOf(req);
   // THE CLIENT'S JA4 FINGERPRINT (#62 P0), for the same reason as the
   // certificate: a client that could set it could claim any TLS stack.
   const helloModule = clientHelloModule();
@@ -5023,6 +7519,11 @@ function proxy(entry, req, res, atGeneration, ticket) {
   const hello = helloModule.encodeForward(req);
   if (hello) {
     headers[helloModule.FORWARD_HEADER] = hello;
+  }
+  // WHERE ITS TIME GOES (#820): asked of the worker by this process only.
+  delete headers[requestPhases.ASK_HEADER];
+  if (timing) {
+    headers[requestPhases.ASK_HEADER] = '1';
   }
   delete headers[POOL_TICKET_HEADER];
   if (ticket) {
@@ -5210,6 +7711,21 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // it never presents back on a browser cookie.
       learn(entry, answer);
     }
+    // AND THE CLIENT KEYS IT HANDS OUT ARE THIS TICKET'S TOO (#820), on every
+    // path: the sign-in that mints a session is that session's write. See
+    // SESSION READ-YOUR-WRITE, above dispatchTicket().
+    if (ticket && readYourWriteMode() === 'session') {
+      learnTicketKeys(ticket, answer);
+    }
+    // A refresh token named in this answer is filed under its key BEFORE
+    // the client is sent the bytes, so the refresh that follows them waits
+    // for this ticket (#879). The read is below, after the status and the
+    // headers: a body already buffered emits `data` and `end` in the turn
+    // the listener is attached, and ending the response first would answer
+    // with no status and never arm the ticket.
+    let refreshLearnt = false;
+    const learnRefresh = ticket && readYourWriteMode() === 'session' &&
+      refreshAnswerCandidate(req, answer);
     // ------------------------------------------------------------------
     // THE SOCKETS THIS ANSWER SAYS TO CLOSE, CLOSED BEFORE IT GOES OUT.
     //
@@ -5219,6 +7735,18 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // already gone. See LDAP_DROP_HEADER.
     // ------------------------------------------------------------------
     closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
+    // AN ANSWER THAT ENDED WHAT A REFRESH TOKEN RESTS ON is filed under
+    // REVOKE_KEY here, before a byte of it reaches the client, so a refresh
+    // grant sent after the client has it waits for it (the review of #879,
+    // THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF).
+    if (ticket && answer.headers[REVOKING_HEADER] &&
+        readYourWriteMode() === 'session') {
+      fileTicketUnder(ticket, [REVOKE_KEY]);
+      revokingAnswers++;
+    }
+    answeredAt = Date.now();
+    workerPhases = requestPhases.decode(
+      answer.headers[requestPhases.PHASES_HEADER]);
     // FROM HERE THE WORKER HAS ANSWERED: it ran the handler, so it will
     // announce this ticket on its own `finish` or `close` whatever happens to
     // the pipe from now on. See ticketAbandoned().
@@ -5235,6 +7763,17 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // `rawHeaders`; the values are still `answer.headers`', merged as
     // before. A name the worker did not send (the pin's `set-cookie` on an
     // answer that set none) keeps its lower-case key.
+    // THE HEADERS THIS PROCESS WROTE BEFORE DISPATCHING ARE THE WORKER'S TO
+    // DECIDE (2026-11-10). `app.js`'s enterRealm() writes the early security
+    // headers on every response before anything else runs, so they are on
+    // this `res` already; the worker ran the same middleware and its answer
+    // carries what the route decided. A header the route REMOVED was absent
+    // from the answer and so stayed here: the OP iframe answered
+    // `X-Frame-Options: DENY` in every dispatching mode, overruling the
+    // narrower `frame-ancestors` it had chosen. Cleared, then the answer's.
+    WORKER_DECIDES.forEach(function (name) {
+      res.removeHeader(name);
+    });
     const spelled = {};
     const raw = answer.rawHeaders || [];
     for (let i = 0; i + 1 < raw.length; i += 2) {
@@ -5244,7 +7783,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
-      if (name === LDAP_DROP_HEADER) {
+      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER ||
+          name === REVOKING_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not
@@ -5282,9 +7822,13 @@ function proxy(entry, req, res, atGeneration, ticket) {
         upstream.destroy();
       });
     }
-    answer.pipe(res);
-    answer.on('end', finish);
+    // Before the body is read. A token response that fails before its
+    // refresh token is learnt is filed under SHARED_KEY, so the next
+    // refresh still waits for it (#879).
     answer.on('error', function (err) {
+      if (learnRefresh && !refreshLearnt) {
+        noteUnlearntRefresh(ticket);
+      }
       if (clientGone) {
         // Ended by this process for a client that had gone. Not a fault.
         log.debug('request_pool: an answer from worker ' + entry.pid +
@@ -5297,11 +7841,30 @@ function proxy(entry, req, res, atGeneration, ticket) {
       finish();
       res.destroy();
     });
+    if (learnRefresh) {
+      // Learns the token, arms the ticket, then sends the same bytes. When
+      // the body is already buffered all three happen before this turn
+      // yields, which is when the next refresh can follow the bytes.
+      bufferRefreshAnswer(answer, res, function (buf) {
+        if (buf && learnRefreshToken(ticket, buf)) {
+          refreshLearnt = true;
+        } else {
+          noteUnlearntRefresh(ticket);
+        }
+        finish();
+      });
+    } else {
+      answer.pipe(res);
+      answer.on('end', finish);
+    }
     log.debug("Leaving onAnswer().");
   };
 
   const open = function () {
     log.debug("Entering open().");
+    if (!askedAt) {
+      askedAt = Date.now();
+    }
     const one = http.request({
       socketPath: entry.socket,
       path: req.originalUrl || req.url,
@@ -5312,8 +7875,20 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // it is made: without it this used the global agent, `maxSockets:
       // Infinity`, and a bulk load answered one request in five thousand
       // with a 502 that named `connect EAGAIN`.
-      agent: entry.agent
+      agent: entry.agent,
+      // A worker's answer may carry headers past node's 16 KiB default
+      // (#1225); see WORKER_ANSWER_MAX_HEADER_BYTES.
+      maxHeaderSize: WORKER_ANSWER_MAX_HEADER_BYTES
     }, onAnswer);
+    // The `socket` event is when the agent hands one over. Measured on
+    // node 22, it is not emitted inside `http.request()`, so the listener
+    // sees it; `one.socket` covers a node that emits it during construction.
+    if (one.socket) {
+      socketAt = Date.now();
+    }
+    one.on('socket', function () {
+      socketAt = Date.now();
+    });
     one.on('error', onUpstreamError);
     log.debug("Leaving open().");
     return one;
@@ -5426,8 +8001,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
     errorCodes.mark(res, 'STS-WORKER-0030');
     res.status(502);
     res.type('text/plain');
-    res.send('The request worker handling this request went away (' +
-             err.message + '). A worker holds no state of its own that this ' +
+    res.send('The request worker handling this request went away' +
+             (require('./mode').hidesFailureDetail() ? '' :
+              ' (' + err.message + ')') +
+             '. A worker holds no state of its own that this ' +
              'request needed, so it can simply be made again.\n');
     log.debug("Leaving gaveUp().");
   };
@@ -5462,7 +8039,11 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // reached the worker. The pipe's back-pressure is kept: a write the
   // connection cannot take yet pauses the client until it drains.
   // -------------------------------------------------------------------------
-  req.on('data', function (chunk) {
+  // One chunk of the body, kept for a resend and written to the worker. A
+  // HOT PATH — every chunk of every dispatched body — so no Entering/Leaving
+  // pair, for route()'s reason.
+  let draining = false;
+  const forward = function (chunk) {
     if (replay.kept && !delivered) {
       replay.bytes += chunk.length;
       if (replay.bytes > REPLAY_BODY_BYTES) {
@@ -5479,17 +8060,44 @@ function proxy(entry, req, res, atGeneration, ticket) {
     const writing = upstream;
     if (!writing.write(chunk, wroteOn(writing))) {
       req.pause();
+      draining = true;
       writing.once('drain', function () {
+        draining = false;
         req.resume();
       });
     }
-  });
-  req.on('end', function () {
+  };
+  const endBody = function () {
+    log.debug("Entering endBody().");
     ended = true;
     if (!detached && !failed) {
       upstream.end(wroteOn(upstream));
     }
-  });
+    log.debug("Leaving endBody().");
+  };
+  // -------------------------------------------------------------------------
+  // A BODY ALREADY READ IS WRITTEN FIRST, AS IT ARRIVED (#820). A code
+  // exchange is read before the barrier, to find its code; its chunks go to
+  // the worker here in the same order and the same bytes, through the same
+  // copy for a resend (it is far under REPLAY_BODY_BYTES), so a signature
+  // over the body (#178, DPoP, client authentication) still verifies. Read
+  // whole, the request has ended and nothing more will arrive on it. Read in
+  // part (over CODE_BODY_MAX), it was paused with the rest unread: the
+  // handlers below take the rest, and it is resumed only once the worker's
+  // connection has room for it.
+  // -------------------------------------------------------------------------
+  if (body) {
+    body.chunks.forEach(forward);
+  }
+  if (body && body.ended) {
+    endBody();
+  } else {
+    req.on('data', forward);
+    req.on('end', endBody);
+    if (body && !draining) {
+      req.resume();
+    }
+  }
   req.on('aborted', function () {
     upstream.destroy();
     // THE CLIENT WENT AWAY. If the worker had already begun answering it will
@@ -5534,8 +8142,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
 // Everything above this line is about the express app, and it would be a
 // mistake to read the pool as being about HTTP. **The front process owns
 // every listener family and only the main port's HTTP is dispatched as
-// requests**: the Kerberos KDC on TCP and UDP 88, the Kerberos service on
-// 8888, the LDAP directory on 389 and 636, and SPIFFE's gRPC surfaces are the
+// requests**: the Kerberos KDC on TCP and UDP 88 (and the Kerberos service
+// on 8888, until #595 moved it to the development companion), the LDAP
+// directory on 389 and 636, and SPIFFE's gRPC surfaces are the
 // others that carry protocol work (the debugger listener and the plain-HTTP
 // PKI listener are HTTP too, and are not dispatched). The work those do has
 // exactly the same reason to leave the front process as a `/scim/v2` POST
@@ -5688,7 +8297,8 @@ function operationDispatched(kind) {
  * @param kind - `family.operation`
  * @param args - the operation's arguments
  * @param opts - optional; `affinity` names what to stick to, such as an LDAP
- *   connection id
+ *   connection id; `onPartial(part)` is handed each part of the answer the
+ *   worker sends ahead of it (#616)
  * @returns a promise of `{ dispatched, result }`
  */
 function runOperation(kind, args, opts) {
@@ -5715,44 +8325,79 @@ function runOperation(kind, args, opts) {
   }
   if (!readYourWrite()) {
     log.debug('Leaving runOperation(). Sent without a barrier.');
-    return sendOperation(entry, kind, args, 0);
+    return sendOperation(entry, kind, args, 0, options.onPartial);
   }
   log.debug("Leaving runOperation().");
   return awaitCommitConfirmations(entry).then(function () {
-    const ticket = dispatchTicket(entry);
+    // A dispatched operation (LDAP, SPIFFE) is a write no browser made, so
+    // every keyed request waits for it (SHARED_KEY).
+    const ticket = dispatchTicket(entry, 'operation ' + kind, [SHARED_KEY]);
     // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
     // generation is read. It matters more here than on the HTTP path, not
     // less: the front process is the one that holds every socket this service
     // has, so it is the process that mints a session at /tls/sign-in and
     // writes the Kerberos replay cache — and an LDAP operation is very often
     // the next thing that has to see it.
-    noteLocalWrites(localWriteCount());
+    noteLocalWrites(localWriteCount(), localWriteKinds());
     const wanted = generation;
+    const write = !!BARRIER_FREE_WRITES[kind];
     if (entry.generation >= wanted) {
-      return sendOperation(entry, kind, args, ticket);
+      if (write) {
+        writeBarriers.current++;
+      }
+      return sendOperation(entry, kind, args, ticket, options.onPartial);
+    }
+    // A WRITE BEHIND ONLY ON WINDOWED ROWS IS HANDED THEIR KEYS AND NOT
+    // SENT THROUGH THE PULL (#626). See staleKeysFor()'s header.
+    const keys = staleKeysFor(entry, kind, wanted);
+    if (keys) {
+      writeBarriers.keyed++;
+      writeBarriers.keysSent += keys.length;
+      return sendOperation(entry, kind, args, ticket, options.onPartial,
+                           { keys: keys, through: wanted });
+    }
+    if (write) {
+      writeBarriers.synced++;
     }
     return barrier(entry, wanted).then(function () {
-      return sendOperation(entry, kind, args, ticket);
+      return sendOperation(entry, kind, args, ticket, options.onPartial);
     });
   });
 }
 
 // The send itself, split out so that the three paths above share one copy of
 // the bookkeeping. A ticket of 0 means read-your-write is off and there is
-// none.
-function sendOperation(entry, kind, args, ticket) {
+// none. `stale`, for a write sent without the pull (#626), is the keys it
+// carries and the generation they bring the worker to — recorded only once
+// the message has gone, since a worker that never got them has applied
+// nothing.
+function sendOperation(entry, kind, args, ticket, onPartial, stale) {
   log.debug('Entering sendOperation(). kind=' + kind + ' pid=' + entry.pid);
   const id = nextOperationId++;
   const promise = new Promise(function (resolve, reject) {
     pendingOperations.set(id, { resolve: resolve, reject: reject, kind: kind,
                                 pid: entry.pid, ticket: ticket,
+                                // A part of the answer sent ahead of it
+                                // (#616), or null to ignore any.
+                                onPartial: typeof onPartial === 'function'
+                                  ? onPartial : null,
                                 // For the pool's response time (#327).
                                 sentAt: Date.now() });
   });
   entry.inFlight++;
   try {
-    entry.child.send({ operation: true, id: id, kind: kind, args: args,
-                       ticket: ticket });
+    /** @type {any} */
+    const message = { operation: true, id: id, kind: kind, args: args,
+                      ticket: ticket };
+    if (stale && stale.keys.length) {
+      message.staleKeys = stale.keys;
+    }
+    entry.child.send(message);
+    if (stale) {
+      entry.keysThrough = Math.max(Number(entry.keysThrough) || 0,
+                                   stale.through);
+      trimKeyLog();
+    }
   } catch (e) {
     log.debug("Caught in sendOperation(): " + ((e && e.message) || e));
     const pending = pendingOperations.get(id);
@@ -5778,6 +8423,22 @@ function receiveOperation(entry, message) {
   const pending = pendingOperations.get(message.id);
   if (!pending) {
     log.debug('Leaving receiveOperation(). Nothing is waiting for that id.');
+    return;
+  }
+  // A PART OF THE ANSWER, AHEAD OF IT (#616): handed on, and the operation
+  // stays pending — the answer is still to come, last, on the same channel.
+  // A caller that asked for none ignores it.
+  if (message.partial) {
+    if (pending.onPartial) {
+      try {
+        pending.onPartial(message.result);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-WORKER-0049') + 'request_pool: a part ' +
+                  'of the ' + pending.kind + ' operation\'s answer could ' +
+                  'not be delivered: ' + ((e && e.message) || e));
+      }
+    }
+    log.debug('Leaving receiveOperation(). A part.');
     return;
   }
   pendingOperations.delete(message.id);
@@ -5858,6 +8519,18 @@ function failOperations(entry) {
 function stop(timeoutMs) {
   log.debug('Entering stop().');
   stopped = true;
+  // A COOL-DOWN MUST NOT FORK DURING THE DRAIN (#333). Cleared before any
+  // worker exits, so its callback sees `stopped`, and a timer still armed
+  // never fires into the next test's reset().
+  POOLS.forEach(function (pool) {
+    const state = giveUpState[pool];
+    if (!state) {
+      return;
+    }
+    state.probing = false;
+    state.at = 0;
+    clearGiveUpRetry(pool);
+  });
   // A worker still waiting behind the start gate is never forked (#342).
   dropQueuedForks();
   const limit = timeoutMs === undefined ? 8000 : timeoutMs;
@@ -5895,6 +8568,10 @@ function stop(timeoutMs) {
         if (one.agent && typeof one.agent.destroy === 'function') {
           one.agent.destroy();
         }
+        // A CLUSTER RUN A STOPPED WORKER WAS DOING FAILS NOW (#408), as
+        // `reap()` makes it fail: nothing else would answer it before its
+        // time limit.
+        failSchedulerRunsOf(one, 'stop', 'the pool stopped');
       });
       workers = [];
       POOLS.forEach(function (pool) {
@@ -5957,6 +8634,203 @@ function removeSocketDir() {
 // to a worker that has not installed its handler yet ends it, and its reply
 // overwrites `served` with the worker's own count.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A CLUSTER JOB'S BODY, RUN IN A REQUEST WORKER (#408).
+//
+// The scheduler's leader is this process, and it keeps everything that
+// decides a run — the lease, the claim, the fence, the time limit, the row —
+// and hands the job's `run()` to a ready PROTOCOL worker, because sixteen jobs
+// did synchronous work for tens of milliseconds to minutes on the thread that
+// answers every listener. `cluster/scheduler.ts`'s *WHERE A CLUSTER RUN RUNS*
+// argues it; this is the transport, in the shape of the operation channel:
+//
+//   front -> worker   { schedulerRun, runId, jobId, realm, trigger, params,
+//                       clockOffsetMs, deadlineMs, grantUntilMs }
+//   worker -> front   { schedulerRunDone, runId, ok, result | error, code,
+//                       why }
+//                     or { schedulerRunDone, runId, unknownJob }
+//   front -> worker   { schedulerFence, runId }   (time limit, lost lease,
+//                                                   removed realm, a row
+//                                                   taken over)
+//   front -> worker   { schedulerRenew, runId, untilMs, off }  (#1305: the
+//                       leader still owns the run; the body's grant runs to
+//                       `untilMs`, and `off` is why its job was switched off)
+//
+// A run's answer is resolved ONCE: the answer, the fence (the leader stopped
+// waiting) or the worker's exit (STS-SCHED-0019), whichever comes first. A
+// worker's load is its requests in flight and the event-loop delay its own
+// `persistence.event-loop-lag` run last reported (`{ loopLag }`, every ten
+// seconds); a report older than three windows is no report.
+// ---------------------------------------------------------------------------
+const schedulerRuns = new Map();
+const LOOP_LAG_FRESH_MS = 30 * 1000;
+
+/**
+ * What the scheduler's leader hands a cluster job's body to (#408).
+ *
+ * @returns `{ workers(), run(workerId, request), fence(runId),
+ *   renew(runId, untilMs, off) }`
+ */
+function schedulerRunner() {
+  log.debug("Entering schedulerRunner().");
+  log.debug("Leaving schedulerRunner().");
+  return {
+    workers: schedulerWorkers,
+    run: runSchedulerJob,
+    fence: fenceSchedulerJob,
+    renew: renewSchedulerJob
+  };
+}
+
+// The ready protocol-pool workers with their load. A pool that gave up has
+// none to offer: its paths are answered here, and so are its runs.
+function schedulerWorkers() {
+  log.debug("Entering schedulerWorkers().");
+  if (givenUp[PROTOCOL_POOL]) {
+    log.debug("Leaving schedulerWorkers(). The pool gave up.");
+    return [];
+  }
+  const now = Date.now();
+  // THE RUNS A WORKER IS ALREADY DOING COUNT AS ITS LOAD: a body is not a
+  // request, so `inFlight` does not see it, and two long runs would
+  // otherwise both go to the worker that looked idle.
+  const running = new Map();
+  schedulerRuns.forEach(function (held) {
+    running.set(held.entry, (running.get(held.entry) || 0) + 1);
+  });
+  const out = readyWorkers(PROTOCOL_POOL).filter(function (one) {
+    return one.child && one.child.connected !== false;
+  }).map(function (one) {
+    const lag = one.loopLag && now - one.loopLag.at <= LOOP_LAG_FRESH_MS
+      ? one.loopLag.p99Ms : null;
+    return { id: one.pid,
+             inFlight: (Number(one.inFlight) || 0) + (running.get(one) || 0),
+             lagMs: lag };
+  });
+  log.debug("Leaving schedulerWorkers(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Runs one cluster job's body in a worker.
+ *
+ * @param workerId - the worker's id (its threadId)
+ * @param request - `{ runId, jobId, realm, trigger, params, clockOffsetMs }`
+ * @returns a promise of the worker's answer; never rejects
+ */
+function runSchedulerJob(workerId, request) {
+  log.debug("Entering runSchedulerJob(). " + (request && request.runId));
+  const runId = String((request || {}).runId || '');
+  const entry = workers.filter(function (one) {
+    return one.pid === workerId && one.ready;
+  })[0];
+  if (!entry) {
+    log.debug("Leaving runSchedulerJob(). No such worker.");
+    return Promise.resolve({ ok: false, code: 'STS-SCHED-0019',
+                             error: 'request worker ' + workerId + ' is not ' +
+                                    'ready to run it' });
+  }
+  log.debug("Leaving runSchedulerJob().");
+  return new Promise(function (resolve) {
+    schedulerRuns.set(runId, { entry: entry, resolve: resolve });
+    try {
+      entry.child.send(Object.assign({}, request, { schedulerRun: true }));
+    } catch (e) {
+      log.debug("Caught in runSchedulerJob(): " + ((e && e.message) || e));
+      schedulerRuns.delete(runId);
+      resolve({ ok: false, code: 'STS-SCHED-0019',
+                error: 'request worker ' + workerId + ' could not be ' +
+                       'reached: ' + ((e && e.message) || e) });
+    }
+  });
+}
+
+/**
+ * Tells the worker running a cluster run that the leader no longer waits for
+ * it, and stops waiting.
+ *
+ * @param runId - the run
+ */
+function fenceSchedulerJob(runId) {
+  log.debug("Entering fenceSchedulerJob(). " + runId);
+  const held = schedulerRuns.get(String(runId || ''));
+  if (!held) {
+    log.debug("Leaving fenceSchedulerJob(). Not running.");
+    return;
+  }
+  schedulerRuns.delete(String(runId));
+  try {
+    held.entry.child.send({ schedulerFence: true, runId: String(runId) });
+  } catch (e) {
+    // A worker that cannot be reached is going, and its run with it.
+    log.debug("Caught in fenceSchedulerJob(): " + ((e && e.message) || e));
+  }
+  held.resolve({ ok: false, fenced: true,
+                 error: 'the leader stopped waiting for it' });
+  log.debug("Leaving fenceSchedulerJob().");
+}
+
+/**
+ * Renews the grant of the worker running a cluster run (#1305): the leader
+ * still owns the run, and keeps waiting for its answer.
+ *
+ * @param runId - the run
+ * @param untilMs - the grant's end, on this process's clock
+ * @param off - why the run's job was switched off, or ''
+ */
+function renewSchedulerJob(runId, untilMs, off) {
+  log.debug("Entering renewSchedulerJob(). " + runId);
+  const held = schedulerRuns.get(String(runId || ''));
+  if (!held) {
+    log.debug("Leaving renewSchedulerJob(). Not running.");
+    return;
+  }
+  try {
+    held.entry.child.send({ schedulerRenew: true, runId: String(runId),
+                            untilMs: Number(untilMs) || 0,
+                            off: String(off || '') });
+  } catch (e) {
+    // A worker that cannot be reached is going, and its run with it; a
+    // grant not renewed runs out there by itself.
+    log.debug("Caught in renewSchedulerJob(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving renewSchedulerJob().");
+}
+
+function receiveSchedulerRunDone(entry, message) {
+  log.debug("Entering receiveSchedulerRunDone(). " + message.runId);
+  const runId = String(message.runId || '');
+  const held = schedulerRuns.get(runId);
+  if (!held || held.entry !== entry) {
+    log.debug("Leaving receiveSchedulerRunDone(). Nobody is waiting.");
+    return;
+  }
+  schedulerRuns.delete(runId);
+  held.resolve({ ok: !!message.ok, unknownJob: !!message.unknownJob,
+                 unknownRealm: !!message.unknownRealm,
+                 result: message.result === undefined ? null
+                   : message.result,
+                 error: message.error || '', code: message.code || '',
+                 // A success's own why (#1313), beside its summary.
+                 why: typeof message.why === 'string' ? message.why : '' });
+  log.debug("Leaving receiveSchedulerRunDone().");
+}
+
+// Every run a worker that ended was running fails, under STS-SCHED-0019.
+function failSchedulerRunsOf(entry, code, reason) {
+  log.debug("Entering failSchedulerRunsOf(). pid=" + entry.pid);
+  Array.from(schedulerRuns.entries()).forEach(function (pair) {
+    if (pair[1].entry !== entry) {
+      return;
+    }
+    schedulerRuns.delete(pair[0]);
+    pair[1].resolve({ ok: false, code: 'STS-SCHED-0019',
+                      error: 'request worker ' + entry.pid + ' ended (' +
+                             (reason || code) + ') before it answered' });
+  });
+  log.debug("Leaving failSchedulerRunsOf().");
+}
+
 let nextPoolStatusId = 1;
 const poolStatusWaiters = new Map();
 
@@ -6036,6 +8910,99 @@ function askWorkerPoolStatus(timeoutMs) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A FULL GARBAGE COLLECTION IN EACH WORKER THREAD, ASKED FOR (#611).
+//
+// Monitoring → Node Health's Collect buttons (`admin-ui/node_health_admin.ts`)
+// over the same channel and in the same shape as `{ poolStatus }` above: one
+// `{ collectGarbage }` message to each ready worker named (or to every ready
+// worker), answered with what `common/heap_collector.ts` measured in that
+// worker's own isolate — a worker THREAD is an isolate of its own, so only it
+// can collect its heap. A worker that does not answer within `timeoutMs` is
+// absent from the answers and the caller says so; a collection of a large
+// heap takes a while, which is why the caller's bound is longer than the
+// status question's second.
+// ---------------------------------------------------------------------------
+let nextCollectId = 1;
+const collectWaiters = new Map();
+
+function receiveCollectGarbage(entry, message) {
+  log.debug("Entering receiveCollectGarbage(). pid=" + entry.pid);
+  const waiter = collectWaiters.get(message.id);
+  if (!waiter || waiter.answers[entry.pid]) {
+    log.debug("Leaving receiveCollectGarbage(). Nobody is waiting.");
+    return;
+  }
+  waiter.answers[entry.pid] = message.collection ||
+    { ok: false, error: 'it answered without a collection' };
+  waiter.left--;
+  if (waiter.left <= 0) {
+    waiter.finish();
+  }
+  log.debug("Leaving receiveCollectGarbage().");
+}
+
+/**
+ * Asks ready request and hosted-surface worker threads to run a full garbage
+ * collection of their own isolate, and waits for what each measured.
+ *
+ * @param ids - the threadIds (the pool's `pid` for a worker) to ask, or
+ *   null for every ready worker
+ * @param timeoutMs - how long to wait for the answers
+ * @returns a promise of `{ asked, answers }`: `asked` the threadIds the
+ *   question went to, `answers` `{ [threadId]: collection }`, a worker that
+ *   did not answer in time absent
+ */
+function collectWorkerGarbage(ids, timeoutMs) {
+  log.debug("Entering collectWorkerGarbage().");
+  const wanted = ids ? ids.map(String) : null;
+  const asked = workers.filter(function (one) {
+    return one.ready && one.child && one.child.connected &&
+           (!wanted || wanted.indexOf(String(one.pid)) >= 0);
+  });
+  if (!asked.length) {
+    log.debug("Leaving collectWorkerGarbage(). No worker to ask.");
+    return Promise.resolve({ asked: [], answers: {} });
+  }
+  const id = nextCollectId++;
+  log.debug("Leaving collectWorkerGarbage(). Asked " + asked.length + ".");
+  return new Promise(function (resolve) {
+    const sent = [];
+    const waiter = { answers: {}, left: asked.length,
+                     finish: function () {} };
+    // Unreferenced, for `askWorkerPoolStatus()`'s reason.
+    const timer = setTimeout(function () {
+      waiter.finish();
+    }, timeoutMs);
+    if (timer.unref) {
+      timer.unref();
+    }
+    waiter.finish = function () {
+      log.debug("Entering finish().");
+      clearTimeout(timer);
+      collectWaiters.delete(id);
+      resolve({ asked: sent, answers: waiter.answers });
+      log.debug("Leaving finish().");
+    };
+    collectWaiters.set(id, waiter);
+    asked.forEach(function (one) {
+      try {
+        one.child.send({ collectGarbage: true, id: id });
+        sent.push(one.pid);
+      } catch (e) {
+        log.debug("Caught in collectWorkerGarbage(): " +
+                  ((e && e.message) || e));
+        // A channel that closed between the filter and the send: that
+        // worker is going, was not asked, and is not waited for.
+        waiter.left--;
+      }
+    });
+    if (waiter.left <= 0) {
+      waiter.finish();
+    }
+  });
+}
+
 // What the pool is doing, for `/admin` and for the tests. A copy, so a reader
 // cannot reach into the live entries.
 /**
@@ -6051,6 +9018,8 @@ function stats() {
   // before there was a second one; `running` is every worker of both, and
   // `pools` breaks both down.
   return {
+    // Where dispatched requests' time went in the last closed window (#820).
+    phases: requestPhases.stats(),
     configured: size(PROTOCOL_POOL),
     running: workers.length,
     ready: readyWorkers(PROTOCOL_POOL).length,
@@ -6062,11 +9031,25 @@ function stats() {
         return one.inFlight > 0;
       }).length;
       const h = history[pool];
+      // THE COOL-DOWN (#333), for Monitoring → Worker Pools.
+      // `giveUpRetryLeftMs` is what is left of the wait and
+      // `giveUpRetryArmedMs` how long it was armed for, both 0 when none is
+      // armed; `giveUpProbing` is the try itself, while routing still says
+      // given up. (One field, `giveUpRetryMs`, held the time left until
+      // #695, under the setting's own name.)
+      const retry = giveUpState[pool];
+      const retryMs = retry && retry.timer
+        ? Math.max(0, retry.at - Date.now()) : 0;
+      const armedMs = retry && retry.timer ? Number(retry.delay) || 0 : 0;
       return { pool: pool, configured: size(pool),
                running: workers.filter(function (one) {
                  return (one.pool || PROTOCOL_POOL) === pool;
                }).length,
                ready: ready.length, gaveUp: givenUp[pool],
+               giveUpRetryLeftMs: retryMs,
+               giveUpRetryArmedMs: armedMs,
+               giveUpProbing: !!(retry && retry.probing),
+               giveUpAttempt: retry ? retry.attempt : 0,
                replaced: replaced[pool],
                affinities: affinities[pool].size,
                prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [],
@@ -6080,6 +9063,16 @@ function stats() {
     }),
     readYourWrite: readYourWrite(),
     generation: generation,
+    // SYNC ROUNDS STARTED, every caller (the change-log pulls the barrier
+    // asked workers for), and HOW EACH WRITE WAS SENT (#626): `current`
+    // (nothing to catch up on), `keyed` (handed `keysSent` keys in place of
+    // the pull) or `synced` (the barrier, as every write before #626).
+    syncRounds: syncRounds,
+    writes: { current: writeBarriers.current, keyed: writeBarriers.keyed,
+              synced: writeBarriers.synced, keysSent: writeBarriers.keysSent,
+              lastSharedGeneration: lastSharedGeneration,
+              keyLog: { records: keyLog.length, keys: keyLogSize,
+                        floor: keyLogFloor } },
     // THE BATCH LANE per pool: in flight, waiting, the cap, which workers are
     // in the lane, and how many were ever queued, refused or timed out.
     batch: batchStats(),
@@ -6088,8 +9081,11 @@ function stats() {
     replayed: replayCount,
     // THE START GATE (#342): how many workers may start at once, how many
     // are starting, and how many wait behind them.
+    // And whether the width is the automatic one, and what a start was
+    // measured to cost (#639).
     starts: { concurrency: startConcurrency(), starting: startsInFlight,
-              queued: forkQueue.length },
+              queued: forkQueue.length, automatic: automaticStarts(),
+              measuredStartMb: Math.round(measuredStartBytes / MIB) },
     // EVERY PROCESS'S HEAP BUDGET AND THE LATEST EXITS (#341): the limit a
     // worker is forked with and where it came from, the container's
     // OOM-kill count when last read, and each exit with its cause.
@@ -6107,7 +9103,38 @@ function stats() {
                // READERS HELD RIGHT NOW. A number that stays large once
                // nothing is being written is the waiter leak
                // releaseTicketWaiters() describes, come back.
-               waiters: ticketWaiters.length - settledWaiters },
+               waiters: ticketWaiters.length - settledWaiters,
+               // READERS THAT WAITED AT ALL, ever (#626): a reader with
+               // nothing blocking it is not counted.
+               waited: ticketWaits },
+    // SESSION READ-YOUR-WRITE (#820): the mode, how many dispatches were
+    // keyed and how many waited globally, and the client-key table. A
+    // `spilled` that is not zero means keys were evicted while they still
+    // mattered, and every keyed request waits for what they held.
+    // `codeKeyed` counts code exchanges keyed by their code, `codesLearnt`
+    // authorization code redirects learnt, and `settledCodes` the names kept
+    // of code keys pruned once settled (THE CODE EXCHANGE, KEYED BY ITS
+    // CODE). `refreshKeyed` counts refresh grants keyed by their token, and
+    // `refreshLearnt` token responses whose refresh token was filed (THE
+    // REFRESH GRANT, KEYED BY ITS TOKEN, #879). `revokingDispatched` and
+    // `revokingAnswered` count tickets filed under REVOKE_KEY by their path
+    // and by their answer, and `revokeWaits` the token requests that waited
+    // for it (THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF).
+    sessionBarrier: { mode: readYourWriteMode(), session: sessionDispatches,
+                     global: globalDispatches,
+                     codeKeyed: codeKeyedDispatches,
+                     codesLearnt: codeKeysLearnt,
+                     settledCodes: settledCodes.size,
+                     refreshKeyed: refreshKeyedDispatches,
+                     refreshLearnt: refreshKeysLearnt,
+                     revokingDispatched: revokingDispatches,
+                     revokingAnswered: revokingAnswers,
+                     revokeWaits: revokeWaits,
+                     keys: clientStates.size,
+                     evicted: clientEvictions,
+                     spilled: spilledTickets.size,
+                     spilledGeneration: spilledGeneration,
+                     frontGeneration: frontGeneration },
     dispatch: dispatchPrefixes(),
     affinities: affinities[PROTOCOL_POOL].size,
     socketDir: socketDir,
@@ -6134,6 +9161,13 @@ function reset() {
     quickExits[pool] = 0;
     replaced[pool] = 0;
     history[pool] = freshHistory();
+    const state = giveUpState[pool];
+    if (state) {
+      clearGiveUpRetry(pool);
+      state.probing = false;
+      state.attempt = 0;
+      state.at = 0;
+    }
   });
   workerModule = WORKER_MODULE;
   stopped = false;
@@ -6141,6 +9175,10 @@ function reset() {
   // And the start gate (#342): nothing queued, nothing counted as starting.
   dropQueuedForks();
   startsInFlight = 0;
+  // And the automatic width's measurement (#639): the next start is the
+  // first again.
+  measuredStartBytes = 0;
+  measuringFrom = 0;
   // And the memory bookkeeping (#341): the budget is read again, the real
   // OOM-kill counter is back, and no exit is remembered.
   processMemory.resetBudget();
@@ -6156,9 +9194,36 @@ function reset() {
   outstanding.clear();
   finishedTickets.clear();
   finishedAt.clear();
+  ticketInfo.clear();
   ticketWaiters = [];
   settledWaiters = 0;
+  // And the client keys session mode keeps (#820).
+  clientStates.clear();
+  spilledTickets.clear();
+  spilledGeneration = 0;
+  frontGeneration = 0;
+  clientEvictions = 0;
+  sessionDispatches = 0;
+  globalDispatches = 0;
+  settledCodes.clear();
+  codeKeyedDispatches = 0;
+  codeKeysLearnt = 0;
+  refreshKeyedDispatches = 0;
+  refreshKeysLearnt = 0;
+  revokingDispatches = 0;
+  revokingAnswers = 0;
+  revokeWaits = 0;
   reaped = 0;
+  // And what each write was and how it was sent (#626).
+  lastSharedGeneration = 0;
+  keyLog = [];
+  keyLogSize = 0;
+  keyLogFloor = 0;
+  writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
+  syncRounds = 0;
+  ticketWaits = 0;
+  localChangeMark = null;
+  localChangeMarked = false;
   // And the batch lane's counts and queue, for the same reason.
   batchState.forEach(function (state) {
     state.waiting.forEach(function (entry) { clearTimeout(entry.timer); });
@@ -6177,13 +9242,20 @@ function reset() {
  * @namespace
  */
 module.exports = {
+  // Where the scheduler's leader runs a cluster job's body (#408).
+  schedulerRunner: schedulerRunner,
   size: size,
   start: start,
+  confirmCoordination: confirmCoordination,
   stop: stop,
   stats: stats,
-  // Monitoring → Worker Pools (#327): each request worker's own
-  // post-quantum pool, asked for over the channel.
+  // Each ready worker's memory and CPU time, asked for over the channel
+  // (#327, #329). Until #363 the answer also carried that worker's
+  // post-quantum pool.
   askWorkerPoolStatus: askWorkerPoolStatus,
+  // Monitoring → Node Health's Collect buttons (#611): a full garbage
+  // collection in each worker thread, asked for over the channel.
+  collectWorkerGarbage: collectWorkerGarbage,
   reset: reset,
   middleware: middleware,
   setServerCertificate: setServerCertificate,
@@ -6193,6 +9265,18 @@ module.exports = {
   dispatched: dispatched,
   fansOut: fansOut,
   readYourWrite: readYourWrite,
+  readYourWriteMode: readYourWriteMode,
+  readYourWriteModeOf: readYourWriteModeOf,
+  clientKeysOf: clientKeysOf,
+  codeExchangeCandidate: codeExchangeCandidate,
+  // THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF, and the refresh token's
+  // key (the review of #879), for tests/request_ryw_session.js: which
+  // requests are filed under REVOKE_KEY by their path, and that a key is a
+  // digest. `clientKeyNames()` is the table's keys, never its tickets.
+  revokingRequest: revokingRequest,
+  refreshKeyOf: refreshKeyOf,
+  REVOKE_KEY: REVOKE_KEY,
+  clientKeyNames: clientKeyNames,
   dispatchPrefixes: dispatchPrefixes,
   fanoutPrefixes: fanoutPrefixes,
   affinityKeyOf: affinityKeyOf,
@@ -6222,6 +9306,10 @@ module.exports = {
   // catch a rename is a test holding them side by side. tests/ldap_logout.js
   // does exactly that.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // And the revoking answer's (the review of #879), for
+  // tests/revoking_writes.js.
+  REVOKING_HEADER: REVOKING_HEADER,
+  WORKER_DECIDES: WORKER_DECIDES,
   // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
   // tests/front_process_writes.js can drive it without a store, a fork or a
   // socket: it takes the count rather than reading it, precisely so that the
@@ -6245,8 +9333,15 @@ module.exports = {
   ticketFinished: ticketFinished,
   ticketAbandoned: ticketAbandoned,
   reapStuckTickets: reapStuckTickets,
+  // What STS-WORKER-0008 says about one ticket (#620), exported so that
+  // `tests/request_ticket_announce.js` can hold the two causes apart.
+  describeTicket: describeTicket,
   awaitCommitConfirmations: awaitCommitConfirmations,
   receiveCommitted: receiveCommitted,
+  // What a write may be handed in place of the pull (#626), for
+  // tests/request_write_barrier.js.
+  staleKeysFor: staleKeysFor,
+  BARRIER_FREE_WRITES: BARRIER_FREE_WRITES,
   // THE SYNC HALF OF THE BARRIER AND THE PROXY, exported for the same file
   // (2026-09-13): that one sync round per worker is shared by every reader it
   // covers is a decision about promises and an IPC `send`, and that a client
@@ -6254,6 +9349,7 @@ module.exports = {
   barrier: barrier,
   receiveSync: receiveSync,
   proxy: proxy,
+  WORKER_ANSWER_MAX_HEADER_BYTES: WORKER_ANSWER_MAX_HEADER_BYTES,
   // THE LISTENER'S RECONCILE, exported for tests/listener_branch_adoption.js
   // (2026-09-13): that one pass runs at a time and that a pass left waiting
   // for a branch arms the fallback are decisions about promises and a timer,
@@ -6279,11 +9375,16 @@ module.exports = {
   // real fork() and reap() with a stub worker — the module a worker runs
   // and fork() itself.
   replacementFor: replacementFor,
+  // The cool-down's doubling (#333), for tests/request_worker_replacement.js.
+  giveUpRetryDelay: giveUpRetryDelay,
   useWorkerModule: useWorkerModule,
   fork: fork,
   // THE START GATE (#342), for the same file: a fork queued behind it, as
   // start() and a replacement queue theirs.
   queueFork: queueFork,
+  // The automatic start width as a decision over its inputs (#639), for its
+  // test.
+  startWidthFor: startWidthFor,
   startOrder: startOrder,
   // WHY A WORKER DIED (#341), for tests/process_memory.js: the decision, and
   // the OOM-kill counter reap() reads.

@@ -3,7 +3,7 @@
 
 /*
  * JscepDriver — a command line over jscep, the Java SCEP client library, for
- * tests/vendored/sts_scep_jscep.js (#250, 2026-09-26).
+ * tests/protocol/sts_scep_jscep.js (#250, 2026-09-26).
  *
  * jscep (com.google.code.jscep:jscep, MIT) is a LIBRARY, not a program, so
  * something has to call it. This is that something, and it is kept as thin as

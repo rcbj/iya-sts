@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# aws under Cygwin, through tests/tools/windows/run-native (#512), which
+# removes the CR from each line the Windows program prints. Put on PATH by
+# tests/tools/host-platform.sh, and never on Linux.
+exec "$(dirname "$0")/run-native" aws "$@"

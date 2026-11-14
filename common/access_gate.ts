@@ -74,6 +74,7 @@
 
 import helpers = require('./helpers');
 import config = require('./config');
+import mode = require('./mode');
 // The error-code registry. A LEAF that requires nothing here, so this file
 // stays one; the two failures below are tagged in the log rather than audited,
 // because `audit.js` is a heavier require than a leaf gate should carry.
@@ -100,6 +101,7 @@ import InstanceSlot = require('./instance_slot');
 //   spire-server-api    `spiffe/spiffe_grpc.ts`'s prepareCall()
 //   xacml-pep-api       `xacml/xacml.ts`'s pepAccess()
 //   xacml-api           `xacml/xacml.ts`'s xacmlAccess()
+//   authzen-api         `authzen/authzen_caller.ts`'s mayAsk() (#563)
 //   protocol-debugger   `debugger/debugger_access.ts`
 //
 // **THE LAST THREE ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
@@ -158,7 +160,8 @@ const RESOURCE = {
   // `xacml/xacml.ts`'s pepAccess() where it is asked.
   XACML_PEP_API: 'xacml-pep-api',
   // THE XACML SURFACE PROPER: GET /xacml, POST /xacml/pdp, GET
-  // /xacml/policies, GET /xacml/protected. The seventh resource and the second
+  // /xacml/policies (and GET /xacml/protected until #596 moved it to the
+  // remote PEP). The seventh resource and the second
   // that is restricted from the start — it requires `XACML_USER`, which
   // `xacml/xacml.ts` puts in the request.
   //
@@ -166,12 +169,18 @@ const RESOURCE = {
   // the two ids are what make the separation writable: an operator adding a
   // second Permit rule for a helpdesk role, or narrowing one surface and not
   // the other, needs two names to target. One id covering all eight endpoints
-  // would mean every policy anybody wrote about the demonstration surface also
+  // would mean every policy anybody wrote about the XACML surface proper also
   // decided who may pull the documents this service enforces its own access
   // with, which is the collapse `roles.js` keeps the two roles apart to
   // prevent — and a policy layer that cannot express the distinction its own
   // register makes is a policy layer somebody will work around.
   XACML_API: 'xacml-api',
+  // THE AUTHZEN AUTHORIZATION API (#563): `POST /access/v1/evaluation` and
+  // its batch sibling. Restricted from the start, like the two XACML ones —
+  // `authzen/authzen_caller.ts` puts AUTHZEN_PEPS in the request — and a
+  // resource of its own so an operator can narrow decision-only callers
+  // without touching either XACML surface (rcbj on #563, decision 2).
+  AUTHZEN_API: 'authzen-api',
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the third resource that
   // is restricted from the start: `debugger/debugger_access.ts` puts the two
   // console roles in the request, so only a console administrator is issued
@@ -179,7 +188,26 @@ const RESOURCE = {
   // purpose — when the scope would be issued and on every call the api's
   // gate forwards — because a role revoked after a token was minted must stop
   // working before the token runs out.
-  DEBUGGER: 'protocol-debugger'
+  DEBUGGER: 'protocol-debugger',
+  // THE REPORT API (#1030, 2026-10-27), the ninth resource, and the first
+  // whose rows are decided one at a time: `report/rights.ts` asks once for
+  // the API — holding REPORT_USE or REPORT_ADMIN, the first rule's any-one
+  // — and once per definition or job, with the row's owner in `owner` and
+  // the row in `reportObject`, so the first rule permits the OWNER (the
+  // same comparison that reaches a person their portal account) and the
+  // access-control document's third rule permits a report administrator on
+  // any row and a shared group's member on a read or a run. An application
+  // holding a report role is an owner and nothing else. Until #1030 every
+  // one of those decisions was an `if` in `report/rights.ts`.
+  REPORT_API: 'report-api',
+  // AN AUTHZEN ACCESS REQUEST (#1180), the tenth resource, asked by
+  // `authzen/authzen_access_request.ts`'s `mayDecide()` before a person
+  // approves, denies or revokes one — from the portal or the console. The
+  // first rule never permits it (it would let any role-holder approve
+  // their own request); the built-in document's fourth rule decides it,
+  // over the facts in `accessRequestObject`, so self-approval and
+  // separation of duties are policy (rcbj's decision 2 on #1180).
+  AUTHZEN_ACCESS_REQUEST: 'authzen-access-request'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's
@@ -197,7 +225,16 @@ const RESOURCE = {
 const ACTION = {
   READ: 'read',
   WRITE: 'write',
-  MANAGE_OWN: 'manage-own'
+  MANAGE_OWN: 'manage-own',
+  // RUNNING A SAVED REPORT DEFINITION (#1030): neither a read of the row
+  // nor a change to it, and the one act a share grants beside reading —
+  // which is why it is a word of its own rather than `read` with a note. A
+  // realm's override narrows or widens it through `reportSharedActions`.
+  RUN: 'run',
+  // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it, denying it,
+  // or revoking its approval, one question for all three — who may decide
+  // a request is who may decide it either way.
+  APPROVE_ACCESS_REQUEST: 'approve-access-request'
 };
 
 // The person a decision is about — the SECURITY CONTEXT's, never the
@@ -208,6 +245,20 @@ interface AccessSubject {
   roles?: string[];
   sub?: string;
   sessionId?: string | null;
+  // `user` or `application` (#1030): sent to the policy as
+  // `urn:sts:xacml:subject-kind` when given, and never otherwise, so a
+  // surface that does not say keeps the request it always made.
+  kind?: string;
+  // The roles given ARE the decision's roles (#1030): a resource server
+  // that computed held ∩ carried from a verified token says so, and the
+  // PEP then consults the register for the built-in roles alone, rather
+  // than unioning in a register role the token does not carry — which
+  // would make a `report:use` token a report administrator's because its
+  // subject also holds REPORT_ADMIN.
+  effective?: boolean;
+  // What to call the subject in a refusal and an audit row where `name` is
+  // an identifier (a `urn:uuid:` subject, #1030).
+  label?: string;
   [key: string]: unknown;
 }
 
@@ -218,8 +269,60 @@ interface AccessRequest {
   subject?: AccessSubject | null;
   owner?: unknown;
   requiredRoles?: string[];
+  requiredAllRoles?: string[];
+  ownedObject?: OwnedObject | null;
+  reportObject?: ReportObject | null;
+  accessRequestObject?: AccessRequestObject | null;
   context?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+// An AuthZEN access request being decided (#1180): the tuple, who asked,
+// and what the approver is. The values are lowercased where the rule
+// compares them with the approver's identity.
+interface AccessRequestObject {
+  id: string;
+  // The PEP that submitted it, and the subject it is about.
+  requester: string;
+  subject: string;
+  subjectType: string;
+  action: string;
+  resource: string;
+  resourceType: string;
+  application: string;
+  // Whether the approver is one the advice named (a role, a group, the
+  // application's owners) — computed, as routing is.
+  eligible: boolean;
+  // `portal` or `admin-api`.
+  door: string;
+  // Every name the approver goes by, lowercased.
+  approverIdentity: string[];
+}
+
+// A report definition or job the question is about (#1030). `owner` goes in
+// the request as `owner` too (the first rule's comparison); this carries
+// what the third rule reads beside it.
+interface ReportObject {
+  // `definition` or `job`.
+  kind: string;
+  // The row's owner as stored: the token subject that made it.
+  owner: string;
+  // The group DNs the definition is shared with (a job's, its
+  // definition's), each as `common/ownership.ts`'s `dnKey()` compares one.
+  groups?: string[];
+  // The PERSON the token is for, by username, for the PIP's owner identity;
+  // empty for an application's own token.
+  person: string;
+}
+
+// The object an owner would administer (#607). See `check()`.
+interface OwnedObject {
+  kind: string;
+  id: string;
+  action: string;
+  requiredRole: string;
+  attributes?: string[];
+  person: string;
 }
 
 // What it answers. A decider's answer may carry more (an error code under a
@@ -237,6 +340,7 @@ type AccessDecider =
 
 // What the gate needs from the rest of the service.
 interface AccessGateDeps {
+  mode: { failsOpenOnPolicyFault(): boolean };
   log: {
     debug(message: string): void;
     warn(message: string): void;
@@ -282,6 +386,7 @@ class AccessGate {
     return {
       log: helpers.log,
       config: config,
+      mode: mode,
       errorCodes: errorCodes
     };
   }
@@ -354,7 +459,21 @@ class AccessGate {
   //                the roles this request demands, where the CALLER states the
   //                requirement (the XACML surfaces, the debugger, the
   //                management API's token path); absent for a surface an
-  //                operator narrows by policy.
+  //                operator narrows by policy. ANY ONE of them satisfies it.
+  //     requiredAllRoles
+  //                roles the subject must hold EVERY one of, beside the above
+  //                (#454): the management API's console operations ask for
+  //                ADMIN_CONSOLE and, where they show realm data, ADMIN_READ
+  //                too. Absent or empty, it asks nothing.
+  //     ownedObject
+  //                the object an OWNER would administer (#607), where the
+  //                management API's operation is one an owner may ask:
+  //                `{ kind, id, action, requiredRole, attributes, person }`
+  //                — the kind of object, how the request names it, the
+  //                action, OWNER_READ or OWNER_WRITE, the attributes it
+  //                would write, and the person by username. The policy's
+  //                owner rule decides on it beside `requiredRoles`; absent,
+  //                that rule cannot permit.
   //     context    anything else worth deciding on: the method, the path. For
   //                the log and for a policy that wants it. }
   //
@@ -366,8 +485,8 @@ class AccessGate {
    *
    * Allowed without asking when no decider is installed, when
    * `xacml.enforceAccess` is off, or when the request names no resource or
-   * action. A decider that throws is a defect: the request is allowed and the
-   * fault logged under STS-XACML-0051.
+   * action. In product mode a fault (no decider, a throw, an empty answer, a
+   * check naming nothing) is a refusal; development allows it. Each is logged.
    *
    * @param request - the resource, action, subject (from the security context,
    *   never the request), owner, required roles and context
@@ -380,11 +499,23 @@ class AccessGate {
     const asked: AccessRequest = request || {};
     log.debug('Entering AccessGate.check(). resource=' + asked.resource +
               ', action=' + asked.action);
+    // A DECISION THAT CANNOT BE MADE (#1450, ASVS 5.0.0 8.2.1): product refuses
+    // and development allows, so a half-loaded development process still
+    // answers. Every case below goes through here; each is logged.
+    const fault = (code: string, why: string): AccessAnswer => {
+      const open = this.deps.mode.failsOpenOnPolicyFault();
+      // error-code: none — each caller of fault() names its literal code.
+      log.error(errorCodes.tag(code) + 'access_gate: ' + why +
+                (open ? ' Access was ALLOWED, in development mode.'
+                      : ' Access was REFUSED.'));
+      log.debug("Leaving AccessGate.check(). A fault.");
+      return open ? this.allow(why)
+                  : { allowed: false, decision: 'Indeterminate', why: why,
+                      policy: '' };
+    };
     if (!this.decider) {
-      log.debug("Leaving AccessGate.check(). No decider, so nothing is " +
-                "gated.");
-      return this.allow('The XACML access subsystem is not loaded in this ' +
-                        'process, so access is not gated by policy.');
+      return fault('STS-XACML-0181', 'no decider is installed in this ' +
+                   'process, so no decision could be asked for.');
     }
     if (config.value('xacml.enforceAccess') === false) {
       log.debug("Leaving AccessGate.check(). Enforcement is off.");
@@ -392,15 +523,9 @@ class AccessGate {
                         'not asked for.');
     }
     if (!asked.resource || !asked.action) {
-      // A caller that does not know what it is asking about. Allowed rather
-      // than refused, and logged, because the alternative is a gate that
-      // refuses because of a bug in the code that called it.
-      log.warn('access_gate: a check named ' +
-               (asked.resource ? 'no action' : 'no resource') +
-               ', so it was allowed. That is a defect at the call site ' +
-               'rather than a decision.');
-      log.debug("Leaving AccessGate.check().");
-      return this.allow('The check named no resource or no action.');
+      return fault('STS-XACML-0182', 'a check named ' +
+                   (asked.resource ? 'no action' : 'no resource') +
+                   ', which is a defect at the call site.');
     }
     let answer: AccessAnswer | null | undefined;
     try {
@@ -408,19 +533,16 @@ class AccessGate {
     } catch (error) {
       log.debug("Caught in AccessGate.check(): " +
                 ((error && error.message) || error));
-      // See the header: a THROW is a defect, not a Deny.
-      log.error(errorCodes.tag('STS-XACML-0051') +
-                'access_gate: the decider threw and access was ALLOWED; ' +
-                'this is a defect in the embedded PEP rather than a ' +
-                'decision. ' + error.message);
-      log.debug("Leaving AccessGate.check().");
-      return this.allow('The embedded PEP threw, which is a defect rather ' +
-                        'than a decision: ' + error.message);
+      return fault('STS-XACML-0051', 'the decider threw, which is a defect ' +
+                   'in the embedded PEP rather than a decision: ' +
+                   error.message);
     }
-    const result = answer || this.allow('The embedded PEP answered nothing.');
+    if (!answer) {
+      return fault('STS-XACML-0181', 'the embedded PEP answered nothing.');
+    }
     log.debug("Leaving AccessGate.check(). " +
-              (result.allowed ? 'Allowed.' : 'REFUSED: ' + result.why));
-    return result;
+              (answer.allowed ? 'Allowed.' : 'REFUSED: ' + answer.why));
+    return answer;
   }
 }
 

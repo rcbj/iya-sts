@@ -88,9 +88,10 @@ TOKEN="$(node tests/tools/admin-api-token.js "${URL}")" || {
   exit 1
 }
 
-# THE PREVIOUS RUNS' REALMS, BULK-LOAD ENTRIES, APPLICATIONS AND OVERRIDES GO
-# FIRST, so the environment can be reused: the suite leaves every realm it
-# creates, and a long-lived cluster would otherwise carry every run's.
+# THE PREVIOUS RUNS' REALMS, BULK-LOAD ENTRIES, APPLICATIONS, OVERRIDES AND
+# SUITE TRUST ANCHORS GO FIRST (#335), so the environment can be reused: the
+# suite leaves every realm it creates, and a long-lived cluster would
+# otherwise carry every run's.
 # deploy/aws/reset-environment.js argues it (it reads
 # STS_ADMIN_API_CLIENT_SECRET, above, for its SCIM token);
 # a failure to remove one is the run's failure, because a realm with a fixed id
@@ -104,7 +105,7 @@ STS_ADMIN_API_TOKEN="${TOKEN}" node deploy/aws/reset-environment.js "${URL}" || 
 EXCLUDE="${STS_SUITE_EXCLUDE:-}"
 ONLY="$(EXCLUDE="${EXCLUDE}" node -e '
   const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-  const jobs = require("./tests/vendored/MANIFEST.js").JOBS
+  const jobs = require("./tests/protocol/MANIFEST.js").JOBS
     .map(function (j) { return j.file; })
     .filter(function (f) { return !skip.has(f); });
   process.stdout.write(jobs.join(","));

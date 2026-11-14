@@ -47,7 +47,7 @@
 //     and which `openssl crl` is then asked to verify, so even that one is read
 //     by an implementation other than the one under test.
 //
-// **MOSTLY NEGATIVES**, for `tests/vendored/sts_dpop.js`'s reason: a
+// **MOSTLY NEGATIVES**, for `tests/protocol/sts_dpop.js`'s reason: a
 // revocation check that answers `good` for a good certificate looks finished
 // and is worth nothing. What it has to get right is `revoked` for a revoked
 // one at every door, `unknown` — and a REFUSAL only under hard-fail — for a
@@ -89,8 +89,8 @@ const CHILD_FLAG = 'STS_REVOCATION_STATUS_CHILD';
 // ---------------------------------------------------------------------------
 async function issue(spec) {
   log.debug("Entering issue().");
-  const x509 = require('../common/vendored/x509');
-  const keys = require('../common/vendored/key_material');
+  const x509 = require('../common/crypto_impl/x509');
+  const keys = require('../common/crypto_impl/key_material');
   const pair = await keys.generateKeyPair('rsa-2048');
   const now = Date.now();
   const extensions = {
@@ -266,6 +266,12 @@ function crlServer() {
   });
 }
 
+// Product mode as #174 wrote it. Paranoid PKI mode, on there by default, has the
+// sharper rule: where a certificate names no source there is no check to perform
+// (rcbj, #1360), which `tests/certificate_trust.js` holds.
+const PRODUCT_NOT_PARANOID = { 'global.mode': 'product',
+                               'pki.paranoid': 'off' };
+
 async function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const config = require('../common/config');
@@ -317,7 +323,7 @@ async function thePolicy(t) {
   t.equal(status.policy().effective, 'soft-fail',
           'and auto is SOFT-FAIL in development — the register is consulted, ' +
           'an unreachable foreign list is not a refusal');
-  await withSettings({ 'global.mode': 'product' }, async function () {
+  await withSettings(PRODUCT_NOT_PARANOID, async function () {
     t.equal(status.policy().effective, 'hard-fail',
             'and HARD-FAIL in product, through ' +
             'mode.refusesUnknownRevocationStatus()');
@@ -720,7 +726,7 @@ async function theForeignCrl(t, fixture, realmId) {
             'verdict says its list was not dialled', l.why);
   });
   // PRODUCT MODE, pki.revocationRequireDistributionPoint=auto: the new default.
-  await withSettings({ 'global.mode': 'product' }, async function () {
+  await withSettings(PRODUCT_NOT_PARANOID, async function () {
     t.equal(status.policy().requireDistributionPoint, true,
             'in PRODUCT, auto is mode.refusesUnrevocableCertificates(): yes');
     const v = await status.verdictFor(input(bare));
@@ -2736,7 +2742,7 @@ async function theUndialledAndNoRevAvail(t, fx) {
             'while the undialled responder is accepted under soft-fail, and ' +
             'reported', ocspLdap.why);
   });
-  await withSettings({ 'global.mode': 'product' }, async function () {
+  await withSettings(PRODUCT_NOT_PARANOID, async function () {
     status.resetCache();
     const none = await status.verdictFor(input(fx.leaf.nNone));
     t.check(none.refused && errorCodes.codeOf(none) === 'STS-PKI-0190',
@@ -2896,7 +2902,7 @@ async function theRegisteredApi(t, fx) {
               'unless pki.revocationRequireDistributionPoint says it must',
               required.why);
     });
-    await withSettings({ 'global.mode': 'product' }, async function () {
+    await withSettings(PRODUCT_NOT_PARANOID, async function () {
       const product = await status.registeredVerdictFor(
           { certificate: fx.leaf.gNoAia.pem, source: 'a test registration' });
       t.check(product.refused &&
@@ -3167,7 +3173,7 @@ async function theRegisteredDoors(t) {
   const assertionGrant = require('../oauth-oidc/assertion_grant');
   const clientAuth = require('../oauth-oidc/client_auth');
   const samlGrant = require('../oauth-oidc/saml_assertion_grant');
-  const signer = require('./vendored/saml_xmldsig.js');
+  const signer = require('./protocol/saml_xmldsig.js');
   const federationSp = require('../federation/federation_sp');
   const vcVerifier = require('../oid4vc/vc_verifier');
   const realm = await secondRealm('rev-doors');
@@ -3395,6 +3401,15 @@ async function theRegisteredDoors(t) {
     t.check(bareFed === 'signed in' && proceeded === 2,
             'while a partner key with no certificate has nothing to check ' +
             'and the sign-in goes on', JSON.stringify(bareFed));
+    // A HELD ANSWER THAT RESTED ON NO SIGNATURE (the opaque token's
+    // profile answer, back from the profile form): nothing to look up, so
+    // even with the relationship's certificate revoked it goes on — and one
+    // that held the certificate as its signer is refused like the first.
+    const unsignedFed = await federationSp.signerStillAccepted({}, fakeRes(),
+      record, proceed, undefined, true);
+    t.check(unsignedFed === 'signed in' && proceeded === 3,
+            'a held answer no signature was verified on goes on without a ' +
+            'lookup', JSON.stringify(unsignedFed));
 
     // --- OID4VP -----------------------------------------------------------
     const vcPair = (await pki.issueSigningKeyPair(REALM, { identifier: 'rev-vc',
@@ -3427,24 +3442,103 @@ async function theRegisteredDoors(t) {
                                               'federation_sp.ts'), 'utf8')
     .split('\n');
   const sites = [];
+  // SEVEN SITES SINCE #729: the five a partner's answer arrives at, and the
+  // two steps that HOLD a verified answer and finish it when the person
+  // returns — the step-up on risk and the newcomer's profile form — each of
+  // which asks signerStillAccepted() AGAIN with the signer the answer
+  // carries (`heldSigner()`), since a key may be revoked while the person is
+  // away. The opaque token's refusal sentence grew a provider clause, so its
+  // marker is looked for over the statement before the site, not 3 lines.
+  //
+  // TEN SINCE #746: Discourse, Steam and Bluesky rest on no signature whose
+  // signer could be withdrawn, each for a different reason. A marker alone
+  // proves only that somebody typed one, so each reason is held to the method
+  // that carries it, and to what that method must do for the reason to be true;
+  // `federation/CLAUDE.md` argues the three.
+  const NO_SIGNER_REASONS = {
+    'discourse-hmac': {
+      method: 'consumeDiscourseAnswer',
+      evidence: [/\.hmacSha256\(/, /\.constantTimeEquals\(/, /!!secret &&/],
+      signer: /signer: FederationSp\.signerOf\('shared-secret'/
+    },
+    'steam-check-authentication': {
+      method: 'consumeSteamAssertion',
+      evidence: [/'check_authentication'/, /'is_valid:true'/],
+      signer: /signer: FederationSp\.signerOf\('none'\)/
+    },
+    'atproto-back-channel': {
+      method: 'consumeAtprotoAnswer',
+      evidence: [/AtprotoClient\.postWithDpop\(/,
+                 /this\.atprotoSubjectProblem\(/],
+      signer: /signer: FederationSp\.signerOf\('did'/
+    }
+  };
   fedSource.forEach(function (line, at) {
     if (/^\s*return (?:this\.)?completeSignIn\(/.test(line)) {
       const before = fedSource.slice(Math.max(0, at - 3), at).join('\n');
+      const statement = fedSource.slice(Math.max(0, at - 16), at)
+        .join('\n');
+      const marked = /\/\/ no-signer: ([a-z0-9-]+) — \S/.exec(
+        fedSource.slice(Math.max(0, at - 5), at).join('\n'));
+      let start = at;
+      while (start > 0 &&
+             !/^ {2}(?:private |static |async )*\w+\(/.test(fedSource[start])) {
+        start -= 1;
+      }
+      const method = /(\w+)\(/.exec(fedSource[start])[1];
       sites.push({ line: at + 1, wrapped: /signerStillAccepted\(/.test(before),
-                   opaque: /The profile endpoint answered/.test(before) });
+                   opaque: /The profile endpoint answered/.test(statement),
+                   reason: marked ? marked[1] : '', method: method,
+                   body: fedSource.slice(start, at).join('\n'),
+                   after: fedSource.slice(at, at + 8).join('\n') });
     }
   });
-  t.check(sites.length === 5 &&
-          sites.filter(function (one) { return one.wrapped; }).length === 4 &&
+  const siteRows = JSON.stringify(sites.map(function (one) {
+    return [one.line, one.method, one.wrapped, one.opaque, one.reason];
+  }));
+  t.check(sites.length === 10 &&
+          sites.filter(function (one) { return one.wrapped; }).length === 6 &&
+          sites.filter(function (one) {
+            return !one.wrapped && one.opaque;
+          }).length === 1 &&
           sites.filter(function (one) { return !one.wrapped; })
                .every(function (one) {
-            return one.opaque;
+            return one.opaque || !!one.reason;
           }),
           'EVERY FEDERATED SIGN-IN THAT RESTS ON A SIGNATURE REACHES ' +
           'completeSignIn() THROUGH signerStillAccepted() — SAML 2.0 and ' +
-          '1.1, WS-Federation, OIDC and a JWT access token — and the one ' +
-          'that does not is the opaque OAuth 2.0 token, where no signature ' +
-          'was verified at all', JSON.stringify(sites));
+          '1.1, WS-Federation, OIDC, a JWT access token, and the step-up ' +
+          'and profile form that hold one of them — and each that does ' +
+          'not says why: the opaque OAuth 2.0 token, or a no-signer reason',
+          siteRows);
+  const reasoned = sites.filter(function (one) { return !!one.reason; });
+  const reasonProblems = reasoned.filter(function (one) {
+    const rule = NO_SIGNER_REASONS[one.reason];
+    return one.wrapped || !rule || rule.method !== one.method ||
+      !rule.evidence.every(function (shape) {
+        return shape.test(one.body);
+      }) ||
+      /verifyForeignJwt\(|verifyXmlSignature\(|verifyIdToken\(|signerOf\('(?:jwk|certificate)'/
+        .test(one.body) ||
+      !rule.signer.test(one.after);
+  });
+  t.check(reasoned.map(function (one) { return one.reason; }).sort().join() ===
+          Object.keys(NO_SIGNER_REASONS).sort().join() &&
+          reasonProblems.length === 0,
+          'and each no-signer reason is used once, in the method it names, ' +
+          'which does what the reason claims, verifies no partner signature ' +
+          'and records what a held answer is asked about', JSON.stringify(
+            reasonProblems.map(function (one) { return one.line; })) + ' ' +
+          siteRows);
+  const joined = fedSource.join('\n');
+  t.check((joined.match(/this\.heldSigner\(res, record, context\.result\)/g) ||
+           []).length === 3 &&
+          /return this\.signerStillAccepted\(req, res, record, \(\) => \{\n\s*return this\.finishSignIn\(req, res, record, context\.result/
+            .test(joined),
+          'and the three steps that hold a verified answer — linking, the ' +
+          'step-up, the profile form — ask the signer again when they ' +
+          'return, with the signer the answer carried',
+          'heldSigner() call sites');
   t.check(/verified: .*jwk: candidates\[i\]|jwk: candidates\[i\]/.test(
       fedSource.join('\n')) &&
           /\}, verified\.jwk\);/.test(fedSource.join('\n')),
@@ -3567,6 +3661,24 @@ async function theMainPort(t, minted) {
     server.listen(0, '127.0.0.1', resolve);
   });
   const port = server.address().port;
+  // BOTH LEAVES STORED ON AN ENTRY (#1061): an outside authority's
+  // certificate is an identity only as the one entry storing it, so the
+  // SCIM door below would refuse an unstored good one for that reason —
+  // and the revoked one is stored too, so its refusal is revocation's.
+  const ldap = require('../ldap/ldap_server');
+  const derOfPem = function (pem) {
+    log.debug("Entering derOfPem().");
+    log.debug("Leaving derOfPem().");
+    return new nodeCrypto.X509Certificate(pem).raw;
+  };
+  [['rev-foreign-good', minted.good], ['rev-foreign-bad', minted.revoked]]
+    .forEach(function (pair) {
+      if (!ldap.existingUserEntry(pair[0])) {
+        ldap.createUser(pair[0], { invent: false });
+      }
+      ldap.changeStoredCertificate('person', pair[0],
+                                   { add: derOfPem(pair[1].pem) });
+    });
   try {
     const good = await handshake(port,
                                  { cert: minted.good.pem + minted.issuing.pem,
@@ -3592,7 +3704,8 @@ async function theMainPort(t, minted) {
     t.check(good.body.scimScheme === 'clientcert' &&
             bad.body.scimScheme !== 'clientcert',
             'SCIM\'s client-certificate scheme accepts the good certificate ' +
-            'and does NOT accept the revoked one as a credential',
+            '(stored on its entry, #1061) and does NOT accept the revoked ' +
+            'one, stored too, as a credential',
             JSON.stringify({ good: good.body.scimScheme,
                              bad: bad.body.scimScheme }));
     t.check(good.body.clientAuthOk === true &&
@@ -3640,6 +3753,19 @@ async function childBody() {
   const tls = require('../tls/tls_server');
   const app = require('../common/app');
   tls.truststore.add(root.pem, { by: 'revocation_status test' });
+  // EACH LEAF STORED ON ITS PERSON'S ENTRY (#1061): an outside authority's
+  // certificate signs in only as the one entry storing it. The good one's
+  // holder is signed in; the revoked one, stored as well, is refused on
+  // revocation and not for being stored nowhere.
+  const ldap = require('../ldap/ldap_server');
+  [['rev-listener-good', good], ['rev-listener-bad', bad]]
+    .forEach(function (pair) {
+      if (!ldap.existingUserEntry(pair[0])) {
+        ldap.createUser(pair[0], { invent: false });
+      }
+      ldap.changeStoredCertificate('person', pair[0], { add:
+        new (require('crypto').X509Certificate)(pair[1].pem).raw });
+    });
   // THE MAIN PORT'S POSTURE, BUILT HERE. A client certificate is asked for and
   // never required, so nothing is refused by the handshake and every refusal
   // below is one this service made after OpenSSL was satisfied — which is the

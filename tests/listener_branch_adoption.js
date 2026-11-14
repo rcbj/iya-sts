@@ -9,13 +9,15 @@
 // THE LISTENER IS RE-ISSUED UNDER THE PROCESS BRANCH THIS PROCESS HOLDS, AND
 // THE FRONT PROCESS NEVER BUILDS THAT BRANCH BESIDE A WORKER (2026-09-13).
 //
-// `tests/vendored/sts_pki_distribution_points.js` failed in `dispatch` mode
+// `tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode
 // only, on the last two full runs:
 //
 //   http://localhost:18082/pki/crl/process/intermediate.crl is named by
 //   certificates of two different authorities — CN=sts Intermediate CA
 //   (Process), O=sts and CN=sts Intermediate CA (Process), O=sts — and one
 //   list can have only one issuer
+//
+// (the names before #1294, which made the default organisation `iya-sts`)
 //
 // Observed on the kept stack: the TLS handshake and `GET
 // /tls/server-certificate` chained to a process Intermediate the FRONT process
@@ -131,7 +133,7 @@ function childSource() {
     '    await tls.reconcileWithHierarchy({ buildBranch: false });',
     '',
     '  // 2. a Root arriving ahead of its branch',
-    "  await pki.buildRoot({ organisation: 'sts' });",
+    "  await pki.buildRoot({ organisation: 'iya-sts' });",
     '  const held2 = heldChain();',
     '  const listener2 = listenerChain();',
     '  out.twoReconciled =',
@@ -152,7 +154,7 @@ function childSource() {
     '  out.threeAnchorSigns = anchorSignsListener();',
     '',
     '  // 4. it never arrives, and the repair is asked for',
-    "  await pki.buildRoot({ organisation: 'sts' });",
+    "  await pki.buildRoot({ organisation: 'iya-sts' });",
     '  const held4 = heldChain();',
     '  out.fourWaited =',
     '    await tls.reconcileWithHierarchy({ buildBranch: false });',
@@ -166,7 +168,7 @@ function childSource() {
     '  await pool.reconcileTheListener();',
     '  out.fiveACurrent = current();',
     '  out.fiveAArmed = pool.listenerRepairArmed();',
-    "  await pki.buildRoot({ organisation: 'sts' });",
+    "  await pki.buildRoot({ organisation: 'iya-sts' });",
     '  const held5 = heldChain();',
     '  await pool.reconcileTheListener();',
     '  out.fiveBHeldUntouched = same(held5, heldChain());',

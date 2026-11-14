@@ -131,10 +131,19 @@
 // thirty comment-interleaved lines. The symptom was a 500 with
 // `numberWord is not defined` on exactly one refusal path — which is the kind
 // of thing only a test that drives the surface can find, and
-// tests/vendored/sts_admin_api_operations.js did, on the first run after.
+// tests/protocol/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
+import configDump = require('./config_dump');
+import DomainClasses = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
+// A policy save's or reset's message is filled from `policy_kinds.ts`'s
+// templates, so the server can translate it (#543).
+import serverProse = require('../common/server_prose');
 import config = require('../common/config');
+// The store's own status, for what a settings write's reply says about
+// whether the override is kept across a restart (rcbj, 2026-10-07). A
+// library, required in the ordinary direction, as `admin_views.ts` does.
+import persistence = require('../persistence/persistence');
 import credentials = require('../common/credentials');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
@@ -172,6 +181,10 @@ import fedLinks = require('../federation/federation_links');
 // request or when its key type changes. A static utility class; it registers
 // nothing.
 import fedEncryption = require('../federation/federation_encryption');
+// A FAPI 1.0 Advanced relationship's TLS client certificate (#931): issued
+// when fedFapi becomes 1-advanced. A static utility class; requiring it
+// registers its scheduler job and no route.
+import fedClientCert = require('../federation/federation_client_certificate');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
@@ -192,9 +205,17 @@ import accountState = require('../common/account_state');
 // filled through its own slot by `ldap_server.js`, so requiring it here loads
 // no route module.
 import personEditor = require('../ldap/person_editor');
+// A person out to an LDIF file and back in (2026-11-14). A library that
+// reads the directory out of the require cache at request time, so requiring
+// it here loads no route module either.
+import personLdif = require('../ldap/person_ldif');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
+// #221: the service-account flag and the policy that governs it.
+import serviceAccounts = require('../common/service_accounts');
+import serviceAccountPolicy = require('../common/service_account_policy');
+import serviceAccountRotation = require('../common/service_account_rotation');
 import ciba = require('../oauth-oidc/ciba');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -213,6 +234,9 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON /admin/policies (#64). A library over the policy
 // modules, which are leaves; `policiesAction()` hands each action to its kind.
 import policyKinds = require('./policy_kinds');
+// POLICY EXPORT AND IMPORT (#1713). A library over the kinds above, the
+// realm's Policy Export Signing CA and the validation door; no route.
+import policyTransfer = require('./policy_transfer');
 // THE ERROR CODES (common/error_codes.js, a leaf). An action has no response to
 // mark, so a refusal's code goes on the RESULT, under the same non-enumerable
 // Symbol `mark()` writes on a response. JSON.stringify never sees a Symbol key,
@@ -282,7 +306,7 @@ const FORM_FURNITURE = {
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // APPLICATION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
+// tests/protocol/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 /**
@@ -343,7 +367,7 @@ const USER_FIELD_PREFIX = 'field.';
 // ---------------------------------------------------------------------------
 // The actions this resource accepts, built from the switch below rather than
 // typed — the same arrangement MFA_ACTIONS had on the page this absorbed, and
-// for the same reason: `tests/vendored/sts_admin_api_operations.js` reads the
+// for the same reason: `tests/protocol/sts_admin_api_operations.js` reads the
 // refusal sentence to discover what to check for, so a list that is short by
 // one turns the parity check off for that action.
 /**
@@ -351,9 +375,14 @@ const USER_FIELD_PREFIX = 'field.';
  */
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // A passkey's name (#470, rcbj's decision D).
+                       'rename-key',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
+                       // Sign-in names a person can use in place of their
+                       // uid (#644).
+                       'set-pseudonyms',
                        // The account id a client knows the person by
                        // (#148, Enterprise Extensions `aud_sub`).
                        'set-aud-sub',
@@ -377,6 +406,11 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Self-issued subjects (#129, 2026-09-23).
                        'enrol-self-issued-subject',
                        'remove-self-issued-subject',
+                       // The preferred DID (#693, phase 2).
+                       'set-preferred-self-issued-subject',
+                       // A DID this realm published for them, deactivated
+                       // (#1291).
+                       'deactivate-published-did',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
@@ -386,7 +420,31 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'remove-attribute',
                        // Several at once, a person's field grid's Save
                        // (2026-10-01).
-                       'update-fields'];
+                       'update-fields',
+                       // A service account (#221, 2026-10-06), and its
+                       // password rotated now; one owner added or taken
+                       // off, at once (#602).
+                       'set-service-account', 'rotate-password',
+                       'add-service-account-owner',
+                       'remove-service-account-owner',
+                       'set-service-account-destination',
+                       // A classical passkey upgraded to ML-DSA (#939).
+                       'begin-passkey-upgrade', 'prove-passkey-upgrade',
+                       'finish-passkey-upgrade', 'cancel-passkey-upgrade',
+                       // An administrator enrols a passkey (#945).
+                       'begin-passkey-enrolment',
+                       'finish-passkey-enrolment',
+                       // A certificate from an outside authority, stored
+                       // on the entry it is to sign in as, and taken off
+                       // (#1061).
+                       'add-certificate', 'remove-certificate',
+                       // A message-signing certificate issued to the
+                       // person by an administrator, and revoked (#521).
+                       'issue-signing-certificate',
+                       'revoke-signing-certificate',
+                       // The person as an LDIF file, out and back in: the
+                       // Import / export tab of their page (2026-11-14).
+                       'export-ldif', 'import-ldif'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -399,11 +457,18 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 //   issue-password-reset   a single-use link, returned ONCE; the password they
 //                          had is REMOVED and they are signed out of
 //                          everything, so the link is their way back.
-//   disable-primary-keys   every PRIMARY security key off, so passkeys no
+//   disable-primary-keys   every passkey off (until #1135, every PRIMARY
+//                          one; a key has no role since), so passkeys no
 //                          longer sign them in; refused where that leaves no
-//                          way in.
-//   disable-mfa            every second factor off: authenticator app, `mfa`
-//                          keys, recovery codes.
+//                          way in (STS-AUTHN-0161). The sessions each removed
+//                          key signed in end (#963); every other session
+//                          stays.
+//   disable-mfa            every second factor off: authenticator app, every
+//                          passkey (until #1135, the `mfa` ones), recovery
+//                          codes; refused as the one above is where the keys
+//                          are the person's way in. The sessions each removed
+//                          factor signed in end (#963); a session only a
+//                          password signed in stays.
 //   require-mfa            a second factor required of them at the sign-in
 //   stop-requiring-mfa     screen, and the requirement taken away.
 //
@@ -451,6 +516,18 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // `remove-self-issued-subject` takes one away. `oid4vc/siop.ts` keeps
   // them; a person enrols their own by proving the key on the portal.
   'enrol-self-issued-subject', 'remove-self-issued-subject',
+  // THE PREFERRED DID (#693, phase 2): `set-preferred-self-issued-subject`
+  // marks one subject the person PROVED, a DID, as the one the `did` claim
+  // releases (`subject`; empty clears the mark). `siop.setPreferred()`.
+  'set-preferred-self-issued-subject',
+  // A PUBLISHED DID (#1291): `deactivate-published-did` deactivates one of
+  // the did:web this realm publishes for the person (`did`, the DID or its
+  // random id): its address answers 410 Gone for good, its history stays
+  // resolvable, and it no longer signs them in, nor is it preferred or
+  // released. An administrator never creates or changes one — that is the
+  // person's act on /portal/self-issued. `oid4vc/person_did.ts` decides and
+  // audits it (`admin.did.deactivated`).
+  'deactivate-published-did',
   // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
   // device entries (`id`), and its Native SSO secret with it — the apps on
   // it are asked to sign in again. `common/devices.ts` keeps them.
@@ -460,7 +537,27 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // its auth_req_id) waiting for the person, as they would on /portal/ciba —
   // DEVELOPMENT ONLY (`mode.opensTestControls()`): in product only the
   // person answers.
-  'answer-ciba-request'];
+  'answer-ciba-request',
+  // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
+  // person one (`serviceAccount` true, the default), changes its `owners`
+  // (#600: the whole list), `destination` and `secretName`, or makes it a
+  // person again
+  // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
+  // it; where the realm's policy refuses a service account every browser
+  // sign-in, becoming one ends the person's sessions. `rotate-password`
+  // QUEUES a rotation of a service account's password on the scheduler's
+  // leader (`common/service_account_rotation.ts`): pushed first, committed
+  // after; the answer is the run's id, never a password.
+  'set-service-account', 'rotate-password',
+  // ONE OWNER AT A TIME (#602, rcbj: the owners table is saved the moment
+  // an owner is added): `add-service-account-owner` and
+  // `remove-service-account-owner` (`owner`) write at once and keep the
+  // destination; the last owner cannot go while the policy requires one.
+  'add-service-account-owner', 'remove-service-account-owner',
+  // And `set-service-account-destination` (`destination`, `secretName`,
+  // both or neither) writes the push destination at once and keeps the
+  // owners.
+  'set-service-account-destination'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -474,8 +571,8 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
 // both are visible to the other immediately because nothing caches.
 //
 // **What may be changed is DECLARED and not DERIVED**, and that line is drawn
-// in `applications.js`'s EDITABLE table rather than here: redirect URIs, grant
-// types, scopes, the secret, whether the client is confidential —
+// in the application table's `editable` rows rather than here: redirect URIs,
+// grant types, scopes, the secret, whether the client is confidential —
 // configuration, which is what RFC 9700 mode reads — but never the counters,
 // the sightings, the kinds or the protocols, which are what happened. LDAP can
 // still reach those; the difference between offering an operation and merely
@@ -525,15 +622,27 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'discard-address',
                              'regenerate-secret', 'rotate-secret',
                              'add-secret', 'remove-secret',
-                             'generate-secret',
+                             'reveal-secret', 'generate-secret',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
+                             'issue-signing-certificate',
+                             'revoke-signing-certificate',
+                             'add-certificate', 'remove-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
-                             'remove-custom-claim', 'set-access-type',
-                             'remove-access-type', 'forget'];
+                             'remove-custom-claim', 'set-claim-attributes',
+                             'set-claim-selections',
+                             'inherit-claim-attributes', 'set-access-type',
+                             'remove-access-type', 'set-access-type-row',
+                             'remove-access-type-row', 'set-not-for-policy',
+                             'fga-enable', 'fga-disable',
+                             'fga-create-policy', 'fga-reset-policy',
+                             'set-permission-claims',
+                             'clear-permission-claims', 'export-ldif',
+                             'import-ldif', 'forget', 'add-owner',
+                             'remove-owner'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -604,9 +713,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 // The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
 // OWN, and that guard is not ceremony.**
 //
-// `tests/vendored/sts_admin_api_operations.js` compares an action resource's
+// `tests/protocol/sts_admin_api_operations.js` compares an action resource's
 // REFUSAL SENTENCE against the operations the OpenAPI document declares for it,
-// in both directions, because `tests/vendored/admin_api.js`'s parity check
+// in both directions, because `tests/protocol/admin_api.js`'s parity check
 // reads that sentence to discover what to look for. A bare delegation to
 // `usersAction()` therefore answered `/admin-api/mfa/no-such-action` by naming
 // all five actions the USERS resource had then — so this resource claimed to
@@ -622,9 +731,12 @@ const SAML11_RP_KIND = saml11.RP_KIND;
  */
 const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
+// The shortest statement of how a person's identity was verified (#1504).
+const MIN_EVIDENCE_LENGTH = 8;
+
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
+// tests/protocol/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 /**
@@ -635,7 +747,7 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
                          'forget-user-consent'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
-// this repository's own tests/vendored/admin_api.js READS the refusal sentence
+// this repository's own tests/protocol/admin_api.js READS the refusal sentence
 // to check that every console action has an /admin-api operation, so a list
 // that is short by one turns the parity check off for that action.
 /**
@@ -643,7 +755,9 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
  */
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
-                      'remove-permission'];
+                      'remove-permission', 'add-conferring-client',
+                      'remove-conferring-client', 'add-owner',
+                      'remove-owner'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -667,6 +781,28 @@ const ROLE_MEMBER_KINDS = [
           'at all, and it is the reason an application is a first-class ' +
           'member of a role here.' }
 ];
+
+// THE ROLES NAMESPACE'S PART OF THIS MODULE (#543 phase 2b): the member
+// kinds' labels and sentences, which `/admin-api/roles` carries as
+// `memberKinds`. A label ('a person') is also substituted into the console's
+// own catalog messages by `web_roles.ts`; it is translated here all the same,
+// so the substituted word is the reader's language too.
+/** The routes whose answers carry this module's roles prose. */
+const PROSE_ROUTES = ['/admin-api/roles'];
+
+/**
+ * Extracts this module's part of the roles namespace (#543): the member
+ * kinds' `label` and `what`.
+ *
+ * @returns key → English
+ */
+function prose(): Record<string, string> {
+  helpers.log.debug("Entering prose().");
+  const out = serverProse.harvest('roles.memberKinds', ROLE_MEMBER_KINDS,
+                                  ['label', 'what']);
+  helpers.log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // THE POLICIES' WRITES (2026-09-12; every kind since #64), behind
@@ -786,7 +922,8 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 // slot — and what it adds is the vocabulary, the audit row and the sentences.
 //
 // **THERE IS NO `clear`, AND THAT IS A REFUSAL RATHER THAN AN OMISSION.**
-// `POST /tls/trust/clear` exists and is a development test control; a bulk
+// `POST /tls/trust/clear` was a development test control until #597 deleted
+// it; a bulk
 // clear on a GATED door is the one operation here whose blast radius is every
 // client certificate every other caller relies on — `tests/CLAUDE.md` records
 // a single unguarded clear costing a remote PEP its identity for the rest of a
@@ -806,6 +943,11 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 
 /**
+ * The actions `pkiTrustAction()` answers (#1360).
+ */
+const PKI_TRUST_ACTIONS = ['add', 'remove', 'recheck', 'set-row'];
+
+/**
  * The actions `spiffeEntriesAction()` answers.
  */
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
@@ -813,7 +955,10 @@ const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 /**
  * The actions `spiffeAgentsAction()` answers.
  */
-const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+// `join-token` mints a credential; it does not name an agent that already
+// attested, so the id check below stays on the three that do.
+const SPIFFE_AGENT_ID_ACTIONS = ['ban', 'unban', 'delete'];
+const SPIFFE_AGENT_ACTIONS = SPIFFE_AGENT_ID_ACTIONS.concat(['join-token']);
 // WHAT EVERY TOKEN REVOCATION ON `/admin/tokens` AND `/admin-api/tokens`
 // STATES (#239): an administrator's act, which CAEP's `session-revoked` about
 // the grant it ends reports as `initiating_entity: admin`
@@ -899,11 +1044,25 @@ const KERBEROS_PRINCIPAL_ACTIONS = ['create-service', 'rotate-service',
                                     'reset-person-keytab', 'rotate-krbtgt',
                                     'rotate-krbtgt-invalidate'];
 
+// THE KERBEROS TRUSTS (#430 Phase 4): seven acts on the realm's trust
+// records, each one function of `kerberos/krb5_trusts.ts`, which validates,
+// seals and writes; this adds the form's shapes, the confirmation a removal
+// needs, the house sentence and the audit row. `pair` writes the matching
+// record on ANOTHER trust realm, so it is a service administrator's act
+// (`admin-ui/admin_scope.ts`), and so is `rotate-key` with `mirror`.
+/**
+ * The actions `kerberosTrustsAction()` answers.
+ */
+const KERBEROS_TRUST_ACTIONS = ['add', 'update', 'enable', 'disable',
+                                'rotate-key', 'remove', 'pair'];
+
 interface AdminActionsDeps {
   log: typeof helpers.log;
   b64uDecode: typeof helpers.b64uDecode;
   numberWord: typeof helpers.numberWord;
   config: typeof config;
+  // Whether a settings override is written down (`overrideDurability()`).
+  persistence: typeof persistence;
   credentials: typeof credentials;
   realms: typeof realms;
   stats: typeof stats;
@@ -936,9 +1095,13 @@ interface AdminActionsDeps {
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
   personEditor: typeof personEditor;
+  personLdif: typeof personLdif;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
+  serviceAccountRotation: typeof serviceAccountRotation;
   ciba: typeof ciba;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
@@ -947,6 +1110,7 @@ interface AdminActionsDeps {
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
   policyKinds: typeof policyKinds;
+  policyTransfer: typeof policyTransfer;
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -955,6 +1119,8 @@ interface AdminActionsDeps {
   // build a default instance in a process that loads the console without the
   // root.
   krbtgtRotation: () => any;
+  // The Kerberos trust records (#430 Phase 4), lazily.
+  krb5Trusts: () => any;
 }
 
 /**
@@ -991,6 +1157,7 @@ class AdminActions {
       b64uDecode: helpers.b64uDecode,
       numberWord: helpers.numberWord,
       config: config,
+      persistence: persistence,
       credentials: credentials,
       realms: realms,
       stats: stats,
@@ -1023,9 +1190,13 @@ class AdminActions {
       accountSignals: accountSignals,
       accountState: accountState,
       personEditor: personEditor,
+      personLdif: personLdif,
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
+      serviceAccountRotation: serviceAccountRotation,
       ciba: ciba,
       backchannel: backchannel,
       oauth2: oauth2,
@@ -1034,11 +1205,15 @@ class AdminActions {
       roles: roles,
       passwordPolicy: passwordPolicy,
       policyKinds: policyKinds,
+      policyTransfer: policyTransfer,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
       krbtgtRotation: function () {
         return require('../kerberos/krb5_krbtgt_rotation');
+      },
+      krb5Trusts: function () {
+        return require('../kerberos/krb5_trusts');
       }
     };
   }
@@ -1254,10 +1429,13 @@ class AdminActions {
    * token set, a subject, a user, a kind, or everything.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param setWarmed - true on the second pass of a set action, once its
+   *   members were read from the store (below); never from a request
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenAction(body) {
+  tokenAction(body: IyaApi.AdminActionBody<
+    '/admin-api/tokens'>, setWarmed?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.tokenAction(). action=" + (body.action ||
                                                                 '(none)'));
@@ -1388,6 +1566,31 @@ class AdminActions {
                                           'of GET /admin-api/tokens names ' +
                                           'it.'] });
       }
+      // THE SET'S MEMBERS ARE READ FROM THE STORE FIRST (2026-10-22, the
+      // full run). The register is on demand (#820), so the process
+      // answering — another node in a cluster, another worker — may hold
+      // none of the set the list read from the store's `set:` index, and
+      // `issuedSetByKey()` below asks only what is held: restore-set
+      // answered "nothing here is called …" for a set the list had just
+      // shown. So the set is read the way the list reads it and its
+      // members warmed, and the act then runs as it always has.
+      if (!setWarmed && typeof stats.issuedSetByKeyAsync === 'function' &&
+          typeof stats.warmTokens === 'function') {
+        const self = this;
+        log.debug("Leaving AdminActions.tokenAction(). Reading the set " +
+                  "first.");
+        return stats.issuedSetByKeyAsync(setKey).then(function (found) {
+          const jtis = found ? found.members.map(function (member) {
+            return String(member.identifier || '');
+          }).filter(Boolean) : [];
+          return jtis.length ? stats.warmTokens(jtis) : null;
+        }).catch(function (e) {
+          log.debug("Caught in AdminActions.tokenAction(): " +
+                    ((e && e.message) || e));
+        }).then(function () {
+          return self.tokenAction(body, true);
+        });
+      }
       const set = stats.issuedSetByKey(setKey);
       if (!set) {
         log.debug("Leaving AdminActions.tokenAction(). No such set.");
@@ -1497,14 +1700,26 @@ class AdminActions {
             'is not a kind that can be revoked. The three are: ' +
                                      stats.REVOCABLE_KINDS.join(', ') + '.'] });
       }
-      const count =
-          stats.revokeWhere(function (record) { return record.kind === kind; },
+      const byKind = function (record) {
+        return record.kind === kind;
+      };
+      const kindAnswer = function (count: number) {
+        return { ok: true, revoked: count,
+                 message: 'Revoked ' + count + ' ' + kind + '(s).' };
+      };
+      // ON DEMAND (#820) a walk of the whole register, answered with a
+      // promise so the process serves others between its pages.
+      if (stats.tokensOnDemand()) {
+        log.debug("Leaving AdminActions.tokenAction(). By kind, walking.");
+        return stats.revokeWhereAsync(byKind, 'the admin console (every ' +
+                                      kind + ')', ADMIN_ACT).then(kindAnswer);
+      }
+      const count = stats.revokeWhere(byKind,
                                       'the admin console (every ' + kind + ')',
-                            ADMIN_ACT);
+                                      ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " by kind.");
-      return { ok: true, revoked: count,
-               message: 'Revoked ' + count + ' ' + kind + '(s).' };
+      return kindAnswer(count);
     }
 
     if (action === 'revoke-subject') {
@@ -1516,7 +1731,9 @@ class AdminActions {
       }
       const count = stats.revokeWhere(function (record) {
         return record.sub === subject || record.username === subject;
-      }, 'the admin console (everything for ' + subject + ')', ADMIN_ACT);
+      }, 'the admin console (everything for ' + subject + ')', ADMIN_ACT,
+      // Exactly where those are filed (#820 part 3).
+      ['s:' + subject, 'u:' + subject]);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a subject.");
       return { ok: true, revoked: count,
@@ -1538,27 +1755,49 @@ class AdminActions {
         return this.refused('STS-ADMIN-0509', { ok: false, errors: ['Give a ' +
             'user, as the users page names them.'] });
       }
-      const count = stats.revokeWhere(function (record) {
+      const byUser = function (record) {
         return stats.holderKeyOf(record.username, record.sub) === key;
-      }, 'the admin console (everything for the user ' + key + ')',
-      ADMIN_ACT);
+      };
+      const userAnswer = function (count: number) {
+        return { ok: true, revoked: count, user: key,
+                 message: 'Revoked ' + count + ' token(s) for ' + key + ' — ' +
+                          'every spelling of that identity, not just the ' +
+                          'one the row showed.' };
+      };
+      if (stats.tokensOnDemand()) {
+        log.debug("Leaving AdminActions.tokenAction(). For a user, walking.");
+        return stats.revokeWhereAsync(byUser, 'the admin console (everything ' +
+                                      'for the user ' + key + ')', ADMIN_ACT)
+          .then(userAnswer);
+      }
+      const count = stats.revokeWhere(byUser, 'the admin console (everything ' +
+                                      'for the user ' + key + ')', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a user.");
-      return { ok: true, revoked: count, user: key,
-               message: 'Revoked ' + count + ' token(s) for ' + key + ' — ' +
-                        'every spelling of that identity, not just the one ' +
-                        'the row showed.' };
+      return userAnswer(count);
     }
 
     if (action === 'revoke-all') {
-      const count = stats.revokeWhere(function () { return true; }, 'the ' +
-          'admin console (everything)', ADMIN_ACT);
+      const everything = function () {
+        return true;
+      };
+      const allAnswer = function (count: number) {
+        return { ok: true, revoked: count,
+                 message: 'Revoked ' + count + ' token(s) — every access ' +
+                          'token, ID Token and refresh token this service ' +
+                          'has issued and still remembers.' };
+      };
+      if (stats.tokensOnDemand()) {
+        log.debug("Leaving AdminActions.tokenAction(). Everything, walking.");
+        return stats.revokeWhereAsync(everything, 'the admin console ' +
+                                      '(everything)', ADMIN_ACT)
+          .then(allAnswer);
+      }
+      const count = stats.revokeWhere(everything, 'the admin console ' +
+                                      '(everything)', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked everything: " +
                 count + ".");
-      return { ok: true, revoked: count,
-               message: 'Revoked ' + count + ' token(s) — every access ' +
-                        'token, ID Token and refresh token this service has ' +
-                        'issued and still remembers.' };
+      return allAnswer(count);
     }
 
     log.debug("Leaving AdminActions.tokenAction(). Unknown action.");
@@ -1590,7 +1829,8 @@ class AdminActions {
    * @param opts - who is acting (`actor`) and from where (`by`)
    * @returns `{ ok, errors, … }` reporting what was ended and what could not be
    */
-  sessionsAction(body, opts) {
+  sessionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/sessions'>, opts) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.sessionsAction().");
     if (!logoutReader) {
@@ -1601,11 +1841,27 @@ class AdminActions {
     }
     const asked = body || {};
     const action = String(asked.action || '');
+    if (action === 'end-all') {
+      const instant = Date.now();
+      require('../common/config').setOverride('authn.sessionsEndedBefore',
+                                              String(instant));
+      this.deps.auditLog.record({
+        category: 'session', action: 'session.end',
+        actor: (opts && opts.by) || '', target: 'every sign-on session',
+        outcome: 'success',
+        summary: 'ended every sign-on session in this realm',
+        detail: { startedBefore: instant }
+      });
+      log.debug("Leaving AdminActions.sessionsAction(). Ended all.");
+      return { ok: true, message: 'Every sign-on session in this realm has ' +
+        'ended. Issued tokens are not revoked by this: use Revoke all on ' +
+        'the Tokens page as well.' };
+    }
     if (action !== 'revoke') {
       log.debug("Leaving AdminActions.sessionsAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
                           { ok: false, errors: ['Unknown action "' + action +
-        '". There is one: revoke.'] });
+        '". There are two: revoke, end-all.'] });
     }
     const key = String(asked.key || '').trim();
     const selected = String(asked.select || '').trim();
@@ -1629,7 +1885,10 @@ class AdminActions {
     // refusal rather than as a success that did nothing.
     const done = (result.terminated || []).length;
     const unknown = (result.unknown || []).length;
-    this.mailSessionsEnded(key, done, 'an administrator (the sessions page)');
+    // #539: who ended them, as a message the mail channel words in the
+    // person's own language (`mailValues`), not an English phrase.
+    this.mailSessionsEnded(key, done, { i18n:
+      'mailValues.by.administratorSessionsPage' });
     const said = []
       .concat((result.terminated || []).map(function (
           one) { return one.message; }))
@@ -1660,15 +1919,17 @@ class AdminActions {
    * delivery.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`), for a retried delivery's row
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  logoutAction(body) {
+  logoutAction(body: IyaApi.AdminActionBody<'/admin-api/logout'>,
+               context?) {
     const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
-    const user = String(body.user || body.username || '').trim();
+    const user = String(body.user || '').trim();
     // RESTORE-KERBEROS IS A DEVELOPMENT TEST CONTROL (#111, 2026-09-23), and
     // refused here — the one function the console form and `POST
     // /admin-api/logout/restore-kerberos` both reach (rule 7) — before the
@@ -1691,13 +1952,14 @@ class AdminActions {
     // `backchannel_logout.ts`'s retry() argues it.
     if (action === 'retry-backchannel') {
       const { backchannel } = this.deps;
-      const id = String(body.delivery || body.id || '').trim();
+      const id = String(body.delivery || '').trim();
       if (!id) {
         log.debug("Leaving AdminActions.logoutAction(). No delivery named.");
         return this.refused('STS-OAUTH-0550', { ok: false, errors: ['Name ' +
             'the dead delivery to retry in `delivery`.'] });
       }
-      const answer = backchannel.retry(id, String(body.actor || user || ''));
+      const answer = backchannel.retry(id,
+        String((context || {}).actor || user || ''));
       log.debug("Leaving AdminActions.logoutAction(). retry-backchannel " +
                 (answer.ok ? 'queued.' : 'refused.'));
       return answer.ok
@@ -1732,7 +1994,7 @@ class AdminActions {
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
-                             'an administrator (the admin console at /admin/logout)');
+        { i18n: 'mailValues.by.administratorConsoleLogout' });
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
@@ -1768,7 +2030,7 @@ class AdminActions {
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
-                             'an administrator (the admin console at /admin/logout)');
+        { i18n: 'mailValues.by.administratorConsoleLogout' });
       log.debug("Leaving AdminActions.logoutAction(). Ended " +
                 result.terminated.length +
                 ".");
@@ -1786,7 +2048,7 @@ class AdminActions {
       // jti belongs. It is the same call tokenAction() makes further up, where
       // it was always spelt `found.jti` — which is why /admin/tokens' restore
       // worked and this one did not.
-      const found = this.jtiFrom(String(body.jti || body.target || ''));
+      const found = this.jtiFrom(String(body.jti || ''));
       if (!found.jti) {
         log.debug("Leaving AdminActions.logoutAction().");
         return this.refused('STS-ADMIN-0502', { ok: false, errors: ['Name ' +
@@ -1834,26 +2096,29 @@ class AdminActions {
    * permission base, on `/admin/delegation`.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  permissionsAction(body) {
+  permissionsAction(body: IyaApi.AdminActionBody<'/admin-api/permissions'>,
+                    context?) {
     const { log, numberWord, appPermissions } = this.deps;
     log.debug("Entering AdminActions.permissionsAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
-    const actor = String(body.actor || '');
-    const resource = String(body.resource || body.application || '').trim();
-    const client = String(body.client || body.application || '').trim();
+    const actor = String((context || {}).actor || '');
+    const resource = String(body.resource || '').trim();
+    const client = String(body.client || '').trim();
 
     // WHICH APPLICATION, ASKED ONCE FOR EACH SIDE. The two names are
     // deliberately different — `resource` for the application that EXPOSES a
     // permission and `client` for the one that HOLDS it — because this is the
     // one feature here where a body naming the wrong one still succeeds and
-    // writes a grant onto the API instead of onto its caller. `application` is
-    // accepted for either as a convenience for a caller editing one entry, and
-    // the refusals below name the field that was missing rather than "an
-    // application".
+    // writes a grant onto the API instead of onto its caller. The refusals
+    // below name the field that was missing rather than "an application".
+    // (`application` was once accepted for either, and `value` for
+    // `baseUri`; neither is in the model, and both were removed — rcbj on
+    // #1579, 2026-11-11.)
     const needsResource = ['set-permission-base', 'define-permission',
                            'remove-permission'];
     const needsClient = ['grant-permission', 'revoke-permission'];
@@ -1883,8 +2148,7 @@ class AdminActions {
       // entry. It is the same convention every `set` on /admin/applications
       // follows.
       const result = appPermissions.setBaseUri(resource,
-                                               String(body.baseUri === undefined
-        ? (body.value === undefined ? '' : body.value) : body.baseUri), actor);
+        String(body.baseUri === undefined ? '' : body.baseUri), actor);
       log.debug("Leaving AdminActions.permissionsAction(). " +
                 "set-permission-base " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -1964,7 +2228,7 @@ class AdminActions {
   // what `respondToAction()` draws on a console page. **EVERY OTHER ACTION
   // RESOURCE ON `/admin-api` ANSWERS `{ ok, errors: [...] }`** — ssf,
   // permissions, realms, spiffe — and
-  // `tests/vendored/sts_admin_api_operations.js` reads that array on every one
+  // `tests/protocol/sts_admin_api_operations.js` reads that array on every one
   // of them: it walks every documented POST resource, sends an unknown action,
   // and requires the refusal SENTENCE to name the actions, because
   // `admin_api.js`'s parity check reads that same sentence to find out what
@@ -1987,7 +2251,8 @@ class AdminActions {
    * @param body - the parsed body, whose `action` names the act
    * @returns `{ ok, errors, why, … }`, or a promise of it
    */
-  xacmlAction(body) {
+  xacmlAction(body: IyaApi.AdminActionBody<
+    '/admin-api/xacml'>) {
     const { log } = this.deps;
     const self = this;
     log.debug('Entering AdminActions.xacmlAction(). action=' + (body ||
@@ -2129,6 +2394,77 @@ class AdminActions {
     return answer;
   }
 
+  // THE END OF AN ADMINISTRATOR'S PASSKEY ENROLMENT (#945): the audit row
+  // either way, and on success what the person is told — a CAEP
+  // credential-change (`create`, initiated by `admin`), which is also what
+  // queues the security notice mail (`mail_uses.ts`'s `fromAccountSignal()`,
+  // the path an administrator's password reset takes) — so a person who
+  // did not expect a key on their account hears of it at once.
+  private adminKeyEnrolled(who, done, ctx) {
+    const { log, credentials, auditLog, accountSignals,
+            errorCodes } = this.deps;
+    log.debug("Entering AdminActions.adminKeyEnrolled().");
+    if (!done || !done.ok) {
+      auditLog.record({
+        category: 'authentication', action: 'admin.passkey.enrolment-refused',
+        errorCode: errorCodes.codeOf(done) || 'STS-AUTHN-0447',
+        actor: ctx.actor, target: who, outcome: 'failure',
+        summary: 'a passkey enrolment for ' + who + ' was not completed',
+        detail: { username: who, via: ctx.via, stage: 'finish',
+                  reason: (done && done.reason) || '',
+                  errors: (done && done.errors) || [] } });
+      log.debug("Leaving AdminActions.adminKeyEnrolled(). Refused.");
+      return this.refusedBy('STS-AUTHN-0447', done || { ok: false,
+        errors: ['The passkey could not be registered. Start again.'] });
+    }
+    const enrolled = credentials.keysOf(who).filter(function (one) {
+      return one.credentialId === String(done.credentialId || '');
+    })[0] || null;
+    const algorithm = credentials.keyAlgorithm(enrolled || {});
+    auditLog.record({
+      category: 'authentication', action: 'admin.passkey.enrolled',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'enrolled a passkey for ' + who,
+      // NO ROLE ON THE ROW SINCE #1135: a key has none, and the realm's
+      // settings decide at each sign-in how it may be used.
+      detail: { username: who, via: ctx.via,
+                lane: credentials.keyLane(enrolled || {}),
+                algorithm: algorithm.text || algorithm.name || '',
+                credentialId: String(done.credentialId || ''),
+                aaguid: String((enrolled && enrolled.aaguid) || ''),
+                enrolledBy: (done.enrolledBy || {}).username || '',
+                held: done.held } });
+    // THE AUDIT ROW BEFORE THE SIGNAL (ASVS 5.0.0 2.3.3): the key is already
+    // enrolled, so a signal that throws must not leave it unrecorded.
+    try {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.keyCredentialType(enrolled),
+        fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+        friendlyName: String((enrolled && enrolled.label) || ''),
+        changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
+        reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
+                     ') enrolled a passkey for ' + who + '.',
+        reasonUser: 'An administrator enrolled a passkey on your account.' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-ADMIN-0918') + 'admin: the passkey ' +
+                'enrolled for "' + who + '" was recorded, and the account ' +
+                'signal about it could not be sent: ' +
+                ((e && e.message) || e));
+    }
+    log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ') enrolled a passkey for "' +
+             who + '", who now holds ' + done.held + '.');
+    log.debug("Leaving AdminActions.adminKeyEnrolled(). Enrolled.");
+    // `role` LEFT THE ANSWER IN #1135: a key carries none, so there is no
+    // "passwordless" or "second-factor" passkey to name.
+    return { ok: true, username: who, lane: done.lane,
+             credentialId: String(done.credentialId || ''),
+             held: done.held, enrolledBy: done.enrolledBy || null,
+             message: 'A passkey is enrolled for ' + who + ', marked as ' +
+                      'enrolled by an administrator. They have been told; ' +
+                      'hand the authenticator over.' };
+  }
+
   // A PERSON WHOSE SESSIONS AN ADMINISTRATOR ENDED IS TOLD BY MAIL (#63): a
   // security notice they cannot decline. Only here, at the administrator's
   // two doors — a person's own sign-out tells nobody, and a reset or a
@@ -2170,8 +2506,540 @@ class AdminActions {
              message: result.message };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SESSIONS A REMOVED CREDENTIAL SIGNED IN (#722): ended, through the
+  // logout model's `endFactorSessions()`, by each of the four per-credential
+  // removals — a security key, the authenticator app, the recovery codes and
+  // the emailed second factor — and by the two bulk disables (#963).
+  // `disable-primary-keys` asks once per key it removed; `disable-mfa`
+  // asks once per key it removed, and once for the
+  // authenticator app and once for the recovery codes when those went.
+  // Only the sessions that credential authenticated: unlike a password
+  // reset (`signOutEverywhere()`), a removal leaves every session the
+  // credential did not authenticate alone. Answered as a count for the
+  // result and the audit row; a process with no logout model ends nothing
+  // and says so (STS-ADMIN-0870), and nothing here undoes the removal.
+  // ---------------------------------------------------------------------------
+  private endFactorSessions(who, factor, ctx, what) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.endFactorSessions(). who=" + who);
+    if (!logoutReader || typeof logoutReader.endFactorSessions !==
+        'function') {
+      log.warn(errorCodes.tag('STS-ADMIN-0870') + 'admin: ' + what + ' of "' +
+               who + '" was removed, and no sign-out module is loaded in ' +
+               'this process, so no session it signed in was ended.');
+      log.debug("Leaving AdminActions.endFactorSessions(). No logout module.");
+      return { ok: false, sessionsEnded: 0, failed: 0,
+               message: 'No sign-out module is loaded in this process, so ' +
+                        'no session it signed in was ended.' };
+    }
+    const ended = logoutReader.endFactorSessions(who, factor, {
+      actor: ctx.actor || who, channel: ctx.via, initiatingEntity: 'admin',
+      by: 'an administrator removing ' + what + ' (' +
+          (ctx.via === 'api' ? '/admin-api/users' : 'the admin console') + ')'
+    });
+    log.debug("Leaving AdminActions.endFactorSessions(). " +
+              ended.sessionsEnded + " ended.");
+    return ended;
+  }
+
+  // The sentence a removal's answer carries about the sessions it ended.
+  private sessionsEndedSentence(ended) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.sessionsEndedSentence().");
+    const n = Number((ended && ended.sessionsEnded) || 0);
+    const failed = Number((ended && ended.failed) || 0);
+    const words = (n === 1 ? ' 1 session it signed in was ended.'
+                           : ' ' + n + ' sessions it signed in were ended.') +
+      (failed ? ' ' + failed + ' could not be ended.' : '');
+    log.debug("Leaving AdminActions.sessionsEndedSentence().");
+    return words;
+  }
+
+  // One act that removed several credentials (#963). Each factor is one
+  // call to `endFactorSessions()` and the counts are added, so the result
+  // and the audit row carry one number the way one `clear-key` does. An
+  // empty list is still one call, with no factor: that call matches
+  // nothing and adds nothing, and it is not a sign-out of every session.
+  // A process with no logout model answers 0 (STS-ADMIN-0870); the
+  // removal has already been written and is not undone.
+  private sumFactorSessions(who, factors, ctx, what) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.sumFactorSessions().");
+    const list = (factors && factors.length) ? factors : [null];
+    let sessionsEnded = 0;
+    let failed = 0;
+    const self = this;
+    list.forEach(function (factor) {
+      const ended = self.endFactorSessions(who, factor, ctx, what);
+      sessionsEnded += Number(ended && ended.sessionsEnded) || 0;
+      failed += Number(ended && ended.failed) || 0;
+    });
+    log.debug("Leaving AdminActions.sumFactorSessions(). " +
+              sessionsEnded + " ended, " + failed + " failed.");
+    return { sessionsEnded: sessionsEnded, failed: failed };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CERTIFICATE STORED ON A PERSON'S ENTRY (#1061, rcbj 2026-10-27).
+  //
+  // A certificate from an outside certificate authority — one trusted through
+  // the Client Truststores — signs its holder in only as the one entry that
+  // stores it, byte for byte, in `userCertificate` (RFC 4523), at every door
+  // that reads a client certificate as a person
+  // (`common/tls_client_certificates.js`, STORED). This is how an operator
+  // says ahead of time which certificate is whose: the person's page on the
+  // console and `POST /admin-api/users/add-certificate` (rule 7), with
+  // `remove-certificate` beside it and `GET /admin-api/users/certificates`
+  // listing them. An LDAP client writing `userCertificate;binary` reaches the
+  // same attribute, under product mode's write authorization.
+  //
+  // REFUSED HERE, AND NOT ONLY WHEN PRESENTED: a certificate already stored on
+  // ANOTHER entry of the realm (STS-ADMIN-0899). Stored on two it names
+  // nobody, and every door refuses it; storing it on the second through this
+  // door would cut the first holder off with nothing on either page saying
+  // why. The entry is never created (STS-ADMIN-0898). A renewed certificate
+  // is a new DER and is stored again; the old one can stay until it expires.
+  //
+  // Each says so over Shared Signals, as an issued certificate does: a CAEP
+  // credential-change of type x509.
+  //
+  // AN APPLICATION'S HALF (#1227, 2026-10-30). The directory and every door
+  // already took a certificate stored on an APPLICATION's entry as that
+  // application (`ldap_server.js`'s `changeStoredCertificate('application',
+  // …)`, `{ stored: true }`), but the only door that wrote one was the
+  // person's. `POST /admin-api/applications/add-certificate` and
+  // `remove-certificate`, the Stored certificates block of the application
+  // page's Credentials tab, and `credentials.stored` on
+  // `GET /admin-api/applications?application=` are the same acts here, with
+  // the same refusals (0897, 0899, 0900) — an application the registry does
+  // not hold is STS-ADMIN-0906, since 0898 says person — and the CAEP
+  // credential-change goes under the APPLICATION's subject (#221 P5), which
+  // `accountSignals` reads off `application` and mails nobody about.
+  // ---------------------------------------------------------------------------
+  /**
+   * The certificates stored on a person's entry in `userCertificate`, each
+   * with its SHA-256, subject, issuer, serial and validity.
+   *
+   * @param who - the person
+   * @returns `{ ok: true, user, dn, certificates }`, or a refusal
+   */
+  storedCertificatesOf(who) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.storedCertificatesOf().");
+    const name = String(who || '').trim();
+    if (!name) {
+      log.debug("Leaving AdminActions.storedCertificatesOf(). Nobody.");
+      return this.refused('STS-ADMIN-0518', { ok: false,
+        errors: ['Name the person in `user`.'] });
+    }
+    log.debug("Leaving AdminActions.storedCertificatesOf().");
+    return this.storedCertificatesFor('person', name);
+  }
+
+  /**
+   * The certificates stored on an application's entry in `userCertificate`
+   * (#1227), in `storedCertificatesOf()`'s shape with `application` for
+   * `user`.
+   *
+   * @param identifier - the application, as the registry holds it
+   * @returns `{ ok: true, application, dn, certificates }`, or a refusal
+   */
+  applicationStoredCertificatesOf(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.applicationStoredCertificatesOf().");
+    const name = String(identifier || '').trim();
+    if (!name) {
+      log.debug("Leaving AdminActions.applicationStoredCertificatesOf(). " +
+                "Nothing named.");
+      return this.refused('STS-ADMIN-0529', { ok: false,
+        errors: ['Name the application in `application`.'] });
+    }
+    log.debug("Leaving AdminActions.applicationStoredCertificatesOf().");
+    return this.storedCertificatesFor('application', name);
+  }
+
+  // The two lists above, read off the entry of either kind.
+  private storedCertificatesFor(kind, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.storedCertificatesFor(). " + kind);
+    const application = kind === 'application';
+    const held = require('../ldap/ldap_server')
+      .storedCertificatesOf(kind, name);
+    if (!held) {
+      log.debug("Leaving AdminActions.storedCertificatesFor(). No entry.");
+      return this.refused(application ? 'STS-ADMIN-0906' : 'STS-ADMIN-0898',
+        { ok: false,
+          errors: ['There is no ' + (application ? 'application' : 'person') +
+                   ' called "' + name + '" here.'] });
+    }
+    const self = this;
+    const rows = held.certificates.map(function (one) {
+      return self.describeStoredCertificate(one.der, one.sha256);
+    });
+    log.debug("Leaving AdminActions.storedCertificatesFor(). " +
+              rows.length + ".");
+    return Object.assign(application ? { ok: true, application: name }
+                                     : { ok: true, user: name },
+      { dn: held.dn, certificates: rows,
+        rule: 'A certificate from an outside certificate authority ' +
+              (application ? 'authenticates this application'
+                           : 'signs this person in') +
+              ' only while it is stored here, byte for byte, and on no ' +
+              'other entry of the realm. A renewed certificate is stored ' +
+              'again.' });
+  }
+
+  // One stored certificate, described from its DER.
+  private describeStoredCertificate(der, sha256) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.describeStoredCertificate().");
+    let parsed: any = null;
+    try {
+      parsed = stsCrypto.parseCertificate(der);
+    } catch (e) {
+      log.debug("Caught in AdminActions.describeStoredCertificate(): " +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    log.debug("Leaving AdminActions.describeStoredCertificate().");
+    return {
+      sha256: String(sha256),
+      subject: parsed ? String(parsed.subject || '').split('\n').join(', ')
+                      : '',
+      issuer: parsed ? String(parsed.issuer || '').split('\n').join(', ')
+                     : '',
+      serialNumber: parsed ? String(parsed.serialNumber || '') : '',
+      notBefore: parsed ? String(parsed.validFrom || '') : '',
+      notAfter: parsed ? String(parsed.validTo || '') : '',
+      expired: parsed ? Date.parse(String(parsed.validTo || '')) < Date.now()
+                      : false,
+      readable: !!parsed
+    };
+  }
+
+  // The DER of one certificate given as PEM or as base64 DER, or null.
+  private certificateDerFrom(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.certificateDerFrom().");
+    const text = String(value || '').trim();
+    const blocks = text.match(/-----BEGIN CERTIFICATE-----/g) || [];
+    if (blocks.length > 1) {
+      log.debug("Leaving AdminActions.certificateDerFrom(). Several.");
+      return null;
+    }
+    const der = require('../persistence/directory_codec')
+      .certificateDerOf(text);
+    if (!der) {
+      log.debug("Leaving AdminActions.certificateDerFrom(). Not base64.");
+      return null;
+    }
+    try {
+      stsCrypto.parseCertificate(der);
+    } catch (e) {
+      log.debug("Caught in AdminActions.certificateDerFrom(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving AdminActions.certificateDerFrom(). Not X.509.");
+      return null;
+    }
+    log.debug("Leaving AdminActions.certificateDerFrom().");
+    return der;
+  }
+
+  // Stores a certificate on a person's entry, or on an application's
+  // (#1227) when `kind` is 'application' and `id` its identifier as the
+  // registry holds it; a person is read off `body.user`.
+  private storedCertificateAction(action, body, ctx, kind?, id?) {
+    const { log, auditLog, accountSignals } = this.deps;
+    log.debug("Entering AdminActions.storedCertificateAction(). " + action);
+    const application = kind === 'application';
+    const noun = application ? 'application' : 'person';
+    const who = application ? String(id || '').trim()
+                            : String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.storedCertificateAction(). Nobody.");
+      return application
+        ? this.refused('STS-ADMIN-0529', { ok: false,
+            errors: ['Name the application in `application`.'] })
+        : this.refused('STS-ADMIN-0518', { ok: false,
+            errors: ['Name the person in `user`.'] });
+    }
+    // The refusal for an entry that is not there, by kind: 0898 names a
+    // person, so an application has a code of its own (#1227).
+    const noEntry = application ? 'STS-ADMIN-0906' : 'STS-ADMIN-0898';
+    const ldap = require('../ldap/ldap_server');
+    const before = ldap.storedCertificatesOf(noun, who);
+    if (!before) {
+      log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
+      return this.refused(noEntry, { ok: false,
+        errors: ['There is no ' + noun + ' called "' + who + '" here, and ' +
+                 'storing a certificate creates nobody.'] });
+    }
+    let der: any = null;
+    let sha256 = '';
+    if (action === 'add-certificate') {
+      der = this.certificateDerFrom(body.certificate);
+      if (!der) {
+        log.debug("Leaving AdminActions.storedCertificateAction(). Not a " +
+                  "certificate.");
+        return this.refused('STS-ADMIN-0897', { ok: false,
+          errors: ['`certificate` is one X.509 certificate, as a PEM block ' +
+                   '(-----BEGIN CERTIFICATE-----) or base64 DER. Only the ' +
+                   'leaf: the authority that issued it goes in the Client ' +
+                   'Truststores.'] });
+      }
+      sha256 = stsCrypto.digest('sha256', der, 'hex');
+      const elsewhere = (ldap.certificateHolders(sha256) || [])
+        .filter(function (one) {
+          return String(one.dn).toLowerCase() !==
+                 String(before.dn).toLowerCase();
+        });
+      if (elsewhere.length) {
+        log.debug("Leaving AdminActions.storedCertificateAction(). Stored " +
+                  "elsewhere.");
+        return this.refused('STS-ADMIN-0899', { ok: false,
+          errors: ['That certificate is already stored on ' +
+                   elsewhere.map(function (one) {
+                     return String(one.dn);
+                   }).join(', ') + '. Stored on two entries it signs ' +
+                   'nobody in; take it off there first.'] });
+      }
+    } else {
+      sha256 = String(body.sha256 || body.fingerprint || '')
+        .replace(/:/g, '').trim().toLowerCase();
+      const held = before.certificates.filter(function (one) {
+        return one.sha256 === sha256;
+      })[0];
+      der = held ? held.der : null;
+      if (!held) {
+        log.debug("Leaving AdminActions.storedCertificateAction(). Not " +
+                  "held.");
+        return this.refused('STS-ADMIN-0900', { ok: false,
+          errors: ['The entry of "' + who + '" stores no certificate with ' +
+                   'the SHA-256 "' + sha256 + '". ' + (application
+                     ? 'GET /admin-api/applications?application= lists ' +
+                       'what it stores, under credentials.stored.'
+                     : 'GET /admin-api/users/certificates lists what it ' +
+                       'stores.')] });
+      }
+    }
+    const done = ldap.changeStoredCertificate(noun, who,
+      action === 'add-certificate' ? { add: der } : { remove: sha256 });
+    if (!done || !done.ok) {
+      log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
+      return this.refused(noEntry, { ok: false,
+        errors: ['There is no ' + noun + ' called "' + who + '" here.'] });
+    }
+    const verb = action === 'add-certificate' ? 'stored' : 'removed';
+    const label = application ? 'the application ' + who : who;
+    auditLog.record({
+      category: 'authentication',
+      action: action === 'add-certificate' ? 'certificate.stored'
+                                           : 'certificate.unstored',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'a certificate (SHA-256 ' + sha256 + ') was ' + verb +
+               (action === 'add-certificate' ? ' on ' : ' from ') +
+               'the entry of ' + label,
+      detail: Object.assign(application ? { application: who }
+                                        : { username: who },
+        { dn: done.dn, sha256: sha256, via: ctx.via,
+          changed: done.changed })
+    });
+    if (done.changed) {
+      // UNDER THE APPLICATION'S OWN SUBJECT for an application (#221 P5):
+      // `application` in place of `username` is what makes the event about
+      // it, and what tells `accountSignals` there is nobody to mail.
+      accountSignals.certificateChanged(Object.assign(
+        application ? { application: who } : { username: who },
+        { initiatingEntity: 'admin', via: ctx.via,
+          pem: '-----BEGIN CERTIFICATE-----\n' +
+            Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n')
+              .replace(/\n$/, '') + '\n-----END CERTIFICATE-----\n',
+          changeType: action === 'add-certificate' ? 'create' : 'delete',
+          friendlyName: 'stored certificate',
+          reasonAdmin: 'A certificate was ' + verb + ' for ' + label + '.',
+          reasonUser: application
+            ? (action === 'add-certificate'
+              ? 'A certificate was stored on this application; it ' +
+                'authenticates the application.'
+              : 'A certificate stored on this application was removed.')
+            : (action === 'add-certificate'
+              ? 'A certificate was stored on your account; it signs you in.'
+              : 'A certificate stored on your account was removed.') }));
+    }
+    const after = application ? this.applicationStoredCertificatesOf(who)
+                              : this.storedCertificatesOf(who);
+    log.debug("Leaving AdminActions.storedCertificateAction(). " + verb +
+              ".");
+    return Object.assign({}, after, {
+      ok: true, changed: done.changed, sha256: sha256,
+      message: done.changed
+        ? 'The certificate (SHA-256 ' + sha256 + ') was ' + verb + '.'
+        : (action === 'add-certificate'
+          ? 'That certificate was already stored on this entry.'
+          : 'That certificate was not stored on this entry.') });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A MESSAGE-SIGNING CERTIFICATE (#521, rcbj 2026-10-28): what a WS-Trust
+  // requester signs its RST with, a WS-Security 1.1 signature over the SOAP
+  // Body and Timestamp. rcbj's decision: an ADMINISTRATOR issues one, to a
+  // person from their /admin/users page or to an application from the
+  // Credentials section of its /admin/applications page, and through
+  // `POST /admin-api/users/issue-signing-certificate` and
+  // `POST /admin-api/applications/issue-signing-certificate` (rule 7) — never
+  // the person on the user portal. `revoke-signing-certificate` beside each.
+  //
+  // `tls_client_certificates.js` decides everything about the certificate,
+  // with `purpose: 'message-signing'` — the realm's `message-signing` Issuing
+  // CA, digitalSignature and no extended key usage, the holder's urn:sts:
+  // name, the cap `pki.messageSigningCertificateMax` (STS-PKI-0220), and the
+  // PKCS#12 it is packaged as. The callers above have decided that the holder
+  // exists; this decides that the file password is one.
+  //
+  // **THE REPLY IS THE ONLY COPY OF THE PRIVATE KEY**, as the application
+  // TLS client certificate's is: nothing keeps it, and the password
+  // protecting the files is neither stored nor audited.
+  // ---------------------------------------------------------------------------
+  /**
+   * The message-signing certificates one holder has been issued in the
+   * ambient realm, with the cap and what an issue form needs.
+   *
+   * @param kind - 'person' or 'application'
+   * @param holder - the username or the application's identifier
+   * @returns `{ ok: true, kind, holder, implicitName, certificates, active,
+   *   max, keyAlgorithms, defaultKeyAlg, revocationReasons, passwordMin }`
+   */
+  signingCertificatesOf(kind, holder) {
+    const { log, tlsClientCertificates } = this.deps;
+    log.debug("Entering AdminActions.signingCertificatesOf(). " + kind);
+    const purpose = tlsClientCertificates.MESSAGE_SIGNING_USE_CASE;
+    const name = String(holder || '');
+    let held = [];
+    try {
+      held = tlsClientCertificates.listFor(undefined, name, kind, purpose)
+        .map(function (cert) {
+          return { serialHex: cert.serialHex, label: cert.label,
+                   subject: cert.subject, keyAlg: cert.keyAlg,
+                   notBefore: cert.notBefore, notAfter: cert.notAfter,
+                   thumbprint: cert.thumbprint, state: cert.state,
+                   reason: cert.reason, revokedAt: cert.revokedAt,
+                   certificatePem: cert.certificatePem };
+        });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued, nothing
+      // held, which is what the section then says.
+      log.debug("Caught in AdminActions.signingCertificatesOf(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    log.debug("Leaving AdminActions.signingCertificatesOf(). " +
+              held.length + " held.");
+    return {
+      ok: true, kind: kind, holder: name,
+      implicitName: (kind === 'application'
+        ? tlsClientCertificates.APPLICATION_URN : 'urn:sts:person:') + name,
+      certificates: held,
+      active: held.filter(function (cert) {
+        return cert.state === 'valid';
+      }).length,
+      max: tlsClientCertificates.maxPerHolder(kind, purpose),
+      keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
+      defaultKeyAlg: tlsClientCertificates.DEFAULT_KEY_ALG,
+      revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
+      passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN
+    };
+  }
+
+  private signingCertificateAction(action, kind, holder, body) {
+    const { log, applications, tlsClientCertificates } = this.deps;
+    const self = this;
+    log.debug("Entering AdminActions.signingCertificateAction(). " + action +
+              " " + kind);
+    const purpose = tlsClientCertificates.MESSAGE_SIGNING_USE_CASE;
+    const whose = kind === 'application'
+      ? 'the application "' + holder + '"' : '"' + holder + '"';
+    // What the answer carries about the holder as it now stands: the
+    // application's entry, as the TLS client actions answer it, or the
+    // person's certificates.
+    const standing = function () {
+      log.debug("Entering standing().");
+      log.debug("Leaving standing().");
+      return kind === 'application'
+        ? { application: applications.get(holder) }
+        : { user: holder,
+            signing: self.signingCertificatesOf('person', holder) };
+    };
+    if (action === 'revoke-signing-certificate') {
+      // Among THIS holder's message-signing certificates only: a serial
+      // belonging to anybody else, or a TLS client certificate's, matches
+      // nothing (STS-PKI-0221).
+      const done = tlsClientCertificates.revoke(undefined, holder,
+        String(body.serialHex || ''), String(body.reason || ''), kind,
+        purpose);
+      if (done.ok) {
+        done.message = 'The message-signing certificate ' +
+          done.certificate.serialHex + ' of ' + whose + ' was revoked (' +
+          done.reason + '). A WS-Trust request signed with it is refused ' +
+          'from now on.';
+        Object.assign(done, standing());
+      }
+      log.debug("Leaving AdminActions.signingCertificateAction(). " +
+                "revoke " + (done.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0903', done);
+    }
+    const passwordSaid = tlsClientCertificates.pkcs12PasswordProblem(
+      body.password, body.confirm === undefined ? undefined : body.confirm);
+    if (passwordSaid) {
+      log.debug("Leaving AdminActions.signingCertificateAction(). The file " +
+                "password.");
+      return this.refused('STS-ADMIN-0902', { ok: false,
+                                              errors: [passwordSaid] });
+    }
+    const spec: any = {
+      kind: kind, keyAlg: body.keyAlg || undefined, label: body.label || '',
+      days: body.days ? Number(body.days) : undefined, purpose: purpose
+    };
+    spec[kind === 'application' ? 'application' : 'username'] = holder;
+    return tlsClientCertificates.issue(undefined, spec)
+      .then(function (made) {
+        if (!made.ok) {
+          log.debug("Leaving AdminActions.signingCertificateAction(). The " +
+                    "issue was refused.");
+          return self.refusedBy('STS-ADMIN-0901', made);
+        }
+        const issued = made.issued;
+        return tlsClientCertificates.bundle(issued, String(body.password))
+          .then(function (files) {
+            log.debug("Leaving AdminActions.signingCertificateAction(). A " +
+                      "message-signing certificate was issued to " + holder +
+                      ".");
+            return Object.assign({
+              ok: true,
+              message: 'A message-signing certificate was issued to ' +
+                       whose + ' (serial ' + issued.serialHex + '). This ' +
+                       'is the only time its private key can be downloaded.',
+              purpose: purpose,
+              certificate: {
+                serialHex: issued.serialHex, subject: issued.subject,
+                keyAlg: issued.keyAlg, label: issued.label,
+                notBefore: issued.notBefore, notAfter: issued.notAfter,
+                thumbprint: issued.thumbprint,
+                certificatePem: issued.certificatePem,
+                chainPem: issued.chainPem,
+                implicitName: (kind === 'application'
+                  ? tlsClientCertificates.APPLICATION_URN
+                  : 'urn:sts:person:') + holder
+              },
+              files: files
+            }, standing());
+          });
+      });
+  }
+
   private credentialAdminAction(action, body, ctx) {
-    const { log, credentials, auditLog, accountSignals } = this.deps;
+    const { log, credentials, auditLog, accountSignals, errorCodes } =
+      this.deps;
     log.debug("Entering AdminActions.credentialAdminAction(). action=" +
               action);
     if (CREDENTIAL_ADMIN_ACTIONS.indexOf(action) < 0) {
@@ -2186,11 +3054,13 @@ class AdminActions {
       return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
           'person in `user`.'] });
     }
+    const self = this;
     const audited = function (name, summary, detail, outcome?) {
       log.debug("Entering audited().");
       auditLog.record({ category: 'admin', action: name, actor: ctx.actor,
         target: who, outcome: outcome || 'success', summary: summary,
-        detail: Object.assign({ username: who, via: ctx.via }, detail || {}) });
+        detail: Object.assign({ username: who, via: ctx.via,
+          evidence: self.evidenceOf(body) || undefined }, detail || {}) });
       log.debug("Leaving audited().");
     };
 
@@ -2202,10 +3072,47 @@ class AdminActions {
                   "password was refused.");
         return this.refusedBy('STS-ADMIN-0780', set);
       }
+      // THE RECOVERY BEFORE THE RESET IS FINISHED (#962). A false
+      // `noteRecovery()` is success when no hold is required — no passkey,
+      // or the selected `recoveryAssurance` is `any` — and
+      // `recoveryHoldRequired()` is that test, not a second copy of it.
+      // When a hold is required and the write failed, the password just
+      // stored would sign in with nothing pending. It is taken off, the
+      // outstanding link is left, nobody is signed out, and the generated
+      // password is not returned: the reset did not happen.
+      const hold = credentials.recoveryHoldRequired(who);
+      const noted = credentials.noteRecovery(who, 'admin-password');
+      if (hold && !noted) {
+        const removed = credentials.removePassword(who);
+        const removal = removed.ok ? ''
+          : ' Removing the password that was just stored also failed' +
+            ((removed.errors && removed.errors.length)
+              ? ': ' + removed.errors.join(' ') : '') + '.';
+        // The write itself is already logged by setRecoveryPending
+        // (STS-AUTHN-0382). This line is the reset that did not finish,
+        // and the removal when that also failed.
+        log.error(errorCodes.tag('STS-AUTHN-0382') + 'admin: the password ' +
+                  'of "' + who + '" was not kept and the reset is not ' +
+                  'complete.' + removal);
+        auditLog.record({
+          category: 'admin', action: 'admin.password.reset',
+          errorCode: 'STS-AUTHN-0382', actor: ctx.actor, target: who,
+          outcome: 'failure',
+          summary: 'an administrator\'s password reset of ' + who +
+                   ' was not completed: the recovery could not be recorded',
+          detail: { username: who, via: ctx.via,
+                    removed: !!(removed.ok && removed.removed) }
+        });
+        log.debug("Leaving AdminActions.credentialAdminAction(). The " +
+                  "recovery was not recorded.");
+        return this.refused('STS-AUTHN-0382', { ok: false, errors: [
+          'The password was not kept and the reset is not complete.'] });
+      }
       const forced = credentials.setPasswordResetRequired(who, true);
       // A LINK OUTSTANDING IS SPENT BY THIS: the administrator has just decided
       // what the password is, and a link left behind would let whoever holds it
-      // replace that decision.
+      // replace that decision. Only once the recovery, where one is required,
+      // has been recorded (#962).
       credentials.consumePasswordReset(who);
       const signedOut = this.signOutEverywhere(who, ctx, 'a password reset');
       audited('admin.password.reset',
@@ -2269,7 +3176,7 @@ class AdminActions {
       const signedOut = this.signOutEverywhere(who, ctx,
                                                'a password reset link');
       const path = '/portal/reset-password?user=' + encodeURIComponent(who) +
-                   '&token=' + encodeURIComponent(issued.token);
+                   '#token=' + encodeURIComponent(issued.token);
       audited('admin.password.reset-link',
               'an administrator issued a password reset link for ' + who,
               { expiresAt: issued.expiresAt, passwordRemoved: removed.removed,
@@ -2343,52 +3250,73 @@ class AdminActions {
                         signedOut.message };
     }
 
+    if (action === 'disable-primary-keys' || action === 'disable-mfa') {
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). No evidence.");
+        return unproved;
+      }
+    }
     if (action === 'disable-primary-keys') {
       const result = credentials.removePrimaryKeys(who);
-      audited('admin.mfa.primary-keys.removed',
-              (result.ok ? 'removed' : 'could not remove') + ' the primary ' +
-              'security keys of ' + who,
-              { removed: (result.removed || []).length,
-                errors: result.ok ? undefined : (result.errors || []) },
-              result.ok ? 'success' : 'failure');
+      // A refusal leaves the keys where they are, so no session ends.
+      // `removed` is absent on that answer (`removePrimaryKeys()`).
       if (!result.ok) {
+        audited('admin.mfa.primary-keys.removed',
+                'could not remove the passkeys of ' + who,
+                { removed: (result.removed || []).length,
+                  errors: result.errors || [] },
+                'failure');
         log.debug("Leaving AdminActions.credentialAdminAction(). Keys " +
                   "refused.");
         return this.refusedBy('STS-ADMIN-0783', result);
       }
-      result.removed.forEach(function (one) {
+      const removed = result.removed || [];
+      removed.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator disabled passwordless sign-in for ' +
+          reasonAdmin: 'An administrator removed every passkey of ' +
                        who + '.',
-          reasonUser: 'A security key that signed you in without a password ' +
-                      'was removed from your account.' });
+          reasonUser: 'A passkey was removed from your account.' });
       });
+      // THE SESSIONS EACH REMOVED KEY SIGNED IN END (#963), and no other:
+      // a password session stays. Since #1135 every key goes (a key has no
+      // role), so "a session an mfa key signed in" is no longer a case that
+      // survives this act. An empty list is still asked —
+      // `sumFactorSessions()` calls once with no factor, which matches
+      // nothing — and a missing sign-out module answers 0 (STS-ADMIN-0870)
+      // without putting the keys back. The CAEP deletes above are unchanged.
+      const ended = this.sumFactorSessions(who, removed.map(function (one) {
+        return { kind: 'webauthn',
+                 credentialId: String((one && one.credentialId) || '') };
+      }), ctx, 'a security key');
+      audited('admin.mfa.primary-keys.removed',
+              'removed the passkeys of ' + who,
+              { removed: removed.length,
+                sessionsEnded: ended.sessionsEnded,
+                failed: ended.failed },
+              'success');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
                 "disable-primary-keys.");
-      return { ok: true, username: who, removed: result.removed,
-               message: result.removed.length + ' primary security key(s) of ' +
-                        who + ' removed. They sign in with their password ' +
-                        'now; a key they hold as a second factor is ' +
-                        'untouched.' };
+      return { ok: true, username: who, removed: removed,
+               sessionsEnded: ended.sessionsEnded,
+               failed: ended.failed,
+               message: removed.length + ' passkey(s) of ' + who +
+                        ' removed. They sign in with their password ' +
+                        'now.' + this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'disable-mfa') {
       const result = credentials.removeSecondFactors(who);
       const removed = result.removed || { totp: false, keys: [],
                                           backupCodes: false };
-      audited('admin.mfa.disabled',
-              (result.ok ? 'disabled' : 'could not disable') + ' every ' +
-              'second factor of ' + who,
-              { totp: removed.totp, keys: removed.keys.length,
-                backupCodes: removed.backupCodes,
-                errors: result.ok ? undefined : (result.errors || []) },
-              result.ok ? 'success' : 'failure');
       // SAID FOR WHATEVER WENT, even on a write that failed part way: those
       // credentials are gone, and a receiver not told would go on trusting
-      // them.
+      // them. Sessions wait for a removal that finished: a partial write
+      // is a refusal, and a factor that is still there must not lose the
+      // sessions it signed in.
       if (removed.totp) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
@@ -2398,14 +3326,14 @@ class AdminActions {
           reasonUser: 'Your authenticator app was removed from your ' +
                       'account.' });
       }
-      removed.keys.forEach(function (one) {
+      (removed.keys || []).forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled every second factor of ' +
                        who + '.',
-          reasonUser: 'A security key was removed from your account.' });
+          reasonUser: 'A passkey was removed from your account.' });
       });
       if (removed.backupCodes) {
         accountSignals.recoveryInformationChanged({ username: who,
@@ -2413,17 +3341,55 @@ class AdminActions {
                        who + ', recovery codes included.' });
       }
       if (!result.ok) {
+        audited('admin.mfa.disabled',
+                'could not disable every second factor of ' + who,
+                { totp: removed.totp, keys: (removed.keys || []).length,
+                  backupCodes: removed.backupCodes,
+                  errors: result.errors || [] },
+                'failure');
         log.debug("Leaving AdminActions.credentialAdminAction(). Second " +
                   "factors refused.");
         return this.refusedBy('STS-ADMIN-0784', result);
       }
+      // THE SESSIONS EACH REMOVED FACTOR SIGNED IN END (#963). A factor
+      // that was not held is not asked, so its sessions — there are none
+      // of its own — stay. The key list is asked even when empty: that
+      // call names no credential and adds nothing. The counts are one
+      // number, as one `clear-totp` reports one.
+      const keysEnded = this.sumFactorSessions(who,
+        (removed.keys || []).map(function (one) {
+          return { kind: 'webauthn',
+                   credentialId: String((one && one.credentialId) || '') };
+        }), ctx, 'a security key');
+      const totpEnded = removed.totp
+        ? this.endFactorSessions(who, { kind: 'totp' }, ctx,
+                                 'the authenticator app')
+        : { sessionsEnded: 0, failed: 0 };
+      const codesEnded = removed.backupCodes
+        ? this.endFactorSessions(who, { kind: 'backup-code' }, ctx,
+                                 'the recovery codes')
+        : { sessionsEnded: 0, failed: 0 };
+      const ended = {
+        sessionsEnded: keysEnded.sessionsEnded + totpEnded.sessionsEnded +
+                       codesEnded.sessionsEnded,
+        failed: keysEnded.failed + totpEnded.failed + codesEnded.failed
+      };
+      audited('admin.mfa.disabled',
+              'disabled every second factor of ' + who,
+              { totp: removed.totp, keys: (removed.keys || []).length,
+                backupCodes: removed.backupCodes,
+                sessionsEnded: ended.sessionsEnded,
+                failed: ended.failed },
+              'success');
       const requirement = credentials.mfaRequirementFor(who);
       log.debug("Leaving AdminActions.credentialAdminAction(). disable-mfa.");
       return { ok: true, username: who, removed: removed,
                requirement: requirement,
+               sessionsEnded: ended.sessionsEnded,
+               failed: ended.failed,
                message: 'Every second factor of ' + who + ' was removed (' +
                         'authenticator app: ' + (removed.totp ? 'yes' : 'no') +
-                        ', security keys: ' + removed.keys.length +
+                        ', passkeys: ' + (removed.keys || []).length +
                         ', recovery codes: ' +
                         (removed.backupCodes ? 'yes' : 'no') + '). ' +
                         (requirement.required
@@ -2432,7 +3398,8 @@ class AdminActions {
                               : 'by the realm') +
                             '), so their next sign-in asks them to enrol ' +
                             'a new one.'
-                          : 'A password alone signs them in now.') };
+                          : 'A password alone signs them in now.') +
+                        this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'create-app-password') {
@@ -2709,33 +3676,226 @@ class AdminActions {
     if (action === 'enrol-self-issued-subject' ||
         action === 'remove-self-issued-subject') {
       const { siop } = this.deps;
+      const self = this;
       const enrolling = action === 'enrol-self-issued-subject';
       const subject = String(body.subject || '').trim();
-      const done = enrolling
-        ? siop.enrol(who, subject, body.label, ctx.actor)
-        : siop.remove(who, subject, ctx.actor);
-      audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
+      const answer = function (done) {
+        log.debug("Entering answer(). " + action);
+        audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
+                (done.ok ? '' : 'could not ') +
+                (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
+                'subject ' + subject + (enrolling ? ' for ' : ' of ') + who +
+                (enrolling ? ' by value (unproven)' : ''),
+                { subject: subject, proof: enrolling ? 'admin' : undefined,
+                  pinnedKeys: done.ok && done.enrolled &&
+                    done.enrolled.pinnedKeys
+                    ? done.enrolled.pinnedKeys.join(' ') : undefined,
+                  errors: done.ok ? undefined : [done.error] },
+                done.ok ? 'success' : 'failure');
+        if (!done.ok) {
+          log.debug("Leaving answer(). " + action + " was refused.");
+          return self.refusedBy(done.code || (enrolling ? 'STS-ADMIN-0809'
+                                                        : 'STS-ADMIN-0810'),
+                                { ok: false, errors: [done.error] });
+        }
+        log.debug("Leaving answer(). " + action + ".");
+        return enrolling
+          ? { ok: true, username: who, enrolled: done.enrolled,
+              message: done.enrolled.subject + ' is enrolled for ' + who +
+                       ': a self-issued ID Token (SIOPv2) signed by that ' +
+                       'key now signs them in.' +
+                       (done.enrolled.pinnedKeys
+                         ? ' Its document\'s authentication keys are ' +
+                           'pinned; a key it names later signs nobody in ' +
+                           'until the person proves it.' : '') }
+          : { ok: true, username: who, removed: done.removed,
+              message: done.removed + ' no longer signs ' + who + ' in.' };
+      };
+      // AN ENROLMENT ANSWERS LATER (#693): a did:web's document is fetched
+      // to pin its keys (`siop.enrolByValue()`), so the act is a promise,
+      // which `/admin-api`'s users handler waits for. It never rejects.
+      if (enrolling) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  ", answered when the enrolment settles.");
+        return siop.enrolByValue(who, subject, body.label, ctx.actor)
+          .then(answer);
+      }
+      // A DID THIS REALM PUBLISHED FOR THEM (#1291) is DEACTIVATED, never
+      // just removed from the list: its address is kept and answers 410,
+      // and the subject goes with it — `deactivate-published-did`'s act.
+      const personDid = require('../oid4vc/person_did');
+      if (personDid.isHosted(siop.normalise(subject))) {
+        const done = personDid.deactivate(who, siop.normalise(subject),
+                                          ctx.actor, 'admin');
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  ", a published DID deactivated.");
+        return answer(done.ok ? { ok: true, removed: done.record.did }
+                              : { ok: false, code: done.code,
+                                  error: done.error });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return answer(siop.remove(who, subject, ctx.actor));
+    }
+
+    if (action === 'deactivate-published-did') {
+      // LAZILY: `person_did.ts` is built with the verifiable credentials
+      // family, and this module is the console's.
+      const personDid = require('../oid4vc/person_did');
+      const asked = String(body.did == null ? '' : body.did).trim();
+      if (!asked) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " named no DID.");
+        return this.refusedBy('STS-VC-0172', { ok: false, errors: [
+          'Which published DID? Send `did`: the DID, or its random id, as ' +
+          'GET /admin-api/users/published-dids lists it.'] });
+      }
+      const done = personDid.deactivate(who, asked, ctx.actor, 'admin');
+      if (!done.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " was refused.");
+        // error-code: none — the library decided the code, on done.code
+        return this.refusedBy(done.code, { ok: false, errors: [done.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return { ok: true, username: who, deactivated: done.record.did,
+               message: done.record.did + ' is deactivated: its address ' +
+                        'answers 410 Gone, its history stays resolvable, ' +
+                        'and it no longer signs ' + who + ' in.' };
+    }
+
+    if (action === 'set-preferred-self-issued-subject') {
+      const { siop } = this.deps;
+      const subject = String(body.subject == null ? '' : body.subject).trim();
+      const done = siop.setPreferred(who, subject);
+      audited('admin.siop.preferred',
               (done.ok ? '' : 'could not ') +
-              (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
-              'subject ' + subject + (enrolling ? ' for ' : ' of ') + who,
-              { subject: subject,
+              (subject ? 'mark ' + subject + ' as ' + who + '\'s preferred ' +
+                         'DID' : 'clear ' + who + '\'s preferred DID'),
+              { subject: subject || undefined,
+                was: done.ok ? (done.was || undefined) : undefined,
                 errors: done.ok ? undefined : [done.error] },
               done.ok ? 'success' : 'failure');
       if (!done.ok) {
         log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                   " was refused.");
-        return this.refusedBy(enrolling ? 'STS-ADMIN-0809' : 'STS-ADMIN-0810',
+        return this.refusedBy('STS-ADMIN-0872',
                               { ok: false, errors: [done.error] });
       }
       log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                 ".");
-      return enrolling
-        ? { ok: true, username: who, enrolled: done.enrolled,
-            message: done.enrolled.subject + ' is enrolled for ' + who +
-                     ': a self-issued ID Token (SIOPv2) signed by that key ' +
-                     'now signs them in.' }
-        : { ok: true, username: who, removed: done.removed,
-            message: done.removed + ' no longer signs ' + who + ' in.' };
+      return { ok: true, username: who, preferred: done.preferred,
+               message: done.preferred
+                 ? done.preferred + ' is ' + who + '\'s preferred DID: a ' +
+                   'client allowed the did scope, and consented to, is told ' +
+                   'it as the did claim where oauth2.didClaim is on.'
+                 : who + ' has no preferred DID; the did claim is released ' +
+                   'to nobody.' };
+    }
+
+    if (action === 'set-service-account') {
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-service-account.");
+      return this.serviceAccountAction(who, body, ctx, audited);
+    }
+
+    if (action === 'set-service-account-destination') {
+      const { serviceAccounts } = this.deps;
+      const destination = String(body.destination == null ? ''
+                                                         : body.destination)
+        .trim();
+      const secretName = String(body.secretName == null ? ''
+                                                       : body.secretName)
+        .trim();
+      const result: any = serviceAccounts.setDestination(who, destination,
+                                                         secretName);
+      audited('admin.service-account.destination-set',
+              (result.ok ? '' : 'could not ') +
+              (destination ? 'set ' + who + '\'s push destination to ' +
+                destination : 'clear ' + who + '\'s push destination'),
+              { destination: destination, secretName: secretName,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "Destination refused.");
+        return this.refusedBy('STS-SVCACCT-0027', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "Destination set.");
+      return { ok: true, username: who, account: result.account,
+               changed: !!result.changed,
+               message: destination
+                 ? who + '\'s rotated password is pushed to ' + destination +
+                   ', secret "' + secretName + '".'
+                 : who + ' has no push destination now; its password is ' +
+                   'not rotated.' };
+    }
+
+    if (action === 'add-service-account-owner' ||
+        action === 'remove-service-account-owner') {
+      const { serviceAccounts } = this.deps;
+      const adding = action === 'add-service-account-owner';
+      const owner = String(body.owner == null ? '' : body.owner).trim();
+      const result: any = adding ? serviceAccounts.addOwner(who, owner)
+                                 : serviceAccounts.removeOwner(who, owner);
+      audited(adding ? 'admin.service-account.owner-added'
+                     : 'admin.service-account.owner-removed',
+              (result.ok ? '' : 'could not ') +
+              (adding ? 'add ' + owner + ' to ' : 'take ' + owner +
+                ' off ') + who + '\'s owners',
+              { owner: owner,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). Owner " +
+                  "refused.");
+        return this.refusedBy('STS-SVCACCT-0027', result);
+      }
+      const named = ((result.account && result.account.owners) || [])
+        .filter(function (one) {
+          return one.dn.toLowerCase() === owner.toLowerCase() ||
+                 String(one.name).toLowerCase() === owner.toLowerCase();
+        })[0];
+      log.debug("Leaving AdminActions.credentialAdminAction(). Owner " +
+                (adding ? 'added.' : 'removed.'));
+      return { ok: true, username: who, account: result.account,
+               changed: !!result.changed,
+               message: adding
+                 ? (result.changed
+                   ? (named ? named.name || named.dn : owner) +
+                     ' is now an owner of ' + who + '.'
+                   : (named ? named.name || named.dn : owner) +
+                     ' was already an owner of ' + who + '.')
+                 : owner + ' is no longer an owner of ' + who + '.' };
+    }
+
+    if (action === 'rotate-password') {
+      const { serviceAccountRotation } = this.deps;
+      const queued = serviceAccountRotation.requestRotation(
+        realms.currentId(), who,
+        { requestedBy: ctx.actor, via: ctx.via, channel: ctx.via });
+      audited('admin.service-account.rotate',
+              (queued.ok ? 'queued' : 'could not queue') + ' a rotation of ' +
+              'the password of ' + who,
+              { runId: queued.runId || null,
+                errors: queued.ok ? undefined : [queued.why] },
+              queued.ok ? 'success' : 'failure');
+      if (!queued.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "rotate-password was refused.");
+        return this.refusedBy(queued.errorCode || 'STS-SVCACCT-0040',
+                              { ok: false, errors: [queued.why] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "rotate-password.");
+      return { ok: true, username: who, runId: queued.runId,
+               alreadyQueued: queued.alreadyQueued,
+               message: 'A rotation of ' + who + '\'s password is queued ' +
+                        '(run ' + queued.runId + '): the new password is ' +
+                        'pushed to its destination first and committed ' +
+                        'after. Monitoring → Scheduler shows the run.' };
     }
 
     // require-mfa and stop-requiring-mfa
@@ -2769,6 +3929,76 @@ class AdminActions {
                    ? ' The REALM still requires one (the authentication ' +
                      'policy).' : '')
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SERVICE ACCOUNT (#221): the flag, its owner and its push destination,
+  // set or cleared. The checks are `service_accounts.set()`'s; this audits,
+  // and where the realm keeps service accounts out of every browser it ends
+  // the sessions a person who has just become one still holds — the policy
+  // would refuse them at the next sign-in, and a session already open is the
+  // same browser.
+  // ---------------------------------------------------------------------------
+  private serviceAccountAction(who, body, ctx, audited) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminActions.serviceAccountAction().");
+    const wanted = body.serviceAccount === undefined ? true
+      : this.truthy(body.serviceAccount);
+    const result = serviceAccounts.set(who, {
+      serviceAccount: wanted,
+      owners: body.owners,
+      destination: body.destination,
+      secretName: body.secretName
+    });
+    const ownersOf = function (account) {
+      log.debug("Entering ownersOf().");
+      log.debug("Leaving ownersOf().");
+      return ((account && account.owners) || []).map(function (one) {
+        return one.dn;
+      });
+    };
+    audited(wanted ? 'admin.service-account.set'
+                   : 'admin.service-account.cleared',
+            (result.ok ? '' : 'could not ') +
+            (wanted ? 'make ' + who + ' a service account'
+                    : 'make ' + who + ' an ordinary person again'),
+            { owners: result.ok ? ownersOf((result as any).account)
+                                : [].concat(body.owners == null ? []
+                                                               : body.owners)
+                                    .map(String),
+              destination: String(body.destination || ''),
+              secretName: String(body.secretName || ''),
+              errors: result.ok ? undefined
+                : ((result as any).errors || []) },
+            result.ok ? 'success' : 'failure');
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.serviceAccountAction(). Refused.");
+      return this.refusedBy('STS-SVCACCT-0027', result);
+    }
+    const done = result as any;
+    let signedOut = null;
+    // ITS OWN PROFILE (#1240), the one the account names.
+    if (wanted && done.changed &&
+        !serviceAccountPolicy.allowsDoor('browser',
+          serviceAccountPolicy.profileFor(done.username || who))) {
+      signedOut = this.signOutEverywhere(who, ctx,
+                                         'becoming a service account');
+    }
+    log.debug("Leaving AdminActions.serviceAccountAction().");
+    return { ok: true, username: done.username || who,
+             serviceAccount: wanted, account: done.account,
+             signedOut: signedOut,
+             message: wanted
+               ? who + ' is ' + (done.changed ? 'now' : 'still') + ' a ' +
+                 'service account' + (ownersOf(done.account).length
+                   ? ', owned by ' + ownersOf(done.account).join('; ')
+                   : '') + '.' +
+                 (signedOut ? ' This realm refuses a service account every ' +
+                   'browser sign-in, so their sessions were ended.' : '')
+               : who + ' is an ordinary person' +
+                 (done.changed ? ' again' : '') + '; the owner, the push ' +
+                 'destination and the rotation state are gone from the ' +
+                 'entry.' };
   }
 
   // ---------------------------------------------------------------------------
@@ -2851,6 +4081,41 @@ class AdminActions {
                  'to is being ended.' };
   }
 
+  // WHAT THE ADMINISTRATOR DID TO PROVE WHO THIS IS (#1504, ASVS 5.0.0
+  // 6.4.4). A factor is cleared for somebody who has lost it, and that request
+  // is how an account is taken over, so product mode refuses to clear one until
+  // the administrator has said how the person's identity was verified.
+  private evidenceRefusal(body: any): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceRefusal().");
+    if (!require('../common/mode').requiresEvidenceToClearFactor() ||
+        this.evidenceOf(body).length >= MIN_EVIDENCE_LENGTH) {
+      log.debug("Leaving AdminActions.evidenceRefusal(). Nothing owed.");
+      return null;
+    }
+    log.debug("Leaving AdminActions.evidenceRefusal(). Refused.");
+    return this.refused('STS-ADMIN-0916', { ok: false, errors: ['Say in ' +
+      '`evidence` how this person\'s identity was verified, in at least ' +
+      MIN_EVIDENCE_LENGTH + ' characters. It is recorded in the audit log.'] });
+  }
+
+  // The evidence as given, bounded because it goes on an audit row.
+  private evidenceOf(body: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceOf().");
+    log.debug("Leaving AdminActions.evidenceOf().");
+    return String((body && body.evidence) || '').trim().slice(0, 500);
+  }
+
+  // The evidence as the end of a sentence, for a module that writes its own row.
+  private evidenceNote(body: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceNote().");
+    const evidence = this.evidenceOf(body);
+    log.debug("Leaving AdminActions.evidenceNote().");
+    return evidence ? '; identity verified by: ' + evidence : '';
+  }
+
   /**
    * Performs a `/admin/users` action on a person: create, set a password or
    * mail address, issue an activation link, clear a second factor, disable or
@@ -2862,7 +4127,7 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  usersAction(body, context?) {
+  usersAction(body: IyaApi.AdminActionBody<'/admin-api/users'>, context?) {
     const { log, numberWord, credentials, auditLog,
             accountSignals } = this.deps;
     log.debug("Entering AdminActions.usersAction(). action=" + (body.action ||
@@ -2875,9 +4140,145 @@ class AdminActions {
     // the door. `base` (2026-09-13) is the address the request arrived on,
     // realm prefix included, so a password reset link can be handed back WHOLE
     // — the one thing an administrator does with it is send it to somebody.
-    const ctx = { via: (context || {}).via || 'console',
-                  actor: (context || {}).actor || String(body.actor || ''),
-                  base: String((context || {}).base || '') };
+    //
+    // THE ACTOR IS THE CONTEXT'S AND NEVER THE BODY'S (#966; rcbj on #1579,
+    // 2026-11-11). The management API passes the verified token's subject,
+    // and '' means nobody was authenticated. Until #1579 a body's `actor`
+    // was read when the context did not name one, and that is how a name
+    // the request nominated once reached the row; no body member names who
+    // acts now, so a caller that omits it records nobody.
+    const given = context || {};
+    const ctx = { via: given.via || 'console',
+                  actor: String(given.actor || ''),
+                  base: String(given.base || '') };
+
+    // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
+    // assertion and ML-DSA registration both run in the operator's browser;
+    // credentials.ts spends the proof before issuing the registration
+    // challenge and preserves the old key until that registration verifies.
+    if (['begin-passkey-upgrade', 'prove-passkey-upgrade',
+         'finish-passkey-upgrade', 'cancel-passkey-upgrade']
+          .indexOf(action) >= 0) {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose passkey is being upgraded.'] });
+      }
+      const authn = require('../authn/authn');
+      const webauthnPolicy = require('../authn/webauthn_policy');
+      const passkeyPolicy = require('../common/passkey_policy');
+      const rpId = ctx.base ? authn.rpIdOf(ctx.base) : '';
+      const audit = function (name, outcome, detail) {
+        auditLog.record({ category: 'authentication', action: name,
+          actor: ctx.actor, target: who, outcome: outcome,
+          summary: 'administrator ' + (outcome === 'success' ?
+            'advanced' : 'could not advance') + ' a passkey upgrade for ' +
+            who, detail: Object.assign({ username: who, via: ctx.via },
+                                       detail || {}) });
+      };
+      if (action === 'cancel-passkey-upgrade') {
+        const pending = credentials.pendingKeyUpgradeFor(who);
+        if (!pending || (body.upgradeId &&
+            String(body.upgradeId) !== String(pending.id))) {
+          return this.refused('STS-AUTHN-0454', { ok: false,
+            errors: ['There is no matching passkey upgrade in progress.'] });
+        }
+        credentials.abandonKeyEnrolment(who);
+        audit('admin.passkey.upgrade-cancelled', 'success', {});
+        return { ok: true, message: 'The pending passkey upgrade was cancelled.' };
+      }
+      if (action === 'begin-passkey-upgrade') {
+        const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+        if (rpRefusal) {
+          return this.refused('STS-AUTHN-0446', { ok: false,
+            errors: [rpRefusal] });
+        }
+        const begun = passkeyPolicy.withSelection(who, '', function () {
+          return credentials.beginKeyUpgrade(who,
+            String(body.credentialId || ''));
+        });
+        if (!begun.ok) {
+          audit('admin.passkey.upgrade-refused', 'failure',
+            { stage: 'begin', errors: begun.errors || [] });
+          return this.refusedBy('STS-AUTHN-0450', begun);
+        }
+        audit('admin.passkey.upgrade-started', 'success', {
+          stage: 'begin', mode: begun.mode, lane: begun.lane,
+          previousAlgorithm: begun.previousAlgorithm });
+        return { ok: true, upgradeId: begun.upgradeId,
+          ceremony: { challenge: begun.challenge, rpId: rpId,
+            allow: begun.credentialId,
+            options: { userVerification:
+              webauthnPolicy.settings().userVerification } } };
+      }
+      let posted: any = null;
+      try {
+        posted = typeof body.credential === 'string'
+          ? JSON.parse(body.credential || 'null') : body.credential;
+      } catch (e) { posted = null; }
+      const upgradeId = String(body.upgradeId || '');
+      if (action === 'prove-passkey-upgrade') {
+        const checked = passkeyPolicy.withSelection(who, '', function () {
+          return credentials.proveKeyUpgrade(who, upgradeId, posted, {
+            origin: authn.expectedOriginFor(ctx.base, posted || {}),
+            rpId: rpId });
+        });
+        const self = this;
+        return Promise.resolve(checked).then(function (proven) {
+          if (!proven.ok) {
+            audit('admin.passkey.upgrade-refused', 'failure',
+              { stage: 'proof', errors: proven.errors || [] });
+            return self.refusedBy('STS-AUTHN-0455', proven);
+          }
+          const options = passkeyPolicy.withSelection(who, '', function () {
+            const pending = credentials.pendingKeyUpgradeFor(who);
+            return webauthnPolicy.upgradeCreationOptions(rpId,
+              pending ? pending.kind : '');
+          });
+          const display = passkeyPolicy.withSelection(who, '', function () {
+            return passkeyPolicy.displayNameFor(who, who);
+          });
+          const user = credentials.laneUser(who, display, proven.lane);
+          audit('admin.passkey.upgrade-proved', 'success',
+            { stage: 'proof', lane: proven.lane });
+          return { ok: true, ceremony: { challenge: proven.challenge,
+            rpId: rpId, user: { id: proven.userHandle, name: user.name,
+                                displayName: user.displayName },
+            exclude: proven.exclude, options: options } };
+        });
+      }
+      const self = this;
+      const finishing = passkeyPolicy.withSelection(who, '', function () {
+        return credentials.confirmKeyUpgrade(who, upgradeId, posted, {
+          origin: authn.expectedOriginFor(ctx.base, posted || {}), rpId: rpId });
+      });
+      return Promise.resolve(finishing).then(function (done) {
+        if (!done.ok) {
+          audit('admin.passkey.upgrade-refused', 'failure',
+            { stage: 'registration', errors: done.errors || [] });
+          return self.refusedBy('STS-AUTHN-0458', done);
+        }
+        const enrolled = credentials.keysOf(who).filter(function (one) {
+          return String(one.credentialId) === String(done.credentialId);
+        })[0] || null;
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.keyCredentialType(enrolled),
+          fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+          friendlyName: String((enrolled && enrolled.label) || ''),
+          changeType: done.mode === 'replace' ? 'update' : 'create',
+          initiatingEntity: 'admin', via: 'admin passkey upgrade',
+          reasonAdmin: ctx.actor + ' upgraded a classical passkey for ' + who,
+          reasonUser: 'An administrator upgraded one of your passkeys.' });
+        audit('admin.passkey.upgraded', 'success', { stage: 'registration',
+          mode: done.mode, lane: done.lane,
+          previousAlgorithm: done.previousAlgorithm,
+          algorithm: done.algorithm });
+        return { ok: true, message: 'The passkey was upgraded.',
+          credentialId: done.credentialId, mode: done.mode,
+          previousAlgorithm: done.previousAlgorithm,
+          algorithm: done.algorithm, lane: done.lane };
+      });
+    }
 
     // DISABLE OR ENABLE AN ACCOUNT (2026-09-17, #36 follow-up). One call into
     // `common/account_state.ts`, which writes the lock and — for a disable —
@@ -2891,7 +4292,7 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
             'the person in `user`.'] });
       }
-      const riscReason = String(body.riscReason || body.risc_reason || '');
+      const riscReason = String(body.riscReason || '');
       if (riscReason && ['hijacking', 'bulk-account'].indexOf(riscReason) < 0) {
         log.debug("Leaving AdminActions.usersAction(). Not a RISC reason.");
         return this.refused('STS-ADMIN-0794', { ok: false, errors: ['"' +
@@ -2952,6 +4353,33 @@ class AdminActions {
         .trim(), body, ctx);
     }
 
+    // A STORED CERTIFICATE (#1061), put on a person's entry or taken off.
+    if (action === 'add-certificate' || action === 'remove-certificate') {
+      log.debug("Leaving AdminActions.usersAction(). A stored certificate.");
+      return this.storedCertificateAction(action, body, ctx);
+    }
+
+    // A MESSAGE-SIGNING CERTIFICATE (#521), issued to the person or revoked.
+    if (action === 'issue-signing-certificate' ||
+        action === 'revoke-signing-certificate') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person in `user`.'] });
+      }
+      if (!require('../ldap/ldap_server').storedCertificatesOf('person',
+                                                               who)) {
+        log.debug("Leaving AdminActions.usersAction(). No entry.");
+        return this.refused('STS-ADMIN-0905', { ok: false,
+          errors: ['There is no person called "' + who + '" here, and ' +
+                   'issuing a certificate creates nobody.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). A message-signing " +
+                "certificate.");
+      return this.signingCertificateAction(action, 'person', who, body);
+    }
+
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
     if (action === 'federation-link' || action === 'federation-unlink') {
       log.debug("Leaving AdminActions.usersAction(). A federation link.");
@@ -2997,12 +4425,12 @@ class AdminActions {
       }
       auditLog.record({
         category: 'authentication', action: 'activation.issued',
-        actor: (body.actor || ''), target: who, outcome: 'success',
+        actor: ctx.actor, target: who, outcome: 'success',
         summary: 'an activation link was issued for ' + who,
         detail: { expiresAt: issued.expiresAt }
       });
       const mailed = this.mailedLink('activation', who, issued.token, body,
-                                     body.actor, 'the users page');
+                                     ctx.actor, 'the users page');
       // AN ACTIVATION LINK FOR SOMEBODY WHO ALREADY EXISTS SETS THEIR
       // CREDENTIALS (#235), as its peer issue-password-reset does, and says
       // the same two RISC events: recovery-activated and
@@ -3030,7 +4458,7 @@ class AdminActions {
                mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
                // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
                activationUrl: '/portal/activate?user=' +
-                              encodeURIComponent(who) + '&token=' +
+                              encodeURIComponent(who) + '#token=' +
                               encodeURIComponent(issued.token),
                message: 'An activation link for ' + who + ' is valid until ' +
                         issued.expiresAt +
@@ -3060,12 +4488,17 @@ class AdminActions {
     // refusal lives, and an operator must not be able to do what the person
     // themselves is stopped from doing.
     //
-    // **THERE IS NO ENROL BESIDE THEM AND THERE CANNOT BE.** Enrolling an
-    // authenticator means being shown a shared secret, and an administrative
-    // door that handed one out would mint a working second factor for any
-    // account. A WebAuthn ceremony happens in the person's own browser against
-    // their own authenticator, and this console is not that browser. Both are
-    // `/portal`, or an activation link, which is itself a credential.
+    // **THERE IS NO ENROL OF AN AUTHENTICATOR APP BESIDE THEM AND THERE
+    // CANNOT BE.** Enrolling one means being shown a shared secret, and an
+    // administrative door that handed one out would mint a working second
+    // factor for any account. A PASSKEY is the one exception since #945,
+    // and it is not that door: the ceremony runs in the administrator's own
+    // browser against an authenticator THEY hold and hand over, nothing
+    // secret is shown, the passkey policy must allow it (`adminEnrolment`,
+    // off by default), the key records who enrolled it and the person is
+    // told — `begin-passkey-enrolment` below. The person's own authenticator
+    // is still enrolled where the person is: `/portal`, or an activation
+    // link, which is itself a credential.
     // ---------------------------------------------------------------------
     if (action === 'clear-totp') {
       const who = String(body.user || body.username || '').trim();
@@ -3076,7 +4509,18 @@ class AdminActions {
                                      'person whose authenticator app is ' +
                                           'being cleared.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = credentials.removeTotp(who);
+      // THE SESSIONS THE APP'S CODES SIGNED IN END (#722) — before the
+      // audit row below, which counts them.
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'totp' }, ctx,
+                                 'the authenticator app')
+        : null;
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.totp.cleared',
         actor: ctx.actor, target: who, outcome: result.ok ? 'success' :
@@ -3084,6 +4528,8 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the authenticator app enrolment for ' + who,
         detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
       if (result.ok) {
@@ -3099,6 +4545,11 @@ class AdminActions {
                  (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). ' +
                  'That account is down to one factor and they can enrol ' +
                  'again from /portal/mfa.');
+      }
+      if (ended) {
+        result.sessionsEnded = ended.sessionsEnded;
+        result.message = 'The authenticator app of ' + who + ' is ' +
+          'cleared.' + this.sessionsEndedSentence(ended);
       }
       log.debug("Leaving AdminActions.usersAction(). clear-totp " +
                 (result.ok ? "ok." : "refused."));
@@ -3141,7 +4592,17 @@ class AdminActions {
                                      'the person whose recovery codes are ' +
                                           'being cleared.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = credentials.removeBackupCodes(who);
+      // THE SESSIONS A RECOVERY CODE SIGNED IN END (#722).
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'backup-code' }, ctx,
+                                 'the recovery codes')
+        : null;
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.backup-codes.cleared',
         actor: ctx.actor, target: who, outcome: result.ok ? 'success' :
@@ -3149,6 +4610,8 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the recovery codes for ' + who,
         detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
       if (result.ok) {
@@ -3159,6 +4622,11 @@ class AdminActions {
                  '" were cleared by ' +
                  (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). ' +
                  'The next second factor they enrol issues a new set.');
+      }
+      if (ended) {
+        result.sessionsEnded = ended.sessionsEnded;
+        result.message = 'The recovery codes of ' + who + ' are cleared.' +
+          this.sessionsEndedSentence(ended);
       }
       log.debug("Leaving AdminActions.usersAction(). clear-backup-codes " +
                 (result.ok ? "ok." : "refused."));
@@ -3179,17 +4647,30 @@ class AdminActions {
                                      'the person whose emailed second ' +
                                      'factor is being turned off.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = require('../common/mail_factor').clear(who, ctx.actor,
-        ctx.via, 'turned off by an administrator');
+        ctx.via, 'turned off by an administrator' + this.evidenceNote(body));
+      // THE SESSIONS THE EMAILED SECOND FACTOR SIGNED IN END (#722), and
+      // only when it was on: a person who had none has none to end.
+      const ended = result.ok && result.removed
+        ? this.endFactorSessions(who, { kind: 'email' }, ctx,
+                                 'the emailed second factor')
+        : null;
       log.info('admin: the emailed second factor of "' + who + '" was ' +
                (result.removed ? 'turned off' : 'already off') + ' by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.usersAction(). clear-email-factor.");
       return result.ok
         ? { ok: true, removed: !!result.removed,
+            sessionsEnded: ended ? ended.sessionsEnded : 0,
             message: result.removed
               ? 'The emailed second factor of ' + who + ' is off. They ' +
-                'turn it on again at /portal/mfa.'
+                'turn it on again at /portal/mfa.' +
+                this.sessionsEndedSentence(ended)
               : who + ' had no emailed second factor.' }
         : this.refused('STS-ADMIN-0814', { ok: false, errors: ['The ' +
             'emailed second factor of ' + who + ' could not be turned ' +
@@ -3221,24 +4702,93 @@ class AdminActions {
           'send to: it ' + bad + '.'] });
       }
       const dir = require('../common/mail').directory();
-      const written = !!(dir && typeof dir.writeAddress === 'function' &&
-                         dir.writeAddress(who, address, 'admin'));
-      auditLog.record({
-        category: 'admin', action: 'admin.mail.set',
-        actor: ctx.actor, target: who, outcome: written ? 'success'
-                                                        : 'failure',
-        summary: (written ? 'set' : 'could not set') + ' the address of ' +
-                 who,
-        detail: { username: who, via: ctx.via } });
-      log.debug("Leaving AdminActions.usersAction(). set-mail " +
-                (written ? "ok." : "refused."));
-      return written
-        ? { ok: true, mail: address, verified: true,
-            message: 'The address of ' + who + ' is ' + address + ', and ' +
-                     'it is verified: an administrator set it.' }
-        : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
-            'no person called "' + who + '" in this realm, or the directory ' +
-            'would not write the address.'] });
+      const self = this;
+      // writeAddress() is a promise (#644). Returning it from this
+      // synchronous function is what the management API already awaits.
+      return (async function () {
+        const written = dir && typeof dir.writeAddress === 'function'
+          ? await dir.writeAddress(who, address, 'admin') : null;
+        const ok = written === true || (written && written.ok === true);
+        auditLog.record({
+          category: 'admin', action: 'admin.mail.set',
+          actor: ctx.actor, target: who, outcome: ok ? 'success' : 'failure',
+          summary: (ok ? 'set' : 'could not set') + ' the address of ' + who,
+          detail: { username: who, via: ctx.via } });
+        log.debug("Leaving AdminActions.usersAction(). set-mail " +
+                  (ok ? "ok." : "refused."));
+        return ok
+          ? { ok: true, mail: address, verified: true,
+              message: 'The address of ' + who + ' is ' + address + ', and ' +
+                       'it is verified: an administrator set it.' }
+          : self.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
+              'no person called "' + who + '" in this realm, or the ' +
+              'directory would not write the address.'] });
+      })();
+    }
+
+    // ---------------------------------------------------------------------
+    // A PERSON'S SIGN-IN NAMES (#644). An administrator stores an email
+    // live, unless it is already somebody else's address. The directory
+    // records that refusal on its own line; this answer marks 0909 and
+    // does not repeat the name. The directory is reached through the
+    // cache, so a call before it has loaded does not start a load.
+    // ---------------------------------------------------------------------
+    if (action === 'set-pseudonyms') {
+      const who = String(body.user || body.username || '').trim();
+      const hasAdd = Object.prototype.hasOwnProperty.call(body, 'add');
+      const hasRemove = Object.prototype.hasOwnProperty.call(body,
+                                                              'remove');
+      const hasCancel = Object.prototype.hasOwnProperty.call(body,
+                                                              'cancelPending');
+      const picked = (hasAdd ? 1 : 0) + (hasRemove ? 1 : 0) +
+                     (hasCancel ? 1 : 0);
+      const add = String(body.add == null ? '' : body.add).trim();
+      const remove = String(body.remove == null ? '' : body.remove).trim();
+      const cancelText = String(body.cancelPending == null ? ''
+                                 : body.cancelPending).trim().toLowerCase();
+      const cancelYes = cancelText === 'true' || cancelText === 'on' ||
+                        cancelText === '1' || cancelText === 'yes';
+      if (!who || picked !== 1 || (hasAdd && !add) ||
+          (hasRemove && !remove) || (hasCancel && !cancelYes)) {
+        log.debug("Leaving AdminActions.usersAction(). A malformed " +
+                  "set-pseudonyms.");
+        return this.refused('STS-ADMIN-0908', { ok: false, errors: ['Name ' +
+          'the person and exactly one of add, remove or cancelPending.'] });
+      }
+      const op = hasAdd ? 'add' : (hasRemove ? 'remove' : 'cancel');
+      const value = hasAdd ? add : (hasRemove ? remove : '');
+      const cached = require.cache[require.resolve('../ldap/ldap_server')];
+      const dir = cached && cached.exports;
+      const self = this;
+      return (async function () {
+        const written = dir && typeof dir.writePseudonyms === 'function'
+          ? await dir.writePseudonyms(who, { op: op, value: value,
+                                             source: 'admin' })
+          : null;
+        const ok = !!(written && written.ok === true);
+        const names = ok && written.pseudonyms ? written.pseudonyms : [];
+        const email = value
+          ? require('../common/mail_transports').addressProblem(value) === ''
+          : false;
+        auditLog.record({
+          category: 'admin', action: 'admin.pseudonym.set',
+          actor: ctx.actor, target: who,
+          outcome: ok ? 'success' : 'failure',
+          summary: (ok ? 'changed' : 'could not change') +
+                   ' the sign-in names of ' + who,
+          detail: { username: who, via: ctx.via, op: op,
+                    length: names.length, email: email } });
+        log.debug("Leaving AdminActions.usersAction(). set-pseudonyms " +
+                  (ok ? "ok." : "refused."));
+        return ok
+          ? { ok: true, pseudonyms: names,
+              pending: written.pending === true ? null
+                                                : (written.pending || null),
+              message: 'The sign-in names of ' + who + ' were changed.' }
+          : self.refused('STS-ADMIN-0909', { ok: false, errors: ['There is ' +
+              'no person called "' + who + '" in this realm, or the ' +
+              'directory would not write the name.'] });
+      })();
     }
 
     // ENTERPRISE EXTENSIONS SECTION 2.3 (#148): the account id a client
@@ -3247,8 +4797,8 @@ class AdminActions {
     // Commands (#151); this is the administrator's door.
     if (action === 'set-aud-sub') {
       const who = String(body.user || body.username || '').trim();
-      const client = String(body.client || body.client_id || '').trim();
-      const value = String(body.value || body.aud_sub || '').trim();
+      const client = String(body.client || '').trim();
+      const value = String(body.value || '').trim();
       if (!who || !client || /\s/.test(client) || value.length > 255 ||
           /[\u0000-\u001f]/.test(value)) {
         log.debug("Leaving AdminActions.usersAction(). A malformed aud_sub.");
@@ -3290,6 +4840,11 @@ class AdminActions {
                                      'the person whose security key is being ' +
                                           'removed.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
       // function carries the refusal that matters.
       const going = credentials.keysOf(who).filter(function (one) {
@@ -3303,24 +4858,288 @@ class AdminActions {
           fido2Aaguid: String((going && going.aaguid) || ''),
           changeType: 'delete', via: ctx.via,
           friendlyName: going ? String(going.label || '') : '',
-          reasonAdmin: 'An administrator removed a ' +
-                       (going ? going.role : '') + ' security key of ' + who +
+          reasonAdmin: 'An administrator removed a passkey of ' + who +
                        '.',
           reasonUser: 'A security key was removed from your account.' });
       }
+      // THE SESSIONS THAT KEY SIGNED IN END (#722) — as the first factor or
+      // as a step; every other session of theirs stays.
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'webauthn',
+            credentialId: String(body.credentialId || '') }, ctx,
+            'a security key')
+        : null;
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.key.cleared',
         actor: ctx.actor, target: who, outcome: result.ok ? 'success' :
                                                 'failure',
         summary: (result.ok ? 'removed' : 'could not remove') +
                  ' a security key for ' + who,
-        detail: { username: who, via: ctx.via,
+        detail: { evidence: this.evidenceOf(body), username: who, via: ctx.via,
                   credentialId: String(body.credentialId || ''),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
+      if (ended) {
+        result.sessionsEnded = ended.sessionsEnded;
+        result.message = 'The security key is removed from ' + who + '.' +
+          this.sessionsEndedSentence(ended);
+      }
       log.debug("Leaving AdminActions.usersAction(). clear-key " +
                 (result.ok ? "ok." : "refused."));
       return this.refusedBy('STS-ADMIN-0522', result);
+    }
+
+    // RENAMING SOMEBODY'S PASSKEY (#470, 2026-10-06; rcbj's decision D on
+    // the ticket). THROUGH `credentials.renameKey()`, the one writer the
+    // person's own `/portal/rename-key` also calls, so the two doors cannot
+    // disagree about what a name may be; an empty name restores the default.
+    // Audited, and no CAEP event: a name says nothing about what the key
+    // proves.
+    if (action === 'rename-key') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0849', { ok: false, errors: ['Name ' +
+          'the person whose passkey is being renamed.'] });
+      }
+      const result = credentials.renameKey(who,
+        String(body.credentialId || ''), String(body.label || ''));
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.key.renamed',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'renamed' : 'could not rename') +
+                 ' a passkey of ' + who,
+        detail: { username: who, via: ctx.via,
+                  credentialId: String(body.credentialId || ''),
+                  from: result.ok ? result.previous : undefined,
+                  to: result.ok ? result.label : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      log.debug("Leaving AdminActions.usersAction(). rename-key " +
+                (result.ok ? "ok." : "refused."));
+      return result.ok
+        ? { ok: true, message: 'The passkey of ' + who + ' is now called "' +
+            result.label + '".', label: result.label }
+        : this.refusedBy('STS-ADMIN-0850', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule
+    // 3cv). Two acts, as the person's own enrolment is two steps: `begin`
+    // mints a challenge bound to this administrator, the person and the
+    // lane and answers the ceremony to run (`ceremony`); the console runs
+    // it in the ADMINISTRATOR'S browser — `navigator.credentials.create()`
+    // under the person's user handle, the realm's RP ID — and `finish`
+    // posts what the browser produced, verified exactly as the person's own
+    // registration is and written through the same writer, marked
+    // `enrolledBy`. rcbj's decision on the ticket: no import of a
+    // registration produced elsewhere, so there is no third act.
+    //
+    // The header above this block's siblings said there could be no enrol
+    // here, because "this console is not that browser". That was an
+    // argument about the PERSON'S authenticator, and it still holds: the
+    // administrator cannot touch it. What changed is the case: a key the
+    // organisation issues, which the administrator holds, registers in the
+    // administrator's browser and is handed over — and the person is told
+    // (CAEP and a security notice), the key says who enrolled it, and the
+    // passkey policy must allow it (`adminEnrolment`, off by default).
+    //
+    // THE ADMINISTRATOR IS THE TOKEN'S SUBJECT, never a body field: the API
+    // hands `admin` over from what its gate verified (`callerPersonOf()`),
+    // so an enrolment cannot be recorded against a name a caller chose.
+    // ---------------------------------------------------------------------
+    if (action === 'begin-passkey-enrolment') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person the passkey is for, in `user`.'] });
+      }
+      // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD
+      // (the fuzz run on 7fc43a1de): it is keyed by the administrator and
+      // the person joined with a newline, and a finish spends it before
+      // anything else — so a NUL here was journalled into a store PostgreSQL
+      // cannot hold (STS-STORE-0063), and a newline could name another
+      // administrator's record.
+      if (/[\u0000-\u001f\u007f]/.test(who) || config.unstorableText(who)) {
+        log.debug("Leaving AdminActions.usersAction(). A name no person " +
+                  "holds.");
+        return this.refused('STS-AUTHN-0556', { ok: false, errors: ['The ' +
+          'person\'s name holds a control character or text that cannot ' +
+          'be stored, so no person has it. Nothing was started or spent.'] });
+      }
+      const authn = require('../authn/authn');
+      const webauthnPolicy = require('../authn/webauthn_policy');
+      const passkeyPolicy = require('../common/passkey_policy');
+      // THE SAME ADDRESS RULE THE PERSON'S OWN CEREMONY APPLIES: an RP ID
+      // that does not fit the address the console is on is refused before
+      // anybody touches a key, rather than replaced.
+      const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+      if (rpRefusal) {
+        log.debug("Leaving AdminActions.usersAction(). The RP ID does not " +
+                  "fit.");
+        return this.refused('STS-AUTHN-0446', { ok: false,
+                                                errors: [rpRefusal] });
+      }
+      // THE SWITCH BEFORE THE MISSING ADMINISTRATOR (#945).
+      // beginAdminKeyEnrolment() names the token's subject first
+      // (STS-AUTHN-0445), so an open call while adminEnrolment is off
+      // would never say so. This door asks the switch first — the order
+      // the operation describes — and uses that method's own sentence.
+      // The constant is not on the credentials module export.
+      passkeyPolicy.select(who, '');
+      let begun;
+      if (!passkeyPolicy.adminEnrolmentAllowed()) {
+        begun = this.refused('STS-AUTHN-0440', { ok: false,
+          reason: 'admin-enrolment',
+          errors: ['This person\'s passkey policy does not let an ' +
+            'administrator enrol a passkey for them (adminEnrolment ' +
+            'is off). Turn it on under Directory → Policies → ' +
+            'Passkeys, or have them create one themselves on their ' +
+            'account page.'] });
+      } else {
+        // `body.role` IS ACCEPTED AND IGNORED SINCE #1135: a key carries
+        // no role, so the old field a caller may still send asks nothing.
+        begun = credentials.beginAdminKeyEnrolment(who, context &&
+          (context as any).admin, {
+          kind: String(body.kind || ''),
+          lane: String(body.lane || '') });
+      }
+      if (!begun.ok) {
+        auditLog.record({
+          category: 'authentication', action: 'admin.passkey.enrolment-refused',
+          errorCode: errorCodes.codeOf(begun) || 'STS-AUTHN-0440',
+          actor: ctx.actor, target: who, outcome: 'failure',
+          summary: 'could not start enrolling a passkey for ' + who,
+          detail: { username: who, via: ctx.via, stage: 'begin',
+                    reason: begun.reason || '',
+                    errors: begun.errors || [] } });
+        log.debug("Leaving AdminActions.usersAction(). The begin was " +
+                  "refused.");
+        return this.refusedBy('STS-AUTHN-0440', begun);
+      }
+      const rpId = authn.rpIdOf(ctx.base);
+      // THE OPTIONS THE PERSON'S OWN CEREMONY IS ARMED WITH (the realm's
+      // attestation, user verification, resident key, hints, timeout), with
+      // THE ALGORITHMS THE PENDING RECORD CARRIES — the one call site
+      // `credentials.adminEnrolmentAlgorithms()` answered, and the list the
+      // finish is held to.
+      const options = webauthnPolicy.creationOptions(rpId, begun.kind,
+                                                     begun.lane, false);
+      options.algorithms = begun.algorithms.slice();
+      // THE NAME THE PROMPT SHOWS (#533): the person's, by the passkey
+      // policy's userDisplayName, the post-quantum lane's naming ML-DSA
+      // (#643) — the person's own prompt's name, on the administrator's
+      // screen.
+      const display = passkeyPolicy.withSelection(who, '', function () {
+        return passkeyPolicy.displayNameFor(who, who);
+      });
+      const user = credentials.laneUser(who, display, begun.lane);
+      auditLog.record({
+        category: 'authentication', action: 'admin.passkey.enrolment-started',
+        actor: ctx.actor, target: who, outcome: 'success',
+        summary: 'started enrolling a passkey for ' + who,
+        detail: { username: who, via: ctx.via,
+                  lane: begun.lane, kind: begun.kind || 'any',
+                  excluded: begun.exclude.length } });
+      log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+               ctx.via + ') started enrolling a passkey for "' + who +
+               '".');
+      log.debug("Leaving AdminActions.usersAction(). begin-passkey-" +
+                "enrolment minted a challenge.");
+      return { ok: true, username: who, enrolmentId: begun.enrolmentId,
+               lane: begun.lane, kind: begun.kind,
+               expiresAt: begun.expiresAt,
+               // WHAT THE CONSOLE'S SCRIPT HANDS
+               // `navigator.credentials.create()`, every byte string as
+               // base64url: the challenge, the person's user handle and
+               // the keys excluded.
+               ceremony: { challenge: begun.challenge, rpId: rpId,
+                           user: { id: begun.userHandle, name: user.name,
+                                   displayName: user.displayName },
+                           exclude: begun.exclude.slice(),
+                           options: options },
+               message: 'A passkey enrolment for ' + who + ' is waiting ' +
+                        'for your authenticator until ' + begun.expiresAt +
+                        '.' };
+    }
+
+    if (action === 'finish-passkey-enrolment') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person the passkey is for, in `user`.'] });
+      }
+      // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD
+      // (the fuzz run on 7fc43a1de): it is keyed by the administrator and
+      // the person joined with a newline, and a finish spends it before
+      // anything else — so a NUL here was journalled into a store PostgreSQL
+      // cannot hold (STS-STORE-0063), and a newline could name another
+      // administrator's record.
+      if (/[\u0000-\u001f\u007f]/.test(who) || config.unstorableText(who)) {
+        log.debug("Leaving AdminActions.usersAction(). A name no person " +
+                  "holds.");
+        return this.refused('STS-AUTHN-0556', { ok: false, errors: ['The ' +
+          'person\'s name holds a control character or text that cannot ' +
+          'be stored, so no person has it. Nothing was started or spent.'] });
+      }
+      const admin = context && (context as any).admin;
+      let posted: any = null;
+      try {
+        posted = typeof body.credential === 'string'
+          ? JSON.parse(body.credential || 'null')
+          : (body.credential && typeof body.credential === 'object'
+            ? body.credential : null);
+      } catch (e) {
+        log.debug("Caught in AdminActions.usersAction(): " +
+                  ((e && e.message) || e));
+        // Not JSON: a hand-made request, answered below.
+        posted = null;
+      }
+      if (!posted || typeof posted !== 'object') {
+        // SPENT ALL THE SAME: a finish is single use whatever it carries.
+        const by = credentials.enrolledByOf(admin);
+        if (by) {
+          credentials.abandonAdminKeyEnrolment(by.username, who);
+        }
+        log.debug("Leaving AdminActions.usersAction(). No ceremony result.");
+        return this.refused('STS-AUTHN-0448', { ok: false, errors: ['No ' +
+          'ceremony result was sent: `credential` is the browser\'s ' +
+          'registration as JSON. A passkey is created by a browser, and ' +
+          'there is no form that can do it. Start again.'] });
+      }
+      const authn = require('../authn/authn');
+      const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+      if (rpRefusal) {
+        const by = credentials.enrolledByOf(admin);
+        if (by) {
+          credentials.abandonAdminKeyEnrolment(by.username, who);
+        }
+        log.debug("Leaving AdminActions.usersAction(). The RP ID does not " +
+                  "fit.");
+        return this.refused('STS-AUTHN-0446', { ok: false,
+                                                errors: [rpRefusal] });
+      }
+      const self = this;
+      log.debug("Leaving AdminActions.usersAction(). finish-passkey-" +
+                "enrolment answers when the verification settles.");
+      return credentials.confirmAdminKeyEnrolment(who, admin,
+        String(body.enrolmentId || ''), posted,
+        { origin: authn.expectedOriginFor(ctx.base, posted),
+          rpId: authn.rpIdOf(ctx.base) }).then(function (done) {
+        return self.adminKeyEnrolled(who, done, ctx);
+      }, function (e) {
+        log.debug("Caught in AdminActions.usersAction(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-AUTHN-0447') + 'admin: finishing a ' +
+                  'passkey enrolment for ' + who + ' threw: ' +
+                  ((e && e.message) || e));
+        return self.refused('STS-AUTHN-0447', { ok: false, errors: ['The ' +
+          'passkey could not be registered. Start again.'] });
+      });
     }
 
     // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).
@@ -3333,9 +5152,18 @@ class AdminActions {
     // ever written. Somebody following either instruction got a 404 naming an
     // endpoint this service documents.
     //
-    // It is `credentials.setPassword()` and nothing else: hashed there, never
-    // here, and never written as an attribute — which is also why
-    // `userPassword` is refused by the attribute door on `create`.
+    // It is `credentials.setPassword()`: hashed there, never here, and never
+    // written as an attribute — which is also why `userPassword` is refused
+    // by the attribute door on `create`. A GENERATED password sets `pwdReset`
+    // (#1446, ASVS 5.0.0 6.4.1): it may be used once, to choose another, and
+    // cannot become the long-term password. One the administrator typed does
+    // not. Neither signs the person out, which is what `reset-password` does
+    // besides the password. What it shares with that door, since #960, is
+    // the recovery note: a passkey holder's next password sign-in is held
+    // by `recoveryAssurance` until a passkey signs them in.
+    // `noteRecovery()` writes nothing when they hold no passkey or the row
+    // is `any`, and a failed write is already logged (STS-AUTHN-0382).
+    // Either way this action still answers that the password was set.
     if (action === 'set-password') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -3372,13 +5200,22 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
+      if (generate) {
+        credentials.setPasswordResetRequired(who, true);
+      }
+      // A passkey holder's recovery, noted the way `reset-password` notes
+      // it (#960). False — no passkey, assurance `any`, or a write already
+      // logged — does not fail the action: the password is set either way.
+      credentials.noteRecovery(who, 'admin-password');
       accountSignals.credentialChanged({ username: who,
         credentialType: 'password', changeType: 'update', via: ctx.via,
         reasonAdmin: 'An administrator set the password of ' + who + '.',
         reasonUser: 'Your password was changed by an administrator.' });
       auditLog.record({
         category: 'authentication', action: 'password.set',
-        actor: (body.actor || ''), target: who, outcome: 'success',
+        // THE SUBJECT THE CALLER PASSED (#966), which for this API is the
+        // verified token. The three create rows below record `ctx.actor` too.
+        actor: ctx.actor, target: who, outcome: 'success',
         summary: 'a password was set for ' + who + ' by an administrator',
         // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
         // records that it happened and by which door; the value existed in one
@@ -3394,9 +5231,100 @@ class AdminActions {
                message: generate
                  ? 'A password for ' + who + ' has been generated and set. ' +
                    'IT IS SHOWN ONCE — this service stores a scrypt hash and ' +
-                   'cannot produce it again, only replace it.'
+                   'cannot produce it again, only replace it. It must be ' +
+                   'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
                    'hash and cannot be shown again.' };
+    }
+
+    // THE PERSON AS AN LDIF FILE (2026-11-14), the application page's #546
+    // pattern on a person's page. `ldap/person_ldif.ts` decides what goes in
+    // and what comes out; this is the transport — the file answered as a
+    // named attachment the console saves (`files`) and as `ldif` for a
+    // script, and an import read from the console's file input (`file`, its
+    // name and text) or from `ldif` — and the Shared Signals an import of
+    // credentials owes, as every other door that gives a person one says
+    // (#145).
+    if (action === 'export-ldif') {
+      const { personLdif } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const withCredentials = body.credentials === true ||
+        ['true', 'on', '1'].indexOf(String(body.credentials || '')
+          .toLowerCase()) >= 0;
+      const exported: any = personLdif.exportPerson(who,
+        { credentials: withCredentials, actor: ctx.actor });
+      if (!exported || exported.ok === false) {
+        log.debug("Leaving AdminActions.usersAction(). export-ldif refused.");
+        return exported;
+      }
+      log.debug("Leaving AdminActions.usersAction(). export-ldif.");
+      return { ok: true, changed: false, username: exported.username,
+               credentials: exported.credentials,
+               attributes: exported.attributes, leftOut: exported.leftOut,
+               ldif: exported.ldif,
+               message: '"' + exported.username + '" exported to ' +
+                        exported.fileName +
+                        (exported.credentials
+                          ? ', WITH their credential material, unencrypted.'
+                          : ', without credential material.'),
+               files: [{ name: exported.fileName, mime: 'text/plain',
+                         base64: Buffer.from(exported.ldif, 'utf8')
+                           .toString('base64') }] };
+    }
+    if (action === 'import-ldif') {
+      const { personLdif } = this.deps;
+      const given: any = body.file;
+      const file = given && typeof given === 'object'
+        ? String(given.text || '') : '';
+      const text = String(body.ldif || '').trim() ? String(body.ldif) : file;
+      const imported: any = personLdif.importPerson(text,
+        { actor: ctx.actor });
+      if (!imported || imported.ok === false) {
+        log.debug("Leaving AdminActions.usersAction(). import-ldif refused.");
+        return this.refusedBy('STS-LDAP-0216', imported || { ok: false,
+          errors: ['The import was refused.'] });
+      }
+      const who = imported.username;
+      const said = { username: who, changeType: 'create',
+                     initiatingEntity: 'admin', via: ctx.via,
+                     reasonAdmin: 'An administrator imported ' + who +
+                                  ' from an LDIF file, with credentials.',
+                     reasonUser: 'Your account was created with ' +
+                                 'credentials an administrator imported.' };
+      const kinds = imported.credentialKinds || [];
+      if (kinds.indexOf('password') >= 0 ||
+          kinds.indexOf('app-passwords') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: 'password' }));
+      }
+      if (kinds.indexOf('totp') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
+      }
+      if (kinds.indexOf('passkey') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: accountSignals.keyCredentialType(null) }));
+      }
+      if (kinds.indexOf('certificate') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: 'x509' }));
+      }
+      log.debug("Leaving AdminActions.usersAction(). import-ldif.");
+      return { ok: true, changed: true, username: who, dn: imported.dn,
+               attributes: imported.attributes,
+               credentials: imported.credentials,
+               kerberosKeys: false,
+               message: '"' + who + '" was imported' +
+                        (imported.credentials.length
+                          ? ' with ' + imported.credentials.join(', ') +
+                            '. No Kerberos key is derived from a stored ' +
+                            'hash: set the password again for Kerberos.'
+                          : ', with no credential.') };
     }
 
     if (action === 'create') {
@@ -3423,6 +5351,38 @@ class AdminActions {
       const typed = this.userFieldsFrom(body);
       const invent = body.invent === undefined ? true :
                      this.truthy(body.invent);
+      // A SERVICE ACCOUNT FROM THE START (#221): checked BEFORE the person
+      // exists, so a refused owner or destination leaves nobody behind as an
+      // ordinary person.
+      const asServiceAccount = this.truthy(body.serviceAccount);
+      // THE NAMED SERVICE-ACCOUNT POLICY A CREATE NAMES (#1240), a field
+      // like any other on the form: held only by a service account, naming
+      // one the realm holds, and the policy whose `requireOwner` the
+      // precheck below asks.
+      const typedReference = typed.stsServiceAccountPolicy;
+      const policyReference = Array.isArray(typedReference)
+        ? typedReference[0] : typedReference;
+      const referenceRefused = this.deps.serviceAccountPolicy.writeRefusal({
+        stsServiceAccount: asServiceAccount ? 'TRUE' : '',
+        stsServiceAccountPolicy: policyReference === undefined ? ''
+          : String(policyReference) });
+      if (referenceRefused) {
+        log.debug("Leaving AdminActions.usersAction(). The service-account " +
+                  "policy reference was refused before the create.");
+        return this.refusedBy(referenceRefused.code,
+          { ok: false, errors: [referenceRefused.message] });
+      }
+      if (asServiceAccount) {
+        const { serviceAccounts } = this.deps;
+        const precheck = serviceAccounts.check(
+          Object.assign({}, body, { policy: policyReference === undefined
+            ? '' : String(policyReference) }), '');
+        if (precheck.ok !== true) {
+          log.debug("Leaving AdminActions.usersAction(). The service " +
+                    "account was refused before the create.");
+          return this.refusedBy('STS-SVCACCT-0027', precheck);
+        }
+      }
       const result = directoryWriter(username, {
         origin: 'console',
         note: String(body.note || '').trim() ||
@@ -3430,7 +5390,10 @@ class AdminActions {
               'authenticating',
         channel: 'console',
         attributes: typed,
-        invent: invent
+        invent: invent,
+        // A SERVICE ACCOUNT IS NOT A PERSON BEING DESCRIBED (#396): the
+        // attribute policy's given name and address are not asked of it.
+        requiredExempt: asServiceAccount ? 'service account' : ''
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.usersAction(). create refused.");
@@ -3467,6 +5430,31 @@ class AdminActions {
                        entry: result.entry, typed: result.typed || [],
                        invented: !!result.invented, credential: credential };
       let credentialSaid = '';
+      if (asServiceAccount) {
+        const { serviceAccounts } = this.deps;
+        const flagged = serviceAccounts.set(result.username, {
+          serviceAccount: true, owners: body.owners,
+          destination: body.destination, secretName: body.secretName });
+        answer.serviceAccount = !!flagged.ok;
+        if (!flagged.ok) {
+          answer.serviceAccountError = ((flagged as any).errors || [])
+            .join(' ');
+        } else {
+          auditLog.record({
+            category: 'admin', action: 'admin.service-account.set',
+            // `ctx.actor`: the subject the caller passed (#966).
+            actor: ctx.actor, target: result.username,
+            outcome: 'success',
+            summary: result.username + ' was created as a service account',
+            detail: { owners: (((flagged as any).account || {}).owners ||
+                               []).map(function (one) {
+                        return one.dn;
+                      }),
+                      destination: String(body.destination || ''),
+                      via: ctx.via }
+          });
+        }
+      }
       if (credential === 'password' || credential === 'generate') {
         const generated = credential === 'generate';
         if (!generated && String(body.password || '') === '') {
@@ -3487,7 +5475,8 @@ class AdminActions {
           } else {
             auditLog.record({
               category: 'authentication', action: 'password.set',
-              actor: (body.actor || ''), target: result.username,
+              // `ctx.actor`: the subject the caller passed (#966).
+              actor: ctx.actor, target: result.username,
               outcome: 'success',
               summary: 'a password was set for ' + result.username +
                        ' as they were created',
@@ -3503,6 +5492,11 @@ class AdminActions {
             answer.passwordSet = true;
             answer.generated = generated;
             if (generated) {
+              // MUST BE CHANGED AT FIRST USE (#1446, ASVS 5.0.0 6.4.1), in
+              // product; development keeps it, as every fixture signs in with it.
+              if (mode.verifiesCredentials()) {
+                credentials.setPasswordResetRequired(result.username, true);
+              }
               // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE HASH.
               answer.password = password;
               credentialSaid = ' A password has been GENERATED for them and ' +
@@ -3522,7 +5516,8 @@ class AdminActions {
         } else {
           auditLog.record({
             category: 'authentication', action: 'activation.issued',
-            actor: (body.actor || ''), target: result.username,
+            // `ctx.actor`: the subject the caller passed (#966).
+            actor: ctx.actor, target: result.username,
             outcome: 'success',
             summary: 'an activation link was issued for ' + result.username +
                      ' as they were created',
@@ -3530,7 +5525,7 @@ class AdminActions {
           });
           answer.expiresAt = issued.expiresAt;
           const mailed = this.mailedLink('activation', result.username,
-                                         issued.token, body, body.actor,
+                                         issued.token, body, ctx.actor,
                                          'the new user screen');
           if (mailed && mailed.ok) {
             answer.mailedTo = mailed.mailedTo;
@@ -3540,7 +5535,7 @@ class AdminActions {
           } else {
             answer.activationUrl = '/portal/activate?user=' +
                                    encodeURIComponent(result.username) +
-                                   '&token=' +
+                                   '#token=' +
                                    encodeURIComponent(issued.token);
             if (mailed) {
               answer.mailError = (mailed.errors || []).join(' ');
@@ -3627,11 +5622,14 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  groupsAction(body) {
+  groupsAction(body: IyaApi.AdminActionBody<'/admin-api/groups'>,
+               context?) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.groupsAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
+    // Who is acting, for the directory's rows: the context's (#1579).
+    const actor = String((context || {}).actor || '');
 
     if (!groupWriter) {
       // ONE REFUSAL FOR BOTH ACTIONS, and it says which half of the page is
@@ -3650,8 +5648,7 @@ class AdminActions {
     }
 
     if (action === 'create') {
-      const name = String(body.group || body.displayName || body.cn || '')
-        .trim();
+      const name = String(body.group || body.displayName || '').trim();
       // THE MEMBERS BOX IS SPLIT ON NEWLINES AND COMMAS, which is where this
       // differs from userFieldsFrom() one section up and is worth saying rather
       // than leaving as an apparent inconsistency: a person's attributes are
@@ -3671,8 +5668,11 @@ class AdminActions {
               'created by hand on the admin console rather than by a ' +
               'directory client',
         channel: 'console',
-        actor: String(body.actor || ''),
-        members: members
+        actor: actor,
+        members: members,
+        // The group's own email address (#989), where a report shared
+        // with it is sent; optional, checked by the directory.
+        mail: String(body.mail || '').trim()
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). create refused.");
@@ -3690,12 +5690,6 @@ class AdminActions {
               'this ' +
               'one has no schema, so it is here because you asked for it') +
               '.' +
-          (result.dangling.length
-            ? ' ' + result.dangling.length + ' of those member value(s) name ' +
-              'nothing this directory holds and are written anyway: nothing ' +
-              'here does referential integrity, and the Dangling column ' +
-              'above is where they show up.'
-            : '') +
           ' IT GRANTS NOTHING. No endpoint in this service checks a group, ' +
           'and the only two that decide anything are the console roles on ' +
           '/admin/rbac. What it does change is what a directory client sees ' +
@@ -3710,7 +5704,7 @@ class AdminActions {
       const result = groupWriter.addGroupMember(group, member, {
         origin: 'console',
         channel: 'console',
-        actor: String(body.actor || '')
+        actor: actor
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). add-member refused.");
@@ -3721,10 +5715,75 @@ class AdminActions {
       return result;
     }
 
+    // A GROUP'S EMAIL ADDRESS (#989): set or cleared from the group page's
+    // form and `POST /admin-api/groups/set-mail`, both reaching the
+    // directory's one setter, which owns the shape rule and the refusals.
+    if (action === 'set-mail') {
+      const group = String(body.group || '').trim();
+      const address = String(body.mail || '').trim();
+      const result = groupWriter.setGroupMail(group, address, {
+        origin: 'console',
+        channel: 'console',
+        actor: actor
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). set-mail refused.");
+        return this.refusedBy('STS-ADMIN-0896', result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). set-mail " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
+    // A GROUP NAMES ITS POLICY OF A KIND (#1235, rule 3cx): the group page's
+    // picker and `POST /admin-api/groups/set-policy`, both reaching the
+    // directory's one writer, which checks the attribute is a declared
+    // reference and the value `default` or a named policy of the realm.
+    if (action === 'set-policy') {
+      const result = groupWriter.setGroupPolicy(
+        String(body.group || '').trim(), String(body.attribute || '').trim(),
+        String(body.policy || '').trim(),
+        { origin: 'console', channel: 'console',
+          actor: actor });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). set-policy refused.");
+        return this.refusedBy('STS-ADMIN-0907', result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). set-policy " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
+    // A GROUP'S OWNERS (#603): one added or taken off at a time, written at
+    // once — the group page's Owners tab, and its two operations. Who may
+    // be an owner and every refusal are ldap_server.js's.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const adding = action === 'add-owner';
+      const group = String(body.group || '').trim();
+      const owner = String(body.owner || '').trim();
+      const options = { origin: 'console', channel: 'console',
+                        actor: actor };
+      const result: any = adding
+        ? groupWriter.addGroupOwner(group, owner, options)
+        : groupWriter.removeGroupOwner(group, owner, options);
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). " + action +
+                  " refused.");
+        return this.refusedBy(adding ? 'STS-ADMIN-0852' : 'STS-ADMIN-0853',
+                              result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). " + action + ": " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The two are: create, add-member. Removing ' +
+                                 'The six are: create, add-member, ' +
+                                 'set-mail, set-policy, add-owner, ' +
+                                 'remove-owner. ' +
+                                 'Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +
                                  'PATCH ' +
@@ -3892,7 +5951,7 @@ class AdminActions {
    * @param protocols - the declared families, when the body carries them
    * @returns `{ ok, changed, errors, message }`
    */
-  updateApplicationFields(identifier, body, protocols) {
+  updateApplicationFields(identifier, body, protocols, actor?) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminActions.updateApplicationFields(). " +
               "identifier=" + identifier);
@@ -3946,8 +6005,90 @@ class AdminActions {
         changes.push({ attribute: name, values: valuesOf(given[name]) });
       }
     });
+    // oauthConfidential IS THE DETERMINATION THE METHODS MAKE (#466). The
+    // field grid no longer edits it. A body that still names it is checked
+    // against the methods THIS body leaves — the methods it posts when it
+    // posts them, otherwise the ones on the entry — before any attribute is
+    // written. Checking each write against the entry as it stands would
+    // refuse a save that changes the method and the flag together, because
+    // the flag would be compared with the old method. A value that agrees
+    // is taken out of the list and written afterwards from the methods, so
+    // a stale flag heals. The refusal is returned here so it keeps
+    // STS-REG-0363; the batch's own code (STS-ADMIN-0836) would hide it.
+    let syncConfidential = false;
+    const confidentialChange = changes.filter(function (change) {
+      return change.attribute === 'oauthConfidential';
+    })[0];
+    if (confidentialChange) {
+      const methodChange = changes.filter(function (change) {
+        return change.attribute === 'oauthTokenEndpointAuthMethod';
+      })[0];
+      const projected = methodChange ? methodChange.values
+        : valuesOf(DomainClasses.OAuthClient.fromEntry(entry.fields)
+          .tokenEndpointAuthMethods);
+      const determination = applications.oauthConfidentialOf({
+        registered: !!entry.registered,
+        fields: { oauthTokenEndpointAuthMethod: projected }
+      });
+      const statedValues = confidentialChange.values;
+      const problem = statedValues.length === 1
+        ? applications.confidentialDisagreement(statedValues[0],
+                                                determination)
+        : (statedValues.length
+          ? applications.confidentialDisagreement(statedValues.join(' '),
+                                                  determination)
+          : applications.confidentialClearSentence());
+      if (problem) {
+        log.debug("Leaving AdminActions.updateApplicationFields(). " +
+                  "oauthConfidential disagrees.");
+        return this.refused('STS-REG-0363', { ok: false, errors: [problem] });
+      }
+      syncConfidential = true;
+      changes.splice(changes.indexOf(confidentialChange), 1);
+    }
+    // #825: a hosted session bound that this save would change is checked
+    // BEFORE any attribute is written. A later refusal must not leave the
+    // earlier fields of the same post already stored.
+    const config = this.deps.config;
+    const confirm = body && body.confirm;
+    const boundRefusals = [];
+    changes.forEach(function (change) {
+      const name = change.attribute;
+      if (modes[name] !== 'set' ||
+          !applications.isHostedSessionClient(identifier) ||
+          !applications.hostedBoundAttribute(name)) {
+        return;
+      }
+      const current = valuesOf(entry.fields[name]);
+      const wanted = change.values;
+      const same = current.length === wanted.length &&
+        current.every(function (one) { return wanted.indexOf(one) >= 0; });
+      if (same) {
+        return;
+      }
+      const refusal = applications.hostedSessionBoundRefusal(identifier,
+        name, wanted[0] || '', confirm, config);
+      if (refusal) {
+        boundRefusals.push(refusal);
+      }
+    });
+    if (boundRefusals.length) {
+      const code = boundRefusals.some(function (one) {
+        return one.code === 'STS-REG-0369';
+      }) ? 'STS-REG-0369' : 'STS-REG-0368';
+      log.debug("Leaving AdminActions.updateApplicationFields(). The " +
+                "hosted session bound was refused.");
+      return this.refused(code, { ok: false,
+        errors: boundRefusals.map(function (one) {
+          return one.errors[0];
+        }) });
+    }
     const changed = [];
     const errors = [];
+    // A METADATA DOCUMENT IN THE SAVE is consumed after every other field
+    // is written (the declared families above all, which decide which
+    // descriptor is read), as `set` consumes one: consumeWrittenMetadata().
+    let metadataDocument = '';
     changes.forEach(function (change) {
       const name = change.attribute;
       const mode = modes[name];
@@ -3957,6 +6098,11 @@ class AdminActions {
       }
       const current = valuesOf(entry.fields[name]);
       const wanted = change.values;
+      if (name === 'samlSpMetadata' && wanted.length === 1 &&
+          !(current.length === 1 && current[0] === wanted[0])) {
+        metadataDocument = wanted[0];
+        return;
+      }
       // `none` BESIDE ANOTHER METHOD (2026-10-01) is refused for the whole
       // list before any of it is written: the removes and adds below go one
       // value at a time, and the first add would land before the second was
@@ -3979,7 +6125,8 @@ class AdminActions {
           return;
         }
         const set = applications.updateApplication(identifier, {
-          mode: 'set', attribute: name, value: wanted[0] || '' });
+          mode: 'set', attribute: name, value: wanted[0] || '',
+          confirm: confirm });
         if (set.ok) {
           changed.push(name);
         } else {
@@ -4014,6 +6161,53 @@ class AdminActions {
         changed.push(name);
       }
     });
+    // A FAMILY THIS SAVE ADDED gets its primary name from the identifier
+    // when the attribute is empty and this body did not name it (#393). A
+    // re-save of the same families writes nothing, so an entry that
+    // deliberately has no client_id keeps that. An explicit list, or an
+    // explicit clear, is in `covered` and wins. The protocol change above
+    // has already been written, which is what lets the family's own check
+    // see the new declaration.
+    if (!errors.length && withProtocols) {
+      const previous = valuesOf(DomainClasses.Application
+        .fromEntry(entry.fields).allowedProtocols);
+      const posted = valuesOf(protocols && protocols.length
+        ? protocols : body.protocols);
+      const addedFamilies = posted.filter(function (id) {
+        return previous.indexOf(id) < 0;
+      });
+      const fresh = applications.get(identifier);
+      const names = fresh && addedFamilies.length
+        ? applications.primaryNameAttributes(addedFamilies) : [];
+      names.forEach(function (name) {
+        if (covered.indexOf(name) >= 0 ||
+            valuesOf(fresh.fields[name]).length) {
+          return;
+        }
+        const verb = modes[name] === 'set' ? 'set' : 'add';
+        const written = applications.updateApplication(identifier, {
+          mode: verb, attribute: name,
+          value: fresh.identifier || identifier });
+        if (written.ok) {
+          changed.push(name);
+        } else {
+          (written.errors || []).forEach(function (one) {
+            errors.push(one);
+          });
+        }
+      });
+    }
+    if (!errors.length && metadataDocument) {
+      const consumed = this.consumeWrittenMetadata(identifier,
+                                                   metadataDocument, actor);
+      if (consumed.ok) {
+        changed.push('samlSpMetadata');
+      } else {
+        (consumed.errors || []).forEach(function (one) {
+          errors.push(one);
+        });
+      }
+    }
     if (errors.length) {
       log.debug("Leaving AdminActions.updateApplicationFields(). " +
                 errors.length + " refusal(s).");
@@ -4021,6 +6215,12 @@ class AdminActions {
         errors: (changed.length
           ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
           : []).concat(errors) });
+    }
+    if (syncConfidential) {
+      const synced = applications.writeOauthConfidential(identifier);
+      if (synced && synced.changed) {
+        changed.push('oauthConfidential');
+      }
     }
     log.debug("Leaving AdminActions.updateApplicationFields(). " +
               changed.length + " attribute(s) changed.");
@@ -4031,6 +6231,81 @@ class AdminActions {
                  identifier + '": ' + changed.join(', ') + '.'
                : 'Nothing changed: every field already held what was ' +
                  'submitted.' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SERVICE PROVIDER'S METADATA DOCUMENT WRITTEN TO ITS ENTRY, CONSUMED.
+  //
+  // `samlSpMetadata` is the document, and what the document REGISTERS — each
+  // assertion consumer service with its binding (`samlAcsEndpoint`), each
+  // single logout service, the signing and encryption certificates, the
+  // flags — is written beside it by `spMetadata.consume()` in one save. A
+  // `set`, an `add` or the field grid's save that stored the text alone left
+  // an entry whose document said artifact-01 and whose endpoints said
+  // nothing, so SAML 1.1's profileFor() fell back to saml11.defaultProfile
+  // and a shire registered on the artifact profile got a Browser/POST form
+  // (run 22, sts_saml11.js's Browser/Artifact section, on an entry a
+  // development sighting had filed before the job registered it). The
+  // create door and the upload already consumed; this is the third door,
+  // and it answers as they do. Consuming writes the document itself, so a
+  // refused one changes nothing on the entry (STS-ADMIN-0935).
+  // ---------------------------------------------------------------------------
+  private consumeWrittenMetadata(identifier, text, actor) {
+    const { log, applications, spMetadata } = this.deps;
+    log.debug("Entering AdminActions.consumeWrittenMetadata(). " +
+              "identifier=" + identifier);
+    const consumed = spMetadata.upload(identifier, text, actor || '');
+    if (!consumed.ok) {
+      log.debug("Leaving AdminActions.consumeWrittenMetadata(). Refused.");
+      return this.refused('STS-ADMIN-0935', { ok: false,
+        errors: ['The metadata document was not written, because it was ' +
+                 'refused: '].concat(consumed.errors || []) });
+    }
+    log.debug("Leaving AdminActions.consumeWrittenMetadata(). Consumed.");
+    return { ok: true, changed: true,
+             application: applications.get(identifier),
+             message: String(consumed.message || '') };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SAVED WRITE THAT LEAVES A wstrustJwtScope VALUE THE SCOPE POLICY WILL
+  // DROP (#488): the reply says so. The write stands (#485); the reply
+  // carries `warnings`, the list `scopePolicy.configuredScopeWarnings()`
+  // gives (the same list the application's GET view and the console's cell
+  // carry, rule 7), and its sentences after the reply's `message`, which is
+  // what the console's Save shows. A refused write and a clean one are
+  // returned as they came.
+  // ---------------------------------------------------------------------------
+  private withScopeWarnings(identifier, result) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.withScopeWarnings().");
+    if (!result || result.ok === false || !identifier) {
+      log.debug("Leaving AdminActions.withScopeWarnings(). Not saved.");
+      return result;
+    }
+    let warnings = [];
+    try {
+      warnings = require('../common/scope_policy')
+        .configuredScopeWarnings(identifier) || [];
+    } catch (e) {
+      // A policy that cannot be asked costs the warning, never the write.
+      log.debug("Caught in AdminActions.withScopeWarnings(): " +
+                ((e && e.message) || e));
+      warnings = [];
+    }
+    if (!warnings.length) {
+      log.debug("Leaving AdminActions.withScopeWarnings(). None.");
+      return result;
+    }
+    const said = warnings.map(function (one) {
+      return String(one.text);
+    }).join(' ');
+    log.debug("Leaving AdminActions.withScopeWarnings(). " + warnings.length +
+              ".");
+    return Object.assign({}, result, {
+      warnings: warnings,
+      message: (result.message ? String(result.message) + ' ' : 'Saved. ') +
+               'WARNING: ' + said });
   }
 
   // ---------------------------------------------------------------------------
@@ -4179,12 +6454,41 @@ class AdminActions {
       }
     });
     if (errors.length) {
+      // ALL OR NOTHING (#1555, ASVS 5.0.0 2.3.3): a save that is partly refused
+      // puts back what it had already changed.
+      const notRestored = changed.filter(function (name) {
+        const held = rows[name.toLowerCase()].values.map(String);
+        const now = (personEditor.editorFor(who).attributes
+          .filter(function (one) {
+            return one.name === name;
+          })[0] || { values: [] }).values.map(String);
+        const results = rows[name.toLowerCase()].multi
+          ? held.filter(function (one) {
+            return now.indexOf(one) < 0;
+          }).map(function (value) {
+            return personEditor.update(who, { attribute: name, mode: 'add',
+                                              value: value }, context);
+          }).concat(now.filter(function (one) {
+            return held.indexOf(one) < 0;
+          }).map(function (value) {
+            return personEditor.update(who, { attribute: name, mode: 'remove',
+                                              value: value }, context);
+          }))
+          : [personEditor.update(who, { attribute: name, mode: 'set',
+                                        value: held[0] || '' }, context)];
+        return !results.every(function (one) {
+          return one.ok;
+        });
+      });
       log.debug("Leaving AdminActions.updatePersonFields(). " +
                 errors.length + " refusal(s).");
-      return this.refused('STS-ADMIN-0839', { ok: false, changed: changed,
-        errors: (changed.length
-          ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
-          : []).concat(errors) });
+      return this.refused('STS-ADMIN-0839', { ok: false,
+        changed: notRestored,
+        errors: (notRestored.length
+          ? ['Part of this was refused, and these could not be put back: ' +
+             notRestored.join(', ') + '.']
+          : ['Nothing was saved, because part of it was refused:'])
+          .concat(errors) });
     }
     log.debug("Leaving AdminActions.updatePersonFields(). " +
               changed.length + " attribute(s) changed.");
@@ -4261,8 +6565,11 @@ class AdminActions {
     // `requiredMembers` is the body's name for the definition's `required`:
     // a body member called `required` would collide with the JSON Schema
     // keyword the management API's request schema is written in.
+    // `notForPolicy` (#564, P5): the member paths a fine-grained policy
+    // deliberately never sees, one per line like the others.
     ['locations', 'actions', 'datatypes', 'privileges', 'requiredMembers',
-     'consentActions', 'derivableFrom', 'introspectionClaims']
+     'consentActions', 'derivableFrom', 'introspectionClaims',
+     'notForPolicy']
       .forEach(function (name: string): void {
         const values = list(name);
         if (values && values.length) {
@@ -4294,6 +6601,13 @@ class AdminActions {
     const limits = json('limits');
     if (limits !== undefined) {
       out.limits = limits;
+    }
+    // THE MAPPING'S ROWS (#564, P5): a JSON array, or its text from the
+    // declare form. Written whole here; the tab's per-row forms are
+    // `set-access-type-row` and `remove-access-type-row`.
+    const xacml = json('xacml');
+    if (xacml !== undefined) {
+      out.xacml = xacml;
     }
     log.debug("Leaving AdminActions.accessTypeDefinitionFrom().");
     return out;
@@ -4377,6 +6691,337 @@ class AdminActions {
                       'definition from the next request.' };
   }
 
+  // -------------------------------------------------------------------------
+  // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5), from the Access types
+  // tab's XACML mapping sub-tabs: `set-access-type-row` adds the row for a
+  // member path or replaces the one already there, `remove-access-type-row`
+  // takes it off, and `set-not-for-policy` replaces the list of paths the
+  // policy deliberately never sees. AuthZEN's catalogue (`set-attribute`,
+  // `remove-attribute` on `authzen_admin.ts`) is the model: a row keyed by
+  // what it maps, replaced rather than doubled.
+  //
+  // **THE SAME DOOR AS `set-access-type`.** Each rewrites the one
+  // `oauthAuthorizationDetailsType` value of the type through
+  // `updateApplication()`, which holds the grammar (`STS-REG-0112`, the
+  // reserved identifiers among it) and, on an application that enforces
+  // fine-grained authorization, the coverage (`STS-FGA-0019`): a remove that
+  // would leave a member uncovered there is refused with the paths named.
+  //
+  // **A ROW IS READ BEFORE IT IS WRITTEN**, by `fga_map.ts`'s `parseRow()`
+  // — the grammar's own reader, not a copy — so a refusal can say which
+  // FIELD of the form was wrong (`field`), and the console draws the
+  // sentence beside that box rather than at the top of the page.
+  // -------------------------------------------------------------------------
+  /**
+   * The field of the row form a mapping problem is about, read off the
+   * grammar's sentence (`row.attributeId: …`, `xacml[2].category must…`).
+   *
+   * @param problem - the grammar's sentence
+   * @returns `path`, `attributeId`, `category`, `dataType`,
+   *   `multiplicity`, `notForPolicy`, or ''
+   */
+  private mappingFieldOf(problem: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mappingFieldOf().");
+    const text = String(problem || '');
+    const row = /(?:^row|\])\.(path|attributeId|category|dataType|multiplicity|description)\b/
+      .exec(text);
+    const field = row ? row[1]
+      : (/notForPolicy/.test(text) ? 'notForPolicy' : '');
+    log.debug("Leaving AdminActions.mappingFieldOf(). " + (field || '-'));
+    return field;
+  }
+
+  // The type's definition as an object to change: the stored JSON, or a
+  // bare type name as `{ type }`. A value that is neither cannot be held,
+  // since every write door refuses one; it is read as its name.
+  private definitionObjectOf(stored: string): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.definitionObjectOf().");
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(String(stored));
+    } catch (e) {
+      log.debug("Caught in AdminActions.definitionObjectOf(): " +
+                ((e && e.message) || e));
+      // A bare type name, which the grammar allows and JSON does not.
+      parsed = null;
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      log.debug("Leaving AdminActions.definitionObjectOf(). An object.");
+      return parsed;
+    }
+    log.debug("Leaving AdminActions.definitionObjectOf(). A name.");
+    return { type: typeof parsed === 'string' ? parsed : String(stored) };
+  }
+
+  // Replaces the values `mine` with `value` on the entry, putting them back
+  // when the new one is refused — `set-access-type`'s order, so a refused
+  // write never leaves the type undeclared.
+  private replaceAccessTypeValue(identifier: string, mine: string[],
+                                 value: string): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.replaceAccessTypeValue().");
+    for (let j = 0; j < mine.length; j++) {
+      applications.updateApplication(identifier, {
+        mode: 'remove', attribute: 'oauthAuthorizationDetailsType',
+        value: mine[j] });
+    }
+    const added = applications.updateApplication(identifier, {
+      mode: 'add', attribute: 'oauthAuthorizationDetailsType', value: value });
+    if (!added.ok) {
+      mine.forEach(function (old: string): void {
+        applications.updateApplication(identifier, {
+          mode: 'add', attribute: 'oauthAuthorizationDetailsType',
+          value: old });
+      });
+      log.debug("Leaving AdminActions.replaceAccessTypeValue(). Refused.");
+      return added;
+    }
+    log.debug("Leaving AdminActions.replaceAccessTypeValue().");
+    return added;
+  }
+
+  // The `set-access-type-row`, `remove-access-type-row` and
+  // `set-not-for-policy` actions (see the switch).
+  private accessTypeMappingAction(action: string, identifier: string,
+                                  body: any): any {
+    const self = this;
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.accessTypeMappingAction(). " + action);
+    // Lazy, as every reach from here into a family's library is: `fga_map`
+    // is pure and loads nothing, but this file may be required at 18.
+    const fgaMap = require('../xacml/fga_map');
+    const entry = applications.get(identifier);
+    if (!entry) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). No entry.");
+      return this.refused('STS-REG-0295', { ok: false,
+        errors: ['There is no application called "' + identifier + '".'] });
+    }
+    const type = String(body.type || '').trim();
+    const held = [].concat((entry.fields || {}).oauthAuthorizationDetailsType ||
+                           []).map(String);
+    const mine = held.filter(function (value: string): boolean {
+      return applications.authorizationDetailsTypeOf(value).type === type;
+    });
+    if (!mine.length) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). Not held.");
+      return this.refused('STS-REG-0295', { ok: false, type: type,
+        errors: ['The application "' + identifier + '" declares no ' +
+                 'access type "' + type.slice(0, 120) + '".'] });
+    }
+    const definition = this.definitionObjectOf(mine[0]);
+    const rows = Array.isArray(definition.xacml) ? definition.xacml : [];
+    const text = function (name: string): string {
+      log.debug("Entering text().");
+      log.debug("Leaving text().");
+      return body[name] === undefined || body[name] === null ? ''
+        : String(body[name]).trim();
+    };
+    let said = '';
+    if (action === 'set-access-type-row') {
+      const row: any = { path: text('path'), attributeId: text('attributeId') };
+      ['category', 'dataType', 'multiplicity', 'description']
+        .forEach(function (name: string): void {
+          if (text(name)) {
+            row[name] = text(name);
+          }
+        });
+      const checked = fgaMap.FgaMap.parseRow(row, 'row');
+      if (!checked.row) {
+        log.debug("Leaving AdminActions.accessTypeMappingAction(). The " +
+                  "row does not read.");
+        return this.refused('STS-FGA-0023', { ok: false, type: type,
+          field: this.mappingFieldOf(checked.problem),
+          errors: ['The row was not saved: ' + checked.problem + '.'] });
+      }
+      const path = checked.row.path;
+      row.path = path;
+      const kept = rows.filter(function (one: any): boolean {
+        return !(one && String(one.path || '').trim() === path);
+      });
+      said = (kept.length < rows.length ? 'Replaced' : 'Added') +
+        ' the row mapping ' + path + ' to ' + checked.row.attributeId;
+      definition.xacml = kept.concat([row]);
+    } else if (action === 'remove-access-type-row') {
+      const path = text('path');
+      const kept = rows.filter(function (one: any): boolean {
+        return !(one && String(one.path || '').trim() === path);
+      });
+      if (kept.length === rows.length) {
+        log.debug("Leaving AdminActions.accessTypeMappingAction(). No " +
+                  "such row.");
+        return this.refused('STS-FGA-0023', { ok: false, type: type,
+          field: 'path',
+          errors: ['The access type "' + type + '" of "' + identifier +
+                   '" has no row mapping "' + path.slice(0, 120) + '".'] });
+      }
+      said = 'Took off the row mapping ' + path;
+      if (kept.length) {
+        definition.xacml = kept;
+      } else {
+        delete definition.xacml;
+      }
+    } else {
+      const given = body.notForPolicy;
+      const list = (Array.isArray(given) ? given
+        : (given === undefined || given === null ? []
+          : String(given).split(/[\r\n,]+/)))
+        .map(function (one: any): string { return String(one).trim(); })
+        .filter(function (one: string, n: number, all: string[]): boolean {
+          return !!one && all.indexOf(one) === n;
+        });
+      said = list.length
+        ? 'notForPolicy is now ' + list.join(', ')
+        : 'notForPolicy is now empty';
+      if (list.length) {
+        definition.notForPolicy = list;
+      } else {
+        delete definition.notForPolicy;
+      }
+    }
+    const value = JSON.stringify(definition);
+    const parsed = applications.authorizationDetailsTypeOf(value);
+    if (parsed.problem) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). The " +
+                "definition does not read: " + parsed.problem);
+      return this.refused('STS-FGA-0023', { ok: false, type: type,
+        field: this.mappingFieldOf(parsed.problem),
+        errors: ['The mapping was not saved: ' + parsed.problem + '.'] });
+    }
+    const written = this.replaceAccessTypeValue(identifier, mine, value);
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). Write " +
+                "refused.");
+      // The coverage refusal (STS-FGA-0019) keeps its own code; its
+      // sentence names the paths, and the field is the one the act was
+      // about.
+      written.type = type;
+      written.field = action === 'set-not-for-policy' ? 'notForPolicy'
+                                                     : 'path';
+      return self.refusedBy('STS-FGA-0023', written);
+    }
+    log.debug("Leaving AdminActions.accessTypeMappingAction(). Saved.");
+    return { ok: true, application: identifier, type: type,
+             definition: definition,
+             message: said + ' on the access type "' + type + '" of "' +
+                      identifier + '". A fine-grained policy reads its ' +
+                      'details through this mapping from the next ' +
+                      'request.' };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FINE-GRAINED AUTHORIZATION TAB'S FOUR ACTS (#564, P5): the switch
+  // (`fga-enable`, `fga-disable`), *Create the default policy*
+  // (`fga-create-policy`) and *Reset to the default policy*
+  // (`fga-reset-policy`). Each is one call into `xacml/fga_policies.ts`,
+  // which owns the policy and its lifecycle and holds every refusal —
+  // enable's uncovered types (STS-FGA-0018, naming the paths), a disabled
+  // or unparseable policy (0006, 0007), an unconfirmed reset (0020) — so
+  // this layer only turns its `why` into the console's `errors` and keeps
+  // its code. The audit rows are `fga_policies.ts`'s and the registry's
+  // (`xacml.policy.write`, the entry's modify), as they are for the
+  // lifecycle P1 wrote.
+  //
+  // Lazy for the reason `xacml_admin.ts` gives: the module is built by the
+  // composition root at 23c, after this file's 18.
+  // -------------------------------------------------------------------------
+  private fgaAction(action: string, identifier: string, body: any,
+                    actor: string): any {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.fgaAction(). " + action);
+    const fga = require('../xacml/fga_policies');
+    const confirmed = body.confirm === true || body.confirm === 'true' ||
+                      body.confirm === 'on';
+    // `via` IS `api`: since #446 the console is a client of `/admin-api`,
+    // and this is the one door both arrive through.
+    const result = action === 'fga-enable'
+      ? fga.enable(identifier, { actor: actor, via: 'api' })
+      : (action === 'fga-disable'
+        ? fga.disable(identifier, { actor: actor })
+        : (action === 'fga-create-policy'
+          ? fga.ensure(identifier, { actor: actor })
+          : fga.reset(identifier, { actor: actor, confirm: confirmed })));
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.fgaAction(). Refused: " +
+                result.failure);
+      return this.refused(errorCodes.codeOf(result) || 'STS-FGA-0012', {
+        ok: false, application: identifier,
+        failure: String(result.failure || ''),
+        errors: [String(result.why || 'Refused.')] });
+    }
+    const policy = String(result.policy || '');
+    let message;
+    if (action === 'fga-enable') {
+      message = 'Fine-grained authorization is enforced on "' + identifier +
+        '": every authorization detail of its types, and every AuthZEN ' +
+        'evaluation about it, is decided by its policy "' + policy +
+        '" from the next request.' + AdminActions.pepGrantSentence(
+          result.peps);
+    } else if (action === 'fga-disable') {
+      message = 'Fine-grained authorization is no longer enforced on "' +
+        identifier + '". Its policy is kept as it is.';
+    } else if (action === 'fga-create-policy') {
+      message = result.created
+        ? 'Created "' + policy + '", the fine-grained authorization ' +
+          'policy of "' + identifier + '", from the fga-default template.'
+        : '"' + identifier + '" already has its policy "' + policy + '".';
+    } else {
+      message = 'The policy "' + policy + '" of "' + identifier + '" was ' +
+        'reset to the fga-default template: one rule permitting every ' +
+        'detail.' + (result.enforced
+          ? ' It is enforced, so every detail of its types is permitted ' +
+            'until that rule is narrowed.' : '');
+    }
+    log.debug("Leaving AdminActions.fgaAction().");
+    return { ok: true, application: identifier, policy: policy,
+             enforced: result.enforced === undefined ? undefined
+                                                     : !!result.enforced,
+             created: result.created === undefined ? undefined
+                                                   : !!result.created,
+             // WHAT THE ENABLE GRANTED THE REALM'S REMOTE PEPS (#1210):
+             // `granted`, `held` and `failed`, each holder by name.
+             peps: result.peps === undefined ? undefined : result.peps,
+             message: message };
+  }
+
+  // THE GRANT IN ONE SENTENCE (#1210), English as every message here is:
+  // who was granted, who already held it, and who could not be, with why.
+  static pepGrantSentence(peps: any): string {
+    helpers.log.debug("Entering AdminActions.pepGrantSentence().");
+    if (!peps) {
+      helpers.log.debug("Leaving AdminActions.pepGrantSentence(). " +
+                        "No grant.");
+      return '';
+    }
+    const names = function (list: any[]): string {
+      helpers.log.debug("Entering names().");
+      helpers.log.debug("Leaving names().");
+      return (list || []).map(function (one: any) {
+        return String(one.name || one.dn || '?');
+      }).join(', ');
+    };
+    const parts: string[] = [];
+    if ((peps.granted || []).length) {
+      parts.push('Granted the remote PEP(s) ' + names(peps.granted) +
+                 ' membership of ' + String(peps.authzenGroup || '') +
+                 ' and this application in their AuthZEN scope.');
+    }
+    if ((peps.held || []).length) {
+      parts.push('Already held: ' + names(peps.held) + '.');
+    }
+    (peps.failed || []).forEach(function (one: any) {
+      parts.push('Not granted: ' + String(one.name || '?') + ' — ' +
+                 String(one.why || ''));
+    });
+    if (!parts.length) {
+      parts.push('No remote PEP holds REMOTE_PEPS in this realm (group "' +
+                 String(peps.group || '') + '"), so none was granted.');
+    }
+    helpers.log.debug("Leaving AdminActions.pepGrantSentence().");
+    return ' ' + parts.join(' ');
+  }
+
   /**
    * Performs a `/admin/applications` action: create, edit attributes, confirm
    * or discard an observed address, manage secrets, software statements and TLS
@@ -4390,25 +7035,40 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  applicationsAction(body, protocols, context) {
+  applicationsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/applications' | '/admin-api/console/applications'>,
+    protocols, context) {
     const { log, numberWord, applications, spMetadata, resourceMetadata,
       softwareStatement, tlsClientCertificates } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.applicationsAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
+    // WHO IS ACTING, for every row an act writes: the context's, never a
+    // member of the body (rcbj on #1579, 2026-11-11).
+    const actor = String((context || {}).actor || '');
     const identifier = String(body.application || '').trim();
     const needsOne = ['set', 'add', 'remove', 'update-fields',
+                      'add-owner', 'remove-owner',
                       'confirm-address',
                       'discard-address', 'regenerate-secret',
                       'rotate-secret', 'add-secret', 'remove-secret',
-                      'issue-software-statement',
+                      'reveal-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
+                      'issue-signing-certificate',
+                      'revoke-signing-certificate',
+                      'add-certificate', 'remove-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
-                      'remove-custom-claim', 'set-access-type',
-                      'remove-access-type', 'forget'];
+                      'remove-custom-claim', 'set-claim-attributes',
+                      'set-claim-selections',
+                      'inherit-claim-attributes', 'set-access-type',
+                      'remove-access-type', 'set-access-type-row',
+                      'remove-access-type-row', 'set-not-for-policy',
+                      'fga-enable', 'fga-disable', 'fga-create-policy',
+                      'fga-reset-policy', 'set-permission-claims',
+                      'clear-permission-claims', 'export-ldif', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
                 "named.");
@@ -4452,7 +7112,10 @@ class AdminActions {
         // guess.
         kind: String(body.kind || ''),
         protocols: asked,
-        fields: this.applicationFieldsFrom(body)
+        fields: this.applicationFieldsFrom(body),
+        // The first client secret's lifetime (#394): the add form's field,
+        // beside Generate Secret on the create form.
+        lifetimeDays: body.lifetimeDays
       });
       log.debug("Leaving AdminActions.applicationsAction(). create " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -4464,8 +7127,8 @@ class AdminActions {
       // A METADATA DOCUMENT GIVEN WITH THE CREATE IS CONSUMED (#37), exactly
       // as an upload on the SAML 2.0 page is, so the form's promise — paste
       // it here to configure a service provider this service cannot reach —
-      // is kept. A document that is refused leaves the entry created and says
-      // why; the create itself is not undone.
+      // is kept. A document that is refused undoes the create (#1555, ASVS 5.0.0
+      // 2.3.3): the application asked for was one configured by that document.
       const created = this.applicationFieldsFrom(body);
       const pasted = String(created.samlSpMetadata || '');
       let consumed = null;
@@ -4473,14 +7136,17 @@ class AdminActions {
         consumed = spMetadata.consume(result.application.identifier, pasted,
                                       'upload');
       }
-      const consumedSentence = !consumed ? ''
-        : consumed.ok
-          ? ' ' + consumed.message
-          : ' The metadata document given with it was stored and NOT ' +
-            'consumed: ' + (consumed.errors || []).join(' ');
+      if (consumed && !consumed.ok) {
+        applications.deleteApplication(result.application.identifier);
+        log.debug("Leaving AdminActions.applicationsAction(). Undone.");
+        return this.refused('STS-ADMIN-0917', { ok: false, errors: ['Nothing was ' +
+          'created, because the metadata document was refused: ' +
+          (consumed.errors || []).join(' ')] });
+      }
+      const consumedSentence = consumed ? ' ' + consumed.message : '';
       log.debug("Leaving AdminActions.applicationsAction().");
       return { ok: true,
-               application: consumed && consumed.ok
+               application: consumed
                  ? (applications.get(result.application.identifier) ||
                     result.application)
                  : result.application,
@@ -4505,7 +7171,12 @@ class AdminActions {
                             'against, by exact string comparison, and the ' +
                             'rest are recorded rather than checked.'
                           :
-                          'It carries no identifier and no redirect URI yet. ' +
+                          (declared.length
+                            ? 'Where a ticked family\'s own identifier was ' +
+                              'left empty, the identifier is that name. It ' +
+                              'carries no redirect URI yet. '
+                            : 'It carries no identifier and no redirect ' +
+                              'URI yet. ') +
                             'Give it the ones it is allowed and RFC 9700 ' +
                             'mode will judge it against them; without them a ' +
                             'redirect_uri is judged against the ' +
@@ -4515,14 +7186,37 @@ class AdminActions {
     }
 
     if (action === 'set' || action === 'add' || action === 'remove') {
+      // A METADATA DOCUMENT WRITTEN TO AN ENTRY THAT EXISTS IS CONSUMED, as
+      // one given with the create is and as an upload is: the document is
+      // the service provider's statement of its endpoints, their bindings
+      // and its keys, and stored without being consumed it registered none
+      // of them. Run 22 found it (sts_saml11.js): an entry a development
+      // sighting had already filed took its metadata through `set`, so no
+      // `samlAcsEndpoint` named the artifact-01 consumer, and the SAML 1.1
+      // shire registered on it was answered with a Browser/POST form.
+      // Clearing it (an empty `set`) is still the plain write.
+      const metadataText = body.value === undefined ? ''
+        : String(body.value);
+      if (action !== 'remove' &&
+          String(body.attribute || '') === 'samlSpMetadata' &&
+          metadataText.trim()) {
+        const consumed = this.consumeWrittenMetadata(identifier,
+                                                     metadataText, actor);
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  " samlSpMetadata " + (consumed.ok ? 'consumed' :
+                                                      'refused') + ".");
+        return consumed;
+      }
       const result = applications.updateApplication(identifier, {
         mode: action,
         attribute: String(body.attribute || ''),
-        value: body.value === undefined ? '' : String(body.value)
+        value: body.value === undefined ? '' : String(body.value),
+        confirm: body.confirm
       });
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
-      return this.refusedBy('STS-ADMIN-0531', result);
+      return this.refusedBy('STS-ADMIN-0531',
+                            this.withScopeWarnings(identifier, result));
     }
 
     // ---------------------------------------------------------------------
@@ -4534,8 +7228,8 @@ class AdminActions {
     // whose values did not change is not written at all, which is what lets
     // a form carry every field and still refuse nothing it did not touch.
     if (action === 'update-fields') {
-      const result = this.updateApplicationFields(identifier, body,
-                                                  protocols);
+      const result = this.withScopeWarnings(identifier,
+        this.updateApplicationFields(identifier, body, protocols, actor));
       log.debug("Leaving AdminActions.applicationsAction(). update-fields " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;
@@ -4576,8 +7270,34 @@ class AdminActions {
     // redirects with the MESSAGE only: the new value is on the page it lands
     // on, behind the same fold the old one was, and a secret in a query string
     // would be a secret in the browser history and every log on the way.
+    // AN APPLICATION'S OWNERS (#604): one added or taken off at a time,
+    // written at once — the application page's Owners tab, and its two
+    // operations. Who may be an owner and every refusal are applications.js's.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const { auditLog } = this.deps;
+      const adding = action === 'add-owner';
+      const owner = String(body.owner || '').trim();
+      const result: any = adding ? applications.addOwner(identifier, owner)
+                                 : applications.removeOwner(identifier, owner);
+      if (result.ok && result.changed) {
+        auditLog.audit({
+          action: adding ? 'application.add-owner'
+                         : 'application.remove-owner',
+          actor: actor, target: identifier,
+          channel: 'http',
+          detail: (adding ? 'made ' : 'took ') + result.owner +
+                  (adding ? ' an owner of ' : ' off the owners of ') +
+                  identifier });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                (result.ok ? ' ok.' : ' refused.'));
+      return this.refusedBy(adding ? 'STS-ADMIN-0856' : 'STS-ADMIN-0857',
+                            result);
+    }
+
     if (action === 'regenerate-secret') {
-      const result = applications.regenerateClientSecret(identifier);
+      const result = applications.regenerateClientSecret(identifier,
+        { actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "regenerate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -4597,8 +7317,9 @@ class AdminActions {
     // ---------------------------------------------------------------------
     // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES (rcbj,
     // 2026-10-01), from the Custom claims section of its OAuth / OpenID
-    // Connect tab and the Custom SAML attributes section of its SAML tab.
-    // `set` names one of the five claim sets; `set-custom-claim` adds a row
+    // Connect tab, the Custom SAML attributes section of its SAML tab, and
+    // the Custom claims section of its GNAP tab (#1250).
+    // `set` names one of the claim sets; `set-custom-claim` adds a row
     // or replaces the row of the same name, `remove-custom-claim` takes one
     // off. The whole list is held to the realm's rules
     // (`stats.checkClaimEntries()`) before it is written as one JSON array,
@@ -4630,7 +7351,11 @@ class AdminActions {
       const SET_FAMILIES = {
         access_token: ['oauth2', 'oidc', 'oid4vci'],
         id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
-        saml2: ['saml2'], saml11: ['saml11']
+        saml2: ['saml2'], saml11: ['saml11'],
+        // #493: a Kerberos service's own PAC claims.
+        'kerberos-pac': ['krb5'],
+        // #1250: a GNAP client's own access-token JWT claims.
+        gnap_access_token: ['gnap']
       };
       const declaredFamilies = applications.declaredFamiliesOf(entry);
       if (action === 'set-custom-claim' &&
@@ -4666,6 +7391,11 @@ class AdminActions {
               type: String(body.type || 'string') }
           : { name: name, value: String(body.value == null ? ''
                                                            : body.value) };
+        // A Kerberos PAC row's type (#493); the other sets' typed rows have
+        // none, and checkClaimEntries() keeps it for that set alone.
+        if (!attributeName && body.type) {
+          row.type = String(body.type);
+        }
         if (body.nameFormat) {
           row.nameFormat = String(body.nameFormat);
         }
@@ -4703,6 +7433,300 @@ class AdminActions {
     }
 
     // ---------------------------------------------------------------------
+    // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495), from the
+    // catalogue sections of its OAuth / OpenID Connect, SAML and Verifiable
+    // Credentials sub-tabs. `set` names one of the five claim sets or
+    // `credential`; `set-claim-attributes` writes the application's own
+    // selection (`attributes`, or a form's repeated `attribute`), which
+    // REPLACES the realm's for that set — an empty one included, which
+    // carries nothing; `inherit-claim-attributes` takes it off, and the
+    // realm's selection is in force again. The names are held to the
+    // catalogue by `updateApplication()` (`STS-REG-0215`).
+    // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // THE OAUTH SUB-TAB'S ONE TABLE (#1144, rcbj 2026-10-29): the access
+    // token, ID Token and UserInfo selections, a column each, under ONE Save
+    // that writes only the columns that CHANGED. A column posted with exactly
+    // the selection in force is left as it is — the realm's, if it was
+    // inheriting it, so a Save that did not touch a column does not turn the
+    // realm's ticks into this application's own copy of them. Every column
+    // is held to the catalogue before any is written; a column not posted
+    // at all is not asked about. `set-claim-attributes` and
+    // `inherit-claim-attributes` still write one set each.
+    // ---------------------------------------------------------------------
+    if (action === 'set-claim-selections') {
+      const COLUMNS = ['access_token', 'id_token', 'userinfo'];
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (!['oauth2', 'oidc'].some(function (one) {
+        return declaredFamilies.indexOf(one) >= 0;
+      })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": not declared for OAuth.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for OAuth 2.0 or OpenID Connect, so its access token, ID Token ' +
+            'and UserInfo selections would reach nothing. Tick the family ' +
+            'first.'] });
+      }
+      const posted = COLUMNS.filter(function (one) {
+        return body[one] !== undefined;
+      });
+      const asked: any = {};
+      for (const setId of posted) {
+        const offered = body[setId];
+        const list = (Array.isArray(offered) ? offered
+          : (offered === null || offered === '' ? []
+            : String(offered).split(/[\s,]+/)))
+          .map(String).filter(function (one: string) { return one !== ''; });
+        const checked = claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0215', { ok: false,
+            errors: checked.errors });
+        }
+        asked[setId] = checked.names;
+      }
+      const sameNames = function (a: string[], b: string[]): boolean {
+        const norm = function (list: string[]): string {
+          return list.map(function (one) { return one.toLowerCase(); })
+            .sort().join(' ');
+        };
+        return norm(a) === norm(b);
+      };
+      const sets: any[] = [];
+      for (const setId of posted) {
+        const own = claimAttributes.applicationSelection(setId, entry);
+        const inForce = own === null ? claimAttributes.selectedNames(setId)
+                                     : own;
+        if (sameNames(asked[setId], inForce)) {
+          sets.push({ set: setId, changed: false, inherited: own === null,
+                      attributes: inForce });
+          continue;
+        }
+        const write = applications.updateApplication(identifier, {
+          mode: 'set',
+          attribute: claimAttributes.APP_SELECTION_ATTRIBUTES[setId],
+          value: JSON.stringify(asked[setId]) });
+        if (!write.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": the write was refused.");
+          return this.refusedBy('STS-REG-0215', write);
+        }
+        sets.push({ set: setId, changed: true, inherited: false,
+                    attributes: asked[setId] });
+      }
+      const changed = sets.filter(function (one) { return one.changed; })
+        .map(function (one) { return one.set; });
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok, " + changed.length + " changed.");
+      return { ok: true, application: identifier, sets: sets,
+               message: changed.length
+                 ? '"' + identifier + '" now holds its own ' +
+                   changed.join(', ') + ' selection' +
+                   (changed.length === 1 ? '' : 's') + ', in place of the ' +
+                   'realm\'s; the other columns are as they were.'
+                 : 'Nothing changed: every column of "' + identifier +
+                   '" is as it was.' };
+    }
+
+    if (action === 'set-claim-attributes' ||
+        action === 'inherit-claim-attributes') {
+      const setId = String(body.set || '');
+      const SELECTION_FAMILIES = {
+        access_token: ['oauth2', 'oidc', 'oid4vci'],
+        id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
+        saml2: ['saml2'], saml11: ['saml11'], credential: ['oid4vci']
+      };
+      const attribute = setId === 'credential'
+        ? vcClaims.APP_SELECTION_ATTRIBUTE
+        : claimAttributes.APP_SELECTION_ATTRIBUTES[setId];
+      if (!attribute || !SELECTION_FAMILIES[setId]) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such set.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['set must be one of ' +
+            Object.keys(SELECTION_FAMILIES).join(', ') + ', not "' +
+            setId.slice(0, 60) + '".'] });
+      }
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      // THE SET'S PROTOCOL MUST BE DECLARED, for set-custom-claim's reason:
+      // a selection nothing can issue reads like a policy in force.
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (action === 'set-claim-attributes' &&
+          !SELECTION_FAMILIES[setId].some(function (one) {
+            return declaredFamilies.indexOf(one) >= 0;
+          })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the set's protocol is not declared.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for ' + SELECTION_FAMILIES[setId].join(' or ') + ', so a ' +
+            setId + ' selection would reach nothing. Tick the family ' +
+            'first.'] });
+      }
+      let value = '';
+      let names = null;
+      if (action === 'set-claim-attributes') {
+        const offered = body.attributes !== undefined ? body.attributes
+                                                      : body.attribute;
+        const list = Array.isArray(offered) ? offered
+          : (offered === undefined || offered === null || offered === ''
+            ? [] : String(offered).split(/[\s,]+/));
+        const checked = setId === 'credential'
+          ? vcClaims.checkNames(list) : claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0215', { ok: false,
+            errors: checked.errors });
+        }
+        names = checked.names;
+        value = JSON.stringify(names);
+      }
+      const write = applications.updateApplication(identifier, {
+        mode: 'set', attribute: attribute, value: value });
+      if (!write.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the write was refused.");
+        return this.refusedBy('STS-REG-0215', write);
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok.");
+      return { ok: true, application: identifier, set: setId,
+               inherited: names === null, attributes: names,
+               message: names === null
+                 ? '"' + identifier + '" uses the realm\'s ' + setId +
+                   ' selection again.'
+                 : '"' + identifier + '" now selects ' +
+                   (names.length ? names.join(', ') : 'no attribute') +
+                   ' for its ' + setId + ' set, in place of the realm\'s ' +
+                   'selection.' };
+    }
+
+    // ---------------------------------------------------------------------
+    // CLAIMS MAPPED TO A RESOURCE SERVER'S OWN SCOPES (2026-10-09), from its
+    // Scope claims tab. `permission` names one of the permissions it exposes
+    // (`oauthPermission`); `set-permission-claims` writes the catalogue
+    // attributes (`attributes`, or a form's repeated `attribute`) an access
+    // token addressed to it carries when that permission was granted — an
+    // empty list maps none — and `clear-permission-claims` takes the
+    // permission's mapping off. The whole map is one JSON object on the
+    // entry, held at the write by `updateApplication()` (`STS-REG-0344`).
+    // ---------------------------------------------------------------------
+    if (action === 'set-permission-claims' ||
+        action === 'clear-permission-claims') {
+      const permission = String(body.permission || '').trim();
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0344', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (action === 'set-permission-claims' &&
+          !['oauth2', 'oidc'].some(function (one) {
+            return declaredFamilies.indexOf(one) >= 0;
+          })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": not an OAuth application.");
+        return this.refused('STS-REG-0344', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for oauth2 or oidc, so no access token is addressed to it. ' +
+            'Tick the family first.'] });
+      }
+      const exposed = applications.permissionsOf(entry).map(function (one) {
+        return one.name;
+      });
+      if (!permission || (action === 'set-permission-claims' &&
+                          exposed.indexOf(permission) < 0)) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": not one of its permissions.");
+        return this.refused('STS-REG-0344', { ok: false,
+          errors: ['permission must name one of the permissions "' +
+            identifier + '" exposes (' + (exposed.length
+              ? exposed.join(', ') : 'it exposes none') + '), not "' +
+            permission.slice(0, 60) + '".'] });
+      }
+      // The whole map, as held, so a save touches one permission only.
+      let current: Record<string, unknown> = {};
+      try {
+        const raw = [].concat(entry.fields[
+          claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE] || [])[0];
+        const parsed = raw ? JSON.parse(String(raw)) : {};
+        current = parsed && typeof parsed === 'object' &&
+          !Array.isArray(parsed) ? parsed : {};
+      } catch (e) {
+        log.debug("Caught in AdminActions.applicationsAction(): " +
+                  ((e && e.message) || e));
+        // A value only an ldapmodify could leave: replaced by this save,
+        // which is the repair.
+        current = {};
+      }
+      // Mappings of permissions it no longer exposes are dropped by any
+      // save: the write is held to what it exposes, and they map nothing.
+      Object.keys(current).forEach(function (name) {
+        if (exposed.indexOf(name) < 0) {
+          delete current[name];
+        }
+      });
+      let names = null;
+      if (action === 'set-permission-claims') {
+        const offered = body.attributes !== undefined ? body.attributes
+                                                      : body.attribute;
+        const list = Array.isArray(offered) ? offered
+          : (offered === undefined || offered === null || offered === ''
+            ? [] : String(offered).split(/[\s,]+/));
+        const checked = claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0344', { ok: false,
+            errors: checked.errors });
+        }
+        names = checked.names;
+        current[permission] = names;
+      } else {
+        delete current[permission];
+      }
+      const write = applications.updateApplication(identifier, {
+        mode: 'set', attribute: claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE,
+        value: Object.keys(current).length ? JSON.stringify(current) : '' });
+      if (!write.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the write was refused.");
+        return this.refusedBy('STS-REG-0344', write);
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok.");
+      return { ok: true, application: identifier, permission: permission,
+               attributes: names, mappings: current,
+               message: names === null
+                 ? 'The permission "' + permission + '" of "' + identifier +
+                   '" maps no claim now.'
+                 : 'An access token for "' + identifier + '" granted "' +
+                   permission + '" now carries ' + (names.length
+                     ? names.join(', ') : 'no attribute') + '.' };
+    }
+
+    // ---------------------------------------------------------------------
     // THE ACCESS-TYPE CATALOGUE (#432 phase 4), from the Access types tab of
     // a resource application's page. A type IS one value of
     // `oauthAuthorizationDetailsType`, so these build that value from named
@@ -4714,6 +7738,26 @@ class AdminActions {
     // ---------------------------------------------------------------------
     if (action === 'set-access-type' || action === 'remove-access-type') {
       const result = this.accessTypeAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
+
+    // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5): the Access types tab's
+    // XACML mapping sub-tabs, through the same door.
+    if (action === 'set-access-type-row' ||
+        action === 'remove-access-type-row' ||
+        action === 'set-not-for-policy') {
+      const result = this.accessTypeMappingAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
+
+    // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5).
+    if (action === 'fga-enable' || action === 'fga-disable' ||
+        action === 'fga-create-policy' || action === 'fga-reset-policy') {
+      const result = this.fgaAction(action, identifier, body, actor);
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;
@@ -4793,7 +7837,7 @@ class AdminActions {
         ok: true,
         did: did, kid: pair.kid, algorithm: pair.alg,
         verificationMethod: did + '#' + pair.kid,
-        documentUrl: base + '/applications/' +
+        documentUrl: helpers.rebaseTo(base, 'oid4vc') + '/applications/' +
                      encodeURIComponent(identifier) + '/did.json',
         publicJwk: pair.publicJwk, privateJwk: pair.privateJwk,
         privateKeyPem: pair.privateKeyPem, replaced: replace,
@@ -4827,7 +7871,12 @@ class AdminActions {
     // A ROTATION (#49 P5): the same new secret, with the old one still
     // accepted for oauth2.clientSecretOverlapS so the client can change over.
     if (action === 'rotate-secret') {
-      const result = applications.rotateClientSecret(identifier);
+      // THE ACTOR GOES WITH IT (2026-10-06): the register names the act's
+      // initiating entity `admin` from it, and `system` without one — so a
+      // rotation an administrator asked for was announced to Shared Signals
+      // as the service's own (sts_application_signals found it).
+      const result = applications.rotateClientSecret(identifier,
+        { actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). rotate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
@@ -4839,17 +7888,128 @@ class AdminActions {
     // primary); the reply carries a new secret once, as regenerate's does.
     if (action === 'add-secret') {
       const result = applications.addClientSecret(identifier, {
-        lifetimeDays: body.lifetimeDays, description: body.description });
+        lifetimeDays: body.lifetimeDays, description: body.description,
+        actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). add-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
     }
     if (action === 'remove-secret') {
       const result = applications.removeClientSecret(identifier, {
-        id: body.secret });
+        id: body.secret, actor: actor });
       log.debug("Leaving AdminActions.applicationsAction(). remove-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // ONE CREDENTIAL'S VALUE, ON DEMAND (#446, rcbj 2026-10-05). The
+    // application's page showed every client secret and the registration
+    // access token behind folds, drawn by the server; a page drawn from
+    // `GET /admin-api/applications` cannot, because that answer carries a
+    // secret's id and expiry and never its value — and no GET here carries a
+    // credential. So the fold asks for the one value it opens: `secret` is a
+    // client secret's id, or `registration-access-token`. A WRITE ROLE'S
+    // ACT, because handing out a credential is one, and AUDITED with what was
+    // revealed and never the value.
+    // THE APPLICATION AS AN LDIF FILE (#546). `applications.js` decides what
+    // goes in and what comes out; this is the transport: the file answered
+    // as a named attachment the console saves (`files`, as the key export
+    // answers) and as `ldif` for a script, and an import read from the
+    // console's file input (`file`, its name and text) or from `ldif`.
+    if (action === 'export-ldif') {
+      const credentials = body.credentials === true ||
+        ['true', 'on', '1'].indexOf(String(body.credentials || '')
+          .toLowerCase()) >= 0;
+      const exported = applications.exportApplicationLdif(identifier,
+        { credentials: credentials, actor: actor });
+      if (!exported || exported.ok === false) {
+        log.debug("Leaving AdminActions.applicationsAction(). export-ldif " +
+                  "refused.");
+        return exported;
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). export-ldif.");
+      return { ok: true, changed: false, application: identifier,
+               credentials: exported.credentials,
+               attributes: exported.attributes, leftOut: exported.leftOut,
+               ldif: exported.ldif,
+               message: '"' + identifier + '" exported to ' +
+                        exported.fileName +
+                        (exported.credentials
+                          ? ', WITH its credential material, unencrypted.'
+                          : ', without credential material.'),
+               files: [{ name: exported.fileName, mime: 'text/plain',
+                         base64: Buffer.from(exported.ldif, 'utf8')
+                           .toString('base64') }] };
+    }
+    if (action === 'import-ldif') {
+      const file = body.file && typeof body.file === 'object'
+        ? String(body.file.text || '')
+        : (typeof body.file === 'string' ? body.file : '');
+      const text = String(body.ldif || '').trim() ? String(body.ldif) : file;
+      const imported = applications.importApplicationLdif(text,
+        { actor: actor });
+      if (!imported || imported.ok === false) {
+        log.debug("Leaving AdminActions.applicationsAction(). import-ldif " +
+                  "refused.");
+        return imported;
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). import-ldif.");
+      return { ok: true, changed: true, application: imported.identifier,
+               message: '"' + imported.identifier + '" was imported.' };
+    }
+
+    if (action === 'reveal-secret') {
+      const entry = applications.get(identifier);
+      const fields = (entry && entry.fields) || {};
+      const asked = String(body.secret || '').trim();
+      let value = '';
+      if (entry && asked === 'registration-access-token') {
+        value = String([].concat(fields.appRegistrationAccessToken || [])[0] ||
+                       '');
+      } else if (entry && asked !== 'didPrivateKeys' &&
+                 // A WITHHELD credential (a secret destination's, #221 P3)
+                 // is sealed too and is never revealed: it leaves this
+                 // service only on the wire to its own secrets manager.
+                 (applications.WITHHELD_FIELDS || []).indexOf(asked) < 0 &&
+                 (applications.SEALED_FIELDS || []).indexOf(asked) >= 0) {
+        // A SEALED CREDENTIAL BY ITS ATTRIBUTE (#446): an RFC 7523 or RFC
+        // 7522 signing key an operator collects to sign the assertions,
+        // GNAP's shared key or macaroon root key. The registry opens it; the
+        // answers that list the application never carry it. A DID's private
+        // keys are handed over when they are generated, and only then.
+        value = String([].concat(fields[asked] || [])[0] || '');
+      } else if (entry && asked) {
+        applications.clientSecretRecordsOf(fields).forEach(function (rec) {
+          if (rec.id === asked) {
+            value = String(rec.secret || '');
+          }
+        });
+      }
+      if (!value) {
+        log.debug("Leaving AdminActions.applicationsAction(). reveal-secret " +
+                  "found nothing to reveal.");
+        return this.refused('STS-ADMIN-0842', { ok: false, errors: [
+          !entry ? 'No application called "' + identifier + '" is recorded ' +
+                   'here.'
+                 : 'This application holds no ' +
+                   (asked === 'registration-access-token'
+                     ? 'registration access token.'
+                     : (applications.SEALED_FIELDS || []).indexOf(asked) >= 0
+                       ? asked + ' that can be revealed.'
+                       : 'client secret with the id "' + asked + '". The ' +
+                         'ids are in its credentials.clientSecret' +
+                         '.secrets.')] });
+      }
+      auditLog.record({ category: 'application',
+        action: 'application.secret-revealed',
+        actor: actor, target: identifier, outcome: 'success',
+        summary: 'A credential of ' + identifier + ' was revealed: ' + asked +
+                 '.',
+        detail: { application: identifier, secret: asked } });
+      log.debug("Leaving AdminActions.applicationsAction(). reveal-secret.");
+      return { ok: true, changed: false, application: identifier,
+               secret: asked, value: value };
     }
 
     // ---------------------------------------------------------------------
@@ -4929,17 +8089,18 @@ class AdminActions {
     // promise, like `refresh-metadata`, for that action's reason.
     if (action === 'load-resource-metadata') {
       const ctx = context || {};
+      // `file` is the model's `{ name, text }`. A bare string beside a
+      // `filename` was an older spelling, removed (rcbj on #1579,
+      // 2026-11-11).
       const file = body.file && typeof body.file === 'object'
-        ? body.file
-        : (body.file ? { name: String(body.filename || ''),
-                         text: String(body.file) } : null);
+        ? body.file : null;
       log.debug("Leaving AdminActions.applicationsAction(). Loading RFC 9728 " +
                 "metadata.");
       return resourceMetadata.load({ document: body.document, url: body.url,
                                      file: file },
                                    { authorizationServers:
                                        ctx.authorizationServers || [],
-                                     actor: ctx.actor || body.actor || '' })
+                                     actor: actor })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0644', result);
         });
@@ -5044,6 +8205,54 @@ class AdminActions {
       return this.refusedBy('STS-ADMIN-0723', done);
     }
 
+    // ---------------------------------------------------------------------
+    // A MESSAGE-SIGNING CERTIFICATE FOR THE APPLICATION (#521, rcbj's
+    // decision: an administrator issues one, from the console or
+    // /admin-api), from the Credentials section of its own page. The same
+    // shape as the TLS client certificate above, and the same module decides
+    // everything about it — here with `purpose: 'message-signing'`: the
+    // realm's `message-signing` Issuing CA, digitalSignature only, the
+    // urn:sts:application: name a WS-Trust request's signature maps back to
+    // the entry, and `pki.messageSigningCertificateMax`. The reply is again
+    // the only copy of the private key.
+    if (action === 'issue-signing-certificate' ||
+        action === 'revoke-signing-certificate') {
+      const target = applications.get(identifier);
+      if (!target) {
+        log.debug("Leaving AdminActions.applicationsAction(). No such " +
+                  "application.");
+        return this.refused('STS-ADMIN-0904', { ok: false, errors: ['There ' +
+            'is no application called "' + identifier + '" here.'] });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). A " +
+                "message-signing certificate.");
+      return this.signingCertificateAction(action, 'application',
+        String(target.identifier), body);
+    }
+
+    // A STORED CERTIFICATE ON THE APPLICATION'S ENTRY (#1227): the person's
+    // `add-certificate` and `remove-certificate` (#1061), on the entry a
+    // certificate from an outside authority is to authenticate as. The
+    // registry is asked first, so an identifier it does not hold is
+    // STS-ADMIN-0906 and the entry is never created.
+    if (action === 'add-certificate' || action === 'remove-certificate') {
+      const target = applications.get(identifier);
+      if (!target) {
+        log.debug("Leaving AdminActions.applicationsAction(). No such " +
+                  "application.");
+        return this.refused('STS-ADMIN-0906', { ok: false, errors: ['There ' +
+            'is no application called "' + identifier + '" here, and ' +
+            'storing a certificate creates nothing.'] });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). A stored " +
+                "certificate.");
+      const asked = context || {};
+      return this.storedCertificateAction(action, body,
+        { actor: actor,
+          via: String(asked.via || 'console') },
+        'application', String(target.identifier));
+    }
+
     if (action === 'revoke-registration') {
       // Not a delete: the entry stays and its history with it. This is RFC
       // 7592's delete reached from the console instead of from the client that
@@ -5095,7 +8304,7 @@ class AdminActions {
     // is that it was typed and went stale: `refresh-metadata` was added on
     // 2026-08-27 and this sentence still said "The six are" and named six. That
     // is not a cosmetic drift — this repository's own
-    // tests/vendored/admin_api.js READS this sentence to check that every
+    // tests/protocol/admin_api.js READS this sentence to check that every
     // console action has an /admin-api operation, so an action missing from it
     // is an action the parity check cannot see, and the API could lose the
     // operation entirely with nothing failing. A generated list cannot be short
@@ -5116,7 +8325,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  asAction(body) {
+  asAction(body: IyaApi.AdminActionBody<
+    '/admin-api/authorization-servers'>) {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering AdminActions.asAction(). action=" + (body.action ||
                                                              '(none)'));
@@ -5192,16 +8402,18 @@ class AdminActions {
    * its signing certificates, its metadata by upload, refresh or MDQ import.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`), for the metadata rows
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  saml2Action(body): any {
+  saml2Action(body: IyaApi.AdminActionBody<'/admin-api/saml2'>,
+              context?): any {
     const { log, applications, saml2 } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
-    const identifier = String(body.sp || body.serviceProvider || '').trim();
+    const identifier = String(body.sp || '').trim();
     if (!identifier) {
       log.debug("Leaving AdminActions.saml2Action(). No service provider " +
                 "named.");
@@ -5298,17 +8510,25 @@ class AdminActions {
     }
     // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
     // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
-    // document; `file` is what the console's file input carries, as text.
+    // document, as XML; `file` is what the console's file input carries,
+    // `{ name, text }`. `family` makes the SAML 1.1/SAML 2.0 sub-tab
+    // authoritative when one application is declared for both protocols.
+    // Each in the model's one type: a `document` object and a bare-string
+    // `file` were older shapes, removed (rcbj on #1579, 2026-11-11).
     if (action === 'upload-metadata') {
-      const text = String(body.document || '') ||
-                   (typeof body.file === 'string' ? body.file :
-                     String((body.file && body.file.text) || ''));
+      const documentText = typeof body.document === 'string'
+        ? body.document : '';
+      const fileText = body.file && typeof body.file.text === 'string'
+        ? body.file.text : '';
+      const text = documentText || fileText;
       if (!text.trim()) {
         log.debug("Leaving AdminActions.saml2Action(). No document.");
         return this.refused('STS-ADMIN-0791', { ok: false, errors: ['Send ' +
                             'the metadata document in `document`.'] });
       }
-      const result = spMetadata.upload(identifier, text, body.actor || '');
+      const result = spMetadata.upload(identifier, text,
+                                       String((context || {}).actor || ''),
+                                       body.family || '');
       log.debug("Leaving AdminActions.saml2Action(). upload-metadata " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0791', result);
@@ -5319,7 +8539,8 @@ class AdminActions {
     // import one from the MDQ responder by entityID, creating its entry.
     if (action === 'refresh-metadata') {
       log.debug("Leaving AdminActions.saml2Action(). refresh-metadata.");
-      return spMetadata.refresh(identifier, { actor: body.actor || '' })
+      return spMetadata.refresh(identifier,
+                                { actor: String((context || {}).actor || '') })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
         });
@@ -5328,7 +8549,8 @@ class AdminActions {
       log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
       // `origin: 'operator'` (#112): an administrator named this entityID,
       // which is what a lookup a request starts cannot claim.
-      return spMetadata.mdqImport(identifier, { actor: body.actor || '',
+      return spMetadata.mdqImport(identifier,
+                                  { actor: String((context || {}).actor || ''),
                                                origin: 'operator' })
         .then(function (result) {
           return self.refusedBy('STS-ADMIN-0532', result);
@@ -5364,9 +8586,8 @@ class AdminActions {
         'Register the service provider first.'] });
     }
     const wanted = applications.samlCertificateBase64(value);
-    const before = row.fields ? row.fields.samlSigningCertificate : [];
-    const current = (Array.isArray(before) ? before : (before ? [before] : []))
-      .map(function (one) { return String(one); });
+    const current = row.fields ? DomainClasses.SamlServiceProvider
+      .fromEntry(row.fields).signingCertificate || [] : [];
     let last = null;
     let changed = false;
     if (wanted) {
@@ -5425,12 +8646,12 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  saml11Action(body) {
+  saml11Action(body: IyaApi.AdminActionBody<'/admin-api/saml11'>) {
     const { log, applications, saml11 } = this.deps;
     log.debug("Entering AdminActions.saml11Action(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
-    const identifier = String(body.rp || body.relyingParty || '').trim();
+    const identifier = String(body.rp || '').trim();
     if (!identifier) {
       log.debug("Leaving AdminActions.saml11Action(). No relying party named.");
       return this.refused('STS-ADMIN-0538', { ok: false, errors: ['Name the ' +
@@ -5438,10 +8659,19 @@ class AdminActions {
     }
 
     if (action === 'register') {
+      const shire = String(body.shire || '').trim();
+      if (!shire) {
+        log.debug("Leaving AdminActions.saml11Action(). No shire named.");
+        return this.refused('STS-ADMIN-0851', { ok: false, errors: [
+          'Name the relying party\'s assertion consumer service URL in ' +
+          '`shire`.'
+        ] });
+      }
       const result = applications.createApplication({
         identifier: identifier, kind: SAML11_RP_KIND, protocol: 'SAML 1.1',
         note: 'registered as a SAML 1.1 relying party from the admin console',
-        fields: { samlEntityId: identifier }
+        fields: { samlEntityId: identifier,
+                  samlAssertionConsumerService: shire }
       });
       log.debug("Leaving AdminActions.saml11Action(). register " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -5476,7 +8706,7 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  mfaAction(body, context) {
+  mfaAction(body: IyaApi.AdminActionBody<'/admin-api/mfa'>, context) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.mfaAction(). action=" + (body.action ||
                                                               '(none)'));
@@ -5511,12 +8741,12 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rbacAction(body, context) {
+  rbacAction(body: IyaApi.AdminActionBody<'/admin-api/rbac'>, context) {
     const { log, realms, rbac } = this.deps;
     log.debug("Entering AdminActions.rbacAction(). action=" + (body.action ||
                                                                '(none)'));
     const action = String(body.action || '');
-    const username = String(body.username || body.user || '').trim();
+    const username = String(body.username || '').trim();
     const role = String(body.role || '').trim();
     // THE ROSTER OF THE REALM BEING READ (2026-09-14, #32): the default realm's
     // is the service roster, any other realm's its own. A realm administrator
@@ -5550,22 +8780,25 @@ class AdminActions {
    * records, on `/admin/consent`.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - who is acting (`actor`)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  consentAction(body) {
+  consentAction(body: IyaApi.AdminActionBody<'/admin-api/consent'>,
+                context?) {
     const { log, numberWord, auditLog, consent } = this.deps;
     log.debug("Entering AdminActions.consentAction(). action=" + (body.action ||
                                                                   '(none)'));
     const action = String(body.action || '');
-    const actor = String(body.actor || '');
+    const actor = String((context || {}).actor || '');
     // `client` for the application half and `username` for the person half,
     // named apart for `permissionsAction()`'s reason: this is another feature
     // where a body naming the wrong field still succeeds and writes the
-    // right-looking thing onto the wrong entry. `application` is accepted for
-    // `client` as a convenience for a caller editing one entry.
-    const client = String(body.client || body.application || '').trim();
-    const username = String(body.username || body.user || '').trim();
+    // right-looking thing onto the wrong entry. (`application` for `client`
+    // and `user` for `username` were older spellings, not in the model, and
+    // were removed — rcbj on #1579, 2026-11-11.)
+    const client = String(body.client || '').trim();
+    const username = String(body.username || '').trim();
     const scope = String(body.scope || '').trim();
 
     if (action === 'grant-global-consent') {
@@ -5684,14 +8917,14 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rolesAction(body, context) {
+  rolesAction(body: IyaApi.AdminActionBody<'/admin-api/roles'>, context?) {
     const { log, numberWord, auditLog, applications, roles } = this.deps;
     log.debug("Entering AdminActions.rolesAction(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
-    const actor = String(ctx.actor || body.actor || '');
-    const name = String(body.role || body.name || '').trim();
+    const actor = String(ctx.actor || '');
+    const name = String(body.role || '').trim();
     const kind = String(body.kind || '').trim();
     // `member` for the thing being added and never `name`, which is the ROLE's.
     // Named apart for `permissionsAction()`'s reason: this is another feature
@@ -5852,13 +9085,13 @@ class AdminActions {
       }
       if (!member) {
         log.debug("Leaving AdminActions.rolesAction(). No member named.");
+        // A kind's label carries its article ("a person", "an
+        // application"), so the sentence takes it as it is.
         return this.refused('STS-ADMIN-0545', { ok: false,
-                                                errors: ['`member` ' +
-            'names the ' + kindRow.label +
-                                          ' being ' + (action === 'add-member'
-                                            ? 'added to' : 'removed from') +
-                                     ' the role, and it is required. `role` ' +
-                                          'is the role\'s own name.'] });
+          errors: ['`member` names ' + kindRow.label + ' being ' +
+                   (action === 'add-member' ? 'added to' : 'removed from') +
+                   ' the role, and it is required. `role` is the role\'s ' +
+                   'own name.'] });
       }
       const row = roles.read(name);
       if (!row) {
@@ -6068,6 +9301,113 @@ class AdminActions {
                    '".' };
     }
 
+    // -------------------------------------------------------------------------
+    // WHICH CLIENTS CONFER A ROLE (#454). `roleConferredBy` on the role entry
+    // names the clients through which every person signing in holds the
+    // role, on that client's token alone — the third way of holding a role,
+    // beside a person's membership (or the console roster) and an
+    // application's own. The client must be registered here, for the
+    // ordering rule add-permission keeps: a typo must not become a role
+    // conferred by nobody that looks conferred by somebody. Which roles may
+    // be conferred at all is `roles.write()`'s to refuse.
+    // -------------------------------------------------------------------------
+    if (action === 'add-conferring-client' ||
+        action === 'remove-conferring-client') {
+      const client = String(body.client || '').trim();
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role, computed from the context ' +
+              'of each decision; no client can confer it.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      if (!client) {
+        log.debug("Leaving AdminActions.rolesAction(). No client named.");
+        return this.refused('STS-ADMIN-0845', { ok: false, errors: [
+          '`client` names the application that confers the role: its ' +
+          'client_id in this realm.'] });
+      }
+      const conferring = (row.conferredBy || []).slice();
+      const at = conferring.indexOf(client);
+      if (action === 'add-conferring-client') {
+        if (!applications.get(client)) {
+          log.debug("Leaving AdminActions.rolesAction(). No such client.");
+          return this.refused('STS-ADMIN-0845', { ok: false, errors: [
+            'There is no application "' + client + '" in this realm to ' +
+            'confer "' + name + '".'] });
+        }
+        if (at >= 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Already conferred.");
+          return this.refused('STS-ADMIN-0846', { ok: false, errors: ['"' +
+            client + '" already confers "' + name + '".'] });
+        }
+        conferring.push(client);
+      } else {
+        if (at < 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Not conferred.");
+          return this.refused('STS-ADMIN-0847', { ok: false, errors: ['"' +
+            client + '" does not confer "' + name + '".'] });
+        }
+        conferring.splice(at, 1);
+      }
+      const result = roles.write(name, {
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: row.permissions,
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes, conferredBy: conferring
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      auditLog.audit({
+        action: action === 'add-conferring-client' ? 'roles.confer'
+                                                   : 'roles.unconfer',
+        actor: actor, target: client, protocol: 'XACML', channel: 'http',
+        detail: '"' + client + '" ' + (action === 'add-conferring-client'
+          ? 'now confers' : 'no longer confers') + ' the role "' + name +
+          '" on everybody signing in through it' });
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, client: client,
+               message: action === 'add-conferring-client'
+                 ? '"' + client + '" now confers "' + name + '" on everybody ' +
+                   'who signs in through it.'
+                 : '"' + client + '" no longer confers "' + name + '".' };
+    }
+
+    // A ROLE'S OWNERS (#604): one added or taken off at a time, written at
+    // once — the role page's Owners tab, and its two operations. Who may be
+    // an owner and every refusal are `roles.js`'s.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const adding = action === 'add-owner';
+      const owner = String(body.owner || '').trim();
+      const result: any = adding ? roles.addOwner(name, owner)
+                                 : roles.removeOwner(name, owner);
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " + action +
+                  " refused.");
+        return this.refused(this.innerCode(result) ||
+                            (adding ? 'STS-ADMIN-0854' : 'STS-ADMIN-0855'),
+                            { ok: false, errors: [result.why] });
+      }
+      if (result.changed) {
+        auditLog.audit({
+          action: adding ? 'roles.add-owner' : 'roles.remove-owner',
+          actor: actor, target: result.role, protocol: 'XACML',
+          channel: 'http',
+          detail: (adding ? 'made ' : 'took ') + result.owner +
+                  (adding ? ' an owner of' : ' off the owners of') +
+                  ' the role "' + result.role + '"' });
+      }
+      log.debug("Leaving AdminActions.rolesAction(). " + action + ": " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
@@ -6085,13 +9425,18 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  policiesAction(body, context) {
+  policiesAction(body: IyaApi.AdminActionBody<'/admin-api/policies'>,
+                 context?) {
     const { log, auditLog, policyKinds, numberWord } = this.deps;
     log.debug("Entering AdminActions.policiesAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
-    const actor = String(ctx.actor || body.actor || '');
+    // THE SUBJECT IS THE CONTEXT'S (#966), the same rule as `usersAction`:
+    // the policies route passes the token's subject, '' means nobody was
+    // authenticated, and no body member names who acts (rcbj on #1579,
+    // 2026-11-11).
+    const actor = String(ctx.actor || '');
     const found = policyKinds.forAction(action);
     if (!found) {
       const known = policyKinds.actions();
@@ -6105,9 +9450,14 @@ class AdminActions {
     }
     const kind = found.kind;
     const module = kind.module;
-    const noun = kind.label.toLowerCase() + ' profile';
+    const noun = policyKinds.nounOf(kind);
+    // The messages are `policy_kinds.ts`'s templates (#543), so the server
+    // can refill them in the reader's language.
+    const fill = serverProse.fill;
+    const MESSAGES = policyKinds.MESSAGES;
     const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
-    const before = module.read(module.DEFAULT_PROFILE);
+    // The profile the act is about (#535: a named passkey profile too).
+    const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
       log.debug("Entering valuesOf().");
       const out: Record<string, any> = {};
@@ -6118,8 +9468,37 @@ class AdminActions {
       return out;
     };
 
+    // AN ACT OF THE KIND'S OWN (#396): the attribute policy's custom
+    // attribute register, defined or removed. The module answers; this
+    // records it, as a save is recorded.
+    if (found.verb === 'act') {
+      const result = module.act(action, Object.assign({}, body));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.policiesAction(). act refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0549',
+                            Object.assign({}, result,
+                                          { ok: false,
+                                            errors: result.errors }));
+      }
+      auditLog.audit({
+        action: found.extra.auditAction, actor: actor,
+        target: String(result.dn || (result.definition &&
+                                     result.definition.dn) || ''),
+        channel: 'http',
+        // `client` is the passkey policy's learned client (#1112).
+        summary: action + ' ' + String(body.name || body.client || ''),
+        detail: { via: ctx.via || '', kind: kind.id, action: action,
+                  name: String(body.name || body.client || '') }
+      });
+      log.debug("Leaving AdminActions.policiesAction(). act " + action + ".");
+      return Object.assign({ kind: kind.id }, result);
+    }
+
     if (found.verb === 'save') {
-      const given = Object.assign({}, body);
+      // `form` is no member of the body: it is this function telling the
+      // policy module's `save()` which door the values came through, and the
+      // copy is what carries it (#1579).
+      const given: Record<string, any> = Object.assign({}, body);
       if (ctx.via === 'console') {
         given.form = 'console';
       }
@@ -6140,40 +9519,164 @@ class AdminActions {
       return { ok: true, kind: kind.id, profile: result.profile,
                rules: module.describe(result.profile),
                enforced: result.profile.enforced,
-               message: 'The ' + noun + ' "' + result.profile.name +
-                        '" is saved at ' + result.profile.dn + '. It applies ' +
-                        'to ' + kind.appliesTo +
-                        (result.profile.enforced ? '.'
-                          : ' — and it is not enforced here until this realm ' +
-                            'is in product mode.') };
+               message: fill(result.profile.enforced
+                 ? MESSAGES.saved : MESSAGES.savedNotEnforced,
+               { noun: noun, name: result.profile.name,
+                 dn: result.profile.dn, appliesTo: kind.appliesTo }) };
     }
 
-    const result = module.reset(profileName);
-    if (!result.ok) {
-      log.debug("Leaving AdminActions.policiesAction(). reset refused.");
-      return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
-                          { ok: false, errors: result.errors });
+    // A RESET MAY ANSWER A PROMISE (#1241): the attribute policy asks who
+    // names a named profile before removing it, and the people are a holder
+    // question asked asynchronously. Every other kind answers at once, and
+    // so does this, for them.
+    const finish = (result) => {
+      log.debug("Entering AdminActions.policiesAction() finish().");
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.policiesAction() finish(). reset " +
+                  "refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
+                            { ok: false, errors: result.errors });
+      }
+      if (result.removed) {
+        auditLog.audit({
+          action: kind.auditAction, actor: actor,
+          target: before.dn, channel: 'http',
+          summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
+                   kind.fallsBackTo,
+          detail: { via: ctx.via || '', kind: kind.id,
+                    before: valuesOf(before),
+                    after: valuesOf(result.profile) }
+        });
+      }
+      log.debug("Leaving AdminActions.policiesAction() finish(). reset.");
+      return { ok: true, kind: kind.id, removed: result.removed,
+               profile: result.profile,
+               rules: module.describe(result.profile),
+               message: result.removed
+                 ? fill(MESSAGES.removed, {
+                   fallsBackTo: kind.fallsBackTo,
+                   rules: module.describe(result.profile).join(', ') })
+                 : fill(MESSAGES.nothingStored,
+                        { fallsBackTo: kind.fallsBackTo }) };
+    };
+    const answered = module.reset(profileName);
+    log.debug("Leaving AdminActions.policiesAction(). reset.");
+    return answered && typeof (answered as any).then === 'function'
+      ? (answered as Promise<any>).then(finish) : finish(answered);
+  }
+
+  // A policy selection as the audit row records it: `kind/name` per policy,
+  // comma-separated, or nothing for a whole export or import (an audit
+  // detail is a flat value; a list of objects would read as
+  // "[object Object]").
+  private selectionText(list: any): string {
+    this.deps.log.debug("Entering AdminActions.selectionText().");
+    const out = Array.isArray(list) ? list.map(function (one) {
+      return String(one.kind) + '/' + String(one.name);
+    }).join(', ') : '';
+    this.deps.log.debug("Leaving AdminActions.selectionText().");
+    return out;
+  }
+
+  /**
+   * Exports, inspects or imports a realm's policies (#1713): `export` signs
+   * the stored profiles of every kind on Directory → Policies, `inspect`
+   * verifies a document and says who signed it without writing anything,
+   * and `import` writes it — another realm's signer only once `trustSigner`
+   * names the Issuing CA `inspect` showed. Each act is audited.
+   *
+   * A selection (`policies`, `[{ kind, name }]`, rcbj 2026-11-14) narrows
+   * an export or an import to the policies it names, and the audit row
+   * records it.
+   *
+   * @param body - `{ action, document, trustSigner, issuerFingerprint,
+   *   policies }`
+   * @param context - who is acting (`actor`) and the door (`via`)
+   * @returns a promise of the module's answer, or a refusal
+   */
+  async policyTransferAction(body: IyaApi.AdminActionBody<
+    '/admin-api/policies/transfer'>, context?) {
+    const { log, auditLog, policyTransfer } = this.deps;
+    log.debug("Entering AdminActions.policyTransferAction(). action=" +
+              (body.action || '(none)'));
+    const action = String(body.action || '');
+    const ctx = context || {};
+    const actor = String(ctx.actor || '');
+    const ACTIONS = ['export', 'inspect', 'import'];
+    if (ACTIONS.indexOf(action) === -1) {
+      log.debug("Leaving AdminActions.policyTransferAction(). Unknown.");
+      return this.refused('STS-ADMIN-0934',
+                          { ok: false, errors: ['Unknown action "' + action +
+                            '". The three are: ' + ACTIONS.join(', ') +
+                            '.'] });
     }
-    if (result.removed) {
+    if (action === 'export') {
+      const exported = await policyTransfer.exportPolicies({
+        actor: actor, policies: body.policies });
+      if (!exported.ok) {
+        log.debug("Leaving AdminActions.policyTransferAction(). Export " +
+                  "refused.");
+        return this.refused(this.innerCode(exported) || 'STS-ADMIN-0925',
+                            exported);
+      }
       auditLog.audit({
-        action: kind.auditAction, actor: actor,
-        target: before.dn, channel: 'http',
-        summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
-                 kind.fallsBackTo,
-        detail: { via: ctx.via || '', kind: kind.id,
-                  before: valuesOf(before), after: valuesOf(result.profile) }
+        action: 'admin.policies.export', actor: actor, target: '',
+        channel: 'http',
+        summary: (exported.selection
+          ? 'exported ' + exported.selection.length + ' of this realm\'s ' +
+            'policies'
+          : 'exported this realm\'s policies') + ', signed by ' +
+                 exported.signer.subject,
+        detail: { via: ctx.via || '', counts: exported.counts,
+                  signer: exported.signer,
+                  selection: this.selectionText(exported.selection) }
+      });
+      log.debug("Leaving AdminActions.policyTransferAction(). Exported.");
+      return exported;
+    }
+    if (action === 'inspect') {
+      const seen = await policyTransfer.inspect(body.document);
+      log.debug("Leaving AdminActions.policyTransferAction(). Inspected.");
+      return seen.ok ? policyTransfer.publicView(seen)
+        : this.refused(this.innerCode(seen) || 'STS-ADMIN-0926',
+                       policyTransfer.publicView(seen));
+    }
+    const done = await policyTransfer.importPolicies(body.document, {
+      trustSigner: String(body.trustSigner) === 'true',
+      issuerFingerprint: body.issuerFingerprint, actor: actor,
+      policies: body.policies });
+    if ((done.trustAdded || []).length) {
+      auditLog.audit({
+        action: 'admin.policies.trust-signer', actor: actor, target: '',
+        channel: 'http',
+        summary: 'trusted another realm\'s policy export signer: ' +
+                 done.trustAdded.map(function (one) {
+                   return one.subject;
+                 }).join(', '),
+        detail: { via: ctx.via || '', purpose: 'policy-signer',
+                  added: done.trustAdded.map(function (one) {
+                    return { subject: one.subject, kind: one.kind,
+                             fingerprint256: one.fingerprint256 };
+                  }) }
       });
     }
-    log.debug("Leaving AdminActions.policiesAction(). reset.");
-    return { ok: true, kind: kind.id, removed: result.removed,
-             profile: result.profile,
-             rules: module.describe(result.profile),
-             message: result.removed
-               ? 'The stored profile is gone, and this realm follows ' +
-                 kind.fallsBackTo + ': ' +
-                 module.describe(result.profile).join(', ') + '.'
-               : 'Nothing was stored in this realm, so it already followed ' +
-                 kind.fallsBackTo + '.' };
+    if (done.imported) {
+      auditLog.audit({
+        action: 'admin.policies.import', actor: actor, target: '',
+        channel: 'http',
+        summary: 'imported policies exported by "' + done.realm + '" (' +
+                 done.origin + ')',
+        outcome: done.ok ? 'success' : 'failure',
+        detail: { via: ctx.via || '', origin: done.origin,
+                  signer: done.signer && done.signer.subject,
+                  imported: done.imported, refused: done.refused,
+                  selection: this.selectionText(done.selection) }
+      });
+    }
+    log.debug("Leaving AdminActions.policyTransferAction(). Import " +
+              (done.ok ? "done." : "refused."));
+    return done.ok ? done : this.refused(this.innerCode(done) ||
+                                         'STS-ADMIN-0932', done);
   }
 
   // ---------------------------------------------------------------------------
@@ -6202,11 +9705,13 @@ class AdminActions {
   // cosmetic: it is the set ids the door being knocked on carries, so a POST to
   // /admin/claims naming `saml2` is refused by name instead of quietly changing
   // a set whose page it is not on and then redirecting to a page that cannot
-  // show what it did. It defaults to all five, which is what a caller that has
-  // not been given a family — nothing today — would get.
+  // show what it did. It defaults to every claim set, which is what a caller
+  // that has not been given a family — nothing today — would get. The pages
+  // and the four doors pass their own lists, so the GNAP set (#1250) is not
+  // among them.
   /**
-   * Changes one of the five claim sets — `/admin/claims`,
-   * `/admin/saml-attributes` and `/admin/userinfo-claims` all post here.
+   * Changes one claim set — `/admin/claims`, `/admin/saml-attributes` and
+   * `/admin/userinfo-claims` all post here.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
    * @param names - the attribute names the form repeated, read at the transport
@@ -6215,7 +9720,10 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  claimsAction(body, names, allowed) {
+  claimsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/claims' | '/admin-api/kerberos/claims' |
+    '/admin-api/saml-attributes' | '/admin-api/userinfo-claims'>, names,
+    allowed) {
     const { log, stats, claimAttributes } = this.deps;
     log.debug("Entering AdminActions.claimsAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -6231,9 +9739,16 @@ class AdminActions {
     }
     const label = stats.CLAIM_SETS[setId].label;
 
+    // THE KERBEROS PAC SET HAS A CATALOGUE HALF SINCE #498: #493 refused the
+    // three `attributes*` actions for it (STS-ADMIN-0848, retired), and they
+    // now act on its selection exactly as on the other five — the KDC reads
+    // it (admin_stats.js, kerberosPacClaims()).
+
     if (action === 'add') {
       const entry: Record<string, any> = { name: String(body.name || '').trim(),
                       value: String(body.value == null ? '' : body.value) };
+      // A Kerberos PAC row's type (#493); ignored by the other sets.
+      if (body.type) entry.type = String(body.type).trim();
       if (body.nameFormat) entry.nameFormat = String(body.nameFormat).trim();
       if (body.namespace) entry.namespace = String(body.namespace).trim();
       const result = stats.setClaimSet(setId,
@@ -6255,8 +9770,10 @@ class AdminActions {
       const entry: Record<string, any> = {
         name: String(body.name || '').trim(),
         attribute: String(body.attribute || '').trim(),
-        multi: body.multi === true || body.multi === 'true' ||
-               body.multi === 'on',
+        // A boolean, the model's type (the console sends one); the strings
+        // `'true'` and `'on'` were an older form's, removed (rcbj on #1579,
+        // 2026-11-11).
+        multi: body.multi === true,
         type: String(body.type || 'string').trim() || 'string' };
       if (!entry.attribute) {
         log.debug("Leaving AdminActions.claimsAction(). No attribute.");
@@ -6415,12 +9932,15 @@ class AdminActions {
     }
 
     log.debug("Leaving AdminActions.claimsAction(). Unknown action.");
+    // Every claim-set door has the same eight since the Kerberos PAC set
+    // gained its catalogue half (#498) — the walk of the management API holds
+    // the sentence to the operations each door documents.
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The eight are: add, ' +
-                                      'add-attribute-claim, remove, clear, ' +
-                                      'replace, attributes, attributes-all, ' +
-                                      'attributes-clear.'] });
+                     'The eight are: add, ' +
+                     'add-attribute-claim, remove, clear, ' +
+                     'replace, attributes, attributes-all, ' +
+                     'attributes-clear.'] });
   }
 
   // The sweep's outcome as a sentence, appended to whatever message the action
@@ -6469,7 +9989,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  vcAction(body, names) {
+  vcAction(body: IyaApi.AdminActionBody<
+    '/admin-api/credential-claims'>, names) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering AdminActions.vcAction(). action=" + (body.action ||
                                                              '(none)'));
@@ -6580,7 +10101,7 @@ class AdminActions {
   //
   // WHAT THE BAR DOOR ASKS FOR — the other end of the page above. /admin/vc
   // decides what an issued credential CARRIES; this decides what the Verifier
-  // at /oid4vp/verifier ASKS FOR, and the two are deliberately separate
+  // ASKS FOR, and the two are deliberately separate
   // settings because the interesting states are the ones where they disagree. A
   // Verifier asking for a claim the issuer is not minting is the negative that
   // exercises a wallet's "I cannot satisfy this request" path, and there is no
@@ -6607,7 +10128,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  vpConfigAction(body, names) {
+  vpConfigAction(body: IyaApi.AdminActionBody<
+    '/admin-api/verifier-request'>, names) {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminActions.vpConfigAction(). action=" +
               (body.action || '(none)'));
@@ -6718,7 +10240,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  realmsAction(body) {
+  realmsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/realms'>) {
     const { log, credentials, realms, rbac, mode, errorCodes } = this.deps;
     log.debug("Entering AdminActions.realmsAction(). action=" + (body &&
                                                                  body.action));
@@ -6728,7 +10251,7 @@ class AdminActions {
     if (action === 'create') {
       // `overrides` IS PASSED THROUGH, and until 2026-08-25 it was not. The
       // management API documents the field, gives it an example
-      // (`{"saml2.entityId": "urn:acme:idp"}`) and says it wins over the six
+      // (`{"saml.organizationName": "Acme"}`) and says it wins over the
       // seeded names — and this function built its argument out of three
       // properties and dropped the fourth, so a create carrying overrides
       // answered 200 and made a realm configured differently from the one that
@@ -6790,6 +10313,9 @@ class AdminActions {
       log.debug("Leaving AdminActions.realmsAction(). create ok, " +
                 Object.keys(result.realm.overrides).length + " setting(s).");
       return { ok: true, realm: result.realm.id,
+               // Where its endpoints answer, for a link to its console: the
+               // static console cannot ask `realms.prefixOf()` (#446).
+               prefix: realms.prefixOf(result.realm),
                bootstrap: seeded.ran
                  ? { username: seeded.username, created: !!seeded.created,
                      passwordResetRequired: !!seeded.created }
@@ -6942,6 +10468,111 @@ class AdminActions {
       'The five are: create, update, set, unset, remove.'] });
   }
 
+  // Moved here from the console's `POST /admin/config` (#446): the static
+  // console sends a settings form as it is drawn, to the operation, so the
+  // fold is the action's — and a machine sending the same fields gets the
+  // same answer.
+  // THE FOLD, for a form that drew `orderedChoiceControl()`: the ticked
+  // values sorted by their numbers (a number that does not read as one goes
+  // last; a tie keeps the order the form posted), joined into the setting's
+  // value, and the per-value fields removed so `set-many` sees only real
+  // keys. Ticking nothing is refused (STS-ADMIN-0840) rather than saved as
+  // an empty list, which the setting would silently replace with its
+  // fallback. Anything else the setting does not take is `checkWrite()`'s
+  // to refuse, as for every other row.
+  /**
+   * Folds an ordered choice's checkbox and order fields into the setting's
+   * one comma-separated value.
+   *
+   * @param body - the parsed form body, changed in place
+   * @returns a refusal, or null
+   */
+  foldOrderedChoices(body) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.foldOrderedChoices().");
+    const markers = Object.keys(body || {}).filter(function (name) {
+      return /\.ordered$/.test(name);
+    });
+    let refusal = null;
+    markers.forEach(function (marker) {
+      const key = marker.slice(0, -'.ordered'.length);
+      const picks = [];
+      Object.keys(body).forEach(function (name, n) {
+        if (name.indexOf(key + '.pick.') === 0) {
+          const value = name.slice((key + '.pick.').length);
+          const rank = Number(body[key + '.rank.' + value]);
+          picks.push({ value: value, n: n,
+                       rank: Number.isFinite(rank) ? rank : Infinity });
+        }
+      });
+      Object.keys(body).forEach(function (name) {
+        if (name === marker || name.indexOf(key + '.pick.') === 0 ||
+            name.indexOf(key + '.rank.') === 0) {
+          delete body[name];
+        }
+      });
+      if (!picks.length) {
+        refusal = refusal || errorCodes.mark({ ok: false, errors: [key +
+          ': choose at least one. A list with nothing in it is not saved; ' +
+          'the setting would fall back to a default nobody chose.'] },
+          'STS-ADMIN-0840');
+        return;
+      }
+      picks.sort(function (a, b) {
+        return a.rank - b.rank || a.n - b.n;
+      });
+      body[key] = picks.map(function (one) { return one.value; }).join(',');
+    });
+    log.debug("Leaving AdminActions.foldOrderedChoices(). " +
+              markers.length + " folded.");
+    return refusal;
+  }
+  // WHETHER A SETTINGS OVERRIDE JUST WRITTEN OUTLIVES THIS PROCESS (rcbj,
+  // 2026-10-07). Every reply below used to end "gone on restart", which was
+  // true for the whole life of this service until 2026-08-27 and has been
+  // wrong on every persistent store since: on 8081 (product, postgres)
+  // `POST /admin-api/config/set` said the override was gone on restart while
+  // the store was holding it. The settings block on every console page words
+  // both cases from `persistsAppconfig` (`web_settings.ts`); this is the same
+  // fact for a reply, asked of the same `persistence.status()`.
+  //
+  // WHICH OF THE TWO FACTS DEPENDS ON WHERE THE WRITE LANDED. `setOverride()`
+  // puts a write made while a non-default realm is ambient on that realm's
+  // own override object, which is written down with the realm row
+  // (`persistsRealms`), and every other write in the process-wide map
+  // (`persistsAppconfig`). The two `realms.*` rows always land process-wide,
+  // so a write naming only those is asked about the process.
+  /**
+   * Words whether the overrides just written are kept across a restart.
+   *
+   * @param keys - the settings written; optional
+   * @returns one sentence: written to the store and kept, or in memory and
+   *   gone on restart with how to keep it
+   */
+  overrideDurability(keys?: string[]): string {
+    const { log, persistence, realms } = this.deps;
+    log.debug("Entering AdminActions.overrideDurability().");
+    const status = persistence.status();
+    const realmWide = (keys || ['']).some(function (key) {
+      return String(key).indexOf('realms.') !== 0;
+    });
+    const inRealm = realmWide && !realms.isDefault();
+    const kept = inRealm ? !!status.persistsRealms
+      : !!status.persistsAppconfig;
+    if (kept) {
+      log.debug("Leaving AdminActions.overrideDurability(). Kept.");
+      return 'It is written to the ' + status.mode + ' store' +
+             (inRealm ? ' with the "' + realms.currentId() + '" realm' : '') +
+             ' and kept across restarts.';
+    }
+    log.debug("Leaving AdminActions.overrideDurability(). Not kept.");
+    return 'It is in memory and gone on restart; to keep it, put it in the ' +
+           'appconfig file or its environment variable, or turn on a ' +
+           'persistent store (' +
+           (inRealm ? 'persistence.realms' : 'persistence.appconfig') +
+           ').';
+  }
+
   // The action switch. `set` and `reset` name one setting; `set-many` is what a
   // section's Save posts, and it is not a convenience — a section is how a
   // person changes configuration, and turning that into one call per field
@@ -6956,26 +10587,56 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  configAction(body) {
+  configAction(body: IyaApi.AdminActionBody<
+    '/admin-api/config'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.configAction(). action=" + (body &&
                                                                  body.action));
+    // A SECTION'S RESET BUTTON names its setting in `reset` (it was the
+    // `?reset=` of the console's own URL, which the static console carries
+    // into the fields it sends), whatever action the section's form posts.
+    // And an ordered choice's checkboxes and numbers are folded into its one
+    // value first: that is the shape the form is drawn in.
+    const resetKey = body && body.reset !== undefined
+      ? String(body.reset || '').trim() : '';
+    if (resetKey) {
+      body = { action: 'reset', key: resetKey, from: body.from };
+    } else if (body) {
+      const refused = this.foldOrderedChoices(body);
+      if (refused) {
+        log.debug("Leaving AdminActions.configAction(). An ordered choice " +
+                  "was refused.");
+        return refused;
+      }
+    }
     const action = String((body && body.action) || '').trim();
 
     if (action === 'set') {
       const key = String(body.key || '').trim();
+      // The mask posted back says "leave it" (#1478): writing it would make
+      // it the password.
+      if (this.configKnows(key) &&
+          configDump.isEchoOfMask(config.describe(this.configSettingFor(key)),
+                                  body.value)) {
+        log.debug("Leaving AdminActions.configAction(). set kept a secret.");
+        return { ok: true, key: key,
+                 setting: this.maskedSettingFor(key),
+                 message: key + ' is unchanged: the value posted was its ' +
+                          'mask.' };
+      }
       const result = config.setOverride(key, body.value);
       if (!result.ok) {
         log.debug("Leaving AdminActions.configAction(). set refused.");
         return this.refusedBy('STS-ADMIN-0564', result);
       }
       log.debug("Leaving AdminActions.configAction(). set ok.");
+      const shown = this.maskedSettingFor(key);
       return { ok: true, key: key,
-               setting: config.describe(this.configSettingFor(key)),
-               message: key + ' is now "' + config.text(key) + '". It ' +
+               setting: shown,
+               message: key + ' is now "' + shown.text + '". It ' +
                         'applies to the next token, assertion, ticket or ' +
-                        'search, and is gone on restart.' };
+                        'search. ' + this.overrideDurability([key]) };
     }
 
     if (action === 'set-many') {
@@ -6984,10 +10645,15 @@ class AdminActions {
       // rows submits the editable ones and nothing else — which is why an
       // absent key is silently skipped rather than treated as an attempt to
       // clear it.
-      const wanted = Object.keys(body).filter(function (name) {
+      const posted = Object.keys(body).filter(function (name) {
         return name !== 'action' && self.configKnows(name);
       });
-      if (!wanted.length) {
+      // A section's Save posts every field, its masked ones included (#1478).
+      const wanted = posted.filter(function (name) {
+        return !configDump.isEchoOfMask(
+          config.describe(self.configSettingFor(name)), body[name]);
+      });
+      if (!posted.length) {
         log.debug("Leaving AdminActions.configAction(). set-many named " +
                   "nothing.");
         return this.refused('STS-ADMIN-0565', { ok: false, errors: ['No ' +
@@ -7003,13 +10669,22 @@ class AdminActions {
       // The first refusal's own code (#263: STS-PKI-0215 for a pinned
       // signer), as `setOverride()` would have marked it.
       let firstRefusal = '';
+      // THE OTHER POSTED VALUES (#1114): a rule between two settings
+      // judges a pair posted together by both new values — here and in
+      // `setOverride()`'s re-check below (`config.withWriteBatch()`).
+      const batch = {};
       wanted.forEach(function (key) {
-        const problem = config.checkWrite(key, body[key]);
-        if (problem) {
-          errors.push(problem);
-          firstRefusal = firstRefusal ||
-                         config.checkWriteCode(key, body[key]);
-        }
+        batch[key] = body[key];
+      });
+      config.withWriteBatch(batch, function () {
+        wanted.forEach(function (key) {
+          const problem = config.checkWrite(key, body[key]);
+          if (problem) {
+            errors.push(problem);
+            firstRefusal = firstRefusal ||
+                           config.checkWriteCode(key, body[key]);
+          }
+        });
       });
       if (errors.length) {
         log.debug("Leaving AdminActions.configAction(). set-many refused: " +
@@ -7020,22 +10695,24 @@ class AdminActions {
                             { ok: false, errors: errors });
       }
       const changed = [];
-      wanted.forEach(function (key) {
-        const before = config.text(key);
-        config.setOverride(key, body[key]);
-        if (config.text(key) !== before) changed.push(key);
+      config.withWriteBatch(batch, function () {
+        wanted.forEach(function (key) {
+          const before = config.text(key);
+          config.setOverride(key, body[key]);
+          if (config.text(key) !== before) changed.push(key);
+        });
       });
       log.debug("Leaving AdminActions.configAction(). set-many ok, " +
                 changed.length + " " +
           "changed.");
       return { ok: true, applied: wanted, changed: changed,
                settings: wanted.map(function (key) {
-                 return config.describe(self.configSettingFor(key));
+                 return self.maskedSettingFor(key);
                }),
                message: changed.length
                  ? changed.length + ' setting(s) changed: ' +
                  changed.join(', ') +
-                   '. Gone on restart.'
+                   '. ' + self.overrideDurability(changed)
                  : 'Nothing changed — every value posted was the one already ' +
                    'in force.' };
     }
@@ -7048,11 +10725,12 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0564', result);
       }
       log.debug("Leaving AdminActions.configAction(). reset ok.");
+      const shown = this.maskedSettingFor(key);
       return { ok: true, key: key,
-               setting: config.describe(this.configSettingFor(key)),
+               setting: shown,
                message: key + ' is back to its ' + config.sourceOf(key) + ' ' +
                    'value, "' +
-                        config.text(key) + '".' };
+                        shown.text + '".' };
     }
 
     if (action === 'reset-all') {
@@ -7075,6 +10753,19 @@ class AdminActions {
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
       'The four are: set, set-many, reset, reset-all.'] });
+  }
+
+  /**
+   * One setting as an operation's answer shows it, its secrets masked.
+   *
+   * @param key - the setting's name
+   * @returns the described setting
+   */
+  maskedSettingFor(key) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminActions.maskedSettingFor().");
+    log.debug("Leaving AdminActions.maskedSettingFor().");
+    return configDump.maskRow(config.describe(this.configSettingFor(key)));
   }
 
   // Whether this service has a setting of that name. Asked before `describe()`,
@@ -7132,7 +10823,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenLifetimesAction(body) {
+  tokenLifetimesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/token-lifetimes'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.tokenLifetimesAction(). action=" + (body &&
@@ -7205,7 +10897,10 @@ class AdminActions {
                    'in force.') +
                  ' It applies to the NEXT token signed; nothing already ' +
                  'issued is affected, because a lifetime is stamped into a ' +
-                 'token as its exp claim. Gone on restart.' };
+                 'token as its exp claim.' +
+                 (changed.length
+                   ? ' ' + self.overrideDurability(changed)
+                   : '') };
     }
 
     if (action === 'defaults') {
@@ -7268,7 +10963,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  samlAssertionsAction(body) {
+  samlAssertionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/saml-assertions'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.samlAssertionsAction(). action=" + (body &&
@@ -7342,7 +11038,10 @@ class AdminActions {
                    'in force.') +
                  ' It applies to the NEXT assertion signed; nothing already ' +
                  'issued is affected, because a validity window is stamped ' +
-                 'into an assertion when it is signed. Gone on restart.' };
+                 'into an assertion when it is signed.' +
+                 (changed.length
+                   ? ' ' + self.overrideDurability(changed)
+                   : '') };
     }
 
     if (action === 'defaults') {
@@ -7382,7 +11081,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  signalsAction(body) {
+  signalsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/signals'>) {
     const { log, signals } = this.deps;
     log.debug("Entering AdminActions.signalsAction(). action=" + String((body ||
         {}).action));
@@ -7391,9 +11091,9 @@ class AdminActions {
     if (SIGNALS_CONSOLE_ACTIONS.indexOf(action) < 0) {
       // THE SENTENCE IS THE HOUSE SHAPE — `Unknown action "x". <prose>: a, b.`
       // — AND IT IS READ RATHER THAN BEING STYLE.
-      // `tests/vendored/sts_admin_api_operations.js` matches exactly that out
+      // `tests/protocol/sts_admin_api_operations.js` matches exactly that out
       // of `errors` on every action resource this API declares, and
-      // `tests/vendored/admin_api.js` reads the same sentence to check that
+      // `tests/protocol/admin_api.js` reads the same sentence to check that
       // every console action has an operation over there. This handler phrased
       // it its own way — `"x" is not one of clear.` — which parses as neither,
       // so it turned the parity check off for this resource with nothing
@@ -7430,7 +11130,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  ssfAction(body) {
+  ssfAction(body: IyaApi.AdminActionBody<'/admin-api/ssf'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.ssfAction().");
@@ -7457,7 +11157,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  caepAction(body) {
+  caepAction(body: IyaApi.AdminActionBody<'/admin-api/caep'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.caepAction().");
@@ -7484,7 +11184,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  riscAction(body) {
+  riscAction(body: IyaApi.AdminActionBody<'/admin-api/risc'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.riscAction().");
@@ -7505,6 +11205,131 @@ class AdminActions {
   }
 
   /**
+   * Answers the controls on `/admin/pki/trust` (#1360). Resolves rather than
+   * returning: admission verifies a self-signature with the engine, and a
+   * recheck walks revocation.
+   *
+   * @param body - `{ action, certificates, kind, purposes, fingerprint,
+   *   setting, value }`
+   * @param context - `{ actor, via }`
+   * @returns a promise of the answer
+   */
+  async pkiTrustAction(body: IyaApi.AdminActionBody<
+    '/admin-api/pki/trust'>, context) {
+    const { log, auditLog, config } = this.deps;
+    log.debug("Entering AdminActions.pkiTrustAction().");
+    const asked = body || {};
+    const action = String(asked.action || '');
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (PKI_TRUST_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). Unknown action.");
+      return this.refused('STS-ADMIN-0910', { ok: false, errors: [
+        'Unknown action "' + action + '". The four are: ' +
+        PKI_TRUST_ACTIONS.join(', ') + '.'] });
+    }
+    const trust = require('../common/certificate_trust');
+    const signers = require('../common/signer_truststore');
+    const realmId = realms.currentId();
+    const record = function (summary, detail) {
+      log.debug("Entering record().");
+      auditLog.audit({ action: 'admin.pki.trust.change', actor: actor,
+                       protocol: 'PKI', channel: 'http', target: realmId,
+                       summary: summary + ' through the ' + via,
+                       detail: Object.assign({ via: via }, detail) });
+      log.debug("Leaving record().");
+    };
+    if (action === 'add') {
+      const purposes = [].concat(asked.purposes || []).map(String);
+      const unknown = purposes.filter(function (one) {
+        return !trust.PURPOSES.some(function (row) {
+          return row.id === one;
+        });
+      });
+      if (unknown.length) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). A bad use case.");
+        return this.refused('STS-ADMIN-0914', { ok: false, errors: [
+          'This service has no use case named ' + unknown.join(', ') + '.'] });
+      }
+      const raw = Array.isArray(asked.certificates)
+        ? asked.certificates.join('\n') : String(asked.certificates || '');
+      const result = await signers.add(realmId, raw, {
+        kind: asked.kind ? String(asked.kind) : '', purposes: purposes,
+        addedBy: actor });
+      const refusals = result.refused.map(function (one) {
+        return one.why;
+      });
+      if (!result.added.length && !result.duplicates) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). add refused.");
+        return this.refused(errorCodes.codeOf(result) || 'STS-ADMIN-0911',
+                            { ok: false, errors: refusals });
+      }
+      if (result.added.length) {
+        record('The signer truststore was given ' + result.added.length +
+               ' certificate(s)', {
+          action: 'add',
+          fingerprints: result.added.map(function (one) {
+            return one.fingerprint256;
+          })
+        });
+      }
+      log.debug("Leaving AdminActions.pkiTrustAction(). added.");
+      return { ok: true, added: result.added, duplicates: result.duplicates,
+               refused: result.refused.map(function (one) {
+                 return { subject: one.subject, why: one.why };
+               }),
+               message: 'Added ' + result.added.length + ', ' +
+                 result.duplicates + ' already held' +
+                 (refusals.length ? '; refused: ' + refusals.join('; ') : '') +
+                 '.' };
+    }
+    if (action === 'remove') {
+      const gone = signers.remove(realmId, String(asked.fingerprint || ''));
+      if (!gone.removed) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). remove refused.");
+        return this.refused('STS-ADMIN-0912',
+                            { ok: false, errors: [gone.why] });
+      }
+      record('A signer truststore entry was removed',
+             { action: 'remove', fingerprint: String(asked.fingerprint) });
+      log.debug("Leaving AdminActions.pkiTrustAction(). removed.");
+      return { ok: true, message: 'Removed.' };
+    }
+    if (action === 'recheck') {
+      const found = await trust.auditRealm(realmId);
+      log.debug("Leaving AdminActions.pkiTrustAction(). rechecked.");
+      return { ok: true, pins: found.pins, truststore: found.truststore,
+               changes: found.changes,
+               message: 'Rechecked ' + found.pins + ' pinned certificate(s) ' +
+                 'and ' + found.truststore + ' truststore entr' +
+                 (found.truststore === 1 ? 'y' : 'ies') + '; ' + found.changes +
+                 ' changed.' };
+    }
+    const setting = String(asked.setting || '');
+    if (setting !== 'pki.paranoid' && !trust.PURPOSES.some(function (row) {
+      return row.setting === setting;
+    })) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). Not a paranoid row.");
+      return this.refused('STS-ADMIN-0913', { ok: false, errors: [
+        '"' + setting + '" is not a paranoid PKI setting.'] });
+    }
+    // THE ORDINARY WRITE: its checks, its persistence, and the write rule that
+    // logs a check turned off in product.
+    const written = config.setOverride(setting, asked.value);
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). The write refused.");
+      return this.refusedBy('STS-ADMIN-0914', written);
+    }
+    record('The setting ' + setting + ' was changed',
+           { action: 'set-row', setting: setting,
+             value: String(asked.value) });
+    log.debug("Leaving AdminActions.pkiTrustAction(). set-row.");
+    return { ok: true, setting: setting,
+             message: setting + ' was changed.' +
+               this.overrideDurability([setting]) };
+  }
+
+  /**
    * Adds an anchor to the client-certificate truststore, or removes one; an add
    * is persisted where a store is installed, and the result says which.
    *
@@ -7513,7 +11338,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  truststoreAction(body, context) {
+  truststoreAction(body: IyaApi.AdminActionBody<
+    '/admin-api/tls/trust'>, context) {
     const { log, numberWord, auditLog } = this.deps;
     log.debug("Entering AdminActions.truststoreAction(). action=" +
               String((body || {}).action));
@@ -7522,8 +11348,8 @@ class AdminActions {
     const actor = String((context || {}).actor || '');
     const via = String((context || {}).via || 'console');
     if (TRUSTSTORE_ACTIONS.indexOf(action) < 0) {
-      // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
-      // and `tests/vendored/admin_api.js` both READ — see signalsAction() above
+      // THE HOUSE SENTENCE, which `tests/protocol/sts_admin_api_operations.js`
+      // and `tests/protocol/admin_api.js` both READ — see signalsAction() above
       // for what a different phrasing silently turns off.
       log.debug("Leaving AdminActions.truststoreAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
@@ -7702,7 +11528,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeEntriesAction(body) {
+  spiffeEntriesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/entries'>) {
     const { log, spiffeCa, spiffeRegistry, spiffeIdLib } = this.deps;
     log.debug("Entering AdminActions.spiffeEntriesAction(). action=" +
               (body.action || '(none)'));
@@ -7827,19 +11654,25 @@ class AdminActions {
   }
 
   /**
-   * Bans, unbans or deletes an attested agent.
+   * Bans, unbans or deletes an attested agent, or mints a join token.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - `{ via, actor }`: who asked, for the audit row (#695:
+   *   all four acts were recorded with an empty actor, and a join token
+   *   with the gRPC door's protocol and channel)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeAgentsAction(body) {
+  spiffeAgentsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/agents'>, context?) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminActions.spiffeAgentsAction(). action=" +
               (body.action || '(none)'));
+    const ctx = context || {};
+    const actor = String(ctx.actor || '');
     const action = String(body.action || '');
     const id = String(body.agent || '').trim();
-    if (SPIFFE_AGENT_ACTIONS.indexOf(action) >= 0 && !id) {
+    if (SPIFFE_AGENT_ID_ACTIONS.indexOf(action) >= 0 && !id) {
       log.debug("Leaving AdminActions.spiffeAgentsAction(). No agent named.");
       return this.refused('STS-ADMIN-0573', { ok: false,
                                               errors: ['Which agent? ' +
@@ -7847,7 +11680,8 @@ class AdminActions {
                                         'is under /spire/agent/.'] });
     }
     if (action === 'ban' || action === 'unban') {
-      const result = spiffeRegistry.setAgentBanned(id, action === 'ban', '');
+      const result = spiffeRegistry.setAgentBanned(id, action === 'ban',
+                                                  actor);
       log.debug("Leaving AdminActions.spiffeAgentsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
@@ -7863,7 +11697,7 @@ class AdminActions {
                  : 'That agent may attest again.' };
     }
     if (action === 'delete') {
-      const result = spiffeRegistry.deleteAgent(id, '');
+      const result = spiffeRegistry.deleteAgent(id, actor);
       log.debug("Leaving AdminActions.spiffeAgentsAction(). delete " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
@@ -7876,6 +11710,57 @@ class AdminActions {
                         'attests again, because attestation is not checked — ' +
                         'deleting is forgetting, not revoking. Ban it ' +
                         'instead if that is what you meant.' };
+    }
+    // A join token for a sidecar agent (#324). Written through the same
+    // store CreateJoinToken writes, required here because there is no admin
+    // SVID until a Workload API exists to fetch one from. The token is the
+    // reply, once, and the alias is `agentId` — `agent` is the attested id
+    // the three actions above name, and must not be read as the alias.
+    if (action === 'join-token') {
+      const rawTtl = body.ttl;
+      const blank = rawTtl === undefined || rawTtl === null ||
+                    String(rawTtl).trim() === '';
+      const ttl = blank ? 0 : Number(rawTtl);
+      // The upper bound keeps now + ttl inside the range a Date can hold
+      // (ECMAScript dates run to 8.64e12 seconds past the epoch), so the ISO
+      // expiry built below cannot throw RangeError on a fuzzed ttl such as
+      // 1e308. It is the representable limit, not a policy ceiling, and it is
+      // measured from now: 8.64e12 alone still overflowed once added to it.
+      const latestTtl = 8640000000000 - Math.ceil(Date.now() / 1000);
+      if (!blank && !(Number.isSafeInteger(ttl) && ttl > 0 &&
+                      ttl <= latestTtl)) {
+        log.debug("Leaving AdminActions.spiffeAgentsAction(). Bad ttl.");
+        return this.refused('STS-ADMIN-0858', { ok: false,
+          errors: ['ttl must be a whole positive number of seconds within ' +
+                   'the representable range. Omit it to use ' +
+                   'spiffe.joinTokenTtl.'] });
+      }
+      // Loaded here, at request time. This module is built at step 18 and
+      // the SPIFFE family at step 23; a require at the top of the file
+      // would build the join-token store before the family is registered.
+      const spiffeApi = require('../spiffe/spiffe_api');
+      const minted = spiffeApi.issueJoinToken({
+        ttl: ttl,
+        agentId: String(body.agentId || '').trim(),
+        actor: actor,
+        protocol: 'SPIFFE',
+        channel: ctx.via === 'api' ? 'api' : 'console'
+      });
+      if (!minted.ok) {
+        log.debug("Leaving AdminActions.spiffeAgentsAction(). Join token " +
+                  "refused.");
+        return this.refused(minted.errorCode, { ok: false,
+                                                errors: [minted.message] });
+      }
+      const when = new Date(minted.expiresAt * 1000).toISOString();
+      log.debug("Leaving AdminActions.spiffeAgentsAction(). Join token " +
+                "minted.");
+      return { ok: true, token: minted.token, expiresAt: minted.expiresAt,
+               agentSpiffeId: minted.agentSpiffeId,
+               message: 'Join token ' + minted.token + '. It is shown once ' +
+                 'and is not recorded. It expires at ' + when + '. The ' +
+                 'agent it attests will be ' + minted.agentSpiffeId +
+                 '. Parent that agent\'s workload entries on it.' };
     }
     log.debug("Leaving AdminActions.spiffeAgentsAction(). Unknown action.");
     return this.spiffeUnknownAction(action, SPIFFE_AGENT_ACTIONS);
@@ -7898,7 +11783,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeBrokersAction(body) {
+  spiffeBrokersAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/brokers'>) {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
               (body.action || '(none)'));
@@ -7985,13 +11871,65 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async federationAction(body, ctx?) {
+  async federationAction(body: IyaApi.AdminActionBody<
+    '/admin-api/federation'>, ctx?) {
     const { log, federation, fedEncryption, loadSignals } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
-    const id = String(body.id || body.relationship || '').trim();
+    const id = String(body.id || '').trim();
     const context = ctx || { via: 'console', actor: '', base: '' };
+
+    // AN OPENID CONNECT PARTNER CHECKED (#930): its discovery document and
+    // key set dialled and reported, nothing written. Required lazily, for
+    // the reason the signals module is: it is loaded at 10c, long before
+    // this, and requiring it here is a cache hit that moves no route.
+    if (action === 'check-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to check.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const checked = await require('../federation/federation_sp')
+        .checkPartner(record);
+      log.debug("Leaving AdminActions.federationAction(). check-partner " +
+                (checked.ok ? 'ok' : 'refused') + ".");
+      if (!checked.ok) {
+        return this.refusedBy(checked.errorCode || 'STS-FED-0209', {
+          ok: false, errors: [String(checked.why || 'the check failed')] });
+      }
+      // `errorCode` is `checkPartner()`'s to this layer and never sent (#1355).
+      const answer = Object.assign({ ok: true, errors: [] }, checked);
+      delete answer.errorCode;
+      return answer;
+    }
+
+    // THE PARTNER REGISTERED AGAIN (#930): an OpenID Connect relationship
+    // with fedDiscovery and fedRegister on registers itself at the partner
+    // now, whatever client it holds.
+    if (action === 'register-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to register.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const done = await require('../federation/federation_sp')
+        .registerPartner(String(context.base || ''), record);
+      log.debug("Leaving AdminActions.federationAction(). register-partner " +
+                (done.ok ? 'ok' : 'refused') + ".");
+      if (!done.ok) {
+        return this.refusedBy(done.errorCode || 'STS-FED-0212', {
+          ok: false, errors: [String(done.why || 'the registration failed')] });
+      }
+      return { ok: true, errors: [], clientId: done.clientId,
+               issuer: done.issuer };
+    }
 
     if (action.indexOf('signals-') === 0) {
       const result = await loadSignals().act(body, context);
@@ -8007,13 +11945,42 @@ class AdminActions {
         fedProtocol: String(body.protocol || ''),
         fedName: String(body.name || ''),
         fedPeer: String(body.peer || ''),
-        fedApplication: String(body.application || '')
+        fedApplication: String(body.application || ''),
+        // A consumer provider (#565): the profile the relationship is
+        // made from.
+        fedProvider: String(body.provider || '')
       });
       log.debug("Leaving AdminActions.federationAction(). create " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
         log.debug("Leaving AdminActions.federationAction().");
         return this.refusedBy('STS-ADMIN-0575', result);
+      }
+      // A PROVIDER'S CLIENT CREDENTIALS IN THE SAME ACT (#565): the two
+      // fields a provider issues and a profile cannot know, set through
+      // update() like any other field — so the secret is sealed exactly as a
+      // later `set` would seal it. A refusal of either leaves the
+      // relationship registered and says which.
+      const credentialNotes: string[] = [];
+      if (String(body.provider || '')) {
+        [['fedClientId', body.clientId], ['fedClientSecret', body.clientSecret]]
+          .forEach(function (pair) {
+            const value = String(pair[1] == null ? '' : pair[1]).trim();
+            if (!value) {
+              return;
+            }
+            const set = federation.update(id, { field: pair[0],
+                                                value: value });
+            if (!set.ok) {
+              credentialNotes.push(pair[0] + ' was not set: ' +
+                                   (set.errors || []).join(' '));
+            }
+          });
+        result.relationship = federation.get(id) || result.relationship;
+        result.readiness = federation.readinessOf(result.relationship);
+        // The secret was given in this request and is not answered back.
+        result.relationship = Object.assign({}, result.relationship);
+        delete result.relationship.fedClientSecret;
       }
       // THE ENCRYPTION KEY A PARTNER ENCRYPTS TO (#168), for the three
       // protocols that have one. A key that could not be issued leaves the
@@ -8033,7 +12000,9 @@ class AdminActions {
       }
       log.debug("Leaving AdminActions.federationAction().");
       return Object.assign({}, result, {
-        message: 'Registered, and DISABLED.' + keyNote + ' Set what it ' +
+        message: 'Registered, and DISABLED.' + keyNote +
+          (credentialNotes.length ? ' ' + credentialNotes.join(' ') : '') +
+          ' Set what it ' +
           'needs — ' +
           (result.readiness.missing.length
             ? result.readiness.missing.join(', ')
@@ -8055,7 +12024,8 @@ class AdminActions {
       const result = federation.update(id, {
         field: String(body.field || ''),
         value: String(body.value == null ? '' : body.value),
-        mode: action === 'remove-value' ? 'remove' : 'add'
+        mode: action === 'remove-value' ? 'remove' : 'add',
+        valueOfList: action !== 'set'
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -8077,6 +12047,26 @@ class AdminActions {
                 message: result.message + ' ' + keyed.message })
             : keyed);
         }
+      }
+      // A FAPI 1.0 ADVANCED RELATIONSHIP GETS ITS CLIENT CERTIFICATE NOW
+      // (#931), so the administrator can register it at the partner before
+      // the first sign-in. One that cannot be issued leaves the profile set
+      // and says so; the renewal job and the first sign-in try again.
+      if (result.ok && String(body.field || '') === 'fedFapi' &&
+          fedClientCert.needed(result.relationship) &&
+          !fedClientCert.currentOf(result.relationship)) {
+        const made = await fedClientCert.issue(id,
+          'a client certificate was issued when fedFapi became 1-advanced');
+        return this.refusedBy('STS-ADMIN-0575',
+          Object.assign({}, result, {
+            relationship: federation.get(id) || result.relationship,
+            readiness: federation.readinessOf(federation.get(id) ||
+                                              result.relationship),
+            message: result.message + ' ' + (made.ok ? made.message
+              : 'ITS TLS CLIENT CERTIFICATE WAS NOT ISSUED: ' +
+                (made.errors || []).join(' ') + ' The scheduler job ' +
+                'federation.client-certificate-renew and the first ' +
+                'sign-in try again.') }));
       }
       return this.refusedBy('STS-ADMIN-0575', result);
     }
@@ -8121,8 +12111,11 @@ class AdminActions {
     // THE LIST IS BUILT, NOT WRITTEN: the Shared Signals acts are the
     // transmitter module's own table (#373), and the parity check reads this
     // sentence's count against what it names.
+    // `check-partner` and `register-partner` (#930) are answered above
+    // and were missing here, which hid them from the parity check.
     const known = ['create', 'set', 'add-value', 'remove-value', 'enable',
-      'disable', 'rotate-key', 'delete']
+      'disable', 'rotate-key', 'check-partner', 'register-partner',
+      'delete']
         .concat(loadSignals().ACTIONS || []);
     return this.refused('STS-ADMIN-0500', { ok: false,
              errors: ['Unknown action "' + action + '". The ' +
@@ -8138,7 +12131,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async spiffeAction(body) {
+  async spiffeAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe'>) {
     const { log, auditLog, spiffeCa } = this.deps;
     log.debug("Entering AdminActions.spiffeAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -8252,7 +12246,11 @@ class AdminActions {
   //      one, the history is kept, and the observer derives the new keys at
   //      the next kvno. A generated one (`random`) is drawn against the same
   //      policy and NEVER SHOWN: the keytab is then the only credential that
-  //      opens the account until somebody sets a password again.
+  //      opens the account until somebody sets a password again. A passkey
+  //      holder's recovery is noted here too, as `reset-password` notes it
+  //      (#960), once that set has succeeded and before the keytab is asked
+  //      for — so a keytab that then fails has still recorded the hold.
+  //      Step 1's refusal is before any of this and notes nothing.
   //   3. What a reset does to the rest of the account, as `reset-password`
   //      does it: an outstanding reset link is spent (the administrator has
   //      just decided what the password is), they are signed out of
@@ -8296,6 +12294,11 @@ class AdminActions {
                 "refused.");
       return this.refusedBy('STS-ADMIN-0802', set);
     }
+    // Noted before the keytab is built (#960). A later failure still
+    // reports `passwordSet`, and the hold is already on the entry. False
+    // — no passkey, assurance `any`, or a write already logged — leaves
+    // the reset as it was.
+    credentials.noteRecovery(who, 'admin-password');
     credentials.setPasswordResetRequired(who, false);
     credentials.consumePasswordReset(who);
     const signedOut = this.signOutEverywhere(who, ctx,
@@ -8352,7 +12355,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  kerberosPrincipalsAction(body, context) {
+  kerberosPrincipalsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/kerberos/principals'>, context) {
     const self = this;
     const { log, numberWord, realms, krb5PersonKeys } = this.deps;
     log.debug("Entering AdminActions.kerberosPrincipalsAction(). action=" +
@@ -8392,8 +12396,8 @@ class AdminActions {
         return self.refusedBy('STS-ADMIN-0602', answer);
       });
     } else {
-      // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
-      // and `tests/vendored/admin_api.js` both READ.
+      // THE HOUSE SENTENCE, which `tests/protocol/sts_admin_api_operations.js`
+      // and `tests/protocol/admin_api.js` both READ.
       log.debug("Leaving AdminActions.kerberosPrincipalsAction(). Unknown " +
                 "action.");
       return this.refused('STS-ADMIN-0602', { ok: false,
@@ -8408,6 +12412,224 @@ class AdminActions {
     log.debug("Leaving AdminActions.kerberosPrincipalsAction(). ok=" +
               !!(result && result.ok));
     return this.refusedBy('STS-ADMIN-0602', result);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE KERBEROS TRUSTS, AS THE TRUSTS TAB POSTS THEM AND `POST
+  // /admin-api/kerberos/trusts/{action}` CALLS THEM (#430 Phase 4).
+  // ---------------------------------------------------------------------------
+  // A form's fields into the library's input: `direction` and `keySource`
+  // become the two key sides, the lists arrive as arrays or comma- and
+  // line-separated text, and `forestTrustInfo` as JSON, an object, or the
+  // two textareas' lines (`<sid> <dns name> <netbios name> [disabled]`, and
+  // `<name> [disabled]`).
+  private trustInput(asked, existing) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.trustInput().");
+    const list = function (value) {
+      if (Array.isArray(value)) {
+        return value.map(String);
+      }
+      return value === undefined || value === null ? undefined :
+        String(value).split(/[,\n]/).map(function (one) {
+          return one.trim();
+        }).filter(Boolean);
+    };
+    const input: any = {};
+    ['partnerRealm', 'netbiosName', 'partnerSid', 'type', 'partnerTrustRealm',
+     'claimsTransformation'].forEach(function (name) {
+      if (asked[name] !== undefined && asked[name] !== '') {
+        input[name] = String(asked[name]).trim();
+      }
+    });
+    ['attributes', 'suffixes', 'enctypes'].forEach(function (name) {
+      const value = list(asked[name]);
+      if (value !== undefined) {
+        input[name] = value;
+      }
+    });
+    // An attribute form ALWAYS posts its checkboxes, so none ticked is an
+    // empty list; `attributesShown` says the form drew them.
+    if (asked.attributesShown !== undefined && asked.attributes === undefined) {
+      input.attributes = [];
+    }
+    if (asked.enabled !== undefined) {
+      input.enabled = !(asked.enabled === false ||
+                        String(asked.enabled) === 'false');
+    }
+    const ft = asked.forestTrustInfo !== undefined ? asked.forestTrustInfo :
+      (asked.forestDomains !== undefined || asked.forestNames !== undefined
+        ? { domains: String(asked.forestDomains || '').split('\n')
+              .map(function (line) {
+                return line.trim().split(/\s+/);
+              }).filter(function (parts) {
+                return parts[0];
+              }).map(function (parts) {
+                return { sid: parts[0], dnsName: parts[1] || '',
+                         netbiosName: parts[2] || '',
+                         sidEnabled: parts[3] !== 'disabled' };
+              }),
+            topLevelNames: String(asked.forestNames || '').split('\n')
+              .map(function (line) {
+                return line.trim().split(/\s+/);
+              }).filter(function (parts) {
+                return parts[0];
+              }).map(function (parts) {
+                return { name: parts[0], enabled: parts[1] !== 'disabled' };
+              }) }
+        : undefined);
+    if (ft !== undefined) {
+      const empty = ft && typeof ft === 'object' &&
+        !(ft.domains || []).length && !(ft.topLevelNames || []).length;
+      input.forestTrustInfo = ft === '' || empty ? null : ft;
+    }
+    // THE KEYS. A side the direction names and the record does not hold
+    // takes the key source; a side it does not name is dropped; a side
+    // already held is kept — its key changes through rotate-key.
+    const direction = asked.direction === undefined ? undefined :
+      String(asked.direction);
+    const source = String(asked.keySource || (typeof asked.password ===
+      'string' && asked.password ? 'password' : ''));
+    const fresh = source === 'generate' ? { generate: true }
+      : (source === 'password' ? { password: String(asked.password || '') }
+         : undefined);
+    const wanted = direction === undefined
+      ? (existing ? null : ['incoming', 'outgoing'])
+      : (direction === 'inbound' ? ['incoming'] : direction === 'outbound' ?
+         ['outgoing'] : ['incoming', 'outgoing']);
+    if (wanted) {
+      ['incoming', 'outgoing'].forEach(function (side) {
+        const held = !!(existing && existing[side] && existing[side].held);
+        if (wanted.indexOf(side) < 0) {
+          if (held || !existing) {
+            input[side] = null;
+          }
+        } else if (!held) {
+          input[side] = fresh;
+        }
+      });
+    }
+    log.debug("Leaving AdminActions.trustInput().");
+    return input;
+  }
+
+  /**
+   * Adds, changes, enables, disables, rotates the keys of, removes or pairs
+   * a Kerberos trust record of the realm the call is in.
+   *
+   * @param body - the parsed form or JSON body; `action` names the act,
+   *   `partnerRealm` the record
+   * @param context - who is acting (`actor`) and through which door (`via`)
+   * @returns `{ ok, errors, trust, shown, … }`; never a key but a generated
+   *   one, once, in `shown`
+   */
+  kerberosTrustsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/kerberos/trusts'>, context) {
+    const { log, numberWord, realms, auditLog } = this.deps;
+    const asked = body || {};
+    const action = String(asked.action || '');
+    log.debug("Entering AdminActions.kerberosTrustsAction(). action=" +
+              action);
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (KERBEROS_TRUST_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.kerberosTrustsAction(). Unknown " +
+                "action.");
+      return this.refused('STS-ADMIN-0859', { ok: false, errors: [
+        'Unknown action "' + action + '". There are ' +
+        numberWord(KERBEROS_TRUST_ACTIONS.length) + ': ' +
+        KERBEROS_TRUST_ACTIONS.join(', ') + '.'] });
+    }
+    const trusts = this.deps.krb5Trusts();
+    const partner = String(asked.partnerRealm || '').trim();
+    const existing = partner ? trusts.get(partner) : null;
+    if (action !== 'add' && !(action === 'pair' && asked.otherRealm) &&
+        !existing) {
+      log.debug("Leaving AdminActions.kerberosTrustsAction(). No record.");
+      return this.refused('STS-ADMIN-0859', { ok: false, errors: [
+        action + ' names a trust by partnerRealm, and this realm holds ' +
+        (partner ? 'none with ' + partner : 'none unnamed') + '.'] });
+    }
+    let result;
+    let detail = '';
+    if (action === 'add') {
+      result = trusts.add(this.trustInput(asked, null));
+      detail = 'added a trust with ' + partner;
+    } else if (action === 'update') {
+      const input = this.trustInput(asked, existing);
+      delete input.partnerRealm;
+      result = trusts.update(partner, input);
+      detail = 'changed the trust with ' + partner;
+    } else if (action === 'enable' || action === 'disable') {
+      result = trusts.setEnabled(partner, action === 'enable');
+      detail = (action === 'enable' ? 'enabled' : 'disabled') +
+               ' the trust with ' + partner;
+    } else if (action === 'rotate-key') {
+      const source = String(asked.keySource || (asked.password ? 'password' :
+                                                ''));
+      result = trusts.rotateKey(partner, {
+        side: asked.side, mirror: asked.mirror,
+        password: source === 'password' ? String(asked.password || '') :
+          undefined,
+        generate: source === 'generate'
+      });
+      detail = 'rotated the ' + ((result && result.rotated) || []).join(' and ') +
+               ' key(s) of the trust with ' + partner +
+               (result && result.there ? ', on both realms' : '');
+    } else if (action === 'remove') {
+      if (String(asked.confirm || '') !== partner) {
+        log.debug("Leaving AdminActions.kerberosTrustsAction(). Not " +
+                  "confirmed.");
+        return this.refused('STS-ADMIN-0860', { ok: false, errors: [
+          'Removing a trust takes its keys with it, so it is confirmed by ' +
+          'typing the partner realm, ' + partner + ', into confirm.'] });
+      }
+      result = trusts.remove(partner);
+      detail = 'removed the trust with ' + partner;
+    } else {
+      // PAIR: the matching record on the other trust realm for a record
+      // held here, or — with `otherRealm` — both records at once.
+      if (asked.otherRealm) {
+        const source = String(asked.keySource || (asked.password ? 'password' :
+                                                  'generate'));
+        const input = this.trustInput(asked, null);
+        result = trusts.pair(String(asked.otherRealm), {
+          direction: asked.direction === 'inbound' ? 'incoming' :
+            (asked.direction === 'outbound' ? 'outgoing' : 'both'),
+          password: source === 'password' ? String(asked.password || '') :
+            undefined,
+          attributes: input.attributes, enctypes: input.enctypes,
+          suffixes: input.suffixes,
+          partnerSuffixes: this.trustInput({ suffixes:
+            asked.partnerSuffixes }, null).suffixes
+        });
+        detail = 'paired this realm with trust realm ' + asked.otherRealm;
+      } else {
+        result = trusts.mirror(partner);
+        detail = (result && result.created ? 'wrote' : 'matched the keys ' +
+                  'of') + ' the record for this realm in trust realm ' +
+                 (result && result.otherRealm || '') + ', pairing the ' +
+                 'trust with ' + partner;
+      }
+    }
+    if (!result || !result.ok) {
+      const errors = ((result && result.errors) || []);
+      const out = { ok: false, errors: errors.map(function (one) {
+        return typeof one === 'string' ? one : String(one.message);
+      }) };
+      const code = errors.length && errors[0] && errors[0].code ?
+        String(errors[0].code) : 'STS-ADMIN-0859';
+      log.debug("Leaving AdminActions.kerberosTrustsAction(). Refused.");
+      return this.refused(code, out);
+    }
+    // THE AUDIT ROW NAMES THE TRUST AND THE ACT, never a key or a password.
+    auditLog.audit({ action: 'krb5.trust.' + action, actor: actor,
+                     target: partner || String(asked.otherRealm || ''),
+                     protocol: 'Kerberos', channel: 'http',
+                     detail: detail + ' (via ' + via + ')' });
+    log.debug("Leaving AdminActions.kerberosTrustsAction(). ok.");
+    return Object.assign({ ok: true, trustRealm: realms.currentId(),
+                           action: action }, result);
   }
 
   // ---------------------------------------------------------------------------
@@ -8483,8 +12705,12 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   TRUSTSTORE_ACTIONS: TRUSTSTORE_ACTIONS,
   truststoreAction: slot.forward('truststoreAction'),
+  pkiTrustAction: slot.forward('pkiTrustAction'),
+  PKI_TRUST_ACTIONS: PKI_TRUST_ACTIONS,
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
   kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
+  KERBEROS_TRUST_ACTIONS: KERBEROS_TRUST_ACTIONS,
+  kerberosTrustsAction: slot.forward('kerberosTrustsAction'),
   // The thirty actions, the tables they dispatch on, and the pure helpers
   // they share with the pages that draw their buttons.
   FORM_FURNITURE: FORM_FURNITURE,
@@ -8501,9 +12727,16 @@ export = {
   truthy: slot.forward('truthy'),
   USERS_ACTIONS: USERS_ACTIONS,
   usersAction: slot.forward('usersAction'),
+  storedCertificatesOf: slot.forward('storedCertificatesOf'),
+  applicationStoredCertificatesOf:
+    slot.forward('applicationStoredCertificatesOf'),
+  signingCertificatesOf: slot.forward('signingCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),
+  // The attributes an `update-fields` body writes, for the management API's
+  // gate (#607): the owner rule is asked about every one of them.
+  fieldsCoveredBy: slot.forward('fieldsCoveredBy'),
   APPLICATION_ACTIONS: APPLICATION_ACTIONS,
   applicationsAction: slot.forward('applicationsAction'),
   asAction: slot.forward('asAction'),
@@ -8518,9 +12751,13 @@ export = {
   consentAction: slot.forward('consentAction'),
   ROLE_ACTIONS: ROLE_ACTIONS,
   ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
+  // #543: the roles namespace's routes and English, this module's part.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
   policiesAction: slot.forward('policiesAction'),
+  policyTransferAction: slot.forward('policyTransferAction'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   claimsAction: slot.forward('claimsAction'),
   sweepText: slot.forward('sweepText'),

@@ -19,12 +19,17 @@
 //   4. ping and push: a delivery with the client's Bearer, retried after a
 //      failure worth retrying, dead after its attempts, and a push carrying
 //      tokens whose ID Token names the request (and rt_hash);
-//   5. the sweep expiring what nobody answered.
+//   5. the sweep expiring what nobody answered;
+//   6. what the stores keep (#614): requests under the digest of their
+//      auth_req_id and never the id once its notification is queued, and a
+//      notification that landed without its token or its body.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
 
 const config = require('../common/config');
+const realms = require('../common/realms');
+const stsCrypto = require('../common/crypto');
 const ldap = require('../ldap/ldap_server');
 const applications = require('../common/applications');
 const ciba = require('../oauth-oidc/ciba');
@@ -215,6 +220,30 @@ async function body(t) {
           sent[sent.length - 1].body.error === 'expired_token',
           '5a. the sweep expires an unanswered request, and a push client ' +
           'is sent expired_token', JSON.stringify(swept));
+
+  t.log.info('=== 6. what the stores keep (#614) ===');
+  const requestRows = JSON.stringify(realms.handleFor('oauth2.cibaRequests')
+    .dump('default'));
+  const ids = [made.record.id, late.record.id, ping.record.id,
+               doomed.record.id, push.record.id, unanswered.record.id];
+  t.check(ids.every(function (id) {
+    return requestRows.indexOf(id) < 0 &&
+           requestRows.indexOf(stsCrypto.credentialDigest(id)) >= 0;
+  }), '6a. every request is held under its auth_req_id\'s digest, and ' +
+      'no row holds an auth_req_id', requestRows.slice(0, 300));
+  const landed = realms.handleFor('oauth2.cibaDeliveries').dump('default')
+    .map(function (row) {
+      return row.value;
+    }).filter(function (row) {
+      return row && row.state === 'sent';
+    });
+  t.check(landed.length >= 1 && landed.every(function (row) {
+    return row.body === undefined && row.token === undefined &&
+           /^[A-Za-z0-9_-]{43}$/.test(String(row.bodyDigest || ''));
+  }) && JSON.stringify(landed).indexOf('nt-ping') < 0,
+          '6b. a notification that landed keeps neither the client\'s ' +
+          'Bearer nor the body, only the body\'s digest',
+          JSON.stringify(landed).slice(0, 400));
   log.debug("Leaving body().");
 }
 

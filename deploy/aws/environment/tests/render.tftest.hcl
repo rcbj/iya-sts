@@ -44,6 +44,9 @@ mock_provider "aws" {
     defaults = { ids = [] }
   }
 }
+mock_provider "aws" {
+  alias = "us_east_1"
+}
 override_data {
   target = data.terraform_remote_state.global
   values = { outputs = {
@@ -173,6 +176,33 @@ run "orphan_pin_refused" {
   }
   expect_failures = [var.jurisdictions]
 }
+# #695: a worker start timeout the 600 s grace cannot hold is refused at
+# plan; 300000 (the environments' own) plus the margin fits.
+run "start_timeout_inside_grace" {
+  command = plan
+  variables {
+    environment       = "dev"
+    public_hostname   = ""
+    cells             = {}
+    jurisdictions     = {}
+    primary_cell      = ""
+    extra_environment = { STS_WORKERS_START_TIMEOUT_MS = "300000" }
+  }
+}
+
+run "start_timeout_past_grace_refused" {
+  command = plan
+  variables {
+    environment       = "dev"
+    public_hostname   = ""
+    cells             = {}
+    jurisdictions     = {}
+    primary_cell      = ""
+    extra_environment = { STS_WORKERS_START_TIMEOUT_MS = "900000" }
+  }
+  expect_failures = [aws_ecs_service.first]
+}
+
 run "single_cell_dev_unchanged" {
   command = plan
   variables {
@@ -328,6 +358,21 @@ run "kek_migrating_needs_the_kms_key" {
   }
   expect_failures = [var.kek_migrating_from_secret]
 }
+# #1309: the id comparison moved into try(), so the rule must still refuse an
+# AWS cell whose id is not its region's (usw9 in us-west-2), and still take
+# a GCP cell's region it cannot take apart (the multi-cloud run below).
+run "aws_cell_id_must_name_its_region" {
+  command = plan
+  variables {
+    environment = "globalidp"
+    cell        = "usw2"
+    cells = merge(jsondecode(file("envs/globalidp.cells.tfvars.json")).cells, {
+      usw9 = merge(jsondecode(file("envs/globalidp.cells.tfvars.json")).cells["usw2"],
+      { vpc_cidr = "10.250.0.0/16" })
+    })
+  }
+  expect_failures = [var.cells]
+}
 run "kek_kms_refused_in_a_multi_cloud_environment" {
   command = plan
   variables {
@@ -366,5 +411,170 @@ run "kek_secret_in_a_multi_cloud_environment_plans" {
   assert {
     condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "aws" && length(data.aws_kms_key.kek) == 0
     error_message = jsonencode(local.kek_environment)
+  }
+}
+
+# CLOUDFRONT (cloudfront.tf): the BREACH decision and the fixed forwarded headers
+# are what would fail quietly, so they are what this holds.
+run "testidp_behind_cloudfront" {
+  command = plan
+  variables {
+    environment           = "testidp"
+    public_hostname       = "test-idp.iyasec.io"
+    public_zone_name      = "iyasec.io"
+    cloudfront_enabled    = true
+    direct_hostname       = "direct.test-idp.iyasec.io"
+    cloudfront_log_bucket = "iyasec-logs"
+    cloudfront_log_prefix = "test-idp/"
+  }
+  override_data {
+    target = data.terraform_remote_state.certificate[0]
+    values = { outputs = {
+      certificate_arn = "arn:aws:acm:us-west-2:111122223333:certificate/c",
+      public_hostname = "test-idp.iyasec.io"
+    } }
+  }
+  assert {
+    condition     = aws_cloudfront_distribution.main[0].price_class == "PriceClass_All"
+    error_message = "Every edge location was asked for."
+  }
+  assert {
+    condition     = aws_cloudfront_distribution.main[0].default_cache_behavior[0].compress == false
+    error_message = "An API or protocol answer must not be compressed at the edge (BREACH)."
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main[0].ordered_cache_behavior) == 4 && alltrue([for b in aws_cloudfront_distribution.main[0].ordered_cache_behavior : b.compress])
+    error_message = "Every static path compresses."
+  }
+  assert {
+    condition     = nonsensitive(toset(flatten([for o in aws_cloudfront_distribution.main[0].origin : [for h in o.custom_header : h.name]]))) == toset(["X-Forwarded-Host", "X-Forwarded-Proto", "X-Origin-Verify"])
+    error_message = "A viewer's X-Forwarded-Host and -Proto must be overwritten."
+  }
+  assert {
+    condition     = aws_route53_record.public[0].type == "A" && aws_route53_record.direct[0].type == "CNAME"
+    error_message = "The public name goes to CloudFront; the direct name stays on the load balancer."
+  }
+  assert {
+    condition     = local.node_environment.STS_TRUST_PROXY == "true" && strcontains(local.node_environment.STS_TRUSTED_PROXIES, "192.0.2.0/24")
+    error_message = "The edges must be the trusted peers, or a caller can forge its address."
+  }
+  assert {
+    condition     = strcontains(local.pki_public_url, "direct.test-idp.iyasec.io")
+    error_message = "The plain-HTTP revocation listener cannot be reached through CloudFront."
+  }
+}
+
+run "no_cloudfront_by_default" {
+  command = plan
+  variables {
+    environment      = "dev"
+    public_hostname  = "test-idp.iyasec.io"
+    public_zone_name = "iyasec.io"
+  }
+  override_data {
+    target = data.terraform_remote_state.certificate[0]
+    values = { outputs = {
+      certificate_arn = "arn:aws:acm:us-west-2:111122223333:certificate/c",
+      public_hostname = "test-idp.iyasec.io"
+    } }
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 0 && aws_route53_record.public[0].type == "CNAME" && local.node_environment.STS_TRUST_PROXY == "false"
+    error_message = "Nothing changes without cloudfront_enabled."
+  }
+}
+
+# CLOUDFRONT IN A MULTI-CELL ENVIRONMENT (#1341): one distribution, the
+# primary's, in its `full` phase; the cells' tree at the direct name, which is
+# the distribution's origin; every cell admitting the edges and reading the
+# global tier's replica of the origin secret.
+run "globalidp_primary_holds_the_distribution" {
+  command = plan
+  variables {
+    environment        = "globalidp"
+    cell               = "usw2"
+    cloudfront_enabled = true
+    direct_hostname    = "direct.global-idp.iyasec.io"
+  }
+  override_data {
+    target = data.terraform_remote_state.global[0]
+    values = { outputs = {
+      primary_address = "p", db_port = 5432, db_name = "sts", db_app_user = "sts_app",
+      read_addresses  = {}, master_secret_arn = "m", edge_secret = "s3cret",
+      secret_arns     = { usw2 = { "edge-secret" = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/globalidp/edge-secret" } }
+    } }
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 1 && one([for o in aws_cloudfront_distribution.main[0].origin : o.domain_name]) == "direct.global-idp.iyasec.io"
+    error_message = "The primary's distribution has the cells' tree, at the direct name, as its origin."
+  }
+  assert {
+    condition     = length(aws_route53_record.default) == 1 && aws_route53_record.default[0].name == "global-idp.iyasec.io" && aws_route53_record.default[0].alias[0].evaluate_target_health == false
+    error_message = "The public name's default is the distribution."
+  }
+  assert {
+    condition     = aws_route53_record.direct_default[0].name == "direct.global-idp.iyasec.io" && aws_route53_record.direct_default[0].alias[0].name == "cells.direct.global-idp.iyasec.io" && aws_route53_record.latency[0].name == "cells.direct.global-idp.iyasec.io"
+    error_message = "The tree is at the direct name."
+  }
+  assert {
+    condition     = length(aws_route53_record.direct) == 0 && length(aws_route53_record.direct_inside) == 1 && length(random_password.edge_secret) == 0
+    error_message = "A cell's direct name outside is the tree, and its secret is the global tier's."
+  }
+  assert {
+    condition     = contains([for s in local.node_secrets : s.valueFrom if s.name == "STS_EDGE_SECRET"], "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/globalidp/edge-secret")
+    error_message = "The nodes read the global tier's replica of the origin secret."
+  }
+}
+
+run "globalidp_primary_base_has_no_distribution" {
+  command = plan
+  variables {
+    environment        = "globalidp"
+    cell               = "usw2"
+    cell_phase         = "base"
+    cloudfront_enabled = true
+    direct_hostname    = "direct.global-idp.iyasec.io"
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 0 && length(aws_route53_record.default) == 0 && length(aws_route53_record.direct_default) == 1
+    error_message = "No distribution before the global tier holds its secret; the direct name's tree is written already."
+  }
+  assert {
+    condition     = length([for s in local.node_secrets : s if s.name == "STS_EDGE_SECRET"]) == 0
+    error_message = "An empty valueFrom is dropped in `base`."
+  }
+}
+
+run "globalidp_cell_behind_cloudfront" {
+  command = plan
+  variables {
+    environment        = "globalidp"
+    cell               = "euc1"
+    cloudfront_enabled = true
+    direct_hostname    = "direct.global-idp.iyasec.io"
+  }
+  override_data {
+    target = data.terraform_remote_state.global[0]
+    values = { outputs = {
+      primary_address = "p", db_port = 5432, db_name = "sts", db_app_user = "sts_app",
+      read_addresses  = {}, master_secret_arn = "m", edge_secret = "s3cret",
+      secret_arns     = { euc1 = { "edge-secret" = "arn:aws:secretsmanager:eu-central-1:111122223333:secret:iya-sts/globalidp/edge-secret" } }
+    } }
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 0 && length(aws_wafv2_web_acl.allowlist) == 0 && length(aws_route53_record.default) == 0
+    error_message = "Only the primary writes the distribution."
+  }
+  assert {
+    condition     = aws_route53_record.pinned["DE"].name == "direct.global-idp.iyasec.io" && aws_route53_record.pinned["DE"].alias[0].name == "eu.cells.direct.global-idp.iyasec.io"
+    error_message = "The pins are at the direct name."
+  }
+  assert {
+    condition     = length(aws_security_group.nlb_cloudfront) == 1 && local.node_environment.STS_TRUST_PROXY == "true" && local.node_environment.STS_EDGE_PROXIES == "192.0.2.0/24"
+    error_message = "Every cell admits and believes the edges."
+  }
+  assert {
+    condition     = contains([for s in local.node_secrets : s.valueFrom if s.name == "STS_EDGE_SECRET"], "arn:aws:secretsmanager:eu-central-1:111122223333:secret:iya-sts/globalidp/edge-secret")
+    error_message = "A cell reads the replica in its own region."
   }
 }

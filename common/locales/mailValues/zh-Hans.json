@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "您本人，或知道您的帐户名、地址及其中一个恢复码的人",
+  "requestedBy.signInScreen": "您本人，或在登录页面上知道您帐户名的人",
+  "requestedBy.administrator": "管理员",
+  "requestedBy.administratorNamed": "管理员（{actor}）",
+  "how.by": "由{entity, select, user {用户} admin {管理员} system {系统} policy {策略} someone {某人} other {{entity}}}执行",
+  "credential.type": "{type, select, password {密码} x509 {X.509 证书} app {身份验证器应用} fido2-roaming {安全密钥} fido2-platform {通行密钥} other {{type}}}",
+  "by.you": "您本人",
+  "by.administrator": "管理员",
+  "by.administratorSessionsPage": "管理员（会话页面）",
+  "by.administratorConsoleLogout": "管理员（管理控制台 /admin/logout）",
+  "act.credentialCompromised": "凭据被标记为已泄露",
+  "act.accountDisabled": "帐户已停用",
+  "rights.access": "访问",
+  "address.none": "（无）"
+}

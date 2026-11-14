@@ -56,20 +56,43 @@ const adminRbac = require('../admin-ui/admin_rbac');
 const log = require('bunyan').createLogger({ name: 'password_policy',
   level: process.env.LOG_LEVEL || 'info' });
 
+// A callback that answers a promise keeps the settings until it settles:
+// an LDAP write carrying a clear password answers a tick later since #756.
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
+  const clear = function () {
+    log.debug("Entering clear().");
+    keys.forEach(function (key) {
+      config.clearOverride(key);
+    });
+    log.debug("Leaving clear().");
+  };
+  let answer;
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
-    log.debug("Leaving withSettings().");
-    return fn();
-  } finally {
-    keys.forEach(function (key) {
-      config.clearOverride(key);
+    answer = fn();
+  } catch (e) {
+    log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+    clear();
+    throw e;
+  }
+  if (answer && typeof answer.then === 'function') {
+    log.debug("Leaving withSettings(). Settles later.");
+    return answer.then(function (value) {
+      clear();
+      return value;
+    }, function (e) {
+      log.debug("Caught in withSettings(): " + ((e && e.message) || e));
+      clear();
+      throw e;
     });
   }
+  clear();
+  log.debug("Leaving withSettings().");
+  return answer;
 }
 
 // An attribute off the entry, whichever case the store handed it back in.
@@ -85,7 +108,10 @@ function attributeOf(username, name) {
 }
 
 // The LDAP modify handler, called the way the socket calls it — the realm
-// wrapper included, since that is what `localHandler()` hands back.
+// wrapper included, since that is what `localHandler()` hands back. It
+// answers a promise of the outcome, settled when the handler calls `next`:
+// a write carrying a clear password is hashed on the thread pool first and
+// answers a tick later (#756).
 //
 // `boundDn` is who is on the connection. Since 2026-09-12 product mode
 // AUTHORIZES a directory write against it (`directoryWriteRefusal()`), so an
@@ -108,17 +134,24 @@ function ldapModify(dn, changes, boundDn) {
     logId: 'password-policy-test'
   };
   const out = { ended: false, failure: null };
-  handler(req, { end: function () {
-    log.debug("Entering end().");
-    out.ended = true;
-    log.debug("Leaving end().");
-  } },
-          function (err) { if (err) { out.failure = err; } });
-  log.debug("Leaving ldapModify().");
-  return out;
+  return new Promise(function (resolve) {
+    handler(req, { end: function () {
+      log.debug("Entering end().");
+      out.ended = true;
+      log.debug("Leaving end().");
+    } }, function (err) {
+      log.debug("Entering the modify's next().");
+      if (err) {
+        out.failure = err;
+      }
+      log.debug("Leaving the modify's next().");
+      log.debug("Leaving ldapModify().");
+      resolve(out);
+    });
+  });
 }
 
-function checkThePolicy(t, who) {
+async function checkThePolicy(t, who) {
   log.debug("Entering checkThePolicy().");
   // -----------------------------------------------------------------------
   t.log.info('=== 1a. development records and does not refuse ===');
@@ -132,7 +165,7 @@ function checkThePolicy(t, who) {
           'and sets the SAME password again: history is not enforced there ' +
           'either');
   t.check(attributeOf(who, 'pwdHistory').length === 1 &&
-          /^\d{14}Z#1\.3\.6\.1\.4\.1\.1466\.115\.121\.1\.40#\d+#\$scrypt\$/
+          /^\d{14}Z#1\.3\.6\.1\.4\.1\.1466\.115\.121\.1\.40#\d+#\$(scrypt|argon2id)\$/
             .test(attributeOf(who, 'pwdHistory')[0]),
           'but the history IS RECORDED, in draft-behera\'s ' +
           'time#oid#length#data form holding the previous HASH — so a realm ' +
@@ -143,28 +176,29 @@ function checkThePolicy(t, who) {
 
   // The Pwned Passwords screen off: this file is about the policy, and the
   // screen is tests/breached_passwords.js's (#62 P6).
-  withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
-               function () {
+  await withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off',
+                       'authn.allowOptionalSecondFactor': 'true' },
+                     async function () {
     // ---------------------------------------------------------------------
     t.log.info('=== 1b. product mode: the composition rules ===');
     const short = credentials.setPassword(who, 'x');
     t.check(!short.ok && short.reason === 'password-policy',
             'PRODUCT mode REFUSES a password that breaks the profile',
             JSON.stringify(short));
-    t.equal((short.problems || []).length, 4,
-            'and names EVERY rule it breaks, not the first — length, symbol, ' +
-            'uppercase and digit — so a person fixes it once');
+    t.equal((short.problems || []).length, 1,
+            'and length is the one rule a password can break');
     t.check(/\/admin\/policies/.test((short.errors || []).join(' ')),
             'with a sentence naming where the rules are',
             (short.errors || []).join(' '));
     t.check(!credentials.setPassword(who, 'Abcdefghij1').ok,
             'eleven characters with an uppercase letter, a digit and no ' +
             'symbol is refused');
-    t.equal(credentials.passwordProblem('Abcdefghijk1'),
-            'That password does not meet this realm\'s password policy, ' +
-            'which asks for at least 1 symbol (it has 0). The rules are on ' +
-            '/admin/policies (profile "default").',
-            'and twelve with no symbol is refused for the symbol ALONE');
+    t.equal(credentials.passwordProblem('Abcdefghijk1'), '',
+            'and twelve with no symbol is accepted (ASVS 5.0.0 6.2.5)');
+    t.equal(credentials.passwordProblem('alllowercaseletters'), '',
+            'and so is a password of letters of one case alone');
+    t.check(passwordPolicy.describe().join(' ').indexOf('symbol') < 0,
+            'and the rules a person is shown ask for no symbol');
     t.check(credentials.passwordProblem('Abcdefghij1!') === '',
             'twelve with a symbol, an uppercase letter and a digit passes — ' +
             'the length boundary is "at least", not "more than"');
@@ -175,8 +209,8 @@ function checkThePolicy(t, who) {
             credentials.passwordProblem('😀😀😀😀😀A1') !== '',
             'twelve code points are twelve characters — an emoji is one, and ' +
             'it is a symbol — and seven are seven, not fourteen UTF-16 units');
-    t.check(credentials.passwordProblem('Abc def ghij1') !== '',
-            'a SPACE is not a symbol, so a passphrase has to carry one');
+    t.equal(credentials.passwordProblem('a plain long passphrase'), '',
+            'a passphrase of words and spaces is accepted as it stands');
 
     // ---------------------------------------------------------------------
     t.log.info('=== 1c. product mode: the history ===');
@@ -226,17 +260,31 @@ function checkThePolicy(t, who) {
             'rather than resetting them — a save that quietly loosened a ' +
             'rule nobody mentioned is the mistake nobody ' +
             'sees', JSON.stringify(partial.errors));
-    t.check(!passwordPolicy.save('strict', Object.assign({},
+    // Since #1236 a named policy may be saved (tests/password_named_policies
+    // .js); a name no cn here may be is still refused.
+    t.check(!passwordPolicy.save('Strict!', Object.assign({},
               passwordPolicy.DEFAULTS)).ok,
-            'a profile other than default is refused: nothing assigns one yet');
+            'a profile name that is neither default nor lower-case letters, ' +
+            'digits and hyphens is refused');
     t.check(!passwordPolicy.save('default', Object.assign({},
               passwordPolicy.DEFAULTS,
               { minSymbols: 12, generatedLength: 20 })).ok,
-            'a generated length that cannot reliably carry the symbol count ' +
-            'is refused');
+            'a policy that asks for symbols is refused (ASVS 5.0.0 6.2.5)');
+    ['requireUppercase', 'requireDigit'].forEach(function (rule) {
+      const asks = {};
+      asks[rule] = true;
+      t.check(!passwordPolicy.save('default', Object.assign({},
+                passwordPolicy.DEFAULTS, asks)).ok,
+              'a policy that sets ' + rule + ' is refused');
+    });
+    t.check(passwordPolicy.problemsWith('all lower case and long enough',
+              Object.assign({}, passwordPolicy.DEFAULTS, { minLength: 12 }))
+              .length === 0,
+            'a password of any composition is accepted once it is long ' +
+            'enough');
     const saved = passwordPolicy.save('default', {
       minLength: '8', history: '1', minSymbols: '0', requireUppercase: 'FALSE',
-      requireDigit: true, generatedLength: 16 });
+      requireDigit: false, generatedLength: 16 });
     t.check(saved.ok, 'a whole profile is saved, from form strings and JSON ' +
             'values alike', JSON.stringify(saved.errors));
     const stored = passwordPolicy.read('default');
@@ -274,9 +322,15 @@ function checkThePolicy(t, who) {
 
     // ---------------------------------------------------------------------
     t.log.info('=== 1e. the LDAP door, in product mode ===');
-    const probe = ldap.createUser('password-policy-ldap-probe', {});
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode, and nothing is invented there.
+    const probe = ldap.createUser('password-policy-ldap-probe', {
+      attributes: { givenName: 'Probe', sn: 'password-policy-ldap-probe',
+                    mail: 'password-policy-ldap-probe@example.test' } });
     const operatorName = 'password-policy-ldap-operator';
-    ldap.createUser(operatorName, { invent: false });
+    ldap.createUser(operatorName, { invent: false,
+      attributes: { givenName: 'Operator', sn: operatorName,
+                    mail: operatorName + '@example.test' } });
     const operator = ldap.objectFor(operatorName).entry.dn;
     const granted = adminRbac.grant(operatorName, 'write', { via: 'test' });
     const asOperator = function (dn, changes) {
@@ -285,7 +339,7 @@ function checkThePolicy(t, who) {
       return ldapModify(dn, changes, operator);
     };
     try {
-      const weak = asOperator(probe.dn, [['replace', 'userPassword', 'weak']]);
+      const weak = await asOperator(probe.dn, [['replace', 'userPassword', 'weak']]);
       t.equal(weak.failure && weak.failure.code, 19,
               'an ldapmodify of a userPassword that breaks the profile is a ' +
               'CONSTRAINT VIOLATION (19), which is what a ppolicy server ' +
@@ -294,7 +348,7 @@ function checkThePolicy(t, who) {
       t.equal(attributeOf('password-policy-ldap-probe', 'userPassword').length,
               0,
               'and the modify is atomic: nothing was written');
-      const strong = asOperator(probe.dn,
+      const strong = await asOperator(probe.dn,
                                 [['replace', 'userPassword',
                                   'Ldap-Passw0rd!']]);
       t.check(!strong.failure && strong.ended, 'a password that meets it is ' +
@@ -302,7 +356,7 @@ function checkThePolicy(t, who) {
               strong.failure && strong.failure.message);
       const hashed = attributeOf('password-policy-ldap-probe',
                                  'userPassword')[0];
-      t.check(/^\$scrypt\$/.test(hashed) &&
+      t.check(/^\$(scrypt|argon2id)\$/.test(hashed) &&
               crypto.verifySecret('Ldap-Passw0rd!', hashed),
               'and STORED AS A HASH — this door used to write the value ' +
               'verbatim, in the clear', String(hashed).slice(0, 20));
@@ -310,36 +364,36 @@ function checkThePolicy(t, who) {
                                  'Ldap-Passw0rd!').ok,
               'which the sign-in verifier accepts, so an LDAP-set password ' +
               'works');
-      const unchanged = asOperator(probe.dn,
+      const unchanged = await asOperator(probe.dn,
                                    [['replace', 'userPassword', hashed]]);
       t.check(!unchanged.failure,
               'writing the stored HASH back unchanged is not a password ' +
               'change, and is allowed even though a hash is otherwise refused',
               unchanged.failure && unchanged.failure.message);
-      const reuse = asOperator(probe.dn,
+      const reuse = await asOperator(probe.dn,
                                [['replace', 'userPassword', 'Ldap-Passw0rd!']]);
       t.equal(reuse.failure && reuse.failure.code, 19,
               'but the same password sent in the CLEAR is a change to the ' +
               'current password, and is refused as one');
-      const reused = asOperator(probe.dn,
+      const reused = await asOperator(probe.dn,
         [['replace', 'userPassword', 'Ldap-Passw0rd!2']]);
       t.check(!reused.failure, 'a second password is accepted');
-      const back = asOperator(probe.dn,
+      const back = await asOperator(probe.dn,
                               [['replace', 'userPassword', 'Ldap-Passw0rd!']]);
       t.equal(back.failure && back.failure.code, 19,
               'and the first one, sent in the clear again, meets its own ' +
               'HISTORY through the ' +
               'socket', back.failure && back.failure.message);
-      const history = asOperator(probe.dn, [['delete', 'pwdHistory']]);
+      const history = await asOperator(probe.dn, [['delete', 'pwdHistory']]);
       t.equal(history.failure && history.failure.code, 19,
               'pwdHistory cannot be deleted over LDAP in product mode — a ' +
               'history anybody can empty is not a history');
-      const prehashed = asOperator(probe.dn,
+      const prehashed = await asOperator(probe.dn,
         [['replace', 'userPassword', crypto.hashSecret('whatever')]]);
       t.equal(prehashed.failure && prehashed.failure.code, 19,
               'and a PRE-HASHED value is refused: a hash cannot be checked ' +
               'against a policy');
-      const two = asOperator(probe.dn,
+      const two = await asOperator(probe.dn,
                              [['add', 'userPassword', 'Another-Passw0rd!']]);
       t.equal(two.failure && two.failure.code, 19,
               'an ADD of a second userPassword is refused: two values would ' +
@@ -355,14 +409,14 @@ function checkThePolicy(t, who) {
   t.log.info('=== 1f. the LDAP door, in development ===');
   const devProbe = ldap.createUser('password-policy-ldap-dev', {});
   const kept = crypto.hashSecret('moved-between-instances');
-  t.check(!ldapModify(devProbe.dn,
-                      [['replace', 'userPassword', kept]]).failure &&
+  t.check(!(await ldapModify(devProbe.dn,
+                             [['replace', 'userPassword', kept]])).failure &&
           attributeOf('password-policy-ldap-dev', 'userPassword')[0] === kept,
           'development keeps a pre-hashed value as given, which is how a ' +
           'directory is moved between two instances of this service');
-  t.check(!ldapModify(devProbe.dn,
-                      [['replace', 'userPassword', 'x']]).failure &&
-          /^\$scrypt\$/.test(
+  t.check(!(await ldapModify(devProbe.dn,
+                             [['replace', 'userPassword', 'x']])).failure &&
+          /^\$(scrypt|argon2id)\$/.test(
             attributeOf('password-policy-ldap-dev', 'userPassword')[0]),
           'and a clear value is still HASHED there — storing a password in ' +
           'the clear is a storage defect, not a permissiveness');
@@ -391,11 +445,11 @@ function checkThePolicy(t, who) {
   log.debug("Leaving checkThePolicy().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const who = 'password-policy-probe';
   ldap.createUser(who, {});
-  checkThePolicy(t, who);
+  await checkThePolicy(t, who);
 
   // -----------------------------------------------------------------------
   t.log.info('=== 2. the hash cost: new hashes only, and a floor ===');

@@ -43,9 +43,16 @@
 // 2.1 leaves the refresh token alone — and is NOT reported. A refresh token
 // retired by ROTATION, or refused because its Grant Management grant was
 // merged or replaced, is `superseded`: its successor carries the grant on.
-// An ID Token, a GNAP token (GNAP reports its own) and a token with no person
-// behind it (client credentials: CAEP's subject here names a person) are
-// not reported either.
+// An ID Token and a GNAP token (GNAP reports its own) are not reported
+// either.
+//
+// **AN APPLICATION'S OWN GRANT IS REPORTED UNDER THE APPLICATION (#221 P5).**
+// A client_credentials grant has no person behind it — `admin_stats.js` files
+// its token under the client — and until #221 it was skipped. It is the
+// application's own delegated session with this authorization server, so
+// its revocation (at `/oauth2/revoke`, on `/admin/tokens`) is the same
+// `session-revoked`, with SSF's complex subject naming the APPLICATION
+// (`ssf_subjects.js`, an `opaque` client_id) and the grant as the session.
 //
 // **WHO ENDED IT is the door's own statement**, `how.initiatingEntity`, never
 // inferred from the words of `via`: `user` at `/oauth2/revoke`, a Grant
@@ -94,6 +101,9 @@ interface Pending {
   realmId: string;
   grantId: string;
   username: string;
+  // The client of an application's OWN grant (client_credentials, #221 P5);
+  // '' for a person's.
+  application: string;
   sub: string;
   clientId: string;
   via: string;
@@ -114,7 +124,8 @@ interface OAuthGrantSignalsDeps {
     run(realm: unknown, fn: () => unknown): unknown;
   };
   subjectForName(username: string): string | null | undefined;
-  stats: { setRevocationObserver(fn: unknown): void };
+  stats: { setRevocationObserver(fn: unknown): void;
+           applicationOfToken?(record: unknown): string };
   // Lazy requires, each a loader called at the moment it is needed.
   loadSsf(): Json;
   loadSsfHttp(): Json;
@@ -191,9 +202,12 @@ class OAuthGrantSignals {
                 "grant's refresh token carries the grant on.");
       return false;
     }
-    const username = String(r.username || '');
-    if (!username) {
-      log.debug("Leaving OAuthGrantSignals.observe(). No person behind " +
+    const stats = this.deps.stats;
+    const application = typeof stats.applicationOfToken === 'function'
+      ? String(stats.applicationOfToken(r) || '') : '';
+    const username = application ? '' : String(r.username || '');
+    if (!username && !application) {
+      log.debug("Leaving OAuthGrantSignals.observe(). Nobody behind " +
                 "this grant.");
       return false;
     }
@@ -212,7 +226,9 @@ class OAuthGrantSignals {
     }
     this.pending.set(key, {
       realmId: realmId, grantId: grantId, username: username,
-      sub: String(r.sub || ''), clientId: String(r.client_id || ''),
+      application: application,
+      sub: application ? '' : String(r.sub || ''),
+      clientId: String(r.client_id || application || ''),
       via: String(via || 'unstated'), initiatingEntity: entity,
       replay: String(said.replay || '')
     });
@@ -305,6 +321,17 @@ class OAuthGrantSignals {
     const { log, subjectForName, loadSsfHttp } = this.deps;
     log.debug("Entering OAuthGrantSignals.subjectFor().");
     const transport = loadSsfHttp();
+    if (one.application) {
+      // The application's own grant (#221 P5): `ssf_subjects.js`'s shape,
+      // written out here as GNAP's is above, so this file needs no SSF
+      // module to name it.
+      log.debug("Leaving OAuthGrantSignals.subjectFor(). An application.");
+      return {
+        format: 'complex',
+        application: { format: 'opaque', id: one.application },
+        session: { format: 'opaque', id: 'oauth-grant:' + one.grantId }
+      };
+    }
     log.debug("Leaving OAuthGrantSignals.subjectFor().");
     return {
       format: 'complex',
@@ -318,6 +345,11 @@ class OAuthGrantSignals {
     const { log } = this.deps;
     log.debug("Entering OAuthGrantSignals.reasonUser().");
     const app = one.clientId ? '"' + one.clientId + '"' : 'an application';
+    if (one.application) {
+      log.debug("Leaving OAuthGrantSignals.reasonUser(). An application's.");
+      return 'An access token issued to this application for itself was ' +
+             'revoked.';
+    }
     let said = 'The access you gave ' + app + ' was revoked.';
     if (one.replay) {
       said = 'The access you gave ' + app + ' was ended because its ' +
@@ -368,7 +400,9 @@ class OAuthGrantSignals {
     }
     const subject = this.subjectFor(one);
     const reasonAdmin = 'An OAuth 2.0 grant of "' + one.clientId + '" for ' +
-                        one.username + ' was revoked: ' + one.via + '.';
+                        (one.application ? 'itself (client_credentials)'
+                                         : one.username) +
+                        ' was revoked: ' + one.via + '.';
     const reasonUser = this.reasonUser(one);
     const risk = one.replay && acts.indexOf('risk') >= 0
       ? Promise.resolve(ssf.emitProtocolEvent({

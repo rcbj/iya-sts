@@ -1,0 +1,14 @@
+{
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "佈建客戶端自己對此人的識別碼。原樣儲存，此處沒有任何元件讀取它。"
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "哪些聯盟夥伴的主體可讓此人登入，每項為 { relationship, issuer, subject }——傳入時 issuer 可省略，即該關係的 fedPeer。「未傳送」：不變，因此對此擴充一無所知的佈建客戶端不會因省略它而解除任何人的連結。已傳送，即使為空：取代，而移除的每個連結都會結束該夥伴讓此人登入的工作階段。另一人已帶有的連結會以 409 拒絕。"
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "「唯讀」，依 RFC 7643 section 4.1.2 的要求。成員資格是「群組」項目上的事實，因此透過 Group 資源變更，絕不透過 User 資源。由 ldap_server.js 的 groupsOfUser() 解析，它與 groups 宣告所讀取的是同一個函數——因此權杖與 SCIM 資源對誰屬於哪個群組不可能有不同說法。"
+  }
+}

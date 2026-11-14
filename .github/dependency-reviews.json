@@ -1,0 +1,17 @@
+{
+  "@noble/curves": {
+    "version": "1.4.0",
+    "reviewed": "2026-11-09",
+    "reason": "Kept at 1.4.0. Later 1.x releases change sign()'s nonce, and 2.x is ESM-only and drops the subpaths common/crypto_impl/pqc.js requires (common/crypto_impl/CLAUDE.md). No advisory is open against it."
+  },
+  "@noble/hashes": {
+    "version": "1.4.0",
+    "reviewed": "2026-11-09",
+    "reason": "Pinned to match @noble/curves 1.4.0, which it is reviewed with (common/crypto_impl/CLAUDE.md). No advisory is open against it."
+  },
+  "@noble/post-quantum": {
+    "version": "0.4.1",
+    "reviewed": "2026-11-09",
+    "reason": "common/pq_native.js takes its shape and its seed expansion from 0.4.1 and was checked against its bytes; the current line is ESM-only, so an update needs that comparison redone. No advisory is open against it."
+  }
+}

@@ -14,7 +14,7 @@
 // the full handshake verified is a replicated shared store
 // (`tls.presentedChains`), and a request on a session that resumed before its
 // row arrived waits for it (`awaitResumedChain()`, `tls.resumedChainWaitMs`).
-// `tests/vendored/sts_main_port_pooling.js` is the over-HTTP half, across a
+// `tests/protocol/sts_main_port_pooling.js` is the over-HTTP half, across a
 // real cluster; what is here is what that job cannot choose — WHEN the row
 // arrives:
 //
@@ -169,7 +169,7 @@ async function run(t) {
     // Service-wide defaults every listener inherits since #429; each
     // listener has its own listener<Id>.<name> row.
     'http.keepAliveTimeoutS': [60, 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S'],
-    'tls.sessionTimeoutS': [60, 'STS_TLS_SESSION_TIMEOUT_S'],
+    'tls.sessionTimeoutS': [300, 'STS_TLS_SESSION_TIMEOUT_S'],
     'tls.mainPortSharedTickets': [true, 'STS_TLS_MAIN_PORT_SHARED_TICKETS'],
     'tls.resumedChainWaitMs': [2000, 'STS_TLS_RESUMED_CHAIN_WAIT_MS']
   };

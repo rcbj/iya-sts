@@ -4,12 +4,13 @@
 # File: sts_adapter.py
 #
 # Runs ONE unmodified tlsfuzzer script against one of this service's TLS
-# listeners, adapting two things about the far end that no tlsfuzzer script
-# can be told on its command line. Nothing here is tlsfuzzer's code: it
+# listeners, adapting the far end in ways no tlsfuzzer script can be told
+# on its command line. Nothing here is tlsfuzzer's code: it
 # imports the pinned upstream at run time (tests/tlsfuzzer/build-tlsfuzzer.sh)
 # and wraps three of its methods, then hands control to the script itself.
 #
-#   python3 sts_adapter.py [--client-cert-request] [--ldap] SCRIPT ARGS...
+#   python3 sts_adapter.py [--client-cert-request] [--ldap]
+#       [--tls12-aead] [--server-key rsa|ec] SCRIPT ARGS...
 #
 # --client-cert-request   THE MAIN PORT AND THE DEBUGGER LISTENER ASK EVERY
 #   connection for a client certificate and require none (tls/CLAUDE.md), so
@@ -34,6 +35,35 @@
 #   to fit — which the directory answers with one BindResponse in every mode
 #   (success, or 48 where product mode refuses the bind). Record sizes and
 #   the lengths the length and record-limit scripts compute are unchanged.
+#
+# --server-key rsa|ec   WHICH CERTIFICATE THE LISTENER PRESENTS (#321),
+#   read together with --tls12-aead. rsa is the default, and what is used
+#   when the flag is absent: TLS 1.2 suites are retargeted to ECDHE-RSA
+#   AES-GCM, and where a script sent no signature_algorithms the RSA list
+#   is added. ec retargets those suites to ECDHE-ECDSA AES-GCM and adds the
+#   three NIST ECDSA schemes (ecdsa_secp256r1_sha256,
+#   ecdsa_secp384r1_sha384, ecdsa_secp521r1_sha512) instead. A script's own
+#   signature_algorithms list is never rewritten, unless the plan also asks
+#   for --retarget-sigalgs.
+#
+# --retarget-sigalgs   WITH --server-key ec ONLY (#1303). Many scripts test
+#   something that has nothing to do with the server's key — record padding,
+#   KeyUpdate, a HelloRetryRequest — and still write the RSA schemes into
+#   their hello as boilerplate, so an ECDSA listener has nothing to sign with
+#   and every probe ends in handshake_failure before it tests anything. This
+#   rewrites such a list HASH FOR HASH, entry for entry: each RSA scheme
+#   (PKCS #1 v1.5, rsa_pss_rsae_*, rsa_pss_pss_*) becomes the ECDSA scheme
+#   with the same hash, so rsa_pss_rsae_sha256 is ecdsa_secp256r1_sha256 and
+#   (sha1, rsa) is (sha1, ecdsa). A list keeps its LENGTH — some scripts
+#   count the hello's bytes — and its order; duplicates it creates are left
+#   in. A list that already names an ECDSA scheme is the script catering for
+#   ECDSA on purpose and is left alone. It applies to the signature_algorithms
+#   and signature_algorithms_cert extensions a script builds, to the
+#   valid_sig_algs of an ExpectServerKeyExchange and to the sig_alg of an
+#   ExpectCertificateVerify, which are the same list seen from the server.
+#   The plan asks for it only for scripts whose RSA schemes are boilerplate;
+#   a script that TESTS RSA signatures (test-sig-algs,
+#   test-tls13-rsa-signatures and the rest) never gets it.
 #
 # This file carries no licence of tlsfuzzer's and no copy of any of its code;
 # tlsfuzzer is GPL-2.0 and tlslite-ng LGPL-2.1, fetched and run, never
@@ -72,18 +102,32 @@ def main():
     cert_request = False
     ldap = False
     aead = False
-    while argv and argv[0] in ('--client-cert-request', '--ldap',
-                               '--tls12-aead'):
-        if argv[0] == '--client-cert-request':
-            cert_request = True
-        elif argv[0] == '--ldap':
-            ldap = True
-        else:
-            aead = True
+    sigalgs = False
+    server_key = 'rsa'
+    flags = ('--client-cert-request', '--ldap', '--tls12-aead',
+             '--server-key', '--retarget-sigalgs')
+    while argv and argv[0] in flags:
+        flag = argv[0]
         argv = argv[1:]
+        if flag == '--client-cert-request':
+            cert_request = True
+        elif flag == '--ldap':
+            ldap = True
+        elif flag == '--tls12-aead':
+            aead = True
+        elif flag == '--retarget-sigalgs':
+            sigalgs = True
+        elif not argv or argv[0] not in ('rsa', 'ec'):
+            sys.stderr.write('sts_adapter.py: --server-key needs rsa or ' +
+                             'ec\n')
+            sys.exit(2)
+        else:
+            server_key = argv[0]
+            argv = argv[1:]
     if not argv:
         sys.stderr.write('usage: sts_adapter.py [--client-cert-request] '
-                         '[--ldap] SCRIPT [ARGS...]\n')
+                         '[--ldap] [--tls12-aead] [--server-key rsa|ec] '
+                         '[--retarget-sigalgs] SCRIPT [ARGS...]\n')
         sys.exit(2)
     script = argv[0]
     root = os.path.dirname(os.path.dirname(os.path.abspath(script)))
@@ -92,7 +136,7 @@ def main():
     from tlsfuzzer import runner as fuzz_runner
     from tlsfuzzer import messages as fuzz_messages
     from tlsfuzzer.expect import ExpectCertificateRequest, \
-        ExpectServerHello, ExpectServerKeyExchange
+        ExpectCertificateVerify, ExpectServerHello, ExpectServerKeyExchange
     from tlslite import messagesocket
     from tlsfuzzer.helpers import RSA_SIG_ALL
     from tlslite.constants import CipherSuite, ContentType, ExtensionType, \
@@ -158,8 +202,14 @@ def main():
     messagesocket.MessageSocket.recvMessageBlocking = recv
 
     if aead:
-        swap = aead_substitutes(CipherSuite)
+        swap = aead_substitutes(CipherSuite, server_key)
         ecdhe = set(swap.values())
+        if server_key == 'ec':
+            from tlslite.constants import SignatureScheme
+            injected_sigs = [getattr(SignatureScheme, name)
+                             for name in ecdsa_schemes()]
+        else:
+            injected_sigs = RSA_SIG_ALL
 
         # Suite for suite, never merged: a list keeps its LENGTH, because
         # the fuzzing scripts address a ClientHello's bytes by offset.
@@ -197,7 +247,7 @@ def main():
                 if ExtensionType.signature_algorithms not in self.extensions:
                     added.append((ExtensionType.signature_algorithms,
                                   SignatureAlgorithmsExtension()
-                                  .create(RSA_SIG_ALL)))
+                                  .create(injected_sigs)))
                 if ExtensionType.supported_groups not in self.extensions:
                     added.append((ExtensionType.supported_groups,
                                   SupportedGroupsExtension().create(
@@ -230,6 +280,49 @@ def main():
                                             kwargs['cipher'])
             original_esh(self, *args, **kwargs)
         esh.__init__ = esh_init
+
+    if sigalgs and server_key == 'ec':
+        # At CONSTRUCTION: the scripts build every extension and every
+        # expectation before anything is sent, and a fuzzer that later
+        # rewrites the hello's bytes by offset finds them where they were,
+        # since no entry changed size.
+        # Both extension classes inherit one create(values) from tlslite's
+        # ListExtension, shared with supported_groups and the rest, so the
+        # wrapper is set on each of the two classes and on no other.
+        from tlslite.extensions import SignatureAlgorithmsCertExtension
+
+        def retarget_create(ext_class):
+            original = ext_class.create
+
+            def create(self, values=None, *args, **kwargs):
+                return original(self, ecdsa_for_rsa(values), *args,
+                                **kwargs)
+            ext_class.create = create
+        retarget_create(SignatureAlgorithmsExtension)
+        retarget_create(SignatureAlgorithmsCertExtension)
+
+        original_ske = ExpectServerKeyExchange.__init__
+
+        def ske_init(self, *args, **kwargs):
+            args = list(args)
+            if len(args) > 2:
+                args[2] = ecdsa_for_rsa(args[2])
+            if 'valid_sig_algs' in kwargs:
+                kwargs['valid_sig_algs'] = ecdsa_for_rsa(
+                    kwargs['valid_sig_algs'])
+            original_ske(self, *args, **kwargs)
+        ExpectServerKeyExchange.__init__ = ske_init
+
+        original_cv = ExpectCertificateVerify.__init__
+
+        def cv_init(self, *args, **kwargs):
+            args = list(args)
+            if len(args) > 1 and args[1] is not None:
+                args[1] = ecdsa_for_rsa([args[1]])[0]
+            if kwargs.get('sig_alg') is not None:
+                kwargs['sig_alg'] = ecdsa_for_rsa([kwargs['sig_alg']])[0]
+            original_cv(self, *args, **kwargs)
+        ExpectCertificateVerify.__init__ = cv_init
 
     if cert_request:
         def send_empty_certificate(state, queue):
@@ -297,12 +390,51 @@ def main():
     runpy.run_path(script, run_name='__main__')
 
 
-def aead_substitutes(suite):
+def ecdsa_schemes():
+    """The NIST ECDSA schemes added for an ECDSA listener when a script
+    sent no signature_algorithms (#321). SHA-1, SHA-224 and brainpool
+    are not among them."""
+    return ('ecdsa_secp256r1_sha256',
+            'ecdsa_secp384r1_sha384',
+            'ecdsa_secp521r1_sha512')
+
+
+# Each RSA scheme, as tlslite writes it (hash, signature), and the hash of
+# the ECDSA scheme that replaces it: PKCS #1 v1.5 with MD5 through SHA-512
+# (signature 1), rsa_pss_rsae_sha256/384/512 (8, 4-6) and
+# rsa_pss_pss_sha256/384/512 (8, 9-11). ECDSA is signature 3, and (4, 3),
+# (5, 3) and (6, 3) are ecdsa_secp256r1_sha256, ecdsa_secp384r1_sha384 and
+# ecdsa_secp521r1_sha512 in TLS 1.3's names.
+RSA_TO_ECDSA_HASH = {
+    (1, 1): 1, (2, 1): 2, (3, 1): 3, (4, 1): 4, (5, 1): 5, (6, 1): 6,
+    (8, 4): 4, (8, 5): 5, (8, 6): 6,
+    (8, 9): 4, (8, 10): 5, (8, 11): 6}
+
+
+def ecdsa_for_rsa(algs):
+    """A signature list with each RSA scheme replaced by the ECDSA scheme
+    of the same hash, entry for entry (#1303). None, an empty list and a
+    list that already names an ECDSA scheme come back unchanged."""
+    if not algs:
+        return algs
+    pairs = [tuple(one) for one in algs]
+    if any(len(one) == 2 and one[1] == 3 for one in pairs):
+        return algs
+    return [(RSA_TO_ECDSA_HASH[one], 3) if one in RSA_TO_ECDSA_HASH
+            else orig for one, orig in zip(pairs, algs)]
+
+
+def aead_substitutes(suite, server_key):
     """The TLS 1.2 suites scripts offer by default — CBC or GCM, with RSA,
-    DHE or ECDHE-ECDSA key exchange — each mapped to the ECDHE-RSA AES-GCM
-    suite of the same key size this service offers."""
-    small = suite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-    large = suite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+    DHE or ECDHE key exchange — each mapped to the ECDHE AES-GCM suite of
+    the same key size this service offers. ECDHE-RSA when the listener's
+    certificate is RSA, ECDHE-ECDSA when it is ECDSA (#321)."""
+    if server_key == 'ec':
+        small = suite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        large = suite.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+    else:
+        small = suite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        large = suite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
     swap = {}
     for kex in ('RSA', 'DHE_RSA', 'ECDHE_RSA', 'ECDHE_ECDSA'):
         for bulk, target in (('AES_128_CBC_SHA', small),

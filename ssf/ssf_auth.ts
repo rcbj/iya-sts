@@ -15,7 +15,7 @@
 // receiver discovers how to authenticate rather than guessing, and this
 // module's list and that member are one table.
 //
-// **THREE SCHEMES, NOT SIX, AND THAT IS A DECISION.** SCIM offers all six of
+// **FOUR SCHEMES, NOT SIX, AND THAT IS A DECISION.** SCIM offers all six of
 // RFC 7644's because RFC 7644 names all six and a provisioning client meets
 // them in the wild. SSF names none: `authorization_schemes` is an open list of
 // `spec_urn` values and the only one the specification's own examples use is
@@ -24,7 +24,9 @@
 // test that has not implemented a token flow yet can still reach every
 // endpoint, and its 401 path stays reachable when the credential is wrong. The
 // third, GNAP (2026-09-12), is here for a different reason and attemptGnap()
-// argues it: a GNAP client application owns a stream as ITSELF.
+// argues it: a GNAP client application owns a stream as ITSELF. The fourth,
+// the receiver's TLS client certificate (#1049, part of #520), arrives at the
+// same owner by another road, and attemptClientCertificate() argues it.
 //
 // **IN DEVELOPMENT BASIC IS A TURNSTILE AND NOT A LOCK**, exactly as
 // `scim/CLAUDE.md` says of its own: any username with any password but
@@ -35,9 +37,14 @@
 // **A TOKEN'S SCOPE IS TIED TO ITS CLIENT, IN BOTH MODES (#110, 2026-09-22).**
 // Until then anybody could get a token with either SSF scope from this
 // service's token endpoint with any grant. The token endpoint and GNAP now
-// issue them only to a client whose `oauthAllowedScope` declares them, and
-// `undeclaredRefusal()` asks again on every call (`STS-SSF-0107`), so an
-// allowance removed from a client stops the tokens it already holds.
+// issue a Shared Signals name only to a client whose `oauthAllowedScope`
+// declares some name of that permission class (a read declaration does not
+// authorize a write name, and a write declaration does not authorize a read
+// name), and `undeclaredRefusal()` asks again on every call
+// (`STS-SSF-0107`), of the class the TOKEN carries: a read stays honoured
+// while a read name stays declared, or while `ssf.manage` stays declared as
+// a write name. An allowance removed from a client stops the tokens it
+// already holds.
 //
 // **IN PRODUCT MODE BASIC VERIFIES THE PASSWORD (2026-09-12)**, through
 // `common/credentials.ts` — the one place a presented password is checked, and
@@ -49,12 +56,18 @@
 // off, which is the posture a deployment whose receivers all hold OAuth tokens
 // should take.
 //
-// **TWO SCOPES, AND THE DIFFERENCE IS REAL.** `ssf:read` reads a stream, its
-// status and the poll queue; `ssf:write` creates, changes and deletes one,
-// adds and removes subjects, sets a status and asks for a verification event.
-// A read token is refused for every one of those with a 403 naming the scope,
-// which is the second place in this service where two scopes differ in what
-// they permit.
+// **TWO SCOPES, AND THE DIFFERENCE IS REAL.** A read scope (`ssf.read`, the
+// CAEP Interoperability Profile's name and the default of
+// `ssf.authScopeRead`, or another name that setting is set to) reads a
+// stream, its status and the poll queue. The write scope (`ssf.manage`, the
+// profile's name and the default of `ssf.authScopeWrite`, or another name
+// that setting is set to) creates, changes and deletes a stream, adds and
+// removes subjects, sets a status and asks for a verification event. WRITE
+// INCLUDES READ, whatever the write scope is called. A token that lacks the
+// permission the operation needs is refused with a 403 naming the scopes
+// that would, which is the second place in this service where two scopes
+// differ in what they permit. `common/ssf_scopes.ts` (#334) is the
+// vocabulary and the rule.
 //
 // ---------------------------------------------------------------------------
 // THE METADATA IS OPEN EITHER WAY AND MUST STAY SO.
@@ -106,6 +119,10 @@ import errorCodes = require('../common/error_codes');
 // WHICH CLIENTS MAY HOLD THE SHARED SIGNALS SCOPES (#110), asked again of
 // every token. A library that requires only libraries.
 import scopePolicy = require('../common/scope_policy');
+// The Shared Signals scope names (#334): the two settings, the historical
+// colon names and the profile names, and which of them covers a read.
+// A library requiring only `config` and `helpers`.
+import ssfScopes = require('../common/ssf_scopes');
 
 interface Scheme {
   id: string;
@@ -145,7 +162,6 @@ interface AuthRequest {
 interface SsfAuthDeps {
   helpers: {
     log: { debug(m: string): void };
-    hasScope(scope: string, name: string): boolean;
     capturingResponse(): any;
     capturedDescription(captured: any): string;
     baseUrlOf(req: any): string;
@@ -153,6 +169,7 @@ interface SsfAuthDeps {
   config: { value(key: string): any };
   mode: {
     gatesSharedSignals(): boolean;
+    restrictsUnscopedPeople(): boolean;
     verifiesCredentials(): boolean;
   };
   credentials: {
@@ -162,7 +179,21 @@ interface SsfAuthDeps {
     presentedAccessToken(req: any, res: any, what: string): any;
   };
   errorCodes: { codeOf(value: any): string };
-  scopePolicy: { declares(clientId: unknown, scope: string): boolean };
+  scopePolicy: {
+    declares(clientId: unknown, scope: string): boolean;
+    declaredScopes(clientId: unknown): string[] | null;
+  };
+  // `common/ssf_scopes.ts`, the module. Called from methods, never at load.
+  ssfScopes: {
+    configuredRead(): string;
+    configuredWrite(): string;
+    namesGranting(permission: string): string[];
+    covers(held: unknown, need: string): boolean;
+    declarationCovers(declared: string[] | null, scope: unknown): boolean;
+    stillDeclared(held: unknown, declared: string[] | null,
+                  need: string): boolean;
+    published(): string[];
+  };
   // `ssf/ssf_cluster.ts`, `gnap/gnap_access.ts` and `gnap/gnap_rs.ts`,
   // required when first asked for. See `attemptGnap()`.
   loadSsfCluster(): {
@@ -171,6 +202,19 @@ interface SsfAuthDeps {
   };
   loadGnapAccess(): { accessCovers(access: any, wanted: any[]): boolean };
   loadGnapRs(): { presentation(req: any): any };
+  // `common/tls_client_certificates.js` (the one mapping from a verified
+  // certificate to a directory entry), `common/role_permissions.ts` (the
+  // roles that authorize a Shared Signals scope) and `common/audit.js`,
+  // required when first asked for. See attemptClientCertificate().
+  loadTlsClientCertificates(): {
+    checkSocket(socket: any, options?: any): any;
+    stillHeld(identity: any): boolean;
+  };
+  loadRolePermissions(): {
+    narrowScope(scope: unknown, subject: object, context?: object): {
+      scope: string; removed: string[]; emptied: boolean; why: string };
+  };
+  loadAudit(): { failure(code: string, row: object): unknown };
 }
 
 // The `authorization_schemes` this transmitter publishes. `spec_urn` is the
@@ -180,9 +224,11 @@ const SCHEMES: Scheme[] = [
   { id: 'oauth', spec_urn: 'urn:ietf:rfc:6749',
     name: 'OAuth 2.0 access token',
     what: 'A Bearer or DPoP-bound access token this service issued, ' +
-          'carrying ssf:read or ssf:write. It is the scheme SSF 1.0\'s own ' +
-          'examples use, and the only one of the two that can express a ' +
-          'DIFFERENCE between reading a stream and changing one.' },
+          'carrying the read scope (ssf.read) or the write scope ' +
+          '(ssf.manage), which includes read. It is the scheme SSF 1.0\'s ' +
+          'own examples use, and the ' +
+          'only one of the two that can express a DIFFERENCE between ' +
+          'reading a stream and changing one.' },
   { id: 'basic', spec_urn: 'urn:ietf:rfc:7617',
     name: 'HTTP Basic',
     what: 'In development, any username with any password except the ' +
@@ -199,12 +245,29 @@ const SCHEMES: Scheme[] = [
   { id: 'gnap', spec_urn: 'urn:ietf:rfc:9635',
     name: 'GNAP access token',
     what: 'A key-bound access token this service issued through its GNAP ' +
-          'grant endpoint, presented with the GNAP scheme and a proof by the ' +
-          'key it is bound to, whose access includes "ssf:read" or ' +
-          '"ssf:write" (as a reference string, or as an object of type ' +
-          '"ssf" with those actions). The principal is the GNAP client ' +
-          'application, which is what scopes a stream it owns to the people ' +
-          'who approved a grant to it. Offered while gnap.enabled is on.' }
+          'grant endpoint, presented with the GNAP scheme and a proof by ' +
+          'the key it is bound to, whose access includes the read scope ' +
+          '("ssf.read") or the write scope ("ssf.manage"), which includes ' +
+          'read, ' +
+          'as a reference string or as an object of type "ssf" with those ' +
+          'actions. The principal is the GNAP client application, which is ' +
+          'what scopes a stream it owns to the people who approved a grant ' +
+          'to it. Offered while gnap.enabled is on.' },
+  // THE RECEIVER'S TLS CLIENT CERTIFICATE (#1049). SSF 1.0's own transmitter
+  // configuration example lists `urn:ietf:rfc:8705` beside RFC 6749, which
+  // is the URN a receiver looks for to learn that mutual TLS authenticates
+  // it here. See attemptClientCertificate().
+  { id: 'clientcert', spec_urn: 'urn:ietf:rfc:8705',
+    name: 'TLS client certificate',
+    what: 'The TLS client certificate on the connection, presented with no ' +
+          'Authorization header. Only a certificate this realm issued to an ' +
+          'application (its TLS client or enrollment Issuing CA, ' +
+          'clientAuth, a urn:sts:application: subjectAltName), not revoked ' +
+          'and still held by the application, is taken. The principal is ' +
+          'the application\'s identifier, the owner a GNAP token for it ' +
+          'would be, and it holds the Shared Signals scopes its ' +
+          'oauthAllowedScope declares and its SSF_READ and SSF_MANAGE ' +
+          'roles authorize; write includes read. Off with ssf.authClientCert.' }
 ];
 
 // The one password Basic refuses, so that a wrong-credential path exists at
@@ -213,14 +276,15 @@ const REFUSED_PASSWORD = 'invalid';
 
 /**
  * The gate in front of the Shared Signals stream endpoints: OAuth 2.0 bearer
- * tokens, GNAP and HTTP Basic, with a read and a write scope.
+ * tokens, GNAP, HTTP Basic and the receiver's TLS client certificate, with a
+ * read and a write scope.
  *
  * In development mode Basic accepts any password but `invalid`; in product mode
  * it verifies the password through `common/credentials.ts`.
  */
 class SsfAuth {
   /**
-   * The three schemes this gate knows, each with its id, name, `spec_urn` and a
+   * The four schemes this gate knows, each with its id, name, `spec_urn` and a
    * description, in the order a 401 offers them.
    */
   static readonly SCHEMES = SCHEMES;
@@ -296,9 +360,22 @@ class SsfAuth {
     return config.value('gnap.enabled') !== false;
   }
 
+  // Whether a TLS client certificate is taken (#1049). A setting, mirroring
+  // `ssf.authBasic`; on by default. Read at call time.
+  private clientCertOffered(): boolean {
+    const { helpers: { log }, config } = this.deps;
+    log.debug("Entering SsfAuth.clientCertOffered().");
+    log.debug("Leaving SsfAuth.clientCertOffered().");
+    return config.value('ssf.authClientCert') !== false;
+  }
+
   private offered(row: Scheme): boolean {
     const { helpers: { log } } = this.deps;
     log.debug("Entering SsfAuth.offered().");
+    if (row.id === 'clientcert') {
+      log.debug("Leaving SsfAuth.offered().");
+      return this.clientCertOffered();
+    }
     if (row.id === 'basic') {
       log.debug("Leaving SsfAuth.offered().");
       return this.basicOffered();
@@ -341,28 +418,28 @@ class SsfAuth {
 
   /**
    * Returns the scope that permits reading a stream, its status and the poll
-   * queue (`ssf.authScopeRead`, default `ssf:read`).
+   * queue (`ssf.authScopeRead`, default `ssf.read`).
    *
    * @returns the read scope
    */
   scopeRead(): string {
-    const { helpers: { log }, config } = this.deps;
+    const { helpers: { log }, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.scopeRead().");
-    const value = String(config.value('ssf.authScopeRead') || 'ssf:read');
+    const value = ssfScopes.configuredRead();
     log.debug("Leaving SsfAuth.scopeRead(). " + value);
     return value;
   }
 
   /**
    * Returns the scope that permits changing streams, subjects, status and
-   * asking for verification (`ssf.authScopeWrite`, default `ssf:write`).
+   * asking for verification (`ssf.authScopeWrite`, default `ssf.manage`).
    *
    * @returns the write scope
    */
   scopeWrite(): string {
-    const { helpers: { log }, config } = this.deps;
+    const { helpers: { log }, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.scopeWrite().");
-    const value = String(config.value('ssf.authScopeWrite') || 'ssf:write');
+    const value = ssfScopes.configuredWrite();
     log.debug("Leaving SsfAuth.scopeWrite(). " + value);
     return value;
   }
@@ -388,13 +465,18 @@ class SsfAuth {
    * offered and a request is given (its `as_uri` needs the request's base).
    *
    * @param req - the request, when there is one
+   * @param need - on a 403, the permission the operation needs: the Bearer
+   *   challenge's `scope` then names the scopes that grant it (RFC 6750
+   *   section 3.1), not every published scope (#695)
    * @returns the challenge strings
    */
-  challenges(req?: AuthRequest | null): string[] {
-    const { helpers: { log, baseUrlOf } } = this.deps;
+  challenges(req?: AuthRequest | null, need?: string): string[] {
+    const { helpers: { log, baseUrlOf }, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.challenges().");
+    const named = need && need !== 'none'
+      ? this.acceptedFor(need) : ssfScopes.published();
     const list = ['Bearer realm="' + this.realm() + '", scope="' +
-      this.scopeRead() + ' ' + this.scopeWrite() + '"'];
+      named.join(' ') + '"'];
     if (this.basicOffered()) {
       list.push('Basic realm="' + this.realm() + '", charset="UTF-8"');
     }
@@ -446,9 +528,8 @@ class SsfAuth {
   // challenge are how a client learns to retry.
   // -------------------------------------------------------------------------
   private attemptOAuth(req: AuthRequest, need: string): Decision | null {
-    const { helpers: { log, capturingResponse, capturedDescription,
-                       hasScope },
-            dpop, errorCodes } = this.deps;
+    const { helpers: { log, capturingResponse, capturedDescription },
+            dpop, errorCodes, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.attemptOAuth().");
     const scheme = this.authorizationScheme(req);
     if (scheme !== 'bearer' && scheme !== 'dpop') {
@@ -490,22 +571,25 @@ class SsfAuth {
         { 'WWW-Authenticate': this.challenges() });
     }
     const scopes = String(claims.scope || '');
-    const required = need === 'write' ? this.scopeWrite() : this.scopeRead();
-    if (need !== 'none' && !hasScope(scopes, required)) {
-      log.debug('Leaving SsfAuth.attemptOAuth(). Missing the "' + required +
+    if (need !== 'none' && !ssfScopes.covers(scopes, need)) {
+      const accepted = this.acceptedFor(need);
+      log.debug('Leaving SsfAuth.attemptOAuth(). Missing a "' + need +
                 '" scope.');
       return this.refusal('STS-SSF-0005', 403,
         'This access token carries ' + (scopes
           ? 'the scope(s) "' + scopes + '"' : 'no scope at all') +
-        ' and this operation needs "' + required + '". The two scopes are ' +
-        'not the same permission: "' + this.scopeRead() + '" reads a ' +
-        'stream, its status and its poll queue, and "' + this.scopeWrite() +
-        '" changes what this transmitter delivers and to whom. Ask for the ' +
-        'one you need, as a client whose oauthAllowedScope declares it.',
-        { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+        ' and this operation needs one of "' + accepted.join('", "') +
+        '". Write includes read. A read scope reads a stream, its status ' +
+        'and its poll queue, and a write scope ' +
+        'changes what this transmitter delivers and to whom, including ' +
+        'acknowledging polled events (ack, setErrs). Ask for the ' +
+        'one you need, as a client whose oauthAllowedScope declares that ' +
+        'permission.',
+        { 'WWW-Authenticate': this.challenges(null, need) },
+        'access_denied');
     }
     const withdrawn = this.undeclaredRefusal(String(claims.client_id || ''),
-                                             need);
+                                             need, scopes);
     if (withdrawn) {
       log.debug("Leaving SsfAuth.attemptOAuth(). The client no longer " +
                 "declares the scope.");
@@ -527,33 +611,51 @@ class SsfAuth {
   }
 
   // -------------------------------------------------------------------------
-  // THE CLIENT STILL DECLARES THE SCOPE (#110, 2026-09-22). The token
-  // endpoint and GNAP issue the Shared Signals scopes only to a client whose
-  // `oauthAllowedScope` lists them; asked again on every call, so an
-  // allowance removed from a client stops the tokens it already holds.
-  // `client` is an OAuth token's client_id, or the GNAP application's
-  // identifier. Null when it declares the scope, or when nothing is needed.
+  // THE CLIENT STILL DECLARES THE PERMISSION (#110, 2026-09-22; #334). The
+  // token endpoint and GNAP issue a Shared Signals name only to a client
+  // whose `oauthAllowedScope` grants every permission that name grants;
+  // asked again on every call, of the permission the operation needs, so an
+  // allowance removed from a client stops the tokens it already holds. The
+  // operation is still declared while the client declares some name that
+  // grants it, and write includes read (`common/ssf_scopes.ts`). `client`
+  // is an OAuth token's client_id, or the GNAP application's identifier.
+  // Null when the permission is still declared, or when nothing is needed.
   // -------------------------------------------------------------------------
-  private undeclaredRefusal(client: string, need: string): Decision | null {
-    const { helpers: { log }, scopePolicy } = this.deps;
+  private undeclaredRefusal(client: string, need: string,
+                            held: unknown): Decision | null {
+    const { helpers: { log }, scopePolicy, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.undeclaredRefusal().");
     if (need === 'none') {
       log.debug("Leaving SsfAuth.undeclaredRefusal(). Nothing needed.");
       return null;
     }
-    const required = need === 'write' ? this.scopeWrite() : this.scopeRead();
-    if (scopePolicy.declares(client, required)) {
+    const declared = scopePolicy.declaredScopes(client);
+    if (ssfScopes.stillDeclared(held, declared, need)) {
       log.debug("Leaving SsfAuth.undeclaredRefusal(). Declared.");
       return null;
     }
     log.debug("Leaving SsfAuth.undeclaredRefusal(). Not declared.");
     return this.refusal('STS-SSF-0107', 403,
-      'This token carries "' + required + '", and the client it was issued ' +
-      'to, "' + client + '", does not declare that scope in its ' +
-      'oauthAllowedScope. A Shared Signals scope is honoured only while the ' +
-      'client declares it, so removing it from the application cuts off ' +
+      'This token carries a Shared Signals scope this operation needs, and ' +
+      'the client it was issued to, "' + client + '", no longer declares ' +
+      'that permission in its oauthAllowedScope. A read stays honoured ' +
+      'while a read or a write scope stays declared, because write ' +
+      'includes read; a write stays honoured while a write scope stays ' +
+      'declared. Removing the declaration from the application cuts off ' +
       'tokens already issued.',
-      { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+      { 'WWW-Authenticate': this.challenges(null, need) }, 'access_denied');
+  }
+
+  // The names an operation accepts: every published name that grants the
+  // permission. A read accepts the read names and the write names, because
+  // write includes read; a write accepts the write names.
+  private acceptedFor(need: string): string[] {
+    const { helpers: { log }, ssfScopes } = this.deps;
+    log.debug("Entering SsfAuth.acceptedFor().");
+    const names = ssfScopes.namesGranting(need === 'write' ? 'write'
+                                                           : 'read');
+    log.debug("Leaving SsfAuth.acceptedFor(). " + names.length);
+    return names;
   }
 
   // -------------------------------------------------------------------------
@@ -564,7 +666,7 @@ class SsfAuth {
   // GNAP token is judged against this authorization server's record of it —
   // issued here, live, presented under the scheme RFC 9635 section 7.2
   // requires, and accompanied by a proof by the key it is bound to. It is the
-  // synchronous half of what the demonstration resource server asks; the
+  // synchronous half of `gnap_rs.ts`'s `authenticate()`; the
   // format's own verification is left out because this process holds the
   // record the format would re-derive, and this gate is synchronous across
   // every SSF endpoint.
@@ -592,14 +694,62 @@ class SsfAuth {
     const { helpers: { log }, loadGnapAccess } = this.deps;
     log.debug("Entering SsfAuth.gnapCovers().");
     const accessLib = loadGnapAccess();
-    const wanted = need === 'write' ? this.scopeWrite() : this.scopeRead();
-    log.debug("Leaving SsfAuth.gnapCovers().");
-    return accessLib.accessCovers(access, [wanted]) ||
-           accessLib.accessCovers(access, [{ type: 'ssf', actions: [need] }]);
+    const names = this.acceptedFor(need);
+    let covered = false;
+    for (let i = 0; i < names.length; i++) {
+      if (accessLib.accessCovers(access, [names[i]])) {
+        covered = true;
+        break;
+      }
+    }
+    // An object of type `ssf` with the action, or — for a read — with the
+    // `write` action, because write includes read.
+    const actions = need === 'read' ? ['read', 'write'] : [need];
+    for (let a = 0; !covered && a < actions.length; a++) {
+      covered = accessLib.accessCovers(access,
+        [{ type: 'ssf', actions: [actions[a]] }]);
+    }
+    log.debug("Leaving SsfAuth.gnapCovers(). " + covered);
+    return covered;
+  }
+
+  // The published and configured names a GNAP access actually holds. A
+  // string grant does not cover an object point, and an object grant does
+  // not cover a string (`gnap/gnap_access.ts`), so both shapes are asked.
+  // An object of type `ssf` contributes the configured name of each action
+  // it covers; the write name it contributes for `write` reads as well.
+  private gnapHeldScopes(access: unknown): string[] {
+    const { helpers: { log }, loadGnapAccess, ssfScopes } = this.deps;
+    log.debug("Entering SsfAuth.gnapHeldScopes().");
+    const accessLib = loadGnapAccess();
+    const held: string[] = [];
+    const published = ssfScopes.published();
+    for (let i = 0; i < published.length; i++) {
+      if (accessLib.accessCovers(access, [published[i]])) {
+        held.push(published[i]);
+      }
+    }
+    if (accessLib.accessCovers(access,
+        [{ type: 'ssf', actions: ['read'] }])) {
+      const name = ssfScopes.configuredRead();
+      if (held.indexOf(name) < 0) {
+        held.push(name);
+      }
+    }
+    if (accessLib.accessCovers(access,
+        [{ type: 'ssf', actions: ['write'] }])) {
+      const name = ssfScopes.configuredWrite();
+      if (held.indexOf(name) < 0) {
+        held.push(name);
+      }
+    }
+    log.debug("Leaving SsfAuth.gnapHeldScopes(). " + held.length);
+    return held;
   }
 
   private attemptGnap(req: AuthRequest, need: string): Decision | null {
-    const { helpers: { log }, errorCodes, loadGnapRs } = this.deps;
+    const { helpers: { log }, errorCodes, loadGnapRs, scopePolicy,
+            ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.attemptGnap().");
     if (this.authorizationScheme(req) !== 'gnap') {
       log.debug("Leaving SsfAuth.attemptGnap(). No GNAP credential.");
@@ -688,35 +838,37 @@ class SsfAuth {
       return this.refusal('STS-SSF-0079', 401,
         'This GNAP access token was issued for the resource server "' +
         record.rsIdentifiers.join('", "') + '", and this transmitter is ' +
-        'not it. Ask the grant endpoint for a token whose access names ' +
-        '"' + this.scopeRead() + '" or "' + this.scopeWrite() +
+        'not it. Ask the grant endpoint for a token whose access names "' +
+        ssfScopes.published().join('" or "') +
         '" and no resource server.',
         { 'WWW-Authenticate': this.challenges(req) }, 'invalid_token');
     }
     if (need !== 'none' && !this.gnapCovers(record.access, need)) {
+      const accepted = this.acceptedFor(need);
       log.debug("Leaving SsfAuth.attemptGnap(). Missing SSF access.");
       return this.refusal('STS-SSF-0080', 403,
         'This GNAP access token\'s access does not include "' +
-        (need === 'write' ? this.scopeWrite() : this.scopeRead()) +
-        '". Ask for it as a reference string, or as an object of type ' +
-        '"ssf" with that action; "' + this.scopeRead() + '" reads a stream ' +
-        'and "' + this.scopeWrite() + '" changes what this transmitter ' +
-        'delivers and to whom.',
-        { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
+        accepted.join('" or "') +
+        '". Write includes read. Ask for one as ' +
+        'a reference string, or as an object of type "ssf" with the "' +
+        need + '" action.',
+        { 'WWW-Authenticate': this.challenges(req, need) },
+        'access_denied');
     }
-    const gnapWithdrawn = this.undeclaredRefusal(
-      String(record.instanceId || ''), need);
+    const held = this.gnapHeldScopes(record.access);
+    const instanceId = String(record.instanceId || '');
+    const gnapWithdrawn = this.undeclaredRefusal(instanceId, need, held);
     if (gnapWithdrawn) {
       log.debug("Leaving SsfAuth.attemptGnap(). The client no longer " +
                 "declares the scope.");
       return gnapWithdrawn;
     }
-    const granted = [this.scopeRead(), this.scopeWrite()]
-      .filter((scope, i) => {
-        return this.gnapCovers(record.access, i === 0 ? 'read' : 'write') &&
-          this.deps.scopePolicy.declares(String(record.instanceId || ''),
-                                         scope);
-      });
+    const declared = scopePolicy.declaredScopes(instanceId);
+    // The names the client could be issued today: every permission each
+    // grants is still declared.
+    const granted = held.filter(function (name) {
+      return ssfScopes.declarationCovers(declared, name);
+    });
     log.debug("Leaving SsfAuth.attemptGnap(). Accepted " +
               record.instanceId + '.');
     return { ok: true, status: 200, scheme: 'gnap',
@@ -758,8 +910,9 @@ class SsfAuth {
       log.debug("Leaving SsfAuth.attemptBasic(). Basic is not offered.");
       return this.refusal('STS-SSF-0006', 401,
         'HTTP Basic is not offered on these endpoints (ssf.authBasic is ' +
-        'off). Present an OAuth 2.0 access token carrying "' +
-        this.scopeRead() + '" or "' + this.scopeWrite() + '"; the ' +
+        'off). Present an OAuth 2.0 access token carrying the read scope ' +
+        '(ssf.read) or the write scope (ssf.manage), which includes read; ' +
+        'the ' +
         'WWW-Authenticate header says what to send.',
         { 'WWW-Authenticate': this.challenges() });
     }
@@ -780,16 +933,29 @@ class SsfAuth {
     const password = cut < 0 ? '' : decoded.slice(cut + 1);
     if (!user) {
       log.debug("Leaving SsfAuth.attemptBasic(). No username.");
+      // Per mode (#543 round 2): "accepts any username with any password"
+      // was the answer in product too, where the password is verified.
       return this.refusal('STS-SSF-0007', 401,
         'The Basic credential did not decode to "user:password". It is ' +
-        'base64 of those two joined by a colon, and this service accepts ' +
-        'any username with any password except "' + REFUSED_PASSWORD + '".',
+        'base64 of those two joined by a colon, and ' +
+        (mode.verifiesCredentials()
+          ? 'the password is verified against the person\'s directory ' +
+            'entry.'
+          : 'this realm, in development mode, accepts any username with ' +
+            'any password except "' + REFUSED_PASSWORD + '".'),
         { 'WWW-Authenticate': this.challenges() });
     }
     // `door: 'ssf'` (#101): a password-only door — see credentials.ts.
+    const websecurity = require('../common/websecurity');
+    if (websecurity.doorBlocked('ssf-basic', req, user)) {
+      log.debug("Leaving SsfAuth.attemptBasic(). Too many failures.");
+      return this.refusal('STS-SSF-0156', 401, 'Too many failed attempts. Wait and ' +
+        'try again.', { 'WWW-Authenticate': this.challenges() });
+    }
     const checked = credentials.verify(user, password,
                                        { via: 'SSF HTTP Basic', door: 'ssf' });
     if (!checked.ok) {
+      websecurity.doorFailed('ssf-basic', req, user);
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
       return this.refusal(checked.reason === 'reserved-refusal'
         ? 'STS-SSF-0008' : 'STS-SSF-0009', 401,
@@ -806,6 +972,21 @@ class SsfAuth {
           'directory entry, and a person with none cannot authenticate at ' +
           'all.',
         { 'WWW-Authenticate': this.challenges() });
+    }
+    websecurity.doorSucceeded('ssf-basic', req, user);
+    // A PASSWORD CARRIES NO SCOPE (#1473, ASVS 5.0.0 8.2.1): both scopes are
+    // granted below, so in product the person must hold Admin Write.
+    if (mode.restrictsUnscopedPeople()) {
+      const held = (require('../admin-ui/admin_rbac').rolesOf(user) || {}).groups;
+      const writes = Array.isArray(held) && held.some(function (one: any) {
+        return one.role === 'write';
+      });
+      if (!writes) {
+        log.debug("Leaving SsfAuth.attemptBasic(). No console role.");
+        return this.refusal('STS-SSF-0157', 403, 'This credential carries no scope, ' +
+          'and the person it names does not hold Admin Write. Use an OAuth ' +
+          'access token.', {});
+      }
     }
     log.debug("Leaving SsfAuth.attemptBasic(). Accepted " + user + '.');
     return { ok: true, status: 200, scheme: 'basic', principal: user,
@@ -824,6 +1005,233 @@ class SsfAuth {
   }
 
   // -------------------------------------------------------------------------
+  // THE TLS CLIENT CERTIFICATE (#1049, part of #520, 2026-10-27).
+  //
+  // rcbj's decision on #520: stream management and the poll endpoint accept
+  // a receiver authenticated by the TLS client certificate on its
+  // connection, beside its bearer token, resolved to the receiver's
+  // APPLICATION by the identity gate. A stream is its owner's either way, so
+  // a certificate reaches only that application's streams.
+  //
+  // **THE ONE MAPPING.** `common/tls_client_certificates.js`'s
+  // `checkSocket()` — `identityOf()` under this request's ambient realm — is
+  // what says a verified certificate is somebody, and `stillHeld()` whether
+  // the entry it names still lists it; RFC 8705's implicit mapping
+  // (`oauth-oidc/client_auth.js`) and GNAP's PKI trust model ask the same
+  // two. Nothing here reads a subject DN or a CN. So, from that gate:
+  //
+  //   * a chain through no authority this process holds (an anchor somebody
+  //     installed at /admin-api/tls/trust) is, since #1061 (rcbj
+  //     2026-10-27), the ONE entry of this realm storing it, byte for byte,
+  //     in `userCertificate` — an application's entry is that application,
+  //     held to everything below like one this realm issued; stored on no
+  //     entry it is refused STS-SSF-0151, and on more than one STS-SSF-0152.
+  //     (Until then it named nobody here and was not this credential.)
+  //   * a certificate this service issued that the gate refuses (not from a
+  //     realm's TLS client or enrollment Issuing CA, no clientAuth, not
+  //     exactly one urn:sts: name, ANOTHER REALM'S authority — the realm
+  //     boundary), or one issued to a PERSON, is refused STS-SSF-0147: a
+  //     receiver is an application, and a person's own streams are reached
+  //     with a token issued for them;
+  //   * one the application's record no longer lists is STS-SSF-0148;
+  //   * one refused on revocation (`req.certificateRevocation`, which
+  //     `common/app.js` computed under `pki.revocationCheck` before any
+  //     route) is STS-SSF-0150, with the certificate's own code audited.
+  //
+  // A refusal is answered only on an endpoint that needs a permission: the
+  // open description (`need` none) never refuses anybody for what their
+  // browser presented. It is answered in BOTH modes, because what was
+  // presented is a wrong credential, as Basic's reserved password is, and a
+  // receiver under test needs that path; development's turnstile is for a
+  // request that presents nothing.
+  //
+  // **ONLY WITH NO AUTHORIZATION HEADER**, SCIM's rule: a header is the
+  // caller choosing its credential, and a certificate-bound OAuth token
+  // already reaches its binding through `attemptOAuth()`.
+  //
+  // **THE PRINCIPAL IS THE APPLICATION'S IDENTIFIER**, which is what a GNAP
+  // token for it owns a stream as, what `ssfAllowedEvents`, `ssfReceiverId`
+  // and the per-receiver settings are found by (`applications.js`'s
+  // `findSsfOwner()`), and what a client_credentials token owns as wherever
+  // the application's client_id is its identifier — the usual registration.
+  //
+  // **ITS SCOPES ARE WHAT A TOKEN WOULD BE ISSUED, ASKED ON EVERY CALL.**
+  // There is no issuance step to ask #110's and #303's questions at, so they
+  // are asked here: the Shared Signals names the application's
+  // `oauthAllowedScope` declares, LITERALLY (a write declaration's implied
+  // read is not asked for, so that an application holding only SSF_MANAGE
+  // is not audited STS-ADMIN-0821 on every poll), narrowed by
+  // `role_permissions.ts`'s `narrowScope()` — the issuance policy, with its
+  // SSF_READ and SSF_MANAGE membership — exactly as a client_credentials
+  // token request. Then `ssf_scopes.ts`'s one rule: write includes read. A
+  // permission nothing authorizes is STS-SSF-0149, a 403 naming the two
+  // halves. A role or a declaration taken away stops the certificate at its
+  // next call, which is what #110 asks of a token.
+  // -------------------------------------------------------------------------
+  private attemptClientCertificate(req: AuthRequest,
+                                   need: string): Decision | null {
+    const { helpers: { log }, errorCodes, scopePolicy, ssfScopes,
+            loadTlsClientCertificates, loadRolePermissions,
+            loadAudit } = this.deps;
+    log.debug("Entering SsfAuth.attemptClientCertificate().");
+    if (this.authorizationScheme(req)) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). An " +
+                "Authorization header was sent.");
+      return null;
+    }
+    if (!this.clientCertOffered()) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Not offered.");
+      return null;
+    }
+    const socket = req.socket || req.connection;
+    if (!socket || typeof socket.getPeerCertificate !== 'function' ||
+        socket.authorized !== true) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). No verified " +
+                "certificate on this connection.");
+      return null;
+    }
+    const decides = need !== 'none';
+    const revocation = req.certificateRevocation || null;
+    if (revocation && revocation.refused) {
+      const code = errorCodes.codeOf(revocation) || 'STS-PKI-0118';
+      try {
+        loadAudit().failure(code, {
+          protocol: 'SSF', channel: 'http',
+          target: req.originalUrl || req.url,
+          summary: 'a verified client certificate was not accepted as a ' +
+                   'Shared Signals receiver credential: ' + revocation.why,
+          outcome: 'refused'
+        });
+      } catch (e) {
+        // No audit log in this process (a test driving the gate alone). The
+        // refusal below still carries its code.
+        log.debug("Caught in SsfAuth.attemptClientCertificate(): " +
+                  ((e && e.message) || e));
+      }
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Refused on " +
+                "revocation.");
+      return decides ? this.refusal('STS-SSF-0150', 401,
+        'The TLS client certificate on this connection was refused on ' +
+        'revocation (' + String(revocation.why || 'revoked') + '), so it ' +
+        'authenticates no receiver. Present a certificate this realm ' +
+        'issued to your application and has not revoked, or an access ' +
+        'token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    let gate: any = null;
+    try {
+      gate = loadTlsClientCertificates().checkSocket(socket,
+                                                     { stored: true });
+    } catch (e) {
+      // No certificate authority in this process, so nothing here was
+      // issued by one and nothing names an application.
+      log.debug("Caught in SsfAuth.attemptClientCertificate(): " +
+                ((e && e.message) || e));
+      gate = null;
+    }
+    const identity = (gate && gate.identity) || {};
+    if (gate && !gate.ok && (gate.error === 'NOT_STORED' ||
+                             gate.error === 'STORED_TWICE')) {
+      const twice = gate.error === 'STORED_TWICE';
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). An outside " +
+                "certificate, not stored on one entry.");
+      return decides ? this.refusal(twice ? 'STS-SSF-0152' : 'STS-SSF-0151',
+        401, 'The TLS client certificate on this connection is from an ' +
+        'outside certificate authority and ' + (twice
+          ? 'is stored on more than one entry here, so it names no ' +
+            'receiver. Store it on the application\'s entry alone.'
+          : 'is not stored on any entry here. An outside certificate ' +
+            'authenticates a receiver only when it is stored, byte for ' +
+            'byte, in userCertificate on that application\'s entry; a ' +
+            'renewed certificate is stored again.') +
+        ' Or present an access token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    if (!gate || (gate.ok && !identity.issuedHere && !identity.accepted)) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Not a " +
+                "certificate this service issued.");
+      return null;
+    }
+    if (!gate.ok || !identity.accepted || identity.kind !== 'application') {
+      const why = !gate.ok
+        ? String(gate.why || identity.why || 'it is not an identity here')
+        : 'it was issued to the ' + String(identity.kind || 'holder') +
+          ' "' + String(identity.username || '') + '", and a receiver ' +
+          'authenticated by its certificate is an application';
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Not an " +
+                "application of this realm: " + why);
+      return decides ? this.refusal('STS-SSF-0147', 401,
+        'The TLS client certificate on this connection does not authenticate ' +
+        'a Shared Signals receiver here: ' + why + '. A receiver presents a ' +
+        'TLS client certificate this realm issued to its application, or an ' +
+        'access token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    const identifier = String(identity.username || '');
+    let held = false;
+    try {
+      held = loadTlsClientCertificates().stillHeld(identity);
+    } catch (e) {
+      log.debug("Caught in SsfAuth.attemptClientCertificate(): " +
+                ((e && e.message) || e));
+      held = false;
+    }
+    if (!held) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). No longer " +
+                "held.");
+      return decides ? this.refusal('STS-SSF-0148', 401,
+        'The TLS client certificate on this connection was issued to the ' +
+        'application "' + identifier + '" (serial ' +
+        String(identity.serialHex || '') + '), and its record no longer ' +
+        'lists it — it was taken off or replaced. A certificate the ' +
+        'application does not hold is not its credential.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    let scopes = '';
+    if (decides) {
+      const published = ssfScopes.published();
+      const declared = (scopePolicy.declaredScopes(identifier) || [])
+        .filter(function (one) {
+          return published.indexOf(one) >= 0;
+        });
+      if (declared.length) {
+        scopes = loadRolePermissions().narrowScope(declared.join(' '),
+          { kind: 'application', name: identifier, authenticated: true },
+          { clientId: identifier, grant: 'tls_client_certificate',
+            stage: 'ssf' }).scope;
+      }
+      if (!ssfScopes.covers(scopes, need)) {
+        const accepted = this.acceptedFor(need);
+        log.debug("Leaving SsfAuth.attemptClientCertificate(). The " +
+                  "application holds no \"" + need + "\" permission.");
+        return this.refusal('STS-SSF-0149', 403,
+          'The TLS client certificate authenticates the application "' +
+          identifier + '", which ' + (declared.length
+            ? 'declares ' + declared.join(', ') + ' and is authorized ' +
+              (scopes ? 'only ' + scopes : 'none of them') + ' by its roles'
+            : 'declares no Shared Signals scope in its oauthAllowedScope') +
+          ', and this operation needs one of "' + accepted.join('", "') +
+          '". Write includes read. A certificate holds what a token for ' +
+          'the application would be issued: the scope declared on the ' +
+          'application, and the application a member of SSF_READ or ' +
+          'SSF_MANAGE.',
+          { 'WWW-Authenticate': this.challenges(req, need) },
+          'access_denied');
+      }
+    }
+    log.debug("Leaving SsfAuth.attemptClientCertificate(). Accepted " +
+              identifier + '.');
+    return { ok: true, status: 200, scheme: 'clientcert',
+      principal: identifier, scopes: scopes, err: '', description: '',
+      headers: {},
+      owner: { kind: 'application', name: identifier },
+      note: 'TLS client certificate (' + (identity.stored === true
+        ? 'SHA-256 ' + String(identity.fingerprint || '')
+        : 'serial ' + String(identity.serialHex || '')) + ', ' +
+            String(identity.why || 'issued by this realm') + ')' };
+  }
+
+  // -------------------------------------------------------------------------
   // THE ONE CALL EVERY PROTECTED ENDPOINT MAKES.
   //
   //   need   'read', 'write' or 'none'
@@ -837,7 +1245,8 @@ class SsfAuth {
    * Authenticates a request to a protected endpoint and decides whether it
    * holds the scope the operation needs.
    *
-   * It tries OAuth, then GNAP, then Basic. It sends nothing itself: the
+   * It tries OAuth, then GNAP, then Basic, then — with no Authorization
+   * header — the TLS client certificate. It sends nothing itself: the
    * decision carries `ok`, `status`, `err`, `description`, `headers` (the
    * challenges on a 401), `principal`, `scheme`, `scopes` and, on a refusal,
    * the error code, and the route writes the body.
@@ -856,6 +1265,9 @@ class SsfAuth {
     }
     if (!decision) {
       decision = this.attemptBasic(req);
+    }
+    if (!decision) {
+      decision = this.attemptClientCertificate(req, wanted);
     }
     if (decision) {
       log.debug("Leaving SsfAuth.authenticate(). A credential was " +
@@ -882,17 +1294,20 @@ class SsfAuth {
       'These endpoints decide what this transmitter delivers and to whom, ' +
       'so they require a credential. ' + (mode.verifiesCredentials()
         ? 'Send an access token from this service\'s own token endpoint ' +
-          'with the "' + this.scopeRead() + '" or "' + this.scopeWrite() +
-          '" scope' +
+          'with the read scope (ssf.read) or the write scope ' +
+          '(ssf.manage), which includes read' +
           (this.basicOffered() ? ', or a directory person\'s username and ' +
-           'password over Basic' : '') + '.'
+           'password over Basic' : '') +
+          (this.clientCertOffered() ? ', or a TLS client certificate this ' +
+           'realm issued to your application' : '') + '.'
         : 'Any scheme in the WWW-Authenticate headers will do and each is ' +
           'permissive: an access token from this service\'s own token ' +
-          'endpoint with the "' + this.scopeRead() + '" or "' +
-          this.scopeWrite() +
-          '" scope' + (this.basicOffered() ? ', or any username with any ' +
-          'password but "' + REFUSED_PASSWORD + '" over Basic' : '') +
-          '.') +
+          'endpoint with the read scope (ssf.read) or the write scope ' +
+          '(ssf.manage), which includes read' +
+          (this.basicOffered() ? ', or any username with any password but ' +
+          '"' + REFUSED_PASSWORD + '" over Basic' : '') +
+          (this.clientCertOffered() ? ', or a TLS client certificate this ' +
+           'realm issued to your application' : '') + '.') +
       ' The transmitter configuration at /.well-known/ssf-configuration ' +
       'lists the schemes and is readable without a credential for exactly ' +
       'that reason.',
@@ -928,12 +1343,15 @@ class SsfAuth {
    * @returns the description
    */
   describe(): Record<string, any> {
-    const { helpers: { log }, mode } = this.deps;
+    const { helpers: { log }, mode, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.describe().");
     const out = {
       required: this.authRequired(),
       realm: this.realm(),
-      scopes: { read: this.scopeRead(), write: this.scopeWrite() },
+      scopes: { read: this.scopeRead(), write: this.scopeWrite(),
+        readAlso: ssfScopes.namesGranting('read'),
+        writeAlso: ssfScopes.namesGranting('write'),
+        writeIncludesRead: true },
       refusedPassword: REFUSED_PASSWORD,
       metadataIsOpen: true,
       passwordVerified: mode.verifiesCredentials(),
@@ -978,6 +1396,7 @@ class SsfAuth {
       dpop: dpop,
       errorCodes: errorCodes,
       scopePolicy: scopePolicy,
+      ssfScopes: ssfScopes,
       loadSsfCluster: function () {
         return require('./ssf_cluster');
       },
@@ -986,6 +1405,15 @@ class SsfAuth {
       },
       loadGnapRs: function () {
         return require('../gnap/gnap_rs');
+      },
+      loadTlsClientCertificates: function () {
+        return require('../common/tls_client_certificates');
+      },
+      loadRolePermissions: function () {
+        return require('../common/role_permissions');
+      },
+      loadAudit: function () {
+        return require('../common/audit');
       }
     };
   }

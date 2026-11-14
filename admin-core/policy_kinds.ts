@@ -35,6 +35,14 @@
 import helpers = require('../common/helpers');
 import passwordPolicy = require('../common/password_policy');
 import authnPolicy = require('../common/authn_policy');
+import serviceAccountPolicy = require('../common/service_account_policy');
+import passkeyPolicy = require('../common/passkey_policy');
+import localePolicy = require('../common/locale_policy');
+import attributePolicy = require('../common/attribute_policy');
+import postLoginPolicy = require('../common/post_login_policy');
+// The page's sentences, in the reader's language (#543): the templates the
+// messages below are filled with, and the namespace `prose()` extracts.
+import serverProse = require('../common/server_prose');
 
 const { log } = helpers;
 
@@ -49,10 +57,53 @@ interface PolicyModule {
   list(): Record<string, any>[];
   save(name: unknown, body?: Record<string, any> | null):
     { ok: boolean; errors?: string[]; profile?: Record<string, any> };
+  // A promise where the kind must ask who names a named profile before it
+  // removes it (#1241: the people naming an attribute profile, a holder
+  // question asked asynchronously).
   reset(name: unknown):
     { ok: boolean; errors?: string[]; removed?: boolean;
-      profile?: Record<string, any> };
+      profile?: Record<string, any> } |
+    Promise<{ ok: boolean; errors?: string[]; removed?: boolean;
+              profile?: Record<string, any> }>;
   describe(profile?: Record<string, any> | null): string[];
+  // A kind whose profiles may be NAMED and selected (#535, the passkey
+  // policy): the selectors each named profile carries.
+  SELECTORS?: ReadonlyArray<Record<string, any>>;
+  // The attributes by which an application, a group and/or a person NAME a
+  // profile of this kind (#1235, rule 3cx), and who names one — for the
+  // Named policies sub-tab and a delete's refusal.
+  REFERENCES?: Readonly<{ application?: string; group?: string;
+                          person?: string }>;
+  namedBy?(name: string): { applications: string[]; groups?: string[];
+                            people: string[] };
+  // The same with the PEOPLE (#1241), a holder question asked
+  // asynchronously; `policiesViewAsync()` fills them in.
+  namedByAsync?(name: string): Promise<{ applications: string[];
+                                         groups?: string[];
+                                         people: string[];
+                                         complete?: boolean }>;
+  // Population registration algorithms and mode (#940), on the passkey
+  // policy. A kind without them leaves those members off the policies read.
+  registrationAlgorithms?(profile?: Record<string, any> | null): string[];
+  registrationMode?(profile?: Record<string, any> | null): string;
+  // A kind with acts of its own beside save and reset (#396, the attribute
+  // policy's custom attribute register): each named in the kind's
+  // `extraActions`, answered here.
+  act?(action: string, body: Record<string, any>):
+    { ok: boolean; errors?: string[]; message?: string;
+      [member: string]: any };
+}
+
+// An act a kind has beside save and reset (#396): its name, the module's
+// audit action, what it does (for the API's description) and its body.
+interface ExtraAction {
+  action: string;
+  // The model's (#1579): `models/api/management.tsp` declares the operation.
+  operationId: keyof IyaApi.Management.Operations;
+  summary: string;
+  description: string;
+  auditAction: string;
+  requestBody: Record<string, any>;
 }
 
 interface PolicyKind {
@@ -69,6 +120,12 @@ interface PolicyKind {
   // A field whose value is a secret is never drawn; none are today, and the
   // flag is here so a kind that has one says so rather than relying on it.
   secretFields?: string[];
+  // Acts beside save and reset (#396), answered by the module's `act()`.
+  extraActions?: ExtraAction[];
+  // Drawn as Default / Named policies / New policy sub-tabs (#609; a
+  // declaration since #1235, so a kind adopting named policies says so in
+  // its own row).
+  tabbed?: boolean;
 }
 
 const KINDS: PolicyKind[] = [];
@@ -81,7 +138,166 @@ const KINDS: PolicyKind[] = [];
  * rules, implementing `password_policy.ts`'s interface; a future policy costs a
  * module and a row here. A library that registers no route.
  */
+// ---------------------------------------------------------------------------
+// WHAT A SAVE OR A RESET ANSWERS, as templates (#543 phase 2). One copy:
+// `admin-core/admin_actions.ts` fills them with `ServerProse.fill()`, and
+// `common/server_prose.ts` matches the answer's `message` against them to
+// refill it in the reader's language — the noun and the kind's sentences
+// translated inside it, the profile's name and DN carried over.
+// ---------------------------------------------------------------------------
+const MESSAGES: Readonly<Record<string, string>> = Object.freeze({
+  saved: 'The {{noun}} "{{name}}" is saved at {{dn}}. It applies to ' +
+    '{{appliesTo}}.',
+  savedNotEnforced: 'The {{noun}} "{{name}}" is saved at {{dn}}. It ' +
+    'applies to {{appliesTo}} — and it is not enforced here until this ' +
+    'realm is in product mode.',
+  removed: 'The stored profile is gone, and this realm follows ' +
+    '{{fallsBackTo}}: {{rules}}.',
+  nothingStored: 'Nothing was stored in this realm, so it already ' +
+    'followed {{fallsBackTo}}.'
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE PAGE SAYS BESIDES EACH KIND'S OWN TABLES (#543 phase 2): the
+// password policy's enforcement, generator and doors, and why the email
+// mechanisms cannot be on. Here, beside the kinds, rather than inline in
+// `admin-core/admin_views.ts`, so the policies namespace can be extracted
+// without loading the console's views; that module reads them from here.
+// ---------------------------------------------------------------------------
+const VIEW_PROSE = Object.freeze({
+  enforced: 'ENFORCED. This realm is in product mode, so every password ' +
+    'set here — at every door below — must meet the profile, and a new ' +
+    'password may not repeat a remembered one.',
+  notEnforced: 'NOT ENFORCED. This realm is in development mode, where no ' +
+    'password is checked at any door, so a rule about one would be a rule ' +
+    'about a credential nothing reads. The history is still RECORDED, so a ' +
+    'realm switched to product mode starts with one. A GENERATED password ' +
+    'meets the profile in both modes.',
+  generatorSource: 'node\'s crypto.randomInt, rejection-sampled so that no ' +
+    'character of the pool is likelier than another',
+  generatorPools: Object.freeze(['lowercase letters', 'uppercase letters',
+                                 'digits', 'symbols']),
+  generatorDrawsUntil: 'the password satisfies the profile, so every ' +
+    'generated password is uniform over the passwords the profile accepts',
+  doors: Object.freeze([
+    Object.freeze({ door: '/admin/users/new and /admin/users (Set password)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: 'POST /admin-api/users/create and ' +
+                          '/admin-api/users/set-password',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/password',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/activate (the first password a person ' +
+                          'sets)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: 'an LDAP add or modify of userPassword on 389 or ' +
+                          '636',
+                    via: 'credentials.preparePassword()' }),
+    // #1236: the two doors the list had left out — the forced change at
+    // sign-in, the one door holding an application (whose
+    // `appPasswordPolicy` ranks too), and a reset link. Appended, so the
+    // catalogs' indexed keys above keep their translations.
+    Object.freeze({ door: '/authn/password-change (the change a sign-in ' +
+                          'requires; the application signed in to may name ' +
+                          'the policy)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/reset-password (a reset link)',
+                    via: 'credentials.setPassword()' })
+  ]),
+  notDoors: 'SCIM carries no password (this service advertises ' +
+    'changePassword: false), and a password is never set by signing in. ' +
+    'Passwords stored BEFORE a rule changed are not re-checked: nothing ' +
+    'here holds a password in a form that could be, and the rule applies ' +
+    'from the next change.',
+  mailWhy: 'This realm cannot send mail, so the two email mechanisms cannot ' +
+    'be turned on and are never offered. Configure a transport on Server ' +
+    'configuration > Mail.'
+});
+
+// The routes whose answers carry the policies namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/policies', '/admin-api/policies/:action'];
+
 class PolicyKinds {
+  /**
+   * What a save or a reset answers, as templates (#543).
+   */
+  static readonly MESSAGES = MESSAGES;
+  /**
+   * What the page says besides each kind's own tables (#543).
+   */
+  static readonly VIEW_PROSE = VIEW_PROSE;
+  /**
+   * The routes whose answers carry the policies namespace's prose.
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the policies namespace (#543 phase 2): every kind's label and
+   * sentences and the noun a message names it by, each kind module's
+   * field table, schema, mechanism, door and selector prose and its
+   * `describe()` templates, and the page's own sentences and messages.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    log.debug("Entering PolicyKinds.prose().");
+    const harvest = serverProse.harvest;
+    // `door` is prose only on the page's list; a field's `door` is an id.
+    const MEMBERS = ['label', 'what', 'unit', 'governs', 'appliesTo',
+                     'fallsBackTo'];
+    const out: Record<string, string> = {};
+    KINDS.forEach(function (kind) {
+      const mod = kind.module as unknown as Record<string, unknown>;
+      Object.assign(out, harvest('kinds.' + kind.id, {
+        label: kind.label, governs: kind.governs, appliesTo: kind.appliesTo,
+        fallsBackTo: kind.fallsBackTo }, MEMBERS));
+      out['kinds.' + kind.id + '.param.noun'] = PolicyKinds.nounOf(kind);
+      ['FIELDS', 'SCHEMA', 'MECHANISMS', 'DOORS', 'SELECTORS', 'SYNTAXES']
+        .forEach(function (name) {
+          if (mod[name]) {
+            Object.assign(out, harvest(kind.id + '.' + name, mod[name],
+                                       MEMBERS));
+          }
+        });
+      if (typeof mod.NIST_EMAIL_WARNING === 'string') {
+        out[kind.id + '.nistWarning'] = mod.NIST_EMAIL_WARNING;
+      }
+      const sentences = (mod.SENTENCES || {}) as Record<string, string>;
+      Object.keys(sentences).forEach(function (key) {
+        out[kind.id + '.sentences.' + key] = sentences[key];
+      });
+    });
+    Object.keys(MESSAGES).forEach(function (key) {
+      out['messages.' + key] = MESSAGES[key];
+    });
+    Object.assign(out, harvest('page', {
+      enforced: VIEW_PROSE.enforced, notEnforced: VIEW_PROSE.notEnforced,
+      source: VIEW_PROSE.generatorSource,
+      drawsUntil: VIEW_PROSE.generatorDrawsUntil,
+      notDoors: VIEW_PROSE.notDoors, mailWhy: VIEW_PROSE.mailWhy,
+      doors: VIEW_PROSE.doors },
+      MEMBERS.concat(['door', 'enforced', 'notEnforced', 'source',
+                      'drawsUntil', 'notDoors', 'mailWhy'])));
+    VIEW_PROSE.generatorPools.forEach(function (pool, i) {
+      out['page.pools.' + i] = pool;
+    });
+    log.debug("Leaving PolicyKinds.prose(). " + Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * The noun a message names a kind's profile by: its label, lower-cased,
+   * and "profile".
+   *
+   * @param kind - the kind
+   * @returns the noun
+   */
+  static nounOf(kind: PolicyKind): string {
+    log.debug("Entering PolicyKinds.nounOf().");
+    log.debug("Leaving PolicyKinds.nounOf().");
+    return kind.label.toLowerCase() + ' profile';
+  }
+
   /**
    * Adds a kind to the list; a second registration of the same id is ignored.
    *
@@ -167,9 +383,11 @@ class PolicyKinds {
     return 'reset-' + kind.id + '-policy';
   }
 
-  // Every action every kind answers, in kind order: save then reset.
+  // Every action every kind answers, in kind order: save then reset, then
+  // its own (#396).
   /**
-   * Returns every action every kind answers, in kind order: save then reset.
+   * Returns every action every kind answers, in kind order: save then reset,
+   * then any the kind has of its own.
    *
    * @returns the actions
    */
@@ -178,6 +396,9 @@ class PolicyKinds {
     const out: string[] = [];
     KINDS.forEach(function (kind) {
       out.push(PolicyKinds.saveAction(kind), PolicyKinds.resetAction(kind));
+      (kind.extraActions || []).forEach(function (extra) {
+        out.push(extra.action);
+      });
     });
     log.debug("Leaving PolicyKinds.actions(). " + out.length + ".");
     return out;
@@ -192,7 +413,8 @@ class PolicyKinds {
    * @returns the kind and verb, or null
    */
   static forAction(action: string):
-      { kind: PolicyKind; verb: 'save' | 'reset' } | null {
+      { kind: PolicyKind; verb: 'save' | 'reset' | 'act';
+        extra?: ExtraAction } | null {
     log.debug("Entering PolicyKinds.forAction(). " + action);
     for (const kind of KINDS) {
       if (action === PolicyKinds.saveAction(kind)) {
@@ -202,6 +424,13 @@ class PolicyKinds {
       if (action === PolicyKinds.resetAction(kind)) {
         log.debug("Leaving PolicyKinds.forAction(). reset " + kind.id);
         return { kind: kind, verb: 'reset' };
+      }
+      const extra = (kind.extraActions || []).filter(function (one) {
+        return one.action === action;
+      })[0];
+      if (extra) {
+        log.debug("Leaving PolicyKinds.forAction(). act " + kind.id);
+        return { kind: kind, verb: 'act', extra: extra };
       }
     }
     log.debug("Leaving PolicyKinds.forAction(). None.");
@@ -221,7 +450,11 @@ PolicyKinds.register({
   auditAction: 'admin.password-policy.change',
   appliesTo: 'the NEXT password set in this realm and to nothing already ' +
              'stored',
-  fallsBackTo: 'the built-in defaults'
+  fallsBackTo: 'the built-in defaults',
+  // NAMED PASSWORD POLICIES (#1236): an application (`appPasswordPolicy`)
+  // and a group (`stsPasswordPolicy`) name theirs, so the kind is drawn as
+  // Default / Named policies / New policy.
+  tabbed: true
 });
 
 PolicyKinds.register({
@@ -234,7 +467,359 @@ PolicyKinds.register({
   appliesTo: 'the NEXT sign-in in this realm; a session already started ' +
              'keeps the factors it was started with',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not',
+  // NAMED AUTHENTICATION POLICIES (#1148): the mechanisms an application
+  // (`appAuthnPolicy`) or a group (`stsAuthnPolicy`, #1237) naming one
+  // allows, saved and deleted beside the realm's own policy. Drawn as the
+  // Default / Named policies / New policy sub-tabs (#1237, rule 3cx).
+  tabbed: true,
+  extraActions: [
+    { action: 'save-named-authn-policy',
+      operationId: 'saveNamedAuthnPolicy',
+      summary: 'Create or replace a named authentication policy in this ' +
+               'realm',
+      description: 'Writes `cn=<name>,ou=authnPolicies` in this realm\'s ' +
+                   'directory: the first-factor mechanisms (`mechanisms`) ' +
+                   'and the second factors (`secondFactors`) a sign-in ' +
+                   'allows where this policy applies — each list the WHOLE ' +
+                   'list, none allowing every one (and leaving the realm\'s ' +
+                   'second factors as they are) — and its `precedence` ' +
+                   '(#1237). It applies where the application names it ' +
+                   '(`appAuthnPolicy`) or one of the person\'s groups does ' +
+                   '(`stsAuthnPolicy`) and its precedence is the lowest of ' +
+                   'those named, ties by name. **The realm\'s own**: not ' +
+                   'inherited from the default realm. The name is ' +
+                   'lower-case letters, digits and hyphens, not `default` ' +
+                   '(STS-AUTHN-0532); an unknown mechanism is refused ' +
+                   '(STS-AUTHN-0533), and a precedence that is not a whole ' +
+                   'number from 1 to 1000 (STS-AUTHN-0541).',
+      auditAction: 'admin.authn-policy.save-named',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,62}$',
+                  description: 'The policy\'s name.' },
+          description: { type: 'string', maxLength: 1024,
+                         description: 'What the policy is for.' },
+          precedence: { oneOf: [{ type: 'integer', minimum: 1,
+                                  maximum: 1000 },
+                                { type: 'string' }],
+                        description: 'Where several named policies are ' +
+                                     'named for one sign-in, the lowest ' +
+                                     'applies; 100 when omitted.' },
+          mechanisms: { type: 'array', items: { type: 'string' },
+                        description: 'The first-factor mechanisms allowed: ' +
+                                     'password, password-mfa, webauthn, ' +
+                                     'spnego, wallet, federation.' },
+          secondFactors: { type: 'array', items: { type: 'string' },
+                           description: 'The second factors allowed: ' +
+                                        'password, securityKey, totp, ' +
+                                        'recoveryCode, emailCode, ' +
+                                        'emailLink, wallet.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'passkeys-only', description: 'Passwordless',
+                     precedence: 50, mechanisms: ['webauthn'],
+                     secondFactors: [] }],
+        additionalProperties: false
+      } },
+    { action: 'delete-named-authn-policy',
+      operationId: 'deleteNamedAuthnPolicy',
+      summary: 'Delete a named authentication policy',
+      description: 'Deletes `cn=<name>,ou=authnPolicies` in this realm. ' +
+                   'Refused while an application (`appAuthnPolicy`) or a ' +
+                   'group (`stsAuthnPolicy`, #1237) of this realm names it ' +
+                   '(STS-AUTHN-0534) — it would then allow no mechanism — ' +
+                   'and for a name the realm does not hold ' +
+                   '(STS-AUTHN-0535).',
+      auditAction: 'admin.authn-policy.delete-named',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The policy\'s name.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'passkeys-only' }],
+        additionalProperties: false
+      } }
+  ]
+});
+
+// #221: the third kind, rcbj's "a third kind of policy, the service-account
+// policy ... set per realm and inherited from the default realm".
+PolicyKinds.register({
+  id: 'serviceAccount',
+  label: 'Service-account policy',
+  container: 'ou=serviceAccountPolicies',
+  governs: 'what a service account may do — the second factor, the ' +
+           'browser, the password doors — and how its password rotates',
+  module: serviceAccountPolicy as unknown as PolicyModule,
+  // Named profiles, each named by a service account's
+  // `stsServiceAccountPolicy` (#1240).
+  tabbed: true,
+  auditAction: 'admin.service-account-policy.change',
+  appliesTo: 'every service account it governs — those naming it, and for ' +
+             '`default` those naming none — from the next time it signs ' +
+             'in, binds or is rotated',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
+});
+
+// #527: the fourth kind, rcbj's "a new policy (which can be overridden per
+// realm) that governs the behavior of passkeys".
+PolicyKinds.register({
+  id: 'passkey',
+  label: 'Passkey policy',
+  container: 'ou=passkeyPolicies',
+  governs: 'how passkeys behave — whether a sign-in may name no username, ' +
+           'and what a security key is asked to store',
+  module: passkeyPolicy as unknown as PolicyModule,
+  tabbed: true,
+  auditAction: 'admin.passkey-policy.change',
+  appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
+             'a passkey already enrolled keeps what its authenticator stored',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not',
+  // THE LEARNED CLIENTS (#1112): the realm's register of clients it stopped
+  // offering ML-DSA to, kept by `common/passkey_clients.ts` and listed on
+  // this kind's page; clearing an entry is the way back, so the clears are
+  // this kind's acts, as the attribute policy's register is that kind's.
+  extraActions: [
+    { action: 'clear-passkey-client',
+      operationId: 'clearPasskeyClient',
+      summary: 'Offer ML-DSA again to one learned client',
+      description: 'Removes one entry from this realm\'s learned clients ' +
+                   '(`webauthn.clientLearning`): a browser, system and ' +
+                   'major version that this realm stopped offering ML-DSA ' +
+                   'to at passkey registration after ' +
+                   '`webauthn.clientLearningFailures` registrations from it ' +
+                   'failed with NotSupportedError, and none succeeded, ' +
+                   'within `webauthn.clientLearningWindowHours`. The next ' +
+                   'registration from that client is offered the list as ' +
+                   'it stands, and its failures are counted afresh. ' +
+                   '`client` is the name exactly as the list shows it ' +
+                   '(`Chrome 141 on macOS 15`); one that is not listed is ' +
+                   'refused (STS-AUTHN-0477). A configured `clientRules` ' +
+                   'row is not changed by this.',
+      auditAction: 'admin.passkey-client.clear',
+      requestBody: {
+        type: 'object',
+        properties: {
+          client: { type: 'string', maxLength: 200,
+                    description: 'The learned client, as listed.' }
+        },
+        required: ['client'],
+        examples: [{ client: 'Chrome 141 on macOS 15' }],
+        additionalProperties: false
+      } },
+    { action: 'clear-passkey-clients',
+      operationId: 'clearPasskeyClients',
+      summary: 'Offer ML-DSA again to every learned client',
+      description: 'Removes every entry from this realm\'s learned clients, ' +
+                   'and the failures being counted towards new ones. ' +
+                   '`removed` says how many entries went. A configured ' +
+                   '`clientRules` row is not changed by this.',
+      auditAction: 'admin.passkey-client.clear',
+      requestBody: {
+        type: 'object',
+        properties: {},
+        examples: [{}],
+        additionalProperties: false
+      } }
+  ]
+});
+
+// #539: the fifth kind, rcbj's "a policy default per realm that automatically
+// populates user locale parameter", with named profiles "assign[ed] ... to
+// application objects" — named since #1238 by an application
+// (`appLocalePolicy`) or a group (`stsLocalePolicy`), ranked by precedence.
+PolicyKinds.register({
+  id: 'locale',
+  label: 'Locale policy',
+  container: 'ou=localePolicies',
+  governs: 'the language a page falls back to, the language mail is ' +
+           'written in when a person names none, and the preferredLanguage ' +
+           'a new person is given',
+  module: localePolicy as unknown as PolicyModule,
+  tabbed: true,
+  auditAction: 'admin.locale-policy.change',
+  appliesTo: 'the NEXT page drawn and the NEXT person created in this ' +
+             'realm; a person created before keeps the preferredLanguage ' +
+             'they have, or none',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not'
+});
+
+// #396: the sixth kind, rcbj's "Add a policy that defines what the required
+// fields must be for a realm", and on the ticket "a list of all attributes,
+// custom attributes, ability to add a new attribute, and require each
+// individual attribute as needed" — the custom attribute register is this
+// kind's acts of its own: define and remove, and since #700 update.
+PolicyKinds.register({
+  id: 'attributes',
+  label: 'Attribute policy',
+  container: 'ou=attributePolicies',
+  governs: 'the attributes every person in this realm must hold, and the ' +
+           'custom attributes a person here may be given',
+  module: attributePolicy as unknown as PolicyModule,
+  // Default / Named policies / New policy, and the realm's custom
+  // attributes beside them (#1241).
+  tabbed: true,
+  auditAction: 'admin.attribute-policy.change',
+  appliesTo: 'the NEXT person created and the NEXT edit in this realm; a ' +
+             'person who already lacks an attribute it requires keeps every ' +
+             'other door',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in default (givenName, sn and mail) where it has not',
+  extraActions: [
+    { action: 'define-person-attribute',
+      operationId: 'definePersonAttribute',
+      summary: 'Define a custom attribute in this realm',
+      description: 'Writes `cn=<name>,ou=attributeDefinitions` in this ' +
+                   'realm\'s directory: an attribute a person here may be ' +
+                   'given, with a label, a syntax its values are checked ' +
+                   'against and whether it holds several values. It is then ' +
+                   'editable on a person\'s page and through ' +
+                   '`/admin-api/users/*-attribute`, settable at a create, ' +
+                   'and may be required by this policy. **The realm\'s ' +
+                   'own**: ' +
+                   'not inherited from the default realm. The name is an ' +
+                   'RFC 4512 descr of at most 64 characters, and may not be ' +
+                   'a name the directory already knows, `memberOf`, or ' +
+                   'begin `sts` (STS-LDAP-0170). At most 100 per realm.',
+      auditAction: 'admin.attribute-policy.define',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9-]{0,63}$',
+                  description: 'The attribute\'s name.' },
+          label: { type: 'string', maxLength: 128,
+                   description: 'What the pages draw beside the name.' },
+          syntax: { type: 'string',
+                    enum: attributePolicy.SYNTAXES.map(function (one) {
+                      return one.id;
+                    }),
+                    description: 'What its values are checked against. ' +
+                                 'Default `string`.' },
+          multiValued: { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+                         description: 'Whether it holds several values ' +
+                                      '(`true`, or `multiple` from a form). ' +
+                                      'Default false.' },
+          description: { type: 'string', maxLength: 1024,
+                         description: 'What it is for. Optional.' },
+          portalVisible: { type: 'boolean',
+                           description: 'Whether a person sees their own ' +
+                                        'values on the user portal\'s ' +
+                                        'Overview (#700). Default false.' },
+          portalEditable: { type: 'boolean',
+                            description: 'Whether a person may change ' +
+                                         'their own values there ' +
+                                         '(`POST /account-api/attributes`). ' +
+                                         'Implies `portalVisible`, which is ' +
+                                         'stored true with it. Default ' +
+                                         'false.' }
+        },
+        required: ['name', 'label'],
+        examples: [{ name: 'employeeBadge', label: 'Badge number',
+                     syntax: 'string', multiValued: false }],
+        additionalProperties: false
+      } },
+    // #700: an existing definition changed in place — its label, its
+    // description and whether the portal shows it and lets the person
+    // edit it. The syntax and the cardinality stay as they are.
+    { action: 'update-person-attribute',
+      operationId: 'updatePersonAttribute',
+      summary: 'Change a custom attribute of this realm',
+      description: 'Rewrites `cn=<name>,ou=attributeDefinitions` with the ' +
+                   'label, description and portal flags sent; what is not ' +
+                   'sent is kept. `portalVisible` shows a person their own ' +
+                   'values on the user portal\'s Overview, and ' +
+                   '`portalEditable` lets them change those values there ' +
+                   '(`POST /account-api/attributes`); both are false by ' +
+                   'default. **Editable implies visible**: making it ' +
+                   'editable stores it visible, and hiding it alone stores ' +
+                   'it not editable. Refused for a name the realm does not ' +
+                   'define (STS-LDAP-0206) and for a field that is not ' +
+                   'valid (STS-LDAP-0207). **The syntax and the ' +
+                   'cardinality are fixed**: a `syntax` or `multiValued` ' +
+                   'other than the definition\'s own is refused ' +
+                   '(STS-LDAP-0208), because the values people hold were ' +
+                   'checked against them.',
+      auditAction: 'admin.attribute-policy.update',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The attribute\'s name.' },
+          label: { type: 'string', maxLength: 128,
+                   description: 'What the pages draw beside the name. ' +
+                                'Kept when not sent.' },
+          description: { type: 'string', maxLength: 1024,
+                         description: 'What it is for; empty removes it. ' +
+                                      'Kept when not sent.' },
+          portalVisible: { type: 'boolean',
+                           description: 'Whether a person sees their own ' +
+                                        'values on the user portal. Kept ' +
+                                        'when not sent; false also turns ' +
+                                        '`portalEditable` off unless that ' +
+                                        'is sent true.' },
+          portalEditable: { type: 'boolean',
+                            description: 'Whether a person may change their ' +
+                                         'own values on the user portal. ' +
+                                         'Kept when not sent; true turns ' +
+                                         '`portalVisible` on.' },
+          syntax: { type: 'string',
+                    description: 'Accepted only as the definition\'s own ' +
+                                 'syntax; any other is refused.' },
+          multiValued: { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+                         description: 'Accepted only as the definition\'s ' +
+                                      'own cardinality; any other is ' +
+                                      'refused.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'employeeBadge', label: 'Badge number',
+                     portalVisible: true, portalEditable: false }],
+        additionalProperties: false
+      } },
+    { action: 'remove-person-attribute',
+      operationId: 'removePersonAttribute',
+      summary: 'Remove a custom attribute of this realm',
+      description: 'Deletes `cn=<name>,ou=attributeDefinitions`. Refused ' +
+                   'while any person in the realm holds a value of it ' +
+                   '(STS-LDAP-0172) and while this realm\'s own profile ' +
+                   'requires it (STS-LDAP-0173): a definition removed from ' +
+                   'under its values would leave data no door offers again.',
+      auditAction: 'admin.attribute-policy.undefine',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The attribute\'s name.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'employeeBadge' }],
+        additionalProperties: false
+      } }
+  ]
+});
+
+// #1096: the seventh kind, rcbj's "post login activity" — what a person is
+// asked to do after signing in, targeted by group membership, configurable
+// and enabled per realm. The first activity is the post-quantum passkey
+// migration. Since #1239 a group or an application names its named policy,
+// and the page is tabbed (Default / Named policies / New policy, #1235).
+PolicyKinds.register({
+  id: 'postLogin',
+  label: 'Post-login activity policy',
+  container: 'ou=postLoginPolicies',
+  governs: 'what a person is asked to do after signing in, before they are ' +
+           'sent back to the application — today, to register a ' +
+           'post-quantum passkey',
+  module: postLoginPolicy as unknown as PolicyModule,
+  tabbed: true,
+  auditAction: 'admin.post-login-policy.change',
+  appliesTo: 'the NEXT sign-in of every person the profile reaches in this ' +
+             'realm; a session already started is not interrupted',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults (nobody is asked anything) where it has not'
 });
 
 export = PolicyKinds;

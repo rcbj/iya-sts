@@ -126,17 +126,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -214,6 +203,7 @@ function childMain() {
                   oauthTokenEndpointAuthMethod: 'client_secret_basic',
                   oauthBackchannelLogoutUri: rpBase + suffix } });
     };
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const authorizeQuery = function (clientId) {
       return '/oauth2/authorize?' + new URLSearchParams({
         client_id: clientId, response_type: 'code', redirect_uri: REDIRECT,
@@ -224,15 +214,15 @@ function childMain() {
       let r = await b.go('GET', authorizeQuery(clientId));
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
-        const page = await b.go('GET', r.headers.location);
-        const form = hiddenFields(page.text);
-        form.username = username;
-        form.password = 'anything';
-        form.action = 'login';
-        const screen = String(r.headers.location).split('?')[0]
-          .replace(/^https?:\/\/[^/]+/, '');
-        const posted = await b.go('POST', screen, { form: form });
-        r = await b.go('GET', String(posted.headers.location || ''));
+        // THE SCREEN OVER `/authn-api` (#571), in this browser's jar.
+        const sent = await authnScreen.submit({ port: port, jar: b.jar,
+          at: String(r.headers.location),
+          fields: { action: 'login', username: username,
+                    password: 'anything' } });
+        if (sent.next !== 'redirect') {
+          return { status: sent.status, json: {}, text: sent.text };
+        }
+        r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
       const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
@@ -297,6 +287,30 @@ function childMain() {
          postsTo('/bc/slow')[0].token === postsTo('/bc/slow')[1].token,
          'A2. and the retry resends the SAME token (the relying party ' +
          'deduplicates on jti)');
+    // #614: once it has landed, the row keeps the token's digest and the
+    // jti, and not the token.
+    const landedRows = [];
+    realms.list().forEach(function (r) {
+      realms.handleFor('oauth2.backchannelDeliveries').dump(r.id)
+        .forEach(function (one) {
+          if (one.value && one.value.state === 'sent') {
+            landedRows.push(one.value);
+          }
+        });
+    });
+    const slowToken = (postsTo('/bc/slow')[0] || {}).token || '';
+    note(slowToken && landedRows.length >= 1 &&
+         JSON.stringify(landedRows).indexOf(slowToken) < 0 &&
+         landedRows.every(function (one) {
+           return one.token === undefined && !!one.jti &&
+                  /^[A-Za-z0-9_-]{43}$/.test(String(one.tokenDigest || ''));
+         }) &&
+         landedRows.some(function (one) {
+           return one.tokenDigest === stsCrypto.credentialDigest(slowToken);
+         }),
+         'A3. a landed delivery keeps its jti and its token\'s digest, and ' +
+         'not the Logout Token (#614)',
+         JSON.stringify(landedRows).slice(0, 400));
     config.setOverride('oauth2.backchannelLogoutTimeoutMs', 2000);
 
     // --- B. a process dies mid-delivery ----------------------------------------
@@ -517,6 +531,39 @@ function childMain() {
          postsTo('/bc/restart').length === 1,
          'E2. a FRESH process — the restart — found the due row and sent ' +
          'attempt 2', JSON.stringify(rows));
+
+    // E3. A RETRY TIMER THAT FIRES BEFORE THE ROW IS DUE is armed again
+    // rather than left to the sweep: setTimeout's monotonic clock can run a
+    // millisecond ahead of the wall clock the due check reads. This one
+    // always fires 50 ms early, and no sweep runs.
+    client('bd-early', '/bc/early');
+    let failures = 1;
+    const realHttp = BL.defaultDeps().fedHttp;
+    const early = processWith({
+      fedHttp: Object.assign(Object.create(realHttp), {
+        deliverForm: function () {
+          if (failures > 0) {
+            failures--;
+            return Promise.resolve({ ok: false, kind: 'status', status: 503,
+                                     why: 'it answered 503' });
+          }
+          return realHttp.deliverForm.apply(realHttp, arguments);
+        } }),
+      later: function (fn, ms) {
+        setTimeout(fn, Math.max(0, ms - 50));
+      }
+    });
+    since = backchannel.mark();
+    const earlySession = sessionFor('bd-e3', 'bd-early');
+    const earlyTry = await early.attempt(
+      realms.currentId(), early.plan(earlySession, { via: 'E3' })[0].id);
+    await sleep(900);
+    rows = backchannel.deliveriesFor(['bd-e3'], since);
+    note(earlyTry === 'retry' && rows.length === 1 &&
+         rows[0].state === 'sent' && rows[0].attempts === 2,
+         'E3. a retry timer that fired before the row was due was armed ' +
+         'again, and attempt 2 was sent without waiting for the sweep',
+         JSON.stringify(rows));
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
 
     // --- F. retention ---------------------------------------------------------
@@ -965,11 +1012,14 @@ function childMain() {
          searched.backchannelDeliveries[0].id === 'from-node-b',
          'K3. deliveryq narrows by client', searched.backchannelDeliveries
            .length);
-    const consoleView = require(ROOT + '/admin-ui/admin').logoutView({
-      query: { deliveryState: 'dead' }, headers: {}, cookies: {} });
-    note(/Back-channel Logout Tokens/.test(consoleView.inner) &&
-         /dead letter/.test(consoleView.inner),
-         'K4. /admin/logout draws the same list', String(consoleView.inner)
+    // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/logout
+    // drawn by its renderer, where it was the console's own view until the
+    // cutover.
+    const consoleView = await require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT).draw('/admin/logout', { deliveryState: 'dead' });
+    note(/Back-channel Logout Tokens/.test(consoleView.html) &&
+         /dead letter/.test(consoleView.html),
+         'K4. /admin/logout draws the same list', String(consoleView.html)
            .slice(0, 120));
 
     held.forEach(function (res) {

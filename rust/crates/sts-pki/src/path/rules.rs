@@ -124,7 +124,7 @@ fn name_within_subtree(name: &GeneralName, subtree: &Subtree) -> bool {
             base.is_empty() || n == base || n.ends_with(&format!(".{}", base))
         }
         (Form::Email, NameValue::Text(Some(n)), NameValue::Text(Some(c))) => {
-            let at = n.rfind('@').map_or(0, |a| a);
+            let at = n.rfind('@').unwrap_or(0);
             let host = n.get(at + 1..).unwrap_or_default().to_lowercase();
             if let Some(cat) = c.rfind('@') {
                 n.get(..at) == c.get(..cat)

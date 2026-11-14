@@ -35,7 +35,8 @@
 #      where the two jobs the SERVICE must call back run (see below);
 #   4. waits for the load balancer, mints an /admin-api token, removes what
 #      the previous runs left — realms, bulk-load entries, applications,
-#      overrides (reset-environment.js; STS_SUITE_KEEP_REALMS=1 keeps them),
+#      overrides and suite trust anchors (#335; reset-environment.js;
+#      STS_SUITE_KEEP_REALMS=1 keeps them),
 #      and runs every other job in the tests image on this
 #      machine's network, into tests/report/aws-<environment>/;
 #   5. runs the callback task once, with the two jobs, waits for it, downloads
@@ -43,7 +44,9 @@
 #      so one report answers for the run;
 #   6. DESTROYS the callback stack — pass, fail or interrupt (an EXIT trap).
 #
-# THE TWO CALLBACK JOBS, and why they cannot run here:
+# THE CALLBACK JOBS, and why they cannot run here (and, since #695,
+# sts_spiffe_grpc, which can but runs there against the task's Workload API
+# sidecar — see CALLBACK_JOBS below):
 #   sts_xacml_remote_pep  the PDP nudges a remote PEP container, and the job
 #                         writes that PEP's listener certificate into a
 #                         directory the container reads — so the job runs in
@@ -84,6 +87,12 @@ set -euo pipefail
 ENVIRONMENT="${1:?usage: deploy/aws/run-suite.sh <environment>}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "${ROOT}"
+
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# and aws.exe are handed, and the shims that take the CR off what they print.
+# See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${ROOT}/tests/tools/host-platform.sh"
 REPORT_DIR="${STS_SUITE_REPORT_DIR:-${ROOT}/tests/report/aws-${ENVIRONMENT}}"
 RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S)"
 CALLBACK_JOBS="sts_xacml_remote_pep.js,sts_gnap_core.js"
@@ -92,6 +101,16 @@ IN_AWS="${STS_SUITE_IN_AWS:-0}"
 if [ "${IN_AWS}" = "1" ];
 then
   WITH_CALLBACKS=1
+fi
+# AND sts_spiffe_grpc, WHERE THERE IS A CALLBACK TASK (#695). Its agent path
+# calls the Workload API through an agent, and in the task that agent is the
+# `spiffe-agent` sidecar from the service's own image (suite-callbacks/
+# main.tf), in another container, as a workload would run it. Without a
+# task (STS_SUITE_CALLBACKS=0) the job runs here and starts the agent in its
+# own process, as it did.
+if [ "${WITH_CALLBACKS}" = "1" ];
+then
+  CALLBACK_JOBS="${CALLBACK_JOBS},sts_spiffe_grpc.js"
 fi
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 
@@ -150,14 +169,29 @@ ENV_REGION="$(out aws_region)"
 ENV_REGION="${ENV_REGION:-${AWS_REGION}}"
 SECRET_ARN="$(out admin_api_client_secret_arn)"
 NLB_DNS="$(out nlb_dns_name)"
-LDAP_PORT="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).ldap.listener))' "$(out load_balancer_ports)")"
+# THE DIRECTORY THE JOBS DIAL (2026-11-10): plain LDAP where the environment
+# publishes 389, and LDAPS on 636 where it does not, which since the ASVS L2
+# hardening (#1490, ldap.plainListener off in product) is every AWS
+# environment. LDAPS is verified against the certificate, so it is dialled by
+# a name the certificate carries: the direct name where CloudFront fronts the
+# public one (CloudFront carries no 636), else the public name, else the NLB.
+LDAP_SCHEME="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).ldap ? "ldap" : "ldaps")' "$(out load_balancer_ports)")"
+LDAP_PORT="$(node -e 'const p = JSON.parse(process.argv[1]); process.stdout.write(String((p.ldap || p.ldaps).listener))' "$(out load_balancer_ports)")"
+LDAP_HOST="${NLB_DNS}"
+if [ "${LDAP_SCHEME}" = "ldaps" ]; then
+  LDAP_HOST="$(out direct_hostname)"
+  LDAP_HOST="${LDAP_HOST:-$(out public_hostname)}"
+  LDAP_HOST="${LDAP_HOST:-${NLB_DNS}}"
+fi
 NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.argv[1])).length))' "$(out ecs_services)")"
 # WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
 # dial a port of their own rather than the main one. Kerberos TCP 88 is a
 # row of `load_balancer_ports` only where `publish_kerberos` is on (testidp);
-# SPIFFE's are the default realm's two ports, which every environment
-# publishes since #311 (`spiffe_default_ports`, environment/spiffe_default.tf);
-# an environment built before that has no such output and counts SPIFFE as
+# SPIFFE's published port is the default realm's Server API, which every
+# environment publishes since #311 (`spiffe_default_ports`,
+# environment/spiffe_default.tf). The Workload API is not on that map
+# (#324); the suite task serves it from a local agent. An environment
+# built before the output existed has none, and counts SPIFFE as
 # unpublished unless the caller names a socket (STS_SPIFFE_WORKLOAD_URL).
 # Without this both jobs
 # dialled the load balancer on a port nobody listens on and failed on a
@@ -210,7 +244,7 @@ fi
 manifestJobs() {
   docker run --rm -e EXCLUDE="$1" "${TESTS_IMAGE}" node -e '
     const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-    process.stdout.write(require("./tests/vendored/MANIFEST.js").JOBS
+    process.stdout.write(require("./tests/protocol/MANIFEST.js").JOBS
       .map(function (j) { return j.file; })
       .filter(function (f) { return !skip.has(f); }).join(","));'
 }
@@ -237,7 +271,7 @@ allowTheSuitesAddress() {
     say "no egress address to allow-list"
     return 0
   fi
-  token="$(curl -fsS -u "sts-management-api:${CLIENT_SECRET}" \
+  token="$(curl -fsS -u "sts-api-client:${CLIENT_SECRET}" \
     -d grant_type=client_credentials \
     --data-urlencode 'scope=admin:read admin:write' \
     --data-urlencode "resource=${URL}/admin-api" "${URL}/oauth2/token" |
@@ -378,7 +412,7 @@ else
 say "$(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s) here; ${CALLBACK_JOBS} in the callback task."
 set +e
 docker run --rm --network host \
-  -v "${REPORT_DIR}:/report" \
+  -v "$(hostPath "${REPORT_DIR}"):/report" \
   -e STS_ADMIN_API_CLIENT_SECRET="${CLIENT_SECRET}" \
   -e URL="${URL}" \
   -e KEEP="${STS_SUITE_KEEP_REALMS:-}" \
@@ -392,7 +426,7 @@ docker run --rm --network host \
   -e STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
   -e STS_PUBLIC_BASE_URL="${URL}" \
   -e STS_TEST_SERVICE_URL="${URL}" \
-  -e STS_LDAP_URL="ldap://${NLB_DNS}:${LDAP_PORT}" \
+  -e STS_LDAP_URL="${LDAP_SCHEME}://${LDAP_HOST}:${LDAP_PORT}" \
   -e STS_LDAP_PORT="${LDAP_PORT}" \
   "${TESTS_IMAGE}" bash -c '
     set -uo pipefail
@@ -443,6 +477,7 @@ then
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
     OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \
       KEEP="${TASK_KEEP_REALMS}" UNPUB="${UNPUBLISHED}" \
+      SPIFFE_SERVER="${STS_SPIFFE_SERVER_URL:-}" \
       JT="${STS_SUITE_JOB_TIMEOUT_MS:-}" node -e '
       const env = function (pairs) {
         return Object.keys(pairs).filter(function (k) { return pairs[k]; })
@@ -455,6 +490,7 @@ then
             STS_SUITE_ONLY: process.env.ONLY,
             STS_SUITE_KEEP_REALMS: process.env.KEEP || "",
             STS_TEST_UNPUBLISHED: process.env.UNPUB || "",
+            STS_SPIFFE_SERVER_URL: process.env.SPIFFE_SERVER || "",
             STS_SUITE_JOB_TIMEOUT_MS: process.env.JT || "" }) },
         { name: "xacml-pep", environment: env({
             XACML_PEP_REALM: process.env.PEP_REALM }) }
@@ -519,7 +555,7 @@ then
     CB_DIR="${REPORT_DIR}/callbacks-${RUN_ID}"
     mkdir -p "${CB_DIR}"
     if aws s3 cp "s3://${BUCKET}/${ENVIRONMENT}/${RUN_ID}/report.tar.gz" \
-         "${CB_DIR}/report.tar.gz" --only-show-errors;
+         "$(hostPath "${CB_DIR}/report.tar.gz")" --only-show-errors;
     then
       tar -C "${CB_DIR}" -xzf "${CB_DIR}/report.tar.gz"
       rm -f "${CB_DIR}/report.tar.gz"
@@ -531,7 +567,7 @@ then
         ln -sfn "${LOCAL_RUN}" "${REPORT_DIR}/latest"
       elif [ -n "${LOCAL_RUN}" ] && [ -d "${LOCAL_RUN}" ];
       then
-        docker run --rm -v "${REPORT_DIR}:/report" "${TESTS_IMAGE}" \
+        docker run --rm -v "$(hostPath "${REPORT_DIR}"):/report" "${TESTS_IMAGE}" \
           node tests/tools/merge-report.js \
             --into="/report/$(basename "${LOCAL_RUN}")" \
             --from="/report/callbacks-${RUN_ID}/latest" --label=callbacks || true
@@ -553,7 +589,7 @@ then
     console.log("run-suite: " + JSON.stringify(count));
     s.jobs.filter(function (j) { return j.status !== "passed"; })
       .forEach(function (j) { console.log("  " + j.status + "  " + j.name); });
-  ' "${LOCAL_RUN}/summary.json" || true
+  ' "$(hostPath "${LOCAL_RUN}/summary.json")" || true
   say "report: ${LOCAL_RUN}/report.html"
 fi
 if [ "${LOCAL_RC}" != "0" ] || [ "${CALLBACK_RC}" != "0" ];

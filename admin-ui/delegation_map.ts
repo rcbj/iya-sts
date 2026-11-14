@@ -113,6 +113,9 @@
 import helpers = require('../common/helpers');
 // The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
 import errorCodes = require('../common/error_codes');
+// The mode (common/mode.js), a leaf over config: which sentence about
+// passwords is true in this realm (#543 round 2).
+import mode = require('../common/mode');
 import dagre = require('@dagrejs/dagre');
 import InstanceSlot = require('../common/instance_slot');
 
@@ -2352,8 +2355,13 @@ class DelegationMap {
     if (edge.relation === 'issued-for') {
       parts.push(edge.credentials + ' credential(s).');
     } else if (edge.relation === 'signed-in') {
+      // Per mode (#543 round 2): "checks no password in any family" was
+      // drawn on a product realm's picture too, where every one was verified.
       parts.push(edge.acts + ' authentication(s), all of them accepted — ' +
-                 'this service checks no password in any family.');
+                 (mode.verifiesCredentials()
+                   ? 'each after what was presented was verified.'
+                   : 'this realm is in development mode, which checks no ' +
+                     'password in any family.'));
     } else if (edge.acts) {
       parts.push(edge.acts + ' act(s): ' + edge.issued + ' issued, ' +
                  edge.refused + ' refused.');

@@ -106,6 +106,24 @@ interface AccessQuestion {
   owner?: any;
   subject?: any;
   requiredRoles?: unknown[];
+  requiredAllRoles?: unknown[];
+  // The object an owner would administer (#607): `common/access_gate.ts`.
+  ownedObject?: {
+    kind: string; id: string; action: string; requiredRole: string;
+    attributes?: string[]; person: string;
+  } | null;
+  // A report definition or job (#1030): `common/access_gate.ts`.
+  reportObject?: {
+    kind: string; owner: string; groups?: string[]; person: string;
+  } | null;
+  // An AuthZEN access request being decided (#1180):
+  // `common/access_gate.ts`.
+  accessRequestObject?: {
+    id: string; requester: string; subject: string; subjectType: string;
+    action: string; resource: string; resourceType: string;
+    application: string; eligible: boolean; door: string;
+    approverIdentity: string[];
+  } | null;
 }
 
 // What a decision answers.
@@ -354,15 +372,79 @@ class XacmlAccessPep {
     // owner rather than an owner called ''.
     const req = new AuthorizationRequest({ includeInResult: true,
                                            dropEmpty: true })
-      .principal(subject.name || '')
+      // THE KIND IS SENT ONLY WHEN THE CALLER SAID (#1030): the report gate
+      // does, because its third rule reads it; every other surface's
+      // request is attribute for attribute what it was.
+      .principal(subject.name || '',
+                 subject.kind === undefined || subject.kind === null
+                   ? undefined
+                   : (subject.kind === 'application' ? 'application'
+                                                     : 'user'))
       .roles(held)
       .subject(ATTRIBUTE.AUTHENTICATED,
                [subject.authenticated === false ? 'false' : 'true'],
                model.TYPE.BOOLEAN)
       .target(asked.resource)
       .resource(ATTRIBUTE.REQUIRED_ROLE, required)
+      // EVERY ONE OF THESE (#454), where the caller names any: the
+      // template's conjunct asks that the subject hold them all.
+      .resource(ATTRIBUTE.REQUIRED_ALL_ROLE,
+                (Array.isArray(asked.requiredAllRoles)
+                  ? asked.requiredAllRoles : []).map(String))
       .resource(ATTRIBUTE.OWNER, [asked.owner || ''])
       .requestedAction(asked.action);
+    // THE OWNER RULE'S QUESTION (#607): what is reached, by whom, and the
+    // owner role it needs. Who owns it, whether it is closed to its owners
+    // and who the person is as an owner are the PIP's to answer.
+    const owned = asked.ownedObject;
+    if (owned && owned.kind && owned.id) {
+      req.resource(ATTRIBUTE.OWNER_REQUIRED_ROLE,
+                   [String(owned.requiredRole || '')])
+        .resource(ATTRIBUTE.OBJECT_KIND, [String(owned.kind)])
+        .resource(ATTRIBUTE.OBJECT_ID, [String(owned.id)])
+        .resource(ATTRIBUTE.OBJECT_ATTRIBUTE,
+                  (owned.attributes || []).map(String))
+        .action(ATTRIBUTE.ADMIN_ACTION, [String(owned.action || '')])
+        .subject(ATTRIBUTE.OWNER_SUBJECT, [String(owned.person || '')]);
+    }
+    // THE REPORT RULE'S QUESTION (#1030): the row's kind and the groups it
+    // is shared with, and the person for the PIP's owner identity. The
+    // row's owner is in `owner` above, the first rule's comparison.
+    const row = asked.reportObject;
+    if (row && row.kind) {
+      req.resource(ATTRIBUTE.REPORT_OBJECT_KIND, [String(row.kind)])
+        .resource(ATTRIBUTE.REPORT_SHARED_GROUP,
+                  (row.groups || []).map(String))
+        .subject(ATTRIBUTE.OWNER_SUBJECT, [String(row.person || '')]);
+    }
+    // THE ACCESS REQUEST RULE'S QUESTION (#1180): the request's tuple and
+    // who asked it on the resource, who the approver is and whether the
+    // advice named them on the subject, and the door on the environment.
+    // The fourth rule compares the approver's identity with the request's
+    // subject and requester, so self-approval is a rule.
+    const ask = asked.accessRequestObject;
+    if (ask && ask.id) {
+      req.resource(ATTRIBUTE.ACCESS_REQUEST_ID, [String(ask.id)])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_REQUESTER,
+                  [String(ask.requester || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_SUBJECT,
+                  [String(ask.subject || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_SUBJECT_TYPE,
+                  [String(ask.subjectType || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_ACTION, [String(ask.action || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_RESOURCE,
+                  [String(ask.resource || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_RESOURCE_TYPE,
+                  [String(ask.resourceType || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_APPLICATION,
+                  [String(ask.application || '')])
+        .subject(ATTRIBUTE.APPROVER_ELIGIBLE,
+                 [ask.eligible === true ? 'true' : 'false'],
+                 model.TYPE.BOOLEAN)
+        .subject(ATTRIBUTE.APPROVER_IDENTITY,
+                 (ask.approverIdentity || []).map(String))
+        .environment(ATTRIBUTE.APPROVER_DOOR, [String(ask.door || '')]);
+    }
     req.category(model.CATEGORY.ENVIRONMENT);
     log.debug("Leaving XacmlAccessPep.buildRequest().");
     return req.build();
@@ -428,9 +510,18 @@ class XacmlAccessPep {
     // The roles this person holds — the register's, plus the six computed
     // built-ins. The SAME function the issuance PEP calls, so "holds a role"
     // means one thing in this service.
+    //
+    // **UNLESS THE CALLER SAYS THE ROLES IT GIVES ARE THE DECISION'S**
+    // (`effective`, #1030): a resource server holding a verified token
+    // computed held ∩ carried (`role_permissions.effectiveRoles()`), and
+    // unioning the register's answer back in would hand a `report:use`
+    // token REPORT_ADMIN because its subject also holds that. Then only the
+    // built-in roles are read here — from the kind and whether anybody
+    // authenticated, with no name, so no register role is resolved.
+    const kind = subject.kind === 'application' ? 'application' : 'user';
     const held = roles.rolesOf({
-      kind: 'user',
-      name: subject.name || '',
+      kind: kind,
+      name: subject.effective === true ? '' : (subject.name || ''),
       authenticated: subject.authenticated !== false,
       groups: subject.groups || []
     });
@@ -501,9 +592,10 @@ class XacmlAccessPep {
 
     // The three refusals mean different things to whoever has to fix one, so
     // the sentence says which — the same division the issuance PEP makes.
-    const who = subject.name
-      ? '"' + subject.name + '"' + (subject.authenticated === false
-          ? ' (who did not authenticate)' : '')
+    const who = (subject.label || subject.name)
+      ? '"' + (subject.label || subject.name) + '"' +
+        (subject.authenticated === false ? ' (who did not authenticate)'
+                                         : '')
       : 'an unauthenticated caller';
     const what = asked.action + ' on ' + asked.resource +
                  (asked.owner ? ', owned by "' + asked.owner + '"' : '');
@@ -548,7 +640,7 @@ class XacmlAccessPep {
     audit.audit({
       action: 'xacml.access.refused',
       errorCode: refusalCode,
-      actor: subject.name || '',
+      actor: subject.label || subject.name || '',
       protocol: 'XACML',
       detail: answer.decision + ' for ' + what + ': ' + why
     });

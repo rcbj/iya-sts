@@ -90,9 +90,9 @@
 // above. A Deny, a NotApplicable and an Indeterminate are not throws — they
 // are answers, and every one of them refuses here, because the policy is
 // `deny-unless-permit` and an issuance decision must not rest on a PEP's bias.
-// `xacml.pepBias` is the EMBEDDED DEMO PEP's setting at `/xacml/protected` and
-// it is deliberately not read here: that one exists to show what bias does,
-// and this one is enforcing.
+// `xacml.pepBias` was the EMBEDDED DEMO PEP's setting at `/xacml/protected`
+// (both moved to the remote PEP in #596) and it was deliberately never read
+// here: that one existed to show what bias does, and this one is enforcing.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -139,6 +139,8 @@ import xacmlRequest = require('./xacml_request');
 import scopeVerdicts = require('./xacml_scope_verdicts');
 // THE TRANSFER QUESTIONS (#98 D4), asked the one way the gate asks them too.
 import transferVerdicts = require('./xacml_transfer_verdicts');
+// THE PASSKEY QUESTIONS (#536), asked the one way the gate asks them too.
+import passkeyVerdicts = require('./xacml_passkey_verdicts');
 // #186: who may act for whom, asked the same way by the gate.
 import exchangeVerdicts = require('./xacml_exchange_verdicts');
 // #432 phase 3: one question per GNAP access right, asked the same way by
@@ -167,6 +169,32 @@ interface IssuanceQuestion {
   // THE AUTHENTICATION A SESSION STANDS ON (#64): `{ amr, acr, kinds }`,
   // named by `authn.startSession()` and by nothing else.
   authentication?: { amr?: string[]; acr?: string; kinds?: string[] } | null;
+  // A FEDERATED AUTHENTICATION'S FACTS (#565), from the gate: the
+  // relationship's category, its provider, and whether the address counts
+  // as verified. Null for any other authentication.
+  authority?: { category?: string; provider?: string;
+                emailVerified?: string } | null;
+  // THE SIGN-IN MECHANISMS (#457): those the person's authentication
+  // satisfies and those the application allows, sent by the gate on a
+  // browser issuance to an application that allows only some, and null
+  // otherwise. See `common/authn_mechanisms.ts`.
+  authnMechanisms?: string[] | null;
+  allowedAuthnMechanisms?: string[] | null;
+  // THE SECOND FACTORS (#475): those the person's authentication gave and
+  // those the application allows, sent by the gate on a browser issuance to
+  // an application that allows only some, when a second factor was given.
+  // See `common/mfa_mechanisms.ts`.
+  mfaMechanisms?: string[] | null;
+  allowedMfaMechanisms?: string[] | null;
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723): OpenID Connect
+  // EAP ACR Values 1.0's `phr` and `phrh` earned, or [`none`], sent by the
+  // gate on every browser issuance. See `common/phishing_resistance.ts`.
+  phishingResistance?: string[] | null;
+  // THE DEVICE-BOUND SESSION (#740): `bound`, `skipped`, `pending`,
+  // `timedout` or `none`, computed by `issuance_gate.js` from the session.
+  // Absent is `none`. The PEP holds `pending` and refuses `skipped` and
+  // `timedout` when the application's passkey profile requires a binding.
+  deviceBoundSession?: string;
   // WHO MAY ACT FOR WHOM (#186): present, this is the exchange question
   // `issuance_gate.checkExchange()` asks, answered with a verdict
   // (`decideExchange()`).
@@ -202,6 +230,11 @@ interface IssuanceQuestion {
   // `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`, and
   // answered with a verdict (`decideTransfer()`).
   transferQuestion?: Record<string, any> | null;
+  // THE PASSKEY QUESTION (#536): present, this is `register-passkey` or
+  // `use-passkey`, asked by `common/passkey_policy.ts` through
+  // `issuance_gate.checkPasskey()`, and answered with a verdict
+  // (`decidePasskey()`).
+  passkeyQuestion?: Record<string, any> | null;
   // THE PER-RIGHT GNAP QUESTION (#432 phase 3): present, one question per
   // GNAP access right, answered with a verdict each
   // (`decideGnapRights()`).
@@ -273,15 +306,27 @@ interface IssuanceAnswer {
   // The protocol rule that denied (2026-10-01): the declaration and the
   // families this issuance satisfies.
   protocolRefused?: { declared: string[]; families: string[] } | null;
+  // A Deny on the sign-in mechanism (#457): the door re-prompts for one of
+  // `allowed`. Not a refusal about roles.
+  // `secondFactor` (#475): the Deny was the second-factor rule's, and the
+  // lists are second factors. The doors re-prompt the same way for both.
+  mechanism?: { allowed: string[]; satisfied: string[];
+                secondFactor?: boolean } | null;
   // The per-scope verdicts, for a scope question (#304).
   scopes?: ScopeVerdict[];
   // The verdict on a transfer question (#98): `hold` / `relay`, `serve` /
   // `refuse` or `release` / `withhold`, and which document decided.
   transfer?: { verdict: string; decidedBy: string } | null;
+  passkey?: { verdict: string; code: string; reason: string;
+              decidedBy: string } | null;
   // The exchange verdict (#186), `xacml_exchange_verdicts.js`'s shape.
   exchange?: Record<string, any> | null;
   // The per-right verdicts, for a GNAP right question (#432).
   gnapRights?: Array<Record<string, any>>;
+  // A device-bound registration that has been offered and has not finished
+  // (#740). Not a refusal and not an error code: issuance waits. `skipped`
+  // and `timedout` are ordinary refusals and do not set this.
+  deferred?: boolean;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -297,7 +342,8 @@ interface XacmlRolePepDeps {
   config: { value(key: string): any };
   audit: { audit(row: object): unknown;
            failure(code: string, row: object): unknown };
-  errorCodes: { tag(code: string): string };
+  errorCodes: { tag(code: string): string;
+                mark<T>(target: T, code: string): T };
   applications: { requiredRolesOf(application: any): string[];
                   requiresNarrowedRoles(application: any): boolean };
   roles: { rolesOf(subject: any): string[];
@@ -472,7 +518,7 @@ class XacmlRolePep {
   // The two alternatives were both worse. Seeding on `realms.onChange` puts a
   // policy in every realm's repository, which changes what `/xacml/policies`
   // answers, what a remote PEP pulls and what every count in
-  // `tests/vendored/sts_xacml_endpoints.js` asserts — for a document that has
+  // `tests/protocol/sts_xacml_endpoints.js` asserts — for a document that has
   // nothing to do with anybody else's boundary. Falling back to the DEFAULT
   // realm's copy couples two realms, which is the one thing the realm design
   // does not do.
@@ -642,6 +688,11 @@ class XacmlRolePep {
     }
     this.riskAttributes(req, asked.risk, String(subject.name || ''));
     this.authenticationAttributes(req, asked.authentication);
+    this.authorityAttributes(req, asked.authority);
+    this.mechanismAttributes(req, asked);
+    this.mfaAttributes(req, asked);
+    this.phishingAttributes(req, asked);
+    this.deviceBoundAttributes(req, asked);
     this.deviceAttributes(req, asked);
     // THE PROTOCOL DECLARATION, only where the gate named both halves: the
     // declaration on the resource (it is a fact about the application), the
@@ -687,6 +738,28 @@ class XacmlRolePep {
   }
 
   // -------------------------------------------------------------------------
+  // A FEDERATED AUTHENTICATION'S CATEGORY, PROVIDER AND ADDRESS (#565), as
+  // environment attributes, sent by the gate only when a federation partner
+  // vouched for the authentication — so a rule about social sign-ins is
+  // inapplicable to every other one.
+  // -------------------------------------------------------------------------
+  private authorityAttributes(req: any, facts: any): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.authorityAttributes().");
+    if (!facts) {
+      log.debug("Leaving XacmlRolePep.authorityAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.CATEGORY, [String(facts.category || 'enterprise')])
+      .environment(AUTHN.EMAIL_VERIFIED,
+                   [String(facts.emailVerified || 'true')]);
+    if (facts.provider) {
+      req.environment(AUTHN.PROVIDER, [String(facts.provider)]);
+    }
+    log.debug("Leaving XacmlRolePep.authorityAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
   // THE AUTHENTICATION A SESSION STANDS ON (#64), as environment attributes:
   // `amr`, `acr` and the credential kinds. Sent only by a caller that names
   // them — the session's start — and none otherwise, so a rule about them is
@@ -706,6 +779,121 @@ class XacmlRolePep {
       req.environment(AUTHN.ACR, [String(facts.acr)]);
     }
     log.debug("Leaving XacmlRolePep.authenticationAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SIGN-IN MECHANISMS (#457), as environment attributes: the ones the
+  // person's authentication satisfies and the ones the application allows.
+  // Sent only where the gate found an application allowing some — so the
+  // `authn-mechanism` rule, which needs the allowed bag to hold something,
+  // is inapplicable to every other issuance.
+  // -------------------------------------------------------------------------
+  private mechanismAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.mechanismAttributes().");
+    if (!Array.isArray(asked.allowedAuthnMechanisms) ||
+        !asked.allowedAuthnMechanisms.length) {
+      log.debug("Leaving XacmlRolePep.mechanismAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.ALLOWED_MECHANISM,
+                    asked.allowedAuthnMechanisms.map(String))
+      .environment(AUTHN.MECHANISM,
+                   (asked.authnMechanisms || []).map(String));
+    log.debug("Leaving XacmlRolePep.mechanismAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SECOND FACTORS (#475), as environment attributes, on
+  // mechanismAttributes()'s terms: sent only where the gate found an
+  // application allowing some and an authentication that gave one, so the
+  // `mfa-mechanism` rule is inapplicable to every other issuance.
+  // -------------------------------------------------------------------------
+  private mfaAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.mfaAttributes().");
+    if (!Array.isArray(asked.allowedMfaMechanisms) ||
+        !asked.allowedMfaMechanisms.length ||
+        !Array.isArray(asked.mfaMechanisms) ||
+        !asked.mfaMechanisms.length) {
+      log.debug("Leaving XacmlRolePep.mfaAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.ALLOWED_MFA_MECHANISM,
+                    asked.allowedMfaMechanisms.map(String))
+      .environment(AUTHN.MFA_MECHANISM, asked.mfaMechanisms.map(String));
+    log.debug("Leaving XacmlRolePep.mfaAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723), as an
+  // environment bag: `phr`, `phrh`, or `none` — never empty when sent, so a
+  // rule that holds on `none` is inapplicable to every issuance the gate did
+  // not describe (a token grant, WS-Trust, Kerberos). Sent whenever the gate
+  // named it.
+  // -------------------------------------------------------------------------
+  private phishingAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.phishingAttributes().");
+    if (!Array.isArray(asked.phishingResistance) ||
+        !asked.phishingResistance.length) {
+      log.debug("Leaving XacmlRolePep.phishingAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.PHISHING_RESISTANCE,
+                    asked.phishingResistance.map(String));
+    log.debug("Leaving XacmlRolePep.phishingAttributes().");
+  }
+
+  // THE DEVICE-BOUND SESSION (#740), sent only while the feature is on, so
+  // a rule about it is inapplicable when the feature is off. The fact is
+  // the gate's token. The requirement is `true` only when the profile
+  // requires a bound session.
+  private deviceBoundAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log, config } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceBoundAttributes().");
+    if (config.value('authn.deviceBoundSessions') !== true) {
+      log.debug("Leaving XacmlRolePep.deviceBoundAttributes(). Off.");
+      return;
+    }
+    const fact = String(asked.deviceBoundSession || 'none');
+    req.environment(AUTHN.DEVICE_BOUND_SESSION, [fact]);
+    if (asked.application &&
+        this.deviceBoundRequiredOf(String(asked.application))) {
+      req.environment(AUTHN.DEVICE_BOUND_REQUIRED, ['true']);
+    }
+    log.debug("Leaving XacmlRolePep.deviceBoundAttributes().");
+  }
+
+  // Whether the application's passkey profile requires a device-bound
+  // session. The policy module is required here, not at load: it requires
+  // the issuance gate, and a top-level require from this file could close
+  // that cycle. A directory that cannot be read is treated as not required,
+  // so a failure there does not become a refusal.
+  private deviceBoundRequiredOf(application: string): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceBoundRequiredOf().");
+    if (config.value('authn.deviceBoundSessions') !== true || !application) {
+      log.debug("Leaving XacmlRolePep.deviceBoundRequiredOf(). No.");
+      return false;
+    }
+    try {
+      const policy = require('../common/passkey_policy');
+      const name = policy.selectionFor('', application);
+      const profile = policy.read(name);
+      const required = !!(profile && profile.deviceBoundRequired === true);
+      log.debug("Leaving XacmlRolePep.deviceBoundRequiredOf(). " +
+                required);
+      return required;
+    } catch (e) {
+      // Unreadable is not required. Refusing every issuance because the
+      // profile could not be read would brick the protocols this gate sits
+      // in front of.
+      log.debug("Caught in XacmlRolePep.deviceBoundRequiredOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving XacmlRolePep.deviceBoundRequiredOf(). Unreadable.");
+      return false;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -770,6 +958,27 @@ class XacmlRolePep {
                                                         : hit.value) : '';
     log.debug("Leaving XacmlRolePep.deviceObligationOf(). " + said);
     return said === 'compromised' ? 'compromised' : 'not-compliant';
+  }
+
+  // What an authentication Deny says the authentication lacked (#723):
+  // `phishing-resistant`, `hardware-protected`, or null for a Deny that
+  // names nothing (an emailed factor's) or is not about the authentication.
+  private authenticationRefusalOf(answer: any): string | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.authenticationRefusalOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === AUTHN.OBLIGATION;
+    })[0];
+    const hit = found ? (found.assignments || []).filter(function (a) {
+      return a.attributeId === AUTHN.REFUSAL;
+    })[0] : null;
+    const said = hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                        : hit.value) : '';
+    const known = said === 'phishing-resistant' ||
+      said === 'hardware-protected' || said === 'device-bound-session';
+    log.debug("Leaving XacmlRolePep.authenticationRefusalOf(). " +
+              (known ? said : 'none'));
+    return known ? said : null;
   }
 
   // The risk obligation on a Deny, read: `{ action, factor }`, or null when
@@ -893,9 +1102,25 @@ class XacmlRolePep {
       return this.decideTransfer(asked);
     }
 
+    if (asked.passkeyQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A passkey question.');
+      return this.decidePasskey(asked);
+    }
+
     if (asked.gnapRightQuestion) {
       log.debug('Leaving XacmlRolePep.decideNow(). A GNAP right question.');
       return this.decideGnapRights(asked);
+    }
+
+    // BEFORE the policy, and before `xacml.enabled` being off (#740): a
+    // repository override written without the device-bound rule, and a
+    // realm that does not evaluate XACML, still hold a pending registration
+    // and still refuse a skipped or timed-out one. A pending hold is not
+    // counted as a refusal.
+    const binding = this.deviceBoundGate(asked);
+    if (binding) {
+      log.debug('Leaving XacmlRolePep.decideNow(). Device-bound session.');
+      return binding;
     }
 
     if (config.value('xacml.enabled') === false) {
@@ -1078,6 +1303,90 @@ class XacmlRolePep {
     }
 
     // -----------------------------------------------------------------------
+    // A DENY ABOUT THE SIGN-IN MECHANISM (#457) — the policy's mechanism
+    // obligation says so: the application allows only some mechanisms and
+    // this authentication used none of them. Enforced in both modes and
+    // where the role question was waived, because it is not about roles;
+    // asked before risk, so a session on the wrong mechanism is re-prompted
+    // for the right one first. The answer carries what the door re-prompts
+    // for. Audited as a refusal: what was asked for was not issued.
+    // -----------------------------------------------------------------------
+    const mechanismDeny = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === AUTHN.MECHANISM_OBLIGATION;
+      });
+    if (mechanismDeny) {
+      const allowedMechanisms = (asked.allowedAuthnMechanisms || [])
+        .map(String);
+      const satisfiedMechanisms = (asked.authnMechanisms || []).map(String);
+      const mechanismWhy = 'The application "' +
+        String(asked.application || '') + '" allows sign-in with ' +
+        allowedMechanisms.join(', ') + ', and this authentication used ' +
+        (satisfiedMechanisms.join(', ') || 'none of the mechanisms an ' +
+         'application can name') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0170',
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the sign-in mechanism for ' +
+                  (asked.kind || 'an issuance') + ': ' + mechanismWhy
+        });
+      }
+      log.info(errorCodes.tag('STS-XACML-0170') + 'xacml: ' +
+               (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' to "' +
+               (subject.name || 'nobody') + '" on the sign-in mechanism — ' +
+               mechanismWhy);
+      const refusal = this.refused('This application requires signing in ' +
+        'with ' + allowedMechanisms.join(' or ') + '.', answer.decision,
+        held, required, answer);
+      refusal.mechanism = { allowed: allowedMechanisms,
+                            satisfied: satisfiedMechanisms };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the mechanism.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
+    // A DENY ABOUT THE SECOND FACTOR (#475), on the sign-in mechanism's
+    // terms and just after it: the application allows only some second
+    // factors and this authentication gave another. The answer carries
+    // `mechanism` with `secondFactor` set, so every door that re-prompts for
+    // #457 re-prompts for this too and needs only to say which it was.
+    // -----------------------------------------------------------------------
+    const mfaDeny = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === AUTHN.MFA_MECHANISM_OBLIGATION;
+      });
+    if (mfaDeny) {
+      const allowedFactors = (asked.allowedMfaMechanisms || []).map(String);
+      const gaveFactors = (asked.mfaMechanisms || []).map(String);
+      const mfaWhy = 'The application "' + String(asked.application || '') +
+        '" allows the second factors ' + allowedFactors.join(', ') +
+        ', and this authentication gave ' + gaveFactors.join(', ') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0171',
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the second factor for ' +
+                  (asked.kind || 'an issuance') + ': ' + mfaWhy
+        });
+      }
+      log.info(errorCodes.tag('STS-XACML-0171') + 'xacml: ' +
+               (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' to "' +
+               (subject.name || 'nobody') + '" on the second factor — ' +
+               mfaWhy);
+      const refusal = this.refused('This application requires the second ' +
+        'factor ' + allowedFactors.join(' or ') + '.', answer.decision,
+        held, required, answer);
+      refusal.mechanism = { allowed: allowedFactors, satisfied: gaveFactors,
+                            secondFactor: true };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the second ' +
+                'factor.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
     // A DENY ABOUT RISK (#62 P3) — the policy's risk obligation says so. In
     // product it refuses, and the answer carries what to do about it (a
     // step-up and its factor) for the doors that can. In development it is
@@ -1176,12 +1485,17 @@ class XacmlRolePep {
     // cover the question, and an Indeterminate is a policy that could not be
     // evaluated.
     const why = this.reasonFor(answer, held, required, asked);
+    // The built-in device-bound rule (#740), when the early gate did not
+    // already answer it: the same operator code, recorded and never sent.
+    const deviceBoundRefusal =
+      this.authenticationRefusalOf(answer) === 'device-bound-session';
     if (!dryRun) {
       audit.audit({
         action: 'xacml.issuance.refused',
-        errorCode: answer.decision === model.DECISION.DENY ? 'STS-XACML-0039'
+        errorCode: deviceBoundRefusal ? 'STS-AUTHN-0462'
+          : (answer.decision === model.DECISION.DENY ? 'STS-XACML-0039'
           : (answer.decision === model.DECISION.NOT_APPLICABLE
-              ? 'STS-XACML-0040' : 'STS-XACML-0041'),
+              ? 'STS-XACML-0040' : 'STS-XACML-0041')),
         actor: subject.name || '',
         protocol: 'XACML',
         detail: answer.decision + ' for ' + (asked.kind || 'an issuance') +
@@ -1193,8 +1507,59 @@ class XacmlRolePep {
              (asked.kind || 'an issuance') + ' for "' +
              asked.application + '" to "' + (subject.name || 'nobody') +
              '" — ' + answer.decision + '. ' + why);
+    const refusal = this.refused(why, answer.decision, held, required,
+                                 answer);
     log.debug('Leaving XacmlRolePep.decideNow(). ' + answer.decision + '.');
-    return this.refused(why, answer.decision, held, required, answer);
+    return deviceBoundRefusal
+      ? errorCodes.mark(refusal, 'STS-AUTHN-0462') : refusal;
+  }
+
+  // A device-bound session the application requires (#740), decided before
+  // the policy is asked. The feature off, a fact other than pending /
+  // skipped / timedout, no application, or a profile that does not require
+  // one: not this gate's, and the caller goes on. `pending` is a hold
+  // (`deferred`, no error code, not counted). `skipped` and `timedout` are
+  // STS-AUTHN-0462, recorded and never sent.
+  private deviceBoundGate(asked: IssuanceQuestion): IssuanceAnswer | null {
+    const { log, config, audit, errorCodes } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceBoundGate().");
+    if (config.value('authn.deviceBoundSessions') !== true) {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). Feature off.");
+      return null;
+    }
+    const fact = String(asked.deviceBoundSession || 'none');
+    if (fact !== 'pending' && fact !== 'skipped' && fact !== 'timedout') {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). " + fact);
+      return null;
+    }
+    if (!asked.application ||
+        !this.deviceBoundRequiredOf(String(asked.application))) {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). Not required.");
+      return null;
+    }
+    if (fact === 'pending') {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). Pending.");
+      return { allowed: false, deferred: true, decision: 'Deny',
+               why: 'The application requires a device-bound session, and ' +
+                    'registration for this one has not finished.',
+               roles: [], required: [],
+               policy: this.issuancePolicyName() };
+    }
+    const why = 'The application requires a device-bound session, and ' +
+      'this one ' + (fact === 'skipped' ? 'was skipped.'
+                                         : 'was not bound in time.');
+    if (!dryRun) {
+      audit.audit({
+        action: 'xacml.issuance.refused', errorCode: 'STS-AUTHN-0462',
+        actor: String(asked.subject && asked.subject.name || ''),
+        protocol: 'XACML',
+        detail: fact + ' for ' + (asked.kind || 'an issuance') + ' to "' +
+                asked.application + '": ' + why
+      });
+    }
+    log.debug("Leaving XacmlRolePep.deviceBoundGate(). Refused.");
+    return errorCodes.mark(this.refused(why, 'Deny', [], [], null),
+                           'STS-AUTHN-0462');
   }
 
   // -------------------------------------------------------------------------
@@ -1346,12 +1711,99 @@ class XacmlRolePep {
              policy: (loaded && loaded.name) || '', transfer: found };
   }
 
+  // -------------------------------------------------------------------------
+  // THE PASSKEY QUESTION (#536): `register-passkey` or `use-passkey`, the
+  // facts `passkey_policy.ts` gathered, and one verdict out of the policy's
+  // passkey obligation. The transfer question's arrangement exactly: the
+  // realm's issuance policy first, with the repository and the PIP, and the
+  // BUILT-IN policy where that gives no verdict — so a realm's override
+  // built before these rules never silently stops refusing. Nothing is
+  // audited or counted here: the door records the refusal.
+  // -------------------------------------------------------------------------
+  private decidePasskey(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decidePasskey().');
+    const question = asked.passkeyQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const found = passkeyVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
+    });
+    log.debug('Leaving XacmlRolePep.decidePasskey(). ' + found.verdict);
+    return { allowed: found.verdict === 'allow',
+             decision: 'Permit',
+             why: 'The passkey verdict is ' + found.verdict +
+                  (found.reason ? ' (' + found.reason + ')' : '') +
+                  ', decided by ' +
+                  (found.decidedBy === 'policy'
+                    ? 'the issuance policy "' +
+                      ((loaded && loaded.name) || '') + '"'
+                    : found.decidedBy === 'none'
+                      ? 'the passkey rules read from the facts, because no ' +
+                        'policy answered'
+                      : 'the built-in issuance policy') + '.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', passkey: found };
+  }
+
   private reasonFor(answer: any, held: string[], required: string[],
                     asked: IssuanceQuestion): string {
     const { log, model } = this.deps;
     log.debug("Entering XacmlRolePep.reasonFor().");
     const who = asked.subject && asked.subject.name
       ? '"' + asked.subject.name + '"' : 'the caller';
+    // A DENY SAYING WHAT THE AUTHENTICATION LACKED (#723) says that: the
+    // role sentence would tell somebody who holds every role that they
+    // hold every role.
+    const lacked = this.authenticationRefusalOf(answer);
+    if (lacked === 'device-bound-session') {
+      const fact = String(asked.deviceBoundSession || '');
+      log.debug("Leaving XacmlRolePep.reasonFor(). Device-bound.");
+      return 'The application requires a device-bound session, and this ' +
+        'one ' + (fact === 'skipped' ? 'was skipped.'
+                                      : 'was not bound in time.');
+    }
+    if (lacked) {
+      log.debug("Leaving XacmlRolePep.reasonFor(). The authentication.");
+      return '"' + asked.application + '" requires ' +
+        (lacked === 'hardware-protected'
+          ? 'a phishing-resistant authentication with a hardware-protected ' +
+            'key (OpenID Connect EAP ACR Values 1.0, phrh)'
+          : 'a phishing-resistant authentication (OpenID Connect EAP ACR ' +
+            'Values 1.0, phr)') +
+        ', and ' + who + '\'s was not one. A passkey or security key ' +
+        'already registered meets phr; phrh needs one whose attestation ' +
+        'this realm trusts and that is not backup-eligible.';
+    }
+    // A DENY FROM ANOTHER RULE (2026-11-10, fuzz run 8). The role sentence
+    // was written for a role Deny, and it was also drawn for a Deny some
+    // other rule made. The fuzz person's console session was refused 130
+    // times with "requires EVERYBODY and ... holds EVERYBODY, ...", naming
+    // a requirement already met. When the subject holds a required role,
+    // the role rule did not refuse. The answer does not name the rule that
+    // did, so this says so and names the obligations the Deny carried.
+    const met = answer.decision === model.DECISION.DENY &&
+      required.some(function (one) {
+        return held.indexOf(one) >= 0;
+      });
+    if (met) {
+      const carried = (answer.obligations || []).map(function (o) {
+        return o && o.id ? String(o.id) : '';
+      }).filter(function (id) {
+        return id.length > 0;
+      });
+      log.debug("Leaving XacmlRolePep.reasonFor(). Another rule.");
+      return 'the issuance policy denied it with a rule other than the ' +
+        'role requirement: "' + asked.application + '" requires ' +
+        required.join(' or ') + ', which ' + who + ' holds. ' +
+        (carried.length
+          ? 'The Deny carried ' + carried.join(', ') + '.'
+          : 'The Deny carried no obligation naming the rule; ' +
+            '/admin/xacml/decide shows which rule applies.');
+    }
     if (answer.decision === model.DECISION.DENY ||
         answer.decision === model.DECISION.NOT_APPLICABLE) {
       log.debug("Leaving XacmlRolePep.reasonFor().");

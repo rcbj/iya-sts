@@ -140,6 +140,9 @@ whichever cell is nearest. Two things let you see the rest:
   * their entry, devices and group memberships move with their entryUUID
     (their `sub`) kept, and their credentials are sealed again under the
     receiving cell's key;
+  * the DIDs the realm publishes for them keep their addresses: a fetch
+    still reaches the cell that created the DID, which finds where the
+    person lives now and answers with the document that cell serves;
   * they are removed from the old cell.
 
 ## Turning a single-cell deployment into a cell
@@ -208,9 +211,11 @@ Every refusal is an `STS-CELL-020x` code, and the exit status is non-zero.
 ## The decisions are policy
 
 Whether a session may be held away from home, whether a request may be
-served at all, and whether a cell's people may be listed from another
-jurisdiction are all questions to the realm's **issuance policy**. The facts
-it receives are:
+served at all, whether a cell's people may be listed from another
+jurisdiction, and whether a person may be pushed to an outbound SCIM client's
+service provider in another jurisdiction (purpose `scim-provision`; see
+[SCIM](scim.md#in-a-service-deployed-as-cells)) are all questions to the
+realm's **issuance policy**. The facts it receives are:
 
 * the home and serving jurisdictions;
 * the client's country;
@@ -220,9 +225,11 @@ it receives are:
 The built-in rules are the strict default. A realm's own XACML policy can
 decide differently; see [XACML](xacml.md).
 
-## What is not placed yet
+## Kerberos
 
-A Kerberos AS-REQ over TCP or UDP port 88, sent to a cell other than the
-principal's home, is answered there. The KDC's socket code belongs to the
-parent project, and a hook it would need is recorded in
-`kerberos/CLAUDE.md`. Over HTTPS (`/KdcProxy`) the request is placed at home.
+A Kerberos request is answered in the client's home cell, over HTTPS
+(`/KdcProxy`) and over TCP and UDP port 88 alike (#588): a client's
+`krb5.conf` may name any cell's KDC. A home cell that cannot be reached
+answers `KDC_ERR_SVC_UNAVAILABLE`, so list more than one KDC. A reply relayed
+from home is held to the UDP size limit like any other, so a large one sends
+the client to TCP.

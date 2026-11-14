@@ -11,7 +11,7 @@
 // Nothing in the in-process half of `tests/` needs this — the whole point of
 // that half is that it drives modules IN PROCESS and binds no port (see
 // tests/CLAUDE.md). This module exists for the report generator's OTHER half:
-// the protocol jobs under `tests/vendored/` (copies of the parent project's)
+// the protocol jobs under `tests/protocol/` (copies of the parent project's)
 // that drive this service over HTTP, which `tests/tools/run-report.js` runs
 // against the WORKING TREE rather than against the `sts/` gitlink the
 // parent's own suite is pinned to. Those need a listener, and somebody has to
@@ -96,7 +96,6 @@ const log = bunyan.createLogger({ name: 'service',
 const PORT_VARS = [
   'STS_PORT',
   'KRB5_KDC_PORT',
-  'KRB5_SERVICE_PORT',
   'LDAP_PORT',
   'LDAPS_PORT',
   'STS_SPIFFE_WORKLOAD_PORT',
@@ -157,7 +156,7 @@ async function findPortBlock(preferredBase, log) {
     bases.push(Number(preferredBase));
   }
   // A spread of candidates well above the service's own defaults (8081, 8082,
-  // 88, 8888, 389, 636, 8092, 8181) so a plain local stack is never touched.
+  // 88, 389, 636, 8092, 8181) so a plain local stack is never touched.
   for (let i = 0; i < 40; i++) {
     bases.push(18100 + require('crypto').randomInt(400) * 10);
   }
@@ -196,7 +195,7 @@ async function findPortBlock(preferredBase, log) {
 //
 // THE LEVEL TAKES TWO OPTIONS AND NOT ONE, which is easy to get wrong: opts.
 // logLevel reaches the loggers config.js registers, and the eight VENDORED
-// modules under common/vendored/ each build their own from
+// modules under common/crypto_impl/ each build their own from
 // `require(process.env.CONFIG_FILE).logLevel` at load and never see it. So a
 // caller that wants those loud or quiet passes opts.configFile as well. Left
 // empty, the fallback below is ./env/local.js, whose level is `info` — and
@@ -230,6 +229,18 @@ function environmentFor(base, opts) {
   env.STS_HTTPS = String(process.env.STS_HTTPS === undefined
     ? 'true'
     : process.env.STS_HTTPS);
+  // THE REALM CAP, RAISED FOR A THROWAWAY INSTANCE (#368). realms.maxCount
+  // ships at 10, counting the default realm, and the fallback appconfig file
+  // above is env/local.js, which does not raise it — so a debug, trace or
+  // coverage run against this instance met the cap as soon as the protocol
+  // jobs had left nine realms standing, and every later create was refused
+  // STS-CORE-0161 for a reason no job was testing. env/test.js and
+  // env/docker-tests.js raise it to the setting's maximum for the same
+  // reason, and tests/run.js does for the in-process suite. A caller's own
+  // STS_REALMS_MAX_COUNT still wins.
+  if (process.env.STS_REALMS_MAX_COUNT === undefined) {
+    env.STS_REALMS_MAX_COUNT = '100000';
+  }
   if (opts.logLevel) {
     // The mock's own level. An EMPTY value is not a harmless default here:
     // bunyan throws `unknown level name: ""` while the service is still
@@ -382,7 +393,7 @@ async function start(opts) {
       // removed from the middle of that list. **Two were removed from the
       // middle of it on 2026-09-16**, which moved the directory from `base +
       // 5` to `base + 3` and cost nothing.
-      // `tests/vendored/sts_directory_bulk_load_ldap.js`
+      // `tests/protocol/sts_directory_bulk_load_ldap.js`
       // is the caller that needed it and run-report.js is what hands it over.
       const ports = {};
       PORT_VARS.forEach(function (name, i) { ports[name] = base + i; });

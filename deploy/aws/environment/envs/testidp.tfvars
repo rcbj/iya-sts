@@ -64,6 +64,22 @@
 public_hostname  = "test-idp.iyasec.io"
 public_zone_name = "iyasec.io"
 
+# CLOUDFRONT IN FRONT OF THE LOAD BALANCER (rcbj, 2026-11-05). A browser reaches
+# test-idp.iyasec.io through it; a client certificate, Kerberos, LDAP, SPIFFE
+# and the revocation listener use direct_hostname (environment/cloudfront.tf).
+cloudfront_enabled    = true
+direct_hostname       = "direct.test-idp.iyasec.io"
+cloudfront_log_bucket = "iyasec-logs"
+cloudfront_log_prefix = "test-idp/"
+
+# THE WAF BLOCKS (rcbj, 2026-11-10). It was in report-only mode for the first
+# Qualys scan, whose scanner (139.87.104.123, Qualys US Platform 3) was outside
+# the range admitted for it; report-only opened the public name to anyone, and
+# a dozen outside sources found it within the hour. For a scan, admit the
+# scanner's addresses in ALLOWED_CIDR instead, or set this true for its
+# duration only.
+waf_report_only = false
+
 # The service's own names under iyasec.io rather than the example domains the
 # settings default to (2026-09-18): the default realm's DNS domain (which roots
 # the directory at dc=iyasec,dc=io — it was LDAP_BASE_DN until global.domain
@@ -102,14 +118,21 @@ extra_environment = {
   LDAP_WORKER_DIRECTORY = "postgres-lru"
 }
 
+# ONE NODE WITH TWO WORKER THREADS (rcbj, 2026-11-03, #1293): the OpenID
+# certification runs go to one deployment, and rcbj asked for a single node
+# with two request workers. Three isolates (the front and two threads) is
+# within task_cpu / 1024 + 1 at 2 vCPU, and 4 GiB gives each a derived heap
+# share well above the 336 MiB the front ran out at in 1 GiB (above).
+node_count = 1
+
 sts_mode                = "product"
-workers_request_count   = 0
+workers_request_count   = 2
 workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 
-task_cpu    = 512
-task_memory = 1024
+task_cpu    = 2048
+task_memory = 4096
 
 delete_automated_backups = true
 vpc_cidr                 = "10.52.0.0/16"

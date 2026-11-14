@@ -1,0 +1,554 @@
+{
+  "fed.roles.service-provider.label": {
+    "en": "1fd2d940fd75671b",
+    "text": "Ce service est le fournisseur de services"
+  },
+  "fed.roles.service-provider.short": {
+    "en": "6deb8eb0a31924f8",
+    "text": "Fournisseur de services"
+  },
+  "fed.roles.service-provider.what": {
+    "en": "9ca71fc74f7baaeb",
+    "text": "Un fournisseur d’identité ÉTRANGER authentifie la personne et ce service consomme ce qu’il émet. C’est le sens qui crée des entrées d’annuaire pour des personnes que ce service n’a jamais vues, et le sens qui ne peut pas être permissif : une assertion est refusée à moins d’être vérifiée avec la clé de cette relation."
+  },
+  "fed.roles.identity-provider.label": {
+    "en": "f565ea32582c51fe",
+    "text": "Ce service est le fournisseur d’identité"
+  },
+  "fed.roles.identity-provider.short": {
+    "en": "d8a43dbfd9a920e9",
+    "text": "Fournisseur d’identité"
+  },
+  "fed.roles.identity-provider.what": {
+    "en": "6456326e0ffdbb1e",
+    "text": "Ce service authentifie la personne et un fournisseur de services ÉTRANGER consomme ce qu’il émet. Chaque point de terminaison de protocole d’ici le fait déjà pour tout appelant — ce qu’ajoute la relation, c’est que le partenaire est marqué comme partenaire de fédération plutôt que comme client de test, ainsi qu’une liste des attributs qui lui sont communiqués."
+  },
+  "fed.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "fed.protocols.saml2.what": {
+    "en": "355d6177d0a6e06b",
+    "text": "Le profil Web Browser SSO. Ce service envoie une <AuthnRequest> au partenaire et consomme la <Response> à son assertion consumer service, ou en émet une vers le partenaire depuis /saml2."
+  },
+  "fed.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "fed.protocols.saml11.what": {
+    "en": "3c12221e7c47c8a0",
+    "text": "Le profil Browser/POST. IL N’Y A PAS DE MESSAGE DE REQUÊTE — un flux SAML 1.1 est initié par le fournisseur d’identité ; ce vers quoi ce service envoie le navigateur est donc une URL de transfert inter-sites portant un TARGET, et ce qui revient est une <Response> sans InResponseTo à faire correspondre. Voir la remarque sur le rejeu à propos de fedNonce ci-dessous."
+  },
+  "fed.protocols.wsfed.label": {
+    "en": "8dedbb37150543a1",
+    "text": "WS-Federation 1.2"
+  },
+  "fed.protocols.wsfed.what": {
+    "en": "7c638a5872ef9fcd",
+    "text": "Le profil passive requestor. Ce service envoie wa=wsignin1.0 avec son propre wtrealm et consomme le wresult, qui porte une assertion SAML 1.1 ou SAML 2.0 dans un RSTR."
+  },
+  "fed.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "fed.protocols.oidc.what": {
+    "en": "37c9ef2268d1e1b9",
+    "text": "Le flux par code d’autorisation par défaut, et response_type=id_token avec response_mode=form_post lorsqu’il ne doit y avoir aucun canal de retour. Les attributs proviennent de l’ID Token, et de UserInfo lorsqu’il est configuré."
+  },
+  "fed.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "fed.protocols.oauth2.what": {
+    "en": "b8c06dd7e4c8e69d",
+    "text": "Le flux par code d’autorisation SANS ID Token — les attributs proviennent du jeton d’accès lorsque c’est un JWT, et sinon d’un point de terminaison configuré de type userinfo. C’est ici un protocole distinct plutôt qu’OIDC avec un indicateur, car ce qui identifie la personne est un artefact différent, et se tromper là-dessus est tout ce qui va mal lorsqu’on utilise OAuth 2.0 pour l’authentification."
+  },
+  "fed.protocols.ssf.label": {
+    "en": "3c589f06261f6ba6",
+    "text": "Shared Signals uniquement"
+  },
+  "fed.protocols.ssf.what": {
+    "en": "01c3df2380a01fdd",
+    "text": "Un transmetteur qui ne connecte personne ici — un gestionnaire d’appareils, un agent de poste de travail, un système RH — envoyant des événements CAEP et RISC sur des personnes et des appareils que ce domaine connaît. Ce à quoi mènent ses événements relève de la décision de la politique de réponse aux signaux, et par défaut ils sont enregistrés sans plus, sauf la conformité d’un appareil."
+  },
+  "fed.mechanisms.password.label": {
+    "en": "e3db92128adfe5d4",
+    "text": "Nom d’utilisateur et mot de passe"
+  },
+  "fed.mechanisms.password.what": {
+    "en": "3c7b942fed61a172",
+    "text": "L’écran de connexion propre à ce service : un nom d’utilisateur et un mot de passe, le mot de passe étant vérifié en mode produit et non en mode développement. Le cas ordinaire, et ce vers quoi se rabat un mécanisme non défini dès que rien d’autre n’a d’avis."
+  },
+  "fed.mechanisms.password-mfa.label": {
+    "en": "4e8e68a717825941",
+    "text": "Nom d’utilisateur et mot de passe, avec MFA"
+  },
+  "fed.mechanisms.password-mfa.what": {
+    "en": "16512b9a181edfcd",
+    "text": "Le même écran avec la case du second facteur cochée et verrouillée ; la cérémonie WebAuthn s’exécute donc après l’étape du mot de passe et la session enregistre amr [\"pwd\",\"hwk\"] et acr \"mfa\". C’est la même exigence que celle que peut formuler un RequestedAuthnContext ; un protocole qui la demande et une relation qui la configure produisent un seul écran, et non deux."
+  },
+  "fed.mechanisms.webauthn.label": {
+    "en": "d1b42f0bce49d6e9",
+    "text": "WebAuthn, sans mot de passe"
+  },
+  "fed.mechanisms.webauthn.what": {
+    "en": "0c8a75ea99e01b48",
+    "text": "Une clé de sécurité SEULE — aucun mot de passe n’est présenté ; la session enregistre donc amr [\"hwk\"] et UN SEUL facteur. C’est pourquoi elle ne peut pas satisfaire un appelant qui a exigé un second facteur : voir forceMfa dans authn.js, qui l’emporte sur ce choix et l’indique dans le journal."
+  },
+  "fed.mechanisms.federation.label": {
+    "en": "abfd4fd4bfb3a76c",
+    "text": "Une autre relation de fédération"
+  },
+  "fed.mechanisms.federation.what": {
+    "en": "86f6c0e269a249de",
+    "text": "LE CAS DU COURTIER. `fedAuthnRelationship` nomme une relation côté FOURNISSEUR DE SERVICES dans ce même domaine et la personne y est envoyée ; ce service consomme donc l’assertion de quelqu’un d’autre puis émet la sienne vers le partenaire qui l’a demandée. Les deux protocoles n’ont pas besoin de correspondre et ne correspondent généralement pas — c’est tout ce qu’est un pont d’identité."
+  },
+  "fed.mechanisms.spnego.label": {
+    "en": "e12bc145a6d518f3",
+    "text": "Ticket Kerberos (SPNEGO)"
+  },
+  "fed.mechanisms.spnego.what": {
+    "en": "0f52a102d4c01229",
+    "text": "AUTHENTIFICATION INTÉGRÉE. La personne est envoyée vers /authn/spnego, qui répond 401 avec WWW-Authenticate: Negotiate et la connecte sur la base du ticket de service que son client renvoie (RFC 4559 sur RFC 4178 sur RFC 4121). Rien n’est saisi et aucun écran n’est affiché. Comme une clé de sécurité ou un portefeuille, il repose sur un identifiant que ce service vérifie dans tous les modes — le mot de passe de l’écran de connexion n’est vérifié qu’en mode produit — et ce que la session revendique ensuite est lu à partir des propres indicateurs du TICKET : amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et RIEN du tout pour un ticket qui ne revendique ni l’un ni l’autre. Un client qui ne peut pas obtenir de ticket arrive sur une page qui renvoie vers l’écran de connexion, car un simple 401 Negotiate est une impasse dans tout navigateur qui n’est pas configuré pour cet hôte."
+  },
+  "fed.mechanisms.wallet.label": {
+    "en": "a6a3e498bac9d4f6",
+    "text": "Portefeuille (OpenID4VP)"
+  },
+  "fed.mechanisms.wallet.what": {
+    "en": "d476b4b21a6959d0",
+    "text": "La personne est envoyée vers /authn/wallet, qui demande à son portefeuille — via la Digital Credentials API, ou sur cet appareil par lien — une attestation que ce domaine lui a émise, et la connecte en tant que l’entrée d’annuaire pour laquelle elle a été émise dès qu’une preuve de détention récente est vérifiée. amr [\"pop\"] et acr \"1\" pour un facteur ; un appelant qui en a exigé deux se voit ensuite demander un second facteur (ou en a déjà un, lorsque l’attestation de clé de l’attestation le dit) ; ce mécanisme ne cède donc pas devant forceMfa comme le fait spnego."
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.label": {
+    "en": "3fb482b3b1d215c6",
+    "text": "Lier à la première connexion (par défaut)"
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.what": {
+    "en": "bf6249bea0d69f73",
+    "text": "Un sujet lié se connecte. Un sujet non lié nommant une personne existante se connecte d’abord ICI en tant que cette personne, puis est lié."
+  },
+  "fed.subjectPolicies.pre-linked.label": {
+    "en": "f892df83895cdf56",
+    "text": "Liaison préalable uniquement"
+  },
+  "fed.subjectPolicies.pre-linked.what": {
+    "en": "9335561304f4cdab",
+    "text": "Seul un lien créé au préalable — dans la console, via /admin-api ou SCIM — permet à quiconque de se connecter."
+  },
+  "fed.subjectPolicies.jit-namespaced.label": {
+    "en": "02c2c9bfd4a4b3cf",
+    "text": "Juste-à-temps, avec espace de noms"
+  },
+  "fed.subjectPolicies.jit-namespaced.what": {
+    "en": "b78784c7524b07bf",
+    "text": "Un sujet non lié reçoit une nouvelle entrée nommée <relationship>~<name>, liée dès sa création, jamais une personne existante."
+  },
+  "fed.subjectPolicies.any-existing.label": {
+    "en": "3c34ce5af080ff96",
+    "text": "Toute personne existante, par nom (développement uniquement)"
+  },
+  "fed.subjectPolicies.any-existing.what": {
+    "en": "0738db6ce4ae6df5",
+    "text": "Le nom qu’envoie le partenaire est mis en correspondance avec une personne locale. Refusé en mode produit."
+  },
+  "fed.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "La classe abstraite que porte chaque entrée."
+  },
+  "fed.schema.objectClasses.applicationProcess.what": {
+    "en": "1c2b8d8382210aed",
+    "text": "La même classe enregistrée qu’utilise ou=applications, et pour la même raison : c’est la seule qui convienne à une partie dans un protocole, et elle apporte cn, description, seeAlso, ou et l."
+  },
+  "fed.schema.objectClasses.stsFederation.what": {
+    "en": "c0a952c96d821bd5",
+    "text": "INVENTÉE. Aucun schéma LDAP enregistré ne comporte de partenaire de fédération, car chaque produit qui en stocke un (AD FS, Shibboleth, Keycloak, Ping) le conserve dans sa propre base de données. Ce sont les noms propres à ce service, comme le sont déjà ceux de stsApplication."
+  },
+  "fed.schema.attributes.fedId.what": {
+    "en": "259929e99a94f66f",
+    "text": "LA CLÉ : un nom court choisi par un opérateur, unique dans les deux rôles. C’est aussi le RDN, contrairement à celui d’une application, car ce registre est CONFIGURÉ plutôt qu’observé — personne n’a à accepter ce qu’un protocole a présenté ; on peut donc simplement exiger que l’identifiant soit court et compatible avec un RDN."
+  },
+  "fed.schema.attributes.cn.what": {
+    "en": "a0eb71f29906fcfc",
+    "text": "La valeur du RDN, égale à fedId. Contrairement à une entrée d’application, il n’y a pas ici de cas de condensat : un identifiant qui ne conviendrait pas est refusé à la création plutôt que haché."
+  },
+  "fed.schema.attributes.fedName.what": {
+    "en": "3680b45397f1fed4",
+    "text": "Le nom sous lequel désigner le partenaire sur une page. L’identifiant tient lieu de nom lorsqu’aucun n’est fourni, car inventer un nom convivial reviendrait à inventer un fait."
+  },
+  "fed.schema.attributes.fedRole.what": {
+    "en": "05d0154783f31965",
+    "text": "QUELLE EXTRÉMITÉ EST CE SERVICE : service-provider (il consomme) ou identity-provider (il fait des assertions). Une relation correspond à un seul sens — voir l’en-tête."
+  },
+  "fed.schema.attributes.fedProtocol.what": {
+    "en": "06ec8c6d5bce784c",
+    "text": "L’un de saml2, saml11, wsfed, oidc, oauth2 — les cinq protocoles de connexion — ou ssf, un partenaire qui envoie uniquement des Shared Signals et ne connecte personne."
+  },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "LE FOURNISSEUR GRAND PUBLIC OU SOCIAL QUE CETTE RELATION REPRÉSENTE (google, discord, github, generic-oidc, generic-oauth2), ou vide pour un partenaire d'entreprise. Fixé à la création de la relation et jamais modifié : le profil du fournisseur a alors écrit ses points de terminaison sur cette entrée, et indique à chaque connexion d'où proviennent le sujet, l'adresse et sa vérification. Une relation qui nomme un fournisseur appartient à la catégorie grand public, qu'un domaine active avec federation.consumerProviders."
+  },
+  "fed.schema.attributes.fedPeer.what": {
+    "en": "267dac8cafddfb60",
+    "text": "L’IDENTIFIANT PROPRE DU PARTENAIRE, quel que soit le nom que lui donne son protocole : un entityID SAML, un émetteur OpenID Connect, un wtrealm WS-Federation. Sur une relation côté fournisseur de services, il est VÉRIFIÉ — une assertion dont l’Issuer n’est pas cette chaîne est refusée — c’est pourquoi ce n’est pas une simple documentation, et depuis le 2026-09-12 il y est OBLIGATOIRE : une relation qui en est dépourvue n’est pas entièrement configurée."
+  },
+  "fed.schema.attributes.fedLocalEntityId.what": {
+    "en": "000e6680c6459ba5",
+    "text": "LE NOM DE CE SERVICE POUR CE PARTENAIRE, lorsque ce n’est pas le nom que ce service dérive. Vide — la valeur par défaut — il est dérivé de l’URL de base par laquelle le navigateur a atteint ce service (<base>/federation/acs/<id>, que fixe global.publicBaseUrl). Définissez-le à l’entityID avec lequel le partenaire a été configuré : il devient l’Issuer de l’AuthnRequest sortante, le wtrealm WS-Federation, le providerId SAML 1.1, l’entityID des métadonnées SP de cette relation, et l’audience que doit nommer une assertion entrante — ce qui est un motif de REFUS depuis le 2026-09-12 ; un partenaire qui connaît ce service sous un autre nom a donc besoin de ce paramètre. L’URL de l’assertion consumer reste dérivée, car c’est une adresse qu’un navigateur doit pouvoir atteindre."
+  },
+  "fed.schema.attributes.fedEnabled.what": {
+    "en": "b6615a9f3a870188",
+    "text": "TRUE/FALSE. Une relation est créée DÉSACTIVÉE et rien en elle ne fait quoi que ce soit tant qu’elle n’est pas activée : un partenaire à moitié configuré qui accepterait silencieusement des assertions serait précisément l’échec que tout ce registre existe pour empêcher."
+  },
+  "fed.schema.attributes.description.what": {
+    "en": "a82b6893dc62502e",
+    "text": "Une ligne par événement survenu à cette relation."
+  },
+  "fed.schema.attributes.fedSsoUrl.what": {
+    "en": "46c3751779813588",
+    "text": "OÙ LE NAVIGATEUR EST ENVOYÉ. Le service Single Sign-On SAML du partenaire, son service de transfert inter-sites SAML 1.1, son point de terminaison passif WS-Federation, ou son point de terminaison d’autorisation OAuth 2.0. Obligatoire dans tous les protocoles, car une relation qui n’a nulle part où envoyer qui que ce soit ne peut pas commencer."
+  },
+  "fed.schema.attributes.fedTokenUrl.what": {
+    "en": "3bd95189243b5794",
+    "text": "Le point de terminaison de jeton du partenaire, pour le flux par code d’autorisation. C’EST L’UNE DES DEUX URL QUE CE SERVICE APPELLERA RÉELLEMENT — voir federation_http.js, qui est la seule requête sortante de ce dépôt et explique pourquoi une URL configurée est autre chose qu’une URL enregistrée."
+  },
+  "fed.schema.attributes.fedUserinfoUrl.what": {
+    "en": "c20335797afc1b41",
+    "text": "Le point de terminaison UserInfo du partenaire, ou tout point de terminaison qui répond en JSON au sujet du porteur d’un jeton d’accès. FACULTATIF pour OIDC, où l’ID Token en porte généralement assez, et SEULE source d’attributs pour un partenaire OAuth 2.0 simple dont le jeton d’accès est opaque. La seconde URL que ce service appellera."
+  },
+  "fed.schema.attributes.fedJwksUri.what": {
+    "en": "8abc51b744775c8b",
+    "text": "Le JWKS du partenaire. RÉCUPÉRÉ — ce qui est exactement l’inverse de ce que fait oauthJwksUri sur une entrée d’application, et la différence constitue tout l’argument de federation_http.js : celle-là est une URL qu’un appelant non authentifié a ENREGISTRÉE, celle-ci une URL qu’un administrateur a CONFIGURÉE. Laissez-la vide et collez plutôt les clés dans fedJwks si ce service ne doit pas effectuer l’appel."
+  },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "UN SECOND POINT DE TERMINAISON DE PROFIL, pour un fournisseur qui publie l'adresse vérifiée d'une personne à part du reste (/user/emails de GitHub). Appelé avec le même jeton d'accès et selon la même politique que fedUserinfoUrl, et seulement pour une relation dont le profil de fournisseur le lit. Son échec coûte l'adresse, jamais la connexion."
+  },
+  "fed.schema.attributes.fedJwks.what": {
+    "en": "e5d612d3437f7654",
+    "text": "Les clés publiques du partenaire sous forme de document JWKS, tel quel. Lu AVANT fedJwksUri et jamais actualisé ; une relation qui le porte n’effectue donc aucune requête sortante pour obtenir des clés."
+  },
+  "fed.schema.attributes.fedTrustAnchor.what": {
+    "en": "c2b143ccd681914e",
+    "text": "OPENID CONNECT UNIQUEMENT. L’Entity Identifier de l’un des Trust Anchors de ce domaine (/admin/oidfed). S’il est défini, l’OP nommé par fedPeer est résolu par sa Trust Chain jusqu’à cette ancre, ses points de terminaison et ses clés sont les métadonnées openid_provider dont se porte garante la chaîne, et ce service s’enregistre auprès de lui AUTOMATIQUEMENT sous son propre Entity Identifier, en signant ses requêtes et son authentification au point de terminaison de jeton avec sa clé ES256 — fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, fedClientId et fedClientSecret ne sont donc pas lus. S’il est vide, la relation est configurée manuellement comme toujours."
+  },
+  "fed.schema.attributes.fedSigningCertificate.what": {
+    "en": "964cd498196aff60",
+    "text": "LE CERTIFICAT DE SIGNATURE DU PARTENAIRE, en DER base64 — la même écriture que porte un ds:X509Certificate et la même qu’utilise samlSigningCertificate sur une entrée d’application ; un certificat a donc une seule écriture dans tout ce service. C’est avec lui que chaque assertion SAML et WS-Federation est vérifiée, et c’est l’unique attribut qui sépare ce service d’un point de terminaison auquel n’importe qui pourrait affirmer n’importe quoi."
+  },
+  "fed.schema.attributes.fedClientId.what": {
+    "en": "d1b0b114250b58b6",
+    "text": "LE client_id DE CE SERVICE CHEZ LE PARTENAIRE. Le nôtre, émis par lui — à ne pas confondre avec un oauthClientId sur une entrée d’application, qui est ici l’identifiant d’un client."
+  },
+  "fed.schema.attributes.fedClientSecret.what": {
+    "en": "627419de92206a62",
+    "text": "LE SECRET DE CE SERVICE CHEZ LE PARTENAIRE, en clair, dans un annuaire où chaque bind réussit. C’est un VÉRITABLE identifiant auprès d’un VÉRITABLE service étranger, ce qui est une affirmation plus forte que tout le reste de cet annuaire — voir l’en-tête. Jamais écrit dans le journal d’audit et jamais affiché sur une page."
+  },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "fdcac3938c7dc0ec",
+    "text": "COMMENT LA RÉPONSE D’AUTORISATION REVIENT. Vide, la valeur par défaut : query pour code, et form_post (OAuth 2.0 Form Post Response Mode) pour un type de réponse OpenID Connect portant un ID Token ou un jeton d’accès. form_post, qu’exige Sign in with Apple dès qu’un nom ou une adresse est demandé, arrive sous forme de POST intersite, si bien qu’un navigateur ne lui envoie aucun cookie SameSite=Lax. fragment, OpenID Connect seulement, est la valeur par défaut de ces types de réponse dans la spécification : la réponse est dans le fragment de l’URL, et une page munie d’un script ici la transmet. Il place l’ID Token dans l’historique du navigateur, ce que form_post ne fait pas : ne l’utilisez que pour un partenaire qui ne peut pas poster. query ne peut porter ni un ID Token ni un jeton d’accès."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "MICROSOFT, TOUT LOCATAIRE SEULEMENT : les identifiants des locataires dont les personnes peuvent se connecter, un par valeur. fedPeer contient alors {tenantid}, rempli à partir du tid de chaque jeton, et un jeton d’un locataire non listé est refusé. Vide refuse tous les locataires."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "APPLE SEULEMENT : l’identifiant d’équipe Apple Developer, l’iss du secret client que ce service signe pour chaque demande de jeton."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "APPLE SEULEMENT : l’identifiant de la clé Sign in with Apple, le kid du secret client que ce service signe."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "APPLE SEULEMENT : LA CLÉ PRIVÉE avec laquelle ce service signe son secret client (le fichier .p8 délivré par Apple, une clé P-256 en PEM PKCS #8). C’est un identifiant chez Apple. Elle est scellée sous la clé de chiffrement de clés partout où les clés persistent, jamais affichée et jamais écrite dans le journal d’audit. Un secret client signé avec elle vit cinq minutes et est émis à chaque demande de jeton."
+  },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "PARAMÈTRES SUPPLÉMENTAIRES DE LA DEMANDE D’AUTORISATION, un par valeur, écrits `<name>=<value>`, pour un fournisseur qui en a besoin (le `claims` de Twitch, pour recevoir une adresse). OpenID Connect et OAuth 2.0 seulement. Les paramètres que ce service fixe lui-même — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request et request_uri — sont refusés ici, car modifier l’un d’eux ici déferait une vérification que fait ce service."
+  },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "df266a3a67c1b2b5",
+    "text": "COMMENT CE SERVICE S'AUTHENTIFIE AUPRÈS DU POINT DE TERMINAISON DE JETON DU PARTENAIRE : client_secret_basic (la valeur par défaut, que la section 2.3.1 de la RFC 6749 impose à tout serveur de prendre en charge) ou client_secret_post, pour un partenaire qui ne lit le secret que dans le corps. Sans fedClientSecret, ce service est un client public et aucune des deux ne s'applique. tls_client_auth (RFC 8705 section 2.1) s'authentifie avec le certificat client TLS de la relation (fedClientCertificate) et n'envoie ni assertion ni secret ; il est réservé à fedFapi 1-advanced, et une relation qui le nomme sans ce profil n'est pas prête."
+  },
+  "fed.schema.attributes.fedScope.what": {
+    "en": "7f9479e6e589a23f",
+    "text": "La portée demandée au partenaire. `openid profile email` est la valeur par défaut pour une relation OIDC et il n’y a pas de valeur par défaut pour une relation OAuth 2.0, car ce qu’un serveur d’autorisation OAuth 2.0 vous accordera lui est entièrement propre."
+  },
+  "fed.schema.attributes.fedResponseType.what": {
+    "en": "885dc55158b43f26",
+    "text": "code (la valeur par défaut), id_token, ou l’un des quatre autres d’OpenID Connect : id_token token (implicite), code id_token, code token et code id_token token (hybrides). `id_token` avec form_post est la forme qui n’a besoin d’AUCUN canal arrière, donc d’aucun point de terminaison de jeton, d’aucun secret client ni d’aucune requête sortante — la seule façon de se fédérer avec un partenaire OIDC depuis un déploiement sans aucune sortie réseau. Un ID Token venu du point de terminaison d’autorisation doit porter le nonce, ainsi que c_hash et at_hash partout où un code ou un jeton d’accès l’accompagnait."
+  },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "OPENID CONNECT SEULEMENT. L’UNIQUE ALGORITHME avec lequel le partenaire signe les ID Tokens et les Logout Tokens de cette relation — ce qui a été enregistré chez le partenaire comme id_token_signed_response_alg (OpenID Connect Core 1.0 section 3.1.3.7 étape 7, Back-Channel Logout 1.0 section 2.6). Un jeton signé avec un autre est refusé, même si la clé du partenaire le vérifie. Vide, la valeur par défaut : tout algorithme de la famille de la clé qui vérifie et que federation.jwtAlgorithms autorise. Définissez-le : vide, il accepte un jeton signé par une autre clé du partenaire sous un autre algorithme."
+  },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "OPENID CONNECT SEULEMENT. L’algorithme avec lequel une réponse UserInfo SIGNÉE doit être signée — ce qui a été enregistré chez le partenaire comme userinfo_signed_response_alg (OpenID Connect Core 1.0 section 5.3.2). Une réponse signée est vérifiée avec les clés du partenaire, que ce champ soit défini ou non ; défini, une réponse signée avec un autre algorithme n’est pas utilisée. Vide, la valeur par défaut : une réponse JSON, ou une réponse signée avec tout algorithme de la famille de sa clé."
+  },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "OPENID CONNECT SEULEMENT. TRUE, la valeur par défaut (et ce que signifie une valeur vide) : le point de terminaison UserInfo du partenaire est interrogé avec le jeton d’accès à la connexion et à chaque rafraîchissement, et ce qu’il répond pour le même sub est ajouté aux claims de l’ID Token (OpenID Connect Core 1.0 section 5.3). FALSE : UserInfo n’est jamais interrogé, quoi que nomment fedUserinfoUrl ou le document de découverte, et les claims de la personne sont ceux de l’ID Token seul — pour un partenaire dont cette relation ne peut pas appeler l’UserInfo, comme un serveur d’autorisation FAPI 1.0 Advanced qui sert sa ressource ailleurs."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "OPENID CONNECT SEULEMENT. TRUE conserve, scellé, le jeton d’actualisation que le partenaire émet à la connexion, avec la session qu’il a ouverte, et l’utilise pour garder à jour l’identité de cette session (OpenID Connect Core 1.0 section 12) : toutes les fedRefreshEverySeconds, les jetons de la session sont actualisés, un nouvel ID Token doit nommer les mêmes iss et sub, et UserInfo doit toujours répondre pour ce sub. Une actualisation que le partenaire refuse, ou une réponse qui échoue à ces vérifications, MET FIN à la session. Le jeton meurt avec la session. FALSE, la valeur par défaut : les jetons du partenaire servent une fois, à la connexion, puis sont jetés — rien ici ne détient d’identifiant auprès d’un autre service, et ce sont la déconnexion du partenaire et ses Shared Signals qui mettent fin à la session plus tôt."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Avec fedRefreshTokens activé : à quelle fréquence, en secondes, les jetons d’une session sont actualisés. Vide : à l’expiration du jeton d’accès (son expires_in), ou toutes les heures quand le partenaire n’indique aucune expiration. La tâche planifiée federation.partner-refresh vérifie toutes les quinze secondes."
+  },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "OPENID CONNECT SEULEMENT, avec fedDiscovery. TRUE fait que ce service S’ENREGISTRE LUI-MÊME chez le partenaire (OpenID Connect Dynamic Client Registration 1.0, RFC 7591), au registration_endpoint que nomme son document de découverte, chaque fois que la relation ne détient aucun fedClientId ou en détient un enregistré auprès d’un autre émetteur — au début d’une connexion, ou par le register-partner d’un administrateur. Le client_id et le secret que le partenaire délivre sont écrits dans fedClientId et fedClientSecret (scellé). Ce qui est enregistré est cette relation : son service consommateur d’assertions, son type de réponse, son authentification client, les algorithmes définis ici et, pour les objets de requête, la clé publique qui les signe. FALSE, la valeur par défaut : le client est enregistré chez le partenaire à la main."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "L’émetteur auprès duquel fedClientId a été enregistré par fedRegister. Écrit par l’enregistrement ; effacez-le, avec fedClientId, pour enregistrer de nouveau à la prochaine connexion."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "OPENID CONNECT SEULEMENT. Envoie la demande d’autorisation comme un objet de requête (OpenID Connect Core 1.0 section 6, RFC 9101) : request (par valeur) ou request_uri (par référence — le partenaire le récupère, une seule fois, à /federation/request/{id}/{handle}). Signé sous fedRequestObjectSigningAlg avec la clé de ce domaine. Vide, la valeur par défaut : une demande d’autorisation simple."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "L’algorithme avec lequel un objet de requête est signé : RS256 (la valeur par défaut), PS256 ou ES256 sous la clé de ce domaine, ou none — un objet NON SIGNÉ, que Core 6.2 n’autorise que par référence en https ; un avertissement : le partenaire n’a alors que le TLS de la récupération pour savoir que ce service l’a écrit."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "OPENID CONNECT SEULEMENT, avec fedDiscovery. TRUE répond à /federation/webfinger/{id}, où une PERSONNE saisit un identifiant (acct:user@host ou une URL) et où ce service demande à cet hôte quel est le fournisseur OpenID de la personne (OpenID Connect Discovery 1.0 section 2, RFC 7033). UN AVERTISSEMENT : l’hôte appelé est choisi par un appelant — la seule exception argumentée de ce genre de ce service parmi les requêtes de fédération, sous la politique sortante (aucune adresse interne en mode produit, aucune redirection, le plafond). L’émetteur trouvé doit commencer par fedPeer, ce qui le borne au partenaire qu’un administrateur a configuré ; la personne voit l’émetteur et ne continue qu’en appuyant sur un bouton. FALSE, la valeur par défaut, refuse."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "OPENID CONNECT SEULEMENT. TRUE lit les points de terminaison du partenaire et son jwks_uri dans son document de découverte, {fedPeer}/.well-known/openid-configuration, au début de chaque connexion (OpenID Connect Discovery 1.0 section 4), dont l’issuer doit être exactement fedPeer ; fedSsoUrl, fedTokenUrl, fedUserinfoUrl et fedJwksUri ne sont alors pas lus. L’adresse est dérivée de fedPeer, qu’un administrateur a configuré, et jamais d’une requête. FALSE, la valeur par défaut : les points de terminaison sont configurés à la main."
+  },
+  "fed.schema.attributes.fedFapi.what": {
+    "en": "f2b7f8d0b97ba58f",
+    "text": "OPENID CONNECT UNIQUEMENT. Le profil client FAPI utilisé lorsque ce service connecte une personne auprès du partenaire (#931). Vide, la valeur par défaut, correspond à la partie de confiance OpenID Connect actuelle. 1-advanced (FAPI 1.0 Advanced) impose le type de réponse code id_token, PKCE S256 et un objet de requête PS256 transmis par valeur, présente le certificat client TLS de la relation (fedClientCertificate) aux points de terminaison de jeton et UserInfo pour que le partenaire puisse y lier ses jetons d'accès (RFC 8705), s'authentifie avec private_key_jwt ou, lorsque fedTokenAuth vaut tls_client_auth, avec ce certificat, et n'utilise pas DPoP. 2-security (FAPI 2.0 Security Profile) impose la découverte, une requête d'autorisation poussée, le type de réponse code, PKCE S256, private_key_jwt et DPoP. 2-message-signing ajoute un objet de requête PS256 dans cette requête poussée et une réponse d'autorisation signée (JARM). Un profil 2.x impose private_key_jwt quelle que soit la valeur de fedTokenAuth. Ce service n'agit pas comme client CIBA, et seul 1-advanced présente un certificat client."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "OPENID CONNECT SEULEMENT. TRUE répond au point de terminaison d’initiation de connexion de cette relation, /federation/initiate-login/{id}, que le partenaire enregistre comme initiate_login_uri (OpenID Connect Core 1.0 section 4) : une connexion que le PARTENAIRE lance, en se nommant dans iss, qui doit être fedPeer. Un login_hint est transmis, et un target_link_uri n’est suivi que vers un chemin de ce service. FALSE, la valeur par défaut, la refuse : sinon n’importe quelle page pourrait lancer une connexion dans le navigateur d’une personne."
+  },
+  "fed.schema.attributes.fedBinding.what": {
+    "en": "a10d4406a67b3b1f",
+    "text": "Le binding sur lequel part l’AuthnRequest SAML sortante : HTTP-Redirect (la valeur par défaut, et ce que prend en charge tout fournisseur d’identité) ou HTTP-POST. Il ne dit rien de la réponse, qui arrive sur le binding qu’utilise le partenaire et est acceptée sur tous."
+  },
+  "fed.schema.attributes.fedSignRequest.what": {
+    "en": "df6a6c1b53d5529c",
+    "text": "Signer l’AuthnRequest sortante avec la clé de CE service. DÉSACTIVÉ par défaut : la plupart des fournisseurs d’identité ne l’exigent pas, et un partenaire qui l’exige refusera la requête d’une manière qui nomme le problème. Lorsqu’il est activé, le certificat à configurer chez le partenaire est celui des propres métadonnées SAML de ce service."
+  },
+  "fed.schema.attributes.fedUsernameSource.what": {
+    "en": "e0e96af3e55ca105",
+    "text": "QUELLE VALEUR ENTRANTE EST RECHERCHÉE AU LINK-AT-FIRST-SIGN-IN, et mise en correspondance sous any-existing — un nom de revendication pour OIDC/OAuth 2.0, un Attribute Name SAML pour les autres. Vide signifie le sujet lui-même : le NameID, ou `sub`. Elle ne nomme pas une entrée que cette connexion CRÉE : ce nom est la relation et le sujet stable du partenaire (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "OAUTH 2.0 SIMPLE UNIQUEMENT : le membre de la réponse du point de terminaison de profil qui est l'identifiant stable de la personne chez le partenaire, sous forme de chemin pointé (id, data.id). Vide conserve ce que ce service a toujours fait — sub, puis id, puis user_id. C'est le SUJET, la moitié d'un lien de fédération qui ne doit jamais changer, et non le nom d'utilisateur (fedUsernameSource). Le sujet d'un partenaire OpenID Connect est le sub du jeton d'identité, que la section 5.7 d'OpenID Connect Core désigne comme le seul stable, et celui d'un fournisseur grand public est celui de son profil."
+  },
+  "fed.schema.attributes.fedAttributeMap.what": {
+    "en": "4c966530efb4269f",
+    "text": "UNE VALEUR PAR CORRESPONDANCE, écrite `<incoming name>=<LDAP attribute>`. Ce qui n’est PAS listé ici arrive quand même — federation_map.js comporte une table par défaut couvrant les revendications OIDC ordinaires, les noms SAML urn:oid: et les URI de revendications WS-Federation — ce paramètre sert donc aux inventions propres du partenaire plutôt qu’aux noms que tout le monde utilise."
+  },
+  "fed.schema.attributes.fedAutocreateUsers.what": {
+    "en": "bfd1076470982a0d",
+    "text": "PROVISIONNEMENT DYNAMIQUE : créer une entrée d’annuaire la première fois que ce partenaire connecte quelqu’un. Écrit TRUE lorsqu’une relation est créée en développement et FALSE en mode produit (mode.defaultsFederatedAutocreate()) ; une relation qui ne stocke ni l’un ni l’autre se lit de la même façon. DÉSACTIVÉ signifie que la personne doit DÉJÀ avoir une entrée ici — provisionnée à l’avance, par SCIM ou manuellement — et une connexion pour quelqu’un qui n’en a pas est refusée, car une session a besoin d’une entrée dont elle soit le sujet. (Jusqu’au 2026-09-14, DÉSACTIVÉ donnait une session sans entrée ; un sujet stable a rendu cet état impossible.)"
+  },
+  "fed.schema.attributes.fedUpdateUserAttributes.what": {
+    "en": "4d516236bce43ce4",
+    "text": "Mettre à jour les attributs d’annuaire de la personne à CHAQUE connexion à partir de la dernière assertion ou du dernier jeton. ACTIVÉ par défaut, ce que ce service a toujours fait. DÉSACTIVÉ n’écrit les attributs du partenaire que lorsque cette connexion a CRÉÉ l’entrée ; une personne provisionnée à l’avance — ou que quelqu’un a modifiée depuis — conserve donc ce que dit l’annuaire. La relation et l’émetteur par lesquels est arrivée une personne sont enregistrés dans tous les cas."
+  },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "CONSTRUIRE LES APPARTENANCES AUX GROUPES À PARTIR DU JETON DU PARTENAIRE (#358). DÉSACTIVÉ par défaut, et une valeur absente vaut désactivé. Activé, chaque nom de groupe que porte l’assertion devient une appartenance de la personne que cette connexion a provisionnée, à chaque connexion réussie. Un groupe créé de cette façon est marqué avec cette relation. Un nom qui existe déjà et n’est pas marqué comme appartenant à cette relation est ignoré, audité (STS-FED-0161), et la connexion se poursuit. Un groupe qui accorde quelque chose du seul fait d’en être membre — un groupe de la console, le groupe membre d’un rôle, un groupe propriétaire, un groupe qu’une politique nomme — n’est jamais créé ni rejoint (STS-FED-0164). Cela ne satisfait pas fedSubjectGroup : cette règle s’applique avant que quiconque soit ajouté."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "6807b5eb2cff8e4f",
+    "text": "COMBIEN DE PERSONNES CETTE RELATION PEUT CRÉER. 0 signifie illimité. Vide signifie illimité pour un partenaire d’entreprise ; la relation d’un fournisseur GRAND PUBLIC ou social n’est jamais illimitée par défaut : elle est créée avec federation.consumerProvisionCap (10000 sauf si le domaine en dispose autrement) inscrit ici, et une valeur vide signifie ce paramètre. Au plafond, un nouveau sujet est refusé STS-FED-0090 ; une personne déjà liée se connecte toujours. ldap.maxEntries reste le plafond du domaine. Ce n’est pas un nombre de connexions — c’est fedUsers."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "DÉSACTIVER UNE PERSONNE POUR QUI CETTE RELATION EST LE SEUL CHEMIN DE CONNEXION, dès que federationLastSeen date de plus de ce nombre de minutes. Vide ou 0 signifie désactivé : personne n’est désactivé pour inactivité. L’entrée et le lien sont conservés. Une personne ayant un userPassword local, ou un lien par une autre relation, n’est pas touchée. Le signal account-disabled d’un partenaire est distinct (STS-FED-0156) et ne bloque que les connexions de ce partenaire."
+  },
+  "fed.schema.attributes.fedSubjectPolicy.what": {
+    "en": "afab8ba90a854d71",
+    "text": "COMMENT LE SUJET DU PARTENAIRE DEVIENT UNE PERSONNE LOCALE. Le sujet est l’identifiant stable propre au partenaire — iss + sub, un NameID persistant et l’entity ID du partenaire — et une personne le porte sous forme de federationLink. link-at-first-sign-in (la valeur par défaut ; vide la désigne) : un sujet lié se connecte ; un sujet non lié nommant une personne existante doit d’abord se connecter ICI en tant que cette personne — mot de passe, et un second facteur lorsqu’il en détient un ou qu’il est requis — et ce n’est qu’ensuite que le lien est enregistré et les attributs du partenaire écrits ; un sujet ne nommant personne reçoit une nouvelle entrée dans l’espace de noms de cette relation lorsque le provisionnement est activé. pre-linked : seul un lien permet à quiconque de se connecter. jit-namespaced : un sujet non lié reçoit toujours une NOUVELLE entrée, <relationship>~<subject>, jamais une personne existante. Le sujet est l’identifiant stable du partenaire, un urn:uuid: étant ramené à sub-<uuid> ; ce n’est pas le nom d’utilisateur mis en correspondance. any-existing : le nom envoyé par le partenaire est mis directement en correspondance avec une personne locale, comme le faisait ce service avant #109 — DÉVELOPPEMENT UNIQUEMENT, refusé en mode produit, et cela permet à ce partenaire de connecter n’importe quel compte qu’il sait nommer."
+  },
+  "fed.schema.attributes.fedSubjectGroup.what": {
+    "en": "a93a51b8d9b56949",
+    "text": "UNE RÈGLE EN PLUS DE LA POLITIQUE : la personne doit être membre de l’un de ces groupes, chacun indiqué par un cn ou un DN. Une entrée que cette connexion CRÉERAIT n’appartient à aucun groupe ; avec ce paramètre défini, personne n’est donc créé. Vide : aucune règle de groupe."
+  },
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "UNE RÈGLE EN PLUS DE LA POLITIQUE : le domaine de messagerie qu’a ENVOYÉ le partenaire (l’adresse mise en correspondance, ou le nom d’utilisateur mis en correspondance lorsque c’est une adresse) doit être l’un de ceux-ci, de même que l’adresse de l’entrée locale lorsqu’elle en a une. Comparaison exacte et insensible à la casse : example.com n’admet pas sub.example.com. Vide : aucune règle de domaine."
+  },
+  "fed.schema.attributes.fedHomeRealmDomain.what": {
+    "en": "e6d68b5bbe3dac9e",
+    "text": "DÉCOUVERTE DU DOMAINE D’ORIGINE (#148) : une requête d’autorisation dont le `domain_hint` des OpenID Connect Enterprise Extensions est l’un de ceux-ci va directement à la connexion de ce partenaire, sauf si l’application nomme un partenaire qui lui est propre. Comparaison exacte et insensible à la casse. Une simple indication de routage — qui est ADMIS relève de fedSubjectDomain."
+  },
+  "fed.schema.attributes.fedSubjectPattern.what": {
+    "en": "d9fa507e5053ce09",
+    "text": "UNE RÈGLE EN PLUS DE LA POLITIQUE : une expression régulière à laquelle le DN de l’entrée locale doit correspondre EN ENTIER (elle est ancrée pour vous), par exemple uid=[^,]+,ou=users,.* — pour une entrée que cette connexion créerait, le DN auquel elle serait créée. Au plus 256 caractères, aucune référence arrière et aucun quantificateur appliqué à un groupe lui-même quantifié, et elle est testée sur au plus 1024 caractères ; on ne peut donc pas lui faire effectuer des retours arrière pendant des minutes. Vide : aucun motif."
+  },
+  "fed.schema.attributes.fedMayAssertAdministrators.what": {
+    "en": "74c845779242205c",
+    "text": "PERMETTRE À CE PARTENAIRE DE CONNECTER UN ADMINISTRATEUR DE LA CONSOLE. DÉSACTIVÉ par défaut, et désactivé signifie qu’une personne figurant dans la liste Admin Read ou Admin Write — ou détenant REMOTE_PEPS — est refusée quoi qu’il en soit par ailleurs, lien valide compris (STS-FED-0093). L’activer fait de la clé de signature de ce partenaire une clé de la console pour chaque administrateur qui lui est lié."
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "PERMETTRE AUX SHARED SIGNALS DE CE PARTENAIRE DE NOMMER UNE PERSONNE PAR SON ADRESSE ÉLECTRONIQUE. DÉSACTIVÉ par défaut : un Security Event Token provenant d’un transmetteur ayant l’émetteur de ce partenaire nomme une personne par `iss_sub`, via le federationLink de la personne. Activé, un sujet `email` correspond aussi à l’unique personne ayant cette adresse — une adresse n’est pas un identifiant (OpenID Connect Core section 5.7), donc uniquement pour un partenaire dont ce domaine fait confiance aux adresses."
+  },
+  "fed.schema.attributes.fedSignalsEnabled.what": {
+    "en": "93b7dae2ca58a41e",
+    "text": "RECEVOIR LES SHARED SIGNALS DE CE PARTENAIRE. DÉSACTIVÉ par défaut sur une relation de connexion, et toute la raison d’être d’une relation `ssf`, où il est écrit ACTIVÉ à la création. Désactivé, aucun envoi n’est accepté pour cette relation et la tâche d’interrogation l’ignore ; fedEnabled doit lui aussi être activé."
+  },
+  "fed.schema.attributes.fedSignalsIssuer.what": {
+    "en": "6ba19adcf4dbf152",
+    "text": "L’ÉMETTEUR SSF DU PARTENAIRE, lorsque ce n’est pas fedPeer. Vide — la valeur par défaut — utilise fedPeer, ce qui convient à un partenaire OpenID Connect dont le transmetteur partage l’émetteur. L’entityID d’un partenaire SAML 2.0 ou WS-Federation n’est généralement PAS son URL d’émetteur SSF ; définissez-le donc dans ce cas. Le document de configuration est récupéré à /.well-known/ssf-configuration sous cette adresse (SSF 1.0 section 7) et doit la nommer, et l’iss de chaque SET doit être cette valeur."
+  },
+  "fed.schema.attributes.fedSignalsDelivery.what": {
+    "en": "2a805e4031228032",
+    "text": "COMMENT ARRIVENT LES ÉVÉNEMENTS DU PARTENAIRE : poll (RFC 8936, la tâche ssf.foreign-poll, la valeur par défaut) ou push (RFC 8935, vers /federation/signals/{id} avec un en-tête d’autorisation que seuls ce domaine et le partenaire connaissent). Lu à la création du flux ; supprimez-le et recréez-le pour le changer."
+  },
+  "fed.schema.attributes.fedSignalsEvents.what": {
+    "en": "d593cfe04f6b50a6",
+    "text": "LES URI DE TYPES D’ÉVÉNEMENTS QUE DEMANDE LE FLUX (events_requested). Aucune valeur demande tout ce que le partenaire prend en charge."
+  },
+  "fed.schema.attributes.fedSignalsTokenUrl.what": {
+    "en": "f22895fc3eb97e28",
+    "text": "OÙ CE DOMAINE OBTIENT UN JETON D’ACCÈS POUR LA GESTION DES FLUX DU PARTENAIRE, par client credentials. Vide utilise fedTokenUrl — le même serveur d’autorisation que la relation de connexion appelle déjà."
+  },
+  "fed.schema.attributes.fedSignalsClientId.what": {
+    "en": "93661f7f666dca94",
+    "text": "LE client_id DE CE SERVICE POUR LA GESTION DES FLUX DU PARTENAIRE. Vide utilise fedClientId."
+  },
+  "fed.schema.attributes.fedSignalsClientSecret.what": {
+    "en": "5c7f0300ca7c4869",
+    "text": "LE SECRET DE fedSignalsClientId, SCELLÉ sous la clé de chiffrement de clé partout où les clés sont persistées et jamais affiché. Vide utilise fedClientSecret, scellé de la même façon."
+  },
+  "fed.schema.attributes.fedSignalsScope.what": {
+    "en": "9a4b1c668a3d1dd5",
+    "text": "La portée demandée avec les identifiants client. Vide demande `ssf.read ssf.manage`, les deux du profil d'interopérabilité CAEP (section 2.7.3)."
+  },
+  "fed.schema.attributes.fedSignalsBearer.what": {
+    "en": "75ae4009add7e2d2",
+    "text": "UN JETON BEARER ÉMIS PAR LE PARTENAIRE, au lieu des client credentials. Scellé comme fedSignalsClientSecret, et utilisé dès qu’il est défini."
+  },
+  "fed.schema.attributes.fedSloUrl.what": {
+    "en": "1fbc6ebefdaa8b2d",
+    "text": "LE SingleLogoutService SAML 2.0 DU PARTENAIRE — où ce service envoie une <LogoutRequest> signée lorsqu’une personne se déconnecte ICI (/logout), et où part la <LogoutResponse> à la propre LogoutRequest du partenaire. Issu des métadonnées du partenaire. Vide : le partenaire n’est jamais informé d’une déconnexion ici, et une LogoutRequest provenant de lui est toujours honorée mais ne reçoit aucune réponse, car il n’y a nulle part où l’envoyer. SAML 2.0 uniquement : SAML 1.1 ne définit aucune déconnexion."
+  },
+  "fed.schema.attributes.fedSloBinding.what": {
+    "en": "f18757e5314706e9",
+    "text": "Le binding sur lequel part une LogoutRequest ou une LogoutResponse que ce service envoie au partenaire : HTTP-Redirect (la valeur par défaut ; la signature porte sur la chaîne de requête) ou HTTP-POST (une signature enveloppée, dans un vrai formulaire avec un vrai bouton — sans script). Un message PROVENANT du partenaire est accepté sur l’un comme sur l’autre."
+  },
+  "fed.schema.attributes.fedEndSessionUrl.what": {
+    "en": "1936bb8b51d16899",
+    "text": "L’end_session_endpoint OpenID Connect DU PARTENAIRE (RP-Initiated Logout 1.0), issu de son document de découverte. Lorsqu’une personne se déconnecte ICI, la page de déconnexion propose de l’y envoyer avec le propre ID Token du partenaire comme id_token_hint, le client_id de cette relation, et le point de terminaison de déconnexion unique de cette relation comme post_logout_redirect_uri — que le partenaire doit avoir enregistré. L’ID Token n’est conservé dans la session que tant que ce paramètre est défini. Vide : le partenaire n’est pas informé."
+  },
+  "fed.schema.attributes.fedAcceptSignout.what": {
+    "en": "a80798b41222ab19",
+    "text": "HONORER LA DÉCONNEXION DU PARTENAIRE : une LogoutRequest SAML, une déconnexion OpenID Connect Back-Channel ou Front-Channel, un nettoyage WS-Federation. ACTIVÉ par défaut — le partenaire fait autorité sur la connexion de la personne, et lorsqu’il y termine une session ou désactive un compte, c’est le seul signal qui parvient ici. Désactivé, chacun d’eux est refusé (STS-FED-0123) et la session ici vit toute sa durée de vie."
+  },
+  "fed.schema.attributes.fedRequireSignedLogout.what": {
+    "en": "7b5c415a7a173deb",
+    "text": "EXIGER QUE LA LogoutRequest ET LA LogoutResponse SAML DU PARTENAIRE SOIENT SIGNÉES, comme saml-profiles-2.0-os section 4.4.4.1 dit qu’elles DOIVENT l’être. ACTIVÉ par défaut et TOUJOURS activé en mode produit, où le désactiver est refusé (STS-FED-0132). Désactivé — en développement uniquement — accepte un message de déconnexion NON SIGNÉ, ce qui permet à quiconque peut nommer la session partenaire d’une personne d’y mettre fin : un partenaire en test qui ne sait pas encore signer est la seule raison de le faire. Une signature PRÉSENTE est vérifiée dans tous les cas."
+  },
+  "fed.schema.attributes.fedEncryptionKeyType.what": {
+    "en": "5499ff6ee41a989b",
+    "text": "LE TYPE DE CLÉ VERS LEQUEL CHIFFRE UN PARTENAIRE : rsa-3072 (la valeur par défaut pour SAML 2.0 et WS-Federation) ou ec-p256 (la valeur par défaut pour OpenID Connect) — ou, pour OpenID Connect uniquement, une clé post-quantique (#82) : x-wing (HPKE-10-KE, ML-KEM-768 + X25519) ou ml-kem-768 (ML-KEM-768), une clé AKP publiée dans le JWKS de la relation sans certificat, issue d’Internet-Drafts que peu de partenaires implémentent encore. La modifier émet immédiatement une nouvelle clé de ce type et conserve l’ancienne pendant federation.encryptionKeyGraceS, comme le fait un renouvellement."
+  },
+  "fed.schema.attributes.fedKeyManagementAlgorithm.what": {
+    "en": "d806c41bb2e8697a",
+    "text": "COMMENT LE PARTENAIRE ENVELOPPE OU NÉGOCIE LA CLÉ DE CONTENU, et le seul algorithme accepté. XML (SAML 2.0, WS-Federation) : rsa-oaep — le RSA-OAEP de XML Encryption 1.1 avec SHA-256 et MGF1-SHA-256 — pour une clé RSA, ecdh-es (ConcatKDF, kw-aes256) pour une clé EC. JOSE (un ID Token OpenID Connect) : RSA-OAEP-256 ou RSA-OAEP pour une clé RSA, ECDH-ES, ECDH-ES+A128KW ou ECDH-ES+A256KW pour une clé EC. AVERTISSEMENT : RSA-OAEP est OAEP sur SHA-1, proposé pour un partenaire qui n’a rien de plus récent ; RSA-OAEP-256 est celui à utiliser. rsa-1_5 et RSA1_5 sont refusés dans tous les modes (Bleichenbacher). Vide signifie la valeur par défaut pour le type de clé."
+  },
+  "fed.schema.attributes.fedContentEncryptionAlgorithm.what": {
+    "en": "30df7b680dcf4979",
+    "text": "LE CHIFFREMENT APPLIQUÉ À L’ASSERTION OU À L’ID TOKEN, et le seul accepté : aes256-gcm (la valeur par défaut) ou aes128-gcm pour XML, A256GCM (la valeur par défaut) ou A128GCM pour JOSE. AES-CBC — les aes*-cbc de XML Encryption et les A*CBC-HS* de JOSE — est refusé dans tous les modes : la forme XML est l’oracle de remplissage de Jager et Somorovsky (2011), et un partenaire qui sait faire du GCM dans l’un sait le faire dans l’autre."
+  },
+  "fed.schema.attributes.fedAllowUnencrypted.what": {
+    "en": "c3d0a1b2ac50968b",
+    "text": "ACCEPTER UNE ASSERTION EN CLAIR EN MODE PRODUIT. DÉSACTIVÉ par défaut, et désactivé signifie qu’une assertion SAML 2.0 ou WS-Federation, ou un id_token OpenID Connect par form_post, qui n’est PAS chiffré pour la clé de cette relation est refusé (STS-FED-0140). AVERTISSEMENT : l’activer permet au partenaire d’envoyer le NameID, l’adresse électronique, les groupes et tous les autres attributs de la personne EN CLAIR à travers son navigateur — son historique, ses extensions et chaque proxy terminant TLS en chemin. Ne l’activez que pour un partenaire qui ne sait pas chiffrer, et préférez lui demander de le faire. Le mode développement accepte le texte en clair quoi qu’indique ce paramètre."
+  },
+  "fed.schema.attributes.fedEncryptionKey.what": {
+    "en": "b4d2ac940c13b9f8",
+    "text": "LA TABLE DES CLÉS : une ligne JSON par clé avec laquelle cette relation déchiffre — son kid, son type de clé, `current` ou `previous`, son certificat et sa chaîne sous l’Intermediate de ce domaine, et la clé privée, SCELLÉE sous la clé de chiffrement de clé partout où les clés sont persistées. Une ligne `previous` est conservée jusqu’à son retiresAt puis supprimée par la tâche planifiée federation.encryption-key-retire. Écrite uniquement par la création, le renouvellement et cette tâche ; MASQUÉE à toute recherche LDAP en mode produit et à toute page et réponse de /admin-api, qui publient la moitié publique. Le type de clé est une colonne afin qu’une clé hybride post-quantique puisse être une ligne à côté de la clé classique dès qu’une telle clé est enregistrée."
+  },
+  "fed.schema.attributes.fedClientCertificate.what": {
+    "en": "c8d1bb6c418a58bb",
+    "text": "OPENID CONNECT, fedFapi 1-advanced UNIQUEMENT (#931). LE CERTIFICAT CLIENT TLS que ce service présente lorsqu'il contacte les points de terminaison de jeton et UserInfo du partenaire : une ligne JSON contenant un certificat clientAuth émis par l'AC émettrice TLS Client de ce domaine (sujet CN=federation <id> client, un subjectAltName urn:sts:federation:), sa chaîne, son x5t#S256, sa validité et la clé privée, SCELLÉE sous la clé de chiffrement de clés partout où les clés sont persistées. Il authentifie le client lorsque fedTokenAuth vaut tls_client_auth (RFC 8705 section 2.1) et c'est à lui que le partenaire lie ses jetons d'accès (cnf.x5t#S256, section 3). Émis lorsque fedFapi devient 1-advanced, à la première connexion qui n'en a pas, ou par la tâche planifiée federation.client-certificate-renew, qui le renouvelle aussi federation.clientCertificateRenewDays avant son expiration, avec le même sujet. Écrit uniquement par ceux-ci ; RETENU de toute recherche LDAP en production et de toute page et réponse /admin-api, qui publient la moitié publique à enregistrer chez le partenaire."
+  },
+  "fed.schema.attributes.fedAllowUnsolicited.what": {
+    "en": "5b2a044dd3f46597",
+    "text": "Accepter une réponse que ce service n’a pas demandée — la Response non sollicitée de SAML 2.0, et le SEUL mode de fonctionnement de SAML 1.1. DÉSACTIVÉ par défaut pour SAML 2.0 et forcé à ACTIVÉ pour SAML 1.1, car ce profil n’a pas de requête à laquelle répondre. L’activer pour SAML 2.0 supprime la vérification d’InResponseTo, ce qu’il vaut mieux savoir que cacher."
+  },
+  "fed.schema.attributes.fedApplication.what": {
+    "en": "c8291b575c606bc3",
+    "text": "LE POINTEUR, et tout ce que ce côté stocke sur le partenaire : l’identifiant de son entrée dans ou=applications. Son entityID, son assertion consumer service, ses URI de redirection et son certificat se trouvent LÀ-BAS, où chaque module de protocole les lit déjà. En copier un seul ici reproduirait l’échec des deux magasins que ce dépôt est organisé pour éviter."
+  },
+  "fed.schema.attributes.fedAuthnMechanism.what": {
+    "en": "10e91a734e1d74b3",
+    "text": "COMMENT CE SERVICE AUTHENTIFIE LA PERSONNE lorsque ce partenaire le lui demande : password, password-mfa, webauthn, spnego — un ticket Kerberos que le navigateur détient déjà, sans aucun écran — wallet — une attestation que ce domaine a émise, présentée depuis le portefeuille de la personne — ou federation, qui l’envoie vers une autre relation et fait de ce service un PONT d’identité entre deux protocoles. VIDE SIGNIFIE QUE CETTE RELATION NE DIT RIEN, ce qui n’est pas la même chose que password : on se rabat sur appFederationRelationship de l’entrée d’application puis sur l’écran de connexion, ce que faisait exactement chaque relation avant l’existence de cet attribut."
+  },
+  "fed.schema.attributes.fedAuthnRelationship.what": {
+    "en": "e67f3ec502c8b6b8",
+    "text": "LA RELATION VERS LAQUELLE LA PERSONNE EST ENVOYÉE, lorsque le mécanisme est `federation`. Elle nomme une relation côté FOURNISSEUR DE SERVICES dans CE domaine — le registre est par domaine ; un identifiant provenant d’un autre domaine ne nomme donc rien ici — et elle est vérifiée lorsqu’elle est UTILISÉE plutôt que lorsqu’elle est écrite, car la relation qu’elle nomme peut être désactivée ou supprimée par la suite par quelqu’un qui n’a jamais regardé cette entrée. Ignorée par tous les autres mécanismes, et requise par celui-ci : readinessOf() la nomme."
+  },
+  "fed.schema.attributes.fedRelease.what": {
+    "en": "c9c33e739003f762",
+    "text": "QUELS ATTRIBUTS SONT COMMUNIQUÉS À CE PARTENAIRE, par nom de revendication ou d’attribut. Il FILTRE ce que /admin/claims, /admin/saml-attributes et la revendication groups placeraient sinon dans un artefact pour cette audience, et il ne peut toucher à rien d’autre — ni sub, ni iss, ni exp, ni un NameID. AUCUNE VALEUR ICI SIGNIFIE AUCUNE POLITIQUE, et non ne rien communiquer ; voir l’en-tête, où la différence est argumentée."
+  },
+  "fed.schema.attributes.fedFirstSeen.what": {
+    "en": "4eb7da413f19633b",
+    "text": "GeneralizedTime : la date à laquelle cette relation a été UTILISÉE pour la première fois, qui n’est pas celle de sa création."
+  },
+  "fed.schema.attributes.fedLastSeen.what": {
+    "en": "49fa18e0b49322c5",
+    "text": "GeneralizedTime, l’utilisation la plus récente."
+  },
+  "fed.schema.attributes.fedAuthentications.what": {
+    "en": "2ee55bdb488ba64f",
+    "text": "Combien d’identifiants ont traversé cette relation. AFFECTÉ à chaque modification — un compteur qui accumulerait des valeurs n’aurait aucun sens — et c’est un nombre vivant dans une entrée d’annuaire, ce qu’un véritable annuaire ne contiendrait pas."
+  },
+  "fed.schema.attributes.fedUsers.what": {
+    "en": "437b5b9e1a80bc48",
+    "text": "Combien d’identités distinctes l’ont traversée. Compté par rapport à fedLastUser ; il compte donc un CHANGEMENT d’utilisateur plutôt qu’un ensemble : juste dans le cas ordinaire et sous-estimé pour quelqu’un qui alterne entre deux partenaires. Indiqué ici parce que c’est un nombre affiché sur une page."
+  },
+  "fed.schema.attributes.fedLastUser.what": {
+    "en": "28541b4bc6a62e68",
+    "text": "L’identité la plus récente. Sur l’entrée plutôt qu’en mémoire, car l’entrée est le magasin."
+  },
+  "fed.schema.attributes.fedApplicationUse.what": {
+    "en": "3c112c1cef2a6f6d",
+    "text": "LES MÊMES DEUX DÉCOMPTES, RÉPARTIS PAR L’APPLICATION POUR LAQUELLE A EU LIEU LA CONNEXION — une valeur par application, compactée sous la forme `application|authentications|users|lastUser|lastSeen`. Il existe parce que fedAuthentications répond à « combien a traversé cette relation » et que la carte de /admin/federation/map doit répondre à « combien l’a traversée POUR CHACUNE des applications configurées pour l’utiliser », ce qui devient une autre question dès qu’une seconde application nomme le même partenaire.\n\nIL N’EXISTE QUE CÔTÉ FOURNISSEUR DE SERVICES, et ce n’est pas un oubli. Une relation côté fournisseur d’identité nomme exactement UNE application (fedApplication) ; son décompte par application EST donc fedAuthentications, et un second attribut contenant le même nombre sous un autre nom serait la copie qui finit par diverger.\n\nUNE VALEUR N’EST ÉCRITE QUE POUR UNE PAIRE POUR LAQUELLE CE SERVICE EST CONFIGURÉ, vérifiée par rapport à la configuration en vigueur au moment de l’écriture plutôt que tenue pour acquise d’après la requête — voir applicationConfiguredFor(). Sans cette vérification, cet attribut serait une liste illimitée de chaînes choisies par quiconque peut atteindre /federation/login/{id}, sur la seule entrée de cet annuaire dont le contenu décide si une assertion est refusée.\n\n`|` DANS L’UN OU L’AUTRE CHAMP DE TEXTE LIBRE EST REMPLACÉ PAR `~` À L’ENTRÉE, c’est le compromis que fait ce format et il est énoncé plutôt que découvert : il s’agit d’un compteur compacté dessiné sur une image, pas d’un identifiant sur lequel quoi que ce soit fait une jointure. L’application sous laquelle une ligne est CLASSÉE est comparée partout dans la même écriture compactée ; une paire se retrouve donc identique à elle-même quel que soit son nom."
+  },
+  "fed.schema.attributes.fedLastError.what": {
+    "en": "20801142f5a5592a",
+    "text": "POURQUOI LA DERNIÈRE TENTATIVE A ÉCHOUÉ, dans les propres mots de ce service. C’est l’attribut le plus utile ici et c’est pourquoi les refus sont enregistrés plutôt que seulement journalisés : une fédération qui ne fonctionne pas échoue chez le service de quelqu’un d’autre, et « la signature n’a pas été vérifiée avec le certificat configuré » est la phrase qui clôt le débat sur l’extrémité défaillante."
+  },
+  "fed.schema.attributes.fedLastErrorAt.what": {
+    "en": "5ff3120f0d87d356",
+    "text": "GeneralizedTime pour la ligne ci-dessus. Séparé, afin qu’une ancienne erreur à côté d’un succès récent se lise comme de l’historique plutôt que comme l’état actuel."
+  },
+  "fed.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "ce service"
+  },
+  "fed.schema.from.thisRegister": {
+    "en": "eb9ec04b4f5dbb7c",
+    "text": "ce registre"
+  },
+  "fedgraph.sentences.thisService": {
+    "en": "2ee8e73fd08187ad",
+    "text": "Ce service"
+  },
+  "fedgraph.sentences.noMechanism": {
+    "en": "85a969d1a113b8c5",
+    "text": "L’écran de connexion (nom d’utilisateur et mot de passe)"
+  },
+  "fedgraph.sentences.unknownMechanism": {
+    "en": "f76c6d8079660f9f",
+    "text": "{{mechanism}} — pas un mécanisme dont dispose ce service"
+  }
+}

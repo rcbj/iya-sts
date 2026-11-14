@@ -50,7 +50,7 @@ mkdir -p /etc/shibboleth/peer
 # container.
 mkdir -p /run/shibboleth
 chown shibd:shibd /run/shibboleth
-for doc in idp-saml2.xml idp-saml11.xml;
+for doc in idp.xml;
 do
   if [ ! -s "/etc/shibboleth/peer/${doc}" ];
   then

@@ -1,0 +1,6 @@
+{
+  "gnap.cells.note": {
+    "en": "26de01686adb3d1c",
+    "text": "De beviljanden som den här cellen håller. Ett beviljande skapas där dess klient anländer och flyttas till resursägarens hemcell innan det godkänns, så detta är normalt alla; ett beviljande vars klientinstans är registrerad i en annan cell stannar där och listas och återkallas där."
+  }
+}

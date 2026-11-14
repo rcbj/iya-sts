@@ -38,10 +38,14 @@ variable "realm" {
 
 variable "workload_port" {
   description = <<-EOT
-    The realm's Workload API TCP port — its `spiffe.workloadPort`. Published on
-    the SAME number on the load balancer. The default realm's is 8092.
+    Accepted and no longer published (#324). The Workload API is a local
+    agent's Unix socket; do not set the realm's `spiffe.workloadPort` from
+    this value (product mode will not bind it here, #166). Kept so a stack
+    applied before that change can still be planned and destroyed. The
+    default realm's historical port is 8092.
   EOT
   type        = number
+  default     = 8092
   validation {
     condition     = var.workload_port >= 1024 && var.workload_port <= 65535 && floor(var.workload_port) == var.workload_port
     error_message = "workload_port is a whole number from 1024 to 65535."

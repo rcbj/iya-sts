@@ -84,9 +84,9 @@
 // without the root builds a default when this module finishes loading.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
+import mode = require('./mode');
 import stsCrypto = require('./crypto');
 // PER PROCESS AND NOT PER REALM — see the store below. Required only for
 // `sharedMap()`, and it is a LEAF that registers no route, so this cannot
@@ -132,9 +132,20 @@ import InstanceSlot = require('./instance_slot');
  */
 const CSRF_FIELD = 'csrf_token';
 
+// The growing wait on a password door (#1448): doubling from a quarter of a
+// second to four, and forgotten after a quarter of an hour's quiet.
+const FAILURE_DELAY_BASE_MS = 250;
+const FAILURE_DELAY_CAP_MS = 4000;
+const FAILURE_QUIET_MS = 900000;
+// A door with no request behind it counts by identity alone: a Kerberos
+// datagram's address can be forged, and a shared bucket would refuse everybody.
+const NO_ADDRESS = { headers: {}, socket: {} };
+const IDENTITY_ONLY = { address: Number.MAX_SAFE_INTEGER };
+
 // What a `WebSecurity` needs from the rest of the service, each named for the
 // module that supplies it today.
 interface WebSecurityDeps {
+  mode: { verifiesCredentials(): boolean };
   log: {
     debug(message: string): void;
     warn(message: string): void;
@@ -153,6 +164,7 @@ interface WebSecurityDeps {
 interface BucketStore {
   readonly size: number;
   get(key: string): Bucket | undefined;
+  has(key: string): boolean;
   set(key: string, value: Bucket): unknown;
   delete(key: string): boolean;
   clear(): void;
@@ -263,6 +275,7 @@ class WebSecurity {
     helpers.log.debug("Entering WebSecurity.defaultDeps().");
     helpers.log.debug("Leaving WebSecurity.defaultDeps().");
     return {
+      mode: mode,
       log: helpers.log,
       config: config,
       crypto: stsCrypto,
@@ -292,9 +305,8 @@ class WebSecurity {
       return '';
     }
     log.debug("Leaving WebSecurity.tokenFor().");
-    return nodeCrypto.createHmac('sha256', clusterSecrets.get('csrf'))
-                     .update(id)
-                     .digest('base64url');
+    return stsCrypto.hmac('sha256', clusterSecrets.get('csrf'), id,
+                          'base64url');
   }
 
   // The hidden input a form carries. Returns '' when there is no session, so a
@@ -477,6 +489,214 @@ class WebSecurity {
     return Number(raw) > 0 ? Math.floor(Number(raw)) : 0;
   }
 
+  // -------------------------------------------------------------------------
+  // A WAIT THAT GROWS WITH FAILURES (#1448, ASVS 5.0.0 6.3.1), NOT A LOCKOUT.
+  //
+  // It runs beside the fixed window: that one bounds a minute, and this one
+  // goes on slowing a guesser across a quiet-free hour. It never disables the
+  // account, because a hard lock is the denial of service 6.1.1 asks a
+  // deployment to prevent: an attacker can only make the owner wait a few
+  // seconds. It is one wait inside one request, not periodic work.
+  // -------------------------------------------------------------------------
+  private failureKey(identity: unknown): string {
+    return 'sign-in|failures|' + String(identity || '').toLowerCase();
+  }
+
+  /**
+   * How long the next password attempt for an identity waits.
+   *
+   * @param identity - the identity attempted
+   * @returns milliseconds, 0 while nothing has failed recently
+   */
+  failureDelayMs(identity: unknown): number {
+    const { log, buckets } = this.deps;
+    log.debug("Entering WebSecurity.failureDelayMs().");
+    const row = buckets.get(this.failureKey(identity));
+    log.debug("Leaving WebSecurity.failureDelayMs().");
+    if (!row || row.until <= Date.now() || row.count < 1) {
+      return 0;
+    }
+    return Math.min(FAILURE_DELAY_CAP_MS,
+                    FAILURE_DELAY_BASE_MS * Math.pow(2, row.count - 1));
+  }
+
+  /**
+   * Waits out an identity's delay, where passwords are actually checked.
+   *
+   * @param identity - the identity attempted
+   * @returns a promise settled when the attempt may go on
+   */
+  async waitAfterFailures(identity: unknown): Promise<void> {
+    const { log, mode } = this.deps;
+    log.debug("Entering WebSecurity.waitAfterFailures().");
+    const wait = mode.verifiesCredentials() ? this.failureDelayMs(identity) : 0;
+    if (wait > 0) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, wait);
+      });
+    }
+    log.debug("Leaving WebSecurity.waitAfterFailures().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DOORS THAT TAKE A PASSWORD FROM A PROGRAM (#1448, ASVS 5.0.0 6.3.1):
+  // WS-Trust, SCIM and SSF Basic, and Kerberos pre-authentication. Only a
+  // FAILURE counts, so a correct credential is never what spends the budget.
+  // A door with no request in hand (WS-Trust's parser, the KDC) takes the
+  // address from the ambient source; with none, the identity alone is counted.
+  //
+  // ONE BUDGET ACROSS THE CLUSTER, FROM A SYNCHRONOUS DOOR (#1482, ASVS 5.0.0
+  // 6.3.1). These doors cannot await a store, so a failure is written through
+  // to the shared window and a refusal from it goes into this process's bucket
+  // for the rest of the window. Each other node learns it from its own next
+  // failure, so across N nodes the limit can be passed by at most N - 1.
+  // -------------------------------------------------------------------------
+  /**
+   * Says whether a program's door is refusing this identity for now.
+   *
+   * @param what - the door
+   * @param req - the request, or null where there is no address to read
+   * @param identity - the identity attempted
+   * @returns the refusal, or null
+   */
+  doorBlocked(what: string, req: any, identity: unknown): LimitAnswer | null {
+    const { log, mode } = this.deps;
+    log.debug("Entering WebSecurity.doorBlocked().");
+    const from = mode.verifiesCredentials() ? this.doorRequest(req) : null;
+    log.debug("Leaving WebSecurity.doorBlocked().");
+    return mode.verifiesCredentials()
+      ? this.blocked(what, from || NO_ADDRESS, identity,
+                     from ? undefined : IDENTITY_ONLY)
+      : null;
+  }
+
+  // The request a door is limited by: its own, the ambient one, or a request
+  // shaped from the ambient address (the KDC's socket). Null where there is
+  // none of them.
+  private doorRequest(req: any): any {
+    const { log } = this.deps;
+    log.debug("Entering WebSecurity.doorRequest().");
+    if (req) {
+      log.debug("Leaving WebSecurity.doorRequest(). Its own.");
+      return req;
+    }
+    // Lazily: the audit log's own limits stand on this module.
+    const audit = require('./audit');
+    const ambient = audit.currentRequest();
+    if (ambient) {
+      log.debug("Leaving WebSecurity.doorRequest(). The ambient request.");
+      return ambient;
+    }
+    const address = String(audit.currentAddress() || '');
+    log.debug("Leaving WebSecurity.doorRequest(). " +
+              (address ? 'The ambient address.' : 'None.'));
+    return address
+      ? { headers: {}, socket: { remoteAddress: address } } : null;
+  }
+
+  // Writes a door's failure through to the shared window (see above).
+  private shareDoorFailure(what: string, from: any, identity: unknown): void {
+    const { log, buckets } = this.deps;
+    const self = this;
+    log.debug("Entering WebSecurity.shareDoorFailure().");
+    if (!this.sharesLimits()) {
+      log.debug("Leaving WebSecurity.shareDoorFailure(). Nothing shared.");
+      return;
+    }
+    const limit = from ? undefined : IDENTITY_ONLY;
+    this.failedShared(what, from || NO_ADDRESS, identity,
+                      limit).then(function (refused: LimitAnswer | null) {
+      if (refused && refused.kind && refused.limit) {
+        buckets.set(what + (refused.kind === 'address'
+          ? '|ip|' + self.addressOf(from || NO_ADDRESS)
+          : '|id|' + String(identity || '').toLowerCase()),
+        { count: refused.limit,
+          until: Date.now() + (refused.retryAfterS || 1) * 1000 });
+      }
+    }, function (e: any) {
+      log.debug("Caught in WebSecurity.shareDoorFailure(): " +
+                ((e && e.message) || e));
+      // This process's own count, above, still stands.
+    });
+    log.debug("Leaving WebSecurity.shareDoorFailure().");
+  }
+
+  /**
+   * Counts a refused credential at a program's door.
+   *
+   * @param what - the door
+   * @param req - the request, or null
+   * @param identity - the identity attempted
+   * @returns nothing
+   */
+  doorFailed(what: string, req: any, identity: unknown): void {
+    const { log, mode } = this.deps;
+    log.debug("Entering WebSecurity.doorFailed().");
+    if (mode.verifiesCredentials()) {
+      const from = this.doorRequest(req);
+      this.attempt(what, from || NO_ADDRESS, identity,
+                   from ? undefined : IDENTITY_ONLY);
+      this.shareDoorFailure(what, from, identity);
+    }
+    log.debug("Leaving WebSecurity.doorFailed().");
+  }
+
+  /**
+   * Forgets an identity's failures at a program's door, on a success.
+   *
+   * @param what - the door
+   * @param req - the request, or null
+   * @param identity - the identity that succeeded
+   * @returns nothing
+   */
+  doorSucceeded(what: string, req: any, identity: unknown): void {
+    const { log, mode } = this.deps;
+    log.debug("Entering WebSecurity.doorSucceeded().");
+    if (mode.verifiesCredentials()) {
+      const from = this.doorRequest(req);
+      this.succeeded(what, from || NO_ADDRESS, identity, { keepAddress: true });
+      if (this.sharesLimits()) {
+        this.succeededShared(what, from || NO_ADDRESS, identity,
+                             { keepAddress: true }).catch(function (e: any) {
+          log.debug("Caught in WebSecurity.doorSucceeded(): " +
+                    ((e && e.message) || e));
+          // The window ends on its own; a success is never refused for this.
+        });
+      }
+    }
+    log.debug("Leaving WebSecurity.doorSucceeded().");
+  }
+
+  /**
+   * Records a refused password for an identity.
+   *
+   * @param identity - the identity attempted
+   * @returns nothing
+   */
+  noteFailure(identity: unknown): void {
+    const { log, buckets } = this.deps;
+    log.debug("Entering WebSecurity.noteFailure().");
+    const key = this.failureKey(identity);
+    const now = Date.now();
+    const row = buckets.get(key);
+    const count = row && row.until > now ? row.count + 1 : 1;
+    buckets.set(key, { count: count, until: now + FAILURE_QUIET_MS });
+    log.debug("Leaving WebSecurity.noteFailure().");
+  }
+
+  /**
+   * Forgets an identity's failures, on a successful sign-in.
+   *
+   * @param identity - the identity that signed in
+   * @returns nothing
+   */
+  forgetFailures(identity: unknown): void {
+    const { log, buckets } = this.deps;
+    log.debug("Entering WebSecurity.forgetFailures().");
+    buckets.delete(this.failureKey(identity));
+    log.debug("Leaving WebSecurity.forgetFailures().");
+  }
+
   /**
    * Counts one attempt in this process's buckets and says whether it is
    * allowed.
@@ -649,11 +869,22 @@ class WebSecurity {
             options?: { keepAddress?: boolean } | null): void {
     const { log, buckets } = this.deps;
     log.debug("Entering WebSecurity.succeeded().");
+    // ONLY A BUCKET THAT EXISTS IS DELETED (2026-10-22, #820): a delete is
+    // journalled whether or not anything was there, so every successful
+    // client authentication on a refresh wrote a row, which every process
+    // then applied, for a bucket that almost never exists. A bucket another
+    // process wrote that has not reached this one yet is not cleared here;
+    // that errs strict, and the next success after it arrives clears it.
+    const clear = function (key: string): void {
+      if (buckets.has(key)) {
+        buckets.delete(key);
+      }
+    };
     if (identity) {
-      buckets.delete(what + '|id|' + String(identity).toLowerCase());
+      clear(what + '|id|' + String(identity).toLowerCase());
     }
     if (!(options && options.keepAddress)) {
-      buckets.delete(what + '|ip|' + this.addressOf(req));
+      clear(what + '|ip|' + this.addressOf(req));
     }
     log.debug("Leaving WebSecurity.succeeded().");
   }
@@ -837,16 +1068,34 @@ class WebSecurity {
    */
   blockedShared(what: string, req: any, identity?: unknown,
                 limit?: NamedLimit): Promise<LimitAnswer | null> {
+    const { log } = this.deps;
+    log.debug('Entering WebSecurity.blockedShared(). what=' + what);
+    log.debug('Leaving WebSecurity.blockedShared().');
+    return this.peekShared(what, req, identity, limit).then(
+      function (peeked) {
+        return peeked.answer;
+      });
+  }
+
+  // `blockedShared()`'s read, with the counts it read: `counts` maps each
+  // bucket key to its failures, or is null where the shared store was not
+  // read (no shared store, or it could not be reached).
+  private peekShared(what: string, req: any, identity?: unknown,
+                     limit?: NamedLimit):
+      Promise<{ answer: LimitAnswer | null;
+                counts: Map<string, number> | null }> {
     const { log, clusterCounters, errorCodes } = this.deps;
     const self = this;
-    log.debug('Entering WebSecurity.blockedShared(). what=' + what);
+    log.debug('Entering WebSecurity.peekShared(). what=' + what);
     if (!clusterCounters.sharesWindows()) {
-      log.debug('Leaving WebSecurity.blockedShared(). No shared store: ' +
+      log.debug('Leaving WebSecurity.peekShared(). No shared store: ' +
                 'blocked().');
-      return Promise.resolve(this.blocked(what, req, identity, limit));
+      return Promise.resolve({ answer: this.blocked(what, req, identity,
+                                                    limit),
+                               counts: null });
     }
     const checks = this.bucketChecks(what, req, identity, limit);
-    log.debug('Leaving WebSecurity.blockedShared(). Reading the store.');
+    log.debug('Leaving WebSecurity.peekShared(). Reading the store.');
     return Promise.all(checks.map(function (check) {
       return clusterCounters.peekWindow({ scope: SHARED_SCOPE, key: check.key,
                                           realm: '' });
@@ -856,18 +1105,22 @@ class WebSecurity {
                  what + '" buckets could not be read from the shared store; ' +
                  'this process\'s own buckets decide, so for now the budget ' +
                  'is per node.');
-        return self.blocked(what, req, identity, limit);
+        return { answer: self.blocked(what, req, identity, limit),
+                 counts: null };
       }
       let refusal: Refusal | null = null;
+      const counts = new Map<string, number>();
       // AT the limit, for `blocked()`'s reason: this counts nothing.
       checks.forEach(function (check, i) {
+        counts.set(check.key, Number(answers[i].count) || 0);
         if (!refusal && answers[i].count >= check.limit) {
           refusal = { kind: check.kind, limit: check.limit,
                       retryAfterS: self.secondsLeft(answers[i].remainingMs) };
         }
       });
-      return refusal ? self.sharedRefusal(refusal, 'Too many failed attempts.')
-        : null;
+      return { answer: refusal
+        ? self.sharedRefusal(refusal, 'Too many failed attempts.') : null,
+               counts: counts };
     });
   }
 
@@ -940,20 +1193,22 @@ class WebSecurity {
    */
   succeededShared(what: string, req: any, identity?: unknown,
                   options?: { keepAddress?: boolean; unlessBlocked?: boolean;
-                              limit?: NamedLimit } | null):
+                              limit?: NamedLimit;
+                              counted?: Map<string, number> | null } | null):
       Promise<LimitAnswer | null | void> {
     const { log, clusterCounters } = this.deps;
     const self = this;
     log.debug("Entering WebSecurity.succeededShared().");
     if (options && options.unlessBlocked) {
       log.debug("Leaving WebSecurity.succeededShared(). Asking first.");
-      return this.blockedShared(what, req, identity,
-                                options.limit).then(function (lockedOut) {
-        if (lockedOut) {
-          return lockedOut;
+      return this.peekShared(what, req, identity,
+                             options.limit).then(function (peeked) {
+        if (peeked.answer) {
+          return peeked.answer;
         }
         return self.succeededShared(what, req, identity,
-                                    { keepAddress: !!options.keepAddress })
+                                    { keepAddress: !!options.keepAddress,
+                                      counted: peeked.counts })
           .then(function () {
             return null;
           });
@@ -971,9 +1226,19 @@ class WebSecurity {
     if (!(options && options.keepAddress)) {
       keys.push(what + '|ip|' + this.addressOf(req));
     }
+    // A BUCKET JUST READ EMPTY IS NOT CLEARED (2026-10-21, #820): clearing a
+    // window with no failures in it changes nothing and cost a round trip to
+    // the store per bucket on every client authentication — two per token
+    // request. One that was not read, or read with failures, is cleared as
+    // before; a failure counted since the read is left counted, which is the
+    // same answer a success that arrived a moment earlier would have given.
+    const counted = options && options.counted;
+    const clearing = counted ? keys.filter(function (key) {
+      return !counted.has(key) || (counted.get(key) || 0) > 0;
+    }) : keys;
     log.debug("Leaving WebSecurity.succeededShared(). Clearing " +
-              keys.length + " window(s).");
-    return Promise.all(keys.map(function (key) {
+              clearing.length + " window(s).");
+    return Promise.all(clearing.map(function (key) {
       return clusterCounters.clearWindow({ scope: SHARED_SCOPE, key: key,
                                            realm: '' });
     })).then(function () {
@@ -1068,6 +1333,13 @@ export = {
   field: slot.forward('field'),
   checkCsrf: slot.forward('checkCsrf'),
   attempt: slot.forward('attempt'),
+  failureDelayMs: slot.forward('failureDelayMs'),
+  waitAfterFailures: slot.forward('waitAfterFailures'),
+  noteFailure: slot.forward('noteFailure'),
+  doorBlocked: slot.forward('doorBlocked'),
+  doorFailed: slot.forward('doorFailed'),
+  doorSucceeded: slot.forward('doorSucceeded'),
+  forgetFailures: slot.forward('forgetFailures'),
   blocked: slot.forward('blocked'),
   succeeded: slot.forward('succeeded'),
   attemptShared: slot.forward('attemptShared'),

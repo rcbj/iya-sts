@@ -189,6 +189,23 @@ function ensure(uri, kid) {
   });
 }
 
+// Drops what a fetch of `uri` answered, so the next ensure() fetches it
+// again whatever the refetch throttle says: an explicit act — a federation
+// partner's Shared Signals discovered again (#932) — means the keys may have
+// changed and is not the stream of invented kids the throttle is for.
+/**
+ * Forgets the cached key set of a `jwks_uri`.
+ *
+ * @param uri - the `jwks_uri`
+ * @returns whether one was held
+ */
+function forget(uri) {
+  log.debug("Entering forget().");
+  const held = keySets.delete(String(uri || ''));
+  log.debug("Leaving forget(). " + held);
+  return held;
+}
+
 // The registration members that ask for a response ENCRYPTED to the client —
 // the synchronous readers' one use of its keys (`recipientKey()`).
 const ENCRYPTION_MEMBERS = ['id_token_encrypted_response_alg',
@@ -218,7 +235,10 @@ function ensureFor(clientId, kid) {
     return Promise.resolve(null);
   }
   const applications = require('../common/applications');
-  const registered = applications.registrationOf(String(clientId)) || {};
+  // The ATTRIBUTES (#290): an encrypted response may be asked for by the
+  // console or the management API as well as by a registration.
+  /** @type {any} */
+  const registered = applications.clientConfigOf(String(clientId));
   const encrypts = ENCRYPTION_MEMBERS.some(function (member) {
     return !!registered[member];
   });
@@ -275,5 +295,6 @@ module.exports = {
   cachedKeys: cachedKeys,
   ensure: ensure,
   ensureFor: ensureFor,
+  forget: forget,
   kidOf: kidOf
 };

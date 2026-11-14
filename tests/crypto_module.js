@@ -26,7 +26,7 @@
 //
 // The PROTOCOL half — that /saml2/metadata is signed, that a Browser/POST
 // response carries two verifiable signatures — is a different test and belongs
-// over there. `tests/vendored/sts_saml11.js` checks SAML 1.1's signature
+// over there. `tests/protocol/sts_saml11.js` checks SAML 1.1's signature
 // reference; what the SAML 2.0 half still lacks is recorded in
 // `saml/CLAUDE.md` rather than implied to be covered.
 //

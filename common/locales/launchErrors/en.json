@@ -1,0 +1,15 @@
+{
+  "title": "This sign-in could not be started",
+  "refusal.STS-LAUNCH-0001": "There is no application <code>{app}</code> in this realm, so there is nothing to sign you in to.",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> is not a protocol a sign-in can be started in. A link here starts saml2, saml11, wsfed or oidc.",
+  "refusal.STS-LAUNCH-0003": "This application does not sign in with <code>{protocol}</code>.",
+  "refusal.STS-LAUNCH-0004": "This application can be started in more than one protocol, and the link does not say which.",
+  "refusal.STS-LAUNCH-0005": "This application cannot be started from here. Start the sign-in at the application itself.",
+  "refusal.STS-LAUNCH-0006": "This application has no address registered to send you to, so a sign-in started here has nowhere to go.",
+  "refusal.STS-LAUNCH-0007": "The link names an address to send you to that is not registered for this application, so it was refused.",
+  "refusal.general": "This sign-in could not be started.",
+  "background": "This link starts a sign-in at this identity provider for an application (identity-provider-initiated sign-in). No application has been sent anything yet, so the problem is reported here instead.",
+  "application": "Application",
+  "protocol": "protocol",
+  "target": "target"
+}

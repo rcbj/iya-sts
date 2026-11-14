@@ -44,7 +44,7 @@
 // entry alone, so the grant keeps the identities it was rotated FROM
 // (`client.keyLineage`, written by `gnap_grants.ts`) and answers to any of
 // them (`grantKeyIdentities()`); the sequence that first found this was
-// `tests/vendored/sts_gnap_core.js` section 9, refused after its rotation. A
+// `tests/protocol/sts_gnap_core.js` section 9, refused after its rotation. A
 // mutual
 // TLS client rotated at its authority has the new thumbprint written to
 // `gnapKeyIdentity` (`placeMtlsCaller()`); both keep their grants, because the
@@ -66,6 +66,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import DomainMap = require('../common/domain_map');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
@@ -445,10 +446,13 @@ class GnapRevocation {
 
   // One value of an application field, as `gnap_grants.ts`'s `field()` reads
   // one: the first, as a string.
-  private fieldOf(app: Json, name: string): string {
+  // Named by its GnapClient field rather than its attribute (#1579).
+  private fieldOf(app: Json,
+      name: keyof IyaDomain.GnapClient & string): string {
     const { log } = this.deps;
     log.debug("Entering GnapRevocation.fieldOf(). " + name);
-    const raw = app && app.fields ? app.fields[name] : undefined;
+    const raw: unknown = app && app.fields ?
+      DomainMap.fieldOf('GnapClient', name, app.fields) : undefined;
     const value = Array.isArray(raw) ? raw[0] : raw;
     log.debug("Leaving GnapRevocation.fieldOf().");
     return value === undefined || value === null ? '' : String(value);
@@ -486,7 +490,7 @@ class GnapRevocation {
     const { log } = this.deps;
     log.debug("Entering GnapRevocation.entryKeyIdentities().");
     const out: string[] = [];
-    const raw = this.fieldOf(app, 'gnapKey');
+    const raw = this.fieldOf(app, 'key');
     if (raw) {
       try {
         const identity = this.keyIdentityOf(JSON.parse(raw));
@@ -500,11 +504,11 @@ class GnapRevocation {
         // (STS-GNAP-0652) where it is read to identify a caller.
       }
     }
-    const identity = this.fieldOf(app, 'gnapKeyIdentity');
+    const identity = this.fieldOf(app, 'keyIdentity');
     if (identity) {
       out.push(identity);
     }
-    const reference = this.fieldOf(app, 'gnapKeyReference');
+    const reference = this.fieldOf(app, 'keyReference');
     if (reference) {
       out.push('ref:' + reference);
     }
@@ -534,6 +538,11 @@ class GnapRevocation {
     const named = this.entryKeyIdentities(app);
     const ended = this.endWhere((grant) => {
       if (!grant.client || grant.client.identifier !== app.identifier) {
+        return false;
+      }
+      // An unregistered instance's key was never on the entry (#1216), so an
+      // edit of the entry's key fields says nothing about it (#1219).
+      if (grant.client.classInstance) {
         return false;
       }
       const held = this.grantKeyIdentities(grant);
@@ -732,12 +741,37 @@ class GnapRevocation {
       return null;
     }
     const owner = this.ownerProblem(grant.ro && grant.ro.username);
-    const problem = owner || (grant.client
-      ? this.clientProblem(grant.client.identifier, grant.client.key,
-                         this.grantKeyIdentities(grant)) : null);
+    const problem = owner || (grant.client ? this.grantClientProblem(grant)
+                                           : null);
     log.debug("Leaving GnapRevocation.grantProblem(). " +
               (problem ? problem.code : 'live'));
     return problem;
+  }
+
+  // AN UNREGISTERED INSTANCE'S KEY IS NEVER ON THE ENTRY (#1216), so the key
+  // comparison #432 makes at every use would read it as a removed key and
+  // refuse the grant's first continuation (#1219). Such a grant is held to
+  // its entry still existing, and to gnap.unregisteredInstances still being
+  // on, as its instance_id is; every other grant to the entry naming its key.
+  private grantClientProblem(grant: Json): Problem | null {
+    const { log, config } = this.deps;
+    log.debug("Entering GnapRevocation.grantClientProblem().");
+    const client = grant.client;
+    if (client.classInstance) {
+      if (config.value('gnap.unregisteredInstances') === false) {
+        log.debug("Leaving GnapRevocation.grantClientProblem(). " +
+                  "Unregistered instances are off.");
+        return { code: 'STS-GNAP-0907',
+                 why: 'the client is an unregistered instance of its ' +
+                      'application, and gnap.unregisteredInstances is off' };
+      }
+      log.debug("Leaving GnapRevocation.grantClientProblem(). An " +
+                "unregistered instance: the entry, not the key.");
+      return this.clientProblem(client.identifier);
+    }
+    log.debug("Leaving GnapRevocation.grantClientProblem().");
+    return this.clientProblem(client.identifier, client.key,
+                              this.grantKeyIdentities(grant));
   }
 
   /**
@@ -758,8 +792,7 @@ class GnapRevocation {
     const owner = this.ownerProblem(record.username ||
                                     (grant && grant.ro && grant.ro.username));
     const problem = owner || (grant && grant.client
-      ? this.clientProblem(grant.client.identifier, grant.client.key,
-                           this.grantKeyIdentities(grant))
+      ? this.grantClientProblem(grant)
       : this.clientProblem(record.instanceId));
     log.debug("Leaving GnapRevocation.tokenProblem(). " +
               (problem ? problem.code : 'live'));

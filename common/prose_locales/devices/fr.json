@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "OpenID Connect Native SSO for Mobile Apps : l’octroi par code d’autorisation de la première application avec la portée device_sso crée l’appareil et lui remet un device_secret, haché sur l’entrée et valable uniquement pour cette session d’authentification."
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "Un administrateur, sur Annuaire → Appareils ou POST /admin-api/devices/create : détenu par une personne ou par une application, avec des clés saisies par valeur. Une clé ajoutée ainsi est enregistrée comme prouvée par personne et auto-déclarée."
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "Le propriétaire sur /portal/devices (ou ses points d’accès JSON, POST /portal/devices/challenge et /portal/devices/proof), prouvant une clé : un JWS device-key-proof+jwt sur un challenge lié à sa session — avec une Android Key Attestation dans son x5c, ou une déclaration Apple App Attest à la place — ou en liant un identifiant de plateforme WebAuthn qu’il a enregistré, avec une assertion récente."
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "simpleenroll EST (RFC 7030) sur /.well-known/est/device/ : un certificat émis pour l’entrée d’appareil que nomme le urn:sts:device:<id> de la requête — ou pour une nouvelle, détenue par le demandeur — avec une attestation de clé TPM (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). Le propriétaire pour son propre appareil, Admin Write pour n’importe lequel."
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "PKCSReq SCEP (RFC 8894) avec un mot de passe de challenge émis pour le profil d’appareil — la même chose, pour les appareils qui ne parlent que ce protocole."
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "Le certificat client sur la connexion TLS — lors d’une connexion et au point de terminaison de jeton (RFC 8705) — mis en correspondance par le SHA-256 de son SubjectPublicKeyInfo ; un certificat renouvelé sur la même clé est donc le même appareil. La négociation prouve la possession ; la vérification ou non de la chaîne est enregistrée, et un certificat refusé pour cause de révocation n’est pas reconnu."
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "Une preuve DPoP au point de terminaison de jeton, mise en correspondance par son jkt — l’empreinte RFC 7638 que porte toute clé jwk."
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "Une assertion WebAuthn lors d’une connexion dont l’identifiant est lié à l’appareil."
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "Le device_secret Native SSO, tant que la session d’authentification pour laquelle il a été émis est active."
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "le membre device sur session-established, session-presented et session-revoked"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked (lorsque risc.autoEmitTypes le nomme ; pas par défaut)"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "complexe : device (iss_sub — l’émetteur de ce domaine et l’identifiant de l’appareil) et user (le propriétaire, lorsqu’il s’agit d’une personne)"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "le registeredDevice de l’événement d’authentification (authn.registeredDeviceOf(session) lit le plus récent)"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "le registered_device de la requête d’émission, avant la barrière d’émission"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "la clé par valeur d’un administrateur est acceptée dans les deux modes, enregistrée avec la preuve admin et auto-déclarée"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "SCEP n’a pas d’opération de nonce ; une déclaration TPM transmise par ce protocole n’est donc jamais démontrée récente"
+  }
+}

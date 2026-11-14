@@ -222,6 +222,12 @@ class AttributeSourceDrivers {
     // store is all there is.
     let ca: string = String(source.caCertificates || '');
     if (source.caFile) {
+      if (!require('../common/outbound_tls')
+        .namedFileAllowed(String(source.caFile))) {
+        throw this.failure('STS-ATTR-0002', 'the CA file for attribute ' +
+          'source ' + source.id + ' is not a file in a directory ' +
+          'security.fileRoots lists');
+      }
       try {
         ca += '\n' + readFile(String(source.caFile));
       } catch (e) {

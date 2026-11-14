@@ -33,7 +33,7 @@
 // a verifier with no clock. Nothing over the wire can ask *what would the code
 // have been at 1970-01-01T00:00:59Z*, and nothing should be able to.
 //
-// The over-HTTP half of this feature is `tests/vendored/sts_portal_totp.js`,
+// The over-HTTP half of this feature is `tests/protocol/sts_portal_totp.js`,
 // which drives the enrolment and the sign-in with a code it computes itself.
 // The two are not substitutes: this one says the arithmetic is right, and that
 // one says the doors are wired up. Neither implies the other, and the vectors
@@ -271,11 +271,12 @@ function run(t) {
           Object.prototype.hasOwnProperty.call(mechanisms, 'secondFactor'),
           'mechanismsFor() reports the authenticator app and WHICH factor a ' +
           'sign-in will ask for — the two fields authn.js reads to demand one');
-  t.check(credentials.ROLES.indexOf('totp') < 0,
-          'and there is no TOTP entry in the security key ROLES — a shared ' +
-          'secret this service also holds is not something to hang an ' +
-          'account on, which is why it has no `primary` reading at all',
-          credentials.ROLES.join(', '));
+  t.check(credentials.USES.indexOf('totp') < 0,
+          'and there is no TOTP entry in the passkey USES (ROLES until ' +
+          '#1135) — a shared secret this service also holds is not ' +
+          'something to hang an account on, which is why it has no ' +
+          '`primary` reading at all',
+          credentials.USES.join(', '));
 
   t.log.info('=== the algorithm report the crypto page reads ===');
   const report = totp.report();

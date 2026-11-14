@@ -115,6 +115,7 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import usedAssertions = require('../common/used_assertions');
 import cacheRegistry = require('../common/cache_registry');
@@ -183,7 +184,9 @@ const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k', 'priv'];
 // A Symbol, so nothing serialises the per-request answers.
 const ANSWERED = Symbol('sts.clientAttestation.answered');
 
-// challenge -> the second it was issued. PER TRUST REALM AND PERSISTED with
+// credentialDigest(challenge) -> the second it was issued: the challenge's
+// DIGEST and never the challenge (#614), hashed as it is issued and as it is
+// presented, `dpop.issuedNonces`' rule. PER TRUST REALM AND PERSISTED with
 // what is minted, `dpop.issuedNonces`' arrangement: a challenge handed out by
 // one process is presented to another, and the barrier makes the write land
 // before the retry can be asked about it.
@@ -205,6 +208,14 @@ function challengeTtlS(): number {
   helpers.log.debug("Leaving challengeTtlS().");
   return isFinite(raw) && raw > 0 ? Math.floor(raw) : 300;
 }
+
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: 'oauth2.clientAttestationChallengeTtlS ({{seconds}} s) after ' +
+    'it was issued.'
+});
 
 // The issued challenges, described to `/admin/caches` (#74, rule 3ap). A
 // challenge is SPENT in the used-assertion history, not here; what this
@@ -228,9 +239,12 @@ const challengesCount = cacheRegistry.register({
   bound: 'Enforced: oauth2.clientAttestationChallengeCacheSize per realm; ' +
     'the oldest challenge is dropped, and a client presenting it is handed ' +
     'a fresh one with use_attestation_challenge.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
-    return 'oauth2.clientAttestationChallengeTtlS (' + challengeTtlS() +
-      ' s) after it was issued.';
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
+    return serverProse.fill(CACHE_SENTENCES.lifetime,
+                            { seconds: challengeTtlS() });
   },
   eject: cacheRegistry.realmMapEjector(realms, challenges,
     function (issuedS: unknown, challenge: unknown, now: number): boolean {
@@ -496,7 +510,8 @@ class ClientAttestation {
     cacheRegistry.makeRoom(challenges, Number(config.value(
       'oauth2.clientAttestationChallengeCacheSize')),
       { counter: challengesCount });
-    challenges.set(challenge, Math.floor(Date.now() / 1000));
+    challenges.set(stsCrypto.credentialDigest(challenge),
+                   Math.floor(Date.now() / 1000));
     log.debug("Leaving ClientAttestation.issueChallenge().");
     return challenge;
   }
@@ -507,7 +522,9 @@ class ClientAttestation {
   private challengeIssuedAt(challenge: string): number {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.challengeIssuedAt().");
-    const issued = Number(challenges.get(challenge));
+    // Hashed as it is presented (#614).
+    const issued = Number(challenges.get(
+      stsCrypto.credentialDigest(challenge)));
     if (!issued ||
         issued < Math.floor(Date.now() / 1000) - challengeTtlS()) {
       challengesCount.miss();
@@ -608,14 +625,16 @@ class ClientAttestation {
     log.debug("Entering ClientAttestation.attesterKeys().");
     const anchors = this.anchors();
     const trusted = this.trustedKeys();
-    if (!anchors.length && !trusted.length) {
+    const reachable = CertificateTrust.anchorsAvailable('client-attestation',
+                                                        anchors);
+    if (!reachable && !trusted.length) {
       log.debug("Leaving ClientAttestation.attesterKeys(). Nobody trusted.");
       return this.refuse('STS-OAUTH-0724', 'this realm trusts no client ' +
         'attester: oauth2.clientAttestationTrustAnchors and ' +
         'oauth2.clientAttestationTrustedKeys are both empty, so no Client ' +
         'Attestation can be verified here');
     }
-    if (Array.isArray(header.x5c) && header.x5c.length && anchors.length) {
+    if (Array.isArray(header.x5c) && header.x5c.length && reachable) {
       let ders: Buffer[] = [];
       try {
         ders = header.x5c.map(function (one: unknown) {
@@ -653,8 +672,8 @@ class ClientAttestation {
           'trust anchor in oauth2.clientAttestationTrustAnchors (HAIP 1.0 ' +
           'section 4.4.1: "MUST NOT be self-signed")');
       }
-      const path = await pki.verifyPathToAnchors(ders[0], ders.slice(1),
-        anchors, { skewMs: this.skewS() * 1000 });
+      const path = await CertificateTrust.path('client-attestation', ders[0],
+        ders.slice(1), anchors, { skewMs: this.skewS() * 1000 });
       if (!path.ok) {
         log.debug("Leaving ClientAttestation.attesterKeys(). No path.");
         return this.refuse('STS-OAUTH-0725', 'the Client Attestation\'s x5c ' +

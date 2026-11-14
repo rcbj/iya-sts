@@ -1,0 +1,12 @@
+# What the scripts read or write at run time stays out of the repository:
+# credentials, the service's Root, logs, resume state, the session database,
+# generated LDIF and heap or CPU profiles.
+*.secret
+*.pem
+*.log
+*.out
+*.state.json
+*.db
+*.db-*
+status.json
+ldif/

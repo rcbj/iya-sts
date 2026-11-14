@@ -12,6 +12,8 @@
 // route: `mgmt-api/admin_api.ts` spreads ROUTES into its table.
 // ===========================================================================
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -26,6 +28,7 @@ interface ClaimsProvidersApiDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   errorCodes: typeof errorCodes;
   loadProviders(): Json;
+  loadViews(): Json;
 }
 
 const BASE = '/admin-api';
@@ -88,6 +91,10 @@ class ClaimsProvidersApi {
       errorCodes: errorCodes,
       loadProviders: function (): Json {
         return require('./claims_providers');
+      },
+      // The console's paging, required lazily for the register's reason.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -110,13 +117,66 @@ class ClaimsProvidersApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering ClaimsProvidersApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving ClaimsProvidersApi.sendJson().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTER AND THE LINKS, PAGED (#313's sweep, 2026-10-12).
+  //
+  // A link is one per (person, provider), so the links grow with the realm;
+  // the providers are an operator's register with no cap. Both are paged, on
+  // `providersPage` and `linksPage` with one `per`, and
+  // `/admin/claim-providers` is drawn from this answer, so the page and a
+  // caller read one slice.
+  // `linkq` narrows the links before they are paged.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the register's answer with each list paged.
+   *
+   * @param query - the request's query
+   * @returns the view, its two lists one page each
+   */
+  pagedView(query: Json): Json {
+    const { log, loadProviders, loadViews } = this.deps;
+    log.debug("Entering ClaimsProvidersApi.pagedView().");
+    const views = loadViews();
+    const json = loadProviders().view();
+    const wanted = String(views.queryOne(query, 'linkq') || '').trim()
+      .slice(0, 256);
+    const needle = wanted.toLowerCase();
+    const links = (json.links || []).filter(function (l: Json): boolean {
+      return !needle ||
+        [l.username, l.provider, l.sub].some(function (v: Json): boolean {
+          return String(v || '').toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+    const providerPage = views.pagedRows(query, json.providers || [],
+      { name: 'providers', noun: 'providers' });
+    const linkPage = views.pagedRows(query, links,
+      { name: 'links', noun: 'links' });
+    log.debug("Leaving ClaimsProvidersApi.pagedView(). " +
+              linkPage.shown.length + " of " + links.length + " link(s).");
+    return Object.assign({}, json, {
+      providers: providerPage.shown,
+      links: linkPage.shown,
+      counts: { providers: (json.providers || []).length,
+                links: (json.links || []).length },
+      matched: { links: links.length },
+      filter: { links: wanted || null },
+      paging: { providers: views.pagingJson(providerPage.paging),
+                links: views.pagingJson(linkPage.paging) }
+    });
   }
 
   /**
@@ -130,33 +190,39 @@ class ClaimsProvidersApi {
             baseUrlOf } = this.deps;
     const self = this;
     log.debug("Entering ClaimsProvidersApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/claim-providers',
         tag: 'OAuth 2.0 / OIDC', operationId: 'getClaimProviders',
-        summary: 'The Claims Providers this realm aggregates claims from, ' +
-                 'and every person\'s link (OIDC Core 5.6.2)',
-        description: 'Everything /admin/claim-providers draws: each ' +
-          'registered provider (issuer, endpoints, client, the claims it ' +
-          'supplies, aggregated or distributed, whether a secret is held), ' +
-          'the redirect URI to register at a provider, and every link a ' +
-          'person made (their subject there, when, the token\'s expiry, ' +
-          'whether it is stale). Never a secret or a token.',
         mirrors: 'GET /admin/claim-providers',
-        responseDescription: 'The register and the links.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`providers`, `links`, ' +
-                                       '`redirectUri`.' },
-        handler: function (req: Req, res: Res): void {
+        parameters: [
+          { name: 'providersPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [1] },
+            description: 'Which page of the providers. Clamped, like every ' +
+                         'page parameter here.' },
+          { name: 'linkq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
+            description: 'Narrows the links to those whose person, ' +
+                         'provider or subject there contains this.' },
+          { name: 'linksPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [1] },
+            description: 'Which page of the matched links. It shares ' +
+                         '`per` with the providers.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [10] },
+            description: 'Rows per page of each list, capped.' }
+        ],
+        handler: function (req, res): void {
           log.debug("Entering the management API claim providers endpoint.");
-          const json = loadProviders().view();
+          const json = self.pagedView(req.query || {});
           self.sendJson(res, 200, Object.assign({
             redirectUri: baseUrlOf(req) + json.callbackPath }, json));
           log.debug("Leaving the management API claim providers endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/claim-providers/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/claim-providers/:action',
         tag: 'OAuth 2.0 / OIDC', mirrors: 'POST /admin/claim-providers',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API claim providers action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -186,63 +252,11 @@ class ClaimsProvidersApi {
           });
         },
         actions: [
-          { action: 'add-provider', operationId: 'addClaimProvider',
-            summary: 'Register a Claims Provider',
-            description: 'A provider this realm aggregates claims from. ' +
-              '`discover` fills the endpoints left empty from the issuer\'s ' +
-              'discovery document; the secret is sealed. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: PROVIDER_PROPERTIES,
-              required: ['id', 'issuer', 'clientId', 'claims'],
-              examples: [{ id: 'bank', issuer: 'https://bank.example',
-                           discover: true, clientId: 'iya-sts',
-                           clientSecret: 's3cret', claims: ['credit_score'],
-                           delivery: 'aggregated' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was registered.' },
-          { action: 'update-provider', operationId: 'updateClaimProvider',
-            summary: 'Change a Claims Provider',
-            description: 'The members given replace the provider\'s; the ' +
-              'secret is kept unless one is given. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: PROVIDER_PROPERTIES,
-              required: ['id'],
-              examples: [{ id: 'bank', delivery: 'distributed' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What changed.' },
-          { action: 'remove-provider', operationId: 'removeClaimProvider',
-            summary: 'Remove a Claims Provider',
-            description: 'It leaves the register; people\'s links to it stay ' +
-              'on their entries and are never used. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { id: PROVIDER_PROPERTIES.id },
-              required: ['id'], examples: [{ id: 'bank' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was removed.' },
-          { action: 'revoke-link', operationId: 'revokeClaimSourceLink',
-            summary: 'Revoke a person\'s link to a Claims Provider',
-            description: 'Their tokens at that provider are removed from ' +
-              'their entry, so its claims are no longer sent. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                username: { type: 'string', maxLength: 256 },
-                provider: PROVIDER_PROPERTIES.id
-              },
-              required: ['username', 'provider'],
-              examples: [{ username: 'alice', provider: 'bank' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was revoked.' }
-        ] }
+          { action: 'add-provider', operationId: 'addClaimProvider' },
+          { action: 'update-provider', operationId: 'updateClaimProvider' },
+          { action: 'remove-provider', operationId: 'removeClaimProvider' },
+          { action: 'revoke-link', operationId: 'revokeClaimSourceLink' }
+        ] })
     ];
     log.debug("Leaving ClaimsProvidersApi.buildRoutes().");
     return ROUTES;

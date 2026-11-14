@@ -6,7 +6,7 @@
 # This is the image `docker-compose-run-tests.yml` builds for the `tests`
 # service: node, a Chrome, this whole repository, and both node_modules trees.
 # It runs tests/run-tests-in-container.sh, which drives EVERY job
-# (tests/vendored/MANIFEST.js is the count and no number is written here —
+# (tests/protocol/MANIFEST.js is the count and no number is written here —
 # one was, said twenty-three, and was wrong within a fortnight)
 # against the `sts` service beside it on the compose network and writes the
 # report to a bind mount. Nothing on the host is needed but docker.
@@ -15,7 +15,7 @@
 # it is about eight hundred lines shorter for one reason: that image is
 # assembled COPY by COPY out of a repository whose tests, borrowed modules and
 # vendored client files live in five directories, and it hit Docker's 125-layer
-# limit doing it. Here the tests ARE this repository — tests/ and tests/vendored/
+# limit doing it. Here the tests ARE this repository — tests/ and tests/protocol/
 # are committed files of this checkout — so one `COPY . ./` is the whole of it.
 #
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@
 # STAGES OF THEIR OWN AND COPIED INTO THE RUNNER BELOW.
 #
 # The ACME, EST and SCEP servers were only ever driven by this suite's own
-# clients (tests/vendored/acme_client.js, est_client.js, scep_client.js),
+# clients (tests/protocol/acme_client.js, est_client.js, scep_client.js),
 # second readings of the RFCs written here. These are the real ones, each
 # the client an operator of that protocol actually runs, each at ONE pinned
 # version and each checked before it is built:
@@ -106,6 +106,11 @@
 #                        makes a runtime of only the modules it uses — the
 #                        runner gets that, the jars and the licences, and
 #                        no JDK or Maven.
+#   keycloak-authz-client 26.0.12  Apache-2.0. Keycloak's UMA 2.0 client
+#                        and resource-server LIBRARY, the independent peer
+#                        of tests/protocol/sts_uma.js (#1196): a thin command
+#                        line over it, tests/tools/keycloak-uma-driver, built
+#                        in the `uma-java` stage exactly as jscep's is.
 #
 # NOTHING OF THEIRS IS VENDORED: each is fetched from its publisher at build
 # time, each archive is held to a sha256 here, and a GitHub archive of a
@@ -128,7 +133,7 @@
 # what was verified when the image was built; tests/tools/build-corpora-image.sh
 # rebuilds it after a pin changes and rewrites this line.
 # ---------------------------------------------------------------------------
-ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:4693ec34f90137c0d8fbe3d9e9c76c9de7dacb71abf555829f34f455bc6e7883
+ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:36f60adcffd341180f7a9185712b90e6cc2ac3eb9321e68ca79278db9a8f7d36
 FROM ${STS_CORPORA_IMAGE} AS corpora
 
 FROM golang:1.26.8-bookworm AS enroll-go
@@ -142,6 +147,67 @@ RUN go install github.com/go-acme/lego/v5@v5.5.2 \
  && cp /go/pkg/mod/github.com/micromdm/scep/v2@v2.3.0/LICENSE \
        /out/licenses/micromdm-scep.LICENSE \
  && /out/lego --version
+
+# THE EUDI-DEV WALLET (#668): a real OpenID4VCI and OpenID4VP wallet with a
+# web UI, which tests/protocol/sts_eudi_wallet_portal.js runs as a child
+# process beside the browser and drives the user portal with. Built from
+# rcbj's fork, rcbj/eudi-dev, at a commit on its `main` (the fork is the
+# source; nothing is ever sent upstream), as its own Dockerfile builds it:
+# the archive by sha256, a static binary, the version stamped in. A bump is
+# the commit, its archive's sha256 and nothing else.
+FROM golang:1.26.8-bookworm AS eudi-wallet
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
+ENV EUDI_DEV_COMMIT=c48269ec315bd21aa0b8d3d121934b2d0d268f3e
+ENV EUDI_DEV_SHA256=08008ea9a1e5083a0adc90c41e989bbedd2e9fe566695ed38da20463ebc97f93
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/eudi-dev.tgz \
+        https://github.com/rcbj/eudi-dev/archive/${EUDI_DEV_COMMIT}.tar.gz \
+ && echo "${EUDI_DEV_SHA256}  /tmp/eudi-dev.tgz" | sha256sum -c - \
+ && mkdir -p /usr/src && tar xzf /tmp/eudi-dev.tgz -C /usr/src \
+ && cd /usr/src/eudi-dev-${EUDI_DEV_COMMIT} \
+ && go build -ldflags "-s -w -X github.com/eudi-dev/eudi-dev/v3/cmd.Version=${EUDI_DEV_COMMIT}" \
+      -o /out/eudi . \
+ && mkdir -p /out/licenses && cp LICENSE /out/licenses/eudi-dev.LICENSE \
+ && echo "${EUDI_DEV_COMMIT}" > /out/COMMIT \
+ && /out/eudi wallet --help >/dev/null
+
+# THE NATIVE OID4VC WALLET (#694): rcbj/oid4vc-wallet, a Linux desktop wallet
+# whose command line (`accept`, `present --approve|--refuse`, `self-issued`,
+# its #10) redeems an offer and answers OpenID4VP and SIOPv2 requests with no
+# window, no session bus and no desktop key ring. tests/protocol/
+# sts_oid4vc_wallet.js runs it as a child, with a throwaway HOME and its
+# storage key in a file (OID4VC_WALLET_KEY_FILE). Built at a pinned commit of
+# its `main`, the archive by sha256, as #668's stage above builds eudi-dev; a
+# bump is the commit and its archive's sha256 and nothing else.
+#   * libudev-dev and libpcsclite-dev are for the security-key code (FIDO2
+#     over USB HID, PIV over PC/SC), linked whether or not a key is ever
+#     used; the runner needs only libudev1 and libpcsclite1. D-Bus is
+#     vendored by the crate, and the window's X11 and GL are opened at run
+#     time, only by `--ui`, which no job passes.
+#   * rust-toolchain.toml says `stable`, which rustup would go and download
+#     over the 1.97 this image carries: it is removed, so the build is the
+#     image's toolchain and nothing is fetched but the locked crates.
+#   * GIT_COMMIT and BUILD_NUMBER are what build.rs stamps into `--version`
+#     (an archive has no .git to read them from).
+FROM rust:1.97-bookworm AS oid4vc-wallet
+ENV OID4VC_WALLET_COMMIT=616d059cb0a6bb19b9a5e9cd64ccc9354286664d
+ENV OID4VC_WALLET_SHA256=f34c36434f1510534a40c09242a345a57e4635b516d69a8a18b6f2c3fbb7bab8
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+      libudev-dev libpcsclite-dev pkg-config \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL --retry 5 --retry-all-errors -o /tmp/oid4vc-wallet.tgz \
+        https://github.com/rcbj/oid4vc-wallet/archive/${OID4VC_WALLET_COMMIT}.tar.gz \
+ && echo "${OID4VC_WALLET_SHA256}  /tmp/oid4vc-wallet.tgz" | sha256sum -c - \
+ && mkdir -p /usr/src && tar xzf /tmp/oid4vc-wallet.tgz -C /usr/src \
+ && cd /usr/src/oid4vc-wallet-${OID4VC_WALLET_COMMIT} \
+ && rm -f rust-toolchain.toml \
+ && GIT_COMMIT=${OID4VC_WALLET_COMMIT} BUILD_NUMBER=${OID4VC_WALLET_COMMIT} \
+      cargo build --release --locked --bin oid4vc-wallet \
+ && mkdir -p /out/licenses \
+ && cp target/release/oid4vc-wallet /out/ \
+ && cp LICENSE /out/licenses/oid4vc-wallet.LICENSE \
+ && echo "${OID4VC_WALLET_COMMIT}" > /out/COMMIT \
+ && /out/oid4vc-wallet --version
 
 FROM ubuntu:latest AS enroll-c
 RUN apt-get update \
@@ -188,6 +254,14 @@ FROM maven:3.9.16-eclipse-temurin-21-noble AS enroll-java
 COPY tests/tools/jscep-driver /usr/src/jscep-driver
 RUN /usr/src/jscep-driver/build.sh /usr/src/jscep-driver /out/jscep
 
+# KEYCLOAK'S UMA 2.0 CLIENT, THROUGH ITS DRIVER (#1196): see the header and
+# tests/tools/keycloak-uma-driver/build.sh — jscep's arrangement, a stage of
+# its own so that neither rebuilds the other.
+FROM maven:3.9.16-eclipse-temurin-21-noble AS uma-java
+COPY tests/tools/keycloak-uma-driver /usr/src/keycloak-uma-driver
+RUN /usr/src/keycloak-uma-driver/build.sh /usr/src/keycloak-uma-driver \
+      /out/keycloak-uma
+
 # THE SECOND SCIM HARNESS, COMPILED IN A STAGE OF ITS OWN (#206).
 # scim2/test-suite is Go, and a Go toolchain in the runner image would be
 # ~600 MB for one binary; so it is fetched at a pinned commit, checked by
@@ -206,7 +280,7 @@ RUN /usr/src/jscep-driver/build.sh /usr/src/jscep-driver /out/jscep
 # /opt/vc-suites. Several carry test PRIVATE keys, which is why they are
 # fetched here and never committed. tests/CLAUDE.md, *The W3C VC and DID
 # suites*, is the provenance.
-FROM node:24.16.0-bookworm AS vc-suites
+FROM node:24.22.1-bookworm AS vc-suites
 COPY tests/vc-suites/fetch-suites.sh /usr/src/fetch-suites.sh
 RUN /usr/src/fetch-suites.sh /opt/vc-suites
 
@@ -220,7 +294,7 @@ RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
 #
 #   * SAMBA 4.25.0 (GPL-3.0, NEVER VENDORED): the release tarball, checked by
 #     sha256, built into /opt/samba for its raw Kerberos KDC tests,
-#     python/samba/tests/krb5 — tests/vendored/sts_kerberos_samba.js runs them
+#     python/samba/tests/krb5 — tests/protocol/sts_kerberos_samba.js runs them
 #     through tests/kerberos-interop/samba_krb5_driver.py. The distribution's
 #     python3-samba ships the bindings without that test tree, and the tree
 #     must match the bindings it imports, so both come from one tarball. The
@@ -230,7 +304,7 @@ RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
 #   * HEIMDAL (BSD-3-Clause) at a pinned master commit — 7.8.0, the last
 #     release, has no gss-token — and curl 8.16.0, the last curl that builds
 #     against Heimdal's GSSAPI, into /opt/heimdal, for
-#     tests/vendored/sts_kerberos_heimdal.js. Nothing of it goes on the PATH:
+#     tests/protocol/sts_kerberos_heimdal.js. Nothing of it goes on the PATH:
 #     the runner's kinit is MIT's.
 #
 # tests/kerberos-interop/build-*.sh pin, check and build; tests/CLAUDE.md,
@@ -315,7 +389,7 @@ WORKDIR /usr/src/sts
 # on a different node from the service it drives can pass on a syntax the
 # service cannot parse.
 ENV NVM_DIR /usr/local/nvm
-ENV NODE_VERSION=24.16.0
+ENV NODE_VERSION=24.22.1
 RUN mkdir -p ${NVM_DIR}
 RUN set -o pipefail && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.5/install.sh | bash
 RUN . $NVM_DIR/nvm.sh && nvm version && echo -e ". $NVM_DIR/nvm.sh\nexport PATH=\$NVM_DIR/versions/node/\$(nvm version)/bin:\$PATH" >> ~/.bashrc
@@ -336,7 +410,7 @@ RUN node -v && npm -v
 # THE VERSION IS NOT THE PARENT PROJECT'S, AND THAT IS DELIBERATE. That image
 # pins 121.0.6167.85, and its own comments explain what it works around there
 # (Web Crypto Ed25519 behind a flag). The browser jobs here drive this
-# service's console, and tests/vendored/sts_admin_console.js reads status codes
+# service's console, and tests/protocol/sts_admin_console.js reads status codes
 # and headers through WEBDRIVER BiDi (`network.responseCompleted`), because
 # `default-src 'none'` on the console is the thing under test and blocks a
 # `fetch()` from the page. BiDi network events are a recent Chrome, so this
@@ -391,10 +465,11 @@ RUN apt-get update \
 # the client every other Kerberos deployment uses rather than only by this
 # suite's own. Its own layer below the source copy, for the compiler's
 # reason; noninteractive, because the package otherwise asks for a default
-# realm.
+# realm. krb5-pkinit (#179) is MIT's PKINIT plugin, for `kinit -X
+# X509_user_identity=` and `kinit -n` in sts_kerberos_pkinit.js.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
-        krb5-user \
+        krb5-user krb5-pkinit \
     && rm -rf /var/lib/apt/lists/*
 # THE CERTIFICATE ENROLLMENT CLIENTS (#207-#211), from the two stages at the
 # top of this file, and certbot, which is Python and is installed here into
@@ -408,6 +483,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=enroll-go /out/ /opt/enroll-clients/
 COPY --from=enroll-c /out/ /opt/enroll-clients/
+# The eudi-dev wallet (#668), from its stage at the top of this file.
+COPY --from=eudi-wallet /out/ /opt/eudi-wallet/
+ENV STS_EUDI_WALLET_BIN=/opt/eudi-wallet/eudi
+# The native OID4VC wallet (#694), from its stage at the top of this file,
+# and the two shared libraries it links beyond libc (its security-key code).
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        libudev1 libpcsclite1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=oid4vc-wallet /out/ /opt/oid4vc-wallet/
+ENV STS_OID4VC_WALLET_BIN=/opt/oid4vc-wallet/oid4vc-wallet
 COPY tests/tools/certbot-requirements.txt /opt/enroll-clients/certbot-requirements.txt
 RUN python3 -m venv /opt/certbot \
  && /opt/certbot/bin/pip install --no-cache-dir --require-hashes --no-deps \
@@ -419,7 +505,7 @@ RUN python3 -m venv /opt/certbot \
  && ldd /opt/enroll-clients/estclient
 # THE PUBLISHED XML SCHEMAS AND A VALIDATOR FOR THEM (#188, 2026-09-24):
 # libxml2's `xmllint`, and every OASIS and W3C schema
-# tests/vendored/sts_xml_schema_validation.js validates this service's SAML,
+# tests/protocol/sts_xml_schema_validation.js validates this service's SAML,
 # WS-Trust and WS-Federation documents against — FETCHED here, each checked
 # against the sha256 in tests/xml-schemas/SCHEMAS (the build fails on a
 # single differing byte), with the catalogue that lets the job run
@@ -438,7 +524,7 @@ ENV STS_XML_SCHEMA_DIR=/opt/xml-schemas
 # environment of its own, every package pinned to a version AND a sha256
 # (--require-hashes; tests/scim-conformance/requirements.txt says how to
 # re-pin). And the second, compiled in the stage at the top of this file.
-# tests/vendored/sts_scim_conformance.js runs both. Above the source copy,
+# tests/protocol/sts_scim_conformance.js runs both. Above the source copy,
 # for the schemas' reason.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
@@ -451,6 +537,17 @@ RUN python3 -m venv /opt/scim2-tester \
 ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
 COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
 ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
+# SCHEMATHESIS (#1299): the API fuzzer, pinned and hash-checked into a venv of
+# its own, run by tests/protocol/sts_schemathesis.js through the auth proxy in
+# tests/schemathesis/. MIT; fetched from PyPI at build time, never vendored
+# (REUSE.toml records it). python3 and python3-venv are already installed
+# above. The requirements were resolved on this base's Python — re-pin in the
+# new image if it moves (tests/schemathesis/requirements.txt says how).
+COPY tests/schemathesis/requirements.txt /usr/src/schemathesis/requirements.txt
+RUN python3 -m venv /opt/schemathesis \
+    && /opt/schemathesis/bin/pip install --no-cache-dir --require-hashes \
+        -r /usr/src/schemathesis/requirements.txt
+ENV STS_SCHEMATHESIS_DIR=/opt/schemathesis
 # THE KERBEROS INTEROPERABILITY HARNESSES (#204, #205), from the two stages
 # at the top of this file, and the shared libraries they link — the packages
 # each build stage wrote into its prefix's RUNTIME_PACKAGES, so the list is
@@ -474,7 +571,7 @@ ENV STS_HEIMDAL_DIR=/opt/heimdal
 # upstream commits, each tarball checked against a sha256, and their Python
 # dependencies hash-pinned into a venv of their own. Run, never vendored;
 # the upstream `tests/` directory with its private keys is not copied.
-# tests/vendored/sts_tlsfuzzer.js and tests/tlsfuzzer_debugger.js drive it
+# tests/protocol/sts_tlsfuzzer.js and tests/tlsfuzzer_debugger.js drive it
 # through tests/tlsfuzzer/sts_adapter.py. Above the source copy, for the
 # schemas' reason: only the two files the fetch reads are copied first.
 COPY tests/tlsfuzzer/build-tlsfuzzer.sh tests/tlsfuzzer/requirements.txt \
@@ -493,9 +590,9 @@ RUN if [ ! -f node-ldapjs/package.json ]; then \
       echo "load the directory die with Cannot find module 'ldapjs'." >&2; \
       exit 1; \
     fi
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 COPY tests/package*.json ./tests/
-RUN npm install --prefix ./tests && npm cache clean --force
+RUN npm ci --prefix ./tests && npm cache clean --force
 
 # ---------------------------------------------------------------------------
 # C2SP x509-LIMBO FOR tests/x509_limbo.js (#201), FETCHED HERE AND NEVER
@@ -560,6 +657,11 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/${CERTMONGER_DEB} \
 COPY --from=enroll-java /out/jscep /opt/enroll-clients/jscep
 RUN ln -s /opt/enroll-clients/jscep/jscep-driver /usr/local/bin/jscep-driver \
  && (jscep-driver 2>&1 | head -1)
+# Keycloak's UMA client (#1196): its driver, runtime and licences.
+COPY --from=uma-java /out/keycloak-uma /opt/uma-clients/keycloak
+RUN ln -s /opt/uma-clients/keycloak/keycloak-uma-driver \
+      /usr/local/bin/keycloak-uma-driver \
+ && (keycloak-uma-driver 2>&1 | head -1)
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
@@ -609,8 +711,14 @@ RUN mkdir -p tests/report
 #
 # CONFIG_FILE is the appconfig layer the JOBS read for a log level, not the
 # service's — run-report.js overrides it per protocol job to ./env/local.js
-# relative to tests/vendored/. This one is for the runner itself.
+# relative to tests/protocol/. This one is for the runner itself.
 ENV CONFIG_FILE=./env/local.js
+# That file carries the shipped rate limits since #1482, and the suite signs in
+# far more often than a person does: an appconfig layer, not the environment,
+# so that a test's own setOverride() still decides.
+ENV CONFIG_FILE=./env/npm-tests.js
+# Where the in-process tests write the CA files they name (#1481).
+ENV STS_SECURITY_FILE_ROOTS=/etc/ssl,/usr/share/ca-certificates,/run/secrets,/tmp
 # Where the service is, on the compose network. run-tests-in-container.sh passes
 # it to run-report.js as --service-url and waits for it first; the compose file
 # sets it too, and this default is what makes a hand-run `docker run` on the

@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "Un archivo montado en el contenedor"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault u OpenBao Transit (la clave nunca sale de él)"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS (la clave nunca sale de él)"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS (la clave nunca sale de él)"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "Clave de Azure Key Vault o Managed HSM (la clave nunca sale de él)"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "De dónde lee este servicio sus secretos primordiales — la clave de cifrado de claves con la que se sella todo lo que sella, y la contraseña de la base de datos — si realmente los leyó, y qué está haciendo el almacén del otro extremo."
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "no configurado"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "(no hay ninguna ruta configurada)"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "(no hay ningún id de secreto configurado)"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "(no hay ningún nombre de recurso configurado)"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "(no hay ningún nombre de secreto configurado)"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "(no hay ninguna url de vault configurada)"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "(no hay ninguna clave configurada)"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "(no hay ningún nombre de clave configurado)"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "(el valor predeterminado del SDK)"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "(el endpoint predeterminado del SDK)"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "cada clave de cifrado de datos, en el KMS"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "cada clave de cifrado de datos, en el vault"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "un certificado de cliente ({{cert}})"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "un certificado de cliente"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "un token"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "un token configurado"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "el VAULT_TOKEN del SDK"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "(ninguno nombrado)"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "El archivo no es un objeto JSON, así que lo que contiene se toma entero. Eso es lo que es un archivo de clave sin formato."
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "Solo los NOMBRES de los miembros. Cuál toma un secreto lo decide su propio ajuste de campo."
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "No hay ningún campo configurado, así que el archivo entero es este secreto."
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "Este secreto comparte el archivo de la clave de cifrado de claves y ese archivo no es un objeto JSON — así que lo que contiene es la CLAVE, y la lectura de este secreto se RECHAZA en lugar de entregar esa clave a una base de datos."
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "El archivo no es JSON, así que todo él es este secreto y el campo no se usa."
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "No hay ningún certificado de cliente configurado, así que no se inició ninguna sesión: el token es el que aporte {{token}} o el VAULT_TOKEN del SDK."
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "ESTA IDENTIDAD PUEDE ESCRIBIR. Podría reemplazar la clave de cifrado de claves, y todo lo sellado con la antigua quedaría ilegible."
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "Solo lectura en cada ruta por la que se le preguntó, que es lo que se supone que dice la política."
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "Esta identidad no puede acceder a ninguna de las rutas que tiene configuradas para leer. Una lectura al iniciar sería rechazada."
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "la cadena de conexión"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "Un archivo montado en el contenedor ({{from}})"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "Un archivo montado en el contenedor, compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "Un archivo montado en el contenedor ({{from}}), compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager, compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager ({{from}}), compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager, compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager ({{from}}), compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault, compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault ({{from}}), compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault, compartido con la clave de cifrado de claves"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault ({{from}}), compartido con la clave de cifrado de claves"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "El archivo en sí: si está ahí, quién puede leerlo y cuándo cambió por última vez."
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "Si el archivo contiene un objeto JSON, y qué miembros hay en él — los NOMBRES y nunca los valores."
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "Si el miembro que este secreto tiene configurado tomar está realmente en el archivo."
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "El certificado que este servicio presenta al almacén, y cuándo caduca."
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "El anclaje contra el que este servicio verifica la propia escucha del almacén."
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "Si el almacén está inicializado, si está sellado, qué tipo de sellado tiene y qué compilación es."
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "El propio resumen de salud del almacén: su reloj, su clúster y si este nodo es el activo."
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "Alta disponibilidad: si este nodo es el líder, y dónde está el líder."
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "Iniciar sesión como lo hace una lectura al iniciar, y lo que devolvió el almacén."
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "Lo que dice el almacén sobre el token que produjo ese inicio de sesión, preguntado al almacén en lugar de leído de la respuesta del inicio de sesión."
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "Lo que esta identidad puede hacer realmente, preguntado al almacén: las rutas que lee, y una escritura que no debe poder hacer."
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "Los motores de secretos que esta identidad puede ver — que son menos de los que tiene el almacén, y así debe ser."
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "Los metadatos KV de este secreto: cuándo se escribió, cuántas versiones hay y cuál obtiene una lectura."
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "Todo lo que AWS Secrets Manager sabe de este secreto EXCEPTO su valor: la rotación, la clave KMS, las versiones y sus etiquetas de staging."
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Lo que dice Transit sobre la clave que envuelve las claves de datos: su tipo, sus versiones y si puede salir alguna vez del KMS."
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "Lo que dice AWS KMS sobre la clave que envuelve las claves de datos: su estado y si AWS la rota."
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Lo que dice Cloud KMS sobre la clave que envuelve las claves de datos: su propósito, su versión principal y su calendario de rotación."
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "Lo que dice el vault sobre la clave que envuelve las claves de datos: su tipo, tamaño, operaciones, versión y rotación."
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "Los propios metadatos del secreto: replicación, etiquetas, rotación y caducidad."
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "La versión que obtendría una lectura: si está habilitada, deshabilitada o destruida."
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "Cada versión de este secreto y sus propiedades — habilitada, creada, actualizada, caducidad — y nunca el valor."
+  }
+}

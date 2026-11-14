@@ -21,5 +21,9 @@ declare module '@azure/keyvault-keys';
 // The mail channel's three cloud transports (#63), required by
 // `common/mail_transports.ts` when a realm chooses one.
 declare module '@aws-sdk/client-sesv2';
+// The SPIFFE target reconcile (#323), loaded by cluster/spiffe_targets.js
+// when this process is an ECS task.
+declare module '@aws-sdk/client-elastic-load-balancing-v2';
+declare module '@aws-sdk/client-ecs';
 declare module '@azure/communication-email';
 declare module '@googleapis/gmail';

@@ -42,7 +42,7 @@
 //
 // NOT HERE: the console gate's HTTP answers, the realm token at /admin-api and
 // the chooser page in a browser — those need the service's own port and were
-// driven against an isolated instance; `tests/vendored/sts_admin_api_auth.js`
+// driven against an isolated instance; `tests/protocol/sts_admin_api_auth.js`
 // and `sts_admin_api_operations.js` hold the API half over HTTP.
 // ===========================================================================
 
@@ -98,6 +98,18 @@ function childMain() {
     // ---------------------------------------------------------------------
     // 1. THE ROSTER IS PER REALM.
     // ---------------------------------------------------------------------
+    // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (2026-11-11):
+    // `admin_rbac.ts`'s grant() refuses a name with no entry
+    // (STS-ADMIN-0920), so every person this file grants a role to is made
+    // first, in the realm whose roster names them.
+    const person = function (id, name) {
+      return inRealm(id, function () {
+        return ldapServer.createUser(name, {});
+      });
+    };
+    person(R, 'realmboss');
+    person(realms.DEFAULT_ID, 'svcboss');
+    person(S, 'someone-else');
     const serviceBefore = rbac.describe();
     const granted = rbac.grant('realmboss', 'write', { via: 'test',
                                                       realm: R });
@@ -288,17 +300,16 @@ function childMain() {
                  { action: 'set', key: 'spiffe.maxRecordedConnections' }) &&
          // KERBEROS, PER KEY SINCE 2026-09-15. The rows a realm's principal
          // database is built from are the realm administrator's — it has a
-         // Kerberos realm of its own — and the two SOCKETS and the
-         // development-mode trust are still the service's. This was the
-         // `krb5.` prefix until that date, which refused all of them.
+         // Kerberos realm of its own — and the KDC's SOCKET is still the
+         // service's. This was the `krb5.` prefix until that date, which
+         // refused all of them. The development-mode trust's four settings
+         // were the service's too until #430 retired them.
          !refused(realmState, '/admin/config',
                   { action: 'set', key: 'krb5.realm' }) &&
          !refused(realmState, '/admin/config',
                   { action: 'set', key: 'krb5.enabled' }) &&
          refused(realmState, '/admin/config',
-                 { action: 'set', key: 'krb5.kdcPort' }) &&
-         refused(realmState, '/admin/config',
-                 { action: 'set', key: 'krb5.trustedRealm' }),
+                 { action: 'set', key: 'krb5.kdcPort' }),
          'settings naming the service are refused by name wherever they are ' +
          'posted, and a realm\'s own are not',
          JSON.stringify(settings && settings.settings));
@@ -317,14 +328,15 @@ function childMain() {
     // ---------------------------------------------------------------------
     // 6. THE REALM CHOOSER.
     // ---------------------------------------------------------------------
-    const ask = function (method, url, ambient) {
+    const ask = function (method, url, ambient, cookie) {
       const query = {};
       new URL('http://x' + url).searchParams.forEach(function (v, k) {
         query[k] = v;
       });
       return inRealm(ambient || realms.DEFAULT_ID, function () {
         return chooser.decide({ method: method, originalUrl: url, query: query,
-                                headers: { host: 'localhost' },
+                                headers: { host: 'localhost',
+                                           cookie: cookie || '' },
                                 protocol: 'https',
                                 get: function () { return 'localhost'; } },
                               url.indexOf('/portal') === 0 ? 'portal'
@@ -342,14 +354,58 @@ function childMain() {
     note(chosen && chosen.kind === 'redirect' &&
          /\/realm\/[^/]+\/admin$/.test(chosen.location) &&
          chosen.location.indexOf(R) >= 0 &&
-         portalChosen && /\/portal$/.test(portalChosen.location),
+         chosen.cookie && chosen.cookie.indexOf('sts_realm=' + R) === 0 &&
+         portalChosen && /\/portal$/.test(portalChosen.location) &&
+         portalChosen.cookie &&
+         portalChosen.cookie.indexOf('sts_realm=' + R) === 0,
          'a realm chosen is a redirect to that realm\'s own surface, built ' +
-         'from its prefix', JSON.stringify([chosen, portalChosen]));
+         'from its prefix, and the choice is remembered',
+         JSON.stringify([chosen, portalChosen]));
     const unknown = ask('GET', '/admin?realm=%3Cscript%3E');
-    note(ask('GET', '/admin?realm=default') === null &&
-         unknown && unknown.kind === 'page' && !!unknown.error,
-         'the default realm signs in where it is, and an id that is not a ' +
-         'realm is the page again with a sentence', JSON.stringify(unknown));
+    const home = ask('GET', '/admin?realm=default');
+    note(home && home.kind === 'here' && home.cookie &&
+         home.cookie.indexOf('sts_realm=default') === 0 &&
+         home.cookie.indexOf('HttpOnly') >= 0 &&
+         home.cookie.indexOf('SameSite=Lax') >= 0 &&
+         unknown && unknown.kind === 'page' && !!unknown.error &&
+         !unknown.cookie,
+         'the default realm signs in where it is and is remembered, and an ' +
+         'id that is not a realm is the page again with a sentence and ' +
+         'nothing stored', JSON.stringify([home, unknown]));
+    const again = ask('GET', '/admin', null, 'sts_realm=' + R);
+    const againPortal = ask('GET', '/portal', null, 'sts_realm=' + R);
+    note(again && again.kind === 'redirect' &&
+         again.location.indexOf('/realm/' + R + '/admin') >= 0 &&
+         againPortal && againPortal.kind === 'redirect' &&
+         /\/portal$/.test(againPortal.location),
+         'a remembered realm is the next bare visit, on both surfaces',
+         JSON.stringify([again, againPortal]));
+    const rememberedDefault = ask('GET', '/portal', null, 'sts_realm=default');
+    note(rememberedDefault && rememberedDefault.kind === 'here',
+         'a remembered default realm signs in where it is',
+         JSON.stringify(rememberedDefault));
+    const stale = ask('GET', '/admin', null, 'sts_realm=not-a-realm');
+    note(stale && stale.kind === 'page' && !stale.error && stale.cookie &&
+         stale.cookie.indexOf('Max-Age=0') >= 0 &&
+         stale.cookie.indexOf('not-a-realm') < 0,
+         'a cookie that names no realm is dropped and the page is drawn',
+         JSON.stringify(stale));
+    const unreadable = ask('GET', '/admin', null, 'sts_realm=%');
+    note(unreadable && unreadable.kind === 'page' && !unreadable.error &&
+         unreadable.cookie && unreadable.cookie.indexOf('Max-Age=0') >= 0 &&
+         unreadable.cookie.indexOf('%') < 0,
+         'a cookie that cannot be read is dropped and the page is drawn',
+         JSON.stringify(unreadable));
+    const overridden = ask('GET', '/admin?realm=default', null,
+                           'sts_realm=' + R);
+    note(overridden && overridden.kind === 'here' && overridden.cookie &&
+         overridden.cookie.indexOf('sts_realm=default') === 0,
+         'an explicit choice replaces what was remembered',
+         JSON.stringify(overridden));
+    const kept = ask('GET', '/admin?realm=no-such', null, 'sts_realm=' + R);
+    note(kept && kept.kind === 'page' && !!kept.error && !kept.cookie,
+         'an unknown id leaves a remembered realm alone',
+         JSON.stringify(kept));
     note(noRealmsYet === null,
          'with no realm defined there is nothing to choose, and a bare ' +
          '/admin ' +
@@ -367,9 +423,44 @@ function childMain() {
     note(drawn.indexOf('<select') >= 0 &&
          drawn.indexOf('value="' + R + '"') >= 0 &&
          drawn.indexOf('<script') < 0 && drawn.indexOf('<b>sentence') < 0 &&
-         /<button type="submit">/.test(drawn),
-         'development lists every realm in a form with a real button, no ' +
+         /<button type="submit">/.test(drawn) &&
+         !/<input[^>]*name="realm"/.test(drawn),
+         'the chooser lists every realm in a form with a real button, no ' +
          'script, and an escaped sentence');
+    const selected = inRealm(realms.DEFAULT_ID, function () {
+      return chooser.form({ headers: { host: 'localhost',
+                                        cookie: 'sts_realm=' + R },
+                            protocol: 'https',
+                            get: function () { return 'localhost'; } },
+                          'admin', '');
+    });
+    note(selected.indexOf('value="' + R + '" selected') >= 0 &&
+         !/<input[^>]*name="realm"/.test(selected),
+         'a remembered realm is the option already selected');
+    // THE CHOOSER IS A PAGE OF ITS OWN (2026-10-08): a whole document with
+    // the form in it and nothing of either surface's frame — no sidebar, no
+    // navigation, no account menu — because none of those can be used
+    // before a realm is chosen.
+    const req = { headers: { host: 'localhost' }, protocol: 'https',
+                  get: function () { return 'localhost'; } };
+    ['admin', 'portal'].forEach(function (surface) {
+      const doc = inRealm(realms.DEFAULT_ID, function () {
+        return chooser.page(req, surface, '');
+      });
+      const formHtml = inRealm(realms.DEFAULT_ID, function () {
+        return chooser.form(req, surface, '');
+      });
+      note(/^<!DOCTYPE html>/.test(doc) &&
+           doc.indexOf(formHtml) >= 0 &&
+           /<h1>Choose your realm<\/h1>/.test(doc) &&
+           /Choose a realm to continue/.test(doc) &&
+           /<select id="realmchoice" name="realm" autofocus>/.test(doc) &&
+           !/<input[^>]*name="realm"/.test(doc) &&
+           !/<aside|<nav|class="side"|class="acct"|<script/.test(doc),
+           '6b. the ' + surface + ' chooser is a page of its own: the form ' +
+           'and a note, a large list with the focus, and no frame or script',
+           doc.slice(0, 300));
+    });
 
     // ---------------------------------------------------------------------
     // 7. ENROLLMENT ASKS THE AMBIENT REALM'S ROSTER OF A SESSION.

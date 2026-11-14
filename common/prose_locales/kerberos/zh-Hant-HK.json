@@ -1,0 +1,10 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "此回答或頁面上沒有任何金鑰數據。人員的金鑰在其密碼被設定或驗證時由密碼衍生，從不顯示；服務主體的 keytab 由建立它的建立或輪替動作交出「一次」，而人員的 keytab 由手上的密碼衍生並交出「一次」——即管理員在該人頁面上設定的密碼，或其本人在 /portal/kerberos 上的密碼。"
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "此 KDC 是「開發」KDC：每位用戶都以 krb5.userPassword 產生金鑰，人員從不會被賦予已儲存的金鑰。在此建立的服務主體在兩種模式下都會使用。"
+  }
+}

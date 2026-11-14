@@ -159,10 +159,10 @@ function createReplication(label) {
   let origin = '';
 
   // The high-water mark: every change up to and including this one has been
-  // applied here. Set at startup to whatever the log's maximum was at the
-  // moment
-  // the restore finished, because a process that has just read the whole store
-  // is up to date with everything committed before that instant by definition.
+  // applied here. `start()` sets it from the seq its caller passes.
+  // persistence.js samples that seq when the store opens, before any row is
+  // read back (#619, #804), so a commit during the restore stays above it.
+  // With no seq, `start()` reads the head at the call.
   //
   // **SINCE 2026-09-14 (#46) IT IS A LOW-WATER MARK AND `highest` IS BESIDE
   // IT.** `applied` is "every seq at or below this is applied or given up on";
@@ -174,6 +174,35 @@ function createReplication(label) {
   let highest = 0;
   // seq -> when this process first saw it missing (Date.now()).
   const holes = new Map();
+  // ---------------------------------------------------------------------------
+  // A JUMP IN THE SEQUENCE IS A RANGE, NOT A HOLE PER NUMBER (#677).
+  //
+  // `page()` used to remember every missing number between two rows it read,
+  // one Map entry each, in a synchronous loop. That is right for what a dense
+  // sequence leaves — a rollback burns one number, a burst of them a few — and
+  // it is an outage for anything else: a `setval()` forward, a sequence put
+  // back out of step with a dump, or an engine whose generator is unique but
+  // SPARSE (CockroachDB's `unique_rowid()`) leaves a gap of millions, and the
+  // loop held the event loop until the heartbeat lapsed and the node
+  // fail-stopped (STS-CLUSTER-0004), or ran the heap out. Below that,
+  // MAX_HOLES evicted the oldest holes first, so a real late commit among a
+  // few thousand burnt numbers was never applied in this process.
+  //
+  // So a gap wider than HOLE_SPAN_LIMIT is kept as ONE range `{ lo, hi,
+  // since, seen }` and re-asked for with one `changesSince(lo - 1)` a pull,
+  // taking the rows inside it that it has not applied. What can appear inside
+  // a jump is a transaction that took its number before the jump and had not
+  // committed — bounded by the connections open at the time, far below a
+  // page — so a page from `lo` reaches every one. Ranges expire as holes do,
+  // and are capped at MAX_HOLE_RANGES. A store whose generator is sparse by
+  // design is refused at open (`changeLogDense()`, STS-STORE-0091); this is
+  // what keeps a jump on a dense one from costing the node.
+  // ---------------------------------------------------------------------------
+  const HOLE_SPAN_LIMIT = 1000;
+  // The poll where the store sends no nudge (#677). See intervalMs().
+  const NO_NUDGE_INTERVAL_MS = 1000;
+  const MAX_HOLE_RANGES = 64;
+  const holeRanges = [];
 
   let unwatch = null;
   let running = false;   // one catch-up at a time
@@ -200,6 +229,20 @@ function createReplication(label) {
   // How long syncNow() may spend reaching its guarantee. See step() in
   // syncNow().
   const SYNC_DEADLINE_MS = 4600;
+  // How many times a change sealed under a data key this process does not
+  // hold yet is tried again after the key rows are read again, and the
+  // pause between (2026-10-27; applyRows()).
+  const SEALED_ROW_RETRIES = 5;
+  const SEALED_ROW_RETRY_PAUSE_MS = 200;
+  // Rows applied between two turns of the event loop (#704; applyRows()).
+  // Small: a turn costs a few microseconds, and a page is at most PAGE rows,
+  // so twenty turns a full page add nothing a barrier's deadline would see.
+  const APPLY_YIELD_EVERY = 25;
+  // Directory changes of a realm this process does not define yet, kept by
+  // kind, realm and key until the realm's own row has been applied
+  // (2026-10-27; applyRows()), and the time after which one is given up.
+  const deferredRows = new Map();
+  const DEFERRED_ROW_EXPIRE_MS = 10 * 60 * 1000;
   // How many pulls have STARTED, and the start number of the newest one that
   // FINISHED. See syncNow(): a barrier waits for a pull that began after it
   // read
@@ -241,7 +284,46 @@ function createReplication(label) {
                'rolled back. ' + holes.size + ' hole(s) are still being ' +
                'asked for.');
     }
+    expireHoleRanges(now);
     log.debug("Leaving expireHoles().");
+  }
+
+  // A range is given up on as a hole is: after HOLE_EXPIRE_MS, or the oldest
+  // first past MAX_HOLE_RANGES. One line per pass, with the span.
+  function expireHoleRanges(now) {
+    log.debug("Entering expireHoleRanges().");
+    const kept = holeRanges.filter(function (range) {
+      return now - range.since < HOLE_EXPIRE_MS;
+    });
+    kept.sort(function (a, b) {
+      return a.lo - b.lo;
+    });
+    while (kept.length > MAX_HOLE_RANGES) {
+      kept.shift();
+    }
+    const dropped = holeRanges.length - kept.length;
+    if (dropped) {
+      holeRanges.length = 0;
+      Array.prototype.push.apply(holeRanges, kept);
+      holesAbandoned += dropped;
+      log.warn(errorCodes.tag('STS-STORE-0049') + 'persistence: ' + dropped +
+               ' jump(s) in the change-log sequence are no longer asked ' +
+               'for; ' + holeRanges.length + ' are still being asked for.');
+    }
+    log.debug("Leaving expireHoleRanges().");
+  }
+
+  // Remembers a gap wider than HOLE_SPAN_LIMIT as one range.
+  function addHoleRange(lo, hi, now) {
+    log.debug("Entering addHoleRange(). " + lo + '..' + hi);
+    holeRanges.push({ lo: lo, hi: hi, since: now, seen: new Set() });
+    log.warn(errorCodes.tag('STS-STORE-0090') + 'persistence: the ' +
+             'change-log sequence jumped from ' + (lo - 1) + ' to ' +
+             (hi + 1) + '; the ' + (hi - lo + 1) + ' number(s) between are ' +
+             'asked for as one range rather than one by one. A dense ' +
+             'sequence jumps only when somebody moved it (setval, a ' +
+             'restore).');
+    log.debug("Leaving addHoleRange().");
   }
 
   // `applied` is just below the oldest hole still asked for, or `highest`.
@@ -251,6 +333,11 @@ function createReplication(label) {
     holes.forEach(function (since, seq) {
       if (!oldest || seq < oldest) {
         oldest = seq;
+      }
+    });
+    holeRanges.forEach(function (range) {
+      if (!oldest || range.lo < oldest) {
+        oldest = range.lo;
       }
     });
     applied = oldest ? Math.max(applied, oldest - 1) : highest;
@@ -263,6 +350,9 @@ function createReplication(label) {
   // is
   // a request waiting to be answered correctly. See syncNow().
   let runningPull = null;
+  // WHAT THE LATEST PULL HAS COST, read by STS-STORE-0039's line: the two
+  // things it waits on, and the rows it is applying.
+  let pullCost = null;
   let pendingWake = false;
   let stopped = false;
 
@@ -291,6 +381,17 @@ function createReplication(label) {
 
   function intervalMs() {
     log.debug("Entering intervalMs().");
+    // A STORE THAT SENDS NO NUDGE IS POLLED EVERY SECOND (rcbj on #677) —
+    // unless somebody set the interval, which then stands. The five-second
+    // default is argued from the nudge arriving first; without one, the
+    // interval IS the convergence lag. One indexed read a process a second
+    // when nothing changed.
+    const noNudge = !!driver && typeof driver.watchChanges !== 'function';
+    const source = config.sourceOf('persistence.pollInterval');
+    if (noNudge && (source === 'default' || source === 'defaults')) {
+      log.debug("Leaving intervalMs(). No nudge, default interval.");
+      return NO_NUDGE_INTERVAL_MS;
+    }
     log.debug("Leaving intervalMs().");
     return Math.max(250,
                     Number(config.value('persistence.pollInterval')) || 5000);
@@ -317,12 +418,13 @@ function createReplication(label) {
   }
 
   // ---------------------------------------------------------------------------
-  // STARTING. Called from `server.js` AFTER the whole store has been restored —
-  // including the minted rows, which need the keystore — because the high-water
-  // mark is only meaningful once this process is up to date.
+  // STARTING. Called after the store has been restored. The seq to start
+  // from was sampled when the store opened, before that restore (#619):
+  // arming the follower earlier would apply into a store not restored yet,
+  // and sampling here would miss a commit that landed in between.
   // ---------------------------------------------------------------------------
   /**
-   * Starts following the change log from its current head.
+   * Starts following one change log.
    *
    * Called after the whole store has been restored. Registers the per-process
    * pull job and the change-log trim job, and listens for the driver's nudge.
@@ -331,11 +433,13 @@ function createReplication(label) {
    * @param theDriver - the persistence driver
    * @param theAppliers - the appliers, by row kind, that take another process's
    * rows into this process's memory
+   * @param fromSeq - when a finite number, the high-water to start from
+   * instead of the log's current head
    * @returns a promise of `{ coordinating, from }`, or `{ coordinating: false
    * }`
    * with an `error` when coordination is off or failed
    */
-  function start(theDriver, theAppliers) {
+  function start(theDriver, theAppliers, fromSeq) {
     log.debug('Entering start().');
     driver = supports(theDriver) ? theDriver : null;
     appliers = theAppliers || {};
@@ -355,11 +459,20 @@ function createReplication(label) {
       return Promise.resolve({ coordinating: false });
     }
 
+    // A caller that sampled a seq before its restore passes it: the
+    // session-index walk (#350), and the head from when the store opened
+    // (#619). Commits after that seq stay above it and are applied. With
+    // no seq this reads the head now, which is "already restored" only
+    // when nothing could commit between the restore's reads and here.
+    const pinned = Number.isFinite(fromSeq) ? fromSeq : null;
+    const reading = pinned === null ? driver.latestChangeSeq()
+                                    : Promise.resolve(pinned);
     log.debug("Leaving start().");
-    return driver.latestChangeSeq().then(function (seq) {
+    return reading.then(function (seq) {
       applied = seq;
       highest = seq;
       holes.clear();
+      holeRanges.length = 0;
       startedAt = new Date().toISOString();
       // THE NUDGE FIRST, THE TIMER SECOND, and neither is load-bearing on its
       // own: the timer is the contract and the listener only makes it prompt.
@@ -438,7 +551,13 @@ function createReplication(label) {
       },
       run: function () {
         return pull().then(function () {
-          return { applied: applied };
+          // A dead process's contributions go, at most once a minute, on
+          // this job rather than a timer of their own (#618).
+          return pruneFanIn(false).then(function (pruned) {
+            return pruned && pruned.dropped.length
+              ? { applied: applied, originsDropped: pruned.dropped.length }
+              : { applied: applied };
+          });
         }, function (err) {
           log.error(errorCodes.tag('STS-STORE-0038') +
                     'persistence: a scheduled change pull failed: ' +
@@ -582,14 +701,35 @@ function createReplication(label) {
     // -------------------------------------------------------------------------
     const needNo = pullsStarted;
 
+    // THE PULL IN FLIGHT, OR THE DEADLINE, WHICHEVER COMES FIRST
+    // (2026-10-07). This waited for the pull alone, and the deadline was read
+    // only once it had finished — so a pull that applies a burst of rows held
+    // every reader for as long as it ran. In the `cluster` mode the leader
+    // rotated the signing keys of dozens of realms at once, the other node's
+    // pull of the key and certificate-authority rows took about 17s, and a
+    // Kerberos AS-REQ waiting on this barrier was answered 20s late, after its
+    // client had given up (`sts_kerberos_rc4`, `KDC ... did not answer within
+    // 10000ms`). The pull goes on; only the reader stops waiting for it, and
+    // is answered at the deadline from what this process has, as below.
     function settled() {
       log.debug("Entering settled().");
-      log.debug("Leaving settled().");
-      return (runningPull || Promise.resolve()).catch(function (e) {
+      const finished = (runningPull || Promise.resolve()).catch(function (e) {
         // A pull that failed is the timer's business to report; this only needs
         // to know it has finished.
         log.debug("Caught in syncNow(): a pull in flight failed: " +
                   ((e && e.message) || e));
+      });
+      const remaining = deadline - Date.now();
+      let timer = null;
+      const timedOut = new Promise(function (resolve) {
+        timer = setTimeout(resolve, Math.max(0, remaining));
+        if (timer.unref) {
+          timer.unref();
+        }
+      });
+      log.debug("Leaving settled().");
+      return Promise.race([finished, timedOut]).then(function () {
+        clearTimeout(timer);
       });
     }
 
@@ -620,7 +760,8 @@ function createReplication(label) {
         log.warn(errorCodes.tag('STS-STORE-0039') +
                  'persistence: a read barrier gave up at ' + highest +
                  ': no change pull started after it completed. The request ' +
-                 'is being answered from what this process has.');
+                 'is being answered from what this process has.' +
+                 pullCostText());
         log.debug("Leaving step(). Gave up.");
         return Promise.resolve({ caughtUp: false, applied: applied,
                                  target: highest, coordinating: true });
@@ -632,7 +773,9 @@ function createReplication(label) {
       // nearly every barrier meets one. `runningPull` settles when that pull's
       // pages have been applied.
       return settled().then(function () {
-        if (lastCompletedStartNo > needNo) {
+        if (lastCompletedStartNo > needNo || Date.now() >= deadline) {
+          // Caught up, or out of time with a pull still running: step() says
+          // which, and starts no second pull behind the running one.
           return null;
         }
         return pull();
@@ -659,6 +802,38 @@ function createReplication(label) {
    * logged and counted, not thrown, and the next pull retries the same rows.
    * @returns a promise of `{ applied }`, with `error` when the pull failed
    */
+  /**
+   * Says what the latest pull has cost, for the line a barrier that gave up
+   * writes: whether the time went to the store, to applying rows, or neither.
+   * @returns the sentence, starting with a space, or an empty string
+   */
+  function pullCostText() {
+    log.debug("Entering pullCostText().");
+    if (!pullCost) {
+      log.debug("Leaving pullCostText(). No pull.");
+      return '';
+    }
+    const now = Date.now();
+    const kindMs = pullCost.kindMs || {};
+    const current = pullCost.current;
+    const kinds = Object.keys(pullCost.kinds).map(function (kind) {
+      const ms = (kindMs[kind] || 0) +
+        (current && current.kind === kind ? now - current.since : 0);
+      return kind + '=' + pullCost.kinds[kind] + '/' + ms + 'ms';
+    }).join(',');
+    const applyMs = pullCost.applyMs +
+      (pullCost.applyingSince ? now - pullCost.applyingSince : 0);
+    log.debug("Leaving pullCostText().");
+    return ' The ' + (runningPull ? 'pull in flight' : 'latest pull') +
+           ' began ' + (now - pullCost.startedAt) + ' ms ago: ' +
+           pullCost.queryMs + ' ms reading pages, ' + applyMs +
+           ' ms applying ' + pullCost.rows + ' row(s)' +
+           (kinds ? ' (rows/time by kind: ' + kinds + ')' : '') +
+           (current ? '; applying a "' + current.kind + '" row (' +
+            current.key.slice(0, 40) + ') for ' + (now - current.since) +
+            ' ms' : '') + '.';
+  }
+
   function pull() {
     log.debug("Entering pull().");
     if (!enabled() || running) {
@@ -674,6 +849,13 @@ function createReplication(label) {
     // pull that STARTED after it read its target, because only such a pull's
     // queries could see every row committed before that read.
     const startNo = ++pullsStarted;
+    // `kindMs` and `current` are kept by applyOne() as each row is applied,
+    // so a barrier that gives up while a page is still being applied says
+    // which kind of row the time is going to (2026-11-10): `applyMs` alone
+    // is added only when a page ends, and read "0 ms" for a stuck one.
+    const cost = { startedAt: Date.now(), queryMs: 0, applyMs: 0, rows: 0,
+                   kinds: {}, kindMs: {}, applyingSince: 0, current: null };
+    pullCost = cost;
 
     function page() {
       log.debug("Entering page().");
@@ -700,13 +882,19 @@ function createReplication(label) {
       // asks for the holes again on every pull, and gives a hole up only after
       // HOLE_EXPIRE_MS — ten minutes, not four seconds.
       // -----------------------------------------------------------------------
+      const asked = Date.now();
       return driver.changesSince(highest, PAGE).then(function (rows) {
+        cost.queryMs += Date.now() - asked;
         if (!rows.length) {
           return 0;
         }
         const now = Date.now();
         let expect = highest + 1;
         rows.forEach(function (row) {
+          if (row.seq - expect > HOLE_SPAN_LIMIT) {
+            addHoleRange(expect, row.seq - 1, now);
+            expect = row.seq;
+          }
           while (expect < row.seq) {
             if (!holes.has(expect)) {
               holes.set(expect, now);
@@ -715,7 +903,15 @@ function createReplication(label) {
           }
           expect = row.seq + 1;
         });
+        rows.forEach(function (row) {
+          cost.kinds[row.kind] = (cost.kinds[row.kind] || 0) + 1;
+        });
+        cost.rows += rows.length;
+        const applying = Date.now();
+        cost.applyingSince = applying;
         return applyRows(rows).then(function () {
+          cost.applyMs += Date.now() - applying;
+          cost.applyingSince = 0;
           // ADVANCED ONLY AFTER THE APPLY, so a failure part-way re-reads the
           // same page rather than skipping it. Applying a row twice is
           // harmless — every applier is idempotent by construction, because it
@@ -733,10 +929,18 @@ function createReplication(label) {
     // hole still being asked for.
     function recheckHoles() {
       log.debug("Entering recheckHoles().");
-      if (!holes.size) {
+      if (!holes.size && !holeRanges.length) {
         applied = highest;
         log.debug("Leaving recheckHoles(). None.");
         return Promise.resolve(0);
+      }
+      if (!holes.size) {
+        log.debug("Leaving recheckHoles(). Ranges only.");
+        return recheckHoleRanges().then(function (n) {
+          expireHoles(Date.now());
+          settleWatermark();
+          return n;
+        });
       }
       const asked = Array.from(holes.keys());
       // A DRIVER THAT CANNOT BE ASKED FOR ONE SEQ is asked for everything above
@@ -761,11 +965,46 @@ function createReplication(label) {
               holes.delete(row.seq);
             });
             rowsApplied += rows.length;
+            return recheckHoleRanges();
+          }).then(function (inRanges) {
             expireHoles(Date.now());
             settleWatermark();
-            return rows.length;
+            return rows.length + inRanges;
           });
       });
+    }
+
+    // THE RANGES, ASKED FOR AGAIN: one `changesSince(lo - 1)` a range, the
+    // rows inside it not applied yet. See HOLE_SPAN_LIMIT for why a page from
+    // `lo` reaches every row a jump can hide.
+    function recheckHoleRanges() {
+      log.debug("Entering recheckHoleRanges().");
+      if (!holeRanges.length) {
+        log.debug("Leaving recheckHoleRanges(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving recheckHoleRanges().");
+      return holeRanges.slice().reduce(function (prior, range) {
+        return prior.then(function (total) {
+          return Promise.resolve(driver.changesSince(range.lo - 1, PAGE))
+            .then(function (found) {
+              const rows = (found || []).filter(function (row) {
+                return row.seq >= range.lo && row.seq <= range.hi &&
+                  !range.seen.has(row.seq);
+              });
+              if (!rows.length) {
+                return total;
+              }
+              return applyRows(rows).then(function () {
+                rows.forEach(function (row) {
+                  range.seen.add(row.seq);
+                });
+                rowsApplied += rows.length;
+                return total + rows.length;
+              });
+            });
+        });
+      }, Promise.resolve(0));
     }
 
     log.debug("Leaving pull().");
@@ -815,6 +1054,79 @@ function createReplication(label) {
   // another realm's session in this one. That is the single most likely bug in
   // this file and it is why the wrapper is here rather than in each applier.
   // ---------------------------------------------------------------------------
+  // A directory change of a realm this process does not define yet, held
+  // until the realm's row is applied — the last occurrence of a key wins,
+  // as in a page — and given up after DEFERRED_ROW_EXPIRE_MS (a realm
+  // removed on another node before its rows reached here, for instance).
+  function deferForRealm(row) {
+    log.debug("Entering deferForRealm(). " + row.realm);
+    const id = row.kind + '\u0000' + row.realm + '\u0000' + row.key;
+    const held = deferredRows.get(id);
+    deferredRows.set(id, { row: row, since: held ? held.since : Date.now() });
+    log.debug("Leaving deferForRealm(). " + deferredRows.size + " held.");
+  }
+
+  // Drops the held rows of a realm this process has just removed on another
+  // node's word (2026-10-27): they arrived behind the removal and will never
+  // apply, and the ten-minute drop would otherwise report each one
+  // (STS-STORE-0088 232 times for the scheduler job's throwaway realm).
+  function forgetDeferred(realmId) {
+    log.debug("Entering forgetDeferred(). " + realmId);
+    let dropped = 0;
+    deferredRows.forEach(function (held, id) {
+      if (held.row.realm === String(realmId)) {
+        deferredRows.delete(id);
+        dropped += 1;
+      }
+    });
+    log.debug("Leaving forgetDeferred(). " + dropped + " dropped.");
+    return dropped;
+  }
+
+  // The realms the held rows wait for, for `persistence.js`'s realm load:
+  // a realm the store no longer lists was removed before this process ever
+  // saw its row — the scheduler job's throwaway realm, created and removed
+  // between two pulls — and its held rows would otherwise wait the full ten
+  // minutes and report STS-STORE-0088 each (232 per cluster node, run #4).
+  function heldRealmIds() {
+    log.debug("Entering heldRealmIds().");
+    const ids = new Set();
+    deferredRows.forEach(function (held) {
+      ids.add(String(held.row.realm));
+    });
+    log.debug("Leaving heldRealmIds(). " + ids.size);
+    return Array.from(ids);
+  }
+
+  // Applies every held row whose realm is defined here now, one after
+  // another, and drops the ones that waited too long.
+  function applyDeferredRows(applyOne) {
+    log.debug("Entering applyDeferredRows(). " + deferredRows.size);
+    let chain = Promise.resolve();
+    const now = Date.now();
+    deferredRows.forEach(function (held, id) {
+      const row = held.row;
+      if (realms.get(row.realm)) {
+        deferredRows.delete(id);
+        chain = chain.then(function () {
+          return applyOne(row);
+        });
+        return;
+      }
+      if (now - held.since > DEFERRED_ROW_EXPIRE_MS) {
+        deferredRows.delete(id);
+        log.warn(errorCodes.tag('STS-STORE-0088') + 'persistence: a "' +
+                 row.kind + '" change for "' + row.key + '" in realm "' +
+                 row.realm + '" waited ' +
+                 Math.round((now - held.since) / 1000) + ' s for that ' +
+                 'realm to be defined here, and it never was; the change ' +
+                 'is dropped.');
+      }
+    });
+    log.debug("Leaving applyDeferredRows().");
+    return chain;
+  }
+
   function applyRows(rows) {
     log.debug("Entering applyRows().");
     // COALESCED: a page can name one directory entry ten times, and re-reading
@@ -854,6 +1166,11 @@ function createReplication(label) {
       }
       byKindRows.get(row.kind).push(row);
     });
+    // A CLEAN SLATE FIRST (2026-10-21): the kinds' prepares now add to one
+    // page's working set (`persistence_minted.js`'s prefetch()), so what a
+    // page that failed part-way left — its `done()` not reached — must not
+    // stand in for this page's rows.
+    clearPageState(appliers);
     let chain = Promise.resolve();
     byKindRows.forEach(function (rowsOfKind, kind) {
       const applier = appliers[kind];
@@ -869,95 +1186,196 @@ function createReplication(label) {
         });
       }
     });
+    // THE REALM BEFORE ITS ROWS (2026-10-27). A realm is created in one
+    // flush whose directory rows commit before its registry row (they were
+    // written in that order until the same day), so a page could carry a
+    // realm's entries ahead of the realm. Applied in seq order, a person's
+    // row reached a windowed process before it knew the realm's windowed
+    // containers and was applied RESIDENT, into the shadow; when the
+    // realm's row then made its people windowed the resident copy was
+    // forgotten, and the next flush read shadow-has/memory-lacks as a
+    // deletion and removed the person from the store — the console
+    // bootstrap job's administrator, in every product mode. So a page's
+    // realm and settings rows go first, and a directory row of a realm
+    // still unknown here is held until its realm arrives.
+    const applyOne = function (row) {
+      log.debug("Entering applyOne(). " + row.kind);
+      byKind[row.kind] = (byKind[row.kind] || 0) + 1;
+      // TIMED PER KIND for the barrier's line (pullCostText()); the cost of
+      // the pull this row belongs to, held so a later pull's does not get it.
+      const cost = pullCost;
+      const began = Date.now();
+      if (cost && cost.kindMs) {
+        cost.current = { kind: row.kind, key: String(row.key || ''),
+                         since: began };
+      }
+      const timed = function (out) {
+        if (cost && cost.kindMs) {
+          cost.kindMs[row.kind] = (cost.kindMs[row.kind] || 0) +
+            (Date.now() - began);
+          cost.current = null;
+        }
+        return out;
+      };
+      const applier = appliers[row.kind];
+      if (typeof applier !== 'function') {
+        // A kind this build does not know. Ordinary during a rolling upgrade,
+        // and counted rather than thrown for that reason: an older process
+        // must not fall over because a newer one wrote a kind it has never
+        // heard of.
+        log.debug('persistence: change kind "' + row.kind + '" has no ' +
+                  'applier here; skipped.');
+        log.debug("Leaving applyOne(). No applier.");
+        return null;
+      }
+      const realm = realms.get(row.realm) || null;
+      log.debug("Leaving applyOne().");
+      return Promise.resolve(realms.run(realm, function () {
+        // -----------------------------------------------------------------
+        // ONE ROW'S FAILURE IS NOT THE PAGE'S. A single entry that will not
+        // apply — a value this build cannot parse, a store that refused it —
+        // must not stop every other change in the page, because the
+        // alternative is one bad row wedging replication for ever at the same
+        // `seq` while this process goes on reporting that it is coordinating.
+        //
+        // **THE `try` IS AROUND THE CALL AND NOT ONLY AROUND THE PROMISE, and
+        // that is a defect `tests/replication.js` caught before this
+        // shipped.**
+        // It was `Promise.resolve(applier(row)).catch(…)`, which handles a
+        // REJECTED promise and does nothing at all for a SYNCHRONOUS throw:
+        // the throw happens while the argument to `Promise.resolve` is being
+        // evaluated, so it escapes the `.catch` that was written for it,
+        // propagates out of this function into the chain, and takes every
+        // later row in the page with it. Both applier shapes are real —
+        // `applyKeysChange()` is synchronous and the rest are not — so the
+        // wrong half was the one nothing in this repository would have
+        // exercised.
+        // -----------------------------------------------------------------
+        function failed(err) {
+          log.debug("Entering failed().");
+          log.error(errorCodes.tag('STS-STORE-0042') +
+                    'persistence: a "' + row.kind + '" change for "' +
+                    row.key + '" in realm "' + (row.realm || 'default') +
+                    '" could not be applied: ' + err.message +
+                    '. The rest of the page is unaffected.');
+          log.debug("Leaving failed().");
+        }
+        // AN ENTRY UNDER A DATA KEY THIS THREAD HAS NOT READ YET is tried
+        // once more after the data-key rows are read again (2026-10-02):
+        // the ordinary cause is a realm another worker thread made a moment
+        // ago, and skipping the row left this thread's directory without
+        // it for good — 196 entries of two new realms in the single-node
+        // mode of the run on 91341350, its role groups among them.
+        function once() {
+          log.debug("Entering once().");
+          log.debug("Leaving once().");
+          try {
+            return Promise.resolve(applier(row));
+          } catch (err) {
+            return Promise.reject(err);
+          }
+        }
+        // AND NOT ONCE BUT A FEW TIMES, A PAUSE BETWEEN (2026-10-27): the
+        // key's row may be a transaction still committing when the first
+        // re-read runs — the full run on 086c421b dropped a new realm's
+        // role groups that way in hundreds of realms (STS-STORE-0042) —
+        // and a dropped directory row is never applied again. Bounded: a
+        // row sealed under a key this process will never hold is still
+        // reported, after SEALED_ROW_RETRIES. A loop, not a chain
+        // (tests/no_periodic_timers.js).
+        const keyedRetries = async function () {
+          log.debug("Entering keyedRetries().");
+          let last = null;
+          for (let i = 0; i < SEALED_ROW_RETRIES; i++) {
+            await require('../common/keystore').refreshDekRows();
+            try {
+              const out = await once();
+              log.debug("Leaving keyedRetries(). Applied.");
+              return out;
+            } catch (err) {
+              if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
+                throw err;
+              }
+              last = err;
+            }
+            if (i + 1 < SEALED_ROW_RETRIES) {
+              await new Promise(function (resolve) {
+                setTimeout(resolve, SEALED_ROW_RETRY_PAUSE_MS);
+              });
+            }
+          }
+          log.debug("Leaving keyedRetries(). Still sealed.");
+          throw last;
+        };
+        return once().catch(function (err) {
+          if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
+            throw err;
+          }
+          log.debug("Caught in applyRows(): " + ((err && err.message) ||
+                                                  err));
+            return keyedRetries();
+          }).catch(failed);
+        })).then(timed);
+    };
+    const first = [];
+    const rest = [];
     seen.forEach(function (row) {
+      if (row.kind === 'realms' || row.kind === 'appconfig') {
+        first.push(row);
+      } else {
+        rest.push(row);
+      }
+    });
+    // A TURN OF THE EVENT LOOP EVERY APPLY_YIELD_EVERY ROWS (#704). The
+    // chain is promises, and a synchronous applier resolves in a microtask,
+    // so a page of 500 synchronous rows ran start to finish with no request,
+    // heartbeat or timer let in between — every 5 s, in every process. The
+    // order and the serial apply are unchanged; only the turns are added.
+    first.concat(rest).forEach(function (row, i) {
+      if (i > 0 && i % APPLY_YIELD_EVERY === 0) {
+        chain = chain.then(function () {
+          return new Promise(function (resolve) {
+            setImmediate(resolve);
+          });
+        });
+      }
       chain = chain.then(function () {
-        byKind[row.kind] = (byKind[row.kind] || 0) + 1;
-        const applier = appliers[row.kind];
-        if (typeof applier !== 'function') {
-          // A kind this build does not know. Ordinary during a rolling upgrade,
-          // and counted rather than thrown for that reason: an older process
-          // must not fall over because a newer one wrote a kind it has never
-          // heard of.
-          log.debug('persistence: change kind "' + row.kind + '" has no ' +
-                    'applier here; skipped.');
+        if (row.kind === 'directory' && row.realm && !realms.get(row.realm)) {
+          deferForRealm(row);
           return null;
         }
-        const realm = realms.get(row.realm) || null;
-        return realms.run(realm, function () {
-          // -----------------------------------------------------------------
-          // ONE ROW'S FAILURE IS NOT THE PAGE'S. A single entry that will not
-          // apply — a value this build cannot parse, a store that refused it —
-          // must not stop every other change in the page, because the
-          // alternative is one bad row wedging replication for ever at the same
-          // `seq` while this process goes on reporting that it is coordinating.
-          //
-          // **THE `try` IS AROUND THE CALL AND NOT ONLY AROUND THE PROMISE, and
-          // that is a defect `tests/replication.js` caught before this
-          // shipped.**
-          // It was `Promise.resolve(applier(row)).catch(…)`, which handles a
-          // REJECTED promise and does nothing at all for a SYNCHRONOUS throw:
-          // the throw happens while the argument to `Promise.resolve` is being
-          // evaluated, so it escapes the `.catch` that was written for it,
-          // propagates out of this function into the chain, and takes every
-          // later row in the page with it. Both applier shapes are real —
-          // `applyKeysChange()` is synchronous and the rest are not — so the
-          // wrong half was the one nothing in this repository would have
-          // exercised.
-          // -----------------------------------------------------------------
-          function failed(err) {
-            log.debug("Entering failed().");
-            log.error(errorCodes.tag('STS-STORE-0042') +
-                      'persistence: a "' + row.kind + '" change for "' +
-                      row.key + '" in realm "' + (row.realm || 'default') +
-                      '" could not be applied: ' + err.message +
-                      '. The rest of the page is unaffected.');
-            log.debug("Leaving failed().");
-          }
-          // AN ENTRY UNDER A DATA KEY THIS THREAD HAS NOT READ YET is tried
-          // once more after the data-key rows are read again (2026-10-02):
-          // the ordinary cause is a realm another worker thread made a moment
-          // ago, and skipping the row left this thread's directory without
-          // it for good — 196 entries of two new realms in the single-node
-          // mode of the run on 91341350, its role groups among them.
-          function once() {
-            log.debug("Entering once().");
-            log.debug("Leaving once().");
-            try {
-              return Promise.resolve(applier(row));
-            } catch (err) {
-              return Promise.reject(err);
-            }
-          }
-          return once().catch(function (err) {
-            if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
-              throw err;
-            }
-            log.debug("Caught in applyRows(): " + ((err && err.message) ||
-                                                    err));
-            return require('../common/keystore').refreshDekRows()
-              .then(once);
-          }).catch(failed);
-        });
+        return applyOne(row);
       });
+    });
+    chain = chain.then(function () {
+      return applyDeferredRows(applyOne);
     });
     log.debug("Leaving applyRows().");
     // THE PAGE'S WORKING SET GOES WITH THE PAGE. A prefetch held past the page
     // it was read for would be this process believing a row is still there
     // because it was there a page ago; see persistence_minted.js's prefetch().
     return chain.then(function () {
-      Object.keys(appliers || {}).forEach(function (kind) {
-        const applier = appliers[kind];
-        if (applier && typeof applier.done === 'function') {
-          try {
-            applier.done();
-          } catch (e) {
-            log.warn(errorCodes.tag('STS-STORE-0043') +
-                     'replication: clearing the "' + kind + '" page state ' +
-                     'failed: ' + e.message);
-          }
-        }
-      });
+      clearPageState(appliers);
     });
+  }
+
+  // Every applier's page state dropped (`done()`), at a page's start and at
+  // its end.
+  function clearPageState(appliers) {
+    log.debug("Entering clearPageState().");
+    Object.keys(appliers || {}).forEach(function (kind) {
+      const applier = appliers[kind];
+      if (applier && typeof applier.done === 'function') {
+        try {
+          applier.done();
+        } catch (e) {
+          log.warn(errorCodes.tag('STS-STORE-0043') +
+                   'replication: clearing the "' + kind + '" page state ' +
+                   'failed: ' + e.message);
+        }
+      }
+    });
+    log.debug("Leaving clearPageState().");
   }
 
   // ---------------------------------------------------------------------------
@@ -991,30 +1409,242 @@ function createReplication(label) {
    */
   function contribute(handle, realmId, key, origin, value) {
     log.debug("Entering contribute().");
+    const id = String(realmId || '');
+    const k = String(key === undefined || key === null ? '' : key);
+    if (value === null || value === undefined) {
+      // A REMOVAL TAKES ITS EMPTY LEVELS WITH IT, AND MAKES NONE (#618,
+      // 2026-10-14). Until then a removal first made any level it lacked,
+      // deleted the origin, and left the key's empty Map behind for ever.
+      // `admin_stats.users` notes every replicated create in every process
+      // and journals the eviction of a note past its MAX_USERS cap, so each
+      // person ever added left an empty Map, its backing table and its key
+      // string in every other process: 796,728 of 798,858 keys held EMPTY
+      // in a request worker's heap at about 974K people on 8081, about 300
+      // bytes a person per isolate, and `everyUserRecord()` walked every
+      // one of them on each read. A removal whose row was gone before this
+      // process read it (an eviction that overtook its note) made the levels
+      // just to empty them. Each step below is one lookup, so a removal is
+      // still O(1); what is held is bounded by what the other processes
+      // HOLD now, not by everything they ever held.
+      const holding = contributions.get(handle);
+      const keysHeld = holding ? holding.get(id) : undefined;
+      const originsHeld = keysHeld ? keysHeld.get(k) : undefined;
+      if (!originsHeld) {
+        log.debug("Leaving contribute(). Nothing held to remove.");
+        return;
+      }
+      originsHeld.delete(origin);
+      if (originsHeld.size === 0) {
+        keysHeld.delete(k);
+        if (keysHeld.size === 0) {
+          holding.delete(id);
+          if (holding.size === 0) {
+            contributions.delete(handle);
+          }
+        }
+      }
+      log.debug("Leaving contribute(). Removed.");
+      return;
+    }
     let byRealm = contributions.get(handle);
     if (!byRealm) {
       byRealm = new Map();
       contributions.set(handle, byRealm);
     }
-    const id = String(realmId || '');
     let byKey = byRealm.get(id);
     if (!byKey) {
       byKey = new Map();
       byRealm.set(id, byKey);
     }
-    const k = String(key === undefined || key === null ? '' : key);
     let byOrigin = byKey.get(k);
     if (!byOrigin) {
       byOrigin = new Map();
       byKey.set(k, byOrigin);
     }
-    if (value === null || value === undefined) {
-      byOrigin.delete(origin);
-      log.debug("Leaving contribute().");
-      return;
-    }
     byOrigin.set(origin, value);
     log.debug("Leaving contribute().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // CONTRIBUTIONS READ WHEN ASKED FOR (2026-10-21, #820). A store declared
+  // `contributionsOnRead` (`common/realms.js`) has another process's change
+  // NOTED here by the applier rather than read and opened, and the page that
+  // reports the store calls `refreshContributions()` before it draws: the
+  // noted rows are read in one batch, through the reader
+  // `persistence_minted.js` installs, and contributed as the applier would
+  // have. A row rewritten many times between two pages is read once.
+  //
+  // **BOUNDED.** Past STALE_CONTRIBUTIONS_MAX noted rows for one handle the
+  // refresh runs on its own, so a process whose page is never drawn holds
+  // at most that many notes and still never reads a row per change.
+  //
+  // **ONE REFRESH AT A TIME**, chained: two overlapping refreshes could each
+  // read one row, and the older answer could land second.
+  // ---------------------------------------------------------------------------
+  // handle -> 'realm\0key\0origin' -> { realm, key, origin, name }
+  const staleContributions = new Map();
+  const STALE_CONTRIBUTIONS_MAX = 5000;
+  // (refs) -> a promise of a Map from each ref's `name` + '\0' + realm to its
+  // value, or null where the row is gone; a row that will not open is left
+  // out. Installed by `persistence_minted.js`.
+  let contributionReader = null;
+  let refreshChain = Promise.resolve();
+  // The handles with a refresh the bound queued and that has not run yet:
+  // one is enough, however many notes arrive while it waits.
+  const boundRefreshQueued = new Set();
+
+  /**
+   * Installs what reads noted contributions (`persistence_minted.js`).
+   * @param reader - (refs) -> a promise of a Map, or null to remove it
+   */
+  function setContributionReader(reader) {
+    log.debug("Entering setContributionReader().");
+    contributionReader = typeof reader === 'function' ? reader : null;
+    log.debug("Leaving setContributionReader().");
+  }
+
+  /**
+   * Whether a noted contribution can be read later: a reader is installed.
+   * @returns true when `contributionStale()` may be used instead of a read
+   */
+  function contributionsReadable() {
+    log.debug("Entering contributionsReadable().");
+    log.debug("Leaving contributionsReadable().");
+    return contributionReader !== null;
+  }
+
+  /**
+   * Notes that another process changed its row of a `contributionsOnRead`
+   * store, to be read by the next refresh.
+   * @param handle - the store's handle
+   * @param realmId - the realm the row belongs to
+   * @param key - the key within the store
+   * @param origin - the process that wrote the row
+   * @param name - the row's stored name, which the reader reads it by
+   */
+  function contributionStale(handle, realmId, key, origin, name) {
+    log.debug("Entering contributionStale().");
+    let noted = staleContributions.get(handle);
+    if (!noted) {
+      noted = new Map();
+      staleContributions.set(handle, noted);
+    }
+    const realm = String(realmId || '');
+    noted.set(realm + '\u0000' + key + '\u0000' + origin,
+              { realm: realm, key: key, origin: origin, name: name });
+    if (noted.size > STALE_CONTRIBUTIONS_MAX &&
+        !boundRefreshQueued.has(handle)) {
+      // Read now, in the background: the bound, not a page.
+      boundRefreshQueued.add(handle);
+      refreshContributions([handle]);
+    }
+    log.debug("Leaving contributionStale().");
+  }
+
+  /**
+   * Reads every noted contribution of the handles given, in one batch, and
+   * contributes what it finds. Never rejects: a failed read notes the rows
+   * again, and the page draws what is held.
+   * @param handles - the stores' handles
+   * @returns a promise of the number of rows read
+   */
+  function refreshContributions(handles) {
+    log.debug("Entering refreshContributions().");
+    const run = function () {
+      const taken = [];
+      (handles || []).forEach(function (handle) {
+        boundRefreshQueued.delete(handle);
+        const noted = staleContributions.get(handle);
+        if (!noted) {
+          return;
+        }
+        staleContributions.delete(handle);
+        noted.forEach(function (one) {
+          taken.push({ handle: handle, realm: one.realm, key: one.key,
+                       origin: one.origin, name: one.name });
+        });
+      });
+      if (!taken.length || !contributionReader) {
+        return 0;
+      }
+      return Promise.resolve(contributionReader(taken)).then(function (read) {
+        taken.forEach(function (one) {
+          const id = one.handle + '\u0000' + one.realm + '\u0000' + one.name;
+          if (read && read.has(id)) {
+            contribute(one.handle, one.realm, one.key, one.origin,
+                       read.get(id));
+          }
+        });
+        return taken.length;
+      }, function (e) {
+        log.debug("Caught in refreshContributions(): " +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-STORE-0087') +
+                 'persistence: ' + taken.length + ' noted row(s) of another ' +
+                 'process could not be read; they are read at the next ' +
+                 'refresh.');
+        taken.forEach(function (one) {
+          const noted = staleContributions.get(one.handle) || new Map();
+          staleContributions.set(one.handle, noted);
+          const id = one.realm + '\u0000' + one.key + '\u0000' + one.origin;
+          if (!noted.has(id)) {
+            noted.set(id, { realm: one.realm, key: one.key,
+                            origin: one.origin, name: one.name });
+          }
+        });
+        return 0;
+      });
+    };
+    const mine = refreshChain.then(run);
+    refreshChain = mine.then(function () {
+      return undefined;
+    }, function (e) {
+      log.debug("Caught in refreshContributions(): " +
+                ((e && e.message) || e));
+    });
+    log.debug("Leaving refreshContributions().");
+    return mine.catch(function (e) {
+      log.debug("Caught in refreshContributions(): " +
+                ((e && e.message) || e));
+      return 0;
+    });
+  }
+
+  /**
+   * How many contributions are noted and not yet read, for the tests.
+   * @param handle - the store's handle
+   * @returns the count
+   */
+  function staleContributionCount(handle) {
+    log.debug("Entering staleContributionCount().");
+    const noted = staleContributions.get(handle);
+    log.debug("Leaving staleContributionCount().");
+    return noted ? noted.size : 0;
+  }
+
+  // How much the fan-in holds: handles, realms, keys and values. For the
+  // tests (#618), which count ENTRIES rather than trusting the heap: a
+  // removal that leaves an empty level behind holds no value and still costs
+  // a Map. Linear in what is held, so never called on a request path.
+  /**
+   * Counts what the fan-in holds, for the tests.
+   * @returns the number of handles, realm maps, key maps and values
+   */
+  function contributionCounts() {
+    log.debug("Entering contributionCounts().");
+    const out = { handles: contributions.size, realms: 0, keys: 0,
+                  values: 0 };
+    contributions.forEach(function (byRealm) {
+      out.realms += byRealm.size;
+      byRealm.forEach(function (byKey) {
+        out.keys += byKey.size;
+        byKey.forEach(function (byOrigin) {
+          out.values += byOrigin.size;
+        });
+      });
+    });
+    log.debug("Leaving contributionCounts().");
+    return out;
   }
 
   // What every OTHER process has contributed under this handle, realm and key,
@@ -1153,6 +1783,34 @@ function createReplication(label) {
   // single-process deployment can be told it is one rather than being shown an
   // empty fan-in it has to interpret.
   /**
+   * Returns every other process's rows of a store in one realm, each with
+   * the origin that wrote it (#1001: the index backfill files a per-origin
+   * store's foreign rows under their own stored names).
+   *
+   * @param handle - the store's handle
+   * @param realmId - the realm; undefined means the ambient realm
+   * @returns `[{ key, origin, value }]`
+   */
+  function remoteContributions(handle, realmId) {
+    log.debug("Entering remoteContributions().");
+    const out = [];
+    const byRealm = contributions.get(handle);
+    const byKey = byRealm
+      ? byRealm.get(String(realmId === undefined
+                           ? realms.currentId() : (realmId || '')))
+      : undefined;
+    if (byKey) {
+      byKey.forEach(function (byOrigin, key) {
+        byOrigin.forEach(function (value, from) {
+          out.push({ key: key, origin: from, value: value });
+        });
+      });
+    }
+    log.debug("Leaving remoteContributions(). " + out.length + " row(s).");
+    return out;
+  }
+
+  /**
    * Returns every other process that has contributed a row.
    * @returns the origins, as an array of strings
    */
@@ -1168,6 +1826,165 @@ function createReplication(label) {
     });
     log.debug("Leaving origins().");
     return Array.from(all);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DEAD PROCESS'S CONTRIBUTIONS GO (#618 phase 2, 2026-10-14).
+  //
+  // The removal fix above bounds the fan-in by what the other processes HOLD
+  // — up to a store's cap per ORIGIN — but an origin is a process's start, and
+  // a process that died never removes its rows: every process that started
+  // under a RANDOM origin (no stable name, or its name still held) and every
+  // node that left the cluster left its origin's worth (2,000
+  // `admin_stats.users` records, an audit ring, every counter) in every other
+  // process for as long as that one ran, and a restored process read all of
+  // them back from the store. The number of origins grew with them.
+  //
+  // So an origin that is no longer a LIVE READER of the change log — the
+  // trim's own test: reported within the reader TTL, and naming no cluster
+  // node that left (`liveChangeReaders()`) — is dropped from the fan-in once
+  // it has been absent for the grace (`fanInGraceMs()`), so a process that
+  // has just started and not yet reported, or one whose report failed once,
+  // is never dropped.
+  //
+  // **THE GRACE IS THE READER TTL, AND NEVER LESS THAN FIFTEEN MINUTES**,
+  // because most origins are STABLE since 2026-09-18 — a process restarting
+  // under its name takes its origin back (`adoptOrigin()` in the postgres
+  // driver) and its rows with it — and a contribution dropped while it was
+  // away comes back only as it is rewritten (a counter on its next change,
+  // an audit segment never) or when this process next restarts and restores.
+  // A restart is not a death; fifteen minutes away is. It runs inside the
+  // change-log pull's own scheduler job (a
+  // per-process job, `schedule()`), at most once a FAN_IN_PRUNE_INTERVAL_MS,
+  // which costs one small read of `sts_change_readers` (a row per process)
+  // and, when something is dropped, one walk of what the fan-in holds — itself
+  // bounded by the live origins times the stores' caps. No timer of its own.
+  //
+  // A contribution of a dropped origin that arrives later — a lagging pull
+  // applying its old rows, or the restore of a restarted process — is held
+  // again and dropped again a grace later. What is dropped is only this
+  // process's memory: the rows stay in `sts_minted` until
+  // `persistence.mintedRetention` removes them.
+  // ---------------------------------------------------------------------------
+  const FAN_IN_PRUNE_INTERVAL_MS = 60 * 1000;
+  const FAN_IN_GRACE_FLOOR_MS = 15 * 60 * 1000;
+  // origin -> when this process first saw it held and not live.
+  const absentSince = new Map();
+  let lastPruneAt = 0;
+  let pruning = false;
+  let originsDropped = 0;
+
+  function fanInGraceMs() {
+    log.debug("Entering fanInGraceMs().");
+    log.debug("Leaving fanInGraceMs().");
+    return Math.max(FAN_IN_GRACE_FLOOR_MS, readerTtlMs());
+  }
+
+  // Every contribution of one origin, removed, and every level it empties.
+  function dropOrigin(gone) {
+    log.debug("Entering dropOrigin().");
+    let removed = 0;
+    contributions.forEach(function (byRealm, handle) {
+      byRealm.forEach(function (byKey, realmId) {
+        byKey.forEach(function (byOrigin, k) {
+          if (byOrigin.delete(gone)) {
+            removed += 1;
+            if (byOrigin.size === 0) {
+              byKey.delete(k);
+            }
+          }
+        });
+        if (byKey.size === 0) {
+          byRealm.delete(realmId);
+        }
+      });
+      if (byRealm.size === 0) {
+        contributions.delete(handle);
+      }
+    });
+    log.debug("Leaving dropOrigin(). " + removed + " value(s).");
+    return removed;
+  }
+
+  /**
+   * Drops from the fan-in every origin that has not been a live reader of the
+   * change log for the grace period. Runs at most once a minute unless
+   * `force`; never rejects.
+   * @param force - true to run whatever the interval (the tests)
+   * @param now - the time to judge by, in ms (the tests); Date.now() otherwise
+   * @returns a promise of `{ held, live, dropped, values }`, or null when it
+   *   did not run
+   */
+  function pruneFanIn(force, now) {
+    log.debug("Entering pruneFanIn().");
+    const at = typeof now === 'number' ? now : Date.now();
+    if (!driver || stopped || pruning ||
+        typeof driver.liveChangeReaders !== 'function' ||
+        (!force && at - lastPruneAt < FAN_IN_PRUNE_INTERVAL_MS)) {
+      log.debug("Leaving pruneFanIn(). Not now.");
+      return Promise.resolve(null);
+    }
+    lastPruneAt = at;
+    const held = origins();
+    // Nothing held, nothing to judge: no read of the store.
+    if (!held.length) {
+      absentSince.clear();
+      log.debug("Leaving pruneFanIn(). The fan-in is empty.");
+      return Promise.resolve({ held: 0, live: 0, dropped: [], values: 0 });
+    }
+    pruning = true;
+    log.debug("Leaving pruneFanIn(). Asking who is live.");
+    return Promise.resolve().then(function () {
+      return driver.liveChangeReaders({ readerTtlMs: readerTtlMs(),
+                                        nodeLiveness: tierLabel !== 'global' });
+    }).then(function (liveList) {
+      pruning = false;
+      const live = new Set(liveList || []);
+      const dropped = [];
+      let values = 0;
+      // An origin no longer held needs no clock.
+      const heldSet = new Set(held);
+      absentSince.forEach(function (since, o) {
+        if (!heldSet.has(o)) {
+          absentSince.delete(o);
+        }
+      });
+      held.forEach(function (o) {
+        // Live now: whatever clock it had stops.
+        if (live.has(o)) {
+          absentSince.delete(o);
+          return;
+        }
+        if (!absentSince.has(o)) {
+          absentSince.set(o, at);
+          return;
+        }
+        if (at - absentSince.get(o) >= fanInGraceMs()) {
+          values += dropOrigin(o);
+          absentSince.delete(o);
+          dropped.push(o);
+        }
+      });
+      if (dropped.length) {
+        originsDropped += dropped.length;
+        log.info('persistence: dropped ' + dropped.length + ' dead ' +
+                 'process(es) from the fan-in (' + values + ' value(s)): ' +
+                 'not a live reader of the change log for ' +
+                 Math.round(fanInGraceMs() / 1000) + 's (#618).');
+      }
+      return { held: held.length, live: live.size, dropped: dropped,
+               values: values };
+    }, function (e) {
+      pruning = false;
+      // Nothing is dropped on a failed read: an origin is dropped on the
+      // evidence of the readers' table, never on its absence. The next pull
+      // tries again a minute later.
+      log.warn(errorCodes.tag('STS-STORE-0082') + 'persistence: the live ' +
+               'readers of the change log could not be read (' +
+               ((e && e.message) || String(e)) + '), so no dead process ' +
+               'was dropped from the fan-in this time.');
+      return null;
+    });
   }
 
   // ===========================================================================
@@ -1263,10 +2080,11 @@ function createReplication(label) {
   }
 
   // `cluster/cluster.js`, for which node this process is and one leader for the
-  // trim. REQUIRED LAZILY: it closes no cycle either way, but this file is in
-  // the parent project's in-process Kerberos closure (through `admin_stats.js`)
-  // and a top-level require would add `cluster.js` to the COPY set that project
-  // owes (kerberos/CLAUDE.md). Only a process that coordinates reaches it.
+  // trim. REQUIRED LAZILY: it closes no cycle either way, but it kept
+  // `cluster.js` out of the parent project's in-process Kerberos COPY set,
+  // which reached this file through `admin_stats.js` (an obligation until
+  // #1280; the arrangement stands). Only a process that coordinates reaches
+  // it.
   function clusterModule() {
     log.debug("Entering clusterModule().");
     log.debug("Leaving clusterModule().");
@@ -1501,6 +2319,7 @@ function createReplication(label) {
       appliedSeq: applied,
       highestSeq: highest,
       holes: holes.size,
+      holeRanges: holeRanges.length,
       holesAbandoned: holesAbandoned,
       pollIntervalMs: intervalMs(),
       pulls: pulls,
@@ -1511,12 +2330,17 @@ function createReplication(label) {
       lastPullAt: lastPullAt,
       lastError: lastError || null,
       otherProcesses: origins().length,
+      // Dead processes dropped from the fan-in since start (#618).
+      originsDropped: originsDropped,
       retention: {
         retentionS: Math.round(retentionMs() / 1000),
         readerTtlS: Math.round(readerTtlMs() / 1000),
         reportedAt: lastReportAt ? new Date(lastReportAt).toISOString() : null,
         reportError: lastReportError || null,
         declaredGoneAt: declaredGoneAt,
+        // How long an origin may be absent from the live readers before its
+        // contributions leave the fan-in (#618).
+        fanInGraceS: Math.round(fanInGraceMs() / 1000),
         // Whether THIS process runs the trim: it is the scheduler's leader
         // and the job is on (#49 P5).
         trimming: trimsHere(),
@@ -1540,20 +2364,29 @@ function createReplication(label) {
    */
   function reset() {
     log.debug("Entering reset().");
+    deferredRows.clear();
     driver = null;
     appliers = null;
     origin = '';
     applied = 0;
     highest = 0;
     holes.clear();
+    holeRanges.length = 0;
     holesAbandoned = 0;
     pullsStarted = 0;
     lastCompletedStartNo = 0;
     stopped = false;
     running = false;
     runningPull = null;
+    pullCost = null;
     pendingWake = false;
     contributions.clear();
+    staleContributions.clear();
+    boundRefreshQueued.clear();
+    absentSince.clear();
+    lastPruneAt = 0;
+    pruning = false;
+    originsDropped = 0;
     if (unwatch) {
       unwatch();
       unwatch = null;
@@ -1582,13 +2415,23 @@ function createReplication(label) {
     start: start,
     stop: stop,
     syncNow: syncNow,
+    forgetDeferred: forgetDeferred,
+    heldRealmIds: heldRealmIds,
     supports: supports,
     pull: pull,
     wake: wake,
     reportPosition: reportPosition,
     purgeOnce: purgeOnce,
     contribute: contribute,
+    setContributionReader: setContributionReader,
+    contributionsReadable: contributionsReadable,
+    contributionStale: contributionStale,
+    refreshContributions: refreshContributions,
+    staleContributionCount: staleContributionCount,
+    contributionCounts: contributionCounts,
+    pruneFanIn: pruneFanIn,
     remoteRows: remoteRows,
+    remoteContributions: remoteContributions,
     remoteSegmentedRows: remoteSegmentedRows,
     remoteKeys: remoteKeys,
     origins: origins,

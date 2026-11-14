@@ -130,15 +130,18 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
-// order is not a position. It requires `config`, `realms` and `error_codes` at
-// the top and nothing that requires it back; `pki.js` and `helpers.js` are
-// required LAZILY, inside the functions that need them — `helpers.js` requires
-// THIS file, and `pki.js` is kept out of the load path of every in-process
-// caller of helpers for the reason `helpers.js`'s certifiedView() gives.
+// order is not a position. It requires `config`, `crypto`, `realms` and
+// `error_codes` at the top and nothing that requires it back; `pki.js` and
+// `helpers.js` are required LAZILY, inside the functions that need them —
+// `helpers.js` requires THIS file, and `pki.js` is kept out of the load path
+// of every in-process caller of helpers for the reason `helpers.js`'s
+// certifiedView() gives.
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453), to parse a certificate. A
+// leaf that requires nothing here.
+const crypto = require('./crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
 const realms = require('./realms');
@@ -163,7 +166,8 @@ const log = bunyan.createLogger({
 const MODES = ['none', 'x5c', 'x5u', 'both'];
 
 /**
- * The mode used when a use case's setting is unset or unreadable: `x5u`.
+ * The mode used when a use case's setting is unset or unreadable: `x5u`, or
+ * the use case's own `defaultMode`.
  */
 const DEFAULT_MODE = 'x5u';
 
@@ -207,6 +211,19 @@ const USE_CASES = [
     label: 'OpenID4VCI credentials',
     where: 'oid4vc/vc_issuer.ts, the SD-JWT VC issuer JWT and the JWT VC; ' +
            'oid4vc/vc_status.ts, the Token Status List',
+    // `x5c` (2026-10-16): SD-JWT VC finds an issuer's key by `x5c` and never
+    // by `x5u`, and a Status List Token has no `iss` for metadata — config.js
+    // argues it beside the setting, whose `dflt` this must equal.
+    defaultMode: 'x5c',
+    withoutAnchor: true },
+  { id: 'vci-trusted-list', setting: 'oid4vci.trustedListCertificateHeader',
+    label: 'OpenID4VCI trusted list (ETSI TS 119 602)',
+    where: 'oid4vc/vc_trusted_list.ts, the List of Trusted Entities at ' +
+           '/oid4vci/trusted-list',
+    // A reader takes the list only when its signer's chain is in x5c and
+    // ends under a list-operator CA it holds — the Root, left off for
+    // HAIP's reason.
+    defaultMode: 'x5c',
     withoutAnchor: true },
   { id: 'vci-signed-metadata',
     setting: 'oid4vci.signedMetadataCertificateHeader',
@@ -273,7 +290,7 @@ function modeFor(id) {
   }
   const raw = String(config.value(uc.setting) || '');
   log.debug("Leaving modeFor().");
-  return MODES.indexOf(raw) >= 0 ? raw : DEFAULT_MODE;
+  return MODES.indexOf(raw) >= 0 ? raw : (uc.defaultMode || DEFAULT_MODE);
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +432,7 @@ function holdsKey(pki, record, signer) {
     // of one, and a post-quantum certificate is never that old, so a throw
     // here is an unreadable certificate and the answer is no.
     try {
-      held = pki.thumbprintOf(new nodeCrypto.X509Certificate(
+      held = pki.thumbprintOf(crypto.parseCertificate(
         record.certificatePem).publicKey.export({ type: 'spki',
                                                   format: 'pem' }));
     } catch (e) {
@@ -467,16 +484,13 @@ function chainPemsOf(pki, record) {
     chainsCount.hit();
   } else {
     chainsCount.miss();
-    let underRoot = false;
-    try {
-      const last = new nodeCrypto.X509Certificate(pems[pems.length - 1]);
-      const anchor = new nodeCrypto.X509Certificate(rootPem);
-      underRoot = last.issuer === anchor.subject &&
-                  last.verify(anchor.publicKey);
-    } catch (e) {
-      log.debug("Caught in chainPemsOf(): " + ((e && e.message) || e));
-      underRoot = false;
-    }
+    // THE ANSWER IS `pki.chainThroughRoot()`'S (#1064), the one place a
+    // reported chain is completed; this memo only keeps a token's signing
+    // path from checking a signature per token.
+    const full = pki.chainThroughRoot(record.certificatePem,
+                                      record.chainPem || []);
+    const underRoot = full.length > pems.length &&
+                      full[full.length - 1] === rootPem;
     if (!underRoot) {
       log.debug('The "' + record.slot + '" certificate\'s stored chain does ' +
                 'not end under the current Root; it is published without ' +
@@ -499,7 +513,9 @@ function scopeSegmentOf(realmId) {
 function chainUrlFor(realmId, thumbprint) {
   log.debug("Entering chainUrlFor().");
   const helpers = require('./helpers');
-  let origin = helpers.pinnedBaseUrl();
+  // Where the certificate authority's documents are advertised (#472); the
+  // chain path names its realm itself, so no realm prefix follows it.
+  let origin = helpers.pinnedBaseUrl('pki');
   if (!origin) {
     const req = currentRequest();
     if (!req) {
@@ -609,10 +625,62 @@ function headerFor(useCaseId, signer) {
 }
 
 // ---------------------------------------------------------------------------
+// DOES THIS SIGNATURE WANT A HEADER THAT THE KEY HAS NO CERTIFICATE FOR YET
+// (2026-11-04)? True where the use case asks for `x5c`, `x5u` or both, the key
+// has a certificate slot, and this process holds no certificate over that key
+// in it — what `helpers.certificateHeaderForAsync()` asks before it reads the
+// store and asks for one, so a signer that can wait does not take "not here
+// yet" for "not certified". False wherever `headerFor()` would answer from a
+// certificate, and wherever there is no certificate authority here at all.
+// ---------------------------------------------------------------------------
+/**
+ * Answers whether a signature's use case asks for a certificate header that
+ * the signing key has no certificate for in this process.
+ *
+ * @param useCaseId - the use case the signature belongs to
+ * @param signer - what `helpers.certificateHeaderFor()` resolves
+ * @returns true when a certificate is wanted and not held
+ */
+function awaitsCertificate(useCaseId, signer) {
+  log.debug("Entering awaitsCertificate(). use=" + useCaseId);
+  if (!useCase(useCaseId) || modeFor(useCaseId) === 'none' || !signer ||
+      !signer.slot) {
+    log.debug("Leaving awaitsCertificate(). No header is asked for.");
+    return false;
+  }
+  const pki = pkiModule();
+  if (!pki) {
+    log.debug("Leaving awaitsCertificate(). No certificate authority.");
+    return false;
+  }
+  try {
+    const record = pki.certificateFor(signer.realm, 'jose', signer.slot);
+    const held = !!(record && record.certificatePem &&
+                    holdsKey(pki, record, signer));
+    log.debug("Leaving awaitsCertificate(). " + !held);
+    return !held;
+  } catch (e) {
+    log.debug("Caught in awaitsCertificate(): " + ((e && e.message) || e));
+    log.debug("Leaving awaitsCertificate(). Unreadable; nothing to wait for.");
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // THE `x5u` RESOURCE: the PEM chain of the JOSE certificate with this SHA-256,
 // in this scope, or null. Only the `jose` use case is searched — it is the only
 // one an `x5u` this module wrote can name — and the thumbprint is matched
 // exactly against the register, never parsed into anything.
+//
+// **AND A CERTIFICATE THE SLOT NO LONGER HOLDS, UNTIL IT EXPIRES (#318).** A
+// slot is certified again over the same key when its chain changes, and the
+// tokens signed before name the old certificate's SHA-256 and are still
+// valid: on testidp every one of them answered 404 for the rest of its life.
+// The issued register keeps a displaced JOSE certificate with the chain it
+// was issued with (`pki_merge.js`'s `displacedRecord()`), and that is served
+// — never re-rooted onto the slot's current chain, and served even when
+// revoked, because its revocation status is what says so. Current
+// certificates are searched first.
 // ---------------------------------------------------------------------------
 /**
  * Returns the PEM chain an `x5u` names: the JOSE certificate with this SHA-256
@@ -635,9 +703,13 @@ function chainPemFor(scopeId, thumbprint) {
     log.debug("Leaving chainPemFor(). No certificate authority.");
     return null;
   }
-  const record = pki.certificatesFor(scopeId, 'jose').filter(function (one) {
+  const matches = function (one) {
     return one && one.thumbprint === wanted;
-  })[0];
+  };
+  const record = pki.certificatesFor(scopeId, 'jose').filter(matches)[0] ||
+    (typeof pki.displacedCertificatesFor === 'function'
+      ? pki.displacedCertificatesFor(scopeId, 'jose').filter(matches)[0]
+      : undefined);
   if (!record) {
     log.debug("Leaving chainPemFor(). No such certificate.");
     return null;
@@ -646,6 +718,51 @@ function chainPemFor(scopeId, thumbprint) {
   return chainPemsOf(pki, record).map(function (pem) {
     return String(pem).trim() + '\n';
   }).join('');
+}
+
+// ---------------------------------------------------------------------------
+// A JWK SET'S CHAINS AS ADDRESSES (#1351, 2026-11-05, rcbj):
+// `keys.jwksCertificateUrl`, OFF BY DEFAULT. RFC 7517 section 4.6's `x5u` is
+// section 4.1.5's for a token: the same document at the same address. The
+// conformance suite records the JWK Set several times in every test, and a
+// four-certificate `x5c` was nearly all of each RSA key.
+//
+// **A KEY KEEPS ITS `x5c` WHERE THE ADDRESS WOULD NOT ANSWER**: no request and
+// no pinned base to build it from, or a certificate `chainPemFor()` does not
+// serve (a signer group's). A dead link would lose the chain altogether, where
+// an inline one only costs bytes.
+// ---------------------------------------------------------------------------
+/**
+ * A JWK Set's keys with `x5c` replaced by `x5u` while
+ * `keys.jwksCertificateUrl` is on in the ambient realm.
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish; a changed key is a copy
+ */
+function withCertificateUrls(keys) {
+  log.debug("Entering withCertificateUrls().");
+  if (config.value('keys.jwksCertificateUrl') !== true) {
+    log.debug("Leaving withCertificateUrls(). Off.");
+    return keys;
+  }
+  const realmId = realms.currentId();
+  const out = (keys || []).map(function (jwk) {
+    if (!jwk || !Array.isArray(jwk.x5c) || !jwk.x5c.length) {
+      return jwk;
+    }
+    const thumbprint = crypto.certificateThumbprint(jwk.x5c[0],
+                                                    { format: 'hex' });
+    const url = chainPemFor(realmId, thumbprint)
+      ? chainUrlFor(realmId, thumbprint) : '';
+    if (!url) {
+      return jwk;
+    }
+    const copy = Object.assign({}, jwk, { x5u: url });
+    delete copy.x5c;
+    return copy;
+  });
+  log.debug("Leaving withCertificateUrls().");
+  return out;
 }
 
 // What every use case is set to in the ambient realm — for a reader that wants
@@ -682,6 +799,8 @@ module.exports = {
   enterRequest: enterRequest,
   currentRequest: currentRequest,
   headerFor: headerFor,
+  awaitsCertificate: awaitsCertificate,
   chainPemFor: chainPemFor,
+  withCertificateUrls: withCertificateUrls,
   report: report
 };

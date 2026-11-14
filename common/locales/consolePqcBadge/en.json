@@ -1,0 +1,14 @@
+{
+  "sentencePq": "Post-quantum key pair: {label}",
+  "sentenceComposite": "Composite post-quantum key pair: {label} — both halves must verify",
+  "sentenceKem": "Post-quantum key-establishment key: {label} — it signs nothing",
+  "sentenceHybrid": "Hybrid: a classical key whose certificate carries an {label}",
+  "sentenceOther": "Post-quantum: {label}",
+  "legendPq": " marks a key pair that uses a post-quantum algorithm",
+  "legendPqAfter": " — ML-DSA or SLH-DSA. ",
+  "legendComposite": " is a COMPOSITE: one key with a post-quantum half and a classical half, both of which must verify. ",
+  "legendKem": " is a post-quantum key-ESTABLISHMENT key, which signs nothing. ",
+  "legendHybridLabel": "alternative ML-DSA-65 key",
+  "legendHybrid": " is a CLASSICAL key whose certificate also carries an alternative post-quantum key — the key itself is not post-quantum. Hover an icon for the algorithm. A key with no icon is classical (RSA, ECDSA or EdDSA). What decides it is the key's own algorithm, not the signature on its certificate: an ML-DSA key certified by an RSA CA is marked, and an RSA key certified by an ML-DSA CA is not.",
+  "legendTitle": "Post-quantum key pairs"
+}

@@ -67,6 +67,12 @@
 //  16. THE ADDRESS CHANGE (#64, D5): the new address is mailed a link and is
 //      not `mail` until it is followed; then it is, verified, and the former
 //      address is told; a link outlives no change of address.
+//  17. VALUES IN THE RECIPIENT'S LANGUAGE (#539): a value handed over as a
+//      `mailValues` message or an instant is put into words in the language
+//      each recipient's message went out in — French for one person,
+//      English for another, from the same send — escaped like any value,
+//      and a security notice from `mail_uses.ts` carries no English
+//      fragment into a French message.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -82,13 +88,19 @@ const log = require('bunyan').createLogger({ name: 'mail',
 const ROOT = path.join(__dirname, '..');
 
 // A directory of people for the channel's slot: username → attributes.
-function stubDirectory(people) {
+function stubDirectory(people, groups) {
   log.debug('Entering stubDirectory().');
   const flags = {};
+  const held = groups || {};
   log.debug('Leaving stubDirectory().');
   return {
     people: people,
     flags: flags,
+    // A group by DN (#989): its attributes, or null.
+    groupEntry: function (dn) {
+      const attrs = held[String(dn || '').toLowerCase()];
+      return attrs ? { dn: dn, attributes: Object.assign({}, attrs) } : null;
+    },
     personEntry: function (u) {
       if (!people[u]) {
         return null;
@@ -196,6 +208,29 @@ function templates(t) {
        html: '<a href="{{link}}" onclick="x()">x</a>' }, 'an event handler'],
     [{ subject: 's', text: 'x {{link}}', html: '<script>x</script>' },
      'a script'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<svg onload="x()"></svg><a href="{{link}}">x</a>' },
+     'an element no list thought of'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<meta http-equiv="refresh" content="0"><a href="{{link}}">x</a>' },
+     'a meta refresh'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<!-- x --><a href="{{link}}">x</a>' }, 'a comment'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<p class="x"><a href="{{link}}">x</a></p>' },
+     'an attribute outside the allow-list'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<a/onclick="x()" href="{{link}}">x</a>' },
+     'an event handler after a slash'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<a title=">"/onclick="x()" href="{{link}}">x</a>' },
+     'an event handler after a quoted bracket'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<a href="{{link}}"onclick="x()">x</a>' },
+     'an event handler straight after a quote'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<img/src="https://x.test/p.png"><a href="{{link}}">x</a>' },
+     'a remote image after a slash'],
     [{ subject: 's', text: 'x {{link}} {{password}}',
        html: '<a href="{{link}}">x</a>' }, 'an unknown placeholder'],
     [{ subject: 's', text: 'no link here',
@@ -293,6 +328,62 @@ async function recipients(t) {
     await stillSent.delivered;
   });
   log.debug('Leaving recipients().');
+}
+
+// ---------------------------------------------------------------------------
+// 3g. A GROUP AS A RECIPIENT (#989): the reports application's notice to a
+// shared group, at the group's own `mail`, resolved by the directory.
+// ---------------------------------------------------------------------------
+async function groupRecipients(t) {
+  log.debug('Entering groupRecipients().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  mailModule.setDirectory(stubDirectory(
+    { dana: { mail: ['dana@example.com'] } },
+    { 'cn=reporters,ou=groups,dc=example,dc=com':
+        { cn: ['reporters'], mail: ['reporters@example.com'] },
+      'cn=silent,ou=groups,dc=example,dc=com': { cn: ['silent'] } }));
+  await withRealm(t, realms, realmId('mail-groups'), {}, async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const sent = m.send({ groupDn: 'cn=reporters,ou=groups,dc=example,dc=com',
+                          template: 'test-message',
+                          values: { when: 'now', transport: 'stub' },
+                          dedupKey: 'g-1' });
+    t.check(sent.ok && sent.queued.length === 1,
+            '3g-a. a group with an address is queued once',
+            JSON.stringify(sent.refused));
+    const row = sent.queued[0] || {};
+    t.equal(row.to || row.address || row.recipient,
+            row.to || row.address || row.recipient,
+            '3g-b. the row names a recipient');
+    t.check(JSON.stringify(row).indexOf('reporters@example.com') >= 0,
+            '3g-c. the address is the group\'s own mail attribute',
+            JSON.stringify(row).slice(0, 300));
+    const again = m.send({ groupDn: 'cn=reporters,ou=groups,dc=example,dc=com',
+                           template: 'test-message',
+                           values: { when: 'now', transport: 'stub' },
+                           dedupKey: 'g-1' });
+    t.check(again.ok && again.queued.length === 0 &&
+            again.duplicates.length === 1,
+            '3g-d. the same act to the same group within the window is one ' +
+            'message');
+    const silent = m.send({ groupDn: 'cn=silent,ou=groups,dc=example,dc=com',
+                            template: 'test-message',
+                            values: { when: 'now', transport: 'stub' } });
+    t.check(!silent.ok && silent.refused[0] &&
+            silent.refused[0].code === 'STS-MAIL-0011',
+            '3g-e. a group with no mail attribute is refused as a person ' +
+            'without one is', JSON.stringify(silent.refused));
+    const gone = m.send({ groupDn: 'cn=gone,ou=groups,dc=example,dc=com',
+                          template: 'test-message',
+                          values: { when: 'now', transport: 'stub' } });
+    t.check(!gone.ok && gone.refused[0] &&
+            gone.refused[0].code === 'STS-MAIL-0012',
+            '3g-f. a group that is not there is refused as a missing ' +
+            'person is', JSON.stringify(gone.refused));
+  });
+  log.debug('Leaving groupRecipients().');
 }
 
 // ---------------------------------------------------------------------------
@@ -777,7 +868,7 @@ async function smtp(t) {
   const tm = require('../common/mail_transports');
   const errorCodes = require('../common/error_codes');
   const stsCrypto = require('../common/crypto');
-  const ca = require('./vendored/outbound_test_ca.js');
+  const ca = require('./protocol/outbound_test_ca.js');
   const authority = await ca.makeCa();
   const leaf = await ca.listenerCertificate(authority, 'localhost');
   const stranger = await ca.listenerCertificate(await ca.makeCa(),
@@ -1055,16 +1146,16 @@ async function uses(t) {
       return /Confirm your address/.test(x.subject);
     })[0];
     const link = /(https:\/\/idp\.example\S+)/.exec(mailed.text)[1];
-    const token = new URL(link).searchParams.get('token');
-    t.check(link.indexOf('/portal/verify-email?user=jan&token=') > 0,
+    const token = new URLSearchParams(new URL(link).hash.slice(1)).get('token');
+    t.check(link.indexOf('/portal/verify-email?user=jan#token=') > 0,
             '11b. the link is the pinned origin and /portal/verify-email',
             link);
     t.check(u.checkVerification('jan', 'wrong').ok === false &&
             u.checkVerification('jan', token).ok === true,
             '11c. only the token that was sent checks');
-    t.check(u.completeVerification('jan', token).ok &&
-            m.recipient('jan').verified &&
-            !u.completeVerification('jan', token).ok,
+    const followed = await u.completeVerification('jan', token);
+    const spent = await u.completeVerification('jan', token);
+    t.check(followed.ok && m.recipient('jan').verified && !spent.ok,
             '11d. following it verifies the address, once');
     dir.people.jan.mail = ['jan.new@example.com'];
     t.check(!m.recipient('jan').verified,
@@ -1098,7 +1189,7 @@ async function uses(t) {
     })[0];
     t.check(resetMail && resetMail.to === 'jan@example.com' &&
             resetMail.text.indexOf('https://idp.example/realm/') >= 0 &&
-            resetMail.text.indexOf('/portal/reset-password?user=jan&token=' +
+            resetMail.text.indexOf('/portal/reset-password?user=jan#token=' +
                                    'tok-jan') > 0,
             '11i. the reset link goes to the entry\'s address on the pinned ' +
             'origin', resetMail && resetMail.text);
@@ -1232,8 +1323,14 @@ async function consolePages(t) {
       configFormsFor: function () {
         return '<form id="settings"></form>';
       },
+      // The settings block the page is drawn from (#446: the page's
+      // renderer draws it from the view, so the view carries one group).
       configSettingsJson: function () {
-        return [];
+        return { groups: [{ group: 'Mail settings', settings: [] }],
+                 context: {} };
+      },
+      renderContext: function (req) {
+        return { query: (req && req.query) || {}, write: true };
       },
       pageNavPair: function () {
         return { head: '', foot: '' };
@@ -1267,23 +1364,28 @@ async function consolePages(t) {
     const page = new mailAdminModule.MailAdmin(Object.assign(
       mailAdminModule.MailAdmin.defaultDeps(), { admin: shell,
                                                  adminViews: views }));
-    const routes = {};
-    page.registerRoutes({
-      get: function (path, fn) {
-        routes['GET ' + path] = fn;
-      },
-      post: function (path, fn) {
-        routes['POST ' + path] = fn;
-      }
-    });
+    // THE PAGES AS THE STATIC CONSOLE DRAWS THEM (#446): each page's view —
+    // what its operation answers — drawn by its renderer; there are no
+    // console routes to call since the cutover. `up` says whether a
+    // drill-down's way back would be drawn (the item its parameter names).
+    const WebPages = require('../admin-ui/web_pages');
+    const WebKit = require('../admin-ui/web_kit');
     const get = function (path, query) {
-      routes['GET ' + path]({ query: query || {}, headers: {} }, {});
-      return drawn[drawn.length - 1];
+      const q = query || {};
+      const req = { query: q, headers: {} };
+      const view = path === '/admin/mail' ? page.settingsView(req, q)
+                                          : page.outboxView(req, q);
+      return {
+        json: view,
+        html: WebPages.render(path, JSON.parse(JSON.stringify(view)),
+                              WebKit.context(q, true)),
+        up: q.template || q.message || null
+      };
     };
     const settings = get('/admin/mail');
     t.check(settings && /capture/.test(settings.html) &&
             /Send a test message/.test(settings.html) &&
-            /id="settings"/.test(settings.html) &&
+            /<h3>Mail settings<\/h3>/.test(settings.html) &&
             settings.html.indexOf('password-reset') >= 0,
             '13a. /admin/mail draws the transport, the test form, the ' +
             'messages and the settings', settings && settings.html.slice(0, 300));
@@ -1574,9 +1676,10 @@ async function addressChange(t) {
     t.check(mailed && mailed.to === 'uma.new@example.com',
             '16c. the link goes to the NEW address — the entry\'s pending ' +
             'one, never a request\'s', mailed && mailed.to);
-    const token = new URL(/(https:\/\/idp\.example\S+)/.exec(mailed.text)[1])
-      .searchParams.get('token');
-    const done = u.completeVerification('uma', token);
+    const token = new URLSearchParams(new URL(
+      /(https:\/\/idp\.example\S+)/.exec(mailed.text)[1]).hash.slice(1))
+      .get('token');
+    const done = await u.completeVerification('uma', token);
     t.check(done.ok && done.changed &&
             written[0].join(',') === 'uma,uma.new@example.com,link' &&
             m.recipient('uma').verified &&
@@ -1584,7 +1687,7 @@ async function addressChange(t) {
             '16d. following it makes the new address `mail`, verified, ' +
             'through the directory — which tells the former one',
             JSON.stringify([done, written]));
-    t.check(!u.completeVerification('uma', token).ok,
+    t.check(!(await u.completeVerification('uma', token)).ok,
             '16e. once');
     const second = u.startAddressChange('uma', 'uma.third@example.com',
                                         'test');
@@ -1594,8 +1697,9 @@ async function addressChange(t) {
     const third = transports.sent.filter(function (x) {
       return x.to === 'uma.third@example.com';
     })[0];
-    const thirdToken = new URL(/(https:\/\/idp\.example\S+)/
-      .exec(third.text)[1]).searchParams.get('token');
+    const thirdToken = new URLSearchParams(new URL(
+      /(https:\/\/idp\.example\S+)/.exec(third.text)[1]).hash.slice(1))
+      .get('token');
     // Somebody else changes the address before the link is followed.
     dir.people.uma.mail = ['uma.admin@example.com'];
     t.check(second.ok && !u.checkVerification('uma', thirdToken).ok,
@@ -1603,6 +1707,74 @@ async function addressChange(t) {
             'address the account had when it was sent');
   });
   log.debug('Leaving addressChange().');
+}
+
+// ---------------------------------------------------------------------------
+// 17. VALUES IN THE RECIPIENT'S LANGUAGE (#539)
+// ---------------------------------------------------------------------------
+async function valuesInLanguage(t) {
+  log.debug('Entering valuesInLanguage().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const i18n = require('../common/i18n');
+  mailModule.setDirectory(stubDirectory({
+    zoe: { mail: ['zoe@example.com'], preferredlanguage: ['fr-CA'] },
+    yan: { mail: ['yan@example.com'] }
+  }));
+  await withRealm(t, realms, realmId('mail-values'),
+                  { 'mail.transport': 'smtp' }, async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const at = Date.UTC(2026, 9, 9, 12, 34, 0);
+    const values = { count: '2', when: { date: at },
+                     by: { i18n: 'mailValues.requestedBy.administratorNamed',
+                           params: { actor: '<b>boss</b>' } } };
+    const fr = m.send({ username: 'zoe', template: 'sessions-ended',
+                        values: values });
+    const en = m.send({ username: 'yan', template: 'sessions-ended',
+                        values: values });
+    await fr.delivered;
+    await en.delivered;
+    const toZoe = transports.sent.filter(function (x) {
+      return x.to === 'zoe@example.com';
+    })[0];
+    const toYan = transports.sent.filter(function (x) {
+      return x.to === 'yan@example.com';
+    })[0];
+    const frDate = i18n.translator(['fr-CA']).date(at);
+    const enDate = i18n.translator(['en']).date(at);
+    t.check(toZoe && toZoe.text.indexOf('un administrateur (<b>boss</b>)') >=
+              0 && toZoe.text.indexOf(frDate) >= 0 &&
+            toZoe.text.indexOf('an administrator') < 0,
+            '17a. a message and an instant are written in the recipient\'s ' +
+            'language (fr-CA)', toZoe && toZoe.text);
+    t.check(toYan && toYan.text.indexOf('an administrator (<b>boss</b>)') >=
+              0 && toYan.text.indexOf(enDate) >= 0,
+            '17b. and in English for a recipient with no preference, from ' +
+            'the same values', toYan && toYan.text);
+    t.check(toZoe && toZoe.html.indexOf('(&lt;b&gt;boss&lt;/b&gt;)') >= 0 &&
+            toZoe.html.indexOf('<b>boss') < 0,
+            '17c. a resolved value is escaped in the HTML part like any ' +
+            'other', toZoe && toZoe.html);
+    const queued = JSON.stringify(fr.queued.concat(en.queued));
+    t.check(fr.queued.length === 1 && en.queued.length === 1 &&
+            !/\[object Object\]|"i18n"/.test(queued),
+            '17d. what was queued holds no unresolved value', queued);
+    // A NOTICE FROM THE USES, end to end.
+    const MailUses = require('../common/mail_uses').MailUses;
+    const u = new MailUses(Object.assign(MailUses.defaultDeps(),
+                                         { mail: m }));
+    const before = transports.sent.length;
+    const notice = u.fromAccountSignal('recoveryActivated',
+      { username: 'zoe', initiatingEntity: 'admin' });
+    await notice.delivered;
+    const told = transports.sent.slice(before)[0];
+    t.check(told && told.text.indexOf('par un administrateur') >= 0 &&
+            told.text.indexOf('an administrator') < 0,
+            '17e. a notice from mail_uses.ts carries no English fragment ' +
+            'into a French message', told && told.text);
+  });
+  log.debug('Leaving valuesInLanguage().');
 }
 
 module.exports = {
@@ -1632,6 +1804,7 @@ async function sections(t) {
   {
     templates(t);
     await recipients(t);
+    await groupRecipients(t);
     await ceilings(t);
     await twoNodes(t);
     await retries(t);
@@ -1645,6 +1818,7 @@ async function sections(t) {
     await layout(t);
     await recoveryCodeReset(t);
     await addressChange(t);
+    await valuesInLanguage(t);
   }
   log.debug('Leaving sections().');
 }

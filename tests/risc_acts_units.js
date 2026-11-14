@@ -168,9 +168,14 @@ function childMain() {
          JSON.stringify(f && f.payload));
 
     // --- G -------------------------------------------------------------
-    settle(risc.observe({ kind: 'created', username: 'g-user', issuer: ISS,
-      before: {}, after: { uid: ['g-user'], mail: ['g@g.test'],
-                           telephonenumber: ['+15550200'] } }));
+    // A row the register HOLDS, with the account's address and number. Made
+    // by hand since #618 phase 2: a blank create is no longer kept (nothing
+    // in it differs from an absent row), and an event naming the number of
+    // an account the register does not hold is filed under the number —
+    // what every account past risc.maxAccountsTracked already got.
+    const gRow = risc.rowFor('g-user', { iss: ISS });
+    gRow.email = 'g@g.test';
+    gRow.phone = '+15550200';
     risc.noteTransmitted({ stream_id: 'unit' }, { iss: ISS, jti: 'g-1',
       events: { [P + 'identifier-changed']: { 'new-value': '+15550299' } },
       sub_id: { format: 'phone_number', phone_number: '+15550200' } });

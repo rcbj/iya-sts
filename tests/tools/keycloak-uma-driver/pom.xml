@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+  SPDX-License-Identifier: BUSL-1.1
+
+  THE KEYCLOAK UMA DRIVER'S DEPENDENCIES (#1196, 2026-10-30), for build.sh and
+  the `uma-java` stage of tests/Dockerfile — jscep-driver's arrangement.
+  Maven RESOLVES them and nothing else: build.sh copies the runtime jars out,
+  holds every one to the sha256 in jars.sha256 (and the directory to exactly
+  that list), and compiles the one source file with javac.
+
+  keycloak-authz-client 26.0.12 is Keycloak's own UMA 2.0 client and
+  resource-server library (Apache-2.0), at its latest release; its pom pins
+  Apache HttpClient, Jackson and keycloak-client-common-synced, and nothing
+  here overrides them — the library under test is Keycloak's as Keycloak
+  ships it.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>net.iyasec.sts.tests</groupId>
+  <artifactId>keycloak-uma-driver</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-authz-client</artifactId>
+      <version>26.0.12</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -287,6 +287,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const stsCrypto = require(ROOT + '/common/crypto');
@@ -332,6 +333,9 @@ function childMain() {
       if (p === '/ro/slow') {
         return;
       }
+      if (p === '/ro/hangup') {
+        return req.socket.destroy();
+      }
       if (p === '/ro/unregistered') {
         res.writeHead(200, { 'content-type': 'application/oauth-authz-req+jwt' });
         return res.end(served['/ro/good']);
@@ -356,7 +360,7 @@ function childMain() {
             '2l. the realm\'s key set carries an RSA and an EC request object ' +
             'encryption key, use enc, with no private member in the JWK');
     const blob = keystore.serialise(set);
-    const back = keystore.deserialise(blob, crypto);
+    const back = keystore.deserialise(blob);
     note(blob.requestObjectEncKeys && /PRIVATE KEY/.test(
               blob.requestObjectEncKeys.rsa.privateKeyPem) &&
             back.requestObjectEncKeys.ec.publicJwk.kid === keys.ec.publicJwk.kid,
@@ -399,7 +403,8 @@ function childMain() {
     make('r91', { oauthRequestUri: [RO + '/ro/good', RO + '/ro/jwt',
                                      RO + '/ro/plain', RO + '/ro/missing',
                                      RO + '/ro/redirect', RO + '/ro/big',
-                                     RO + '/ro/slow', RO + '/ro/digest'] });
+                                     RO + '/ro/slow', RO + '/ro/digest',
+                                     RO + '/ro/hangup'] });
     make('r91-nokeys', { oauthJwks: null });
     make('r91-es256', { oauthRequestObjectSigningAlg: 'ES256' });
     make('r91-enc', { oauthRequestObjectEncryptionAlg: 'RSA-OAEP-256' });
@@ -438,22 +443,14 @@ function childMain() {
       if (!toSignIn(first)) {
         return { final: first, page: null };
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username || 'r91-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await request(port, 'POST', '/authn/login',
-                                   { form: form, cookies: true });
+      // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+      // act, this test's jar kept. `page` is the view the screen is drawn
+      // from: what the old page said is a fact of it now.
+      const posted = await screen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: username || 'r91-alice',
+                  password: 'anything' } });
+      const page = { text: JSON.stringify(posted.view || {}) };
       const back = String(posted.headers.location || '');
       const final = back
         ? await request(port, 'GET', back.replace(/^https?:\/\/[^/]+/, ''),
@@ -488,7 +485,8 @@ function childMain() {
          flow.final.status + ' ' + flow.final.headers.location);
     note(flow.page && /signed request object \(ES256\)/.test(flow.page.text),
          '3d. section 11.1: the sign-in screen says the request was a ' +
-         'verified signed request object', flow.page &&
+         'verified signed request object (a detail of its view since #571)',
+         flow.page &&
          flow.page.text.slice(0, 80));
 
     r = await authorize({ client_id: 'r91', request: object,
@@ -735,6 +733,18 @@ function childMain() {
     } finally {
       config.clearOverride('oauth2.requestUriTimeoutMs');
     }
+    // 3aw-ii (2026-11-04): a request_uri whose host hangs up is refused in a
+    // sentence that names the address and the cause and ends in ONE full
+    // stop, since a cause's own is dropped before the refusal's is added.
+    // The quotation marks arrive as apostrophes: an error_description may
+    // not carry %x22 (RFC 6749 section 5.2), and the endpoint swaps them.
+    r = await byRef(RO + '/ro/hangup');
+    note(refusedWith(r, 'invalid_request_uri',
+                     /^the request_uri ['"]http[^'"]+\/ro\/hangup['"] could not be (fetched|read): [^.]+[^.]\.$/) &&
+         !/""|''|\.\.$/.test(r.json.error_description),
+         '3aw-ii. a request_uri that hangs up is refused in one sentence, ' +
+         'one full stop at its end',
+         r.text.slice(0, 200));
     served['/ro/digest'] = good('r91');
     applications.updateApplication('r91', { attribute: 'oauthRequestUri',
       mode: 'add', value: digestUri(served['/ro/digest']) });
@@ -774,6 +784,97 @@ function childMain() {
            'dialled', r.text.slice(0, 160));
     } finally {
       config.clearOverride('global.mode');
+    }
+    // AN UNSIGNED OBJECT BY REFERENCE, IN PRODUCT (#1293). The OpenID
+    // Foundation's oidcc-request-uri-unsigned-supported-correctly-or-rejected-
+    // as-unsupported is SKIPPED against a product realm, because its
+    // discovery lists no `none`; this is what that skip stands for. 3bb shows
+    // product never dials plain http, so the object is served over HTTPS
+    // under a CA this child makes now (`tests/protocol/outbound_test_ca.js`,
+    // named by federation.outboundCaFile, which is how product reaches a
+    // privately certified host) — otherwise the refusal would be the
+    // scheme's and say nothing about the signature. A SIGNED object from the
+    // same listener is accepted first, so the unsigned one's refusal can
+    // only be its own.
+    const https = require('https');
+    const testCa = require(ROOT + '/tests/protocol/outbound_test_ca');
+    const roCa = await testCa.makeCa();
+    const roLeaf = await testCa.listenerCertificate(roCa, '127.0.0.1');
+    const roCaFile = require('path').join(require('os').tmpdir(),
+      'r91-ro-ca-' + process.pid + '.crt');
+    require('fs').writeFileSync(roCaFile, roCa.certPem);
+    const secureServed = {};
+    const secureHits = {};
+    const secureRo = https.createServer({ key: roLeaf.key,
+                                          cert: roLeaf.cert },
+                                        function (req, res) {
+      secureHits[req.url] = (secureHits[req.url] || 0) + 1;
+      if (secureServed[req.url] === undefined) {
+        res.writeHead(404);
+        return res.end();
+      }
+      res.writeHead(200,
+                    { 'content-type': 'application/oauth-authz-req+jwt' });
+      return res.end(secureServed[req.url]);
+    });
+    await new Promise(function (done) {
+      secureRo.listen(0, '127.0.0.1', done);
+    });
+    const SRO = 'https://127.0.0.1:' + secureRo.address().port;
+    secureServed['/ro/signed'] = good('r91');
+    secureServed['/ro/unsigned'] = sign('none', claimsFor('r91'), null);
+    ['/ro/signed', '/ro/unsigned'].forEach(function (p) {
+      applications.updateApplication('r91', { attribute: 'oauthRequestUri',
+        mode: 'add', value: SRO + p });
+    });
+    config.setOverride('federation.outboundCaFile', roCaFile);
+    config.setOverride('global.mode', 'product');
+    config.setOverride('oauth2.allowConfidentialWithoutPkce', 'true');
+    // ASVS 5.0.0 1.3.6: product dials no loopback, private, link-local or
+    // reserved address for a request_uri, as for every outbound fetch
+    // (federation_http.vetHost()). This listener is on 127.0.0.1, so it is
+    // refused first, with nothing fetched; then vetHost() is made to answer
+    // as a public name would, pinned to the listener, so 3bb-ii and 3bb-iii
+    // say something about the signature rather than the address.
+    const fedHttp = require(ROOT + '/federation/federation_http');
+    const realVetHost = fedHttp.vetHost;
+    try {
+      r = await byRef(SRO + '/ro/signed');
+      note(refusedWith(r, 'invalid_request_uri',
+                       /loopback, private, link-local or reserved/) &&
+           !secureHits['/ro/signed'],
+           '3bb-0. product: a request_uri at a loopback address is not ' +
+           'dialled, and is refused invalid_request_uri (STS-OAUTH-1004)',
+           r.status + ' hits=' + secureHits['/ro/signed'] + ' ' +
+           r.text.slice(0, 240));
+      fedHttp.vetHost = function () {
+        return Promise.resolve({ ok: true, address: '127.0.0.1',
+                                 family: 4 });
+      };
+      r = await byRef(SRO + '/ro/signed');
+      note(toSignIn(r) && secureHits['/ro/signed'] === 1,
+           '3bb-ii. product: a SIGNED request object by reference over ' +
+           'https is fetched and accepted (the control for 3bb-iii)',
+           r.status + ' hits=' + secureHits['/ro/signed'] + ' ' +
+           r.text.slice(0, 200));
+      r = await byRef(SRO + '/ro/unsigned');
+      note(refusedWith(r, 'invalid_request_object', /product mode/) &&
+           /unsigned/.test(r.json.error_description || '') &&
+           secureHits['/ro/unsigned'] === 1,
+           '3bb-iii. product: an UNSIGNED request object by reference is ' +
+           'fetched and refused invalid_request_object (stands in for ' +
+           'OIDF oidcc-request-uri-unsigned-supported-correctly-or-' +
+           'rejected-as-unsupported)',
+           r.status + ' hits=' + secureHits['/ro/unsigned'] + ' ' +
+           r.text.slice(0, 240));
+    } finally {
+      fedHttp.vetHost = realVetHost;
+      config.clearOverride('oauth2.allowConfidentialWithoutPkce');
+      config.clearOverride('global.mode');
+      config.clearOverride('pki.paranoidOutboundTls');
+      config.clearOverride('federation.outboundCaFile');
+      secureRo.close();
+      require('fs').unlinkSync(roCaFile);
     }
     r = await authorize({ client_id: 'r91', request: good('r91'),
                           request_uri: RO + '/ro/good' });
@@ -948,9 +1049,12 @@ function childMain() {
                           { kid: 'r91-ec' }), 'r91-consent');
       flow = await signIn(r, 'r91-consenter');
       const consentPage = String(flow.final.headers.location || '');
+      // THE CONSENT SCREEN'S VIEW (#576): the page is drawn in the browser
+      // from `/authn-api/consent/{id}`, whose view carries the request's
+      // own parameters at the foot.
       const drawn = consentPage
-        ? await request(port, 'GET', consentPage.replace(/^https?:\/\/[^/]+/,
-                                                         ''), { cookies: true })
+        ? await screen.openConsent({ port: port, jar: jar,
+            at: consentPage.replace(/^https?:\/\/[^/]+/, '') })
         : { text: '' };
       note(/\/oauth2\/consent/.test(consentPage) &&
            /signed request object \(ES256\)/.test(drawn.text),
@@ -991,6 +1095,27 @@ function childMain() {
            'advertising none');
     } finally {
       config.clearOverride('oauth2.requireSignedRequestObject');
+    }
+    // THE PRODUCT DOCUMENT (#1293): no `none`, with no setting asked. This
+    // is the half of the OpenID Foundation's skips that is the service's own
+    // statement — oidcc-unsigned-request-object-supported-correctly-or-
+    // rejected-as-unsupported and its request_uri twin are skipped BECAUSE a
+    // product realm's discovery lists no `none`, so the list is what has to
+    // stay true; 3ab and 3bb-iii are what it promises.
+    config.setOverride('global.mode', 'product');
+    try {
+      meta = (await request(port, 'GET',
+                            '/.well-known/openid-configuration')).json || {};
+      const productAlgs = meta.request_object_signing_alg_values_supported;
+      note(Array.isArray(productAlgs) && productAlgs.indexOf('none') < 0 &&
+           productAlgs.indexOf('ES256') >= 0,
+           '3ca-ii. product: the OpenID Provider Configuration\'s ' +
+           'request_object_signing_alg_values_supported lists ES256 and ' +
+           'never none (stands in for OIDF oidcc-unsigned-request-object-' +
+           'supported-correctly-or-rejected-as-unsupported)',
+           JSON.stringify(productAlgs));
+    } finally {
+      config.clearOverride('global.mode');
     }
     const narrowedMeta = (await request(port, 'GET',
       '/.well-known/oauth-authorization-server/r91np')).json;
@@ -1108,7 +1233,7 @@ function inAChild(t) {
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', R91_ROOT: ROOT, R91_OUT: out }),
+                         { STS_SECURITY_FILE_ROOTS: require('os').tmpdir(), LOG_LEVEL: 'fatal', R91_ROOT: ROOT, R91_OUT: out }),
       encoding: 'utf8', timeout: 240000, cwd: ROOT
     });
   let findings = null;

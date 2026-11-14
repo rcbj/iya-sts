@@ -106,13 +106,27 @@ removed {
 
 # A CELL WRITES THE RECORD TREE IN dns_cells.tf INSTEAD (#98): a CNAME may not
 # share its name with any other record, so the two are exclusive.
+#
+# WITH CLOUDFRONT THE NAME IS AN ALIAS OF THE DISTRIBUTION (cloudfront.tf). One
+# resource for both, because a CNAME and an A record may not share a name: a
+# change of type replaces it, destroying the first before creating the second,
+# which two resources would not promise. Inside the VPC nothing changes.
 resource "aws_route53_record" "public" {
   count   = local.public_name && !local.multi ? 1 : 0
   zone_id = data.aws_route53_zone.public[0].zone_id
   name    = var.public_hostname
-  type    = "CNAME"
-  ttl     = 300
-  records = [aws_lb.main.dns_name]
+  type    = local.cloudfront ? "A" : "CNAME"
+  ttl     = local.cloudfront ? null : 300
+  records = local.cloudfront ? null : [aws_lb.main.dns_name]
+
+  dynamic "alias" {
+    for_each = local.cloudfront ? [1] : []
+    content {
+      name                   = aws_cloudfront_distribution.main[0].domain_name
+      zone_id                = aws_cloudfront_distribution.main[0].hosted_zone_id
+      evaluate_target_health = false
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------

@@ -48,8 +48,20 @@
 // retention is dead-lettered, so nothing is pending for ever.
 //
 // **5. LOGGING IS A SUMMARY**: the kind writes one audit row when a delivery
-// finishes (`onFinish`), and this file writes at most one line per kind per
-// realm per summary interval.
+// finishes (`onFinish`). A dead letter or a deferred delivery is one warning
+// per kind per realm per summary interval. A count with neither is info at
+// this call and debug while the sweep is a scheduler job.
+//
+// **6. WHAT WAS SENT LEAVES THE ROW ONCE IT LANDS (#614).** Until a delivery
+// is `sent`, its `token` and `body` are on the row because a retry has to
+// send the SAME bytes — the same signed Logout Token or Command Token, the
+// same CIBA push with its tokens in it. Once it is `sent` nothing sends them
+// again (an operator's retry is of a dead letter only), so `finish()` puts
+// their digests (`tokenDigest`, `bodyDigest`, `crypto.credentialDigest()`)
+// in their place and the row keeps its jti, its status and its history. A
+// DEAD LETTER keeps both, because an operator's retry resends it. Until #614
+// every landed row kept a whole token — a CIBA push's whole token response
+// — for the kind's retention.
 //
 // WHAT A KIND SUPPLIES (`DeliveryKind`): its store, its claim scope, the
 // address attribute the outbound policy reads, whether the body is a form or
@@ -64,6 +76,9 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+// `credentialDigest()` for what a landed delivery keeps of what it sent
+// (#614). A leaf library.
+import stsCrypto = require('../common/crypto');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
@@ -153,6 +168,20 @@ interface DeliveryKind {
   send?(row: Json, prepared: Prepared,
         options: { timeoutMs: number }): Promise<Json>;
   judge?(result: Json, row: Json): Judgement | null;
+  // THE WAIT BEFORE A RETRY, when the kind's is not the plain doubling of
+  // `backoffMs`: the outbound SCIM client's is jittered, capped and honours a
+  // Retry-After (#552). `n` is the attempt that failed; `row` carries the
+  // judgement's patch.
+  backoff?(n: number, row: Json): number;
+  // A PENDING ROW THE SWEEP MUST NOT ATTEMPT YET although it is due: a time
+  // after `at` holds it. The outbound SCIM client holds a paused client's
+  // rows (#552). An operator's retry is not held.
+  holdUntil?(row: Json, at: number): number;
+  // A LANE a row is attempted in, with its own limit inside the kind's
+  // concurrency (#553): the outbound SCIM client's per-client budget in a
+  // service deployed as cells, `scimClient.concurrency` split across the
+  // cells pushing to that client. null, or no hook, is no lane.
+  laneOf?(row: Json): { key: string; limit: number } | null;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -273,6 +302,8 @@ class OutboundDelivery {
   private readonly lastSummaryAt = new Map<string, number>();
   // Attempts in flight in this process for this kind.
   private inFlightHere = 0;
+  // Attempts in flight in this process per lane (`laneOf`).
+  private readonly laneInFlight = new Map<string, number>();
 
   /**
    * Builds a queue for one kind of delivery.
@@ -454,6 +485,23 @@ class OutboundDelivery {
     log.debug("Leaving OutboundDelivery.tally().");
   }
 
+  // Header point 6 (#614): a landed row's token and body become their
+  // digests. Replaced rather than mutated, so a caller still holding the
+  // body object it sent keeps it.
+  private static forgetSent(row: Json): void {
+    helpers.log.debug("Entering OutboundDelivery.forgetSent().");
+    if (row.token !== undefined && row.token !== null) {
+      row.tokenDigest = stsCrypto.credentialDigest(String(row.token));
+      delete row.token;
+    }
+    if (row.body !== undefined && row.body !== null) {
+      row.bodyDigest = stsCrypto.credentialDigest(
+        typeof row.body === 'string' ? row.body : JSON.stringify(row.body));
+      delete row.body;
+    }
+    helpers.log.debug("Leaving OutboundDelivery.forgetSent().");
+  }
+
   // A delivery reaches its final state: the row changes and the kind's
   // `onFinish` writes its one audit row. Answers the row as written.
   /**
@@ -475,6 +523,9 @@ class OutboundDelivery {
     row.finishedAt = now();
     row.inFlight = 0;
     row.nextAttemptAt = 0;
+    if (state === 'sent') {
+      OutboundDelivery.forgetSent(row);
+    }
     const written = this.writeRow(row);
     if (written.state !== state || written.updatedAt !== row.updatedAt) {
       log.debug("Leaving OutboundDelivery.finish(). A newer copy stood; " +
@@ -541,7 +592,27 @@ class OutboundDelivery {
     const realm = realms.get(realmId);
     later(function () {
       realms.run(realm, function () {
-        return self.attempt(realmId, id).catch(function (e) {
+        return self.attempt(realmId, id).then(function (result) {
+          // A TIMER CAN FIRE A MOMENT BEFORE THE ROW IS DUE: setTimeout runs
+          // on node's monotonic clock and `now()` is the wall clock, which
+          // may read a millisecond short of `nextAttemptAt`. `attempt()` then
+          // answers `not-due` and does nothing — and until this re-armed the
+          // timer, the retry waited for the kind's sweep job instead, up to
+          // its interval later (an OpenID Provider Commands retry seen to
+          // land half a minute late). Armed again for the row's due time, at
+          // least a millisecond on, so it never spins.
+          if (result !== 'not-due') {
+            return;
+          }
+          const row = self.liveRow(realmId, id);
+          if (row && row.state === 'pending') {
+            log.debug("OutboundDelivery.scheduleRetry(): " + id + " fired " +
+                      "before it was due; armed again.");
+            self.scheduleRetry(realmId, id,
+                               Math.max(Number(row.nextAttemptAt),
+                                        now() + 1));
+          }
+        }).catch(function (e) {
           log.debug("Caught in OutboundDelivery.scheduleRetry(): " +
                     ((e && e.message) || e));
         });
@@ -700,8 +771,10 @@ class OutboundDelivery {
       log.debug("Leaving OutboundDelivery.attempt(). Dead.");
       return 'dead';
     }
-    const backoff = Math.max(0, this.setting(kind.settings.backoffMs)) *
-      Math.pow(2, n - 1);
+    const backoff = kind.backoff
+      ? Math.max(0, Number(kind.backoff(n, current)) || 0)
+      : Math.max(0, this.setting(kind.settings.backoffMs)) *
+        Math.pow(2, n - 1);
     current.errorCode = judged.code || '';
     current.why = why + ' (attempt ' + n + '; trying again)';
     current.nextAttemptAt = now() + backoff;
@@ -804,12 +877,15 @@ class OutboundDelivery {
   // -------------------------------------------------------------------------
   // THE SWEEP: every realm, the rows that are due, bounded by the kind's
   // concurrency in this process; retention; the kind's own per-realm work;
-  // the summary line. Resolves the totals; never rejects.
+  // the summary. A dead letter or a deferred delivery is a warning. A count
+  // with neither is debug while this sweep is a scheduler job. Resolves the
+  // totals; never rejects.
   // -------------------------------------------------------------------------
   /**
    * Sweeps every realm: attempts due rows within the kind's concurrency,
-   * applies retention, runs the kind's per-realm work and writes the summary
-   * line. Never rejects.
+   * applies retention and runs the kind's per-realm work. A dead letter or
+   * a deferred delivery is a warning; a count with neither is debug while
+   * this sweep is a scheduler job. Never rejects.
    *
    * @returns a promise of the totals
    */
@@ -853,6 +929,7 @@ class OutboundDelivery {
     const cap = Math.max(1, this.setting(kind.settings.maxRows));
     const store = kind.store.realmMap(realmId);
     const due: string[] = [];
+    const laneOfId = new Map<string, { key: string; limit: number }>();
     const finished: Json[] = [];
     const stale: Json[] = [];
     let dead = 0;
@@ -863,8 +940,13 @@ class OutboundDelivery {
       if (row.state === 'pending') {
         if (at - Number(row.queuedAt) > keepMs) {
           stale.push(Object.assign({}, row));
-        } else if (!(Number(row.nextAttemptAt) > at)) {
+        } else if (!(Number(row.nextAttemptAt) > at) &&
+                   !(kind.holdUntil && kind.holdUntil(row, at) > at)) {
           due.push(id);
+          const lane = kind.laneOf ? kind.laneOf(row) : null;
+          if (lane) {
+            laneOfId.set(id, lane);
+          }
         }
         return;
       }
@@ -889,14 +971,33 @@ class OutboundDelivery {
     });
     const limit = Math.max(1, this.setting(kind.settings.concurrency));
     let attempted = 0;
+    // The next due row whose lane has room; a row whose lane is full waits
+    // for the next sweep.
+    const take = function (): string | undefined {
+      log.debug("Entering take().");
+      for (let i = 0; i < due.length; i++) {
+        const lane = laneOfId.get(due[i]);
+        if (!lane || (self.laneInFlight.get(lane.key) || 0) < lane.limit) {
+          log.debug("Leaving take().");
+          return due.splice(i, 1)[0];
+        }
+      }
+      log.debug("Leaving take(). Every lane is full.");
+      return undefined;
+    };
     const next = function (): Promise<void> {
       log.debug("Entering next().");
-      const id = due.shift();
-      if (id === undefined || self.inFlightHere >= limit) {
+      const id = self.inFlightHere >= limit ? undefined : take();
+      if (id === undefined) {
         log.debug("Leaving next(). Nothing more this sweep.");
         return Promise.resolve();
       }
+      const lane = laneOfId.get(id);
       self.inFlightHere++;
+      if (lane) {
+        self.laneInFlight.set(lane.key,
+                              (self.laneInFlight.get(lane.key) || 0) + 1);
+      }
       attempted++;
       log.debug("Leaving next().");
       return self.attempt(realmId, id).catch(function (e) {
@@ -904,6 +1005,10 @@ class OutboundDelivery {
         return 'error';
       }).then(function () {
         self.inFlightHere--;
+        if (lane) {
+          self.laneInFlight.set(lane.key,
+                                (self.laneInFlight.get(lane.key) || 1) - 1);
+        }
         return next();
       });
     };
@@ -923,10 +1028,13 @@ class OutboundDelivery {
                            dead: dead }, extra);
   }
 
-  // At most one line per realm per summary interval, when something happened.
+  // A dead letter or a deferred delivery is a warning. A count with neither
+  // is info here and debug while the sweep is a scheduler job. At most one
+  // line per realm per summary interval, and only when something happened.
   /**
-   * Writes at most one summary line per realm per interval, when something
-   * happened.
+   * A dead letter or a deferred delivery is a warning. A count with neither
+   * is info here and debug while the sweep is a scheduler job. At most one
+   * line per realm per interval, when something happened.
    *
    * @param realmId - the realm
    * @param force - true to write it regardless of the interval
@@ -1137,7 +1245,7 @@ const KINDS = [
 
 /**
  * Reports every kind's counts and rows, newest first, for `/admin/deliveries`
- * and `GET /admin-api/deliveries`.
+ * and `GET /admin-api/deliveries` — every row, or the first `limit`.
  *
  * @param options - `kind`, `state`, `q` and `limit`
  * @returns `{ kinds, states }`
@@ -1145,7 +1253,10 @@ const KINDS = [
 function kindReport(options?: Json): Json {
   helpers.log.debug("Entering kindReport().");
   const o = options || {};
-  const limit = Number(o.limit) > 0 ? Number(o.limit) : 200;
+  // WHOLE unless a caller asks for a `limit` (#313's sweep): every kind was
+  // cut at 200 rows, silently, so a delivery past the cut could not be
+  // reached. `GET /admin-api/deliveries` pages each kind instead.
+  const limit = Number(o.limit) > 0 ? Number(o.limit) : undefined;
   const out = KINDS.filter(function (k) {
     return !o.kind || k.id === String(o.kind);
   }).map(function (k) {

@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "OpenID Connect Native SSO for Mobile Apps：第一个应用带 device_sso 作用域的授权码授权会创建设备并交给它一个 device_secret，该密钥以哈希形式存放在条目上，仅对该登录会话有效。"
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "由管理员在 目录 → 设备 或 POST /admin-api/devices/create 上创建：由某个人或某个应用拥有，密钥按值输入。以这种方式添加的密钥被记录为无人证明且为自我声明。"
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "由所有者在 /portal/devices（或其 JSON 入口 POST /portal/devices/challenge 和 /portal/devices/proof）上证明一个密钥：对绑定到其会话的质询签署的 device-key-proof+jwt JWS——在其 x5c 中带有 Android Key Attestation，或改用 Apple App Attest 声明——或者通过新的断言关联其已注册的 WebAuthn 平台凭据。"
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "在 /.well-known/est/device/ 上的 EST（RFC 7030）simpleenroll：证书签发给请求中 urn:sts:device:<id> 所指明的设备条目——或签发给一个由请求方拥有的新条目——并附带 TPM 密钥证明（draft-ietf-lamps-csr-attestation，tcg-attest-tpm-certify）。所有者可为自己的设备申请，拥有 Admin Write 者可为任何设备申请。"
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "带有为设备配置文件签发的质询密码的 SCEP（RFC 8894）PKCSReq——相同的流程，用于只支持它的设备。"
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "TLS 连接上的客户端证书——在登录时和令牌端点（RFC 8705）处——按其 SubjectPublicKeyInfo 的 SHA-256 匹配，因此基于同一密钥续订的证书仍是同一台设备。握手证明了持有；证书链是否通过验证会被记录，因吊销而被拒绝的证书不会被识别。"
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "令牌端点处的 DPoP 证明，按其 jkt 匹配——即每个 jwk 密钥都带有的 RFC 7638 指纹。"
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "登录时的 WebAuthn 断言，其凭据已关联到该设备。"
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "Native SSO 的 device_secret，在为其签发的登录会话仍有效期间。"
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "session-established、session-presented 和 session-revoked 上的 device 成员"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked（在 risc.autoEmitTypes 指明它时；默认不包括）"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "复合：device（iss_sub——本领域的颁发者和设备 id）和 user（所有者，若为人员）"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "身份验证事件的 registeredDevice（authn.registeredDeviceOf(session) 读取最新的一个）"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "签发请求的 registered_device，在签发关口之前"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "管理员按值输入的密钥在两种模式下都被接受，记录为 admin 证明且为自我声明"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "SCEP 没有 nonce 操作，因此基于它的 TPM 声明永远无法证明为新鲜"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "No hay material de clave en esta respuesta ni en la página. Las claves de una persona se derivan de su contraseña cuando se establece o se verifica y nunca se muestran; el keytab de un principal de servicio se entrega UNA VEZ, por la creación o rotación que lo generó, y el keytab de una persona UNA VEZ, derivado de una contraseña proporcionada — la que un administrador establece en la página de la persona, o la suya propia en /portal/kerberos."
+  },
+  "kerberos.notes.modeProduct": {
+    "en": "8d432ed7c10cfff6",
+    "text": "Este KDC es uno de PRODUCTO: una persona se autentica con su propia contraseña a través de las claves guardadas en su entrada de directorio, y a una persona sin ninguna se le rechaza con \"inicie sesión una vez\"."
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "Este KDC es uno de DESARROLLO: las claves de todo usuario se generan a partir de krb5.userPassword y a las personas nunca se les dan claves guardadas. Los principales de servicio creados aquí se usan en ambos modos."
+  },
+  "kerberos.notes.realmServed": {
+    "en": "8a723c27287c5be5",
+    "text": "UN KDC POR DOMINIO DE CONFIANZA: estas son las personas y aplicaciones del dominio de confianza en el que se lee esta página, como principales de su propio dominio Kerberos {{kerberosRealm}}."
+  },
+  "kerberos.notes.realmNone": {
+    "en": "8b5e4bb62b24c1f7",
+    "text": "ESTE DOMINIO DE CONFIANZA NO TIENE KDC: {{reason}}. Establezca krb5.realm en el dominio y active krb5.enabled para darle uno; el puerto 88 enruta una solicitud por el nombre de dominio Kerberos que lleva dentro."
+  },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "EL KDC DE ESTE DOMINIO DE CONFIANZA ESTÁ ACTIVADO PERO NO SE PUEDE USAR: {{reason}}. Su dominio Kerberos es {{kerberosRealm}}."
+  },
+  "kerberos.notes.window": {
+    "en": "f23c2b84dd49da4d",
+    "text": "Las claves se derivan DESPUÉS de que se establece o verifica una contraseña y tardan unas decenas de milisegundos en quedar guardadas; hasta entonces, el KDC rechaza a la persona en lugar de aceptar una clave anterior."
+  },
+  "kerberos.notes.previous": {
+    "en": "6266fa9952830399",
+    "text": "Un cambio de contraseña o una rotación conserva la versión que reemplazó — como máximo krb5.retainedKeyVersions de ellas, cada una durante krb5.retainedKeyTtlS —, así que un ticket emitido con ella se sigue aceptando hasta que podría haber vencido. Una versión anterior solo ABRE un ticket así: no se emite nada con ella y una contraseña antigua nunca inicia sesión. \"Descartar versiones anteriores\" cierra la ventana de inmediato, tras un compromiso."
+  },
+  "kerberos.notes.param.noKdcReason": {
+    "en": "eb8c1a9f118d56b9",
+    "text": "krb5.enabled está desactivado para él"
+  }
+}

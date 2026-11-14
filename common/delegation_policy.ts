@@ -68,6 +68,7 @@ import applications = require('./applications');
 import credentials = require('./credentials');
 import gate = require('./issuance_gate');
 import roles = require('./roles');
+import Classes = require('./domain_classes');
 
 type Json = any;
 
@@ -81,7 +82,8 @@ type TargetKind = 'audience' | 'appliesTo';
 interface DelegationPolicyDeps {
   log: typeof helpers.log;
   config: { value(key: string): any };
-  mode: { authorizesDelegation(): boolean; current(): string };
+  mode: { authorizesDelegation(): boolean; current(): string;
+          issuesToUnregisteredApplications(): boolean };
   applications: Json;
   credentials: Json;
   gate: Json;
@@ -111,6 +113,33 @@ interface DecideQuestion {
   // actor (`mayActNames()`).
   mayActPresent?: boolean;
   mayActNamesActor?: boolean;
+  // Kerberos only (#490): which [MS-SFU] mechanism asked — 'S4U2Self', or
+  // 'S4U2Proxy' with `rbcd` saying whether resource-based delegation
+  // permitted it — so the row is written in Kerberos's words. 'forwarded'
+  // (#430) is a TGT delegated across a trust.
+  mechanism?: '' | 'S4U2Self' | 'S4U2Proxy' | 'forwarded';
+  rbcd?: boolean;
+  // Kerberos ACROSS A TRUST only (#430): the trust the question arrived
+  // across, as its record says, this KDC's Kerberos realm, each party's
+  // Kerberos realm, and whether the source (the front end) is a party of
+  // another realm, named whole with no entry here.
+  trust?: Json;
+  localRealm?: string;
+  subjectRealm?: string;
+  actorRealm?: string;
+  targetRealm?: string;
+  foreignSource?: boolean;
+  // The SIDs a subject of another realm still carries after SID filtering
+  // (#430): the only grants, beside its name, that roles.js reads for it.
+  subjectSids?: string[];
+  // AuthZEN's token-exchange binding only (#1181): what the question was
+  // asked with — the trusted caller and application, the tuples' types and
+  // token types, and the catalogue's rows — handed to the request as
+  // `xacml_request.js`'s `exchange()` `authzen` facts, so a realm's policy
+  // can tell an exchange decided for another authorization server from one
+  // this service performs. NO OTHER DOOR SENDS IT, and nothing here reads
+  // it: the facts gathered and the questions asked are the same either way.
+  authzen?: Json;
 }
 
 // What `decide()` answers. `refusal` says which rule refused, so each door can
@@ -185,23 +214,35 @@ class DelegationPolicy {
     };
   }
 
-  // Every value of one attribute on an application view, as strings.
+  // A concept's value as trimmed non-empty strings.
   /**
-   * Returns every value of one attribute on an application view, as trimmed
-   * non-empty strings.
+   * Returns a concept's value as trimmed non-empty strings: what this policy
+   * has always read an application's delegation settings as.
    *
-   * @param row - an application view with `fields`
-   * @param attribute - the attribute name
+   * @param raw - a field of a concept
    * @returns the values, empty when there are none
    */
-  static valuesOf(row: Json, attribute: string): string[] {
+  static valuesOf(raw: unknown): string[] {
     helpers.log.debug("Entering DelegationPolicy.valuesOf().");
-    const raw = row && row.fields ? row.fields[attribute] : undefined;
     const out = (Array.isArray(raw) ? raw : (raw === undefined ||
       raw === null || raw === '' ? [] : [raw]))
       .map(function (one) { return String(one).trim(); })
       .filter(function (one) { return !!one; });
     helpers.log.debug("Leaving DelegationPolicy.valuesOf().");
+    return out;
+  }
+
+  // WHAT AN APPLICATION SAYS ABOUT DELEGATION IS ITS CONCEPTS' (#1579): who
+  // it may act for and to, the Application's; its realms across a trust,
+  // the KerberosService's. ATTRIBUTES above stays for the answers that
+  // name the attribute a pair was set by.
+  private static delegationOf(row: Json): { app: IyaDomain.Application;
+      kdc: IyaDomain.KerberosService } {
+    helpers.log.debug("Entering DelegationPolicy.delegationOf().");
+    const fields = (row && row.fields) || {};
+    const out = { app: Classes.Application.fromEntry(fields),
+                  kdc: Classes.KerberosService.fromEntry(fields) };
+    helpers.log.debug("Leaving DelegationPolicy.delegationOf().");
     return out;
   }
 
@@ -221,10 +262,19 @@ class DelegationPolicy {
   }
 
   // The application an identifier, client_id or name belongs to, or null.
+  //
+  // A CLIENT'S SUBJECT IS ITS APPLICATION TOO (#471): `urn:sts:client:<id>`,
+  // the form a client is named by as an actor in RFC 9700 mode, resolves to
+  // the application whose client_id is `<id>` — so a party handed over in
+  // either of a client's two spellings has the same facts, and the policy's
+  // actor fact is the application's identifier in both modes. The token
+  // exchange hands the bare client_id today; this keeps any other caller (or
+  // a realm policy's party) from finding nobody behind the namespaced one.
   /**
-   * Finds the application an identifier or client_id belongs to.
+   * Finds the application an identifier, client_id or client subject
+   * (`urn:sts:client:<id>`) belongs to.
    *
-   * @param name - an application identifier or client_id
+   * @param name - an application identifier, client_id or client subject
    * @returns the application view, or null
    */
   applicationFor(name: string): Json {
@@ -235,8 +285,13 @@ class DelegationPolicy {
       log.debug("Leaving DelegationPolicy.applicationFor(). Nothing asked.");
       return null;
     }
+    // The name as written first, so an entry whose identifier happens to
+    // begin with the prefix is still found by it.
+    const clientId = /^urn:sts:client:./.test(wanted)
+      ? wanted.slice('urn:sts:client:'.length) : '';
     const found = applications.get(wanted) ||
-      applications.forClientId(wanted) || null;
+      applications.forClientId(wanted) ||
+      (clientId ? applications.forClientId(clientId) : null) || null;
     log.debug("Leaving DelegationPolicy.applicationFor(). " +
               (found ? found.identifier : 'None.'));
     return found;
@@ -262,6 +317,19 @@ class DelegationPolicy {
         : (applications.forAudience(wanted) ||
            applications.forClientId(wanted));
       found = found || applications.get(wanted) || null;
+    }
+    // IN PRODUCT A TARGET NOBODY REGISTERED IS NO TARGET (#496). An entry a
+    // development sighting filed (no `appRegisteredBy`) resolved here, so a
+    // token exchange to an audience development had merely seen was decided
+    // as a registered target with no relationships. rcbj: in product an
+    // unregistered application gets nothing, so it resolves to nothing and
+    // is the policy's `unregistered-target` (RFC 8693's `invalid_target`).
+    // Development keeps the sighting, and its "would have refused" notes.
+    if (found && !this.deps.mode.issuesToUnregisteredApplications() &&
+        !String(found.registeredBy || '')) {
+      log.debug("DelegationPolicy.resolveTarget(): " + found.identifier +
+                " is not registered; product resolves it to nothing.");
+      found = null;
     }
     log.debug("Leaving DelegationPolicy.resolveTarget(). " +
               (found ? found.identifier : 'Unregistered.'));
@@ -436,7 +504,6 @@ class DelegationPolicy {
    */
   partyFacts(name: string): Json {
     const { log, credentials, roles } = this.deps;
-    const A = DelegationPolicy.ATTRIBUTES;
     log.debug("Entering DelegationPolicy.partyFacts().");
     const wanted = String(name || '').trim();
     const rolesFor = function (kind: string, who: string): string[] {
@@ -452,24 +519,32 @@ class DelegationPolicy {
     const application = this.applicationFor(wanted);
     if (application) {
       const id = String(application.identifier);
+      const held = DelegationPolicy.delegationOf(application);
       log.debug("Leaving DelegationPolicy.partyFacts(). An application.");
       return {
         id: id, kind: 'application', registered: true,
         roles: rolesFor('application', id),
-        notDelegated: DelegationPolicy.valuesOf(application, A.NOT_DELEGATED)
+        notDelegated: DelegationPolicy.valuesOf(held.app.notDelegated)
           .some(function (one) { return one.toUpperCase() === 'TRUE'; }),
         groups: [],
-        semantics: DelegationPolicy.valuesOf(application, A.SEMANTICS)
+        semantics: DelegationPolicy.valuesOf(held.app.delegationSemantics)
           .map(function (one) { return one.toLowerCase(); }),
-        defaultSemantics: (DelegationPolicy.valuesOf(application,
-          A.DEFAULT_SEMANTICS)[0] || '').toLowerCase(),
-        delegatesTo: this.resolvedList(DelegationPolicy.valuesOf(application,
-          A.DELEGATE_TO)),
-        subjectGroups: DelegationPolicy.valuesOf(application, A.SUBJECT_GROUP)
+        defaultSemantics: (DelegationPolicy.valuesOf(
+          held.app.defaultDelegationSemantics)[0] || '').toLowerCase(),
+        delegatesTo: this.resolvedList(DelegationPolicy.valuesOf(
+          held.app.allowedToDelegateTo)),
+        subjectGroups: DelegationPolicy.valuesOf(
+          held.app.delegationSubjectGroup)
           .map(function (one) { return DelegationPolicy.normalizeDn(one); }),
-        accepts: this.resolvedList(DelegationPolicy.valuesOf(application,
-          A.ACT_ON_BEHALF_OF)),
-        mayAct: ''
+        accepts: this.resolvedList(DelegationPolicy.valuesOf(
+          held.app.allowedToActOnBehalfOf)),
+        mayAct: '',
+        // #430: the realms whose users this service may obtain S4U2Self
+        // tickets for, and what it says of a TGT delegated to it across a
+        // trust.
+        selfRealms: DelegationPolicy.valuesOf(held.kdc.s4uSelfRealm),
+        foreignTgtDelegation: (DelegationPolicy.valuesOf(
+          held.kdc.foreignTgtDelegation)[0] || '').toLowerCase()
       };
     }
     const facts = wanted ? (credentials.delegationFactsFor(wanted) || {}) : {};
@@ -518,15 +593,50 @@ class DelegationPolicy {
               " by " + question.actor + " for " + question.subject);
     const subject = this.partyFacts(question.subject);
     const actor = this.partyFacts(question.actor);
-    // S: the first candidate that resolves to an application.
+    // S: the first candidate that resolves to an application — AND IS NOT AN
+    // API RESOURCE OBJECT (#1139). A token's audience comes first among the
+    // candidates, and since #1139 this service's own APIs are application
+    // objects holding theirs: a subject token for the default resource
+    // resolved to `sts-resource` wherever the seeded name is the one the
+    // request came in on (the single-node suite, which pins it), and the
+    // exchange was refused for want of a relationship nothing can hold. A
+    // resource object is never a client (STS-OAUTH-0985), so it is never
+    // the actor and never the application a token was issued FOR; the
+    // candidate is passed over and the token's client_id decides, as it did
+    // before those objects existed.
     let sourceId = '';
+    const resourceOnly = function (id: string): boolean {
+      try {
+        return !!id && self.deps.applications.isResourceServer(id);
+      } catch (e) {
+        log.debug("Caught in DelegationPolicy.decide(): " +
+                  ((e && e.message) || e));
+        // No registry (a library tested on its own): nothing is one.
+        return false;
+      }
+    };
     (question.source || []).some(function (one) {
       sourceId = self.resolveTarget(String(one || ''), question.targetKind) ||
         (self.applicationFor(String(one || '')) || { identifier: '' })
           .identifier || '';
+      if (resourceOnly(sourceId)) {
+        sourceId = '';
+      }
       return !!sourceId;
     });
+    // A FRONT END OF ANOTHER KERBEROS REALM (#430) has no entry here; it is
+    // S by its name, `SPN@REALM`, which is how a target accepts it.
+    if (!sourceId && question.foreignSource && (question.source || []).length) {
+      sourceId = String(question.source[0] || '');
+    }
     const source = sourceId ? this.partyFacts(sourceId) : null;
+    // A FRONT END OF ANOTHER REALM with no entry here requires nothing HERE
+    // (#430): what its own entry requires is its realm's to ask, and was
+    // asked there before the evidence was issued or referred. Read as the
+    // default EVERYBODY it would refuse every subject of another realm,
+    // who holds no built-in role (`common/roles.js`).
+    const foreignSourceUnregistered = !!question.foreignSource && !!source &&
+      !source.registered;
     const asked = (question.targets || []).map(function (one) {
       return String(one || '').trim();
     }).filter(function (one) { return !!one; });
@@ -545,7 +655,7 @@ class DelegationPolicy {
     const facts = {
       subject: subject, actor: actor,
       source: { id: sourceId,
-                requiredRoles: sourceId
+                requiredRoles: sourceId && !foreignSourceUnregistered
                   ? applications.requiredRolesOf(sourceId) : [],
                 delegatesTo: source ? source.delegatesTo : [] },
       target: { id: targetId || (asked[0] || ''), count: asked.length,
@@ -557,11 +667,57 @@ class DelegationPolicy {
       mayActPresent: !!question.mayActPresent,
       mayActNamesActor: !!question.mayActNamesActor,
       protectedGroups: this.protectedGroupKeys()
-    };
+    } as Json;
+    // #1181: carried, never read here (DecideQuestion's `authzen`).
+    if (question.authzen) {
+      facts.authzen = question.authzen;
+    }
+    // ACROSS A KERBEROS TRUST (#430 Phase 3): the facts the cross-realm
+    // rules read, added only for such a question.
+    const settingsAsked: Json = {
+      defaultSemantics: setting('delegation.defaultSemantics'),
+      actorRole: setting('delegation.actorRole') };
+    if (question.trust) {
+      facts.trust = question.trust;
+      // A USER OF ANOTHER REALM has no entry here, and so no roles from one
+      // — and, since rcbj's decision of 2026-10-19, NOT the roles every
+      // person authenticated here holds either: EVERYBODY and
+      // ALL_AUTHENTICATED_USERS mean "authenticated in THIS realm". They
+      // hold only a role granted to them by name (`alice@PARTNER.TEST`) or
+      // to one of their FILTERED SIDs (`roles.js`, THE RESOLVER), so an
+      // application requiring only EVERYBODY refuses them (`authority`)
+      // until it is narrowed to a role somebody granted.
+      if (!subject.registered) {
+        let foreignRoles: string[] = [];
+        try {
+          foreignRoles = this.deps.roles.rolesOf({ kind: 'user',
+            name: subject.id, authenticated: true, crossRealm: true,
+            sids: question.subjectSids || [] }) || [];
+        } catch (e) {
+          log.debug("Caught in DelegationPolicy.decide(): " +
+                    ((e && e.message) || e));
+          foreignRoles = [];
+        }
+        facts.subject = Object.assign({}, facts.subject,
+                                      { roles: foreignRoles });
+      }
+      facts.localRealm = String(question.localRealm || '');
+      facts.mechanism = question.mechanism === 'S4U2Proxy'
+        ? (question.rbcd ? 'S4U2Proxy-rbcd' : 'S4U2Proxy-classic')
+        : String(question.mechanism || '');
+      facts.subject = Object.assign({}, facts.subject,
+                                    { realm: question.subjectRealm || '' });
+      facts.actor = Object.assign({}, actor,
+                                  { realm: question.actorRealm || '' });
+      facts.target = Object.assign({}, facts.target, {
+        realm: question.targetRealm || '',
+        foreignTgtDelegation: target ? target.foreignTgtDelegation : '' });
+      settingsAsked.crossRealmClassicDelegation =
+        setting('krb5.crossRealmClassicDelegation') === 'true';
+    }
     const answer = gate.checkExchange({
       facts: facts, mode: mode.current(), protocol: question.protocol,
-      settings: { defaultSemantics: setting('delegation.defaultSemantics'),
-                  actorRole: setting('delegation.actorRole') }
+      settings: settingsAsked
     }) || {};
     const allowed = answer.verdict === 'allow';
     const semantics = (allowed ? answer.semantics : answer.chosen) || '';
@@ -600,6 +756,9 @@ class DelegationPolicy {
   // The attribute each refusal is about, for the act's row.
   static readonly REFUSAL_ATTRIBUTE: Record<string, string> = {
     'subject': 'stsNotDelegated',
+    // #430's, across a Kerberos trust.
+    'self-realm': 'krb5S4uSelfRealm',
+    'tgt-delegation': 'krb5ForeignTgtDelegation',
     'semantics': 'appDelegationSemantics',
     'target': 'appAllowedToDelegateTo',
     'no-target': 'appAllowedToDelegateTo',
@@ -624,13 +783,20 @@ class DelegationPolicy {
               decision.refusal);
     const actor = '"' + facts.actor.id + '"';
     const subject = '"' + facts.subject.id + '"';
-    const target = '"' + (facts.target.id || '') + '"';
+    // A target with no name is called that, rather than quoted as "".
+    const target = facts.target.id ? '"' + facts.target.id + '"'
+      : 'the unnamed target';
     const what = decision.semantics || 'act';
     const noTarget = question.protocol === 'WS-Trust' ? 'no AppliesTo'
       : question.protocol === 'Kerberos' ? 'no service'
         : 'neither audience nor resource';
     const sentences: Record<string, string> = {
-      'may-act': 'The subject token\'s may_act (RFC 8693 section 4.4) names ' +
+      // In WS-Trust's words (#481, #747): the token is the JWT inside the
+      // element, not a subject token.
+      'may-act': (question.protocol === 'WS-Trust'
+        ? 'The JWT inside ' + (question.requested === 'impersonation'
+          ? '<wst:OnBehalfOf>' : '<wst14:ActAs>') + ' carries a may_act'
+        : 'The subject token\'s may_act') + ' (RFC 8693 section 4.4) names ' +
         'somebody other than ' + actor + '.',
       'targets': 'The request names ' + facts.target.count + ' targets; a ' +
         'token is issued for exactly one.',
@@ -638,7 +804,11 @@ class DelegationPolicy {
         target + ', so there is nothing to read its roles or relationships ' +
         'from.',
       'no-target': 'The request names no target (' + noTarget + '), and ' +
-        'only a self exchange defaults to the subject token\'s own audience.',
+        (question.protocol === 'Kerberos'
+          ? 'a Kerberos request always names the SPN it wants a ticket for.'
+          : 'only a self ' + (question.protocol === 'WS-Trust'
+            ? 'request defaults to the presented token\'s own audience.'
+            : 'exchange defaults to the subject token\'s own audience.')),
       'subject': subject + ' is protected — its entry says it is never ' +
         'delegated, it is in a protected group (delegation.protectedGroups, ' +
         'the console roster), or it is outside the groups ' + actor +
@@ -660,11 +830,39 @@ class DelegationPolicy {
           subject + ': R is not the actor itself, nor on its ' +
           'appAllowedToDelegateTo, nor does R accept it ' +
           '(appAllowedToActOnBehalfOf).'
-        : 'Nothing allows this delegation to ' + target + ': the actor ' +
-          'must be the application the subject token was issued for or ' +
-          'the target, and that application must delegate to the target ' +
-          '(appAllowedToDelegateTo on it, or appAllowedToActOnBehalfOf on ' +
-          'the target).'),
+        : question.protocol === 'Kerberos'
+          ? 'Nothing allows this S4U2Proxy to ' + target + ': the service ' +
+            'the evidence ticket was issued to must delegate to the ' +
+            'requested SPN (appAllowedToDelegateTo on it, classic ' +
+            'constrained delegation), or the target must accept it ' +
+            '(appAllowedToActOnBehalfOf, resource-based).'
+          : 'Nothing allows this delegation to ' + target + ': the actor ' +
+            'must be the application ' + (question.protocol === 'WS-Trust'
+              ? 'the token inside <wst14:ActAs> was issued for'
+              : 'the subject token was issued for') + ' or ' +
+            'the target, and that application must delegate to the ' +
+            'target (appAllowedToDelegateTo on it, or ' +
+            'appAllowedToActOnBehalfOf on the target).'),
+      // #430: across a Kerberos trust.
+      'trust-disabled': 'The trust with ' + String((facts.trust || {})
+        .partner || 'the other realm') + ' is disabled.',
+      'trust-direction': 'This realm holds no trust ACCEPTING tickets from ' +
+        String((facts.trust || {}).partner || 'the other realm') + ' (an ' +
+        'incoming key), so it does not act for that realm\'s users.',
+      'self-realm': actor + ' does not list ' + String(facts.subject.realm ||
+        'the user\'s realm') + ' in krb5S4uSelfRealm, the realms whose ' +
+        'users it may obtain S4U2Self tickets for (empty: its own realm ' +
+        'only).',
+      'classic-across-realms': 'Classic constrained delegation does not ' +
+        'cross a trust here unless the realm allows it ' +
+        '(krb5.crossRealmClassicDelegation); resource-based delegation ' +
+        '(appAllowedToActOnBehalfOf on the target, naming SPN@REALM) does.',
+      'tgt-delegation': 'A TGT is not delegated across the trust with ' +
+        String((facts.trust || {}).partner || 'the other realm') + ': ' +
+        '[MS-KILE] 3.3.5.7.5 needs the trust to be within the forest or to ' +
+        'enable TGT delegation, and neither to forbid it nor be ' +
+        'quarantined, and ' + target + ' must not refuse it ' +
+        '(krb5ForeignTgtDelegation).',
       'policy': 'The issuance policy refused this ' + what + '.'
     };
     const out = sentences[decision.refusal] || sentences.policy;
@@ -690,11 +888,47 @@ class DelegationPolicy {
       out = 'nothing was needed: "' + facts.actor.id + '" acts for nobody ' +
             'but itself.';
     } else {
+      // EACH PROTOCOL IN ITS OWN VOCABULARY (#481). RFC 8693's words —
+      // "the subject token was issued for" — were written on every row,
+      // and a WS-Trust row has no subject token: it has the token inside
+      // <wst:OnBehalfOf> or <wst14:ActAs> (the element is the semantics
+      // asked for) and an AppliesTo the target was resolved from. Every
+      // other protocol keeps the sentence it had.
+      //
+      // KERBEROS TOO (#490): a Kerberos row has no token at all. S4U2Self
+      // is a ticket the service asked for TO ITSELF, naming a user in
+      // PA-FOR-USER ([MS-SFU] protocol transition); S4U2Proxy presents an
+      // EVIDENCE TICKET — a ticket for the user, issued to the service
+      // asking — and names the target by its SPN, permitted by classic or
+      // resource-based constrained delegation.
+      const wsTrust = question.protocol === 'WS-Trust';
+      const kerberos = question.protocol === 'Kerberos';
+      const element = question.requested === 'impersonation'
+        ? '<wst:OnBehalfOf>' : '<wst14:ActAs>';
+      const mechanism = question.mechanism === 'S4U2Self'
+        ? 'S4U2Self, protocol transition: the service named the user in ' +
+          'PA-FOR-USER and holds no credential of theirs'
+        : 'S4U2Proxy, ' + (question.rbcd ? 'resource-based'
+                                         : 'classic') +
+          ' constrained delegation';
+      const source = kerberos
+        ? ' (' + mechanism + (facts.source.id
+          ? '; the evidence ticket was issued to "' + facts.source.id + '"'
+          : '') + ')'
+        : !facts.source.id ? ''
+          : wsTrust
+            ? ' (the token inside ' + element + ' was issued for "' +
+              facts.source.id + '")'
+            : ' (the subject token was issued for "' + facts.source.id +
+              '")';
       out = 'the issuance policy allowed ' + decision.semantics + ' by "' +
             facts.actor.id + '" for "' + facts.subject.id + '" to "' +
-            decision.audience + '"' + (facts.source.id
-              ? ' (the subject token was issued for "' + facts.source.id +
-                '")' : '') +
+            decision.audience + '"' +
+            (wsTrust ? ', the application the AppliesTo names' : '') +
+            (kerberos ? (question.mechanism === 'S4U2Self'
+              ? ', the service the ticket is for'
+              : ', the service the requested SPN names') : '') +
+            source +
             (question.mayActNamesActor
               ? '; the subject named this actor in may_act' : '') + '.';
     }
@@ -762,9 +996,8 @@ class DelegationPolicy {
     if (application) {
       subjectId = String(application.identifier);
       kind = 'application';
-      const dn = DelegationPolicy.valuesOf(application,
-                                           DelegationPolicy.ATTRIBUTES
-                                             .MAY_ACT)[0] || '';
+      const dn = DelegationPolicy.valuesOf(
+        DelegationPolicy.delegationOf(application).app.mayAct)[0] || '';
       declared = dn ? this.claimForDn(dn) : null;
     } else {
       const facts = credentials.delegationFactsFor(name);
@@ -825,7 +1058,8 @@ class DelegationPolicy {
     log.debug("Entering DelegationPolicy.claimForDn().");
     const row = this.applicationByDn(dn);
     if (row) {
-      const clientIds = DelegationPolicy.valuesOf(row, 'oauthClientId');
+      const clientIds = DelegationPolicy.valuesOf(Classes.OAuthClient
+        .fromEntry(row.fields || {}).clientIds);
       log.debug("Leaving DelegationPolicy.claimForDn(). An application.");
       return { sub: clientIds[0] || String(row.identifier) };
     }
@@ -904,38 +1138,42 @@ class DelegationPolicy {
       return !!self.applicationFor(identifier);
     };
     rows.forEach(function (row: Json) {
-      const semantics = DelegationPolicy.valuesOf(row, A.SEMANTICS)
+      const held = DelegationPolicy.delegationOf(row).app;
+      const semantics = DelegationPolicy.valuesOf(held.delegationSemantics)
         .map(function (one) { return one.toLowerCase(); });
       const trusted = semantics.indexOf('impersonation') >= 0;
-      const defaultSemantics = (DelegationPolicy.valuesOf(row,
-        A.DEFAULT_SEMANTICS)[0] || '').toLowerCase();
-      const notDelegated = DelegationPolicy.valuesOf(row, A.NOT_DELEGATED)
+      const defaultSemantics = (DelegationPolicy.valuesOf(
+        held.defaultDelegationSemantics)[0] || '').toLowerCase();
+      const notDelegated = DelegationPolicy.valuesOf(held.notDelegated)
         .some(function (one) { return one.toUpperCase() === 'TRUE'; });
-      const groups = DelegationPolicy.valuesOf(row, A.SUBJECT_GROUP);
-      DelegationPolicy.valuesOf(row, A.DELEGATE_TO).forEach(function (target) {
-        const resolved = self.resolveTarget(target, 'audience') ||
-          self.resolveTarget(target, 'appliesTo');
-        pairs.push({ mechanism: 'constrained', intermediary: row.identifier,
-          target: target, targetApplication: resolved,
-          attribute: A.DELEGATE_TO, setOn: row.identifier,
-          setOnRole: 'intermediary', impersonates: trusted,
-          subjectGroups: groups, targetKnown: !!resolved,
-          warning: resolved ? '' : 'No application here has registered "' +
-            target + '"; it is matched exactly as written.' });
-      });
-      DelegationPolicy.valuesOf(row, A.ACT_ON_BEHALF_OF)
+      const groups = DelegationPolicy.valuesOf(held.delegationSubjectGroup);
+      DelegationPolicy.valuesOf(held.allowedToDelegateTo)
+        .forEach(function (target) {
+          const resolved = self.resolveTarget(target, 'audience') ||
+            self.resolveTarget(target, 'appliesTo');
+          pairs.push({ mechanism: 'constrained', intermediary: row.identifier,
+            target: target, targetApplication: resolved,
+            attribute: A.DELEGATE_TO, setOn: row.identifier,
+            setOnRole: 'intermediary', impersonates: trusted,
+            subjectGroups: groups, targetKnown: !!resolved,
+            warning: resolved ? '' : 'No application here has registered "' +
+              target + '"; it is matched exactly as written.' });
+        });
+      DelegationPolicy.valuesOf(held.allowedToActOnBehalfOf)
         .forEach(function (who) {
           const found = self.applicationFor(who);
+          const theirs = found ? DelegationPolicy.delegationOf(found).app :
+            null;
           pairs.push({ mechanism: 'resource-based', intermediary: who,
             target: row.identifier, targetApplication: row.identifier,
             attribute: A.ACT_ON_BEHALF_OF, setOn: row.identifier,
             setOnRole: 'target',
-            impersonates: found ? DelegationPolicy.valuesOf(found,
-              A.SEMANTICS).some(function (one) {
+            impersonates: theirs ? DelegationPolicy.valuesOf(
+              theirs.delegationSemantics).some(function (one) {
               return one.toLowerCase() === 'impersonation';
             }) : false,
-            subjectGroups: found ? DelegationPolicy.valuesOf(found,
-              A.SUBJECT_GROUP) : [],
+            subjectGroups: theirs ? DelegationPolicy.valuesOf(
+              theirs.delegationSubjectGroup) : [],
             targetKnown: true,
             warning: known(who) ? '' : 'No application here is called "' +
               who + '", so nothing can act under that name.' });

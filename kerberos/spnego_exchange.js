@@ -22,6 +22,17 @@
 // would be a page that describes a check the sign-in does not make, or the
 // reverse, and neither would show up as a failure anywhere.
 //
+// **ONE DOOR AGAIN SINCE #595.** `/spnego/protected` left the runtime for the
+// development companion (`companion/demo_kerberos.js`), where a Kerberos
+// service with its own keytab and MIT Kerberos's acceptor plays it; the
+// sign-in is the one caller here. `supported` and `wantMic` stay as the
+// library's, for the in-process tests. `mutualOff` is one of those and,
+// since #896, what `GET /authn/spnego?mutual=off` passes in development:
+// the AP-REP is withheld, on the accept-completed reply and on a
+// request-mic first reply, and the pending row remembers it so the
+// continuation's verdict still says so. What this header and the comments
+// below say of `/spnego/protected` is its history.
+//
 // So the split is the same one `krb5_service.js` already made one layer down
 // and for the same reason, which that module's header stated as a promise when
 // it was written: *"the acceptor logic here is written as its own function so
@@ -66,9 +77,12 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for a pending exchange's id. `helpers.js` above already
+// requires it at load, so this adds no file to what this module loads
+// (#453).
+const stsCrypto = require('../common/crypto');
 // For the two limits below. `helpers.js` above already requires it, so this
-// adds no file to the parent project's copy set.
+// adds no file to what this module loads.
 const config = require('../common/config');
 const prim = require('./krb5_primitives.js');
 const gss = require('./krb5_gss.js');
@@ -87,9 +101,8 @@ const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 // ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 5): a request-mic
 // continuation is spent through an atomic claim, and the table active-active
-// mode is held to. **NEITHER ADDS A FILE TO THE PARENT PROJECT'S COPY SET**:
-// `krb5_service.js` above already requires both, so both are in that closure
-// already (kerberos/CLAUDE.md).
+// mode is held to. Neither adds a file to what this module loads:
+// `krb5_service.js` above already requires both.
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 
@@ -213,7 +226,12 @@ const OUTCOMES = {
 function volunteerTheSpn(res) {
   log.debug('Entering volunteerTheSpn().');
   res.set('X-Krb5-Service-Principal', spn() + '@' + principals.REALM);
-  res.set('X-Krb5-Accepts-Spn-Hosts', principals.SERVICE_DOMAINS.join(','));
+  // Only the hosts the KDC will issue an SPN for: none in product mode,
+  // where the one SPN above is all there is (2026-10-12).
+  const hosts = principals.ADVERTISED_SERVICE_HOSTS;
+  if (hosts.length) {
+    res.set('X-Krb5-Accepts-Spn-Hosts', hosts.join(','));
+  }
   log.debug('Leaving volunteerTheSpn().');
 }
 
@@ -359,10 +377,17 @@ function whoIs(req) {
   return (req.ip || req.connection.remoteAddress || 'unknown');
 }
 
+// **THE ID IS KEPT AS ITS DIGEST (#614).** The negotiation id is the value
+// of the `sts_spnego_negotiation` cookie — a bearer of the half-finished
+// negotiation — and the store only ever looks it up and spends it, so the
+// key is `door|credentialDigest(id)`, hashed at the moment the cookie is
+// minted and again when it is presented, and the row's own `id` is the same
+// digest. A row written under the old key shape is simply not found.
 function pendingKey(door, id) {
   log.debug('Entering pendingKey().');
   log.debug('Leaving pendingKey().');
-  return String(door || '') + '|' + String(id || '');
+  return String(door || '') + '|' +
+    stsCrypto.credentialDigest(String(id || ''));
 }
 
 // The negotiation id this request carries, or ''. A plain parse of one cookie:
@@ -412,7 +437,8 @@ function prunePending(nowMs) {
 }
 
 // ---------------------------------------------------------------------------
-// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view.
+// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view until #595 moved
+// that page to the development companion; no route reads it now.
 //
 // It lives here rather than in `spnego.js` now that there are two doors, and
 // it carries the DOOR — so a person reading that page can tell an exchange
@@ -522,6 +548,9 @@ function rejection(door, code, facts) {
 //   wantMic   force the request-mic round trip even where section 5 would let
 //             it be skipped. Also a knob.
 //   mutualOff withhold the AP-REP from an otherwise successful exchange.
+//             A request-mic first reply omits it too, and the pending row
+//             stores the flag so the continuation's verdict still says so
+//             (#896).
 //   via       what to call this transport when krb5_service.js records the
 //             authentication. See `record` below.
 //   record    FALSE stops krb5_service.js recording the authentication itself,
@@ -732,10 +761,12 @@ async function negotiate(req, opts) {
     // skipped. Real acceptors do this — Windows sets request-mic whenever it
     // wants the list protected regardless of preference order.
     prunePending(Date.now());
-    const pendingId = nodeCrypto.randomBytes(18).toString('base64url');
+    const pendingId = stsCrypto.randomBytes(18).toString('base64url');
     pending.set(pendingKey(door, pendingId), {
       at: Date.now(),
-      id: pendingId,
+      // The digest, never the cookie value (#614): it is only the claim's
+      // name below, which `cluster_claims` digests again anyway.
+      id: stsCrypto.credentialDigest(pendingId),
       door: door,
       address: whoIs(req),
       mechListDer: prim.toHex(mechListDer),
@@ -746,14 +777,19 @@ async function negotiate(req, opts) {
       ticketFlags: result.ticketFlags || null,
       // The RFC 8129 indicators the acceptor verified (#173), carried to the
       // continuation as the flags are.
-      authIndicators: result.authIndicators || []
+      authIndicators: result.authIndicators || [],
+      // So the continuation's verdict still says the AP-REP was withheld,
+      // when this request asked (#896). Absent on a row written before that.
+      mutualOff: mutualOff
     });
     log.debug('Leaving negotiate(). request-mic.');
     return tokenVerdict(door, 'request-mic',
       spnego.encodeNegTokenResp({
         negState: spnego.NEG_STATE.REQUEST_MIC,
         supportedMech: selected,
-        responseToken: result.reply || null
+        // The AP-REP would otherwise go here. mutualOff withholds it on
+        // this reply too (#896). The continuation does not put one back.
+        responseToken: (!mutualOff && result.reply) ? result.reply : null
       }),
       { reason: 'request-mic sent; awaiting the client MIC',
         errorCode: 'STS-KRB-0093',
@@ -880,7 +916,9 @@ async function continuation(req, door, parsed) {
                    reason: 'This acceptor asked for it with request-mic.' },
     rawKerberos: false,
     micVerified: true,
-    mutualOff: false,
+    // Remembered from the first reply (#896). A row written before that
+    // field existed did not withhold the AP-REP.
+    mutualOff: !!entry.mutualOff,
     continuation: true
   });
   accepted.pendingSpent = !!named;

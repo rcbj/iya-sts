@@ -286,6 +286,19 @@ function joinGroup(globalAttrs, cellAttrs) {
 const GLOBAL_MINTED = {
   // Configuration, which every cell must hold the same copy of.
   'authorization_servers.profiles': 'the named authorization servers',
+  // The audit export destinations (#641): a URL, a format and a sealed
+  // credential each, no personal data, and every cell delivers its own
+  // events to the same ones. Each cell's position in its own ring is
+  // `audit.export.cursors`, which is cell-tier with the ring it walks.
+  'audit.export.destinations': 'where a realm\'s audit events are ' +
+    'delivered',
+  // A realm's sign-in logo (#717): configuration every cell's sign-in
+  // pages draw, as the mail templates are.
+  'branding.assets': 'a realm\'s sign-in logo',
+  // What the daily audit of a realm's pinned certificates last found (#1360):
+  // the certificates are configuration every cell relies on alike.
+  'pki.pins.lastAudit': 'what a realm\'s pinned certificate audit last ' +
+    'found',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
@@ -301,11 +314,21 @@ const GLOBAL_MINTED = {
   // One list per realm, published by every cell: a credential issued in one
   // cell and revoked in another must show revoked everywhere.
   'vc_status.entries': 'the status list bits every cell publishes',
+  // The W3C VC API's credential-to-index map (#598), for its reason: a
+  // status change may reach any cell, and the index it names is in the list
+  // above. A row is a credential id the caller chose and an index — nobody's
+  // data.
+  'vc_api.issued': 'the status index of each credential the W3C VC API ' +
+    'issued',
   // The same argument for access tokens (#432): one list per realm, and a
   // token revoked in one cell must read INVALID in every cell's copy. A row
   // is an index, a jti and an expiry — nobody's data.
   'access_token_status.entries': 'the access-token status list every cell ' +
     'publishes',
+  // The bits of that list that are revoked (#820 part 3), for the list's
+  // reason: a token revoked in one cell reads INVALID at every other.
+  'access_token_status.invalid': 'the revoked bits of the access-token ' +
+    'status list every cell publishes',
   // The revocation identifiers of revoked biscuit tokens (#432), which a
   // resource server reads from whichever cell it reaches.
   'gnap.biscuitRevocations': 'revoked biscuit tokens\' revocation ids',
@@ -323,7 +346,14 @@ const GLOBAL_MINTED = {
   // any cell: held in one cell, a set registered there would be unknown at
   // every other. Written when an RS registers a set it has not registered
   // before, which is rare and administrative (#98 section 3).
-  'gnap.resources': 'the resource sets GNAP resource servers registered'
+  'gnap.resources': 'the resource sets GNAP resource servers registered',
+  // THE OUTBOUND SCIM CLIENT'S PAUSE (#553 section 5): a 429 or a 5xx seen by
+  // any cell pauses the client in every cell, and one probe goes for the
+  // whole service, so a struggling service provider is not sent N cells'
+  // worth of load. A row is a client id, a failure count, two times and the
+  // probe's row id — nobody's data — and it is written only on a failure and
+  // on the recovery.
+  'scimClient.pause': 'the outbound SCIM clients\' shared backoff pause'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
@@ -335,22 +365,61 @@ const CELL_MINTED = [
   // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
+  // AuthZEN access requests and their index (#1180): a request names the
+  // person it is about and the approver who decided it — somebody's, made in
+  // this cell. A PEP polls the cell it submitted to.
+  'authzen.accessRequestIndex', 'authzen.accessRequests',
+  // A browser's account set and its selection tickets (#561), and their
+  // counters: a browser and its sessions are pinned to one cell.
+  'admin_stats.accountCounts', 'authn.accountSets', 'authn.accountTickets',
   'admin_stats.artifacts', 'admin_stats.calls', 'admin_stats.claimSets',
-  'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokens',
+  'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokenHolders',
+  'admin_stats.tokens',
   'admin_stats.users', 'attribute_sources.status', 'audit.events',
+  // A destination's cursor over THIS cell's audit ring (#641), beside the
+  // ring itself: another cell's cursor would point into events it never held.
+  'audit.export.cursors',
   'audit.nums', 'authn.pending',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
+  // A person's published DIDs' index (#1291): a random id to the person it
+  // belongs to — somebody's, beside their entry in this cell.
+  'did.personDids',
+  // A person's profile photo (#719): their image, beside their entry in this
+  // cell, and reached by an id stamped with the cell that minted it.
+  'profilePhoto.images',
+  // An administrator's enrolment for somebody (#945). Keyed by both
+  // names, so it cannot share pendingKeys, and it is this cell's
+  // ceremony in the same way: the begin and the finish may be two nodes
+  // of this cell, and no other cell's.
+  'credentials.pendingAdminKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',
+  // What the Android attestation recheck last covered in this cell (#615).
+  'devices.androidRecheck',
   'devices.events', 'dpop.issuedNonces', 'federation.signalBlocks',
   'federation.unmapped', 'federation_sp.contexts',
+  // A partner's refresh token held for one session (#930): the session's
+  // cell's, as the session is.
+  'federation_sp.partnerRefresh',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
+  // What the validation door answered in this cell (#1360): counters, as the
+  // monitors' are.
+  'pki.door.counts',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
+  // USER-MANAGED ACCESS (#1168): every one of its six stores is somebody's
+  // or minted here. A registered resource names its OWNER, a person, and
+  // was registered where their resource server arrived; an owner's policy
+  // document IS the person's data; a permission ticket, a PCT and an RPT
+  // record are minted at the endpoint that issued them and name the
+  // requesting party; a pending approval names the owner it waits for.
+  // None is configuration every cell must hold the same copy of.
+  'uma.ownerPolicies', 'uma.pcts', 'uma.pending', 'uma.resources',
+  'uma.rpts', 'uma.tickets',
   'ldap.clusterConnections', 'ldap.clusterSignOuts', 'mail.outbox',
   'mail.preferences', 'oauth2.attestationChallenges', 'oauth2.authzCodes',
   'oauth2.backchannelDeliveries', 'oauth2_bcp.grantTokens',
@@ -358,27 +427,68 @@ const CELL_MINTED = [
   'oauth2_bcp.transactions', 'oauth2.cibaDeliveries', 'oauth2.cibaRequests',
   'oauth2.claimSourceFlows', 'oauth2.commandAccounts',
   'oauth2.commandCallbacks', 'oauth2.commandDeliveries',
-  'oauth2.commandMockAccounts', 'oauth2.commandMockJtis',
-  'oauth2.commandMockKnobs', 'oauth2.deviceCodes', 'oauth2.ephemeralSubjects',
+  'oauth2.deviceCodes', 'oauth2.ephemeralSubjects',
+  // An opaque access token's claims (#501), minted in this cell the way an
+  // authorization code is. The handle is stored as a digest.
+  'oauth2.opaqueAccessTokens',
   'oauth2.grantIssued', 'oauth2.grants', 'oauth2_monitor.counters',
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
-  'oidc_rp.flows', 'risc.register', 'saml11_sso.artifacts',
+  'oidc_rp.flows',
+  // When a person was first asked a post-login activity, until when they put
+  // it off, and when they did it (#1096): somebody's, minted at their sign-in.
+  'post_login.progress',
+  // The learned passkey clients (#1112): which browsers failed an ML-DSA
+  // registration here, with a digest of each person who failed. An
+  // OBSERVATION of this cell's own traffic, as `attribute_sources.status`
+  // is, and keyed by people, so it stays in the cell.
+  'passkey_clients.learned',
+  // The passkey history (#1109): a realm's counts per day — people by kind,
+  // passkeys by algorithm, each named profile's population. Counted from
+  // this cell's people, as the passkey report's baseline is, so it stays
+  // with them.
+  'passkey_report.history',
+  // A started post-login activity (#1111, #1123) and what its runs did: the
+  // record names the administrator who started it, and its run row holds a
+  // key cursor that is a person's DN — and it walks this cell's people.
+  'post_login.activityRuns', 'post_login.activities',
+  // The reports application's definitions, jobs and reporter stamp (#956).
+  // A report reads this cell's people and its artifact holds them, so the
+  // job and its definition are this cell's; the stamp names a node, and a
+  // node is a member of one cell.
+  'report.control', 'report.definitions', 'report.jobs',
+  'risc.register', 'saml11_sso.artifacts',
   'saml11_sso.assertionsById', 'saml11_sso.pendingFlows', 'saml2.mdqRefusals',
-  'saml2_sso.artifacts', 'saml2_sso.pendingRequests', 'saml2_sso.spContexts',
+  'saml2_sso.artifacts', 'saml2_sso.pendingRequests',
   'scep.transactions', 'scheduler.runs', 'scim.digestCounts',
   'scim.digestNonces', 'scim.hobaChallenges', 'scim.hobaSeen',
+  // The outbound SCIM client's (#552) deliveries, links and last
+  // reconciliation: a person is pushed from their home cell, so what was
+  // sent for them, and the service provider's id for them, stay in that cell
+  // (#553 section 1). The PAUSE is `scimClient.pause`, global, above.
+  'scimClient.deliveries', 'scimClient.links', 'scimClient.state',
   'security.rateLimitBuckets', 'spiffe.joinTokens',
   'spiffe.recordedConnections', 'spnego.pending',
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
+  // An announcement a surface's receiver took in (#1086), for its own tabs:
+  // minted here, beside the inbox it came out of.
+  'ssf_receivers.announcements',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
-  'ssf_streams.received', 'ssf_streams.streams', 'tls.listenerAnnounced',
-  'tls.presentedChains',
-  'tls.sessionTicketKey', 'vc_api.issued', 'vc_issued.credentials',
+  'ssf_streams.streams', 'tls.listenerAnnounced',
+  // Each node's own listener key (2026-10-08), sealed: a node is a member of
+  // one cell, and its key never leaves that cell's store.
+  'tls.listenerKeys', 'tls.presentedChains',
+  // The server name a TLS 1.2 ticket was made under (#507), beside the
+  // chain it presented: both are what a node that did not make the ticket
+  // needs when the shared ticket key brings the session to it.
+  'tls.ticketNames',
+  'tls.sessionTicketKey', 'vc_issued.byNotification', 'vc_issued.bySubject',
+  'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',
   'vc_offers.deferredAccessTokens', 'vc_offers.deferredTransactions',
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
-  'vc_verifier.vpRequests', 'vc_verifier.vpTransactions', 'wsfed.rpContexts',
+  'vc_offers.signingAlgTokens', 'vc_trusted_list.state',
+  'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
   'xacml_monitor.counters'
 ];
 
@@ -392,19 +502,29 @@ const CELL_PREFIXES = ['enrollment_monitor.', 'test.'];
 // per cluster, and a cell IS a cluster — so a job whose work is the global
 // tier's (rotating a realm's signing keys, the krbtgt key, a SPIFFE authority,
 // the OpenID Federation key; expiring a client secret; purging the global
-// used-assertion history) would run once PER CELL if its run were claimed in
-// the cell's database. Their runs are claimed in the global tier instead,
-// under `GLOBAL_RUN_SCOPE`, so exactly one cell runs each slot. Every other
-// job's work is what its own cell holds, and it runs in every cell.
+// used-assertion history or the global tier's expired minted rows and
+// tombstones) would
+// run once PER CELL if its run were claimed in the cell's database. Their
+// runs are claimed in the global tier instead, under `GLOBAL_RUN_SCOPE`, so
+// exactly one cell runs each slot. Every other job's work is what its own
+// cell holds, and it runs in every cell.
 // ---------------------------------------------------------------------------
 const GLOBAL_JOBS = [
   'signing.rotate', 'signing.retire', 'signing.rotate-now',
   'krb5.krbtgt-rotate', 'krb5.krbtgt-rotate-now',
   'oidfed.key-rotate', 'oidfed.key-rotate-now', 'oidfed.collection-crawl',
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
+  'federation.client-certificate-renew',
   'spiffe.authority-rotation', 'spiffe.sigstore-tuf-refresh',
   'oauth2.client-secret-expiry', 'oauth2.used-assertion-purge',
-  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll'
+  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll',
+  // The global tier's half of the minted expiry purge (#695): before it was
+  // a job of its own every cell's leader purged the one global sts_minted.
+  // The cell's half, persistence.minted-expiry-purge, runs in every cell.
+  'persistence.minted-expiry-purge-global',
+  // And the global tier's tombstone sweep, for the same reason (#1313);
+  // the cell's half, persistence.tombstone-purge, runs in every cell.
+  'persistence.tombstone-purge-global'
 ];
 // The claim scope a global job's run is claimed under.
 const GLOBAL_RUN_SCOPE = 'scheduler.run.global';

@@ -61,6 +61,8 @@ const config = require('../common/config');
 const credentials = require('../common/credentials');
 const webauthn = require('../authn/webauthn');
 const policy = require('../authn/webauthn_policy');
+// #527: the passkey policy decides a security key's resident key now.
+const passkeyPolicy = require('../common/passkey_policy');
 const ldap = require('../ldap/ldap_server');
 const authn = require('../authn/authn');
 
@@ -83,6 +85,24 @@ function withSetting(key, value, fn) {
     return fn();
   } finally {
     config.clearOverride(key);
+  }
+}
+
+// THE PASSKEY POLICY FOR THE LENGTH OF ONE CHECK (#527): saved in this
+// realm, then reset so the next check sees the built-in defaults again.
+function withPasskeyPolicy(fields, fn) {
+  log.debug("Entering withPasskeyPolicy().");
+  const saved = passkeyPolicy.save('default',
+    Object.assign({}, passkeyPolicy.DEFAULTS, fields));
+  if (!saved.ok) {
+    throw new Error('the passkey policy was not saved: ' +
+                    (saved.errors || []).join(' '));
+  }
+  try {
+    log.debug("Leaving withPasskeyPolicy().");
+    return fn();
+  } finally {
+    passkeyPolicy.reset('default');
   }
 }
 
@@ -135,18 +155,29 @@ function run(t) {
     return verifiable.indexOf(name) >= 0;
   }), 'every algorithm offered by default is one the verifier can check',
   policy.algorithmsOffered().join(', '));
-  // AND EVERY ONE IS OFFERED, ML-DSA FIRST (2026-10-01, rcbj: "support and
-  // request every possible algorithm", the PQC three in particular).
+  // SEVEN BY DEFAULT, IN rcbj'S ORDER (#1150, 2026-10-29): ML-DSA-87, -65,
+  // -44, ES384, EdDSA, ES256, RS256. It was every algorithm the verifier
+  // checks (2026-10-01) until then; the others may still be ticked.
+  // SIX SINCE #1166 (the same day): ES384 left the default, because
+  // certain browsers on Windows are incompatible with it.
   const ids = policy.algorithmIds();
-  t.check(verifiable.filter(function (name) {
-    // The insecure ones (RS1) only behind webauthn.insecureAlgorithms.
-    return policy.INSECURE_ALGS.indexOf(name) < 0;
-  }).every(function (name) {
-    return policy.algorithmsOffered().indexOf(name) >= 0;
-  }) && ids.slice(0, 3).join(',') === '-48,-49,-50' &&
+  t.check(policy.algorithmsOffered().join(',') ===
+            'ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256' &&
+          ids.join(',') === '-50,-49,-48,-8,-7,-257' &&
           ids.indexOf(-65535) < 0,
-  'the default requests EVERY algorithm the verifier checks, ML-DSA-44, ' +
-  '-65 and -87 (-48, -49, -50) first, and never RS1', ids.join(', '));
+  'the default requests ML-DSA-87, ML-DSA-65, ML-DSA-44, EdDSA, ES256 ' +
+  'and RS256, in that order, and never ES384 (#1166) or RS1',
+  ids.join(', '));
+  const row = require('../common/config').SETTINGS.filter(function (one) {
+    return one.key === 'webauthn.algorithms';
+  })[0];
+  t.check(row && row.csvValues.slice(0, 6).join(',') ===
+            'ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256' &&
+          verifiable.every(function (name) {
+            return row.csvValues.indexOf(name) >= 0;
+          }),
+  'the page offers every algorithm, the default\'s six first (#1166)',
+  JSON.stringify(row && row.csvValues));
 
   // -------------------------------------------------------------------------
   t.log.info('=== the two algorithm flags (2026-10-01) ===');
@@ -199,8 +230,8 @@ function run(t) {
   // webauthn.pqcOnly: ML-DSA only, all three where the list names none,
   // and it beats the insecure flag.
   withSetting('webauthn.pqcOnly', true, function () {
-    t.check(policy.algorithmIds().join(',') === '-48,-49,-50',
-      'PQC only: the default list narrows to ML-DSA-44, -65 and -87',
+    t.check(policy.algorithmIds().join(',') === '-50,-49,-48',
+      'PQC only: the default list narrows to ML-DSA-87, -65 and -44',
       policy.algorithmIds().join(','));
     withSetting('webauthn.algorithms', 'ES256,ML-DSA-87,RS256', function () {
       t.check(policy.algorithmsOffered().join(',') === 'ML-DSA-87',
@@ -209,8 +240,9 @@ function run(t) {
     });
     withSetting('webauthn.algorithms', 'ES256,RS256', function () {
       t.check(policy.algorithmsOffered().join(',') ===
-              'ML-DSA-44,ML-DSA-65,ML-DSA-87',
-        'PQC only with a list naming no ML-DSA requests all three, never a ' +
+              'ML-DSA-87,ML-DSA-65,ML-DSA-44',
+        'PQC only with a list naming no ML-DSA requests all three, strongest ' +
+        'first (#1078), never a ' +
         'classical one and never an empty list',
         policy.algorithmsOffered().join(','));
     });
@@ -283,56 +315,103 @@ function run(t) {
       'and a real preference IS sent');
   });
 
-  // THE PERSON'S CHOICE ON /portal/keys (2026-09-26): which kind of
-  // authenticator the enrolment asks for, narrowing the request only while
-  // the realm's setting leaves the choice open.
+  // THE PERSON'S CHOICE ON /portal/keys: which of the two calls to action
+  // they pressed (#470; a three-way radio from 2026-09-26). *Create a
+  // passkey* sends NO attachment — a hard `platform` refused outright on a
+  // browser with nothing built in — and hints the device then hybrid; *Use a
+  // security key* asks for cross-platform and hints a security key.
   withSetting('webauthn.authenticatorAttachment', 'any', function () {
-    withSetting('webauthn.residentKey', 'discouraged', function () {
-      const built = policy.creationOptions('localhost', 'platform')
-        .authenticatorSelection;
-      const carried = policy.creationOptions('localhost', 'roaming')
-        .authenticatorSelection;
-      const neither = policy.creationOptions('localhost', 'bogus')
-        .authenticatorSelection;
-      t.check(built.authenticatorAttachment === 'platform' &&
-              built.residentKey === 'preferred' &&
-              built.requireResidentKey === false,
-        'a key BUILT INTO THIS DEVICE asks for the platform authenticator ' +
-        'and a discoverable credential (preferred), because "discouraged" ' +
-        'is what sends Chrome and Edge to a USB key and never the device',
-        JSON.stringify(built));
-      t.check(carried.authenticatorAttachment === 'cross-platform' &&
-              carried.residentKey === 'discouraged',
-        'a key THEY CARRY asks for a roaming authenticator and keeps the ' +
-        'setting\'s resident-key answer — its slot argument is about them',
-        JSON.stringify(carried));
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'discouraged' }, function () {
+      const passkey = policy.creationOptions('localhost', 'passkey');
+      const key = policy.creationOptions('localhost', 'security-key');
+      const neither = policy.creationOptions('localhost', 'bogus');
       t.check(!Object.prototype.hasOwnProperty
-                .call(neither, 'authenticatorAttachment') &&
-              neither.residentKey === 'discouraged',
-        'an unknown kind is the request as it always was',
+                .call(passkey.authenticatorSelection,
+                      'authenticatorAttachment') &&
+              passkey.authenticatorSelection.residentKey === 'required' &&
+              passkey.authenticatorSelection.requireResidentKey === true &&
+              JSON.stringify(passkey.hints) === '["client-device","hybrid"]',
+        'CREATE A PASSKEY asks for no attachment, REQUIRES a discoverable ' +
+        'credential whatever securityKeyResidentKey says (#474: a passkey is ' +
+        'one the usernameless sign-in can find) and hints the device then ' +
+        'hybrid',
+        JSON.stringify(passkey));
+      t.check(key.authenticatorSelection.authenticatorAttachment ===
+                'cross-platform' &&
+              key.authenticatorSelection.residentKey === 'discouraged' &&
+              JSON.stringify(key.hints) === '["security-key"]',
+        'USE A SECURITY KEY asks for a roaming authenticator, hints a ' +
+        'security key and, with usernameless sign-in ON, keeps the passkey ' +
+        'policy\'s securityKeyResidentKey (#527) — its slot argument is ' +
+        'about them', JSON.stringify(key));
+      t.check(!Object.prototype.hasOwnProperty
+                .call(neither.authenticatorSelection,
+                      'authenticatorAttachment') &&
+              neither.authenticatorSelection.residentKey === 'discouraged' &&
+              JSON.stringify(neither.hints) === '[]',
+        'an unknown kind — and the sign-in screen, which sends none — is ' +
+        'the request as it always was, with no hint',
         JSON.stringify(neither));
       t.check(JSON.stringify(policy.authenticatorKinds()) ===
-              '["platform","roaming"]',
-        'both kinds are offered while the setting is any',
+              '["passkey","security-key"]',
+        'both calls to action are offered while the setting is any',
         JSON.stringify(policy.authenticatorKinds()));
     });
-    withSetting('webauthn.residentKey', 'required', function () {
-      t.check(policy.creationOptions('localhost', 'platform')
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'required' }, function () {
+      t.check(policy.creationOptions('localhost', 'passkey')
                 .authenticatorSelection.residentKey === 'required',
-        'a setting of REQUIRED is never loosened to preferred');
+        'a policy of REQUIRED is never loosened to preferred');
+    });
+    // #527, rcbj's answers 1 and 2: with usernameless sign-in OFF (the
+    // default) the security-key button asks REQUIRED whatever the row says,
+    // and the row's own default is REQUIRED, so one key gives one result
+    // through either button.
+    const both = function () {
+      return [policy.creationOptions('localhost', 'passkey'),
+              policy.creationOptions('localhost', 'security-key'),
+              policy.creationOptions('localhost')].map(function (opts) {
+        return opts.authenticatorSelection.residentKey + '/' +
+               opts.authenticatorSelection.requireResidentKey;
+      }).join(',');
+    };
+    t.check(both() === 'required/true,required/true,required/true',
+      '#527 built-in defaults: both buttons, and an enrolment naming no ' +
+      'kind, ask for a discoverable credential', both());
+    withPasskeyPolicy({ allowUsernameless: false,
+                        securityKeyResidentKey: 'discouraged' }, function () {
+      t.check(both() === 'required/true,required/true,required/true',
+        '#527 answer 1: usernameless OFF, the security-key button asks ' +
+        'REQUIRED whatever securityKeyResidentKey says', both());
+    });
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'preferred' }, function () {
+      t.check(both() === 'required/true,preferred/false,preferred/false',
+        '#527: usernameless ON, the security-key button asks the policy\'s ' +
+        'row; Create a passkey stays REQUIRED', both());
     });
   });
   withSetting('webauthn.authenticatorAttachment', 'cross-platform',
               function () {
-    t.check(policy.creationOptions('localhost', 'platform')
+    t.check(policy.creationOptions('localhost', 'passkey')
               .authenticatorSelection.authenticatorAttachment ===
               'cross-platform' &&
-            JSON.stringify(policy.authenticatorKinds()) === '["roaming"]',
-      'a setting that names one wins over the person\'s choice, and the page ' +
-      'is offered only that one');
+            JSON.stringify(policy.authenticatorKinds()) ===
+              '["security-key"]',
+      'a setting that names one wins over the person\'s choice, and the ' +
+      'page is offered only that button');
+  });
+  withSetting('webauthn.authenticatorAttachment', 'platform', function () {
+    t.check(policy.creationOptions('localhost', 'passkey')
+              .authenticatorSelection.authenticatorAttachment === 'platform' &&
+            JSON.stringify(policy.authenticatorKinds()) === '["passkey"]',
+      'a platform setting offers only Create a passkey, and asks for the ' +
+      'platform authenticator');
   });
 
-  withSetting('webauthn.residentKey', 'required', function () {
+  withPasskeyPolicy({ allowUsernameless: true,
+                      securityKeyResidentKey: 'required' }, function () {
     const sel = policy.creationOptions('localhost').authenticatorSelection;
     t.check(sel.residentKey === 'required' && sel.requireResidentKey === true,
       'a REQUIRED resident key sets the Level 1 `requireResidentKey` too, ' +
@@ -340,7 +419,8 @@ function run(t) {
       'that still read it are the ones that would otherwise ignore the ' +
       'modern member entirely', JSON.stringify(sel));
   });
-  withSetting('webauthn.residentKey', 'preferred', function () {
+  withPasskeyPolicy({ allowUsernameless: true,
+                      securityKeyResidentKey: 'preferred' }, function () {
     t.check(policy.creationOptions('localhost')
               .authenticatorSelection.requireResidentKey === false,
       'and PREFERRED does not, because the Level 1 member has no third state');
@@ -416,50 +496,80 @@ function run(t) {
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== the POLICY rows refuse an ENROLMENT and never an ' +
-             'authentication ===');
+  t.log.info('=== the POLICY rows decide how a key is USED, and refuse an ' +
+             'enrolment only when no use is left (#1135) ===');
   // -------------------------------------------------------------------------
+  // Until #1135 a key was enrolled in a ROLE and these rows refused an
+  // enrolment in the role they named, never a sign-in. A key has no role
+  // now: every key may answer either step as the realm allows, so the rows
+  // are asked at the SIGN-IN (`useAllowed()`, through `keyForAssertion()`),
+  // and an enrolment is refused only where no use at all is accepted.
   const who = 'webauthn-policy-probe';
   ldap.createUser(who, {});
   credentials.setPassword(who, 'anything');
+  const codeOf = require('../common/error_codes').codeOf;
 
   withSetting('webauthn.primaryAllowed', false, function () {
-    const refused = credentials.addKey(who, aKey('p1'), 'primary');
-    t.check(!refused.ok, 'a PRIMARY key is refused where the realm does not ' +
-      'allow one', (refused.errors || []).join(' '));
-    t.check(/webauthn.primaryAllowed/.test((refused.errors || []).join(' ')),
+    const added = credentials.addKey(who, aKey('p1'));
+    t.check(added.ok, 'a key is still ENROLLED where the realm does not let ' +
+      'one sign anybody in on its own, because it may still be the second ' +
+      'factor', (added.errors || []).join(' '));
+    const asked = policy.useAllowed('primary');
+    t.check(!asked.ok && codeOf(asked) === 'STS-AUTHN-0045',
+      'and the passwordless USE is refused, STS-AUTHN-0045', asked.why);
+    t.check(/webauthn.primaryAllowed/.test(String(asked.why || '')),
       'AND THE REFUSAL NAMES THE SETTING — somebody being sent back to a ' +
       'password field needs to know the answer is a knob rather than their ' +
       'hardware');
-    t.check(credentials.addKey(who, aKey('m1'), 'mfa').ok,
-      'and a SECOND-FACTOR key is unaffected, because the two rows are two ' +
-      'policies');
+    t.check(!authn.keyForAssertion(who, 'primary', 'p1').key &&
+            !!authn.keyForAssertion(who, 'mfa', 'p1').key,
+      'the same key is refused as a first factor and accepted as a second ' +
+      'factor, because the two rows are two policies over one key');
+    t.check(credentials.mechanismsFor(who).primaryKeys === 0 &&
+            credentials.mechanismsFor(who).mfaKeys === 1,
+      'and mechanismsFor() counts the key by the uses the realm allows');
   });
 
   withSetting('webauthn.mfaAllowed', false, function () {
-    t.check(!credentials.addKey(who, aKey('m2'), 'mfa').ok,
-      'the mirror image: a second-factor key is refused where that row is off');
-    t.check(credentials.mechanismsFor(who).mfaRequired === true,
-      'BUT THE KEY ALREADY ENROLLED GOES ON BEING DEMANDED. This is the ' +
-      'contract the setting itself states: an account configured for two ' +
-      'factors is still configured for two, and a switch that silently ' +
-      'downgraded it would be a security control whose off position does ' +
-      'something other than what it says');
+    t.check(credentials.addKey(who, aKey('m2')).ok,
+      'the mirror image: a key is enrolled where it may not be a second ' +
+      'factor, because it may still sign somebody in on its own');
+    const asked = policy.useAllowed('mfa');
+    t.check(!asked.ok && codeOf(asked) === 'STS-AUTHN-0046',
+      'and the second-factor USE is refused, STS-AUTHN-0046', asked.why);
+    t.check(!authn.keyForAssertion(who, 'mfa', 'p1').key &&
+            !!authn.keyForAssertion(who, 'primary', 'p1').key,
+      'the key enrolled earlier is refused as a second factor and accepted ' +
+      'as a first one: the switch stops the use it names, for every key ' +
+      'alike (until #1135 a key already enrolled went on being demanded)');
+    t.check(credentials.mechanismsFor(who).mfaKeys === 0 &&
+            credentials.mechanismsFor(who).primaryKeys === 2,
+      'and no key is counted as a second factor here');
+  });
+
+  withSetting('webauthn.primaryAllowed', false, function () {
+    withSetting('webauthn.mfaAllowed', false, function () {
+      const refused = credentials.addKey(who, aKey('n1'));
+      t.check(!refused.ok && codeOf(refused) === 'STS-AUTHN-0531',
+        'WITH BOTH USES REFUSED A NEW KEY IS REFUSED, STS-AUTHN-0531: it ' +
+        'could never answer anything', (refused.errors || []).join(' '));
+    });
   });
 
   withSetting('webauthn.enabled', false, function () {
-    t.check(!credentials.addKey(who, aKey('m3'), 'mfa').ok &&
-            !credentials.addKey(who, aKey('p3'), 'primary').ok,
-      'with the mechanism off, neither role may be enrolled');
-    t.check(credentials.mechanismsFor(who).mfaKeys === 1,
-      'and the key on the entry is untouched');
+    const refused = credentials.addKey(who, aKey('m3'));
+    t.check(!refused.ok && codeOf(refused) === 'STS-AUTHN-0044',
+      'with the mechanism off no key may be enrolled, STS-AUTHN-0044',
+      (refused.errors || []).join(' '));
+    t.check(credentials.mechanismsFor(who).keys.length === 2,
+      'and the keys on the entry are untouched');
     t.check(policy.offered() === false && policy.report().offered === false,
       'and both the door predicate and the report agree, so a page and an ' +
       'endpoint cannot disagree about whether the mechanism is offered');
   });
 
-  withSetting('webauthn.maxKeysPerPerson', 1, function () {
-    const refused = credentials.addKey(who, aKey('m4'), 'mfa');
+  withSetting('webauthn.maxKeysPerPerson', 2, function () {
+    const refused = credentials.addKey(who, aKey('m4'));
     t.check(!refused.ok, 'the cap refuses the next enrolment',
       (refused.errors || []).join(' '));
     t.check(/webauthn.maxKeysPerPerson/.test((refused.errors || []).join(' ')),
@@ -470,7 +580,7 @@ function run(t) {
       'lowering it safe');
   });
 
-  t.check(credentials.addKey(who, aKey('m5'), 'mfa').ok,
+  t.check(credentials.addKey(who, aKey('m5')).ok,
     'with every policy row back at its default the enrolment succeeds again, ' +
     'so none of the refusals above left an override behind');
 
@@ -490,15 +600,15 @@ function run(t) {
   // in this service could build it when this section was written**: the
   // sign-in screen's checkbox was the only enrolment there was, and it is
   // reserved for people who hold no second factor yet. `/portal/keys` enrols a
-  // second key now (`tests/vendored/sts_portal_backup_keys.js`), and the shape
+  // second key now (`tests/protocol/sts_portal_backup_keys.js`), and the shape
   // is still built here, through the credential layer, so the rule is asserted
   // directly rather than through a door.
   const twoKeys = 'webauthn-two-keys-probe';
   ldap.createUser(twoKeys, {});
   credentials.setPassword(twoKeys, 'anything');
-  credentials.addKey(twoKeys, aKey('first-mfa'), 'mfa');
-  credentials.addKey(twoKeys, aKey('second-mfa'), 'mfa');
-  credentials.addKey(twoKeys, aKey('the-primary'), 'primary');
+  credentials.addKey(twoKeys, aKey('first-mfa'));
+  credentials.addKey(twoKeys, aKey('second-mfa'));
+  credentials.addKey(twoKeys, aKey('the-primary'));
 
   t.check(authn.keyForAssertion(twoKeys, 'mfa', 'second-mfa').key
             .credentialId === 'second-mfa',
@@ -511,25 +621,27 @@ function run(t) {
             .credentialId === 'first-mfa',
     'and one naming the first is checked against the first');
 
-  const wrongRole = authn.keyForAssertion(twoKeys, 'mfa', 'the-primary');
-  t.check(!wrongRole.key,
-    'A `primary` KEY DOES NOT ANSWER A SECOND-FACTOR STEP. It signs somebody ' +
-    'in on its own, so accepting one here would let a person satisfy "a ' +
-    'password AND a second factor" with a credential this service already ' +
-    'considers sufficient by itself', wrongRole.why);
-  t.check(authn.keyForAssertion(twoKeys, 'primary', 'the-primary').key
-            .credentialId === 'the-primary',
-    'and it answers a PASSWORDLESS step, which is the role it was enrolled in');
+  // UNTIL #1135 a `primary` key did not answer a second-factor step. A key
+  // has no role now, so every key the person holds answers either step the
+  // realm allows — the one named, whichever step it is.
+  const eitherStep = authn.keyForAssertion(twoKeys, 'mfa', 'the-primary');
+  t.check(!!eitherStep.key &&
+          eitherStep.key.credentialId === 'the-primary',
+    'EVERY KEY ANSWERS A SECOND-FACTOR STEP (#1135): a key carries no role, ' +
+    'and the one the assertion names is the one checked', eitherStep.why);
+  t.check(authn.keyForAssertion(twoKeys, 'primary', 'second-mfa').key
+            .credentialId === 'second-mfa',
+    'and every key answers a PASSWORDLESS step as well');
 
   const stranger = authn.keyForAssertion(twoKeys, 'mfa', 'never-enrolled');
-  t.check(!stranger.key && /not one of the 2/.test(stranger.why),
+  t.check(!stranger.key && /not one of the 3/.test(stranger.why),
     'a credential this person never enrolled is refused, and the refusal ' +
     'says how many they DO hold — which is a different thing to fix from ' +
     'holding none', stranger.why);
 
   const nobody = authn.keyForAssertion('webauthn-holds-nothing-at-all', 'mfa',
                                        'x');
-  t.check(!nobody.key && /no security key is enrolled/.test(nobody.why),
+  t.check(!nobody.key && /no passkey is enrolled/.test(nobody.why),
     'and somebody who holds none is refused differently, because an account ' +
     'that reached that screen holding nothing is a different fault',
     nobody.why);
@@ -558,6 +670,7 @@ module.exports = {
             'an algorithm the verifier cannot check, that an unusable ' +
             'setting falls back rather than producing an empty offer, that ' +
             'the RP ID may only be widened to a real domain suffix, and that ' +
-            'the policy rows refuse an enrolment and never an authentication',
+            'the policy rows decide how a key is used at the sign-in and ' +
+            'refuse an enrolment only where no use is left (#1135)',
   run: run
 };

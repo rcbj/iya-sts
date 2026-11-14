@@ -15,7 +15,7 @@
 // the XACML PIP's role designator:
 //
 //   A. THE CONSOLE ROLES. A realm is seeded with ADMIN_READ and ADMIN_WRITE,
-//      configured, each held by sts-management-api and authorizing its own
+//      configured, each held by sts-api-client and authorizing its own
 //      admin scope; people and groups cannot be written onto them, their
 //      permission cannot be changed, and they cannot be deleted.
 //   B. A PERSON AND admin:*. While the realm's console is open, both; once
@@ -47,6 +47,18 @@
 //      xacml.enabled off) the BUILT-IN policy decides, so gating never
 //      switches off — and with no decider at all the gate evaluates the
 //      built-in policy itself (#305).
+//   H. AN APPLICATION PERMISSION COMES FROM A ROLE (#551). On
+//      client_credentials an ungated permission the client holds only by
+//      delegation is left off (invalid_scope alone, STS-OAUTH-0957 either
+//      way) and issued once a role it holds authorizes it; a person's is
+//      unchanged.
+//   I. SHARED SIGNALS. SSF_READ and SSF_MANAGE are ordinary native roles,
+//      seeded with ssf-read and ssf-manage and with no application. A
+//      client_credentials token carries ssf.read or ssf.manage only while
+//      the application is a member of that role. A person's token carries
+//      one only while they belong to the role's group AND the application
+//      is a member. SSF_MANAGE does not authorize ssf.read. A direct user
+//      member and a conferring client do not stand in for the group.
 //
 // IN A THROWAWAY REALM, for the reason #302's test was: `run.js` runs every
 // file in one process, and a grant on the default realm's roster would
@@ -154,13 +166,18 @@ function setUp(t) {
     applications.createApplication({ identifier: CLIENT,
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
-                oauthAllowedScope: ['openid', 'admin:read', 'admin:write',
-                                    PERMISSION] } }),
+                oauthAllowedScope: ['openid', PERMISSION],
+                // The admin scopes are delegated permission grants since #1141.
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                                           'urn:sts:admin-api:admin:write']
+              } }),
     applications.createApplication({ identifier: MACHINE,
       protocols: ['oauth2'],
       fields: { oauthClientId: MACHINE,
-                oauthAllowedScope: ['admin:read', 'admin:write',
-                                    'device:compliance', PERMISSION] } }),
+                oauthAllowedScope: ['device:compliance', PERMISSION],
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                                           'urn:sts:admin-api:admin:write']
+              } }),
     applications.createApplication({ identifier: RESOURCE,
       protocols: ['oauth2'],
       fields: { oauthClientId: RESOURCE,
@@ -179,14 +196,16 @@ function consoleRoles(t) {
   const rows = roles.all().filter(function (row) {
     return row.console;
   });
+  // THREE SINCE #645: SECURITY_ADMIN, authorizing admin:security.
+  const ownScope = { ADMIN_READ: 'admin:read', ADMIN_WRITE: 'admin:write',
+                     SECURITY_ADMIN: 'admin:security' };
   t.equal(rows.map(function (row) { return row.name; }).sort().join(','),
-          'ADMIN_READ,ADMIN_WRITE',
-          'A1. the realm was seeded with the two console roles');
+          'ADMIN_READ,ADMIN_WRITE,SECURITY_ADMIN',
+          'A1. the realm was seeded with the three console roles');
   t.check(rows.every(function (row) {
-    return row.applications.indexOf('sts-management-api') >= 0 &&
-           row.permissions.join() === (row.name === 'ADMIN_READ'
-             ? 'admin:read' : 'admin:write');
-  }), 'A2. each is held by sts-management-api and authorizes its own scope',
+    return row.applications.indexOf('sts-api-client') >= 0 &&
+           row.permissions.join() === ownScope[row.name];
+  }), 'A2. each is held by sts-api-client and authorizes its own scope',
           JSON.stringify(rows));
   t.check(!roles.isBuiltIn('ADMIN_READ') && !roles.isBuiltIn('ADMIN_WRITE'),
           'A3. and neither is a built-in any longer');
@@ -252,7 +271,7 @@ async function machines(t) {
   const read = await machineToken(MACHINE, 'admin:read admin:write');
   t.equal(read.scope, 'admin:read',
           'C2. in ADMIN_READ, it is issued admin:read and not admin:write');
-  const seeded = await machineToken('sts-management-api',
+  const seeded = await machineToken('sts-api-client',
                                     'admin:read admin:write');
   t.equal(seeded.scope, 'admin:read admin:write',
           'C3. the seeded management client, in both, is issued both');
@@ -335,6 +354,59 @@ async function gatedPermission(t, names) {
   log.debug("Leaving gatedPermission().");
 }
 
+// #551: on client_credentials the client is the subject, and an
+// application permission comes from a ROLE it holds; a delegated grant
+// (oauthDelegatedPermission) needs a person and does not count.
+async function applicationPermission(t, names) {
+  log.debug("Entering applicationPermission().");
+  t.log.info('=== H. an application permission comes from a role (#551) ===');
+  const WRITE = RESOURCE_BASE + 'write';
+  t.check(!rolePermissions.isGated(WRITE) &&
+          rolePermissions.isApplicationPermission(WRITE),
+          'precondition: write is an ungated application permission');
+  t.check(applications.updateApplication(MACHINE, {
+    attribute: 'oauthDelegatedPermission', mode: 'add', value: WRITE }).ok,
+          'precondition: the client holds write by delegation');
+  t.check(rolePermissions.asksFor(WRITE, { kind: 'application',
+                                           name: MACHINE }) &&
+          !rolePermissions.asksFor(WRITE, { kind: 'user',
+                                            name: names.nobody }),
+          'H1. the role check takes an ungated permission for an ' +
+          'application subject and not for a person');
+  const before = audit.list().filter(function (row) {
+    return row.errorCode === 'STS-OAUTH-0957';
+  }).length;
+  const alone = await refusedWith(function () {
+    return machineToken(MACHINE, WRITE);
+  });
+  t.check(!!alone && alone.refusal.error === 'invalid_scope',
+          'H2. client_credentials asking only for a permission it holds by ' +
+          'delegation alone: invalid_scope',
+          alone ? JSON.stringify(alone.refusal) : 'issued');
+  const beside = await machineToken(MACHINE, 'api ' + WRITE);
+  t.check(String(beside.scope).split(' ').indexOf('write') < 0 &&
+          String(beside.scope).split(' ').indexOf('api') >= 0,
+          'H3. beside another scope, the permission is left off',
+          beside.scope);
+  t.check(audit.list().filter(function (row) {
+    return row.errorCode === 'STS-OAUTH-0957';
+  }).length > before, 'H4. and STS-OAUTH-0957 is recorded');
+  t.check(action({ action: 'create-role', role: 'rp-writers-' + RUN }).ok &&
+          action({ action: 'add-member', role: 'rp-writers-' + RUN,
+                   kind: 'application', member: MACHINE }).ok &&
+          action({ action: 'add-permission', role: 'rp-writers-' + RUN,
+                   permission: WRITE }).ok,
+          'precondition: a role authorizing write, held by the client');
+  const held = await machineToken(MACHINE, WRITE);
+  t.check(String(held.scope).split(' ').indexOf('write') >= 0,
+          'H5. holding the role, the client is issued it', held.scope);
+  const person = await refresh(names.nobody, 'openid ' + WRITE);
+  t.check(String(person.scope).split(' ').indexOf('write') >= 0,
+          'H6. a person\'s ungated permission is issued as before',
+          person.scope);
+  log.debug("Leaving applicationPermission().");
+}
+
 function heldAndCarried(t, realm, names) {
   log.debug("Entering heldAndCarried().");
   t.log.info('=== E. held ∩ carried ===');
@@ -402,8 +474,10 @@ function pipRoles(t, names) {
     }).sort().join(',');
   };
   t.equal(answer(request(names.writer)),
-          ['ADMIN_READ', 'ADMIN_WRITE'].join(','),
-          'F1. a person\'s configured roles, the console ones from the roster');
+          ['ADMIN_READ', 'ADMIN_WRITE', 'REPORT_ADMIN', 'REPORT_USE']
+            .join(','),
+          'F1. a person\'s configured roles, the console ones from the ' +
+          'roster, and the report roles Admin Write brings (#1038)');
   t.equal(answer(request(MACHINE, 'application')),
           ['ADMIN_READ', 'DEVICE_COMPLIANCE', 'rp-readers-' + RUN].sort()
             .join(','),
@@ -541,6 +615,174 @@ async function thePolicyDecides(t, names) {
   log.debug("Leaving thePolicyDecides().");
 }
 
+// SSF_READ and SSF_MANAGE. A separate client and separate people, so the
+// PIP's exact role list for MACHINE is left as sections C and D wrote it.
+async function sharedSignals(t) {
+  log.debug("Entering sharedSignals().");
+  t.log.info('=== I. Shared Signals roles ===');
+  const person = 'rp-ssf-' + RUN;
+  const outsider = 'rp-ssf-out-' + RUN;
+  const direct = 'rp-ssf-direct-' + RUN;
+  const conferred = 'rp-ssf-conf-' + RUN;
+  const app = 'rp-ssf-app-' + RUN;
+  const manageOnly = 'rp-ssf-mgr-' + RUN;
+  [person, outsider, direct, conferred].forEach(function (name) {
+    ldap.createUser(name, { invent: false, attributes: {} });
+  });
+  const made = [
+    applications.createApplication({ identifier: app, protocols: ['oauth2'],
+      fields: { oauthClientId: app,
+                oauthAllowedScope: ['openid', 'ssf.read', 'ssf.manage'] } }),
+    applications.createApplication({ identifier: manageOnly,
+      protocols: ['oauth2'],
+      fields: { oauthClientId: manageOnly,
+                oauthAllowedScope: ['ssf.read', 'ssf.manage'] } })
+  ];
+  t.check(made.every(function (one) { return one && one.ok; }),
+          'precondition: the Shared Signals clients were created',
+          JSON.stringify(made));
+  const readRole = roles.read('SSF_READ');
+  const manageRole = roles.read('SSF_MANAGE');
+  t.check(!!readRole && readRole.native && !readRole.console &&
+          readRole.applications.length === 0 &&
+          readRole.groups.indexOf('ssf-read') >= 0 &&
+          readRole.permissions.join() === 'ssf.read',
+          'I1. SSF_READ is a native role, not a console role, seeded with ' +
+          'ssf-read and no application', JSON.stringify(readRole));
+  t.check(!!manageRole && manageRole.native && !manageRole.console &&
+          manageRole.applications.length === 0 &&
+          manageRole.groups.indexOf('ssf-manage') >= 0 &&
+          manageRole.permissions.join() === 'ssf.manage',
+          'I2. SSF_MANAGE is a native role, seeded with ssf-manage',
+          JSON.stringify(manageRole));
+  function personToken(name, scope, clientId) {
+    log.debug("Entering personToken(). " + name);
+    log.debug("Leaving personToken().");
+    return oauth2.tokenSet(BASE, {
+      client_id: clientId || app, grant: 'authorization_code',
+      withRefresh: false, scope: scope, sub: name, username: name,
+      user: { username: name, sub: name } });
+  }
+  const bare = await refusedWith(function () {
+    return machineToken(app, 'ssf.read ssf.manage');
+  });
+  t.check(!!bare && bare.refusal && bare.refusal.error === 'invalid_scope',
+          'I3. client_credentials without membership is not issued either',
+          bare ? JSON.stringify(bare.refusal) : '');
+  t.check(action({ action: 'add-member', role: 'SSF_READ',
+                   kind: 'application', member: app }).ok,
+          'precondition: the client was added to SSF_READ');
+  t.equal((await machineToken(app, 'ssf.read ssf.manage')).scope, 'ssf.read',
+          'I4. in SSF_READ it is issued ssf.read and not ssf.manage');
+  t.check(action({ action: 'add-member', role: 'SSF_MANAGE',
+                   kind: 'application', member: app }).ok,
+          'precondition: the client was added to SSF_MANAGE');
+  t.equal((await machineToken(app, 'ssf.read ssf.manage')).scope,
+          'ssf.read ssf.manage',
+          'I5. in both roles it is issued both');
+  t.equal((await personToken(outsider, 'openid ssf.read')).scope, 'openid',
+          'I6. a person the application is mapped for, who is not in the ' +
+          'group, keeps openid and loses ssf.read');
+  const outsiderAlone = await refusedWith(function () {
+    return personToken(outsider, 'ssf.read');
+  });
+  t.check(!!outsiderAlone && outsiderAlone.refusal &&
+          outsiderAlone.refusal.error === 'invalid_scope',
+          'I7. and ssf.read alone is invalid_scope',
+          outsiderAlone ? JSON.stringify(outsiderAlone.refusal) : '');
+  // `audit.list()` is newest first, so the row just written is the first.
+  const outsiderRow = JSON.stringify(narrowedRows(outsider).slice(0, 1));
+  t.check(/is in none of the groups of the role SSF_READ \(ssf-read\)/
+            .test(outsiderRow) && !/console roster/.test(outsiderRow),
+          'I7a. the audit row says the person is not in ssf-read, not ' +
+          'anything about the console roster', outsiderRow);
+  t.check(action({ action: 'add-member', role: 'SSF_READ', kind: 'user',
+                   member: direct }).ok,
+          'precondition: a person was added to SSF_READ directly');
+  const directRefused = await refusedWith(function () {
+    return personToken(direct, 'ssf.read');
+  });
+  t.check(!!directRefused && directRefused.refusal &&
+          directRefused.refusal.error === 'invalid_scope',
+          'I8. a direct user member who is not in the group is not issued ' +
+          'ssf.read', directRefused ? JSON.stringify(directRefused.refusal)
+                                    : '');
+  t.check(action({ action: 'add-conferring-client', role: 'SSF_READ',
+                   client: app }).ok,
+          'precondition: the client confers SSF_READ');
+  const conferredRefused = await refusedWith(function () {
+    return personToken(conferred, 'ssf.read');
+  });
+  t.check(!!conferredRefused && conferredRefused.refusal &&
+          conferredRefused.refusal.error === 'invalid_scope',
+          'I9. a conferring client does not stand in for the group',
+          conferredRefused ? JSON.stringify(conferredRefused.refusal) : '');
+  const joined = ldap.addGroupMember('ssf-read', person);
+  t.check(joined && joined.ok, 'precondition: the person joined ssf-read',
+          JSON.stringify(joined));
+  t.equal((await personToken(person, 'ssf.read')).scope, 'ssf.read',
+          'I10. in the group, and with the application a member, the ' +
+          'person is issued ssf.read');
+  const manageRefused = await refusedWith(function () {
+    return personToken(person, 'ssf.manage');
+  });
+  t.check(!!manageRefused && manageRefused.refusal &&
+          manageRefused.refusal.error === 'invalid_scope',
+          'I11. the ssf-read group does not issue ssf.manage',
+          manageRefused ? JSON.stringify(manageRefused.refusal) : '');
+  const joinedManage = ldap.addGroupMember('ssf-manage', person);
+  t.check(joinedManage && joinedManage.ok,
+          'precondition: the person joined ssf-manage',
+          JSON.stringify(joinedManage));
+  t.equal((await personToken(person, 'ssf.read ssf.manage')).scope,
+          'ssf.read ssf.manage',
+          'I12. in both groups, with the application in both roles, both ' +
+          'are issued');
+  t.check(action({ action: 'remove-member', role: 'SSF_READ',
+                   kind: 'application', member: app }).ok,
+          'precondition: the application was removed from SSF_READ');
+  const unmapped = await refusedWith(function () {
+    return personToken(person, 'ssf.read');
+  });
+  t.check(!!unmapped && unmapped.refusal &&
+          unmapped.refusal.error === 'invalid_scope',
+          'I13. in the group, without the application as a member, ' +
+          'ssf.read is not issued',
+          unmapped ? JSON.stringify(unmapped.refusal) : '');
+  const unmappedRow = JSON.stringify(narrowedRows(person).slice(0, 1));
+  t.check(new RegExp('the application \\\\"' + app + '\\\\" is not a ' +
+                     'member of the role SSF_READ').test(unmappedRow),
+          'I13a. the audit row says the application is not a member of ' +
+          'SSF_READ', unmappedRow);
+  t.check(action({ action: 'add-member', role: 'SSF_MANAGE',
+                   kind: 'application', member: manageOnly }).ok,
+          'precondition: the second client was added to SSF_MANAGE only');
+  const readFromManage = await refusedWith(function () {
+    return personToken(person, 'ssf.read', manageOnly);
+  });
+  t.check(!!readFromManage && readFromManage.refusal &&
+          readFromManage.refusal.error === 'invalid_scope',
+          'I14. SSF_MANAGE does not issue ssf.read, even when the person ' +
+          'is in ssf-read and the client declares both',
+          readFromManage ? JSON.stringify(readFromManage.refusal) : '');
+  t.equal((await personToken(person, 'ssf.manage', manageOnly)).scope,
+          'ssf.manage',
+          'I15. and that client is issued ssf.manage');
+  t.check(!action({ action: 'delete-role', role: 'SSF_READ' }).ok &&
+          !action({ action: 'delete-role', role: 'SSF_MANAGE' }).ok,
+          'I16. neither role can be deleted');
+  t.check(action({ action: 'create-role',
+                   role: 'rp-ssf-ordinary-' + RUN }).ok,
+          'precondition: an ordinary role');
+  const nativePerm = action({ action: 'add-permission',
+                              role: 'rp-ssf-ordinary-' + RUN,
+                              permission: 'ssf.read' });
+  t.check(!nativePerm.ok,
+          'I17. ssf.read cannot be added to an ordinary role',
+          JSON.stringify(nativePerm));
+  log.debug("Leaving sharedSignals().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   // THE ISSUANCE PEP IS THE DECIDER FOR THIS FILE, installed here rather
@@ -564,6 +806,8 @@ async function run(t) {
     await gatedPermission(t, names);
     heldAndCarried(t, realm, names);
     pipRoles(t, names);
+    await applicationPermission(t, names);
+    await sharedSignals(t);
     try {
       await thePolicyDecides(t, names);
     } finally {
@@ -583,7 +827,8 @@ async function run(t) {
 module.exports = {
   name: 'role_permissions',
   describe: 'a scope is a request and a role authorizes it: the console ' +
-            'roles, a gated application permission, held ∩ carried and ' +
-            'the PIP role designator (#302, #303)',
+            'roles, a gated application permission, held ∩ carried, ' +
+            'the PIP role designator and the Shared Signals roles ' +
+            '(#302, #303)',
   run: run
 };

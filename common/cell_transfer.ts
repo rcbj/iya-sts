@@ -27,7 +27,12 @@
 //     (#98 D11)? An administrator listing another cell's residents from the
 //     console, a management-API call relayed with `?cell=`. Asked by the
 //     cell that HOLDS the people, before it answers; no withholds them. The
-//     built-in rule is `holdDecision()`'s, on the same list.
+//     built-in rule is `holdDecision()`'s, on the same list. Asked too with
+//     the purpose `scim-provision` (#553), by the home cell before it pushes
+//     ONE person to an outbound SCIM client's service provider: the serving
+//     side is then the JURISDICTION the client declares
+//     (`servingJurisdiction`), since a service provider is in no cell, and
+//     no is "out of scope" — not pushed, deprovisioned if pushed before.
 //
 // **NOTHING HERE DECIDES.** rcbj's rule is that every authorization decision is
 // a rule of the issuance policy and code supplies facts: this gathers them —
@@ -86,6 +91,11 @@ interface TransferOptions {
   servingCell: string;
   // The client's country (ISO 3166-1 alpha-2), when the caller knows it.
   clientCountry?: string;
+  // THE JURISDICTION THE DATA GOES TO, when it goes to no cell at all (#553):
+  // an outbound SCIM client's service provider is in a jurisdiction its
+  // client declares (`scimClientJurisdiction`), not in a cell. Given, it is
+  // the serving side of the question and `servingCell` is not read.
+  servingJurisdiction?: string;
 }
 
 // What a caller knows about a release (#98 D11): no subject — it is about a
@@ -95,8 +105,16 @@ interface ReleaseOptions {
   // The cell that holds the people, and the cell the reader is at.
   homeCell: string;
   servingCell: string;
-  // `directory-list` or `api`.
+  // `directory-list`, `api`, `attributes` or `scim-provision` (#553: one
+  // person pushed to an outbound SCIM client's service provider).
   purpose: string;
+  // ONE PERSON, when the release is about one (`scim-provision`): their
+  // `urn:uuid:<entryUUID>`, so a realm's own policy may decide per person.
+  // Empty for a release about a cell's residents.
+  subject?: string;
+  // Where the data goes when that is a jurisdiction and not a cell — a SCIM
+  // service provider's (#553). Given, `servingCell` is not read.
+  servingJurisdiction?: string;
 }
 
 // The facts the policy is asked on, as `issuance_gate.checkTransfer()` takes
@@ -248,7 +266,9 @@ class CellTransfer {
    * holds them, before it answers.
    *
    * @param opts - the realm, the cell holding the people, the reader's cell
-   *   and the purpose (`directory-list` or `api`)
+   *   (or, for `scim-provision`, the jurisdiction the data goes to and the
+   *   one subject) and the purpose (`directory-list`, `api`, `attributes`
+   *   or `scim-provision`)
    * @returns `{ allowed, why }`; not allowed withholds them
    *   (STS-CELL-0184, marked on the answer for the caller's response)
    */
@@ -263,9 +283,12 @@ class CellTransfer {
     const given = opts || ({} as ReleaseOptions);
     const answer = this.ask(this.deps.gate.TRANSFER.RELEASE_ATTRIBUTES,
                             'attributes',
-                            { realm: given.realm, subject: '',
+                            { realm: given.realm,
+                              subject: String(given.subject || ''),
                               homeCell: given.homeCell,
-                              servingCell: given.servingCell },
+                              servingCell: given.servingCell,
+                              servingJurisdiction:
+                                given.servingJurisdiction },
                             String(given.purpose || '').trim());
     if (answer.unknownRealm) {
       log.debug("Leaving CellTransfer.releaseDecision(). Unknown realm.");
@@ -316,7 +339,12 @@ class CellTransfer {
       const homeCell = self.homeOf(given);
       const servingCell = String(given.servingCell || '').trim();
       const home = self.deps.cells.jurisdictionOf(homeCell);
-      const serving = self.deps.cells.jurisdictionOf(servingCell);
+      // A jurisdiction given outright (#553) is the serving side; an empty
+      // one is unknown, and an unknown jurisdiction is never listed.
+      const serving = given.servingJurisdiction !== undefined &&
+                      given.servingJurisdiction !== null
+        ? String(given.servingJurisdiction).trim().toLowerCase()
+        : self.deps.cells.jurisdictionOf(servingCell);
       // An unknown jurisdiction on either side is never "listed": `*>us`
       // loosens the default for every KNOWN home, and a cell the service
       // does not have is not one.

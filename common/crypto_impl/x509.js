@@ -1,0 +1,3057 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+// File: x509.js
+//
+// ---------------------------------------------------------------------------
+// X.509 certificates: authoring one, describing one, and checking a chain.
+//
+// This is the protocol half of the PKI workflow (client/public/pki.html) and it
+// has NO DOM in it, which is the point: the whole matrix — every key algorithm
+// against every signature algorithm, every extension, a four-deep chain — is
+// driven from node by tests/pki_x509.js and checked against OpenSSL, which is
+// the only way "every combination" can mean anything. A page that built its
+// certificates inside its own event handlers could only ever be tested one
+// click at a time.
+//
+// Keys are client/src/key_material.js's job and stay there; this module takes
+// PEM in and gives DER/PEM out. The dependency runs one way only.
+//
+// ---------------------------------------------------------------------------
+// THREE THINGS THAT ARE NOT OBVIOUS AND COST TIME IF REDISCOVERED
+//
+//   * **pkijs cannot import an Ed25519 public key and cannot sign with one.**
+//     `subjectPublicKeyInfo.importKey()` throws "Error during exporting public
+//     key: Incorrect key data" and `cert.sign()` never gets that far. Both are
+//     avoidable: an SPKI is already the exact DER that field holds, so it is
+//     parsed in with `fromSchema()` for EVERY algorithm rather than only for
+//     the one that needs it (one path, so the odd one out is not the untested
+//     one), and Ed25519 signing is done by hand — set both
+//     AlgorithmIdentifiers
+//     to 1.3.101.112, encode the TBS, sign it with Web Crypto, drop the result
+//     in as the BIT STRING. OpenSSL verifies the result.
+//
+//   * **The hash a key was IMPORTED with is the hash that ends up in the
+//     certificate.** pkijs reads `privateKey.algorithm` to build the
+//     signatureAlgorithm field, so importing an RSA key as SHA-256 and then
+//     asking `sign()` for SHA-512 produces a certificate whose declared
+//     algorithm and actual signature disagree. Every path here imports the
+//     issuer key with the descriptor of the SIGNATURE algorithm chosen, not
+//     with the descriptor of the key. `openssl verify` is what catches getting
+//     this wrong, and it reports it as a bad signature — naming neither hash.
+//
+//   * **A DN attribute's string type is part of interoperability, not taste.**
+//     `C` must be PrintableString, `emailAddress` and `domainComponent` must be
+//     IA5String, and everything else is UTF8String here. Encoding a country as
+//     UTF8String produces a certificate that parses perfectly and that several
+//     validators refuse, which reads as a signature problem.
+// ---------------------------------------------------------------------------
+
+var bunyan = require("bunyan");
+var jose = require("./jose_jwe");
+var keys = require("./key_material");
+var pqx = require("./pqc_x509");
+var pkijs = require("pkijs");
+var asn1js = require("asn1js");
+
+var logLevelProblem = null;
+var log = bunyan.createLogger({
+  name: "x509",
+  level: (function () {
+    try {
+      return require(process.env.CONFIG_FILE).logLevel || "info";
+    } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
+      return "info";
+    }
+  })()
+});
+if (logLevelProblem) {
+  log.debug("Caught in x509 log level: " + logLevelProblem);
+}
+
+var derToPem = jose.derToPem;
+var pemToDer = jose.pemToDer;
+
+// ---------------------------------------------------------------------------
+// Signature algorithms — the issuer's key type crossed with a digest.
+//
+// `kind` names the key family the SIGNER must have, so a page can offer only
+// the algorithms a chosen CA key can actually produce. The two SHA-1 entries
+// are deliberate and marked `weak`: this is a debugger, and "does my TLS stack
+// refuse a SHA-1 certificate?" is a question it should be able to ask. Nothing
+// defaults to them.
+// ---------------------------------------------------------------------------
+var SIG_ALGS = {
+  'sha256-rsa': { kind: 'rsa', hash: 'SHA-256', pss: false,
+                 label: 'RSASSA-PKCS1-v1_5 with SHA-256' },
+  'sha384-rsa': { kind: 'rsa', hash: 'SHA-384', pss: false,
+                 label: 'RSASSA-PKCS1-v1_5 with SHA-384' },
+  'sha512-rsa': { kind: 'rsa', hash: 'SHA-512', pss: false,
+                 label: 'RSASSA-PKCS1-v1_5 with SHA-512' },
+  'sha1-rsa': { kind: 'rsa', hash: 'SHA-1', pss: false, weak: true,
+               label: 'RSASSA-PKCS1-v1_5 with SHA-1 (legacy, weak)' },
+  'sha256-rsapss': { kind: 'rsa', hash: 'SHA-256', pss: true,
+                    label: 'RSASSA-PSS with SHA-256' },
+  'sha384-rsapss': { kind: 'rsa', hash: 'SHA-384', pss: true,
+                    label: 'RSASSA-PSS with SHA-384' },
+  'sha512-rsapss': { kind: 'rsa', hash: 'SHA-512', pss: true,
+                    label: 'RSASSA-PSS with SHA-512' },
+  'sha256-ecdsa': { kind: 'ec', hash: 'SHA-256',
+                   label: 'ECDSA with SHA-256' },
+  'sha384-ecdsa': { kind: 'ec', hash: 'SHA-384',
+                   label: 'ECDSA with SHA-384' },
+  'sha512-ecdsa': { kind: 'ec', hash: 'SHA-512',
+                   label: 'ECDSA with SHA-512' },
+  'sha1-ecdsa': { kind: 'ec', hash: 'SHA-1', weak: true,
+                 label: 'ECDSA with SHA-1 (legacy, weak)' },
+  'ed25519': { kind: 'okp', name: 'Ed25519', label: 'Ed25519 (EdDSA)' }
+};
+
+var POST_QUANTUM_SIG_ALG_ORDER = [];
+
+// ---------------------------------------------------------------------------
+// The post-quantum signature algorithms, generated from pqc_x509.js's registry
+// for the reason key_material.js gives about its own generated block: the OID,
+// the standard and the family already exist next to the encoder, and a second
+// hand-written copy of thirty-one rows is a transcription waiting to be wrong.
+//
+// THEY ARE THE ONE FAMILY WHERE `kind` IS ALSO THE KEY'S KIND. Every classical
+// entry above crosses a key family with a digest — an RSA key can sign with
+// six of them — but ML-DSA-65 is one algorithm, one OID, one digest chosen
+// inside FIPS 204, and a key of that algorithm can produce exactly that
+// signature and nothing else. `pqc` names the registry entry, and it is what
+// signatureAlgorithmsFor() matches on.
+(function addPostQuantumSigAlgs() {
+  pqx.algIds('sig').forEach(function (id) {
+    var entry = pqx.alg(id);
+    SIG_ALGS[id.toLowerCase()] = {
+      kind: 'pqc',
+      pqc: id,
+      family: entry.family,
+      oid: entry.oid,
+      draft: entry.family === 'Composite ML-DSA',
+      label: pqx.labelFor(id)
+    };
+    POST_QUANTUM_SIG_ALG_ORDER.push(id.toLowerCase());
+  });
+})();
+
+var SIG_ALG_ORDER = ['sha256-rsa', 'sha384-rsa', 'sha512-rsa',
+                     'sha256-rsapss', 'sha384-rsapss', 'sha512-rsapss',
+                     'sha1-rsa', 'sha256-ecdsa', 'sha384-ecdsa',
+                     'sha512-ecdsa', 'sha1-ecdsa',
+                     'ed25519'].concat(POST_QUANTUM_SIG_ALG_ORDER);
+
+var ED25519_OID = '1.3.101.112';
+
+function sigAlg(id) {
+  log.debug("Entering sigAlg(). id=" + id);
+  var found = SIG_ALGS[String(id || '').toLowerCase()];
+  log.debug("Leaving sigAlg().");
+  return found ? Object.assign({ id: String(id).toLowerCase() }, found) : null;
+}
+
+// Which signature algorithms a key of this family can produce. A page calls
+// this when the CA key changes: offering ECDSA against an RSA key produces a
+// Web Crypto error about key usage, which names neither.
+function signatureAlgorithmsFor(keyKindOrDesc) {
+  log.debug("Entering signatureAlgorithmsFor().");
+  var desc = typeof keyKindOrDesc === 'string'
+    ? { kind: keyKindOrDesc }
+    : (keyKindOrDesc || {});
+  var kind = desc.kind;
+  var out;
+  if (kind === 'pqc') {
+    // One key, one algorithm — and for ML-KEM, none at all. A KEM key cannot
+    // sign, so a certificate over one is always issued BY SOMEBODY ELSE; the
+    // empty list is what tells the page to say so rather than to offer a menu
+    // whose every entry would fail.
+    out = desc.pqc && pqx.alg(desc.pqc) && pqx.alg(desc.pqc).use === 'sig'
+      ? [desc.pqc.toLowerCase()]
+      : [];
+    log.debug("Leaving signatureAlgorithmsFor(). " + out.length +
+        " post-quantum.");
+    return out;
+  }
+  out = SIG_ALG_ORDER.filter(function (id) {
+    return SIG_ALGS[id].kind === kind;
+  });
+  log.debug("Leaving signatureAlgorithmsFor(). " + out.length + " of them.");
+  return out;
+}
+
+// The default signature algorithm for a key — the strongest non-weak one its
+// family has at the digest size that matches it.
+function defaultSignatureAlgorithm(desc) {
+  log.debug("Entering defaultSignatureAlgorithm().");
+  var kind = (desc || {}).kind;
+  if (kind === 'pqc') {
+    log.debug("Leaving defaultSignatureAlgorithm(). Post-quantum.");
+    return String((desc || {}).pqc || '').toLowerCase();
+  }
+  if (kind === 'okp') {
+    log.debug("Leaving defaultSignatureAlgorithm().");
+    return 'ed25519';
+  }
+  if (kind === 'ec') {
+    var byCurve = { 'P-256': 'sha256-ecdsa', 'P-384': 'sha384-ecdsa',
+                   'P-521': 'sha512-ecdsa' };
+    log.debug("Leaving defaultSignatureAlgorithm().");
+    return byCurve[desc.curve] || 'sha256-ecdsa';
+  }
+  log.debug("Leaving defaultSignatureAlgorithm().");
+  return 'sha256-rsa';
+}
+
+// The descriptor to import the ISSUER's private key with, for this signature
+// algorithm. See the header: this is the hash that lands in the certificate.
+function signerDescriptor(sig, keyDesc) {
+  log.debug("Entering signerDescriptor().");
+  var out;
+  if (sig.kind === 'pqc') {
+    // Nothing is crossed here: the algorithm IS the key type, so the
+    // descriptor is the signature algorithm restated. It exists so that every
+    // caller can go on asking for one.
+    out = { kind: 'pqc', pqc: sig.pqc };
+  } else if (sig.kind === 'rsa') {
+    out = { kind: 'rsa', hash: sig.hash, pss: !!sig.pss };
+  } else if (sig.kind === 'okp') {
+    out = { kind: 'okp', name: sig.name || 'Ed25519' };
+  } else {
+    out = { kind: 'ec', curve: (keyDesc || {}).curve || 'P-256',
+            hash: sig.hash };
+  }
+  log.debug("Leaving signerDescriptor().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Distinguished names
+//
+// Every attribute a page offers, with the OID and the ASN.1 string type each
+// one is supposed to use. `type` is the asn1js class name rather than the class
+// itself so this table stays data.
+// ---------------------------------------------------------------------------
+var DN_ATTRS = {
+  CN: { oid: '2.5.4.3', type: 'utf8', label: 'Common Name' },
+  SN: { oid: '2.5.4.4', type: 'utf8', label: 'Surname' },
+  serialNumber: { oid: '2.5.4.5', type: 'printable',
+                 label: 'Serial Number (DN)' },
+  C: { oid: '2.5.4.6', type: 'printable', label: 'Country' },
+  L: { oid: '2.5.4.7', type: 'utf8', label: 'Locality' },
+  ST: { oid: '2.5.4.8', type: 'utf8', label: 'State or Province' },
+  STREET: { oid: '2.5.4.9', type: 'utf8', label: 'Street Address' },
+  O: { oid: '2.5.4.10', type: 'utf8', label: 'Organization' },
+  OU: { oid: '2.5.4.11', type: 'utf8', label: 'Organizational Unit' },
+  title: { oid: '2.5.4.12', type: 'utf8', label: 'Title' },
+  description: { oid: '2.5.4.13', type: 'utf8', label: 'Description' },
+  businessCategory: { oid: '2.5.4.15', type: 'utf8',
+                     label: 'Business Category' },
+  postalCode: { oid: '2.5.4.17', type: 'utf8', label: 'Postal Code' },
+  GN: { oid: '2.5.4.42', type: 'utf8', label: 'Given Name' },
+  initials: { oid: '2.5.4.43', type: 'utf8', label: 'Initials' },
+  generationQualifier: { oid: '2.5.4.44', type: 'utf8',
+                        label: 'Generation Qualifier' },
+  dnQualifier: { oid: '2.5.4.46', type: 'printable',
+                label: 'DN Qualifier' },
+  pseudonym: { oid: '2.5.4.65', type: 'utf8', label: 'Pseudonym' },
+  DC: { oid: '0.9.2342.19200300.100.1.25', type: 'ia5',
+       label: 'Domain Component' },
+  UID: { oid: '0.9.2342.19200300.100.1.1', type: 'utf8', label: 'User ID' },
+  emailAddress: { oid: '1.2.840.113549.1.9.1', type: 'ia5',
+                 label: 'Email Address' },
+  jurisdictionC: { oid: '1.3.6.1.4.1.311.60.2.1.3', type: 'printable',
+                  label: 'Jurisdiction Country (EV)' },
+  jurisdictionST: { oid: '1.3.6.1.4.1.311.60.2.1.2', type: 'utf8',
+                   label: 'Jurisdiction State (EV)' },
+  jurisdictionL: { oid: '1.3.6.1.4.1.311.60.2.1.1', type: 'utf8',
+                  label: 'Jurisdiction Locality (EV)' }
+};
+
+// Reverse lookup, so a parsed certificate's OIDs come back as names.
+var DN_BY_OID = (function buildDnByOid() {
+  var out = {};
+  Object.keys(DN_ATTRS).forEach(function (name) {
+    out[DN_ATTRS[name].oid] = name;
+  });
+  return out;
+})();
+
+function asn1String(type, value) {
+  log.debug("Entering asn1String().");
+  if (type === 'printable') {
+    log.debug("Leaving asn1String(). PrintableString.");
+    return new asn1js.PrintableString({ value: value });
+  }
+  if (type === 'ia5') {
+    log.debug("Leaving asn1String(). IA5String.");
+    return new asn1js.IA5String({ value: value });
+  }
+  log.debug("Leaving asn1String(). Utf8String.");
+  return new asn1js.Utf8String({ value: value });
+}
+
+// Build the RDN sequence from a list of {name|oid, value} in the order given —
+// the order IS the DN, and reordering it produces a different name that chains
+// to nothing.
+// A Name is an RDNSequence: a SEQUENCE of SETs, ONE SET PER ATTRIBUTE. pkijs's
+// RelativeDistinguishedNames builds a single SET holding every attribute
+// instead — a multi-valued RDN — and that is a different name: OpenSSL renders
+// it "CN = localhost + O = Example + C = US", the `+` being the tell, and a
+// certificate whose issuer field is a multi-valued RDN chains to nothing
+// because the CA's own subject is the ordinary kind. jwt_tools.js never saw it,
+// having only ever put a CN in.
+//
+// So the DER is built here and handed to pkijs as a parsed schema: its
+// toSchema() returns `valueBeforeDecode` verbatim when it has one, which makes
+// that the supported way to keep an encoding it would not have chosen.
+function buildDn(attributes) {
+  log.debug("Entering buildDn().");
+  var rdns = [];
+  (attributes || []).forEach(function (attr) {
+    if (!attr || attr.value === undefined || attr.value === null ||
+        String(attr.value) === '') return;
+    var known = DN_ATTRS[attr.name];
+    var oid = attr.oid || (known && known.oid);
+    if (!oid) throw new Error('Unknown DN attribute: ' + attr.name);
+    var type = attr.type || (known && known.type) || 'utf8';
+    rdns.push(new asn1js.Set({ value: [
+      new asn1js.Sequence({ value: [
+        new asn1js.ObjectIdentifier({ value: oid }),
+        asn1String(type, String(attr.value))
+      ] })
+    ] }));
+  });
+  var seq = new asn1js.Sequence({ value: rdns });
+  var parsed = asn1js.fromBER(seq.toBER(false));
+  log.debug("Leaving buildDn(). " + rdns.length + " attribute(s).");
+  return new pkijs.RelativeDistinguishedNames({ schema: parsed.result });
+}
+
+// An RDN sequence as the one-line string every UI and log shows.
+function dnToString(rdn) {
+  log.debug("Entering dnToString().");
+  var parts = ((rdn && rdn.typesAndValues) || []).map(function (tv) {
+    var name = DN_BY_OID[tv.type] || tv.type;
+    return name + '=' + (tv.value.valueBlock.value !== undefined
+      ? tv.value.valueBlock.value
+      : String(tv.value.valueBlock.toString()));
+  });
+  log.debug("Leaving dnToString().");
+  return parts.join(', ');
+}
+
+// "CN=Example Root CA, O=Example, C=US" -> the attribute list buildDn() takes.
+// Written because a stored CA keeps its subject as a string and the page has to
+// be able to re-issue against it without the operator retyping the fields.
+function parseDnString(text) {
+  log.debug("Entering parseDnString().");
+  var out = [];
+  String(text || '').split(/,(?![^(]*\))/).forEach(function (piece) {
+    var trimmed = piece.trim();
+    if (!trimmed) return;
+    var eq = trimmed.indexOf('=');
+    if (eq < 0) return;
+    var name = trimmed.slice(0, eq).trim();
+    var value = trimmed.slice(eq + 1).trim();
+    if (DN_ATTRS[name]) {
+      out.push({ name: name, value: value });
+    } else if (/^[0-9]+(\.[0-9]+)+$/.test(name)) {
+      out.push({ oid: name, value: value });
+    }
+  });
+  log.debug("Leaving parseDnString(). " + out.length + " attribute(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// General names — the value type behind subjectAltName, issuerAltName, the CRL
+// distribution points, the AIA locations and the name constraints.
+// ---------------------------------------------------------------------------
+var GN_TYPES = {
+  otherName: 0,
+  email: 1,
+  dns: 2,
+  x400: 3,
+  dirName: 4,
+  ediParty: 5,
+  uri: 6,
+  ip: 7,
+  registeredID: 8
+};
+
+// Microsoft's userPrincipalName, and the Kerberos principal from RFC 4556 —
+// the two otherNames anybody actually asks for, offered by name so nobody has
+// to hand-encode them.
+var OTHERNAME_UPN = '1.3.6.1.4.1.311.20.2.3';
+var OTHERNAME_KRB5 = '1.3.6.1.5.2.2';
+
+function ipv4Bytes(text) {
+  log.debug("Entering ipv4Bytes().");
+  var parts = String(text).split('.');
+  if (parts.length !== 4) {
+    log.debug("Leaving ipv4Bytes(). Not four octets.");
+    return null;
+  }
+  var out = new Uint8Array(4);
+  for (var i = 0; i < 4; i++) {
+    var n = parseInt(parts[i], 10);
+    if (!(n >= 0 && n <= 255) || String(n) !== parts[i].replace(/^0+(?=\d)/,
+        '')) {
+      log.debug("Leaving ipv4Bytes(). Octet out of range.");
+      return null;
+    }
+    out[i] = n;
+  }
+  log.debug("Leaving ipv4Bytes().");
+  return out;
+}
+
+function ipv6Bytes(text) {
+  log.debug("Entering ipv6Bytes().");
+  var s = String(text);
+  if (s.indexOf(':') < 0) {
+    log.debug("Leaving ipv6Bytes(). Not an IPv6 literal.");
+    return null;
+  }
+  var halves = s.split('::');
+  if (halves.length > 2) {
+    log.debug("Leaving ipv6Bytes(). More than one '::'.");
+    return null;
+  }
+  function groups(part) {
+    log.debug("Entering groups().");
+    var list = part ? part.split(':').filter(function (g) { return g !== ''; })
+                    : [];
+    log.debug("Leaving groups().");
+    return list;
+  }
+  var head = groups(halves[0]);
+  var tail = halves.length === 2 ? groups(halves[1]) : [];
+  if (halves.length === 1 && head.length !== 8) {
+    log.debug("Leaving ipv6Bytes(). Wrong group count.");
+    return null;
+  }
+  var fill = 8 - head.length - tail.length;
+  if (fill < 0) {
+    log.debug("Leaving ipv6Bytes(). Too many groups.");
+    return null;
+  }
+  var all = head.concat(new Array(halves.length === 2 ? fill : 0).fill('0'))
+                .concat(tail);
+  var out = new Uint8Array(16);
+  for (var i = 0; i < 8; i++) {
+    var v = parseInt(all[i], 16);
+    if (isNaN(v) || v < 0 || v > 65535) {
+      log.debug("Leaving ipv6Bytes(). Bad group.");
+      return null;
+    }
+    out[i * 2] = (v >> 8) & 0xff;
+    out[i * 2 + 1] = v & 0xff;
+  }
+  log.debug("Leaving ipv6Bytes().");
+  return out;
+}
+
+function ipBytes(text) {
+  log.debug("Entering ipBytes().");
+  var v4 = ipv4Bytes(text);
+  if (v4) {
+    log.debug("Leaving ipBytes(). IPv4.");
+    return v4;
+  }
+  var v6 = ipv6Bytes(text);
+  if (v6) {
+    log.debug("Leaving ipBytes(). IPv6.");
+    return v6;
+  }
+  log.debug("Leaving ipBytes(). Neither.");
+  throw new Error('Not an IP address: ' + text);
+}
+
+// An IP name constraint is the address FOLLOWED BY ITS MASK — 8 bytes for v4,
+// 32 for v6 — which is the one place a general name's iPAddress is not just an
+// address, and encoding it as one silently constrains nothing.
+function ipConstraintBytes(text) {
+  log.debug("Entering ipConstraintBytes().");
+  var slash = String(text).indexOf('/');
+  var addrText = slash < 0 ? String(text) : String(text).slice(0, slash);
+  var prefix = slash < 0 ? null : parseInt(String(text).slice(slash + 1), 10);
+  var addr = ipBytes(addrText);
+  var bits = addr.length * 8;
+  if (prefix === null) prefix = bits;
+  if (!(prefix >= 0 && prefix <= bits)) {
+    log.debug("Leaving ipConstraintBytes(). Prefix out of range.");
+    throw new Error('Prefix length out of range for ' + text);
+  }
+  var out = new Uint8Array(addr.length * 2);
+  out.set(addr, 0);
+  for (var i = 0; i < addr.length; i++) {
+    var take = Math.min(8, Math.max(0, prefix - i * 8));
+    out[addr.length + i] = take === 0 ? 0 : (0xff << (8 - take)) & 0xff;
+  }
+  log.debug("Leaving ipConstraintBytes().");
+  return out;
+}
+
+// `spec` is {kind, value} where kind is a GN_TYPES name, 'upn', 'krb5' or
+// 'otherName' (with `oid` and base64 DER `value`).
+function buildGeneralName(spec, options) {
+  log.debug("Entering buildGeneralName(). kind=" + (spec || {}).kind);
+  var opts = options || {};
+  var kind = (spec || {}).kind;
+  var value = (spec || {}).value;
+  if (kind === 'dns' || kind === 'email' || kind === 'uri') {
+    log.debug("Leaving buildGeneralName(). " + kind);
+    return new pkijs.GeneralName({ type: GN_TYPES[kind],
+        value: String(value) });
+  }
+  if (kind === 'ip') {
+    var bytes = opts.constraint ? ipConstraintBytes(value) : ipBytes(value);
+    log.debug("Leaving buildGeneralName(). ip");
+    return new pkijs.GeneralName({ type: GN_TYPES.ip,
+        value: new asn1js.OctetString({ valueHex: bytes.buffer.slice(
+            bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }) });
+  }
+  if (kind === 'dirName') {
+    log.debug("Leaving buildGeneralName(). dirName");
+    return new pkijs.GeneralName({ type: GN_TYPES.dirName,
+        value: buildDn(parseDnString(value)) });
+  }
+  if (kind === 'registeredID') {
+    log.debug("Leaving buildGeneralName(). registeredID");
+    return new pkijs.GeneralName({ type: GN_TYPES.registeredID,
+        value: String(value) });
+  }
+  if (kind === 'upn' || kind === 'krb5' || kind === 'otherName') {
+    log.debug("Leaving buildGeneralName(). otherName");
+    return otherNameGeneralName(spec);
+  }
+  log.debug("Leaving buildGeneralName(). Unknown kind.");
+  throw new Error('Unknown general name kind: ' + kind);
+}
+
+// An otherName cannot go through pkijs.GeneralName, and the failure is quiet.
+//
+// GeneralName's otherName is `[0] IMPLICIT OtherName`, so the [0] tag REPLACES
+// the SEQUENCE tag and the OID and the [0] EXPLICIT value sit directly inside
+// it. pkijs's toSchema() for type 0 wraps whatever it is given in a further
+// [0], which produces a name that parses, displays plausibly in `openssl x509
+// -text`, and makes OpenSSL refuse the whole certificate at verification time
+// with `ossl_x509v3_cache_extensions:reason(158)` — an error naming no
+// extension, no name and no field. So the DER is built here, and returned as a
+// duck-typed object with the toSchema() its callers use: everything that holds
+// general names asks for exactly that method.
+function otherNameGeneralName(spec) {
+  log.debug("Entering otherNameGeneralName(). kind=" + spec.kind);
+  var oid = spec.kind === 'upn' ? OTHERNAME_UPN
+    : spec.kind === 'krb5' ? OTHERNAME_KRB5
+      : String(spec.oid || '');
+  if (!oid) {
+    log.debug("Leaving otherNameGeneralName(). No OID.");
+    throw new Error('An otherName needs an OID.');
+  }
+  var inner;
+  if (spec.kind === 'otherName') {
+    // Raw DER, base64, so any otherName at all can be written.
+    inner = derFromBase64(spec.value, 'otherName ' + oid);
+  } else {
+    inner = new asn1js.Utf8String({ value: String(spec.value) });
+  }
+  var asn1 = new asn1js.Constructed({
+    idBlock: { tagClass: 3, tagNumber: GN_TYPES.otherName },
+    value: [
+      new asn1js.ObjectIdentifier({ value: oid }),
+      new asn1js.Constructed({ idBlock: { tagClass: 3, tagNumber: 0 },
+          value: [inner] })
+    ]
+  });
+  log.debug("Leaving otherNameGeneralName(). " + oid);
+  return { otherName: true, oid: oid, toSchema: function () {
+    log.debug("Entering toSchema().");
+    log.debug("Leaving toSchema().");
+    return asn1;
+  } };
+}
+
+// ---------------------------------------------------------------------------
+// Extensions
+// ---------------------------------------------------------------------------
+var EXT_OIDS = {
+  subjectKeyIdentifier: '2.5.29.14',
+  keyUsage: '2.5.29.15',
+  privateKeyUsagePeriod: '2.5.29.16',
+  subjectAltName: '2.5.29.17',
+  issuerAltName: '2.5.29.18',
+  basicConstraints: '2.5.29.19',
+  nameConstraints: '2.5.29.30',
+  cRLDistributionPoints: '2.5.29.31',
+  certificatePolicies: '2.5.29.32',
+  policyMappings: '2.5.29.33',
+  authorityKeyIdentifier: '2.5.29.35',
+  policyConstraints: '2.5.29.36',
+  extKeyUsage: '2.5.29.37',
+  freshestCRL: '2.5.29.46',
+  inhibitAnyPolicy: '2.5.29.54',
+  authorityInfoAccess: '1.3.6.1.5.5.7.1.1',
+  subjectInfoAccess: '1.3.6.1.5.5.7.1.11',
+  tlsFeature: '1.3.6.1.5.5.7.1.24',
+  ocspNoCheck: '1.3.6.1.5.5.7.48.1.5',
+  netscapeCertType: '2.16.840.1.113730.1.1',
+  netscapeComment: '2.16.840.1.113730.1.13',
+  // ITU-T X.509 (2019) clause 9.8 — the hybrid-certificate trio. They are
+  // ordinary non-critical extensions to everything that does not know them,
+  // which is the entire point: a validator from 2015 reads the certificate,
+  // checks the classical signature and never notices that a second signature
+  // by a second key is sitting beside it.
+  subjectAltPublicKeyInfo: '2.5.29.72',
+  altSignatureAlgorithm: '2.5.29.73',
+  altSignatureValue: '2.5.29.74'
+};
+
+var EXT_BY_OID = (function buildExtByOid() {
+  var out = {};
+  Object.keys(EXT_OIDS).forEach(function (name) {
+    out[EXT_OIDS[name]] = name;
+  });
+  return out;
+})();
+
+// KeyUsage, in the bit order RFC 5280 section 4.2.1.3 gives — bit 0 is the
+// MOST significant bit of the first byte, which is why this is a table and not
+// a shift.
+var KEY_USAGE_BITS = [
+  { name: 'digitalSignature', bit: 0 },
+  { name: 'nonRepudiation', bit: 1 },
+  { name: 'keyEncipherment', bit: 2 },
+  { name: 'dataEncipherment', bit: 3 },
+  { name: 'keyAgreement', bit: 4 },
+  { name: 'keyCertSign', bit: 5 },
+  { name: 'cRLSign', bit: 6 },
+  { name: 'encipherOnly', bit: 7 },
+  { name: 'decipherOnly', bit: 8 }
+];
+
+// Extended key usages, by the name a page shows.
+var EKU_OIDS = {
+  serverAuth: '1.3.6.1.5.5.7.3.1',
+  clientAuth: '1.3.6.1.5.5.7.3.2',
+  codeSigning: '1.3.6.1.5.5.7.3.3',
+  emailProtection: '1.3.6.1.5.5.7.3.4',
+  ipsecEndSystem: '1.3.6.1.5.5.7.3.5',
+  ipsecTunnel: '1.3.6.1.5.5.7.3.6',
+  ipsecUser: '1.3.6.1.5.5.7.3.7',
+  timeStamping: '1.3.6.1.5.5.7.3.8',
+  ocspSigning: '1.3.6.1.5.5.7.3.9',
+  ipsecIKE: '1.3.6.1.5.5.7.3.17',
+  anyExtendedKeyUsage: '2.5.29.37.0',
+  msSmartcardLogon: '1.3.6.1.4.1.311.20.2.2',
+  msDocumentSigning: '1.3.6.1.4.1.311.10.3.12',
+  msEncryptingFileSystem: '1.3.6.1.4.1.311.10.3.4',
+  kdcAuthentication: '1.3.6.1.5.2.3.5',
+  pkinitClientAuth: '1.3.6.1.5.2.3.4'
+};
+
+var EKU_BY_OID = (function buildEkuByOid() {
+  var out = {};
+  Object.keys(EKU_OIDS).forEach(function (name) {
+    out[EKU_OIDS[name]] = name;
+  });
+  return out;
+})();
+
+// Netscape cert-type bits, kept for the same reason SHA-1 is: somebody's old
+// appliance still reads them, and this tool is where you find that out.
+var NS_CERT_TYPE_BITS = [
+  { name: 'sslClient', bit: 0 },
+  { name: 'sslServer', bit: 1 },
+  { name: 'sslCA', bit: 5 },
+  { name: 'emailCA', bit: 6 },
+  { name: 'objectSigningCA', bit: 7 }
+];
+
+function bitStringFor(bits, table) {
+  log.debug("Entering bitStringFor().");
+  var wanted = (bits || []).map(function (b) { return String(b); });
+  var numbers = table.filter(function (entry) {
+    return wanted.indexOf(entry.name) >= 0;
+  }).map(function (entry) { return entry.bit; });
+  if (!numbers.length) {
+    log.debug("Leaving bitStringFor(). Nothing set.");
+    return null;
+  }
+  var highest = Math.max.apply(null, numbers);
+  var byteCount = Math.floor(highest / 8) + 1;
+  var bytes = new Uint8Array(byteCount);
+  numbers.forEach(function (bit) {
+    bytes[Math.floor(bit / 8)] |= 0x80 >> (bit % 8);
+  });
+  var unused = (byteCount * 8) - (highest + 1);
+  log.debug("Leaving bitStringFor().");
+  return { bytes: bytes, unusedBits: unused };
+}
+
+function extension(oid, critical, valueAsn1) {
+  log.debug("Entering extension(). oid=" + oid);
+  var ext = new pkijs.Extension({
+    extnID: oid,
+    critical: !!critical,
+    extnValue: new asn1js.OctetString({
+        valueHex: valueAsn1.toBER(false) }).valueBlock.valueHexView
+  });
+  log.debug("Leaving extension().");
+  return ext;
+}
+
+// The SHA-1 of the subjectPublicKey BIT STRING's contents — RFC 5280 section
+// 4.2.1.2's method (1), which is what every other implementation computes, so
+// key identifiers match across tools.
+async function keyIdentifier(spkiDer) {
+  log.debug("Entering keyIdentifier().");
+  var spki = pkijs.PublicKeyInfo.fromBER(spkiDer);
+  var bits = spki.subjectPublicKey.valueBlock.valueHexView;
+  var digest = await crypto.subtle.digest('SHA-1', bits);
+  log.debug("Leaving keyIdentifier().");
+  return new Uint8Array(digest);
+}
+
+function buildBasicConstraints(spec) {
+  log.debug("Entering buildBasicConstraints().");
+  var bc = new pkijs.BasicConstraints({ cA: !!spec.ca });
+  if (spec.ca && spec.pathLen !== undefined && spec.pathLen !== null &&
+      spec.pathLen !== '') {
+    bc.pathLenConstraint = parseInt(spec.pathLen, 10);
+  }
+  log.debug("Leaving buildBasicConstraints().");
+  // RFC 5280: this extension MUST be critical in a CA certificate.
+  return extension(EXT_OIDS.basicConstraints,
+      spec.critical === undefined ? !!spec.ca : !!spec.critical,
+      bc.toSchema());
+}
+
+function buildKeyUsage(spec) {
+  log.debug("Entering buildKeyUsage().");
+  var built = bitStringFor(spec.usages, KEY_USAGE_BITS);
+  if (!built) {
+    log.debug("Leaving buildKeyUsage(). No bits set.");
+    return null;
+  }
+  var bitString = new asn1js.BitString({
+    unusedBits: built.unusedBits,
+    valueHex: built.bytes.buffer.slice(built.bytes.byteOffset,
+        built.bytes.byteOffset + built.bytes.byteLength)
+  });
+  log.debug("Leaving buildKeyUsage().");
+  return extension(EXT_OIDS.keyUsage,
+      spec.critical === undefined ? true : !!spec.critical, bitString);
+}
+
+function buildExtKeyUsage(spec) {
+  log.debug("Entering buildExtKeyUsage().");
+  var oids = (spec.usages || []).map(function (usage) {
+    return EKU_OIDS[usage] || usage;
+  }).filter(Boolean);
+  if (!oids.length) {
+    log.debug("Leaving buildExtKeyUsage(). None.");
+    return null;
+  }
+  var eku = new pkijs.ExtKeyUsage({ keyPurposes: oids });
+  log.debug("Leaving buildExtKeyUsage().");
+  return extension(EXT_OIDS.extKeyUsage, !!spec.critical, eku.toSchema());
+}
+
+function buildAltName(oid, spec) {
+  log.debug("Entering buildAltName(). oid=" + oid);
+  var names = (spec.names || []).map(function (name) {
+    return buildGeneralName(name).toSchema();
+  });
+  if (!names.length) {
+    log.debug("Leaving buildAltName(). No names.");
+    return null;
+  }
+  // GeneralNames is a plain SEQUENCE OF GeneralName, emitted here rather than
+  // through pkijs.GeneralNames so that otherNameGeneralName()'s hand-built DER
+  // is accepted alongside the pkijs ones.
+  log.debug("Leaving buildAltName().");
+  return extension(oid, !!spec.critical,
+      new asn1js.Sequence({ value: names }));
+}
+
+function buildCrlDistributionPoints(oid, spec) {
+  log.debug("Entering buildCrlDistributionPoints().");
+  var points = (spec.urls || []).map(function (url) {
+    return new pkijs.DistributionPoint({
+      distributionPoint: [new pkijs.GeneralName({ type: GN_TYPES.uri,
+          value: String(url) })]
+    });
+  });
+  if (!points.length) {
+    log.debug("Leaving buildCrlDistributionPoints(). None.");
+    return null;
+  }
+  var cdp = new pkijs.CRLDistributionPoints({ distributionPoints: points });
+  log.debug("Leaving buildCrlDistributionPoints().");
+  return extension(oid, !!spec.critical, cdp.toSchema());
+}
+
+// Authority / subject information access. `entries` is
+// [{method:'ocsp'|'caIssuers'|oid, url}].
+var AIA_METHODS = {
+  ocsp: '1.3.6.1.5.5.7.48.1',
+  caIssuers: '1.3.6.1.5.5.7.48.2',
+  timeStamping: '1.3.6.1.5.5.7.48.3',
+  caRepository: '1.3.6.1.5.5.7.48.5'
+};
+
+var AIA_BY_OID = (function buildAiaByOid() {
+  var out = {};
+  Object.keys(AIA_METHODS).forEach(function (name) {
+    out[AIA_METHODS[name]] = name;
+  });
+  return out;
+})();
+
+function buildInfoAccess(oid, spec) {
+  log.debug("Entering buildInfoAccess().");
+  var descriptions = (spec.entries || []).map(function (entry) {
+    return new pkijs.AccessDescription({
+      accessMethod: AIA_METHODS[entry.method] || entry.method,
+      accessLocation: new pkijs.GeneralName({ type: GN_TYPES.uri,
+          value: String(entry.url) })
+    });
+  });
+  if (!descriptions.length) {
+    log.debug("Leaving buildInfoAccess(). None.");
+    return null;
+  }
+  var access = new pkijs.InfoAccess({ accessDescriptions: descriptions });
+  log.debug("Leaving buildInfoAccess().");
+  return extension(oid, !!spec.critical, access.toSchema());
+}
+
+// certificatePolicies, with the two qualifiers RFC 5280 defines: a CPS URI and
+// a user notice.
+function buildCertificatePolicies(spec) {
+  log.debug("Entering buildCertificatePolicies().");
+  var infos = (spec.policies || []).map(function (policy) {
+    var qualifiers = [];
+    if (policy.cps) {
+      qualifiers.push(new pkijs.PolicyQualifierInfo({
+        policyQualifierId: '1.3.6.1.5.5.7.2.1',
+        qualifier: new asn1js.IA5String({ value: String(policy.cps) })
+      }));
+    }
+    if (policy.notice) {
+      qualifiers.push(new pkijs.PolicyQualifierInfo({
+        policyQualifierId: '1.3.6.1.5.5.7.2.2',
+        qualifier: new asn1js.Sequence({ value: [
+          new asn1js.Utf8String({ value: String(policy.notice) })
+        ] })
+      }));
+    }
+    var info = new pkijs.PolicyInformation({
+        policyIdentifier: String(policy.oid) });
+    if (qualifiers.length) info.policyQualifiers = qualifiers;
+    return info;
+  });
+  if (!infos.length) {
+    log.debug("Leaving buildCertificatePolicies(). None.");
+    return null;
+  }
+  var policies = new pkijs.CertificatePolicies({ certificatePolicies: infos });
+  log.debug("Leaving buildCertificatePolicies().");
+  return extension(EXT_OIDS.certificatePolicies, !!spec.critical,
+      policies.toSchema());
+}
+
+function buildPolicyMappings(spec) {
+  log.debug("Entering buildPolicyMappings().");
+  var mappings = (spec.mappings || []).map(function (mapping) {
+    return new pkijs.PolicyMapping({
+      issuerDomainPolicy: String(mapping.issuer),
+      subjectDomainPolicy: String(mapping.subject)
+    });
+  });
+  if (!mappings.length) {
+    log.debug("Leaving buildPolicyMappings(). None.");
+    return null;
+  }
+  var ext = new pkijs.PolicyMappings({ mappings: mappings });
+  log.debug("Leaving buildPolicyMappings().");
+  // RFC 5280 says this one SHOULD be critical.
+  return extension(EXT_OIDS.policyMappings,
+      spec.critical === undefined ? true : !!spec.critical, ext.toSchema());
+}
+
+function buildPolicyConstraints(spec) {
+  log.debug("Entering buildPolicyConstraints().");
+  var has = false;
+  var pc = new pkijs.PolicyConstraints();
+  var explicit = spec.requireExplicitPolicy;
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    pc.requireExplicitPolicy = parseInt(spec.requireExplicitPolicy, 10);
+    has = true;
+  }
+  if (spec.inhibitPolicyMapping !== undefined &&
+      spec.inhibitPolicyMapping !== null && spec.inhibitPolicyMapping !== '') {
+    pc.inhibitPolicyMapping = parseInt(spec.inhibitPolicyMapping, 10);
+    has = true;
+  }
+  if (!has) {
+    log.debug("Leaving buildPolicyConstraints(). Neither field set.");
+    return null;
+  }
+  log.debug("Leaving buildPolicyConstraints().");
+  return extension(EXT_OIDS.policyConstraints,
+      spec.critical === undefined ? true : !!spec.critical, pc.toSchema());
+}
+
+function buildNameConstraints(spec) {
+  log.debug("Entering buildNameConstraints().");
+  function subtrees(list) {
+    log.debug("Entering subtrees().");
+    var out = (list || []).map(function (entry) {
+      var tree = new pkijs.GeneralSubtree({
+          base: buildGeneralName(entry, { constraint: true }) });
+      if (entry.minimum !== undefined && entry.minimum !== null &&
+          entry.minimum !== '') {
+        tree.minimum = parseInt(entry.minimum, 10);
+      }
+      if (entry.maximum !== undefined && entry.maximum !== null &&
+          entry.maximum !== '') {
+        tree.maximum = parseInt(entry.maximum, 10);
+      }
+      return tree;
+    });
+    log.debug("Leaving subtrees().");
+    return out;
+  }
+  var permitted = subtrees(spec.permitted);
+  var excluded = subtrees(spec.excluded);
+  if (!permitted.length && !excluded.length) {
+    log.debug("Leaving buildNameConstraints(). Neither list set.");
+    return null;
+  }
+  var nc = new pkijs.NameConstraints();
+  if (permitted.length) nc.permittedSubtrees = permitted;
+  if (excluded.length) nc.excludedSubtrees = excluded;
+  log.debug("Leaving buildNameConstraints().");
+  // RFC 5280: MUST be critical.
+  return extension(EXT_OIDS.nameConstraints,
+      spec.critical === undefined ? true : !!spec.critical, nc.toSchema());
+}
+
+function generalizedTime(date) {
+  log.debug("Entering generalizedTime().");
+  var d = new Date(date);
+  function pad(n, width) {
+    log.debug("Entering pad().");
+    var s = String(n);
+    while (s.length < (width || 2)) s = '0' + s;
+    log.debug("Leaving pad().");
+    return s;
+  }
+  var text = pad(d.getUTCFullYear(), 4) + pad(d.getUTCMonth() + 1) +
+      pad(d.getUTCDate()) + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
+      pad(d.getUTCSeconds()) + 'Z';
+  log.debug("Leaving generalizedTime().");
+  return text;
+}
+
+function buildPrivateKeyUsagePeriod(spec) {
+  log.debug("Entering buildPrivateKeyUsagePeriod().");
+  var values = [];
+  if (spec.notBefore) {
+    values.push(new asn1js.Primitive({ idBlock: { tagClass: 3, tagNumber: 0 },
+        valueHex: new TextEncoder().encode(
+            generalizedTime(spec.notBefore)).buffer }));
+  }
+  if (spec.notAfter) {
+    values.push(new asn1js.Primitive({ idBlock: { tagClass: 3, tagNumber: 1 },
+        valueHex: new TextEncoder().encode(
+            generalizedTime(spec.notAfter)).buffer }));
+  }
+  if (!values.length) {
+    log.debug("Leaving buildPrivateKeyUsagePeriod(). Neither field set.");
+    return null;
+  }
+  log.debug("Leaving buildPrivateKeyUsagePeriod().");
+  return extension(EXT_OIDS.privateKeyUsagePeriod, !!spec.critical,
+      new asn1js.Sequence({ value: values }));
+}
+
+function buildInhibitAnyPolicy(spec) {
+  log.debug("Entering buildInhibitAnyPolicy().");
+  if (spec.skipCerts === undefined || spec.skipCerts === null ||
+      spec.skipCerts === '') {
+    log.debug("Leaving buildInhibitAnyPolicy(). Not set.");
+    return null;
+  }
+  log.debug("Leaving buildInhibitAnyPolicy().");
+  return extension(EXT_OIDS.inhibitAnyPolicy,
+      spec.critical === undefined ? true : !!spec.critical,
+      new asn1js.Integer({ value: parseInt(spec.skipCerts, 10) }));
+}
+
+// RFC 7633's TLS Feature extension. Its one interesting value is 5,
+// status_request — "must-staple".
+function buildTlsFeature(spec) {
+  log.debug("Entering buildTlsFeature().");
+  var features = (spec.features || []).map(function (f) {
+    return parseInt(f, 10);
+  }).filter(function (f) { return !isNaN(f); });
+  if (!features.length) {
+    log.debug("Leaving buildTlsFeature(). None.");
+    return null;
+  }
+  log.debug("Leaving buildTlsFeature().");
+  return extension(EXT_OIDS.tlsFeature, !!spec.critical,
+      new asn1js.Sequence({ value: features.map(function (f) {
+        return new asn1js.Integer({ value: f });
+      }) }));
+}
+
+function buildOcspNoCheck(spec) {
+  log.debug("Entering buildOcspNoCheck().");
+  if (!spec.present) {
+    log.debug("Leaving buildOcspNoCheck(). Absent.");
+    return null;
+  }
+  log.debug("Leaving buildOcspNoCheck().");
+  return extension(EXT_OIDS.ocspNoCheck, !!spec.critical, new asn1js.Null());
+}
+
+function buildNetscapeCertType(spec) {
+  log.debug("Entering buildNetscapeCertType().");
+  var built = bitStringFor(spec.types, NS_CERT_TYPE_BITS);
+  if (!built) {
+    log.debug("Leaving buildNetscapeCertType(). None.");
+    return null;
+  }
+  log.debug("Leaving buildNetscapeCertType().");
+  return extension(EXT_OIDS.netscapeCertType, !!spec.critical,
+      new asn1js.BitString({ unusedBits: built.unusedBits,
+          valueHex: built.bytes.buffer.slice(built.bytes.byteOffset,
+              built.bytes.byteOffset + built.bytes.byteLength) }));
+}
+
+function buildNetscapeComment(spec) {
+  log.debug("Entering buildNetscapeComment().");
+  if (!spec.text) {
+    log.debug("Leaving buildNetscapeComment(). Absent.");
+    return null;
+  }
+  log.debug("Leaving buildNetscapeComment().");
+  return extension(EXT_OIDS.netscapeComment, !!spec.critical,
+      new asn1js.IA5String({ value: String(spec.text) }));
+}
+
+// Parse base64 DER given by a caller, and say which of the two ways it was
+// wrong.
+//
+// The two are worth separating, and it took a test to notice: `atob` throws
+// `Invalid character` for text that is not base64 at all, which names neither
+// the field nor the OID and reads as an internal fault. And a value that IS
+// base64 but does not decode to a DER element is a different mistake with a
+// different fix. Note also the trap api/CLAUDE.md records from the other end —
+// node's own base64 decoder is LENIENT, silently dropping what it does not
+// recognise — so the alphabet is checked here rather than trusted to whichever
+// decoder happens to run.
+function derFromBase64(text, what) {
+  log.debug("Entering derFromBase64(). what=" + what);
+  var normalised = String(text || '').replace(/\s+/g, '')
+      .replace(/-/g, '+').replace(/_/g, '/');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalised) ||
+      normalised.length % 4 === 1 || !normalised.length) {
+    log.debug("Leaving derFromBase64(). Not base64.");
+    throw new Error(what + ': the value is not base64. It must be the DER ' +
+                    'encoding of the value, base64 or base64url.');
+  }
+  var parsed = asn1js.fromBER(pemToDer(normalised));
+  if (parsed.offset === -1) {
+    log.debug("Leaving derFromBase64(). Not DER.");
+    throw new Error(what + ': the value decoded from base64 but is not DER — ' +
+                    'it must be one complete ASN.1 element.');
+  }
+  log.debug("Leaving derFromBase64().");
+  return parsed.result;
+}
+
+// Anything at all: an OID, a critical flag, and base64 DER. Without this the
+// extension set is whatever this file knows about, which is not what a
+// debugger is for.
+function buildCustomExtension(spec) {
+  log.debug("Entering buildCustomExtension(). oid=" + (spec || {}).oid);
+  if (!spec.oid || !spec.value) {
+    log.debug("Leaving buildCustomExtension(). Incomplete.");
+    return null;
+  }
+  var value = derFromBase64(spec.value, 'Extension ' + spec.oid);
+  log.debug("Leaving buildCustomExtension().");
+  return extension(String(spec.oid), !!spec.critical, value);
+}
+
+// ---------------------------------------------------------------------------
+// Certificate profiles — the extension set each kind of certificate starts
+// with. Everything below is a DEFAULT the page then lets you edit, including
+// the criticality flags: the point of the tool is to be able to issue the
+// certificate that is wrong in exactly one way and watch what refuses it.
+//
+// `cn` is the subject Common Name that goes with the kind of certificate this
+// is — `RootCA`, `IntermediateCA`, `IssuingCA` for the three authorities, and
+// `server` / `client` for the two TLS profiles, which is what the hierarchy
+// reads as in a chain view and in a store listing. It is here rather than in
+// the page for the same reason the extension defaults are: the node tests then
+// start from what the browser starts from. An empty CN is a legal DN and a
+// certificate nobody can tell apart from the next one in the store, which is
+// what typing four of them by hand before the first handshake actually costs.
+//
+// These were `Example Root CA`, `localhost` and so on until 2026-08-18. Two
+// things went with the rename: the TLS profiles no longer default to a name a
+// local server answers to (issue for `localhost` by typing it, which is one
+// field), and `server` / `client` are short enough to be words somebody might
+// type themselves — `isDefaultSubjectCN()` cannot tell those apart from one of
+// ours and will replace them on the next profile change. That was already true
+// of `localhost`; it is more likely now.
+// ---------------------------------------------------------------------------
+var PROFILES = {
+  'root-ca': {
+    label: 'Root CA (self-signed)',
+    cn: 'RootCA',
+    ca: true,
+    selfSigned: true,
+    years: 20,
+    keyUsage: ['keyCertSign', 'cRLSign', 'digitalSignature'],
+    pathLen: null
+  },
+  'intermediate-ca': {
+    label: 'Intermediate CA',
+    cn: 'IntermediateCA',
+    ca: true,
+    years: 10,
+    keyUsage: ['keyCertSign', 'cRLSign', 'digitalSignature'],
+    pathLen: 1
+  },
+  'issuing-ca': {
+    label: 'Issuing CA',
+    cn: 'IssuingCA',
+    ca: true,
+    years: 5,
+    keyUsage: ['keyCertSign', 'cRLSign', 'digitalSignature'],
+    pathLen: 0
+  },
+  'tls-server': {
+    label: 'TLS Server',
+    cn: 'server',
+    years: 1,
+    keyUsage: ['digitalSignature', 'keyEncipherment'],
+    extKeyUsage: ['serverAuth']
+  },
+  'tls-client': {
+    label: 'TLS Client (mutual auth)',
+    cn: 'client',
+    years: 1,
+    keyUsage: ['digitalSignature', 'keyEncipherment'],
+    extKeyUsage: ['clientAuth']
+  },
+  'tls-server-client': {
+    label: 'TLS Server + Client',
+    cn: 'server',
+    years: 1,
+    keyUsage: ['digitalSignature', 'keyEncipherment'],
+    extKeyUsage: ['serverAuth', 'clientAuth']
+  },
+  'digital-signature': {
+    label: 'Digital Signature / non-repudiation',
+    cn: 'Signer',
+    years: 3,
+    keyUsage: ['digitalSignature', 'nonRepudiation']
+  },
+  'key-encipherment': {
+    label: 'Key Encipherment (encryption)',
+    cn: 'Recipient',
+    years: 3,
+    keyUsage: ['keyEncipherment', 'dataEncipherment']
+  },
+  'code-signing': {
+    label: 'Code Signing',
+    cn: 'CodeSigner',
+    years: 3,
+    keyUsage: ['digitalSignature'],
+    extKeyUsage: ['codeSigning']
+  },
+  'email': {
+    label: 'S/MIME (email protection)',
+    cn: 'EmailUser',
+    years: 3,
+    keyUsage: ['digitalSignature', 'keyEncipherment', 'nonRepudiation'],
+    extKeyUsage: ['emailProtection']
+  },
+  'ocsp-responder': {
+    label: 'OCSP Responder',
+    cn: 'OCSPResponder',
+    years: 1,
+    keyUsage: ['digitalSignature'],
+    extKeyUsage: ['ocspSigning'],
+    ocspNoCheck: true
+  },
+  'timestamping': {
+    label: 'Time Stamping',
+    cn: 'TimeStampingAuthority',
+    years: 5,
+    keyUsage: ['digitalSignature', 'nonRepudiation'],
+    extKeyUsage: ['timeStamping'],
+    ekuCritical: true
+  },
+  'smartcard-logon': {
+    label: 'Smartcard Logon',
+    cn: 'SmartcardUser',
+    years: 2,
+    keyUsage: ['digitalSignature', 'keyEncipherment'],
+    extKeyUsage: ['clientAuth', 'msSmartcardLogon']
+  },
+  'kdc': {
+    label: 'Kerberos KDC (PKINIT)',
+    cn: 'kdc',
+    years: 2,
+    keyUsage: ['digitalSignature', 'keyEncipherment'],
+    extKeyUsage: ['kdcAuthentication']
+  }
+};
+
+var PROFILE_ORDER = ['root-ca', 'intermediate-ca', 'issuing-ca', 'tls-server',
+                     'tls-client', 'tls-server-client', 'digital-signature',
+                     'key-encipherment', 'code-signing', 'email',
+                     'ocsp-responder', 'timestamping', 'smartcard-logon',
+                     'kdc'];
+
+function profileIds() {
+  log.debug("Entering profileIds().");
+  log.debug("Leaving profileIds().");
+  return PROFILE_ORDER.slice();
+}
+
+function profile(id) {
+  log.debug("Entering profile(). id=" + id);
+  var found = PROFILES[id];
+  log.debug("Leaving profile().");
+  return found ? Object.assign({ id: id }, found) : null;
+}
+
+// The subject CN a profile starts from. Empty for a profile that has none,
+// which is not one of the fourteen but is what an unknown id gives back.
+function defaultSubjectCN(profileId) {
+  log.debug("Entering defaultSubjectCN(). profile=" + profileId);
+  var p = profile(profileId) || {};
+  log.debug("Leaving defaultSubjectCN(). " + (p.cn || '(none)'));
+  return p.cn || '';
+}
+
+// Whether a CN is one THIS table wrote. The page needs the question to tell a
+// default it put there itself — which it may replace when the profile changes
+// — from a name somebody typed, which it must not touch. Comparing against the
+// current profile's own default is not enough: by the time the question is
+// asked the dropdown has already moved on, and the value in the field belongs
+// to the profile that was selected a moment ago.
+function isDefaultSubjectCN(value) {
+  log.debug("Entering isDefaultSubjectCN(). value=" + value);
+  var wanted = String(value || '').trim();
+  var found = PROFILE_ORDER.some(function (id) {
+    return PROFILES[id].cn === wanted;
+  });
+  log.debug("Leaving isDefaultSubjectCN(). " + found);
+  return found;
+}
+
+// The rest of the subject DN, which does NOT vary by profile.
+//
+// A distinguished name with nothing but a CN is a legal name and a poor
+// example of one: the O/OU/L/ST/C an operator actually meets are what makes
+// the DN encoding — the PrintableString of a country code, the ordered
+// RDNSequence — visible in the first certificate somebody issues here rather
+// than in the fifth. They are obviously-fictional values for the same reason
+// the CNs are: this page issues test certificates.
+//
+// Unlike the CN there is no "is this still a default" question to answer,
+// because none of these follow the profile: the page fills an EMPTY field and
+// never replaces one that has anything in it.
+var DEFAULT_DN = {
+  O: 'Example Corp',
+  OU: 'Information Technology',
+  L: 'Austin',
+  ST: 'Texas',
+  C: 'US'
+};
+
+// The subjectAltName a profile starts from, in the page's own list syntax.
+//
+// Only the profiles that carry serverAuth get one, and it is `dns:` + the
+// profile's own CN — because for a TLS server the CN is not what is checked.
+// Every current browser ignores it and reads subjectAltName, so a server
+// certificate whose SAN does not repeat the name in the CN is the one shape of
+// certificate this page could hand somebody that no client will accept. It is
+// derived from `extKeyUsage` rather than written into each profile so that a
+// new server-ish profile cannot be added without one.
+function defaultSubjectAltName(profileId) {
+  log.debug("Entering defaultSubjectAltName(). profile=" + profileId);
+  var p = profile(profileId) || {};
+  var eku = p.extKeyUsage || [];
+  if (eku.indexOf('serverAuth') < 0 || !p.cn) {
+    log.debug("Leaving defaultSubjectAltName(). None for this profile.");
+    return '';
+  }
+  log.debug("Leaving defaultSubjectAltName(). dns:" + p.cn);
+  return 'dns:' + p.cn;
+}
+
+// Whether a subjectAltName is one THIS table wrote, asked and answered for the
+// same reason isDefaultSubjectCN() is: the page may replace its own default
+// when the profile changes and must never touch a name somebody typed. Empty
+// counts, so the first server profile chosen fills an untouched field.
+function isDefaultSubjectAltName(value) {
+  log.debug("Entering isDefaultSubjectAltName(). value=" + value);
+  var wanted = String(value || '').trim();
+  var found = !wanted || PROFILE_ORDER.some(function (id) {
+    var mine = defaultSubjectAltName(id);
+    return !!mine && mine === wanted;
+  });
+  log.debug("Leaving isDefaultSubjectAltName(). " + found);
+  return found;
+}
+
+// The extension spec a profile starts from, which the page then edits. Kept
+// here rather than in the page so that the node tests issue exactly what the
+// browser issues.
+function defaultExtensions(profileId) {
+  log.debug("Entering defaultExtensions(). profile=" + profileId);
+  var p = profile(profileId) || {};
+  var out = {
+    basicConstraints: { present: true, ca: !!p.ca, pathLen: p.pathLen,
+                       critical: true },
+    keyUsage: { present: true, usages: (p.keyUsage || []).slice(),
+               critical: true },
+    extKeyUsage: { present: !!(p.extKeyUsage || []).length,
+                  usages: (p.extKeyUsage || []).slice(),
+                  critical: !!p.ekuCritical },
+    subjectKeyIdentifier: { present: true, critical: false },
+    authorityKeyIdentifier: { present: true, critical: false,
+                             includeIssuerAndSerial: false },
+    subjectAltName: { present: false, names: [], critical: false },
+    issuerAltName: { present: false, names: [], critical: false },
+    cRLDistributionPoints: { present: false, urls: [], critical: false },
+    freshestCRL: { present: false, urls: [], critical: false },
+    authorityInfoAccess: { present: false, entries: [], critical: false },
+    subjectInfoAccess: { present: false, entries: [], critical: false },
+    certificatePolicies: { present: false, policies: [], critical: false },
+    policyMappings: { present: false, mappings: [], critical: true },
+    policyConstraints: { present: false, critical: true },
+    nameConstraints: { present: false, permitted: [], excluded: [],
+                      critical: true },
+    inhibitAnyPolicy: { present: false, critical: true },
+    privateKeyUsagePeriod: { present: false, critical: false },
+    tlsFeature: { present: false, features: [], critical: false },
+    ocspNoCheck: { present: !!p.ocspNoCheck, critical: false },
+    netscapeCertType: { present: false, types: [], critical: false },
+    netscapeComment: { present: false, text: '', critical: false },
+    custom: []
+  };
+  // A CA that is not self-signed has no business claiming a path length it did
+  // not ask for; a leaf has no basicConstraints pathLen at all.
+  if (!p.ca) out.basicConstraints.pathLen = null;
+  log.debug("Leaving defaultExtensions().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Serial numbers
+//
+// A random 128-bit positive integer, which is what the CA/Browser Forum
+// requires and what makes a hash collision on the TBS impractical to arrange.
+// The top bit is cleared so the DER INTEGER stays positive without a leading
+// zero byte that some parsers report as a 17-byte serial.
+// ---------------------------------------------------------------------------
+function randomSerialHex(bytes) {
+  log.debug("Entering randomSerialHex().");
+  var raw = new Uint8Array(bytes || 16);
+  crypto.getRandomValues(raw);
+  raw[0] = raw[0] & 0x7f;
+  if (raw[0] === 0) raw[0] = 1;
+  var hex = '';
+  for (var i = 0; i < raw.length; i++) {
+    hex += ('0' + raw[i].toString(16)).slice(-2);
+  }
+  log.debug("Leaving randomSerialHex().");
+  return hex;
+}
+
+function serialFromHex(hex) {
+  log.debug("Entering serialFromHex().");
+  var clean = String(hex).replace(/[^0-9a-fA-F]/g, '');
+  if (clean.length % 2) clean = '0' + clean;
+  var bytes = new Uint8Array(clean.length / 2);
+  for (var i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.substr(i * 2, 2), 16);
+  }
+  // DER WANTS THE SHORTEST FORM (X.690 8.3.2), so leading zero bytes a
+  // caller's serial carries are dropped while the next byte keeps the value
+  // positive (2026-11-05). A random eight-byte serial beginning 00 3f… was
+  // written as 02 08 00 3f…, and OpenSSL refused the certificate with
+  // "illegal padding" — tests/federation_oidc_rp.js, about once in five
+  // hundred runs.
+  var first = 0;
+  while (first < bytes.length - 1 && bytes[first] === 0 &&
+         bytes[first + 1] < 0x80) {
+    first++;
+  }
+  bytes = bytes.subarray(first);
+  // A leading byte of 0x80 or more would be read as a negative integer.
+  var value = bytes[0] >= 0x80
+    ? new Uint8Array([0].concat(Array.prototype.slice.call(bytes)))
+    : bytes;
+  log.debug("Leaving serialFromHex().");
+  return new asn1js.Integer({ valueHex: value.buffer.slice(value.byteOffset,
+      value.byteOffset + value.byteLength) });
+}
+
+// ---------------------------------------------------------------------------
+// Issuing a certificate
+//
+// spec:
+//   subject          [{name,value}] or a DN string
+//   subjectPublicKey SPKI PEM of the key being certified
+//   issuer           null for self-signed, else
+//                    {certificatePem, privateKeyPem, keyAlg}
+//   issuerPrivateKey PKCS#8 PEM (self-signed: the subject's own private key)
+//   signatureAlg     a SIG_ALGS id
+//   serial           hex string; omitted means a random 128-bit one
+//   notBefore/notAfter Date or ISO string
+//   extensions       as defaultExtensions() returns
+// ---------------------------------------------------------------------------
+async function issueCertificate(spec) {
+  log.debug("Entering issueCertificate().");
+  var subjectAttrs = typeof spec.subject === 'string'
+    ? parseDnString(spec.subject)
+    : spec.subject;
+  if (!subjectAttrs || !subjectAttrs.length) {
+    log.debug("Leaving issueCertificate(). Empty subject.");
+    throw new Error('A certificate needs a subject.');
+  }
+  var subjectSpki = pemToDer(spec.subjectPublicKey);
+  var sig = sigAlg(spec.signatureAlg);
+  if (!sig) {
+    // A KEM asked for as a signature algorithm is the one wrong answer worth
+    // a sentence of its own: it is a real algorithm, in this build, that
+    // simply cannot sign — and "unknown algorithm" would send somebody
+    // looking for a typo.
+    var kem = pqx.alg(spec.signatureAlg);
+    log.debug("Leaving issueCertificate(). Unknown signature algorithm.");
+    throw new Error(kem && kem.use === 'kem'
+      ? kem.name + ' is a key-encapsulation mechanism: it cannot sign a ' +
+        'certificate. An ML-KEM key is certified BY an issuer with a ' +
+        'signing key.'
+      : 'Unknown signature algorithm: ' + spec.signatureAlg);
+  }
+
+  var issuerCert = spec.issuer && spec.issuer.certificatePem
+    ? pkijs.Certificate.fromBER(pemToDer(spec.issuer.certificatePem))
+    : null;
+  var issuerPrivatePem = spec.issuer
+    ? spec.issuer.privateKeyPem
+    : spec.issuerPrivateKey;
+  if (!issuerPrivatePem) {
+    log.debug("Leaving issueCertificate(). No signing key.");
+    throw new Error('No issuer private key: nothing can sign this ' +
+                    'certificate.');
+  }
+  var issuerKeyDesc = spec.issuer && spec.issuer.keyAlg
+    ? keys.keyAlg(spec.issuer.keyAlg)
+    : await keys.describePublicPem(spec.subjectPublicKey);
+  // A self-signed certificate over a KEM key is the one combination that
+  // cannot exist: ML-KEM establishes keys and signs nothing, so there is no
+  // private key in the world that could sign this certificate — including its
+  // own. Saying so here beats the message the primitive would give.
+  if (sig.kind === 'pqc' && pqx.alg(sig.pqc).use !== 'sig') {
+    log.debug("Leaving issueCertificate(). KEM cannot sign.");
+    throw new Error(sig.pqc + ' is a key-encapsulation mechanism: it cannot ' +
+        'sign a certificate. An ML-KEM key is certified BY an issuer with a ' +
+        'signing key.');
+  }
+  var signerDesc = signerDescriptor(sig, issuerKeyDesc || {});
+
+  var cert = new pkijs.Certificate();
+  cert.version = 2; // v3
+  cert.serialNumber = serialFromHex(spec.serial || randomSerialHex(16));
+  cert.subject = buildDn(subjectAttrs);
+  cert.issuer = issuerCert ? issuerCert.subject : cert.subject;
+
+  var notBefore = spec.notBefore ? new Date(spec.notBefore) : new Date();
+  var notAfter = spec.notAfter ? new Date(spec.notAfter) : null;
+  if (!notAfter) {
+    var years = (profile(spec.profile) || {}).years || 1;
+    notAfter = new Date(notBefore.getTime());
+    notAfter.setUTCFullYear(notAfter.getUTCFullYear() + years);
+  }
+  cert.notBefore.value = notBefore;
+  cert.notAfter.value = notAfter;
+  // RFC 5280 section 4.1.2.5: a time at or after 2050 must be a
+  // GeneralizedTime. pkijs picks UTCTime by default, and a 2050+ UTCTime is
+  // read as 1950 — a certificate that expired seventy years ago, reported by
+  // every validator as expired and by none as misencoded.
+  if (notBefore.getUTCFullYear() >= 2050) cert.notBefore.type = 1;
+  if (notAfter.getUTCFullYear() >= 2050) cert.notAfter.type = 1;
+
+  // The subject public key: parsed in as DER rather than imported, because
+  // pkijs's importKey cannot read an Ed25519 SPKI. See the header.
+  cert.subjectPublicKeyInfo.fromSchema(asn1js.fromBER(subjectSpki).result);
+
+  var extensions = await buildExtensions(spec, subjectSpki, issuerCert);
+  if (extensions.length) cert.extensions = extensions;
+
+  // A post-quantum key never becomes a CryptoKey — Web Crypto has no such
+  // import — so what is handed to signCertificate() is the PEM and the
+  // descriptor, and the classical path imports it exactly as it always did.
+  // Passing the pair for BOTH kinds is what keeps one signing function rather
+  // than two that can drift.
+  var signer = sig.kind === 'pqc'
+    ? { pem: issuerPrivatePem, desc: signerDesc }
+    : await keys.importPrivateKey(issuerPrivatePem, signerDesc);
+  if (spec.altSignature || spec.subjectAltPublicKey) {
+    await addAlternativeSignature(cert, spec, signerDesc);
+  }
+  await signCertificate(cert, signer, sig);
+
+  var der = cert.toSchema(true).toBER(false);
+  log.debug("Leaving issueCertificate().");
+  return {
+    der: new Uint8Array(der),
+    pem: derToPem(der, 'CERTIFICATE'),
+    serialHex: bytesToHex(cert.serialNumber.valueBlock.valueHexView),
+    subject: dnToString(cert.subject),
+    issuer: dnToString(cert.issuer),
+    notBefore: notBefore.toISOString(),
+    notAfter: notAfter.toISOString(),
+    signatureAlg: sig.id
+  };
+}
+
+// ---------------------------------------------------------------------------
+// A PKCS#10 CERTIFICATION REQUEST.
+//
+// A CSR is what you send to an authority that will not take a certificate you
+// made yourself: it carries a public key, a subject, optionally the extensions
+// you would like, and a SIGNATURE BY THE MATCHING PRIVATE KEY — which is the
+// whole point of the format. That signature is a proof of possession, and it
+// is why an authority can hand back a certificate for a key it has never seen.
+//
+// It is here rather than on the page that first needed it, because FIVE SPIFFE
+// methods take one — AttestAgent, RenewAgent, MintX509SVID, BatchNewX509SVID
+// and NewDownstreamX509CA — and the PKI page has always had somewhere to put
+// "request a certificate from somebody else" and no way to build the request.
+// One implementation, two workflows.
+//
+// TWO THINGS ARE LOAD-BEARING AND BOTH ARE ALREADY-PAID-FOR LESSONS FROM
+// issueCertificate() BELOW.
+//
+//  * **The ECDSA signature must be minimally encoded.** The same
+//    `minimalDerInteger()` problem, on a document whose signature is checked
+//    much more often than a certificate's: SPIRE verifies a CSR's signature
+//    before it will mint anything, and OpenSSL-backed verifiers re-encode what
+//    they parsed and compare bytes. A CSR with a non-minimal INTEGER in its
+//    signature is refused as a bad signature, on roughly one P-521 request in
+//    256, with a message naming neither the encoding nor the curve.
+//  * **Ed25519 is signed by hand**, because pkijs's engine does not know the
+//    algorithm. Both paths set the SAME AlgorithmIdentifier, which is what
+//    makes the request self-consistent.
+//
+// SPIFFE has one convention worth knowing before filling in `subjectAltName`:
+// the identity of an X509-SVID is the **URI subjectAltName** and nothing else.
+// The subject DN is decoration — SPIRE issues `C=US, O=SPIRE` to everything —
+// so a CSR asking for an identity asks for it in a `uri` general name, and an
+// authority is free to ignore even that. `MintX509SVID` is the one method that
+// reads it, because there is no registration entry to take the identity from.
+// ---------------------------------------------------------------------------
+async function certificationRequest(spec) {
+  log.debug("Entering certificationRequest().");
+  var subjectAttrs = typeof spec.subject === 'string'
+    ? parseDnString(spec.subject)
+    : spec.subject;
+  if (!subjectAttrs || !subjectAttrs.length) {
+    log.debug("Leaving certificationRequest(). Empty subject.");
+    throw new Error('A certification request needs a subject. SPIFFE puts no ' +
+                    'meaning in it — C=US, O=SPIRE is what SPIRE itself ' +
+                    'issues — but PKCS#10 has nowhere to leave it out.');
+  }
+  if (!spec.publicKeyPem) {
+    log.debug("Leaving certificationRequest(). No public key.");
+    throw new Error('A certification request carries the public key it is ' +
+                    'asking to have certified.');
+  }
+  if (!spec.privateKeyPem) {
+    log.debug("Leaving certificationRequest(). No private key.");
+    throw new Error('A certification request is SIGNED by the private key ' +
+                    'matching its public key: that signature is the proof of ' +
+                    'possession the whole format exists for.');
+  }
+  var keyDesc = await keys.describePublicPem(spec.publicKeyPem);
+  var sig = sigAlg(spec.signatureAlg ||
+                   defaultSignatureAlgorithm(keyDesc || {}));
+  if (keyDesc && keyDesc.kind === 'pqc' && pqx.alg(keyDesc.pqc).use !== 'sig') {
+    log.debug("Leaving certificationRequest(). KEM cannot prove possession.");
+    throw new Error(keyDesc.pqc + ' is a key-encapsulation mechanism and ' +
+        'cannot sign, so it cannot make the proof of possession a PKCS#10 ' +
+        'request IS. RFC 9935 section 7 says the same: a CSR for an ML-KEM ' +
+        'key needs another mechanism entirely.');
+  }
+  if (!sig) {
+    log.debug("Leaving certificationRequest(). Unknown signature algorithm.");
+    throw new Error('Unknown signature algorithm: ' + spec.signatureAlg);
+  }
+  var signerDesc = signerDescriptor(sig, keyDesc || {});
+
+  var request = new pkijs.CertificationRequest();
+  request.version = 0;
+  request.subject = buildDn(subjectAttrs);
+  var spki = pemToDer(spec.publicKeyPem);
+  // Parsed in as DER rather than imported, for the reason issueCertificate()
+  // gives: pkijs's importKey cannot read an Ed25519 SPKI.
+  request.subjectPublicKeyInfo.fromSchema(asn1js.fromBER(spki).result);
+
+  // The requested extensions, in the one attribute PKCS#9 defines for them.
+  // A CSR's extensions are a REQUEST and an authority may ignore every one —
+  // which SPIRE does, except at MintX509SVID. Saying so here rather than
+  // leaving somebody to discover that their keyUsage did not survive.
+  var extensions = [];
+  // Each general name is { kind, value } — the shape buildGeneralName() takes
+  // everywhere else in this file, so a caller that has built a subjectAltName
+  // for a certificate can hand the same list here. A builder that finds
+  // nothing to encode returns null, so the nulls are dropped rather than
+  // pushed: an extension whose value is null serialises to a broken attribute.
+  if (spec.subjectAltName && spec.subjectAltName.length) {
+    extensions.push(buildAltName(EXT_OIDS.subjectAltName,
+                                 { names: spec.subjectAltName }));
+  }
+  // `usages`, which is what both builders read. They were called with `bits`
+  // and `ekus` until 2026-09-01 — names those functions have never used — so
+  // each returned null, the filter below dropped it, and every CSR this
+  // module has ever produced carried NEITHER extension while reporting no
+  // error anywhere. It is exactly the failure the filter's own comment
+  // describes being careful about, arriving through the argument instead:
+  // nothing throws, the request is valid, and an authority honouring what it
+  // was asked for grants a key usage nobody asked for.
+  if (spec.keyUsage && spec.keyUsage.length) {
+    extensions.push(buildKeyUsage({ usages: spec.keyUsage }));
+  }
+  if (spec.extKeyUsage && spec.extKeyUsage.length) {
+    extensions.push(buildExtKeyUsage({ usages: spec.extKeyUsage }));
+  }
+  if (spec.basicConstraints) {
+    extensions.push(buildBasicConstraints(spec.basicConstraints));
+  }
+  extensions = extensions.filter(function (one) {
+    return !!one;
+  });
+  if (extensions.length) {
+    request.attributes = [new pkijs.Attribute({
+      type: '1.2.840.113549.1.9.14',
+      values: [(new pkijs.Extensions({ extensions: extensions })).toSchema()]
+    })];
+  } else {
+    // An EMPTY attributes list rather than none. PKCS#10's `attributes` is an
+    // implicitly tagged SET that is REQUIRED, and pkijs omits the tag entirely
+    // when the member is undefined — producing a request that this codebase
+    // reads back perfectly and that OpenSSL refuses to parse at all.
+    request.attributes = [];
+  }
+
+  if (sig.kind === 'pqc') {
+    // Same shape as the Ed25519 path below: pkijs cannot sign it, so both
+    // AlgorithmIdentifiers are set by hand and the proof of possession is made
+    // over the CertificationRequestInfo this module encodes.
+    request.signatureAlgorithm = pqcAlgorithmIdentifier(sig);
+    var pqTbs = request.encodeTBS().toBER(false);
+    var pqValue = await signBytes(sig, spec.privateKeyPem, keyDesc, pqTbs);
+    request.signatureValue = new asn1js.BitString({
+      valueHex: pqValue.buffer.slice(pqValue.byteOffset,
+          pqValue.byteOffset + pqValue.byteLength) });
+    var pqDer = request.toSchema(true).toBER(false);
+    log.debug("Leaving certificationRequest(). " + sig.pqc + ".");
+    return {
+      der: new Uint8Array(pqDer),
+      pem: derToPem(pqDer, 'CERTIFICATE REQUEST'),
+      base64: jose.bytesToBase64
+        ? jose.bytesToBase64(new Uint8Array(pqDer))
+        : derToPem(pqDer, 'CERTIFICATE REQUEST')
+            .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''),
+      subject: dnToString(request.subject),
+      signatureAlg: sig.id
+    };
+  }
+  var privateKey = await keys.importPrivateKey(spec.privateKeyPem, signerDesc);
+  if (sig.kind !== 'okp') {
+    await request.sign(privateKey, sig.hash);
+    if (sig.kind === 'ec') {
+      var normalized = minimalEcdsaSignature(
+        request.signatureValue.valueBlock.valueHexView);
+      request.signatureValue = new asn1js.BitString({
+        valueHex: normalized.buffer.slice(
+          normalized.byteOffset,
+          normalized.byteOffset + normalized.byteLength)
+      });
+    }
+  } else {
+    request.signatureAlgorithm = new pkijs.AlgorithmIdentifier({
+      algorithmId: ED25519_OID });
+    var tbs = request.encodeTBS().toBER(false);
+    var signature = await crypto.subtle.sign({ name: 'Ed25519' }, privateKey,
+      tbs);
+    request.signatureValue = new asn1js.BitString({ valueHex: signature });
+  }
+
+  var der = request.toSchema(true).toBER(false);
+  log.debug("Leaving certificationRequest().");
+  return {
+    der: new Uint8Array(der),
+    pem: derToPem(der, 'CERTIFICATE REQUEST'),
+    // Base64 DER, which is what every gRPC `bytes` field in the SPIRE API
+    // wants and what saves each of the five call sites a conversion.
+    base64: jose.bytesToBase64
+      ? jose.bytesToBase64(new Uint8Array(der))
+      : derToPem(der, 'CERTIFICATE REQUEST')
+          .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''),
+    subject: dnToString(request.subject),
+    signatureAlg: sig.id
+  };
+}
+
+// ---------------------------------------------------------------------------
+// A DER INTEGER, minimally encoded — which is what an ECDSA signature in a
+// certificate has to carry and what pkijs does not always produce.
+//
+// Web Crypto returns an ECDSA signature as FIXED-WIDTH r||s, and pkijs turns
+// that into `SEQUENCE { INTEGER r, INTEGER s }` through asn1js's
+// `Integer.toDER()`, which strips exactly ONE leading zero octet. A value small
+// enough to have TWO — about one P-521 signature in 256, because that curve's r
+// and s are 66 octets for a 521-bit order — therefore comes out as `00 1d f9 …`
+// where DER requires `1d f9 …`.
+//
+// The certificate is otherwise perfect and verifies against this codebase's own
+// verifyChain(), because pkijs's reader right-aligns whatever length it finds.
+// OPENSSL refuses it, because ECDSA_verify re-encodes what it parsed and
+// compares the bytes:
+//
+//     error 7 at 0 depth lookup: certificate signature failure
+//     ...asn1 encoding routines:ASN1_item_verify_ctx:EVP lib
+//
+// — a message that names neither the encoding nor the curve, on one certificate
+// in a few hundred. tests/pki_x509.js caught it as an intermittent failure of
+// one cell of its algorithm matrix.
+// ---------------------------------------------------------------------------
+function minimalDerInteger(bytes) {
+  log.debug("Entering minimalDerInteger().");
+  var start = 0;
+  while (start + 1 < bytes.length && bytes[start] === 0 &&
+         (bytes[start + 1] & 0x80) === 0) {
+    start = start + 1;
+  }
+  var trimmed = bytes.slice(start);
+  // The other half of the same rule: a value whose top bit is set needs a
+  // leading zero octet so the INTEGER stays positive. asn1js gets this one
+  // right; it is here so that this function alone defines the encoding.
+  if ((trimmed[0] & 0x80) !== 0) {
+    var padded = new Uint8Array(trimmed.length + 1);
+    padded.set(trimmed, 1);
+    trimmed = padded;
+  }
+  log.debug("Leaving minimalDerInteger().");
+  return trimmed;
+}
+
+// `SEQUENCE { INTEGER r, INTEGER s }` in, the same pair minimally encoded out.
+// Anything that is not that pair is returned untouched: this runs on bytes
+// another library produced, and a signature it cannot read is not one to
+// rewrite.
+function minimalEcdsaSignature(der) {
+  log.debug("Entering minimalEcdsaSignature().");
+  var bytes = new Uint8Array(der);
+  var parsed = asn1js.fromBER(bytes.slice().buffer);
+  var seq = parsed.result;
+  var pair = (parsed.offset !== -1 && seq && seq.valueBlock &&
+              seq.valueBlock.value) ? seq.valueBlock.value : [];
+  if (pair.length !== 2) {
+    log.debug("Leaving minimalEcdsaSignature(). Not an (r, s) pair.");
+    return bytes;
+  }
+  var rebuilt = new asn1js.Sequence({
+    value: pair.map(function (part) {
+      var value = minimalDerInteger(
+        new Uint8Array(part.valueBlock.valueHexView));
+      return new asn1js.Integer({
+        valueHex: value.buffer.slice(value.byteOffset,
+                                     value.byteOffset + value.byteLength)
+      });
+    })
+  });
+  log.debug("Leaving minimalEcdsaSignature(). Re-encoded.");
+  return new Uint8Array(rebuilt.toBER(false));
+}
+
+// ---------------------------------------------------------------------------
+// SIGNING AND VERIFYING ARBITRARY BYTES, WHICH IS NOT WHAT pkijs OFFERS
+//
+// pkijs signs a certificate and a certification request and nothing else, and
+// three things here need a signature over bytes it has never seen: the
+// post-quantum algorithms (which pkijs cannot sign with at all), the
+// ALTERNATIVE signature of a hybrid certificate (which is computed over a
+// preTBSCertificate that is not any object pkijs models), and the same for a
+// hybrid CSR. So this pair is the one place that knows how to turn a
+// (signature algorithm, private key) into a signature, and every path below
+// calls it rather than repeating the branch.
+//
+// TWO ENCODING TRAPS LIVE IN HERE AND BOTH PRODUCE A VALID-LOOKING SIGNATURE:
+//
+//   * Web Crypto returns an ECDSA signature as FIXED-WIDTH r || s (RFC 7518's
+//     encoding), and X.509 wants a DER Ecdsa-Sig-Value. Writing the raw pair
+//     into a BIT STRING gives a certificate every parser reads and no verifier
+//     accepts, and the error it produces names the signature rather than the
+//     encoding.
+//   * The DER it wants is MINIMALLY encoded, which is the same P-521 hazard
+//     minimalDerInteger() above exists for — so the conversion goes through
+//     that function rather than emitting whatever length falls out.
+// ---------------------------------------------------------------------------
+var EC_FIELD_LEN = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+
+function ecdsaRawToDer(raw) {
+  log.debug("Entering ecdsaRawToDer().");
+  var bytes = new Uint8Array(raw);
+  var half = bytes.length / 2;
+  function part(from) {
+    log.debug("Entering part().");
+    var value = minimalDerInteger(bytes.slice(from, from + half));
+    log.debug("Leaving part().");
+    return new asn1js.Integer({
+      valueHex: value.buffer.slice(value.byteOffset,
+                                   value.byteOffset + value.byteLength)
+    });
+  }
+  var der = new asn1js.Sequence({ value: [part(0), part(half)] });
+  log.debug("Leaving ecdsaRawToDer().");
+  return new Uint8Array(der.toBER(false));
+}
+
+function ecdsaDerToRaw(der, fieldLen) {
+  log.debug("Entering ecdsaDerToRaw().");
+  var bytes = new Uint8Array(der);
+  var parsed = asn1js.fromBER(bytes.slice().buffer);
+  var pair = (parsed.offset !== -1 && parsed.result.valueBlock)
+    ? (parsed.result.valueBlock.value || [])
+    : [];
+  if (pair.length !== 2) {
+    log.debug("Leaving ecdsaDerToRaw(). Not an (r, s) pair.");
+    throw new Error('This ECDSA signature is not a DER Ecdsa-Sig-Value.');
+  }
+  var out = new Uint8Array(fieldLen * 2);
+  for (var i = 0; i < 2; i++) {
+    var value = new Uint8Array(pair[i].valueBlock.valueHexView);
+    // A leading zero octet is the sign padding DER requires and the fixed
+    // encoding must not carry; a SHORT value is left-padded for the same
+    // reason, in the other direction.
+    while (value.length > fieldLen && value[0] === 0) {
+      value = value.slice(1);
+    }
+    out.set(value, i * fieldLen + (fieldLen - value.length));
+  }
+  log.debug("Leaving ecdsaDerToRaw().");
+  return out;
+}
+
+// `keyDesc` is the descriptor of the SIGNING key, which matters only for
+// ECDSA — the curve is not derivable from the signature algorithm id, since
+// ecdsa-with-SHA256 is legal over any of the three.
+async function signBytes(sig, privatePem, keyDesc, data) {
+  log.debug("Entering signBytes(). alg=" + sig.id);
+  if (sig.kind === 'pqc') {
+    var priv = pqx.decodePkcs8(new Uint8Array(pemToDer(privatePem)));
+    if (!priv) {
+      log.debug("Leaving signBytes(). Not a post-quantum private key.");
+      throw new Error('This private key is not a post-quantum key, and ' +
+          sig.id + ' can only be produced by one.');
+    }
+    if (priv.alg !== sig.pqc) {
+      log.debug("Leaving signBytes(). Algorithm mismatch.");
+      throw new Error('This is a ' + priv.alg + ' private key and the ' +
+          'signature algorithm asked for is ' + sig.pqc + '. Unlike RSA, a ' +
+          'post-quantum key can produce exactly one algorithm.');
+    }
+    if (!priv.priv) {
+      log.debug("Leaving signBytes(). No seed to sign with.");
+      throw new Error('This ' + priv.alg + ' key was written in the ' +
+          'expandedKey arm of RFC 9881 section 6. Signing from an expanded ' +
+          'key is possible in principle and is not implemented here: this ' +
+          'build signs from the seed, which is the arm the RFC recommends ' +
+          'and the only one an AKP JWK can carry.');
+    }
+    var pqSig = await pqx.sign(sig.pqc, new Uint8Array(data), priv.priv);
+    log.debug("Leaving signBytes(). Post-quantum.");
+    return new Uint8Array(pqSig);
+  }
+  var desc = signerDescriptor(sig, keyDesc || {});
+  var key = await keys.importPrivateKey(privatePem, desc);
+  if (sig.kind === 'okp') {
+    var eddsa = await crypto.subtle.sign({ name: sig.name || 'Ed25519' }, key,
+        data);
+    log.debug("Leaving signBytes(). EdDSA.");
+    return new Uint8Array(eddsa);
+  }
+  if (sig.kind === 'ec') {
+    var raw = await crypto.subtle.sign({ name: 'ECDSA', hash: sig.hash }, key,
+        data);
+    log.debug("Leaving signBytes(). ECDSA.");
+    return ecdsaRawToDer(raw);
+  }
+  var params = sig.pss
+    ? { name: 'RSA-PSS', saltLength: HASH_LENGTHS[sig.hash] }
+    : { name: 'RSASSA-PKCS1-v1_5' };
+  var rsa = await crypto.subtle.sign(params, key, data);
+  log.debug("Leaving signBytes(). RSA.");
+  return new Uint8Array(rsa);
+}
+
+// The salt length for RSASSA-PSS. RFC 4055 section 3.1's recommendation, and
+// what OpenSSL's default `-sigopt rsa_pss_saltlen:digest` produces: a salt as
+// long as the digest. A different value is legal and produces a signature that
+// only a verifier told the same number can check.
+var HASH_LENGTHS = { 'SHA-1': 20, 'SHA-256': 32, 'SHA-384': 48,
+                    'SHA-512': 64 };
+
+async function verifyBytes(sig, publicSpkiPem, signature, data) {
+  log.debug("Entering verifyBytes(). alg=" + sig.id);
+  if (sig.kind === 'pqc') {
+    var read = pqx.decodeSpki(new Uint8Array(pemToDer(publicSpkiPem)));
+    if (!read || read.alg !== sig.pqc) {
+      log.debug("Leaving verifyBytes(). Wrong key for the algorithm.");
+      return false;
+    }
+    var ok = await pqx.verify(sig.pqc, new Uint8Array(signature),
+        new Uint8Array(data), read.pub);
+    log.debug("Leaving verifyBytes(). Post-quantum says " + ok);
+    return !!ok;
+  }
+  var desc = await keys.describePublicPem(publicSpkiPem);
+  if (!desc) {
+    log.debug("Leaving verifyBytes(). Unreadable public key.");
+    return false;
+  }
+  var key = await keys.importPublicKey(publicSpkiPem,
+      signerDescriptor(sig, desc));
+  if (sig.kind === 'okp') {
+    var eddsa = await crypto.subtle.verify({ name: sig.name || 'Ed25519' },
+        key, signature, data);
+    log.debug("Leaving verifyBytes(). EdDSA says " + eddsa);
+    return eddsa;
+  }
+  if (sig.kind === 'ec') {
+    var raw;
+    try {
+      raw = ecdsaDerToRaw(signature, EC_FIELD_LEN[desc.curve] || 32);
+    } catch (e) {
+      log.debug("Leaving verifyBytes(). " + e.message);
+      return false;
+    }
+    var ecOk = await crypto.subtle.verify({ name: 'ECDSA', hash: sig.hash },
+        key, raw, data);
+    log.debug("Leaving verifyBytes(). ECDSA says " + ecOk);
+    return ecOk;
+  }
+  var params = sig.pss
+    ? { name: 'RSA-PSS', saltLength: HASH_LENGTHS[sig.hash] }
+    : { name: 'RSASSA-PKCS1-v1_5' };
+  var rsaOk = await crypto.subtle.verify(params, key, signature, data);
+  log.debug("Leaving verifyBytes(). RSA says " + rsaOk);
+  return rsaOk;
+}
+
+// Sign the TBS. Everything but Ed25519 goes through pkijs; Ed25519 is done by
+// hand because pkijs's engine does not know the algorithm at all — see the
+// header. Both paths set the SAME two AlgorithmIdentifiers, which is what
+// makes the certificate self-consistent.
+// ---------------------------------------------------------------------------
+// THE HYBRID CERTIFICATE: TWO KEYS AND TWO SIGNATURES IN ONE DOCUMENT
+//
+// ITU-T X.509 (2019) clause 9.8 adds three non-critical extensions that mirror
+// three fields of the certificate itself:
+//
+//     subjectAltPublicKeyInfo (2.5.29.72)  mirrors subjectPublicKeyInfo
+//     altSignatureAlgorithm   (2.5.29.73)  mirrors the signature field
+//     altSignatureValue       (2.5.29.74)  mirrors signatureValue
+//
+// A certificate carrying them is signed TWICE by its issuer, with two
+// different keys and usually two different algorithm families — classically in
+// the ordinary fields, post-quantum in the extensions. Every validator that
+// has never heard of the extensions sees an ordinary certificate and accepts
+// it; a validator that has, checks both. That is the whole migration story,
+// and it is why this is the third of the three ways this page can put
+// post-quantum cryptography into a certificate.
+//
+// THE ONE THING THAT IS EASY TO GET WRONG IS WHAT THE ALTERNATIVE SIGNATURE
+// COVERS, and it is not the TBSCertificate. It is the preTBSCertificate, which
+// differs in TWO ways, both of which produce a signature that verifies against
+// nothing if you get them wrong:
+//
+//   1. THE `signature` FIELD IS REMOVED — the third element of the
+//      TBSCertificate SEQUENCE, holding the AlgorithmIdentifier of the
+//      CONVENTIONAL algorithm. The reasoning in the draft is that the CA might
+//      not know it yet when the alternative signature is computed, and that it
+//      belongs to the other signature anyway.
+//   2. THE altSignatureValue EXTENSION IS ABSENT — necessarily, since it is
+//      what is being computed.
+//
+// Nothing else changes: the two other extensions ARE covered, so the
+// alternative signature binds the alternative public key to the subject.
+//
+// WHAT THIS BUILD WILL NOT PRETEND TO KNOW is what a *failed* alternative
+// signature means to a chain. The IETF profile that would have said
+// (draft-truskovsky-lamps-pq-hybrid-x509) expired without progressing, so
+// verifyChain() reports the alternative signature as its own verdict beside
+// the conventional one and refuses to fold the two into a single boolean.
+// ---------------------------------------------------------------------------
+
+// The AlgorithmIdentifier for a CLASSICAL signature algorithm, which pkijs
+// writes for us when it signs and which nothing writes when the algorithm goes
+// into an extension instead. RSASSA-PSS is the one with parameters, and they
+// are not optional decoration: the hash, the mask generation function and the
+// salt length are all in there, and a verifier reads them rather than guessing.
+var SIG_ALG_OIDS = {
+  'sha1-rsa': { oid: '1.2.840.113549.1.1.5', nullParams: true },
+  'sha256-rsa': { oid: '1.2.840.113549.1.1.11', nullParams: true },
+  'sha384-rsa': { oid: '1.2.840.113549.1.1.12', nullParams: true },
+  'sha512-rsa': { oid: '1.2.840.113549.1.1.13', nullParams: true },
+  'sha256-rsapss': { oid: '1.2.840.113549.1.1.10', pss: 'SHA-256' },
+  'sha384-rsapss': { oid: '1.2.840.113549.1.1.10', pss: 'SHA-384' },
+  'sha512-rsapss': { oid: '1.2.840.113549.1.1.10', pss: 'SHA-512' },
+  'sha1-ecdsa': { oid: '1.2.840.10045.4.1' },
+  'sha256-ecdsa': { oid: '1.2.840.10045.4.3.2' },
+  'sha384-ecdsa': { oid: '1.2.840.10045.4.3.3' },
+  'sha512-ecdsa': { oid: '1.2.840.10045.4.3.4' },
+  'ed25519': { oid: ED25519_OID }
+};
+
+var DIGEST_OIDS = {
+  'SHA-1': '1.3.14.3.2.26',
+  'SHA-256': '2.16.840.1.101.3.4.2.1',
+  'SHA-384': '2.16.840.1.101.3.4.2.2',
+  'SHA-512': '2.16.840.1.101.3.4.2.3'
+};
+
+var MGF1_OID = '1.2.840.113549.1.1.8';
+
+function digestAlgorithmIdentifier(hash) {
+  log.debug("Entering digestAlgorithmIdentifier(). hash=" + hash);
+  var out = new asn1js.Sequence({
+    value: [new asn1js.ObjectIdentifier({ value: DIGEST_OIDS[hash] }),
+            new asn1js.Null()]
+  });
+  log.debug("Leaving digestAlgorithmIdentifier().");
+  return out;
+}
+
+// RFC 4055 section 3.1. Every field is written out even though three of them
+// have DEFAULTs, because the defaults are all SHA-1 and a reader that applies
+// them to a SHA-256 signature gets a verification failure that names neither.
+function rsaPssParams(hash) {
+  log.debug("Entering rsaPssParams(). hash=" + hash);
+  var out = new asn1js.Sequence({
+    value: [
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        value: [digestAlgorithmIdentifier(hash)]
+      }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 1 },
+        value: [new asn1js.Sequence({
+          value: [new asn1js.ObjectIdentifier({ value: MGF1_OID }),
+                  digestAlgorithmIdentifier(hash)]
+        })]
+      }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 2 },
+        value: [new asn1js.Integer({ value: HASH_LENGTHS[hash] })]
+      }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 3 },
+        value: [new asn1js.Integer({ value: 1 })]
+      })
+    ]
+  });
+  log.debug("Leaving rsaPssParams().");
+  return out;
+}
+
+function signatureAlgorithmIdentifier(sig) {
+  log.debug("Entering signatureAlgorithmIdentifier(). alg=" + sig.id);
+  if (sig.kind === 'pqc') {
+    log.debug("Leaving signatureAlgorithmIdentifier(). Post-quantum.");
+    return new asn1js.Sequence({
+      value: [new asn1js.ObjectIdentifier({ value: sig.oid })]
+    });
+  }
+  var known = SIG_ALG_OIDS[sig.id];
+  if (!known) {
+    log.debug("Leaving signatureAlgorithmIdentifier(). Unknown.");
+    throw new Error('No AlgorithmIdentifier is known here for ' + sig.id +
+        '.');
+  }
+  var value = [new asn1js.ObjectIdentifier({ value: known.oid })];
+  if (known.nullParams) {
+    value.push(new asn1js.Null());
+  }
+  if (known.pss) {
+    value.push(rsaPssParams(known.pss));
+  }
+  log.debug("Leaving signatureAlgorithmIdentifier().");
+  return new asn1js.Sequence({ value: value });
+}
+
+// The preTBSCertificate, from a TBSCertificate's own DER. Both removals in one
+// function so that the signer and the verifier cannot disagree about what was
+// covered — which is the failure mode that makes a hybrid certificate verify
+// on the machine that made it and nowhere else.
+function preTbsFromTbs(tbsDer) {
+  log.debug("Entering preTbsFromTbs().");
+  var input = new Uint8Array(tbsDer);
+  var parsed = asn1js.fromBER(input.slice().buffer);
+  if (parsed.offset === -1) {
+    log.debug("Leaving preTbsFromTbs(). Unparseable.");
+    throw new Error('This certificate\'s TBSCertificate does not parse.');
+  }
+  var items = (parsed.result.valueBlock.value || []).slice();
+  var versionPresent = items.length && items[0].idBlock &&
+      items[0].idBlock.tagClass === 3 && items[0].idBlock.tagNumber === 0;
+  var signatureIndex = versionPresent ? 2 : 1;
+  items.splice(signatureIndex, 1);
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    if (!item.idBlock || item.idBlock.tagClass !== 3 ||
+        item.idBlock.tagNumber !== 3) {
+      continue;
+    }
+    var holder = (item.valueBlock.value || [])[0];
+    if (!holder) continue;
+    var kept = (holder.valueBlock.value || []).filter(function (ext) {
+      var oid = (ext.valueBlock.value || [])[0];
+      return !oid || typeof oid.valueBlock.toString !== 'function' ||
+          oid.valueBlock.toString() !== EXT_OIDS.altSignatureValue;
+    });
+    items[i] = new asn1js.Constructed({
+      idBlock: { tagClass: 3, tagNumber: 3 },
+      value: [new asn1js.Sequence({ value: kept })]
+    });
+  }
+  var out = new Uint8Array(new asn1js.Sequence({ value: items })
+      .toBER(false));
+  log.debug("Leaving preTbsFromTbs(). " + out.length + " bytes.");
+  return out;
+}
+
+// Adds the two extensions the alternative signature covers, computes it over
+// the preTBSCertificate, and adds the third. Called before the conventional
+// signature, because the conventional one covers all three.
+async function addAlternativeSignature(cert, spec, issuerKeyDesc) {
+  log.debug("Entering addAlternativeSignature().");
+  var extensions = cert.extensions || [];
+  if (spec.subjectAltPublicKey) {
+    // SubjectAltPublicKeyInfoExt is a SubjectPublicKeyInfo, so the subject's
+    // alternative public key goes in as the DER it already is rather than
+    // being taken apart and rebuilt.
+    var altSpki = asn1js.fromBER(pemToDer(spec.subjectAltPublicKey));
+    if (altSpki.offset === -1) {
+      log.debug("Leaving addAlternativeSignature(). Bad alt public key.");
+      throw new Error('The alternative public key is not a readable ' +
+          'SubjectPublicKeyInfo.');
+    }
+    extensions.push(extension(EXT_OIDS.subjectAltPublicKeyInfo,
+        !!(spec.altSignature && spec.altSignature.critical), altSpki.result));
+  }
+  if (!spec.altSignature) {
+    cert.extensions = extensions;
+    log.debug("Leaving addAlternativeSignature(). Key only, no signature.");
+    return cert;
+  }
+  var altSig = sigAlg(spec.altSignature.signatureAlg);
+  if (!altSig) {
+    log.debug("Leaving addAlternativeSignature(). Unknown algorithm.");
+    throw new Error('Unknown alternative signature algorithm: ' +
+        spec.altSignature.signatureAlg);
+  }
+  if (!spec.altSignature.privateKeyPem) {
+    log.debug("Leaving addAlternativeSignature(). No alternative key.");
+    throw new Error('An alternative signature is made with the ISSUER\'s ' +
+        'alternative private key — the one matching the alternative public ' +
+        'key in the issuer\'s own certificate. There is none here.');
+  }
+  extensions.push(extension(EXT_OIDS.altSignatureAlgorithm,
+      !!spec.altSignature.critical, signatureAlgorithmIdentifier(altSig)));
+  cert.extensions = extensions;
+  var altKeyDesc = spec.altSignature.keyAlg
+    ? keys.keyAlg(spec.altSignature.keyAlg)
+    : (keys.describePrivatePem(spec.altSignature.privateKeyPem) ||
+       issuerKeyDesc);
+  var preTbs = preTbsFromTbs(cert.encodeTBS().toBER(false));
+  var value = await signBytes(altSig, spec.altSignature.privateKeyPem,
+      altKeyDesc, preTbs);
+  extensions.push(extension(EXT_OIDS.altSignatureValue,
+      !!spec.altSignature.critical, new asn1js.BitString({
+        valueHex: value.buffer.slice(value.byteOffset,
+            value.byteOffset + value.byteLength) })));
+  cert.extensions = extensions;
+  log.debug("Leaving addAlternativeSignature(). Signed with " + altSig.id +
+      ".");
+  return cert;
+}
+
+// The three extensions read back off a parsed certificate, or null for each
+// that is absent. Shared by the verifier and the describer.
+function alternativeParts(cert) {
+  log.debug("Entering alternativeParts().");
+  var out = { altPublicKeyPem: null, altAlgorithmOid: null,
+              altSignature: null };
+  (cert.extensions || []).forEach(function (ext) {
+    if (ext.extnID === EXT_OIDS.subjectAltPublicKeyInfo) {
+      out.altPublicKeyPem = derToPem(ext.extnValue.valueBlock.valueHexView,
+          'PUBLIC KEY');
+    }
+    if (ext.extnID === EXT_OIDS.altSignatureAlgorithm) {
+      var parsed = asn1js.fromBER(
+          new Uint8Array(ext.extnValue.valueBlock.valueHexView).slice()
+              .buffer);
+      var oid = parsed.offset === -1
+        ? null
+        : (parsed.result.valueBlock.value || [])[0];
+      out.altAlgorithmOid = oid && oid.valueBlock &&
+          typeof oid.valueBlock.toString === 'function'
+        ? oid.valueBlock.toString()
+        : null;
+    }
+    if (ext.extnID === EXT_OIDS.altSignatureValue) {
+      var value = asn1js.fromBER(
+          new Uint8Array(ext.extnValue.valueBlock.valueHexView).slice()
+              .buffer);
+      out.altSignature = value.offset === -1
+        ? null
+        : new Uint8Array(value.result.valueBlock.valueHexView);
+    }
+  });
+  log.debug("Leaving alternativeParts().");
+  return out;
+}
+
+// Which SIG_ALGS entry an AlgorithmIdentifier OID names. The post-quantum
+// families are one-to-one; the classical ones are not, and RSASSA-PSS is
+// one OID for three algorithms — so the digest comes out of the parameters,
+// which is exactly why they are written in full above.
+function sigAlgForOid(oid, paramsHashOid) {
+  log.debug("Entering sigAlgForOid(). oid=" + oid);
+  var pq = pqx.algForOid(oid);
+  if (pq) {
+    log.debug("Leaving sigAlgForOid(). Post-quantum.");
+    return sigAlg(pq.id.toLowerCase());
+  }
+  var ids = Object.keys(SIG_ALG_OIDS);
+  for (var i = 0; i < ids.length; i++) {
+    var known = SIG_ALG_OIDS[ids[i]];
+    if (known.oid !== oid) continue;
+    if (!known.pss) {
+      log.debug("Leaving sigAlgForOid(). " + ids[i]);
+      return sigAlg(ids[i]);
+    }
+    if (paramsHashOid && DIGEST_OIDS[known.pss] === paramsHashOid) {
+      log.debug("Leaving sigAlgForOid(). PSS " + ids[i]);
+      return sigAlg(ids[i]);
+    }
+  }
+  log.debug("Leaving sigAlgForOid(). Unknown.");
+  return null;
+}
+
+// Verify the ALTERNATIVE signature on a certificate, given the issuer's
+// certificate (whose own subjectAltPublicKeyInfo holds the verification key).
+// Returns a verdict object rather than a boolean, because "there is no
+// alternative signature here" and "the alternative signature is wrong" are
+// completely different answers and a boolean cannot carry both.
+async function verifyAlternativeSignature(cert, issuerCert) {
+  log.debug("Entering verifyAlternativeSignature().");
+  var parts = alternativeParts(cert);
+  if (!parts.altSignature || !parts.altAlgorithmOid) {
+    log.debug("Leaving verifyAlternativeSignature(). Absent.");
+    return { present: false, valid: null,
+             reason: 'This certificate carries no alternative signature.' };
+  }
+  var issuerParts = alternativeParts(issuerCert);
+  if (!issuerParts.altPublicKeyPem) {
+    log.debug("Leaving verifyAlternativeSignature(). No issuer alt key.");
+    return { present: true, valid: null, algorithmOid: parts.altAlgorithmOid,
+             reason: 'The issuer\'s certificate carries no ' +
+                 'subjectAltPublicKeyInfo, so there is no key to check this ' +
+                 'alternative signature with. A hybrid chain has to be ' +
+                 'hybrid the whole way up.' };
+  }
+  var altSig = sigAlgForOid(parts.altAlgorithmOid);
+  if (!altSig) {
+    log.debug("Leaving verifyAlternativeSignature(). Unknown algorithm.");
+    return { present: true, valid: null, algorithmOid: parts.altAlgorithmOid,
+             reason: 'This build does not know the alternative signature ' +
+                 'algorithm ' + parts.altAlgorithmOid + '.' };
+  }
+  var preTbs = preTbsFromTbs(cert.tbsView);
+  var ok = await verifyBytes(altSig, issuerParts.altPublicKeyPem,
+      parts.altSignature, preTbs);
+  log.debug("Leaving verifyAlternativeSignature(). valid=" + ok);
+  return { present: true, valid: !!ok, algorithm: altSig.id,
+           algorithmOid: parts.altAlgorithmOid };
+}
+
+// A pkijs AlgorithmIdentifier for a post-quantum algorithm: the OID and
+// NOTHING ELSE. pkijs writes `algorithmParams` when it is set and omits the
+// member when it is not, which is exactly what "PARAMS ARE absent" requires;
+// an explicit NULL here — the shape an RSA identifier has, and therefore the
+// shape a copied line produces — makes a certificate OpenSSL 3.5 refuses to
+// load at all.
+function pqcAlgorithmIdentifier(sig) {
+  log.debug("Entering pqcAlgorithmIdentifier(). alg=" + sig.id);
+  var out = new pkijs.AlgorithmIdentifier({ algorithmId: sig.oid });
+  log.debug("Leaving pqcAlgorithmIdentifier().");
+  return out;
+}
+
+async function signCertificate(cert, privateKey, sig) {
+  log.debug("Entering signCertificate(). alg=" + sig.id);
+  if (sig.kind === 'pqc') {
+    // The same shape as the Ed25519 path below, and for a stronger version of
+    // the same reason: pkijs cannot import the key, cannot sign with it, and
+    // has no AlgorithmIdentifier for it. Both identifiers are set to the one
+    // OID the algorithm has — RFC 9881 section 3, RFC 9909 section 3 and
+    // section 5.1 of the composite draft all give the signature algorithm and
+    // the key algorithm the SAME identifier, with PARAMETERS ABSENT.
+    cert.signature = pqcAlgorithmIdentifier(sig);
+    cert.signatureAlgorithm = pqcAlgorithmIdentifier(sig);
+    var pqTbs = cert.encodeTBS().toBER(false);
+    var pqSignature = await signBytes(sig, privateKey.pem, privateKey.desc,
+        pqTbs);
+    cert.signatureValue = new asn1js.BitString({
+      valueHex: pqSignature.buffer.slice(pqSignature.byteOffset,
+          pqSignature.byteOffset + pqSignature.byteLength) });
+    log.debug("Leaving signCertificate(). Signed as " + sig.pqc + ".");
+    return cert;
+  }
+  if (sig.kind !== 'okp') {
+    await cert.sign(privateKey, sig.hash);
+    // ECDSA only, and only because pkijs's (r, s) encoding is not always
+    // minimal — see minimalDerInteger() above. RSA signatures are a single
+    // octet string and are left exactly as they were produced.
+    if (sig.kind === 'ec') {
+      var normalized = minimalEcdsaSignature(
+        cert.signatureValue.valueBlock.valueHexView);
+      cert.signatureValue = new asn1js.BitString({
+        valueHex: normalized.buffer.slice(
+          normalized.byteOffset,
+          normalized.byteOffset + normalized.byteLength)
+      });
+    }
+    log.debug("Leaving signCertificate(). Signed by pkijs.");
+    return cert;
+  }
+  cert.signature = new pkijs.AlgorithmIdentifier({
+      algorithmId: ED25519_OID });
+  cert.signatureAlgorithm = new pkijs.AlgorithmIdentifier({
+      algorithmId: ED25519_OID });
+  var tbs = cert.encodeTBS().toBER(false);
+  var signature = await crypto.subtle.sign({ name: 'Ed25519' }, privateKey,
+      tbs);
+  cert.signatureValue = new asn1js.BitString({ valueHex: signature });
+  log.debug("Leaving signCertificate(). Signed as Ed25519.");
+  return cert;
+}
+
+async function buildExtensions(spec, subjectSpki, issuerCert) {
+  log.debug("Entering buildExtensions().");
+  var ext = spec.extensions || defaultExtensions(spec.profile);
+  var out = [];
+  function add(built) {
+    log.debug("Entering add().");
+    if (built) out.push(built);
+    log.debug("Leaving add().");
+  }
+
+  if (ext.basicConstraints && ext.basicConstraints.present) {
+    add(buildBasicConstraints(ext.basicConstraints));
+  }
+  if (ext.keyUsage && ext.keyUsage.present) add(buildKeyUsage(ext.keyUsage));
+  if (ext.extKeyUsage && ext.extKeyUsage.present) {
+    add(buildExtKeyUsage(ext.extKeyUsage));
+  }
+  if (ext.subjectAltName && ext.subjectAltName.present) {
+    add(buildAltName(EXT_OIDS.subjectAltName, ext.subjectAltName));
+  }
+  if (ext.issuerAltName && ext.issuerAltName.present) {
+    add(buildAltName(EXT_OIDS.issuerAltName, ext.issuerAltName));
+  }
+  if (ext.subjectKeyIdentifier && ext.subjectKeyIdentifier.present) {
+    var skid = await keyIdentifier(subjectSpki);
+    add(extension(EXT_OIDS.subjectKeyIdentifier,
+        !!ext.subjectKeyIdentifier.critical,
+        new asn1js.OctetString({ valueHex: skid.buffer.slice(skid.byteOffset,
+            skid.byteOffset + skid.byteLength) })));
+  }
+  if (ext.authorityKeyIdentifier && ext.authorityKeyIdentifier.present) {
+    add(await buildAuthorityKeyIdentifier(ext.authorityKeyIdentifier,
+        subjectSpki, issuerCert));
+  }
+  if (ext.cRLDistributionPoints && ext.cRLDistributionPoints.present) {
+    add(buildCrlDistributionPoints(EXT_OIDS.cRLDistributionPoints,
+        ext.cRLDistributionPoints));
+  }
+  if (ext.freshestCRL && ext.freshestCRL.present) {
+    add(buildCrlDistributionPoints(EXT_OIDS.freshestCRL, ext.freshestCRL));
+  }
+  if (ext.authorityInfoAccess && ext.authorityInfoAccess.present) {
+    add(buildInfoAccess(EXT_OIDS.authorityInfoAccess,
+        ext.authorityInfoAccess));
+  }
+  if (ext.subjectInfoAccess && ext.subjectInfoAccess.present) {
+    add(buildInfoAccess(EXT_OIDS.subjectInfoAccess, ext.subjectInfoAccess));
+  }
+  if (ext.certificatePolicies && ext.certificatePolicies.present) {
+    add(buildCertificatePolicies(ext.certificatePolicies));
+  }
+  if (ext.policyMappings && ext.policyMappings.present) {
+    add(buildPolicyMappings(ext.policyMappings));
+  }
+  if (ext.policyConstraints && ext.policyConstraints.present) {
+    add(buildPolicyConstraints(ext.policyConstraints));
+  }
+  if (ext.nameConstraints && ext.nameConstraints.present) {
+    add(buildNameConstraints(ext.nameConstraints));
+  }
+  if (ext.inhibitAnyPolicy && ext.inhibitAnyPolicy.present) {
+    add(buildInhibitAnyPolicy(ext.inhibitAnyPolicy));
+  }
+  if (ext.privateKeyUsagePeriod && ext.privateKeyUsagePeriod.present) {
+    add(buildPrivateKeyUsagePeriod(ext.privateKeyUsagePeriod));
+  }
+  if (ext.tlsFeature && ext.tlsFeature.present) {
+    add(buildTlsFeature(ext.tlsFeature));
+  }
+  if (ext.ocspNoCheck && ext.ocspNoCheck.present) {
+    add(buildOcspNoCheck(ext.ocspNoCheck));
+  }
+  if (ext.netscapeCertType && ext.netscapeCertType.present) {
+    add(buildNetscapeCertType(ext.netscapeCertType));
+  }
+  if (ext.netscapeComment && ext.netscapeComment.present) {
+    add(buildNetscapeComment(ext.netscapeComment));
+  }
+  (ext.custom || []).forEach(function (custom) {
+    add(buildCustomExtension(custom));
+  });
+  log.debug("Leaving buildExtensions(). " + out.length + " extension(s).");
+  return out;
+}
+
+// The AKI names the ISSUER's key, which for a self-signed certificate is the
+// subject's own — the one case where reading it off the issuer certificate is
+// impossible, because there is not one yet.
+async function buildAuthorityKeyIdentifier(spec, subjectSpki, issuerCert) {
+  log.debug("Entering buildAuthorityKeyIdentifier().");
+  var spki;
+  if (issuerCert) {
+    spki = issuerCert.subjectPublicKeyInfo.toSchema().toBER(false);
+  } else {
+    spki = subjectSpki;
+  }
+  var kid = await keyIdentifier(spki);
+  var aki = new pkijs.AuthorityKeyIdentifier({
+    keyIdentifier: new asn1js.OctetString({
+        valueHex: kid.buffer.slice(kid.byteOffset,
+            kid.byteOffset + kid.byteLength) })
+  });
+  if (spec.includeIssuerAndSerial && issuerCert) {
+    aki.authorityCertIssuer = [new pkijs.GeneralName({
+        type: GN_TYPES.dirName, value: issuerCert.issuer })];
+    aki.authorityCertSerialNumber = issuerCert.serialNumber;
+  }
+  log.debug("Leaving buildAuthorityKeyIdentifier().");
+  return extension(EXT_OIDS.authorityKeyIdentifier, !!spec.critical,
+      aki.toSchema());
+}
+
+function bytesToHex(bytes) {
+  log.debug("Entering bytesToHex().");
+  var view = new Uint8Array(bytes.buffer ? bytes.buffer.slice(bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength) : bytes);
+  var hex = '';
+  for (var i = 0; i < view.length; i++) {
+    hex += ('0' + view[i].toString(16)).slice(-2);
+  }
+  log.debug("Leaving bytesToHex().");
+  return hex;
+}
+
+// ---------------------------------------------------------------------------
+// Reading one back
+//
+// The describer covers exactly the extensions the builder writes, which is what
+// makes the pair testable: issue with a setting, read it back, compare. An
+// extension it does not know is reported by OID with its bytes rather than
+// skipped — a certificate whose interesting extension is silently missing from
+// the display is worse than no display.
+// ---------------------------------------------------------------------------
+var SIG_OID_NAMES = {
+  '1.2.840.113549.1.1.5': 'sha1WithRSAEncryption',
+  '1.2.840.113549.1.1.11': 'sha256WithRSAEncryption',
+  '1.2.840.113549.1.1.12': 'sha384WithRSAEncryption',
+  '1.2.840.113549.1.1.13': 'sha512WithRSAEncryption',
+  '1.2.840.113549.1.1.10': 'rsassaPss',
+  '1.2.840.10045.4.1': 'ecdsa-with-SHA1',
+  '1.2.840.10045.4.3.2': 'ecdsa-with-SHA256',
+  '1.2.840.10045.4.3.3': 'ecdsa-with-SHA384',
+  '1.2.840.10045.4.3.4': 'ecdsa-with-SHA512',
+  '1.3.101.112': 'Ed25519'
+};
+
+
+var PUBKEY_OID_NAMES = {
+  '1.2.840.113549.1.1.1': 'rsaEncryption',
+  '1.2.840.10045.2.1': 'id-ecPublicKey',
+  '1.3.101.112': 'Ed25519'
+};
+
+// The post-quantum names, from the same registry the encoder reads, so a
+// certificate this page issues can never describe itself with a name the
+// issuer did not use.
+(function addPostQuantumOidNames() {
+  pqx.algIds().forEach(function (id) {
+    var entry = pqx.alg(id);
+    if (entry.use === 'sig') {
+      SIG_OID_NAMES[entry.oid] = entry.name;
+    }
+    PUBKEY_OID_NAMES[entry.oid] = entry.name;
+  });
+})();
+
+
+function describeGeneralName(gn) {
+  log.debug("Entering describeGeneralName().");
+  var out;
+  if (gn.type === GN_TYPES.dns) out = 'DNS:' + gn.value;
+  else if (gn.type === GN_TYPES.email) out = 'email:' + gn.value;
+  else if (gn.type === GN_TYPES.uri) out = 'URI:' + gn.value;
+  else if (gn.type === GN_TYPES.ip) {
+    out = 'IP:' + describeIp(gn.value.valueBlock.valueHexView);
+  } else if (gn.type === GN_TYPES.dirName) out = 'DirName:' + dnToString(
+      gn.value);
+  else if (gn.type === GN_TYPES.registeredID) out = 'RID:' + gn.value;
+  else if (gn.type === GN_TYPES.otherName) out = describeOtherName(gn);
+  else out = 'type ' + gn.type;
+  log.debug("Leaving describeGeneralName().");
+  return out;
+}
+
+function describeIp(bytes) {
+  log.debug("Entering describeIp().");
+  var view = new Uint8Array(bytes);
+  var out;
+  if (view.length === 4 || view.length === 8) {
+    out = Array.prototype.slice.call(view.slice(0, 4)).join('.');
+    if (view.length === 8) {
+      out += '/' + Array.prototype.slice.call(view.slice(4)).join('.');
+    }
+  } else {
+    var groups = [];
+    for (var i = 0; i + 1 < Math.min(view.length, 16); i += 2) {
+      groups.push(((view[i] << 8) | view[i + 1]).toString(16));
+    }
+    out = groups.join(':');
+    if (view.length === 32) out += '/…';
+  }
+  log.debug("Leaving describeIp().");
+  return out;
+}
+
+function describeOtherName(gn) {
+  log.debug("Entering describeOtherName().");
+  var out = 'otherName';
+  try {
+    var seq = gn.value.valueBlock.value;
+    var oid = seq[0].valueBlock.toString();
+    var inner = seq[1].valueBlock.value[0];
+    var name = oid === OTHERNAME_UPN ? 'UPN'
+      : oid === OTHERNAME_KRB5 ? 'Kerberos principal' : oid;
+    var text = inner && inner.valueBlock && inner.valueBlock.value !== undefined
+      ? inner.valueBlock.value
+      : '(DER)';
+    out = 'otherName:' + name + ':' + text;
+  } catch (e) {
+    log.debug("describeOtherName(): " + e.message);
+  }
+  log.debug("Leaving describeOtherName().");
+  return out;
+}
+
+function bitsSet(bitString, table) {
+  log.debug("Entering bitsSet().");
+  var view = new Uint8Array(bitString.valueBlock.valueHexView);
+  var out = table.filter(function (entry) {
+    var byte = Math.floor(entry.bit / 8);
+    if (byte >= view.length) return false;
+    return (view[byte] & (0x80 >> (entry.bit % 8))) !== 0;
+  }).map(function (entry) { return entry.name; });
+  log.debug("Leaving bitsSet().");
+  return out;
+}
+
+// The KeyUsage extension of a parsed certificate — the X.509v3 field that
+// says what the key inside it may be USED for (RFC 5280 section 4.2.1.3).
+//
+// `present` is reported beside the list because the specification draws a
+// distinction a validator must not lose: a certificate carrying NO KeyUsage
+// extension restricts its key to nothing at all, while a certificate that
+// carries one may be used ONLY for the bits it asserts. So an empty `usages`
+// with `present` true is a key permitted to do nothing, and an empty one with
+// `present` false is a key permitted to do anything — and a check that
+// conflated the two would either refuse every certificate without the
+// extension or accept one that forbids the very operation being checked.
+function keyUsageOf(cert) {
+  log.debug("Entering keyUsageOf().");
+  var extensions = cert.extensions || [];
+  for (var i = 0; i < extensions.length; i++) {
+    if (extensions[i].extnID !== EXT_OIDS.keyUsage) continue;
+    var parsed = asn1js.fromBER(
+      extensions[i].extnValue.valueBlock.valueHexView);
+    if (parsed.offset === -1) {
+      log.warn("keyUsageOf(): the KeyUsage extension did not parse.");
+      break;
+    }
+    log.debug("Leaving keyUsageOf(). Present.");
+    return { present: true, critical: !!extensions[i].critical,
+             usages: bitsSet(parsed.result, KEY_USAGE_BITS) };
+  }
+  log.debug("Leaving keyUsageOf(). Absent.");
+  return { present: false, critical: false, usages: [] };
+}
+
+// Whether a KeyUsage from keyUsageOf() permits `usage`, by the rule above:
+// an absent extension permits everything, a present one permits only what it
+// asserts. Callers pass the name from KEY_USAGE_BITS — `digitalSignature`
+// for a key that verifies a signature over something that is not a
+// certificate, `keyCertSign` for one that signs the certificate below it.
+function keyUsagePermits(keyUsage, usage) {
+  log.debug("Entering keyUsagePermits(). usage=" + usage);
+  var permitted = !keyUsage || !keyUsage.present ||
+      keyUsage.usages.indexOf(usage) !== -1;
+  log.debug("Leaving keyUsagePermits(). " + permitted);
+  return permitted;
+}
+
+function describeExtension(ext) {
+  log.debug("Entering describeExtension(). oid=" + ext.extnID);
+  var name = EXT_BY_OID[ext.extnID] || ext.extnID;
+  var out = { oid: ext.extnID, name: name, critical: !!ext.critical,
+              value: null };
+  var parsed = asn1js.fromBER(ext.extnValue.valueBlock.valueHexView);
+  var asn1 = parsed.offset === -1 ? null : parsed.result;
+  try {
+    if (name === 'basicConstraints') {
+      var bc = new pkijs.BasicConstraints({ schema: asn1 });
+      out.value = { ca: !!bc.cA,
+                    pathLen: bc.pathLenConstraint === undefined
+                      ? null : bc.pathLenConstraint };
+    } else if (name === 'keyUsage') {
+      out.value = bitsSet(asn1, KEY_USAGE_BITS);
+    } else if (name === 'netscapeCertType') {
+      out.value = bitsSet(asn1, NS_CERT_TYPE_BITS);
+    } else if (name === 'extKeyUsage') {
+      out.value = new pkijs.ExtKeyUsage({ schema: asn1 }).keyPurposes
+        .map(function (oid) { return EKU_BY_OID[oid] || oid; });
+    } else if (name === 'subjectAltName' || name === 'issuerAltName') {
+      out.value = new pkijs.GeneralNames({ schema: asn1 }).names
+        .map(describeGeneralName);
+    } else if (name === 'subjectAltPublicKeyInfo') {
+      // The extension IS a SubjectPublicKeyInfo, so it is described the same
+      // way the certificate's own key is: the algorithm by name where one is
+      // known, and the size of what it holds.
+      var altOid = (asn1.valueBlock.value[0].valueBlock.value[0])
+          .valueBlock.toString();
+      var altBits = asn1.valueBlock.value[1].valueBlock.valueHexView.length;
+      out.value = {
+        algorithm: PUBKEY_OID_NAMES[altOid] || altOid,
+        oid: altOid,
+        bytes: altBits
+      };
+    } else if (name === 'altSignatureAlgorithm') {
+      var sigOid = asn1.valueBlock.value[0].valueBlock.toString();
+      out.value = { algorithm: SIG_OID_NAMES[sigOid] || sigOid, oid: sigOid };
+    } else if (name === 'altSignatureValue') {
+      // The signature itself, which is up to 50 kB for SLH-DSA — so its
+      // LENGTH and the first bytes, rather than a page of hex nobody reads.
+      var altSig = new Uint8Array(asn1.valueBlock.valueHexView);
+      out.value = { bytes: altSig.length,
+                    starts: bytesToHex(altSig.slice(0, 16)) };
+    } else if (name === 'subjectKeyIdentifier') {
+      out.value = bytesToHex(asn1.valueBlock.valueHexView);
+    } else if (name === 'authorityKeyIdentifier') {
+      var aki = new pkijs.AuthorityKeyIdentifier({ schema: asn1 });
+      out.value = {
+        keyIdentifier: aki.keyIdentifier
+          ? bytesToHex(aki.keyIdentifier.valueBlock.valueHexView) : null,
+        issuer: aki.authorityCertIssuer
+          ? aki.authorityCertIssuer.map(describeGeneralName) : null,
+        serial: aki.authorityCertSerialNumber
+          ? bytesToHex(aki.authorityCertSerialNumber.valueBlock.valueHexView)
+          : null
+      };
+    } else if (name === 'cRLDistributionPoints' || name === 'freshestCRL') {
+      out.value = new pkijs.CRLDistributionPoints({ schema: asn1 })
+        .distributionPoints.map(function (point) {
+          return (point.distributionPoint || []).map(describeGeneralName)
+              .join(', ');
+        });
+    } else if (name === 'authorityInfoAccess' || name === 'subjectInfoAccess') {
+      out.value = new pkijs.InfoAccess({ schema: asn1 }).accessDescriptions
+        .map(function (access) {
+          return (AIA_BY_OID[access.accessMethod] || access.accessMethod) +
+              ': ' + describeGeneralName(access.accessLocation);
+        });
+    } else if (name === 'certificatePolicies') {
+      out.value = new pkijs.CertificatePolicies({ schema: asn1 })
+        .certificatePolicies.map(function (info) {
+          return { oid: info.policyIdentifier,
+                   qualifiers: (info.policyQualifiers || []).length };
+        });
+    } else if (name === 'policyMappings') {
+      out.value = new pkijs.PolicyMappings({ schema: asn1 }).mappings
+        .map(function (m) {
+          return m.issuerDomainPolicy + ' -> ' + m.subjectDomainPolicy;
+        });
+    } else if (name === 'policyConstraints') {
+      var pc = new pkijs.PolicyConstraints({ schema: asn1 });
+      out.value = { requireExplicitPolicy: pc.requireExplicitPolicy,
+                    inhibitPolicyMapping: pc.inhibitPolicyMapping };
+    } else if (name === 'nameConstraints') {
+      var nc = new pkijs.NameConstraints({ schema: asn1 });
+      out.value = {
+        permitted: (nc.permittedSubtrees || []).map(function (t) {
+          return describeGeneralName(t.base);
+        }),
+        excluded: (nc.excludedSubtrees || []).map(function (t) {
+          return describeGeneralName(t.base);
+        })
+      };
+    } else if (name === 'inhibitAnyPolicy') {
+      out.value = asn1.valueBlock.valueDec;
+    } else if (name === 'ocspNoCheck') {
+      out.value = 'present';
+    } else if (name === 'netscapeComment') {
+      out.value = asn1.valueBlock.value;
+    } else if (name === 'tlsFeature') {
+      out.value = asn1.valueBlock.value.map(function (v) {
+        return v.valueBlock.valueDec;
+      });
+    } else {
+      out.value = bytesToHex(ext.extnValue.valueBlock.valueHexView);
+    }
+  } catch (e) {
+    log.warn('describeExtension(' + ext.extnID + '): ' + e.message);
+    out.value = bytesToHex(ext.extnValue.valueBlock.valueHexView);
+    out.parseError = e.message;
+  }
+  log.debug("Leaving describeExtension().");
+  return out;
+}
+
+async function describeCertificate(pemOrDer) {
+  log.debug("Entering describeCertificate().");
+  var der = typeof pemOrDer === 'string' ? pemToDer(pemOrDer) : pemOrDer;
+  var cert = pkijs.Certificate.fromBER(der);
+  var spkiDer = cert.subjectPublicKeyInfo.toSchema().toBER(false);
+  var out = {
+    version: (cert.version || 0) + 1,
+    serialHex: bytesToHex(cert.serialNumber.valueBlock.valueHexView),
+    subject: dnToString(cert.subject),
+    issuer: dnToString(cert.issuer),
+    notBefore: cert.notBefore.value.toISOString(),
+    notAfter: cert.notAfter.value.toISOString(),
+    signatureAlgorithm: SIG_OID_NAMES[cert.signatureAlgorithm.algorithmId] ||
+        cert.signatureAlgorithm.algorithmId,
+    signatureAlgorithmOid: cert.signatureAlgorithm.algorithmId,
+    publicKeyAlgorithm:
+        PUBKEY_OID_NAMES[cert.subjectPublicKeyInfo.algorithm.algorithmId] ||
+        cert.subjectPublicKeyInfo.algorithm.algorithmId,
+    selfSigned: dnToString(cert.subject) === dnToString(cert.issuer),
+    extensions: (cert.extensions || []).map(describeExtension),
+    fingerprints: {}
+  };
+  // The key description comes from importing the key, which is the only way to
+  // learn an RSA modulus size or an EC curve — and the only part of this
+  // function that can decline: describePublicPem() returns null rather than
+  // throwing when no candidate imports, which is what a browser without
+  // Ed25519 in Web Crypto does with an Ed25519 certificate. The ALGORITHM is
+  // in the SubjectPublicKeyInfo either way, so that is the fallback rather
+  // than "unrecognised" — the certificate says what it is, and a page that
+  // cannot import the key can still say so.
+  var keyDesc = await keys.describePublicPem(derToPem(spkiDer, 'PUBLIC KEY'));
+  out.publicKey = keyDesc
+    ? (keyDesc.kind === 'rsa' ? 'RSA ' + keyDesc.bits + '-bit'
+      : keyDesc.kind === 'ec' ? 'ECDSA ' + keyDesc.curve : 'Ed25519')
+    : out.publicKeyAlgorithm;
+  out.fingerprints = await fingerprintsOf(der);
+  log.debug("Leaving describeCertificate().");
+  return out;
+}
+
+// SHA-1 and SHA-256 over the DER, or nulls.
+//
+// Both digests are Web Crypto, which is absent outside a secure context — and
+// this describes a certificate, which is a public document that needs no
+// secrecy to read. Everything else in describeCertificate() is ASN.1 parsing
+// that works anywhere, so a missing crypto.subtle costs two rows of a table
+// rather than the whole description: saml_cert.html is reachable from eight
+// pages and reads certificates that arrived in somebody else's metadata.
+async function fingerprintsOf(der) {
+  log.debug("Entering fingerprintsOf().");
+  var out = { sha1: null, sha256: null };
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    log.warn('fingerprintsOf(): no Web Crypto here, so no fingerprints.');
+    log.debug("Leaving fingerprintsOf(). No Web Crypto.");
+    return out;
+  }
+  try {
+    var sha1 = await crypto.subtle.digest('SHA-1', der);
+    var sha256 = await crypto.subtle.digest('SHA-256', der);
+    out.sha1 = colonHex(new Uint8Array(sha1));
+    out.sha256 = colonHex(new Uint8Array(sha256));
+  } catch (e) {
+    log.warn('fingerprintsOf(): ' + e.message);
+  }
+  log.debug("Leaving fingerprintsOf().");
+  return out;
+}
+
+// One described extension's value as a line of text.
+//
+// It lives here rather than in the page that first needed it because the
+// second page that needs it is saml_cert.html, which reads certificates this
+// tree did not issue: `describeExtension()` returns a string for some
+// extensions, a number for others, an array for the list-shaped ones and an
+// object for basicConstraints, nameConstraints and the authority key
+// identifier, and a caller that renders only the shapes it happens to have met
+// prints "[object Object]" for the rest.
+function extensionValueText(ext) {
+  log.debug("Entering extensionValueText().");
+  var value = ext ? ext.value : null;
+  var text;
+  if (value === null || value === undefined) {
+    text = '(present)';
+  } else if (typeof value === 'string' || typeof value === 'number') {
+    text = String(value);
+  } else if (Object.prototype.toString.call(value) === '[object Array]') {
+    text = value.map(function (item) {
+      return typeof item === 'object' ? JSON.stringify(item) : String(item);
+    }).join(', ');
+  } else {
+    text = JSON.stringify(value);
+  }
+  log.debug("Leaving extensionValueText().");
+  return text;
+}
+
+function colonHex(bytes) {
+  log.debug("Entering colonHex().");
+  var hex = bytesToHex(bytes).toUpperCase();
+  log.debug("Leaving colonHex().");
+  return (hex.match(/.{2}/g) || [hex]).join(':');
+}
+
+// Verify that each certificate in the list was signed by the next one, and
+// that the last is self-signed. Reports EVERY link rather than one boolean:
+// "the chain is broken" is not an answer anybody can act on.
+async function verifyChain(pems) {
+  log.debug("Entering verifyChain().");
+  var certs = pems.map(function (pem) {
+    return pkijs.Certificate.fromBER(pemToDer(pem));
+  });
+  var results = [];
+  for (var i = 0; i < certs.length; i++) {
+    var issuer = certs[i + 1] || certs[i];
+    var link = {
+      subject: dnToString(certs[i].subject),
+      issuer: dnToString(certs[i].issuer),
+      signedBy: dnToString(issuer.subject),
+      namesMatch: dnToString(certs[i].issuer) === dnToString(issuer.subject),
+      selfSigned: !certs[i + 1],
+      signatureValid: false,
+      // What this certificate's own key is allowed to do. The verdict on it
+      // is the CALLER's, because it depends on the position: the first
+      // certificate here verifies a signature over something that is not a
+      // certificate (digitalSignature) and every one above it signs the
+      // certificate below (keyCertSign).
+      keyUsage: keyUsageOf(certs[i])
+    };
+    try {
+      link.signatureValid = await verifySignature(certs[i], issuer);
+    } catch (e) {
+      // Reported on the link rather than thrown: one unverifiable link must
+      // not hide what the rest of the chain says.
+      log.debug("Caught in verifyChain(): " + ((e && e.message) || e));
+      link.error = e.message;
+    }
+    // The alternative signature is reported BESIDE the conventional one and
+    // never folded into it: no published profile says what a PKIX validator
+    // should do when the two disagree, and inventing a rule here would hide
+    // exactly the case this page exists to show.
+    try {
+      link.alternative = await verifyAlternativeSignature(certs[i], issuer);
+    } catch (e) {
+      // Reported beside the conventional result, for the reason above.
+      log.debug("Caught in verifyChain(): " + ((e && e.message) || e));
+      link.alternative = { present: true, valid: null, reason: e.message };
+    }
+    var now = new Date();
+    link.expired = certs[i].notAfter.value < now;
+    link.notYetValid = certs[i].notBefore.value > now;
+    results.push(link);
+  }
+  log.debug("Leaving verifyChain(). " + results.length + " link(s).");
+  return results;
+}
+
+// pkijs's own verify() cannot check an Ed25519 signature (the same engine gap
+// as signing), so that one is verified with Web Crypto against the issuer's
+// SPKI directly.
+async function verifySignature(cert, issuerCert) {
+  log.debug("Entering verifySignature().");
+  var pqcAlg = pqx.algForOid(cert.signatureAlgorithm.algorithmId);
+  if (pqcAlg) {
+    // pkijs's verify() would throw "Unsupported signature algorithm" here,
+    // which reads as a broken certificate rather than as a library that has
+    // never heard of ML-DSA.
+    var issuerSpkiPem = derToPem(issuerCert.subjectPublicKeyInfo.toSchema()
+        .toBER(false), 'PUBLIC KEY');
+    var pqcOk = await verifyBytes(sigAlg(pqcAlg.id.toLowerCase()),
+        issuerSpkiPem, cert.signatureValue.valueBlock.valueHexView,
+        cert.tbsView);
+    log.debug("Leaving verifySignature(). " + pqcAlg.id + " says " + pqcOk);
+    return pqcOk;
+  }
+  if (cert.signatureAlgorithm.algorithmId !== ED25519_OID) {
+    var ok = await cert.verify(issuerCert);
+    log.debug("Leaving verifySignature(). pkijs says " + ok);
+    return ok;
+  }
+  var spkiPem = derToPem(issuerCert.subjectPublicKeyInfo.toSchema()
+      .toBER(false), 'PUBLIC KEY');
+  var key = await keys.importPublicKey(spkiPem, { kind: 'okp',
+      name: 'Ed25519' });
+  var verified = await crypto.subtle.verify({ name: 'Ed25519' }, key,
+      cert.signatureValue.valueBlock.valueHexView, cert.tbsView);
+  log.debug("Leaving verifySignature(). Ed25519 says " + verified);
+  return verified;
+}
+
+// ---------------------------------------------------------------------------
+// A SELF-SIGNED CERTIFICATE FOR A KEY PAIR THAT NEEDS ONE ONLY AS A WRAPPER.
+//
+// PKCS#12 cannot carry a bare private key: the format's whole shape is a key
+// bag beside a certificate bag, so key_material.js's buildPkcs12() takes the
+// certificates it is to wrap and deliberately does not mint one — that would
+// make it depend on this module, and this module already depends on it.
+//
+// Which leaves each PAGE to mint the throwaway. jwt_tools.js had the only copy
+// (buildSelfSignedCertPem), and the Encryption / Decryption page's RSA pane
+// needs exactly the same thing for exactly the same reason — its Download Keys
+// button offers PKCS#12, and without a certificate that download fails with
+// "PKCS#12 needs at least one certificate to wrap the private key in".
+//
+// So it is here, once. `subject` is the caller's, because the CN is the only
+// part of this that says which page produced the file, and the validity window
+// is fixed rather than relative to now: a keystore's dates are not the point
+// of the exercise on either page, and a fixed window makes the output
+// reproducible.
+async function selfSignedCertPem(options) {
+  log.debug("Entering selfSignedCertPem().");
+  var opts = options || {};
+  var issued = await issueCertificate({
+    subject: opts.subject || 'CN=generated key',
+    subjectPublicKey: opts.publicPem,
+    issuerPrivateKey: opts.privatePem,
+    signatureAlg: opts.signatureAlg ||
+        defaultSignatureAlgorithm(opts.desc),
+    serial: opts.serial || '01',
+    notBefore: new Date(Date.UTC(2020, 0, 1)),
+    notAfter: new Date(Date.UTC(2035, 0, 1)),
+    extensions: defaultExtensions(opts.profile || 'tls-server')
+  });
+  log.debug("Leaving selfSignedCertPem().");
+  return issued.pem;
+}
+
+module.exports = {
+  // algorithms
+  SIG_ALGS: SIG_ALGS,
+  sigAlg: sigAlg,
+  signatureAlgorithmsFor: signatureAlgorithmsFor,
+  defaultSignatureAlgorithm: defaultSignatureAlgorithm,
+  selfSignedCertPem: selfSignedCertPem,
+  signerDescriptor: signerDescriptor,
+  // names
+  DN_ATTRS: DN_ATTRS,
+  buildDn: buildDn,
+  dnToString: dnToString,
+  parseDnString: parseDnString,
+  GN_TYPES: GN_TYPES,
+  buildGeneralName: buildGeneralName,
+  ipBytes: ipBytes,
+  ipConstraintBytes: ipConstraintBytes,
+  // extensions
+  EXT_OIDS: EXT_OIDS,
+  KEY_USAGE_BITS: KEY_USAGE_BITS,
+  EKU_OIDS: EKU_OIDS,
+  AIA_METHODS: AIA_METHODS,
+  NS_CERT_TYPE_BITS: NS_CERT_TYPE_BITS,
+  keyIdentifier: keyIdentifier,
+  // profiles
+  PROFILES: PROFILES,
+  profileIds: profileIds,
+  profile: profile,
+  defaultSubjectCN: defaultSubjectCN,
+  isDefaultSubjectCN: isDefaultSubjectCN,
+  DEFAULT_DN: DEFAULT_DN,
+  defaultSubjectAltName: defaultSubjectAltName,
+  isDefaultSubjectAltName: isDefaultSubjectAltName,
+  defaultExtensions: defaultExtensions,
+  // issuing and reading
+  randomSerialHex: randomSerialHex,
+  issueCertificate: issueCertificate,
+  certificationRequest: certificationRequest,
+  describeCertificate: describeCertificate,
+  keyUsageOf: keyUsageOf,
+  keyUsagePermits: keyUsagePermits,
+  extensionValueText: extensionValueText,
+  verifyChain: verifyChain,
+  verifySignature: verifySignature,
+  // the hybrid trio
+  signatureAlgorithmIdentifier: signatureAlgorithmIdentifier,
+  sigAlgForOid: sigAlgForOid,
+  preTbsFromTbs: preTbsFromTbs,
+  alternativeParts: alternativeParts,
+  verifyAlternativeSignature: verifyAlternativeSignature,
+  signBytes: signBytes,
+  verifyBytes: verifyBytes,
+  ecdsaRawToDer: ecdsaRawToDer,
+  ecdsaDerToRaw: ecdsaDerToRaw,
+  // Exported for tests/pki_x509.js: the case it guards against appears in
+  // roughly one P-521 signature in 256, so a check that waits for a real one
+  // is a check that reports green most of the time.
+  minimalEcdsaSignature: minimalEcdsaSignature,
+  bytesToHex: bytesToHex,
+  colonHex: colonHex
+};

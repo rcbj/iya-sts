@@ -49,10 +49,13 @@ Every suite below passed in the full runs of 2026-09-26 and 2026-09-27.
 | Area | Suite | Published by | Scale |
 |---|---|---|---|
 | OpenID Connect, OAuth 2.0 | [OpenID conformance suite](#the-openid-foundation-conformance-suite), `release-v5.3.1` | OpenID Foundation | 9 OP certification profiles, `oidcc-test-plan` × 5 client authentications × 3 response modes, 4 logout plans, Identity Assurance |
+| OpenID Connect, relying party | the same suite | OpenID Foundation | the relying-party plans (Basic, Implicit, Hybrid, Config, Dynamic, the three form_post plans, third-party-initiated login, logout, refresh tokens) against a [federation relationship](federation.md), added 2026-11-02 |
 | FAPI | the same suite | OpenID Foundation | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced, FAPI-CIBA, with their variants |
+| FAPI, client | the same suite | OpenID Foundation | the FAPI 1.0 Advanced, FAPI 2.0 Security Profile and FAPI 2.0 Message Signing client plans against a [federation relationship](federation.md#fapi-client-profiles) held to a FAPI profile, added 2026-11-13 (#931) |
 | Shared Signals, CAEP | the same suite | OpenID Foundation | SSF transmitter and CAEP interop transmitter, by push and by poll |
-| OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, and automatic registration into a federation the suite plays |
-| OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers) |
+| OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, automatic registration into a federation the suite plays, and this service as the relying party of a federation the suite plays (#933; a suite run is outstanding) |
+| OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers, HAIP with SD-JWT VC and ISO mdoc) |
+| AuthZEN | the same suite | OpenID Foundation | the six PDP plans (evaluation, evaluations, the three searches) with API-key client authentication; mutual TLS is not runnable on this release ([AuthZEN](#authzen)) |
 | Verifiable Credentials | [W3C VC test suites](#w3c-verifiable-credentials-and-did-suites) | W3C VC Working Group | VC Data Model 2.0, Data Integrity EdDSA, Data Integrity ECDSA (incl. `ecdsa-sd-2023`), Bitstring Status List, VC-JOSE-COSE |
 | DIDs | [did-test-suite](#w3c-verifiable-credentials-and-did-suites) | W3C DID Working Group | DID Core: did:web, did:key, did:jwk, resolution and dereferencing |
 | XACML 3.0 | [OASIS conformance tests](#xacml-30) (via AT&T and AuthzForce) | OASIS XACML TC | **454 of 455** mandatory cases |
@@ -80,17 +83,32 @@ configured for the profile it tests. The job does everything a human tester
 would do in the suite's UI: it registers clients with keys made at run
 time, signs a person in on `/authn/login` and approves consent, approves
 CIBA requests through `/admin-api`, emits CAEP events for the SSF interop
-module, delivers credential offers and transaction codes, and acts as the
-End-User for the OpenID4VP verifier.
+module, presses a receiver's stream buttons when the suite is the SSF
+transmitter, delivers credential offers and transaction codes, and acts as
+the End-User for the OpenID4VP verifier.
 
 | Job | Plans |
 |---|---|
 | `sts_oidcc_conformance` | the nine OP certification profiles (Basic with dynamic and static clients, Implicit, Hybrid, Config, Dynamic, the three form_post profiles, 3rd-party-initiated login); `oidcc-test-plan` once per client authentication (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post; RP-Initiated, Front-Channel, Back-Channel and Session Management logout; Identity Assurance (`ekyc-test-plan-oidccore`) |
+| `sts_oidcc_rp_conformance` | the relying-party plans, with iya-sts as the relying party of an inbound OpenID Connect [federation relationship](federation.md) and the suite as the OpenID Provider: Basic, Implicit and Hybrid (every response type), Config (the endpoints read from the provider's discovery document), Dynamic, the three form_post plans, third-party-initiated login, logout (RP-Initiated, Back-Channel and Front-Channel, OP- and RP-initiated) and refresh tokens |
 | `sts_fapi_conformance` | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing (with Grant Management), FAPI 1.0 Advanced (with PAR and JARM), FAPI-CIBA (poll and ping), with mutual TLS as both client authentication and sender constraint |
+| `sts_fapi_client_conformance` | the FAPI client plans, with iya-sts as the client of an inbound OpenID Connect [federation relationship](federation.md#fapi-client-profiles) held to a FAPI profile: FAPI 1.0 Advanced (`private_key_jwt`, and `tls_client_auth`, both over the relationship's TLS client certificate), FAPI 2.0 Security Profile and FAPI 2.0 Message Signing (DPoP), each with its classical twin |
 | `sts_ssf_oidf_conformance` | the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll |
-| `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically |
+| `sts_ssf_receiver_conformance` | the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, against a realm receiving through a signals-only federation relationship; the job also checks that the suite's CAEP `session-revoked` ended the person's sessions |
+| `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically; the plan in which this service is the relying party of a federation the suite plays (the OpenID Provider and the Trust Anchor), registering automatically |
 | `sts_oid4vci_conformance` | the issuer plan (SD-JWT VC) wallet-initiated, issuer-initiated and pre-authorized with a transaction code; the HAIP issuer plan (`attest_jwt_client_auth`) |
-| `sts_oid4vp_conformance` | the verifier plan for SD-JWT VC by `direct_post` and `direct_post.jwt`, with the `redirect_uri`, `x509_san_dns` and `x509_hash` client identifier prefixes |
+| `sts_oid4vp_conformance` | the verifier plan for SD-JWT VC by `direct_post` and `direct_post.jwt`, with the `redirect_uri`, `x509_san_dns` and `x509_hash` client identifier prefixes; the HAIP verifier plan (`oid4vp-1final-verifier-haip-test-plan`: `x509_hash`, a signed request by reference, encrypted `direct_post.jwt`) for SD-JWT VC and for an ISO mdoc, the realm trusting the suite's mdoc IACA root |
+| `sts_authzen_conformance` | the six AuthZEN 1.0 PDP plans (evaluation, evaluations, evaluations comprehensive, and the subject, resource and action searches), the suite as the Policy Enforcement Point, against a realm whose callers authenticate with an access token (`authzen.callerAuthentication` `bearer`); see [AuthZEN](#authzen) |
+
+**The OpenID Federation relying-party plan is scheduled, and a suite run
+against it is outstanding.** `sts_oidfed_conformance` creates
+`openid-federation-entity-joined-to-test-federation-rp-test-plan` and its
+classical twin. The suite is the OpenID Provider and the Trust Anchor; a
+throwaway realm is the relying party, resolving that provider through the
+anchor and registering automatically. The full runs of 2026-09-26 and
+2026-09-27 did not include it. Explicit registration is not a variant of
+the plan: the suite marks it not applicable, and this service refuses an
+OpenID Provider that offers only explicit registration (STS-FED-0149).
 
 **What it found**, each now fixed in every mode:
 
@@ -99,6 +117,14 @@ End-User for the OpenID4VP verifier.
 * A repeated authorization code was answered again instead of refused.
 * `nonce` was optional in the hybrid flow.
 * `updated_at` and `phone_number_verified` were missing from UserInfo.
+* Five of the `profile` scope's claims (`middle_name`, `profile`,
+  `picture`, `gender`, `zoneinfo`) had no directory attribute, so UserInfo
+  and an implicit ID Token never carried them; each has one now (#1292).
+* `session_expiry` and `tenant` were in every ID Token, requested or not;
+  they are put there only when a `claims` request names them now (#1292).
+* The JWK Set carried EdDSA (`kty: OKP`) keys, which the suite throws on
+  during `oidcc-server-rotate-keys`; EdDSA signing is off by default now
+  ([`keys.eddsaSigning`](oauth-oidc.md#eddsa-signing-off-by-default), #1292).
 * A `post_logout_redirect_uri` with no `id_token_hint` or `client_id` was
   followed.
 * Identity Assurance's `value`/`values` were not enforced inside
@@ -107,30 +133,114 @@ End-User for the OpenID4VP verifier.
 * FAPI 1.0 Advanced accepted `code` without JARM.
 * Several SSF, OpenID Federation and OpenID4VCI details departed from the
   final specification texts.
+* As an SSF receiver: no stream replacement or status read, a default scope
+  without `ssf.read`, no new token after a 401, cached keys kept across a
+  rediscovery, and a CAEP `session-revoked` initiated by `policy` ignored.
+* The OpenID4VP Verifier could not verify an ISO mdoc, which the HAIP
+  verifier plan certifies a Verifier for. It now can (see
+  [Accept an ISO mdoc](configure-oid4vp.md#accept-an-iso-mdoc)), and both
+  HAIP variants pass, the classical twins with no exemption.
 
-**Warnings that stay.** Every module warns that the realm's JWKS carries
-post-quantum keys the suite cannot parse. The OpenID Connect realms turn off
+**What the relying-party plans needed**, built in every mode
+([federation](federation.md#openid-connect-as-the-relying-party)):
+
+* An ID Token without `sub`, `iat` or `exp`, with an `azp` that is not
+  iya-sts's client, or without the `nonce` iya-sts sent is refused. A
+  code-flow ID Token without the nonce used to be accepted with a warning.
+* A UserInfo answer for another `sub` refuses the sign-in.
+* The implicit `id_token token` and the three hybrid response types, with
+  `c_hash` and `at_hash` checked before the code is redeemed.
+* The fragment response mode, the specification's default for those types.
+* Reading the provider's endpoints from its discovery document, and a sign-in
+  the provider starts (`initiate_login_uri`). Both are off by default.
+
+**The one relying-party module that is argued, not passed:** the logout
+plan's Session Management module, because iya-sts does not poll a partner's
+`check_session_iframe` (Back-Channel Logout tells it the same thing). It is a
+documented design decision on the
+[federation page](federation.md#openid-connect-as-the-relying-party). The
+Dynamic plan, which needs iya-sts to register itself, sign Request Objects and
+find a provider by WebFinger, also runs as a classical twin.
+
+**Every plan twice, with post-quantum signing on and off.** The suite cannot
+parse a post-quantum (`AKP`) key and its JWS algorithm table lacks SLH-DSA
+and the composite ML-DSA algorithms, so in a realm that publishes them some
+modules warn or fail for the suite's reason, and those are recorded with
+it. Every plan of the OpenID Connect, OpenID Federation, OpenID4VCI and
+OpenID4VP jobs therefore also runs as a classical twin (`<plan>-cl`), in a
+realm with [`keys.postQuantumSigning`](oauth-oidc.md#post-quantum-signing-switched-off)
+off, where none of those exemptions applies: a twin that passes is a clean
+result with nothing post-quantum excused. The FAPI plans already pass with
+no such exemption, and so do the SSF receiver plans, in which the suite
+verifies nothing the realm signs, and the OpenID Connect relying-party
+plans: iya-sts signs with a classical key there and registers only that
+key. The OpenID Federation relying-party plan publishes the realm's Entity
+Configuration, which can carry post-quantum keys, so that plan keeps its
+classical twin.
+
+**Warnings that stay.** In the post-quantum realms, every module warns that
+the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Connect realms turn off
 `oauth2.requestUriFragmentCheck`, because the suite's `request_uri`
 fragments are random rather than hashes. The default stays the stricter
 check.
 
-**Not run, and why:**
+## AuthZEN
 
-* The relying-party plans: this service is no one's relying party but its
-  own.
-* The Brazil, panva and superseded-draft plans, and AuthZEN.
-* The SSF receiver plans.
+`sts_authzen_conformance` runs the six AuthZEN PDP plans with the
+`api_key` client authentication variant and static PDP metadata. The suite
+sends its API key as `Authorization: Bearer`; the job gives it an OAuth
+access token from a `client_credentials` grant, carrying `authzen:evaluate`
+and audienced to the realm's `/access/v1`, in a realm configured with
+[`authzen.callerAuthentication`](authzen.md) set to `bearer`. Mutual TLS is
+still the service's default; only that realm is set otherwise.
+
+Two limits of the suite (`release-v5.3.1`) decide the variants:
+
+* **Mutual TLS cannot run.** Every module of the `mtls` variant stops while
+  the suite configures it, before it calls the PDP. The job keeps those
+  plans, but runs them only when they are named
+  (`CONFORMANCE_PLANS='mtls-*'`).
+* **The API key needs static metadata.** With discovery, the suite replaces
+  its PDP configuration with the fetched metadata document and loses the
+  key, so every module stops before calling the PDP. The job gives the suite
+  the endpoints from the realm's metadata instead. The metadata document
+  and its `signed_metadata` are tested by the repository's own jobs.
+
+One module is argued from the suite's source rather than passed:
+`authzen-pdp-evaluation-invalid-credentials-returns-401` stops before it
+sends a request, because it needs a client object that no AuthZEN test of
+that release creates. The missing-credentials module beside it checks the
+same 401.
+
+**What the plans found:** AuthZEN 1.0 section 10.1.1 says a receiver MUST
+ignore unknown fields, and iya-sts refused a request member AuthZEN 1.0 does
+not define. Since 1.1.0 every AuthZEN request ignores one, as the
+`*-unknown-*-fields-ignored` modules expect
+([release notes](release-notes.md#authzen-ignores-members-it-does-not-define)).
+
+## Not run, and why
+
+* The Brazil, panva and superseded-draft plans.
+* AuthZEN's mutual-TLS variant: see [AuthZEN](#authzen).
 * FAPI 1.0 Baseline: the suite no longer publishes a plan for it, so the
   repository's own `sts_fapi_baseline.js` is Baseline's only check.
 * FAPI 2.0 Message Signing's `plain_response` variant: section 5.4.1 has the
   authorization server require JARM.
 * Push-mode FAPI-CIBA: the suite publishes no plan for it.
+* FAPI 1.0 Advanced's client plan with `pushed` or `by_reference` request
+  objects or a JARM response, and the FAPI 2.0 client plans' mutual-TLS
+  sender constraint: `1-advanced` sends its request object by value on a
+  plain hybrid response, and the 2.x profiles bind with DPoP. The client
+  plans that do run are in `sts_fapi_client_conformance`, above.
+* `fapi-ciba-id1-client-test-plan`. This service has no CIBA client role.
+  `POST /oauth2/bc-authorize` is the authorization server, which
+  `sts_fapi_conformance` already runs (`fapi-ciba-id1-test-plan`).
 
 ## W3C Verifiable Credentials and DID suites
 
 The Working Groups' own mocha and jest suites run unmodified, at pinned
-commits, against the [VC-API test endpoints](vc-api.md) of a throwaway
-development realm. A local wrapper answers the JSON-LD contexts from the
+commits, against the [W3C VC API](vc-api.md) of a throwaway
+development realm that turns it on. A local wrapper answers the JSON-LD contexts from the
 hashed copies the service ships, so a run never depends on w3.org.
 
 | Suite | Result |
@@ -399,7 +509,8 @@ directory's `CLAUDE.md` in the repository.
 
 `./run-tests.sh` runs them all; see [Getting started](getting-started.md).
 
-* The OpenID Foundation plans take about two hours. By default they run in
+* The OpenID Foundation plans take several hours, since four of the jobs
+  run every plan twice (above). By default they run in
   the `memory` mode only (`STS_TEST_CONFORMANCE_MODES`). In CI they are a
   job of their own.
 * The four SAML peers run in `memory` and `single-node`

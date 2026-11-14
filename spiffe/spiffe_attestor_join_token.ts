@@ -35,7 +35,7 @@
 // by `CreateJoinToken` when it registers the alias a named agent gets.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 const { log, nowSec } = helpers;
 import errorCodes = require('../common/error_codes');
@@ -108,9 +108,8 @@ class JoinTokenAttestor {
   agentIdFor(trustDomain: string, token: string): string {
     const { log, crypto, spiffeId } = this.deps;
     log.debug("Entering JoinTokenAttestor.agentIdFor().");
-    const suffix = crypto.createHash('sha256')
-      .update('join_token|').update(String(token || '').trim(), 'utf8')
-      .digest('hex').slice(0, 32);
+    const suffix = crypto.digest('sha256',
+      'join_token|' + String(token || '').trim(), 'hex').slice(0, 32);
     log.debug("Leaving JoinTokenAttestor.agentIdFor().");
     return spiffeId.agentId(trustDomain, 'join_token', suffix);
   }
@@ -194,8 +193,9 @@ class JoinTokenAttestor {
       // recognise the agent it attested, and nobody can reconstruct it
       // (2026-09-12).
       selectors: [{ type: 'join_token',
-                    value: 'token-sha256:' + crypto.createHash('sha256')
-                      .update(presented, 'utf8').digest('hex').slice(0, 16) }],
+                    value: 'token-sha256:' +
+                      crypto.digest('sha256', presented, 'hex')
+                        .slice(0, 16) }],
       // Single use, so an agent that attested with one cannot do it again.
       canReattest: false,
       method: 'agent attestation (join token)',

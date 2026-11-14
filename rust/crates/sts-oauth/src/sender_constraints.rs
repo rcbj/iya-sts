@@ -53,7 +53,7 @@ pub fn dpop_bound_public_client(client_id: &str, method: &str) -> bool {
 }
 
 /// `publicClientIssuanceRefusal()`: at the token endpoint, a request from
-/// that client carrying no DPoP proof (STS-OAUTH-0938). `dpop_jkt` is the
+/// that client carrying no DPoP proof (STS-OAUTH-0943). `dpop_jkt` is the
 /// proof key's thumbprint, `""` with no proof.
 pub fn public_client_issuance_refusal(
     client_id: &str,
@@ -66,7 +66,7 @@ pub fn public_client_issuance_refusal(
     }
     Some(Refusal {
         error: "invalid_dpop_proof",
-        code: codes::STS_OAUTH_0938,
+        code: codes::STS_OAUTH_0943,
         setting: "the admin console is a public client",
         description: format!(
             "the admin console is a public client, and every token issued to it is bound to a key it proves \
@@ -107,7 +107,7 @@ pub fn access_token_refusal(
     // console as a public client was not issued by the token endpoint as it
     // stands, and is refused rather than believed.
     if o.client_bound && o.bound_jkt.is_empty() {
-        return Some(Refusal { error: "invalid_token", code: codes::STS_OAUTH_0939,
+        return Some(Refusal { error: "invalid_token", code: codes::STS_OAUTH_0944,
             setting: "the admin console is a public client", description: format!(
             "{} accepts an access token issued to the admin console only when it is DPoP-bound (RFC 9449), \
              because the console is a public client, and this token carries no cnf.jkt.", at) });

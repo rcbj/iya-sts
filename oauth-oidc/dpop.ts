@@ -42,7 +42,7 @@
 //     an OID4VCI credential proof of possession, say, which this very workflow
 //     also signs — is accepted as a DPoP proof.
 //
-// Which is why tests/vendored/sts_dpop.js removes each of those checks in turn
+// Which is why tests/protocol/sts_dpop.js removes each of those checks in turn
 // and requires that the suite notices.
 // ---------------------------------------------------------------------------
 
@@ -59,7 +59,6 @@
 // forward to the installed instance.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
@@ -96,6 +95,11 @@ import fapi = require('./fapi');
 // `authorization_servers.ts`, none of which requires this one, so the no-cycle
 // property is unchanged. The resource-server check below is its reader.
 import jwtAccessToken = require('./jwt_access_token');
+// Opaque access tokens (#501). A library that does not require this file.
+// Called directly, not through DpopDeps: the check below is the one door
+// the protected endpoints share, and a second copy of the dependency would
+// be a caller nobody updated.
+import opaqueAccessToken = require('./opaque_access_token');
 // For one decision: whether to REFUSE an access token in a query string rather
 // than merely ignore it (RFC 9700 section 4.3.2). A library that registers no
 // route and requires `common/` and `cluster/` libraries, client_auth.js,
@@ -155,6 +159,12 @@ interface DpopDeps {
   stepUp: typeof stepUp;
   clusterClaims: typeof clusterClaims;
   capabilities: typeof capabilities;
+  // FAPI 2.0 HTTP Signatures (#178), asked last of an accepted token.
+  // Reached LAZILY, so this file stays the leaf rule 3 asks it to be: the
+  // profile reads the application register and the client key cache.
+  httpSignatures: () => {
+    atResource(req: Req, res: Res, presented: Json, where?: string): boolean;
+  };
 }
 
 const PROOF_TYP = 'dpop+jwt';
@@ -244,7 +254,7 @@ const seenJtis = realms.map({
 //
 // **WHY THE CLAIM IS NOT IN `verifyProof()`.** An atomic "once" in a shared
 // store is a round trip, and `verifyProof()` is synchronous with synchronous
-// callers: `presentedAccessToken()` answers UserInfo, the step-up stand-in
+// callers: `presentedAccessToken()` answers UserInfo, Grant Management
 // and three more families (the credential endpoints, SCIM, Shared Signals),
 // each of which reads its return value on the next line. Making it async
 // would be a change to every one of those files, and a caller that forgot the
@@ -305,8 +315,11 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // to every request worker by the same change log a setting already rides, and
 // reachable through /admin/oauth2 and POST /admin-api/config/set behind a
 // credential. That last property is the one product mode needed: the
-// endpoint that used to be the ONLY way to set it is an unauthenticated test
-// control, and in product it refuses.
+// endpoint that used to be the ONLY way to set it was an unauthenticated test
+// control. **SINCE #597 (2026-10-12) THAT ENDPOINT IS GONE** — `GET` and
+// `POST /dpop/nonce-mode` were deleted with `setNonceMode()` and
+// `forgetProofs()`, which only it called — and the setting is the one door
+// in both modes.
 //
 // The replication property the 2026-09-08 fix bought is kept rather than
 // traded: a setting written through one worker is read by the others exactly
@@ -318,6 +331,11 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // this behaves as the plain Map it replaced. See common/realms.js.
 // `expiresAt` (#333): the value is when the nonce was ISSUED, epoch seconds;
 // it lives `oauth2.dpopNonceTtlS`.
+// KEYED BY THE NONCE'S DIGEST, NEVER BY THE NONCE (#614,
+// `crypto.credentialDigest()`): the store is only ever asked whether a
+// presented nonce was issued, so it is hashed as it is issued and as it is
+// presented, and a heap snapshot or a replicated row holds no nonce a proof
+// could carry.
 const issuedNonces = realms.map({
   persist: 'dpop.issuedNonces',
   retain: 'age',
@@ -480,7 +498,10 @@ class Dpop {
       config: config,
       stepUp: stepUp,
       clusterClaims: clusterClaims,
-      capabilities: capabilities
+      capabilities: capabilities,
+      httpSignatures: function () {
+        return require('./http_signatures');
+      }
     };
   }
 
@@ -592,46 +613,6 @@ class Dpop {
            NONCE_TTL_SECONDS;
   }
 
-  // WRITES THE SETTING, IN THE REALM IT IS CALLED IN. Returns what is now in
-  // force, or throws with the setting's own refusal — which cannot happen for
-  // a boolean on a runtime row, and is surfaced rather than swallowed because
-  // a switch that silently did not switch is the invisible failure the
-  // endpoint's own comment warns about.
-  //
-  // **TURNING IT BACK TO WHAT IT WOULD BE ANYWAY CLEARS THE OVERRIDE rather
-  // than writing one**, which is tests/CLAUDE.md's "restore with reset" rule
-  // applied inside the control: a test that turns nonces on and then off
-  // would otherwise leave the row reading `source: override` with the
-  // default's value, and the management API's own job asserts that a row
-  // nobody meant to override does not say that — so the failure would land on
-  // a different file.
-  /**
-   * Turns DPoP nonces on or off in the realm it is called in, clearing the
-   * override when the value is the default.
-   *
-   * @param on - true to require nonces
-   * @returns what is now in force
-   * @throws the setting's own refusal
-   */
-  setNonceMode(on: unknown): boolean {
-    const { log, config } = this.deps;
-    log.debug('Entering Dpop.setNonceMode(). on=' + on);
-    const wanted = on === true;
-    config.clearOverride('oauth2.dpopNonceRequired');
-    if (config.value('oauth2.dpopNonceRequired') !== wanted) {
-      const written: Json = config.setOverride('oauth2.dpopNonceRequired',
-                                               wanted);
-      if (written && written.ok === false) {
-        log.debug('Leaving Dpop.setNonceMode(). The setting refused the ' +
-                  'value.');
-        throw new Error((written.errors || []).join(' '));
-      }
-    }
-    log.debug('Leaving Dpop.setNonceMode(). DPoP nonces are ' +
-              (this.nonceModeOn() ? 'REQUIRED' : 'not required'));
-    return this.nonceModeOn();
-  }
-
   /**
    * Tells whether DPoP nonces are required (`oauth2.dpopNonceRequired`).
    *
@@ -660,7 +641,7 @@ class Dpop {
     cacheRegistry.makeRoom(issuedNonces,
                            Number(config.value('oauth2.dpopNonceCacheSize')),
                            { counter: issuedNoncesCount });
-    issuedNonces.set(nonce, nowSec());
+    issuedNonces.set(stsCrypto.credentialDigest(nonce), nowSec());
     log.debug('Leaving Dpop.issueNonce().');
     return nonce;
   }
@@ -687,7 +668,9 @@ class Dpop {
     const { log } = this.deps;
     log.debug('Entering Dpop.nonceIsCurrent().');
     this.pruneNonces();
-    const ok = !!nonce && issuedNonces.has(String(nonce));
+    // Hashed as it is presented (#614).
+    const ok = !!nonce &&
+      issuedNonces.has(stsCrypto.credentialDigest(String(nonce)));
     if (ok) {
       issuedNoncesCount.hit();
     } else {
@@ -749,9 +732,9 @@ class Dpop {
     const { log, b64u } = this.deps;
     log.debug("Entering Dpop.athOf().");
     log.debug("Leaving Dpop.athOf().");
-    return b64u(crypto.createHash('sha256')
-                      .update(String(accessToken), 'ascii')
-                      .digest());
+    // The 'ascii' reading the hash was always fed, kept (#453).
+    return b64u(stsCrypto.digest('sha256',
+                                 Buffer.from(String(accessToken), 'ascii')));
   }
 
   // -------------------------------------------------------------------------
@@ -1236,21 +1219,6 @@ class Dpop {
     };
   }
 
-  // Only for tests that need a clean slate: the replay cache is per realm (it
-  // said process-wide here long after it stopped being), so a test asserting
-  // "a fresh proof is accepted" after asserting "a replayed one is refused"
-  // needs a way to forget.
-  /**
-   * Forgets every remembered proof in the realm. For tests.
-   */
-  forgetProofs(): void {
-    const { log } = this.deps;
-    log.debug('Entering Dpop.forgetProofs(). ' + seenJtis.size +
-              ' remembered proof(s) discarded.');
-    seenJtis.clear();
-    log.debug('Leaving Dpop.forgetProofs().');
-  }
-
   // -------------------------------------------------------------------------
   // The access token on a protected endpoint — Bearer (RFC 6750) or DPoP (RFC
   // 9449 section 7).
@@ -1302,7 +1270,13 @@ class Dpop {
   // anyway. The requirement is `oauth2.stepUpAcrValues` /
   // `oauth2.stepUpMaxAgeS` unless the caller names one.
   //
-  // `options`, which only RFC 9470's stand-in resource passes:
+  // `options`. `audience` and `stepUp` are for a resource server answering
+  // for a REGISTERED application: RFC 9470's stand-in resource passed them
+  // until #593 (2026-10-12) deleted it — the test peer plays that resource
+  // server now — and no route of this service passes them since; they stay
+  // because they are the library half of such a resource server, and
+  // `tests/rfc9470_step_up.js` serves one on them. `requireVerified` is the
+  // OpenID4VCI endpoints' in product mode, and the VC-API's:
   //   audience        `{ names(audiences), label }` — RFC 9068 section 4 step
   //                   4 asked of a registered application instead of this
   //                   service (`jwt_access_token.resourceServerRefusal()`)
@@ -1317,8 +1291,9 @@ class Dpop {
    * @param req - the request
    * @param res - the response, which a refusal is sent on
    * @param where - the endpoint, named in the log and refusals
-   * @param options - `audience`, `requireVerified` and `stepUp`, which only RFC
-   *   9470's stand-in resource passes
+   * @param options - `audience`, `requireVerified` and `stepUp`, for a
+   *   resource server answering for a registered application, and
+   *   `formBody`, which UserInfo passes
    * @returns `{ accessToken, claims, scheme, jkt, verified, dpop }`, or null
    *   once a refusal has been sent
    */
@@ -1426,26 +1401,84 @@ class Dpop {
     // unverified token could have a cnf its holder wrote.
     let claims: Json = null;
     let verified = false;
-    try {
-      // Any generation of this realm's key (#42) — helpers.verifyOwnJws().
-      claims = helpers.verifyOwnJws(accessToken);
-      verified = true;
-    } catch (e) {
-      log.debug("Caught in Dpop.presentedAccessToken(): " +
-                ((e && e.message) || e));
-      log.debug("This access token is not one of ours, so its claims are " +
-                "read unverified: " +
-                e.message);
+    // #501: a handle has no '.'. resolve() is ambient-only. A miss while
+    // this realm issues opaque tokens is a generic invalid_token, and past
+    // the address limit a 429. Expired and revoked are refused here because
+    // this function does not otherwise check exp. A miss while the realm
+    // issues JWTs falls through to the unverified read below.
+    let opaqueHit = false;
+    if (accessToken.indexOf('.') < 0) {
+      const found = opaqueAccessToken.resolve(accessToken, req);
+      if (found.kind === 'limited') {
+        res.set('Retry-After', String(found.retryAfterS));
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Too many unknown " +
+                  "handles.");
+        errorCodes.mark(res, 'STS-OAUTH-0983');
+        vciError(res, 429, 'invalid_token',
+          'Too many attempts. Wait ' + found.retryAfterS +
+          ' seconds and try again.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'unknown' && opaqueAccessToken.issuesOpaque()) {
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Unknown handle.");
+        errorCodes.mark(res, 'STS-OAUTH-0980');
+        vciError(res, 401, 'invalid_token',
+                 'The access token is not valid.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'inactive' && found.why === 'expired') {
+        const when = found.claims && Number(found.claims.exp) > 0
+          ? new Date(Number(found.claims.exp) * 1000).toISOString() : '';
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Expired handle.");
+        errorCodes.mark(res, 'STS-OAUTH-0981');
+        vciError(res, 401, 'invalid_token',
+          'The access token expired' + (when ? ' at ' + when : '') + '.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'inactive' && found.why === 'revoked') {
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Revoked handle.");
+        errorCodes.mark(res, 'STS-OAUTH-0982');
+        vciError(res, 401, 'invalid_token',
+                 'The access token has been revoked.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'active') {
+        claims = found.claims;
+        verified = true;
+        opaqueHit = true;
+      }
+    }
+    if (!opaqueHit) {
       try {
-        claims = jsonFromB64u(String(accessToken).split('.')[1]) || {};
-      } catch (e2) {
-        // Not a JWT at all. Opaque tokens are legal, and this issuer accepts
-        // them as it always has — there is simply no binding to find in one.
+        // Any generation of this realm's key (#42) — helpers.verifyOwnJws().
+        claims = helpers.verifyOwnJws(accessToken);
+        verified = true;
+      } catch (e) {
         log.debug("Caught in Dpop.presentedAccessToken(): " +
-                  ((e2 && e2.message) || e2));
-        log.debug("...and it is not a JWT either, so there is no cnf to " +
-                  "read: " + e2.message);
-        claims = {};
+                  ((e && e.message) || e));
+        log.debug("This access token is not one of ours, so its claims " +
+                  "are read unverified: " +
+                  e.message);
+        try {
+          claims = jsonFromB64u(String(accessToken).split('.')[1]) || {};
+        } catch (e2) {
+          // Not a JWT. A realm that issues opaque tokens already refused
+          // a miss above. One that does not still has nothing to read a
+          // cnf from, which is the development path for a foreign token.
+          log.debug("Caught in Dpop.presentedAccessToken(): " +
+                    ((e2 && e2.message) || e2));
+          log.debug("...and it is not a JWT either, so there is no cnf " +
+                    "to read: " + e2.message);
+          claims = {};
+        }
       }
     }
     const boundTo = this.jktOf(claims);
@@ -1490,7 +1523,8 @@ class Dpop {
     // `mode.acceptsUnverifiedIssuerTokens()`, 2026-09-18).
     if (verified) {
       const profileProblem = jwtAccessToken.resourceServerRefusal(accessToken,
-        claims, baseUrlOf(req), { audience: opts.audience || null });
+        claims, baseUrlOf(req), { audience: opts.audience || null,
+                                  skipTyp: opaqueHit });
       if (profileProblem) {
         res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
         log.debug("Leaving Dpop.presentedAccessToken(). RFC 9068 section 4 " +
@@ -1569,8 +1603,10 @@ class Dpop {
       proofOk: req.headers['dpop'] !== undefined,
       boundThumbprint: mtls.boundThumbprintOf(claims),
       certificate: !!mtls.peerCertificate(req),
+      // RFC 8705 section 3 binds a token to a certificate, not to a CA, so this
+      // is the match alone: `peerVerified()` answers an object, and the term it
+      // was here could not fail (#1360).
       certificateMatches: !!mtls.boundThumbprintOf(claims) &&
-                          mtls.peerVerified(req) &&
                           mtls.presentedThumbprint(req) ===
                             mtls.boundThumbprintOf(claims),
       mtlsAvailable: mtls.available()
@@ -1597,10 +1633,16 @@ class Dpop {
                   "required.");
         return null;
       }
+      const bearer = { accessToken: accessToken, claims: claims,
+                       scheme: scheme, jkt: '', verified: verified };
+      if (!this.deps.httpSignatures().atResource(req, res, bearer, where)) {
+        log.debug("Leaving Dpop.presentedAccessToken(). FAPI 2.0 HTTP " +
+                  "Signatures refused the request.");
+        return null;
+      }
       log.debug("Leaving Dpop.presentedAccessToken(). A Bearer request. " +
                 "verified=" + verified);
-      return { accessToken: accessToken, claims: claims, scheme: scheme,
-               jkt: '', verified: verified };
+      return bearer;
     }
 
     const checked = this.verifyProof(req.headers['dpop'], {
@@ -1642,13 +1684,22 @@ class Dpop {
       log.debug("Leaving Dpop.presentedAccessToken(). Step-up is required.");
       return null;
     }
-    log.debug("Leaving Dpop.presentedAccessToken(). A valid DPoP request. " +
-              "jkt=" + checked.jkt +
-              ", token verified=" + verified);
-    return {
+    const proved = {
       accessToken: accessToken, claims: claims, scheme: scheme,
       jkt: checked.jkt, verified: verified, dpop: checked
     };
+    // FAPI 2.0 HTTP SIGNATURES (#178), LAST: a signature is checked only on
+    // a request whose token, binding and step-up requirement all held, and
+    // the response signer is armed only for a response to one.
+    if (!this.deps.httpSignatures().atResource(req, res, proved, where)) {
+      log.debug("Leaving Dpop.presentedAccessToken(). FAPI 2.0 HTTP " +
+                "Signatures refused the request.");
+      return null;
+    }
+    log.debug("Leaving Dpop.presentedAccessToken(). A valid DPoP request. " +
+              "jkt=" + checked.jkt +
+              ", token verified=" + verified);
+    return proved;
   }
 
   // RFC 9470 SECTION 3: answer the request with the challenge and return true
@@ -1752,11 +1803,9 @@ export = {
   // #46: the middleware that reserves a proof's jti across the cluster.
   proofClaims: slot.forward('proofClaims'),
   jktOf: slot.forward('jktOf'),
-  setNonceMode: slot.forward('setNonceMode'),
   nonceModeOn: slot.forward('nonceModeOn'),
   issueNonce: slot.forward('issueNonce'),
   nonceIsCurrent: slot.forward('nonceIsCurrent'),
   state: slot.forward('state'),
-  forgetProofs: slot.forward('forgetProofs'),
   presentedAccessToken: slot.forward('presentedAccessToken')
 };

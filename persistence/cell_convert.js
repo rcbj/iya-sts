@@ -138,12 +138,13 @@ const TABLES = {
   sts_ldap_entries: {
     key: ['realm', 'dn_key'],
     // The six lookup columns the service writes beside the sealed `attrs`
-    // since #391 phase 6 (they were generated).
+    // since #391 phase 6 (they were generated), and the data keys the entry
+    // holds values under since #623.
     columns: ['realm', 'dn_key', 'dn', 'attrs', 'origin', 'created_at',
               'modified_at', 'name_keys', 'mail_keys', 'uuid_keys',
-              'class_keys', 'value_keys', 'attr_names'],
+              'class_keys', 'value_keys', 'attr_names', 'dek_keys'],
     json: ['attrs', 'name_keys', 'mail_keys', 'uuid_keys', 'class_keys',
-           'value_keys', 'attr_names'], time: [] },
+           'value_keys', 'attr_names', 'dek_keys'], time: [] },
   sts_minted: {
     key: ['handle', 'realm', 'key'],
     // `key_sealed`: the row's name, sealed beside its digest key (#222).
@@ -211,30 +212,36 @@ function contentOf(table, row) {
 }
 
 // ---------------------------------------------------------------------------
-// ONE DATABASE, OVER `pg`. The store the conversion is driven through: the
-// real one here, a double in `tests/cell_convert.js`. Six operations and a
+// ONE DATABASE, OVER KNEX (#326). The store the conversion is driven through:
+// the real one here, a double in `tests/cell_convert.js`. Six operations and a
 // transaction, each a statement built from `TABLES` with every value a
 // parameter.
 // ---------------------------------------------------------------------------
 /**
- * Builds the store of one database over `pg`.
+ * Builds the store of one database over Knex (`knex_store.js`, #326).
  *
  * @param options - `url` (the connection string, password included),
- *   `verifyTls`, and `name` ('cell' or 'global', for the log)
+ *   `verifyTls`, `tlsCa` (the database's PEM trust anchors, or ''), and
+ *   `name` ('cell' or 'global', for the log)
  * @returns the store
  */
 function sqlStore(options) {
   log.debug("Entering sqlStore().");
   const dial = require('./persistence_postgres')
-    .dialOptions(options.url, options.verifyTls);
-  if (dial.notUrl) {
-    log.debug('cell_convert: the ' + options.name + ' connection string is ' +
-              'not a URL, so its sslmode was left as it is.');
+    .dialOptions(options.url, options.verifyTls, options.tlsCa);
+  if (dial.refused) {
+    throw new Error(errorCodes.tag('STS-STORE-0078') + 'cell_convert: the ' +
+                    options.name + ' connection string is not dialled: ' +
+                    dial.refused + ' (#273).');
   }
-  const Pool = /** @type {any} */ (require('pg')).Pool;
-  const pool = new Pool({ connectionString: dial.connectionString,
-                          ssl: dial.ssl, max: 2,
-                          connectionTimeoutMillis: 10000 });
+  // Through the service's one door to PostgreSQL (#326): a Knex pool per
+  // database, dialled with the options the driver's would be, under the host
+  // check and the path rules of every other dial (#1360).
+  require('../common/outbound_tls').installProcessWide();
+  const pool = require('./knex_store').openPool(
+    { connectionString: dial.connectionString, ssl: dial.ssl,
+      connectionTimeoutMillis: 10000 },
+    { max: 2 });
   pool.on('error', function (err) {
     log.warn('cell_convert: an idle connection to the ' + options.name +
              ' database errored: ' + ((err && err.message) || err));
@@ -489,6 +496,7 @@ function sealPlannedEntries(rows, tier) {
     const attrs = row.attrs || {};
     const index = codec.index(attrs);
     row.attrs = codec.sealAttributes(row.realm, row.dn_key, attrs);
+    row.dek_keys = codec.dekKeys(attrs, row.attrs);
     row.name_keys = index.nameKeys;
     row.mail_keys = index.mailKeys;
     row.uuid_keys = index.uuidKeys;
@@ -580,26 +588,32 @@ function planOf(source, cellId, digest, now) {
   return plan;
 }
 
-// The routing index rows of one person's entry — `indexPeople()`'s two
-// claims, made from the same two values under the same digest.
+// The routing index rows of one person's entry — `indexPeople()`'s claims,
+// one per live name plus the entryUUID, under the same digest.
 function routesOf(row, cellId, digest, now) {
   log.debug("Entering routesOf().");
   const attrs = row.attrs || {};
-  const name = tiered.loginNameOf(row.dn_key, attrs);
+  const names = tiered.liveNamesOf(row.dn_key, attrs);
   const uuid = tiered.uuidOf(attrs);
   const out = [];
-  [['name', name], ['uuid', uuid]].forEach(function (pair) {
-    if (!pair[1]) {
-      return;
-    }
-    const made = digest(row.realm, pair[0], pair[1]);
+  names.forEach(function (name) {
+    const made = digest(row.realm, 'name', name);
     if (!made) {
       throw refusal('STS-CELL-0207', 'the routing index\'s digest could not ' +
                     'be made: no service key-encryption key is held.');
     }
-    out.push({ realm: String(row.realm), kind: pair[0], digest: made,
+    out.push({ realm: String(row.realm), kind: 'name', digest: made,
                cell: cellId, written_at: String(now) });
   });
+  if (uuid) {
+    const made = digest(row.realm, 'uuid', uuid);
+    if (!made) {
+      throw refusal('STS-CELL-0207', 'the routing index\'s digest could not ' +
+                    'be made: no service key-encryption key is held.');
+    }
+    out.push({ realm: String(row.realm), kind: 'uuid', digest: made,
+               cell: cellId, written_at: String(now) });
+  }
   log.debug("Leaving routesOf().");
   return out;
 }
@@ -1125,9 +1139,11 @@ async function main(argv) {
                     ((e && e.message) || e));
     }
     cellStore = sqlStore({ url: cellConnection.url, name: 'cell',
-                           verifyTls: cellConnection.verifyTls });
+                           verifyTls: cellConnection.verifyTls,
+                           tlsCa: cellConnection.tlsCa });
     globalStore = sqlStore({ url: globalConnection.url, name: 'global',
-                             verifyTls: globalConnection.verifyTls });
+                             verifyTls: globalConnection.verifyTls,
+                             tlsCa: globalConnection.tlsCa });
     try {
       await holdKek(cellStore, globalStore);
     } catch (e) {

@@ -41,8 +41,10 @@
 //   * `rdn_value` is the first RDN's value, lower-cased (the key is), still
 //     DN-escaped. `usernameOfEntry()` unescapes; a name whose RDN carries an
 //     escape is matched through `name_keys` (its `uid`) instead.
-//   * `name_keys` is the entry's `uid` values, lower-cased: with `rdn_value`,
-//     the pair `usernameKeysOf()` indexes.
+//   * `name_keys` is the entry's `uid` values and its live `stsPseudonym`
+//     values, lower-cased (#644): with `rdn_value`, the set
+//     `usernameKeysOf()` indexes. A pending verification address is not in
+//     the column.
 //   * `mail_keys` is `mail`, lower-cased; `uuid_keys` is `entryUUID` and its
 //     aliases (`stsEntryUuidAlias`), lower-cased.
 //
@@ -105,6 +107,613 @@ function suffixLength(baseKey) {
   return String(baseKey).length + 1;
 }
 
+// ---------------------------------------------------------------------------
+// A SUBTREE IS READ THROUGH ITS PARENTS, NOT TESTED ROW BY ROW (#638,
+// 2026-10-14).
+//
+// `underClause()` — `right(dn_key, n) = ',' || base` — is true of exactly the
+// keys under a base, and no index can narrow it: the database reads the
+// realm's keys and tests each. For a base the size of the realm that is what
+// a walk costs anyway; for a SPARSE one (`ou=devices` beside fifty million
+// people, the resident containers at start) it is the whole table to answer a
+// handful of rows. #636 found it in `hasChild` and the device lookups; #638 in
+// the start of every windowed worker, `residentOnly()`, minutes at 50M.
+//
+// **WHAT IS INDEXED IS THE PARENT.** `parent_key` is everything after a key's
+// first comma, and the `(realm, parent_key, dn_key)` index orders the rows by
+// it. A key is strictly under `B` (B not '') exactly when its `parent_key`
+// is `B` or itself ends with `,B` — the comma `,B` starts at is either the
+// key's first, or one inside its parent — so "the rows under B" is "the rows
+// whose PARENT is B or under B", and the second question is asked of the
+// realm's DISTINCT parents rather than of its rows. Those are read with a
+// loose index scan (`PARENTS`, below): each step one descent of the index to
+// the first parent after the last, so the cost is the number of distinct
+// parents — the containers, and any entry that has children — never the
+// number of rows. The rows of each kept parent are then one range of the
+// same index, in key order.
+//
+// **WHY NOT A WALK DOWN FROM THE REALM'S BASE**, which is what #638 first
+// proposed: a walk reaches only what hangs from an entry that exists. An
+// entry whose parent is missing (written by hand, or by an import that
+// supplied a child before its parent), an entry outside the realm's base,
+// several roots — the old statement answered all of them, and the parents
+// scan does too, because it reads the parents the rows NAME rather than the
+// entries that exist.
+//
+// **THE ONE ASSUMPTION IS THE BASE IS NOT ''.** A key with no comma has
+// `parent_key` '' (the column's ELSE), so '' is not a container the identity
+// above holds for; `subtreeRows()` asks the old suffix for that case, which
+// no caller makes.
+// ---------------------------------------------------------------------------
+
+/**
+ * The recursive CTE `parents(parent_key)`: the realm's distinct `parent_key`
+ * values in index order, one index descent each.
+ *
+ * @param realmAt - the position of the realm in `values`
+ * @returns the SQL, starting `WITH RECURSIVE`
+ */
+function parentsOf(realmAt) {
+  log.debug("Entering parentsOf().");
+  const r = '$' + realmAt;
+  log.debug("Leaving parentsOf().");
+  return 'WITH RECURSIVE parents(parent_key) AS ((SELECT parent_key FROM ' +
+         'sts_ldap_entries WHERE realm = ' + r + ' ORDER BY parent_key ' +
+         'LIMIT 1) UNION ALL SELECT n.parent_key FROM parents p CROSS JOIN ' +
+         'LATERAL (SELECT e.parent_key FROM sts_ldap_entries e WHERE ' +
+         'e.realm = ' + r + ' AND e.parent_key > p.parent_key ORDER BY ' +
+         'e.parent_key LIMIT 1) AS n)';
+}
+
+// ---------------------------------------------------------------------------
+// ONE PARENT'S ROWS ARE A WALK OF THE PARENT INDEX, ONE DESCENT A ROW (#639,
+// 2026-10-15).
+//
+// The form #638 shipped read a kept parent's rows as `e.realm = k.realm AND
+// e.parent_key = k.parent_key ORDER BY e.dn_key`. Inside a LATERAL the
+// parent is a parameter the planner cannot see, so it estimates the rows by
+// `parent_key`'s `n_distinct` — and at 50.2M entries ANALYZE's ~30,000-row
+// sample saw one parent, `n_distinct` was 1, every parent looked like the
+// whole realm, and the plan read the PRIMARY KEY `(realm, dn_key)` with
+// `parent_key` as a filter: the realm, once per parent, at every start.
+// (A parent bound as a CONSTANT is judged by the most-common-values list
+// instead, and was never wrong: `hasChild`, `byName`, `withNames`,
+// `byAttribute` keep their equality.)
+//
+// Three shapes were tried on a postgres:18 table whose sample saw one parent
+// and on one whose sample saw them all, and two failed:
+//
+//   * `ORDER BY realm, parent_key, dn_key` beside the equality: an equality
+//     makes `parent_key` a constant of the ordering, which reduces to
+//     `dn_key`, and the primary key gives that.
+//   * a RANGE of the parent index under a LIMIT — `(realm, parent_key,
+//     dn_key) > (r, p, after) … LIMIT 1000`: with a page's worth of rows
+//     estimated, sorting them is priced below reading them in order, and
+//     the planner took the realm index with an (incremental) sort, or the
+//     `(realm, parent_key, rdn_value)` index with a sort of the WHOLE
+//     parent. And a row comparison beside `realm =` is no scan boundary for
+//     a btree: the scan starts at the realm's first key and filters.
+//
+// So each row is ONE STEP, the loose index scan `parentsOf()` already
+// is: the next key of the parent index after the last one, `(realm,
+// parent_key, dn_key) > (…)`, `ORDER BY realm, parent_key, dn_key LIMIT 1`,
+// kept while it is still the realm's and the parent's (tested OUTSIDE the
+// LIMIT, which the planner may not push through, so the scan stops at one
+// row). A row comparison ALONE positions the btree exactly. For one row,
+// the parent index costs a descent and every other path costs a sort of
+// everything after the position, and no estimate makes the second cheaper —
+// short of a realm the sample never saw, which is then a realm with few
+// rows (the bulk import, the one door that writes millions, ANALYZEs after
+// it). The price is a descent per row instead of a range: about five
+// buffers a row, 9 ms for a thousand, measured.
+//
+// `postgres/schema.sql` also overrides `parent_key`'s `n_distinct` (schema
+// version 20), which puts every OTHER plan that reads a parameter parent
+// right; this form is what keeps a start from hanging where a store has not
+// had that upgrade. `tests/directory_parent_statistics.js` plans every
+// statement here on a table whose sample sees one parent, before and after.
+// ---------------------------------------------------------------------------
+/**
+ * One parent's rows after a cursor, as a parenthesised subquery: a walk of
+ * the parent index, one descent a row, in its order, at most `limit` rows.
+ *
+ * @param columns - the columns to select (unqualified)
+ * @param realm - the realm, as SQL (a parameter or an outer column)
+ * @param parent - the parent's key, as SQL
+ * @param after - the cursor, as SQL; null reads from the parent's first
+ *   row
+ * @param limit - the limit, as SQL; null for every row of the parent
+ * @returns the SQL, parenthesised, for the caller to alias
+ */
+function childrenRange(columns, realm, parent, after, limit) {
+  log.debug("Entering childrenRange().");
+  // ONE STEP: the next key of the parent index after a position, whatever
+  // parent it is under — one descent — kept only while it is still this
+  // realm's and this parent's. The test is OUTSIDE the LIMIT, which a
+  // planner may not push through, so the scan stops at one row.
+  const step = function (from, alias) {
+    return '(SELECT * FROM (SELECT ' + columns + ', e.parent_key AS ' +
+           'within, e.dn_key AS at, e.realm AS home FROM sts_ldap_entries e ' +
+           'WHERE ' + from + ' ORDER BY e.realm, e.parent_key, e.dn_key ' +
+           'LIMIT 1) AS ' + alias + ' WHERE ' + alias + '.home = ' + realm +
+           ' AND ' + alias + '.within = ' + parent + ')';
+  };
+  const first = after === null
+    ? '(e.realm, e.parent_key) >= (' + realm + ', ' + parent + ')'
+    : '(e.realm, e.parent_key, e.dn_key) > (' + realm + ', ' + parent +
+      ', ' + after + ')';
+  log.debug("Leaving childrenRange().");
+  return '(WITH RECURSIVE walk AS (' + step(first, 'f') + ' UNION ALL ' +
+         'SELECT n.* FROM walk w CROSS JOIN LATERAL ' +
+         step('(e.realm, e.parent_key, e.dn_key) > (w.home, w.within, ' +
+              'w.at)', 'm') + ' AS n) SELECT ' + columns + ' FROM walk' +
+         (limit === null ? '' : ' LIMIT ' + limit) + ')';
+}
+
+/**
+ * One parent's direct children after a cursor, in `rdn_value` order, as a
+ * parenthesised subquery: a walk of `sts_ldap_entries_rdn`, one descent a
+ * row. The same shape as `childrenRange()`, on `(realm, parent_key,
+ * rdn_value)` rather than `dn_key` (#359).
+ *
+ * A plain `WHERE parent_key = $n ORDER BY rdn_value LIMIT` is planned on
+ * the primary key when `parent_key`'s `n_distinct` is wrong, which is the
+ * failure `childrenRange()` exists to avoid. The row comparison alone
+ * positions the rdn index.
+ *
+ * Two children with the same `rdn_value` (`uid=alice` and `cn=alice`) are
+ * not both visited: the index carries no `dn_key`, so the step's `>` moves
+ * past every row that shares the cursor's value. A person's RDN is its
+ * `uid`, which this directory keeps unique under `ou=users`.
+ *
+ * `filter`, when given, is SQL ANDed inside the one-row step (a
+ * `position($n in e.rdn_value) > 0` this module built), so a contains
+ * search stops at the next match instead of reading every child and
+ * throwing the misses away. It is never a caller's text.
+ *
+ * @param columns - the columns to select (unqualified)
+ * @param realm - the realm, as SQL (a parameter or an outer column)
+ * @param parent - the parent's key, as SQL
+ * @param after - the cursor, as SQL: an RDN value, lower-cased
+ * @param limit - the limit, as SQL; null for every child
+ * @param filter - extra SQL for the step's WHERE, or ''
+ * @returns the SQL, parenthesised, for the caller to alias
+ */
+function rdnRange(columns, realm, parent, after, limit, filter) {
+  log.debug("Entering rdnRange().");
+  const extra = filter ? ' ' + filter : '';
+  // ONE STEP, as childrenRange(): the next key of the rdn index, kept
+  // only while it is still this realm's and this parent's. The test is
+  // OUTSIDE the LIMIT, so the scan stops at one row.
+  const step = function (from, alias) {
+    log.debug("Entering step().");
+    const sql = '(SELECT * FROM (SELECT ' + columns +
+                ', e.rdn_value AS at, ' +
+                'e.parent_key AS within, e.realm AS home FROM ' +
+                'sts_ldap_entries e WHERE ' + from + extra +
+                ' ORDER BY e.realm, e.parent_key, e.rdn_value LIMIT 1) ' +
+                'AS ' + alias + ' WHERE ' + alias + '.home = ' + realm +
+                ' AND ' + alias + '.within = ' + parent + ')';
+    log.debug("Leaving step().");
+    return sql;
+  };
+  const first = '(e.realm, e.parent_key, e.rdn_value) > (' + realm + ', ' +
+                parent + ', ' + after + ')';
+  log.debug("Leaving rdnRange().");
+  return '(WITH RECURSIVE walk AS (' + step(first, 'f') + ' UNION ALL ' +
+         'SELECT n.* FROM walk w CROSS JOIN LATERAL ' +
+         step('(e.realm, e.parent_key, e.rdn_value) > (w.home, ' +
+              'w.within, w.at)', 'm') + ' AS n) SELECT ' + columns +
+         ', at AS rdn_value FROM walk' +
+         (limit === null ? '' : ' LIMIT ' + limit) + ')';
+}
+
+/**
+ * One page of a parent's direct children in `rdn_value` order (#359).
+ *
+ * `afterRdn` is the previous page's last RDN, compared with `>`. `offset`
+ * skips that many matching children after the cursor — the chooser's page
+ * — and is capped so a deep page cannot become a walk of the container.
+ * `options.needle`, when set, is a lower-cased substring of the RDN,
+ * applied inside the walk (`position()`, not `LIKE`, so the needle cannot
+ * inject a wildcard). An empty needle adds no predicate: `position('' in
+ * x)` is 1 in PostgreSQL and would match every row for the wrong reason.
+ *
+ * **A NEEDLE THE TRIGRAM INDEX SERVES, WITH FEW MATCHES, IS READ BY ITS
+ * MATCHES INSTEAD** (#1310): when `options.matched` and `options.total`
+ * (the caller's capped count and the container's size) say that reading
+ * every match costs less than the walk would (`matchesCheaper()`), the
+ * page is `needleMatches()`'s statement — the matches through
+ * `sts_ldap_entries_uid_trgm`, sorted. Otherwise the walk.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param afterRdn - the cursor, or ''
+ * @param limit - the page size (at most 1,000)
+ * @param options - `offset`, `needle`, and `matched`, `total` and
+ *   `countCapped` when the caller has counted
+ * @returns the statement
+ */
+function rdnPage(realm, parentKey, afterRdn, limit, options) {
+  log.debug("Entering rdnPage().");
+  const o = options || {};
+  const needle = String(o.needle || '').toLowerCase();
+  const skip = Math.max(0, Math.min(100000,
+    Math.floor(Number(o.offset) || 0)));
+  const n = pageSize(limit);
+  const walk = Math.min(skip + n, 100000);
+  // The walk and the offset are numbers; the rest of the row is text.
+  /** @type {Array<string | number>} */
+  const values = [String(realm), String(parentKey),
+                  String(afterRdn || '').toLowerCase()];
+  if (needleIndexed(parentKey, needle) && matchesCheaper(o, walk)) {
+    values.push('%' + likeEscaped(needle) + '%', walk - skip, skip);
+    log.debug("Leaving rdnPage(). By its matches.");
+    return { text: needleMatches(), values: values };
+  }
+  let filter = '';
+  if (needle) {
+    values.push(needle);
+    filter = 'AND position($' + values.length + ' in e.rdn_value) > 0';
+  }
+  values.push(walk);
+  const walkSql = '$' + values.length;
+  values.push(skip);
+  const skipSql = '$' + values.length;
+  log.debug("Leaving rdnPage().");
+  return { text: 'SELECT ' + COLUMNS + ', rdn_value FROM ' +
+                 rdnRange(COLUMNS, '$1', '$2', '$3', walkSql, filter) +
+                 ' AS x ORDER BY rdn_value OFFSET ' + skipSql,
+           values: values };
+}
+
+// ---------------------------------------------------------------------------
+// A NEEDLE SEARCH'S COUNT IS CAPPED (#1308, rcbj's decision 2026-11-04).
+//
+// `position($3 in rdn_value) > 0` is a substring, and no index serves one:
+// the count read every direct child of the parent, so under a parent of
+// millions each search's count was a scan of millions. The count now stops
+// at `cap + 1` matches — a LIMIT inside the count, as
+// `countWithAttributeUpTo()` has — and an answer of `cap + 1` means MORE
+// THAN `cap`, which the caller says in those words. No schema change.
+//
+// **THE CAP IS THE WALK'S CAP, 100,000** (`rdnPage()`'s `walk`): no page
+// past it can be asked, so a count past it bought a number nobody could
+// page to, and a count up to it costs what the deepest page already costs.
+// A caller may ask a smaller cap (a test does); never a larger one. The
+// cap bounds the MATCHES counted, not the rows read: a needle that matches
+// few children read every child to find that out — until #1310, below,
+// which keeps the cap and asks such a needle of the trigram index.
+// ---------------------------------------------------------------------------
+const RDN_COUNT_CAP = 100000;
+
+/**
+ * The cap a count is asked with: a whole number from 1 to `RDN_COUNT_CAP`,
+ * and `RDN_COUNT_CAP` when none (or nonsense) is given.
+ *
+ * @param cap - the caller's cap, or undefined
+ * @returns the cap
+ */
+function rdnCountCap(cap) {
+  log.debug("Entering rdnCountCap().");
+  const n = Math.floor(Number(cap));
+  log.debug("Leaving rdnCountCap().");
+  return isFinite(n) && n >= 1 ? Math.min(n, RDN_COUNT_CAP) : RDN_COUNT_CAP;
+}
+
+/**
+ * How many direct children of a parent have an RDN containing `needle`,
+ * COUNTED NO FURTHER THAN `cap + 1` (#1308): an answer over `cap` means
+ * more than `cap`, and is never the number of matches.
+ *
+ * An empty needle is every direct child, capped the same way. This is a
+ * count of the table, not the counter: the counter cannot see a
+ * substring. A caller that wants the container's size asks `count`
+ * instead, and this is asked asynchronously — a heavier plan must not
+ * hold the event loop.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param needle - the substring, or ''
+ * @param cap - the most it reports exactly (`rdnCountCap()`)
+ * @returns the statement
+ */
+function rdnCount(realm, parentKey, needle, cap) {
+  log.debug("Entering rdnCount().");
+  const wanted = String(needle || '').toLowerCase();
+  /** @type {Array<string | number>} */
+  const values = [String(realm), String(parentKey)];
+  if (needleIndexed(parentKey, wanted)) {
+    values.push('%' + likeEscaped(wanted) + '%', rdnCountCap(cap) + 1);
+    log.debug("Leaving rdnCount(). Through the trigram index.");
+    return { text: 'WITH m AS MATERIALIZED (SELECT 1 AS one FROM ' +
+                   'sts_ldap_entries WHERE realm = $1 AND parent_key = $2 ' +
+                   'AND ' + USERS_PARENT + ' AND rdn_value LIKE $3 ESCAPE ' +
+                   '\'\\\') SELECT count(*)::bigint AS n FROM (SELECT one ' +
+                   'FROM m LIMIT $4) AS matched',
+             values: values };
+  }
+  let filter = '';
+  if (wanted) {
+    values.push(wanted);
+    filter = ' AND position($' + values.length + ' in rdn_value) > 0';
+  }
+  values.push(rdnCountCap(cap) + 1);
+  log.debug("Leaving rdnCount().");
+  return { text: 'WITH m AS MATERIALIZED (SELECT 1 AS one FROM ' +
+                 'sts_ldap_entries WHERE realm = $1 AND parent_key = $2' +
+                 filter + ') SELECT count(*)::bigint AS n FROM (SELECT one ' +
+                 'FROM m LIMIT $' + values.length + ') AS matched',
+           values: values };
+}
+
+// ---------------------------------------------------------------------------
+// THE DIRECT CHILDREN OF `ou=users` WHOSE RDN VALUE CONTAINS A STRING
+// (2026-10-20, `/portal/delegate`'s search, `ldap_server.js`'s
+// `delegateCandidates()`).
+//
+// The RDN value is the one name of a person the database holds in the
+// clear (`rdn_value`, generated from the key and lower-cased with it; a
+// person's is their `uid`), so a contains match on it can be indexed while
+// every attribute stays sealed. `sts_ldap_entries_uid_trgm` is a `pg_trgm`
+// GIN over it, PARTIAL on `USERS_PARENT` — the children of a realm's
+// `ou=users`, whatever its base — and this statement repeats the predicate
+// character for character, because the planner uses a partial index only
+// where the query implies its WHERE.
+//
+// **THE TEXT IS A PARAMETER AND ITS WILDCARDS ARE ESCAPED** (`likeEscaped()`)
+// so `%`, `_` and `\` match themselves; nothing a caller typed is ever SQL.
+// No ORDER BY, so the LIMIT stops the heap scan at the limit-th match; the
+// caller sorts the page it was given.
+// ---------------------------------------------------------------------------
+const USERS_PARENT = "parent_key LIKE 'ou=users,%'";
+
+/**
+ * Escapes LIKE's wildcards and its escape character, `\`.
+ *
+ * @param text - the literal text
+ * @returns the text, safe inside a LIKE pattern with `ESCAPE '\'`
+ */
+function likeEscaped(text) {
+  log.debug("Entering likeEscaped().");
+  log.debug("Leaving likeEscaped().");
+  return String(text == null ? '' : text).replace(/[\\%_]/g, '\\$&');
+}
+
+/**
+ * At most `limit` direct children of `parentKey` whose RDN value contains
+ * `needle` (lower-cased), in no particular order.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN, a realm's `ou=users`
+ * @param needle - the substring. An empty one matches every child: the
+ *   one caller asks only for three characters or more
+ * @param limit - the most rows (at most 1,000)
+ * @returns the statement
+ */
+function uidContains(realm, parentKey, needle, limit) {
+  log.debug("Entering uidContains().");
+  const wanted = String(needle || '').toLowerCase();
+  log.debug("Leaving uidContains().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND ' + USERS_PARENT +
+                 ' AND rdn_value LIKE $3 ESCAPE \'\\\' LIMIT $4',
+           values: [String(realm), String(parentKey),
+                    '%' + likeEscaped(wanted) + '%', pageSize(limit)] };
+}
+
+// ---------------------------------------------------------------------------
+// A SELECTIVE NEEDLE IS AN INDEX PROBE, NOT A READ OF EVERY CHILD (#1310,
+// rcbj's follow-up to #1308, 2026-11-04).
+//
+// `sts_ldap_entries_uid_trgm` (schema version 23, `uidContains`'s, above)
+// is already the index the role chooser's needle needs: a `pg_trgm` GIN
+// over `rdn_value`, partial on `USERS_PARENT`, and every needle search is
+// of a realm's `ou=users` (`ldap_server.js`'s `candidatePageAsync()`). So
+// NO NEW INDEX AND NO SCHEMA VERSION: the count and the page are rewritten
+// so that index can serve them — `rdn_value LIKE $n ESCAPE '\'` with the
+// needle's `%`, `_` and `\` escaped (`likeEscaped()`), and the index's
+// own condition repeated, because the planner uses a partial index only
+// where the query implies its WHERE. `rdn_value` is generated from the
+// lower-cased key and the needle is lower-cased, so LIKE matches exactly
+// what `position()` did: no ILIKE is needed. Measured on postgres:18
+// beside a composite `btree_gin` index of `(realm, parent_key, rdn_value
+// gin_trgm_ops)`: the composite was chosen as readily and read MORE (179
+// buffers to this index's 56, a four-character needle, 200,000 people a
+// realm in two realms), since its realm and parent entries are posting
+// trees of every row; this index's cost is the needle's matches in every
+// realm's `ou=users`, which the heap recheck then drops to this parent's.
+//
+// **WHICH NEEDLES** (`needleIndexed()`): a parent under `ou=users` (the
+// index's condition) and three ASCII letters or digits in a row. pg_trgm
+// extracts no trigram from a shorter run, and a pattern without one is a
+// scan of the whole index, which the planner rightly refuses; an ASCII run
+// is the conservative test, since what counts as a letter beyond ASCII is
+// the database's locale. Any other needle keeps #359's walk and #1308's
+// statement, `position()` — a read of the parent's children, in the rdn
+// index's order, until the cap's matches or the page are found or the
+// children end. SO A ONE- OR TWO-CHARACTER NEEDLE IS STILL A SCAN of the
+// parent, bounded by the cap only when it is broad; such a needle is
+// broad in practice, and a narrow one is a third character away.
+//
+// **THE PLANNER IS FENCED** (`MATERIALIZED`): with the `LIMIT` beside
+// the predicates, a LIMIT makes the rdn index's ordered read look cheap —
+// it is priced to stop early — and was chosen for a page whose needle
+// matched 0.2% of 2M children: 467,564 buffers, 1.2 s, where the trigram
+// index reads 5,234 in 13 ms. Inside the CTE there is no LIMIT, so the
+// planner prices reading every match against reading every child and picks
+// the index that is cheaper for the needle it has (the rdn index for a
+// broad one); the LIMIT outside still stops the read, because a CTE is
+// read lazily.
+//
+// **THE COUNT ALWAYS GOES THIS WAY; THE PAGE ONLY WHEN ITS MATCHES ARE
+// FEW** (`matchesCheaper()`): the page must be SORTED, so through the
+// trigram index it reads every match, where the walk reads children in
+// order until the page fills — for a broad needle a few thousand rows. The
+// caller has the numbers (it counts before it pages): reading the matches
+// costs `matched`; the walk costs about `walk × total / matched`. The
+// page is read by its matches when `matched² ≤ walk × total` and the count
+// was not capped, so either way a page reads no more than `matched` rows,
+// which is at most the cap.
+// ---------------------------------------------------------------------------
+const INDEXED_NEEDLE = /[a-z0-9]{3}/;
+
+/**
+ * Whether a needle under a parent is one `sts_ldap_entries_uid_trgm` can
+ * serve (#1310): the parent is a realm's `ou=users` and the needle holds
+ * three ASCII letters or digits in a row.
+ *
+ * @param parentKey - the parent's normalised DN
+ * @param needle - the needle, lower-cased
+ * @returns true when the trigram statements are asked
+ */
+function needleIndexed(parentKey, needle) {
+  log.debug("Entering needleIndexed().");
+  const ok = String(parentKey || '').indexOf('ou=users,') === 0 &&
+    INDEXED_NEEDLE.test(String(needle || ''));
+  log.debug("Leaving needleIndexed(). " + ok);
+  return ok;
+}
+
+/**
+ * Whether reading a needle's every match costs less than walking the
+ * parent to fill the page (#1310): the caller counted (`matched` and
+ * `total` numbers), the count was not capped, and
+ * `matched² ≤ walk × total`.
+ *
+ * @param options - `rdnPage()`'s options
+ * @param walk - how far the walk would go: offset and page, capped
+ * @returns true when the page is read by its matches
+ */
+function matchesCheaper(options, walk) {
+  log.debug("Entering matchesCheaper().");
+  const matched = Number(options.matched);
+  const total = Number(options.total);
+  const ok = options.countCapped !== true &&
+    options.matched !== undefined && options.matched !== null &&
+    options.total !== undefined && options.total !== null &&
+    isFinite(matched) && isFinite(total) && matched >= 0 &&
+    matched <= RDN_COUNT_CAP && matched * matched <= walk * total;
+  log.debug("Leaving matchesCheaper(). " + ok);
+  return ok;
+}
+
+/**
+ * `rdnPage()`'s statement for a page read by its matches (#1310): $1 the
+ * realm, $2 the parent, $3 the cursor, $4 the LIKE pattern, $5 the rows
+ * after the offset, $6 the offset. Ordered by `rdn_value` and then
+ * `dn_key`, so two children sharing an RDN value are both on the page.
+ *
+ * @returns the SQL
+ */
+function needleMatches() {
+  log.debug("Entering needleMatches().");
+  log.debug("Leaving needleMatches().");
+  return 'WITH m AS MATERIALIZED (SELECT ' + COLUMNS + ', rdn_value FROM ' +
+         'sts_ldap_entries WHERE realm = $1 AND parent_key = $2 AND ' +
+         USERS_PARENT + ' AND rdn_value > $3 AND rdn_value LIKE $4 ESCAPE ' +
+         '\'\\\') SELECT ' + COLUMNS + ', rdn_value FROM m ORDER BY ' +
+         'rdn_value, dn_key LIMIT $5 OFFSET $6';
+}
+
+/**
+ * One numbered page of a parent's direct children, in key order (#359).
+ *
+ * `page()`'s one-level form stays a cursor. This is the devices page,
+ * which numbers its pages: the walk reads `offset + limit` rows of the
+ * parent index and the statement drops the offset. The walk is capped,
+ * as `rdnPage()`'s is. The cursor is the empty key, so the first child
+ * is included — `page()` passes the cursor as a parameter, and passing
+ * that here would bind a value instead of comparing with `''`.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param offset - rows to skip
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function containerPage(realm, parentKey, offset, limit) {
+  log.debug("Entering containerPage().");
+  const skip = Math.max(0, Math.min(100000,
+    Math.floor(Number(offset) || 0)));
+  const n = pageSize(limit);
+  const walk = Math.min(skip + n, 100000);
+  log.debug("Leaving containerPage().");
+  // `''` is the SQL literal, so the comparison is `> ($1, $2, '')`.
+  return { text: 'SELECT ' + COLUMNS + ' FROM ' +
+                 childrenRange(COLUMNS, '$1', '$2', "''", '$3') +
+                 ' AS x ORDER BY dn_key OFFSET $4',
+           values: [String(realm), String(parentKey), walk, skip] };
+}
+
+/**
+ * The parent a key's row has: `parent_key` as the column computes it —
+ * everything after the key's first comma, or '' when it has none.
+ *
+ * @param key - a normalised DN
+ * @returns the parent's key
+ */
+function parentOf(key) {
+  log.debug("Entering parentOf().");
+  const text = String(key);
+  const comma = text.indexOf(',');
+  log.debug("Leaving parentOf().");
+  return comma >= 0 ? text.slice(comma + 1) : '';
+}
+
+/**
+ * One page of the rows strictly under a base (and the base itself when
+ * `self`), in key order after a cursor: through the realm's parents, each
+ * kept parent's rows one range of the parent index.
+ *
+ * @param columns - the columns to select (unqualified)
+ * @param at - the positions in `values`: `realm`, `base`, `length` (the
+ *   suffix length), `after` and `limit`
+ * @param self - true to include the base itself
+ * @returns the SQL
+ */
+function subtreeRows(columns, at, self) {
+  log.debug("Entering subtreeRows().");
+  const r = '$' + at.realm;
+  const b = '$' + at.base;
+  const a = '$' + at.after;
+  const n = '$' + at.limit;
+  const base = self
+    ? ' UNION ALL SELECT ' + columns + ' FROM sts_ldap_entries WHERE ' +
+      'realm = ' + r + ' AND dn_key = ' + b + ' AND dn_key > ' + a
+    : '';
+  log.debug("Leaving subtreeRows().");
+  return parentsOf(at.realm) + ', under AS (SELECT parent_key FROM parents ' +
+         'WHERE parent_key = ' + b + ' OR right(parent_key, $' + at.length +
+         ') = \',\' || ' + b + ') SELECT ' + columns + ' FROM (SELECT x.* ' +
+         'FROM under u CROSS JOIN LATERAL ' +
+         childrenRange(columns, r, 'u.parent_key', a, n) + ' AS x' + base +
+         ') AS s ORDER BY dn_key LIMIT ' + n;
+}
+
+/**
+ * The WHERE-free form a subtree page takes: through the parents for a base,
+ * and the old suffix for the base '' (see above).
+ *
+ * @param columns - the columns to select
+ * @param baseKey - the base's normalised DN
+ * @param self - true to include the base itself
+ * @returns the SQL, its values in the order realm, base, after, limit,
+ *   length
+ */
+function subtreePage(columns, baseKey, self) {
+  log.debug("Entering subtreePage().");
+  if (String(baseKey) === '') {
+    log.debug("Leaving subtreePage(). The empty base: the suffix.");
+    return 'SELECT ' + columns + ' FROM sts_ldap_entries WHERE realm = $1 ' +
+           'AND ' + underClause(2, 5, self) + ' AND dn_key > $3 ORDER BY ' +
+           'dn_key LIMIT $4';
+  }
+  log.debug("Leaving subtreePage().");
+  return subtreeRows(columns, { realm: 1, base: 2, after: 3, limit: 4,
+                                length: 5 }, self);
+}
+
 // A bound on a page, so no caller can ask for the table in one statement.
 const MAX_PAGE = 1000;
 
@@ -124,10 +733,19 @@ function pageSize(limit) {
  */
 function byKeys(realm, keys) {
   log.debug("Entering byKeys().");
+  // A dn_key containing a NUL byte can match no stored key — PostgreSQL text
+  // holds no NUL — and sending one makes the driver throw, which reached the
+  // request as an uncaught 500 under fuzzing (#1356: twelve of the fuzz gate's
+  // uncaught 5xx were one NUL-in-a-key here). Drop it: the right answer for a
+  // key that cannot exist is no row, and `= ANY('{}')` on whatever remains is
+  // empty. This is not a refusal and carries no error code.
+  const safe = (keys || []).map(String).filter(function (key) {
+    return key.indexOf('\u0000') < 0;
+  });
   log.debug("Leaving byKeys().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND dn_key = ANY($2::text[]) ORDER BY dn_key',
-           values: [String(realm), (keys || []).map(String)] };
+           values: [String(realm), safe] };
 }
 
 /**
@@ -146,12 +764,25 @@ function byName(realm, parentKey, name) {
   const rdn = name && typeof name === 'object'
     ? String(name.rdn || '')
     : String(name == null ? '' : name).trim().toLowerCase();
+  const key = keyed(name, 'name', true);
+  // A NUL byte in a looked-up name can match no stored entry — PostgreSQL text
+  // holds no NUL, so neither `rdn_value` nor a `name_keys` digest ever does —
+  // and binding one makes the driver throw, which reached the request as an
+  // uncaught 500 under fuzzing (#1356, `byKeys`'s NUL read a second way: the
+  // RDN carries it even where the key is a digest). The right answer for a
+  // name that cannot exist is no row, so a statement matching nothing is
+  // returned. This is not a refusal and carries no error code.
+  if (rdn.indexOf('\u0000') >= 0 || key.indexOf('\u0000') >= 0) {
+    log.debug("Leaving byName(). A NUL in the name.");
+    return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE false',
+             values: [] };
+  }
   log.debug("Leaving byName().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND parent_key = $2 AND (name_keys @> $3::jsonb ' +
                  'OR rdn_value = $4) ORDER BY dn_key LIMIT 2',
            values: [String(realm), String(parentKey),
-                    JSON.stringify([keyed(name, 'name', true)]), rdn] };
+                    JSON.stringify([key]), rdn] };
 }
 
 /**
@@ -169,6 +800,37 @@ function byUuid(realm, uuid) {
                  'LIMIT 8',
            values: [String(realm), JSON.stringify([keyed(uuid, 'uuid',
                                                          true)])] };
+}
+
+/**
+ * The entries holding ANY of a list of `entryUUID` values or aliases, lower-
+ * cased: `byUuid()`'s question for many subjects at once. A page that names
+ * the holder of every token it holds (`admin_stats.js`'s `userKeys()`) asked
+ * `byUuid` once per token in a windowed process, a synchronous round trip
+ * each, and thousands of them made one `GET /admin-api/audit` take a second.
+ * `@> ANY` is answered by a bitmap scan of the same GIN index, one probe per
+ * value.
+ *
+ * @param realm - the realm id
+ * @param uuids - the UUIDs, bare; each `{ key }` once keyed
+ * @returns the statement
+ */
+function withUuids(realm, uuids) {
+  log.debug("Entering withUuids().");
+  const keys = (Array.isArray(uuids) ? uuids : []).map(function (one) {
+    return JSON.stringify([keyed(one, 'uuid', true)]);
+  });
+  log.debug("Leaving withUuids().");
+  // **PLANNED WITHOUT JIT (2026-10-21)**, `residentOnly()`'s reason: the
+  // planner estimates `@> ANY` of 500 keys at 4.8 million rows on 8081's
+  // 1M-entry table — the GIN index answers 500 — so it compiled the
+  // statement every time: 89 ms of JIT for 150 ms of work, measured, and
+  // the Users page asks it once per 500 register subjects (134 times).
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND uuid_keys @> ANY($2::jsonb[]) ORDER BY ' +
+                 'dn_key',
+           values: [String(realm), keys],
+           jitOff: true };
 }
 
 /**
@@ -192,25 +854,78 @@ function byMail(realm, mail, limit) {
 
 /**
  * The entries holding exactly this value of an attribute (case as stored),
- * through the GIN index over `attrs`. For the lookups that compare a value
- * as written — a DID, a SPIFFE ID, a federation link.
+ * through the GIN index over `value_keys`. For the lookups that compare a
+ * value as written — a DID, a SPIFFE ID, a federation link, a device's key
+ * thumbprint or owner.
+ *
+ * `parentKey`, when given, keeps only the entries directly under that DN
+ * (#636): a device's `owner` is also a group's and a service account's, and
+ * the devices of an owner are the rows under `ou=devices` — so the limit
+ * cannot be spent on the others first.
  *
  * @param realm - the realm id
  * @param attribute - the attribute name, lower-cased as the store holds it
  * @param value - the value
  * @param limit - at most this many rows
+ * @param parentKey - optional: the normalised DN the entries are directly
+ *   under
  * @returns the statement
  */
-function byAttribute(realm, attribute, value, limit) {
+function byAttribute(realm, attribute, value, limit, parentKey) {
   log.debug("Entering byAttribute().");
   const name = String(attribute).toLowerCase();
+  const values = [String(realm),
+                  JSON.stringify([keyed(value, 'attr:' + name, false)]),
+                  pageSize(limit)];
+  let under = '';
+  if (parentKey) {
+    values.push(String(parentKey));
+    under = 'parent_key = $4 AND ';
+  }
   log.debug("Leaving byAttribute().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND value_keys @> $2::jsonb ORDER BY dn_key ' +
-                 'LIMIT $3',
-           values: [String(realm),
-                    JSON.stringify([keyed(value, 'attr:' + name, false)]),
-                    pageSize(limit)] };
+                 'realm = $1 AND ' + under + 'value_keys @> $2::jsonb ' +
+                 'ORDER BY dn_key LIMIT $3',
+           values: values };
+}
+
+// THE COLUMN EACH `equalUnder()` KIND READS (#320): only the two whose index
+// holds every value, lower-cased, so an equality on the attribute can be
+// answered from it as a superset.
+const EQUAL_UNDER_COLUMNS = { name: 'name_keys', mail: 'mail_keys' };
+
+/**
+ * The entries at or under a base holding a `uid` (kind `name`) or `mail`
+ * (kind `mail`) value equal to `value`, compared lower-cased — a SUPERSET of
+ * an LDAP equality filter's matches, which the caller then applies (#320).
+ * At most `limit` rows: a caller that gets `limit` back must not assume it
+ * has them all.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the search base's normalised DN
+ * @param kind - `name` or `mail`
+ * @param value - the asserted value
+ * @param limit - at most this many rows (at most 1,000)
+ * @returns the statement
+ * @throws an Error naming a kind with no column
+ */
+function equalUnder(realm, baseKey, kind, value, limit) {
+  log.debug("Entering equalUnder(). " + kind);
+  const column = Object.prototype.hasOwnProperty.call(EQUAL_UNDER_COLUMNS,
+                                                      kind)
+    ? EQUAL_UNDER_COLUMNS[kind] : '';
+  if (!column) {
+    log.debug("Leaving equalUnder(). Unknown kind.");
+    throw new Error('directory_queries: equalUnder has no kind ' +
+                    String(kind));
+  }
+  log.debug("Leaving equalUnder().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 5, true) + ' AND ' +
+                 column + ' @> $3::jsonb ORDER BY dn_key LIMIT $4',
+           values: [String(realm), String(baseKey),
+                    JSON.stringify([keyed(value, kind, true)]),
+                    pageSize(limit), suffixLength(baseKey)] };
 }
 
 /**
@@ -227,13 +942,13 @@ function byAttribute(realm, attribute, value, limit) {
 function page(realm, baseKey, afterKey, limit, options) {
   log.debug("Entering page().");
   const o = options || {};
-  const where = o.oneLevel
-    ? 'parent_key = $2'
-    : underClause(2, 5, !!o.self);
   log.debug("Leaving page().");
-  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND ' + where + ' AND dn_key > $3 ORDER BY ' +
-                 'dn_key LIMIT $4',
+  // One level is one parent's walk (#639), its cursor and limit inside.
+  return { text: o.oneLevel
+             ? 'SELECT ' + COLUMNS + ' FROM ' +
+               childrenRange(COLUMNS, '$1', '$2', '$3', '$4') +
+               ' AS x ORDER BY dn_key'
+             : subtreePage(COLUMNS, baseKey, !!o.self),
            values: o.oneLevel
              ? [String(realm), String(baseKey), String(afterKey || ''),
                 pageSize(limit)]
@@ -241,9 +956,159 @@ function page(realm, baseKey, afterKey, limit, options) {
                 pageSize(limit), suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// THE COUNTS ARE READ, NOT COUNTED (#618). `sts_ldap_counts` holds, per realm
+// and per base, the entries strictly under it (`attribute` '') and those
+// holding each attribute in COUNTED_ATTRIBUTES, kept by the database's own
+// triggers in the transaction that wrote (`persistence_postgres.js`,
+// SCHEMA_ROUTINES). So `count` and `countHolding` are one primary-key read
+// whatever the size of the directory, where each was a `count(*)` linear in
+// the realm's rows — a range of it since #630, which shards each counter
+// (up to COUNT_SHARDS rows a key) and has every reader `sum()` them. A
+// base with no counter row has nothing under it: the counters are started
+// from one count of the table, under a lock, when the triggers are created,
+// and a missing row is a zero from then on.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTE NAMES A HOLDER QUESTION IS ASKED ABOUT, AND ONLY THOSE, ARE
+// INDEXED (#618 phase 2, schema version 18, 2026-10-14).
+//
+// `attr_names` holds every attribute name of an entry in the clear, about
+// fifteen a person, and until version 18 a GIN index over the whole column
+// took every one of them: on 8081's 1.2M entries twelve names are in 99.9% of
+// rows and fourteen more in a sixth, so a person's insert wrote fifteen-odd
+// GIN entries that could narrow nothing — nobody asks "who holds a `mail`".
+// The index is now over an IMMUTABLE expression of the column that keeps only
+// the names below (`ASKED_NAMES`), and PARTIAL, so an entry holding none of
+// them — nearly every person — writes no GIN entry at all.
+//
+// **THE LIST IS THE NAMES THE CODE ASKS** `withAttribute()` and
+// `anyWithAttribute()` about, read from their callers: `ldap_server.js`'s
+// `eachHolderOfAny()` sites (group membership, consents, delegation flags,
+// Kerberos keys, service accounts, federation links, claim-source tokens,
+// self-issued subjects, the WebAuthn user handle), `holdersAsync()`'s
+// (`credentials.ts`'s Android marker and WebAuthn credentials, `devices.ts`'
+// device keys and marker), `credentialTallies()`'s second factors,
+// `person_assertions.js`'s key pairs and issuers, `cert_enrollment.ts`'s
+// enrolled-certificate attributes and SCIM's HOBA key.
+// `tests/directory_asked_names.js` holds the list to those sites.
+//
+// **A NAME NOT IN THE LIST IS STILL ANSWERED**, by `attr_names ? name` with
+// no index behind it — a scan of the realm's rows under the base, said once
+// in the log — because a holder question that silently answered "nobody"
+// would be worse than a slow one. A new caller adds its name here, which is a
+// new index expression and so a schema version: the expression is part of
+// the index's definition, and the planner uses the index only for a query
+// that repeats it — and its predicate — exactly, which `ASKED_NAMES` and
+// `ASKED_NAMES_HELD` guarantee by being the one place each is written.
+//
+// `userpassword` is not in the list: nearly every person holds one, so an
+// index of its holders narrows nothing, and the two questions asked about it
+// — how many hold one, and whether anybody does — are answered by the
+// counters (`COUNTED_ATTRIBUTES`).
+// ---------------------------------------------------------------------------
+// `stsassertionkeypair` and `stssamlassertionkeypair` replaced
+// `stsassertionjwks` and `stssamlassertioncertificate` in version 31 (#1290),
+// when a person's signing key pairs became several records per profile.
+const ASKED_ATTRIBUTES = Object.freeze([
+  'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',
+  'pwdaccountlockedtime',
+  'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer',
+  'stsassertionkeypair', 'stsbackupcodes', 'stscertificatehostname',
+  'stsclaimsourcetokens',
+  'stsdefaultdelegationsemantics', 'stsdelegationsemantics',
+  'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate',
+  'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor',
+  'stsmayact', 'stsnotdelegated', 'stssamlassertionissuer',
+  'stssamlassertionkeypair', 'stsscepchallenge', 'stsselfissuedsubject',
+  'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential',
+  'stswebauthnuserhandle'
+]);
+
+// The jsonpath literal and the expression, built once. A name is spelt into
+// SQL here, so each is checked to be a bare lower-case name: nothing in it
+// can end the literal or the path's string.
+function askedNamesExpression() {
+  log.debug("Entering askedNamesExpression().");
+  ASKED_ATTRIBUTES.forEach(function (name) {
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      throw new Error('directory_queries: an asked attribute name must be ' +
+                      'a bare lower-case name: ' + name);
+    }
+  });
+  const path = '$[*] ? (' + ASKED_ATTRIBUTES.map(function (name) {
+    return '@ == "' + name + '"';
+  }).join(' || ') + ')';
+  log.debug("Leaving askedNamesExpression().");
+  return 'jsonb_path_query_array(attr_names, \'' + path + '\')';
+}
+
+/**
+ * The indexed expression over `attr_names`: the entry's names that a holder
+ * question is asked about, as a JSON array. The driver's index and every
+ * query below spell it from here.
+ */
+const ASKED_NAMES = askedNamesExpression();
+
+/**
+ * The partial index's predicate, which a query repeats so the planner may use
+ * the index: the entry holds at least one asked name. `?|` and not
+ * `ASKED_NAMES <> '[]'`, and that is a measured choice: the database checks
+ * a partial index's predicate on every insert and computes the indexed
+ * expression only for a row that passes, and on 8081's people the
+ * jsonpath above cost about 30 µs a row where `?|` over the same names cost
+ * about 2 µs — so a person holding none of them pays the 2.
+ */
+const ASKED_NAMES_HELD = 'attr_names ?| ARRAY[' +
+  ASKED_ATTRIBUTES.map(function (name) {
+    return '\'' + name + '\'';
+  }).join(', ') + ']';
+
+/**
+ * The partial index's predicate over `class_keys`, which since version 18
+ * holds the GROUP classes only (`directory_codec.js`): the entry has one.
+ */
+const GROUP_CLASSES_HELD = 'class_keys <> \'[]\'::jsonb';
+
+// The names already said to have no index, so the log says it once a name.
+const unindexedNoted = new Set();
+
+/**
+ * The condition "holds the attribute" for a holder question: the indexed
+ * expression for an asked name, the bare column otherwise.
+ *
+ * @param name - the attribute name, lower-cased
+ * @param at - the position of the name in the statement's values
+ * @returns the SQL condition
+ */
+function holdsClause(name, at) {
+  log.debug("Entering holdsClause(). " + name);
+  if (ASKED_ATTRIBUTES.indexOf(name) >= 0) {
+    log.debug("Leaving holdsClause(). Indexed.");
+    return ASKED_NAMES + ' ? $' + at + ' AND ' + ASKED_NAMES_HELD;
+  }
+  if (!unindexedNoted.has(name)) {
+    unindexedNoted.add(name);
+    log.warn('directory_queries: the holders of `' + name + '` are asked ' +
+             'of the store, and no index answers for that name — it is ' +
+             'answered by a scan of the rows under the base. Add it to ' +
+             'ASKED_ATTRIBUTES (a schema version) if it is asked on a ' +
+             'request or a job (#618).');
+  }
+  log.debug("Leaving holdsClause(). Not indexed.");
+  return 'attr_names ? $' + at;
+}
+
+/**
+ * The attributes whose holders `sts_ldap_counts` keeps a count of, lower-cased
+ * as `attr_names` holds them. The postgres driver's trigger functions name
+ * the same list; `tests/directory_counts.js` holds the two together.
+ */
+const COUNTED_ATTRIBUTES = ['userpassword'];
+
 /**
  * How many entries are under a base (strictly), or in the whole realm when
- * the base is ''.
+ * the base is '': the counter row, read.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN, or '' for the realm
@@ -251,19 +1116,148 @@ function page(realm, baseKey, afterKey, limit, options) {
  */
 function count(realm, baseKey) {
   log.debug("Entering count().");
-  if (!baseKey) {
-    log.debug("Leaving count(). The realm.");
-    return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                   'WHERE realm = $1', values: [String(realm)] };
-  }
   log.debug("Leaving count().");
-  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND ' + underClause(2, 3, false),
-           values: [String(realm), String(baseKey), suffixLength(baseKey)] };
+  // The key's SHARDS, summed (#630): the fold adds to one shard per
+  // connection, and only the sum is a count.
+  return { text: 'SELECT COALESCE((SELECT sum(n) FROM sts_ldap_counts ' +
+                 'WHERE realm = $1 AND base_key = $2 AND attribute = ' +
+                 '\'\'), 0)::bigint AS n',
+           values: [String(realm), String(baseKey || '')] };
 }
 
 /**
- * Whether anything is under a key: `hasChildren()`'s question.
+ * How many entries are strictly under a base, and how many of them hold an
+ * attribute (by NAME — `attr_names`, the one column of an entry's attributes
+ * the database can read), for a page's tiles (#610): two counter rows read,
+ * for an attribute in COUNTED_ATTRIBUTES. Any other attribute is COUNTED, a
+ * `count(*) FILTER` linear in the realm's rows — no caller asks one today
+ * (`credentialTallies()` asks `userpassword`), and a new one should join
+ * the list rather than take this path.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @returns the statement; its one row's `n` and `holding` are the counts
+ */
+function countHolding(realm, baseKey, attribute) {
+  log.debug("Entering countHolding().");
+  const name = String(attribute).toLowerCase();
+  if (COUNTED_ATTRIBUTES.indexOf(name) >= 0) {
+    log.debug("Leaving countHolding(). Two counters.");
+    return { text: 'SELECT COALESCE(sum(n) FILTER (WHERE attribute = \'\'), ' +
+                   '0)::bigint AS n, COALESCE(sum(n) FILTER (WHERE ' +
+                   'attribute = $3), 0)::bigint AS holding FROM ' +
+                   'sts_ldap_counts WHERE realm = $1 AND base_key = $2 AND ' +
+                   'attribute IN (\'\', $3)',
+             values: [String(realm), String(baseKey), name] };
+  }
+  log.debug("Leaving countHolding(). Not a counted attribute: counted.");
+  return { text: 'SELECT count(*)::bigint AS n, count(*) FILTER (WHERE ' +
+                 'attr_names ? $4)::bigint AS holding FROM sts_ldap_entries ' +
+                 'WHERE realm = $1 AND ' + underClause(2, 3, false),
+           values: [String(realm), String(baseKey), suffixLength(baseKey),
+                    name] };
+}
+
+/**
+ * The entries directly under a container that answer to ANY of a list of
+ * login names — `byName()`'s question for many names at once (#610): an RDN
+ * value, or a `uid` (its lookup form, keyed by `directory_codec.keyArgs()`).
+ *
+ * @param realm - the realm id
+ * @param parentKey - the container's normalised DN (`ou=users,<base>`)
+ * @param names - the names; each `{ key, rdn }` once keyed
+ * @returns the statement
+ */
+// THE DIRECTORY'S TWO DATES AS A RANGE (#1028, rcbj: "index unencrypted
+// fields that can be used as filters"): `created_at` and `modified_at` are
+// text in RFC 4517 generalized time (`20260827192200Z`, fixed width, UTC),
+// so a B-tree over them sorts chronologically and a range is two
+// comparisons. The index is (realm, parent_key, column), so the children of
+// one realm's `ou=users` in one span are read in order and nothing else is
+// touched. `lo` is inclusive and `hi` exclusive, both in that format; the
+// caller spells a `<=` as the next second's `<`.
+// THE STATEMENT REPEATS THE INDEX'S CONDITION (`USERS_PARENT`), found on
+// 8081: PostgreSQL uses a partial index only when it can prove the query
+// implies the index's WHERE, and it cannot prove `parent_key = $2` implies
+// `parent_key LIKE 'ou=users,%'`, so without it the plan was a sequential
+// scan of fifty million rows (cost 11.3M; with it, 8.6).
+function timeBetween(column, realm, parentKey, lo, hi, limit) {
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND ' + USERS_PARENT +
+                 ' AND ' + column +
+                 ' >= $3 AND ' + column + ' < $4 ORDER BY ' + column +
+                 ', dn_key LIMIT $5',
+           values: [String(realm), String(parentKey), String(lo || ''),
+                    String(hi || '99999999999999Z'), pageSize(limit)] };
+}
+
+/**
+ * The entries under a parent created in a span of generalized time.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param lo - the first creation time taken, inclusive, or ''
+ * @param hi - the first creation time left out, or '' for no bound
+ * @param limit - at most this many (at most 1,000)
+ * @returns the statement
+ */
+function createdBetween(realm, parentKey, lo, hi, limit) {
+  log.debug("Entering createdBetween().");
+  log.debug("Leaving createdBetween().");
+  return timeBetween('created_at', realm, parentKey, lo, hi, limit);
+}
+
+/**
+ * The entries under a parent last changed in a span of generalized time.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param lo - the first change time taken, inclusive, or ''
+ * @param hi - the first change time left out, or '' for no bound
+ * @param limit - at most this many (at most 1,000)
+ * @returns the statement
+ */
+function modifiedBetween(realm, parentKey, lo, hi, limit) {
+  log.debug("Entering modifiedBetween().");
+  log.debug("Leaving modifiedBetween().");
+  return timeBetween('modified_at', realm, parentKey, lo, hi, limit);
+}
+
+function withNames(realm, parentKey, names) {
+  log.debug("Entering withNames().");
+  const list = Array.isArray(names) ? names : [];
+  const rdns = list.map(function (one) {
+    return one && typeof one === 'object'
+      ? String(one.rdn || '')
+      : String(one == null ? '' : one).trim().toLowerCase();
+  });
+  const keys = list.map(function (one) {
+    return JSON.stringify([keyed(one, 'name', true)]);
+  });
+  log.debug("Leaving withNames().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND (rdn_value = ' +
+                 'ANY($3::text[]) OR name_keys @> ANY($4::jsonb[])) ORDER BY ' +
+                 'dn_key',
+           values: [String(realm), String(parentKey), rdns, keys] };
+}
+
+// WHETHER ANYTHING IS UNDER A KEY ASKS FOR A CHILD, NOT A DESCENDANT (#636,
+// 2026-10-14). It was `underClause()` — `right(dn_key, n) = ',' || key` —
+// which no index narrows, and for a LEAF (every person an LDAP delete, a
+// rename or `deletePerson()` asks about) `LIMIT 1` is never met, so the
+// database read every key of the realm: at 6.4M people, a synchronous
+// question on the request's event loop past the bridge's 2 s. A direct
+// child is `parent_key = key`, the `(realm, parent_key, dn_key)` index's
+// first probe. The two answers agree on every tree this service writes: an
+// entry is added only under an entry that exists, and a non-leaf cannot be
+// deleted or renamed, so nothing has a descendant and no child. An orphan
+// made some other way (rows written into the table by hand) would read as a
+// leaf here, and its parent could then be deleted, which leaves it the
+// orphan it already was.
+/**
+ * Whether anything is directly under a key: `hasChildren()`'s question.
  *
  * @param realm - the realm id
  * @param key - the entry's normalised DN
@@ -273,15 +1267,16 @@ function hasChild(realm, key) {
   log.debug("Entering hasChild().");
   log.debug("Leaving hasChild().");
   return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND ' + underClause(2, 3, false) + ' LIMIT 1',
-           values: [String(realm), String(key), suffixLength(key)] };
+                 'AND parent_key = $2 LIMIT 1',
+           values: [String(realm), String(key)] };
 }
 
 /**
  * One page of the entries under a base that HOLD an attribute (any value),
- * in key order after `afterKey`. `attr_names ? name` has no index behind it here
- * and is a scan of the realm's rows under the base; it answers only the
- * holders, which is what the lists of who holds a credential need.
+ * in key order after `afterKey`: for a name in ASKED_ATTRIBUTES, the partial
+ * GIN index over ASKED_NAMES (#618, schema version 18); for any other, a scan
+ * of the realm's rows under the base. It answers only the holders, which is
+ * what the lists of who holds a credential need.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -292,17 +1287,104 @@ function hasChild(realm, key) {
  */
 function withAttribute(realm, baseKey, attribute, afterKey, limit) {
   log.debug("Entering withAttribute().");
+  const name = String(attribute).toLowerCase();
   log.debug("Leaving withAttribute().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND ' + underClause(2, 6, false) + ' AND ' +
-                 'attr_names ? $3 AND dn_key > $4 ORDER BY dn_key LIMIT $5',
-           values: [String(realm), String(baseKey),
-                    String(attribute).toLowerCase(), String(afterKey || ''),
-                    pageSize(limit), suffixLength(baseKey)] };
+                 holdsClause(name, 3) + ' AND dn_key > $4 ORDER BY dn_key ' +
+                 'LIMIT $5',
+           values: [String(realm), String(baseKey), name,
+                    String(afterKey || ''), pageSize(limit),
+                    suffixLength(baseKey)] };
+}
+
+// ---------------------------------------------------------------------------
+// A CONSOLE PAGE OF HOLDERS, AND HOW MANY THERE ARE (2026-10-22, #820).
+//
+// Monitoring → Consent listed every person holding `oauthConsent` — about
+// 470,000 on 8081, because consent is required by default — through the
+// synchronous bridge, one decrypt each, on a request worker. These are the
+// two questions the page asks instead, asynchronously on the read pool: how
+// many entries under a base hold an attribute (the asked names' partial GIN
+// index for an asked name, `holdsClause()`'s rule — a count of the holders
+// the index narrows to, linear in the HOLDERS and never in the directory,
+// nothing opened), and one page of them in key order at an offset. The
+// offset is the console's page number, and the database walks it; a keyset
+// would need the console's paging to carry a cursor.
+// ---------------------------------------------------------------------------
+/**
+ * How many entries under a base hold an attribute.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @returns the statement; its one row's `n` is the count
+ */
+function countWithAttribute(realm, baseKey, attribute) {
+  log.debug("Entering countWithAttribute().");
+  const name = String(attribute).toLowerCase();
+  log.debug("Leaving countWithAttribute().");
+  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
+                 holdsClause(name, 3),
+           values: [String(realm), String(baseKey), name,
+                    suffixLength(baseKey)] };
 }
 
 /**
- * Whether any entry of a realm holds an attribute.
+ * How many entries under a base hold an attribute, counted no further than
+ * `limit` (#1002): the count of the first `limit` holders, so the answer is
+ * `limit` when at least that many hold it. A caller asking "more than my
+ * cap?" pays for the cap and not for the holders — on 8081 the whole count
+ * of a million Kerberos key holders took a minute, and the question was
+ * whether there were more than five hundred.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param limit - count no further than this many (at least 1)
+ * @returns the statement; its one row's `n` is the bounded count
+ */
+function countWithAttributeUpTo(realm, baseKey, attribute, limit) {
+  log.debug("Entering countWithAttributeUpTo().");
+  const name = String(attribute).toLowerCase();
+  const most = Math.max(1, Math.floor(Number(limit) || 0));
+  log.debug("Leaving countWithAttributeUpTo().");
+  return { text: 'SELECT count(*)::bigint AS n FROM (SELECT 1 AS one FROM ' +
+                 'sts_ldap_entries WHERE realm = $1 AND ' +
+                 underClause(2, 5, false) + ' AND ' + holdsClause(name, 3) +
+                 ' LIMIT $4) AS held',
+           values: [String(realm), String(baseKey), name, most,
+                    suffixLength(baseKey)] };
+}
+
+/**
+ * One page of the entries under a base that hold an attribute, in key
+ * order, after skipping `offset` of them.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param offset - holders to skip
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function withAttributeAt(realm, baseKey, attribute, offset, limit) {
+  log.debug("Entering withAttributeAt().");
+  const name = String(attribute).toLowerCase();
+  const skip = Math.max(0, Math.floor(Number(offset) || 0));
+  log.debug("Leaving withAttributeAt().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 6, false) + ' AND ' +
+                 holdsClause(name, 3) + ' ORDER BY dn_key LIMIT $4 ' +
+                 'OFFSET $5',
+           values: [String(realm), String(baseKey), name, pageSize(limit),
+                    skip, suffixLength(baseKey)] };
+}
+
+/**
+ * Whether any entry of a realm holds an attribute: a counter for a counted
+ * attribute, the asked names' index for an asked one, a scan otherwise.
  *
  * @param realm - the realm id
  * @param attribute - the attribute name, lower-cased as the store holds it
@@ -310,16 +1392,30 @@ function withAttribute(realm, baseKey, attribute, afterKey, limit) {
  */
 function anyWithAttribute(realm, attribute) {
   log.debug("Entering anyWithAttribute().");
+  const name = String(attribute).toLowerCase();
+  if (COUNTED_ATTRIBUTES.indexOf(name) >= 0) {
+    // A COUNTED ATTRIBUTE IS ASKED OF ITS COUNTER (#618, schema version 18):
+    // the realm's row (`base_key` ''), one primary-key read. `userpassword`
+    // is in nearly every person, so no index of its holders is kept.
+    log.debug("Leaving anyWithAttribute(). The counter.");
+    return { text: 'SELECT 1 AS one FROM sts_ldap_counts WHERE realm = $1 ' +
+                   'AND base_key = \'\' AND attribute = $2 AND n > 0',
+             values: [String(realm), name] };
+  }
   log.debug("Leaving anyWithAttribute().");
   return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND attr_names ? $2 LIMIT 1',
-           values: [String(realm), String(attribute).toLowerCase()] };
+                 'AND ' + holdsClause(name, 2) + ' LIMIT 1',
+           values: [String(realm), name] };
 }
 
 /**
- * The entries strictly under a base holding any of the given object classes
- * (lower-cased), through the GIN index over `class_keys`: the groups a
- * windowed worker must see although it does not hold their container.
+ * The entries strictly under a base holding any of the given GROUP classes
+ * (lower-cased), through the partial GIN index over `class_keys`: the groups
+ * a windowed worker must see although it does not hold their container.
+ * Since schema version 18 the column holds an entry's group classes only
+ * (`directory_codec.js`'s CLASS_INDEXED), so a person writes nothing to the
+ * index; an entry written before then holds all its classes, which answers
+ * the same question.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -331,7 +1427,8 @@ function classesUnder(realm, baseKey, classes) {
   log.debug("Leaving classesUnder().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
-                 'class_keys ?| $3::text[] ORDER BY dn_key',
+                 'class_keys ?| $3::text[] AND ' + GROUP_CLASSES_HELD +
+                 ' ORDER BY dn_key',
            values: [String(realm), String(baseKey),
                     (classes || []).map(function (one) {
                       return keyed(one, 'class', true);
@@ -354,32 +1451,191 @@ function namesUnder(realm, baseKey, afterKey, limit) {
   log.debug("Leaving namesUnder().");
   // `attrs` whole, not `attrs->'uid'`: it is a sealed blob (#391 phase 6),
   // and the `uid` is read out of it by `directory_codec.openAnswer()`.
-  return { text: 'SELECT dn_key, dn, origin, attrs ' +
-                 'FROM sts_ldap_entries WHERE realm = $1 AND ' +
-                 underClause(2, 5, false) + ' AND dn_key > $3 ORDER BY ' +
-                 'dn_key LIMIT $4',
+  return { text: subtreePage('dn_key, dn, origin, attrs', baseKey, false),
            values: [String(realm), String(baseKey), String(afterKey || ''),
                     pageSize(limit), suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// THE WHOLE REALM, A PAGE AT A TIME, FOR `/admin/ldap/directory` (#616).
+//
+// That page lists EVERY entry of a realm — the resident containers and the
+// windowed ones alike — and the store holds all of them, so one statement
+// over the realm answers a page in the store's key order where the page used
+// to walk every row through the synchronous bridge to draw twenty-five.
+// What it can push down, it does: the ORIGIN (a plain column), the ORDER (the
+// primary key, `(realm, dn_key)`), the page (a key cursor, or an OFFSET for
+// a numbered page — linear in the offset, in the database and off the
+// service's event loop) and the counts. What it cannot is the page's `q`,
+// which matches attribute VALUES the database holds sealed
+// (`directory_codec.js`): the caller scans a bounded number of rows for it
+// and says so.
+//
+// An origin of `unstated` is an entry with none, which is how the page names
+// it (`directoryRowOf()`).
+// ---------------------------------------------------------------------------
+// The origin condition, and the value it binds (none for `unstated`).
+function originClause(origin, at) {
+  log.debug("Entering originClause().");
+  const wanted = origin === undefined || origin === null ? '' :
+    String(origin);
+  if (!wanted) {
+    log.debug("Leaving originClause(). Any origin.");
+    return { text: '', values: [] };
+  }
+  if (wanted === 'unstated') {
+    log.debug("Leaving originClause(). None stated.");
+    return { text: ' AND (origin IS NULL OR origin = \'\')', values: [] };
+  }
+  log.debug("Leaving originClause().");
+  return { text: ' AND origin = $' + at, values: [wanted] };
+}
+
+/**
+ * One page of a whole realm's entries in key order, after `afterKey` and
+ * past `offset` rows, optionally of one origin.
+ *
+ * @param realm - the realm id
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @param options - `offset` (rows to skip after the cursor), `origin`
+ * @returns the statement
+ */
+function realmPage(realm, afterKey, limit, options) {
+  log.debug("Entering realmPage().");
+  const o = options || {};
+  const offset = Math.max(0, Math.floor(Number(o.offset) || 0));
+  const origin = originClause(o.origin, 5);
+  log.debug("Leaving realmPage().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND dn_key > $2' + origin.text + ' ORDER BY ' +
+                 'dn_key LIMIT $3 OFFSET $4',
+           values: [String(realm), String(afterKey || ''), pageSize(limit),
+                    offset].concat(origin.values) };
+}
+
+/**
+ * How many entries a realm holds, optionally of one origin.
+ *
+ * @param realm - the realm id
+ * @param origin - an origin, `unstated`, or '' for any
+ * @returns the statement; its one row's `n` is the count
+ */
+function realmCount(realm, origin) {
+  log.debug("Entering realmCount().");
+  const clause = originClause(origin, 2);
+  log.debug("Leaving realmCount().");
+  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
+                 'WHERE realm = $1' + clause.text,
+           values: [String(realm)].concat(clause.values) };
+}
+
+/**
+ * How many entries of a realm came from each origin, `unstated` for none:
+ * one pass, `GROUP BY`.
+ *
+ * @param realm - the realm id
+ * @returns the statement; its rows are `{ origin, n }`
+ */
+function originCounts(realm) {
+  log.debug("Entering originCounts().");
+  log.debug("Leaving originCounts().");
+  return { text: 'SELECT COALESCE(NULLIF(origin, \'\'), \'unstated\') AS ' +
+                 'origin, count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 GROUP BY 1',
+           values: [String(realm)] };
+}
+
+/**
+ * One page of the KEYS and DNs under a base — no attributes, so nothing is
+ * read out of a sealed blob or opened (#616): what a list of names asks
+ * when a name is the entry's RDN (`personNamesUpTo()`).
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function keysUnder(realm, baseKey, afterKey, limit) {
+  log.debug("Entering keysUnder().");
+  log.debug("Leaving keysUnder().");
+  return { text: subtreePage('dn_key, dn', baseKey, false),
+           values: [String(realm), String(baseKey), String(afterKey || ''),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
+// ---------------------------------------------------------------------------
+// THE RESIDENT ENTRIES, READ THROUGH THEIR PARENTS (#638, 2026-10-14).
+//
+// A windowed worker starts by reading every entry EXCEPT those strictly under
+// its windowed containers (`persistence.js`' `loadDirectoryRows()`). It was
+// one statement: every row of the table, each tested with
+// `right(dn_key, …) = ',' || container` against the list — a suffix no
+// index narrows. At 10M entries that was seconds of an 11 s start; at 50M it
+// was minutes with nothing listening, and on the first read after a bulk
+// import it also set the hint bits of every new row. #618's rule is that a
+// start costs the same whatever the size of the directory.
+//
+// Now it is the parents scan above, over EVERY realm at once: the table's
+// distinct `(realm, parent_key)` pairs, one descent of the `(realm,
+// parent_key, dn_key)` index each; a pair is DROPPED when its parent is a
+// windowed container of its realm or under one (the identity above: a key is
+// strictly under C exactly when its parent is C or under C), and the rows of
+// every pair kept are one range of the same index — in a LATERAL with its
+// own `ORDER BY`, which the planner cannot pull up: without it the join was
+// planned as a hash join over a sequential scan of the table, the cost this
+// exists to remove (measured on a scratch postgres:18). The answer is the old
+// statement's row for row, in the same order — orphans, entries outside the
+// realm's base, several roots, a realm nobody listed, the containers
+// themselves included — because both ask of a row only its key; only the
+// cost moved, from the table to the number of distinct parents plus the
+// rows answered. A person who has children (nothing this service writes)
+// is a distinct parent, and costs one descent.
+//
+// **EACH KEPT PARENT'S ROWS ARE `childrenRange()`'s WALK (#639,
+// 2026-10-15)**: one descent of the parent index a row, so the plan cannot
+// become the primary key's whatever ANALYZE saw (see `childrenRange()`). It
+// is planned WITHOUT JIT (`jitOff`, honoured by the driver's
+// `directoryQuery()` with `SET LOCAL jit = off`): its estimate is past
+// `jit_above_cost`, and compiling it cost every process 0.1–0.2 s of its
+// start for a statement that reads about a thousand rows.
+//
+// `tests/directory_resident_walk.js` holds the statement's shape, the
+// identity on a fixture tree, and — given a database — both statements' rows
+// against each other.
+// ---------------------------------------------------------------------------
 /**
  * Every entry EXCEPT those strictly under the given containers, for the
- * restore of a worker that holds those containers as a window.
+ * restore of a worker that holds those containers as a window: through the
+ * table's distinct parents, never a test of every row; each kept parent's
+ * rows a walk of the parent index (#639).
  *
  * @param windowed - `[{ realm, baseKey }]`, the containers not restored
- * @returns the statement
+ * @returns the statement; `jitOff` asks the driver to plan it without JIT
  */
 function residentOnly(windowed) {
   log.debug("Entering residentOnly().");
   const list = windowed || [];
   log.debug("Leaving residentOnly().");
-  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries e WHERE NOT ' +
-                 'EXISTS (SELECT 1 FROM unnest($1::text[], $2::text[]) AS ' +
-                 'w(r, c) WHERE w.r = e.realm AND right(e.dn_key, ' +
-                 'length(w.c) + 1) = \',\' || w.c) ORDER BY realm, dn_key',
+  return { text: 'WITH RECURSIVE parents(realm, parent_key) AS ((SELECT ' +
+                 'realm, parent_key FROM sts_ldap_entries ORDER BY realm, ' +
+                 'parent_key LIMIT 1) UNION ALL SELECT n.realm, ' +
+                 'n.parent_key FROM parents p CROSS JOIN LATERAL (SELECT ' +
+                 'e.realm, e.parent_key FROM sts_ldap_entries e WHERE ' +
+                 '(e.realm, e.parent_key) > (p.realm, p.parent_key) ORDER ' +
+                 'BY e.realm, e.parent_key LIMIT 1) AS n), kept AS (SELECT ' +
+                 'p.realm, p.parent_key FROM parents p WHERE NOT EXISTS ' +
+                 '(SELECT 1 FROM unnest($1::text[], $2::text[]) AS w(r, c) ' +
+                 'WHERE w.r = p.realm AND (p.parent_key = w.c OR ' +
+                 'right(p.parent_key, length(w.c) + 1) = \',\' || w.c))) ' +
+                 'SELECT x.* FROM kept k CROSS JOIN LATERAL ' +
+                 childrenRange(COLUMNS, 'k.realm', 'k.parent_key', null,
+                               null) +
+                 ' AS x ORDER BY x.realm, x.dn_key',
            values: [list.map(function (one) { return String(one.realm); }),
-                    list.map(function (one) { return String(one.baseKey); })]
-  };
+                    list.map(function (one) { return String(one.baseKey); })],
+           jitOff: true };
 }
 
 /**
@@ -400,7 +1656,9 @@ function rowOf(row) {
 
 /**
  * The answer to a named query from its result rows: rows in the directory's
- * shape, except `count` (a number) and `hasChild` (a boolean).
+ * shape, except `count`, `realmCount` and `rdnCount` (a number),
+ * `countHolding` (`{ n, holding }`), `originCounts` (`{ origin: n }`) and
+ * `hasChild` (a boolean). `rdnPage` is the row shape plus `rdn`.
  *
  * @param name - the query's name
  * @param rows - the result rows
@@ -409,13 +1667,36 @@ function rowOf(row) {
 function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
-  if (name === 'count') {
+  if (name === 'count' || name === 'realmCount' || name === 'rdnCount' ||
+      name === 'countWithAttribute' || name === 'countWithAttributeUpTo') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
+  }
+  if (name === 'countHolding') {
+    log.debug("Leaving answerOf(). Two counts.");
+    return { n: Number((list[0] || {}).n || 0),
+             holding: Number((list[0] || {}).holding || 0) };
+  }
+  if (name === 'originCounts') {
+    // AN OBJECT, NOT AN ARRAY: `directory_codec.openAnswer()` opens the
+    // entries of an array answer and passes anything else through, and
+    // these rows hold no entry.
+    const counted = {};
+    list.forEach(function (row) {
+      counted[String(row.origin)] = Number(row.n || 0);
+    });
+    log.debug("Leaving answerOf(). Counts by origin.");
+    return counted;
   }
   if (name === 'hasChild' || name === 'anyWithAttribute') {
     log.debug("Leaving answerOf(). A yes or a no.");
     return list.length > 0;
+  }
+  if (name === 'keysUnder') {
+    log.debug("Leaving answerOf(). Keys.");
+    return list.map(function (row) {
+      return { key: row.dn_key, dn: row.dn };
+    });
   }
   if (name === 'namesUnder') {
     log.debug("Leaving answerOf(). Names.");
@@ -431,6 +1712,14 @@ function answerOf(name, rows) {
                attrs: plain ? undefined : row.attrs };
     });
   }
+  if (name === 'rdnPage') {
+    log.debug("Leaving answerOf(). RDN rows.");
+    return list.map(function (row) {
+      const one = rowOf(row);
+      one.rdn = String(row.rdn_value || '');
+      return one;
+    });
+  }
   log.debug("Leaving answerOf().");
   return list.map(rowOf);
 }
@@ -441,16 +1730,33 @@ const QUERIES = {
   byKeys: byKeys,
   byName: byName,
   byUuid: byUuid,
+  withUuids: withUuids,
   byMail: byMail,
   byAttribute: byAttribute,
+  equalUnder: equalUnder,
   page: page,
   count: count,
+  countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  countWithAttribute: countWithAttribute,
+  countWithAttributeUpTo: countWithAttributeUpTo,
+  withAttributeAt: withAttributeAt,
+  withNames: withNames,
+  createdBetween: createdBetween,
+  modifiedBetween: modifiedBetween,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
-  residentOnly: residentOnly
+  realmPage: realmPage,
+  realmCount: realmCount,
+  originCounts: originCounts,
+  keysUnder: keysUnder,
+  residentOnly: residentOnly,
+  rdnPage: rdnPage,
+  rdnCount: rdnCount,
+  containerPage: containerPage,
+  uidContains: uidContains
 };
 
 /**
@@ -475,22 +1781,56 @@ function build(name, args) {
 
 module.exports = {
   COLUMNS: COLUMNS,
+  COUNTED_ATTRIBUTES: COUNTED_ATTRIBUTES,
+  ASKED_ATTRIBUTES: ASKED_ATTRIBUTES,
+  ASKED_NAMES: ASKED_NAMES,
+  ASKED_NAMES_HELD: ASKED_NAMES_HELD,
+  GROUP_CLASSES_HELD: GROUP_CLASSES_HELD,
   MAX_PAGE: MAX_PAGE,
+  RDN_COUNT_CAP: RDN_COUNT_CAP,
   QUERIES: QUERIES,
+  parentOf: parentOf,
+  // For `directory_queries_mariadb.js`, the same questions spelt for MariaDB
+  // (#677): one copy of how a value is keyed and a page is bounded.
+  keyed: keyed,
+  pageSize: pageSize,
+  rdnCountCap: rdnCountCap,
+  needleIndexed: needleIndexed,
+  matchesCheaper: matchesCheaper,
+  suffixLength: suffixLength,
   build: build,
   answerOf: answerOf,
   rowOf: rowOf,
   byKeys: byKeys,
   byName: byName,
   byUuid: byUuid,
+  withUuids: withUuids,
   byMail: byMail,
   byAttribute: byAttribute,
+  equalUnder: equalUnder,
   page: page,
   count: count,
+  countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  countWithAttribute: countWithAttribute,
+  countWithAttributeUpTo: countWithAttributeUpTo,
+  withAttributeAt: withAttributeAt,
+  withNames: withNames,
+  createdBetween: createdBetween,
+  modifiedBetween: modifiedBetween,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
-  residentOnly: residentOnly
+  realmPage: realmPage,
+  realmCount: realmCount,
+  originCounts: originCounts,
+  keysUnder: keysUnder,
+  residentOnly: residentOnly,
+  rdnPage: rdnPage,
+  rdnCount: rdnCount,
+  containerPage: containerPage,
+  uidContains: uidContains,
+  likeEscaped: likeEscaped,
+  USERS_PARENT: USERS_PARENT
 };

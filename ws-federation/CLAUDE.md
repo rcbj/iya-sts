@@ -1,7 +1,9 @@
 # ws-federation/
 
-WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
-`/wsfed/rp` that verifies a sign-in response check by check. One file.
+WS-Federation 1.2, the passive requestor profile. One file; its model is
+read through `../ws-trust/ws_model.ts` (see *THE MESSAGES ARE THE MODEL'S*,
+at the end). The mock relying party at `/wsfed/rp` was deleted by #592 (see
+*The mock relying party — deleted*).
 
 4. **`wsfed.ts` must stay after `authn/authn.ts` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
@@ -53,7 +55,9 @@ direction on #36 was to take the row off the list, so:
 * **The assertion reports what HAPPENED.** `authnMethodsFor()` reads the
   session after the step-up; a password and a one-time code is
   `multipleauthn`, a password and a key is `multipleauthn` too, a passwordless
-  key alone is `HardwareToken`. Nothing about the request changes the answer.
+  key alone is `HardwareToken`. Nothing about the request changes the answer,
+  except an EAP class the request named and the session earned — the next
+  section.
 * **A HARDWARE demand is met by a key in EITHER role; a MULTI-FACTOR demand
   only by two real factors.** A passwordless key does not answer multi-factor,
   however phishing-resistant it is. **THE SCREEN NOW OFFERS EXACTLY THOSE TWO
@@ -84,6 +88,49 @@ passwordless sign-in a two-factor one. Anything reading `hwk` to mean "two
 factors" is wrong for the reason `../authn/CLAUDE.md` gives; this now tests for
 `hwk` AND `pwd`.
 
+## THE EAP PHISHING-RESISTANT CLASSES (#737, 2026-10-25)
+
+A `wauth` that names the OpenID Connect EAP ACR Values 1.0 class URIs is
+the same demand `acr_values=phr` / `phrh` is, and the same one trip the
+`wauth` step-up above already is. The URIs are registered by that
+profile's section 5 (IANA Level of Assurance Profiles), and they live on
+`common/phishing_resistance.ts` — `URI_PHR`, `URI_PHRH` — rather than in
+a second table here:
+
+* `http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` (`phr`)
+* `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware` (`phrh`)
+
+**`wauth` is one URI.** `classOfUri()` recognises it. `signInFor()` splits
+on whitespace, so it is not what admits the value: two class URIs in one
+`wauth` stay the unknown-method refusal (`STS-WSFED-0006`). On a value
+that was admitted, `signInFor([wauth])` forces a key only when that one
+URI is an EAP class, and sets `phishingClass` `phrh` only when it is the
+hardware URI. A password, hardware or multi-factor `wauth` is unchanged:
+`forceKey` stays what `screenDemand()` already set and `phishingClass` is
+`''`. `screenDemand()` has no kind for this demand — `'eap'` would force
+neither flag — so the key comes from the leaf.
+
+**ONE attempt, then the refusal**, the marker this profile already uses.
+Still unmet — a password session, a registration ceremony (it earns
+nothing), a software key against `phrh` — is a 400 page,
+`STS-WSFED-0030`, recorded and never sent. The protocol error is the page
+this profile already answers a failed `wauth` with. There is no second
+trip. `wp` stays recorded and unenforced: this profile has no `Is passive`
+reading to add.
+
+**The assertion reports the class only when it was asked and earned.**
+`assertionUri(session, [wauth])` is the SAML 2.0 `AuthnContextClassRef`,
+the SAML 1.1 `AuthenticationMethod` and both `authenticationmethod`
+claims when it returns a URI. The default token is SAML 1.1, so the class
+would otherwise never appear on it, and a SAML 2.0 claim would disagree
+with the statement. When it returns `''`, each of those stays
+`methods.saml2` or `methods.saml11`, which is every request that did not
+name an EAP class and every session that did not earn the one it named.
+The identity-provider-initiated link carries no `wauth`, so its tokens
+are that unchanged path.
+
+`tests/wsfed_wauth_step_up.js` (k–n) holds it.
+
 ## This module no longer owns a sign-in screen, and that was a hole in three features
 
 Until 2026-08-26 it drew its own, on an argument that was right about the screen
@@ -113,14 +160,6 @@ for byte what that handler redirected to once it had a session — so there is o
 less store to make per realm, and the realm-isolation hole that store had in
 2026-08-25 cannot recur in it.
 
-## `rpContexts` is per trust realm
-
-`/wsfed/rp` answers under every realm prefix, so there is one mock relying party
-per realm, and a `wctx` minted by one being recognised by another would make the
-check that Map exists for — did my own value come back? — answer yes across a
-boundary the rest of the profile does not cross. `realmSupport()` publishes this
-family as `full` and says single sign-on with OAuth "does not cross realms".
-
 ## The autopost page is one of the seven scripted pages
 
 Section 13.2.1's sign-in response is a self-submitting form, so
@@ -132,10 +171,12 @@ is the whole mechanism. See the root `CLAUDE.md`.
 
 * **`wreply` must be registered in product mode** (`mode.acceptsUnregisteredAddresses()`):
   one of the `wsfedReplyUrl` values on the `wtrealm`'s entry, exact match, with
-  none sent meaning the registered one and NO fallback to `/wsfed/rp`. The rule is
-  `../saml/return_address.ts`, shared with both SAML profiles. Development passes
-  no registration to it at all, so a request with no `wreply` still goes to the
-  mock relying party even when the entry recorded one — byte for byte what it did.
+  none sent meaning the registered one. The rule is
+  `../saml/return_address.ts`, shared with both SAML profiles. Development
+  passed no registration to it at all until #592, so a request with no `wreply`
+  went to the mock relying party even when the entry recorded one; with the
+  mock deleted it passes the entry's, so such a request goes to the registered
+  `wsfedReplyUrl`, and is refused (`STS-WSFED-0003`) when there is none.
   **Which `wsfedReplyUrl` values count is `applications.returnAddressesOf()`'s
   answer** (the same day): a `wreply` a development sighting wrote is marked
   OBSERVED on `appReturnAddressObserved`, and product refuses it with
@@ -149,11 +190,10 @@ is the whole mechanism. See the root `CLAUDE.md`.
   omitted (`../saml/person_attributes.ts`), and **the signed metadata describes
   what the realm's mode emits** — it said `Always "Mock"` and
   `username@sts.example` in a product deployment's signed document.
-* **`wsfed.entityId` and `saml.issuer` differing is reported** on `/wsfed` and
-  once at startup (`issuerDisagreement()`): the metadata names one and every
-  assertion the other, which a relying party's issuer registry refuses.
-* `wsfed.mockRpContextTtlMin` (30) replaced the constant; the metadata signer
-  reads `saml.signatureAlgorithm`.
+* ~~`wsfed.entityId` and `saml.issuer` differing is reported~~ — both retired
+  by #523, and `issuerDisagreement()` with them: there is one name.
+* The metadata signer reads `saml.signatureAlgorithm`. (`wsfed.mockRpContextTtlMin`
+  replaced a constant that day, and went with the mock relying party, #592.)
 
 `tests/saml_family_hardcoded.js` sections A, H and I pin these.
 
@@ -170,6 +210,169 @@ relationship's own key (`federation/CLAUDE.md`, #168). WS-Trust's `/sts/cert`
 serves the pinned certificate while it signs. `common/CLAUDE.md` has the
 model.
 
+## ONE ISSUER: THE REALM'S OAUTH ISSUER (#523, 2026-10-08)
+
+rcbj, on #523: one issuer per realm, the OAuth issuer URL, in every protocol,
+with no override. It replaced #494's per-application name
+(`<entityID>:<application>` for a registered `wtrealm`). So:
+
+* **Every assertion's Issuer and the metadata's `entityID` are
+  `IssuerNames.issuer()`** — the string SAML SSO, WS-Trust and every JWT
+  carry — for every `wtrealm`, registered or not. `wsfed.entityId` and
+  `saml.issuer` are retired, and so is `STS-WSFED-0020` (no name to issue
+  under): the OAuth issuer is never empty.
+* **The metadata reads it at the request's base** (`federationMetadata(base,
+  …)` passes `base`); the sign-in response reads it at the ambient request's,
+  which in a request is the same base.
+* **`/wsfed/metadata/{rp}` stays**, the same document for a relying party
+  configured per application: the segment is the identifier or
+  `saml2_sso.slugOf()`'s slug, and **a 404 in BOTH modes for anything
+  unregistered** (`STS-WSFED-0019`).
+* **ONE ENTITY, TWO VIEWS (#524, rcbj: "Address #1", then "Two views, one
+  entity").** With one entityID, a WS-Federation document of its own was a
+  second `<EntityDescriptor>` for an entity the SAML document already
+  described. So this module publishes no document: `roleDescriptor(base)` is
+  its `fed:SecurityTokenServiceType` role, `md:`-prefixed with its own
+  namespaces on itself, and `saml2_sso.metadataFor(base, '', true)` puts it
+  first among the roles of the one document and signs it.
+  `federationMetadata()` serves that view, with the SAML endpoints unscoped (a
+  `wtrealm` need not be a SAML provider), at both WS-Federation paths.
+  **It carries `alg:SigningMethod` and `alg:DigestMethod` like the SAML paths
+  (#1368, rcbj, 2026-11-06: it advertises them unless that violates a
+  specification, and none is violated).** They were left out for one commit,
+  on the argument that a passive requestor signs nothing and that section 2.5
+  of the Algorithm Support profile makes absence safe. That argues they are
+  optional, not that they are wrong, so it does not meet rcbj's test.
+  `sts_xml_schema_validation.js` holds this view to the published schemas.
+  **The SAML paths serve the same document WITHOUT this role**: tried in one
+  document everywhere first, SimpleSAMLphp's metadata validator refused the
+  whole document — the role's `xsi:type` resolves only with the
+  WS-Federation schema, and an abstract RoleDescriptor whose type does not
+  resolve fails validation — while the Shibboleth SP accepted it. The
+  WS-Federation view is a superset of the SAML one, under one entityID and
+  one signer. `STS-WSFED-0015` (its own signing failure) is retired into
+  `STS-SAML-0014`.
+
+## A relying party nobody registered gets nothing, in product (#496, 2026-10-06)
+
+rcbj, on #496: in product an application that is not registered gets nothing
+but a 404 or its protocol's own "unknown application" error. Section 13 has
+no error response (the `wsfedError()` paragraph above), so a `wsignin1.0`
+whose `wtrealm` is not a registered relying party is **a 404 page,
+`STS-WSFED-0021`**, behind `mode.issuesToUnregisteredApplications()` (the
+`unregistered-applications` row on `/admin/mode`, shared with WS-Trust):
+
+* **"Registered" is #494's word**: `appRegisteredBy` on the entry
+  filed under the `wtrealm` itself, `IssuerNames.registeredApplication()`.
+  An entry a development sighting filed is refused like no entry.
+* **First thing after `wtrealm` is known to be present**, in `signIn()`:
+  before the `wreply` is resolved, before the person is sent to the sign-in
+  screen and before `issueSignInResponse()`'s `seen()`. Product's `wreply`
+  rule already refused most of these (an unregistered realm has no
+  confirmed `wsfedReplyUrl`), with a message about the wrong thing and only
+  after the realm had been looked at; this says what is wrong.
+* **Development is unchanged**: any `wtrealm`, the realm's one issuer, and
+  `seen()` files it.
+* **An entry an LDAP add made IS registered, since #504**:
+  `stampLdapRegistration()` writes `appRegisteredBy: ldap:<the bound DN>` on an
+  add under `ou=applications`, unless the add already says who. A modify of an
+  entry that only turned up does not register it.
+
+`tests/unregistered_applications.js` (U7) holds it in both modes.
+
+`tests/issuer_names.js` (U4, U5) and `tests/protocol/wstrust_chain_kit.js`
+(`samlIssuerFor()`, which asks this route for every tier) hold it;
+`sts_metadata_anonymous.js` section 5 holds the 404.
+
+## Who may start a sign-in, and the identity-provider-initiated link (#712)
+
+rcbj's plan on #426: IdP-initiated sign-in is off until an application opts
+in, for every protocol, and runs what an SP-initiated one runs. Here that is
+two switches from #710 — `wsfed.spInitiatedSso` (on) and
+`wsfed.idpInitiatedSso` (off), each overridden per relying party through
+`applications.settingFor()` — and one route, `initiate()`:
+
+* **`GET /wsfed/initiate/{rp}`, and `GET /wsfed/initiate?wtrealm=`.** The
+  specification has no such request, so the link is ours; the query form
+  exists because a `wtrealm` is usually a URL and an encoded `%2F` in a path
+  segment is what proxies refuse. The segment is resolved by
+  `relyingPartyOfSegment()`, the metadata route's resolver, so a slug works
+  and an unregistered entry is a 404 in BOTH modes (`STS-WSFED-0024`):
+  development's leniency at `/wsfed` rests on the relying party having named
+  its own `wreply`, and nobody names one here.
+* **`wreply` is REFUSED (`STS-WSFED-0026`), not ignored.** The link is
+  followed by whoever was handed it; an address on it would be an open
+  redirect carrying a signed token. The response goes to
+  `registeredReplyOf()` — the first `wsfedReplyUrl` that is registered AND
+  not marked observed, in every mode, where `returnAddressesOf()` alone
+  believes observed ones in development. None is `STS-WSFED-0027`.
+* **ONE ISSUING PATH.** After the session check it calls
+  `notePresented()` and `issueSignInResponse()` — the gate, the mechanism
+  re-prompt, `seen()`, `session.wsfedRealms` and `noteSessionChanged()` —
+  with an `entry` argument saying where a sign-in trip returns (`/wsfed` or
+  the link) and whether a risk denial is a step-up. Nothing was copied.
+* **A risk denial is a step-up at the link only**, oauth2.ts's road
+  (`STS-RISK-0017`), with its own one-trip marker `sts_risk_retry`
+  (`RISK_MARKER`) beside `MECHANISM_MARKER`; still denied on the marked
+  return is `STS-WSFED-0029`. **`/wsfed` was left alone on purpose**: a
+  `wsignin1.0` denied on risk is still refused 403 `STS-WSFED-0011` with no
+  step-up. Giving it one is a one-line change (`riskStepUp: true` in
+  `signIn()`'s call) and a decision #712 did not ask for.
+* **`wsignin1.0` checks `wsfed.spInitiatedSso`** right after the
+  registration check (`STS-WSFED-0028`). The request is unsigned, so the
+  switch closes a door; it proves nothing about who knocked, and the
+  documentation says so.
+
+`/launch/{app}` (#713) is expected to send a WS-Federation launch to this
+link rather than to a second implementation.
+
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design; off, nothing here changes. **This protocol carries no hint about
+which account** — `whr` names a home realm, not a person — so a sign-in from
+a browser with several reaches the picker through `beginAuthentication()`.
+**`wfresh` is `accountChoice: 'never'`, whatever its value**: the return
+address drops `wfresh` (`requeryString()`), so an account chosen at the
+picker would be answered on the way back however old its authentication
+was; a fresh sign-in is what section 13.2.1 asks for, and signing in as an
+account already in the set re-authenticates its session.
+
+**The two sign-outs** (`signOutAccounts()`):
+
+* **`wsignout1.0`** ends the one session of the set that signed in to
+  `wtrealm`; with more than one it ASKS WHICH (`askWhichAccount()`): a page
+  of links, each this same GET with the account's key as
+  `sts_signout_account`, which names only this browser's own accounts.
+  Links rather than forms because the message is a GET that signs out on
+  arrival already. A sign-out naming no realm, or one none of them signed
+  in to, ends the default session, as always.
+* **`wsignoutcleanup1.0` stays non-interactive** (it arrives as an image):
+  it ends EVERY session of the set that signed in to `wtrealm`, and the page
+  names each.
+
+The words are `handoff.wsfed.chooseAccount.*`. `tests/multi_account_protocols.js`
+6 and `tests/multi_account_logout.js` 8.
+
+## Every refusal is `common/error_page.ts`'s page (#1327, 2026-11-05)
+
+**`wsfedError()` draws the shared error page, translated** — #1326's design
+(`common/CLAUDE.md`, `error_page.ts`): no status, header or protocol
+message changed, and nothing goes to the relying party, as before. The box
+carries the sentence for the code the caller marked
+(`wsfedErrors.refusal.<code>`, else `wsfedErrors.refusal.general`); the
+profile's "no error response" paragraph is the collapsed background; the
+ways forward of a refused `wauth`, the accepted methods and the understood
+`wa` values are drawn below it in the page's language. **The caller's
+English title and detail are unchanged and are the Summary and Detail rows
+of the diagnostics**, beside `wa`, `wtrealm`, `wreply`, `wctx` and who is
+signed in — data, escaped once (the cancelled page used to escape twice).
+WS-Federation has no language hint, so the order is #539's without one.
+**STS-WSFED-0026 echoes nothing**: no `wreply` row, and its language chooser
+returns to the realm's front door rather than to the link, because the
+refusal exists so that the address is not used. A new refusal owes a
+sentence in all seven base catalogs. `tests/wsfed_wauth_step_up.js` d3–d4.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and
@@ -184,9 +387,30 @@ authenticator built in the test) meeting the demand passwordless AND as a
 second factor, a forged marker refused
 `STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
 the marker ignored, so every unmet demand is refused as before — turned eight
-of its assertions red. Nothing else here is
-tested. The mock relying party makes the rest look covered — but a person has
-to click it and read the page. What a test would add is the other negatives:
+of its assertions red. Cases k–n (#737) hold an EAP class URI: one trip
+and `STS-WSFED-0030` for `phr`, `phishingClass` `phrh` for the hardware
+URI, a password `wauth`, a multi-factor `wauth` and no `wauth` keeping the
+class they already issued, and a passkey assertion carrying the `phr` URI
+on both token types while a request that does not ask does not.
+`tests/wsfed_initiation.js` (#712) holds who may start a sign-in: the link
+off by default, by an entry's override and by the realm setting; the 404 for
+an unregistered relying party; a `wreply` refused; no registered reply
+address refused; the response posted to the registered address with `wctx`
+byte for byte; the realm on the session's cleanup list; the `?wtrealm=` form;
+a `wsignin1.0` refused under `wsfedSpInitiatedSso` FALSE; and the risk
+step-up sent once and refused on a marked return — with the risk put on the
+session object directly rather than scored. It does not complete a stepped-up
+sign-in (the test person holds no second factor).
+The risk step-up runs there a second time in PRODUCT mode (#715).
+**`tests/protocol/sts_idp_initiated_wsfed.js` is the product-mode and
+cross-node coverage of the rest** — the same rules over the wire, in a
+throwaway realm in the run's mode, with relying parties and a person with a
+real password made through `/admin-api`, the realm setting set and reset
+there, and the relying party read back from `GET /logout`'s JSON inventory;
+the suite runs it in `memory`, `single-node` and `cluster`. Nothing else here is
+tested but by `tests/protocol/sts_saml11.js`, which posts a sign-in response to
+the test peer's relying party (the mock relying party that made the rest look
+covered was deleted, #592). What a test would add is the other negatives:
 an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
 signature whose reference does not resolve because `AssertionID` was not
 named, A passive requestor that issues a good token to a
@@ -197,5 +421,57 @@ working relying party looks finished and proves almost nothing.
 The federation metadata and the sign-in response's `wresult` — SAML 1.1 and
 SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
 published WS-Federation 1.2, WS-Trust and SAML schemas by
-`tests/vendored/sts_xml_schema_validation.js`, in a development and a product
+`tests/protocol/sts_xml_schema_validation.js`, in a development and a product
 realm. Both were valid on the first run.
+
+## The mock relying party — deleted (#592, 2026-10-12)
+
+`/wsfed/rp` was a development-only demonstration (#585) whose pages #581 had
+made a static surface. #592 deleted it — its routes, its start view, the
+verifier that existed only to show a verdict (`verifySignInResponse()`), the
+`wctx` store (`wsfed.rpContexts`) and its lifetime setting — because the
+runtime ships no demonstration code (#591). `verifyAssertionSignature()`
+stays: `tests/saml_signature_algorithms.js` and `tests/issuer_names.js` ask
+it whether an assertion this service signed verifies. The relying party a
+test needs is the test peer's (`tests/peer/peer_saml.js`, #586).
+`STS-WSFED-0016` is retired. `common/CLAUDE.md` 3cm has the whole record.
+
+## THE MESSAGES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/ws/wsfed.tsp` is the source of this profile's parameters, its
+vocabularies, and the order its sign-in response and metadata role are
+written in**, read through `../ws-trust/ws_model.ts` beside WS-Trust's and
+SAML's model (`../ws-trust/CLAUDE.md` has the mechanism, which is one).
+
+* **The parameters (`wsfed.passive`)**: every one section 13.2 defines,
+  with its `use` — `read` (`wa`, `wtrealm`, `wreply`, `wfresh`, `wauth`,
+  `wreq`), `recorded` and not enforced (`wct`, `whr`, `wp`, `wencoding`),
+  `refused` (`wreqptr`, `refusedAs` STS-WSFED-0001), `echoed` (`wctx`),
+  `written` (`wresult`), `ignored` (`wres`) — and the two non-spec ones,
+  `tokenType` and `trust` (whose `accepts` is `1.3`, else 2005/02).
+* **The vocabularies**: the `wa` actions (`answered: false` is the 501 of
+  `wattr1.0` and `wpseudo1.0`); the token types, which ARE SAML's two
+  assertion namespaces, written as those properties, with the short forms
+  the `tokenType` parameter takes and `offered` for the metadata; the
+  `wauth` values with the demand each is read as (`password`,
+  `multiFactor`, `hardware`) — four of the password ones, multipleauthn and
+  HardwareToken are SAML's own terms, written as properties, and the
+  refusal page lists them in the model's order; the claim types, with the
+  display name and the description the metadata offers in each mode
+  (`invented` is development's); the 2005/02 NoProofKey key type; and the
+  namespaces.
+* **The sign-in response**: `buildRstr()` joins the RSTR in AD FS's order,
+  which differs from `/sts`'s and is therefore its own message
+  (`wsfed.RequestSecurityTokenResponse`), and the 1.3 collection around it.
+  **The metadata role**: `roleDescriptor()` joins the
+  `fed:SecurityTokenServiceType` role from the model, its offered token and
+  claim types from the vocabularies. Both are held as they are built — the
+  role as a fragment whose `md:` the EntityDescriptor declares — a gap
+  logged under **STS-WSFED-0032**, the document unchanged.
+
+**Byte for byte** and **what stays in code**: `../ws-trust/CLAUDE.md`'s
+section of the same name; here what stays is the sign-in itself — the
+session, `wfresh`'s age, `wauth`'s step-up and the EAP classes
+(`../common/phishing_resistance.ts`), the registered `wreply`, the
+issuance policy — and the prose of the pages, which names the actions and
+parameters as words.

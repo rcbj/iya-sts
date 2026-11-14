@@ -34,7 +34,7 @@
 #     protocol  — a throwaway copy of THIS WORKING TREE (of the tests IMAGE
 #                 built from it, in a containerized run — which is the same
 #                 tree one `COPY . ./` later), driven over HTTP by
-#                 the jobs in tests/vendored/ (MANIFEST.js is the count: some
+#                 the jobs in tests/protocol/ (MANIFEST.js is the count: some
 #                 vendored from the parent, the `local: true` ones this
 #                 repository's own). This is where every protocol family is
 #                 actually exercised, and it
@@ -106,6 +106,11 @@ set -u -o pipefail
 
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
+
+# Linux, or Windows under Cygwin (#512): hostPath(), hostOpen() and the shims
+# that take the CR off what docker prints. See its header.
+# shellcheck source=tests/tools/host-platform.sh
+. "${CURRENT_DIR}/tests/tools/host-platform.sh"
 
 ONLY=""
 PROTOCOL="on"
@@ -250,7 +255,7 @@ unset STS_TEST_SERVICE_URL
 #
 # THE APPCONFIG FILE IS THE OTHER HALF OF THE LEVEL and this block cannot set
 # it: run-report.js starts the service in process here, and the VENDORED
-# modules under common/vendored/ each build a bunyan logger at load from
+# modules under common/crypto_impl/ each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel`, never seeing STS_LOG_LEVEL. So
 # the file is chosen the way ./run-tests.sh chooses its own, and by the
 # same rule — the level picks it, a STS_TEST_CONFIG_FILE named in the
@@ -329,7 +334,7 @@ esac
 # THE BULK LOADS AT FIFTY PEOPLE (2026-10-02, rcbj). Coverage asks whether a
 # line ran, and the fiftieth create runs the same lines as the five
 # thousandth. This run used the library's sizes (5000 people, 50 groups,
-# 5000 memberships per door, tests/vendored/bulk_load.js) because it reads
+# 5000 memberships per door, tests/protocol/bulk_load.js) because it reads
 # nothing of tests/tools/modes.sh, and instrumented on CI's two cores the
 # /admin-api door took over twelve minutes and lost a connection
 # (sts_directory_bulk_load_api, run 36967212793). Five groups of ten, because
@@ -392,6 +397,7 @@ else
     "STS_NETWORK_SUBNET=${subnet}"
     "STS_TESTS_CONTAINER_NAME=iya-sts-coverage-runner"
     "STS_CONTAINER_NAME=sts-coverage-unused"
+    "STS_RESTART=no"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     "STS_TEST_ARGS="
   )
@@ -481,6 +487,14 @@ else
     # catcher: the sections that read a delivered message are SKIPPED and
     # say so, and the rest still run.
     -e MAILPIT_API_URL=
+    # AND THE TEST PEER'S, THE FIFTH (#586): the compose file defaults
+    # `STS_TEST_PEER_URL=http://test-peer:9600` for a hand run beside the
+    # container, and `--no-deps` starts none. Emptied, run-report.js starts
+    # a peer of its own beside the service it starts (startTestPeer()): a
+    # child of the runner on a loopback port, its CA certificate in this
+    # run's directory where the service reads it — so the jobs that need a
+    # peer RUN here rather than being skipped.
+    -e STS_TEST_PEER_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.
@@ -510,9 +524,16 @@ else
     # certificate there and names the same path in a `…CaFile` setting.
     -e OUTBOUND_TEST_CA_DIR=/tmp/sts-test-ca
     -e OUTBOUND_TEST_CA_FILE=/tmp/sts-test-ca/outbound-test-ca.crt
-    # AND THE ATTRIBUTE SOURCES' DATABASE (#94): the compose file names the
-    # stack's postgres, which this run does not start; empty, the job skips.
+    # AND THE ATTRIBUTE SOURCES' DATABASES (#94, #356): the compose file
+    # names the stack's postgres and mariadb, which this run does not start;
+    # empty, the job skips. `-` in the compose default is what makes empty
+    # win over the dial string.
     -e STS_TEST_ATTRIBUTE_DB_URL=
+    -e STS_TEST_ATTRIBUTE_MYSQL_URL=
+    # And the persistence job's (moved from the parent project, 2026-10-23),
+    # for the same reason: no postgres here, so it skips.
+    -e STS_TEST_PERSISTENCE_DB_URL=
+    -e STS_TEST_PERSISTENCE_DB_CA=
     # THE MEMORY MODE'S KEYS (2026-09-27): the throwaway service is a
     # development process with no key-encryption key, and `keys.source` left
     # at `auto` follows the AMBIENT realm's mode — so in a product-mode realm a
@@ -520,6 +541,13 @@ else
     # sts_credential_signals' EAB key was refused "could not be sealed". The
     # `memory` mode sets this for the same service (tests/tools/modes.sh).
     -e STS_KEYS_SOURCE=generated
+    # THE UID OF PID 1 (2026-10-12): sts_spiffe_broker attests "pid 1, the
+    # service" and selects it by uid, 10001 by default — the service image's
+    # `sts` since #254. Here the service is a child of THIS container, which
+    # runs as root, so pid 1 is root's and the job's default named a uid it
+    # does not have: "the referenced pid 1 is not entitled to an SVID" in the
+    # 2026-10-11 coverage run.
+    -e STS_SPIFFE_BROKER_PID_UID=0
     # The bulk loads' sizes, set above; the compose file's own are 5000.
     -e "BULK_USERS=${BULK_USERS}"
     -e "BULK_GROUPS=${BULK_GROUPS}"
@@ -543,7 +571,7 @@ else
   fi
 
   docker_compose -f "${COMPOSE_FILE}" run --rm --no-deps \
-    -v "${COVERAGE_DIR}:/usr/src/sts/coverage" \
+    -v "$(hostPath "${COVERAGE_DIR}"):/usr/src/sts/coverage" \
     "${RUN_ENV[@]}" \
     tests node tests/tools/run-report.js ${ARGS[@]+"${ARGS[@]}"}
   RC=$?
@@ -570,17 +598,25 @@ else
   # comment exists to prevent: without the mount, `chown` cheerfully succeeds
   # against the image's OWN empty /usr/src/sts/coverage and the host directory
   # stays root-owned, with nothing said.
-  docker_compose -f "${COMPOSE_FILE}" run --rm --no-deps \
-    -v "${COVERAGE_DIR}:/usr/src/sts/coverage" \
-    --entrypoint chown tests -R "$(id -u):$(id -g)" \
-    /usr/src/sts/coverage /usr/src/sts/tests/report > /dev/null 2>&1 || true
+  #
+  # NOT ON WINDOWS (#512): Docker Desktop writes the host's files as the
+  # Windows user whatever the container ran as, so there is nothing to hand
+  # back, and Cygwin's uid is no user the image has.
+  if [ "${HOST_WINDOWS}" != "1" ];
+  then
+    docker_compose -f "${COMPOSE_FILE}" run --rm --no-deps \
+      -v "$(hostPath "${COVERAGE_DIR}"):/usr/src/sts/coverage" \
+      --entrypoint chown tests -R "$(id -u):$(id -g)" \
+      /usr/src/sts/coverage /usr/src/sts/tests/report > /dev/null 2>&1 || true
+  fi
 
   # The network `run` created, and nothing else — this project has its own
   # name, so `down` here can never reach the stack ./run-tests.sh or a
   # `docker compose up` in this directory is holding.
   docker_compose -f "${COMPOSE_FILE}" down --remove-orphans > /dev/null 2>&1 || true
 
-  if [ -n "$(find "${COVERAGE_DIR}" -user root -print -quit 2>/dev/null)" ];
+  if [ "${HOST_WINDOWS}" != "1" ] &&
+     [ -n "$(find "${COVERAGE_DIR}" -user root -print -quit 2>/dev/null)" ];
   then
     echo ""
     echo "Some of ./coverage is still owned by root — the chown-back container"
@@ -602,13 +638,13 @@ then
       console.log("           " + s.linesPct + "% of lines in the " + s.files +
                   " files loaded, " + s.functionsPct + "% of functions; " +
                   s.neverLoaded + " file(s) loaded by nothing.");
-    ' "${COVERAGE_DIR}/summary.json"
+    ' "$(hostPath "${COVERAGE_DIR}/summary.json")"
   fi
   if [ "${OPEN}" = "1" ];
   then
     # Best effort: a headless machine has no opener, and failing to open the
     # report must not change the exit code of the run it describes.
-    (xdg-open "${COVERAGE_DIR}/index.html" > /dev/null 2>&1 &) || true
+    (hostOpen "${COVERAGE_DIR}/index.html" > /dev/null 2>&1 &) || true
   fi
 else
   echo "No coverage report was written; see the run output above."

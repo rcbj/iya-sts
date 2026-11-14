@@ -40,9 +40,9 @@
 //      default, offered once turned on, read as off in product with it still
 //      stored (STS-CORE-0106, once).
 //
-// The clients are `tests/vendored/krb5_wire.js`'s, over an in-process
+// The clients are `tests/protocol/krb5_wire.js`'s, over an in-process
 // transport that hands each message to `kdc.handleMessage()`. The same over
-// TCP 88, and MIT kinit, is `tests/vendored/sts_kerberos_rc4.js`.
+// TCP 88, and MIT kinit, is `tests/protocol/sts_kerberos_rc4.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -82,7 +82,7 @@ async function productChild() {
   const credentials = require(R + '/common/credentials');
   const personKeys = require(R + '/kerberos/krb5_person_keys');
   const actions = require(R + '/admin-core/admin_actions');
-  const wire = require(R + '/tests/vendored/krb5_wire.js');
+  const wire = require(R + '/tests/protocol/krb5_wire.js');
   // The code each refusal carries is RECORDED, never sent: the KDC hangs it
   // on the reply under a Symbol for its transport to write down, and this
   // transport reads it there.
@@ -122,7 +122,11 @@ async function productChild() {
 
   // --- a person, their keys and their keytab ---
   const PW = 'Rc4-Product-Passw0rd#182';
-  out.created = directory.createUser('rc4alice', { invent: false }).ok;
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  out.created = directory.createUser('rc4alice', { invent: false,
+    attributes: { givenName: 'Alice', sn: 'rc4alice',
+                  mail: 'rc4alice@example.test' } }).ok;
   out.set = credentials.setPassword('rc4alice', PW).ok;
   await personKeys.idle();
   const alice = personKeys.listPeople().filter(function (p) {
@@ -213,7 +217,7 @@ async function developmentChild() {
   const principals = require(R + '/kerberos/krb5_principals.js');
   const kdc = require(R + '/kerberos/krb5_kdc.js');
   const scimAuth = require(R + '/scim/scim_auth');
-  const wire = require(R + '/tests/vendored/krb5_wire.js');
+  const wire = require(R + '/tests/protocol/krb5_wire.js');
   const inproc = { label: 'in-process', send: function (bytes) {
     return kdc.handleMessage(bytes);
   } };
@@ -251,8 +255,10 @@ async function developmentChild() {
   out.md5SetInDevelopment = on.ok;
   await observe('development');
   config.setOverride('global.mode', 'product');
+  config.setOverride('krb5.allowSha1Enctypes', 'true');
   await observe('product');
   await observe('productAgain');
+  config.clearOverride('krb5.allowSha1Enctypes');
   config.setOverride('global.mode', 'development');
   await observe('developmentAgain');
   return out;
@@ -313,10 +319,11 @@ function inProduct(t) {
   const got = inAChild(productChild, function (kekFile) {
     log.debug("Entering env().");
     log.debug("Leaving env().");
-    return { STS_MODE: 'product',
+    return { STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
              KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret-182',
              KRB5_SERVICE_PASSWORD: 'not-the-published-service-secret-182',
              STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+             STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
              STS_KEYS_KEK_FILE: kekFile };
   }, 'product', t);
   const r = got.report;

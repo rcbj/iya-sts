@@ -90,7 +90,8 @@ Each store refuses an expired entry whenever it is asked for one, whatever
 else happens. On top of that, the scheduler job `caches.eject-expired`
 (`/admin/scheduler`) runs every minute in every process and deletes the
 expired entries of every store that has them, so an idle store does not hold
-dead rows until its next lookup. What it removed is counted in each store's
+dead rows until its next lookup. It deletes a few hundred entries at a time,
+so the process goes on answering requests while it works. What it removed is counted in each store's
 **Evictions** on `/admin/caches`. Two stores are cleared by other means: the
 back-channel Logout Token deliveries (their own sweep, which dead-letters a
 delivery before removing it) and the decrypted signing keys (dropped
@@ -107,6 +108,7 @@ answer.
 | CRLs | each fetched certificate revocation list | per process | until the CRL's own `nextUpdate`, but never longer than the setting | `pki.revocationCrlMaxAgeS` (3600) |
 | OCSP answers | each fetched OCSP response | per process | until the response's `nextUpdate`, but never longer than the setting | `pki.revocationOcspMaxAgeS` (3600) |
 | Issuer certificates | certificates fetched from an Authority Information Access address | per process | as for CRLs | `pki.revocationCrlMaxAgeS` |
+| Pinned certificates' revocation | what was last fetched about a pinned certificate, for the doors that answer in one tick under [paranoid PKI mode](pki.md#paranoid-pki-mode) | per process | 5 minutes | at most 1024; none |
 | Failed fetches | an address that did not answer, so it is not asked again at once | per process | the setting; 0 means a failure is not remembered | `pki.revocationFailureRetryS` (60) |
 | Certificate files | trust anchors read from a file named in a setting | per process | until the file's path or modification time changes; one entry per setting that names a file (two) | — |
 | Client certificate chains | the chain a verified client certificate built on a full TLS handshake, handed back when that session is resumed (a resumed session carries the leaf alone) | per process | no expiry; 1024 leaves, the oldest dropped first | — |
@@ -137,6 +139,7 @@ They need no setting because a changed certificate is a different entry.
 | Post-quantum keys | the realm's ML-DSA and SLH-DSA keys, generated when first needed | per realm | as for the key set; one per realm | — |
 | Certificate authorities | each realm's CA hierarchy, held decrypted | per process | replaced when the hierarchy changes; one per realm, plus the service Root and the process branch | — |
 | Thumbprint key IDs | the RFC 9278 URI for each key ID | per process | never needed again (512 entries) | — |
+| Derived digest keys | the HMAC key each kind of keyed digest is derived with | per process | until the digest key or key-encryption key it came from changes, checked on every use (64 entries) | — |
 
 The decrypted-key policy only applies where keys persist. In development mode
 there is no stored copy to fall back to, so keys stay in memory.
@@ -150,6 +153,8 @@ there is no stored copy to fall back to, so keys stay in memory.
 | Fetched client key sets | the JSON Web Key Set a client's registered `jwks_uri` answered (#120) | per realm | 256 entries per realm, the oldest dropped | `oauth2.clientJwksCacheS` (300), `oauth2.clientJwksRefetchS` (30) |
 | Request objects | JWT request objects fetched from a client's registered `request_uri` | per realm | the setting; 0 (the default) turns it off; at most 256 entries | `oauth2.requestUriCacheS` (0) |
 | Authorization details types | parsed RFC 9396 type definitions and their compiled JSON Schemas | per process | until the definition text changes (512 entries) | — |
+| Declared authorization details types | the RFC 9396 types the realm's applications declare, with the resource that answers for each | per realm | until any application entry changes | — |
+| Application entries by identifier | one application's entry and parsed record, for the checks a sign-in makes about its client | per realm | until any application entry changes; 256 identifiers | — |
 | SSF event permissions | which Shared Signals events each application may receive | per realm | until any application entry changes; 4,096 answers, oldest first | — |
 
 **After a signing key rotation**, a discovery document can carry `signed_metadata`
@@ -170,6 +175,7 @@ The embedded directory keeps indexes so that a lookup does not walk every entry.
 | Groups | member → groups | per realm | rebuilt after a change that affects groups |
 | entryUUIDs | UUID → entry | per realm | rebuilt when a lookup finds it stale |
 | Container listings | the entries under each container | per realm | rebuilt after a write under that container; 64 containers, oldest first |
+| Service accounts | the names of the realm's service accounts | per realm | rebuilt after a write to an entry that is, or was, a service account |
 
 These are exact. A write is visible to the next read whichever door made it: the
 console, `/admin-api`, SCIM or LDAP on port 389. Each index is one per realm and
@@ -197,7 +203,7 @@ not use this cache: it decrypts the secret every time.
 | Federation release policy | which attributes each application releases to its partner | per realm | the setting | `federation.releaseIndexTtlMs` (5000) |
 | SPIFFE authorities | a realm's X.509 SVID authorities, unpacked | per process | until the stored authorities change | — |
 | Kerberos keys | long-term keys derived for each principal | per trust realm, in the realm's own principal database | until the principal changes; at most 4,096 principals hold keys at once, least recently used first, and the keys are derived or read again at the next ticket; never persisted | — |
-| SAML 1.1 assertions | issued assertions, kept so a Browser/Artifact request can be answered | per realm, persisted | the oldest is dropped past the limit | `saml11.assertionCacheMax` (500) |
+| SAML 1.1 assertions | issued assertions, kept so an `AssertionIDReference` can be answered | per realm, persisted | until the assertion's own `NotOnOrAfter` (or `saml11.assertionCacheTtlS` when it carries none); the oldest is dropped past the limit | `saml11.assertionCacheMax` (500), `saml11.assertionCacheTtlS` (3600) |
 | SAML SP metadata | a service provider's metadata, stored as received, and what consuming it registered | the application entry | until refreshed (the application's page, an upload on `/admin/saml2`, an MDQ import, or the background refresher once its `cacheDuration` has elapsed); past its effective `validUntil` it is EXPIRED and every request from that service provider is refused | — |
 | Dead-letter counts | an estimate of each Shared Signals stream's dead letters | per realm | recounted at each sweep | — |
 | Remote PEP policy | the policy set a remote PEP last pulled | the PEP container | until the next successful pull | — |
@@ -206,6 +212,7 @@ not use this cache: it decrypts the secret every time.
 | Signed status lists | the last Status List Token and Bitstring Status List credential this process signed for each realm | per process | until the list changes, or half of `oid4vci.statusListTtlS`; 1,024 documents, oldest first | `oid4vci.statusListTtlS` |
 | GNAP resource owners | the owner a resource server's `gnapOwnerLookupUri` named for an identifier (#432) | per realm | the setting; 1,024 entries per realm, the oldest dropped; a failed lookup is never held | `gnap.ownerLookupCacheS` (60) |
 | Signed access-token status lists | the last access-token Status List Token this process signed for each realm (#432) | per process | until the list changes, or half of `oauth2.accessTokenStatusListTtlS`; 1,024 lists, oldest first | `oauth2.accessTokenStatusListTtlS` |
+| Packed access-token status lists | the compressed access-token status list this process last built for each realm (#885) | per process | until an invalid bit changes, or the earliest one expires; one list per realm | — |
 
 **XACML policy parses are kept by content.** Each distinct policy text is a new
 entry, so an edited policy leaves its old parse behind until it becomes the
@@ -229,6 +236,7 @@ store of one entry:
 | Cache | Holds | How long |
 |---|---|---|
 | Trusted proxy ranges | `global.trustedProxies`, parsed | until the setting's text changes |
+| CDN edge ranges | `global.edgeProxies`, parsed | until the setting's text changes |
 | Version stamp | the build record read from `version.json` | for the life of the process |
 | Observation-store declarations | whether each persisted store is a tally the read barrier does not wait for | for the life of the process; one flag per declared store |
 
@@ -246,20 +254,23 @@ something be used twice, which is why none of them has a control.
 |---|---|---|---|---|
 | Used assertions | every RFC 7523 JWT and RFC 7522 SAML assertion accepted, for a grant or client authentication, and the `jti` of every RFC 9101 request object an authorization response was issued on | per realm, persisted in every store mode | `oauth2.assertionReplayCacheSize` (1000); **refuses new assertions when full** | once the assertion itself expires; a request that fails releases its claim |
 | Kerberos authenticators | each authenticator the protected service accepted | per trust realm (the realm whose Kerberos realm issued the ticket), persisted | `krb5.replayCacheMaxEntries` (10000); **refuses when full** | after twice the clock skew |
+| Refresh token rotation records | under rotation, each refresh token and family, so a replayed refresh token revokes its family; and what each grant issued, for RFC 7009 | per realm, persisted | `oauth2.maxRefreshTokenFamilies` (2000), twice that for the grant records; past it the retired go first, then the oldest, with a warning | after the family window; dropped by the expiry job every minute |
 | DPoP proof IDs | each DPoP proof's `jti` | per realm, persisted | `oauth2.dpopReplayCacheSize` (10000); **refuses new proofs when full** | after twice `oauth2.dpopIatSkewS` (300) |
 | DPoP nonces | server-issued DPoP nonces | per realm, persisted | `oauth2.dpopNonceCacheSize` (10000), oldest first | after `oauth2.dpopNonceTtlS` (300) |
 | GNAP signatures | each signed GNAP request | per realm, persisted | `gnap.replayCacheSize` (10000); **refuses new signatures when full** | after twice `gnap.signatureMaxAgeS` (300) |
 | ACME nonces | spent ACME `Replay-Nonce` values | per realm, persisted | `acme.maxSpentNonces` (10000); **refuses when full of live nonces** (answered `badNonce`) | expired ones are cleared when the limit is reached |
+| SAML 2.0 artifacts | the message each unresolved artifact stands for, keyed by the SHA-256 of the artifact and never by the artifact (#614) | per realm, persisted | `saml2.maxArtifacts` (10000); **refuses the next artifact when full of live ones** (a 503 page, `STS-SAML-0110`) | when resolved, once; or after `saml2.artifactTtlS` (300) |
+| SAML 1.1 artifacts | the assertion each unresolved artifact stands for, keyed by the SHA-256 of the artifact (#614) | per realm, persisted | `saml11.maxArtifacts` (10000); **refuses the next artifact when full of live ones** (a 503 page, `STS-SAML-0110`) | when resolved, once; or after `saml11.artifactTtlS` (300) |
 | SCIM Digest nonces | Digest challenges handed out | per realm | `scim.maxDigestNonces` (2000) | after `scim.digestNonceSeconds` (300), then oldest first |
 | SCIM HOBA challenges | HOBA challenges handed out | per realm | `scim.maxHobaChallenges` (2000) | after `scim.hobaMaxAgeSeconds` (600), then oldest first |
 | SCIM HOBA signatures | HOBA signatures already seen | per realm | `scim.maxHobaSeen` (5000) | oldest first |
 | SCIM Digest nonce counts | the nonce-count values already accepted under each Digest nonce | per realm | `scim.maxDigestNonces` (2000) nonces, oldest first, and 1,024 counts per nonce, after which the nonce is retired | with its nonce |
 | OID4VCI nonces | `c_nonce` values issued to wallets | per realm, persisted | `oid4vci.cNonceCacheSize` (10000), oldest first | after `oid4vci.cNonceTtlS` (300), or when used |
 | Redeemed codes | each authorization code already exchanged, and the tokens it produced | per realm, persisted | `oauth2.redeemedCodeCacheSize` (10000), oldest first | one code lifetime (five minutes by default) after the code would have expired |
-| OpenID4VP transactions | every presentation request the Verifier is waiting on — the bar door's, and a wallet sign-in's with its Digital Credentials API request and the key its answer is encrypted to | per realm, persisted | `oid4vp.maxTransactions` (5000), oldest first | `oid4vp.presentationRequestTtlS`, or `oid4vp.signInTtlS` for a sign-in |
+| OpenID4VP transactions | every presentation request the Verifier is waiting on — a verification's started through `/admin-api`, and a wallet sign-in's with its Digital Credentials API request and the key its answer is encrypted to | per realm, persisted | `oid4vp.maxTransactions` (5000), oldest first | `oid4vp.presentationRequestTtlS`, or `oid4vp.signInTtlS` for a sign-in |
 | Wallet sign-in register | the credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with | per realm, persisted | `oid4vp.signInRegisterMaxEntries` (10000), the row issued first dropped | until the last credential on the row expires |
 | Credential status entries | each issued credential's index in this realm's status lists, and the status set for it | per realm, persisted | 131,072 | as long as the credential it describes |
-| Access-token status entries | each live access token's index in the realm's access-token status list — OAuth RFC 9068 tokens and GNAP's two JWT formats — with its `jti` (#432) | per realm, persisted, every cell | 1,048,576; **refuses to mint a token when full** | as long as the access token it describes |
+| Access-token status entries | each live access token's index in the realm's access-token status list — OAuth RFC 9068 tokens and GNAP's two JWT formats — with its `jti` (#432) | per realm, persisted, every cell | 16,777,216; **refuses to mint a token when full** | as long as the access token it describes |
 | Revoked biscuits | the revocation identifiers of each revoked GNAP biscuit token, published at `/gnap/biscuit/revocations` (#432) | per realm, persisted, every cell | `oauth2.maxRevokedJtis` (100000); expired rows first, then the oldest revocation is forgotten (`STS-GNAP-0752`) | at the revoked token's own `exp` |
 | Back-channel Logout deliveries | one row per relying party told that a session ended: its state, its attempts, when it is next due and the signed Logout Token | per realm, persisted | `oauth2.backchannelLogoutMaxRows` (2000), oldest FINISHED first | `oauth2.backchannelLogoutRetentionS` (86400) after it was queued; a row still pending then becomes a dead letter |
 

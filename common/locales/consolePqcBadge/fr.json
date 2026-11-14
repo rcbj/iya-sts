@@ -1,0 +1,14 @@
+{
+  "sentencePq": "Paire de clés post-quantique : {label}",
+  "sentenceComposite": "Paire de clés post-quantique composite : {label} — les deux moitiés doivent être vérifiées",
+  "sentenceKem": "Clé d’établissement de clé post-quantique : {label} — elle ne signe rien",
+  "sentenceHybrid": "Hybride : une clé classique dont le certificat porte aussi une {label}",
+  "sentenceOther": "Post-quantique : {label}",
+  "legendPq": " signale une paire de clés qui utilise un algorithme post-quantique",
+  "legendPqAfter": " — ML-DSA ou SLH-DSA. ",
+  "legendComposite": " est une clé COMPOSITE : une seule clé avec une moitié post-quantique et une moitié classique, qui doivent toutes deux être vérifiées. ",
+  "legendKem": " est une clé post-quantique d’ÉTABLISSEMENT de clé, qui ne signe rien. ",
+  "legendHybridLabel": "clé ML-DSA-65 alternative",
+  "legendHybrid": " est une clé CLASSIQUE dont le certificat porte aussi une clé post-quantique alternative — la clé elle-même n’est pas post-quantique. Survolez une icône pour voir l’algorithme. Une clé sans icône est classique (RSA, ECDSA ou EdDSA). Ce qui en décide, c’est l’algorithme de la clé elle-même, et non la signature de son certificat : une clé ML-DSA certifiée par une AC RSA est signalée, et une clé RSA certifiée par une AC ML-DSA ne l’est pas.",
+  "legendTitle": "Paires de clés post-quantiques"
+}

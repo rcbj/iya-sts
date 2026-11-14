@@ -105,6 +105,36 @@
   // ---------------------------------------------------------------------
   var TOKEN = root.getAttribute('data-token') || '';
 
+  // THE STATIC CONSOLE'S EXPLORER (#446) embeds no token at all: its calls
+  // go through `window.stsConsoleFetch`, which the console's runtime answers
+  // with its own DPoP-bound token and a proof by its own key — a key this
+  // script never sees. `data-console-fetch` says the page was drawn that
+  // way; with it and no runtime there is nothing to call with, and Try it
+  // is refused as it is with no token.
+  var consoleWindow = /** @type {any} */ (window);
+  var CONSOLE_FETCH = root.hasAttribute('data-console-fetch') &&
+    typeof consoleWindow.stsConsoleFetch === 'function'
+    ? consoleWindow.stsConsoleFetch : null;
+
+  // One way to call, whichever way the page was drawn.
+  function call(method, url, body) {
+    log.debug("Entering call().");
+    if (CONSOLE_FETCH) {
+      log.debug("Leaving call(). Through the console.");
+      return CONSOLE_FETCH(method, url, body);
+    }
+    var options = { method: method, headers: {} };
+    if (TOKEN) {
+      options.headers.Authorization = 'Bearer ' + TOKEN;
+    }
+    if (body !== null && body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = body;
+    }
+    log.debug("Leaving call().");
+    return fetch(url, options);
+  }
+
   // --- small DOM helpers ----------------------------------------------------
   function el(tag, className, text) {
     log.debug("Entering el().");
@@ -295,11 +325,19 @@
 
     var detail = add(wrap, el('div', 'opbody'));
     detail.style.display = 'none';
+    // Drawn when first opened: hundreds of operations' models in the page from
+    // the start would be tens of thousands of rows nobody has asked for.
+    var responses = null;
     head.addEventListener('click', function () {
       detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+      if (!responses) {
+        responses = add(answers, el('div', 'drawn'));
+        renderResponses(responses, row.operation, spec);
+      }
     });
 
     prose(detail, row.operation.description);
+    var answers = add(detail, el('div', 'answers'));
 
     var form = add(detail, el('div', 'form'));
     var inputs = {};
@@ -353,30 +391,178 @@
 
     run.addEventListener('click', function () {
       var url = urlFor(row, inputs);
-      var options = { method: row.method, headers: {} };
-      if (TOKEN) {
-        options.headers.Authorization = 'Bearer ' + TOKEN;
-      }
-      if (bodyBox) {
-        options.headers['Content-Type'] = 'application/json';
-        options.body = bodyBox.value;
-      }
       result.textContent = '';
       add(result, el('div', 'pending', 'calling ' + row.method + ' ' + url +
                                        ' …'));
       var started = Date.now();
-      fetch(url, options).then(function (response) {
-        return response.text().then(function (text) {
-          renderResult(result, response.status, Date.now() - started, text);
+      call(row.method, url, bodyBox ? bodyBox.value : null)
+        .then(function (response) {
+          return response.text().then(function (text) {
+            renderResult(result, response.status, Date.now() - started, text);
+          });
+        }).catch(function (error) {
+          // Shown rather than logged, for the reason at the top of this
+          // file: the page is the only place a person is looking.
+          renderResult(result, 0, Date.now() - started, String(error));
         });
-      }).catch(function (error) {
-        // Shown rather than logged, for the reason at the top of this file: the
-        // page is the only place a person is looking.
-        renderResult(result, 0, Date.now() - started, String(error));
-      });
     });
     log.debug("Leaving renderOperation().");
     return wrap;
+  }
+
+  // --- what an operation answers (#1353) -------------------------------------
+  // The document's response models, member by member, the same rows as the
+  // published reference (`tests/tools/openapi_pages.js`). No model admits a
+  // member it does not list, so this is what a caller can receive.
+  function resolved(spec, schema) {
+    log.debug("Entering resolved().");
+    var out = schema || {};
+    var hops = 0;
+    while (out && out.$ref && hops < 16) {
+      out = out.$ref.split('/').slice(1).reduce(function (at, part) {
+        return at && at[part];
+      }, spec) || {};
+      hops += 1;
+    }
+    log.debug("Leaving resolved().");
+    return out;
+  }
+
+  function armsOf(spec, schema) {
+    log.debug("Entering armsOf().");
+    var out = [];
+    (schema.anyOf || schema.oneOf || []).forEach(function (one) {
+      var inner = resolved(spec, one);
+      if (inner.anyOf || inner.oneOf) {
+        out = out.concat(armsOf(spec, inner));
+      } else {
+        out.push(one);
+      }
+    });
+    log.debug("Leaving armsOf().");
+    return out;
+  }
+
+  function typeOf(schema) {
+    log.debug("Entering typeOf().");
+    var types = [].concat(schema.type || []);
+    var words = types.filter(function (one) {
+      return one !== 'null';
+    }).join(' or ');
+    if (schema.enum) {
+      words = 'one of ' + schema.enum.join(', ');
+    }
+    if (types.indexOf('null') >= 0) {
+      words += (words ? ', or ' : '') + 'null';
+    }
+    log.debug("Leaving typeOf().");
+    return words || 'any JSON';
+  }
+
+  // `seen` is the `$ref`s being walked, so a model holding itself stops.
+  function rowsOf(spec, given, at, needed, seen, rows) {
+    log.debug("Entering rowsOf().");
+    var ref = given && given.$ref;
+    var schema = resolved(spec, given);
+    var about = (given && given.description) || schema.description || '';
+    var add1 = function (type, note) {
+      rows.push({ path: at, type: type, required: needed,
+                  about: [about, note].filter(Boolean).join(' ') });
+    };
+    var branches = schema.anyOf || schema.oneOf;
+    if ((ref && seen.indexOf(ref) >= 0) || seen.length > 12) {
+      add1('object', 'The same shape as the member holding it.');
+    } else if (schema['x-free-form']) {
+      add1('any JSON', schema['x-free-form']);
+    } else {
+      var walked = ref ? seen.concat([ref]) : seen.concat(['']);
+      if (branches) {
+        var arms = armsOf(spec, schema);
+        var isShape = function (one) {
+          var inner = resolved(spec, one);
+          return !!(inner.properties || inner.items ||
+                    inner.additionalProperties || inner['x-free-form']);
+        };
+        var words = arms.filter(function (one) {
+          return !isShape(one);
+        }).map(function (one) {
+          return typeOf(resolved(spec, one));
+        });
+        var shapes = arms.filter(isShape);
+        if (!shapes.length) {
+          add1(words.join(', or '));
+        } else if (shapes.length === 1) {
+          var first = rows.length;
+          rowsOf(spec, shapes[0], at, needed, walked, rows);
+          if (words.length && rows[first] && rows[first].path === at) {
+            rows[first].type += ', or ' + words.join(', or ');
+          } else if (words.length) {
+            rows.splice(first, 0, { path: at, required: needed, about: about,
+                                    type: 'object, or ' + words.join(', or ') });
+          }
+        } else {
+          add1('one of ' + shapes.length + ' shapes' +
+               (words.length ? ', or ' + words.join(', or ') : ''));
+          shapes.forEach(function (one, index) {
+            rowsOf(spec, one, at + (at ? ' ' : '') + '(shape ' + (index + 1) +
+                   ')', false, walked, rows);
+          });
+        }
+      } else if (schema.properties) {
+        if (at) {
+          add1('object');
+        }
+        Object.keys(schema.properties).sort().forEach(function (name) {
+          rowsOf(spec, schema.properties[name], at ? at + '.' + name : name,
+                 (schema.required || []).indexOf(name) >= 0, walked, rows);
+        });
+      } else if (schema.items) {
+        add1('list');
+        rowsOf(spec, schema.items, at + '[]', false, walked, rows);
+      } else if (schema.additionalProperties &&
+                 typeof schema.additionalProperties === 'object') {
+        add1('map');
+        rowsOf(spec, schema.additionalProperties, at + '.{key}', false, walked,
+               rows);
+      } else {
+        add1(typeOf(schema));
+      }
+    }
+    log.debug("Leaving rowsOf().");
+  }
+
+  function renderResponses(detail, operation, spec) {
+    log.debug("Entering renderResponses().");
+    var answers = operation.responses || {};
+    var box = add(detail, el('div', 'responses'));
+    add(box, el('h4', '', 'Responses'));
+    Object.keys(answers).sort().forEach(function (status) {
+      var answer = resolved(spec, answers[status]);
+      var one = add(box, el('details', 'response'));
+      add(one, el('summary', '', (status === 'default' ? 'any other status' :
+        status) + (answer.description ? ': ' + answer.description : '')));
+      Object.keys(answer.content || {}).sort().forEach(function (media) {
+        if (!/json/.test(media)) {
+          add(one, el('p', 'hint', 'As ' + media + '.'));
+          return;
+        }
+        var rows = [];
+        rowsOf(spec, answer.content[media].schema || {}, '', false, [], rows);
+        var table = add(one, el('table', 'model'));
+        var head = add(table, el('tr'));
+        ['Member', 'Type', 'Required', 'What it is'].forEach(function (name) {
+          add(head, el('th', '', name));
+        });
+        rows.forEach(function (row) {
+          var line = add(table, el('tr'));
+          add(add(line, el('td')), el('code', '', row.path || '(the answer)'));
+          add(line, el('td', '', row.type));
+          add(line, el('td', '', row.required ? 'yes' : ''));
+          add(line, el('td', '', row.about));
+        });
+      });
+    });
+    log.debug("Leaving renderResponses().");
   }
 
   // --- the page -------------------------------------------------------------
@@ -443,11 +629,12 @@
   // `/admin-api/openapi.json`, so it arrives on the console session this page
   // was drawn with and needs no token of its own. See
   // admin-ui/api_explorer.ts.
-  fetch(SPEC_URL).then(function (response) {
-    return response.json();
-  }).then(render).catch(function (error) {
-    root.textContent = '';
-    add(root, el('h1', '', 'The OpenAPI document could not be read'));
-    add(root, el('pre', 'body', SPEC_URL + '\n\n' + String(error)));
-  });
+  (CONSOLE_FETCH ? CONSOLE_FETCH('GET', SPEC_URL, null) : fetch(SPEC_URL))
+    .then(function (response) {
+      return response.json();
+    }).then(render).catch(function (error) {
+      root.textContent = '';
+      add(root, el('h1', '', 'The OpenAPI document could not be read'));
+      add(root, el('pre', 'body', SPEC_URL + '\n\n' + String(error)));
+    });
 }());

@@ -414,7 +414,8 @@ class DeviceRecognition {
   }
 
   // A statement in `format` that did not verify, or a key product refused
-  // for having none (`format` 'unattested').
+  // for having none (`format` 'unattested') or for a TPM statement not shown
+  // fresh (`format` 'stale', #257).
   /**
    * Counts an attestation statement that did not verify, or a key refused for
    * having none.

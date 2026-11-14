@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "挂载到容器中的文件"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault 或 OpenBao Transit（密钥从不离开它）"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS（密钥从不离开它）"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS（密钥从不离开它）"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "Azure Key Vault 或 Managed HSM 密钥（密钥从不离开它）"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "本服务从何处读取其初始机密——用于封存其所有封存内容的密钥加密密钥，以及数据库密码——它是否确实读取到了，以及另一端的存储正在做什么。"
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "未配置"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "（未配置路径）"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "（未配置机密 id）"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "（未配置资源名称）"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "（未配置机密名称）"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "（未配置 vault url）"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "（未配置密钥）"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "（未配置密钥名称）"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "（SDK 默认值）"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "（SDK 默认端点）"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "每个数据加密密钥，在 KMS 中"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "每个数据加密密钥，在 vault 中"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "客户端证书（{{cert}}）"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "客户端证书"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "令牌"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "配置的令牌"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "SDK 的 VAULT_TOKEN"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "（未指定）"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "该文件不是 JSON 对象，因此其中的内容整体被采用。原始密钥文件正是如此。"
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "仅成员名称。某个机密取哪一个，由它自己的字段设置决定。"
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "未配置字段，因此整个文件就是此机密。"
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "此机密与密钥加密密钥共用一个文件，而该文件不是 JSON 对象——因此其中的内容就是该密钥，读取此机密会被拒绝，而不是把该密钥交给数据库。"
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "该文件不是 JSON，因此整个文件就是此机密，不使用字段设置。"
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "未配置客户端证书，因此没有进行登录：令牌就是 {{token}} 或 SDK 的 VAULT_TOKEN 所提供的内容。"
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "此身份具有写权限。它可以替换密钥加密密钥，届时在旧密钥下封存的一切都将无法读取。"
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "在被询问的每条路径上都是只读的，这正是策略应有的规定。"
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "此身份无权访问其配置要读取的任何路径。启动时的读取将被拒绝。"
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "连接字符串"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "挂载到容器中的文件（{{from}}）"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "挂载到容器中的文件，与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "挂载到容器中的文件（{{from}}），与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager（{{from}}）"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager，与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager（{{from}}），与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager（{{from}}）"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager，与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager（{{from}}），与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault（{{from}}）"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault，与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault（{{from}}），与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault（{{from}}）"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault，与密钥加密密钥共用"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault（{{from}}），与密钥加密密钥共用"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "文件本身：它是否存在、谁可以读取它、上次更改是何时。"
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "文件是否包含 JSON 对象，以及其中有哪些成员——只显示名称，绝不显示值。"
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "此机密配置要取的成员是否确实在文件中。"
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "本服务向存储出示的证书，以及其到期时间。"
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "本服务用于验证存储自身监听器的信任锚。"
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "存储是否已初始化、是否已封印、采用何种封印，以及它是哪个版本。"
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "存储自己的健康摘要：其时钟、其集群，以及此节点是否为活动节点。"
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "高可用性：此节点是否为领导者，以及领导者在哪里。"
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "以启动时读取的方式登录，以及存储返回了什么。"
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "存储对该次登录产生的令牌的说明，向存储询问得来，而不是从登录应答中读取。"
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "此身份实际可以做什么，向存储询问得来：它读取的路径，以及一项它必须无法执行的写入。"
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "此身份可见的机密引擎——比存储实际拥有的少，也理应如此。"
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "此机密的 KV 元数据：写入时间、版本数量，以及读取会得到哪个版本。"
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "AWS Secrets Manager 所知道的关于此机密的一切，唯独不含其值：轮换、KMS 密钥、各版本及其暂存标签。"
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Transit 对包装数据密钥的那个密钥的说明：其类型、其版本，以及它是否可能离开 KMS。"
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "AWS KMS 对包装数据密钥的那个密钥的说明：其状态，以及 AWS 是否轮换它。"
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Cloud KMS 对包装数据密钥的那个密钥的说明：其用途、其主版本及其轮换计划。"
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "vault 对包装数据密钥的那个密钥的说明：其类型、大小、操作、版本和轮换。"
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "机密自身的元数据：复制、标签、轮换和到期。"
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "读取会得到的版本：它是已启用、已禁用还是已销毁。"
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "此机密的每个版本及其属性——启用、创建、更新、到期——绝不包括值。"
+  }
+}

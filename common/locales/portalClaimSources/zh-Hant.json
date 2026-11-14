@@ -1,0 +1,15 @@
+{
+  "heading": "已連結的宣告來源",
+  "sub": "另一個身分提供者可以為本服務未持有的有關您的資訊作擔保。連結之後，要求這些資訊的應用程式會收到該提供者簽署的原樣資訊（OpenID Connect 彙總宣告與分散式宣告）。連結時會前往該提供者，由您登入並同意。",
+  "none": "本服務沒有可提供的宣告來源。",
+  "supplies": "提供",
+  "distributed": "，方式是將您在該提供者的權杖交給應用程式，由應用程式自行取得。",
+  "aggregated": "，由本服務取得並依提供者的簽署原樣轉交。",
+  "linked": "連結於 {when}。",
+  "linkedStale": "連結於 {when}——<strong>已無法使用</strong>；請重新連結。",
+  "link": "連結",
+  "linkAgain": "重新連結",
+  "unlink": "取消連結",
+  "doneUnlinked": "已取消連結。",
+  "doneLinked": "已連結「{provider}」。"
+}

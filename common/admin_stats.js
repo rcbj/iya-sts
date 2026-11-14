@@ -53,6 +53,7 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
+        namesForSubjects, namesForSubjectsAsync, subjectsForNamesAsync,
         LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
@@ -69,21 +70,29 @@ const replication = require('../persistence/persistence_replication');
 // which most of the service already requires — can call it without dragging a
 // graph behind it.
 //
-// It is called from ONE place in here, recordAuthentication() below, and that
-// is the point: that function is already the single funnel every one of the
-// sixteen protocol families passes through at the moment a credential is
-// accepted, so the audit log gets its authentication events from one line
-// rather than from sixteen call sites, the seventeenth of which would be the
-// one nobody adds. It is also the only place in this service that has already
-// normalised the identity, which is what lets an audit row and a /admin/users
-// row name the same person.
+// Accepted credentials are recorded from ONE place, recordAuthentication()
+// below: that function is already the single funnel every one of the sixteen
+// protocol families passes through at the moment a credential is accepted, so
+// the audit log gets those events from one line rather than from sixteen
+// call sites. recordRefusedAuthentication() is the other line, and it is not
+// a second funnel: a refusal increments nothing and creates no user, because
+// putting it inside the acceptance would count an attempt that was turned
+// away. Both normalise the identity here, which is what lets an audit row
+// and a /admin/users row name the same person.
 const audit = require('./audit');
 // The registry of failure codes, a LEAF. The wrapped calls below that swallow a
 // throw log it with one; a refused claim-set change carries its code on the
 // audit row and, NON-ENUMERABLY, on the result a caller serialises.
 const errorCodes = require('./error_codes');
+// THE ONE CRYPTO MODULE, for one digest: a Kerberos PAC claim's id (#493,
+// pacClaimId()). A LEAF that `helpers.js` above has already loaded, so this
+// line adds no file to anything's closure and cannot close a cycle.
+const stsCrypto = require('./crypto');
 // Which attributes a claim may carry out (#94). A leaf.
 const SourcedAttributes = require('./sourced_attributes');
+// Where a revocation is SAID, so a refresh grant waits for it (the review of
+// #879). A leaf over `helpers.js`, which this file already requires.
+const RevokingWrites = require('./revoking_writes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js, realms.js,
@@ -202,7 +211,11 @@ const nums = realms.obj(function () {
            // identifier anybody can quote, so without this there would be
            // nothing to address the row by, and /admin/tokens/set could not
            // open one.
-           artifactsRecorded: 0 };
+           artifactsRecorded: 0,
+           // Successful liveness probes (#312): counted here and NOWHERE
+           // else — not in `callTotal`, not in the call table. See
+           // recordCall().
+           healthProbes: 0 };
 }, { persist: 'admin_stats.nums', merge: 'own' });
 
 
@@ -238,6 +251,35 @@ function callRow(method, path) {
 function recordCall(call) {
   log.debug("Entering recordCall(). " + call.method + " " + call.path + " -> " +
             call.status);
+  // -------------------------------------------------------------------------
+  // A LIVENESS PROBE THAT SUCCEEDED IS NOT A CALL (#312, 2026-10-13).
+  //
+  // Behind a load balancer it is most of them. On testidp the NLB's two HTTP
+  // target groups (8081 and the revocation listener's 8082) asked each of
+  // three nodes every ten seconds from each of three zones — over a hundred a
+  // minute before the compose healthcheck and the launchers — and the metrics
+  // page reported 18,000 calls in a few hours, nearly all `/healthcheck`.
+  // Every number an operator opened the page for was a rounding error beside
+  // it.
+  //
+  // THE RULE IS THE AUDIT LOG'S, READ FROM THERE: `audit.quietWhenOk()` and
+  // its `QUIET_WHEN_OK`, so the two cannot drift into disagreeing about which
+  // paths are probes. A probe answered anything but 200 is still a call — it
+  // is a node saying it is unhealthy, which is exactly what should show —
+  // and so is a `POST`, which Express refuses.
+  //
+  // COUNTED, NOT DROPPED: `healthProbes` is one number of its own, summed
+  // across processes like `callTotal`, and the page shows it beside the
+  // totals rather than inside them. Every process and every listener comes
+  // through here — the front, both worker pools, and `pki_service.ts`'s
+  // plain-HTTP listener, which hands the path to the same app.
+  // -------------------------------------------------------------------------
+  if (audit.quietWhenOk(call.method, call.path, call.status)) {
+    nums.healthProbes++;
+    log.debug("Leaving recordCall(). A successful liveness probe; counted " +
+              "apart from the calls.");
+    return;
+  }
   let path = call.path;
   let matched = !!call.matched;
   if (!matched && calls.size >= MAX_CALL_PATHS) {
@@ -313,8 +355,195 @@ function recordCall(call) {
 // `oauth2.expiredTokenRetentionS` past its `exp` (epoch seconds, plus the
 // clock skew) so /admin/tokens can show it expired, and then goes. A token
 // with no `exp` (0) never expires.
+// ---------------------------------------------------------------------------
+// EVERY IDENTITY A TOKEN WAS ISSUED TO, ONE SMALL ROW EACH (#820, rcbj's
+// choice): what `/admin/users` lists beside the register and the directory.
+// With the register on demand a process holds only the recent tokens, and
+// the people known only from older ones fell off the list — 130,000 rows
+// became 17,000 on 8081. This keeps them: keyed by the holder's identity
+// key, written when a token is recorded and only when that holder is new or
+// the token outlives the row by an hour, so a person signing in again and
+// again does not write a row each time. It expires with the holder's last
+// token, as the register's records do. A row's token COUNTS are the
+// index's, read for the rows a page shows (`userRow()`).
+//
+// **ON DEMAND, KEYS RESIDENT (2026-10-22, #820).** Held whole it was read
+// back by every process at every start — 562,120 rows on 8081, and a
+// request worker's start went from 16 s to 52 s. So a process holds the
+// rows it was asked about (`maxEntries`) and the KEY COLUMN of every row:
+// `has()` and `size` answer from the keys with no read, which is what the
+// console's synchronous readers ask ("is this name a known identity?",
+// "how many are there?"), and a start loads the keys without opening one
+// body. The cost is a digest per holder per process — about 45 MB at
+// 562,000 — against the rows held whole before.
+//
+// **A WRITE NEVER WAITS ON A READ.** `noteTokenHolder()` runs for every JWT,
+// so a holder this process does not hold is written BLINDLY (`peek()`, no
+// `get()`), and `mergeRow` combines the blind row with the stored one at
+// the flush, under the row's lock: the earliest `firstAt`, the latest
+// `lastExp`, and a client once a client. The doors that know their holder
+// before they sign (a refresh, a code redemption) warm the row first
+// (`warmTokenHolders()`), so the blind write is the rare case.
+// ---------------------------------------------------------------------------
+const tokenHolders = realms.map({
+  persist: 'admin_stats.tokenHolders',
+  onDemand: { maxEntries: 20000, keysResident: true },
+  // Pure and convergent (realms.js's rule for `mergeRow`): the minimum of
+  // the positive first sightings, the maximum `lastExp`, and the OR of
+  // `isClient` — each a lattice join, so merging again changes nothing.
+  // A hot path (every row a flush writes for this store): no
+  // Entering/Leaving pair.
+  mergeRow: function (mine, theirs) {
+    const a = mine || {};
+    const b = theirs || {};
+    const firsts = [Number(a.firstAt) || 0, Number(b.firstAt) || 0]
+      .filter(function (n) {
+        return n > 0;
+      });
+    return { firstAt: firsts.length ? Math.min.apply(null, firsts) : 0,
+             lastExp: Math.max(Number(a.lastExp) || 0,
+                               Number(b.lastExp) || 0),
+             isClient: !!(a.isClient || b.isClient) };
+  },
+  // THE CLIENTS AMONG THEM, KEPT BY THE PARTITION (2026-10-22, #820), so
+  // Monitoring → Metrics counts the client holders without walking one row
+  // per person (`userCountsResolved()`). The IndexedMap re-files a row on
+  // every `set`, so a holder that becomes a client is filed when its row is
+  // written again.
+  indexBy: function (row) {
+    return row && row.isClient ? ['client'] : [];
+  },
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row) {
+    const exp = Number(row && row.lastExp);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    const keepS = Number(config.value('oauth2.expiredTokenRetentionS'));
+    return exp > 0 && isFinite(skewS) && isFinite(keepS)
+      ? (exp + Math.max(0, skewS) + Math.max(0, keepS)) * 1000 : null;
+  }
+});
+
+// HOW FAR PAST ITS TOKEN A HOLDER'S ROW IS WRITTEN TO LIVE (seconds), so a
+// row is written again only once a token outlives it. It was an hour, and a
+// row was written at the token's own `exp`: every refresh more than an hour
+// after the last rewrote it — one row per refresh on 8081, where people
+// refresh every 9.6 hours (#820, 2026-10-22). With a day of headroom a
+// person refreshing that often writes it about once a day. The cost is that
+// a row outlives its holder's last token by up to a day, which no reader
+// minds: the row's token COUNTS are the index's (`userRow()`), and
+// `lastExp` decides nothing but when the row expires.
+const HOLDER_HEADROOM_S = 86400;
+
+/**
+ * Notes the holder of a token just recorded, when that holder is new or the
+ * token outlives their row, which is written `HOLDER_HEADROOM_S` past the
+ * token. A hot path (every JWT signed): no Entering/Leaving pair.
+ *
+ * @param record - the token record
+ */
+function noteTokenHolder(record) {
+  // BY NAME ONLY. A record with only a `sub` is keyed through the directory
+  // (`holderKeyOf()` resolves the entry), two synchronous reads of the store
+  // each: the first run of the backfill on 8081 did that for every refresh
+  // token of 546,000 and held the front process for its whole walk, every
+  // request waiting behind it. A person's access and ID tokens carry the
+  // name, so their row comes from those, and nothing here asks the
+  // directory.
+  if (!record.username) {
+    return;
+  }
+  const key = identityKeyOf(record.username);
+  if (!key) {
+    return;
+  }
+  // WHAT IS HELD, NEVER A READ (#820): on demand `get()` of a holder this
+  // process does not hold is a synchronous read of the store, on the path
+  // of every token. Not held, the row is written blindly — `firstAt` now,
+  // `lastExp` this token's plus the headroom — and the store's `mergeRow`
+  // keeps the earlier `firstAt` and the later `lastExp` of the two.
+  const held = tokenHolders.peek(key);
+  const exp = Number(record.exp) || 0;
+  const lastExp = held ? Number(held.lastExp) || 0 : 0;
+  const client = record.grant === 'client_credentials';
+  if (held && exp <= lastExp && (!client || held.isClient)) {
+    return;
+  }
+  tokenHolders.set(key, { firstAt: held ? held.firstAt : Date.now(),
+                          lastExp: exp > 0
+                            ? Math.max(exp + HOLDER_HEADROOM_S, lastExp)
+                            : lastExp,
+                          isClient: client || !!(held && held.isClient) });
+}
+
+// **ON DEMAND (#820 part 3)**: 546,000 records on 8081, read back by every
+// process at every start. A process holds the recent ones it was asked
+// about; a token is read by its jti when it is asked for; what has to find
+// every token of a session, a client, a person or a key asks the index
+// (`revokeWhere()`'s `candidates`, `lookup()`). THE CONSOLE'S LISTS AND
+// COUNTS ARE OF WHAT THIS PROCESS HOLDS — the recent issuances, which is
+// what `MAX_TOKENS` always made this register — and say so (rcbj's
+// decision on #820: the hybrid). The cap is the cache's business on demand.
 const tokens = realms.map({
   persist: 'admin_stats.tokens',
+  onDemand: { maxEntries: 20000 },
+  // FILED BY PERSON (#766): `holdsLiveIssuance()` asks, before every CAEP
+  // token-claims-change, whether a person holds a live token, and walked the
+  // whole register to answer — 9% of a request worker under a password-write
+  // load. Both names a record can be found by, and neither changes on a
+  // record once written (`realms.map()`'s rule for an index).
+  //
+  // And since #820 part 3, where `revokeWhere()`'s callers find their
+  // tokens: the session (`sid:`, every sign-out), the client (`c:`, consent
+  // withdrawn), and the key it is bound to (`jkt:`, `x5t:`, `spki:`, a
+  // device marked compromised). None changes on a record once written.
+  indexBy: function (record) {
+    const out = [];
+    if (record && record.username) {
+      out.push('u:' + String(record.username));
+    }
+    if (record && record.sub) {
+      out.push('s:' + String(record.sub));
+    }
+    if (record && record.sessionId) {
+      out.push('sid:' + String(record.sessionId));
+    }
+    if (record && record.client_id) {
+      out.push('c:' + String(record.client_id));
+    }
+    if (record && record.jkt) {
+      out.push('jkt:' + String(record.jkt));
+    }
+    if (record && record.x5t) {
+      out.push('x5t:' + String(record.x5t));
+    }
+    if (record && record.x5tSpki) {
+      out.push('spki:' + String(record.x5tSpki));
+    }
+    // THE REPLY IT CAME BACK IN (2026-10-22, #820): Monitoring → Tokens
+    // opens one issuance by its `set:<id>`, and on demand the members of a
+    // set are found by this key rather than by walking what is held. The
+    // issuer states the set id once, at issuance, so it never changes.
+    if (record && record.setId) {
+      out.push('set:' + String(record.setId));
+    }
+    return out;
+  },
+  // NEWEST FIRST BY WHEN IT WAS ISSUED (2026-10-22, #820): Monitoring →
+  // Tokens lists the store's newest records, and `minted.newest` walks
+  // this value's index row (`sts_minted_index_sort`) rather than sorting
+  // 1.7M rows by `written_at`, which has only a BRIN. Milliseconds, so two
+  // tokens of one second keep their order; a record with neither field has
+  // no sort row and is not in that list. It never changes on a record once
+  // written, so a revocation's rewrite files the row where it was.
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  sortBy: function (record) {
+    const ms = Number(record && record.issuedAt);
+    if (ms > 0) {
+      return ms;
+    }
+    const iat = Number(record && record.iat);
+    return iat > 0 ? iat * 1000 : null;
+  },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
   expiresAt: function (record) {
     const exp = Number(record && record.exp);
@@ -382,6 +611,19 @@ function kindOfTyp(typ) {
 // that says nothing (the credential issuer, WS-Trust's JWT) leaves both fields
 // empty, which the users page reports as "not through a browser session" rather
 // than as unknown.
+// A claim as text for a register row, or ''. These rows hold what an UNVERIFIED
+// token said in development mode (token exchange, the Credential Endpoint), so
+// a `sub` of any JSON type reached them and made the tokens page or a person's
+// page unanswerable (#1353). Called for every token this service issues, so no
+// Entering/Leaving pair, which would drown the log on a path this hot.
+function claimText(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return typeof value === 'number' || typeof value === 'boolean'
+    ? String(value) : '';
+}
+
 function recordJwt(payload, signed, context) {
   log.debug("Entering recordJwt(). typ=" + (payload.typ || '(none)'));
   const issuedUnder = context || {};
@@ -405,7 +647,7 @@ function recordJwt(payload, signed, context) {
     kind: kind,
     typ: payload.typ || '',
     revocable: !!payload.jti && REVOCABLE_KINDS.indexOf(kind) >= 0,
-    sub: payload.sub || '',
+    sub: claimText(payload.sub),
     // WHO SAID IT, which is this service under whichever base URL the request
     // arrived on — `oauth2.issuer` is empty by default precisely so that one
     // process answers correctly as localhost, as `sts` on a compose network and
@@ -428,7 +670,15 @@ function recordJwt(payload, signed, context) {
     username: payload.username || payload.preferred_username ||
               (issuedUnder.grant === 'client_credentials'
                 ? String(payload.client_id || '') : ''),
-    client_id: payload.client_id || payload.azp || payload.aud || '',
+    // ONE STRING, ALWAYS (rcbj on #1579, 2026-11-11): with no client_id and
+    // no azp the fallback is the audience, and an array `aud` (RFC 7519
+    // section 4.1.3) gives its FIRST member. Until then the array itself was
+    // stored, which the model's IssuedToken.clientId (a string) does not
+    // read: the sign-out page showed "no client" and OpenID Provider
+    // Commands skipped the row. `audience` below keeps every member.
+    client_id: String(payload.client_id || payload.azp ||
+                      (Array.isArray(payload.aud) ? payload.aud[0]
+                                                  : payload.aud) || ''),
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right
     // for the tokens page's one party column and loses the audience entirely on
@@ -520,13 +770,16 @@ function recordJwt(payload, signed, context) {
     // sessionsFromArtifacts().
     length: String(signed || '').length
   };
-  if (tokens.size >= MAX_TOKENS) {
+  // On demand (#820 part 3) the bound is the cache's: every record stays in
+  // the store until its own expiry, and `revokeWhere()` must still find it.
+  if (!tokens.onDemandLive() && tokens.size >= MAX_TOKENS) {
     // Map iterates in insertion order, so the first key is the oldest.
     const oldest = tokens.keys().next().value;
     tokens.delete(oldest);
     nums.tokensForgotten++;
   }
   tokens.set(key, record);
+  noteTokenHolder(record);
   ensureTokenPurgeJob();
   log.debug("Leaving recordJwt(). " + tokens.size + " token(s) held, " +
       nums.tokensForgotten + " " +
@@ -567,58 +820,113 @@ function recordJwt(payload, signed, context) {
 const TOKEN_PURGE_JOB = 'oauth2.expired-token-purge';
 let tokenPurgeRegistered = false;
 
+// **IN SLICES, AND LINEAR (#704).** The dead jtis were an array searched with
+// `indexOf()` for every dated revocation — quadratic in the revocations of a
+// realm — and both walks ran in one turn of the event loop. They are a Set
+// now, and each walk gives the loop a turn every PURGE_SLICE entries; the
+// deletes happen after the walks, so a walk never sees the Map it is
+// emptying. Everything a slice decides is decided inside its realm, read
+// again in each slice (`realms.run()`), because a turn of the loop ends the
+// ambient realm.
+/** Entries of the token register walked between two turns of the loop. */
+const PURGE_SLICE = 500;
+
+// Walks a Map PURGE_SLICE entries at a time, each slice inside `realm`, a
+// turn of the event loop between slices.
+async function walkInSlices(realm, map, visit) {
+  log.debug("Entering walkInSlices().");
+  const it = map.entries();
+  let done = false;
+  while (!done) {
+    realms.run(realm, function () {
+      for (let i = 0; i < PURGE_SLICE; i++) {
+        const step = it.next();
+        if (step.done) {
+          done = true;
+          return;
+        }
+        visit(step.value[1], step.value[0]);
+      }
+    });
+    if (!done) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  log.debug("Leaving walkInSlices().");
+}
+
 /**
  * Deletes, in every realm, token records past their expiry and retention, and
  * revoked jtis whose tokens have expired; the `oauth2.expired-token-purge`
  * scheduler job.
  *
  * @param nowMs - the time in milliseconds; now when omitted
- * @returns how many records and revocations were deleted
+ * @returns a promise of how many records and revocations were deleted
  */
-function purgeExpiredTokens(nowMs) {
+async function purgeExpiredTokens(nowMs) {
   log.debug("Entering purgeExpiredTokens().");
   const now = Number(nowMs) || Date.now();
   const out = { records: 0, revocations: 0 };
-  realms.list().forEach(function (r) {
-    realms.run(r, function () {
-      const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
-      const keepMs = Number(config.value('oauth2.expiredTokenRetentionS')) *
-                     1000;
-      const map = tokens.realmMap(r.id);
-      const revoked = revokedJtis.realmMap(r.id);
-      const deadJtis = [];
-      const gone = [];
-      map.forEach(function (record, key) {
+  for (const r of realms.list()) {
+    const setting = realms.run(r, function () {
+      return {
+        skewMs: Number(config.value('oauth2.clockSkewS')) * 1000,
+        keepMs: Number(config.value('oauth2.expiredTokenRetentionS')) * 1000
+      };
+    });
+    const skewMs = setting.skewMs;
+    const keepMs = setting.keepMs;
+    const map = tokens.realmMap(r.id);
+    const revoked = revokedJtis.realmMap(r.id);
+    // ON DEMAND (#820 part 2) the revocations are the store's: each row
+    // carries its expiry, and the minted expiry purge deletes it. A walk
+    // here would see only what is held, and a `has()` per record would be
+    // a read of the store for every revoked one.
+    const revokedHere = !revokedJtis.onDemandLive();
+    const deadJtis = new Set();
+    const gone = [];
+    // On demand (#820 part 3) the register's expired records are the
+    // store's expiry purge's: each carries its `expiresAt`. A walk here
+    // would see only what is held.
+    const recordsHere = !tokens.onDemandLive();
+    if (recordsHere) {
+      await walkInSlices(r, map, function (record, key) {
         if (!record || !record.exp) {
           return;
         }
         const deadAt = record.exp * 1000 + skewMs;
-        if (deadAt <= now && record.jti && revoked.has(record.jti)) {
-          deadJtis.push(record.jti);
+        if (revokedHere && deadAt <= now && record.jti &&
+            revoked.has(record.jti)) {
+          deadJtis.add(record.jti);
         }
         if (deadAt + keepMs <= now) {
           gone.push(key);
         }
       });
-      // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
-      // register still holds their record.
-      revoked.forEach(function (value, jti) {
+    }
+    // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
+    // register still holds their record.
+    if (revokedHere) {
+      await walkInSlices(r, revoked, function (value, jti) {
         const exp = revokedExpOf(value);
-        if (exp && exp * 1000 + skewMs <= now &&
-            deadJtis.indexOf(jti) < 0) {
-          deadJtis.push(jti);
+        if (exp && exp * 1000 + skewMs <= now) {
+          deadJtis.add(jti);
         }
       });
+    }
+    realms.run(r, function () {
       deadJtis.forEach(function (jti) {
         revoked.delete(jti);
       });
       gone.forEach(function (key) {
         map.delete(key);
       });
-      out.records += gone.length;
-      out.revocations += deadJtis.length;
     });
-  });
+    out.records += gone.length;
+    out.revocations += deadJtis.size;
+  }
   log.debug("Leaving purgeExpiredTokens(). " + JSON.stringify(out));
   return out;
 }
@@ -724,11 +1032,31 @@ setJwtRecorder(recordJwt);
 // A row written before #345 holds `true`, which `revokedExpOf()` reads as
 // "not stated", the same as a token with no `exp`: kept until the cap.
 //
-// (feature/333 adds an `expiresAt` hook to the minted-store declaration, so
-// a start need not restore a row past its expiry. It is not on develop yet;
-// once it is, this declaration's hook is `revokedExpOf()` plus the clock
-// skew, in milliseconds.)
-const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
+// **ITS EXPIRY IS ITS TOKEN'S** (`expiresAt`, #333's hook, #820 part 2):
+// `revokedExpOf()` plus the clock skew, so a start does not read a
+// revocation past it and the store's expiry purge deletes it. One with no
+// stated `exp` has none, and is kept.
+//
+// **KEY-RESIDENT ON DEMAND (#820 part 2)**: 331,000 live revocations on 8081
+// — refresh tokens ended at sign-out — read back by every process at every
+// start. The question asked of it on every token check is membership, for a
+// token that is almost never revoked, so a read of the store per question
+// would be a read per request. A process holds the key column of every live
+// revocation (a keyed digest, loaded without opening a body) and answers
+// "not revoked" from it; only a digest it holds is read. See `keysResident`
+// in `realms.map()`. The cap and the purge's walk below are the store's
+// business then, as the refresh tokens' cap is (`onDemandLive()`).
+const revokedJtis = realms.map({
+  persist: 'admin_stats.revokedJtis',
+  onDemand: { maxEntries: 20000, keysResident: true },
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (value) {
+    const exp = revokedExpOf(value);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    return exp > 0 && isFinite(skewS)
+      ? (exp + Math.max(0, skewS)) * 1000 : null;
+  }
+});
 
 /**
  * Reads the token expiry a revocation carries.
@@ -768,6 +1096,14 @@ function makeRoomForRevocation() {
   const cap = Number(config.value('oauth2.maxRevokedJtis'));
   if (!(cap > 0) || revokedJtis.size < cap) {
     log.debug("Leaving makeRoomForRevocation(). Room.");
+    return 0;
+  }
+  // ON DEMAND (#820 part 2) THERE IS NOTHING TO MAKE ROOM IN: a process
+  // holds a digest per revocation and a bounded cache of rows, and every
+  // revocation stays in the store until its token's expiry. Forgetting one
+  // here would re-open a revoked token for nothing.
+  if (revokedJtis.onDemandLive()) {
+    log.debug("Leaving makeRoomForRevocation(). On demand.");
     return 0;
   }
   const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
@@ -849,11 +1185,12 @@ function makeRoomForRevocation() {
 //
 // A SLOT AND NOT A REQUIRE, argued both ways round (rule 3e): the observer
 // delivers through `ssf/ssf.ts`, which requires this file at its load, so a
-// load-time require from here closes that cycle; and a LAZY one would put
-// `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
-// which reaches this file (`kerberos/CLAUDE.md`). The observer is told only
-// of a jti NEWLY revoked, is called for its side effect, and can never fail a
-// revocation: what it throws is logged and dropped.
+// load-time require from here closes that cycle; and a LAZY one would have
+// put `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
+// which reached this file (an obligation until #1280; the slot stands). The
+// observer is told only of a jti NEWLY revoked, is called for its side
+// effect, and can never fail a revocation: what it throws is logged and
+// dropped.
 //
 // `how` is the door's own statement of the act, passed through untouched:
 // `{ initiatingEntity, superseded, replay }` — see the observer's file.
@@ -872,6 +1209,39 @@ function setRevocationObserver(fn) {
   revocationObserver = typeof fn === 'function' ? fn : null;
   log.debug("Leaving setRevocationObserver(). " +
             (revocationObserver ? "Installed." : "Cleared."));
+}
+
+// ---------------------------------------------------------------------------
+// THE STATUS MARKER (#820 part 3), a slot (rule 3e) filled by
+// `oauth-oidc/access_token_status.ts`. Its access-token status list is built,
+// on demand, from a small store of the bits that are revoked, so it has to
+// hear of every revocation and every un-revocation — `revoke()` and
+// `restore()` below. It cannot be required from here: that module requires
+// this one (`isRevoked()`), and the require would close a cycle. Called with
+// `(jti, revoked, kind)`; a throw is logged and never undoes the revocation.
+// ---------------------------------------------------------------------------
+let statusMarker = null;
+
+function setStatusMarker(fn) {
+  log.debug("Entering setStatusMarker().");
+  statusMarker = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setStatusMarker(). " +
+            (statusMarker ? "Installed." : "Cleared."));
+}
+
+function tellStatusMarker(jti, revoked, record) {
+  log.debug("Entering tellStatusMarker().");
+  if (statusMarker) {
+    try {
+      statusMarker(String(jti), !!revoked, record ? record.kind : '');
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-OAUTH-0978') + 'admin: the access-token ' +
+               'status list could not be told that jti ' + jti + ' is ' +
+               (revoked ? 'revoked' : 'no longer revoked') + ': ' +
+               ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving tellStatusMarker().");
 }
 
 function tellRevocationObserver(jti, record, via, how) {
@@ -927,7 +1297,21 @@ function revoke(jti, via, how, expSec) {
                        revokedExpOf(record),
                        revokedExpOf(revokedJtis.get(jti)));
   revokedJtis.set(jti, { exp: exp });
-  if (record) {
+  // A TOKEN SUPERSEDED BY ITS SUCCESSOR — a refresh token rotated on use —
+  // is not written back to the register (2026-10-22, #820). It was one of a
+  // refresh's 13.6 writes, every process applying it, for a fact
+  // `revokedJtis` above already holds and is what enforces it; the
+  // register's readers ask both (`tokenStateOf()`, and `tokenList()`'s
+  // `revoked` for the console). Every other revocation still writes it.
+  const superseded = !!(how && how.superseded);
+  // ENDED, NOT SUPERSEDED: a refresh grant must not answer ahead of it (the
+  // review of #879). A token rotated on use ends nothing — its successor
+  // carries the grant on — and is every refresh's own write, so marking it
+  // would make each refresh wait for every other.
+  if (!superseded) {
+    RevokingWrites.note('a token revoked (' + (via || 'unstated') + ')');
+  }
+  if (record && !superseded) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
     record.revokedVia = record.revokedVia || (via || 'unstated');
@@ -942,6 +1326,7 @@ function revoke(jti, via, how, expSec) {
            (via || 'unstated') + '). ' +
            revokedJtis.size + ' revoked in total.');
   if (first) {
+    tellStatusMarker(jti, true, record);
     tellRevocationObserver(jti, record, via, how);
   }
   log.debug("Leaving revoke(). " + (first ? "It is newly revoked." : "It was " +
@@ -965,6 +1350,9 @@ function restore(jti) {
   log.debug("Entering restore(). jti=" + jti);
   const was = revokedJtis.delete(jti);
   const record = tokens.get(jti);
+  if (was) {
+    tellStatusMarker(jti, false, record);
+  }
   if (record) {
     record.revoked = false;
     record.revokedAt = 0;
@@ -1108,6 +1496,29 @@ function artifactRevokedByKey(key) {
   return mark;
 }
 
+// EVERY HANDLE THE REGISTER MARKS REVOKED (2026-10-22, #820), for
+// Monitoring → Verifiable Credentials' counts: `vc_status.ts` joins these to
+// its entries through its `a:` index instead of asking every entry whether
+// its artifact is revoked. It walks the revocations, which grow with what an
+// administrator revoked and not with the population.
+/**
+ * Lists the handles of every artifact the register marks revoked in the
+ * ambient realm.
+ *
+ * @returns the handles
+ */
+function revokedArtifactKeys() {
+  log.debug("Entering revokedArtifactKeys().");
+  const out = [];
+  revokedArtifacts.forEach(function (mark, key) {
+    if (mark) {
+      out.push(String(key));
+    }
+  });
+  log.debug("Leaving revokedArtifactKeys(). " + out.length + ".");
+  return out;
+}
+
 // One artifact with the revocation overlaid, so that a row from another
 // process's segment says who revoked it and when rather than only that it is
 // in the revoked state.
@@ -1192,19 +1603,29 @@ function recordAssertion(version, detail) {
  * Records a Kerberos ticket.
  *
  * @param kind - `TGT` or `service ticket`
- * @param detail - `client`, `realm`, `service`, `etype` and `expiresAt`
+ * @param detail - `client`, `realm`, `service`, `etype` and `expiresAt`;
+ *   `claimSet`, `username` and `pacClaims` when its PAC carried claims
  * @returns the record
  */
 function recordTicket(kind, detail) {
   log.debug("Entering recordTicket(). kind=" + kind + ", client=" +
             (detail.client || '?'));
-  const record = recordArtifact('Kerberos ' + kind, {
+  const fields = {
     subject: detail.client || '',
     realm: detail.realm || '',
     service: detail.service || '',
     etype: detail.etype || '',
     expiresAt: detail.expiresAt || 0
-  });
+  };
+  // A ticket whose PAC carried claims from the PAC set (#493) names the set
+  // and the person, so a change to that set reaches its holder as CAEP
+  // token-claims-change (liveClaimBearers()); `pacClaims` counts them.
+  if (detail.claimSet) {
+    fields.claimSet = String(detail.claimSet);
+    fields.username = String(detail.username || '');
+    fields.pacClaims = Number(detail.pacClaims || 0);
+  }
+  const record = recordArtifact('Kerberos ' + kind, fields);
   log.debug("Leaving recordTicket(). " + artifacts.length +
             " artifact(s) held.");
   return record;
@@ -1301,8 +1722,8 @@ function recordSvid(kind, detail) {
 //   * The SPIRE Server API's OWN server SVID, minted in spiffe_grpc.js to bind
 //     the mutual-TLS port. It never reaches this function because that call
 //     site records no artifact either, and it must not: filing this service's
-//     own listener among the people is the mistake didPlan() already refuses
-//     for `/did/generate?method=web`.
+//     own listener among the people is the mistake didPlan() already refused
+//     for this service's own did:web.
 //   * A downstream CA from NewDownstreamX509CA. It is an intermediate belonging
 //     to whoever asked for it, not an identity in this trust domain, and
 //     spiffe_ca.js deliberately does not add it to this service's authorities
@@ -1336,6 +1757,11 @@ function recordSvid(kind, detail) {
 // not here. That is the conservative direction for this caller — it refuses an
 // enrolment it could have allowed, rather than allowing one that creates
 // somebody — and the refusal names the fix.
+//
+// **SINCE #613 THE DOOR ASKS THE DIRECTORY AS WELL** (`authn.ts`'s
+// `knownPerson()`): the restore no longer puts every restored person here, and
+// a register capped at `MAX_USERS` never held a large directory's people
+// anyway, so this answer alone refused most of them.
 /**
  * Says whether this register already holds an identity by a name; asked by the
  * WebAuthn enrolment door in product mode.
@@ -1353,7 +1779,9 @@ function knownUser(username) {
   // Another node, or this one before a restart, may be the process that saw
   // them — see everyUserRecord().
   log.debug("Leaving knownUser().");
-  return !!users.get(identity.key) || everyUserRecord().has(identity.key);
+  // One person's rows, never every record built to find them (#1001).
+  return !!users.get(identity.key) ||
+         everyUserRecord(identity.key).has(identity.key);
 }
 
 /**
@@ -1510,11 +1938,13 @@ function recordCredentialStatus(subject, status, detail) {
 function recordCredential(format, detail) {
   log.debug("Entering recordCredential(). format=" + format);
   const record = recordArtifact('Credential (' + format + ')', {
-    subject: detail.subject || '',
+    subject: claimText(detail.subject),
     // THE PERSON IT WAS ISSUED FOR, when that is not its subject (#38). An
     // ldp_vc names its HOLDER KEY as a did:jwk and says nothing about whose
     // wallet that is, so without this the credential was nobody's on
-    // /admin/users and beyond the reach of that person's global sign-out.
+    // /admin/users and beyond the reach of a sign-out that ends the issued
+    // row — an administrator's global sign-out, or the row ticked. The
+    // person's own Global logout at /logout leaves the row.
     // Set only where the issuer verified the access token that named them.
     person: detail.person || '',
     configId: detail.configId || '',
@@ -1587,6 +2017,18 @@ const SCIM_OPERATIONS = [
           'answered 404 in the SCIM Error schema (RFC 7644 section 3.12) ' +
           'rather than by express as an HTML page (#206).' }
 ];
+
+// What the monitor says of an operation SCIM_OPERATIONS does not list, so
+// that the prose catalog can carry it (#543 phase 2b).
+const SCIM_UNLISTED_OPERATION = 'Counted under a name admin_stats.js\'s ' +
+  'SCIM_OPERATIONS does not list. It is shown rather than dropped, because ' +
+  'a table that quietly discarded it would make the column stop adding up ' +
+  'with no way to find out why.';
+
+// The routes whose answers carry this module's prose (#543): the SCIM
+// operations' sentences, in the scim namespace. A route is listed only
+// where this module's sentences reach its answer.
+const PROSE_ROUTES = ['/admin-api/scim', '/admin-api/scim/monitor'];
 
 /**
  * The SCIM resource types the monitor counts.
@@ -1965,6 +2407,83 @@ function scimCountsAll() {
   return merged;
 }
 
+// ---------------------------------------------------------------------------
+// SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561): what the account sets
+// did, counted per realm — selections made, requests that could not tell
+// which account they were for (`ambiguous`), selections refused, accounts
+// added, forgotten and expired (a signed-out account dropped at
+// `authn.rememberedAccountDays`). The plan's TR-3: an operator asking "is
+// the picker being shown more than it should be" reads `ambiguous` beside
+// `selected`.
+//
+// `merge: 'own'` for the reason `scimCounts` is: a count is an INCREMENT, so
+// each process keeps its own row and `accountChoiceCounts()` adds them up.
+// Written only by `recordAccountChoice()`, which cannot throw.
+// ---------------------------------------------------------------------------
+const ACCOUNT_CHOICE_KINDS = ['selected', 'ambiguous', 'selectFailed',
+                              'added', 'forgotten', 'expired', 'switched'];
+
+const accountCounts = realms.obj(function () {
+  const out = {};
+  ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+    out[kind] = 0;
+  });
+  return out;
+}, { persist: 'admin_stats.accountCounts', merge: 'own' });
+
+/**
+ * Counts one thing a browser's account set did (#561). Never throws.
+ *
+ * @param kind - one of `selected`, `ambiguous`, `selectFailed`, `added`,
+ *   `forgotten`, `expired`, `switched`
+ * @param n - how many; 1 by default
+ */
+function recordAccountChoice(kind, n) {
+  log.debug("Entering recordAccountChoice(). " + kind);
+  try {
+    const name = String(kind || '');
+    if (ACCOUNT_CHOICE_KINDS.indexOf(name) < 0) {
+      log.debug("Leaving recordAccountChoice(). Not a kind.");
+      return;
+    }
+    const by = Math.max(1, Math.floor(Number(n) || 1));
+    accountCounts[name] = (Number(accountCounts[name]) || 0) + by;
+  } catch (e) {
+    // A counter must never fail the sign-in it counts.
+    log.debug("Caught in recordAccountChoice(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving recordAccountChoice().");
+}
+
+/**
+ * Every process's account-set counts for the ambient realm, added up.
+ *
+ * @returns kind → count
+ */
+function accountChoiceCounts() {
+  log.debug("Entering accountChoiceCounts().");
+  const out = {};
+  ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+    out[kind] = Number(accountCounts[kind]) || 0;
+  });
+  try {
+    replication.remoteRows('admin_stats.accountCounts', undefined, '')
+      .forEach(function (theirs) {
+        if (!theirs || typeof theirs !== 'object') {
+          return;
+        }
+        ACCOUNT_CHOICE_KINDS.forEach(function (kind) {
+          out[kind] += Number(theirs[kind]) || 0;
+        });
+      });
+  } catch (e) {
+    // Another process's rows are a refinement; this one's are the answer.
+    log.debug("Caught in accountChoiceCounts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving accountChoiceCounts().");
+  return out;
+}
+
 /**
  * Summarises the SCIM traffic for `/admin/scim` and `GET /admin-api/scim`.
  *
@@ -2049,11 +2568,8 @@ function scimMonitorSnapshot() {
   });
   Object.keys(detail).sort().forEach(function (name) {
     if (!known[name]) {
-      operations.push(scimOperationRow(name, name, '', 'Counted under a name ' +
-        'admin_stats.js\'s SCIM_OPERATIONS does not list. It is shown rather ' +
-        'than dropped, because a table that quietly discarded it would make ' +
-        'the column stop adding up with no way to find out why.',
-        detail[name]));
+      operations.push(scimOperationRow(name, name, '',
+                                       SCIM_UNLISTED_OPERATION, detail[name]));
     }
   });
 
@@ -2249,7 +2765,50 @@ const SUBJECT_PREFIX = LEGACY_SUBJECT_PREFIX;
 // into, and here each realm has a store of its own, so a shared cap would let a
 // busy realm evict a quiet realm's people.
 // local name -> the record below
-const users = realms.map({ persist: 'admin_stats.users', merge: 'own' });
+//
+// **READ FROM THE STORE, NOT FROM A 2,000-RECORD WINDOW (#1001, 2026-10-27;
+// rcbj: "It has to be able to go back to the database and pull the
+// original / permanent data").** Until #1001 this Map was the register: capped
+// at `MAX_USERS` identities per realm and process, evicting the FIRST SEEN,
+// and the eviction was a journalled DELETE, so the row left the store too and
+// a person who signed in again started at one. On 8081 a million load people
+// had cycled through the 2,000 slots and every real person's count was
+// whatever had happened since their record was last made. Now the store is
+// `onDemand` (#820's machinery): the 2,000 is the bound of an in-memory
+// CACHE, nothing is deleted on eviction, and a record not held is read back
+// from `sts_minted` when the person next signs in (`userRecord()` →
+// `users.get()`) or a page asks (`everyUserRecord()` → `lookupEntries()`).
+// Filed under the person's key (`indexBy`), so one lookup answers EVERY
+// origin's row for them — each process's share, and each restart's — and
+// sorted by `lastAt`. Still `merge: 'own'`: a write here is an increment,
+// which is `persistence/CLAUDE.md`'s test for a per-origin row; what #1001
+// taught the on-demand reader about per-origin rows is argued in
+// `persistence_minted.js` (*A PER-ORIGIN ROW ON DEMAND*).
+//
+// What stays bounded: the events on a row (`MAX_EVENTS_PER_USER`, the 50
+// most recent per origin — the audit log is the history, #955), and what a
+// WHOLE-register reader sees on demand, which is what this process holds
+// (`userRows()`, `userCountsResolved()`, `collectUserKeys()` — the hybrid
+// rcbj chose for the token register on #820, said with `heldOnly`). In
+// memory mode, development, and until the index backfill has marked the
+// store complete, it is an ordinary Map with the old cap, as before.
+const users = realms.map({
+  persist: 'admin_stats.users', merge: 'own',
+  onDemand: { maxEntries: MAX_USERS },
+  // The person's key, which never changes on a record once written
+  // (`realms.map()`'s rule for an index; a rename makes a new record).
+  // A hot path (every row a flush writes for this store): no
+  // Entering/Leaving pair.
+  indexBy: function (record, key) {
+    return key === undefined || key === null || key === '' ? []
+      : [String(key)];
+  },
+  // A hot path, as above.
+  sortBy: function (record) {
+    const at = record ? Number(record.lastAt || record.firstAt) : 0;
+    return at > 0 ? at : null;
+  }
+});
 
 // Does this identity begin `<attributetype>=`? That is the one shape
 // identityOf() below must not split at an '@'. Deliberately strict — a type is
@@ -2268,11 +2827,293 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 //
 // It matters here because the Decentralized Identity endpoints present
 // identities of exactly this shape: an ldp_vc names its subject `did:jwk:…`,
-// the OID4VP Verifier reports whatever DID presented to it, and /did/generate
-// mints one. RFC 3986 says the method name is lowercase ALPHA and DIGIT; the
+// and the OID4VP Verifier reports whatever DID presented to it. RFC 3986 says the method name is lowercase ALPHA and DIGIT; the
 // `i` flag is here because this test is deciding how to file a person and not
 // validating a DID.
 const DID_SHAPED = /^did:[a-z0-9]+:/i;
+
+// ---------------------------------------------------------------------------
+// THE SUBJECTS OF EVERY HELD TOKEN AND ARTIFACT, RESOLVED TOGETHER
+// (2026-10-14).
+//
+// `userKeys()`, `buildUserRows()` and `holdingsOf()` file every token and
+// artifact under its holder, and a `urn:uuid:` subject is resolved through the
+// directory to do it — `nameForSubject()`, one lookup per record. In a process
+// holding the whole directory that is an index read; in one whose directory is
+// a WINDOW onto the store (#320's `ldap.workerDirectory=auto`, every request
+// worker and the front on postgres) a person is not resident, so each was a
+// synchronous `byUuid` round trip, and one naming nobody — a person a test
+// deleted, whose tokens are still held — was asked again on every call. With
+// thousands of records `GET /admin-api/audit` (whose `knownUserKeys()` is
+// `userKeys()`) took over a second, and `sts_admin_closed_sets`, asking it
+// once per audit category and action, was killed by its watchdog in the
+// postgres modes.
+//
+// So each of the three asks `helpers.namesForSubjects()` once for every
+// subject it will meet — one statement per batch — and `identityOf()` reads
+// the answer while the walk runs. The answers are the ones each lookup would
+// have given; a subject not gathered (nothing should be) is still looked up
+// alone. Synchronous, so nothing else runs while the answer is held, and it
+// is dropped when the walk ends: a later call asks again.
+// ---------------------------------------------------------------------------
+let resolvedSubjects = null;
+
+// Hot path: called for every token and artifact on every users page view,
+// as identityOf() is, so no Entering/Leaving pair would drown the log.
+function subjectNameOf(subject) {
+  if (resolvedSubjects) {
+    const held = resolvedSubjects.get(subject.toLowerCase());
+    if (held !== undefined) {
+      return held;
+    }
+  }
+  return nameForSubject(subject);
+}
+
+/**
+ * Runs `fn` with the `urn:uuid:` subject of every held token and artifact
+ * resolved in one question to the directory, which `identityOf()` reads.
+ *
+ * @param fn - the walk
+ * @returns what `fn` returns
+ */
+function withSubjectsResolved(fn) {
+  log.debug("Entering withSubjectsResolved().");
+  if (resolvedSubjects) {
+    // Already inside one: the subjects are resolved.
+    const inner = fn();
+    log.debug("Leaving withSubjectsResolved(). Nested.");
+    return inner;
+  }
+  const subjects = new Set();
+  const note = function (value) {
+    let text = String(value == null ? '' : value).trim();
+    if (text.indexOf(SUBJECT_PREFIX) === 0) {
+      text = text.slice(SUBJECT_PREFIX.length);
+    }
+    if (/^urn:uuid:/i.test(text)) {
+      subjects.add(text);
+    }
+  };
+  tokens.forEach(function (record) {
+    note(record.sub);
+  });
+  allArtifacts().forEach(function (record) {
+    note(record.subject);
+    note(record.person);
+  });
+  resolvedSubjects = subjects.size
+    ? namesForSubjects(Array.from(subjects)) : null;
+  let value;
+  try {
+    value = fn();
+  } finally {
+    resolvedSubjects = null;
+  }
+  log.debug("Leaving withSubjectsResolved(). " + subjects.size +
+            " subject(s).");
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME, WITH THE SUBJECTS ASKED ASYNCHRONOUSLY (#790). The subjects are
+// gathered exactly as `withSubjectsResolved()` gathers them and resolved
+// through `namesForSubjectsAsync()`, which waits on the store without holding
+// the event loop; `fn` then runs synchronously against them, as it does
+// there. For the Users page, whose register on 8081 held ~228,000 subjects.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` with every subject of the register resolved, asked of the
+ * directory asynchronously.
+ *
+ * @param fn - what to run
+ * @param alsoSubjects - optional; subjects of records `fn` will meet that
+ *   this process does not hold (#820: a shown row's tokens, read from the
+ *   store's index)
+ * @returns a promise of what `fn` returns
+ */
+async function withSubjectsResolvedAsync(fn, alsoSubjects) {
+  log.debug("Entering withSubjectsResolvedAsync().");
+  if (resolvedSubjects) {
+    const inner = fn();
+    log.debug("Leaving withSubjectsResolvedAsync(). Nested.");
+    return inner;
+  }
+  const subjects = new Set();
+  const note = function (value) {
+    let text = String(value == null ? '' : value).trim();
+    if (text.indexOf(SUBJECT_PREFIX) === 0) {
+      text = text.slice(SUBJECT_PREFIX.length);
+    }
+    if (/^urn:uuid:/i.test(text)) {
+      subjects.add(text);
+    }
+  };
+  tokens.forEach(function (record) {
+    note(record.sub);
+  });
+  allArtifacts().forEach(function (record) {
+    note(record.subject);
+    note(record.person);
+  });
+  (alsoSubjects || []).forEach(note);
+  const resolved = subjects.size
+    ? await namesForSubjectsAsync(Array.from(subjects)) : null;
+  // Set only now, across a synchronous call: nothing else can run inside it.
+  resolvedSubjects = resolved;
+  let value;
+  try {
+    value = fn();
+  } finally {
+    resolvedSubjects = null;
+  }
+  log.debug("Leaving withSubjectsResolvedAsync(). " + subjects.size +
+            " subject(s).");
+  return value;
+}
+
+/**
+ * `userRows()`, with every subject resolved asynchronously (#790).
+ *
+ * @returns a promise of the rows `userRows()` answers
+ */
+function userRowsAsync() {
+  log.debug("Entering userRowsAsync().");
+  log.debug("Leaving userRowsAsync().");
+  return withSubjectsResolvedAsync(function () {
+    return buildUserRowsResolved(undefined);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE USER COUNTS, WITHOUT A ROW PER PERSON (2026-10-22, #820).
+//
+// Monitoring → Metrics and the console's dashboard read four numbers off the
+// users list — how many identities are known, how many signed in here, how
+// many are clients, and how many authentications there were — and built
+// `userRowsAsync()` to get them: a row for every person, about 470,000 on
+// 8081, every one copied, counted and sorted on the event loop, to keep four
+// integers.
+//
+// The four come from the same sources the rows are built from, by the same
+// rules (`buildUserRowsResolved()`), and only one source grows with the
+// population: on demand, the token holders, one small row per person, held
+// whole. That one is never walked here. Its size is the Map's own, and its
+// CLIENTS are the `client` index the partition keeps on every `set`
+// (`tokenHolders`' `indexBy`) — a count maintained as the rows are written,
+// in every process, replication included, because every way a row enters or
+// leaves the Map ends in the partition's `set` and `delete`. What is walked
+// is bounded: the register's records (capped per process), the tokens this
+// process holds (the cache's 20,000) and the artifacts, each asked only
+// whether the holders already count it.
+//
+// The rejected alternatives: a counter `nums` would keep (a write per new
+// holder, a fan-in, and one more number to drift from the Map it counts),
+// and a scheduler job computing the rows off the request path (the same
+// O(people) walk, every few minutes, in every process).
+// ---------------------------------------------------------------------------
+/**
+ * Counts the users the users list would hold, without building its rows.
+ *
+ * @returns the counts `snapshot().users` reports: `known`,
+ *   `authenticatedHere`, `clients` and `authentications`
+ */
+function userCountsResolved(holderClients) {
+  log.debug("Entering userCountsResolved().");
+  const keys = new Set();
+  const clients = new Set();
+  let authenticatedHere = 0;
+  let authentications = 0;
+  everyUserRecord().forEach(function (record) {
+    keys.add(record.key);
+    if (!record.knownBy) {
+      authenticatedHere++;
+    }
+    authentications += Number(record.authentications) || 0;
+    if (record.isClient) {
+      clients.add(record.key);
+    }
+  });
+  tokens.forEach(function (record) {
+    const key = identityOf(holderKeyOf(record.username, record.sub)).key;
+    if (!key) {
+      return;
+    }
+    keys.add(key);
+    if (record.grant === 'client_credentials') {
+      clients.add(key);
+    }
+  });
+  allArtifacts().forEach(function (record) {
+    const key = identityOf(record.subject).key;
+    if (key) {
+      keys.add(key);
+    }
+  });
+  let known = keys.size;
+  if (tokens.onDemandLive()) {
+    // Every holder is a row; a key another source named is counted again
+    // only when the holders do not already count it. `size` and `has()`
+    // answer from the keys every process holds (`keysResident`), with no
+    // read of the store.
+    const holders = tokenHolders.size;
+    let beyond = 0;
+    keys.forEach(function (key) {
+      if (!tokenHolders.has(key)) {
+        beyond++;
+      }
+    });
+    known = holders + beyond;
+    // The client holders, read asynchronously by `userCountsAsync()` from
+    // the store's `client` index; synchronously only what is held (a
+    // `lookup()` on demand would be a blocking read of the store).
+    (holderClients || []).forEach(function (key) {
+      clients.add(key);
+    });
+    if (!holderClients) {
+      tokenHolders.forEach(function (row, key) {
+        if (row && row.isClient) {
+          clients.add(key);
+        }
+      });
+    }
+  }
+  log.debug("Leaving userCountsResolved(). " + known + " known.");
+  return { known: known, authenticatedHere: authenticatedHere,
+           clients: clients.size, authentications: authentications };
+}
+
+/**
+ * `userCountsResolved()`, with the held tokens' and artifacts' subjects
+ * asked of the directory asynchronously, as `userRowsAsync()` asks them.
+ *
+ * @returns a promise of the counts
+ */
+async function userCountsAsync() {
+  log.debug("Entering userCountsAsync().");
+  let holderClients = null;
+  if (tokens.onDemandLive()) {
+    try {
+      holderClients = (await tokenHolders.lookupEntriesAsync('client'))
+        .map(function (entry) {
+          return entry.key;
+        });
+    } catch (e) {
+      log.debug("Caught in userCountsAsync(): " + ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-ADMIN-0895') + 'admin: the client ' +
+               'token holders could not be read from the store (' +
+               ((e && e.message) || e) + '); the clients counted are the ' +
+               'ones this process holds.');
+      holderClients = null;
+    }
+  }
+  const counts = await withSubjectsResolvedAsync(function () {
+    return userCountsResolved(holderClients);
+  });
+  log.debug("Leaving userCountsAsync().");
+  return counts;
+}
+
 
 // A presented identity, split into the part that identifies a person here and
 // the parts that merely say where it was presented. Without entering/leaving
@@ -2301,7 +3142,7 @@ function identityOf(value) {
   if (rest.indexOf(SUBJECT_PREFIX) === 0) rest = rest.slice(
       SUBJECT_PREFIX.length);
   if (/^urn:uuid:/i.test(rest)) {
-    const named = nameForSubject(rest);
+    const named = subjectNameOf(rest);
     if (!named) {
       log.debug("Leaving identityOf(). A subject naming nobody here.");
       return { key: rest, name: rest, realm: '', form: text,
@@ -2542,6 +3383,40 @@ function everyUserRecord(onlyKey) {
   log.debug("Entering everyUserRecord().");
   const merged = new Map();
   const wanted = onlyKey === undefined ? null : String(onlyKey);
+  // ON DEMAND (#1001): one person's rows — this process's and every other
+  // origin's — come from the index, and nothing is fanned in to memory; the
+  // whole register is what this process holds.
+  if (users.onDemandLive()) {
+    if (wanted === null) {
+      users.forEach(function (record) {
+        merged.set(record.key, copyOfUserRecord(record));
+      });
+      log.debug("Leaving everyUserRecord(). " + merged.size +
+                " held record(s).");
+      return merged;
+    }
+    // The users page read its shown rows' entries together, off the event
+    // loop (`userRowsOfAsync()`); a request path asks the bridge.
+    const entries = preloadedUserEntries && preloadedUserEntries.has(wanted)
+      ? preloadedUserEntries.get(wanted) : users.lookupEntries(wanted);
+    entries.forEach(function (entry) {
+      const value = entry.value;
+      if (!value || typeof value !== 'object') {
+        return;
+      }
+      const theirs = Object.assign({}, value, { key: wanted,
+                                                name: value.name || wanted });
+      const mine = merged.get(wanted);
+      if (mine) {
+        foldUserRecord(mine, theirs);
+      } else {
+        merged.set(wanted, copyOfUserRecord(theirs));
+      }
+    });
+    log.debug("Leaving everyUserRecord(). " + merged.size +
+              " record(s) from the index.");
+    return merged;
+  }
   users.forEach(function (record) {
     if (wanted !== null && record.key !== wanted) {
       return;
@@ -2616,7 +3491,10 @@ function userRecord(identity) {
     log.debug("Leaving userRecord().");
     return record;
   }
-  if (users.size >= MAX_USERS) {
+  // ON DEMAND (#1001) the cache evicts and deletes nothing: the record is
+  // in the store and comes back when asked for. The eviction below is the
+  // held-whole register's, memory mode's and development's.
+  if (!users.onDemandLive() && users.size >= MAX_USERS) {
     // Map iterates in insertion order, so the first key is the least recently
     // FIRST SEEN — not the least recently active. Chosen because it needs no
     // sweep and because a registry of 2,000 distinct usernames on a mock is
@@ -2638,6 +3516,46 @@ function userRecord(identity) {
   users.set(identity.key, record);
   log.debug("Leaving userRecord().");
   return record;
+}
+
+// ---------------------------------------------------------------------------
+// AN EDIT IN PLACE REACHES THE JOURNAL ONLY IF THE KEY IS SET AGAIN (#999,
+// 2026-10-27).
+//
+// `users` is `realms.map({ persist })`, and that facade journals a `set()`, a
+// `delete()` and a `clear()` — nothing else. A record here is MUTATED where it
+// stands: `recordAuthentication()` increments `authentications`, pushes the
+// event, moves `lastAt` and bumps the protocol and method counts, and
+// `noteKnownIdentity()` writes `knownBy`. Until #999 the only `set()` was the
+// one in `userRecord()` at creation, so the row the store held was the record
+// as it stood at the first flush after that — one authentication — and it was
+// never rewritten. On 8081 (product, postgres, two request workers) an account
+// with sixty-two accepted credentials read `authentications: 1` with
+// `firstAt === lastAt`, twelve days old; the audit rows' `authenticationsSoFar`
+// climbed within each worker's life and read 2 again after every restart,
+// because the restart restored the frozen row, and the OTHER worker read the
+// same frozen row through the fan-in (`everyUserRecord()`). `sts_changes` held
+// six rows for this store in two days, all creations. Development mode on the
+// memory store never restarts and never persists, which is why #672's tests
+// passed while the deployed portal still said 1.
+//
+// This is persistence/CLAUDE.md's mutable-row rule, which `ssf/caep.ts` and
+// `ssf/risc.ts` answer with a `touch()`: re-set the key after the edit, so the
+// journal names it and the next flush writes the record as it NOW stands. One
+// call per sign-in rather than one per field, because the flush reads the
+// value when it takes the journal and every edit above has happened by then.
+// The cost is one `minted-own` change row per sign-in — a row the read barrier
+// never waits on (persistence_postgres.js, *What a reader actually has to
+// wait for*) and that #618 phase 2's accounting already prices; what it buys
+// is a count that survives a restart and reaches the other workers.
+//
+// The eviction past `MAX_USERS` is unchanged: a record evicted and made again
+// starts at one, and the row written then says so.
+// ---------------------------------------------------------------------------
+function touchUserRecord(record) {
+  log.debug("Entering touchUserRecord().");
+  users.set(record.key, record);
+  log.debug("Leaving touchUserRecord().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2668,6 +3586,27 @@ function userRecord(identity) {
 // What persists is what somebody typed; what resets is what this process
 // counted. Restoring the counts would make `/admin/metrics` disagree with
 // `/admin/users` about how many authentications this process has seen.
+//
+// **AND SINCE #613 (2026-10-13) THE RESTORE CALLS THIS FOR NOBODY.** Filling
+// the register with every restored person was one synchronous pass per
+// process, linear in the directory — 16 s of blocked event loop per process
+// at 131,546 people — and every note and every eviction past `MAX_USERS` was
+// journalled into this minted store, so each start then wrote ~131K rows to
+// the store and the change log. `/admin/users` has read the DIRECTORY's
+// people itself since #610 (`peopleRows()`), so a restored person is listed
+// as `directory` without a record here. What calls this now is a door that
+// CREATED somebody, and nothing else. `restored` is still understood: a
+// record persisted by an earlier build carries it.
+//
+// **AND SINCE #618 PHASE 2 (2026-10-14) NOT THE APPLIERS OF ANOTHER
+// PROCESS'S CREATE EITHER.** `ldap_server.js`'s `applyEntry()` and
+// `forgetEntry()` noted every replicated person here, in every process, so
+// one add cost every OTHER process a journalled note and, past `MAX_USERS`,
+// a journalled eviction and a `usersForgotten` bump — about four of the 9.7
+// change rows each LDAP add wrote on 8081. The creating process's own record
+// reaches every other process through the fan-in (`everyUserRecord()`), so
+// `knownBy` reads the same whichever process answers, and
+// `tests/change_rows_per_add.js` holds the bound.
 // ---------------------------------------------------------------------------
 /**
  * Adds a person who exists but has not authenticated in this process, such as
@@ -2700,6 +3639,7 @@ function noteKnownIdentity(name, how) {
   // persistent store, `created` because somebody made the person by hand.
   // userRows() reads it and nothing else does.
   record.knownBy = how === 'restored' ? 'restored' : 'created';
+  touchUserRecord(record);
   log.debug("Leaving noteKnownIdentity().");
   return record;
 }
@@ -2728,7 +3668,8 @@ function noteKnownIdentity(name, how) {
  * The user observer is told, which is how the directory learns of the person.
  *
  * @param detail - `presented`, `protocol`, `method`, `sessionId`, and
- *   optionally `amr`, `acr`, `client_id`, `note`, `isClient` and `sub`
+ *   optionally `amr`, `acr`, `client_id`, `application`, `note`, `isClient`
+ *   and `sub`
  * @returns the record, or null for an empty identity
  */
 function recordAuthentication(detail) {
@@ -2743,6 +3684,55 @@ function recordAuthentication(detail) {
               "record.");
     log.debug("Leaving recordAuthentication().");
     return null;
+  }
+  // A NAMESPACED FEDERATED UID KEEPS ITS '@' (#358). identityOf() splits on
+  // the last '@' so alice@a.example and a Kerberos principal share a row,
+  // and a confirm-link still wants that. A sign-in that creates
+  // `<relationship>~<subject>` has already chosen that whole string as the
+  // directory name: two partners' subjects that share a local-part are two
+  // people, and folding here would store `rel~alice` and hand the session
+  // the other entry's subject. identityKeyOf() itself is unchanged.
+  // subjectForName() looks the same name up whole before it folds, or the
+  // session would miss the entry this call asks the directory for.
+  if (info.federation) {
+    const form = identity.form;
+    const tilde = form.indexOf('~');
+    const at = form.indexOf('@');
+    if (tilde > 0 && at > tilde) {
+      identity.key = form;
+      identity.name = form;
+      identity.realm = '';
+    }
+  }
+  // A LIVE PSEUDONYM IS THIS PERSON (#644). identityOf() stays a pure fold:
+  // this file is on the hot path, and ldap_server.js requires it while that
+  // module is still loading. The directory is asked only when it is already
+  // loaded, and only for the whole presented string. A hit replaces the
+  // fold with the name the entry is filed under, so a sign-in of an alias
+  // does not create a second person and does not issue the alias as the
+  // username. A miss leaves the fold, which is still how an ordinary
+  // address shares a row with its local part.
+  try {
+    const resolved = require.resolve('../ldap/ldap_server');
+    const loaded = require.cache[resolved];
+    const directory = loaded && loaded.exports;
+    const presented = String(identity.form || '');
+    if (directory && typeof directory.existingUserEntry === 'function' &&
+        presented) {
+      const hit = directory.existingUserEntry(presented);
+      const filed = hit && typeof directory.personNameOf === 'function'
+        ? String(directory.personNameOf(hit) || '') : '';
+      if (filed) {
+        identity.key = filed;
+        identity.name = filed;
+        identity.realm = '';
+      }
+    }
+  } catch (e) {
+    // The authentication stands on the fold. A directory that cannot be
+    // asked is the same outcome as a name it does not hold.
+    log.debug('Caught in recordAuthentication(): ' +
+              ((e && e.message) || e));
   }
   const now = Date.now();
   const record = userRecord(identity);
@@ -2761,7 +3751,8 @@ function recordAuthentication(detail) {
   // the JWT recorder is: a throw out here would fail the request that was
   // accepting a credential, which is the tail wagging the dog. It is given the
   // NORMALISED identity rather than `presented`, so that the three spellings of
-  // one person seed one entry.
+  // one person seed one entry. A namespaced federated uid is the exception
+  // just above: its key is the name as presented, '@' included.
   // **THE DIRECTORY IS TOLD FIRST (2026-09-14)**, before the event and the
   // audit row below, where it used to be told last. A person's `sub` is their
   // entry's `entryUUID` now, so the entry an authentication creates has to
@@ -2834,7 +3825,11 @@ function recordAuthentication(detail) {
         // The attributes inside it are ALREADY MAPPED to this directory's own
         // names — federation_map.js owns that vocabulary — so nothing here or
         // in ldap_server.js has to know what a `urn:oid:` name is.
-        federation: info.federation || null
+        federation: info.federation || null,
+        // THE APPLICATION THE SIGN-IN WAS FOR (#539): an OAuth client_id or a
+        // relationship's application, where the door named one. A person
+        // this sign-in creates is given the locale policy's language for it.
+        application: String(info.application || '')
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-REG-0039') +
@@ -2845,7 +3840,7 @@ function recordAuthentication(detail) {
   // The subject, now that the entry exists: the caller's where it gave one, and
   // otherwise the directory's — '' for a client, for somebody the directory
   // declined to create, and in a process with no directory.
-  const subject = info.sub ||
+  const subject = claimText(info.sub) ||
     (record.isClient ? '' : subjectForName(identity.key));
   family.count++;
   family.methods[method] = (family.methods[method] || 0) + 1;
@@ -2862,14 +3857,17 @@ function recordAuthentication(detail) {
   record.events.push({
     at: now, protocol: protocol, method: method, presented: identity.form,
     realm: identity.realm || '', sub: subject, address: address,
-    client_id: info.client_id || '',
-    amr: (info.amr || []).join(', '), acr: info.acr || '',
-    sessionId: info.sessionId || '', note: info.note || ''
+    client_id: claimText(info.client_id),
+    amr: (info.amr || []).join(', '), acr: claimText(info.acr),
+    sessionId: claimText(info.sessionId), note: claimText(info.note)
   });
   if (record.events.length > MAX_EVENTS_PER_USER) {
     record.events.shift();
     record.eventsForgotten++;
   }
+  // Every edit above happened in place; this is what reaches the store
+  // (#999, `touchUserRecord()`).
+  touchUserRecord(record);
   // AT info ON THE FIRST AUTHENTICATION AND EVERY HUNDREDTH (2026-09-21),
   // at debug otherwise. It was info on every one, and a SCIM caller
   // authenticates on every request: a bulk load of five thousand people wrote
@@ -2909,6 +3907,16 @@ function recordAuthentication(detail) {
       realm: identity.realm || '',
       sub: subject,
       client_id: info.client_id || '',
+      // THE APPLICATION THE DOOR NAMED (#954), beside client_id. An
+      // authorization-code sign-in authenticates in authn, which passes
+      // `application` and not `client_id`, so a row without this field does
+      // not name the application the person was signing in to. Empty is
+      // dropped by detailOf(). It is the twelfth key, which is the cap, so
+      // nothing further is added here. It is NOT handed to
+      // applications.recordAuthentication() below: that call counts, and
+      // the protocols that already know the identifier call seen()
+      // themselves. Counting this name as well would count one sign-in twice.
+      application: String(info.application || ''),
       amr: (info.amr || []).join(', '),
       acr: info.acr || '',
       sessionId: info.sessionId || '',
@@ -2954,6 +3962,78 @@ function recordAuthentication(detail) {
             " user(s) known.");
   log.debug("Leaving recordAuthentication().");
   return record;
+}
+
+// ---------------------------------------------------------------------------
+// A CREDENTIAL THAT WAS REFUSED (#954).
+//
+// The acceptance above is "a credential was accepted", and it counts. A
+// wrong password, a rate limit and a second factor that did not verify are
+// attempts too, and they are not acceptances: recording them there would
+// put a refusal on /admin/users as a sign-in and increment the application's
+// authentication counter. This writes the audit row and nothing else. No
+// user record is created, so a name that has never signed in does not appear
+// on /admin/users because somebody guessed at it.
+//
+// The note is a reason token (`wrong-password`), never the credential. The
+// caller is responsible for that; this function copies `note` and does not
+// read a password field because it is not given one.
+// ---------------------------------------------------------------------------
+/**
+ * Records that a presented credential was refused. Increments nothing.
+ *
+ * @param detail - `presented`, `protocol`, `method`, `errorCode`, and
+ *   optionally `client_id`, `application`, `amr`, `acr`, `sessionId`,
+ *   `isClient`, `sub`, `note`, `channel` and `address`
+ * @returns the audit row, or null when there was no identity
+ */
+function recordRefusedAuthentication(detail) {
+  log.debug("Entering recordRefusedAuthentication().");
+  const info = detail || {};
+  const identity = identityOf(info.presented);
+  if (!identity.key) {
+    log.debug("Leaving recordRefusedAuthentication(). No identity.");
+    return null;
+  }
+  const protocol = String(info.protocol || 'unstated');
+  const method = String(info.method || 'unstated');
+  // A lookup, not a create: subjectForName returns '' when the directory
+  // holds nobody of this name, and it does not write an entry.
+  const subject = info.sub ||
+    (info.isClient ? '' : subjectForName(identity.key));
+  // An empty address is omitted so the audit row takes the ambient source,
+  // the same way an acceptance with no address does.
+  const address = info.address ? String(info.address) : '';
+  const row = audit.audit({
+    action: 'authentication.refused',
+    // error-code: none — the caller names the code; this row copies it
+    outcome: 'refused',
+    errorCode: info.errorCode || '',
+    actor: identity.key,
+    actorForm: identity.form,
+    protocol: protocol,
+    channel: info.channel || 'http',
+    address: address,
+    target: info.sessionId || '',
+    summary: identity.key + ' was refused through ' + protocol + ' (' +
+             method + ')',
+    detail: {
+      method: method,
+      presented: identity.form,
+      realm: identity.realm || '',
+      sub: subject,
+      client_id: info.client_id || '',
+      application: String(info.application || ''),
+      amr: Array.isArray(info.amr) ? info.amr.join(', ') :
+                                     String(info.amr || ''),
+      acr: info.acr || '',
+      sessionId: info.sessionId || '',
+      isClient: !!info.isClient,
+      note: info.note || ''
+    }
+  });
+  log.debug("Leaving recordRefusedAuthentication().");
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -3013,6 +4093,13 @@ const RESERVED_JWT_CLAIMS = [
   'status'
 ];
 
+// Names a GNAP access-token JWT sets itself, beside the JWT list (#1250).
+// RFC 9635 section 3.2.1 leaves the token opaque to the client; the payload
+// a resource server verifies already carries these, and a configured row of
+// the same name would be overwritten at the mint or, worse, read as the
+// access rights. `username` is already on the JWT list. `uid` is not.
+const GNAP_RESERVED_CLAIMS = ['access', 'flags', 'label', 'grant_id'];
+
 // PER TRUST REALM, AND IT WAS NOT UNTIL 2026-08-28.
 //
 // `realms.obj(factory)` builds one of these per realm, so `CLAIM_SETS[id]` is
@@ -3030,14 +4117,16 @@ const RESERVED_JWT_CLAIMS = [
 // so one set disagreed with itself about whether it belonged to a realm.
 //
 // The LABEL and the KIND are constants and are duplicated into every
-// partition, which costs five strings per realm and keeps the table one shape:
-// splitting the metadata from the state would have been two tables to keep in
-// step, and the thing that goes wrong with two tables is a set in one and not
-// the other.
+// partition, which costs one string per set per realm and keeps the table one
+// shape: splitting the metadata from the state would have been two tables to
+// keep in step, and the thing that goes wrong with two tables is a set in one
+// and not the other.
 //
 // `CLAIM_SET_IDS` below reads `Object.keys()` off this, which the proxy
 // answers from the ambient realm's partition — every partition carries the
-// same five ids, because they come from this one factory.
+// same ids, because they come from this one factory. A row persisted before
+// a set existed is merged over the factory (`realms.obj()`'s restore), so
+// the new set keeps its empty list rather than disappearing.
 function freshClaimSets() {
   log.debug("Entering freshClaimSets().");
   log.debug("Leaving freshClaimSets().");
@@ -3047,13 +4136,28 @@ function freshClaimSets() {
     userinfo: { label: 'OIDC UserInfo response', kind: 'userinfo', claims: [] },
     saml2: { label: 'SAML 2.0 Attribute', kind: 'saml2', claims: [] },
     saml11: { label: 'SAML 1.1 Attribute (WS-Federation)', kind: 'saml11',
-              claims: [] }
+              claims: [] },
+    // THE SIXTH SET (#493, 2026-10-06): the claims a Kerberos ticket's PAC
+    // carries in PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11). Its own `kind`, so it
+    // is on none of the three pages above — it is configured under Protocols
+    // → Kerberos (`/admin/kerberos/claims`) — and its rows carry a TYPE of
+    // the four a PAC claim can have. See KERBEROS PAC CLAIMS below.
+    'kerberos-pac': { label: 'Kerberos PAC claims', kind: 'kerberos',
+                      claims: [] },
+    // THE SEVENTH SET (#1250): the claims a GNAP access-token JWT carries
+    // besides the protocol's own. Kind `gnap`, so it is on none of the pages
+    // above — an application's GNAP configuration tab draws it
+    // (`gnapClaimsAccessToken`) — and `reservedNames()` refuses the JWT list
+    // plus `GNAP_RESERVED_CLAIMS`. Groups, roles and the ticked catalogue are
+    // not part of it: `configuredJwtClaims()` reads the rows only.
+    gnap_access_token: { label: 'GNAP access token', kind: 'gnap',
+                         claims: [] }
   };
 }
 
 /**
- * The five custom claim sets, per realm: the access token, ID Token, UserInfo,
- * SAML 2.0 and SAML 1.1 sets.
+ * The seven custom claim sets, per realm: the access token, ID Token,
+ * UserInfo, SAML 2.0, SAML 1.1, Kerberos PAC and GNAP access-token sets.
  */
 const CLAIM_SETS = realms.obj(freshClaimSets,
                               { persist: 'admin_stats.claimSets' });
@@ -3080,7 +4184,7 @@ const CLAIM_SETS = realms.obj(freshClaimSets,
 //   thing is a JWT carrying `iss` and `aud` as well. Every name on that list is
 //   load-bearing in at least one of the two shapes, so the list applies whole.
 /**
- * The ids of the five claim sets.
+ * The ids of the seven claim sets.
  */
 const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 
@@ -3123,6 +4227,13 @@ const SAML_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
 const USERINFO_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
   return CLAIM_SETS[id].kind === 'userinfo';
 });
+/**
+ * The id of the Kerberos PAC claim set, configured on
+ * /admin/kerberos/claims (#493).
+ */
+const KERBEROS_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
+  return CLAIM_SETS[id].kind === 'kerberos';
+});
 
 // The default namespace a SAML 1.1 attribute gets when the admin does not name
 // one. It is the claim namespace every WS-Federation relying party already
@@ -3161,8 +4272,9 @@ let attributeResolver = null;
  * Installs the directory-attribute resolver the claim sets read; filled by
  * `claim_attributes.ts`.
  *
- * @param hooks - `jwtClaims(setId, context)` and `samlAttributes(setId,
- *   context)`
+ * @param hooks - `jwtClaims(setId, context)`, `samlAttributes(setId,
+ *   context)`, `entryAttributes(context)` (#94) and `selectedAttributes(setId)`
+ *   (#498, the Kerberos PAC set's ticked catalogue)
  */
 function setAttributeResolver(hooks) {
   log.debug("Entering setAttributeResolver().");
@@ -3439,6 +4551,10 @@ function resolvedGroupClaims(id, context) {
 function claimApplicationsOf(ctx) {
   log.debug("Entering claimApplicationsOf().");
   const out = [];
+  // The application a caller resolved (#483), ahead of the audience values.
+  if (ctx.application) {
+    out.push(String(ctx.application));
+  }
   String(ctx.audience || '').split(/\s+/).filter(Boolean)
     .forEach(function (value) {
       let found = null;
@@ -3670,28 +4786,47 @@ function recordClaimSetChange(id, set, added, removed, count, ok, errors,
 // an <Attribute>, and refusing them there would tell a caller their call will
 // fail when it will succeed.
 /**
- * Returns the names a claim set refuses: the reserved JWT claims for a JWT or
- * UserInfo set, none for a SAML set.
+ * Returns the names a claim set refuses: the reserved JWT claims for a JWT,
+ * UserInfo or GNAP set (and the GNAP payload's own names for a GNAP set),
+ * none for a SAML set.
  *
  * @param set - the claim set
  * @returns the reserved names
  */
 function reservedNames(set) {
   log.debug("Entering reservedNames().");
+  const names = (set.kind === 'jwt' || set.kind === 'userinfo')
+    ? RESERVED_JWT_CLAIMS
+    : (set.kind === 'gnap'
+      ? RESERVED_JWT_CLAIMS.concat(GNAP_RESERVED_CLAIMS) : []);
   log.debug("Leaving reservedNames().");
-  return (set.kind === 'jwt' || set.kind === 'userinfo') ? RESERVED_JWT_CLAIMS :
-          [];
+  return names;
 }
 
 // The JSON types an attribute claim's values become in a JWT (#94). A SAML
 // attribute's values are text whatever this says.
 const ATTRIBUTE_CLAIM_TYPES = ['string', 'number', 'boolean', 'json'];
 
+// THE FOUR TYPES A PAC CLAIM CAN HAVE ([MS-ADTS] 2.2.18.2's CLAIM_TYPE), as a
+// Kerberos PAC row names them (#493). Every row of that set carries one — a
+// typed row as well as an attribute row, because a PAC claim's type is part
+// of what it IS on the wire rather than a reading of its text.
+/**
+ * The types a Kerberos PAC claim row may name.
+ */
+const PAC_CLAIM_TYPES = ['string', 'int64', 'uint64', 'boolean'];
+
+// A PAC claim row's NAME: the `<name>` of `ad://ext/<name>:<hex>`, or a whole
+// claim id of that form when the operator wants a claim type an Active
+// Directory forest already defines.
+const PAC_CLAIM_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const PAC_CLAIM_ID = /^ad:\/\/ext\/[A-Za-z0-9._-]{1,128}:[0-9a-fA-F]{1,32}$/;
+
 // Validate and install a whole set at once. Returns the errors rather than
 // throwing, because the caller is a form handler that has to redisplay them.
 // THE RULES A CLAIM ROW IS HELD TO, wherever it is configured (2026-10-01):
 // lifted out of setClaimSet() when an APPLICATION grew claim sets of its own,
-// so the realm's five sets and an application's are refused for exactly the
+// so the realm's sets and an application's are refused for exactly the
 // same reasons — a reserved name, a duplicate, an attribute that may not be
 // released, a type that is not one. Returns the cleaned rows; changes
 // nothing.
@@ -3735,6 +4870,25 @@ function checkClaimEntries(id, entries) {
       return;
     }
     seen.add(name);
+    // A KERBEROS PAC ROW (#493): its name has to make a claim id, and its type
+    // is one of the four a PAC claim has.
+    const isPac = set.kind === 'kerberos';
+    const pacType = String((entry && entry.type) || 'string');
+    if (isPac && !PAC_CLAIM_NAME.test(name) && !PAC_CLAIM_ID.test(name)) {
+      errors.push('"' + name.slice(0, 140) + '" is not a PAC claim name: ' +
+                  'letters, digits, ".", "_" and "-" (it becomes ' +
+                  'ad://ext/<name>:<hex>), or a whole ad://ext/<name>:<hex> ' +
+                  'claim id.');
+      code = code || 'STS-REG-0336';
+      return;
+    }
+    if (isPac && PAC_CLAIM_TYPES.indexOf(pacType) < 0) {
+      errors.push('"' + name + '" has type "' + pacType.slice(0, 40) +
+                  '", which is not one of ' + PAC_CLAIM_TYPES.join(', ') +
+                  ' — the four types a PAC claim can have.');
+      code = code || 'STS-REG-0337';
+      return;
+    }
     // AN ATTRIBUTE CLAIM (#94): the value is a directory attribute of the
     // person the artifact is about, rather than a template. `multi` carries
     // every value; `type` (JWT and UserInfo sets) says what JSON type each
@@ -3753,7 +4907,7 @@ function checkClaimEntries(id, entries) {
         return;
       }
       const type = String((entry && entry.type) || 'string');
-      if (set.kind !== 'saml2' && set.kind !== 'saml11' &&
+      if (!isPac && set.kind !== 'saml2' && set.kind !== 'saml11' &&
           ATTRIBUTE_CLAIM_TYPES.indexOf(type) < 0) {
         errors.push('"' + name + '" has type "' + type + '", which is not ' +
                     'one of ' + ATTRIBUTE_CLAIM_TYPES.join(', ') + '.');
@@ -3769,6 +4923,21 @@ function checkClaimEntries(id, entries) {
       claim = { name: name,
                 value: String((entry && entry.value) != null ? entry.value :
                               '') };
+      // A FIXED PAC value is held to its type now, where a form can say so;
+      // one with a ${placeholder} can only be checked when it is expanded,
+      // at issuance (`pacClaimValue()`).
+      if (isPac) {
+        claim.type = pacType;
+        if (claim.value.indexOf('${') < 0 &&
+            pacClaimValue(claim.value, pacType) === null) {
+          errors.push('"' + name + '" has the value "' +
+                      claim.value.slice(0, 60) + '", which is not ' +
+                      (pacType === 'boolean' ? 'true or false'
+                                             : 'a ' + pacType) + '.');
+          code = code || 'STS-REG-0338';
+          return;
+        }
+      }
     }
     if (set.kind === 'saml2' &&
         entry.nameFormat) claim.nameFormat = String(entry.nameFormat);
@@ -3864,17 +5033,20 @@ function setClaimSet(id, entries) {
   return { ok: true, errors: [], claims: cleaned };
 }
 
-// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each of the five sets
-// may also be configured on an APPLICATION, on its OAuth / OpenID Connect
-// and SAML configuration tabs, as one JSON array of rows on its entry
+// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each set may also be
+// configured on an APPLICATION, on the configuration tab of the protocol that
+// issues it, as one JSON array of rows on its entry
 // (`APP_CLAIM_ATTRIBUTES`). At issuance they are ADDED to the realm's set and
 // WIN BY NAME — rcbj's choice: the realm's rows still go out, an
 // application's row replaces the realm's row of the same name, and an
-// application with none issues exactly what the realm does.
+// application with none issues exactly what the realm does. The GNAP set
+// (#1250) is the same rows on the GNAP tab; its JWT reads them through
+// `configuredJwtClaims()`, not `jwtClaims()`.
 //
 // WHICH APPLICATION: the one the per-application settings already answer
 // for (`applications.settingFor()`) — the OAuth `client_id` for the three
-// JSON sets, the audience (a service provider's entityID, a WS-Federation
+// JSON sets and the GNAP client instance identifier for `gnap_access_token`,
+// the audience (a service provider's entityID, a WS-Federation
 // realm) for the two SAML sets — read by identifier, then by client_id or
 // AppliesTo. The rows are held to `checkClaimEntries()` at the write; a row
 // stored by hand that fails it is dropped here with a warning rather than
@@ -3884,7 +5056,12 @@ const APP_CLAIM_ATTRIBUTES = {
   id_token: 'oauthClaimsIdToken',
   userinfo: 'oauthClaimsUserinfo',
   saml2: 'saml2CustomAttributes',
-  saml11: 'saml11CustomAttributes'
+  saml11: 'saml11CustomAttributes',
+  // #493: an application's own PAC claims, added to a SERVICE TICKET issued
+  // for one of its krb5ServicePrincipalName values.
+  'kerberos-pac': 'krb5ClaimsPac',
+  // #1250: an application's own GNAP access-token JWT claims.
+  gnap_access_token: 'gnapClaimsAccessToken'
 };
 
 /**
@@ -3907,7 +5084,10 @@ function applicationForClaims(name) {
       (typeof applications.forClientId === 'function'
         ? applications.forClientId(wanted) : null) ||
       (typeof applications.forAppliesTo === 'function'
-        ? applications.forAppliesTo(wanted) : null);
+        ? applications.forAppliesTo(wanted) : null) ||
+      // A Kerberos service principal name (#493), for the PAC set.
+      (typeof applications.forServicePrincipal === 'function'
+        ? applications.forServicePrincipal(wanted) : null);
   } catch (e) {
     log.debug("Caught in applicationForClaims(): " + ((e && e.message) || e));
     // A registry that cannot answer costs the application's rows, never the
@@ -3965,9 +5145,58 @@ function applicationClaimSet(id, application) {
   return checked.claims;
 }
 
+// WHICH APPLICATION AN ISSUANCE'S CLAIMS ARE FOR, by name: asked by the
+// typed rows below and by the directory-attribute selection
+// (`claim_attributes.ts`, #495), so the two halves of one claim set cannot
+// disagree about whose configuration is in force.
+//
+// `application` FIRST (#483): a caller that resolved the application an
+// issuance is for names it, and the strings below are only how a caller
+// that did not is looked up. WS-Trust needs it: its audience is an
+// AppliesTo URI, which an OBSERVED entry named by that very URI (the one
+// `applications.seen()` files) answers to before `forAppliesTo()` is
+// asked — so the registered application's rows were found for the first
+// token and never again.
 /**
- * Returns the claim rows in force for an issuance: the realm's set, with the
- * application's own rows added and winning by name.
+ * Names the application an issuance's claims are for: the resolved
+ * application, else the client_id for the JSON sets and the GNAP set, and
+ * the audience for the SAML ones.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the name, or '' when the context names none
+ */
+function claimApplicationNameOf(id, context) {
+  log.debug("Entering claimApplicationNameOf(). id=" + id);
+  const isSaml = id === 'saml2' || id === 'saml11';
+  const name = context
+    ? (context.application || (isSaml ? context.audience
+                                      : (context.client_id ||
+                                         context.clientId)))
+    : '';
+  log.debug("Leaving claimApplicationNameOf().");
+  return name ? String(name) : '';
+}
+
+/**
+ * Finds the application an issuance's claims are for.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the application's view, or null
+ */
+function claimApplicationOf(id, context) {
+  log.debug("Entering claimApplicationOf(). id=" + id);
+  const name = claimApplicationNameOf(id, context);
+  const found = name ? applicationForClaims(name) : null;
+  log.debug("Leaving claimApplicationOf(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
+/**
+ * Returns the claim rows in force for an issuance: the realm's set and the
+ * application's own rows, combined as the application's mode for the set
+ * says (#395) — unset, its rows are added and win by name.
  *
  * @param id - the claim set id
  * @param context - the issuance's context: `client_id` for the JSON sets,
@@ -3977,21 +5206,39 @@ function applicationClaimSet(id, application) {
 function effectiveClaimSet(id, context) {
   log.debug("Entering effectiveClaimSet(). id=" + id);
   const realmRows = claimSet(id);
-  const isSaml = id === 'saml2' || id === 'saml11';
-  const name = context
-    ? (isSaml ? context.audience : (context.client_id || context.clientId))
-    : '';
-  const own = name ? applicationClaimSet(id, String(name)) : [];
+  const name = claimApplicationNameOf(id, context);
+  const own = name ? applicationClaimSet(id, name) : [];
   if (!own.length) {
     log.debug("Leaving effectiveClaimSet(). The realm's.");
     return realmRows;
   }
-  const ownNames = own.map(function (row) { return row.name; });
+  // HOW THE TWO ARE COMBINED (#395): the application's own choice for this
+  // set, `scope_claims.ts`'s four modes over the names, the application's
+  // row winning wherever both hold one. Unset is `union`, which is what
+  // this function did before the choice existed.
+  // REQUIRED HERE, LAZILY: the KDC never reaches this line, so a process
+  // that loads this module only for Kerberos never loads it (which kept it
+  // out of the parent project's Kerberos COPY closure until #1280).
+  const scopeClaims = require('./scope_claims');
+  const mode = scopeClaims.realmModeOf(id, applicationForClaims(name)) ||
+    'union';
+  if (mode === 'realm') {
+    log.debug("Leaving effectiveClaimSet(). The realm's, as chosen.");
+    return realmRows;
+  }
+  const ownByName = {};
+  own.forEach(function (row) { ownByName[row.name] = row; });
+  const names = scopeClaims.combineNames(
+    realmRows.map(function (row) { return row.name; }),
+    own.map(function (row) { return row.name; }), mode);
   const merged = realmRows.filter(function (row) {
-    return ownNames.indexOf(row.name) < 0;
-  }).concat(own);
-  log.debug("Leaving effectiveClaimSet(). " + own.length + " of the " +
-            "application's over " + realmRows.length + " of the realm's.");
+    return names.indexOf(row.name) >= 0 && !ownByName[row.name];
+  }).concat(own.filter(function (row) {
+    return names.indexOf(row.name) >= 0;
+  }));
+  log.debug("Leaving effectiveClaimSet(). " + mode + ": " + merged.length +
+            " row(s) from " + own.length + " of the application's and " +
+            realmRows.length + " of the realm's.");
   return merged;
 }
 
@@ -4068,6 +5315,56 @@ function applyClaimRelease(out, context, what) {
   return out;
 }
 
+// The configured rows of one set, expanded into an object, with no groups,
+// roles or ticked catalogue. Called once per token from jwtClaims() and from
+// configuredJwtClaims(), so no Entering/Leaving pair — the hot-path
+// exception, stated as it requires. Those two bracket it.
+function configuredClaimObject(id, context) {
+  const out = {};
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  configured.forEach(function (claim) {
+    if (claim.attribute) {
+      const value = jwtAttributeClaimValue(entry, claim);
+      if (value !== undefined) {
+        out[claim.name] = value;
+      }
+      return;
+    }
+    out[claim.name] = typedValue(expandValue(claim.value, context));
+  });
+  return out;
+}
+
+// The configured rows only (#1250). GNAP's two JWT formats call this rather
+// than jwtClaims(), so a token does not gain the groups claim, the roles
+// claim or the ticked catalogue. Those three belong to the OAuth, OIDC and
+// SAML sets their settings name. The release policy still applies: it only
+// ever removes.
+/**
+ * Returns the configured claim rows for a set, expanded and filtered by the
+ * release policy, without groups, roles or the directory-attribute catalogue.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the claims, ready to merge under a protocol payload
+ */
+function configuredJwtClaims(id, context) {
+  log.debug("Entering configuredJwtClaims(). id=" + id);
+  const out = configuredClaimObject(id, context);
+  applyClaimRelease(out, context, 'custom claim(s)');
+  const names = Object.keys(out);
+  if (names.length) {
+    log.debug("configuredJwtClaims(): " + names.length +
+              " configured claim(s) for a " + id + ": " + names.join(', '));
+  }
+  log.debug("Leaving configuredJwtClaims(). " + names.length + " claim(s).");
+  return out;
+}
+
 // The custom claims for a JWT, expanded against this token's context and typed.
 // Returns a plain object ready to be merged into a payload — and the merge at
 // the call site is written so the protocol's own claims win, which is belt as
@@ -4120,21 +5417,9 @@ function jwtClaims(id, context) {
   const out = resolvedRoleClaims(context);
   Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
-  // The realm's set with the application's own rows over it (2026-10-01).
-  const configured = effectiveClaimSet(id, context);
-  // Read once, and only when a row needs it (#94).
-  const entry = configured.some(function (claim) { return !!claim.attribute; })
-    ? resolvedEntryAttributes(context) : null;
-  configured.forEach(function (claim) {
-    if (claim.attribute) {
-      const value = jwtAttributeClaimValue(entry, claim);
-      if (value !== undefined) {
-        out[claim.name] = value;
-      }
-      return;
-    }
-    out[claim.name] = typedValue(expandValue(claim.value, context));
-  });
+  // The configured rows over the three layers above, so a name somebody
+  // typed still wins (configuredClaimObject(), #1250's extraction).
+  Object.assign(out, configuredClaimObject(id, context));
   // ---------------------------------------------------------------------
   // AND THE FOURTH LAYER, WHICH ONLY EVER REMOVES: the federation release
   // policy for this audience, if there is one.
@@ -4314,13 +5599,228 @@ function tokenStateOf(record, nowMs) {
  *
  * @returns the token rows
  */
-function tokenList() {
+// The token records filed under a person (#820 part 3): by every name they
+// were given and by their subject, through the register's index — on demand
+// the register is not held whole. Each record once, and only records whose
+// holder IS that person (`holderKeyOf()`), so a lookup may be wide.
+function recordsHeldBy(name) {
+  log.debug("Entering recordsHeldBy().");
+  const wanted = String(name || '');
+  const key = identityKeyOf(wanted);
+  // READ ALREADY, ASYNCHRONOUSLY (#820): `userRowsOfAsync()` hands in the
+  // records its index questions answered, and only the filter is left.
+  if (preloadedHeld && preloadedHeld.has(wanted)) {
+    const kept = preloadedHeld.get(wanted).filter(function (record) {
+      return !!record && holderKeyOf(record.username, record.sub) === key;
+    });
+    log.debug("Leaving recordsHeldBy(). " + kept.length + ", read already.");
+    return kept;
+  }
+  const names = Array.from(new Set([wanted, key].filter(Boolean)));
+  let subject = '';
+  try {
+    subject = String(subjectForName(key) || '');
+  } catch (e) {
+    log.debug("Caught in recordsHeldBy(): " + ((e && e.message) || e));
+    subject = '';
+  }
+  const keys = new Set();
+  names.forEach(function (one) {
+    tokens.lookup('u:' + one).forEach(function (k) {
+      keys.add(k);
+    });
+  });
+  if (subject) {
+    tokens.lookup('s:' + subject).forEach(function (k) {
+      keys.add(k);
+    });
+  }
+  const out = [];
+  keys.forEach(function (k) {
+    const record = tokens.get(k);
+    if (record && holderKeyOf(record.username, record.sub) === key) {
+      out.push(record);
+    }
+  });
+  log.debug("Leaving recordsHeldBy(). " + out.length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// A PAGE OF PEOPLE'S OWN ROWS, READ TOGETHER (#820, 2026-10-22).
+//
+// `/admin/users` puts each shown row's own token counts on it while the
+// register is on demand, and asked `userRow()` per row: two or three index
+// questions and a read per record (`recordsHeldBy()`), and the subjects of
+// every held token resolved again, each a SYNCHRONOUS round trip in a
+// windowed process — fifty rows' worth charged to one request's store
+// budget (STS-LDAP-0175 on 8081, beside the credentials the same rows read).
+// This asks the index questions of every row at once on the read pool
+// (`lookupEntriesAsync()`, which answers what `lookup()` and `get()`
+// would), resolves every subject the answers name in one asynchronous
+// question, and then builds the rows as `userRow()` builds one — the same
+// builder, handed the records (`preloadedHeld`). The person's OWN subject
+// is one `subjectsForNamesAsync()` of the rows' identity keys (#881), not
+// `subjectForName()` per row and not a warm of `uid=<name>`: a certificate
+// DN, a DID, a SPIFFE ID and a name that is not the uid all miss that warm
+// and were still one blocking read each. Held whole, there is no store to
+// ask, and only the subjects are asked asynchronously.
+// ---------------------------------------------------------------------------
+let preloadedHeld = null;
+// The users page's register entries per shown key (#1001), the same way.
+let preloadedUserEntries = null;
+
+// The candidate records filed under one person by the register's index —
+// by each name and by the subject — read asynchronously. Unfiltered: the
+// holder test resolves subjects, so it is made where they are resolved.
+// `resolvedSubject` is that subject's answer when the caller already asked
+// for the page (#881). Undefined keeps today's `subjectForName()`; a
+// string, including '', is the answer and is not asked again.
+async function recordsHeldByAsync(name, resolvedSubject) {
+  log.debug("Entering recordsHeldByAsync().");
+  const wanted = String(name || '');
+  const key = identityKeyOf(wanted);
+  const indexKeys = Array.from(new Set([wanted, key].filter(Boolean)))
+    .map(function (one) {
+      return 'u:' + one;
+    });
+  let subject = '';
+  if (resolvedSubject === undefined) {
+    try {
+      subject = String(subjectForName(key) || '');
+    } catch (e) {
+      log.debug("Caught in recordsHeldByAsync(): " +
+                ((e && e.message) || e));
+      subject = '';
+    }
+  } else {
+    subject = String(resolvedSubject || '');
+  }
+  if (subject) {
+    indexKeys.push('s:' + subject);
+  }
+  const answers = await Promise.all(indexKeys.map(function (indexKey) {
+    return tokens.lookupEntriesAsync(indexKey);
+  }));
+  const byKey = new Map();
+  answers.forEach(function (entries) {
+    (entries || []).forEach(function (entry) {
+      if (entry && entry.value && !byKey.has(entry.key)) {
+        byKey.set(entry.key, entry.value);
+      }
+    });
+  });
+  log.debug("Leaving recordsHeldByAsync(). " + byKey.size + " candidate(s).");
+  return Array.from(byKey.values());
+}
+
+/**
+ * `userRow()` for several keys at once, the store asked asynchronously.
+ *
+ * @param keys - identity keys
+ * @returns a promise of one row per key, as `userRow()` answers it, or null
+ */
+async function userRowsOfAsync(keys) {
+  log.debug("Entering userRowsOfAsync(). " + (keys || []).length +
+            " key(s).");
+  const list = (keys || []).map(function (key) {
+    return String(key == null ? '' : key);
+  });
+  let held = null;
+  const also = [];
+  // THE REGISTER ON DEMAND (#1001): each shown row's register entries —
+  // every origin's — read together on the read pool rather than one
+  // synchronous index read per row inside the request.
+  let entries = null;
+  if (users.onDemandLive() && list.length) {
+    const answers = await Promise.all(list.map(function (key) {
+      return users.lookupEntriesAsync(key).catch(function (e) {
+        log.debug("Caught in userRowsOfAsync(): " + ((e && e.message) || e));
+        return null;
+      });
+    }));
+    entries = new Map();
+    list.forEach(function (key, i) {
+      if (answers[i]) {
+        entries.set(key, answers[i]);
+      }
+    });
+  }
+  if (tokens.onDemandLive() && list.length) {
+    // THE ROW'S OWN SUBJECT, ASKED WITH THE OTHERS (#881). The key is the
+    // one `userRow()` would hand `subjectForName()` — folded here, because
+    // the batch itself tries the whole string first and a page of identity
+    // keys has already decided the fold. A failure is still a page: the
+    // u: tokens remain and the s: ones are absent for this draw.
+    const folded = list.map(function (key) {
+      return identityKeyOf(key);
+    });
+    let subjects = [];
+    try {
+      subjects = await subjectsForNamesAsync(folded);
+    } catch (e) {
+      log.debug("Caught in userRowsOfAsync(): " +
+                ((e && e.message) || e));
+      subjects = folded.map(function () {
+        return '';
+      });
+    }
+    if (!Array.isArray(subjects)) {
+      subjects = [];
+    }
+    const answers = await Promise.all(list.map(function (key, i) {
+      const one = subjects.length > i ? subjects[i] : '';
+      return recordsHeldByAsync(key, one);
+    }));
+    held = new Map();
+    list.forEach(function (key, i) {
+      held.set(key, answers[i]);
+      answers[i].forEach(function (record) {
+        also.push(record.sub);
+      });
+    });
+  }
+  const rows = await withSubjectsResolvedAsync(function () {
+    preloadedHeld = held;
+    preloadedUserEntries = entries;
+    try {
+      return list.map(function (key) {
+        return buildUserRowsResolved(key)[0] || null;
+      });
+    } finally {
+      preloadedHeld = null;
+      preloadedUserEntries = null;
+    }
+  }, also);
+  log.debug("Leaving userRowsOfAsync().");
+  return rows;
+}
+
+/**
+ * Every token record, newest first, with its state; or, given a person,
+ * theirs alone — which, on demand (#820 part 3), is the only complete
+ * answer: the whole list is what this process holds.
+ *
+ * @param holder - a person's name, or nothing for every record held
+ * @returns the records
+ */
+function tokenList(holder) {
   log.debug("Entering tokenList().");
   const nowMs = Date.now();
   const out = [];
-  tokens.forEach(function (record) {
-    out.push(Object.assign({ state: tokenStateOf(record, nowMs) }, record));
-  });
+  const shape = function (record) {
+    const state = tokenStateOf(record, nowMs);
+    // Revoked in `revokedJtis` and not in the record: a token superseded on
+    // use, which `revoke()` does not write back (#820).
+    out.push(Object.assign({ state: state }, record,
+                           state === 'revoked' && !record.revoked
+                             ? { revoked: true } : {}));
+  };
+  if (holder) {
+    recordsHeldBy(holder).forEach(shape);
+  } else {
+    tokens.forEach(shape);
+  }
   // Newest first: the token somebody is debugging is the one they just got.
   out.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   log.debug("Leaving tokenList(). " + out.length + " token(s).");
@@ -4360,12 +5860,21 @@ function holdsLiveIssuance(username, sub) {
   }
   const nowMs = Date.now();
   let live = false;
-  tokens.forEach(function (record) {
-    if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
+  // THE RECORDS FILED UNDER THE PERSON (#766), not the whole register: the
+  // index `tokens` declares holds every record by `username` and by `sub`,
+  // and the test below is the walk's, unchanged.
+  const candidates = new Set((name ? tokens.lookup('u:' + name) : [])
+    .concat(subject ? tokens.lookup('s:' + subject) : []));
+  candidates.forEach(function (key) {
+    const record = tokens.get(key);
+    if (!record || live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
       return;
     }
-    const theirs = (name && record.username === name) ||
-                   (subject && record.sub === subject);
+    // An application's own token (#221 P5) is filed under its client_id,
+    // and is not a person's of the same name.
+    const theirs = !applicationOfToken(record) &&
+                   ((name && record.username === name) ||
+                    (subject && record.sub === subject));
     const state = theirs ? tokenStateOf(record, nowMs) : '';
     if (state === 'valid' || state === 'no expiry stated') {
       live = true;
@@ -4389,6 +5898,317 @@ function holdsLiveIssuance(username, sub) {
 }
 
 // ---------------------------------------------------------------------------
+// KERBEROS PAC CLAIMS (#493, 2026-10-06): the sixth claim set, as the claims
+// of a ticket's PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11, [MS-ADTS] 2.2.18).
+//
+// rcbj's four decisions, and what each means here:
+//
+//  1. **The claims come from this set**, `kerberos-pac`, configured on its own
+//     page under Protocols → Kerberos and held to checkClaimEntries() like the
+//     other five. An APPLICATION may add rows of its own (`krb5ClaimsPac`, the
+//     2026-10-01 pattern), and those are applied when the KDC builds a
+//     SERVICE TICKET for one of its service principal names. A TGT carries the
+//     realm's set alone; a service ticket carries what its TGT carried with
+//     the application's rows added and winning by name — the KDC does that
+//     merge (`kerberos/krb5_kdc.js`, claimsForTicket()), with
+//     kerberosApplicationPacClaims() below as its input.
+//  2. **The claim id is `ad://ext/<name>:<hex>`**, Active Directory's form for
+//     a claim type it defines. AD picks the hex at random when a claim type is
+//     created; here it is DERIVED, so every node, every restart and every
+//     realm names a claim the same way: the first sixteen hex digits (64
+//     bits) of SHA-256 over the UTF-8 name. Realm-independent on purpose — a
+//     service reading a PAC re-signed across a trust sees the same id for the
+//     same name. A row whose name is ALREADY a whole `ad://ext/…:…` id is used
+//     as written, for a claim type a real forest already defines.
+//  3. **Roles go as claims only**: the roles claim (`roles.claimName`, the
+//     person's realm-wide roles) is a STRING claim under the rows, and nothing
+//     is added to the logon information's extraSids.
+//  4. **Never compressed** — the codec does not compress at all.
+//
+// A value that cannot be its row's type at issuance — a `${placeholder}` or a
+// directory value that is not an integer — leaves THAT claim out, said once
+// at warn with STS-KRB-0200; it never costs the ticket.
+//
+// **THE TICKED CATALOGUE (#498, 2026-10-06)** is the set's other half, as on
+// the other five: `claim_attributes.ts`'s `kerberos-pac` selection, nothing
+// ticked on a fresh start, read through this slot's `selectedAttributes`
+// member (the cycle rule 2 exists for forbids the require). rcbj's rules:
+//
+//  * each ticked attribute PRESENT ON THE PERSON'S ENTRY becomes a claim —
+//    the directory only, never the persona the JWT sets fall back to, as an
+//    attribute row reads it (#94) — named by its canonical catalogue spelling,
+//    so its id is `ad://ext/<attribute>:<hex>` derived exactly as a row's;
+//  * type STRING, EVERY value of a multi-valued attribute, source type AD;
+//  * a set's own ROW, and the roles claim the KDC writes itself, are never
+//    shadowed: a ticked attribute whose claim id one of them already holds
+//    adds nothing. So the precedence is roles (unless a row of its name
+//    replaces it, #493), rows, then the catalogue;
+//  * a TGT carries them (kerberosPacClaims()), a service ticket by the KDC's
+//    carry and override rules, and they count toward its 64 KiB cap. An
+//    application has no selection of its own for this set.
+// ---------------------------------------------------------------------------
+
+// One value as a PAC claim of `type`: a string for `string`, a decimal string
+// for the two integers (exact beyond 2^53), true/false for `boolean` — or null
+// when it is not one. Once per value while a ticket is built: the hot-path
+// exception, so no Entering/Leaving pair.
+/**
+ * Reads one value as a PAC claim value of a type, or null when it is not one.
+ *
+ * @param value - the value, as configured or read off the directory
+ * @param type - `string`, `int64`, `uint64` or `boolean`
+ * @returns the value in the codec's form, or null
+ */
+function pacClaimValue(value, type) {
+  const text = String(value == null ? '' : value).trim();
+  if (type === 'boolean') {
+    const lower = text.toLowerCase();
+    return lower === 'true' ? true : (lower === 'false' ? false : null);
+  }
+  if (type === 'int64' || type === 'uint64') {
+    if (!/^-?\d{1,20}$/.test(text)) {
+      return null;
+    }
+    const big = BigInt(text);
+    const min = type === 'int64' ? -(BigInt(1) << BigInt(63)) : BigInt(0);
+    const max = type === 'int64' ? (BigInt(1) << BigInt(63)) - BigInt(1)
+                                 : (BigInt(1) << BigInt(64)) - BigInt(1);
+    return big < min || big > max ? null : big.toString();
+  }
+  // A [string] LPWSTR cannot carry a NUL, and an empty value says nothing.
+  const raw = String(value == null ? '' : value);
+  return raw === '' || raw.indexOf('\u0000') >= 0 ? null : raw;
+}
+
+/**
+ * Returns the PAC claim id a row's name stands for: the name itself when it
+ * is already an `ad://ext/<name>:<hex>` id, and otherwise
+ * `ad://ext/<name>:<hex>` with the hex the first 64 bits of SHA-256 over the
+ * UTF-8 name.
+ *
+ * @param name - the row's name
+ * @returns the claim id
+ */
+function pacClaimId(name) {
+  log.debug("Entering pacClaimId().");
+  const text = String(name || '');
+  if (PAC_CLAIM_ID.test(text)) {
+    log.debug("Leaving pacClaimId(). Already an id.");
+    return text;
+  }
+  const hex = stsCrypto.sha256Hex(Buffer.from(text, 'utf8')).slice(0, 16);
+  log.debug("Leaving pacClaimId().");
+  return 'ad://ext/' + text + ':' + hex;
+}
+
+// The rows of the PAC set, turned into claims for one person: each row's
+// values typed, the ones that are not their type left out (and named), the
+// roles claim under them when `withRoles`. Later rows replace earlier ones of
+// the same NAME, which is how an application's rows win when the caller
+// passes the merged list.
+function pacClaimsFromRows(rows, context, withRoles, attributes) {
+  log.debug("Entering pacClaimsFromRows(). " + rows.length + " row(s).");
+  const ctx = context || {};
+  const ticked = attributes || [];
+  const byName = new Map();
+  const dropped = [];
+  if (withRoles) {
+    const roleClaim = resolvedRoleClaims(ctx);
+    Object.keys(roleClaim).forEach(function (name) {
+      const values = [].concat(roleClaim[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+      if (values.length && (PAC_CLAIM_NAME.test(name) ||
+                            PAC_CLAIM_ID.test(name))) {
+        byName.set(name, { name: name, id: pacClaimId(name), type: 'string',
+                           values: values, from: 'roles' });
+      }
+    });
+  }
+  const entry = ticked.length || rows.some(function (row) {
+    return !!row.attribute;
+  }) ? resolvedEntryAttributes(ctx) : null;
+  rows.forEach(function (row) {
+    const type = row.type || 'string';
+    let raw;
+    if (row.attribute) {
+      raw = attributeValuesOf(entry, row.attribute);
+      if (!row.multi) {
+        raw = raw.slice(0, 1);
+      }
+      if (!raw.length) {
+        // The entry has none: the row adds nothing (#94's rule), and a lower
+        // layer of the same name still answers.
+        return;
+      }
+    } else {
+      raw = [expandValue(row.value, ctx)];
+    }
+    const values = raw.map(function (one) {
+      return pacClaimValue(one, type);
+    });
+    if (values.some(function (one) { return one === null; })) {
+      dropped.push(row.name);
+      return;
+    }
+    byName.set(row.name, { name: row.name, id: pacClaimId(row.name),
+                           type: type, values: values,
+                           from: row.attribute ? 'attribute' : 'value' });
+  });
+  // THE TICKED CATALOGUE (#498), UNDER everything above: a claim id a row or
+  // the roles claim already holds is theirs (see the header).
+  const taken = new Set(Array.from(byName.values()).map(function (claim) {
+    return claim.id;
+  }));
+  ticked.forEach(function (attribute) {
+    const claim = pacCatalogueClaim(entry, attribute);
+    if (!claim || taken.has(claim.id)) {
+      return;
+    }
+    if (claim.dropped) {
+      dropped.push(attribute);
+      return;
+    }
+    taken.add(claim.id);
+    byName.set(attribute, claim);
+  });
+  if (dropped.length) {
+    log.warn(errorCodes.tag('STS-KRB-0200') + 'krb5: the PAC claim(s) ' +
+             dropped.join(', ') + ' for "' + String(ctx.username || '') +
+             '" have a value that is not their type, and are left out of ' +
+             'the ticket. The ticket is issued with the rest.');
+  }
+  const out = Array.from(byName.values());
+  log.debug("Leaving pacClaimsFromRows(). " + out.length + " claim(s).");
+  return out;
+}
+
+// One ticked catalogue attribute as a PAC claim (#498): every value on the
+// entry, as STRING; null when the entry has none (it adds nothing), and
+// `dropped` when a value cannot be a PAC string (a NUL). Once per ticked
+// attribute while a ticket is built: the hot-path exception, so no
+// Entering/Leaving pair.
+function pacCatalogueClaim(entry, attribute) {
+  const name = String(attribute || '');
+  if (!PAC_CLAIM_NAME.test(name)) {
+    return null;
+  }
+  const raw = attributeValuesOf(entry, name);
+  if (!raw.length) {
+    return null;
+  }
+  const values = raw.map(function (one) {
+    return pacClaimValue(one, 'string');
+  });
+  const claim = { name: name, id: pacClaimId(name), type: 'string',
+                  values: values, from: 'catalogue' };
+  if (values.some(function (one) { return one === null; })) {
+    claim.dropped = true;
+  }
+  return claim;
+}
+
+// The realm's ticked catalogue attributes for a set, through the slot's
+// `selectedAttributes` member (#498), canonically spelled; none without a
+// resolver. Wrapped for resolvedJwtClaims()'s reason: a selection that cannot
+// be read costs those claims, never the ticket.
+function resolvedSelection(id) {
+  log.debug("Entering resolvedSelection(). " + id);
+  if (!attributeResolver ||
+      typeof attributeResolver.selectedAttributes !== 'function') {
+    log.debug("Leaving resolvedSelection(). No resolver.");
+    return [];
+  }
+  try {
+    const names = [].concat(attributeResolver.selectedAttributes(id) || [])
+      .map(String);
+    log.debug("Leaving resolvedSelection(). " + names.length + ".");
+    return names;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw reading the ' + id +
+              ' selection and was ignored; the artifact is issued without ' +
+              'its ticked attributes: ' + e.message);
+    log.debug("Leaving resolvedSelection(). Threw.");
+    return [];
+  }
+}
+
+/**
+ * Returns what each named catalogue attribute would be as a PAC claim for one
+ * person (#498) — the console's and the API's table beside the checkboxes,
+ * built by the function a ticket is.
+ *
+ * @param context - `username`
+ * @param names - the catalogue attribute names, canonically spelled
+ * @returns `{ entryFound, byLdap: { <lower-cased name>: { claimId, values,
+ *   value, source } } }`, an attribute the entry lacks absent
+ */
+function kerberosPacAttributeValues(context, names) {
+  log.debug("Entering kerberosPacAttributeValues().");
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  const entry = resolvedEntryAttributes(ctx);
+  const byLdap = {};
+  (names || []).forEach(function (name) {
+    const claim = pacCatalogueClaim(entry, name);
+    if (claim && !claim.dropped) {
+      byLdap[String(name).toLowerCase()] = {
+        claimId: claim.id, values: claim.values,
+        value: claim.values.join(', '), source: 'directory' };
+    }
+  });
+  log.debug("Leaving kerberosPacAttributeValues(). " +
+            Object.keys(byLdap).length + ".");
+  return { entryFound: !!entry, byLdap: byLdap };
+}
+
+/**
+ * Returns the claims a person's TGT carries in its PAC: the realm's
+ * `kerberos-pac` set, with the person's realm-wide roles under it as a
+ * string claim (rcbj's decision 3 on #493), and the set's ticked catalogue
+ * attributes under both (#498).
+ *
+ * @param context - `username` (the person), and nothing else is needed
+ * @returns `[{ name, id, type, values, from }]`, empty for none
+ */
+function kerberosPacClaims(context) {
+  log.debug("Entering kerberosPacClaims().");
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  // No application: a TGT is for the KDC, and its roles are the realm-wide
+  // ones (the roles of one application are not this person's in general).
+  delete ctx.application;
+  const out = pacClaimsFromRows(claimSet('kerberos-pac'), ctx, true,
+                                resolvedSelection('kerberos-pac'));
+  log.debug("Leaving kerberosPacClaims(). " + out.length + " claim(s).");
+  return out;
+}
+
+/**
+ * Returns an application's OWN PAC claims for a person — the rows on its
+ * `krb5ClaimsPac`, typed — which the KDC adds to a service ticket for one of
+ * its service principal names, winning by name over what the TGT carried.
+ *
+ * @param application - the application's identifier or service principal
+ *   name, or its view
+ * @param context - `username`
+ * @returns `[{ name, id, type, values, from }]`, empty for none
+ */
+function kerberosApplicationPacClaims(application, context) {
+  log.debug("Entering kerberosApplicationPacClaims().");
+  const rows = applicationClaimSet('kerberos-pac', application);
+  if (!rows.length) {
+    log.debug("Leaving kerberosApplicationPacClaims(). None.");
+    return [];
+  }
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  const out = pacClaimsFromRows(rows, ctx, false);
+  log.debug("Leaving kerberosApplicationPacClaims(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // WHO HOLDS SOMETHING LIVE THAT A CONFIGURATION CHANGE MOVES (#238).
 //
 // holdsLiveIssuance() above answers the question for ONE person, which is
@@ -4401,16 +6221,44 @@ function holdsLiveIssuance(username, sub) {
 //
 // Access and ID Tokens, and SAML assertions: the three kinds whose CLAIMS a
 // relying party holds. A refresh token carries none of them — the tokens it
-// mints next are built afresh — and a token with no person behind it (a
-// client_credentials grant) names an application, whose subject waits on
-// #221. One walk of each register, in the ambient realm.
+// mints next are built afresh. One walk of each register, in the ambient
+// realm.
+//
+// **AN APPLICATION'S OWN TOKEN IS A HOLDER OF ITS OWN (#221 P5).** A
+// client_credentials token has no person behind it, and is recorded under its
+// client (recordToken() above files `username` as the client_id). Until #221
+// it was listed here as though that client_id were a person, and the fan-out
+// sent an `iss_sub` "user" nobody had. It is listed under `application:` and
+// the client_id now, with `application` set on the row and on what `match`
+// sees, so `ssf.ts` names the application (`applicationClaimsEmit()`).
 // ---------------------------------------------------------------------------
 const SET_OF_KIND = { access_token: 'access_token', id_token: 'id_token',
                       'SAML 2.0': 'saml2', 'SAML 1.1': 'saml11' };
 
+// The application a token record is an application's OWN token for: the
+// client of a client_credentials grant, or '' for a token with a person
+// behind it (#221 P5).
+/**
+ * Returns the application a token is that application's own token for (a
+ * client_credentials grant's client), or '' for a person's token.
+ *
+ * @param record - a token record
+ * @returns the client_id, or ''
+ */
+function applicationOfToken(record) {
+  log.debug("Entering applicationOfToken().");
+  const one = record || {};
+  const out = one.grant === 'client_credentials'
+    ? String(one.client_id || one.username || '') : '';
+  log.debug("Leaving applicationOfToken(). " + (out || '(a person\'s)'));
+  return out;
+}
+
 /**
  * Lists every person holding a live access token, ID Token or SAML assertion,
- * each with the newest such artifact and its claim set.
+ * each with the newest such artifact and its claim set — and every
+ * application holding a live token of its own (client_credentials), as a row
+ * with `application` set and no `username`.
  *
  * @param match - a predicate over the artifacts to consider; all when omitted
  * @returns the bearers
@@ -4429,7 +6277,22 @@ function liveClaimBearers(match) {
                              claimSet: fromSet, at: at });
     }
   };
-  tokens.forEach(function (record) {
+  // Keyed apart from every person: a username cannot carry the prefix's
+  // NUL, so an application and a person of the same name are two holders.
+  const keepApplication = function (application, record, fromSet, at) {
+    log.debug("Entering keepApplication(). " + application);
+    const key = '\u0000application:' + application;
+    const held = newest.get(key);
+    if (!held || at > held.at) {
+      newest.set(key, { username: '', sub: '', application: application,
+                        record: record, claimSet: fromSet, at: at });
+    }
+    log.debug("Leaving keepApplication().");
+  };
+  // EVERY RECORD, held or not (#820 part 3): a claim reshaped reaches every
+  // live bearer, and on demand `forEach` would see only the recent ones.
+  // A walk of the store, for a configuration change, which is rare.
+  tokens.scan(function (record) {
     const fromSet = SET_OF_KIND[record.kind];
     if (!fromSet || !record.username) {
       return;
@@ -4438,15 +6301,27 @@ function liveClaimBearers(match) {
     if (state !== 'valid' && state !== 'no expiry stated') {
       return;
     }
-    if (!accept(Object.assign({}, record, { claimSet: fromSet }))) {
+    const application = applicationOfToken(record);
+    if (!accept(Object.assign({}, record, { claimSet: fromSet,
+                                            application: application }))) {
+      return;
+    }
+    if (application) {
+      keepApplication(application, record, fromSet,
+                      Number(record.iat || 0) * 1000);
       return;
     }
     keep(String(record.username), String(record.sub || ''), record, fromSet,
          Number(record.iat || 0) * 1000);
   });
   allArtifacts().forEach(function (one) {
-    const fromSet = SET_OF_KIND[one.kind];
-    if (!fromSet || !one.subject) {
+    // A Kerberos ticket is a holder only when its PAC carried claims from the
+    // PAC set (#493): recordTicket() files `claimSet` and the person's
+    // `username` (its `subject` is a principal, name@REALM) on that row alone.
+    const fromSet = SET_OF_KIND[one.kind] ||
+      (one.claimSet === 'kerberos-pac' ? 'kerberos-pac' : '');
+    const holder = fromSet === 'kerberos-pac' ? one.username : one.subject;
+    if (!fromSet || !holder) {
       return;
     }
     const state = artifactStateOf(withRevocation(one), nowMs);
@@ -4454,13 +6329,13 @@ function liveClaimBearers(match) {
       return;
     }
     const shaped = { claimSet: fromSet, kind: one.kind,
-                     username: String(one.subject),
-                     audience: String(one.audience || ''),
+                     username: String(holder),
+                     audience: String(one.audience || one.service || ''),
                      client_id: String(one.audience || ''), scope: '' };
     if (!accept(shaped)) {
       return;
     }
-    keep(String(one.subject), '', shaped, fromSet,
+    keep(String(holder), '', shaped, fromSet,
          Number(one.issuedAt || 0));
   });
   const out = Array.from(newest.values());
@@ -4486,13 +6361,29 @@ function liveClaimBearers(match) {
 function claimValuesFor(setId, record, names) {
   log.debug("Entering claimValuesFor(). set=" + setId);
   const held = record || {};
-  const context = { username: String(held.username || ''),
-                    subject: String(held.username || ''),
+  // An application's own token (#221 P5) is built for no person: its
+  // claims are what an issuance with no username would carry — the
+  // application's roles among them (resolvedRoleClaims()).
+  const person = applicationOfToken(held) ? '' : String(held.username || '');
+  const context = { username: person,
+                    subject: person,
                     sub: String(held.sub || ''),
                     client_id: String(held.client_id || ''),
                     audience: String(held.audience || '') };
   const out = {};
-  if (setId === 'saml2' || setId === 'saml11') {
+  if (setId === 'kerberos-pac') {
+    // What the person's next TGT would carry (#493): a ticket already issued
+    // carries the old claims until it expires, which is what the event says.
+    const claims = kerberosPacClaims(context);
+    (names || []).forEach(function (name) {
+      const found = claims.filter(function (one) {
+        return one.name === name;
+      })[0];
+      out[name] = found ? (found.values.length === 1 ? found.values[0]
+                                                     : found.values.slice(0))
+                        : null;
+    });
+  } else if (setId === 'saml2' || setId === 'saml11') {
     const attributes = samlAttributes(setId, context);
     (names || []).forEach(function (name) {
       const found = attributes.filter(function (attribute) {
@@ -4533,7 +6424,9 @@ function claimNamesFor(setId, username) {
   log.debug("Entering claimNamesFor(). set=" + setId);
   const context = { username: String(username || ''),
                     subject: String(username || '') };
-  const out = (setId === 'saml2' || setId === 'saml11')
+  const out = setId === 'kerberos-pac'
+    ? kerberosPacClaims(context).map(function (claim) { return claim.name; })
+    : (setId === 'saml2' || setId === 'saml11')
     ? samlAttributes(setId, context).map(function (attribute) {
       return attribute.name;
     })
@@ -4935,11 +6828,17 @@ ISSUED_FAMILIES.forEach(function (entry) {
  *
  * @returns the rows
  */
-function issuedList() {
+function issuedList(onlyTokens, withArtifacts) {
   log.debug("Entering issuedList().");
   const nowMs = Date.now();
   const out = [];
-  tokens.forEach(function (record) {
+  // `onlyTokens`: these token records alone, as rows, and no artifacts —
+  // `issuedById()`'s one jti (#820 part 3). `withArtifacts` (2026-10-22):
+  // those artifacts beside them, for the store-backed lists, which read
+  // their tokens from the store and the artifacts from every process.
+  const artifactRows = withArtifacts !== undefined ? withArtifacts
+    : (onlyTokens ? [] : allArtifacts());
+  (onlyTokens || tokens).forEach(function (record) {
     out.push(Object.assign({}, record, {
       family: 'token',
       state: tokenStateOf(record, nowMs),
@@ -4952,7 +6851,7 @@ function issuedList() {
       revocationReach: 'protocol'
     }));
   });
-  allArtifacts().forEach(function (one) {
+  (artifactRows || []).forEach(function (one) {
     const record = withRevocation(one);
     const family = FAMILY_BY_ARTIFACT_KIND[record.kind];
     // A credential, or a kind added to the registry and not to the structure
@@ -5128,7 +7027,22 @@ function issuedArtifactsOfKind(kind) {
  */
 function issuedSets() {
   log.debug("Entering issuedSets().");
-  const rows = issuedList();
+  const out = groupIssued(issuedList());
+  log.debug("Leaving issuedSets(). " + out.length + " set(s).");
+  return out;
+}
+
+// The rows of `issuedList()` grouped into sets — the body of `issuedSets()`,
+// taken out so that the store-backed lists below (2026-10-22, #820) group
+// the rows they read exactly as the held list is grouped.
+/**
+ * Groups issued rows into the sets one response issued together.
+ *
+ * @param rows - rows in `issuedList()`'s shape and order
+ * @returns the sets
+ */
+function groupIssued(rows) {
+  log.debug("Entering groupIssued().");
   const byKey = new Map();
   const order = [];
   rows.forEach(function (row) {
@@ -5233,7 +7147,7 @@ function issuedSets() {
       members: members
     };
   });
-  log.debug("Leaving issuedSets(). " + out.length + " set(s) over " +
+  log.debug("Leaving groupIssued(). " + out.length + " set(s) over " +
       rows.length + " " +
       "row(s).");
   return out;
@@ -5260,6 +7174,157 @@ function issuedSetByKey(setKey) {
   const found =
       issuedSets().filter(function (set) { return set.setKey === wanted; });
   log.debug("Leaving issuedSetByKey(). " + found.length + " set(s) hold it.");
+  return found.length ? found[0] : null;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME LISTS, READ FROM THE STORE (2026-10-22, #820).
+//
+// On demand the register holds at most 20,000 records in each process — the
+// recent ones it was asked about — so `issuedSets()` answered with what the
+// answering worker happened to hold: two workers drew two different Tokens
+// pages, `?session=` found only what was held, and opening a set found it
+// only on the worker that had minted it. These read the store, on the
+// driver's read pool, and never hold the event loop:
+//
+//   a session   every record filed under `sid:<id>` (the index #820 part 3
+//               added for sign-outs), and the artifacts issued under it;
+//   a set       `set:<id>` (the index key added for this), or one record by
+//               its key for a `one:` set;
+//   the list    the NEWEST `ISSUED_NEWEST` records the store holds, by when
+//               each was issued (the store's `sortBy`), with every artifact
+//               beside them — a
+//               bounded window and NOT the whole register, which the answer
+//               says (`coverage`); the total is the store's own count.
+//
+// Held whole (memory, development, in-process tests) every one answers as
+// the synchronous function beside it does, so the small-population
+// behaviour is unchanged. A store that cannot be asked falls back to what
+// this process holds and says so, rather than drawing an empty list that
+// would read as "nothing issued".
+// ---------------------------------------------------------------------------
+// How many of the newest records the store-backed list reads.
+const ISSUED_NEWEST = 500;
+
+/**
+ * Lists the issued sets from the store: one session's, or the newest.
+ *
+ * @param opts - `session` (an exact session id), optional
+ * @returns a promise of `{ sets, coverage, tokenCount }`: `coverage` says
+ *   what the list covers (`source` `held` or `store`, `newest`, `session`,
+ *   `complete`, `unread`), and `tokenCount` is the store's count of live
+ *   token records (null where it could not be counted)
+ */
+async function issuedSetsAsync(opts) {
+  log.debug("Entering issuedSetsAsync().");
+  const session = String((opts && opts.session) || '');
+  if (!tokens.onDemandLive()) {
+    log.debug("Leaving issuedSetsAsync(). Held whole.");
+    return { sets: issuedSets(),
+             coverage: { source: 'held', complete: true, newest: null,
+                         session: session || null, unread: false,
+                         countEstimated: false },
+             tokenCount: tokens.size };
+  }
+  let records = null;
+  let unread = '';
+  try {
+    const entries = session
+      ? await tokens.lookupEntriesAsync('sid:' + session)
+      : await tokens.newestAsync(ISSUED_NEWEST);
+    records = (entries || []).map(function (e) {
+      return e.value;
+    }).filter(Boolean);
+  } catch (e) {
+    log.debug("Caught in issuedSetsAsync(): " + ((e && e.message) || e));
+    unread = String((e && e.message) || e);
+  }
+  // THE TOTAL IS AN ESTIMATE WHERE THE STORE IS LARGE (2026-10-22, #820).
+  // The exact count was a scan of every live token record — 5.7-8.6 s on
+  // 8081's 2.4M, on every view of this page. `countEstimateAsync()` answers
+  // the planner's estimate for a large store and the exact count for a small
+  // one (`persistence_minted.js`); `countEstimated` tells the page and the
+  // API which they got, and an estimated total never makes the list
+  // "complete".
+  let tokenCount = null;
+  let countEstimated = false;
+  try {
+    const counted = await tokens.countEstimateAsync();
+    tokenCount = counted.count;
+    countEstimated = !counted.exact;
+  } catch (e) {
+    log.debug("Caught in issuedSetsAsync(), counting: " +
+              ((e && e.message) || e));
+    tokenCount = null;
+  }
+  if (records === null) {
+    log.warn(errorCodes.tag('STS-ADMIN-0890') + 'admin: the token register ' +
+             'could not be read from the store (' + unread + '); the list ' +
+             'is what this process holds.');
+    log.debug("Leaving issuedSetsAsync(). Unread.");
+    return { sets: issuedSets(),
+             coverage: { source: 'held', complete: false, newest: null,
+                         session: session || null, unread: true,
+                         countEstimated: countEstimated },
+             tokenCount: tokenCount };
+  }
+  const every = allArtifacts();
+  const artifactRows = session ? every.filter(function (one) {
+    return String((one && one.sessionId) || '') === session;
+  }) : every;
+  const sets = groupIssued(issuedList(records, artifactRows));
+  const complete = session ? true
+    : (tokenCount !== null && !countEstimated && records.length >= tokenCount);
+  log.debug("Leaving issuedSetsAsync(). " + sets.length + " set(s) from " +
+            records.length + " record(s).");
+  return { sets: sets,
+           coverage: { source: 'store', complete: complete,
+                       newest: session ? null : ISSUED_NEWEST,
+                       session: session || null, unread: false,
+                       countEstimated: countEstimated },
+           tokenCount: tokenCount };
+}
+
+/**
+ * Returns one issued set by its key, read from the store on demand.
+ *
+ * @param setKey - the set's key, `set:<id>` or `one:<key>`
+ * @returns a promise of the set, or null
+ */
+async function issuedSetByKeyAsync(setKey) {
+  log.debug("Entering issuedSetByKeyAsync(). setKey=" + setKey);
+  const wanted = String(setKey == null ? '' : setKey).trim();
+  if (!wanted || !tokens.onDemandLive()) {
+    log.debug("Leaving issuedSetByKeyAsync(). Held whole, or nothing asked.");
+    return issuedSetByKey(wanted);
+  }
+  let records = [];
+  let artifactRows = [];
+  if (wanted.indexOf('set:') === 0) {
+    const entries = await tokens.lookupEntriesAsync(wanted);
+    records = entries.map(function (e) {
+      return e.value;
+    }).filter(Boolean);
+  } else if (wanted.indexOf('one:') === 0) {
+    const key = wanted.slice(4);
+    artifactRows = allArtifacts().filter(function (one) {
+      return one && String(one.key || one.id || '') === key;
+    });
+    if (!artifactRows.length && key) {
+      // Read off the event loop first, so the `get()` below is a hit.
+      await tokens.warm([key]);
+      const record = tokens.get(key);
+      if (record) {
+        records = [record];
+      }
+    }
+  }
+  const found = groupIssued(issuedList(records, artifactRows))
+    .filter(function (set) {
+      return set.setKey === wanted;
+    });
+  log.debug("Leaving issuedSetByKeyAsync(). " + found.length +
+            " set(s) hold it.");
   return found.length ? found[0] : null;
 }
 
@@ -5292,6 +7357,18 @@ function issuedById(identifier) {
   if (!wanted) {
     log.debug("Leaving issuedById(). Nothing was asked for.");
     return null;
+  }
+  // A token by its jti first (#820 part 3): on demand the list is what
+  // this process holds, and the register reads any jti from the store.
+  const direct = tokens.get(wanted);
+  if (direct && tokens.onDemandLive()) {
+    const one = issuedList([direct]).filter(function (row) {
+      return String(row.identifier || '') === wanted;
+    });
+    if (one.length) {
+      log.debug("Leaving issuedById(). Read by its jti.");
+      return one[0];
+    }
   }
   const found = issuedList().filter(function (row) {
     return String(row.identifier || '') === wanted;
@@ -5403,18 +7480,83 @@ function userRow(key) {
  */
 function userKeys() {
   log.debug("Entering userKeys().");
+  const keys = withSubjectsResolved(collectUserKeys);
+  log.debug("Leaving userKeys().");
+  return keys;
+}
+
+// ---------------------------------------------------------------------------
+// ONE KEY ASKED, NOT EVERY KEY BUILT (2026-10-22, #820). Nine console pages
+// asked `userKeys()` only to decide which of the names on the page to draw
+// as links — the audit log, a token's lineage, the delegation pictures —
+// and on 8081 that walked every user record and every token holder, about
+// 940,000 rows, synchronously, per page. This answers the same question for
+// one key: a user record (here or in another process), a token holder, or
+// an artifact's subject. Null while the register is held whole, where the
+// walk is the register's size and `userKeys()` is the answer.
+// ---------------------------------------------------------------------------
+/**
+ * A test of whether one key is one `userKeys()` would answer, or null
+ * while the token register is held whole.
+ *
+ * @returns `(key) => boolean`, or null
+ */
+function userKeyTest() {
+  log.debug("Entering userKeyTest().");
+  if (!tokens.onDemandLive() && !users.onDemandLive()) {
+    log.debug("Leaving userKeyTest(). Held whole.");
+    return null;
+  }
+  // The artifacts are bounded (`MAX_ARTIFACTS` a process); their subjects
+  // are read once, when a key is first asked.
+  let artifactKeys = null;
+  log.debug("Leaving userKeyTest().");
+  return function (key) {
+    const k = String(key == null ? '' : key);
+    if (!k) {
+      return false;
+    }
+    // `users.has()` reads this process's own row from the store on demand
+    // (#1001), and the index answers every other origin's.
+    if (users.has(k) || tokenHolders.has(k) ||
+        (users.onDemandLive()
+          ? users.lookupEntries(k).length
+          : replication.remoteRows('admin_stats.users', undefined, k)
+              .length)) {
+      return true;
+    }
+    if (artifactKeys === null) {
+      artifactKeys = new Set();
+      allArtifacts().forEach(function (record) {
+        const identity = identityOf(record.subject);
+        if (identity.key) {
+          artifactKeys.add(identity.key);
+        }
+      });
+    }
+    return artifactKeys.has(k);
+  };
+}
+
+// `userKeys()`'s walk, the subjects resolved.
+function collectUserKeys() {
+  log.debug("Entering collectUserKeys().");
   const keys = new Set();
   users.forEach(function (record) {
     keys.add(record.key);
   });
-  replication.remoteKeys('admin_stats.users').forEach(function (key) {
-    replication.remoteRows('admin_stats.users', undefined, key)
-      .forEach(function (value) {
-        if (value && typeof value === 'object') {
-          keys.add(value.key || key);
-        }
-      });
-  });
+  // Nothing is fanned in while the register is on demand (#1001): the keys
+  // are what this process holds, and `userKeyTest()` answers one key.
+  if (!users.onDemandLive()) {
+    replication.remoteKeys('admin_stats.users').forEach(function (key) {
+      replication.remoteRows('admin_stats.users', undefined, key)
+        .forEach(function (value) {
+          if (value && typeof value === 'object') {
+            keys.add(value.key || key);
+          }
+        });
+    });
+  }
   // `rowFor()`'s rule: the key is `identityOf()` of what it is handed, and an
   // empty one files nothing.
   const add = function (value) {
@@ -5426,16 +7568,36 @@ function userKeys() {
   tokens.forEach(function (record) {
     add(holderKeyOf(record.username, record.sub));
   });
+  // On demand (#820), the holders this process HOLDS, not only those of
+  // the tokens held. Not every holder: the store's are known only by their
+  // keyed digest (`keysResident`), which names nobody, and listing them all
+  // would read every row. A caller asking whether ONE key is known asks
+  // `userKeyTest()`, which answers for every holder from the digests.
+  if (tokens.onDemandLive()) {
+    tokenHolders.forEach(function (row, key) {
+      add(key);
+    });
+  }
   allArtifacts().forEach(function (record) {
     add(record.subject);
   });
-  log.debug("Leaving userKeys(). " + keys.size + " key(s).");
+  log.debug("Leaving collectUserKeys(). " + keys.size + " key(s).");
   return keys;
 }
 
 // `userRows()`, or with `onlyKey` the one row it would hold under that key.
 function buildUserRows(onlyKey) {
   log.debug("Entering buildUserRows().");
+  const rows = withSubjectsResolved(function () {
+    return buildUserRowsResolved(onlyKey);
+  });
+  log.debug("Leaving buildUserRows().");
+  return rows;
+}
+
+// `buildUserRows()`'s walk, the subjects resolved.
+function buildUserRowsResolved(onlyKey) {
+  log.debug("Entering buildUserRowsResolved().");
   const wanted = onlyKey === undefined ? null : String(onlyKey);
   const nowMs = Date.now();
   const rows = new Map();
@@ -5482,7 +7644,12 @@ function buildUserRows(onlyKey) {
     rows.set(record.key, row);
   });
 
-  tokens.forEach(function (record) {
+  // ONE PERSON'S ROW, ON DEMAND (#820 part 3), is counted from their records
+  // through the index, so their page is complete; the whole list counts
+  // what this process holds.
+  const tokenRecords = wanted !== null && tokens.onDemandLive()
+    ? recordsHeldBy(wanted) : tokens;
+  tokenRecords.forEach(function (record) {
     // `username` first: it is the local name, and falling back to `sub` costs
     // nothing because identityOf() strips the prefix off it anyway.
     const row = rowFor(holderKeyOf(record.username, record.sub));
@@ -5507,6 +7674,20 @@ function buildUserRows(onlyKey) {
     if (record.issuedAt > row.lastActivityAt) row.lastActivityAt =
         record.issuedAt;
   });
+  // THE HOLDERS THIS PROCESS HOLDS, ON DEMAND (#820): a row for each, its
+  // counts from the tokens held here; a page reads a shown row's own from
+  // the index. Not every holder in the store — only their keys are held
+  // (`keysResident`), and those are digests — so the list is of the people
+  // this process has met recently and the directory's, and the counts
+  // (`userCountsAsync()`) are of every holder.
+  if (wanted === null && tokens.onDemandLive()) {
+    tokenHolders.forEach(function (holder, key) {
+      const row = rowFor(key);
+      if (row && holder && holder.isClient) {
+        row.isClient = true;
+      }
+    });
+  }
 
   // EVERY PROCESS'S — see allArtifacts(). A per-user count built from this
   // process's segment alone under-reports every identity another worker served.
@@ -5540,9 +7721,13 @@ function buildUserRows(onlyKey) {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving buildUserRows(). " + out.length + " user(s), " +
-            out.filter(function (r) { return r.authenticated; }).length + " " +
-                "authenticated here.");
+  // A second pass over every row, made only when it will be written (#627).
+  if (log.debug()) {
+    log.debug("Leaving buildUserRowsResolved(). " + out.length +
+              " user(s), " + out.filter(function (r) {
+                return r.authenticated;
+              }).length + " authenticated here.");
+  }
   return out;
 }
 
@@ -5610,13 +7795,32 @@ function holdingsOf(keys) {
     log.debug("Leaving holdingsOf(). Nobody asked.");
     return out;
   }
+  withSubjectsResolved(function () {
+    fileHoldings(out);
+  });
+  log.debug("Leaving holdingsOf().");
+  return out;
+}
+
+// `holdingsOf()`'s walk into `out`, the subjects resolved.
+function fileHoldings(out) {
+  log.debug("Entering fileHoldings().");
   const nowMs = Date.now();
-  tokens.forEach(function (record) {
+  const file = function (record) {
     const held = out.get(holderKeyOf(record.username, record.sub));
     if (!held) return;
     held.tokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
                                    record));
-  });
+  };
+  // ON DEMAND (#820 part 3), each person's records through the index: what
+  // a sign-out ends and the person's page lists has to be everything.
+  if (tokens.onDemandLive()) {
+    out.forEach(function (held, key) {
+      recordsHeldBy(key).forEach(file);
+    });
+  } else {
+    tokens.forEach(file);
+  }
   // ACROSS EVERY PROCESS'S ROWS — see allArtifacts(). This was the LAST reader
   // still walking the bare array, and it was the one that mattered most: this
   // is what `logout.js`'s `issued` family collects, so a credential another
@@ -5640,8 +7844,7 @@ function holdingsOf(keys) {
     held.tokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
     held.artifacts.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   });
-  log.debug("Leaving holdingsOf().");
-  return out;
+  log.debug("Leaving fileHoldings().");
 }
 
 // The session a token was issued under, by jti. The refresh grant is what needs
@@ -5699,16 +7902,135 @@ function sessionAuthenticatedOfJti(jti) {
  * @param how - the door's statement of the act, passed to `revoke()`
  * @returns how many were newly revoked
  */
-function revokeWhere(predicate, via, how) {
+// ---------------------------------------------------------------------------
+// ON DEMAND (#820 part 3) THE REGISTER IS NOT HELD WHOLE, so a predicate
+// walked over `forEach` would revoke only what this process holds. A caller
+// that knows where its tokens are filed passes `candidates` — index keys of
+// the register (`indexBy` below: 'sid:', 'c:', 'u:', 's:', 'jkt:', 'x5t:',
+// 'spki:') — and only those rows are read and tested; every predicate is
+// still applied, so a candidate list may be wider than the predicate. One
+// that does not (an administrator's revoke-all, by kind, by user) walks the
+// whole store through `scan()`: rare, and it has to see everything.
+// ---------------------------------------------------------------------------
+function revokeWhere(predicate, via, how, candidates) {
   log.debug("Entering revokeWhere().");
   let count = 0;
-  tokens.forEach(function (record) {
-    if (!record.revocable || record.revoked) return;
+  const visit = function (record) {
+    if (!record || !record.revocable || record.revoked) return;
     if (!predicate(record)) return;
     if (revoke(record.jti, via, how)) count++;
-  });
+  };
+  if (!tokens.onDemandLive()) {
+    tokens.forEach(visit);
+  } else if (Array.isArray(candidates)) {
+    const keys = new Set();
+    candidates.forEach(function (indexKey) {
+      tokens.lookup(String(indexKey)).forEach(function (key) {
+        keys.add(key);
+      });
+    });
+    keys.forEach(function (key) {
+      visit(tokens.get(key));
+    });
+  } else {
+    // Collected first: revoking writes the register a walk is reading. Each
+    // is then held, so `revoke()` does not read it from the store again.
+    const found = [];
+    tokens.scan(function (record, key) {
+      if (record && record.revocable && !record.revoked &&
+          predicate(record)) {
+        found.push([key, record]);
+      }
+    });
+    const declared = realms.handleFor('admin_stats.tokens');
+    const realmId = realms.currentId();
+    found.forEach(function (pair) {
+      if (declared && !tokens.realmMap().has(pair[0])) {
+        declared.restore(realmId, pair[0], pair[1]);
+      }
+      visit(pair[1]);
+    });
+  }
   log.debug("Leaving revokeWhere(). Revoked " + count + " token(s).");
   return count;
+}
+
+// How many revocations `revokeWhereAsync()` makes between yields.
+const REVOKE_BATCH = 500;
+
+/**
+ * `revokeWhere()` with no candidates, for a request that may wait (#820):
+ * on demand the store is walked a page at a time and the revocations made
+ * a batch at a time, the event loop given back between, so a revoke-all
+ * through /admin-api does not hold the process for the whole walk. Held
+ * whole, it is `revokeWhere()`.
+ *
+ * @param predicate - which records to revoke
+ * @param via - what the revocation is recorded as coming through
+ * @param how - the door's own statement (`initiatingEntity`, …)
+ * @returns a promise of how many tokens were newly revoked
+ */
+async function revokeWhereAsync(predicate, via, how) {
+  log.debug("Entering revokeWhereAsync().");
+  if (!tokens.onDemandLive()) {
+    log.debug("Leaving revokeWhereAsync(). Held whole.");
+    return revokeWhere(predicate, via, how);
+  }
+  const realm = realms.current();
+  const found = [];
+  await tokens.scanAsync(function (record, key) {
+    if (record && record.revocable && !record.revoked &&
+        predicate(record)) {
+      found.push([key, record]);
+    }
+  });
+  const declared = realms.handleFor('admin_stats.tokens');
+  let count = 0;
+  for (let i = 0; i < found.length; i += REVOKE_BATCH) {
+    realms.run(realm, function () {
+      found.slice(i, i + REVOKE_BATCH).forEach(function (pair) {
+        if (declared && !tokens.realmMap().has(pair[0])) {
+          declared.restore(realm.id, pair[0], pair[1]);
+        }
+        const record = pair[1];
+        if (record && record.revocable && !record.revoked &&
+            predicate(record) && revoke(record.jti, via, how)) {
+          count++;
+        }
+      });
+    });
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  log.debug("Leaving revokeWhereAsync(). Revoked " + count + " token(s).");
+  return count;
+}
+
+/**
+ * Whether the token register is read on demand here (#820), so a walk of
+ * it is a walk of the store: what decides whether a revoke-all answers now
+ * or with a promise.
+ *
+ * @returns true when on demand
+ */
+function tokensOnDemand() {
+  log.debug("Entering tokensOnDemand().");
+  log.debug("Leaving tokensOnDemand().");
+  return tokens.onDemandLive();
+}
+
+/**
+ * Whether the identity register is read on demand (#1001), so that a page
+ * walking `userRows()` sees only what this process holds and has to ask the
+ * index for the people it shows (`userRowsOfAsync()`).
+ *
+ * @returns true while the users store is on demand
+ */
+function usersOnDemand() {
+  log.debug("Entering usersOnDemand().");
+  log.debug("Leaving usersOnDemand().");
+  return users.onDemandLive();
 }
 
 // ---------------------------------------------------------------------------
@@ -5795,7 +8117,7 @@ function sessionsFromArtifacts() {
  *
  * @returns the snapshot
  */
-function snapshot() {
+function snapshot(opts) {
   log.debug("Entering snapshot().");
   const nowMs = Date.now();
 
@@ -5835,7 +8157,22 @@ function snapshot() {
     else row.expired++;
   });
 
-  const knownUsers = userRows();
+  // THE ROWS MAY BE HANDED IN (2026-10-21): built by `userRowsAsync()`, whose
+  // subjects are asked of the directory without holding the event loop. Built
+  // here they are every register subject asked synchronously — on 8081 the
+  // console's dashboard stood a request worker still for ten seconds.
+  //
+  // `withoutUsers` (2026-10-22, #820): a caller that reads none of the user
+  // counts — the token lifetimes and SAML assertions pages — asks for none,
+  // since building them is a row for every person, synchronously.
+  //
+  // `userCounts` (2026-10-22, #820): the four counts themselves, from
+  // `userCountsAsync()`, which builds no row at all — what Monitoring →
+  // Metrics and the dashboard hand in now. The rows are built only where
+  // neither is handed in and the caller did not decline them.
+  const userCounts = opts && opts.userCounts ? opts.userCounts : null;
+  const knownUsers = userCounts ? [] : ((opts && opts.knownUsers) ||
+    (opts && opts.withoutUsers ? [] : userRows()));
 
   const callRows = Array.from(calls.values())
                         .sort(function (a, b) { return b.count - a.count; });
@@ -5959,13 +8296,18 @@ function snapshot() {
              byStatusClass: statusTotals,
              pathsCollapsed: nums.callPathsDropped +
                              alsoElsewhere('callPathsDropped'),
+             // NOT in `total` and NOT in `rows` (#312): see recordCall().
+             healthProbes: nums.healthProbes +
+                           alsoElsewhere('healthProbes'),
              rows: mergedRows },
     // TOKENS ARE `merge: 'replace'` AND ARE THEREFORE ALREADY MERGED — a token
     // is minted by one process and the register is keyed by jti, so the row IS
     // the value and coordination has already put every process's tokens in
     // this map. That is also why a revocation in another process reaches this
     // one: it is a write to the same row rather than a tally of its own.
-    tokens: { held: tokens.size,
+    // `heldOnly` (#820 part 3): the register is on demand, and `held` is
+    // what this process holds — the recent issuances — not every token.
+    tokens: { held: tokens.size, heldOnly: tokens.onDemandLive(),
               forgotten: nums.tokensForgotten +
                          alsoElsewhere('tokensForgotten'),
               cap: MAX_TOKENS,
@@ -5986,7 +8328,18 @@ function snapshot() {
     // Counted, not listed: the whole list is what /admin/users is for, and
     // repeating it inside every metrics reply would make the two disagree the
     // first time one of them changed.
-    users: { known: knownUsers.length, cap: MAX_USERS,
+    // `heldOnly` (#1001): the register is on demand, and these are the
+    // records this process holds; a person's own figure is read from the
+    // store by `userDetail()`.
+    users: userCounts ? {
+             known: userCounts.known, cap: MAX_USERS,
+             heldOnly: users.onDemandLive(),
+             forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
+             authenticatedHere: userCounts.authenticatedHere,
+             clients: userCounts.clients,
+             authentications: userCounts.authentications } : {
+             known: knownUsers.length, cap: MAX_USERS,
+             heldOnly: users.onDemandLive(),
              forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
              authenticatedHere: knownUsers.filter(
                  function (r) { return r.authenticated; }).length,
@@ -6006,6 +8359,33 @@ function snapshot() {
             result.tokens.held +
             " token(s), " + result.artifacts.held + " artifact(s).");
   return result;
+}
+
+/**
+ * Extracts this module's part of the scim namespace (#543 phase 2b): what
+ * each SCIM operation is, and what the monitor says of one it does not list.
+ * Its labels are not harvested: `Bulk` is also a resource type's NAME in the
+ * same answer, and a label translated there would rename the type.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY: this module is required early (`app.js` installs its JWT
+  // recorder at #2 of the require order), and a require here at load would
+  // be the one thing that could make server_prose.ts load before what it
+  // requires has finished.
+  const serverProse = require('./server_prose');
+  // Keyed by `operation`: harvest() would name a row by its `method`, and
+  // the methods repeat.
+  const byOperation = {};
+  SCIM_OPERATIONS.forEach(function (row) {
+    byOperation[row.operation] = { what: row.what };
+  });
+  const out = serverProse.harvest('stats.operations', byOperation, ['what']);
+  out['stats.unlistedOperation'] = SCIM_UNLISTED_OPERATION;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
 }
 
 /**
@@ -6031,6 +8411,7 @@ module.exports = {
   reservedNames: reservedNames,
   CLAIM_SETS: CLAIM_SETS,
   RESERVED_JWT_CLAIMS: RESERVED_JWT_CLAIMS,
+  GNAP_RESERVED_CLAIMS: GNAP_RESERVED_CLAIMS,
   PLACEHOLDERS: PLACEHOLDERS,
   DEFAULT_SAML11_NAMESPACE: DEFAULT_SAML11_NAMESPACE,
   REVOCABLE_KINDS: REVOCABLE_KINDS,
@@ -6038,6 +8419,11 @@ module.exports = {
   ISSUED_FAMILIES: ISSUED_FAMILIES,
   recordCall: recordCall,
   recordAuthentication: recordAuthentication,
+  recordRefusedAuthentication: recordRefusedAuthentication,
+  // #561: the account sets' counters.
+  recordAccountChoice: recordAccountChoice,
+  accountChoiceCounts: accountChoiceCounts,
+  ACCOUNT_CHOICE_KINDS: ACCOUNT_CHOICE_KINDS,
   noteWebauthnEnrolled: noteWebauthnEnrolled,
   knownUser: knownUser,
   setUserObserver: setUserObserver,
@@ -6047,8 +8433,34 @@ module.exports = {
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
   userRows: userRows,
+  userRowsAsync: userRowsAsync,
+  userCountsAsync: userCountsAsync,
+  withSubjectsResolvedAsync: withSubjectsResolvedAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
+  userRowsOfAsync: userRowsOfAsync,
+  // What signing a JWT reports through `helpers.setJwtRecorder()`, for the
+  // tests that record one without signing it.
+  recordJwt: recordJwt,
+  userKeyTest: userKeyTest,
+  // The register records of these jtis, read together off the event loop
+  // before a request asks for them (#820; `warm()` in common/realms.js).
+  warmTokens: function (jtis) {
+    log.debug("Entering warmTokens().");
+    log.debug("Leaving warmTokens().");
+    return tokens.warm(jtis);
+  },
+  // The token-holder rows of these usernames, read together off the event
+  // loop before a token is recorded for them (#820), so that
+  // `noteTokenHolder()` finds the row held and does not write blindly.
+  warmTokenHolders: function (usernames) {
+    log.debug("Entering warmTokenHolders().");
+    const keys = (usernames || []).map(function (name) {
+      return name ? identityKeyOf(name) : '';
+    }).filter(Boolean);
+    log.debug("Leaving warmTokenHolders().");
+    return tokenHolders.warm(keys);
+  },
   userKeys: userKeys,
   issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,
@@ -6061,6 +8473,8 @@ module.exports = {
   recordSvid: recordSvid,
   recordCredentialStatus: recordCredentialStatus,
   SCIM_OPERATIONS: SCIM_OPERATIONS,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   SCIM_RESOURCE_TYPES: SCIM_RESOURCE_TYPES,
   recordScim: recordScim,
   scimSnapshot: scimSnapshot,
@@ -6084,20 +8498,34 @@ module.exports = {
   artifactByKey: artifactByKey,
   revokeArtifactsWhere: revokeArtifactsWhere,
   artifactRevokedByKey: artifactRevokedByKey,
+  revokedArtifactKeys: revokedArtifactKeys,
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
   attributeClaimRows: attributeClaimRows,
   setClaimSet: setClaimSet,
   checkClaimEntries: checkClaimEntries,
+  KERBEROS_CLAIM_SET_IDS: KERBEROS_CLAIM_SET_IDS,
+  PAC_CLAIM_TYPES: PAC_CLAIM_TYPES,
+  pacClaimId: pacClaimId,
+  pacClaimValue: pacClaimValue,
+  kerberosPacClaims: kerberosPacClaims,
+  kerberosApplicationPacClaims: kerberosApplicationPacClaims,
+  kerberosPacAttributeValues: kerberosPacAttributeValues,
   APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
   applicationClaimSet: applicationClaimSet,
   effectiveClaimSet: effectiveClaimSet,
+  // The application an issuance's claims are for (#495), asked by
+  // claim_attributes.ts for an application's own attribute selection.
+  claimApplicationOf: claimApplicationOf,
   // Filled by claim_attributes.js at its require time; see the note above it.
   // The inversion is what keeps the four issuance sites unchanged.
   setAttributeResolver: setAttributeResolver,
   setGroupResolver: setGroupResolver,
   jwtClaims: jwtClaims,
+  // The configured rows alone (#1250): GNAP's JWT formats, which must not
+  // gain the groups claim, the roles claim or the ticked catalogue.
+  configuredJwtClaims: configuredJwtClaims,
   samlAttributes: samlAttributes,
   // The release filter on its own, for the ONE caller that produces claims
   // without going through a claim set — the UserInfo endpoint's answer to a
@@ -6110,6 +8538,7 @@ module.exports = {
   // The fan-out's two halves (#238): who holds a live artifact a
   // configuration change shaped, and what its claims would say now.
   liveClaimBearers: liveClaimBearers,
+  applicationOfToken: applicationOfToken,
   claimValuesFor: claimValuesFor,
   claimNamesFor: claimNamesFor,
   announceClaimsReshaped: announceClaimsReshaped,
@@ -6117,7 +8546,14 @@ module.exports = {
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,
+  issuedSetsAsync: issuedSetsAsync,
+  issuedSetByKeyAsync: issuedSetByKeyAsync,
+  ISSUED_NEWEST: ISSUED_NEWEST,
   issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
-  snapshot: snapshot
+  snapshot: snapshot,
+  setStatusMarker: setStatusMarker,
+  revokeWhereAsync: revokeWhereAsync,
+  tokensOnDemand: tokensOnDemand,
+  usersOnDemand: usersOnDemand
 };

@@ -11,7 +11,7 @@
 //
 // `risk/risk_store.ts` answers the same methods from maps when there is no
 // database, and those are the ones driven here; the postgres driver's SQL is
-// driven by `tests/vendored/sts_admin_risk.js` against a real database in the
+// driven by `tests/protocol/sts_admin_risk.js` against a real database in the
 // single-node and cluster modes. What this file holds:
 //
 //   A. The address arithmetic every lookup rests on — a range from a single
@@ -188,6 +188,29 @@ async function partB(t) {
 
 async function partC(t) {
   log.debug("Entering partC().");
+  // A FILE OF THE WRONG KIND (#1480, ASVS 5.0.0 5.2.2).
+  const junk = ['192.0.2.9'].concat(new Array(9).fill('not an address'))
+    .join('\n');
+  config.clearOverride('risk.maxSkippedLinesPercent');
+  t.check(Number(config.value('risk.maxSkippedLinesPercent')) === 10,
+          'C0-0. the default share of lines that may fail is ten percent');
+  const skippedOut = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+    content: junk, version: 'skip-1', source: 'upload', activate: false });
+  const skippedRows = await riskStore.listVersions('default',
+                                                   'iplist.operator-allow');
+  t.check(!skippedOut.ok && skippedRows.some(function (one) {
+    return one.version === 'skip-1' && one.state === 'refused' &&
+      one.errorCode === 'STS-RISK-0056';
+  }), 'C0. a file mostly of lines that are not rows is refused',
+  JSON.stringify(skippedOut));
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
+  const skippedIn = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+    content: junk, version: 'skip-2', source: 'upload', activate: false });
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
+  t.check(skippedIn.ok, 'C0-ii. at 100 it is accepted, as before',
+          JSON.stringify(skippedIn));
   const wrong = await riskDatasets.importVersion({
     dataset: 'iplist.reputation', format: 'ip-list', content: '192.0.2.1',
     version: 'rep-bad', sha256: 'a'.repeat(64), source: 'upload' });
@@ -247,9 +270,9 @@ async function partD(t) {
   t.check(back.ok && back.version === 'asn-1' && !after.asn,
           'D2. rollback makes the previous version active again, and ' +
           'lookups follow at once', JSON.stringify(back));
-  const refusedDelete = await riskDatasets.deleteVersion('', 'asn', 'asn-1',
-                                                         'a test');
-  t.check(!refusedDelete.ok, 'D3. the active version cannot be deleted');
+  // D3 refused the active version's deletion until #1152; removing the
+  // active version is part L now, at the end, where unloading `asn` cannot
+  // change what the parts after this one read.
   const deleted = await riskDatasets.deleteVersion('', 'asn', 'asn-2',
                                                    'a test');
   const versions = await riskStore.listVersions('', 'asn');
@@ -394,8 +417,8 @@ async function partI(t) {
   const unknown = await riskAdmin.riskAction({ action: 'explode',
                                                dataset: 'asn' }, 'a test');
   t.equal(unknown.errors && unknown.errors[0],
-          'Unknown action "explode". The 6 are: import, activate, rollback, ' +
-          'delete, accept-terms, upload.',
+          'Unknown action "explode". The 7 are: import, activate, rollback, ' +
+          'delete, reload, accept-terms, upload.',
           'I1. an unknown action is refused in rule 7\'s sentence');
   const imported = await riskAdmin.riskAction({
     action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',
@@ -409,6 +432,31 @@ async function partI(t) {
   }) && view.datasets.length === Object.keys(riskDatasets.CATALOGUE).length,
           'I2. an import through the page\'s action loads, and the view ' +
           'draws every dataset and the lookup', JSON.stringify(imported));
+  // The fuzz run on d96b74093: a reload naming a realm with a NUL in it
+  // reached PostgreSQL and was answered 500. Each of the four non-import
+  // actions refuses an unknown realm or dataset before the store is asked,
+  // and repeats neither value back.
+  const odd = '\u009d\u0000';
+  const refusals = [];
+  for (const action of ['activate', 'delete', 'reload', 'rollback']) {
+    refusals.push(await riskAdmin.riskAction({
+      action: action, dataset: 'iplist.reputation', realm: odd,
+      version: 'v1' }, 'a test'));
+    refusals.push(await riskAdmin.riskAction({
+      action: action, dataset: 'no-such' + odd, realm: '',
+      version: 'v1' }, 'a test'));
+  }
+  t.check(refusals.every(function (r) {
+    return r && r.ok === false &&
+           require('../common/error_codes').codeOf(r) === 'STS-RISK-0011' &&
+           JSON.stringify(r).indexOf('\\u0000') < 0;
+  }) && /no realm by that name/.test(refusals[0].errors[0]) &&
+     /no dataset by that name/.test(refusals[1].errors[0]),
+  'I3. activate, delete, reload and rollback refuse a realm or dataset that ' +
+  'does not exist before the store is asked, naming neither value',
+  JSON.stringify(refusals.map(function (r) {
+    return r && r.errors;
+  })));
   log.debug("Leaving partI().");
 }
 
@@ -491,6 +539,83 @@ async function partJ(t) {
 // install-time loader writes its acceptances to the store and a log file.
 // Run first, before anything has been accepted.
 // ---------------------------------------------------------------------------
+async function partL(t) {
+  log.debug("Entering partL().");
+  // REMOVE ON THE ACTIVE VERSION (#1152): its rows go, the dataset has no
+  // active version, nothing else is activated, and Roll back is offered.
+  config.setOverride('risk.datasetShrinkLimitPercent', 100);
+  const loaded = await riskDatasets.importVersion({ dataset: 'asn',
+    format: 'dbip-asn-csv', version: 'asn-L', source: 'upload',
+    content: '203.0.113.0,203.0.113.255,64511,Removal Test Networks' });
+  config.setOverride('risk.datasetShrinkLimitPercent', 50);
+  const before = await riskDatasets.lookup('203.0.113.9', 'default');
+  t.check(loaded.ok && before.asn && before.asn.asn === 64511,
+          'L1. precondition: asn-L is active and answers lookups',
+          JSON.stringify(loaded) + ' ' + JSON.stringify(before.asn));
+  const removed = await riskDatasets.deleteVersion('', 'asn', 'asn-L',
+                                                   'a test');
+  const after = await riskDatasets.lookup('203.0.113.9', 'default');
+  t.check(removed.ok && removed.unloaded === true && removed.rows === 1 &&
+          !after.asn && !after.datasets.asn,
+          'L2. REMOVE ON THE ACTIVE VERSION deletes its rows and unloads it: ' +
+          'lookups stop reading the dataset at once',
+          JSON.stringify(removed) + ' ' + JSON.stringify(after));
+  const registry = await riskDatasets.registry('default');
+  const asn = registry.datasets.filter(function (d) {
+    return d.dataset === 'asn';
+  })[0];
+  const record = asn.versions.filter(function (v) {
+    return v.version === 'asn-L';
+  })[0];
+  t.check(asn.state === 'empty' && asn.activeVersion === '' &&
+          record && record.state === 'deleted',
+          'L3. nothing else was made active, and the version\'s record ' +
+          'stays, marked deleted', JSON.stringify(asn.state) + ' ' +
+          JSON.stringify(record));
+  t.check(asn.previousVersion !== '' && asn.previousVersion !== 'asn-L',
+          'L4. the version it replaced is still offered for Roll back',
+          JSON.stringify(asn.previousVersion));
+  const again = await riskDatasets.deleteVersion('', 'asn', 'asn-L',
+                                                 'a test');
+  const reactivate = await riskDatasets.activateVersion('', 'asn', 'asn-L',
+                                                        'a test');
+  t.check(again.ok && again.rows === 0 && !again.unloaded && !reactivate.ok,
+          'L5. removing it again deletes nothing, and it cannot be made ' +
+          'active', JSON.stringify(again) + ' ' + JSON.stringify(reactivate));
+
+  // UPLOADED AGAIN (#1155): an administrator's door may load the version
+  // they removed; a job (no `reloadDeleted`) still finds it recorded.
+  const sameFile = { dataset: 'asn', format: 'dbip-asn-csv',
+    version: 'asn-L', source: 'upload',
+    content: '203.0.113.0,203.0.113.255,64511,Removal Test Networks' };
+  const byJob = await riskDatasets.importVersion(sameFile);
+  t.check(byJob.ok && byJob.duplicate === true,
+          'L6. a removed version imported by a door that is not an ' +
+          'administrator\'s is still already recorded, and nothing loads',
+          JSON.stringify(byJob));
+  config.setOverride('risk.datasetShrinkLimitPercent', 100);
+  const byAdmin = await riskDatasets.importVersion(
+    Object.assign({ reloadDeleted: true, actor: 'a test' }, sameFile));
+  config.setOverride('risk.datasetShrinkLimitPercent', 50);
+  const back = await riskDatasets.lookup('203.0.113.9', 'default');
+  const reloaded = (await riskStore.listVersions('', 'asn'))
+    .filter(function (v) {
+      return v.version === 'asn-L';
+    })[0];
+  t.check(byAdmin.ok && !byAdmin.duplicate && byAdmin.activated &&
+          back.asn && back.asn.asn === 64511 &&
+          reloaded.state === 'active' && reloaded.rowsDeletedAt === 0,
+          'L7. AN ADMINISTRATOR UPLOADS THE REMOVED VERSION AGAIN: the ' +
+          'record is reused, loaded, made active and answers lookups',
+          JSON.stringify(byAdmin) + ' ' + JSON.stringify(reloaded));
+  const notDeleted = await riskDatasets.importVersion(
+    Object.assign({ reloadDeleted: true }, sameFile));
+  t.check(notDeleted.ok && notDeleted.duplicate === true,
+          'L8. a version that is not deleted is still already recorded, ' +
+          'whoever imports it', JSON.stringify(notDeleted));
+  log.debug("Leaving partL().");
+}
+
 async function partK(t) {
   log.debug("Entering partK().");
   const refused = await riskDatasets.importVersion({ dataset: 'asn',
@@ -572,6 +697,9 @@ async function run(t) {
   if (!realms.get('acme')) {
     realms.create({ id: 'acme', name: 'risk datasets test' });
   }
+  // The fixtures below hold a few lines each, some of them on purpose not rows;
+  // C0 restores the shipped share to test it (#1480).
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
   riskStore.reset();
   riskDatasets.forget();
   await partK(t);
@@ -586,6 +714,8 @@ async function run(t) {
   await partH(t);
   await partI(t);
   await partJ(t);
+  await partL(t);
+  config.clearOverride('risk.maxSkippedLinesPercent');
   log.debug("Leaving run().");
 }
 

@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "du, eller någon som kände till ditt kontonamn, din adress och en av dina återställningskoder",
+  "requestedBy.signInScreen": "du, eller någon som kände till ditt kontonamn, på inloggningsskärmen",
+  "requestedBy.administrator": "en administratör",
+  "requestedBy.administratorNamed": "en administratör ({actor})",
+  "how.by": "av {entity, select, user {användaren} admin {en administratör} system {systemet} policy {en policy} someone {någon} other {{entity}}}",
+  "credential.type": "{type, select, password {Lösenordet} x509 {X.509-certifikatet} app {Autentiseringsappen} fido2-roaming {Säkerhetsnyckeln} fido2-platform {Nyckeln} other {{type}}}",
+  "by.you": "dig",
+  "by.administrator": "en administratör",
+  "by.administratorSessionsPage": "en administratör (sidan med sessioner)",
+  "by.administratorConsoleLogout": "en administratör (administrationskonsolen, /admin/logout)",
+  "act.credentialCompromised": "autentiseringsuppgift markerad som komprometterad",
+  "act.accountDisabled": "kontot inaktiverat",
+  "rights.access": "åtkomst",
+  "address.none": "(ingen)"
+}

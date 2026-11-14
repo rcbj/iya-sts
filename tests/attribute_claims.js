@@ -74,7 +74,7 @@ function theAct(t) {
                 name: 'badge', attribute: 'employeeNumber',
                 type: 'number' }, stats.JWT_CLAIM_SET_IDS).ok === true &&
           act({ action: 'add-attribute-claim', set: 'id_token',
-                name: 'teams', attribute: 'ou', multi: 'true' },
+                name: 'teams', attribute: 'ou', multi: true },
               stats.JWT_CLAIM_SET_IDS).ok === true,
           'A1. three attribute claims are added: one, one typed, one multi');
   const refused = [
@@ -91,7 +91,7 @@ function theAct(t) {
           'type and no attribute are each refused',
           JSON.stringify(refused.map(function (one) { return one.ok; })));
   t.check(act({ action: 'add-attribute-claim', set: 'saml2',
-                name: 'costCenter', attribute: 'costCenter', multi: 'true' },
+                name: 'costCenter', attribute: 'costCenter', multi: true },
               stats.SAML_CLAIM_SET_IDS).ok === true,
           'A3. and one in the SAML 2.0 set');
   const rows = stats.attributeClaimRows().map(function (one) {
@@ -209,11 +209,11 @@ async function theHelps(t) {
           'G3. a partner whose release list does not name the claim is ' +
           'reported as withholding it, in the JSON the API answers',
           JSON.stringify({ withheld: set.withheldFrom }));
-  // AND THE PAGE DRAWS ALL THREE: the section the three claim pages share.
+  // AND THE PAGE DRAWS ALL THREE: the section the three claim pages share,
+  // drawn from that same answer since #446.
   const admin = require('../admin-ui/admin');
-  const html = admin.claimSetSection('id_token', PERSON,
-    require('../common/claim_attributes').catalogueValuesFor(PERSON),
-    '/admin/claims');
+  const html = admin.claimSetSection('id_token',
+    JSON.parse(JSON.stringify(json)), '/admin/claims');
   t.check(html.indexOf('<datalist id="ac-id_token">') >= 0 &&
           html.indexOf('value="employeeGrade"') >= 0 &&
           html.indexOf('&quot;CC-7&quot;') >= 0 &&

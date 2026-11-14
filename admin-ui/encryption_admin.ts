@@ -97,6 +97,10 @@ import mode = require('../common/mode');
 import persistence = require('../persistence/persistence');
 import minted = require('../persistence/persistence_minted');
 import InstanceSlot = require('../common/instance_slot');
+// THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `harvest()` collects
+// this module's tables for the encryption namespace. Safe at the top: this
+// module is built at 18b, long after what server_prose.ts requires.
+import serverProse = require('../common/server_prose');
 
 type Req = any;
 type Res = any;
@@ -333,6 +337,35 @@ const DATA_CLASSES = [
          'server’s operator has somewhere to collect it.'
   },
   {
+    label: 'secret-destination-credential',
+    what: 'A secret push destination’s write credential — ' +
+          '`secretDestCredential` (#221): the key, token or service account ' +
+          'this service writes a service account’s rotated password to a ' +
+          'secrets manager with',
+    where: 'an attribute on the destination’s application entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds it can write the passwords other systems read. ' +
+         'Sealed at rest when keys persist, and — unlike an application’s ' +
+         'signing key — WITHHELD from every reader as well: it is opened ' +
+         'only for the push that uses it, and never drawn, revealed or ' +
+         'returned by `/admin-api`.'
+  },
+  {
+    label: 'scim-client-credential',
+    what: 'An outbound SCIM client’s credentials (#552) — ' +
+          '`scimClientPassword`, `scimClientOAuthClientSecret` and ' +
+          '`scimClientTlsPrivateKey`: what this service authenticates to a ' +
+          'remote SCIM service provider, or its token endpoint, with',
+    where: 'attributes on the client’s application entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds them can create, change and delete accounts at the ' +
+         'remote identity provider. Sealed at rest when keys persist and ' +
+         'WITHHELD from every reader, as a secret destination’s credential ' +
+         'is: opened only for the request that uses it.'
+  },
+  {
     label: 'person-private-key',
     what: 'The assertion signing key pairs `/admin/pki` issues to a PERSON — ' +
           '`stsAssertionPrivateKey` (2026-09-11) and, for RFC 7522, ' +
@@ -463,8 +496,144 @@ const DATA_CLASSES = [
          'to seal. All three are named in `common/mode.js`’s `NOT_YET` ' +
          'rather than left to be discovered, because *not stored* and *not ' +
          'protected* read the same from outside and are not the same thing.'
+  },
+  // Last rather than beside `federation-encryption-key`, because a row's
+  // translations are keyed by its place in this list (#931).
+  {
+    label: 'federation-client-certificate',
+    what: 'A FAPI 1.0 Advanced federation relationship’s TLS client ' +
+          'certificate private key (#931) — what this service presents to ' +
+          'the partner’s token and UserInfo endpoints, in ' +
+          '`fedClientCertificate`',
+    where: 'the relationship’s own entry under `ou=federations`',
+    sealed: true,
+    why: 'Whoever holds it can authenticate to that partner as this ' +
+         'service (`tls_client_auth`) and present the access tokens the ' +
+         'partner bound to the certificate. Sealed at rest wherever keys ' +
+         'persist, and withheld — ciphertext included — from every LDAP ' +
+         'search, page and `/admin-api` reply, which carry the certificate ' +
+         'only.'
   }
 ];
+
+// ---------------------------------------------------------------------------
+// WHAT `encryptionJson()` SAYS BESIDES THE TABLE, as a table (#543 phase 2b):
+// the page's sentences, so that the encryption namespace can carry them and
+// `common/server_prose.ts` refill an answer to `GET /admin-api/encryption`
+// in a console reader's language. Each is the sentence written inline until
+// #543, byte for byte; `keyPersisted` and `keyEphemeral` are the two the key's
+// `note` chooses between. The backquotes are kept: the renderer draws these
+// RAW, and a translator is told to keep markup.
+// ---------------------------------------------------------------------------
+const NOTES = Object.freeze({
+  what: 'What this service encrypts AT REST, with which key, under which ' +
+    'algorithm, and how much of it has happened in this process.',
+  keyPersisted: 'The key-encryption key is read from the provider above at ' +
+    'startup, before the listener binds. This service never ' +
+    'generates it and never writes it down, and a service that ' +
+    'cannot read it does NOT start — it does not generate a ' +
+    'replacement and carry on, because that would stop every token ' +
+    'it has ever issued from verifying, silently, at somebody else’s ' +
+    'relying party.',
+  keyEphemeral: 'This service is in development mode, so nothing it holds ' +
+    'outlives the process and the key-encryption key is EPHEMERAL: ' +
+    'generated per run, never written down, and used only so that ' +
+    'the request-worker pool can share minted rows within one run. ' +
+    'Sealing a directory attribute under it would be WORSE than the ' +
+    'clear — the entry survives a restart in the `ldif` and ' +
+    '`postgres` stores and the key does not, so the value would come ' +
+    'back as permanent garbage. That is why the test at every write ' +
+    'site is `keystore.persists()` rather than `keystore.sealed()`.',
+  algorithmNote:
+    'AES-256-GCM and deliberately not CBC: GCM is AUTHENTICATED, so a ' +
+    'ciphertext somebody altered fails to decrypt instead of yielding a ' +
+    'subtly different key. A signing key that decrypted to the wrong ' +
+    'bytes would produce signatures nothing can verify, and the failure ' +
+    'would surface at a relying party as "the signature is invalid" — as ' +
+    'far from the cause as it is possible to get. The key-encryption key ' +
+    'NEVER ENCRYPTS A VALUE (#391): every value is encrypted under a ' +
+    'data encryption key — 256 random bits, one per realm per data ' +
+    'class — and the data encryption keys are what the key-encryption ' +
+    'key wraps. A process unwraps each once and holds it, so a key ' +
+    'held in a key management service is asked per data key, never per ' +
+    'value, and rotating the key-encryption key re-wraps a handful of ' +
+    'keys rather than re-encrypting the store.',
+  realms: 'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER ' +
+    'TRUST REALM, AND A DATA ENCRYPTION KEY PER REALM PER DATA CLASS ' +
+    '(#391). No data encryption key is shared between realms, so a ' +
+    'value of one realm is never sealed under a key another realm\'s ' +
+    'values are. But every data encryption key is wrapped under the ' +
+    'one key-encryption key, so a realm is NOT an independent ' +
+    'boundary at rest: whoever can read that key can unwrap every ' +
+    'realm\'s data keys, and rotating it re-wraps every realm\'s at ' +
+    'once.',
+  storage:
+    'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
+    'directory entries, the groups, the applications, the realms and ' +
+    'the settings, and in development mode very nearly all of it. This ' +
+    'service seals credentials and private keys and nothing else, ' +
+    'deliberately: column-level encryption leaves the plaintext in the ' +
+    'write-ahead log, in temporary files when a sort spills, in a ' +
+    'pg_dump, on replicas and in query logs, so the layer that covers ' +
+    'a whole store belongs UNDER the database rather than inside it. ' +
+    'That layer is the operator\'s — LUKS or an encrypted ZFS dataset ' +
+    'under PGDATA, a cloud disk with a customer-managed key, or one of ' +
+    'the PostgreSQL forks that has TDE, since the community build has ' +
+    'none. docs/encryption-at-rest.md is this repository\'s write-up ' +
+    'of the options.',
+  keyResidency:
+    'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +
+    'the same unencrypted volume as the store hands both halves to ' +
+    'whoever takes the volume; that is fine for a development stack ' +
+    'and is why the `file` provider is the default, and it is not a ' +
+    'deployment. keys.kekProvider selects a secret store instead.',
+  accountingNote: 'Counted at the ONE funnel both operations pass through — ' +
+    '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
+    'the data encryption keys’ own wraps and unwraps under ' +
+    '`data-keys` — ' +
+    'rather than at the call sites, because a total assembled from call ' +
+    'sites is wrong the first time somebody adds another one and is ' +
+    'wrong SILENTLY. The breakdown below is by a LABEL each call site ' +
+    'passes; a caller that passes none is still counted, under ' +
+    '`(unlabelled)`. THESE ARE PROCESS-WIDE AND NOT PER REALM — a ' +
+    'key-encryption key belongs to the process, so partitioning the ' +
+    'count by realm would be counting the realm a request happened to be ' +
+    'in — and they are in memory, so a restart is how you get an empty ' +
+    'one.',
+  failuresNote: 'A FAILURE IS ALMOST ALWAYS THE WRONG KEY-ENCRYPTION KEY — a ' +
+    'rotated secret, or a store carried between deployments — and it ' +
+    'is its own figure rather than being folded into the decryptions, ' +
+    'because nine hundred decryptions and nine hundred decryptions with ' +
+    'four hundred failures are very different reports. What happens next ' +
+    'depends on what was being read: a signing key that will not open is ' +
+    'FATAL at startup, a session row is dropped, and a second factor ' +
+    'that will not open makes that person unable to sign in until an ' +
+    'operator clears the enrolment — never silently absent, which would ' +
+    'remove a security control.',
+  noSamples:
+    'Neither a sealed value nor an opened one appears anywhere on this ' +
+    'page or in this document. A sealed value is a private key, a shared ' +
+    'secret or somebody’s recovery codes, and printing either half of ' +
+    'one would hand over exactly what the sealing exists to protect. ' +
+    '/admin/ldap/directory is where a `$aesgcm$…` envelope can be ' +
+    'seen, under a heading that says it is the store as the directory ' +
+    'sees it.',
+  storeNote: 'Sealing protects what is WRITTEN DOWN, so what the store holds ' +
+    'decides how much of the table above is reachable by anybody at ' +
+    'all. A `memory` store writes nothing, so nothing in it survives ' +
+    'this process to be read.',
+  dataKeysNote:
+    'One data encryption key per realm and data class seals every ' +
+    'value of that class; the key-encryption key only wraps the data ' +
+    'keys. A ROTATED data key is superseded: it still opens what it ' +
+    'sealed, nothing new is sealed under it, and the re-encryption ' +
+    'job re-seals what it sealed and then destroys it. A DERIVED key ' +
+    'is made from the key-encryption key per run where nothing ' +
+    'outlives the process, and is never stored or rotated.'
+});
+
+// The routes whose answers carry the encryption namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/encryption'];
 
 /**
  * Monitoring → Encryption: what is encrypted in the store, with which key,
@@ -475,6 +644,34 @@ class EncryptionAdmin {
    * See the module's `DATA_CLASSES`.
    */
   static readonly DATA_CLASSES = DATA_CLASSES;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the encryption namespace (#543 phase 2b): what each data class
+   * is and why it is or is not sealed, and the page's notes. A class's
+   * `where` is not harvested: most of them name a table, a row or an
+   * attribute, and a translated one would no longer say where to look.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering EncryptionAdmin.prose().");
+    const harvest = serverProse.harvest;
+    // Keyed by position: a class's `label` is null for the ones that are
+    // not sealed, so it cannot name a row.
+    const out: Record<string, string> = Object.assign({},
+      harvest('encryption.classes', DATA_CLASSES.map(function (one) {
+        return { what: one.what, why: one.why };
+      }), ['what', 'why']),
+      harvest('encryption.notes', NOTES, Object.keys(NOTES)));
+    helpers.log.debug("Leaving EncryptionAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * The four acts of `POST /admin/encryption/data-keys` and
@@ -578,8 +775,7 @@ class EncryptionAdmin {
     });
 
     const out = {
-      what: 'What this service encrypts AT REST, with which key, under which ' +
-            'algorithm, and how much of it has happened in this process.',
+      what: NOTES.what,
       mode: mode.current(),
       // ---------------------------------------------------------------------
       // THE KEY. `keystore.persists()` and `keystore.sealed()` are DIFFERENT
@@ -603,40 +799,11 @@ class EncryptionAdmin {
         providerKnown: !!report.kek.known,
         where: report.kek.where,
         providers: report.kek.providers,
-        note: report.persisting
-          ? 'The key-encryption key is read from the provider above at ' +
-            'startup, before the listener binds. This service never ' +
-            'generates it and never writes it down, and a service that ' +
-            'cannot read it does NOT start — it does not generate a ' +
-            'replacement and carry on, because that would stop every token ' +
-            'it has ever issued from verifying, silently, at somebody else’s ' +
-            'relying party.'
-          : 'This service is in development mode, so nothing it holds ' +
-            'outlives the process and the key-encryption key is EPHEMERAL: ' +
-            'generated per run, never written down, and used only so that ' +
-            'the request-worker pool can share minted rows within one run. ' +
-            'Sealing a directory attribute under it would be WORSE than the ' +
-            'clear — the entry survives a restart in the `ldif` and ' +
-            '`postgres` stores and the key does not, so the value would come ' +
-            'back as permanent garbage. That is why the test at every write ' +
-            'site is `keystore.persists()` rather than `keystore.sealed()`.'
+        note: report.persisting ? NOTES.keyPersisted : NOTES.keyEphemeral
       },
       algorithm: crypto.KEK_PARAMETERS,
       dataKeys: self.dataKeysJson(query || {}),
-      algorithmNote:
-        'AES-256-GCM and deliberately not CBC: GCM is AUTHENTICATED, so a ' +
-        'ciphertext somebody altered fails to decrypt instead of yielding a ' +
-        'subtly different key. A signing key that decrypted to the wrong ' +
-        'bytes would produce signatures nothing can verify, and the failure ' +
-        'would surface at a relying party as "the signature is invalid" — as ' +
-        'far from the cause as it is possible to get. The key-encryption key ' +
-        'NEVER ENCRYPTS A VALUE (#391): every value is encrypted under a ' +
-        'data encryption key — 256 random bits, one per realm per data ' +
-        'class — and the data encryption keys are what the key-encryption ' +
-        'key wraps. A process unwraps each once and holds it, so a key ' +
-        'held in a key management service is asked per data key, never per ' +
-        'value, and rotating the key-encryption key re-wraps a handful of ' +
-        'keys rather than re-encrypting the store.',
+      algorithmNote: NOTES.algorithmNote,
       // ---------------------------------------------------------------------
       // THE TWO LIMITS OF EVERYTHING ABOVE (2026-09-12), and they are on the
       // JSON as well as on the page for `pki_admin.ts`'s `revocationNote`
@@ -653,39 +820,12 @@ class EncryptionAdmin {
         // can assert it rather than matching on a sentence.
         perRealmKey: false,
         perRealmDataKey: true,
-        realms:
-          'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER ' +
-          'TRUST REALM, AND A DATA ENCRYPTION KEY PER REALM PER DATA CLASS ' +
-          '(#391). No data encryption key is shared between realms, so a ' +
-          'value of one realm is never sealed under a key another realm\'s ' +
-          'values are. But every data encryption key is wrapped under the ' +
-          'one key-encryption key, so a realm is NOT an independent ' +
-          'boundary at rest: whoever can read that key can unwrap every ' +
-          'realm\'s data keys, and rotating it re-wraps every realm\'s at ' +
-          'once.',
-        storage:
-          'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
-          'directory entries, the groups, the applications, the realms and ' +
-          'the settings, and in development mode very nearly all of it. This ' +
-          'service seals credentials and private keys and nothing else, ' +
-          'deliberately: column-level encryption leaves the plaintext in the ' +
-          'write-ahead log, in temporary files when a sort spills, in a ' +
-          'pg_dump, on replicas and in query logs, so the layer that covers ' +
-          'a whole store belongs UNDER the database rather than inside it. ' +
-          'That layer is the operator\'s — LUKS or an encrypted ZFS dataset ' +
-          'under PGDATA, a cloud disk with a customer-managed key, or one of ' +
-          'the PostgreSQL forks that has TDE, since the community build has ' +
-          'none. docs/encryption-at-rest.md is this repository\'s write-up ' +
-          'of the options.',
+        realms: NOTES.realms,
+        storage: NOTES.storage,
         // The one deployment mistake that makes everything above decorative,
         // and the one this repository's own compose stack invites by mounting a
         // key file beside the database volume.
-        keyResidency:
-          'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +
-          'the same unencrypted volume as the store hands both halves to ' +
-          'whoever takes the volume; that is fine for a development stack ' +
-          'and is why the `file` provider is the default, and it is not a ' +
-          'deployment. keys.kekProvider selects a secret store instead.'
+        keyResidency: NOTES.keyResidency
       },
       store: store,
       classes: classes,
@@ -704,42 +844,12 @@ class EncryptionAdmin {
           ? new Date(accounting.lastAt).toISOString() : null,
         labels: accounting.labels
       },
-      accountingNote:
-        'Counted at the ONE funnel both operations pass through — ' +
-        '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
-        'the data encryption keys’ own wraps and unwraps under ' +
-        '`data-keys` — ' +
-        'rather than at the call sites, because a total assembled from call ' +
-        'sites is wrong the first time somebody adds another one and is ' +
-        'wrong SILENTLY. The breakdown below is by a LABEL each call site ' +
-        'passes; a caller that passes none is still counted, under ' +
-        '`(unlabelled)`. THESE ARE PROCESS-WIDE AND NOT PER REALM — a ' +
-        'key-encryption key belongs to the process, so partitioning the ' +
-        'count by realm would be counting the realm a request happened to be ' +
-        'in — and they are in memory, so a restart is how you get an empty ' +
-        'one.',
-      failuresNote:
-        'A FAILURE IS ALMOST ALWAYS THE WRONG KEY-ENCRYPTION KEY — a ' +
-        'rotated secret, or a store carried between deployments — and it ' +
-        'is its own figure rather than being folded into the decryptions, ' +
-        'because nine hundred decryptions and nine hundred decryptions with ' +
-        'four hundred failures are very different reports. What happens next ' +
-        'depends on what was being read: a signing key that will not open is ' +
-        'FATAL at startup, a session row is dropped, and a second factor ' +
-        'that will not open makes that person unable to sign in until an ' +
-        'operator clears the enrolment — never silently absent, which would ' +
-        'remove a security control.',
+      accountingNote: NOTES.accountingNote,
+      failuresNote: NOTES.failuresNote,
       // NO CIPHERTEXT AND NO PLAINTEXT IS ON THIS PAGE, said in the JSON as
       // well as in the markup, because a machine reading this may be about to
       // ask where the samples are.
-      noSamples:
-        'Neither a sealed value nor an opened one appears anywhere on this ' +
-        'page or in this document. A sealed value is a private key, a shared ' +
-        'secret or somebody’s recovery codes, and printing either half of ' +
-        'one would hand over exactly what the sealing exists to protect. ' +
-        '/admin/ldap/directory is where a `$aesgcm$…` envelope can be ' +
-        'seen, under a heading that says it is the store as the directory ' +
-        'sees it.'
+      noSamples: NOTES.noSamples
     };
     log.debug('Leaving EncryptionAdmin.encryptionJson(). ' +
               out.accounting.operations + ' operation(s).');
@@ -785,98 +895,8 @@ class EncryptionAdmin {
       // of one tick.
       fellBack: !!active && active !== setting,
       persistsMinted: mintedOn,
-      note: 'Sealing protects what is WRITTEN DOWN, so what the store holds ' +
-            'decides how much of the table above is reachable by anybody at ' +
-            'all. A `memory` store writes nothing, so nothing in it survives ' +
-            'this process to be read.'
+      note: NOTES.storeNote
     };
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE PAGE.
-  // ---------------------------------------------------------------------------
-  private bytes(n: Json): string {
-    const { log } = this.deps;
-    log.debug("Entering EncryptionAdmin.bytes().");
-    const num = Number(n) || 0;
-    if (num < 1024) {
-      log.debug("Leaving EncryptionAdmin.bytes().");
-      return num + ' B';
-    }
-    if (num < 1024 * 1024) {
-      log.debug("Leaving EncryptionAdmin.bytes().");
-      return (num / 1024).toFixed(1) + ' KB';
-    }
-    log.debug("Leaving EncryptionAdmin.bytes().");
-    return (num / (1024 * 1024)).toFixed(1) + ' MB';
-  }
-
-  private when(iso: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering EncryptionAdmin.when().");
-    log.debug("Leaving EncryptionAdmin.when().");
-    return iso ? admin.esc(String(iso).replace('T', ' ').replace(/\..*$/, 'Z'))
-               : '<span class="muted">never</span>';
-  }
-
-  private classesTable(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug('Entering EncryptionAdmin.classesTable().');
-    const rows = json.classes.map(function (one) {
-      // The two halves of the table are told apart by a WORD in a cell rather
-      // than by two tables, because the reading a person came for is the
-      // comparison — *is this encrypted and is that* — and two tables make that
-      // a scroll.
-      const mark = one.sealed
-        ? '<span class="ok">sealed</span>'
-        : '<span class="muted">not sealed</span>';
-      const counts = one.sealed
-        ? admin.esc(String(one.encryptions)) + ' out, ' +
-          admin.esc(String(one.decryptions)) + ' in' +
-          (one.failures
-            ? ' <span class="bad">' + admin.esc(String(one.failures)) +
-              ' failed</span>' : '')
-        : '<span class="muted">&mdash;</span>';
-      return '<tr><td>' + one.what + '</td>' +
-             '<td><code>' + admin.esc(one.where) + '</code></td>' +
-             '<td>' + mark +
-             (one.label ? '<br><code>' + admin.esc(one.label) + '</code>'
-                        : '') +
-             '</td>' +
-             '<td>' + counts + '</td>' +
-             '<td>' + self.when(one.lastAt) + '</td>' +
-             '<td class="why">' + one.why + '</td></tr>';
-    }).join('');
-    log.debug('Leaving EncryptionAdmin.classesTable().');
-    return '<table class="grid"><thead><tr>' +
-           '<th>What</th><th>Where it lives</th><th>At rest</th>' +
-           '<th>Operations</th><th>Last</th><th>Why</th>' +
-           '</tr></thead><tbody>' + rows + '</tbody></table>';
-  }
-
-  private unclassifiedBlock(json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering EncryptionAdmin.unclassifiedBlock().");
-    if (!json.unclassified.length) {
-      log.debug("Leaving EncryptionAdmin.unclassifiedBlock().");
-      return '';
-    }
-    log.debug("Leaving EncryptionAdmin.unclassifiedBlock().");
-    return admin.warn(
-      '<p><strong>' + json.unclassified.length + ' label(s) were counted ' +
-      'that ' +
-      'this page has no row for:</strong> ' +
-      json.unclassified.map(function (row) {
-        return '<code>' + admin.esc(row.label) + '</code> (' +
-               row.encryptions + ' out, ' + row.decryptions + ' in)';
-      }).join(', ') + '.</p>' +
-      '<p>That is a call site somebody added without adding a row to ' +
-      '<code>DATA_CLASSES</code> in ' +
-      '<code>admin-ui/encryption_admin.ts</code>. It is drawn rather than ' +
-      'dropped on purpose: the alternative is a table that goes on looking ' +
-      'complete while the totals above it do not add up to the rows ' +
-      'below.</p>');
   }
 
   // ---------------------------------------------------------------------------
@@ -936,13 +956,7 @@ class EncryptionAdmin {
       lastCounted: counted ? new Date(counted).toISOString() : null,
       keys: paged.shown,
       paging: adminViews().pagingJson(paged.paging),
-      note: 'One data encryption key per realm and data class seals every ' +
-            'value of that class; the key-encryption key only wraps the data ' +
-            'keys. A ROTATED data key is superseded: it still opens what it ' +
-            'sealed, nothing new is sealed under it, and the re-encryption ' +
-            'job re-seals what it sealed and then destroys it. A DERIVED key ' +
-            'is made from the key-encryption key per run where nothing ' +
-            'outlives the process, and is never stored or rotated.'
+      note: NOTES.dataKeysNote
     };
     Object.defineProperty(out, 'pagingRaw',
                           { value: paged.paging, enumerable: false });
@@ -1023,247 +1037,6 @@ class EncryptionAdmin {
     };
   }
 
-  // The section drawn under the algorithm: the lifecycle, the keys, and —
-  // for Admin Write, where keys are stored — the two forms. No script.
-  private renderDataKeys(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug('Entering EncryptionAdmin.renderDataKeys().');
-    const dk = json.dataKeys;
-    const life = dk.lifecycle;
-    const status = !life ? '<p class="warn">The data-key rotation module ' +
-        'is not loaded in this process, so nothing here can be rotated.</p>'
-      : '<p>' + (life.on
-        ? (life.scheduled
-          ? 'Every data encryption key is rotated after <strong>' +
-            admin.esc(String(life.rotationDays)) + ' day(s)</strong> ' +
-            '(<code>keys.dataKeyRotationDays</code>); a new key is used ' +
-            admin.esc(String(life.activationLeadSeconds)) + ' second(s) ' +
-            'after it is published, and a replaced key is destroyed no ' +
-            'sooner than ' + admin.esc(String(life.retireAfterDays)) +
-            ' day(s) after, once nothing is sealed under it.'
-          : 'Scheduled rotation is <strong>off</strong>: ' +
-            admin.esc(life.scheduleOffReason) + '. A rotation by hand ' +
-            'still works.')
-        : 'Nothing is rotated here: ' + admin.esc(life.offReason) + '.') +
-      ' Data stored in the directory is sealed with <code>' +
-      admin.esc(life.directoryCipher) + '</code> ' +
-      '(<code>keys.directoryCipher</code>); everything else with ' +
-      '<code>aes-256-gcm</code>.</p>' +
-      (life.on ? '<p>' + (life.counting
-        ? 'What is sealed under each key is counted once a day ' +
-          '(<code>keys.data-key-count</code>)' + (dk.lastCounted
-            ? ', last at ' + admin.esc(dk.lastCounted) : ', and has not ' +
-              'been counted yet') + '.'
-        : 'Values are not counted: ' + admin.esc(life.countOffReason) +
-          '.') + '</p>' : '');
-    const tiles = '<div class="tiles">' +
-      admin.tile(String(dk.counts.current), 'current') +
-      admin.tile(String(dk.counts.pending), 'waiting to be used') +
-      admin.tile(String(dk.counts.superseded), 'superseded') +
-      admin.tile(String(dk.counts.destroyed), 'destroyed') +
-      admin.tile(String(dk.counts.derived), 'derived per run') +
-      '</div>';
-    const params = this.deps.adminViews().pageParamsOf(req.query || {});
-    const nav = admin.pageNavPair('/admin/encryption', params, dk.pagingRaw);
-    const table = dk.keys.length
-      ? nav.head + '<table class="grid"><thead><tr><th>Realm</th>' +
-        '<th>Class</th><th>Cipher</th><th>State</th><th>Created</th>' +
-        '<th>Used from</th><th>Age (days)</th><th>Values</th>' +
-        '<th>Key id</th></tr></thead><tbody>' +
-        dk.keys.map(function (k: Json): string {
-          return '<tr><td><code>' + admin.esc(k.realm) + '</code></td>' +
-            '<td><code>' + admin.esc(k.cls) + '</code></td>' +
-            '<td><code>' + admin.esc(k.alg) + '</code></td>' +
-            '<td>' + admin.esc(k.state) + '</td>' +
-            '<td>' + admin.esc(k.createdAt || '—') + '</td>' +
-            '<td>' + admin.esc(k.activateAt || '—') + '</td>' +
-            '<td>' + admin.esc(k.ageDays === null ? '—'
-                                                  : String(k.ageDays)) +
-            '</td>' +
-            '<td' + (k.countedAt ? ' title="counted ' +
-                     admin.esc(k.countedAt) + '"' : '') + '>' +
-            admin.esc(k.values === null ? '—' : String(k.values)) + '</td>' +
-            '<td>' + admin.clipped(k.id, 40) + '</td></tr>';
-        }).join('') + '</tbody></table>' + nav.foot
-      : '<p class="muted">No data encryption key is held yet: one is made ' +
-        'the first time a value of its realm and class is sealed.</p>';
-    let forms = '';
-    if (life && life.on && admin.mayWrite(req)) {
-      forms = '<h4>Rotate by hand</h4>' +
-        '<form method="post" action="/admin/encryption/data-keys">' +
-        '<input type="hidden" name="action" value="rotate-data-keys">' +
-        '<label>Realm (empty for every realm): <input type="text" ' +
-        'name="realm" id="data-keys-realm" autocomplete="off"></label> ' +
-        '<label>Class (empty for every class): <input type="text" ' +
-        'name="cls" id="data-keys-cls" autocomplete="off"></label> ' +
-        '<button type="submit" id="data-keys-rotate">Rotate data keys' +
-        '</button></form>' +
-        '<p class="muted">Each key gets a successor, used once it has been ' +
-        'published; what the old key sealed is re-sealed by the ' +
-        're-encryption job.</p>' +
-        '<form method="post" action="/admin/encryption/data-keys">' +
-        '<input type="hidden" name="action" value="reencrypt-data-keys">' +
-        '<button type="submit" id="data-keys-reencrypt">Re-encrypt now' +
-        '</button> — re-seals what is still under a superseded key, and ' +
-        'destroys a superseded key nothing is sealed under that has been ' +
-        'superseded long enough.</form>' +
-        (life.counting
-          ? '<form method="post" action="/admin/encryption/data-keys">' +
-            '<input type="hidden" name="action" value="count-data-keys">' +
-            '<button type="submit" id="data-keys-count">Count now</button> ' +
-            '&mdash; counts what is sealed under every key, in one pass of ' +
-            'the store.</form>'
-          : '') +
-        '<h4>Rotate the key-encryption key</h4>' +
-        (life.kekRotation
-          ? '<form method="post" action="/admin/encryption/data-keys">' +
-            '<input type="hidden" name="action" value="rotate-kek">' +
-            '<button type="submit" id="kek-rotate">Rotate the ' +
-            'key-encryption key</button> &mdash; the key management ' +
-            'service makes a new version, and every data key is re-wrapped ' +
-            'under it. The earlier version stays: data keys other nodes ' +
-            'wrapped under it still unwrap. The identity this service runs ' +
-            'as must be allowed to rotate the key, which the deployments ' +
-            'here do not grant: they rotate it on the KMS\'s own ' +
-            'schedule.</form>'
-          : '<p class="muted">Not from here: ' +
-            admin.esc(life.kekRotationOffReason) + '.</p>');
-    }
-    log.debug('Leaving EncryptionAdmin.renderDataKeys().');
-    return status + tiles + '<p class="muted">' + admin.esc(dk.note) +
-           '</p>' + table + forms;
-  }
-
-  private renderEncryption(req: Req, res: Res): void {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug('Entering EncryptionAdmin.renderEncryption().');
-    const json = self.encryptionJson(req.query || {});
-
-    const tiles = '<div class="tiles">' +
-      admin.tile(String(json.accounting.operations), 'operations') +
-      admin.tile(String(json.accounting.encryptions), 'encryptions') +
-      admin.tile(String(json.accounting.decryptions), 'decryptions') +
-      admin.tile(String(json.accounting.failures), 'failed to open') +
-      admin.tile(json.key.present
-        ? (json.key.persists ? 'durable' : 'ephemeral') : 'none',
-        'key-encryption key') +
-      admin.tile(json.mode, 'mode') +
-      '</div>';
-
-    const what = admin.note(
-      '<p>This page answers <strong>what this service encrypts at rest, with ' +
-      'which key, under which algorithm, and how much of it has ' +
-      'happened</strong>. It is under Monitoring rather than beside the ' +
-      'other two cryptography pages because of what it is: <a ' +
-      'href="/admin/crypto-metadata">the crypto report</a> says what this ' +
-      'service <em>does</em> when it signs or encrypts and reads the same on ' +
-      'a service that started a second ago, and <a href="/admin/keys">the ' +
-      'keys page</a> says what one realm <em>holds</em>. The numbers here go ' +
-      'up while you watch.</p><p><strong>Neither a sealed value nor an ' +
-      'opened one appears on this page.</strong> A sealed value is a private ' +
-      'key, an authenticator&rsquo;s shared secret or somebody&rsquo;s ' +
-      'recovery codes, and printing either half of one would hand over ' +
-      'exactly what the sealing exists to protect. Its only controls rotate ' +
-      'the data encryption keys, re-seal and count what they sealed, and ' +
-      'rotate a key-encryption key that is in a key management service ' +
-      '(which makes the new version itself), and they show nothing. A ' +
-      'key-encryption key READ into this process is rotated by deploying ' +
-      'its successor &mdash; this service reads one and never writes one ' +
-      '&mdash; and a <em>decrypt this</em> button would be the one door ' +
-      'onto material no door is supposed to have.</p>',
-      'What this page is, and the two things it deliberately has not got');
-
-    const keyBlock = admin.note(
-      '<p>The key-encryption key is read by <code>common/secrets.js</code> ' +
-      'from <strong>' + admin.esc(json.key.providerLabel) + '</strong> ' +
-      '(<code>' + admin.esc(json.key.provider) + '</code>)' +
-      (json.key.kmsKey ? ' &mdash; <strong>' + admin.esc(json.key.kmsKey) +
-        '</strong>, which never leaves it: the service holds a handle, ' +
-        'not the key, and asks it to wrap and unwrap each data key' : '') +
-      ', once, at startup ' +
-      'and before the listener binds. <code>file</code> is the default ' +
-      'because it needs nothing: Kubernetes mounts a Secret as a file, ' +
-      'Docker mounts a secret as a file, and every other provider here is ' +
-      'that same idea with somebody else&rsquo;s access control in front of ' +
-      'it.</p><p>' + json.key.note + '</p>' +
-      '<p><strong>A key shorter than 32 bytes is REFUSED rather than ' +
-      'stretched.</strong> Stretching would let a four-character password ' +
-      'protect every signing key this service holds while the log said ' +
-      'AES-256. Hex is tried before base64, because a 64-character hex ' +
-      'string is also valid base64 and reading it that way produces 48 ' +
-      'different bytes.</p><p class="muted">Available providers: ' +
-      json.key.providers.map(function (one) {
-        return '<code>' + admin.esc(one.id) + '</code> ' + admin.esc(one.label);
-      }).join(', ') + '. <code>keys.kekProvider</code> selects one.</p>',
-      'Where the key comes from');
-
-    // **THE LIMITS, DRAWN AS A WARNING RATHER THAN A NOTE.** Everything else on
-    // this page says what IS encrypted, and a reader who stops there comes away
-    // believing more than is true — which is the shape of mistake this console
-    // draws in amber everywhere else.
-    const boundsBlock = admin.warn(
-      '<p>' + admin.esc(json.boundaries.realms) + '</p>' +
-      '<p>' + admin.esc(json.boundaries.storage) + '</p>' +
-      '<p>' + admin.esc(json.boundaries.keyResidency) + '</p>',
-      'What this key does not separate, and what this page does not cover');
-
-    const algBlock = admin.note(
-      '<p>' + json.algorithmNote + '</p>' +
-      '<table class="grid"><tbody>' +
-      [['Cipher', json.algorithm.cipher],
-       ['Key', json.algorithm.keyBits + '-bit'],
-       ['Nonce', json.algorithm.ivBits + '-bit, random per record'],
-       ['Authentication tag', json.algorithm.tagBits + '-bit'],
-       ['Data keys', json.algorithm.dataKeys],
-       ['Data key wrapping', json.algorithm.dekWrap],
-       ['Authenticated data', json.algorithm.aad],
-       ['Envelope', json.algorithm.envelope]].map(function (pair) {
-        return '<tr><th>' + admin.esc(pair[0]) + '</th><td><code>' +
-               admin.esc(String(pair[1])) + '</code></td></tr>';
-      }).join('') +
-      '</tbody></table>' +
-      '<p class="muted">Every figure in that table is read out of ' +
-      '<code>common/crypto.js</code>&rsquo;s own <code>KEK_PARAMETERS</code> ' +
-      'rather than written down here &mdash; the same rule ' +
-      '<a href="/admin/crypto-metadata">the crypto report</a> follows about ' +
-      'reading an algorithm table from the module that performs the ' +
-      'algorithm, so this page cannot go on looking complete while being ' +
-      'wrong.</p>',
-      'The algorithm, and why it is authenticated');
-
-    const countsBlock = admin.note(
-      '<p>' + json.accountingNote + '</p><p>' + json.failuresNote + '</p>' +
-      '<p class="muted">Since ' + self.when(json.accounting.since) +
-      '. First operation ' + self.when(json.accounting.firstAt) +
-      ', most recent ' + self.when(json.accounting.lastAt) + '. ' +
-      admin.esc(self.bytes(json.accounting.plaintextBytes)) +
-      ' of plaintext has ' +
-      'passed through, producing ' +
-      admin.esc(self.bytes(json.accounting.ciphertextBytes)) +
-      ' of ciphertext.</p>',
-      'How the counting works, and what a failure means');
-
-    const storeBlock = admin.note(
-      '<p>' + json.store.note + ' This service is on the <strong>' +
-      admin.esc(json.store.mode) + '</strong> store, and what it MINTS ' +
-      (json.store.persistsMinted ? 'IS' : 'is NOT') + ' persisted.</p>',
-      'The store underneath all of it');
-
-    admin.respond(req, res, json, 'Encryption', '/admin/encryption',
-                  tiles + what +
-                  '<h3>What is encrypted, and what is not</h3>' +
-                  self.classesTable(json) +
-                  self.unclassifiedBlock(json) +
-                  '<h3>The key</h3>' + keyBlock + boundsBlock +
-                  '<h3>The algorithm</h3>' + algBlock +
-                  '<h3>The data encryption keys</h3>' +
-                  self.renderDataKeys(req, json) +
-                  '<h3>The counting</h3>' + countsBlock +
-                  storeBlock);
-    log.debug('Leaving EncryptionAdmin.renderEncryption().');
-  }
-
   // For `tests/encryption_report.js`, which checks the table against the
   // labels the call sites actually pass. Exported for `pki_authoring.js`'s
   // reason: a class described here and never sealed, or sealed and never
@@ -1290,34 +1063,6 @@ class EncryptionAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering EncryptionAdmin.registerRoutes().");
-    app.get('/admin/encryption', function (req, res) {
-      log.debug('Entering GET /admin/encryption.');
-      self.renderEncryption(req, res);
-      log.debug('Leaving GET /admin/encryption.');
-    });
-    // THE DATA-KEY ACTS (#391 P2). Admin Write; a service page, so a realm's
-    // own administrator never reaches it (`admin_scope.ts`).
-    app.post('/admin/encryption/data-keys', function (req, res) {
-      log.debug('Entering POST /admin/encryption/data-keys.');
-      if (!admin.mayWrite(req)) {
-        require('../common/error_codes').mark(res, 'STS-ADMIN-0012');
-        admin.respondToAction(req, res, '/admin/encryption', { ok: false,
-          errors: ['Rotating data encryption keys needs the Admin Write ' +
-                   'role.'] });
-        log.debug('Leaving POST /admin/encryption/data-keys. Read-only.');
-        return;
-      }
-      const result = self.dataKeysAction(req, helpers.parseBody(req),
-                                         'the admin console');
-      if (!result.ok) {
-        require('../common/error_codes').mark(res,
-          result.errorCode || 'STS-ADMIN-0012');
-      }
-      admin.respondToAction(req, res,
-                            result.ok ? result.href : '/admin/encryption',
-                            result);
-      log.debug('Leaving POST /admin/encryption/data-keys. ' + result.ok);
-    });
     log.debug("Leaving EncryptionAdmin.registerRoutes().");
   }
 }
@@ -1358,6 +1103,8 @@ slot.buildNowUnlessDeferred();
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   EncryptionAdmin: EncryptionAdmin,
+  PROSE_ROUTES: EncryptionAdmin.PROSE_ROUTES,
+  prose: EncryptionAdmin.prose,
   /**
    * Installs the instance the composition root built and runs its
    * wire step; a second install is refused.

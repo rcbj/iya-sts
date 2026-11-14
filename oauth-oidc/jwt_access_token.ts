@@ -76,6 +76,10 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
+// Where the authorization server is advertised when a resource server is on
+// another listener (#472), and the realm prefix after it. LEAVES.
+import listenerMap = require('../common/listener_map');
+import realms = require('../common/realms');
 // The registry of error codes: a leaf. A refusal carries its code under the
 // Symbol `mark()` sets, so a caller that answers it can mark the response
 // without the code ever being serialised.
@@ -379,15 +383,51 @@ class JwtAccessTokens {
       log.debug("Leaving JwtAccessTokens.isHostedIssuer(). No issuer.");
       return false;
     }
-    if (text === this.issuerFor(base)) {
-      log.debug("Leaving JwtAccessTokens.isHostedIssuer(). The default " +
-                "authorization server.");
-      return true;
-    }
-    const asBase = this.hostedBaseOf(text, base);
-    const hosted = !!asBase && this.issuerFor(asBase) === text;
+    // THE AUTHORIZATION SERVER MAY BE ON ANOTHER LISTENER THAN THE RESOURCE
+    // SERVER ASKING (#472): `/admin-api` on one, `oauth-oidc` advertised on
+    // another, so the issuer at the resource server's own base is not the
+    // only one this process publishes for the realm. The base `oauth-oidc`
+    // is advertised on is the other.
+    const self = this;
+    const hosted = [base].concat(this.authorizationServerBase(base))
+      .some(function (one: string): boolean {
+        if (text === self.issuerFor(one)) {
+          return true;
+        }
+        const asBase = self.hostedBaseOf(text, one);
+        return !!asBase && self.issuerFor(asBase) === text;
+      });
     log.debug("Leaving JwtAccessTokens.isHostedIssuer(). hosted=" + hosted);
     return hosted;
+  }
+
+  // Where `oauth-oidc` is advertised in the ambient realm when that is not
+  // the base a resource server was asked at (#472): its custom listener's
+  // `publicBaseUrl`, or, where it is the main port and nothing pins that,
+  // the main port on the asking base's host name. Empty when it is the same.
+  private authorizationServerBase(base: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering JwtAccessTokens.authorizationServerBase().");
+    if (listenerMap.isTrivial()) {
+      log.debug("Leaving JwtAccessTokens.authorizationServerBase(). Same.");
+      return [];
+    }
+    let found = helpers.pinnedBaseUrl('oauth-oidc');
+    if (!found) {
+      try {
+        const asked = new URL(String(base || ''));
+        found = (config.value('global.https') === true ? 'https' : 'http') +
+          '://' + asked.host.replace(/:\d+$/, '') + ':' +
+          Number(config.value('global.port'));
+      } catch (e) {
+        log.debug("Caught in JwtAccessTokens.authorizationServerBase(): " +
+                  ((e && e.message) || e));
+        found = '';
+      }
+    }
+    const out = found ? found + realms.currentPrefix() : '';
+    log.debug("Leaving JwtAccessTokens.authorizationServerBase().");
+    return out && out !== base ? [out] : [];
   }
 
   // SECTION 4 STEP 4: the aud claim "contains a resource indicator value
@@ -456,10 +496,12 @@ class JwtAccessTokens {
   // 3.1's code for a token that is "expired, revoked, malformed, or invalid
   // for other reasons", which is what section 4's last step says to use.
   //
-  // **`options.audience` REPLACES STEP 4 AND NOTHING ELSE** (2026-09-13): RFC
-  // 9470's stand-in resource answers for a REGISTERED application rather than
-  // for this service, so the identifier it "expects for itself" is that
-  // application's — `{ names(audiences) -> boolean, label }`. Steps 1 and 3
+  // **`options.audience` REPLACES STEP 4 AND NOTHING ELSE** (2026-09-13): a
+  // resource server answering for a REGISTERED application rather than for
+  // this service — RFC 9470's stand-in resource until #593 deleted it, and a
+  // caller of `dpop.presentedAccessToken()`'s `audience` option since — so
+  // the identifier it "expects for itself" is that application's —
+  // `{ names(audiences) -> boolean, label }`. Steps 1 and 3
   // are the same for every resource server here, because the authorization
   // servers it trusts are the same.
   // -------------------------------------------------------------------------
@@ -472,7 +514,8 @@ class JwtAccessTokens {
    * @param base - the request's base URL
    * @param options - `audience` (`{ names, label }`), which replaces the
    *   audience check for a resource server answering for a registered
-   *   application
+   *   application, and `skipTyp` for an opaque handle (#501), which has no
+   *   JOSE header. Issuer and audience are still checked.
    * @returns null to accept, or an `invalid_token` refusal `{ error,
    *   description }` carrying its error code
    */
@@ -482,18 +525,23 @@ class JwtAccessTokens {
     const self = this;
     log.debug("Entering JwtAccessTokens.resourceServerRefusal().");
     const audience = (options && options.audience) || null;
-    const typ = this.typOf(token);
-    if (!this.isAccessTokenType(typ)) {
-      log.debug("Leaving JwtAccessTokens.resourceServerRefusal(). typ=" +
-                (typ || '(none)'));
-      return this.refusal('STS-OAUTH-0247',
-        'RFC 9068 section 4: a resource server MUST verify that the typ ' +
-        'header of a JWT access token is "at+jwt", and this token\'s is ' +
-        (typ ? '"' + typ + '"' : 'absent') + '. Every token this service ' +
-        'signs is signed with the same key, so the header is what tells an ' +
-        'access token apart from an ID Token, a logout token or a Security ' +
-        'Event Token. An access token minted before this service issued ' +
-        'at+jwt is refused too; ask the token endpoint for a new one.');
+    // An opaque handle (#501) has no JOSE header. The caller resolved it
+    // from the store and passes skipTyp. Issuer and audience still run.
+    if (!(options && options.skipTyp)) {
+      const typ = this.typOf(token);
+      if (!this.isAccessTokenType(typ)) {
+        log.debug("Leaving JwtAccessTokens.resourceServerRefusal(). typ=" +
+                  (typ || '(none)'));
+        return this.refusal('STS-OAUTH-0247',
+          'RFC 9068 section 4: a resource server MUST verify that the typ ' +
+          'header of a JWT access token is "at+jwt", and this token\'s is ' +
+          (typ ? '"' + typ + '"' : 'absent') + '. Every token this service ' +
+          'signs is signed with the same key, so the header is what tells ' +
+          'an access token apart from an ID Token, a logout token or a ' +
+          'Security Event Token. An access token minted before this ' +
+          'service issued at+jwt is refused too; ask the token endpoint ' +
+          'for a new one.');
+      }
     }
     const claimsIn = claims || {};
     if (!this.isHostedIssuer(claimsIn.iss, base)) {

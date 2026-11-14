@@ -91,7 +91,9 @@
 // exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import ModelTables = require('../common/model_tables');
+import Classes = require('../common/domain_classes');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
@@ -171,6 +173,31 @@ class SpiffeRegistry {
     deps.log.debug("Leaving SpiffeRegistry.constructor().");
   }
 
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * what each object class and attribute of the schema holds, and the short
+   * phrases its `where` and `from` columns say in words — once each, rather
+   * than once per row that carries them. A `where` that cites an RFC is a
+   * citation and is not translated.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeRegistry.prose().");
+    // LAZILY: `server_prose` requires `config.js` at its load, and this is
+    // asked only when the namespace is first built.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> =
+      harvest('spiffe.registry.schema', SCHEMA, ['what']);
+    out['spiffe.registry.schema.where.thisService'] = 'this service';
+    out['spiffe.registry.schema.from.thisRegistry'] = 'this registry';
+    out['spiffe.registry.schema.from.theCaller'] = 'the caller';
+    out['spiffe.registry.schema.from.theAgent'] = 'the agent';
+    helpers.log.debug("Leaving SpiffeRegistry.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
   // What the composition root passes, from the real modules.
   /**
    * Returns the dependencies the composition root passes.
@@ -215,77 +242,34 @@ class SpiffeRegistry {
     return config.value('spiffe.maxAgents');
   }
 
-  // Every attribute lookup goes through here, because names arrive canonically
-  // spelled on the way OUT of the directory and lower-cased in the store. An
-  // index assuming either produces a record with an empty identifier rather
-  // than an error — the defect `applications.js` names in its own header.
+  // A concept holds what the entry says as text, so its LDAP booleans and
+  // integers are read here. The concept's own lookup is what makes a name
+  // arriving canonically spelled and one lower-cased in the store the same
+  // attribute (#1390), the defect `applications.js` names in its own header.
   /**
-   * Returns an attribute's values by its name, whatever case either side spells
-   * it in.
+   * Reads a concept's field as an LDAP boolean.
    *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
-   * @returns the values, or []
-   */
-  byLowerName(attributes, name) {
-    const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.byLowerName().");
-    if (!attributes) {
-      log.debug("Leaving SpiffeRegistry.byLowerName().");
-      return [];
-    }
-    const key = String(name).toLowerCase();
-    const found = attributes[key] !== undefined ? attributes[key] :
-                  attributes[name];
-    if (found === undefined) {
-      log.debug("Leaving SpiffeRegistry.byLowerName().");
-      return [];
-    }
-    log.debug("Leaving SpiffeRegistry.byLowerName().");
-    return Array.isArray(found) ? found : [found];
-  }
-
-  /**
-   * Returns an attribute's first value.
-   *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
-   * @returns the value, or ''
-   */
-  firstValue(attributes, name) {
-    const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.firstValue().");
-    const values = this.byLowerName(attributes, name);
-    log.debug("Leaving SpiffeRegistry.firstValue().");
-    return values.length ? String(values[0]) : '';
-  }
-
-  /**
-   * Reads an attribute as an LDAP boolean.
-   *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
+   * @param text - the field's value, if it has one
    * @returns whether it is TRUE
    */
-  boolValue(attributes, name) {
+  isTrue(text) {
     const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.boolValue().");
-    log.debug("Leaving SpiffeRegistry.boolValue().");
-    return /^true$/i.test(this.firstValue(attributes, name));
+    log.debug("Entering SpiffeRegistry.isTrue().");
+    log.debug("Leaving SpiffeRegistry.isTrue().");
+    return /^true$/i.test(text || '');
   }
 
   /**
-   * Reads an attribute as an integer.
+   * Reads a concept's field as an integer.
    *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
+   * @param text - the field's value, if it has one
    * @returns the integer, or 0
    */
-  intValue(attributes, name) {
+  intOf(text) {
     const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.intValue().");
-    const n = parseInt(this.firstValue(attributes, name), 10);
-    log.debug("Leaving SpiffeRegistry.intValue().");
+    log.debug("Entering SpiffeRegistry.intOf().");
+    const n = parseInt(text || '', 10);
+    log.debug("Leaving SpiffeRegistry.intOf().");
     return Number.isFinite(n) ? n : 0;
   }
 
@@ -446,28 +430,31 @@ class SpiffeRegistry {
       return null;
     }
     const a = entry.attributes || {};
+    // The entry as the domain model says it means (#1390), made once per
+    // entry: this runs for every entry of every Workload API answer.
+    const held = Classes.SpiffeRegistration.fromEntry(a);
     const record: Record<string, any> = {
-      id: this.firstValue(a, 'spiffeEntryId') || this.firstValue(a, 'cn'),
+      id: held.entryId || held.cn || '',
       dn: entry.dn,
-      spiffeId: this.firstValue(a, 'spiffeId'),
-      parentId: this.firstValue(a, 'spiffeParentId'),
-      selectors: this.byLowerName(a, 'spiffeSelector').map(function (s) {
+      spiffeId: held.id || '',
+      parentId: held.parentId || '',
+      selectors: (held.selector || []).map(function (s) {
         return self.parseSelector(s);
       }).filter(Boolean),
-      x509SvidTtl: this.intValue(a, 'spiffeX509SvidTtl'),
-      jwtSvidTtl: this.intValue(a, 'spiffeJwtSvidTtl'),
-      dnsNames: this.byLowerName(a, 'spiffeDnsName').map(String),
-      federatesWith: this.byLowerName(a, 'spiffeFederatesWith').map(String),
-      hint: this.firstValue(a, 'spiffeHint'),
-      admin: this.boolValue(a, 'spiffeAdmin'),
-      downstream: this.boolValue(a, 'spiffeDownstream'),
-      storeSvid: this.boolValue(a, 'spiffeStoreSvid'),
-      expiresAt: this.intValue(a, 'spiffeEntryExpiresAt'),
-      revisionNumber: this.intValue(a, 'spiffeRevisionNumber'),
-      origin: this.firstValue(a, 'spiffeOrigin') || 'unstated',
-      svidsIssued: this.intValue(a, 'spiffeSvidsIssued'),
-      lastSvidAt: this.firstValue(a, 'spiffeLastSvidAt'),
-      createdAt: this.firstValue(a, 'spiffeCreatedAt') || entry.createdAt || '',
+      x509SvidTtl: this.intOf(held.x509SvidTtl),
+      jwtSvidTtl: this.intOf(held.jwtSvidTtl),
+      dnsNames: held.dnsName || [],
+      federatesWith: held.federatesWith || [],
+      hint: held.hint || '',
+      admin: this.isTrue(held.admin),
+      downstream: this.isTrue(held.downstream),
+      storeSvid: this.isTrue(held.storeSvid),
+      expiresAt: this.intOf(held.entryExpiresAt),
+      revisionNumber: this.intOf(held.revisionNumber),
+      origin: held.origin || 'unstated',
+      svidsIssued: this.intOf(held.svidsIssued),
+      lastSvidAt: held.lastSvidAt || '',
+      createdAt: held.createdAt || entry.createdAt || '',
       modifiedAt: entry.modifiedAt || '',
       attributes: a
     };
@@ -492,21 +479,19 @@ class SpiffeRegistry {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.attributesFromRecord().');
     const now = this.generalizedTime();
-    const previous = existing || {};
+    const previous = Classes.SpiffeRegistration.fromEntry(existing || {});
     const attributes: Record<string, any> = {
       objectclass: ['top', 'applicationProcess', 'spiffeRegistrationEntry'],
       cn: [record.id],
       spiffeentryid: [record.id],
       spiffeid: [record.spiffeId],
       spiffeparentid: [record.parentId],
-      spiffecreatedat: [this.firstValue(previous, 'spiffeCreatedAt') || now],
-      spiffeorigin: [record.origin ||
-                     this.firstValue(previous, 'spiffeOrigin') ||
-                     'unstated'],
+      spiffecreatedat: [previous.createdAt || now],
+      spiffeorigin: [record.origin || previous.origin || 'unstated'],
       spifferevisionnumber: [String(record.revisionNumber || 0)],
       spiffesvidsissued: [String(record.svidsIssued || 0)],
       description: [record.description ||
-                    this.firstValue(previous, 'description') ||
+                    (previous.description || [])[0] ||
                     'A SPIFFE registration entry.']
     };
     const selectors = (record.selectors || []).map(this.selectorText.bind(this))
@@ -1048,6 +1033,89 @@ class SpiffeRegistry {
     return { ok: true, errors: [], id: id, entry: this.entryById(id) };
   }
 
+  // -------------------------------------------------------------------------
+  // A REGISTRATION ENTRY REMOVED, SAID OVER CAEP (#221 P5).
+  //
+  // A registration entry is what lets a workload be ISSUED an SVID here, so
+  // its removal is a change to the workload's credential: CAEP
+  // `credential-change` about the WORKLOAD, named by its SPIFFE ID as a
+  // plain `uri` subject (`ssf_subjects.js` argues it), with this service's
+  // `urn:iya:sts:credential-type:spiffe-registration`. `delete` when it was
+  // the LAST entry naming that SPIFFE ID — no SVID can be issued for it here
+  // any more — and `update` when others still name it, because the
+  // conditions under which one may be issued narrowed and did not end.
+  //
+  // **NOT `session-revoked`.** Nothing ended: SPIFFE has no revocation, an
+  // SVID already issued verifies until it expires (the paragraph above), and
+  // a workload holds no session here — the Workload API has none. Sending one
+  // would tell a receiver to tear down something that is still valid.
+  //
+  // Found through `ssf/account_signals.ts` (a `require.cache` lookup, never a
+  // load of SSF), and never into the delete.
+  // -------------------------------------------------------------------------
+  private signalRegistrationRemoved(existing, id, remaining, actor): void {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeRegistry.signalRegistrationRemoved().');
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ workload: String(existing.spiffeId),
+        username: '',
+        credentialType: signals.SPIFFE_REGISTRATION_CREDENTIAL_TYPE,
+        changeType: remaining ? 'update' : 'delete',
+        friendlyName: 'SPIFFE registration entry ' + id,
+        initiatingEntity: actor ? 'admin' : 'system',
+        via: 'the SPIFFE registry',
+        reasonAdmin: 'The SPIFFE registration entry ' + id + ' for ' +
+          existing.spiffeId + ' was deleted' + (remaining
+            ? '; ' + remaining + ' other entry/entries still name it.'
+            : ', the last naming it, so no SVID can be issued for it here.'),
+        reasonUser: 'A registration that lets this workload be issued an ' +
+          'SVID was removed.' });
+    } catch (e) {
+      log.debug('Caught in SpiffeRegistry.signalRegistrationRemoved(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0140') + 'spiffe: the ' +
+               'credential-change for the removed registration entry ' + id +
+               ' could not be started: ' + ((e && e.message) || e));
+    }
+    log.debug('Leaving SpiffeRegistry.signalRegistrationRemoved().');
+  }
+
+  // A REGISTRATION ENTRY DELETED OVER THE LDAP SOCKET (#221, the gap P5
+  // left): the directory removed it itself, so `deleteEntry()` never ran.
+  // What follows the removal is the same — the holder's identity marked
+  // revoked where this was the last entry naming it, and the
+  // credential-change — told from the entry as it was.
+  /**
+   * Reports a registration entry the directory deleted without the registry —
+   * an LDAP delete over the socket — as `deleteEntry()` reports its own.
+   *
+   * @param entry - the stored entry as it was
+   * @param actor - the bound DN that deleted it, or ''
+   */
+  noteEntryRemovedOutside(entry, actor) {
+    const { log, stats } = this.deps;
+    log.debug('Entering SpiffeRegistry.noteEntryRemovedOutside().');
+    const existing = this.recordFromEntry(entry);
+    if (!existing || !existing.spiffeId) {
+      log.debug('Leaving SpiffeRegistry.noteEntryRemovedOutside(). Not an ' +
+                'entry.');
+      return;
+    }
+    const remaining = this.entriesForSpiffeId(existing.spiffeId).length;
+    if (!remaining) {
+      stats.recordCredentialStatus(existing.spiffeId, 'revoked', {
+        reason: 'the last SPIFFE registration entry naming this identity (' +
+                existing.id + ') was deleted over LDAP, so no further SVID ' +
+                'can be issued for it here. Nothing was revoked — SPIFFE has ' +
+                'no revocation — and any SVID already issued verifies until ' +
+                'it expires.'
+      });
+    }
+    this.signalRegistrationRemoved(existing, existing.id, remaining, actor);
+    log.debug('Leaving SpiffeRegistry.noteEntryRemovedOutside().');
+  }
+
   /**
    * Deletes a registration entry, and audits it.
    *
@@ -1094,6 +1162,7 @@ class SpiffeRegistry {
                 'entries still name ' + existing.spiffeId + ', so its ' +
                 'directory entry is left active.');
     }
+    this.signalRegistrationRemoved(existing, id, remaining, actor);
     log.debug('Leaving SpiffeRegistry.deleteEntry(). Removed.');
     return { ok: true, errors: [], id: id };
   }
@@ -1184,21 +1253,24 @@ class SpiffeRegistry {
       return null;
     }
     const a = entry.attributes || {};
+    // An agent is the same concept as a registration entry (#1390): both are
+    // what `ou=spiffe` holds, and the agent's fields are its own.
+    const held = Classes.SpiffeRegistration.fromEntry(a);
     log.debug('Leaving SpiffeRegistry.agentFromEntry().');
     return {
-      id: this.firstValue(a, 'spiffeAgentId'),
+      id: held.agentId || '',
       dn: entry.dn,
-      attestationType: this.firstValue(a, 'spiffeAttestationType'),
-      selectors: this.byLowerName(a, 'spiffeAgentSelector')
+      attestationType: held.attestationType || '',
+      selectors: (held.agentSelector || [])
         .map(this.parseSelector.bind(this))
         .filter(Boolean),
-      banned: this.boolValue(a, 'spiffeAgentBanned'),
-      canReattest: this.boolValue(a, 'spiffeAgentCanReattest'),
-      svidHash: this.firstValue(a, 'spiffeAgentSvidHash'),
-      expiresAt: this.intValue(a, 'spiffeAgentExpiresAt'),
-      firstSeen: this.firstValue(a, 'spiffeFirstSeen'),
-      lastSeen: this.firstValue(a, 'spiffeLastSeen'),
-      attestations: this.intValue(a, 'spiffeAttestations'),
+      banned: this.isTrue(held.agentBanned),
+      canReattest: this.isTrue(held.agentCanReattest),
+      svidHash: held.agentSvidHash || '',
+      expiresAt: this.intOf(held.agentExpiresAt),
+      firstSeen: held.firstSeen || '',
+      lastSeen: held.lastSeen || '',
+      attestations: this.intOf(held.attestations),
       attributes: a
     };
   }
@@ -1428,8 +1500,8 @@ class SpiffeRegistry {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeRegistry.agentCnFor().");
     log.debug("Leaving SpiffeRegistry.agentCnFor().");
-    return 'agent-' + crypto.createHash('sha256').update(String(id))
-      .digest('hex').slice(0, 12);
+    return 'agent-' + crypto.digest('sha256', String(id), 'hex')
+      .slice(0, 12);
   }
 
   /**
@@ -1590,175 +1662,8 @@ const slot = new InstanceSlot<SpiffeRegistry>(
  * The directory schema of registration entries and agents: the object classes
  * and attributes, with where each is defined and what it holds.
  */
-const SCHEMA = {
-  objectClasses: [
-    { name: 'top', where: 'RFC 4512', standard: true,
-      what: 'The abstract class every entry carries.' },
-    { name: 'applicationProcess', where: 'RFC 4519 section 3.3', standard: true,
-      what: 'The one REGISTERED class that fits: it brings cn and ' +
-            'description, so the NAME of a registration entry is a standard ' +
-            'attribute even though nothing else about it can be. The same ' +
-            'class ou=applications uses, for the same reason.' },
-    { name: 'spiffeRegistrationEntry', where: 'this service', standard: false,
-      what: 'INVENTED. No registered LDAP schema has a SPIFFE ID, a parent ' +
-            'ID or a selector — SPIRE keeps its entries in SQL and nothing ' +
-            'else keeps them anywhere — so there was nothing to borrow.' },
-    { name: 'spiffeAgent', where: 'this service', standard: false,
-      what: 'INVENTED, for the same reason, on the entries under ou=agents.' }
-  ],
-  attributes: [
-    // --- identity ---------------------------------------------------------
-    { name: 'spiffeEntryId', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'THE KEY: the entry id, which is what the SPIRE Server API calls ' +
-            '`id` and what BatchUpdateEntry and BatchDeleteEntry name. ' +
-            'Generated here as 32 hex characters and never reused. The ' +
-            'entry\'s own cn is a shortened form of it, so this is the ' +
-            'attribute to search on — the arrangement appIdentifier already ' +
-            'has one container over.' },
-    { name: 'cn', kind: 'single', from: 'this registry', standard: true,
-      editable: false,
-      what: 'The RDN value: the entry id.' },
-    { name: 'spiffeId', kind: 'single', from: 'the caller', editable: true,
-      what: 'THE IDENTITY THIS ENTRY GRANTS — the SPIFFE ID a matching ' +
-            'workload is issued. Refused if it is not a valid SPIFFE ID, if ' +
-            'it belongs to another trust domain, or if it is under the ' +
-            'reserved /spire path.' },
-    { name: 'spiffeParentId', kind: 'single', from: 'the caller',
-      editable: true,
-      what: 'WHO MAY ISSUE IT: the SPIFFE ID of the agent (or of this ' +
-            'server) that this entry hangs beneath. It decides which ' +
-            'entries GetAuthorizedEntries and SyncAuthorizedEntries tell an ' +
-            'agent about: those beneath its own SPIFFE ID or a node alias ' +
-            'its selectors match, and BatchNewX509SVID and NewJWTSVID ' +
-            'refuse an agent any other entry.' },
-    { name: 'spiffeSelector', kind: 'multi', from: 'the caller', editable: true,
-      what: 'One value per selector, written `type:value` — `unix:uid:1000`, ' +
-            '`k8s:ns:default`, `docker:label:app:web`. The type is ' +
-            'everything before the FIRST colon and the value is the whole ' +
-            'rest, colons included, which is why they are stored as one ' +
-            'string rather than as a pair: splitting on every colon is how ' +
-            '`docker:label:app:web` becomes a selector nobody wrote.' },
-
-    // --- what gets issued -------------------------------------------------
-    { name: 'spiffeX509SvidTtl', kind: 'single', from: 'the caller',
-      editable: true,
-      what: 'The lifetime in seconds of the X509-SVIDs this entry produces. ' +
-            'Absent or 0 means spiffe.svidTtl.' },
-    { name: 'spiffeJwtSvidTtl', kind: 'single', from: 'the caller',
-      editable: true,
-      what: 'The same for JWT-SVIDs. Absent or 0 means spiffe.jwtSvidTtl.' },
-    { name: 'spiffeDnsName', kind: 'multi', from: 'the caller', editable: true,
-      what: 'DNS subjectAltNames added to the SVID beside the SPIFFE ID. ' +
-            'What makes an SVID usable by TLS software that checks a ' +
-            'hostname and cannot read a SPIFFE ID.' },
-    { name: 'spiffeFederatesWith', kind: 'multi', from: 'the caller',
-      editable: true,
-      what: 'Trust domain names whose bundles are handed to a workload ' +
-            'holding this identity — X509SVIDResponse.federated_bundles. A ' +
-            'name with no bundle here is recorded and simply contributes ' +
-            'nothing, because a federation relationship configured before ' +
-            'the bundle arrives is the ordinary order of events.' },
-    { name: 'spiffeHint', kind: 'single', from: 'the caller', editable: true,
-      what: 'The operator\'s guidance when a workload gets more than one ' +
-            'SVID — `internal`, `external`. Passed through to the Workload ' +
-            'API verbatim; nothing here reads it.' },
-    { name: 'spiffeAdmin', kind: 'single', from: 'the caller', editable: true,
-      what: 'TRUE where the holder may call the SPIRE Server API\'s ' +
-            'administrative methods. RECORDED AND NOT ENFORCED, like every ' +
-            'other authorization fact in this service: no call here is ' +
-            'refused for want of it.' },
-    { name: 'spiffeDownstream', kind: 'single', from: 'the caller',
-      editable: true,
-      what: 'TRUE where the holder is a downstream SPIRE server that may ask ' +
-            'for an intermediate CA (NewDownstreamX509CA). Recorded, not ' +
-            'enforced.' },
-    { name: 'spiffeStoreSvid', kind: 'single', from: 'the caller',
-      editable: true,
-      what: 'TRUE where the SVID is to be written to an SVID store plugin ' +
-            'rather than handed to the workload. Recorded and not acted on — ' +
-            'this service has no store plugins.' },
-    { name: 'spiffeEntryExpiresAt', kind: 'single', from: 'the caller',
-      editable: true,
-      what: 'When the ENTRY itself stops applying, as seconds since the ' +
-            'epoch. Different from an SVID lifetime: this retires the ' +
-            'registration. An expired entry is kept and reported as expired ' +
-            'rather than deleted, because an entry that vanished is ' +
-            'indistinguishable from one nobody created.' },
-
-    // --- what has happened ------------------------------------------------
-    { name: 'spiffeRevisionNumber', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'Incremented on every change. The SPIRE Server API publishes it ' +
-            'and an agent uses it to tell "the entry I hold is current" from ' +
-            '"I hold an entry".' },
-    { name: 'spiffeOrigin', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'How this entry got here: `seed`, `console`, `api`, `grpc`, ' +
-            '`auto` (invented for a workload that matched nothing) or ' +
-            '`ldap`. What tells an invented entry from one somebody meant.' },
-    { name: 'spiffeSvidsIssued', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'How many SVIDs have been issued against this entry. ASSIGNED on ' +
-            'every change — a counter that accumulated values would be ' +
-            'nonsense — and a live number in a directory entry, which a real ' +
-            'directory would not hold.' },
-    { name: 'spiffeLastSvidAt', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'GeneralizedTime, the most recent issuance against it.' },
-    { name: 'spiffeCreatedAt', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'GeneralizedTime. Beside the entry\'s own createTimestamp ' +
-            'because the SPIRE Server API publishes `created_at` as a number ' +
-            'and a reader should be able to see both are the same moment.' },
-    { name: 'description', kind: 'multi', from: 'this registry', standard: true,
-      editable: false,
-      what: 'One line saying where this entry came from.' },
-
-    // --- agents (ou=agents) -----------------------------------------------
-    { name: 'spiffeAgentId', kind: 'single', from: 'the agent', editable: false,
-      what: 'THE KEY of an agent entry: the agent\'s own SPIFFE ID, always ' +
-            'under the reserved /spire/agent path.' },
-    { name: 'spiffeAttestationType', kind: 'single', from: 'the agent',
-      editable: false,
-      what: 'The node attestor that verified the agent — `join_token`, and ' +
-            'the other types a realm names in spiffe.nodeAttestors. A type ' +
-            'no attestor here verifies is refused at AttestAgent, never ' +
-            'recorded.' },
-    { name: 'spiffeAgentSelector', kind: 'multi', from: 'the agent',
-      editable: false,
-      what: 'The selectors the attestation produced. Invented from what the ' +
-            'agent sent, for the same reason.' },
-    { name: 'spiffeAgentBanned', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'TRUE where BanAgent was called. A banned agent is REFUSED at ' +
-            'AttestAgent and RenewAgent — one of the few refusals in this ' +
-            'service — because an unbannable agent makes the ban button a ' +
-            'lie.' },
-    { name: 'spiffeAgentCanReattest', kind: 'single', from: 'the agent',
-      editable: false,
-      what: 'Whether the attestor can be run again without an operator. ' +
-            'Reported to the agent, which decides what to do about it.' },
-    { name: 'spiffeAgentSvidHash', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'SHA-256 over the DER of the agent\'s current SVID, which is ' +
-            'what spire.api.types.Agent carries and how an operator tells ' +
-            'two agents with one identity apart.' },
-    { name: 'spiffeAgentExpiresAt', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'When that SVID expires, as seconds since the epoch.' },
-    { name: 'spiffeFirstSeen', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'GeneralizedTime, when this agent first attested.' },
-    { name: 'spiffeLastSeen', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'GeneralizedTime, the most recent time.' },
-    { name: 'spiffeAttestations', kind: 'single', from: 'this registry',
-      editable: false,
-      what: 'How many times it has attested or renewed. ASSIGNED, not ' +
-            'accumulated.' }
-  ]
-};
+// The table is written in models/directory/spiffe.tsp (#1390).
+const SCHEMA = ModelTables.schema('spiffe');
 
 // The editable set, DECLARED rather than derived — the same rule
 // `applications.js`'s EDITABLE table follows, and drawn in the same place.
@@ -1807,6 +1712,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: SCHEMA,
   EDITABLE: EDITABLE,
+  // The `spiffe` namespace's route and English (#543): the schema is on the
+  // directory's own view of `ou=spiffe`.
+  PROSE_ROUTES: ['/admin-api/ldap/spiffe'],
+  prose: (): Record<string, string> => SpiffeRegistry.prose(),
   setDirectory: slot.forward('setDirectory'),
   parseSelector: slot.forward('parseSelector'),
   selectorText: slot.forward('selectorText'),
@@ -1826,6 +1735,7 @@ export = {
   createEntry: slot.forward('createEntry'),
   updateEntry: slot.forward('updateEntry'),
   deleteEntry: slot.forward('deleteEntry'),
+  noteEntryRemovedOutside: slot.forward('noteEntryRemovedOutside'),
   noteSvidIssued: slot.forward('noteSvidIssued'),
   allAgents: slot.forward('allAgents'),
   agentById: slot.forward('agentById'),

@@ -12,7 +12,9 @@
 //
 // This file owned two HTTPS listeners of its own until 2026-09-16 and owns
 // none now — the block below says what happened to them. What is left is a
-// LIBRARY plus six ordinary routes on the main app: the server certificate
+// LIBRARY plus two ordinary routes on the main app (#597 deleted the other
+// four, and `/tls` and `/tls/forwarded` became Monitoring → TLS connection's
+// view, `connectionView()`): the server certificate
 // and the hierarchy it is certified under, the client truststore a caller
 // fills at runtime, the record of every client certificate presented to this
 // process, and `GET /tls/sign-in`, which turns a verified one into a session.
@@ -42,8 +44,8 @@
 // surface rather than a protocol, and it is being taken up in the project that
 // asks the question. What this file still answers is the part that is about
 // this service rather than about the connection — whose anchors verify a
-// client certificate (`/tls/trust`), what this service presents
-// (`/tls/server-certificate`), what a certificate that verified is worth
+// client certificate (the truststore, `/admin-api/tls/trust`), what this
+// service presents (`/tls/server-certificate`), what a certificate that verified is worth
 // (`/tls/sign-in`), and what arrived (the sighting, on /admin/tls).
 //
 // ---------------------------------------------------------------------------
@@ -82,7 +84,8 @@
 // It has to be. The certificate authority whose clients this is meant to verify
 // is generated in somebody's BROWSER, thirty seconds before the connection, and
 // exists nowhere else — so there is no configuration file that could hold it
-// and no image that could bake it in. `POST /tls/trust` takes the anchors and
+// and no image that could bake it in. `POST /admin-api/tls/trust/add` takes
+// the anchors (the open `POST /tls/trust` until #597) and
 // `tls.Server.setSecureContext()` applies them; existing connections are not
 // disturbed, and the next handshake is judged against the new list.
 //
@@ -95,7 +98,8 @@
 //     by a private CA. So the empty case is passed explicitly, and with it
 //     every client certificate presented to this service is UNVERIFIED — it
 //     still arrives, and everything that reads one refuses it. That is the
-//     correct starting state and the `/tls` page says so.
+//     correct starting state and the truststore page (/admin/tls/trust)
+//     says so.
 //   * the anchors go in over the main port, which is where everything else
 //     goes now too. Without `global.https` it is plain HTTP, which is the one
 //     thing reachable before anything is trusted, and this is a mock: an
@@ -106,12 +110,12 @@
 //     RFC 9700 and OAuth 2.1 mode turn on by default — takes that property
 //     away, and it is worth knowing rather than discovering: with it on there
 //     is no plain listener in this process at all, so the FIRST fetch of
-//     /tls/server-certificate and the first POST to /tls/trust have to be made
+//     /tls/server-certificate and the first call to /admin-api have to be made
 //     without verifying the certificate (`curl -k`). That is the ordinary
 //     bootstrap for a certificate regenerated on every start — it is the same
-//     act as trusting the PEM this endpoint hands back, done a step earlier —
-//     and `mainPortPhrase()` below is what keeps every page in this module from
-//     claiming a plain port that is not there.
+//     act as trusting the PEM this endpoint hands back, done a step earlier.
+//     Monitoring → TLS connection says whether the request it describes
+//     arrived over HTTPS (the view's `connection.https`, #597).
 //
 // ---------------------------------------------------------------------------
 // AND IT AUTHENTICATES PEOPLE THE WAY THE REST OF THIS SERVICE DOES, WHICH IS
@@ -130,9 +134,10 @@
 // client-certificate authentication is a real, deployed way for a person to
 // sign in to a web application, and this service exists to exercise clients of
 // exactly that kind. Every other family here resolves the same tension the same
-// way and always has: the KDC issues tickets to anybody who asks with the one
-// shared password, the sign-in screen checks no password at all, LDAP refuses
-// no bind — and all three start real sessions. **The permissiveness lives in
+// way in development mode and always has: the KDC issues tickets to anybody
+// who asks with the one shared password, the sign-in screen checks no password
+// at all, LDAP refuses no bind — and all three start real sessions (product
+// mode verifies all three). **The permissiveness lives in
 // what is ACCEPTED, not in refusing to record what was accepted.** Refusing the
 // session was the one place this service made the opposite choice, and what it
 // cost was that a global sign-out could not end a way in that it could not see.
@@ -148,9 +153,7 @@
 
 const https = require('https');
 const tls = require('tls');
-const crypto = require('crypto');
 const fs = require('fs');
-const forge = require('node-forge');
 // The RSA keygen-and-self-sign skeleton this shares with `common/helpers.js`
 // lives in one module since 2026-08-27. What is NOT shared is anything below —
 // the extensions, and the subjectAltName that is the only place the names are.
@@ -163,10 +166,15 @@ const helpers = require('../common/helpers');
 // session has committed. A library; app.js has already loaded it.
 const clusterBarrier = require('../cluster/cluster_barrier');
 
-// The input validator. A LEAF (rule 3): it registers no route and closes no
-// cycle. Both `/tls` pages take exactly one parameter and it is a closed set.
-const validation = require('../common/validation');
-const { log, xmlEscape, parseBody, baseUrlOf } = helpers;
+// The input validator was required here for the two `/tls` pages' one
+// parameter; both pages were deleted by #597, and nothing else here takes a
+// parameter it has to check.
+const { log, baseUrlOf } = helpers;
+// WHAT A FORWARDED HEADER IS BELIEVED FROM (#597): Monitoring → TLS
+// connection reports what `client_address.js` made of this request's
+// forwarding headers. A leaf (config and the cache registry); it registers
+// nothing.
+const clientAddress = require('../common/client_address');
 // The single funnel every authentication in this service passes through at the
 // moment a credential is ACCEPTED. A verified client certificate is one, and
 // going through here rather than writing to the console and the directory
@@ -188,6 +196,11 @@ const authn = require('../authn/authn');
 // ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
+// #507: the master-secret digest a TLS 1.2 ticket's name is kept under is
+// `stsCrypto.sha256Hex()` (every digest goes through common/crypto.js,
+// tests/crypto_centralised.js), and this is the room-maker for its
+// replicated store (rule 3ap).
+const cacheRegistry = require('../common/cache_registry');
 // The PROXY protocol v2 reader was required here until 2026-09-16 and is not
 // any more: it was installed on this module's two listeners, and with those
 // deleted the only installs are `server.js`'s on the main port and the
@@ -237,28 +250,15 @@ const identityAssurance = require('../common/identity_assurance');
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
 const realms = require('../common/realms');
+// THE CUSTOM LISTENERS' DEFINITIONS (#472): a custom listener's TLS policy and
+// client authentication are members of its definition. A LEAF (it requires
+// the settings, the realms and the catalogue of applications).
+const listenerMap = require('../common/listener_map');
 // WHICH CELL SIGNS A CERTIFICATE'S HOLDER IN (#98): the cell map and the
 // placement helper. Libraries that register nothing; their own requires of
 // the channel and the routing index are lazy.
 const cells = require('../common/cells');
 const cellPlacement = require('../common/cell_placement');
-
-// ---------------------------------------------------------------------------
-// THE TRUSTSTORE IS THE PROCESS'S, SO THE MODE THAT GUARDS IT IS TOO.
-//
-// `global.mode` is per trust realm, and `/realm/<id>/tls/trust` reaches this
-// module's routes like any other path. The anchors are one array for every
-// listener in the process, so a realm left in development inside a product
-// process must not be a way to add one — asked in the DEFAULT realm, which is
-// where a process-wide setting lives, the answer is the process's.
-// ---------------------------------------------------------------------------
-function truststoreOpenToAnybody() {
-  log.debug("Entering truststoreOpenToAnybody().");
-  log.debug("Leaving truststoreOpenToAnybody().");
-  return realms.run(realms.get(realms.DEFAULT_ID), function () {
-    return serviceMode.opensTestControls();
-  });
-}
 
 // ---------------------------------------------------------------------------
 // THE PROTOCOL FLOOR AND THE CIPHER LIST, FOR EVERY TLS SOCKET THIS PROCESS
@@ -353,10 +353,11 @@ const CLIENT_AUTH_SETTINGS = {
   ldaps: ['ldap.ldapsDisableOptionalClientCertificate',
           'ldap.ldapsRequireClientCertificate'],
   debugger: ['debugger.disableOptionalClientCertificate',
-             'debugger.requireClientCertificate'],
-  realm: ['listener.disableOptionalClientCertificate',
-          'listener.requireClientCertificate']
+             'debugger.requireClientCertificate']
 };
+// A CUSTOM LISTENER (#472; a realm's own since #99 is one) carries its client
+// authentication in its definition — `clientAuth`, none / optional /
+// required — rather than in a pair of settings: `customClientAuth()`.
 
 // A list setting as an array of trimmed, non-empty entries.
 function listOf(raw) {
@@ -415,11 +416,13 @@ function clientAuthFrom(disableOptional, require) {
 // EVERY SETTING PER LISTENER, INHERITING THE SERVICE'S (#429, 2026-10-02).
 //
 // A listener's own row is `listener<Id>.<name>` (generated in common/config.js
-// from `PER_LISTENER_SETTINGS`), and a realm's own listener's is
-// `listener.<name>` read inside the realm. `own()` answers that row's value,
-// or undefined where the row says inherit — `inherit` in an enum, the empty
-// string otherwise — or the listener has no such row; `pick()` falls back to
-// the service-wide row.
+// from `PER_LISTENER_SETTINGS`), and a custom listener's (#472, a realm's own
+// among them) is the same name in its definition's `tls` block
+// (`common/listener_map.js`), kind `custom` and the listener's id where a
+// realm id was. `own()` answers that value, or undefined where it says
+// inherit — `inherit` in an enum, the empty string otherwise, -1 for a number
+// — or the listener has no such value; `pick()` falls back to the
+// service-wide row.
 // ---------------------------------------------------------------------------
 const LISTENER_KINDS = ['main', 'ldaps', 'debugger', 'spiffeServer',
                         'spiffeBroker', 'cell', 'revocation'];
@@ -429,11 +432,10 @@ function ownValue(kind, realmId, name) {
   log.debug("Entering ownValue(). " + kind + " " + name);
   let raw;
   try {
-    if (kind === 'realm') {
-      const realm = realms.get(String(realmId || ''));
-      raw = realm ? realms.run(realm, function () {
-        return config.value('listener.' + name);
-      }) : undefined;
+    if (kind === 'custom') {
+      const one = listenerMap.listenerById(String(realmId || ''));
+      raw = one && Object.prototype.hasOwnProperty.call(one.tls, name)
+        ? one.tls[name] : undefined;
     } else if (LISTENER_KINDS.indexOf(String(kind)) >= 0) {
       raw = config.value('listener' + String(kind).charAt(0).toUpperCase() +
                          String(kind).slice(1) + '.' + name);
@@ -454,13 +456,24 @@ function ownValue(kind, realmId, name) {
   return raw === 'on' ? true : raw === 'off' ? false : raw;
 }
 
+// A custom listener's client authentication, from its definition: `none`,
+// `optional` (the default, as the main port's) or `required`. A listener
+// that has gone since it registered answers optional; it is about to be
+// forgotten.
+function customClientAuth(id) {
+  log.debug("Entering customClientAuth(). " + id);
+  const one = listenerMap.listenerById(id);
+  log.debug("Leaving customClientAuth().");
+  return one && one.clientAuth ? one.clientAuth : 'optional';
+}
+
 /**
  * The policy one listener is held to: each of its own settings where it has
  * one, the service-wide setting where it inherits.
  *
  * @param kind - `main`, `ldaps`, `debugger`, `spiffeServer`, `spiffeBroker`,
- *   `cell` or `realm`; omitted, the service-wide policy
- * @param realmId - for `realm`, the realm whose own listener it is
+ *   `cell` or `custom`; omitted, the service-wide policy
+ * @param realmId - for `custom`, the listener's id (#472)
  * @returns `{ kind, realm, minVersion, disableTls12, pqcOnly, tls13Suites,
  *   ciphers12, groups, sigalgs, trustAnchorsFile, trustIssued, clientAuth }`;
  *   `clientAuth` is null for a kind whose protocol decides it
@@ -477,12 +490,8 @@ function policyFor(kind, realmId) {
   let suites = listOf(pick('tls13CipherSuites', 'tls.tls13CipherSuites'));
   let clientAuth = null;
   const pair = CLIENT_AUTH_SETTINGS[String(k || '')];
-  if (k === 'realm') {
-    const realm = realms.get(String(realmId || ''));
-    clientAuth = realm ? realms.run(realm, function () {
-      return clientAuthFrom(config.value(pair[0]) === true,
-                            config.value(pair[1]) === true);
-    }) : 'optional';
+  if (k === 'custom') {
+    clientAuth = customClientAuth(String(realmId || ''));
   } else if (pair) {
     clientAuth = clientAuthFrom(config.value(pair[0]) === true,
                                 config.value(pair[1]) === true);
@@ -519,7 +528,7 @@ function policyFor(kind, realmId) {
     // THE TLS SESSION CACHE (#429): how long a session resumes, and how many
     // session IDs this listener keeps (`attachSessionCache()`).
     sessionTimeoutS: Math.max(1, Number(pick('sessionTimeoutS',
-                                             'tls.sessionTimeoutS')) || 60),
+                                             'tls.sessionTimeoutS')) || 300),
     sessionCacheSize: Math.max(0, Number(pick('sessionCacheSize',
                                               'tls.sessionCacheSize')) || 0),
     clientAuth: clientAuth
@@ -586,7 +595,7 @@ function protocolOptions(policy) {
   // — and each renegotiation is a full handshake's CPU spent at the peer's
   // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
   // TLS 1.3 has no renegotiation to refuse.
-  options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
+  options.secureOptions = stsCrypto.TLS_NO_RENEGOTIATION;
   // How long a session may be resumed (#429): a ticket's lifetime and the
   // session cache's. In the context, so every re-application carries it.
   if (p.sessionTimeoutS) {
@@ -741,7 +750,8 @@ if (typeof config.addWriteRule === 'function') {
       log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. The ' +
                 kind + ' listener\'s own TLS settings (listener' +
                 kind.charAt(0).toUpperCase() + kind.slice(1) + '.*) cannot ' +
-                'build a TLS context: ' + e.message + '.');
+                'build a TLS context: ' +
+                String((e && e.message) || e).replace(/\.+$/, '') + '.');
       process.exit(1);
     }
     if (policy.trustAnchorsFile &&
@@ -794,15 +804,17 @@ let listenError = null;
 // ---------------------------------------------------------------------------
 // The server certificate.
 //
-// Generated per start and never written down, because a certificate committed
-// to a repository is a private key committed to a repository. It is born
-// SELF-SIGNED, and until 2026-09-11 it stayed that way, so the anchor changed
-// on every restart — which is why `GET /tls/server-certificate` exists: a
-// debugger fetches it and puts it in its own truststore, rather than being
-// told to disable verification, which is the habit this whole workflow is
-// trying to break. Since that day the key is certified under this service's
-// own Root, which is the anchor now — see the block above
-// `serverCertificateExtensions()`.
+// Generated at start and never written to a file, because a certificate
+// committed to a repository is a private key committed to a repository —
+// and where minted state persists, the KEY is kept per node in the sealed
+// store (*THE LISTENER KEY IS KEPT PER NODE*, below SERVER_CERTIFICATE).
+// It is born SELF-SIGNED, and until 2026-09-11 it stayed that way, so the
+// anchor changed on every restart — which is why `GET
+// /tls/server-certificate` exists: a debugger fetches it and puts it in its
+// own truststore, rather than being told to disable verification, which is
+// the habit this whole workflow is trying to break. Since that day the key
+// is certified under this service's own Root, which is the anchor now — see
+// the block above `serverCertificateExtensions()`.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // EVERY LEAF THE MAIN PORT PRESENTS, AS THIS PROCESS KNOWS THEM (#248).
@@ -955,7 +967,7 @@ function handedInCertificate() {
 function selfSignedOrganization() {
   log.debug("Entering selfSignedOrganization().");
   log.debug("Leaving selfSignedOrganization().");
-  return String(config.value('tls.selfSignedOrganization') || 'sts');
+  return String(config.value('tls.selfSignedOrganization') || 'iya-sts');
 }
 
 function makeServerCertificate() {
@@ -1023,20 +1035,6 @@ function makeServerCertificate() {
   };
 }
 
-// What to CALL the port these views answer on. It is the plain HTTP port
-// unless `global.https` has made it TLS as well, and seven sentences in this
-// module used to say "the plain HTTP port" outright — each of them correct
-// until the day somebody turned that setting on, and then quietly wrong in
-// the one place a reader goes when a handshake is failing. Read per call
-// rather than captured: the setting is restart-only, but a captured const
-// here would be a second thing to remember if that ever changed.
-function mainPortPhrase() {
-  log.debug("Entering mainPortPhrase().");
-  log.debug("Leaving mainPortPhrase().");
-  return config.value('global.https')
-    ? 'the main HTTPS port' : 'the plain HTTP port';
-}
-
 // The extra sentence a bootstrap instruction needs when there is no plain port
 // left to bootstrap from. Empty in the ordinary case, so it can be appended
 // unconditionally.
@@ -1078,8 +1076,9 @@ function certificateProvenance() {
   // only a process with none still presents a self-signed one.
   if (SERVER_CERTIFICATE && (SERVER_CERTIFICATE.chainPem || []).length) {
     log.debug('Leaving certificateProvenance(). Issued under the Root.');
-    return 'issued by this service\'s TLS Issuing CA under its own Root ' +
-           'and reissued on every start, so trust the Root ' +
+    return 'issued by this service\'s TLS Issuing CA under its own Root, ' +
+           'over a key each node keeps where minted state persists and ' +
+           'makes at every start where it does not, so trust the Root ' +
            '(/pki/revocation lists it) rather than the certificate itself';
   }
   log.debug('Leaving certificateProvenance(). Self-signed.');
@@ -1209,7 +1208,7 @@ function suppliedServerCertificate() {
   // that names OpenSSL rather than this setting.
   let leaf = null;
   try {
-    leaf = new crypto.X509Certificate(certPem);
+    leaf = stsCrypto.parseCertificate(certPem);
   } catch (e) {
     log.debug('Leaving suppliedServerCertificate(). Unparseable.');
     throw new Error(errorCodes.tag('STS-TLS-0004') +
@@ -1220,7 +1219,7 @@ function suppliedServerCertificate() {
   // surfaces as an OpenSSL message three layers down.
   let pair = false;
   try {
-    pair = leaf.checkPrivateKey(crypto.createPrivateKey(keyPem));
+    pair = leaf.checkPrivateKey(stsCrypto.privateKeyFrom(keyPem));
   } catch (e) {
     throw new Error(errorCodes.tag('STS-TLS-0005') +
       'tls: ' + keyFile + ' is not a readable private key: ' +
@@ -1317,8 +1316,9 @@ function splitSuppliedBundle(bundlePem, certFile) {
       return;
     }
     try {
-      const top = new crypto.X509Certificate(topPem);
-      if (top.verify(new crypto.X509Certificate(pem).publicKey)) {
+      const top = stsCrypto.parseCertificate(topPem);
+      if (stsCrypto.certificateSignedWith(
+        top, stsCrypto.parseCertificate(pem).publicKey)) {
         anchorPem = pem;
       }
     } catch (e) {
@@ -1346,8 +1346,9 @@ function splitSuppliedBundle(bundlePem, certFile) {
 function isSelfSignedPem(pem) {
   log.debug('Entering isSelfSignedPem().');
   try {
-    const cert = new crypto.X509Certificate(pem);
-    const self = cert.checkIssued(cert) && cert.verify(cert.publicKey);
+    const cert = stsCrypto.parseCertificate(pem);
+    const self = cert.checkIssued(cert) &&
+      stsCrypto.certificateSignedWith(cert, cert.publicKey);
     log.debug('Leaving isSelfSignedPem(). ' + self);
     return self;
   } catch (e) {
@@ -1391,7 +1392,7 @@ const SERVER_CERTIFICATES = (function buildServerCertificates() {
       return;
     }
     // THE RUNTIME BEFORE THE SPELLING. An ML-DSA certificate needs node's
-    // OpenSSL 3.5 (node 24; this repository's Dockerfile pins 24.16.0), and
+    // OpenSSL 3.5 (node 24; this repository's Dockerfile pins 24.22.1), and
     // this block runs at MODULE TOP LEVEL — so on node 22 a configured
     // `ml-dsa-65` used to throw out of a `require` and take the whole service
     // down before it bound anything, which is the failure the root CLAUDE.md's
@@ -1432,6 +1433,285 @@ const SERVER_CERTIFICATES = (function buildServerCertificates() {
 })();
 
 const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
+
+// ===========================================================================
+// THE LISTENER KEY IS KEPT PER NODE, WHERE MINTED STATE PERSISTS (2026-10-08).
+//
+// The keys above are made at require time, and until this date that was the
+// whole of it: every start of a product container with its database kept
+// presented a NEW key pair under the Root it had kept, certified by the
+// process CA it had kept. rcbj: "#162 was supposed to generate a key pair if
+// one didn't already exist in the database. Not recreate it on every restart
+// with a persisted volume." #162's decision 2 still binds and shapes the
+// whole of this: **each node keeps its OWN listener key**, no listener
+// private key is shared between nodes, the process CA is one shared
+// authority, and no node address is published anywhere.
+//
+// **WHERE.** `tls.listenerKeys`, a `realms.sharedMap()` beside
+// `tls.listenerAnnounced` (#264), so it persists exactly where that record
+// does — product mode on postgres, a cluster, a dispatched pool with a real
+// key-encryption key (`persistence_minted.js`'s `enabled()`) — and every row
+// is SEALED under the KEK like every other minted row. Not a table of its
+// own: a private key the store already seals beside the session ids and the
+// Kerberos keys is one more row of the same kind, and a second table would
+// be a second answer to *where does this service keep a private key*.
+// Anywhere else the map is this process's memory and dies with it, so
+// development, `memory` mode and an `ldif` store still make a key per start,
+// and an ephemeral-KEK pool clears the rows it finds, as it does for all.
+//
+// **KEYED BY ALGORITHM UNIT AND NODE NAME** — `rsa@node-a`,
+// `ml-dsa-65@node-a` (the units #264 names) — the node name being
+// `cluster.nodeName`, else the host name (`cluster.js`'s `nodeName()`; the
+// compose stack's `hostname: sts`, AWS's `STS_CLUSTER_NODE_NAME` per node).
+// A unit never contains `@`, so the split is unambiguous. **Two nodes given
+// ONE name would share a key**, which is the configuration's fault and is
+// said in `tls/CLAUDE.md`; a node RENAMED makes a key of its own and leaves
+// the old row behind, unread.
+//
+// **EACH NODE HOLDS ONLY ITS OWN ROW.** The store is shared — a change log
+// carries every row to every node — so the reconciler below admits a row
+// only when it names THIS node, at a restore and at replication alike; any
+// other node's row is opened by the persistence layer, dropped, and never
+// held. That is decision 2 read strictly: another node's key is in the
+// database it cannot read without the KEK, and in no other node's memory.
+//
+// **WHAT A ROW HOLDS**: the private key, its unit and (RSA) its modulus
+// size, and the certificate this node last took for it with its chain and
+// what it was issued for. The certificate is what lets a plain restart
+// present the SAME leaf (`heldListenerCertificate()`, and `common/pki.js`'s
+// `heldCertificateCurrent()`, which decides), so #264's `restarted` notice
+// does not fire for a restart that changed nothing. It is kept per node and
+// not read off the `tls:server` slot, because that slot holds ONE node's
+// record at a time (#162) and a cluster restart would find another node's
+// there.
+//
+// **WHEN.** The key is settled the first time `common/pki.js` asks for the
+// public key to certify (`settleListenerKey()`, from the registration's
+// `publicKeyPem()`), which is inside `pki.start()` — after the minted rows
+// are restored and before anything binds. The record's own `privateKeyPem`
+// stays the one its self-signed bootstrap certificate is over until a
+// certificate over the settled key is taken (`takeIssuedCertificate()`), so
+// key and certificate never disagree on a socket, and with no hierarchy
+// (`pki.autoBuild` off) nothing is settled or stored at all.
+//
+// **A STORED KEY THAT NO LONGER FITS** — another algorithm, an RSA modulus
+// other than `tls.selfSignedKeyBits`, a row that will not parse — is
+// replaced by the key made at this start, with `STS-TLS-0048` saying why.
+// A request worker (handed in), a supplied certificate and a process with no
+// registration settle nothing.
+// ===========================================================================
+const listenerKeys = realms.sharedMap({
+  persist: 'tls.listenerKeys',
+  scope: 'shared',
+  reconcile: {
+    // Only this node's rows are held — see the block above.
+    restore: function (key, incoming) {
+      log.debug("Entering restore().");
+      const own = isOwnListenerKeyName(key);
+      log.debug("Leaving restore(). " + (own ? 'This node\'s.' : 'Not held.'));
+      return own ? incoming : undefined;
+    }
+  }
+});
+
+// This node's name, read when asked: a setting is final by the time anything
+// certifies, and `cluster.js` is a library that registers nothing, required
+// here lazily so that loading this module loads nothing more.
+function listenerNodeName() {
+  log.debug("Entering listenerNodeName().");
+  const name = String(require('../cluster/cluster').nodeName() || '');
+  log.debug("Leaving listenerNodeName().");
+  return name;
+}
+
+function listenerKeyName(unit) {
+  log.debug("Entering listenerKeyName(). " + unit);
+  log.debug("Leaving listenerKeyName().");
+  return String(unit) + '@' + listenerNodeName();
+}
+
+function isOwnListenerKeyName(key) {
+  log.debug("Entering isOwnListenerKeyName().");
+  const text = String(key || '');
+  const at = text.indexOf('@');
+  const own = at > 0 && text.slice(at + 1) === listenerNodeName();
+  log.debug("Leaving isOwnListenerKeyName(). " + own);
+  return own;
+}
+
+// Why a stored key may not be used for this unit now, or '' when it may.
+function storedKeyProblem(unit, held) {
+  log.debug("Entering storedKeyProblem(). " + unit);
+  if (!held || typeof held !== 'object' || !held.privateKeyPem) {
+    log.debug("Leaving storedKeyProblem(). No key.");
+    return 'the row holds no key';
+  }
+  if (String(held.unit || '') !== String(unit)) {
+    log.debug("Leaving storedKeyProblem(). Another unit.");
+    return 'the row is for "' + held.unit + '"';
+  }
+  let key = null;
+  try {
+    key = stsCrypto.privateKeyFrom(held.privateKeyPem);
+  } catch (e) {
+    log.debug("Caught in storedKeyProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving storedKeyProblem(). Unreadable.");
+    return 'the key will not parse (' + ((e && e.message) || e) + ')';
+  }
+  const type = String(key.asymmetricKeyType || '');
+  if (unit === 'rsa') {
+    const bits = Number((key.asymmetricKeyDetails || {}).modulusLength || 0);
+    const wanted = Number(config.value('tls.selfSignedKeyBits'));
+    if (type !== 'rsa') {
+      log.debug("Leaving storedKeyProblem(). Not RSA.");
+      return 'it is a ' + (type || 'unknown') + ' key, not RSA';
+    }
+    if (bits !== wanted) {
+      log.debug("Leaving storedKeyProblem(). Another size.");
+      return 'it is ' + bits + ' bits and tls.selfSignedKeyBits is ' + wanted;
+    }
+    log.debug("Leaving storedKeyProblem(). Fits.");
+    return '';
+  }
+  if (type !== unit) {
+    log.debug("Leaving storedKeyProblem(). Another algorithm.");
+    return 'it is a ' + (type || 'unknown') + ' key, not ' + unit;
+  }
+  log.debug("Leaving storedKeyProblem(). Fits.");
+  return '';
+}
+
+/**
+ * Settles the key this node certifies for one listener certificate: the one
+ * stored for this node and unit where it still fits the configuration, and
+ * otherwise the key made at this start, which is then stored. Idempotent.
+ *
+ * @param record - an entry of SERVER_CERTIFICATES this process owns
+ * @returns the private key PEM to certify
+ */
+function settleListenerKey(record) {
+  log.debug("Entering settleListenerKey(). " + record.algorithm);
+  if (record.nodeKeyPem) {
+    log.debug("Leaving settleListenerKey(). Already settled.");
+    return record.nodeKeyPem;
+  }
+  const unit = String(record.algorithm);
+  const name = listenerKeyName(unit);
+  const held = listenerKeys.get(name);
+  const problem = held ? storedKeyProblem(unit, held) : '';
+  if (held && !problem) {
+    record.nodeKeyPem = held.privateKeyPem;
+    log.info('tls: this node (' + listenerNodeName() + ') keeps its ' + unit +
+             ' listener key across restarts, and the one it stored is used ' +
+             'again.');
+    log.debug("Leaving settleListenerKey(). Stored.");
+    return record.nodeKeyPem;
+  }
+  if (held) {
+    log.warn(errorCodes.tag('STS-TLS-0048') + 'tls: the ' + unit +
+             ' listener key stored for this node (' + listenerNodeName() +
+             ') cannot be used — ' + problem + ' — so the key made at this ' +
+             'start replaces it, and a new certificate is issued over it.');
+  }
+  record.nodeKeyPem = record.privateKeyPem;
+  const row = { unit: unit, node: listenerNodeName(),
+                privateKeyPem: record.nodeKeyPem,
+                createdAt: new Date().toISOString() };
+  if (unit === 'rsa') {
+    row.bits = Number(config.value('tls.selfSignedKeyBits'));
+  }
+  listenerKeys.set(name, row);
+  log.debug("Leaving settleListenerKey(). Made at this start.");
+  return record.nodeKeyPem;
+}
+
+// What a listener certificate is issued FOR — the name, the key usage and
+// the extensions — in one place, so the registration and the comparison
+// below cannot drift. A change to any of them (tls.hostnames, tls.ips) makes
+// a held certificate stale.
+function listenerIssuance(record) {
+  log.debug("Entering listenerIssuance(). " + record.algorithm);
+  const mlDsa = !!stsCrypto.ML_DSA_OIDS[record.algorithm];
+  log.debug("Leaving listenerIssuance().");
+  return {
+    commonName: TLS_HOSTNAMES[0] || 'localhost',
+    // digitalSignature ALONE for ML-DSA: such a key cannot encipher anything,
+    // and TLS 1.3 — the only version that negotiates one — needs nothing else
+    // of a server certificate's key.
+    keyUsage: mlDsa ? ['digitalSignature']
+                    : ['digitalSignature', 'keyEncipherment'],
+    extensions: serverCertificateExtensions()
+  };
+}
+
+function issuanceSignature(record) {
+  log.debug("Entering issuanceSignature().");
+  log.debug("Leaving issuanceSignature().");
+  return JSON.stringify(listenerIssuance(record));
+}
+
+/**
+ * Answers the certificate this node last took over its stored listener key,
+ * for `common/pki.js` to present again where it is still current, or null.
+ *
+ * @param record - an entry of SERVER_CERTIFICATES this process owns
+ * @returns `{ certificatePem, chainPem }`, or null
+ */
+function heldListenerCertificate(record) {
+  log.debug("Entering heldListenerCertificate(). " + record.algorithm);
+  const held = listenerKeys.get(listenerKeyName(record.algorithm));
+  if (!held || !record.nodeKeyPem ||
+      held.privateKeyPem !== record.nodeKeyPem || !held.certificatePem ||
+      !Array.isArray(held.chainPem) ||
+      held.issuedFor !== issuanceSignature(record)) {
+    log.debug("Leaving heldListenerCertificate(). None to offer.");
+    return null;
+  }
+  log.debug("Leaving heldListenerCertificate().");
+  return { certificatePem: held.certificatePem,
+           chainPem: held.chainPem.slice() };
+}
+
+// The certificate just taken, written onto this node's row beside its key.
+function rememberListenerCertificate(record) {
+  log.debug("Entering rememberListenerCertificate(). " + record.algorithm);
+  const name = listenerKeyName(record.algorithm);
+  const held = listenerKeys.get(name);
+  if (!held || held.privateKeyPem !== record.nodeKeyPem) {
+    log.debug("Leaving rememberListenerCertificate(). Not this key's row.");
+    return;
+  }
+  if (held.certificatePem === record.certPem) {
+    log.debug("Leaving rememberListenerCertificate(). Unchanged.");
+    return;
+  }
+  listenerKeys.set(name, Object.assign({}, held, {
+    certificatePem: record.certPem,
+    chainPem: (record.chainPem || []).slice(),
+    issuedFor: issuanceSignature(record),
+    certifiedAt: new Date().toISOString()
+  }));
+  log.debug("Leaving rememberListenerCertificate().");
+}
+
+// What this process holds of `tls.listenerKeys`, for the tests and a page:
+// the row names and their public facts, never a key.
+/**
+ * Returns the listener-key rows this process holds, without their keys.
+ *
+ * @returns `{ "<unit>@<node>": { unit, node, bits, createdAt, certified } }`
+ */
+function heldListenerKeys() {
+  log.debug("Entering heldListenerKeys().");
+  const out = {};
+  listenerKeys.forEach(function (value, name) {
+    out[name] = { unit: value.unit, node: value.node,
+                  bits: value.bits || null, createdAt: value.createdAt,
+                  certified: !!value.certificatePem };
+  });
+  log.debug("Leaving heldListenerKeys().");
+  return out;
+}
 
 // ===========================================================================
 // AND IT IS CERTIFIED BY THIS SERVICE'S OWN CERTIFICATE AUTHORITY (2026-09-11).
@@ -1489,9 +1769,29 @@ function serverCertificateExtensions() {
 // what adopting a certificate involves.
 function takeIssuedCertificate(record, certPem, chainPem) {
   log.debug("Entering takeIssuedCertificate(). " + record.algorithm);
+  // **THE SAME CERTIFICATE AGAIN IS NOTHING TO DO (2026-10-08).** Since the
+  // listener key is kept per node, `common/pki.js` hands back the certificate
+  // this record already presents whenever it is still current — a second
+  // `certifyRegistered()` in one life among them — and re-applying it would
+  // re-key every socket and tell every observer about a change that is not
+  // one.
+  if (record.selfSigned === false && record.certPem === certPem &&
+      JSON.stringify(record.chainPem || []) === JSON.stringify(chainPem)) {
+    log.debug("Leaving takeIssuedCertificate(). Already presented.");
+    return;
+  }
   // What the socket presented until now, for the notice below (#245).
   const wasFingerprint = record.fingerprint256 || '';
   const wasIssued = !!record.certPem && record.selfSigned === false;
+  // **THE KEY THE CERTIFICATE IS OVER GOES ON THE RECORD WITH IT.** What
+  // `common/pki.js` certified is the key `settleListenerKey()` settled — the
+  // one this node stored, where it had one — and until this moment the
+  // record carried the key its self-signed bootstrap is over. One assignment
+  // beside the certificate's, so the socket never holds one without the
+  // other.
+  if (record.nodeKeyPem) {
+    record.privateKeyPem = record.nodeKeyPem;
+  }
   record.certPem = certPem;
   // The chain travels with it: without the Issuing CA and the
   // Intermediate a client holding only the Root cannot build a path, and
@@ -1500,7 +1800,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   record.fingerprint256 = fingerprintOf(certPem);
   record.selfSigned = false;
   try {
-    const read = new crypto.X509Certificate(certPem);
+    const read = stsCrypto.parseCertificate(certPem);
     record.subject = read.subject.replace(/\n/g, ', ');
     record.notAfter = new Date(read.validTo).toISOString();
   } catch (e) {
@@ -1510,13 +1810,16 @@ function takeIssuedCertificate(record, certPem, chainPem) {
              'certificate could not be read back for its subject and ' +
              'expiry: ' + e.message);
   }
+  // Kept beside this node's key, so the next start can present it again
+  // where it is still current (`heldListenerCertificate()`).
+  rememberListenerCertificate(record);
   // **AND THE LISTENERS HAVE TO BE TOLD, because they were built before
   // this ran.** Every listener this module knows — the main port and the
   // debugger's, registered through `trustClientCertificatesOn()` — was
   // created with the secure context evaluated THERE, before `pki.start()`
   // had run, so mutating the record above is invisible to a socket that
   // already has a context. `applyAnchors()` is the rebuild
-  // path `POST /tls/trust` already uses, and it re-reads
+  // path every truststore change already uses, and it re-reads
   // `secureContextOptions()`, which is where the new certificate and its
   // chain are picked up. Without this line the certificate is issued,
   // recorded, reported on every page — and not served, which is the most
@@ -1529,7 +1832,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // So after `POST /admin-api/pki/build-root` they went on presenting a chain
   // under a Root nothing held any more, and every client that re-fetched the
   // anchor failed with `unable to get local issuer certificate` until the
-  // service restarted (tests/vendored/sts_ldaps.js and sts_spiffe_grpc.js,
+  // service restarted (tests/protocol/sts_ldaps.js and sts_spiffe_grpc.js,
   // red in every mode). The log line below said "one anchor covers LDAPS 636"
   // the whole time. The owners of those sockets re-key on this.
   notifyCertificateObservers(record.algorithm);
@@ -1539,9 +1842,12 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // to every realm's streams, the one port serving them all.
   //
   // **THE FIRST CERTIFICATE A PROCESS TAKES OVER ITS SELF-SIGNED BOOTSTRAP IS
-  // COMPARED WITH WHAT THE SERVICE LAST ANNOUNCED (#264)**, not ignored: the
-  // listener key is made again at every start, so a restart presents a
-  // certificate a receiver has never seen. At start that comparison waits
+  // COMPARED WITH WHAT THE SERVICE LAST ANNOUNCED (#264)**, not ignored: a
+  // start may present a certificate a receiver has never seen — wherever the
+  // listener key is not kept (it is per node, and only where minted state
+  // persists), and in a cluster whenever another node announced last. A
+  // restart that presents the SAME certificate again announces nothing,
+  // because nothing differs. At start that comparison waits
   // for `listen()` — the main port is bound by then, so a receiver that
   // fetches the certificate at once reaches it; a first certificate taken
   // AFTER `listen()` (a hierarchy that arrived late) is compared here.
@@ -1595,9 +1901,14 @@ function sendCertificateNotice(rotated, reason) {
 // WHAT THE SERVICE LAST ANNOUNCED, KEPT ACROSS A RESTART (#264, 2026-09-26).
 //
 // `tls-certificate-changed` was sent only when a certificate the RUNNING
-// process had issued was replaced. The listener key is made again at every
-// start (`makeServerCertificate()`), so a restart presents a certificate
-// nobody was told about, and a receiver that pins it learned nothing.
+// process had issued was replaced. The listener key was made again at every
+// start (`makeServerCertificate()`), so a restart presented a certificate
+// nobody was told about, and a receiver that pins it learned nothing. Since
+// 2026-10-08 the key — and, while it is current, the certificate — is kept
+// per node where minted state persists, so a plain restart of one node
+// presents what it presented before and this compares equal; what is still
+// announced is a start that presents something else: a new key, a re-issue
+// after the hierarchy moved, or another node's leaf.
 //
 // **FOR THE SERVICE, NOT PER NODE — rcbj's rule that no node is ever
 // exposed, and a fact about node identity.** A receiver reaches the
@@ -1700,9 +2011,9 @@ function announceSinceLastStart(records) {
     return 0;
   }
   log.info('tls: the listener presents ' + rotated.length + ' certificate(s) ' +
-           'other than the one(s) this service last announced — the key is ' +
-           'made at every start — so tls-certificate-changed goes to every ' +
-           'realm\'s streams, reason "restarted".');
+           'other than the one(s) this service last announced, so ' +
+           'tls-certificate-changed goes to every realm\'s streams, reason ' +
+           '"restarted".');
   sendCertificateNotice(rotated, 'restarted');
   log.debug("Leaving announceSinceLastStart().");
   return rotated.length;
@@ -1816,22 +2127,33 @@ function notifyCertificateObservers(algorithm) {
   // A LEAF (rule 3w): it registers no route, so requiring it here moves
   // nothing. The registration is passive — `pki.start()` is what acts on it.
   const pki = require('../common/pki');
+  // What it is issued for, in one place with the comparison that decides
+  // whether a held certificate still fits (`listenerIssuance()`).
+  const rsaIssuance = listenerIssuance(SERVER_CERTIFICATE);
   pki.registerCertifiable({
     scope: pki.PROCESS_SCOPE,
     useCase: 'tls',
     slot: 'server',
     alg: 'RS256',
-    keyAlg: 'rsa-2048',
+    keyAlg: 'rsa-' + require('../common/mode').defaultRsaBits(),
     label: 'TLS server certificate',
-    commonName: TLS_HOSTNAMES[0] || 'localhost',
+    commonName: rsaIssuance.commonName,
     profile: 'tls-server',
-    keyUsage: ['digitalSignature', 'keyEncipherment'],
-    extensions: serverCertificateExtensions(),
+    keyUsage: rsaIssuance.keyUsage,
+    extensions: rsaIssuance.extensions,
+    // THE KEY THIS NODE KEEPS (2026-10-08), settled on the first ask — see
+    // *THE LISTENER KEY IS KEPT PER NODE* above. `pki.start()` is the first
+    // caller, after the minted rows are back and before anything binds.
     publicKeyPem: function () {
       log.debug("Entering publicKeyPem().");
       log.debug("Leaving publicKeyPem().");
-      return crypto.createPublicKey(SERVER_CERTIFICATE.privateKeyPem)
+      return stsCrypto.publicKeyOf(settleListenerKey(SERVER_CERTIFICATE))
         .export({ type: 'spki', format: 'pem' });
+    },
+    heldCertificate: function () {
+      log.debug("Entering heldCertificate().");
+      log.debug("Leaving heldCertificate().");
+      return heldListenerCertificate(SERVER_CERTIFICATE);
     },
     onCertified: function (certPem, chainPem) {
       log.debug("Entering onCertified().");
@@ -1862,6 +2184,9 @@ function notifyCertificateObservers(algorithm) {
     return one !== SERVER_CERTIFICATE &&
            !!stsCrypto.ML_DSA_OIDS[one.algorithm];
   }).forEach(function (record) {
+    // digitalSignature ALONE, in `listenerIssuance()`: an ML-DSA key cannot
+    // encipher anything.
+    const issuance = listenerIssuance(record);
     pki.registerCertifiable({
       scope: pki.PROCESS_SCOPE,
       useCase: 'tls',
@@ -1869,18 +2194,21 @@ function notifyCertificateObservers(algorithm) {
       alg: record.algorithm.toUpperCase(),
       keyAlg: record.algorithm,
       label: 'TLS server certificate (' + record.algorithm + ')',
-      commonName: TLS_HOSTNAMES[0] || 'localhost',
+      commonName: issuance.commonName,
       profile: 'tls-server',
-      // digitalSignature ALONE. An ML-DSA key cannot encipher anything, and
-      // TLS 1.3 — the only version that negotiates one — needs nothing
-      // else of a server certificate's key.
-      keyUsage: ['digitalSignature'],
-      extensions: serverCertificateExtensions(),
+      keyUsage: issuance.keyUsage,
+      extensions: issuance.extensions,
+      // Kept per node like the RSA key, under its own unit.
       publicKeyPem: function () {
         log.debug("Entering publicKeyPem().");
         log.debug("Leaving publicKeyPem().");
-        return crypto.createPublicKey(record.privateKeyPem)
+        return stsCrypto.publicKeyOf(settleListenerKey(record))
           .export({ type: 'spki', format: 'pem' });
+      },
+      heldCertificate: function () {
+        log.debug("Entering heldCertificate().");
+        log.debug("Leaving heldCertificate().");
+        return heldListenerCertificate(record);
       },
       onCertified: function (certPem, chainPem) {
         log.debug("Entering onCertified().");
@@ -1934,29 +2262,14 @@ function splitPemCertificates(text) {
 function describePem(pem) {
   log.debug('Entering describePem().');
   let subject = '(unreadable)';
+  // A label on a page, not a check. OpenSSL reads it, which is what the listener
+  // will verify against, and it reads the ML-DSA anchors forge could not, so an
+  // ML-DSA root is no longer labelled '(unreadable)'.
   try {
-    const cert = forge.pki.certificateFromPem(pem);
-    subject = cert.subject.attributes.map(function (attribute) {
-      return (attribute.shortName || attribute.name) + '=' + attribute.value;
-    }).join(', ');
+    subject = stsCrypto.parseCertificate(pem).subject
+      .split('\n').join(', ');
   } catch (e) {
-    // Not a certificate this parser can read. It is still handed to OpenSSL as
-    // an anchor — forge and OpenSSL do not accept exactly the same set, and
-    // refusing here on forge's opinion would reject anchors that work. The
-    // subject is a label on a page, not a check.
-    //
-    // AND THE COMMONEST CASE IS NOW A POST-QUANTUM ANCHOR. node-forge has no
-    // ML-DSA and cannot parse a certificate signed with one at all, while the
-    // OpenSSL underneath this process reads it perfectly — so ask OpenSSL
-    // before giving up, or every ML-DSA root a debugger uploads is labelled
-    // '(unreadable)' on a page whose whole job is to say what was trusted.
-    try {
-      subject = new crypto.X509Certificate(pem).subject
-          .split('\n').join(', ');
-    } catch (openSslError) {
-      log.warn('tls: an anchor could not be parsed for display: ' +
-               e.message + ' / ' + openSslError.message);
-    }
+    log.warn('tls: an anchor could not be parsed for display: ' + e.message);
   }
   // THE REST OF WHAT A PERSON COMPARES BY EYE (2026-09-12), for the truststore
   // page at /admin/tls/trust: the issuer, the serial and the validity. Read
@@ -1968,7 +2281,7 @@ function describePem(pem) {
   let details = { issuer: '', serial: '', notBefore: '', notAfter: '',
                   ca: false, readable: false };
   try {
-    const parsed = new crypto.X509Certificate(pem);
+    const parsed = stsCrypto.parseCertificate(pem);
     details = {
       issuer: parsed.issuer.split('\n').join(', '),
       serial: parsed.serialNumber,
@@ -1979,8 +2292,8 @@ function describePem(pem) {
     };
   } catch (e) {
     // OpenSSL cannot read it, so it is not an anchor OpenSSL will use either.
-    // The row is still described — `/tls/trust` has always accepted what it
-    // was given, and that door's behaviour is not this function's to change —
+    // The row is still described — a non-strict add (the in-process tests')
+    // accepts what it was given, and that is not this function's to change —
     // and `readable: false` says why the rest is blank.
     log.debug('describePem(): OpenSSL could not read the certificate: ' +
               e.message);
@@ -2006,8 +2319,8 @@ function describePem(pem) {
 // service hands out chains to it, and most of them are not identities.
 // `common/tls_client_certificates.js`'s `identityOf()` is what every door below
 // asks before a verified chain through a held authority signs anybody in or is
-// recorded as an authentication. An anchor POSTed to /tls/trust that happens to
-// be the same Root is not added twice.
+// recorded as an authentication. An anchor added through /admin-api/tls/trust
+// that happens to be the same Root is not added twice.
 //
 // Required lazily and answered '' on any failure: this is called whenever a
 // secure context is built, which can be before the certificate authority has
@@ -2048,12 +2361,15 @@ function issuedClientCertificateReport() {
 
 // The identity gate for whatever this socket presented — see the block above.
 // `{ issuedHere: false }` when nothing verified or it was not issued here.
-function issuedIdentityOf(socket) {
+// With `options.stored` (#1061) an outside authority's certificate is
+// resolved to the one entry storing it, in the ambient realm — what every
+// sign-in asks; the connection page and the handshake's recording do not.
+function issuedIdentityOf(socket, options) {
   log.debug("Entering issuedIdentityOf().");
   let identity = { issuedHere: false, accepted: false };
   try {
     identity = require('../common/tls_client_certificates').identityOf(
-      revocationStatus.fromSocket(socket));
+      revocationStatus.fromSocket(socket), options);
   } catch (e) {
     // No certificate authority in this process: nothing here was issued by
     // one, so the gate has nothing to say.
@@ -2129,14 +2445,11 @@ function secureContextOptions(policy) {
     // certificate is issued by this service's own TLS Issuing CA, so a client
     // holding only the Root needs the two certificates between them — without
     // that, "trust this one anchor" is true and unusable, and the failure is
-    // `unable to get local issuer certificate`, which names nothing.
-    cert: SERVER_CERTIFICATES.map(function (one) {
-      return (one.chainPem && one.chainPem.length)
-        ? [one.certPem].concat(one.chainPem).join('')
-        : one.certPem;
-    }),
+    // `unable to get local issuer certificate`, which names nothing. And the
+    // Root after them since #1064 — see presentedBundlePem().
+    cert: SERVER_CERTIFICATES.map(presentedBundlePem),
     // THE LISTENER'S OWN TRUSTSTORE (#429): the runtime anchors every
-    // listener shares (/tls/trust), the anchors of its OWN file where it
+    // listener shares (/admin/tls/trust), the anchors of its OWN file where it
     // names one — replacing the service's file anchors for it — and the
     // service Root where its trustIssuedClientCertificates says so.
     ca: anchors.filter(function (anchor) {
@@ -2197,7 +2510,7 @@ function secureContextOptions(policy) {
 //   * a rebuild half-fails and leaves a new Root over an old branch.
 //
 // What comes out is a bundle whose four certificates look perfectly right —
-// `CN=sts Root CA` at the top, correct names all the way down — and whose
+// `CN=iya-sts Root CA` at the top, correct names all the way down — and whose
 // Root has a different KEY from the one that signed the Intermediate. OpenSSL
 // calls it `error 30 at 2 depth lookup: authority and subject key identifier
 // mismatch`; node calls it `unable to get local issuer certificate`; curl is
@@ -2225,14 +2538,14 @@ function anchorSigns(anchorPem, record) {
     return false;
   }
   try {
-    const anchor = new crypto.X509Certificate(anchorPem);
-    const top = new crypto.X509Certificate(topPem);
+    const anchor = stsCrypto.parseCertificate(anchorPem);
+    const top = stsCrypto.parseCertificate(topPem);
     log.debug("Leaving anchorSigns().");
     // `verify()` is the SIGNATURE and not the name. That is the whole point:
     // the two Roots this has to tell apart have identical subjects, so
     // comparing issuer strings — the obvious check, and the one a reader will
     // want to replace this with — passes on exactly the case that is broken.
-    return top.verify(anchor.publicKey);
+    return stsCrypto.certificateSignedWith(top, anchor.publicKey);
   } catch (e) {
     log.warn('tls: a candidate trust anchor could not be checked against the ' +
              'server certificate chain (' + e.message + '), so it is not ' +
@@ -2384,6 +2697,63 @@ function trustAnchorPems() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A SOCKET PRESENTS: THE LEAF, ITS CHAIN, AND THE ROOT (#1064).
+//
+// **THE ONE PLACE A LISTENER'S `cert` BUNDLE IS BUILT**, and the chain in it
+// is `common/pki.js`'s `chainThroughRoot()`, the one place ANY reported chain
+// is completed — that function's header says why the Root goes with it and
+// why sending it trusts nothing. Every TLS listener this service owns presents
+// what this answers: the main port and the debugger's listener (both through
+// `secureContextOptions()`), the custom and realm listeners
+// (`tls/listeners.js`), LDAPS (`ldap/ldap_server.js`; ldapjs hands the bundle
+// to `tls.createServer()` unchanged), the channel between cells
+// (`common/cell_channel.ts`) and SPIFFE's gRPC listeners
+// (`spiffe/spiffe_grpc.ts`).
+//
+// RFC 8446 section 4.4.2 (RFC 5246 section 7.4.2 before it) lets a server
+// leave the trust anchor out, and until #1064 every listener here did; it lets
+// it be sent as well. `chainPem` keeps its meaning — what a certificate is
+// STORED with, without the Root — which the request workers' pin and every
+// "an empty chain means self-signed" reader in this file depend on.
+//
+// The candidate Roots are `trustAnchorPems()` as well as the service Root:
+// a supplied main certificate makes `trustAnchorPems()` answer the anchor that
+// came in its own file, which is the Root its chain ends under. A self-signed
+// leaf has no chain and is presented alone.
+// ---------------------------------------------------------------------------
+/**
+ * Builds the PEM bundle a TLS socket presents for one certificate: the leaf,
+ * the chain it is stored with, and the Root that signs that chain.
+ *
+ * @param record - `{ certPem, chainPem }`, `chainPem` leaf-first and without
+ *   the Root
+ * @returns the PEM bundle, leaf first
+ */
+function presentedBundlePem(record) {
+  log.debug("Entering presentedBundlePem().");
+  const certPem = String((record && record.certPem) || '');
+  const chain = ((record && record.chainPem) || []).filter(function (pem) {
+    return !!pem;
+  });
+  if (!chain.length) {
+    log.debug("Leaving presentedBundlePem(). No chain.");
+    return certPem;
+  }
+  // Lazily, as trustAnchorPems() reaches it: rule 3w, and a cache hit here.
+  const pems = require('../common/pki').chainThroughRoot(certPem, chain,
+    { anchors: trustAnchorPems() });
+  log.debug("Leaving presentedBundlePem(). " + pems.length +
+            " certificate(s).");
+  // Each block ends in a newline before the next begins: the inter-cell and
+  // SPIFFE callers joined theirs with '\n' and the others with '', so a PEM
+  // without a trailing newline would otherwise run into the next one's BEGIN
+  // line and OpenSSL would read one certificate fewer.
+  return pems.map(function (pem) {
+    return /\n$/.test(pem) ? pem : pem + '\n';
+  }).join('');
+}
+
 // ===========================================================================
 // THE HIERARCHY MOVED UNDERNEATH THE SOCKET (2026-09-12).
 //
@@ -2430,10 +2800,11 @@ function trustAnchorPems() {
 // signed by the same Root, and the reconcile answered "already chains" about
 // the stale one.
 //
-// It reached the suite as `tests/vendored/sts_pki_distribution_points.js` in
+// It reached the suite as `tests/protocol/sts_pki_distribution_points.js` in
 // dispatch mode only: *http://…/pki/crl/process/intermediate.crl is named by
 // certificates of two different authorities — CN=sts Intermediate CA
-// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts*. Measured on
+// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts* (the names
+// before #1294). Measured on
 // the kept stack: the handshake and `GET /tls/server-certificate` chained to
 // an Intermediate made at 14:53:56 by the FRONT process, every worker and the
 // front process's own register held one made at 14:53:57 by worker 33. The
@@ -2736,7 +3107,7 @@ function adoptServerCertificate(bundle) {
   SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
   SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
   try {
-    const read = new crypto.X509Certificate(bundle.certPem);
+    const read = stsCrypto.parseCertificate(bundle.certPem);
     SERVER_CERTIFICATE.subject = read.subject.replace(/\n/g, ', ');
     SERVER_CERTIFICATE.notAfter = new Date(read.validTo).toISOString();
   } catch (e) {
@@ -2857,7 +3228,7 @@ function anchorCertificates() {
     if (!parsedAnchors.has(text)) {
       let parsed = null;
       try {
-        parsed = new crypto.X509Certificate(text);
+        parsed = stsCrypto.parseCertificate(text);
       } catch (e) {
         log.debug("Caught in anchorCertificates(): " +
                   ((e && e.message) || e));
@@ -3032,9 +3403,10 @@ function refuseNonNistCurveCertificatesOn(server, label) {
  * @param server - the TLS listener
  * @param label - its name, for the log
  * @param certificateOf - optional; for a listener that presents a certificate
- *   of its own rather than this module's (a realm's listener, #99), answers
+ *   of its own rather than this module's (a custom listener, #472), answers
  *   `{ key, cert }` each time the truststore is applied
- * @param which - optional `{ kind, realm }` naming the listener's policy
+ * @param which - optional `{ kind, realm }` naming the listener's policy;
+ *   for kind `custom`, `realm` is the listener's id
  *   (`policyFor()`, #423); omitted, the main port's
  * @returns true when it was registered; false (logged) when `server` is not a
  * TLS server
@@ -3076,7 +3448,8 @@ function trustClientCertificatesOn(server, label, certificateOf, which) {
   log.info('tls: the client truststore now covers ' + label + '. A client ' +
            'certificate presented there is verified against ' +
            'the ' + anchors.length + ' anchor(s) ' +
-           'at /tls/trust; one that chains to none of them is still accepted ' +
+           'in the truststore; one that chains to none of them is still ' +
+           'accepted ' +
            'and still binds a token, which is what that port has always done.');
   log.debug('Leaving trustClientCertificatesOn(). Covered.');
   return true;
@@ -3084,8 +3457,8 @@ function trustClientCertificatesOn(server, label, certificateOf, which) {
 
 
 /**
- * Stops applying the truststore to a listener that has closed — a realm's
- * listener taken away or rebound (#99) — so the list does not keep it.
+ * Stops applying the truststore to a listener that has closed — a custom
+ * listener taken away or rebound (#99, #472) — so the list does not keep it.
  *
  * @param server - the listener given to `trustClientCertificatesOn()`
  * @returns true when it was registered
@@ -3117,10 +3490,10 @@ function applyAnchors() {
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
-  // A REALM'S LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99): it said so
-  // when it registered, and its own key and chain replace this module's in the
-  // context it is given, so a truststore change never swaps its certificate
-  // for the main port's.
+  // A CUSTOM LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99, #472): it said
+  // so when it registered, and its own key and chain replace this module's in
+  // the context it is given, so a truststore change never swaps its
+  // certificate for the main port's.
   externalServers.forEach(function (one) {
     const server = one.server;
     try {
@@ -3173,7 +3546,7 @@ const policyAppliers = [];
  * @param label - its name, for the log and the Listeners page
  * @param kind - as for `policyFor()`
  * @param apply - re-keys the listener with a policy
- * @param realm - for a realm's own listener, its id
+ * @param realm - for a custom listener, its id (#472)
  * @returns a function that unregisters it
  */
 function registerPolicyApplier(label, kind, apply, realm) {
@@ -3259,16 +3632,626 @@ realms.onChange(function () {
 // `resumeSession` events — its documented external cache. This is that cache:
 // a Map per listener, bounded by the listener's sessionCacheSize (the oldest
 // forgotten past it) and its sessionTimeoutS, both read at each event so a
-// change takes effect at once. Size 0 keeps nothing, which is the default:
-// every resumption is a ticket's.
+// change takes effect at once. Size 0 keeps nothing: every resumption is then
+// a ticket's.
+//
+// A SESSION IS RESUMED ONLY UNDER THE SERVER NAME IT WAS MADE UNDER (RFC 6066
+// section 3, 2026-10-07). "A server that implements this extension MUST NOT
+// accept the request to resume the session if the server_name extension
+// contains a different name. Instead, it proceeds with a full handshake to
+// establish a new session." Neither half of the stack does that for us:
+// OpenSSL, given a TLS 1.2 session by ID, resumes it and merely notes that
+// the name differs (tls_parse_ctos_server_name() sets servername_done = 0 on
+// a hit, and parses no name at all, so a malformed one is not refused
+// either), and node's `resumeSession` event hands the listener the session
+// ID and nothing else. tlsfuzzer found it the day the cache went on by
+// default (2048, 2026-10-07): test-invalid-server-name-extension-
+// resumption.py's "session resume with different SNI" and "... malformed
+// SNI" were RESUMED on the debugger's listener, where with the cache at 0
+// they had full handshakes.
+//
+// So the cache keeps the name with the session and compares. Node 24's
+// early ClientHello callback hands `onclienthello` the session id and
+// whether a ticket was offered, and nothing else: `hello.servername` is
+// absent, and `getServername()` is still false while `resumeSession` runs,
+// because OpenSSL parses the name only after the session has been chosen.
+// `installSessionNameSniffer()` therefore reads the name from the raw
+// ClientHello before the TLS engine sees the socket — the same
+// pause-and-unshift `tls/client_hello.ts` uses — and is installed from
+// `attachSessionCache()`, which runs before that module's `install()` and
+// before the PROXY protocol's, so this wrapper is the inner one and reads
+// a hello whose header is already gone. `hello.servername` is still
+// preferred when a node passes it. `watchClientHello()` wraps
+// `onclienthello` and `onnewsession` on every server socket of a listener
+// with a cache, and `offeredHello` carries the name to the two listeners
+// for exactly the length of that SYNCHRONOUS call. A resumption whose name
+// differs in any byte — a different name, an added or missing one, a NUL
+// inside it — is answered "nothing to resume", which is the full handshake
+// the RFC asks for; OpenSSL then judges the name as it judges any full
+// handshake's (a malformed one is refused, unrecognized_name). A hello the
+// sniffer cannot read is not resumed either.
+//
+// FAILING CLOSED: a name the cache does not know (the hook missing, a node
+// that stopped passing `servername`) refuses the resumption rather than
+// skipping the comparison, so the failure mode is a full handshake.
+// tests/listener_tls_policy.js L5 resumes one, so that state is not silent.
+//
+// A TLS 1.2 TICKET IS HELD TO THE SAME RULE, AFTER THE HANDSHAKE (#507,
+// 2026-10-26). Node resumes a ticket inside OpenSSL with no event, OpenSSL
+// makes the same TLS 1.2 non-check there, and nothing node exposes carries
+// the name a ticket was made under: `servername` is false after a TLS 1.2
+// hit and the session's DER holds no name, with or without an SNI
+// callback (shown by hand against a bare node server, 2026-10-26). What a
+// resumed TLS 1.2 session DOES keep is the master secret of the session it
+// resumes. So `rememberTicketName()` records, at the end of every full TLS
+// 1.2 handshake, the server name the hello offered under a digest of that
+// session's master secret (read from `getSession()`), and
+// `checkResumedName()` looks the digest up on every resumed TLS 1.2
+// connection and CLOSES the connection when the name differs
+// (STS-TLS-0052) or is one this process never recorded (STS-TLS-0053).
+// Closed, not resumed afresh: by `secureConnection` the handshake is over,
+// and a client answered under the wrong name is the thing the RFC forbids.
+// The record is per listener and per process, bounded by
+// TICKET_NAME_ENTRIES and the listener's sessionTimeoutS (a ticket lives no
+// longer), and where minted state persists it is also a replicated shared
+// store (`tls.ticketNames`, `tls.presentedChains`'s arrangement) so a
+// ticket sealed under the cluster's shared key is known on the node that
+// did not make it. A mismatch closes at once; a session with NO record on
+// this node waits for one read barrier (`persistence.syncNow()`) and is
+// judged again, because behind a balancer that row is simply still
+// replicating (2026-10-27, the cluster mode's tlsfuzzer). TLS 1.3 is left
+// alone on purpose: RFC 8446 section 4.2.11 removes the server's check and
+// section 4.6.1 puts it on the client, and OpenSSL resumes a TLS 1.3 PSK
+// under another name (same probe). tests/listener_tls_policy.js L5d.
 // ---------------------------------------------------------------------------
+
+/**
+ * The server name of the ClientHello whose handler is running, while it
+ * runs: `{ servername }`, or null between hellos.
+ * @type {{servername: (string|null)}|null}
+ */
+let offeredHello = null;
+
+/** The servers whose sockets carry `watchClientHello()`. */
+const helloWatchedServers = new WeakSet();
+
+// The name `installSessionNameSniffer()` read, on the raw socket, and the
+// mark that this sniffer has already handed that socket to the TLS engine.
+const SESSION_NAME = Symbol('sts.sessionServerName');
+const SESSION_SEEN = Symbol('sts.sessionNameSeen');
+// The same bounds `tls/client_hello.ts` uses: past either, the bytes are
+// handed to the TLS engine unread and the session is not resumed by ID.
+const SESSION_HELLO_LIMIT = 64 * 1024;
+const SESSION_HELLO_WAIT_MS = 10 * 1000;
+// The TLS 1.2 ticket names a listener remembers (#507): one per full TLS
+// 1.2 handshake, the oldest forgotten past this. Its own bound rather than
+// sessionCacheSize, because a size of 0 means "resume by ticket only" and
+// must not become "close every resumed TLS 1.2 connection".
+const TICKET_NAME_ENTRIES = 4096;
+// The replicated half (#507): a row per full TLS 1.2 handshake, aged out
+// at the listener's session lifetime, so a node that did not make a ticket
+// still knows the name it was made under. `tls.presentedChains`'s shape.
+const ticketNamesShared = realms.sharedMap({
+  persist: 'tls.ticketNames',
+  retain: 'age',
+  scope: 'shared',
+  expiresAt: realms.expiryField('until', 1)
+});
+const TICKET_NAME_SHARED_ENTRIES = 4096;
+// How many read barriers a resumed session with no record here is given
+// before it is judged, and the pause between them (2026-10-27).
+const TICKET_NAME_BARRIERS = 4;
+const TICKET_NAME_BARRIER_PAUSE_MS = 250;
+// Rule 3ap: the replicated half describes itself to /admin/caches; each
+// listener's own record is reported beside its session cache.
+cacheRegistry.register({
+  name: 'tls.ticket-names',
+  title: 'TLS 1.2 ticket names, for resumed sessions',
+  description: 'The server name a full TLS 1.2 handshake was made under, ' +
+    'keyed by a digest of the session\'s master secret, compared when ' +
+    'that session is RESUMED by ticket (#507, RFC 6066 section 3): node ' +
+    'resumes a ticket inside OpenSSL with no event, and OpenSSL does not ' +
+    'compare the name. A resumption under another name, or one no record ' +
+    'vouches for, is closed after the handshake. Each listener keeps its ' +
+    'own copy as well, bounded the same way.',
+  owner: 'tls/tls_server.js',
+  scope: 'process',
+  persisted: true,
+  maxEntries: function () {
+    return TICKET_NAME_SHARED_ENTRIES;
+  },
+  bound: 'Enforced: ' + TICKET_NAME_SHARED_ENTRIES + ' sessions; expired ' +
+    'rows go first, then the oldest.',
+  lifetime: function () {
+    return 'Shared by every node and replicated: the listener\'s session ' +
+      'lifetime (tls.sessionTimeoutS), which is as long as a ticket lives.';
+  },
+  entries: function () {
+    const out = [];
+    ticketNamesShared.forEach(function (row, key) {
+      const until = row && Number(row.until) > 0 ? Number(row.until) : null;
+      out.push({ key: 'master-secret sha256 ' + String(key).slice(0, 16) +
+                      '\u2026 (' + (row && typeof row.servername === 'string'
+                        ? (row.servername || 'no name') : '?') + ')',
+                 validUntil: until, basis: 'content-keyed' });
+    });
+    return out;
+  }
+});
+
+/**
+ * `tls/client_hello.ts`'s `parse`, loaded once. Null when it could not be
+ * loaded: every session-ID resumption then fails closed.
+ * @type {((bytes: Buffer) => { state: string,
+ *   hello?: { serverName?: string } })|null}
+ */
+let readClientHello = null;
+
+// Set on a server once `installSessionNameSniffer()` has wrapped its emit.
+const SESSION_SNIFFER = Symbol('sts.sessionNameSniffer');
+
+let clientHelloHookInstalled = false;
+
+/**
+ * Loads `tls/client_hello.ts`'s parser, once. A later listener retries
+ * when the first load found nothing.
+ */
+function loadClientHelloReader() {
+  log.debug('Entering loadClientHelloReader().');
+  if (typeof readClientHello === 'function') {
+    log.debug('Leaving loadClientHelloReader(). Cached.');
+    return;
+  }
+  try {
+    const clientHello = require('./client_hello');
+    if (clientHello && typeof clientHello.parse === 'function') {
+      readClientHello = clientHello.parse;
+    }
+  } catch (e) {
+    log.debug('Caught in loadClientHelloReader(): ' +
+              ((e && e.message) || e));
+  }
+  log.debug('Leaving loadClientHelloReader(). ' +
+            (typeof readClientHello === 'function' ? 'loaded'
+                                                   : 'unavailable'));
+}
+
+// A hot path: once per chunk of every ClientHello on a listener with a
+// cache, and no Entering/Leaving pair here would drown the log. `undefined`
+// asks for more bytes; null is a hello whose name cannot be read.
+function nameOfHello(bytes) {
+  if (typeof readClientHello !== 'function') {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = readClientHello(bytes);
+  } catch (e) {
+    log.debug('Caught in nameOfHello(): ' + ((e && e.message) || e));
+    return null;
+  }
+  if (!parsed || parsed.state === 'incomplete') {
+    return undefined;
+  }
+  if (parsed.state === 'complete' && parsed.hello &&
+      typeof parsed.hello.serverName === 'string') {
+    return parsed.hello.serverName;
+  }
+  return null;
+}
+
+// A hot path: once per connection, and no Entering/Leaving pair here would
+// drown the log. '' is a hello that offered no name; null was not read.
+function sniffedServerName(raw) {
+  if (!raw || !Object.prototype.hasOwnProperty.call(raw, SESSION_NAME)) {
+    return null;
+  }
+  const name = raw[SESSION_NAME];
+  if (typeof name === 'string') {
+    return name;
+  }
+  return null;
+}
+
+/**
+ * Reads the server name from the raw ClientHello before the TLS engine
+ * takes the socket, and remembers it on the socket for `watchClientHello()`.
+ * Installed inside the JA4 reader's and the PROXY protocol's wrappers, so
+ * both have already returned the bytes. Idempotent per server.
+ *
+ * @param server - the TLS server
+ */
+function installSessionNameSniffer(server) {
+  log.debug('Entering installSessionNameSniffer().');
+  if (!server || typeof server.emit !== 'function' ||
+      server[SESSION_SNIFFER]) {
+    log.debug('Leaving installSessionNameSniffer(). Nothing to do.');
+    return;
+  }
+  server[SESSION_SNIFFER] = true;
+  loadClientHelloReader();
+  const originalEmit = server.emit;
+
+  // A hot path: one connection on every listener with a cache, and no
+  // Entering/Leaving pair on the readers below would drown the log.
+  function capture(socket) {
+    let buffered = Buffer.alloc(0);
+    let finished = false;
+
+    // Hot path: once per connection. See capture().
+    function handOver(name) {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearTimeout(timer);
+      socket.removeListener('data', onData);
+      socket.removeListener('error', onDone);
+      socket.removeListener('close', onDone);
+      socket[SESSION_NAME] = typeof name === 'string' ? name : null;
+      socket[SESSION_SEEN] = true;
+      socket.pause();
+      if (buffered.length) {
+        socket.unshift(buffered);
+      }
+      if (!socket.destroyed) {
+        originalEmit.call(server, 'connection', socket);
+      }
+    }
+
+    // Hot path: once per chunk. See capture().
+    function onData(chunk) {
+      if (finished) {
+        return;
+      }
+      buffered = buffered.length ? Buffer.concat([buffered, chunk])
+                                 : chunk;
+      if (buffered.length > SESSION_HELLO_LIMIT) {
+        handOver(null);
+        return;
+      }
+      const name = nameOfHello(buffered);
+      if (name === undefined) {
+        return;
+      }
+      handOver(name);
+    }
+
+    // Hot path: the client went away while the hello was read. See capture().
+    function onDone() {
+      finished = true;
+      clearTimeout(timer);
+      socket.removeListener('data', onData);
+    }
+
+    const timer = setTimeout(function () {
+      if (!finished) {
+        handOver(null);
+      }
+    }, SESSION_HELLO_WAIT_MS);
+    socket.on('data', onData);
+    socket.once('error', onDone);
+    socket.once('close', onDone);
+    // A socket straight from accept is flowing. One handed on by the
+    // PROXY protocol or the JA4 reader is paused, with the hello already
+    // buffered — a data listener alone never makes it flow. resume()
+    // delivers either, and handOver() pauses again before the TLS engine
+    // is given the socket.
+    socket.resume();
+  }
+
+  // Anonymous and unlogged: emit runs for every event the server raises,
+  // and only a first connection is this sniffer's business.
+  server.emit = function (event, socket) {
+    if (event !== 'connection' || !socket || socket[SESSION_SEEN]) {
+      return originalEmit.apply(server, arguments);
+    }
+    capture(socket);
+    return true;
+  };
+  log.debug('Leaving installSessionNameSniffer().');
+}
+
+/**
+ * The server name a parsed ClientHello offered, '' for none, null if node
+ * did not say.
+ *
+ * @param hello - node's parsed ClientHello
+ * @returns the name, '' or null
+ */
+// A hot path: called for every handshake on a listener with a cache, and no
+// Entering/Leaving pair here would tell a reader anything but would drown
+// the log.
+function offeredServername(hello) {
+  if (hello && typeof hello.servername === 'string') {
+    return hello.servername;
+  }
+  return null;
+}
+
+/**
+ * Wraps one server socket's `onclienthello` and `onnewsession` so that the
+ * session cache's listeners can see the server name its hello offered.
+ *
+ * @param handle - the socket's TLSWrap handle
+ */
+// A hot path: once per connection on every listener with a cache, and no
+// Entering/Leaving pair here would tell a reader anything but would drown
+// the log.
+function watchClientHello(handle) {
+  const onHello = handle.onclienthello;
+  const onNewSession = handle.onnewsession;
+  if (typeof onHello !== 'function' || typeof onNewSession !== 'function') {
+    return;
+  }
+  // The name THIS connection's hello offered, for its resumeSession and
+  // for its newSession at the end of a full handshake. Node 24 leaves the
+  // name off the hello object, so the sniffer's reading is compared unless
+  // the hello carries a name of its own.
+  let offered = sniffedServerName(handle._parentWrap);
+  handle.onclienthello = function (hello) {
+    const parsed = offeredServername(hello);
+    if (parsed !== null) {
+      offered = parsed;
+    }
+    const outer = offeredHello;
+    offeredHello = { servername: offered };
+    try {
+      return onHello.apply(this, arguments);
+    } finally {
+      offeredHello = outer;
+    }
+  };
+  handle.onnewsession = function () {
+    const outer = offeredHello;
+    offeredHello = { servername: offered };
+    try {
+      return onNewSession.apply(this, arguments);
+    } finally {
+      offeredHello = outer;
+    }
+  };
+}
+
+/**
+ * Installs, once, the hook through which every server socket of a listener
+ * with a session cache gets `watchClientHello()`. node builds a server's
+ * sockets inside `tls.Server`'s own connection listener and hands the
+ * listener no socket, so the one place a socket can be reached before its
+ * hello arrives is `TLSSocket.prototype._init`, which sets the handlers
+ * this wraps; it is wrapped for the servers in `helloWatchedServers` alone.
+ *
+ * @returns whether the hook is in place
+ */
+function installClientHelloHook() {
+  log.debug('Entering installClientHelloHook().');
+  if (clientHelloHookInstalled) {
+    log.debug('Leaving installClientHelloHook(). Already.');
+    return true;
+  }
+  // `_init`, `_tlsOptions`, `_handle` and `server` are node's own and
+  // undeclared in @types/node, hence the cast.
+  const proto = /** @type {any} */ (tls.TLSSocket &&
+                                     tls.TLSSocket.prototype);
+  const originalInit = proto && proto._init;
+  if (typeof originalInit !== 'function') {
+    // Fails CLOSED: every session-ID resumption is then refused (a full
+    // handshake), never resumed under a name nobody compared.
+    log.error(errorCodes.tag('STS-TLS-0046') +
+              'tls: this node has no TLSSocket.prototype._init, so the TLS ' +
+              'session cache cannot see a ClientHello\'s server name; no ' +
+              'session will be resumed by ID (RFC 6066 section 3).');
+    log.debug('Leaving installClientHelloHook(). No _init.');
+    return false;
+  }
+  // A hot path: every TLS socket in the process is built through it, and
+  // no Entering/Leaving pair here would tell a reader anything but would
+  // drown the log.
+  proto._init = function () {
+    const out = originalInit.apply(this, arguments);
+    const socket = /** @type {any} */ (this);
+    if (socket._tlsOptions && socket._tlsOptions.isServer &&
+        socket._handle && helloWatchedServers.has(socket.server)) {
+      watchClientHello(socket._handle);
+    }
+    return out;
+  };
+  clientHelloHookInstalled = true;
+  log.debug('Leaving installClientHelloHook().');
+  return true;
+}
+
+/**
+ * Whether a held session may be resumed by the hello now offering it: only
+ * under the very server name it was made under (RFC 6066 section 3).
+ *
+ * @param held - the cache's entry
+ * @param offered - `offeredHello`, as the listener found it
+ * @returns true to resume
+ */
+// A hot path: every TLS 1.2 resumption by ID, and no Entering/Leaving pair
+// here would tell a reader anything but would drown the log.
+function sameServerName(held, offered) {
+  if (!held || !offered) {
+    return false;
+  }
+  if (typeof held.servername !== 'string' ||
+      typeof offered.servername !== 'string') {
+    return false;
+  }
+  return held.servername === offered.servername;
+}
+
+/**
+ * The server name a connection's ClientHello offered, as the sniffer read
+ * it off the raw socket, else as OpenSSL reports it (a full handshake's
+ * `servername`; after a TLS 1.2 hit OpenSSL reports none). '' is a hello
+ * that offered no name; null is a name nobody read.
+ *
+ * @param socket - the TLS socket
+ * @returns the name, '' or null
+ */
+// A hot path: once per TLS 1.2 connection, and no Entering/Leaving pair
+// here would tell a reader anything but would drown the log.
+function helloServerName(socket) {
+  const raw = socket && socket._parent;
+  const sniffed = sniffedServerName(raw);
+  if (sniffed !== null) {
+    return sniffed;
+  }
+  if (socket && typeof socket.servername === 'string') {
+    return socket.servername;
+  }
+  return null;
+}
+
+/**
+ * A digest of the master secret of the session a socket is on, read from
+ * OpenSSL's serialized SSL_SESSION (`getSession()`): SEQUENCE { version,
+ * sslVersion, cipher, sessionId, masterKey, ... }, the fifth element. The
+ * same across a TLS 1.2 resumption, which is what makes it the key the
+ * ticket's name is kept under. Never the secret itself: the digest is all
+ * that is held or replicated.
+ *
+ * @param socket - the TLS socket
+ * @returns the hex digest, or null where the session could not be read
+ */
+// A hot path, as above.
+function masterSecretDigest(socket) {
+  let der = null;
+  try {
+    der = socket && typeof socket.getSession === 'function'
+      ? socket.getSession() : null;
+  } catch (e) {
+    log.debug('Caught in masterSecretDigest(): ' + ((e && e.message) || e));
+    return null;
+  }
+  if (!der || !der.length || der[0] !== 0x30) {
+    return null;
+  }
+  const tlv = function (off) {
+    if (off + 2 > der.length) {
+      return null;
+    }
+    const tag = der[off];
+    let len = der[off + 1];
+    let p = off + 2;
+    if (len & 0x80) {
+      const n = len & 0x7f;
+      len = 0;
+      for (let i = 0; i < n; i++) {
+        if (p >= der.length) {
+          return null;
+        }
+        len = len * 256 + der[p++];
+      }
+    }
+    if (p + len > der.length) {
+      return null;
+    }
+    return { tag: tag, start: p, end: p + len };
+  };
+  const seq = tlv(0);
+  if (!seq) {
+    return null;
+  }
+  let p = seq.start;
+  let fifth = null;
+  for (let i = 0; i < 5 && p < seq.end; i++) {
+    const t = tlv(p);
+    if (!t) {
+      return null;
+    }
+    fifth = t;
+    p = t.end;
+  }
+  if (!fifth || fifth.tag !== 0x04 || fifth.end - fifth.start < 16) {
+    return null;
+  }
+  return stsCrypto.sha256Hex(der.subarray(fifth.start, fifth.end));
+}
+
+/**
+ * Records the name a full TLS 1.2 handshake was made under (#507), in the
+ * listener's own record and, where minted state persists, in the
+ * replicated store.
+ *
+ * @param record - the listener's Map
+ * @param key - the master-secret digest
+ * @param name - the server name the hello offered ('' for none)
+ * @param ttlMs - the listener's session lifetime
+ */
+// A hot path, as above.
+function rememberTicketName(record, key, name, ttlMs) {
+  const now = Date.now();
+  record.delete(key);
+  record.set(key, { servername: name, at: now });
+  while (record.size > TICKET_NAME_ENTRIES) {
+    record.delete(record.keys().next().value);
+  }
+  try {
+    ticketNamesShared.delete(key);
+    cacheRegistry.makeRoom(ticketNamesShared, TICKET_NAME_SHARED_ENTRIES, {
+      expired: function (row) {
+        return !row || Number(row.until) <= now;
+      }
+    });
+    ticketNamesShared.set(key, { servername: name, until: now + ttlMs });
+    // FLUSHED NOW, NOT AT THE NEXT UNRELATED WRITE (2026-10-27): a client
+    // resumes within milliseconds of its full handshake, on whichever node
+    // the balancer picks, and that node's read barrier can only see a row
+    // that has been COMMITTED. The minted flush coalesces concurrent
+    // callers into one write (persistence_minted.js), and nothing here
+    // waits for it.
+    const flushed = require('../persistence/persistence').flushMinted();
+    Promise.resolve(flushed).then(function () {
+      return null;
+    }, function (e) {
+      log.debug('Caught flushing a ticket name: ' + ((e && e.message) || e));
+      return null;
+    });
+  } catch (e) {
+    log.debug('Caught in rememberTicketName(): ' + ((e && e.message) || e));
+  }
+}
+
+/**
+ * The name a resumed TLS 1.2 session was made under (#507): the listener's
+ * own record first, then the replicated store. Null where neither knows.
+ *
+ * @param record - the listener's Map
+ * @param key - the master-secret digest
+ * @param ttlMs - the listener's session lifetime
+ * @returns the name, or null
+ */
+// A hot path, as above.
+function recordedTicketName(record, key, ttlMs) {
+  const now = Date.now();
+  const own = record.get(key);
+  if (own && now - own.at <= ttlMs && typeof own.servername === 'string') {
+    return own.servername;
+  }
+  let shared = null;
+  try {
+    shared = ticketNamesShared.get(key);
+  } catch (e) {
+    log.debug('Caught in recordedTicketName(): ' + ((e && e.message) || e));
+  }
+  if (shared && Number(shared.until) > now &&
+      typeof shared.servername === 'string') {
+    return shared.servername;
+  }
+  return null;
+}
+
 /**
  * Attaches a session-ID cache to a TLS server, bounded by the listener's
- * policy.
+ * policy, and resuming a session only under the server name it was made
+ * under.
  *
  * @param server - the TLS server
  * @param kind - the listener's kind, as for `policyFor()`
- * @param realmId - for a realm's own listener, its id
+ * @param realmId - for a custom listener, its id (#472)
  * @returns the cache, for its report
  */
 function attachSessionCache(server, kind, realmId) {
@@ -3277,6 +4260,10 @@ function attachSessionCache(server, kind, realmId) {
     log.debug('Leaving attachSessionCache(). Not a server.');
     return null;
   }
+  if (installClientHelloHook()) {
+    installSessionNameSniffer(server);
+  }
+  helloWatchedServers.add(server);
   const cache = new Map();
   const bounds = function () {
     const policy = policyFor(kind, realmId);
@@ -3288,7 +4275,9 @@ function attachSessionCache(server, kind, realmId) {
     if (b.size > 0) {
       const key = Buffer.from(id).toString('hex');
       cache.delete(key);
-      cache.set(key, { data: data, at: Date.now() });
+      cache.set(key, { data: data, at: Date.now(),
+                       servername: offeredHello ? offeredHello.servername
+                         : null });
       while (cache.size > b.size) {
         cache.delete(cache.keys().next().value);
       }
@@ -3302,13 +4291,160 @@ function attachSessionCache(server, kind, realmId) {
     const key = Buffer.from(id).toString('hex');
     const held = b.size > 0 ? cache.get(key) : null;
     if (held && Date.now() - held.at <= b.ttlMs) {
-      done(null, held.data);
+      if (sameServerName(held, offeredHello)) {
+        done(null, held.data);
+        return;
+      }
+      // Not resumed, and not forgotten: the session is still good for the
+      // name it was made under. The full handshake makes a new one.
+      log.debug('tls: a ' + kind + ' session ID offered under another ' +
+                'server name is not resumed (RFC 6066 section 3).');
+      done(null, null);
       return;
     }
     cache.delete(key);
     done(null, null);
   });
-  sessionCaches.push({ kind: kind, realm: realmId || null, cache: cache });
+  // THE TLS 1.2 TICKET'S NAME (#507; the block above the sniffer). First
+  // among the listeners, so a connection resumed under another name is
+  // closed before node's HTTP server, the connection observer or anything
+  // else reads it, which is `refuseNonNistCurveCertificatesOn()`'s
+  // arrangement for a chain it refuses.
+  const ticketNames = new Map();
+  server.prependListener('secureConnection', function (socket) {
+    let protocol = null;
+    try {
+      protocol = typeof socket.getProtocol === 'function'
+        ? socket.getProtocol() : null;
+    } catch (e) {
+      log.debug('Caught in the ticket-name check: ' +
+                ((e && e.message) || e));
+    }
+    if (protocol !== 'TLSv1.2' || socket.destroyed) {
+      return;
+    }
+    const ttlMs = bounds().ttlMs;
+    const key = masterSecretDigest(socket);
+    const offered = helloServerName(socket);
+    let reused = false;
+    try {
+      reused = typeof socket.isSessionReused === 'function' &&
+               socket.isSessionReused();
+    } catch (e) {
+      log.debug('Caught in the ticket-name check: ' +
+                ((e && e.message) || e));
+    }
+    if (!reused) {
+      if (key && offered !== null) {
+        rememberTicketName(ticketNames, key, offered, ttlMs);
+      }
+      return;
+    }
+    const judge = function (madeUnder) {
+      log.debug('Entering judge().');
+      if (madeUnder === null || offered === null) {
+        // Fails CLOSED, as the session-ID cache does: a session this
+        // process cannot vouch for is not answered under a name nobody
+        // compared.
+        log.info(errorCodes.tag('STS-TLS-0053') + 'tls: a ' + kind +
+                 ' TLS 1.2 session was resumed by ticket whose server ' +
+                 'name this node does not know (' + (madeUnder === null
+                   ? 'no record of the session'
+                   : 'the hello\'s name was not read') + '); the ' +
+                 'connection is closed (RFC 6066 section 3).');
+        socket.destroy();
+        log.debug('Leaving judge(). No record.');
+        return;
+      }
+      if (madeUnder !== offered) {
+        log.info(errorCodes.tag('STS-TLS-0052') + 'tls: a ' + kind +
+                 ' TLS 1.2 session made under ' + JSON.stringify(madeUnder) +
+                 ' was resumed by ticket under ' + JSON.stringify(offered) +
+                 '; the connection is closed (RFC 6066 section 3).');
+        socket.destroy();
+      }
+      log.debug('Leaving judge().');
+    };
+    const madeUnder = key ? recordedTicketName(ticketNames, key, ttlMs)
+                          : null;
+    if (madeUnder !== null || offered === null || !key) {
+      judge(madeUnder);
+      return;
+    }
+    // NO RECORD HERE YET: ONE READ BARRIER BEFORE THE VERDICT (2026-10-27).
+    // Behind a balancer the ticket was made on another node seconds or
+    // milliseconds ago, and its `tls.ticketNames` row is still on the
+    // change log this node has not pulled — the cluster mode's tlsfuzzer
+    // (test-session-ticket-resumption over sts-lb) closed every such
+    // resumption, which is every quick reconnect a real client makes. The
+    // socket is held (an explicit pause survives the HTTP server's own
+    // 'data' listener), everything committed before this moment is pulled
+    // (`persistence.syncNow()`, bounded by its own deadline; a memory
+    // store answers at once with nothing to pull), and the record is read
+    // again. A mismatch still closes without waiting, above.
+    // Asked up to TICKET_NAME_BARRIERS times, a short pause between: the
+    // making node flushes the row as it records it (rememberTicketName()),
+    // but that commit and this node's pull are two processes' timers, and
+    // one barrier can land between them.
+    socket.pause();
+    const barrierOnce = function () {
+      log.debug('Entering barrierOnce().');
+      let barrier = null;
+      try {
+        barrier = require('../persistence/persistence').syncNow();
+      } catch (e) {
+        log.debug('Caught in the ticket-name check: ' +
+                  ((e && e.message) || e));
+        barrier = null;
+      }
+      log.debug('Leaving barrierOnce().');
+      return Promise.resolve(barrier).then(function () {
+        return null;
+      }, function (e) {
+        log.debug('Caught in the ticket-name check\'s barrier: ' +
+                  ((e && e.message) || e));
+        return null;
+      });
+    };
+    // A loop, not a chain: the pause between two barriers is a one-shot
+    // delay inside one operation (tests/no_periodic_timers.js).
+    const lookAgain = async function () {
+      log.debug('Entering lookAgain().');
+      let found = null;
+      for (let left = TICKET_NAME_BARRIERS; left > 0; left--) {
+        await barrierOnce();
+        if (socket.destroyed) {
+          log.debug('Leaving lookAgain(). Gone.');
+          return null;
+        }
+        found = recordedTicketName(ticketNames, key, ttlMs);
+        if (found !== null || left === 1) {
+          break;
+        }
+        await new Promise(function (resolve) {
+          setTimeout(resolve, TICKET_NAME_BARRIER_PAUSE_MS);
+        });
+      }
+      log.debug('Leaving lookAgain().');
+      return found;
+    };
+    lookAgain().then(function (found) {
+      if (socket.destroyed) {
+        return;
+      }
+      judge(found);
+      if (!socket.destroyed) {
+        socket.resume();
+      }
+    }, function (e) {
+      log.debug('Caught in lookAgain(): ' + ((e && e.message) || e));
+      if (!socket.destroyed) {
+        socket.destroy();
+      }
+    });
+  });
+  sessionCaches.push({ kind: kind, realm: realmId || null, cache: cache,
+                       ticketNames: ticketNames });
   log.debug('Leaving attachSessionCache().');
   return cache;
 }
@@ -3331,10 +4467,11 @@ const httpListeners = [];
  * The connection-pooling values one HTTP listener is held to: its own where
  * set, the service's otherwise.
  *
- * @param kind - `main`, `debugger`, `revocation` or `realm`
- * @param realmId - for `realm`, the realm
+ * @param kind - `main`, `debugger`, `revocation` or `custom`
+ * @param realmId - for `custom`, the listener's id
  * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
- *   maxConnections }`, the header timeout resolved
+ *   maxConnections, http2, http2MaxConcurrentStreams }`, the header timeout
+ *   resolved
  */
 function httpPolicyFor(kind, realmId) {
   log.debug('Entering httpPolicyFor(). ' + kind);
@@ -3346,6 +4483,20 @@ function httpPolicyFor(kind, realmId) {
                                      'http.keepAliveTimeoutS') || 60);
   const asked = Math.max(0, pick('headersTimeoutS', 'http.headersTimeoutS') ||
                             0);
+  // A boolean, so not through `pick()`'s Number(): the listener's own on or
+  // off (`ownValue()` turns those into true and false; a custom listener's
+  // definition may also say `"true"` or `"false"`), else the service's. A
+  // value that is none of those follows the service's, as `inherit` does.
+  const ownHttp2 = kind ? ownValue(kind, realmId, 'http2') : undefined;
+  const ownSays = ownHttp2 === true || ownHttp2 === 'true' ? true
+    : ownHttp2 === false || ownHttp2 === 'false' ? false : undefined;
+  const http2 = ownSays !== undefined ? ownSays
+                                      : config.value('http.http2') !== false;
+  // THE STREAMS ONE HTTP/2 CONNECTION MAY HAVE OPEN AT ONCE (#407). 0 is not
+  // a legal value (the row's `min` is 1), so the `||` only catches a value
+  // that is not a number.
+  const streams = Math.max(1, pick('http2MaxConcurrentStreams',
+                                   'http.http2MaxConcurrentStreams') || 100);
   log.debug('Leaving httpPolicyFor().');
   return {
     keepAliveTimeoutS: keepAlive,
@@ -3355,8 +4506,26 @@ function httpPolicyFor(kind, realmId) {
     maxRequestsPerSocket: Math.max(0, pick('maxRequestsPerSocket',
                                            'http.maxRequestsPerSocket') || 0),
     maxConnections: Math.max(0, pick('maxConnections',
-                                     'http.maxConnections') || 0)
+                                     'http.maxConnections') || 0),
+    http2: http2,
+    http2MaxConcurrentStreams: streams
   };
+}
+
+// WHAT ALPN OFFERS, as the TLS layer wants it: length-prefixed protocol
+// names, most preferred first (RFC 7301 section 3.1). `http/1.1` is in both,
+// so a client that asks only for it is answered either way.
+const ALPN_HTTP2 = Buffer.from('\x02h2\x08http/1.1', 'latin1');
+const ALPN_HTTP1 = Buffer.from('\x08http/1.1', 'latin1');
+
+// Whether a registered server is node's http2 secure server, which has no
+// exported class to test against.
+function isHttp2Server(server) {
+  log.debug('Entering isHttp2Server().');
+  const yes = !!(server && server.constructor &&
+                 server.constructor.name === 'Http2SecureServer');
+  log.debug('Leaving isHttp2Server(). ' + yes);
+  return yes;
 }
 
 // The pooling values onto the server object.
@@ -3370,8 +4539,97 @@ function applyHttpPolicy(entry) {
   // at a maxConnections of 0.
   entry.server.maxConnections = p.maxConnections > 0 ? p.maxConnections
                                                      : Infinity;
+  // HTTP/2 OFFERED OR NOT (#407). Only node's http2 secure server — built
+  // with `allowHTTP1` for every TLS HTTP listener — speaks both, and it reads
+  // `ALPNProtocols` at each new connection, so the offer changes here, in
+  // place, for the next handshake; an open connection keeps its protocol. A
+  // plain-HTTP server (the revocation listener, or the main port with
+  // global.https off) has no handshake to offer it in.
+  if (isHttp2Server(entry.server)) {
+    entry.server.ALPNProtocols = p.http2 ? ALPN_HTTP2 : ALPN_HTTP1;
+    // THE SAME BOUNDS ON AN HTTP/2 CONNECTION (#407). Node applies the
+    // pooling values above to HTTP/1.1 only, so without these one HTTP/2
+    // connection held open every stream a client asked for (node's own
+    // SETTINGS_MAX_CONCURRENT_STREAMS is 2^32-1) for as long as it liked:
+    // `maxConnections` bounded connections and nothing bounded the work on
+    // each. `updateSettings()` is what a new session announces; an open one
+    // is sent the new SETTINGS too, and given the new idle timeout.
+    entry.server.updateSettings({
+      maxConcurrentStreams: p.http2MaxConcurrentStreams });
+    entry.policy = p;
+    entry.sessions.forEach(function (session) {
+      holdHttp2Session(entry, session);
+    });
+  }
   entry.applied = JSON.stringify(p);
   log.debug('Leaving applyHttpPolicy().');
+}
+
+/**
+ * Holds one HTTP/2 session to its listener's policy as it now stands: the
+ * stream cap, and the idle timeout. Called when the session opens and again
+ * when the policy changes.
+ *
+ * - **Idle**: `keepAliveTimeoutS` with no frame either way, and the session
+ *   is closed GRACEFULLY — a GOAWAY, then whatever stream is still open
+ *   finishes — which is what the keep-alive timeout does to an idle HTTP/1.1
+ *   connection.
+ * - **Streams**: the SETTINGS the session announces.
+ *
+ * @param entry - the listener's registration
+ * @param session - the server's `Http2Session`
+ */
+function holdHttp2Session(entry, session) {
+  log.debug('Entering holdHttp2Session(). ' + entry.kind);
+  const p = entry.policy;
+  if (!p || session.destroyed || session.closed) {
+    log.debug('Leaving holdHttp2Session(). Nothing to hold.');
+    return;
+  }
+  try {
+    session.settings({ maxConcurrentStreams: p.http2MaxConcurrentStreams });
+  } catch (e) {
+    // A session part-way through closing refuses new SETTINGS; it is
+    // about to go, and the next one announces the new value.
+    log.debug('Caught in holdHttp2Session(): ' + ((e && e.message) || e));
+  }
+  session.setTimeout(p.keepAliveTimeoutS * 1000, function () {
+    log.debug('tls: an idle HTTP/2 session on the ' + entry.kind +
+              ' listener is closed after ' + p.keepAliveTimeoutS + ' s.');
+    session.close();
+  });
+  log.debug('Leaving holdHttp2Session().');
+}
+
+/**
+ * Follows the HTTP/2 sessions of one registered listener: each is held to
+ * the policy when it opens (holdHttp2Session()), counted against
+ * `maxRequestsPerSocket` — an HTTP/2 connection carries requests as
+ * streams, and one that has carried its share is sent a GOAWAY after the
+ * last, so the client opens a new one exactly as it would over HTTP/1.1 —
+ * and forgotten when it closes.
+ *
+ * @param entry - the listener's registration
+ */
+function followHttp2Sessions(entry) {
+  log.debug('Entering followHttp2Sessions(). ' + entry.kind);
+  entry.server.on('session', function (session) {
+    entry.sessions.add(session);
+    holdHttp2Session(entry, session);
+    let carried = 0;
+    // Once per stream; no Entering/Leaving pair (a hot path).
+    session.on('stream', function () {
+      carried += 1;
+      const most = entry.policy ? entry.policy.maxRequestsPerSocket : 0;
+      if (most > 0 && carried >= most && !session.closed) {
+        session.close();
+      }
+    });
+    session.once('close', function () {
+      entry.sessions.delete(session);
+    });
+  });
+  log.debug('Leaving followHttp2Sessions().');
 }
 
 /**
@@ -3379,15 +4637,18 @@ function applyHttpPolicy(entry) {
  * listener's settings, now and whenever they change.
  *
  * @param server - the http or https server
- * @param kind - `main`, `debugger`, `revocation` or `realm`
- * @param realmId - for `realm`, the realm
+ * @param kind - `main`, `debugger`, `revocation` or `custom`
+ * @param realmId - for `custom`, the listener's id
  * @returns a function that unregisters it
  */
 function registerHttpListener(server, kind, realmId) {
   log.debug('Entering registerHttpListener(). ' + kind);
   const entry = { server: server, kind: String(kind), realm: realmId || null,
-                  applied: '' };
+                  applied: '', policy: null, sessions: new Set() };
   httpListeners.push(entry);
+  if (isHttp2Server(server)) {
+    followHttp2Sessions(entry);
+  }
   applyHttpPolicy(entry);
   log.debug('Leaving registerHttpListener().');
   return function unregister() {
@@ -3422,7 +4683,7 @@ function listenerPolicies() {
 // `options.source` is `runtime` unless a caller says otherwise — the file
 // loader below pushes directly and marks its own rows `file` — and
 // `options.strict` is the management door's: see the block above `truststore`
-// at the foot of this section for why `/tls/trust` does not pass it.
+// at the foot of this section; the in-process tests' adds do not pass it.
 /**
  * Adds the certificates in a PEM bundle to the client truststore, storing
  * runtime anchors so they survive a restart, and applies it to every registered
@@ -3434,6 +4695,42 @@ function listenerPolicies() {
  * @returns `{ added, duplicates, total }`, or with `error` and `errorCode` when
  * nothing was added
  */
+// Whether this process's truststore holds to the admission rule. The MODE IS
+// ASKED IN THE DEFAULT REALM, `truststoreOpenToAnybody()`'s reason: these are
+// one array for every listener. Lazily, as this runs at require for a file.
+function admissionApplies() {
+  log.debug("Entering admissionApplies().");
+  const trust = require('../common/certificate_trust');
+  log.debug("Leaving admissionApplies().");
+  return trust.applies('anchor-admission', realms.DEFAULT_ID);
+}
+
+// What the admission rule says of one row, given the rows beside it, what is
+// held and the service Root an intermediate may hang from. null when it holds
+// or when the rule is not in force.
+function admissionProblemOf(row, rows) {
+  log.debug("Entering admissionProblemOf().");
+  if (!admissionApplies()) {
+    log.debug("Leaving admissionProblemOf(). Not in force.");
+    return null;
+  }
+  const held = anchors.map(function (one) {
+    return one.pem;
+  }).concat(rows.map(function (one) {
+    return one.pem;
+  })).filter(function (pem) {
+    return pem !== row.pem;
+  });
+  const root = issuedClientCertificateAnchor();
+  if (root) {
+    held.push(root);
+  }
+  const problem = require('../common/pki')
+    .anchorProblemSync(row.pem, { heldAnchors: held });
+  log.debug("Leaving admissionProblemOf(). " + (problem ? problem.code : 'ok'));
+  return problem;
+}
+
 function addAnchors(text, options) {
   log.debug('Entering addAnchors().');
   const opts = options || {};
@@ -3462,6 +4759,21 @@ function addAnchors(text, options) {
         'verify against — so none was added. A block OpenSSL cannot parse is ' +
         'not an anchor it will use, and putting one in the truststore makes ' +
         'the next setSecureContext() on every listener throw.' };
+    }
+  }
+  // THE ADMISSION RULE (#1360, gap 5), under paranoid PKI mode: all or nothing
+  // for the reason above. Off, this store takes what OpenSSL can read, as it
+  // did. The file's own loader asks below; only the gated doors are strict.
+  if (opts.strict) {
+    const refused = described.map(function (one) {
+      return admissionProblemOf(one, described);
+    }).filter(Boolean);
+    if (refused.length) {
+      log.debug('Leaving addAnchors(). ' + refused.length + ' not admitted.');
+      return { added: 0, total: anchors.length, errorCode: refused[0].code,
+               error: refused.map(function (one) {
+                 return one.why;
+               }).join('; ') + '. So none was added.' };
     }
   }
   let added = 0;
@@ -3511,7 +4823,8 @@ function addAnchors(text, options) {
 // ONE ANCHOR TAKEN AWAY, BY ITS SHA-256 FINGERPRINT (2026-09-12).
 //
 // The management door's remove. There is deliberately no bulk counterpart on
-// that door: `clearAnchors()` is what `POST /tls/trust/clear` calls, and a
+// that door: `clearAnchors()` is what the in-process tests call (`POST
+// /tls/trust/clear` did until #597 deleted it), and a
 // bulk clear is exactly what `tests/CLAUDE.md` records costing a remote PEP its
 // identity for the rest of a run. A caller that means to empty the truststore
 // removes what it can see, one row at a time, and the rows it did not put
@@ -3583,6 +4896,8 @@ function publicAnchor(anchor) {
     fingerprint256: anchor.fingerprint256, ca: !!anchor.ca,
     readable: !!anchor.readable,
     source: anchor.source === 'file' ? 'file' : 'runtime',
+    // Admitted once and refused by the rule now (#1360): kept, and reported.
+    unadmittable: anchor.unadmittable || '',
     // Whether this anchor survives a restart. A `file` anchor does, because
     // the file brings it back; a `runtime` one does exactly when it was
     // written to ou=trustAnchors, which fails only on a full directory or in
@@ -3782,6 +5097,15 @@ function reloadStoredAnchors() {
     anchors.push(Object.assign(described, {
       source: 'runtime', stored: true, addedAt: row.addedAt || ''
     }));
+    // KEPT AND REPORTED (#1360): admitted before the rule, or before this mode.
+    // Nothing is taken away silently; an operator removes it.
+    const refused = admissionProblemOf(described, []);
+    if (refused) {
+      anchors[anchors.length - 1].unadmittable = refused.why;
+      log.warn(errorCodes.tag('STS-TLS-0056') + 'tls: a stored trust anchor ' +
+               'is one the admission rule refuses, and it is kept: ' +
+               refused.why);
+    }
     added += 1;
   });
   if (added || removed) {
@@ -3913,47 +5237,6 @@ function describeCertificate(cert, depth) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Rendering.
-// ---------------------------------------------------------------------------
-
-function pageShell(title, inner) {
-  log.debug("Entering pageShell().");
-  log.debug("Leaving pageShell().");
-  return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>' + xmlEscape(title) +
-    '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-    'Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem;color:#222;' +
-    'line-height:1.45}.card{background:#fff;border:1px solid ' +
-    '#d5d5dd;border-radius:10px;padding:24px 28px;max-width:60rem;margin:0 ' +
-    'auto;box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 ' +
-    '0 4px;color:#12107c}h2{font-size:1em;margin:1.4em 0 ' +
-    '.4em}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
-    '18px}p.verdict{background:#f0f0f8;border-left:4px solid ' +
-    '#12107c;padding:.6rem .8rem;margin:.6rem ' +
-    '0}table{border-collapse:collapse;width:100%;margin:.5rem 0 ' +
-    '1rem;font-size:.85em}th,td{border:1px solid #ddd;padding:.35rem .55rem;' +
-    'text-align:left;vertical-align:top}th{background:#f0f0f5}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-    'font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;' +
-    'border-radius:3px;word-break:break-all}a{color:#12107c}' +
-    'textarea{width:100%;font-family:ui-monospace,monospace;font-size:.8em}' +
-    'ul{margin:.3em 0;padding-left:1.2em}li{margin:.2em ' +
-    '0}</style></head><body><div ' +
-    'class="card">' + inner + '</div></body></html>\n';
-}
-
-function rowsFrom(pairs) {
-  log.debug("Entering rowsFrom().");
-  log.debug("Leaving rowsFrom().");
-  return pairs.map(function (pair) {
-    return '<tr><td>' + xmlEscape(pair[0]) + '</td><td><code>' +
-      xmlEscape(pair[1] === null || pair[1] === undefined
-        ? '(none)' : String(pair[1])) + '</code></td></tr>';
-  }).join('');
-}
-
 // The revocation verdict for whatever this socket presented, or null when it
 // presented nothing. NEVER REJECTS: a check that threw is reported as unknown
 // by `revocation_status.js` itself, and the caller must answer either way.
@@ -3982,8 +5265,9 @@ function checkedSocket(socket) {
 // **THE OLD POSITION IS BELOW, KEPT RATHER THAN DELETED**, because it was a
 // good argument and knowing what it protected is how to avoid losing that when
 // changing it. What it said was that verification means exactly one thing —
-// OpenSSL built a chain from what the client sent to an anchor somebody POSTed
-// to `/tls/trust` — and that turning it into an identity would teach a client
+// OpenSSL built a chain from what the client sent to an anchor somebody added
+// through `/admin-api/tls/trust` — and that turning it into an identity
+// would teach a client
 // something false about every server it will ever meet.
 //
 // **WHAT THE ARGUMENT ACTUALLY PROTECTED WAS THE STRENGTH OF THE CLAIM, NOT
@@ -3991,9 +5275,10 @@ function checkedSocket(socket) {
 // real, deployed way for a person to sign in to a web application; the thing a
 // mock must not do is pretend the chain check proved more than it did. Every
 // other family here resolves the same tension the same way and has for as long
-// as this service has existed: the KDC issues tickets to anybody who asks with
-// the one shared password, the sign-in screen checks no password at all, LDAP
-// refuses no bind — and all three start real sessions. **The permissiveness
+// as this service has existed, in development mode: the KDC issues tickets to
+// anybody who asks with the one shared password, the sign-in screen checks no
+// password at all, LDAP refuses no bind — and all three start real sessions
+// (product mode verifies all three). **The permissiveness
 // lives in what is accepted, not in refusing to record what was accepted.**
 //
 // SO THREE THINGS ARE TRUE AT ONCE AND THIS FUNCTION KEEPS THEM APART:
@@ -4029,61 +5314,12 @@ function checkedSocket(socket) {
 // ---------------------------------------------------------------------------
 function startCertificateSession(req, res, mode, revocation, identity) {
   log.debug('Entering startCertificateSession(). mode=' + mode);
-  const socket = req.socket;
-  if (!socket || socket.authorized !== true) {
-    log.debug('Leaving startCertificateSession(). Nothing verified here.');
-    return { started: false,
-             why: 'no verified client certificate on this connection, so ' +
-                  'there is nobody to sign in' };
+  const checked = certificateRefusal(req.socket, mode, revocation, identity);
+  if (checked.refusal) {
+    log.debug('Leaving startCertificateSession(). Refused.');
+    return checked.refusal;
   }
-  // REFUSED ON REVOCATION (2026-09-12), before the existing-session read below:
-  // a browser already holding a session is not handed a new one, and a revoked
-  // certificate must not be the thing that is reported as having "already" got
-  // in. The session is the one thing this function gives out, so it is the
-  // point the refusal is made at.
-  if (revocation && revocation.refused) {
-    log.info('tls: a verified client certificate on the ' + mode + ' ' +
-             'listener was refused a session on revocation: ' + revocation.why);
-    log.debug('Leaving startCertificateSession(). Refused on revocation.');
-    return { started: false, refusedOnRevocation: true,
-             why: 'the certificate verified and was REFUSED ON REVOCATION ' +
-                  '(pki.revocationCheck is ' + revocation.policy + '): ' +
-                  revocation.why };
-  }
-  // NOT AN IDENTITY (2026-09-13): a chain through this service's own Root from
-  // an authority that does not issue TLS client identities. See
-  // `issuedClientCertificateAnchor()` for why that Root is trusted at all and
-  // why trusting it is not trusting everything under it.
-  const gated = identity || issuedIdentityOf(socket);
-  if (gated.issuedHere && !gated.accepted) {
-    log.info('tls: a verified client certificate on the ' + mode + ' ' +
-             'listener was issued by this service and is not a TLS client ' +
-             'identity, so no session was started: ' + gated.why + '.');
-    log.debug('Leaving startCertificateSession(). Not an identity.');
-    return { started: false, refusedAsIdentity: true,
-             why: 'the certificate verified and is NOT AN IDENTITY here: ' +
-                  gated.why };
-  }
-  // AN APPLICATION'S CERTIFICATE IS A CLIENT CREDENTIAL AND NOT A SIGN-IN
-  // (2026-09-13). The identity gate accepts a leaf naming a
-  // urn:sts:application: — that is what RFC 8705's implicit mapping at the
-  // token endpoint reads — and until then this function started a browser
-  // sign-on session for whatever name it carried, so an application whose
-  // identifier happened to be a person's username signed in AS that person.
-  // It became reachable by anybody holding such a certificate the day the
-  // application Credentials section started issuing them.
-  if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
-    log.info('tls: a verified client certificate on the ' + mode + ' ' +
-             'listener was issued to the application ' + gated.username +
-             ', which authenticates at the token endpoint (RFC 8705) and ' +
-             'signs nobody in, so no session was started.');
-    log.debug('Leaving startCertificateSession(). An application.');
-    return { started: false, application: gated.username,
-             why: 'the certificate verified and was issued to the ' +
-                  'application "' + gated.username + '"; an application ' +
-                  'presents it at the token endpoint under RFC 8705, and it ' +
-                  'is not a browser sign-in' };
-  }
+  const gated = checked.gated;
   // A TLS CLIENT OR ENROLLED CERTIFICATE SIGNS ITS HOLDER IN TO ITS OWN REALM,
   // which is the realm of the authority that signed it; this socket has no
   // path to carry one. Everything below — the existing-session read, the
@@ -4093,6 +5329,94 @@ function startCertificateSession(req, res, mode, revocation, identity) {
   return inCertificateRealm(gated, function () {
     return startCertificateSessionIn(req, res, mode, revocation, gated);
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE FOUR REFUSALS EVERY CERTIFICATE SIGN-IN MAKES FIRST, IN THIS ORDER
+// (#1051, 2026-10-27: moved out of `startCertificateSession()` unchanged, so
+// that the sign-in screen's "Continue with your certificate" asks exactly
+// what `GET /tls/sign-in` asks rather than a copy of it): nothing verified,
+// refused on revocation, a certificate of this service's that is not an
+// identity, and an application's certificate. Answers `{ refusal }` — the
+// object `GET /tls/sign-in` reports as `session` — or `{ refusal: null,
+// gated }`, the identity gate's answer, for the caller to go on with.
+// ---------------------------------------------------------------------------
+function certificateRefusal(socket, mode, revocation, identity) {
+  log.debug('Entering certificateRefusal(). mode=' + mode);
+  if (!socket || socket.authorized !== true) {
+    log.debug('Leaving certificateRefusal(). Nothing verified here.');
+    return { gated: null, refusal: { started: false,
+             why: 'no verified client certificate on this connection, so ' +
+                  'there is nobody to sign in' } };
+  }
+  // REFUSED ON REVOCATION (2026-09-12), before the existing-session read below:
+  // a browser already holding a session is not handed a new one, and a revoked
+  // certificate must not be the thing that is reported as having "already" got
+  // in. The session is the one thing this function gives out, so it is the
+  // point the refusal is made at.
+  if (revocation && revocation.refused) {
+    log.info('tls: a verified client certificate on the ' + mode + ' ' +
+             'listener was refused a session on revocation: ' + revocation.why);
+    log.debug('Leaving certificateRefusal(). Refused on revocation.');
+    return { gated: null, refusal: { started: false,
+                                     refusedOnRevocation: true,
+             why: 'the certificate verified and was REFUSED ON REVOCATION ' +
+                  '(pki.revocationCheck is ' + revocation.policy + '): ' +
+                  revocation.why } };
+  }
+  // NOT AN IDENTITY (2026-09-13): a chain through this service's own Root from
+  // an authority that does not issue TLS client identities. See
+  // `issuedClientCertificateAnchor()` for why that Root is trusted at all and
+  // why trusting it is not trusting everything under it.
+  const gated = identity || issuedIdentityOf(socket, { stored: true });
+  // AN OUTSIDE AUTHORITY'S CERTIFICATE NOT STORED ON EXACTLY ONE ENTRY
+  // (#1061, rcbj 2026-10-27). Until then such a certificate signed in by its
+  // common name, and seeded a directory entry for it; now it is the one entry
+  // storing it in `userCertificate`, or nobody.
+  if (!gated.issuedHere && gated.outside === true && !gated.accepted) {
+    log.info('tls: a verified client certificate from an outside ' +
+             'certificate authority on the ' + mode + ' listener started ' +
+             'no session: ' + gated.why + '.');
+    log.debug('Leaving certificateRefusal(). An outside certificate, ' +
+              'not stored on one entry.');
+    return { gated: gated, refusal: { started: false,
+                                      refusedAsStored: String(gated.error),
+             why: 'the certificate verified and is NOT AN IDENTITY here: ' +
+                  gated.why } };
+  }
+  if (gated.issuedHere && !gated.accepted) {
+    log.info('tls: a verified client certificate on the ' + mode + ' ' +
+             'listener was issued by this service and is not a TLS client ' +
+             'identity, so no session was started: ' + gated.why + '.');
+    log.debug('Leaving certificateRefusal(). Not an identity.');
+    return { gated: gated, refusal: { started: false,
+                                      refusedAsIdentity: true,
+             why: 'the certificate verified and is NOT AN IDENTITY here: ' +
+                  gated.why } };
+  }
+  // AN APPLICATION'S CERTIFICATE IS A CLIENT CREDENTIAL AND NOT A SIGN-IN
+  // (2026-09-13). The identity gate accepts a leaf naming a
+  // urn:sts:application: — that is what RFC 8705's implicit mapping at the
+  // token endpoint reads — and until then this function started a browser
+  // sign-on session for whatever name it carried, so an application whose
+  // identifier happened to be a person's username signed in AS that person.
+  // It became reachable by anybody holding such a certificate the day the
+  // application Credentials section started issuing them.
+  if (gated.accepted && gated.kind === 'application') {
+    log.info('tls: a verified client certificate on the ' + mode + ' ' +
+             'listener was issued to the application ' + gated.username +
+             ', which authenticates at the token endpoint (RFC 8705) and ' +
+             'signs nobody in, so no session was started.');
+    log.debug('Leaving certificateRefusal(). An application.');
+    return { gated: gated, refusal: { started: false,
+                                      application: gated.username,
+             why: 'the certificate verified and was issued to the ' +
+                  'application "' + gated.username + '"; an application ' +
+                  'presents it at the token endpoint under RFC 8705, and it ' +
+                  'is not a browser sign-in' } };
+  }
+  log.debug('Leaving certificateRefusal(). None.');
+  return { refusal: null, gated: gated };
 }
 
 // WHAT A CLIENT CERTIFICATE SAYS ABOUT ITS HOLDER, in claim names (#127):
@@ -4141,7 +5465,20 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // second fetch of /tls/sign-in does not mint a second session for somebody
   // who already has one — which would leave a global sign-out reporting two
   // where the person experienced one.
-  const existing = authn.sessionOf(req);
+  //
+  // NOT WITH SEVERAL ACCOUNTS IN ONE BROWSER (#561): there "the browser's
+  // session" is not one thing. `sessionOf()` answers nobody for a browser
+  // holding two accounts and naming neither, and answered the cookie's
+  // default — perhaps somebody else entirely — for one holding one; either
+  // way the certificate's holder would be told they were "already" signed in
+  // as whoever that was. So the question is asked of the CERTIFICATE'S
+  // account, below, once its name is known: `startSession()` re-authenticates
+  // that account's session where the browser's set holds it live (one live
+  // session per person per browser, `authn/CLAUDE.md`) and adds one where it
+  // does not. Still one session per person per browser, however many
+  // fetches. Unchanged with `authn.multipleAccounts` off.
+  const several = authn.multipleAccounts();
+  const existing = several ? null : authn.sessionOf(req);
   if (existing) {
     log.debug('Leaving startCertificateSessionIn(). One was already open.');
     return { started: false, id: existing.id, username: existing.user &&
@@ -4150,45 +5487,32 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                   'presenting a certificate to this listener does not start ' +
                   'a second one' };
   }
-  let cert = null;
-  try {
-    cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
-  } catch (e) {
-    // A socket that went away between the handshake and this line. Swallowed
-    // for recordClientCertificate()'s reason: this runs inside the
-    // /tls/sign-in handler, and a throw here answers nothing.
-    log.debug('startCertificateSessionIn(): the peer certificate could not ' +
-              'be read: ' + e.message);
-    log.debug("Leaving startCertificateSessionIn().");
-    return { started: false, why: 'the peer certificate could not be read' };
+  const peer = certificatePeer(socket, gated);
+  if (!peer.ok) {
+    log.debug('Leaving startCertificateSessionIn(). ' + peer.why);
+    return { started: false, why: peer.why };
   }
-  if (!cert || !Object.keys(cert).length) {
-    // A RESUMED TLS SESSION carries no peer certificate — the client does not
-    // send it again. Nothing is started, rather than a session with no identity
-    // on it.
-    log.debug('Leaving startCertificateSessionIn(). No peer certificate; a ' +
-              'resumed session.');
+  const cert = peer.cert;
+  const subject = peer.subject;
+  const username = peer.username;
+  // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
+  // (#1516), so product mode starts no one-factor
+  // session here for somebody who needs one; the sign-in screen's certificate
+  // door asks for it. This is the browser's door only. A certificate presented
+  // by a program (WS-Trust, a token exchange, RFC 8705, LDAP EXTERNAL, PKINIT)
+  // has nobody there to answer, and a federated sign-in is the partner's.
+  if (serviceMode.verifiesCredentials() &&
+      require('../common/credentials').mfaRequirementFor(username).required) {
+    errorCodes.mark(res, 'STS-TLS-0060');
+    log.debug('Leaving startCertificateSessionIn(). A second factor is owed.');
     return { started: false,
-             why: 'the connection verified but carries no peer certificate, ' +
-                  'which is what a resumed TLS session looks like' };
+             why: 'a second factor is required, so sign in on the sign-in ' +
+                  'screen and choose your certificate there' };
   }
-  const subject = dnRfc4514(cert.subject);
-  const common = cert.subject && cert.subject.CN
-    ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
-             cert.subject.CN)
-    : '';
-  // THE IDENTITY THE ISSUING AUTHORITY WROTE, where this service issued it:
-  // the `urn:sts:person:` (or application) name, which is what an enrolled
-  // certificate is mapped to its entry by. Otherwise the common name, as it
-  // has been since 2026-09-05.
-  const username = (gated && gated.accepted && gated.username) ||
-                   common || subject;
-  if (!username) {
-    log.debug('Leaving startCertificateSessionIn(). The subject is empty.');
-    return { started: false,
-             why: 'the certificate names nobody: it has neither a common ' +
-                  'name nor a subject' };
-  }
+  // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
+  // certificate's account live in the set is re-authenticated, any other
+  // added.
+  const held = several ? certificateAccountHeld(req, username) : null;
   let session = null;
   try {
     session = authn.startSession(res, username, ['swk'], '1',
@@ -4246,7 +5570,7 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
            'certificate ' +
            '(' + mode + ' listener). The chain verified and ' + revocationSaid);
   log.debug('Leaving startCertificateSessionIn(). Started ' + session.id + '.');
-  return { started: true, id: session.id, username: username,
+  const answer = { started: true, id: session.id, username: username,
            subject: subject,
            // The realm the session is in: the certificate's issuing authority's
            // for one this service issued, the default realm's otherwise.
@@ -4255,6 +5579,282 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                  'truststore and ' + revocationSaid + '. The session is this ' +
                  'service tracking that the holder got in, which is what ' +
                  'lets a global sign-out end it.' };
+  // With several accounts on (#561), what became of the browser's set: the
+  // certificate's account `reauthenticated` where it was already signed in
+  // here, `added` beside the others where it was not. Absent off, so the
+  // answer is then the one it always was.
+  if (several) {
+    answer.account = held ? 'reauthenticated' : 'added';
+  }
+  return answer;
+}
+
+// THE CERTIFICATE ON THE CONNECTION AND WHOM IT NAMES (#1051: moved out of
+// `startCertificateSessionIn()` unchanged, for the sign-in screen's door):
+// `{ ok: true, cert, subject, username }`, or `{ ok: false, why }` for a
+// socket that went away, a resumed session that carries no certificate, or a
+// certificate that names nobody.
+function certificatePeer(socket, gated) {
+  log.debug('Entering certificatePeer().');
+  let cert = null;
+  try {
+    cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
+  } catch (e) {
+    // A socket that went away between the handshake and this line. Swallowed
+    // for recordClientCertificate()'s reason: this runs inside the
+    // handler that asked, and a throw here answers nothing.
+    log.debug('Caught in certificatePeer(): the peer certificate could ' +
+              'not be read: ' + ((e && e.message) || e));
+    log.debug('Leaving certificatePeer(). Unreadable.');
+    return { ok: false, why: 'the peer certificate could not be read' };
+  }
+  if (!cert || !Object.keys(cert).length) {
+    // A RESUMED TLS SESSION carries no peer certificate — the client does not
+    // send it again. Nothing is started, rather than a session with no identity
+    // on it.
+    log.debug('Leaving certificatePeer(). No peer certificate; a resumed ' +
+              'session.');
+    return { ok: false,
+             why: 'the connection verified but carries no peer certificate, ' +
+                  'which is what a resumed TLS session looks like' };
+  }
+  const subject = dnRfc4514(cert.subject);
+  const common = cert.subject && cert.subject.CN
+    ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
+             cert.subject.CN)
+    : '';
+  // THE IDENTITY THE GATE ANSWERED, AND NOTHING ELSE (#1061): the
+  // `urn:sts:person:` name this service's own authority wrote, or the entry
+  // an outside authority's certificate is stored on. It was the common name,
+  // else the subject, from 2026-09-05 until rcbj's decision on #1061 — a name
+  // a certificate carries is a name its issuer chose, and an outside issuer
+  // could choose anybody's.
+  const username = gated && gated.accepted ? String(gated.username || '')
+                                           : '';
+  if (!username) {
+    log.debug('Leaving certificatePeer(). Not an identity here.');
+    return { ok: false,
+             why: 'the certificate (' + (common || subject || 'no subject') +
+                  ') names nobody here: an outside certificate authority\'s ' +
+                  'certificate names only the one entry it is stored on ' +
+                  '(userCertificate), and nothing is read off its common ' +
+                  'name or subject' };
+  }
+  log.debug('Leaving certificatePeer(). ' + username);
+  return { ok: true, cert: cert, subject: subject, username: username };
+}
+
+// THE CERTIFICATE'S ACCOUNT, LIVE IN THIS BROWSER'S SET (#561): the session
+// the set holds for that person, or null. By name, as `startSession()`
+// matches a re-authentication — the certificate names a login name, not a
+// subject. [] — so null — with `authn.multipleAccounts` off.
+function certificateAccountHeld(req, username) {
+  log.debug('Entering certificateAccountHeld().');
+  const wanted = String(username || '').toLowerCase();
+  const found = authn.accountSessionsOf(req).filter(function (one) {
+    return !!(one && one.user && wanted &&
+              String(one.user.username || '').toLowerCase() === wanted);
+  })[0] || null;
+  log.debug('Leaving certificateAccountHeld(). ' +
+            (found ? 'Held.' : 'Not held.'));
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGN-IN SCREEN CONTINUES WITH THE CERTIFICATE ON THE CONNECTION (#1051,
+// 2026-10-27).
+//
+// rcbj's decision on #520: every browser protocol — SAML 2.0 and 1.1 SSO,
+// WS-Federation, the OIDC authorization endpoint, GNAP's interaction — reaches
+// the one sign-in screen, so the certificate is offered THERE, once, as
+// "Continue as <name> with your certificate". These two functions are what
+// `authn/authn.ts` asks, and they are here rather than there because what
+// they ask is what `GET /tls/sign-in` asks, in the same functions:
+// `certificateRefusal()` (nothing verified, revocation, not an identity, an
+// application's certificate) and `certificatePeer()` (the certificate and the
+// name it signs in). The SESSION is the screen's: it is a first factor of a
+// pending sign-in, so `authn.ts` asks the authentication policy, the risk, a
+// second factor where one is needed, and returns to the protocol that sent
+// the person — none of which `GET /tls/sign-in`, which has no caller, does.
+//
+// TWO DIFFERENCES FROM `GET /tls/sign-in`, BOTH FORCED:
+//
+//   * THE REALM IS THE PENDING SIGN-IN'S, not the certificate's. The protocol
+//     that sent the person here decided the realm, so the certificate has to
+//     belong to it: `tls_client_certificates.checkSocket()` refuses one from
+//     another realm's authority, exactly as at the other doors of the main
+//     port that have an ambient realm. A certificate from an anchor somebody
+//     installed signs in by its common name, as at `GET /tls/sign-in`.
+//   * NO "ALREADY SIGNED IN" ANSWER. A person at the screen is not signed in
+//     for this request — that is why they are at it — and the screen's
+//     session replaces or re-authenticates as every first factor's does.
+//
+// `authn.ts` reaches this module LAZILY and only where it is loaded already
+// (`Authn.certificateDoor()`): this is a JavaScript route module, #20 in the
+// require order, and requiring it from #8 would drag its `/tls*` views to the
+// front of the router and close a cycle, since it requires `authn` itself.
+// ---------------------------------------------------------------------------
+/**
+ * Whom the connection's verified client certificate would sign in at the
+ * sign-in screen, in the request's realm, or null. The offer only: no
+ * revocation is asked here, and nothing is logged above debug.
+ *
+ * @param req - the request for the screen's view
+ * @returns `{ username }`, or null
+ */
+function screenCertificateOffer(req) {
+  log.debug('Entering screenCertificateOffer().');
+  const socket = req && req.socket;
+  if (!socket || socket.authorized !== true) {
+    log.debug('Leaving screenCertificateOffer(). Nothing verified.');
+    return null;
+  }
+  let checked = null;
+  try {
+    checked = require('../common/tls_client_certificates')
+      .checkSocket(socket, { stored: true });
+  } catch (e) {
+    log.debug('Caught in screenCertificateOffer(): ' +
+              ((e && e.message) || e));
+    checked = null;
+  }
+  const identity = checked ? checked.identity : null;
+  if (!checked || !checked.ok || !identity || !identity.accepted ||
+      identity.kind === 'application') {
+    log.debug('Leaving screenCertificateOffer(). Not a person here.');
+    return null;
+  }
+  // UNDER PARANOID PKI MODE no name is drawn for a certificate revocation has
+  // refused, the verdict `common/app.js` put on the request (#1360).
+  if (req.certificateRevocation && req.certificateRevocation.refused &&
+      require('../common/certificate_trust')
+        .applies('tls-client', realms.DEFAULT_ID)) {
+    log.debug('Leaving screenCertificateOffer(). Refused on revocation.');
+    return null;
+  }
+  const peer = certificatePeer(socket, identity);
+  log.debug('Leaving screenCertificateOffer(). ' +
+            (peer.ok ? 'Offered.' : 'Not offered.'));
+  return peer.ok ? { username: peer.username } : null;
+}
+
+/**
+ * The connection's verified client certificate as a first factor at the
+ * sign-in screen: revocation consulted, the identity gate and the ambient
+ * realm asked, an application's certificate refused — `GET /tls/sign-in`'s
+ * refusals, in its order, by its functions.
+ *
+ * @param req - the act's request
+ * @returns a promise of `{ ok: true, username, credentialId, revocationSaid,
+ *   recordVerification }`, or `{ ok: false, code, why }` with an English
+ *   sentence for the screen and the error code to record
+ */
+function screenCertificateHolder(req) {
+  log.debug('Entering screenCertificateHolder().');
+  const socket = req && req.socket;
+  const none = { ok: false, code: 'STS-AUTHN-0463',
+                 why: 'No verified client certificate arrived on this ' +
+                      'connection, so there is nobody to continue as. ' +
+                      'Choose the certificate when your browser asks, or ' +
+                      'sign in another way.' };
+  if (!socket || socket.authorized !== true) {
+    log.debug('Leaving screenCertificateHolder(). Nothing verified.');
+    return Promise.resolve(none);
+  }
+  log.debug('Leaving screenCertificateHolder(). The verdict follows.');
+  return checkedSocket(socket).then(function (revocation) {
+    let checked = null;
+    try {
+      checked = require('../common/tls_client_certificates')
+        .checkSocket(socket, { stored: true });
+    } catch (e) {
+      log.debug('Caught in screenCertificateHolder(): ' +
+                ((e && e.message) || e));
+      checked = null;
+    }
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE (#1061) continues only as the one
+    // entry it is stored on — refused after revocation, which
+    // `certificateRefusal()` below would otherwise report first.
+    if (checked && !checked.ok && !(revocation && revocation.refused) &&
+        (checked.error === 'NOT_STORED' ||
+         checked.error === 'STORED_TWICE')) {
+      log.info('tls: the sign-in screen refused a client certificate from ' +
+               'an outside certificate authority: ' + checked.why);
+      log.debug('Leaving screenCertificateHolder(). An outside ' +
+                'certificate, not stored on one entry.');
+      return checked.error === 'STORED_TWICE'
+        ? { ok: false, code: 'STS-AUTHN-0469',
+            why: 'Your certificate is stored on more than one account ' +
+                 'here, so it cannot say which one is yours. Ask an ' +
+                 'administrator to store it on yours alone.' }
+        : { ok: false, code: 'STS-AUTHN-0468',
+            why: 'Your certificate is not stored on any account here, so ' +
+                 'it cannot sign you in. Ask an administrator to store it ' +
+                 'on your account (a renewed certificate is stored again), ' +
+                 'or sign in another way.' };
+    }
+    if (checked && !checked.ok && checked.error === 'OTHER_REALM') {
+      log.info('tls: the sign-in screen refused a client certificate from ' +
+               'another realm: ' + checked.why);
+      log.debug('Leaving screenCertificateHolder(). Another realm\'s.');
+      return { ok: false, code: 'STS-AUTHN-0465',
+               why: 'Your certificate was issued in another realm, so it ' +
+                    'cannot sign you in here.' };
+    }
+    const pre = certificateRefusal(socket, 'optional', revocation,
+                                   checked ? checked.identity : undefined);
+    if (pre.refusal) {
+      const r = pre.refusal;
+      log.info('tls: the sign-in screen did not continue with the client ' +
+               'certificate: ' + r.why);
+      log.debug('Leaving screenCertificateHolder(). Refused.');
+      if (r.refusedOnRevocation) {
+        return { ok: false, code: 'STS-AUTHN-0464',
+                 why: 'Your certificate has been revoked, or its revocation ' +
+                      'could not be confirmed, so it cannot sign you in.' };
+      }
+      if (r.refusedAsIdentity) {
+        return { ok: false, code: 'STS-AUTHN-0465',
+                 why: 'This certificate is not a TLS client certificate ' +
+                      'for a person here, so it cannot sign you in.' };
+      }
+      if (r.application) {
+        return { ok: false, code: 'STS-AUTHN-0466',
+                 why: 'This certificate was issued to an application, and ' +
+                      'an application\'s certificate signs nobody in.' };
+      }
+      return none;
+    }
+    const peer = certificatePeer(socket, pre.gated);
+    if (!peer.ok) {
+      log.info('tls: the sign-in screen did not continue with the client ' +
+               'certificate: ' + peer.why);
+      log.debug('Leaving screenCertificateHolder(). ' + peer.why);
+      return none;
+    }
+    const revocationSaid = revocation && revocation.checked
+      ? 'its revocation was consulted (' + revocation.policy + '): ' +
+        revocation.why
+      : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)';
+    log.debug('Leaving screenCertificateHolder(). ' + peer.username);
+    return {
+      ok: true,
+      username: peer.username,
+      credentialId: String(peer.cert.fingerprint256 || ''),
+      revocationSaid: revocationSaid,
+      // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
+      // its session has started, recorded by the screen at the same point.
+      recordVerification: function recordVerification() {
+        log.debug('Entering recordVerification().');
+        identityAssurance.recordAutomatic(peer.username, 'certificate',
+                                          certificateFacts(peer.cert));
+        log.info('tls: ' + peer.username + ' continued at the sign-in ' +
+                 'screen with a verified client certificate. The chain ' +
+                 'verified and ' + revocationSaid);
+        log.debug('Leaving recordVerification().');
+      }
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -4269,7 +5869,8 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
 // The two are worth holding apart, because this module's whole value is that
 // it does not confuse them. What a verified certificate means here has not
 // changed and is stated everywhere this module speaks: OpenSSL built a chain
-// from what the client sent to an anchor somebody POSTed to /tls/trust. No
+// from what the client sent to an anchor somebody added through
+// /admin-api/tls/trust. No
 // session starts, no token is issued, no revocation is checked, and no endpoint
 // of this service will let the holder do anything it would not let an anonymous
 // caller do.
@@ -4342,6 +5943,18 @@ function recordClientCertificate(socket, mode, revocation) {
     log.debug('Leaving recordClientCertificate(). An application.');
     return null;
   }
+  // AN OUTSIDE AUTHORITY'S CERTIFICATE IS NOT RECORDED HERE (#1061). Until
+  // rcbj's decision it was recorded under its subject, and the observer
+  // SEEDED a directory entry for it (`certificatePlan()`) — an entry created
+  // out of a name somebody else's authority chose. It is an identity now
+  // only as the one entry storing it, in a realm, and a handshake has no
+  // realm: `GET /tls/sign-in` and every other door resolve it where the
+  // request names one, and the sign-in they start is the authentication.
+  if (!gated.issuedHere) {
+    log.debug('Leaving recordClientCertificate(). An outside certificate; ' +
+              'its doors resolve it.');
+    return null;
+  }
   let cert = null;
   try {
     cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
@@ -4404,6 +6017,11 @@ function recordCertificateAuthentication(subject, common, cert, mode,
     presented: subject,
     protocol: 'TLS',
     method: 'client certificate on the main port (' + MAIN_PORT + ')',
+    // The certificate subject, RFC 4514, which is what an application's
+    // oauthTlsClientAuthSubjectDn holds. The attempts tab matches that.
+    // Not client_id: this sighting is the certificate, and the token
+    // endpoint records its own client_id when one authenticated there.
+    application: subject,
     note: 'the chain verified against one of the ' + anchors.length +
       ' anchor(s) in this service\'s truststore, and ' +
       (revocation && revocation.checked
@@ -4432,8 +6050,8 @@ function recordCertificateAuthentication(subject, common, cert, mode,
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE FROM A FILE, READ BEFORE THE LISTENERS EXIST (2026-09-12).
 //
-// `tls.trustAnchorsFile`. Product mode refuses `POST /tls/trust` (see there),
-// and a deployment that verifies client certificates at all — a remote XACML
+// `tls.trustAnchorsFile`. There is no open door to the truststore (#597), and
+// a deployment that verifies client certificates at all — a remote XACML
 // PEP is the one this service ships — needs its anchors from somewhere an
 // operator controls rather than from whoever reaches the port. So they are
 // CONFIGURATION: a PEM file read once, here, before any listener is given a
@@ -4461,7 +6079,8 @@ let anchorsFileReport = { file: '', loaded: 0 };
     log.fatal(errorCodes.tag('STS-TLS-0019') +
               'tls: NOT STARTING. tls.trustAnchorsFile ' +
               '(STS_TLS_TRUST_ANCHORS_FILE) is ' +
-              '"' + file + '" and it could not be read: ' + e.message + '.');
+              '"' + file + '" and it could not be read: ' +
+              String((e && e.message) || e).replace(/\.+$/, '') + '.');
     process.exit(1);
   }
   const found = splitPemCertificates(text);
@@ -4472,7 +6091,18 @@ let anchorsFileReport = { file: '', loaded: 0 };
               'truststore would be empty while configured to be filled.');
     process.exit(1);
   }
-  found.slice(0, MAX_ANCHORS).forEach(function (pem) {
+  // Under paranoid a block the admission rule refuses is left out by name,
+  // rather than stopping the process: an expired CA in this file must not take
+  // the service down, and an anchor left out trusts less, not more.
+  const fileRows = found.slice(0, MAX_ANCHORS).map(describePem);
+  found.slice(0, MAX_ANCHORS).filter(function (pem, i) {
+    const refused = admissionProblemOf(fileRows[i], fileRows);
+    if (refused) {
+      log.error(errorCodes.tag('STS-TLS-0057') + 'tls: tls.trustAnchorsFile: ' +
+                'left out under paranoid PKI mode: ' + refused.why);
+    }
+    return !refused;
+  }).forEach(function (pem) {
     const described = describePem(pem);
     if (!anchors.some(function (one) {
       return one.fingerprint256 === described.fingerprint256;
@@ -4572,28 +6202,147 @@ function holdToPathRules(socket, label) {
     log.debug('Leaving holdToPathRules(). Nothing verified.');
     return null;
   }
+  const trust = require('../common/certificate_trust');
+  let inForce = false;
   let problem = null;
   try {
-    problem = require('../common/pki')
-      .peerChainProblem(socket.getPeerCertificate(true));
+    inForce = trust.applies('tls-client', realms.DEFAULT_ID);
+    const peer = socket.getPeerCertificate(true);
+    const held = trust.holdPeer('tls-client', peer,
+                                { realmId: realms.DEFAULT_ID });
+    if (!held.ok) {
+      problem = { check: held.check, why: held.why, code: held.code };
+    }
+    if (inForce) {
+      problem = problem || resumedProblem(socket, peer);
+      if (peer && peer.raw && (typeof socket.isSessionReused !== 'function' ||
+                               !socket.isSessionReused())) {
+        // The chain with the verdict, in one row, so another node has both
+        // when the session resumes there, whether or not a request came first.
+        if (!problem && typeof socket.isSessionReused === 'function') {
+          revocationStatus.fromSocket(socket);
+        }
+        revocationStatus.rememberHold(peer.raw, !problem);
+      }
+    }
   } catch (e) {
-    // A defect here must not make an unverified chain look verified, nor a
-    // verified one unverified for a reason nobody can read. OpenSSL's answer
-    // stands and the failure is logged.
+    // Not in force: a defect here must not make an unverified chain look
+    // verified, nor a verified one unverified for a reason nobody can read, so
+    // OpenSSL's answer stands and the failure is logged. Under paranoid PKI
+    // mode it FAILS CLOSED: a check that could not be made is a refusal.
     log.error(errorCodes.tag('STS-PKI-0198') + 'tls: the path rules could ' +
               'not be asked of a client chain on ' + label + ': ' +
               ((e && e.message) || e));
-    problem = null;
+    problem = inForce ? { check: 'path', code: 'STS-PKI-0198',
+                          why: 'the checks could not be made' } : null;
   }
   if (problem) {
     socket.authorized = false;
     socket.authorizationError = 'ERR_STS_PATH_RULES: ' + problem.why;
-    log.warn(errorCodes.tag('STS-PKI-0198') + 'tls: a client certificate ' +
-             'chain on ' + label + ' verified with OpenSSL and breaks RFC ' +
-             '5280, so it is treated as unverified: ' + problem.why + '.');
+    log.warn(errorCodes.tag(problem.code || 'STS-PKI-0198') + 'tls: a client ' +
+             'certificate chain on ' + label + ' verified with OpenSSL and ' +
+             (problem.code === 'STS-PKI-0198' ? 'breaks RFC 5280' :
+              'is refused for its use') + ', so it is treated as unverified: ' +
+             problem.why + '.');
   }
   log.debug('Leaving holdToPathRules().' + (problem ? ' Demoted.' : ''));
   return problem;
+}
+
+// A RESUMED SESSION UNDER PARANOID PKI MODE (#1360). Node hands over the leaf
+// alone, so the hold above saw one certificate. What the full handshake's hold
+// concluded is remembered with its chain, and it is the session's verdict: a
+// demoted one is demoted again. One not known here yet may be on its way from
+// the node that saw the handshake, so the socket is marked and
+// `revocation_status.awaitResumedChain()` settles it before any request is
+// answered; what has not arrived by then is demoted. The leaf's own fields, its
+// window included, are asked on every connection, and revocation by the
+// request's verdict as it always was, so neither is frozen at the full
+// handshake. null when the session is not resumed, the leaf held, or that is
+// still to be settled.
+function resumedProblem(socket, peer) {
+  log.debug("Entering resumedProblem().");
+  if (typeof socket.isSessionReused !== 'function' ||
+      !socket.isSessionReused() || !peer || !peer.raw) {
+    log.debug("Leaving resumedProblem(). Not resumed.");
+    return null;
+  }
+  const held = revocationStatus.rememberedHold(peer.raw);
+  log.debug("Leaving resumedProblem(). " + held);
+  if (held === null) {
+    socket.stsResumedHoldPending = true;
+    return null;
+  }
+  return held === true ? null : {
+    check: 'path', code: 'STS-TLS-0058',
+    why: 'its full handshake was refused, and this session resumes it'
+  };
+}
+
+// THE HOLD ON A LISTENER THAT IS NOT THE MAIN PORT (#1360): LDAPS, the debugger
+// and the channel between cells. In force it asks the rules, the leaf's fields
+// and revocation of every certificate presented, and leaves the record of
+// `observeConnectionsOn()` to the listeners it has always served. Not in force
+// it does nothing at all, which is what these listeners did.
+//
+// **A REVOCATION ANSWER IS A FETCH**, so the connection waits: paused until the
+// verdict for a stream reader, and with `certificateTrustSettled` for a server
+// node's HTTP parser reads past a pause (`settledRequest()` is its door).
+/**
+ * Holds every client certificate on this listener to the checks of paranoid
+ * PKI mode.
+ *
+ * @param server - the TLS listener
+ * @param label - its name, for the log
+ */
+function holdConnectionsOn(server, label) {
+  log.debug("Entering holdConnectionsOn(). " + label);
+  server.on('secureConnection', function (socket) {
+    log.debug("Entering the paranoid hold. " + label);
+    const trust = require('../common/certificate_trust');
+    let inForce = false;
+    try {
+      inForce = trust.applies('tls-client', realms.DEFAULT_ID);
+    } catch (e) {
+      log.debug("Caught in the paranoid hold: " + ((e && e.message) || e));
+    }
+    if (!inForce) {
+      log.debug("Leaving the paranoid hold. Not in force.");
+      return;
+    }
+    holdToPathRules(socket, label);
+    socket.pause();
+    socket.certificateTrustSettled = revocationStatus.awaitResumedChain(socket)
+      .then(function () {
+        return checkedSocket(socket);
+      }).then(function (verdict) {
+        if (verdict && verdict.refused && socket.authorized) {
+          socket.authorized = false;
+          socket.authorizationError = 'ERR_STS_REVOCATION: ' + verdict.why;
+        }
+      }, function (e) {
+        log.debug("Caught in the paranoid hold: " + ((e && e.message) || e));
+        socket.authorized = false;
+        socket.authorizationError = 'ERR_STS_REVOCATION: not established';
+      }).then(function () {
+        socket.resume();
+      });
+    log.debug("Leaving the paranoid hold.");
+  });
+  log.debug("Leaving holdConnectionsOn().");
+}
+
+/**
+ * Waits for a request's connection to be settled by `holdConnectionsOn()`.
+ *
+ * @param req - the request
+ * @returns a promise settled once the socket's verdict is in
+ */
+function settledRequest(req) {
+  log.debug("Entering settledRequest().");
+  const socket = req && req.socket;
+  log.debug("Leaving settledRequest().");
+  return Promise.resolve(socket && socket.certificateTrustSettled);
 }
 
 // ---------------------------------------------------------------------------
@@ -4749,270 +6498,6 @@ function observeConnectionsOn(server, label) {
 }
 
 // ---------------------------------------------------------------------------
-// The views on the main port.
-//
-// Every surface of this module is a route since 2026-09-16, so
-// /admin/sts-metadata, which walks the Express router, sees all of them. The
-// ungated truststore controls are on the MAIN port on purpose — see the
-// header, including what global.https changes about that — and the gated
-// doors are the console's and the management API's (`truststore` below).
-// ---------------------------------------------------------------------------
-
-function description(req) {
-  log.debug('Entering description().');
-  const host = String(req.get('host') || 'localhost').split(':')[0];
-  const out = {
-    // What this service presents, and — when there is more than one — the
-    // fact that WHICH one arrives is decided by the client's own signature
-    // algorithms rather than by this service.
-    serverCertificates: SERVER_CERTIFICATES.map(function (one) {
-      return { algorithm: one.algorithm, subject: one.subject,
-              names: one.names, fingerprint256: one.fingerprint256,
-              notAfter: one.notAfter,
-              // Whether this one is a leaf of the TLS Issuing CA or still the
-              // self-signed certificate it was born with — per certificate,
-              // since the ML-DSA ones joined the tree (2026-09-13).
-              certified: !!(one.chainPem && one.chainPem.length) };
-    }),
-    serverCertificateNote: SERVER_CERTIFICATES.length > 1
-      ? 'Several certificates are configured (tls.certificateAlgorithms). ' +
-        'OpenSSL serves whichever one matches the signature algorithms the ' +
-        'CLIENT offered, so an ordinary client and a post-quantum one get ' +
-        'different certificates from the same port — which is what a ' +
-        'migration looks like. GET /tls/server-certificate returns all of ' +
-        'them, and a truststore needs all of them.'
-      : 'One certificate, self-signed and regenerated at every start. GET ' +
-        '/tls/server-certificate for it. Add an ML-DSA one beside it with ' +
-        'tls.certificateAlgorithms=rsa,ml-dsa-65.',
-    // ONE LISTENER SINCE 2026-09-16. This was two entries — 8443 asking for a
-    // client certificate and 9443 requiring one — and both sockets were
-    // deleted: the main port already had the first posture, and the second
-    // cannot be had on a port every other protocol answers on. What a client
-    // certificate is worth is now decided where it is USED.
-    listeners: [
-      { mode: 'optional',
-        url: 'https://' + host + ':' + MAIN_PORT + '/',
-        port: MAIN_PORT,
-        listening: true,
-        requestsClientCertificate: !!config.value('global.https'),
-        requiresClientCertificate: false,
-        what: 'The main port asks every connection for a client certificate ' +
-          'and requires none, so presenting one is the CLIENT\'s decision. ' +
-          'What arrives is recorded, and is judged where it is used: at the ' +
-          'token endpoint (RFC 8705), at /xacml, at /scim/v2, and at ' +
-          'GET /tls/sign-in, which starts a session for a verified one.' }
-    ],
-    listenError: listenError,
-    // `report: '/tls/whoami'` and `page: '/'` were here until 2026-09-16,
-    // and both were routes on the deleted listeners. What a caller can be
-    // pointed at now is the sign-in — which reports what the connection
-    // carried as well as signing its holder in — and the two documents.
-    paths: {
-      signIn: '/tls/sign-in',
-      trust: '/tls/trust',
-      serverCertificate: '/tls/server-certificate'
-    },
-    serverCertificate: {
-      subject: SERVER_CERTIFICATE.subject,
-      names: SERVER_CERTIFICATE.names,
-      fingerprint256: SERVER_CERTIFICATE.fingerprint256,
-      notAfter: SERVER_CERTIFICATE.notAfter,
-      selfSigned: true,
-      pemUrl: '/tls/server-certificate'
-    },
-    truststore: {
-      anchors: anchors.length,
-      maxAnchors: MAX_ANCHORS,
-      subjects: anchors.map(function (anchor) { return anchor.subject; }),
-      fingerprints: anchors.map(function (anchor) {
-        return anchor.fingerprint256;
-      }),
-      addUrl: '/tls/trust',
-      clearUrl: '/tls/trust/clear',
-      // The GATED doors, which answer in both modes (2026-09-12): the console
-      // page lists every anchor with where it came from, and the management
-      // API adds and removes one at a time.
-      consoleUrl: '/admin/tls/trust',
-      apiUrl: '/admin-api/tls/trust',
-      // Whether those two answer anybody (development) or refuse (product), and
-      // the file product mode reads instead.
-      changeableOverHttp: truststoreOpenToAnybody(),
-      anchorsFile: anchorsFileReport.file || null,
-      anchorsFromFile: anchorsFileReport.loaded
-    },
-    // `tls.minVersion`, `tls.ciphers`, `tls.groups` and
-    // `tls.signatureAlgorithms`, as every TLS socket applies them.
-    protocol: { minVersion: protocolOptions().minVersion,
-                ciphers: protocolOptions().ciphers || '(node default)',
-                groups: protocolOptions().ecdhCurve || '(node default)',
-                signatureAlgorithms: protocolOptions().sigalgs ||
-                  '(node default)' },
-    // WHAT A PRESENTED CERTIFICATE IS HELD TO BEYOND ITS CHAIN (2026-09-12):
-    // the policy in force, how it was decided, where it is and is not
-    // consulted, and the one sentence every surface repeats. The verdict for
-    // a particular connection is on /tls/sign-in.
-    revocation: Object.assign(revocationStatus.describePolicy(),
-                              { cache: revocationStatus.cacheReport() }),
-    // FALSE SINCE 2026-09-05 AND KEPT UNDER ITS OLD NAME, because a client
-    // reading this document by that key is entitled to a truthful answer
-    // rather than a missing one. A verified client certificate now starts a
-    // sign-on session at GET /tls/sign-in, after the revocation check that
-    // `revocation` above describes.
-    authenticatesNobody: false,
-    signsInVerifiedCertificates: {
-      started: true,
-      what: 'GET /tls/sign-in on a connection carrying a client certificate ' +
-        'that VERIFIED starts a sign-on session for its common name (or its ' +
-        'RFC 4514 subject, where it has no common name), and the response ' +
-        'carries the session cookie',
-      when: 'when that route is asked, and not again while the ' +
-        'browser sends the cookie back',
-      note: 'REVOCATION IS CONSULTED BEFORE THE SESSION STARTS (see ' +
-        '`revocation` above — it said NO REVOCATION IS CHECKED until ' +
-        '2026-09-12), and a certificate the policy refuses gets no session; ' +
-        'the route still answers 200, saying so. The session is this service ' +
-        'tracking that the holder got in — which is what lets /admin/logout ' +
-        'end it.',
-      endUrl: '/admin/logout'
-    },
-    // Beside the sign-in rather than instead of it, and the two are next to
-    // each other so that neither can be read alone: what is RECORDED is the
-    // certificate's own identity, and who is SIGNED IN is its common name.
-    recordsVerifiedCertificates: {
-      recorded: true,
-      what: 'when a handshake completes with a client certificate that ' +
-        'verified, the subject DN is filed as an authentication (protocol ' +
-        '"TLS") and the embedded LDAP directory seeds an entry for it',
-      when: 'once per handshake, not once per request',
-      consoleUrl: '/admin/users?protocol=TLS',
-      directoryUrl: '/admin/ldap/directory',
-      note: 'a record of what happened. A session IS started beside it since ' +
-        '2026-09-05 (see signsInVerifiedCertificates above) and no token is ' +
-        'issued; a certificate refused on revocation is not recorded, and ' +
-        'nothing in this service consults the record itself.'
-    }
-  };
-  log.debug('Leaving description().');
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// The one parameter these two pages take.
-//
-// **CASE-INSENSITIVE ON PURPOSE**, because the call sites below compare after
-// `.toLowerCase()` — a closed set written case-sensitively here would refuse
-// `?format=JSON`, which those lines accept today. A validator that changes what
-// an endpoint accepts is not validating it.
-//
-// `html` is in the set although nothing compares against it: anything that is
-// not `json` renders HTML, so it is the other real answer and a caller naming
-// it should not be refused for being explicit.
-// ---------------------------------------------------------------------------
-const TLS_QUERY = validation.z.looseObject({
-  format: validation.types.opt(validation.z.string().regex(/^(json|html)$/i,
-    'must be "json" or "html"'))
-});
-
-app.get('/tls', function (req, res) {
-  log.debug('Entering GET /tls.');
-  const info = description(req);
-  const askedFormat = validation.check(req, 'query', TLS_QUERY);
-  if (!askedFormat.ok) {
-    log.debug('Leaving the TLS page. ' + askedFormat.detail);
-    errorCodes.mark(res, 'STS-TLS-0023');
-    return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
-  }
-  if (String(req.query.format || '').toLowerCase() === 'json') {
-    log.debug('Leaving GET /tls. JSON.');
-    return res.status(200).set('Cache-Control', 'no-store').json(info);
-  }
-  const listenerRows = info.listeners.map(function (listener) {
-    return '<tr><td><code>' + xmlEscape(listener.url) + '</code></td><td>' +
-      (listener.requiresClientCertificate ? 'required' : 'optional') +
-      '</td><td>' + (listener.listening ? 'up' : 'DOWN') + '</td><td>' +
-      xmlEscape(listener.what) + '</td></tr>';
-  }).join('');
-  const anchorRows = anchors.length
-    ? anchors.map(function (anchor) {
-        return '<tr><td><code>' + xmlEscape(anchor.subject) +
-          '</code></td><td><code>' + xmlEscape(anchor.fingerprint256) +
-          '</code></td></tr>';
-      }).join('')
-    : '<tr><td colspan="2">Empty. No client certificate can verify here ' +
-      'yet, and nothing can connect to the listener that requires one.</td>' +
-      '</tr>';
-  const inner = '<h1>A TLS endpoint lives here</h1><p class="sub">Two HTTPS ' +
-    'listeners whose only content is what the server saw: the request as it ' +
-    'arrived, what TLS negotiated underneath it, and the client certificate ' +
-    'exactly as it was presented. This page is on ' +
-    xmlEscape(mainPortPhrase()) +
-    (config.value('global.https')
-      ? ', so there is no plain listener in this process: fetch the server ' +
-        'certificate below without verifying it the first time, then trust it.'
-      : ', which is the one that is reachable before anything is trusted.') +
-    '</p>' +
-    '<table><tr><th>URL</th><th>Client certificate</th><th>Listener</th>' +
-    '<th>What it is for</th></tr>' + listenerRows + '</table>' +
-    (info.listenError
-      ? '<p class="verdict">A listener did not bind: ' +
-        xmlEscape(info.listenError) + '. This page is HTTP and answers ' +
-        'either way; the listener does not.</p>'
-      : '') +
-    '<h2>The server certificate</h2>' +
-    '<p>Self-signed, and <strong>regenerated on every start</strong> — so it ' +
-    'is an anchor nobody can have baked in. Fetch it and put it in your own ' +
-    'truststore rather than switching verification off, which is the habit ' +
-    'this whole workflow exists to break.</p>' +
-    '<table>' + rowsFrom([
-      ['Subject', info.serverCertificate.subject],
-      ['Names', info.serverCertificate.names.join(', ')],
-      ['SHA-256', info.serverCertificate.fingerprint256],
-      ['Not after', info.serverCertificate.notAfter],
-      ['PEM', 'GET /tls/server-certificate']
-    ]) + '</table><h2>What client certificates are verified ' +
-    'against</h2><p>Empty at startup, and it has to be: the certificate ' +
-    'authority whose clients this verifies is generated in a ' +
-    '<em>browser</em>, minutes before the connection, and exists nowhere ' +
-    'else. Paste its certificate here — the root, or the whole chain above ' +
-    'the ' +
-    'leaf.</p><table><tr><th>Anchor</th><th>SHA-256</th></tr>' + anchorRows +
-    '</table><form method="post" action="/tls/trust"><textarea ' +
-    'name="certificates" rows="6" placeholder="-----BEGIN ' +
-    'CERTIFICATE-----"></textarea><p><button type="submit">Trust ' +
-    'these</button></p></form><form method="post" ' +
-    'action="/tls/trust/clear"><button type="submit">Empty the ' +
-    'truststore</button></form><p class="sub">Both buttons are test controls ' +
-    'and product mode refuses them. The gated doors answer in every mode: <a ' +
-    'href="/admin/tls/trust">the truststore page in the admin console</a>, ' +
-    'which also says where each anchor came from, and <code>POST ' +
-    '/admin-api/tls/trust/add</code> / ' +
-    '<code>remove</code>.</p><h2>Revocation</h2><p>' +
-    xmlEscape(revocationStatus.describePolicy().sentence) + '</p><h2>What a ' +
-    'verified certificate is worth here</h2><p>A verified client ' +
-    'certificate means one thing: a chain was built from what the client ' +
-    'sent to an anchor somebody supplied. No token is issued for presenting ' +
-    'one, and this port requires nobody to present one at all. What it is ' +
-    'good for is <a href="/tls/sign-in">GET /tls/sign-in</a>, which starts ' +
-    'a sign-on session for its holder, and the doors that read a certificate ' +
-    'for themselves: RFC 8705 client authentication at the token endpoint, ' +
-    '<code>/xacml</code> and <code>/scim/v2</code>.</p><p>It is also ' +
-    '<em>recorded</em>, which is a different ' +
-    'claim. When the handshake completes with a certificate that verified, ' +
-    'the subject DN is filed as an authentication on <a ' +
-    'href="/admin/users">/admin/users</a> and the embedded LDAP directory ' +
-    'seeds an entry for it — a certificate subject is already a DN, so it is ' +
-    'the one identity here that does not have to be turned into one, and the ' +
-    'subject, issuer, serial and validity go on the entry beside it. <a ' +
-    'href="/admin/ldap/service">The directory service</a> says where. Both ' +
-    'are a record of what happened; neither is a credential.</p><p ' +
-    'class="sub"><a href="/tls?format=json">This page as JSON</a> &middot; ' +
-    '<a href="/admin/sts-metadata">everything this service speaks</a></p>';
-  res.status(200).type('html').set('Cache-Control', 'no-store')
-     .send(pageShell('TLS endpoint', inner));
-  log.debug('Leaving GET /tls.');
-});
-
-// ---------------------------------------------------------------------------
 // A VERIFIED CLIENT CERTIFICATE IS A SIGN-IN, ON THE MAIN PORT (2026-09-16).
 //
 // It was a side effect of reaching 8443 or 9443 at all: the deleted handler
@@ -5037,8 +6522,36 @@ app.get('/tls', function (req, res) {
 // STARTS A SESSION, and in active-active mode an answer sent before the
 // session committed left a sign-out on another node unable to see it.
 // ---------------------------------------------------------------------------
+// **HELD TO Sec-Fetch-* IN PRODUCT (#1484, ASVS 5.0.0 3.5.3)**, the requirement's
+// own alternative to another method: this is a GET that starts a session, so
+// that a person can sign in by opening an address. A browser's request must be
+// a top-level navigation, typed by the person (`none`) or from this origin; a
+// link from another site, an iframe or an image starts nothing. A program sends
+// no Sec-Fetch-* and holds the certificate itself, and is unaffected.
+function foreignCertificateSignIn(req) {
+  log.debug('Entering foreignCertificateSignIn().');
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
+  const fetched = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
+  const foreign = !!(site || dest || fetched) &&
+    require('../common/mode').bindsSignInSteps() &&
+    !((site === 'none' || site === 'same-origin') && dest === 'document' &&
+      fetched === 'navigate');
+  log.debug('Leaving foreignCertificateSignIn(). ' + foreign);
+  return foreign;
+}
+
 app.get('/tls/sign-in', function (req, res) {
   log.debug('Entering GET /tls/sign-in.');
+  if (foreignCertificateSignIn(req)) {
+    errorCodes.mark(res, 'STS-TLS-0059');
+    res.set('Cache-Control', 'no-store');
+    res.status(403).json({ signedIn: false, error: 'access_denied',
+      error_description: 'Open this address directly to sign in with a ' +
+                         'certificate.' });
+    log.debug('Leaving GET /tls/sign-in. Not a navigation from here.');
+    return;
+  }
   // WHICH CELL SIGNS THE HOLDER IN (#98 D10), BEFORE the revocation check,
   // the identity gate and the session: a session is started where its person
   // is homed. `placeCertificateSignIn()` argues it; single-cell mode answers
@@ -5087,19 +6600,21 @@ function placeCertificateSignIn(req, res) {
     log.debug('Leaving placeCertificateSignIn(). Here.');
     return Promise.resolve(false);
   }
-  const identity = issuedIdentityOf(req.socket);
+  const identity = issuedIdentityOf(req.socket, { stored: true });
   let name = '';
   let held = false;
   try {
-    const cert = req.socket.getPeerCertificate();
-    const common = cert && cert.subject && cert.subject.CN
-      ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
-               cert.subject.CN)
-      : '';
-    name = (identity && identity.accepted && identity.username) || common ||
-           (cert && cert.subject ? dnRfc4514(cert.subject) : '');
+    // THE GATE'S NAME ONLY (#1061): an outside certificate is the entry it
+    // is stored on, and one stored nowhere is answered here, refused.
+    name = identity && identity.accepted ? String(identity.username || '')
+                                         : '';
+    // With several accounts on (#561) "held" is the CERTIFICATE'S account
+    // live in this browser's set, for `startCertificateSessionIn()`'s
+    // reason: the browser's other accounts are not this person, and one
+    // signed in here does not make this one a sign-in nobody needs.
     held = !!inCertificateRealm(identity, function () {
-      return authn.sessionOf(req);
+      return authn.multipleAccounts()
+        ? certificateAccountHeld(req, name) : authn.sessionOf(req);
     });
   } catch (e) {
     log.debug('Caught in placeCertificateSignIn(): ' +
@@ -5130,9 +6645,16 @@ function answerCertificateSignIn(req, res) {
   log.debug('Entering answerCertificateSignIn().');
   clusterBarrier.middleware()(req, res, function () {
     checkedSocket(req.socket).then(function (revocation) {
-      const identity = issuedIdentityOf(req.socket);
+      const identity = issuedIdentityOf(req.socket, { stored: true });
       const session = startCertificateSession(req, res, 'optional', revocation,
                                               identity);
+      // AN OUTSIDE CERTIFICATE STORED ON NO ENTRY, OR ON SEVERAL (#1061):
+      // the answer is still 200 with `session.started` false, as every
+      // refusal of this route's is, and the condition is recorded.
+      if (session.refusedAsStored) {
+        errorCodes.mark(res, session.refusedAsStored === 'STORED_TWICE'
+          ? 'STS-TLS-0055' : 'STS-TLS-0054');
+      }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&
                            req.socket.getPeerCertificate().raw.length);
@@ -5265,64 +6787,19 @@ app.get('/tls/server-certificate', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
-// A TEST CONTROL, AND PRODUCT MODE REFUSES IT (2026-09-12).
+// THE TRUSTSTORE HAS NO OPEN DOOR SINCE #597 (2026-10-12).
 //
-// Adding an anchor decides whose client certificates VERIFY on the main port
-// — and since 2026-09-06 a verified certificate is an identity:
-// it resolves to a directory entry, a group and a role, and it is what admits a
-// remote XACML PEP to the documents this service enforces its own access with.
-// Both routes answered anybody who could reach the port. In development that is
-// the point (a test drives the truststore, and the launchers post the PEP's
-// Root here). In product mode (`mode.opensTestControls()` false) an anchor
-// anybody can add is a certificate anybody can make verify.
-//
-// **REFUSED RATHER THAN GATED, AND THE REFUSAL SAYS WHERE TO GO.** The obvious
-// alternative was to require the credential `/admin-api` requires — an access
-// token with `admin:write` — and it was not taken for a structural reason:
-// that verification is middleware inside `mgmt-api/admin_api.ts`, exported as
-// nothing, and a second copy of it here would be a second answer to "who may
-// administer this service" (the mistake `logout.js` exists to prevent).
-//
-// **THE RUNTIME DOOR EXISTS SINCE 2026-09-12 AND IT IS NOT THIS ONE.** This
-// paragraph ended "a management-API operation that calls `addAnchors()` behind
-// that API's own gate is the runtime door still to be built". It is built:
-// `/admin/tls/trust` behind the console's session and roles, and
-// `POST /admin-api/tls/trust/{add,remove}` behind that API's access token —
-// both through `truststore` below, handed to the console through
-// `admin.setTruststore()`. So these two routes stay exactly as they were in
-// both modes, and the refusal now names the gated doors as well as the file.
+// `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could
+// reach the main port — test controls, development only since #585, the
+// PROCESS's demonstration mark (itself removed by #599) because the anchors
+// are one array for every listener. Adding an anchor decides whose client certificates
+// VERIFY, and a verified certificate is an identity here, so #597 deleted
+// both: the doors are `/admin/tls/trust` behind the console's roles and
+// `POST /admin-api/tls/trust/{add,remove}` behind the management API's
+// access token, both through `truststore` below, in either mode. There is
+// deliberately no bulk clear on them (`clearAnchors()` stays, for the
+// in-process tests).
 // ---------------------------------------------------------------------------
-function refuseTruststoreChange(req, res, route) {
-  log.debug('Entering refuseTruststoreChange(). route=' + route);
-  const message = route + ' changes whose client certificates this service ' +
-    'verifies, and in product mode it is not open to whoever can reach the ' +
-    'port. At runtime, use the gated doors: the console page ' +
-    '/admin/tls/trust (Admin Write) or POST /admin-api/tls/trust/add and ' +
-    'POST /admin-api/tls/trust/remove (an access token carrying ' +
-    'admin:write). Neither persists what it adds; for anchors that must ' +
-    'survive a restart, put the CA certificates in a PEM file and set ' +
-    'tls.trustAnchorsFile (STS_TLS_TRUST_ANCHORS_FILE), which is read at ' +
-    'startup. ' + anchors.length +
-    ' anchor(s) are in force now.';
-  log.info('tls: refused ' + route + ' — product mode.');
-  errorCodes.mark(res, 'STS-TLS-0024');
-  if (/html/i.test(String(req.headers.accept || ''))) {
-    log.debug('Leaving refuseTruststoreChange(). HTML.');
-    return res.status(403).type('html').send(pageShell('Truststore',
-      '<h1>The truststore is not changed from here</h1><p>' +
-      xmlEscape(message) +
-      '</p><p class="sub"><a href="/admin/tls/trust">the truststore page in ' +
-      'the admin console</a> &middot; <a href="/tls">back to the TLS ' +
-      'endpoint</a></p>'));
-  }
-  log.debug('Leaving refuseTruststoreChange(). JSON.');
-  errorCodes.mark(res, 'STS-TLS-0024');
-  log.debug("Leaving refuseTruststoreChange().");
-  return res.status(403).json({ error: 'forbidden', errors: [message],
-                                anchors: anchors.length,
-                                console: '/admin/tls/trust',
-                                api: '/admin-api/tls/trust' });
-}
 
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE AS THE GATED DOORS SEE IT (2026-09-12).
@@ -5337,12 +6814,10 @@ function refuseTruststoreChange(req, res, route) {
 // which `setTruststore` does not exist yet. `common/protocol_stack.ts` fills
 // the slot on the line after it requires this module, where both are whole.
 //
-// **`add` IS STRICT AND `/tls/trust` IS NOT.** A block OpenSSL cannot read is
-// refused whole here, because an anchor the listener cannot parse makes the
-// next `setSecureContext()` throw on every listener (logged, and the listeners
-// keep their old context while the page says otherwise). `/tls/trust` has
-// always accepted what it was given, and a development-mode test control is
-// left behaving as it did.
+// **`add` IS STRICT.** A block OpenSSL cannot read is refused whole here,
+// because an anchor the listener cannot parse makes the next
+// `setSecureContext()` throw on every listener (logged, and the listeners
+// keep their old context while the page says otherwise).
 //
 // **A RUNTIME ANCHOR IS PERSISTED SINCE LATER THE SAME DAY**, and this
 // paragraph said *nothing here is persisted* until then. It is written to
@@ -5366,83 +6841,10 @@ const truststore = {
   remove: removeAnchor
 };
 
-// The body may be raw PEM (what a script sends), or the `certificates` member
-// of a form or JSON body (what the /tls page sends). They are told apart by
-// looking for the PEM header rather than by the content type, because a raw PEM
-// posted as text/plain would otherwise be run through URLSearchParams and come
-// out as a set of nonsense keys — a silent mangling rather than a refusal.
-app.post('/tls/trust', function (req, res) {
-  log.debug('Entering POST /tls/trust.');
-  if (!truststoreOpenToAnybody()) {
-    log.debug('Leaving POST /tls/trust. Product mode.');
-    return refuseTruststoreChange(req, res, 'POST /tls/trust');
-  }
-  const raw = typeof req.body === 'string' ? req.body : '';
-  const looksLikePem = /-----BEGIN CERTIFICATE-----/.test(raw) &&
-      !/^certificates=/.test(raw.trim());
-  const text = looksLikePem ? raw
-    : String((parseBody(req) || {}).certificates || '');
-  const result = addAnchors(text);
-  const wantsHtml = /html/i.test(String(req.headers.accept || '')) &&
-      !/json/i.test(String(req.headers['content-type'] || ''));
-  if (result.error && !result.added) {
-    log.debug('Leaving POST /tls/trust. Refused: ' + result.error);
-    errorCodes.mark(res, result.errorCode || 'STS-TLS-0012');
-    if (wantsHtml) {
-      return res.status(400).type('html').send(pageShell('Truststore',
-        '<h1>Nothing was added</h1><p>' + xmlEscape(result.error) + '</p>' +
-        '<p class="sub"><a href="/tls">back to the TLS endpoint</a></p>'));
-    }
-    errorCodes.mark(res, result.errorCode || 'STS-TLS-0012');
-    return res.status(400)
-              .json({ error: result.error, anchors: anchors.length });
-  }
-  if (wantsHtml) {
-    log.debug('Leaving POST /tls/trust. HTML, added=' + result.added);
-    return res.status(200).type('html').send(pageShell('Truststore',
-      '<h1>' + result.added + ' anchor(s) added</h1>' +
-      '<p>This service now verifies client certificates against ' +
-      anchors.length + ' anchor(s). Existing connections keep the truststore ' +
-      'they were made under; the next handshake is judged against this ' +
-      'one.</p><p class="sub"><a href="/tls">back to the TLS ' +
-      'endpoint</a></p>'));
-  }
-  res.status(200).json({
-    added: result.added,
-    duplicates: result.duplicates || 0,
-    anchors: anchors.length,
-    subjects: anchors.map(function (anchor) { return anchor.subject; }),
-    note: 'Applied with tls.Server.setSecureContext(). Existing connections ' +
-      'keep the truststore they were made under; the next handshake is ' +
-      'judged against this one.'
-  });
-  log.debug('Leaving POST /tls/trust. added=' + result.added);
-});
-
-app.post('/tls/trust/clear', function (req, res) {
-  log.debug('Entering POST /tls/trust/clear.');
-  if (!truststoreOpenToAnybody()) {
-    log.debug('Leaving POST /tls/trust/clear. Product mode.');
-    return refuseTruststoreChange(req, res, 'POST /tls/trust/clear');
-  }
-  const result = clearAnchors();
-  if (/html/i.test(String(req.headers.accept || ''))) {
-    log.debug('Leaving POST /tls/trust/clear. HTML.');
-    return res.status(200).type('html').send(pageShell('Truststore',
-      '<h1>The truststore is empty</h1>' +
-      '<p>' + result.removed + ' anchor(s) removed. No client certificate ' +
-      'verifies here now: one presented to the main port still arrives, and ' +
-      'everything that reads one refuses it — which is the state this ' +
-      'service starts in.</p>' +
-      '<p class="sub"><a href="/tls">back to the TLS endpoint</a></p>'));
-  }
-  res.status(200).json({ removed: result.removed, anchors: 0 });
-  log.debug('Leaving POST /tls/trust/clear.');
-});
-
 // ---------------------------------------------------------------------------
-// GET /tls/forwarded — what a reverse proxy told this service, and what was
-// believed of it.
+// WHAT A REVERSE PROXY TOLD THIS SERVICE, AND WHAT WAS BELIEVED OF IT — the
+// second half of Monitoring → TLS connection (`connectionView()` below). It
+// was `GET /tls/forwarded`, a development page, until #597.
 //
 // RFC 9700 section 2.6 has a paragraph about reverse proxies with two halves.
 // The proxy's half is that it MUST sanitize inbound security-sensitive headers
@@ -5451,7 +6853,7 @@ app.post('/tls/trust/clear', function (req, res) {
 // is the one this service can do something about, is that it must not BELIEVE
 // those headers unless it knows a proxy set them.
 //
-// So this page reports the request as it arrived: every forwarding header,
+// So the view reports the request as it arrived: every forwarding header,
 // every security-sensitive header a proxy might inject, whether this service
 // believed any of it, and what the effective base URL — the thing every issuer
 // and every endpoint in both discovery documents is built from — came out as.
@@ -5466,7 +6868,7 @@ app.post('/tls/trust/clear', function (req, res) {
 // X-Forwarded-Client-Cert, X-SSL-Client-Cert, and a dozen vendor spellings —
 // and an application that believed one would be accepting a certificate anybody
 // can forge, since a header costs nothing to write. THIS SERVICE READS NONE OF
-// THEM, in either mode, and the page says so with the ones it saw listed: a
+// THEM, in either mode, and the view says so with the ones it saw listed: a
 // mock that silently ignored a header somebody was relying on would be as bad
 // as one that silently trusted it.
 // ---------------------------------------------------------------------------
@@ -5486,7 +6888,7 @@ const FORWARDING_HEADERS = [
       'empty, and otherwise only from a peer in those ranges, taking the ' +
       'right-most hop that is not one of them (common/client_address.js). ' +
       'The audit log deliberately records the CHANNEL rather than an ' +
-      'address: on a mock reached over a compose bridge an address is a ' +
+      'address: on a service reached over a compose bridge an address is a ' +
       'fact about docker.' },
   { name: 'forwarded', what: 'RFC 7239\'s single-header form. NOT PARSED — ' +
       'this service reads the X- forms only, which is what every proxy in ' +
@@ -5507,117 +6909,204 @@ const SENSITIVE_HEADERS = [
                                           'balancer spells it.' }
 ];
 
-app.get('/tls/forwarded', function (req, res) {
-  log.debug('Entering GET /tls/forwarded.');
-  const trusted = !!config.value('global.trustProxy');
+// ---------------------------------------------------------------------------
+// MONITORING → TLS CONNECTION: WHAT THIS SERVICE SAW OF A REQUEST (#597,
+// 2026-10-12; rcbj's decision 3 on #591).
+//
+// `GET /tls` and `GET /tls/forwarded` described the connection a page was
+// loaded on and the headers it arrived with, to anybody, development only
+// (#585). #591 moved every demonstration out of the runtime, and rcbj kept
+// this one as a CONSOLE PAGE — Admin Read, and answered in product mode,
+// because "what did the server make of my connection, and of the proxy in
+// front of it" is a question an operator of a product deployment has. So
+// the two pages are one view, `GET /admin-api/tls-connection`, drawn at
+// `/admin/tls-connection` by `tls/web_tls_connection.ts`.
+//
+// **THE REQUEST DESCRIBED IS THE API CALL, NOT THE PAGE LOAD**, and the
+// page says so. The console is a static application (#446): the browser
+// loads its shell and then asks the management API, with a DPoP-bound
+// token, for the view — a second request, on whatever connection the
+// browser chose for it (HTTP keep-alive usually makes it the same one).
+// For a console page that is fine: the client certificate a browser
+// presents is per connection, and the forwarded headers a proxy writes are
+// the same on every request it relays. A caller of the API reads the same
+// view about ITS OWN request.
+//
+// **ANSWERED BY THE FRONT PROCESS**: both paths are in
+// `common/request_pool.js`'s NEVER_DISPATCHED, beside `/tls`, because a
+// request worker sees a unix socket where the front process sees the
+// client's — the argument `/tls` was pinned on.
+//
+// What it reads: the socket's own TLS facts (version, cipher), the client
+// certificate as `describeCertificate()` describes the sightings, whether
+// it VERIFIED against the truststore and why not, what the identity gate
+// (`tls_client_certificates.js`) makes of it, the revocation verdict
+// `GET /tls/sign-in` would act on — and the forwarding headers with what
+// `common/client_address.js` believed of them under `global.trustProxy` and
+// `global.trustedProxies`. It changes nothing: no session is started, no
+// sighting is recorded, no setting is written. The English sentences in it
+// are data, as every view's are (#539).
+// ---------------------------------------------------------------------------
+/**
+ * Describes the connection and the forwarding headers of the request it is
+ * given, as this service saw and believed them: what `GET
+ * /admin-api/tls-connection` answers and `/admin/tls-connection` draws.
+ *
+ * @param req - the request to describe
+ * @returns a promise of the view; it never rejects
+ */
+function connectionView(req) {
+  log.debug('Entering connectionView().');
+  const socket = (req && (req.socket || req.connection)) || {};
+  const headers = (req && req.headers) || {};
+  let peer = null;
+  try {
+    peer = typeof socket.getPeerCertificate === 'function'
+      ? socket.getPeerCertificate(true) : null;
+  } catch (e) {
+    // A socket that went away between the handshake and this line: nothing
+    // presented to describe.
+    log.debug('Caught in connectionView(): ' + ((e && e.message) || e));
+    peer = null;
+  }
+  const presented = !!(peer && peer.raw && peer.raw.length);
+  const tlsFact = function (name) {
+    log.debug('Entering tlsFact(). ' + name);
+    let out = null;
+    try {
+      if (name === 'protocol' && typeof socket.getProtocol === 'function') {
+        out = socket.getProtocol() || null;
+      } else if (name === 'cipher' &&
+                 typeof socket.getCipher === 'function') {
+        const cipher = socket.getCipher();
+        out = cipher && cipher.name ? String(cipher.name) : null;
+      }
+    } catch (e) {
+      log.debug('Caught in tlsFact(): ' + ((e && e.message) || e));
+      out = null;
+    }
+    log.debug('Leaving tlsFact().');
+    return out;
+  };
   const seen = function (rows) {
-    log.debug("Entering seen().");
-    log.debug("Leaving seen().");
+    log.debug('Entering seen().');
+    log.debug('Leaving seen().');
     return rows.map(function (row) {
-      const value = req.headers[row.name];
+      const value = headers[row.name];
       return { header: row.name, present: value !== undefined,
                value: value === undefined ? null : String(value),
                what: row.what };
     });
   };
-  const forwarding = seen(FORWARDING_HEADERS);
+  const trusted = !!config.value('global.trustProxy');
+  const ranges = clientAddress.trustedProxyRanges();
   const sensitive = seen(SENSITIVE_HEADERS);
-  const presentSensitive = sensitive.filter(function (
-      row) { return row.present; });
-  const payload = {
-    trustProxy: trusted,
-    socket: { scheme: req.protocol, host: req.get('host') || '',
-              encrypted: !!req.secure },
-    effectiveBaseUrl: baseUrlOf(req),
-    what_it_means: trusted
-      ? 'global.trustProxy is ON, so X-Forwarded-Proto and X-Forwarded-Host ' +
-        'decide what this service thinks its own URLs are. That is correct ' +
-        'behind a reverse proxy and unsafe without one, because those are ' +
-        'headers any client can set.'
-      : 'global.trustProxy is OFF, so the forwarding headers below are ' +
-        'IGNORED and this service describes the connection it can see. If a ' +
-        'proxy is terminating TLS in front of it, the metadata is publishing ' +
-        'the wrong URLs and every DPoP proof is being refused for naming the ' +
-        'real endpoint — turn the setting on.',
-    forwarding: forwarding,
-    clientCertificateHeaders: {
-      readByThisService: false,
-      seen: presentSensitive.map(function (row) { return row.header; }),
-      note: 'THIS SERVICE READS NONE OF THESE, in either mode. A certificate ' +
-            'in a header is a certificate anybody can write, so believing ' +
-            'one would let any client claim any identity — and RFC 8705 ' +
-            'binding here reads the certificate off the TLS handshake itself ' +
-            '(see /tls/sign-in and mtls.js). A proxy that terminates mTLS in ' +
-            'front of this service therefore cannot pass the certificate ' +
-            'through, which is a real limitation rather than an oversight: ' +
-            'the alternative is trusting a header.' +
-            (presentSensitive.length
-              ? ' This request carried ' + presentSensitive.length + ' of ' +
-                'them and they were ignored.'
-              : ''),
-      headers: sensitive
+  const presentSensitive = sensitive.filter(function (row) {
+    return row.present;
+  });
+  const identity = presented ? issuedIdentityOf(socket) : null;
+  const view = {
+    generatedAt: new Date().toISOString(),
+    connection: {
+      https: !!req.secure,
+      encrypted: !!socket.encrypted,
+      protocol: tlsFact('protocol'),
+      cipher: tlsFact('cipher'),
+      peerAddress: clientAddress.normalise(socket.remoteAddress) || null,
+      clientAddress: clientAddress.clientAddressOf(req)
     },
-    proxyMustSanitize: 'RFC 9700 section 2.6: a reverse proxy MUST strip ' +
-      'these headers from what a CLIENT sent before setting its own, or a ' +
-      'client can reach past it by setting them itself. That is the proxy\'s ' +
-      'job and this service cannot do it — what it can do is not believe ' +
-      'them unless told to, which is what the setting above is.'
+    clientCertificate: {
+      presented: presented,
+      verified: presented && socket.authorized === true,
+      authorizationError: presented && socket.authorizationError
+        ? String(socket.authorizationError) : null,
+      certificate: presented ? describeCertificate(peer, 0) : null,
+      thumbprint: presented ? stsCrypto.certificateThumbprint(peer.raw) : '',
+      identity: identity ? {
+        issuedHere: !!identity.issuedHere,
+        accepted: !!identity.accepted,
+        kind: identity.kind || null,
+        username: identity.username || null,
+        realm: identity.realm === undefined ? null : identity.realm,
+        why: identity.why || null
+      } : null,
+      revocation: null,
+      signIn: '/tls/sign-in',
+      note: presented
+        ? 'What this connection carried. Verified means a chain to an anchor ' +
+          'in the client truststore (/admin/tls/trust); what a verified ' +
+          'certificate is worth is decided where it is used — a sign-on ' +
+          'session at GET /tls/sign-in, RFC 8705 at the token endpoint, ' +
+          '/xacml, /scim/v2. Nothing here started a session.'
+        : 'No client certificate arrived on this connection. The main port ' +
+          'asks every connection for one and requires none, so presenting ' +
+          'one is the client\'s own doing.'
+    },
+    forwarded: {
+      trustProxy: trusted,
+      trustedProxies: config.value('global.trustedProxies') || [],
+      rangesConfigured: ranges.configured,
+      rangesUsable: ranges.count,
+      peerIsTrustedProxy: clientAddress.peerIsTrustedProxy(req),
+      believed: clientAddress.forwardedBelieved(req),
+      socket: { scheme: req.protocol, host: req.get ? req.get('host') || ''
+                                                    : '',
+                encrypted: !!req.secure },
+      effectiveBaseUrl: baseUrlOf(req),
+      whatItMeans: !trusted
+        ? 'global.trustProxy is OFF, so the forwarding headers below are ' +
+          'IGNORED and this service describes the connection it can see. If ' +
+          'a proxy is terminating TLS in front of it, the metadata is ' +
+          'publishing the wrong URLs and every DPoP proof is being refused ' +
+          'for naming the real endpoint — turn the setting on.'
+        : (clientAddress.forwardedBelieved(req)
+          ? 'global.trustProxy is ON and this request came from a peer it ' +
+            'believes (' + (ranges.configured
+              ? 'one of global.trustedProxies'
+              : 'global.trustedProxies is empty, so ANY peer') + '), so ' +
+            'X-Forwarded-Proto and X-Forwarded-Host decide what this ' +
+            'service thinks its own URLs are, and X-Forwarded-For its ' +
+            'idea of the client\'s address. That is correct behind a ' +
+            'reverse proxy and unsafe without one.'
+          : 'global.trustProxy is ON, but this request\'s peer is not in ' +
+            'global.trustedProxies, so its forwarding headers were IGNORED: ' +
+            'a caller that reached the node directly cannot choose this ' +
+            'service\'s URL or its own address.'),
+      forwarding: seen(FORWARDING_HEADERS),
+      clientCertificateHeaders: {
+        readByThisService: false,
+        seen: presentSensitive.map(function (row) { return row.header; }),
+        note: 'THIS SERVICE READS NONE OF THESE, in either mode. A ' +
+              'certificate in a header is a certificate anybody can write, ' +
+              'so believing one would let any client claim any identity — ' +
+              'and RFC 8705 binding here reads the certificate off the TLS ' +
+              'handshake itself. A proxy that terminates mTLS in front of ' +
+              'this service therefore cannot pass the certificate through, ' +
+              'which is a real limitation rather than an oversight: the ' +
+              'alternative is trusting a header.' +
+              (presentSensitive.length
+                ? ' This request carried ' + presentSensitive.length + ' of ' +
+                  'them and they were ignored.'
+                : ''),
+        headers: sensitive
+      },
+      proxyMustSanitize: 'RFC 9700 section 2.6: a reverse proxy MUST strip ' +
+        'these headers from what a CLIENT sent before setting its own, or a ' +
+        'client can reach past it by setting them itself. That is the ' +
+        'proxy\'s job and this service cannot do it — what it can do is not ' +
+        'believe them unless told to, which is what the settings above are.'
+    }
   };
-  const askedFormat = validation.check(req, 'query', TLS_QUERY);
-  if (!askedFormat.ok) {
-    log.debug('Leaving the TLS page. ' + askedFormat.detail);
-    errorCodes.mark(res, 'STS-TLS-0023');
-    return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
+  if (!presented) {
+    log.debug('Leaving connectionView(). No client certificate.');
+    return Promise.resolve(view);
   }
-  if (String(req.query.format || '').toLowerCase() === 'json') {
-    log.debug('Leaving GET /tls/forwarded. JSON.');
-    return res.status(200).json(payload);
-  }
-  const rowsOf = function (rows) {
-    log.debug("Entering rowsOf().");
-    log.debug("Leaving rowsOf().");
-    return rows.map(function (row) {
-      return '<tr><td><code>' + xmlEscape(row.header) + '</code></td>' +
-        '<td>' + (row.present
-          ? '<code>' + xmlEscape(row.value) + '</code>'
-          : '<span class="none">not sent</span>') + '</td>' +
-        '<td>' + xmlEscape(row.what) + '</td></tr>';
-    }).join('');
-  };
-  const inner = '<h1>What a proxy told this service</h1><p class="sub">The ' +
-    'request as it arrived, and what was believed of it. Every issuer and ' +
-    'every endpoint in both discovery documents is built from the effective ' +
-    'base URL below, so if that is wrong, everything a client reads is wrong ' +
-    'with it.</p><table><tr><th>Thing</th><th>Value</th></tr><tr><td>' +
-    'global.trustProxy</td><td>' + (trusted
-      ? '<strong>on</strong> — the forwarding headers are believed'
-      : '<strong>off</strong> — the forwarding headers are ignored') +
-    '</td></tr><tr><td>The ' +
-    'socket saw</td><td><code>' + xmlEscape(req.protocol) + '://' +
-    xmlEscape(req.get('host') || '') + '</code>' +
-    (req.secure ? ' (encrypted)' : ' (not encrypted)') + '</td></tr>' +
-    '<tr><td>Effective base URL</td><td><code>' + xmlEscape(baseUrlOf(req)) +
-    '</code></td></tr>' +
-    '</table>' +
-    '<p class="' + (trusted ? 'sub' : 'verdict') + '">' +
-    xmlEscape(payload.what_it_means) +
-    '</p><h2>Forwarding headers</h2><table><tr><th>Header</th><th>This ' +
-    'request</th><th>What it does here</th></tr>' +
-    rowsOf(forwarding) + '</table>' +
-    '<h2>Client certificate headers</h2>' +
-    '<p class="verdict">' + xmlEscape(payload.clientCertificateHeaders.note) +
-    '</p><table><tr><th>Header</th><th>This ' +
-    'request</th><th>What it is</th></tr>' +
-    rowsOf(sensitive) + '</table>' +
-    '<h2>What the proxy has to do</h2>' +
-    '<p>' + xmlEscape(payload.proxyMustSanitize) + '</p><p class="sub"><a ' +
-    'href="/tls/forwarded?format=json">This page as JSON</a> &middot; <a ' +
-    'href="/tls">what the TLS endpoint is</a> &middot; <a ' +
-    'href="/.well-known/oauth-authorization-server">the document built from ' +
-    'that base URL</a></p>';
-  res.status(200).type('html').send(pageShell('Forwarded headers', inner));
-  log.debug('Leaving GET /tls/forwarded. trustProxy=' + trusted);
-});
+  log.debug('Leaving connectionView(). The revocation verdict follows.');
+  return checkedSocket(socket).then(function (verdict) {
+    view.clientCertificate.revocation = verdict || null;
+    return view;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // THIS MODULE BINDS NOTHING SINCE 2026-09-16.
@@ -5626,7 +7115,7 @@ app.get('/tls/forwarded', function (req, res) {
 // socket owner in this service does: a bind can fail, and a `require` that
 // throws takes the whole process down where a route cannot. Both are gone —
 // see the block above `observeConnectionsOn()` — and what is left is a
-// LIBRARY: the certificate, the truststore, the sightings and six routes on
+// LIBRARY: the certificate, the truststore, the sightings and two routes on
 // the main app.
 //
 // `listen()` and `close()` are kept rather than deleted, because `server.js`
@@ -5701,6 +7190,8 @@ module.exports = {
   // What the service last announced of the listener certificate (#264).
   lastAnnouncedListenerCertificates: lastAnnouncedListenerCertificates,
   listenerChangesSinceAnnounced: listenerChangesSinceAnnounced,
+  // The listener-key rows this node holds, without their keys (2026-10-08).
+  heldListenerKeys: heldListenerKeys,
   // Exported for tests, which check these without opening a socket.
   splitPemCertificates: splitPemCertificates,
   // The RFC 4514 form of a subject. It now LIVES in common/helpers.js and is
@@ -5722,12 +7213,12 @@ module.exports = {
   setTrustAnchorStore: setTrustAnchorStore,
   reloadStoredAnchors: reloadStoredAnchors,
   // The main HTTPS listener is created in server.js and registers here so that
-  // /tls/trust reaches it too — see the block above
+  // a truststore change reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
   forgetListener: forgetListener,
   // Applies the truststore again to every registered listener — and so each
-  // listener's own certificate, after a realm listener's is renewed (#99).
+  // listener's own certificate, after a custom listener's is renewed (#99, #472).
   reapplyTruststore: applyAnchors,
   // #212: the guard, for a TLS listener that does not register above.
   refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,
@@ -5740,6 +7231,10 @@ module.exports = {
   // listeners from the same answer applyAnchors() re-applies to them, rather
   // than assembling a second one that can drift.
   clientTruststoreOptions: secureContextOptions,
+  // The `cert` bundle a socket presents for one `{ certPem, chainPem }`:
+  // leaf, chain and the Root that signs it (#1064). Every listener that
+  // builds its own context takes its bundle from here.
+  presentedBundlePem: presentedBundlePem,
   // `tls.minVersion` / `tls.ciphers` / `tls.groups` /
   // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
@@ -5754,6 +7249,10 @@ module.exports = {
     return ownValue(kind, null, name);
   },
   clientAuthOptions: clientAuthOptions,
+  // The sign-in screen's certificate (#1051), asked by `authn/authn.ts`
+  // lazily: the offer its view draws and the first factor its act takes.
+  screenCertificateOffer: screenCertificateOffer,
+  screenCertificateHolder: screenCertificateHolder,
   registerPolicyApplier: registerPolicyApplier,
   reapplyPolicy: reapplyPolicy,
   listenerPolicies: listenerPolicies,
@@ -5786,8 +7285,9 @@ module.exports = {
   // The whole of it, private key included, because ldap_server.js serves it on
   // 636 — see the note above SERVER_CERTIFICATE. Handing a private key to
   // another module in this process is not the same act as publishing one: this
-  // key is generated per start, exists only in memory and dies with the
-  // process. Nothing here writes it to a response; GET
+  // key is held in memory, and written down only as this node's SEALED row of
+  // `tls.listenerKeys` where minted state persists. Nothing here writes it to
+  // a response; GET
   // /tls/server-certificate publishes the CERTIFICATE alone.
   /**
    * Returns the listener certificate with its private key, chain and trust
@@ -5893,9 +7393,15 @@ module.exports = {
   // Installed by `server.js` on the main HTTPS listener: the sighting, and the
   // failed-handshake log that is otherwise invisible.
   observeConnectionsOn: observeConnectionsOn,
+  // Monitoring → TLS connection's view (#597), for `GET
+  // /admin-api/tls-connection`, which reaches this module lazily.
+  connectionView: connectionView,
   // Exported for tests/tls_handshake_alerts.js (#225).
   handshakeFailureOf: handshakeFailureOf,
   // #201: the path rules asked of a chain OpenSSL verified; exported for
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
-  holdToPathRules: holdToPathRules
+  holdToPathRules: holdToPathRules,
+  anchorCertificates: anchorCertificates,
+  holdConnectionsOn: holdConnectionsOn,
+  settledRequest: settledRequest
 };

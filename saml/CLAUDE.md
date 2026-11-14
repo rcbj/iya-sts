@@ -7,8 +7,8 @@ provider for each of them**.
 |---|---|
 | `saml2.ts` | A SAML 2.0 assertion: build, sign, encrypt, and the attribute statement. Registers nothing. |
 | `saml11.ts` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
-| `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, identity-provider-initiated SSO and the SOAP attribute authority (#189), the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
-| `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
+| `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, identity-provider-initiated SSO and the SOAP attribute authority (#189), and the per-service-provider metadata. **This one registers routes.** |
+| `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), and the per-relying-party metadata. **This one registers routes.** |
 | `sp_metadata.ts` | A service provider's metadata: parsing it (an EntitiesDescriptor aggregate included), fetching it — through `../federation/federation_http.ts`'s outbound policy, product-mode address check included — by an explicit refresh, the Metadata Query Protocol or the BACKGROUND REFRESHER, CONSUMING it (`consume()`, against the realm's trust anchors), and saying how current it is (`freshness()`: fresh, stale, expired). Registers nothing; the refresher is the scheduler job `saml2.sp-metadata-refresh` (#49), which `startRefresher()` registers. What a Metadata Query answer may REGISTER is decided by who started the lookup (#112). |
 | `request_signature.ts` | **Whether a service provider's request is signed by that service provider** (2026-09-17, #37): the verification policy for an AuthnRequest, LogoutRequest or LogoutResponse on the Redirect, POST and POST-SimpleSign bindings, whether a signature may be absent, and who is calling a SOAP responder that hands out an artifact (`authenticateSoapCaller()`). Registers nothing. |
 | `authn_context.ts` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
@@ -16,9 +16,10 @@ provider for each of them**.
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
 | `saml_cells.ts` | **Where a SAML back-channel request is answered in a service deployed as cells** (#98 D10, 2026-09-28): the cell tag inside an artifact's handle, and the peer holding the session a query names (the `saml-session-holder` inter-cell operation). Registers no route. See *IN A SERVICE DEPLOYED AS CELLS*, at the end. |
+| `saml_model.ts` | **The SAML model, as both identity providers read it (#1579).** Every vocabulary term, the AuthnRequest's and LogoutRequest's attributes as they are read, the order every builder writes its attributes and children in, SAML 1.1's browser parameters, and the holding of every built message to its model. One instance of `../common/xml_model.ts`, the reader WS-Trust and WS-Federation share (#1579). A leaf. See *THE MESSAGES ARE THE MODEL'S*, at the end. |
 | `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
-## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
+## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG — rule 4b
 
 This is the first thing to know before reading either file, because everything
 else follows from it and because "surely most of that is shared" is the change
@@ -35,7 +36,7 @@ function of a merged implementation:
 | the relying party names itself | `<saml:Issuer>` on the request | it cannot — `providerId`, the path segment, or GUESSED from the TARGET's origin |
 | a failure goes | to the service provider, as a Response with a status | to a PAGE — there is nothing to answer |
 | Single Logout | both directions | **does not exist in the protocol** |
-| `ForceAuthn`, `IsPassive`, `RequestedAuthnContext` | all three implemented | **no spelling in the protocol** |
+| `ForceAuthn`, `IsPassive`, `RequestedAuthnContext` | all three implemented; the EAP class URIs are #736 | **no spelling in the protocol.** The non-spec `authnContextClassRef` parameter carries those URIs (#736) |
 | the artifact | 44 bytes, type 0x0004, stands for a MESSAGE | 42 bytes, type 0x0001, stands for an ASSERTION |
 | the SOAP endpoint answers | ArtifactResolve | four request types, including an attribute authority |
 
@@ -44,6 +45,24 @@ And the spellings differ almost everywhere the two overlap: `AssertionID` not
 (`samlp:Success`) not a URI, `AudienceRestrictionCondition` not
 `AudienceRestriction`, and a signature that goes LAST in an assertion and FIRST
 in a response.
+
+**BOTH PROFILES' ERROR PAGES ARE `common/error_page.ts`'s SINCE #1327**
+(rcbj's design on #1326). Each `samlError()` keeps its signature, its status
+and its callers' codes, and draws the shared page: the sentence in the yellow
+box in the page's language, chosen by the code the caller marked
+(`samlErrors.refusal.<code>`, a caller's `pageKey`, then
+`samlErrors.refusal.general`), why it is a page and not a Response collapsed
+(`samlErrors.background.saml2` / `saml11`, plus a case's own key — `paos`,
+`authnFailed`, `noAuthnContext`, `policy`), the start-over note and the
+portal, and the Diagnostics: the service provider or `providerId`, the ACS URL
+or `shire`, the binding or profile, `RelayState` or `TARGET`, who is signed
+in, and the caller's English title and detail AS DATA. No error value sits in
+the box: these pages send no protocol error, and the STS code is never shown.
+**A new refusal code here owes a `samlErrors.refusal.<code>` sentence in all
+seven base catalogs**; without one the general sentence is drawn, which says
+less. The text/plain 404 of `refusedUnregistered()` (a scoped path for an
+unregistered service provider, shared with metadata) is not a page and is
+unchanged. `tests/saml_initiation.js` A2b and C1b hold the shape.
 
 What IS shared is shared deliberately and is exactly three things: the
 application registry, the session, and `slugOf()` — which `saml11_sso.ts`
@@ -104,7 +123,8 @@ change was mostly a prose sweep.
   server.
 * ~~**No identity-provider-initiated SSO**~~ **REVERSED 2026-09-24 (#189)**:
   `/saml2/unsolicited[/{sp}]` sends an unsolicited Response — see *What four
-  independent service providers found*, below. ~~**No Assertion Query and
+  independent service providers found*, below — **to a service provider that
+  opted in** since #711 (*WHO MAY START A SIGN-IN*, below). ~~**No Assertion Query and
   Request profile**~~ **its attribute query is answered since #189**, at
   `/saml2/aa`, under a release policy (same section).
 * **No ECP profile and its PAOS binding, no Name Identifier Management, and no
@@ -141,7 +161,7 @@ implementation:
 
 ---
 
-## Six decisions in `saml2_sso.ts`, and the two most likely to be undone
+## Six decisions in `saml2_sso.ts`, and the two most likely to be undone — rule 4a
 
 The file's own header argues all six at length. Two of them are the ones somebody
 will try to "fix":
@@ -161,15 +181,15 @@ ceremony available at the screen, and one fewer place asking for a username.
 this profile a screen of its own.
 
 **2. THE METADATA IS PER SERVICE PROVIDER AND, IN DEVELOPMENT, IS MINTED FOR
-ANYTHING ASKED FOR.** `/saml2/metadata/{sp}` names an identity provider of its
-own — `urn:sts:idp:{slug}` — with endpoints under that same segment, which is
-what Okta and Ping do. In development it **404s for nothing**: an entityID
+ANYTHING ASKED FOR.** `/saml2/metadata/{sp}` publishes this identity provider
+with endpoints under that same segment. Its entityID is the realm's ONE name,
+its OAuth issuer, for every service provider (*ONE ENTITY, ONE NAME, ONE
+DOCUMENT*, below); it was `urn:sts:idp:{slug}` per service provider until #523.
+In development it **404s for nothing**: an entityID
 nobody registered is registered by the ask. **In product (#112) every `{sp}`
 path of both profiles is a 404 for a name that is not a registered provider of
 that profile** — see *AN UNREGISTERED SERVICE PROVIDER IN PRODUCT* at the end
-of this file. `saml2.perApplicationEntityId` turns the separate entityID
-off for a service provider library that keys its trust store off the entityID;
-the ENDPOINTS stay per-application either way, because that is what makes the
+of this file. The ENDPOINTS are per application, which is what makes the
 documents worth having separately.
 
 The slug is the entityID where it is safe in a URL path segment and
@@ -180,14 +200,12 @@ registry which application has it. That is a scan of a mock's in-memory
 directory, and it is why `/admin/saml2` exists — nobody derives that digest by
 hand.
 
-**AND THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
-`sha256sum`.** The metadata URL carries the digest because the document is
-published per service provider, and three shell scripts over there build it
-rather than guessing it — so **a change to `slugOf()` breaks three files nothing
-in this repository can see**, and it breaks them in the parent's suite rather
-than here. That is the same standing obligation the root `CLAUDE.md`'s last
-section describes for the Kerberos COPY set: this repository moves, and the
-other one has to be moved with it in the same change. Nothing is provisioned for
+**THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
+`sha256sum`**, because the metadata URL carries the digest and the document is
+published per service provider. Until #1280 this file made a change to
+`slugOf()` an obligation to move those three scripts in the same change; rcbj
+ended that with the rest of what this repository owed the parent, so keeping
+them in step is the parent's business. Nothing is provisioned for
 the `sts` side of those jobs — any entityID is accepted, the metadata is minted
 on the ask, and the application entry is created by the first valid AuthnRequest
 — which is why there is no `configureX` step for it anywhere in those launchers,
@@ -220,8 +238,10 @@ now asynchronous at that point. What is decided, and why:
 * **Nothing releases it.** The delete has already spent the artifact in this
   process whatever the answer, and a claim given back without the map restored
   would only license another node to resolve it.
-* **A store that cannot be asked refuses** (fail closed) with `StatusCode
-  Responder`, where a used artifact is `Requester` as before.
+* **A store that cannot be asked refuses** (fail closed). Since #160 that
+  refusal, like a used artifact, is the EMPTY response — see *AN ARTIFACT
+  THAT DOES NOT RESOLVE IS ONE ANSWER* below; it was `Responder` and
+  `Requester` until then.
 * Codes: `STS-SAML-0057` (2.0, resolved elsewhere), `0058` (1.1), `0059` (the
   store), `0060` (the answer failed after the spend) — renumbered from
   0055–0058 when feature/46 was rebased onto develop, which had taken 0055 and
@@ -233,6 +253,54 @@ now asynchronous at that point. What is decided, and why:
 still holding a resolved artifact is refused, the same restore against an empty
 claim store resolves (the control), a store that throws refuses, and two
 concurrent resolutions answer once.
+
+### The artifact stores keep digests, are bounded, and refuse when full (2026-10-13, #614)
+
+* **The key is `credentialDigest(artifact)`** (`common/crypto.js`), in both
+  `saml2_sso.artifacts` and `saml11_sso.artifacts`, computed in
+  `stashArtifact()` and again where the artifact is presented. The
+  MessageHandle / AssertionHandle is the bearer secret and the store only
+  looks it up and spends it, so no copy of it is in the map, a heap
+  snapshot, an `sts_minted` row or an `sts_changes` name. **The VALUE stays
+  whole** — resolution hands the message (2.0) or the assertion (1.1) back.
+  No migration: a row under the old key is not found and expires.
+* **What still sees the artifact**: the 303 to the service provider (that is
+  the binding), the cluster claim (`cluster_claims.digestOf()` digests it), the
+  first twelve base64 characters on the info/warn lines (TypeCode,
+  EndpointIndex and the start of the SourceID — public, no handle byte), and
+  the debug-level whole-message log of the ArtifactResolve, which logs the
+  ASSERTIONS themselves at the same level by design.
+* **`saml2.maxArtifacts` / `saml11.maxArtifacts` (10000 per realm)**: the
+  expired go first, then `cacheRegistry.makeRoom(..., { policy: 'refuse' })`.
+  A store full of live artifacts REFUSES the next one rather than evict an
+  unresolved one — `used_assertions`' stance: an artifact dropped before its
+  party resolved it is a sign-in lost after it succeeded. **The refusal is a
+  503 page (`samlError()`), `STS-SAML-0110`, and nothing goes to the service
+  provider**: a Responder `<samlp:Response>` (section 3.2.2) would itself have
+  to travel as an artifact on that binding, and switching to another binding
+  at an endpoint declared for HTTP-Artifact is not the identity provider's
+  choice. SAML 1.1's browser profiles have no failure message at all.
+* **Expired is refused AT THE READ** in both resolvers (`STS-SAML-0018`,
+  `0037`) and deleted. Until #614 only the sweep in `stashArtifact()` removed
+  one, so an artifact past its lifetime resolved until the next stash.
+* **Both are on `/admin/caches`** (`saml2.artifacts`, `saml11.artifacts`,
+  kind `replay`, keys drawn by `digestKey()`), with an `eject` on the
+  `caches.eject-expired` scheduler job.
+* **A resolved artifact is deleted on every node already**: the delete
+  journals the digest key, the minted flush DELETEs the `sts_minted` row and
+  logs a change, and every other process's `persistence_minted.applyChange()`
+  finds the row gone and calls the store's `remove()` (`persistence/CLAUDE.md`,
+  *A MINTED WRITE ASKS FOR A FLUSH*). Nothing needed changing; `tombstone`
+  was not added, because nothing writes an artifact's key a second time.
+* **`saml11_sso.assertionsById` holds `{ xml, expires }`** and expires at the
+  assertion's `<saml:Conditions NotOnOrAfter>` — or `saml11.assertionCacheTtlS`
+  (3600) after it was kept when it carries none, which no assertion this
+  service builds does. Checked at the read (`STS-SAML-0038`, and the entry is
+  deleted), ejected by the scheduler job, still capped by
+  `saml11.assertionCacheMax`. A row of the old shape (a bare string) is not
+  found.
+
+`tests/saml_artifact_digests.js` holds all of it.
 
 ---
 
@@ -255,12 +323,12 @@ assertion issued by this profile with no wiring at all** — the same
 WS-Federation assertion puts them in this one. A second builder would have
 silently lost that, and nothing would have said so.
 
-**`issuer` is the option most easily thought unnecessary.** It defaults to
-`saml.issuer` and the two older callers want that. The Web SSO profile MUST
-override it, because it publishes an entityID per service provider and a service
-provider checks the assertion's `Issuer` against the entityID in the metadata it
-was configured from. An assertion issued by a name that is not in that document
-is refused, and the refusal reads as a trust-store problem.
+**`issuer` is the option most easily thought unnecessary.** It defaults to the
+realm's one issuer at the ambient request's base (#523). A caller that read the
+name for its request passes it, so the Response around the assertion, the
+metadata and the assertion cannot be read at different bases: a service
+provider checks the assertion's `Issuer` against the entityID in the metadata
+it was configured from, and the refusal reads as a trust-store problem.
 
 ---
 
@@ -284,8 +352,8 @@ confirmation method is the assertion's own statement of HOW it reached the
 relying party, so an artifact-profile assertion confirmed as `bearer` claims to
 have travelled through the browser when it did not. A relying party that checks
 refuses it; one that does not check works perfectly with either — which is why
-this needed a decision rather than a line of code, and why the mock relying party
-checks it.
+this needed a decision rather than a line of code, and why the test peer's
+relying party checks it (the mock relying party did until #592 deleted it).
 
 ---
 
@@ -315,8 +383,8 @@ The fix WAS one option in each signer — `idAttribute: 'AssertionID'` in
 `saml11.ts`, `'ResponseID'` in `saml11_sso.ts`'s `signDocument()`. Then the real
 attribute is found, nothing is injected, and the reference names the id a SAML
 1.1 relying party expects. **WS-Federation's assertions changed as a result and
-are more correct for it**; `/wsfed/rp` verifies them check by check and was used
-to prove it.
+are more correct for it**; `/wsfed/rp`, the mock relying party #592 deleted,
+verified them check by check and was used to prove it.
 
 **It was only safe because neither name was already on that default list.** The
 opposite case was recorded in `saml2_sso.ts`: naming `ID` for SAML 2.0 unshifts a
@@ -328,7 +396,7 @@ got exactly right in opposite directions at six call sites.
 
 **ON 2026-08-27 THAT ARGUMENT STOPPED EXISTING, AND THAT — NOT THE LINE COUNT —
 IS WHAT `common/crypto.js` BOUGHT.** Every signer and verifier here now goes
-through one module over `common/vendored/xmldsig.js`, which resolves `ID`,
+through one module over `common/crypto_impl/xmldsig.js`, which resolves `ID`,
 `AssertionID`, `ResponseID` and `RequestID` from the document itself. There is
 no list to be told about, nothing is ever invented, and **there is no longer a
 parameter to get wrong** — `signDocument()` in `saml11_sso.ts` and
@@ -465,31 +533,77 @@ lines away. The message is now chosen from the error.
 
 ---
 
-## FOUR SETTINGS GROUPS, AND `saml.issuer` IS NOT ONE OF THE PROFILES'
+## FOUR SETTINGS GROUPS
 
-The *SAML* group held TWO rows from 2026-08-27 — `saml.issuer` and
-`saml.clockSkewS` — and five more since 2026-09-12: `saml.signatureAlgorithm`,
+The *SAML* group held TWO rows from 2026-08-27 — `saml.issuer` (retired by
+#523) and `saml.clockSkewS` — and five more since 2026-09-12: `saml.signatureAlgorithm`,
 `saml.canonicalizationAlgorithm` and the three `saml.organization*` rows
 (`document_settings.ts`). What they have in common is the entry test for that
 group: each is read by what BOTH profiles sign and therefore reaches WS-Trust
 or WS-Federation as well. See *The validity window* below for
 `saml.clockSkewS`.
 
-`saml.issuer` (group *SAML*) governs who SIGNED an assertion and is shared by
-WS-Trust and WS-Federation. The `saml2.*` rows (group *SAML 2.0*) and the
+The *SAML* group governs what every assertion shares with WS-Trust and
+WS-Federation. The `saml2.*` rows (group *SAML 2.0*) and the
 `saml11.*` rows (group *SAML 1.1*) govern how this service behaves as an
 identity provider in each browser profile. Folding any of them together would
 make a change to one look like a change to the assertions WS-Trust hands out,
-which it is not. `wsfed.entityId` is separate from all of them for the same
-reason and always was.
+which it is not.
 
 **The two profile groups are separate from EACH OTHER for a reason of their
-own**, and it is not symmetry: a relying party that trusts this service for SAML
-1.1 and not for SAML 2.0 is the ordinary case rather than an exotic one, and one
-`entityId` shared between them would make that unexpressible. It also has a
-consequence worth knowing: `saml11.providerId` is what every type 0x0001
-artifact's SourceID is a SHA-1 of, so changing it changes every artifact this
-service mints.
+own**, and it is not symmetry: SAML 1.1 and SAML 2.0 are different
+specifications, and a shared `signResponse` would mean two things. Their NAME
+is not one of their settings any more: both are the realm's issuer (#523).
+
+---
+
+## ONE ENTITY, ONE NAME, ONE DOCUMENT (#523, 2026-10-08)
+
+rcbj, on #523: one issuer per realm, the OAuth issuer URL, in every protocol
+and with no override — so `saml2.entityId`, `saml2.perApplicationEntityId`,
+`saml11.providerId`, `saml11.perApplicationProviderId` and `saml.issuer` are
+retired, and `common/issuer_names.ts`'s `issuer()` is every name:
+`saml2_sso.idpEntityId()` and `saml11_sso.providerId()` ask it, at the
+ambient request's base. It is never empty, so `STS-SAML-0004` and
+`STS-SAML-0027` (product with no name) are retired.
+
+**The consequence rcbj chose ("merge the documents"):** SAML 2.0 and SAML 1.1
+now name ONE entity, and saml-metadata-2.0-os gives one entity one
+`<EntityDescriptor>`. Two documents under one entityID are a duplicate a
+relying party reading both must resolve — the Shibboleth SP's chaining
+provider keeps one and the other profile stops working. So
+`saml2_sso.metadataFor()` builds the one document from both profiles —
+`saml11_sso.metadataParts()` gives SAML 1.1's protocols, its
+ArtifactResolutionService (index 1, the SAML 1.0 SOAP binding; SAML 2.0's is
+index 0, the EndpointIndex every 2.0 artifact carries), its three
+SingleSignOnService profile URIs, its AttributeService and NameID formats —
+and `/saml11/metadata[/{rp}]` serves the same document (`STS-SAML-0034`,
+the 1.1 document's signing failure, retired into `STS-SAML-0014`). The
+Shibboleth peer is handed one file, `idp.xml`.
+
+**The SourceID is the realm's issuer for both artifact types**, so every
+resolver of a realm answers for every artifact of that realm; `STS-SAML-0098`
+now refuses another ENTITY's artifact (another realm's, or one minted at
+another base), still answered empty and left unspent.
+
+**Pin `global.publicBaseUrl`.** The name is read at the request's base, as
+the OAuth issuer is; unpinned, a back channel arriving under another host
+name computes another name and another SourceID.
+
+**AND WS-FEDERATION'S VIEW ADDS ITS ROLE (#524).** The same entity is
+WS-Federation's security token service, so `metadataFor(base, sp, true)` also
+asks `../ws-federation/wsfed.ts`'s `roleDescriptor(base)` (lazily) and puts
+that `fed:SecurityTokenServiceType` RoleDescriptor first among the roles; the
+WS-Federation paths serve that view. The SAML paths do NOT carry it: its
+`xsi:type` resolves only with the WS-Federation schema, and SimpleSAMLphp's
+metadata validator refused the whole document over it (the Shibboleth SP
+accepted it). rcbj chose "two views, one entity" — one entityID, one signer,
+the WS-Federation view a superset — over one document everywhere.
+
+**Every view carries the Algorithm Support profile's `alg:SigningMethod` and
+`alg:DigestMethod` (#1368).** They sit in the `md:Extensions` of the one
+`md:EntityDescriptor` and describe the entity. `ws-federation/CLAUDE.md` records
+rcbj's decision for the WS-Federation view.
 
 ---
 
@@ -522,9 +636,9 @@ is an application's setting read as though it were the service's.
 **WHICH STRING IDENTIFIES THE APPLICATION IS THE THING TO GET RIGHT, AND IT IS
 NOT THE OBVIOUS ONE.** It is the SERVICE PROVIDER's entityID (`spEntityId`, or
 `rpId` in 1.1) and never `idpEntityId` / `providerId`. Those two are THIS
-service's own name for that application and differ per application when
-`saml2.perApplicationEntityId` is on — so passing one would have compiled, found
-no entry, and silently used the service-wide default every time. Both
+service's own name (the realm's issuer, #523), no application's — so passing
+one would compile, find no entry, and silently use the service-wide default
+every time. Both
 `buildResponse()` implementations take the service provider as its own member
 (`opts.sp` / `opts.rp`) for exactly this reason, rather than reusing the issuer
 that was already there.
@@ -602,14 +716,14 @@ skew. That is deliberate and conservative: the envelope describes what was asked
 for, the assertion states what it is actually valid for, and a relying party
 trusting the envelope discards early rather than late.
 
-**ONE CALLER HAD TO BE EDITED ANYWAY**, and it is the exception that proves the
-choke point. `saml2_sso.ts` passes its own
-`SubjectConfirmationData/NotOnOrAfter`, because the Web Browser SSO profile
-requires the bearer confirmation to carry one; it now adds the same skew. Two
-expiries inside one assertion that disagree is a defect a service provider
-reports as *assertion expired* while this console shows a window that has not
-closed. **A future caller that passes its own expiry has to do the same** — that
-is the one thing about this feature that is not automatic.
+**THE CONFIRMATION'S EXPIRY IS THE BUILDER'S.** When `subjectConfirmation` is
+present and `notOnOrAfter` is omitted, `SubjectConfirmationData/NotOnOrAfter`
+is the Conditions instant (`exp`), the same string. Two `iso()` calls are two
+`Date.now()` reads, and they disagreed by a millisecond
+(`tests/wsfed_saml2_token.js`, 2026-11-01). The Web Browser SSO profile and
+WS-Federation both omit it. A caller that passes its own expiry has to be
+that same instant — that is the one thing about this feature that is not
+automatic.
 
 **AND IT IS NOT `oauth2.clockSkewS`.** That one is a TOLERANCE applied wherever
 this service READS a document back, including an inbound partner assertion at
@@ -652,6 +766,8 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 `authn_context.ts` — none of which requires them back, so they cannot join a
 cycle and their position is not a position at all.
 
+### 4a. `saml2_sso.ts` comes after `authn/authn.ts`, and has no screen of its own
+
 **`saml2_sso.ts` is position 10a in `common/protocol_stack.ts` (the require
 order `server.js` loads) and has one real constraint**: it
 must come after `../authn/authn.ts`, and it is a STRONGER dependency than
@@ -666,6 +782,8 @@ read together in the route order and on `/admin/sts-metadata`.
 direction — a plain require, not another inverted slot — and rule 3e's test is
 why: `common/protocol_stack.ts` requires this module at 10a and those at 18 or
 later, so a require from there closes no cycle and moves no route.
+
+### 4b. `saml11_sso.ts` comes after `authn/authn.ts` and after `saml2_sso.ts`
 
 **`saml11_sso.ts` is position 10b and has TWO constraints**, the second of which
 is the only require between the two profiles. It must come after
@@ -689,8 +807,8 @@ somebody's relying party will post a form at it anyway.
 
 ## `/saml2/autopost.js` IS THE FIFTH SCRIPTED PAGE
 
-`../common/app.js` sets `script-src 'none'` on every response. The HTTP POST
-binding (bindings section 3.5) **is** a self-submitting form — that is what keeps
+`../common/app.js` sets `script-src 'none'` as the service-wide default. The
+HTTP POST binding (bindings section 3.5) **is** a self-submitting form — that is what keeps
 a response of several kilobytes of signed XML out of a URL, a log and a Referer
 header — so there is no version of this binding without a script. The exception
 is the same shape as the other four and no wider: `script-src 'self'` naming ONE
@@ -723,7 +841,8 @@ Hand-verified end to end on 2026-08-24 against a throwaway instance: 90 checks
 over all three bindings, the SOAP back channel, the one-shot artifact rule, the
 per-application metadata, the registry entry, the custom-attribute path, the
 NameID formats, `ForceAuthn`, `IsPassive`/`NoPassive`, the PAOS refusal, Single
-Logout and the mock service provider's own verification. The parent project's
+Logout and the mock service provider's own verification (that mock was
+deleted by #592). The parent project's
 `tests/saml_sso.js` and `tests/saml_logout.js` now take `SAML_IDP=sts` and drive
 this profile with the same assertions they drive Keycloak with, which is the
 arrangement `tests/wsfed_sso.js` already had — and the one that catches a mock
@@ -797,7 +916,7 @@ record of the decisions.
   authenticated session (`authn.sessionsOf()`) or with Success and NO assertion,
   and an AttributeQuery omits the AuthenticationStatement
   (`buildSaml11Assertion`'s new `authenticationStatement: false`). The vendored
-  `tests/vendored/sts_saml11.js` asserted the old AuthenticationQuery answer
+  `tests/protocol/sts_saml11.js` asserted the old AuthenticationQuery answer
   about a person who never signed in; the parent has since updated it to ask
   about a user who really signed in.
 * **NO SIGNER PASSED AN ALGORITHM.** `saml.signatureAlgorithm` and
@@ -819,7 +938,6 @@ record of the decisions.
 | What | Predicate | Development |
 |---|---|---|
 | ACS URL / `shire` must be a registered `samlAssertionConsumerService`, exact match, no mock fallback — and an address a development sighting wrote is still marked OBSERVED and does not count until confirmed (`applications.returnAddressesOf()`, `STS-REG-0049`) | `acceptsUnregisteredAddresses()` | unchanged, and the sighting is marked |
-| An empty `saml2.entityId` / `saml11.providerId` is not replaced with `urn:sts:idp[:saml11]`; SSO and metadata refuse, naming the setting | `inventsClaimValues()` | unchanged |
 | Given name, surname, mail, display name come off the directory entry or are omitted | `inventsClaimValues()` (via `userFor()` and `person_attributes.ts`) | unchanged |
 | SAML 1.1 AttributeQuery / AuthenticationQuery refused | `opensTestControls()` | answered |
 | SAML 2.0: an assertion configured to be encrypted that cannot be is a Responder status, not plaintext | `sendsWeakerThanAsked()` — it used `opensTestControls()` for an hour, for want of a predicate that named the question | plaintext + WARN |
@@ -827,11 +945,22 @@ record of the decisions.
 **A refusal for an unregistered address is a PAGE and not a SAML Response**: the
 address a Response would go to is the address in question.
 
+**The console's SAML 1.1 registration takes the ACS at the same time as the
+relying-party identifier** (`/admin/saml11`, #291): `shire` is required and is
+stored as `samlAssertionConsumerService` on that entry. The application
+registry validates it as an absolute HTTP(S) URL at every write door; an OAuth
+native-app callback scheme is not a SAML endpoint. This makes a newly
+registered relying party immediately usable in product mode, where an
+unregistered `shire` has no mock fallback.
+
 ### The literals that became settings (default = the old literal)
 
-`saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30),
+`saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30, deleted with the
+mock service provider by #592),
 `saml2.redirectWarnLength` (8000), `saml2.spMetadataMaxBytes` (524288),
-`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500),
+`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500) — and, new
+rather than converted, `saml2.maxArtifacts` / `saml11.maxArtifacts` (10000) and
+`saml11.assertionCacheTtlS` (3600) (#614, above),
 `saml.organizationName` / `saml.organizationDisplayName` / `saml.organizationUrl`
 — an emptied name OMITS `<md:Organization>` in either mode, because half an
 Organization is schema-invalid and a setting silently ignored in one mode would
@@ -871,6 +1000,40 @@ keeps the session and moves `auth_time` (`authn/CLAUDE.md`), which is what the f
 over HTTP; four mutants, all caught — the cancellation one only after the test asserted
 HOW the cancellation was reported.
 
+## THE EAP PHISHING-RESISTANT CLASSES (#736, 2026-10-25)
+
+A `RequestedAuthnContext` that names the OpenID Connect EAP ACR Values 1.0
+class URIs is the same demand `acr_values=phr` / `phrh` is. The URIs are
+registered by that profile's section 5 (IANA Level of Assurance Profiles),
+and they live on `common/phishing_resistance.ts` — `URI_PHR`, `URI_PHRH` —
+rather than in a second table here:
+
+* `http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` (`phr`)
+* `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware` (`phrh`)
+
+**Comparison is read as exact, which is the specification's default:** any
+named class can satisfy. `signInFor()` therefore forces a key only when every
+`AuthnContextClassRef` is one of those two URIs, and sets `phishingClass`
+`phrh` only when every one of them is the hardware URI. A list that also
+names `PasswordProtectedTransport`, or any class in `AC_MFA_DEMANDS`, does
+not force the key: that other class can answer the request, and the
+multi-factor demand keeps the behaviour it already had. When the request
+names neither URI, the assertion's `AuthnContextClassRef` is the value
+`authn_context.ts` already produced. When it names one and the session
+earned it, the assertion carries that URI — `phrh` when both were asked and
+both were earned.
+
+An unmet EAP-only list takes the one trip above and then `NoAuthnContext`
+(`STS-SAML-0116`), the same shape as an unmet multi-factor class
+(`STS-SAML-0056`). `IsPassive` still answers `NoPassive` (`STS-SAML-0008`).
+
+**SAML 1.1 has no `RequestedAuthnContext`.** The non-spec
+`authnContextClassRef` parameter is the same device as `format` and
+`profile`: absent, `AuthenticationMethod` is unchanged; present and naming
+only an EAP URI, one trip and then a page (`STS-SAML-0117`), because this
+profile has nowhere to put a status. `tests/eap_acr_values.js` (F) holds the
+leaf, and `tests/saml2_force_authn.js` (7–10) holds both profiles over HTTP.
+
 ---
 
 ## A SERVICE PROVIDER'S SIGNATURE, AND ITS METADATA (2026-09-17, #37)
@@ -909,11 +1072,10 @@ forged LogoutRequest can end somebody's session.
 
 * **The anchor is `samlSigningCertificate` and never the request's `ds:KeyInfo`.**
   `common/crypto.js`'s verifier falls back to the document's own certificate when
-  it is given none, so every call here passes `certPem`. The one implicit anchor
-  is this service's own certificate for its own mock service provider
-  (`<base>/saml2/sp`), which signs its requests with this service's key — only
-  this process can make such a signature, and the key changes on every
-  development start, so it is not stored.
+  it is given none, so every call here passes `certPem`. There is NO implicit
+  anchor (#592): the one there was, this service's own certificate for its own
+  mock service provider (`<base>/saml2/sp`), went with that mock, and
+  `request_signature.ts` no longer takes an `implicitCertificates` list.
 * **The Redirect binding's octets are the RAW query string**, read off
   `req.originalUrl` — section 3.4.4.1 signs the parameters as they arrived,
   URL-encoded, and a service provider that percent-encodes in lower case would
@@ -968,7 +1130,21 @@ certificate, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`,
 `samlSpWantAssertionsSigned`, `samlSpMetadataValidUntil`,
 `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt` and
 `samlSpMetadataSignature`. A later consumption retires the endpoint locations
-the previous one wrote and leaves the ones an operator added by hand.
+the previous one wrote and leaves the ones an operator added by hand. Without
+an explicit family, it reads the SAML 1.1 SPSSODescriptor only for an
+application declared for `saml11` and not `saml2`; all other entries keep the
+SAML 2.0 selection. An administrator's upload from the application's SAML 1.1
+or SAML 2.0 sub-sub-tab supplies that declared family explicitly, so a
+dual-protocol application consumes the matching descriptor. The shared ACS
+representation is what lets `saml11_sso.ts` infer Browser/POST versus
+Browser/Artifact from the registered `shire`, without a `profile` parameter.
+**Every door that writes a document onto an entry consumes it** — the
+create, the upload, and since run 22 (2026-11-13) `set` / `add` of
+`samlSpMetadata` and the field grid's save (`admin_actions.ts`'s
+`consumeWrittenMetadata()`, `STS-ADMIN-0935` when refused). A document stored
+without being consumed registers no endpoint, so a shire registered on
+artifact-01 was answered on Browser/POST; `tests/saml11_metadata_written.js`
+holds it.
 
 **It is a trust act because only an operator can cause it**: a refresh dials the
 URL an administrator put on the entry (never one from a request), when an
@@ -985,9 +1161,10 @@ recorded `signed-not-verified`: verifying it against a key inside the same
 document would be the decoration the request check refuses.
 
 **Refused, writing nothing**: not an EntityDescriptor (or an
-EntitiesDescriptor holding exactly one for this entity) with a SAML 2.0
-SPSSODescriptor; an entityID that is not this application's (`STS-SAML-0066`); a
-passed validUntil (`0068`); an unusable encryption certificate (`0053`, as
+EntitiesDescriptor holding exactly one for this entity) with the SPSSODescriptor
+for the application's declared profile; an entityID that is not this
+application's (`STS-SAML-0066`); a passed validUntil (`0068`); an unusable
+encryption certificate (`0053`, as
 before); a metadata signature that does not verify (`0065`); an upload over
 `saml2.spMetadataMaxBytes` (`0067`). **A document with no encryption certificate
 is no longer refused** — it was, while the encryption certificate was the only
@@ -1091,7 +1268,11 @@ consumption; with none, halfway to validUntil), or **fresh**.
   scheduler*), every `saml2.spMetadataRefreshIntervalS` on the leader, switched
   by `saml2.spMetadataRefresh`. It was a timer `server.js`'s `announce()`
   started in every process until #49; `server.js` still calls
-  `startRefresher()`, which now only registers the job. The `cluster_claims`
+  `startRefresher()`, which now only registers the job — and since #704 the
+  module's wire step registers it first, in every process, so the scheduler
+  may run its body on a request worker. The refresh STATE
+  `refreshStatus()` answers stays per process, as it always was for a
+  worker answering the page. The `cluster_claims`
   claim keyed by realm, entity and the consumption it replaces stays, as the
   guard against a refresh asked for by hand at the same moment. **A failed refresh changes nothing**, so the old
   document works until it expires; the failure is a STATE
@@ -1135,6 +1316,12 @@ leaves it resolvable by the right one):
   or for SAML 1.1 (whose Request names nobody) any responder path segment —
   in every mode (`STS-SAML-0078`);
 * its metadata must not have expired (`STS-SAML-0074`, SAML 2.0);
+* the artifact's SourceID must be the SHA-1 of THIS resolver's entityID
+  (SAML 2.0) or providerID (SAML 1.1) (#160) — the realm's one issuer since
+  #523, so an artifact another entity minted is answered with the empty
+  response and left unspent (`STS-SAML-0098`). Checked after the cell relay, so the minting cell
+  decides; a value that is not a 44-byte type 0x0004 (42-byte 0x0001)
+  artifact names no SourceID and is the unknown artifact it looks like;
 * it must be AUTHENTICATED where signed requests are required
   (`saml2.requireSignedAuthnRequests`; product by default) — an enveloped
   signature on the message verifying against its registered certificates, or
@@ -1143,6 +1330,29 @@ leaves it resolvable by the right one):
   for TLS client authentication, self-signed as a rule, so no chain is asked
   for; a revoked chain counts as none) — else `STS-SAML-0077`. A signature
   that is present and wrong is refused in every mode.
+
+### AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER (#160)
+
+saml-core-2.0-os section 3.5.3 and saml-bindings-1.1 section 4.1.1.6 leave
+the resolver one answer for every artifact it does not hand over: Success,
+nothing embedded. The SAML 2.0 text names a replay and a requester that
+"cannot authenticate itself as the original intended recipient"; the 1.1 text
+a replay ("the same message as … an unknown artifact") and an artifact issued
+to another destination site. So every refusal above, an unknown, expired or
+replayed artifact, another entity's SourceID, a replay seen through the
+cluster claim, a claim store that cannot be asked and an answer that failed
+after the spend all answer `empty()` in `resolveArtifact()` (2.0) and
+`respond()` (1.1): Success, no message or assertion, **no StatusMessage**,
+identical whatever the reason, so the answer says nothing about whether an
+artifact exists or whom it was for. The reason is the error code, the log
+line and the audit row. Until #160 each was `Requester` (or `Responder`) with
+a sentence naming the reason, which neither specification allows. `Requester`
+is kept for a request that is not an artifact resolution at all (not XML, no
+ArtifactResolve or Request, no Artifact). **Owed to the parent project**: its
+`tests/protocol/sts_saml11.js` resolves a per-relying-party artifact at the
+unscoped `/saml11/responder` and expects a replay to be `samlp:Requester`
+naming the one-shot rule; both now fail here until that copy is changed and
+synced.
 
 ### HTTP-POST-SimpleSign
 
@@ -1243,16 +1453,57 @@ one declared for the family in `appAllowedProtocol` — not any application whos
 slug matches: an OAuth client's name is not somebody this identity provider
 has agreed to publish itself to, and a SAML 2.0 service provider is not a SAML
 1.1 relying party.
+**And, since #496, one somebody REGISTERED** (`appRegisteredBy`, #494's
+word): a development sighting writes the kind onto an entry, so the kind
+alone let an entry development had merely seen through every per-SP path in
+product. Both helpers add it in product only.
+
+## A SERVICE PROVIDER NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an unregistered application gets nothing but
+a 404 or its protocol's own "unknown application" error, and nothing is
+learnt from it. #112 closed the per-provider paths; the GENERIC doors still
+answered any Issuer, refused only later by the signature or the return
+address rule — after the signature check had written its audit row, and, on
+a signature refusal, after `recordServiceProvider()` had filed a sighting on
+whatever entry the Issuer named. Behind `mode.issuesToUnregisteredApplications()`
+(the `unregistered-saml-providers` row on `/admin/mode`):
+
+* **`/saml2/sso`**: an AuthnRequest whose Issuer (or path segment) is no
+  registered service provider is a **403 page, `STS-SAML-0103`**, on its
+  first arrival, before the signature check. A page and not a SAML
+  Response: no Response may go to an AssertionConsumerService nobody
+  registered, which is the signature refusal's reason too. **The one thing
+  still started is an MDQ lookup for an entityID with NO entry**, through
+  `queueMdqLookup()` and its trust-anchor rule above — the operator's
+  responder is consulted and nothing is taken from the request, and a
+  verified answer is a registration (`createApplication()` stamps it). So
+  `sts_saml_unregistered`'s request-started lookup keeps its shape.
+* **`/saml2/slo`**: a LogoutRequest from an unregistered Issuer ends
+  nothing, **403 page, `STS-SAML-0104`**, before the signature check and the
+  session lookup. With signed requests not required, an unsigned one from an
+  Issuer nobody registered ended the browser's session.
+* **`/saml11/sso`**: a browser flow for a relying party that is not
+  registered (named by `providerId`, the segment, or inferred) is a **403
+  page, `STS-SAML-0105`**, before its addresses are read.
+* **`sp_metadata.ts`**: "known" is "registered" for `mdqImport()` and
+  `queueMdqLookup()`, so a lookup a request starts for an entityID only a
+  sighting filed is gated as for an unknown one (`STS-SAML-0080` with no
+  anchor). Such an entry stays unregistered after a verified refresh — the
+  refresh updates it and does not create it — and is registered by an
+  operator.
+
+`tests/unregistered_applications.js` (S1–S5) holds it in both modes.
 
 **The parent project's paired SAML jobs** (decision 2 above) run against a
-development service, where nothing changed. `tests/vendored/sts_saml11.js` (a
+development service, where nothing changed. `tests/protocol/sts_saml11.js` (a
 parent copy) asserts a document is minted for an identifier nobody registered;
 in product that is now a 404, which is owed to the parent.
 
 Tests: `tests/saml_metadata_lifecycle.js` section F (both modes, every
 refusal, the positive product case against a realm anchor — its transport
 stubbed, because product refuses the loopback responder before any
-connection) and `tests/vendored/sts_saml_unregistered.js` over HTTP, in a
+connection) and `tests/protocol/sts_saml_unregistered.js` over HTTP, in a
 product realm and a development realm of one service, with an MDQ responder
 the job serves itself.
 
@@ -1288,8 +1539,10 @@ saml-profiles-2.0-os 4.1.5): `providerId` (or the path segment), `shire`,
 `target` and `binding`, the Shibboleth identity provider's parameter names.
 Held to what a solicited request is: a registered service provider in
 product, an ACS its consumed metadata or entry registered, the endpoint's own
-binding (never HTTP-Redirect), the issuance policy; `saml2.unsolicitedSso`
-turns it off for a realm. The Response and assertion carry no InResponseTo.
+binding (never HTTP-Redirect), the issuance policy. The Response and
+assertion carry no InResponseTo. ~~`saml2.unsolicitedSso` turns it off for a
+realm~~ — **off until a service provider opts in since #711**, the next
+section.
 
 **THE ATTRIBUTE AUTHORITY** (`/saml2/aa[/{sp}]`, an
 AttributeAuthorityDescriptor in the per-SP metadata): the Assertion Query and
@@ -1311,13 +1564,90 @@ metadata carries it now (the next section), so that pin would pass; with the
 artifact profile out of SimpleSAMLphp's reach there is still nothing of its
 to exercise it with.
 
+## WHO MAY START A SIGN-IN (#426, #711, 2026-10-19)
+
+**Two switches per profile, each a realm default an application's entry
+overrides, both read through the local `settingFor()`** (the section on the
+fourteen per-application settings is why that is the only way to read them):
+
+| Setting | On the entry | Default | Refused with |
+|---|---|---|---|
+| `saml2.idpInitiatedSso` | `saml2IdpInitiatedSso` | **off** | a 403 page, `STS-SAML-0091` |
+| `saml2.spInitiatedSso` | `saml2SpInitiatedSso` | on | `Responder` / `RequestDenied`, `STS-SAML-0111` |
+| `saml11.idpInitiatedSso` | `saml11IdpInitiatedSso` | **off** | a 403 page, `STS-SAML-0113` |
+| `saml11.spInitiatedSso` | `saml11SpInitiatedSso` | on | a 403 page, `STS-SAML-0114` |
+
+**IDENTITY-PROVIDER-INITIATED IS OFF UNTIL AN APPLICATION OPTS IN** — rcbj's
+decision 1 on #426, which reversed `saml2.unsolicitedSso`'s ON and renamed it
+with no alias. An unsolicited Response carries no InResponseTo, so the
+service provider cannot tell one it was sent from one pushed into a browser,
+and that is a choice made per relying party. The unsolicited path refuses
+on a PAGE, not a Response: the service provider never asked and has not
+said it accepts one, so it is exactly the one not to post to. The check sits
+after the registration check, so an unregistered service provider in product
+is still the 404 every per-SP path answers.
+
+**AN AuthnRequest FROM A SERVICE PROVIDER WHOSE OWN START IS OFF** is
+answered `RequestDenied`, the policy refusal's shape, after the request is
+understood and its sighting recorded and BEFORE the sign-in screen — a person
+is not made to sign in for a refusal.
+
+**SAML 1.1 HAS NO REQUEST MESSAGE, SO `shire` IS THE ONLY TELL.** A request
+carrying one is the Shibboleth 1.3 AuthnRequest profile, the relying party's
+start; a link with only a TARGET (and `providerId` or the path segment) was
+always the inter-site transfer service's own start. **That request is an
+unsigned URL**: anybody can write one with a `shire`, or leave it off, so the
+service-provider switch closes a door and proves nothing about origin. Both
+refusals come before the relying party's sighting is recorded and before the
+screen.
+
+**AN IDENTITY-PROVIDER-INITIATED ISSUANCE RUNS WHAT A SOLICITED ONE RUNS**
+(#426's decision 4), in the same order: `sessionOf()` or
+`beginAuthentication({ application, protocol })`, `gate.check()` with the
+session, `notePresented()`, and `issueSignInResponse()` /
+`issueSignIn()` — which write `session.saml2ServiceProviders` /
+`saml11RelyingParties`, what `/logout` and back-channel logout read.
+
+**A STEP-UP ON RISK IS A SIGN-IN, NOT A REFUSAL, ON BOTH IDP-INITIATED
+PATHS** — the authorization endpoint's branch (`oauth-oidc/oauth2.ts`),
+copied: a Deny whose risk obligation is `step-up`, not observe-only, on an
+authenticated session, marks `STS-RISK-0017` and sends the person to
+`beginAuthentication()` with `forceMfa` / `forceKey` for the factor named,
+back to the same link. **The solicited SAML 2.0 path does NOT step up** and
+was left alone: it refuses on risk with `STS-SAML-0010` as before, and #711
+was about the identity provider's start.
+
+**ONE TRIP PER LINK.** The mechanism re-prompt (#457) and the step-up share
+it. SAML 1.1 marks its held flow (`mechanismAt`, `steppedUpAt`) — the
+server's copy, as SAML 2.0's solicited path marks `forcedAt`. SAML 2.0's
+unsolicited link has no request to hold, so the trip is marked IN THE URL,
+`reprompted=1` appended to the return address: a forged mark only gets the
+person the refusal a trip sooner, and a stripped one only sends them round
+again as following the link would — the guard stops a loop, not an
+attacker, and the policy is asked afresh either way. Back from the trip and
+still denied: `RequestDenied` with `STS-SAML-0112` (risk) or `0100` / `0107`
+(mechanism); SAML 1.1's page with `STS-SAML-0115` or `0102` / `0109`.
+
+`tests/saml_initiation.js` holds all of it over HTTP, risk included (a
+session's risk put in place directly, with `risk.enforceInDevelopment`),
+and runs the risk step-up a second time in product mode (#715).
+**`tests/protocol/sts_idp_initiated_saml.js` is the product-mode
+coverage of the rest** (#715): the two switches of both profiles, the
+realm setting, InResponseTo absent, the relying party in the logout
+inventory and the mechanism re-prompt, over the wire in `single-node`
+and `cluster`, with real passwords and registered addresses.
+The local jobs that send an unsolicited Response — the three SAML peers and
+`sts_xml_schema_validation.js` — and `sts_global_logout.js`'s TARGET-only
+SAML 1.1 flow set the entry's switch on the application they create.
+
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
-`tests/vendored/sts_xml_schema_validation.js` makes both profiles emit
+`tests/protocol/sts_xml_schema_validation.js` makes both profiles emit
 everything they emit — the metadata, the Response on each binding with and
 without an EncryptedAssertion, the ArtifactResponse, the error Responses,
-logout in both directions (with an EncryptedID), the mock service provider's
-AuthnRequests, the SAML 1.1 Browser/POST Response and every answer of the
+logout in both directions (with an EncryptedID), the federation module's
+outbound AuthnRequests (the mock service provider's, until #592), the SAML 1.1
+Browser/POST Response and every answer of the
 responder — in a development and a product realm, and validates each with
 `xmllint` against the OASIS SAML 2.0 / 1.1 and W3C XML Signature and
 Encryption schemas (`tests/CLAUDE.md`, *The published XML Schemas*). The
@@ -1345,7 +1675,13 @@ needs before changing it:
   open XML Encryption. TLS server authentication is a signing use of a key and
   is where every metadata-reading TLS engine looks. Last, so a consumer that
   takes the first signing certificate for XML signatures still takes the XML
-  key (`tests/vendored/sts_xml_schema_validation.js` is one such consumer).
+  key (`tests/protocol/sts_xml_schema_validation.js` is one such consumer).
+  A reader that keeps one certificate per `X509Data` keeps the LAST instead.
+  pysaml2 7.5.5 does (cardinality max 1, and a later element overwrites),
+  which is why `helpers.x509DataXml()` repeats the signer's certificate
+  after the Root: that reader still holds the leaf, and this TLS descriptor
+  stays a separate key the same reader may try and reject. `common/CLAUDE.md`
+  (3w) argues the chain.
 * **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
   AttributeAuthorityDescriptor (the attribute query), because a service
   provider looks up the keys of the role whose endpoint it is calling.
@@ -1415,10 +1751,186 @@ asked is skipped (`STS-CELL-0121`) and the query is answered here, which for
 a session only that peer holds is the UnknownPrincipal it would always have
 been.
 
-**What is not placed, and why that is acceptable**: the three MOCK relying
-parties (`/saml2/sp`, `/saml11/rp` and WS-Federation's `/wsfed/rp`) keep the
-context of a flow they started in the cell where it started. A flow whose
-person is homed in another cell restarts at home (D9) and comes back there,
-where the mock's context is not — so the mock reports an unsolicited response.
-They are test aids; a real relying party keeps its own state. Held in process
-by `tests/cell_saml_federation.js`.
+## The mock service provider and relying party — deleted (#592, 2026-10-12)
+
+`/saml2/sp` and `/saml11/rp` were development-only demonstrations (#585)
+whose pages #581 had made a static surface. #592 deleted both — the routes,
+the start views, the verifiers that existed only to show a verdict (both
+`verifyResponse()`s), the in-process artifact resolution, the RelayState store
+(`saml2_sso.spContexts`) and its lifetime, and **the mock SP's implicit trust
+anchor** (`implicitCertificatesFor()`, and `request_signature.ts`'s
+`implicitCertificates`) — because the runtime ships no demonstration code
+(#591). The console's SAML pages and the description pages name neither. A
+browser flow naming no assertion consumer, with none registered, is refused
+in development too now (`return_address.ts`; SAML 1.1 on its own page,
+`STS-SAML-0028`). `STS-SAML-0021`, `0022`, `0042` and `0043` are retired.
+The service provider and relying party a test needs are the test peer's
+(`tests/peer/peer_saml.js`, #586). `common/CLAUDE.md` 3cm has the record.
+
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design. With `authn.multipleAccounts` off nothing here changes; on:
+
+* **THE AUTHNREQUEST'S `<saml:Subject>` NAMEID IS THE HINT**
+  (`accountHintOf()`), handed to `authn.hintAccount()` before `sessionOf()`
+  at step 4 — the `login_hint` of this protocol, read as a login name
+  because `nameIdValueFor()` answers the username or the mail address. A
+  NameID naming nobody live here answers no session, never another
+  account, and the sign-in screen is drawn with it filled in. **A
+  `transient` NameID is no hint** (`subjectHintFormat`): it names a session
+  of some other sign-in, nobody's account.
+* **`ForceAuthn` is `accountChoice: 'never'`**: a fresh sign-in, never the
+  picker; signing in as an account already in the set re-authenticates that
+  session.
+* **`IsPassive` with a choice to make is `NoPassive`**: the picker is user
+  interface. **The status message is generic and says nothing about the
+  browser's accounts** — no count, not even that there are several (rcbj's
+  decision on #561, batch 10): the Response reaches the service provider and
+  whatever page sent the passive request, so a count would tell any site how
+  many people use the browser. One sentence for every account-choice case;
+  `authn.noteAccountAmbiguous()` writes the `account.ambiguous` row, which
+  is where the operator reads how many. With the setting off the
+  no-session sentence is unchanged. An `IsPassive` request with a `<Subject>` naming a live account is
+  answered as that account.
+* **Front-channel Single Logout ends the session of the set** its
+  SessionIndex names (checked against this service provider and the NameID
+  by `sessionNamedBy()`), else the one that was issued the NameID there
+  (`sloAccountOf()`); otherwise the browser's default, as always. The back
+  channel is unchanged.
+* **SAML 1.1 has neither a hint nor `IsPassive`** (decision 1 above), so a
+  browser with several accounts reaches the picker through
+  `beginAuthentication()` with no change here; the identity-provider-
+  initiated sign-ins and the mechanism re-prompts likewise.
+
+`tests/multi_account_protocols.js` 4–5 and `tests/multi_account_logout.js` 7.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /saml2` and `GET /saml11` are this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `saml/web_saml_description.ts` from the `describeSaml2` and `describeSaml11` catalogs, with `/saml2/description.js` and `/saml11/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. Neither page had a JSON form before; it is the view, which names no mock service provider or relying party since #592. The bare `GET /saml2/sso`, `/saml2/ars`, `/saml11/sso` and `/saml11/responder` descriptions are a specification's endpoints answering a parameterless GET and stay server-drawn. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## Under paranoid PKI mode an administrator's act names the anchor (rcbj, #1360)
+
+**`consume()` tells the two kinds of document apart by `this.quiet`**, which is
+true only for the refresher and a lookup a request started. A document an
+administrator gives or asks for, with no anchor yet, is accepted unsigned and
+its first signing certificate is written to
+`samlSpMetadataSigningCertificate`. A quiet fetch never names one: it verifies
+against what is held, a certificate set by hand included, and is otherwise
+refused (`STS-SAML-0118`), or whoever answers for the URL would choose the key.
+A verified quiet fetch may rotate `samlSigningCertificate`, so the anchor is the
+separate field and rotation does not move it; over a hand-set certificate, the
+one it answered to is pinned there. An administrator's unsigned document is taken
+while it keeps a held anchor or names no signing key, because real providers
+publish unsigned metadata and nothing new is trusted (`keptAnchor()`); one naming
+only another key is refused, and replacing an anchor is setting that field. With
+realm anchors configured every document must verify, as it always did.
+`saml2.mdqImportWithoutAnchors` still gates an operator's MDQ import, and the
+import it lets through is an administrator's act like any other. Nothing else
+can write these attributes: no OAuth registration door names them, and a sighting
+goes to the observed attribute, never to the registered one.
+`tests/saml_metadata_lifecycle.js` F1c holds it, against nine mutants.
+
+## THE MESSAGES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/saml/saml2.tsp` and `saml11.tsp` are the source of both
+profiles' vocabularies, of what is read off a request, and of the order
+every message and metadata document is written in.** SAML is XML, so
+nothing there is a JSON Schema: the model states the protocol as FACTS,
+`models/lib/saml_lib.mjs` writes them into `models/generated/saml.json`,
+and `saml_model.ts` reads that file.
+
+* **A vocabulary (`@vocabulary`)** is a closed list of values, a property
+  per term: the namespaces, the bindings (what each carries, which a
+  request may ARRIVE on — never HTTP-Artifact, #191 — and which a Response
+  is DELIVERED on), SAML 2.0's top- and second-level status codes
+  (saml-core-2.0-os section 3.2.2.2) and SAML 1.1's QNames, the NameID
+  formats (`advertised` is the metadata's list, in order), the attribute
+  name formats, the confirmation methods, the authentication context
+  classes (`mfaDemand` is what `AC_MFA_DEMANDS` was) and SAML 1.1's methods
+  (`equivalent` is what `authn_context.ts`'s two translation tables were),
+  SAML 1.1's profiles, protocols and request types (`answered: false` is
+  the AuthorizationDecisionQuery refused by name). **Every constant in this
+  directory is `SamlModel.term(vocabulary, name)`**, so a URI is written
+  once. A term no code writes is `readOnly` and stated for a reader (every
+  second-level code, holder-of-key, PAOS).
+* **A message (`@message`)** is one element: its attributes (`@attribute`)
+  and children (`@element`) **in the schema's sequence**. Reading:
+  `SamlModel.read(id, element)` answers the attributes the model marks
+  `read` — an xs:boolean true for `"true"` or `"1"`, anything else its text, ''
+  when absent — and `readAuthnRequest()`, the LogoutRequest's envelope and
+  the NameIDPolicy are read through it, and so are a service provider's
+  `md:SPSSODescriptor` flags and endpoints where `sp_metadata.ts` consumes
+  them (`md.SPSSODescriptor`, `md.Endpoint`); `accepts()` is the Version
+  `envelopeProblem()` holds a request to. Writing: every builder —
+  `buildSamlAssertion()`, `buildSaml11Assertion()`, both `buildResponse()`s,
+  the ArtifactResponse, both logout messages, the Status, and the metadata's
+  `md:EntityDescriptor`, `md:IDPSSODescriptor` and
+  `md:AttributeAuthorityDescriptor` — passes its start tag's values to
+  `SamlModel.attributes()` (the model's order, a `fixed` value always,
+  anything empty omitted, escaped as `helpers.xmlEscape()` escapes) and
+  its children's text to `SamlModel.children()` (joined in the model's
+  order). **A part the model does not name, or one it says the builder
+  never writes, throws**: ds:Signature is `signer: true, written: false`,
+  because `common/crypto.js` inserts it at that place.
+* **Holding**: `SamlModel.hold(id, xml, where)` parses what was built —
+  after signing — and checks the root, its attributes and fixed values,
+  its children and their order and repetition, recursively where a child is
+  a declared message; a gap is logged under **STS-SAML-0121** and the
+  document is sent unchanged. Every Response, ArtifactResponse,
+  LogoutRequest, LogoutResponse and metadata document is held.
+* **SAML 1.1's browser profiles have no request message (rule 4b)**, so
+  what a relying party sends is a parameter set, `saml11.browser` (`@params`).
+  The binding registered for the `shire` picks the profile; there is no
+  `profile` or `format` parameter.
+
+**Byte for byte**: `tests/saml_model_wire.js` recorded both identity
+providers before the switch — every metadata document, sign-in on each
+binding, artifact resolution, each AuthnRequest refusal, the attribute
+authority, single logout both ways, SAML 1.1's profiles and every request
+the responder answers, in a development and a product realm with
+`saml2.signResponse`, `signAssertion`, `requireSignedAuthnRequests` and
+`nameIdFormat` turned — three runs, identical, and the switched tree answers
+the same record. `tests/model_saml.js` holds the build's refusals, no SAML
+URI, QName or advertised list written in `saml/` outside the model, the
+readers and writers, and every recorded message held with nothing to say.
+
+**What stays in code, and why.** XML parsing (`common/xml_parser.js`),
+canonicalisation, signing and encryption (`common/crypto.js`, so the
+`Id="_0"` story above cannot recur: no builder hands the signer anything but
+the document). Every check that needs state: whose signature a request
+carries (`request_signature.ts`), whether an address or a provider is
+registered, whether a session meets a context, freshness and replay, the
+artifact's one spending. The element-level text of a NameID, an
+AudienceRestriction, an Attribute and an endpoint element is still written
+where its values are, inside a part the model orders. **The console's browser
+bundle (`web_saml.ts`) keeps the two profile URIs it labels**: a `web_*.ts` may require only other `web_*.ts` (root `CLAUDE.md`,
+*Pages with a script*), so the model's reader cannot reach them. **The
+federation module reads a partner's SAML with its own reader**
+(`federation/federation_sp.ts`) and shares only `request_signature.ts` and
+`document_settings.ts`, which the switch did not change.
+
+**THE DECORATORS AND THE READER ARE NOT SAML'S ALONE (#1579, the WS
+families).** SOAP, WS-Trust and WS-Federation are XML messages too, and
+`models/ws/*.tsp` is written with `saml_lib.tsp`'s decorators;
+`saml_lib.mjs`'s `FAMILIES` reads each family into its own file by the
+prefixes of its ids (`saml.json`: `saml2.`, `saml11.`, `md.`). The code of
+`read()`, `attributes()`, `children()` and `hold()` is
+`../common/xml_model.ts`'s, and `SamlModel` is its instance over
+`saml.json`, its statics unchanged. What the WS families added to the
+decorators — `namespaces` (a message in the request's namespace), an
+element's `xmlns` (two children of one local name, a SAML 1.1 and a SAML
+2.0 Assertion), `anotherPartys`, `inSignedBody`, `relative`, a term written
+as another vocabulary's property — changes nothing of SAML's, and a term
+here they need is added here (`previousSession`), not copied there.
+
+**An xs:boolean is read as XML Schema Part 2 section 3.2.2 says** (rcbj's
+decision on #1579, 2026-11-11): `true` and `1` are true, after the
+whitespace is collapsed (`XmlModel.booleanTrue()`). Until then only `"true"`
+was, so `ForceAuthn="1"` and `IsPassive="1"` were read as false — a fresh
+sign-in or a passive answer asked for and not given. Every attribute the
+model reads as `boolean` changed with them: `AllowCreate`, and a service
+provider's `AuthnRequestsSigned` and `WantAssertionsSigned`; so did an
+`AssertionConsumerService`'s `isDefault` in `sp_metadata.ts`, and WS-Trust's
+`Forwardable` and `Delegatable` (`ws-trust/CLAUDE.md`).
+

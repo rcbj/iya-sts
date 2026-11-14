@@ -29,15 +29,18 @@
 //      the second's release lets a third take it at once. Plus, as source,
 //      that `persistence.js` names the origin by node and slot and that
 //      `request_pool.js` hands each worker its slot.
-//   C. THE TWO ACCUMULATORS NO READER FANNED IN — the SCIM counters and what
-//      `POST /ssf/receive` received — and the SSF sweep history, read with
-//      another origin's contribution in place.
+//   C. THE ACCUMULATOR NO READER FANNED IN — the SCIM counters (what
+//      `POST /ssf/receive` received was the second, until #593 deleted that
+//      endpoint) — and the SSF sweep history, read with another origin's
+//      contribution in place.
 //   D. THE STORES THAT WERE NOT PERSISTED AT ALL — SCIM's Digest counts and
 //      HOBA history, the sweep history — are declared now.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 const fs = require('fs');
 const path = require('path');
 const realms = require('../common/realms');
@@ -58,11 +61,32 @@ const QUIET = { debug: function () {}, info: function () {},
 // ---------------------------------------------------------------------------
 function fakeDatabase() {
   log.debug("Entering fakeDatabase().");
-  const db = { now: 1000000, claims: new Map(), statements: [] };
+  const db = { now: 1000000, claims: new Map(), statements: [],
+              flush: flushDouble.state(),
+              nodes: new Map(), locks: new Set() };
   const keyOf = function (scope, realm, key) {
     return scope + '|' + realm + '|' + key;
   };
   db.query = function (sql, params) {
+    // A MINTED FLUSH IS ONE STATEMENT SINCE #820, its fence inside it: the
+    // origin claim is asked of this file's claims, the statement is played
+    // against Maps, and what it WROTE is recorded — its text names every
+    // table whether or not the fence let it write.
+    if (flushDouble.isFlush(sql)) {
+      const named = flushDouble.named(sql);
+      const claim = named.claim_key === null ? null
+        : db.claims.get(keyOf('persistence.origin', '', named.claim_key));
+      const fenceOk = named.claim_key === null ||
+        (!!claim && claim.reservation === named.claim_reservation &&
+         claim.expires > db.now);
+      db.statements.push('MINTED_FLUSH');
+      const answer = flushDouble.play(db.flush, sql, null,
+                                      { fenceOk: fenceOk });
+      if (answer.rows[0].go) {
+        db.statements.push('MINTED_FLUSH wrote');
+      }
+      return Promise.resolve(answer);
+    }
     const p = params || [];
     const text = String(sql);
     db.statements.push(text);
@@ -78,10 +102,37 @@ function fakeDatabase() {
       return Promise.resolve({ rowCount: 0, rows: [] });
     }
     if (/^SELECT origin, claimed_at, expires_at FROM sts_cluster_claims/
-          .test(text)) {
+          .test(text) || /sts:claimOnce\.holder /.test(text)) {
       const row = db.claims.get(keyOf(p[0], p[1], p[2]));
       return Promise.resolve({ rowCount: row ? 1 : 0, rows: row ? [
         { origin: row.origin, claimed_at: 0, expires_at: row.expires }] : [] });
+    }
+    // THE TAKEOVER FROM A MEMBERSHIP THAT HAS GONE (#617): the statement's
+    // own conditions — the row names a membership after its '@', not the
+    // asker's, and that membership's row has left or expired.
+    if (/^UPDATE sts_cluster_claims c SET reservation/.test(text)) {
+      const row = db.claims.get(keyOf(p[0], '', p[1]));
+      const at = row ? String(row.origin).indexOf('@') : -1;
+      const named = at >= 0 ? String(row.origin).slice(at + 1) : '';
+      const node = named ? db.nodes.get(named) : null;
+      if (row && named && named !== p[5] && node &&
+          (node.left > 0 || node.expires <= db.now)) {
+        db.claims.set(keyOf(p[0], '', p[1]), { reservation: p[2],
+          origin: p[3], expires: db.now + Number(p[4]) });
+        return Promise.resolve({ rowCount: 1, rows: [{ claimed_at: db.now }] });
+      }
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    // THE RENEWAL, built with the Knex builder since #677: the new expiry's
+    // offset first, then scope, realm, key and reservation, and it asks
+    // for a live claim.
+    if (/sts:renewOrigin /.test(text)) {
+      const row = db.claims.get(keyOf(p[1], '', p[3]));
+      if (row && row.reservation === p[4] && row.expires > db.now) {
+        row.expires = db.now + Number(p[0]);
+        return Promise.resolve({ rowCount: 1, rows: [] });
+      }
+      return Promise.resolve({ rowCount: 0, rows: [] });
     }
     if (/^UPDATE sts_cluster_claims SET expires_at/.test(text)) {
       const row = db.claims.get(keyOf(p[0], '', p[1]));
@@ -97,7 +148,8 @@ function fakeDatabase() {
       }
       return Promise.resolve({ rowCount: 0, rows: [] });
     }
-    if (/^DELETE FROM sts_cluster_claims/.test(text)) {
+    if (/^DELETE FROM sts_cluster_claims/.test(text) ||
+        /sts:releaseClaim /.test(text)) {
       const k = keyOf(p[0], p[1], p[2]);
       const row = db.claims.get(k);
       if (row && row.reservation === p[3]) {
@@ -110,6 +162,38 @@ function fakeDatabase() {
       const row = db.claims.get(keyOf(p[0], '', p[1]));
       const live = !!row && row.reservation === p[2] && row.expires > db.now;
       return Promise.resolve({ rowCount: live ? 1 : 0, rows: [] });
+    }
+    // THE FENCE'S SHARE LOCK (#770). The lock outlives a lapse; a takeover
+    // or a release removes it. BEGIN and the renewal's SET LOCAL are the
+    // bounded autocommit around a statement this fake already understands.
+    if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(text) ||
+        /^SET LOCAL /.test(text)) {
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    if (/^INSERT INTO sts_cluster_locks/.test(text)) {
+      db.locks.add(String(p[0]));
+      return Promise.resolve({ rowCount: 1, rows: [] });
+    }
+    if (/^DELETE FROM sts_cluster_locks/.test(text) ||
+        /sts:releaseClaim\.lock /.test(text)) {
+      if (/left\(/.test(text)) {
+        const prefix = String(p[0]);
+        const keep = String(p[1]);
+        Array.from(db.locks).forEach(function (name) {
+          if (name.indexOf(prefix) === 0 && name !== keep) {
+            db.locks.delete(name);
+          }
+        });
+      } else if (p.length) {
+        db.locks.delete(String(p[0]));
+      }
+      return Promise.resolve({ rowCount: 1, rows: [] });
+    }
+    if (/sts_cluster_locks/.test(text) && /FOR SHARE/i.test(text)) {
+      const name = String(p[0] || '');
+      const held = db.locks.has(name);
+      return Promise.resolve({ rowCount: held ? 1 : 0,
+                               rows: held ? [{ name: name }] : [] });
     }
     return Promise.resolve({ rowCount: 0, rows: [] });
   };
@@ -150,20 +234,13 @@ function fakePg(db) {
 // A driver over the shared fake — one "process".
 function driverOver(db) {
   log.debug("Entering driverOver().");
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: fakePg(db) };
+  const restore = storeDouble.install(fakePg(db));
   try {
     log.debug("Leaving driverOver().");
     return postgres.create({ url: 'postgres://sts_app@localhost:5432/sts',
                              log: QUIET });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
@@ -239,7 +316,7 @@ async function claimB2(t) {
     fenced = e;
   }
   const wrote = db.statements.some(function (sql) {
-    return /INSERT INTO sts_minted/.test(sql);
+    return sql === 'MINTED_FLUSH wrote';
   });
   t.check(!fenced && wrote && lost.length === 0,
           'a write after the lapse re-asserts the claim and goes through, ' +
@@ -253,14 +330,15 @@ async function claimB2(t) {
   // every ten seconds. The reservation update is now the fallback only.
   const renewals = function () {
     return db.statements.filter(function (sql) {
-      return /^UPDATE sts_cluster_claims SET expires_at/.test(sql);
+      return /^UPDATE sts_cluster_claims SET expires_at/.test(sql) ||
+        /sts:renewOrigin /.test(sql);
     });
   };
   const before = renewals().length;
   t.equal(await only.renewOrigin(30000), true,
           'a routine renewal of a live claim succeeds');
   const routine = renewals().slice(before);
-  t.check(routine.length === 1 && /expires_at\s*>/.test(routine[0]),
+  t.check(routine.length === 1 && /expires_at"?\s*>/.test(routine[0]),
           'with ONE update that needs the claim live — not the lapsed-claim ' +
           'fallback, which is the one that says it lapsed',
           JSON.stringify(routine));
@@ -271,7 +349,7 @@ async function claimB2(t) {
           'a renewal that arrives after the lapse extends the claim, because ' +
           'the reservation on it is still this process\'s');
   const afterLapse = renewals().slice(beforeLapse);
-  t.check(afterLapse.length === 2 && /expires_at\s*>/.test(afterLapse[0]) &&
+  t.check(afterLapse.length === 2 && /expires_at"?\s*>/.test(afterLapse[0]) &&
           !/expires_at\s*>/.test(afterLapse[1]),
           'the live update matched nothing, so it fell back to the ' +
           'reservation update — the one path that logs a lapse',
@@ -281,6 +359,118 @@ async function claimB2(t) {
           'and the claim is live again afterwards',
           JSON.stringify(row || null));
   log.debug("Leaving claimB2().");
+}
+
+// ---------------------------------------------------------------------------
+// B3. A CLAIM WHOSE MEMBERSHIP HAS GONE IS TAKEN OVER, NOT WAITED OUT (#617).
+// On 8081 a restarted container's first request worker waited 2 s for the
+// claim its predecessor had taken — a thread of a front process that had
+// already left the cluster. A claim records the membership that took it, and
+// is taken over at once when that membership's row has left or expired; a
+// LIVE membership's claim — another container under this name, a sibling
+// worker of this very front — and one that names no membership are waited
+// for exactly as before, and the old holder is fenced as after a lapse.
+// ---------------------------------------------------------------------------
+async function claimB3(t) {
+  log.debug("Entering claimB3().");
+  t.log.info('=== B3. a claim whose membership has gone is taken over ===');
+  const db = fakeDatabase();
+  db.nodes.set('front-old', { left: 0, expires: db.now + 30000 });
+  db.nodes.set('front-new', { left: 0, expires: db.now + 30000 });
+  const old = driverOver(db);
+  const lost = [];
+  old.setOriginLost(function (err) {
+    lost.push(err);
+  });
+  const a = await old.adoptOrigin({ name: 'node-c:protocol-0', ttlMs: 30000,
+                                    nodeId: 'front-old' });
+  const row = db.claims.get('persistence.origin||n:node-c:protocol-0');
+  t.check(a.adopted && !!row && /@front-old$/.test(row.origin),
+          'a claim records the membership that took it after an @ in its ' +
+          'origin column', JSON.stringify({ a: a, row: row || null }));
+
+  const sibling = await driverOver(db).adoptOrigin({
+    name: 'node-c:protocol-0', ttlMs: 30000, waitMs: 0, nodeId: 'front-old' });
+  t.check(!sibling.adopted,
+          'a process of the SAME live membership (a sibling worker in the ' +
+          'same slot) is refused, not handed the claim',
+          JSON.stringify(sibling));
+  const live = await driverOver(db).adoptOrigin({
+    name: 'node-c:protocol-0', ttlMs: 30000, waitMs: 0, nodeId: 'front-new' });
+  t.check(!live.adopted,
+          'and so is another membership while the holder\'s membership is ' +
+          'live — another container under this node name',
+          JSON.stringify(live));
+  const anonymous = await driverOver(db).adoptOrigin({
+    name: 'node-c:protocol-0', ttlMs: 30000, waitMs: 0 });
+  t.check(!anonymous.adopted,
+          'and so is a process that names no membership',
+          JSON.stringify(anonymous));
+
+  // The old front process stops cleanly: its membership LEAVES.
+  db.nodes.get('front-old').left = db.now;
+  const started = Date.now();
+  const taken = await driverOver(db).adoptOrigin({
+    name: 'node-c:protocol-0', ttlMs: 30000, waitMs: 35000, pollMs: 2000,
+    nodeId: 'front-new' });
+  t.check(taken.adopted && taken.tookOverFrom &&
+          /@front-old$/.test(taken.tookOverFrom) &&
+          Date.now() - started < 1000,
+          'once the holder\'s membership has LEFT, the successor takes the ' +
+          'claim at once — no poll, no lapse waited out',
+          JSON.stringify(taken));
+  let fenced = null;
+  try {
+    await old.saveMinted([{ handle: 'test.x', realm: 'default', key: 'k',
+                            body: 'b' }], []);
+  } catch (e) {
+    fenced = e;
+  }
+  t.check(!!fenced && fenced.reason === 'origin' && lost.length === 1,
+          'and the old holder, had it still been writing, is FENCED as after ' +
+          'a lapse', (fenced && fenced.message) + ' lost=' + lost.length);
+
+  // An EXPIRED membership (a crashed node, dead for good) is gone too, and
+  // a membership row nobody wrote proves nothing.
+  const db2 = fakeDatabase();
+  db2.nodes.set('front-crashed', { left: 0, expires: db2.now + 30000 });
+  await driverOver(db2).adoptOrigin({ name: 'node-d:front', ttlMs: 30000,
+                                      nodeId: 'front-crashed' });
+  await driverOver(db2).adoptOrigin({ name: 'node-e:front', ttlMs: 30000,
+                                      nodeId: 'front-never-joined' });
+  db2.now += 20000;
+  db2.nodes.get('front-crashed').expires = db2.now - 1;
+  const afterCrash = await driverOver(db2).adoptOrigin({
+    name: 'node-d:front', ttlMs: 30000, waitMs: 0, nodeId: 'front-next' });
+  t.check(afterCrash.adopted,
+          'a claim whose membership EXPIRED is taken over before the claim ' +
+          'itself lapses', JSON.stringify(afterCrash));
+  const noRow = await driverOver(db2).adoptOrigin({
+    name: 'node-e:front', ttlMs: 30000, waitMs: 0, nodeId: 'front-next' });
+  t.check(!noRow.adopted,
+          'while a claim naming a membership with no row is still waited ' +
+          'for — absence is not death (cluster off, or not yet joined)',
+          JSON.stringify(noRow));
+
+  // The wiring only the source shows: the membership is passed, the front
+  // joins under the id it was planned with, and a worker gives its origin
+  // back before it exits.
+  const persistenceSrc = fs.readFileSync(path.join(ROOT, 'persistence',
+                                                   'persistence.js'), 'utf8');
+  const clusterSrc = fs.readFileSync(path.join(ROOT, 'cluster',
+                                               'cluster.js'), 'utf8');
+  const workerSrc = fs.readFileSync(path.join(ROOT, 'common',
+                                              'request_worker.ts'), 'utf8');
+  t.check(/nodeId: nodeId \}\)/.test(persistenceSrc) &&
+          /cluster\.plannedNodeId\(\)/.test(persistenceSrc) &&
+          /nodeId = plannedId \|\| stsCrypto\.randomUuid\(\)/
+            .test(clusterSrc),
+          'persistence.js passes the membership it will join under, and ' +
+          'cluster.js joins under that same id');
+  t.check(/releaseOrigin\(\)/.test(workerSrc) &&
+          /this\.releaseThenExit\(\)/.test(workerSrc),
+          'a request worker gives its origin back before it exits');
+  log.debug("Leaving claimB3().");
 }
 
 async function claimB(t) {
@@ -325,7 +515,7 @@ async function claimB(t) {
     fenced = e;
   }
   const wrote = db.statements.slice(before).some(function (sql) {
-    return /INSERT INTO sts_minted/.test(sql);
+    return sql === 'MINTED_FLUSH wrote';
   });
   t.check(!!fenced && fenced.fenced === true && fenced.reason === 'origin' &&
           !wrote && lost.length === 1,
@@ -391,18 +581,6 @@ function claimC(t) {
   replication.contribute('admin_stats.scimCounts', realms.currentId(), '',
                          'n:other-node:front', null);
 
-  const streams = require('../ssf/ssf_streams');
-  const mine = streams.listReceived().length;
-  replication.contribute('ssf_streams.received', realms.currentId(), '',
-                         'n:other-node:front',
-                         [{ at: '2000-01-01T00:00:00.000Z', token: 'x' }]);
-  const all = streams.listReceived();
-  t.check(all.length === mine + 1 &&
-          all[0].at === '2000-01-01T00:00:00.000Z',
-          'what another process received is listed, oldest first');
-  replication.contribute('ssf_streams.received', realms.currentId(), '',
-                         'n:other-node:front', null);
-
   const report = require('../ssf/ssf_dead_letter_report');
   replication.contribute('ssf_dead_letter_report.sweeps', realms.currentId(),
                          '', 'n:other-node:front', {
@@ -440,6 +618,7 @@ async function run(t) {
   claimA(t);
   await claimB(t);
   await claimB2(t);
+  await claimB3(t);
   claimC(t);
   claimD(t);
   log.debug("Leaving run().");

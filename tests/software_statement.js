@@ -333,6 +333,17 @@ function childMain() {
     note(noExpiry.ok && !('exp' in payloadOf(noExpiry.softwareStatement)),
          '4d. a lifetime of 0 issues a statement with no exp',
          JSON.stringify(noExpiry.errors || ''));
+    // #1470: an `exp` no Date can hold, as a number and as text.
+    const errorCodes = require('./common/error_codes');
+    const tooLong = [1e300, '1e300', 'Infinity', 8.64e12].map(function (life) {
+      return issueAction({ metadata: {}, lifetimeSeconds: life });
+    });
+    note(tooLong.every(function (one) {
+      return one.ok === false && errorCodes.codeOf(one) === 'STS-ADMIN-0915';
+    }), '4d-ii. a lifetime past the last date a Date can hold is refused',
+         JSON.stringify(tooLong.map(function (one) {
+           return one.ok;
+         })));
     const reserved = issueAction({ metadata: { client_id: 'chosen' } });
     const notJson = issueAction({ metadata: '{nope' });
     const nobody = adminActions.applicationsAction(

@@ -24,8 +24,8 @@
 //      supersedes it) and names that authority's CRL and responder. The
 //      private key is handed back ONCE and this module keeps no copy.
 //   2. PACKAGE — a password-protected PKCS#12 and a PEM key and chain, through
-//      `common/vendored/key_material.js`'s `exportKeyPair()`, which is the
-//      exporter `/admin/keys` and the Certificate & Key Configuration pane
+//      `common/crypto_impl/key_material.js`'s `exportKeyPair()`, which is the
+//      exporter `/admin/keys` and the Certificate Workbench
 //      already use. One exporter, so a `.p12` from here imports exactly as one
 //      from those pages does.
 //   3. RECOGNISE — `identityOf()`, the gate every door that turns a verified
@@ -37,11 +37,11 @@
 // A certificate this service issues is useless at a listener unless the
 // listener trusts its chain, and the client truststore every listener shares
 // (`tls/tls_server.js`) was EMPTY by default — anchors arrived only through
-// /tls/trust. So since this module it trusts the SERVICE ROOT as well
-// (`trustAnchorPem()`, behind `tls.trustIssuedClientCertificates`), which
-// reaches the main port. OpenSSL will not end a path at an
-// Intermediate or an Issuing CA without a partial-chain flag node does not
-// expose, so the anchor HAS to be the Root.
+// its runtime door (`/admin-api/tls/trust` today). So since this module it
+// trusts the SERVICE ROOT as well (`trustAnchorPem()`, behind
+// `tls.trustIssuedClientCertificates`), which reaches the main port. OpenSSL
+// will not end a path at an Intermediate or an Issuing CA without a
+// partial-chain flag node does not expose, so the anchor HAS to be the Root.
 //
 // **AND THE ROOT VOUCHES FOR EVERY KEY PAIR THIS SERVICE HAS EVER ISSUED.** An
 // application's RFC 7523 key pair carries no extended key usage, which OpenSSL
@@ -66,9 +66,12 @@
 //     disagree is somebody else's construction and is refused rather than
 //     believed on its CN.
 //
-// A chain through NO authority this process holds is not this module's
-// business and is answered `issuedHere: false`: that is an anchor somebody
-// installed through /tls/trust, and every door treats it exactly as before.
+// A chain through NO authority this process holds is an anchor somebody
+// installed through /admin-api/tls/trust — an OUTSIDE authority. It is
+// answered `issuedHere: false`, and since #1061 (rcbj, 2026-10-27) it is an
+// identity ONLY when the caller asks (`{ stored: true }`) and it is, byte for
+// byte, a leaf stored in `userCertificate` on EXACTLY ONE entry of the realm —
+// see STORED, below. It is never read by its common name or subject.
 //
 // ---------------------------------------------------------------------------
 // THE REALM IS THE ISSUING CA'S.
@@ -82,14 +85,16 @@
 // own Intermediate on an assertion's path.
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453): the register slot's random
+// part, the memo's digest and the leaf's parse. `helpers.js` loads it first.
+const crypto = require('./crypto');
 const { log } = require('./helpers');
 const config = require('./config');
 const realms = require('./realms');
 const errorCodes = require('./error_codes');
 const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
-const keyMaterial = require('./vendored/key_material');
+const keyMaterial = require('./crypto_impl/key_material');
 // CAEP credential-change when this file changes a person's credential
 // (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
 // is due. This file is loaded from `app.js`'s own chain, before the
@@ -152,6 +157,69 @@ const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
  */
 const IDENTITY_USE_CASES = ['tls-client', 'acme', 'est', 'scep'];
 
+// ---------------------------------------------------------------------------
+// TWO PURPOSES SINCE #521 (rcbj, 2026-10-28), AND A LEAF SERVES ONE.
+//
+// A WS-Trust requester may sign its RST (a WS-Security 1.1 signature over
+// the SOAP Body and the Timestamp) instead of presenting a password or a
+// token, and the certificate it signs with maps to a directory entry by THIS
+// module's rules — #520's "one mapping, never a second". What differs is
+// which certificates count, and that is a PURPOSE:
+//
+//   * `tls-client` — what every door before #521 asks: a leaf from an
+//     authority in `IDENTITY_USE_CASES` carrying `clientAuth`, or (asked with
+//     `stored`) an outside leaf stored in `userCertificate` on one entry;
+//   * `message-signing` — a leaf from the realm's `message-signing` Issuing
+//     CA (`pki.js`), `digitalSignature` in its keyUsage, no extended key
+//     usage asked for; or an outside leaf stored on one entry exactly as
+//     above, whose keyUsage says `digitalSignature` (`signingIdentityOf()`).
+//
+// NEITHER ACCEPTS THE OTHER'S LEAVES: a `message-signing` leaf has no
+// clientAuth and its authority is not in `IDENTITY_USE_CASES`, so no TLS door
+// reads it as anybody; and a TLS client certificate is not from the
+// `message-signing` authority, so a signed RST is not authenticated by one.
+// rcbj's decision on #521 was an authority of its own, for `tls-client`'s
+// reason in `pki.js`: every authority here chains to one Root, so "may sign a
+// request as its holder" is sayable only as WHICH authority issued it.
+// ---------------------------------------------------------------------------
+/**
+ * The use case of the realm Issuing CA message-signing certificates come
+ * from (#521).
+ */
+const MESSAGE_SIGNING_USE_CASE = 'message-signing';
+
+// What each purpose issues, and how it is spoken of. `capCodes` and
+// `notHeldCodes` are by holder kind, as `KINDS` keeps them for `tls-client`.
+const PURPOSES = {
+  'tls-client': {
+    useCase: 'tls-client', noun: 'TLS client certificate',
+    profile: 'tls-client', clientAuth: true, stem: 'tls-client',
+    settings: { person: 'pki.personTlsClientCertificateMax',
+                application: 'pki.applicationTlsClientCertificateMax' },
+    capCodes: { person: 'STS-PKI-0170', application: 'STS-PKI-0180' },
+    notHeldCodes: { person: 'STS-PKI-0171', application: 'STS-PKI-0181' }
+  },
+  'message-signing': {
+    useCase: MESSAGE_SIGNING_USE_CASE, noun: 'message-signing certificate',
+    profile: 'digital-signature', clientAuth: false, stem: 'message-signing',
+    settings: { person: 'pki.messageSigningCertificateMax',
+                application: 'pki.messageSigningCertificateMax' },
+    capCodes: { person: 'STS-PKI-0220', application: 'STS-PKI-0220' },
+    notHeldCodes: { person: 'STS-PKI-0221', application: 'STS-PKI-0221' }
+  }
+};
+
+function purposeOf(purpose) {
+  log.debug("Entering purposeOf().");
+  const id = purpose === undefined || purpose === null || purpose === ''
+    ? 'tls-client' : String(purpose);
+  log.debug("Leaving purposeOf().");
+  return PURPOSES[id] ? id : null;
+}
+
+// The use cases whose register this module keeps by slot.
+const SLOTTED_USE_CASES = ['tls-client', MESSAGE_SIGNING_USE_CASE];
+
 const CLIENT_AUTH_OID = '1.3.6.1.5.5.7.3.2';
 const PERSON_URN = 'urn:sts:person:';
 /**
@@ -205,7 +273,7 @@ function slotFor(holder, kind) {
   const k = kindOf(kind) || 'person';
   log.debug("Leaving slotFor().");
   return KINDS[k].slot + String(holder) + ':' +
-    nodeCrypto.randomBytes(6).toString('hex');
+    crypto.randomBytes(6).toString('hex');
 }
 
 // `{ kind, id }` for a slot this module wrote, or null.
@@ -255,13 +323,15 @@ function maxPerPerson() {
  * Answers the most valid certificates one holder of a kind may hold.
  *
  * @param kind - 'person' or 'application'; a person when absent
+ * @param purpose - 'tls-client' (the default) or 'message-signing' (#521)
  * @returns the configured cap
  */
-function maxPerHolder(kind) {
+function maxPerHolder(kind, purpose) {
   log.debug("Entering maxPerHolder().");
   const k = kindOf(kind) || 'person';
+  const p = PURPOSES[purposeOf(purpose) || 'tls-client'];
   log.debug("Leaving maxPerHolder().");
-  return Number(config.value(KINDS[k].setting));
+  return Number(config.value(p.settings[k]));
 }
 
 // Revocation is `pki_revocation.js`'s, required lazily for the reason `pki.js`
@@ -286,21 +356,23 @@ function revocation() {
  * @param realmId - the realm; the ambient realm when absent
  * @param username - the holder's username or application identifier
  * @param kind - 'person' or 'application'; a person when absent
+ * @param purpose - 'tls-client' (the default) or 'message-signing' (#521)
  * @returns one row per certificate
  */
-function listFor(realmId, username, kind) {
+function listFor(realmId, username, kind, purpose) {
   log.debug("Entering listFor().");
   const scope = scopeOf(realmId);
   const wanted = String(username || '');
   const wantedKind = kindOf(kind) || 'person';
+  const useCase = PURPOSES[purposeOf(purpose) || 'tls-client'].useCase;
   const now = Date.now();
-  const rows = pki.certificatesFor(scope, USE_CASE).filter(function (one) {
+  const rows = pki.certificatesFor(scope, useCase).filter(function (one) {
     const holder = slotHolder(one.slot);
     return !!holder && holder.kind === wantedKind && holder.id === wanted;
   }).map(function (one) {
     let revoked = null;
     try {
-      revoked = revocation().isRevoked(scope, USE_CASE, one.serialHex);
+      revoked = revocation().isRevoked(scope, useCase, one.serialHex);
     } catch (e) {
       // No revocation register in this process. The certificate is reported
       // on its validity alone, which is all such a process could check.
@@ -336,12 +408,13 @@ function listFor(realmId, username, kind) {
  * @param realmId - the realm; the ambient realm when absent
  * @param username - the holder's username or application identifier
  * @param kind - 'person' or 'application'; a person when absent
+ * @param purpose - 'tls-client' (the default) or 'message-signing' (#521)
  * @returns the valid rows of `listFor()`
  */
-function activeFor(realmId, username, kind) {
+function activeFor(realmId, username, kind, purpose) {
   log.debug("Entering activeFor().");
   log.debug("Leaving activeFor().");
-  return listFor(realmId, username, kind).filter(function (one) {
+  return listFor(realmId, username, kind, purpose).filter(function (one) {
     return one.state === 'valid';
   });
 }
@@ -385,7 +458,9 @@ function labelProblem(label) {
 // ---------------------------------------------------------------------------
 /**
  * Issues a TLS client certificate carrying clientAuth to a person or an
- * application, from the realm's `tls-client` Issuing CA.
+ * application, from the realm's `tls-client` Issuing CA — or, with
+ * `purpose: 'message-signing'` (#521), a digitalSignature-only certificate
+ * from the realm's `message-signing` Issuing CA.
  *
  * The caller has already decided who. The private key is handed back once
  * and not kept; expired records of the holder are forgotten first, and a
@@ -393,7 +468,7 @@ function labelProblem(label) {
  * @param realmId - the realm; the ambient realm when absent
  * @param spec - `kind` ('person' or 'application'), `username` or
  *   `application`, `keyAlg`, `label`, `email` (a person's, for an
- *   rfc822Name) and `days`
+ *   rfc822Name), `days` and `purpose` ('tls-client' by default)
  * @returns `{ ok: true, issued }` with the certificate, chain and key pair,
  *   or `{ ok: false, errors }` marked with its code
  */
@@ -401,6 +476,18 @@ async function issue(realmId, spec) {
   log.debug("Entering issue().");
   const scope = scopeOf(realmId);
   const s = spec || {};
+  // WHAT FOR (#521): a TLS client certificate, as always, or a
+  // message-signing certificate; see PURPOSES.
+  const purposeId = purposeOf(s.purpose);
+  if (!purposeId) {
+    log.debug("Leaving issue(). Unknown purpose.");
+    return errorCodes.mark({ ok: false,
+             errors: ['A certificate is issued here for TLS client ' +
+                      'authentication (tls-client) or for signing ' +
+                      'requests (message-signing).'] }, 'STS-PKI-0168');
+  }
+  const purpose = PURPOSES[purposeId];
+  const useCase = purpose.useCase;
   // WHO. A person by `username` (what every caller before 2026-09-13 passes),
   // or an application by `application` with `kind: 'application'` — the
   // application's identifier in the registry, which is what the
@@ -432,8 +519,8 @@ async function issue(realmId, spec) {
   if (!keyDesc || KEY_ALGS.indexOf(keyAlgId) < 0) {
     log.debug("Leaving issue(). Key algorithm refused.");
     return errorCodes.mark({ ok: false,
-             errors: ['"' + keyAlgId + '" is not a key algorithm a TLS ' +
-                      'client certificate is issued with here. It may be ' +
+             errors: ['"' + keyAlgId + '" is not a key algorithm a ' +
+                      purpose.noun + ' is issued with here. It may be ' +
                       KEY_ALGS.join(', ') + '.'] }, 'STS-PKI-0169');
   }
   const labelSaid = labelProblem(s.label);
@@ -445,20 +532,25 @@ async function issue(realmId, spec) {
   // sign anybody in, so it is not one of the "five devices" the number means;
   // counting it would make revoking an old laptop's certificate unable to make
   // room for the new laptop's.
-  const active = activeFor(scope, username, kind);
-  if (active.length >= maxPerHolder(kind)) {
+  const active = activeFor(scope, username, kind, purposeId);
+  if (active.length >= maxPerHolder(kind, purposeId)) {
     log.debug("Leaving issue(). The cap is reached.");
     return errorCodes.mark({ ok: false,
              errors: [kind === 'application'
                ? 'The application "' + username + '" already holds ' +
-                 active.length + ' TLS client certificate(s) that are still ' +
-                 'valid, which is ' + KINDS.application.setting + '. Revoke ' +
-                 'one it no longer uses and issue again.'
-               : 'You already hold ' + active.length + ' TLS client ' +
+                 active.length + ' ' + purpose.noun + '(s) that are still ' +
+                 'valid, which is ' + purpose.settings.application +
+                 '. Revoke one it no longer uses and issue again.'
+               : purposeId === 'tls-client'
+               ? 'You already hold ' + active.length + ' TLS client ' +
                  'certificate(s) that are still valid, which is the ' +
                  'most this service issues to one person. Revoke one ' +
-                 'you no longer use and generate again.'] },
-                           KINDS[kind].capCode);
+                 'you no longer use and generate again.'
+               : 'The person "' + username + '" already holds ' +
+                 active.length + ' ' + purpose.noun + '(s) that are still ' +
+                 'valid, which is ' + purpose.settings.person +
+                 '. Revoke one they no longer use and issue again.'] },
+                           purpose.capCodes[kind]);
   }
   const branch = await pki.ensureScope(scope);
   if (!branch || !branch.ok) {
@@ -474,11 +566,11 @@ async function issue(realmId, spec) {
   // they kept replacing laptops. A REVOKED one that has not expired stays: its
   // record is what lets this person's page say it was revoked.
   const now = Date.now();
-  pki.certificatesFor(scope, USE_CASE).forEach(function (one) {
+  pki.certificatesFor(scope, useCase).forEach(function (one) {
     const holder = slotHolder(one.slot);
     if (holder && holder.kind === kind && holder.id === username &&
         new Date(one.notAfter).getTime() < now) {
-      pki.forgetCertificate(scope, USE_CASE, one.slot);
+      pki.forgetCertificate(scope, useCase, one.slot);
     }
   });
 
@@ -492,49 +584,61 @@ async function issue(realmId, spec) {
     names.push({ kind: 'email', value: email });
   }
   const slot = slotFor(username, kind);
-  const made = await pki.certify(scope, USE_CASE, {
+  // A MESSAGE-SIGNING LEAF (#521) says one thing: `digitalSignature`, and no
+  // extended key usage — WS-Security names none, and the authority that
+  // issued it is what says what it is for (PURPOSES, above).
+  const extensions = purposeId === 'tls-client'
+    ? { extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
+        subjectAltName: { present: true, critical: false, names: names } }
+    : { subjectAltName: { present: true, critical: false, names: names } };
+  const made = await pki.certify(scope, useCase, {
     slot: slot,
     holderSubject: kind === 'person' && realms.get(scope)
       ? realms.run(realms.get(scope), function () {
         return require('./helpers').subjectForName(username);
       }) : '',
-    label: String(s.label || '') || 'TLS client certificate',
+    label: String(s.label || '') ||
+           (purposeId === 'tls-client' ? 'TLS client certificate'
+                                       : 'Message-signing certificate'),
     commonName: username,
     keyAlg: keyAlgId,
     publicKeyPem: pair.publicPem,
-    profile: 'tls-client',
+    profile: purpose.profile,
     days: s.days,
     // keyEncipherment only where the key can do it — `issueTlsServerKeyPair()`
     // says why a KeyUsage naming a use the key cannot perform is refused by a
-    // strict peer.
-    keyUsage: keyDesc.kind === 'rsa' ? ['digitalSignature', 'keyEncipherment']
-                                     : ['digitalSignature'],
-    extensions: {
-      extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
-      subjectAltName: { present: true, critical: false, names: names }
-    }
+    // strict peer. A message-signing key signs and does nothing else.
+    keyUsage: keyDesc.kind === 'rsa' && purposeId === 'tls-client'
+      ? ['digitalSignature', 'keyEncipherment'] : ['digitalSignature'],
+    extensions: extensions
   });
   if (!made.ok) {
     log.debug("Leaving issue(). certify() refused.");
     return made;
   }
   const root = pki.serviceRoot();
-  log.info('tls-client: a ' + keyDesc.label + ' TLS client certificate was ' +
+  log.info(useCase + ': a ' + keyDesc.label + ' ' + purpose.noun + ' was ' +
            'issued to the ' + kind + ' ' + username + ' in "' + scope +
            '", serial ' +
            made.record.serialHex + ', expires ' + made.record.notAfter +
            '. The private key was handed to the caller and is not kept.');
-  // A person's certificate is one of their credentials (#145); an
-  // application's has no CAEP subject here. A person issues their own.
-  if (kind === 'person') {
-    accountSignals().certificateChanged({ username: username,
-      pem: made.record.certificatePem, changeType: 'create',
-      friendlyName: String(made.record.label || 'TLS client certificate'),
-      initiatingEntity: 'user', via: 'portal',
-      reasonAdmin: 'A TLS client certificate was issued to ' + username +
-                   '.',
-      reasonUser: 'You were issued a TLS client certificate.' });
-  }
+  // A person's certificate is one of their credentials (#145), and so —
+  // since #221 P5 — is an application's (its RFC 8705 tls_client_auth
+  // certificate), told under the application subject. A person issues their
+  // own; an application's is issued by an administrator.
+  accountSignals().certificateChanged(Object.assign(
+    kind === 'application' ? { application: username, initiatingEntity:
+                               'admin', via: '/admin/applications' }
+                           : { username: username, initiatingEntity: 'user',
+                               via: 'portal' },
+    { pem: made.record.certificatePem, changeType: 'create',
+      friendlyName: String(made.record.label || purpose.noun),
+      reasonAdmin: 'A ' + purpose.noun + ' was issued to ' +
+                   (kind === 'application' ? 'the application ' : '') +
+                   username + '.',
+      reasonUser: kind === 'application'
+        ? 'A ' + purpose.noun + ' was issued to this application.'
+        : 'You were issued a ' + purpose.noun + '.' }));
   log.debug("Leaving issue().");
   return {
     ok: true,
@@ -542,6 +646,7 @@ async function issue(realmId, spec) {
       scope: scope,
       slot: slot,
       label: made.record.label,
+      purpose: purposeId,
       kind: kind,
       username: username,
       keyAlg: keyAlgId,
@@ -602,11 +707,13 @@ function pkcs12PasswordProblem(password, confirm) {
 
 function fileStem(issued) {
   log.debug("Entering fileStem().");
+  const purpose = PURPOSES[purposeOf(issued.purpose) || 'tls-client'];
   const base = (String(issued.username) + (issued.label &&
-    issued.label !== 'TLS client certificate' ? '-' + issued.label : ''))
+    issued.label !== 'TLS client certificate' &&
+    issued.label !== 'Message-signing certificate' ? '-' + issued.label : ''))
     .replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
   log.debug("Leaving fileStem().");
-  return (base || 'client') + '-tls-client';
+  return (base || 'client') + '-' + purpose.stem;
 }
 
 /**
@@ -651,6 +758,31 @@ async function bundle(issued, password) {
   };
 }
 
+/**
+ * The two files the PORTAL answers (#671): the private key as the issue
+ * handed it over (unencrypted PKCS#8 PEM) and the certificate chain, leaf
+ * first. No password, no PKCS#12 — rcbj's decision on #671, so the three
+ * cards of `/portal/signing-key` answer the same pair. `bundle()` above is
+ * still what the console's issue answers.
+ *
+ * @param issued - the `issued` object from `issue()`
+ * @returns `{ key, chain }`, each with a file name, MIME type and PEM text
+ */
+function pemFiles(issued) {
+  log.debug("Entering pemFiles().");
+  const stem = fileStem(issued);
+  const certs = [issued.certificatePem].concat(issued.chainPem || []);
+  log.debug("Leaving pemFiles().");
+  return {
+    key: { name: stem + '-key.pem', mime: 'application/x-pem-file',
+           text: String(issued.privateKeyPem).trim() + '\n' },
+    chain: { name: stem + '-chain.pem', mime: 'application/x-pem-file',
+             text: certs.map(function (one) {
+               return String(one).trim() + '\n';
+             }).join('') }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // REVOKE ONE OF YOUR OWN.
 //
@@ -671,13 +803,16 @@ async function bundle(issued, password) {
  * @param reasonId - one of `REVOCATION_REASONS`; `cessationOfOperation`
  *   otherwise
  * @param kind - 'person' or 'application'; a person when absent
+ * @param purpose - 'tls-client' (the default) or 'message-signing' (#521)
  * @returns the revocation's outcome with the certificate and reason, or
  *   `{ ok: false, errors }` when the holder holds no such serial
  */
-function revoke(realmId, username, serialHex, reasonId, kind) {
+function revoke(realmId, username, serialHex, reasonId, kind, purpose) {
   log.debug("Entering revoke().");
   const scope = scopeOf(realmId);
   const holderKind = kindOf(kind) || 'person';
+  const purposeId = purposeOf(purpose) || 'tls-client';
+  const what = PURPOSES[purposeId];
   const reason = REVOCATION_REASONS.indexOf(String(reasonId)) >= 0
     ? String(reasonId) : 'cessationOfOperation';
   let normal;
@@ -687,45 +822,72 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
     log.debug("Caught in revoke(): " + ((e && e.message) || e));
     normal = String(serialHex || '').toLowerCase();
   }
-  const mine = listFor(scope, username, holderKind).filter(function (one) {
-    return revocation().normalSerial(one.serialHex) === normal;
-  })[0];
+  const mine = listFor(scope, username, holderKind, purposeId)
+    .filter(function (one) {
+      return revocation().normalSerial(one.serialHex) === normal;
+    })[0];
   if (!mine) {
     log.debug("Leaving revoke(). Not one of theirs.");
     return errorCodes.mark({ ok: false,
              errors: [holderKind === 'application'
-               ? 'The application "' + username + '" holds no TLS client ' +
-                 'certificate with that serial number.'
-               : 'You hold no TLS client certificate with that serial ' +
-                 'number.'] }, KINDS[holderKind].notHeldCode);
+               ? 'The application "' + username + '" holds no ' + what.noun +
+                 ' with that serial number.'
+               : purposeId === 'tls-client'
+               ? 'You hold no TLS client certificate with that serial ' +
+                 'number.'
+               : 'The person "' + username + '" holds no ' + what.noun +
+                 ' with that serial number.'] },
+                           what.notHeldCodes[holderKind]);
   }
-  const done = revocation().revoke(scope, USE_CASE, {
+  const done = revocation().revoke(scope, what.useCase, {
     serialHex: mine.serialHex,
     reason: reason,
     subject: mine.subject,
     note: holderKind === 'application'
       ? 'revoked for the application ' + username + ' by an administrator'
-      : 'revoked by ' + username + ' on the user portal'
+      : purposeId === 'tls-client'
+      ? 'revoked by ' + username + ' on the user portal'
+      : 'revoked for ' + username + ' by an administrator'
   });
-  if (done.ok && holderKind === 'person') {
-    accountSignals().certificateChanged({ username: username,
+  // A person's revoke is theirs, on the portal; an application's (#221 P5)
+  // is an administrator's, on /admin/applications.
+  const whose = holderKind === 'application'
+    ? { application: username, initiatingEntity: 'admin',
+        via: '/admin/applications' }
+    : purposeId === 'tls-client'
+    ? { username: username, initiatingEntity: 'user', via: 'portal' }
+    : { username: username, initiatingEntity: 'admin', via: '/admin/users' };
+  const label = holderKind === 'application'
+    ? 'the application ' + username : username;
+  if (done.ok) {
+    accountSignals().certificateChanged(Object.assign({}, whose, {
       pem: mine.certificatePem, x509Serial: mine.serialHex,
       changeType: 'revoke',
-      friendlyName: String(mine.label || 'TLS client certificate'),
-      initiatingEntity: 'user', via: 'portal',
-      reasonAdmin: 'A TLS client certificate of ' + username + ' was ' +
+      friendlyName: String(mine.label || what.noun),
+      reasonAdmin: 'A ' + what.noun + ' of ' + label + ' was ' +
                    'revoked (' + reason + ').',
-      reasonUser: 'You revoked a TLS client certificate.' });
+      reasonUser: holderKind === 'application'
+        ? 'A ' + what.noun + ' of this application was revoked.'
+        : purposeId === 'tls-client'
+        ? 'You revoked a TLS client certificate.'
+        : 'A ' + what.noun + ' of yours was revoked.' }));
     // "SOMEBODY ELSE MAY HAVE THE KEY" (#231): RFC 5280's `keyCompromise` is
     // a compromise of the credential, which RISC 1.0 section 2.7 says as
     // `credential-compromise`, beside the CAEP revoke above.
     if (reason === 'keyCompromise') {
-      accountSignals().credentialCompromised({ username: username,
-        credentialType: 'x509', initiatingEntity: 'user', via: 'portal',
-        reasonAdmin: username + ' revoked a TLS client certificate (serial ' +
-                     mine.serialHex + ') because its key was compromised.',
-        reasonUser: 'You revoked a TLS client certificate because somebody ' +
-                    'else may have its key.' });
+      accountSignals().credentialCompromised(Object.assign({}, whose, {
+        credentialType: 'x509',
+        reasonAdmin: 'A ' + what.noun + ' of ' + label + ' (serial ' +
+                     mine.serialHex + ') was revoked because its key was ' +
+                     'compromised.',
+        reasonUser: holderKind === 'application'
+          ? 'A ' + what.noun + ' of this application was revoked ' +
+            'because somebody else may have its key.'
+          : purposeId === 'tls-client'
+          ? 'You revoked a TLS client certificate because somebody else ' +
+            'may have its key.'
+          : 'A ' + what.noun + ' of yours was revoked because somebody ' +
+            'else may have its key.' }));
     }
   }
   log.debug("Leaving revoke(). ok=" + !!done.ok);
@@ -858,8 +1020,8 @@ function currentHolderOf(answer) {
   }
   const serial = normal(answer.serialHex);
   const ca = String(answer.authority.ca);
-  const records = ca === USE_CASE
-    ? pki.certificatesFor(answer.realm, USE_CASE)
+  const records = SLOTTED_USE_CASES.indexOf(ca) >= 0
+    ? pki.certificatesFor(answer.realm, ca)
     : pki.issuedKeyPairsFor(answer.realm, ca);
   const record = records.filter(function (one) {
     return one && normal(one.serialHex) === serial;
@@ -887,6 +1049,93 @@ function currentHolderOf(answer) {
                                   certifiedName: answer.username });
 }
 
+// ---------------------------------------------------------------------------
+// STORED: A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS THE ENTRY IT IS STORED ON
+// (#1061, rcbj 2026-10-27).
+//
+// rcbj's rule, whole: an outside certificate authenticates only if it
+// verifies against the Client Truststores, passes the revocation check, and is
+// byte for byte (the SHA-256 of its DER) a leaf stored in `userCertificate`
+// (RFC 4523) on EXACTLY ONE existing entry in the request's realm. Never by
+// its common name or subject; never by creating or seeding an entry; a
+// certificate stored on two entries is refused; a renewed certificate is a
+// different DER and has to be stored again.
+//
+// The first two are the door's (the handshake and `req.certificateRevocation`
+// — every door already asks both before it reaches this module). The third is
+// this function, the ONE mapping every door asks, through certificate
+// enrollment's directory slot (`certificateHolders()`, filled by
+// `ldap/ldap_server.js`), which looks the digest up in an index and never walks
+// the people.
+//
+// ASKED PER CALL AND NEVER MEMOISED, for `currentHolderOf()`'s reason: the
+// answer is the directory's, and an entry the certificate was taken off a
+// second ago is not its holder now. And ONLY WHEN A DOOR ASKS
+// (`{ stored: true }`): RFC 8705's token endpoint, GNAP's key proof and the
+// other doors that read a certificate as a KEY rather than as a person keep
+// their own registered metadata (rcbj on #1061), so they neither pay for the
+// lookup nor see its answer.
+//
+// The answer, `issuedHere: false` and `outside: true` throughout:
+//   * accepted — `kind` ('person' or 'application'), `username` (the
+//     person's name or the application's identifier), `dn`, `realm`,
+//     `stored: true`, `fingerprint` (the SHA-256, hex);
+//   * refused  — `error` 'NOT_STORED' (on no entry, or only on an entry that
+//     is neither a person nor an application) or 'STORED_TWICE' (on more than
+//     one), with `why`.
+// ---------------------------------------------------------------------------
+function storedIdentityOf(leafBytes, realmId) {
+  log.debug("Entering storedIdentityOf().");
+  const fingerprint = crypto.digest('sha256', leafBytes, 'hex');
+  const realmIdNow = realmId ? String(realmId) : realms.currentId();
+  const realm = realms.get(realmIdNow);
+  let holders = null;
+  try {
+    const ask = function () {
+      return require('./cert_enrollment').certificateHolders(fingerprint);
+    };
+    holders = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug("Caught in storedIdentityOf(): " + ((e && e.message) || e));
+    holders = null;
+  }
+  const base = { issuedHere: false, outside: true, accepted: false,
+                 realm: realmIdNow, fingerprint: fingerprint };
+  const list = Array.isArray(holders) ? holders : [];
+  if (list.length > 1) {
+    log.debug("Leaving storedIdentityOf(). Stored on " + list.length + ".");
+    return Object.assign(base, { error: 'STORED_TWICE',
+      holders: list.map(function (one) { return String(one.dn); }),
+      why: 'the certificate is from an outside certificate authority and ' +
+           'is stored in userCertificate on more than one entry of the "' +
+           realmIdNow + '" realm (' + list.map(function (one) {
+             return String(one.dn);
+           }).join(', ') + '), so it names nobody; store it on exactly one' });
+  }
+  const one = list[0];
+  if (!one || (one.kind !== 'person' && one.kind !== 'application')) {
+    log.debug("Leaving storedIdentityOf(). Not stored on an identity.");
+    return Object.assign(base, { error: 'NOT_STORED',
+      why: one
+        ? 'the certificate is from an outside certificate authority and is ' +
+          'stored on ' + String(one.dn) + ', which is neither a person nor ' +
+          'an application'
+        : 'the certificate is from an outside certificate authority and is ' +
+          'not stored in userCertificate on any entry of the "' +
+          realmIdNow + '" realm (SHA-256 ' + fingerprint + '); an outside ' +
+          'certificate names the one entry it is stored on, and nothing ' +
+          'else — store it on the person\'s or the application\'s entry ' +
+          'first (a renewed certificate is stored again)' });
+  }
+  log.debug("Leaving storedIdentityOf(). The " + one.kind + " " + one.id +
+            ".");
+  return Object.assign(base, { accepted: true, stored: true,
+    kind: one.kind, username: String(one.id), dn: String(one.dn),
+    why: 'an outside certificate authority\'s certificate, stored in ' +
+         'userCertificate on ' + String(one.dn) + ' in the "' + realmIdNow +
+         '" realm' });
+}
+
 /**
  * Recognises a verified client certificate as an identity, or refuses it.
  *
@@ -895,12 +1144,18 @@ function currentHolderOf(answer) {
  * `IDENTITY_USE_CASES`, with clientAuth, naming exactly one person or
  * application; a person is then resolved to whoever holds their subject
  * now. Memoised by leaf digest and held authorities.
+ * A chain through no held authority is an outside authority's: with
+ * `options.stored` it is resolved to the one entry storing it in
+ * `userCertificate` (#1061, `storedIdentityOf()`), in `options.realm` or the
+ * ambient realm; without, it is answered `issuedHere: false` and nothing
+ * else, as it always was.
  * @param input - `{ leaf, chain, verified }`, from
  *   `revocation_status.fromSocket()`
+ * @param options - `{ stored, realm }`, both optional
  * @returns `{ issuedHere, accepted }`, with `realm`, `kind`, `username`,
  *   `serialHex` and `authority` when accepted, or `error` and `why` when not
  */
-function identityOf(input) {
+function identityOf(input, options) {
   log.debug("Entering identityOf().");
   if (!input || !input.leaf || input.verified !== true) {
     log.debug("Leaving identityOf(). Nothing verified.");
@@ -918,12 +1173,24 @@ function identityOf(input) {
                                                 : Buffer.from(input.leaf);
   const heldKey = (typeof status.heldAuthorityKey === 'function')
     ? status.heldAuthorityKey() : '';
-  const key = nodeCrypto.createHash('sha256').update(leafBytes)
-    .digest('hex') + '|' + heldKey;
+  const opts = options || {};
+  // THE PURPOSE IS IN THE KEY (#521): one leaf is a TLS client identity
+  // and not a message-signing one, or the reverse, never both.
+  const purposeId = purposeOf(opts.purpose) || 'tls-client';
+  const key = crypto.digest('sha256', leafBytes, 'hex') + '|' + heldKey +
+    '|' + purposeId;
+  // The outside half is the directory's answer, asked each time and never
+  // memoised (STORED, above); the memo still says whether it IS outside.
+  const settle = function (answer) {
+    if (!answer.issuedHere && opts.stored === true) {
+      return storedIdentityOf(leafBytes, opts.realm);
+    }
+    return currentHolderOf(answer);
+  };
   if (memo.has(key)) {
     memoCount.hit();
     log.debug("Leaving identityOf(). Memoised.");
-    return currentHolderOf(memo.get(key));
+    return settle(memo.get(key));
   }
   memoCount.miss();
   const walked = status.walk(input);
@@ -936,7 +1203,7 @@ function identityOf(input) {
     answer = { issuedHere: false, accepted: false };
   } else {
     const first = links[0];
-    const leaf = new nodeCrypto.X509Certificate(leafBytes);
+    const leaf = crypto.parseCertificate(leafBytes);
     const commonName = subjectCnOf(leaf);
     const eku = Array.isArray(leaf.keyUsage) ? leaf.keyUsage : [];
     const uris = String(leaf.subjectAltName || '').split(/,\s*/)
@@ -960,7 +1227,53 @@ function identityOf(input) {
     let error = '';
     let kind = 'person';
     let name = '';
-    if (!(first && first.source === 'register' && authority &&
+    const signing = purposeId === MESSAGE_SIGNING_USE_CASE;
+    if (signing) {
+      // A MESSAGE-SIGNING LEAF (#521): this purpose's own authority, the
+      // digitalSignature bit, one urn: name that is also the CN.
+      let usages = null;
+      try {
+        usages = pki.pathFactsOf(pki.certificateFromDer(leafBytes) ||
+                                 { der: leafBytes }).keyUsage;
+      } catch (e) {
+        log.debug("Caught in identityOf(): " + ((e && e.message) || e));
+        usages = null;
+      }
+      if (!(first && first.source === 'register' && authority &&
+            authority.ca === MESSAGE_SIGNING_USE_CASE && isRealmScope)) {
+        error = 'NOT_A_SIGNING_CERTIFICATE';
+        why = 'the certificate chains to this service\'s own Root, but it ' +
+              'was not issued by a realm\'s message-signing Issuing CA' +
+              (authority ? ' (it was signed by the "' + authority.ca + '" ' +
+                           'authority)' : '') + '; only a certificate from ' +
+              'that authority signs a request as its holder';
+      } else if (!Array.isArray(usages) ||
+                 usages.indexOf('digitalSignature') < 0) {
+        error = 'NOT_A_SIGNING_CERTIFICATE';
+        why = 'the certificate\'s keyUsage does not include ' +
+              'digitalSignature';
+      } else if (people.length + applications.length !== 1) {
+        error = 'NOT_A_SIGNING_CERTIFICATE';
+        why = 'the certificate does not name exactly one person or ' +
+              'application in a urn:sts:person: or urn:sts:application: ' +
+              'subjectAltName, so there is no one entry it could be the ' +
+              'identity of';
+      } else if ((people.length ? people[0] : applications[0]) !==
+                 commonName) {
+        error = 'NOT_A_SIGNING_CERTIFICATE';
+        why = 'the certificate\'s common name and its ' +
+              (people.length ? 'urn:sts:person:' : 'urn:sts:application:') +
+              ' subjectAltName do not name the same ' +
+              (people.length ? 'person' : 'application');
+      } else if (!realms.get(scope)) {
+        error = 'REALM_GONE';
+        why = 'the certificate was issued in the "' + scope + '" realm, ' +
+              'which no longer exists';
+      } else {
+        kind = people.length ? 'person' : 'application';
+        name = people.length ? people[0] : applications[0];
+      }
+    } else if (!(first && first.source === 'register' && authority &&
           IDENTITY_USE_CASES.indexOf(authority.ca) >= 0 && isRealmScope)) {
       error = 'NOT_A_TLS_CLIENT_CERTIFICATE';
       why = 'the certificate chains to this service\'s own Root, but it was ' +
@@ -1014,7 +1327,7 @@ function identityOf(input) {
   memo.set(key, answer);
   log.debug("Leaving identityOf(). issuedHere=" + answer.issuedHere +
             " accepted=" + answer.accepted);
-  return currentHolderOf(answer);
+  return settle(answer);
 }
 
 // ---------------------------------------------------------------------------
@@ -1045,6 +1358,12 @@ function identityOf(input) {
  */
 function stillHeld(identity) {
   log.debug("Entering stillHeld().");
+  // A STORED certificate (#1061) was found ON its entry a moment ago, by the
+  // lookup that made it an identity: that lookup is this question.
+  if (identity && identity.accepted && identity.stored === true) {
+    log.debug("Leaving stillHeld(). Stored on its entry.");
+    return true;
+  }
   if (!identity || !identity.accepted || !identity.authority) {
     log.debug("Leaving stillHeld(). Not an accepted identity.");
     return false;
@@ -1061,14 +1380,14 @@ function stillHeld(identity) {
     };
   }
   const serial = normal(identity.serialHex);
-  if (ca === USE_CASE) {
-    const held = pki.certificatesFor(scope, USE_CASE).some(function (one) {
+  if (SLOTTED_USE_CASES.indexOf(ca) >= 0) {
+    const held = pki.certificatesFor(scope, ca).some(function (one) {
       const holder = slotHolder(one.slot);
       return !!holder && holder.kind === identity.kind &&
              holder.id === (identity.certifiedName || identity.username) &&
              normal(one.serialHex) === serial;
     });
-    log.debug("Leaving stillHeld(). tls-client register: " + held);
+    log.debug("Leaving stillHeld(). " + ca + " register: " + held);
     return held;
   }
   const realm = realms.get(scope);
@@ -1091,6 +1410,168 @@ function stillHeld(identity) {
   return held;
 }
 
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE A REQUEST WAS SIGNED WITH (#521, rcbj 2026-10-28).
+//
+// The WS-Security signature over a WS-Trust RST names a certificate in its
+// header; the signature is verified with it by `crypto.js`, and this answers
+// WHO it is, by `identityOf()` with the `message-signing` purpose — the one
+// mapping #520 made the rule — and nothing else. There is no handshake, so
+// the two things a handshake does are done here instead:
+//
+//   * ITS VALIDITY PERIOD is checked, with `oauth2.clockSkewS` of tolerance;
+//   * IT IS "VERIFIED" ONLY IN THE TWO SENSES THAT NEED NO ANCHOR. A leaf
+//     from this realm's message-signing authority is verified by the walk
+//     itself (the issuer is found by name AND signature among the held
+//     authorities). Any other leaf is an identity only as the one entry
+//     storing it byte for byte in `userCertificate` (#1061's rule, rcbj's
+//     decision 1 on #521): the administrator registered THAT certificate,
+//     which pins it, so no chain is asked of it — and its keyUsage must
+//     carry `digitalSignature`.
+//
+// The realm boundary is `checkSocket()`'s: an issued leaf from another
+// realm's authority is refused. Revocation is the caller's
+// (`revocation_status.js`), as it is at every door.
+// ---------------------------------------------------------------------------
+/**
+ * Answers who a certificate a request was signed with is: a person or an
+ * application of this realm, issued by its message-signing Issuing CA or
+ * stored in `userCertificate` on exactly one entry (#521).
+ *
+ * @param certificate - the certificate: DER bytes, base64 DER or PEM
+ * @param options - optional `realm`, the ambient realm when absent
+ * @returns `identityOf()`'s answer, with `ok` and, when refused, `error`
+ *   (`UNREADABLE`, `NOT_YET_VALID`, `EXPIRED`, `NOT_A_SIGNING_CERTIFICATE`,
+ *   `OTHER_REALM`, or the gate's own) and `why`; `leaf` is the DER
+ */
+function signingIdentityOf(certificate, options) {
+  log.debug("Entering signingIdentityOf().");
+  const opts = options || {};
+  const ambient = opts.realm ? String(opts.realm) : realms.currentId();
+  let x509 = null;
+  try {
+    const text = Buffer.isBuffer(certificate) ? '' : String(certificate || '');
+    x509 = crypto.parseCertificate(Buffer.isBuffer(certificate)
+      ? certificate
+      : (text.indexOf('-----BEGIN') >= 0 ? text
+         : Buffer.from(text.replace(/\s+/g, ''), 'base64')));
+  } catch (e) {
+    log.debug("Caught in signingIdentityOf(): " + ((e && e.message) || e));
+    x509 = null;
+  }
+  if (!x509) {
+    log.debug("Leaving signingIdentityOf(). Unreadable.");
+    return { ok: false, accepted: false, error: 'UNREADABLE',
+             why: 'the certificate could not be read' };
+  }
+  const leaf = Buffer.from(x509.raw);
+  const skewMs = Math.max(0, Number(config.value('oauth2.clockSkewS')) || 0) *
+                 1000;
+  const now = Date.now();
+  if (Date.parse(x509.validFrom) - skewMs > now) {
+    log.debug("Leaving signingIdentityOf(). Not yet valid.");
+    return { ok: false, accepted: false, error: 'NOT_YET_VALID', leaf: leaf,
+             why: 'the certificate is not valid until ' + x509.validFrom };
+  }
+  if (Date.parse(x509.validTo) + skewMs <= now) {
+    log.debug("Leaving signingIdentityOf(). Expired.");
+    return { ok: false, accepted: false, error: 'EXPIRED', leaf: leaf,
+             why: 'the certificate expired at ' + x509.validTo };
+  }
+  const identity = identityOf({ leaf: leaf, chain: [], verified: true },
+    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient });
+  if (!identity.accepted) {
+    log.debug("Leaving signingIdentityOf(). " + identity.error);
+    return Object.assign({}, identity, { ok: false, leaf: leaf,
+                                         error: identity.error ||
+                                           'NOT_A_SIGNING_CERTIFICATE' });
+  }
+  if (identity.stored === true) {
+    let usages = null;
+    try {
+      usages = pki.pathFactsOf(pki.certificateFromDer(leaf) || { der: leaf })
+        .keyUsage;
+    } catch (e) {
+      log.debug("Caught in signingIdentityOf(): " + ((e && e.message) || e));
+      usages = null;
+    }
+    if (!Array.isArray(usages) || usages.indexOf('digitalSignature') < 0) {
+      log.debug("Leaving signingIdentityOf(). Stored, and not for signing.");
+      return Object.assign({}, identity, { ok: false, accepted: false,
+        leaf: leaf, error: 'NOT_A_SIGNING_CERTIFICATE',
+        why: 'the certificate is stored on ' + String(identity.dn) + ', and ' +
+             'its keyUsage ' + (Array.isArray(usages)
+               ? '(' + usages.join(', ') + ') does not include '
+               : 'is absent, so it does not say ') + 'digitalSignature' });
+    }
+  } else if (identity.realm !== ambient) {
+    log.debug("Leaving signingIdentityOf(). Another realm's.");
+    return Object.assign({}, identity, { ok: false, accepted: false,
+      leaf: leaf, error: 'OTHER_REALM',
+      why: 'the certificate was issued by the "' + identity.realm + '" ' +
+           'realm\'s message-signing authority and this request is in "' +
+           ambient + '"' });
+  }
+  log.debug("Leaving signingIdentityOf(). The " + identity.kind + " " +
+            identity.username + ".");
+  return Object.assign({}, identity, { ok: true, leaf: leaf });
+}
+
+// An issuer's name as a comparable set of RDNs: `CN=a, O=b` (RFC 4514, as
+// an X509IssuerName is written) and node's `CN=a\nO=b` alike.
+function issuerKeyOf(text) {
+  log.debug("Entering issuerKeyOf().");
+  const parts = String(text || '').split(/\s*[,\n]\s*/)
+    .map(function (one) { return one.trim().toLowerCase(); })
+    .filter(function (one) { return !!one; }).sort();
+  log.debug("Leaving issuerKeyOf().");
+  return parts.join('\n');
+}
+
+/**
+ * Finds a certificate this realm's message-signing Issuing CA issued, by a
+ * WS-Security SecurityTokenReference that does not carry the certificate:
+ * its SHA-1 thumbprint, its issuer and serial, or its Subject Key
+ * Identifier (#521). A certificate stored in `userCertificate` is found by
+ * value only, so it is carried in a BinarySecurityToken.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param reference - `crypto.readWsSecuritySignature()`'s `keyReference`
+ * @returns the certificate's PEM, or '' when no issued certificate matches
+ */
+function signingCertificateFor(realmId, reference) {
+  log.debug("Entering signingCertificateFor().");
+  const ref = reference || {};
+  const scope = scopeOf(realmId);
+  const normal = function (serial) {
+    return String(serial || '').toLowerCase().replace(/^0+/, '');
+  };
+  const found = pki.certificatesFor(scope, MESSAGE_SIGNING_USE_CASE)
+    .filter(function (one) {
+      const parsed = pki.certificateFromDer(
+        crypto.parseCertificate(String(one.certificatePem)).raw);
+      if (!parsed) {
+        return false;
+      }
+      if (ref.kind === 'thumbprint') {
+        return parsed.sha1 === String(ref.sha1 || '').toLowerCase();
+      }
+      if (ref.kind === 'ski') {
+        return pki.pathFactsOf(parsed).keyIdentifier ===
+               String(ref.ski || '').toLowerCase();
+      }
+      if (ref.kind === 'issuer-serial') {
+        return normal(parsed.x509.serialNumber) === normal(ref.serialHex) &&
+               issuerKeyOf(parsed.x509.issuer) === issuerKeyOf(ref.issuer);
+      }
+      return false;
+    })[0];
+  log.debug("Leaving signingCertificateFor(). " + (found ? 'Found.'
+                                                         : 'None.'));
+  return found ? String(found.certificatePem) : '';
+}
+
 // ---------------------------------------------------------------------------
 // THE DOORS ON THE MAIN PORT, which have an ambient realm.
 //
@@ -1100,15 +1581,26 @@ function stillHeld(identity) {
 // certificate this service issued for something else, or one from another
 // realm's authority.
 // ---------------------------------------------------------------------------
+//
+// WITH `{ stored: true }` (#1061) A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS
+// NO LONGER "NO OPINION": it is `{ ok: true }` with the entry it is stored on
+// as its identity, or `{ ok: false }` with 'NOT_STORED' or 'STORED_TWICE'.
+// Every door that turns a certificate into a person or an application asks
+// that way; the doors that read one as a key (RFC 8705, GNAP) do not.
 /**
  * Checks a main-port socket's client certificate against the ambient realm.
  *
  * @param socket - the TLS socket
+ * @param options - `{ stored: true }` to resolve an outside authority's
+ *   certificate to the entry storing it (#1061); `realm` to ask in a realm
+ *   other than the ambient one
  * @returns `{ ok: true, identity }` for no opinion or a certificate from
- *   this realm's authority, or `{ ok: false, identity, error, why }` for a
- *   certificate issued here for something else or by another realm
+ *   this realm's authority (or, with `stored`, an outside certificate stored
+ *   on one entry), or `{ ok: false, identity, error, why }` for a
+ *   certificate issued here for something else or by another realm, or an
+ *   outside one not stored on exactly one entry
  */
-function checkSocket(socket) {
+function checkSocket(socket, options) {
   log.debug("Entering checkSocket().");
   let input = null;
   try {
@@ -1117,19 +1609,53 @@ function checkSocket(socket) {
     log.debug("Caught in checkSocket(): " + ((e && e.message) || e));
     input = null;
   }
-  const identity = identityOf(input);
+  log.debug("Leaving checkSocket().");
+  return checkCertificate(input, options);
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME GATE WITHOUT A SOCKET (#1189).
+//
+// `checkSocket()` above reads what a handshake carried and asks this. The
+// AuthZEN callers a remote PEP pulls (`GET /xacml/pep/authzen-callers`) are
+// the certificates this gate WOULD accept, worked out ahead of any handshake
+// from the certificates a caller holds, so the question is asked of the
+// leaf's DER, `{ leaf, chain: [], verified: true }`, through exactly the
+// rules a socket's certificate meets: one gate, two ways in, and the edge's
+// list cannot be a second reading of who a certificate is.
+// ---------------------------------------------------------------------------
+/**
+ * Applies `checkSocket()`'s gate to a certificate already in hand.
+ *
+ * @param input - `{ leaf, chain, verified }`, as
+ *   `revocation_status.fromSocket()` answers, or null
+ * @param options - `{ stored, realm }`, both optional
+ * @returns `{ ok, identity }`, with `error` and `why` when refused
+ */
+function checkCertificate(input, options) {
+  log.debug("Entering checkCertificate().");
+  const opts = options || {};
+  const identity = identityOf(input, opts);
+  if (!identity.issuedHere && identity.outside === true) {
+    log.debug("Leaving checkCertificate(). An outside certificate, " +
+              (identity.accepted ? 'stored on one entry.' : 'refused.'));
+    return identity.accepted
+      ? { ok: true, identity: identity }
+      : { ok: false, identity: identity, error: identity.error,
+          why: identity.why };
+  }
   if (!identity.issuedHere) {
-    log.debug("Leaving checkSocket(). Not ours.");
+    log.debug("Leaving checkCertificate(). Not ours.");
     return { ok: true, identity: identity };
   }
   if (!identity.accepted) {
-    log.debug("Leaving checkSocket(). Refused.");
+    log.debug("Leaving checkCertificate(). Refused.");
     return { ok: false, identity: identity, error: identity.error,
              why: identity.why };
   }
-  const ambient = realms.currentId();
+  const ambient = opts.realm ? String(opts.realm) : realms.currentId();
   if (identity.realm !== ambient) {
-    log.debug("Leaving checkSocket(). Another realm's.");
+    log.debug("Leaving checkCertificate(). Another realm's.");
     return { ok: false, identity: identity, error: 'OTHER_REALM',
              why: 'the certificate is a TLS client certificate issued in the ' +
                   '"' + identity.realm + '" realm and this request is in "' +
@@ -1137,7 +1663,7 @@ function checkSocket(socket) {
                   'realm\'s ' +
                   'people and nobody else\'s' };
   }
-  log.debug("Leaving checkSocket(). Accepted.");
+  log.debug("Leaving checkCertificate(). Accepted.");
   return { ok: true, identity: identity };
 }
 
@@ -1172,7 +1698,8 @@ function report() {
     note: !on
       ? 'tls.trustIssuedClientCertificates is off, so the TLS listeners do ' +
         'not trust this service\'s Root and a certificate issued on the user ' +
-        'portal verifies only where somebody added that Root at /tls/trust.'
+        'portal verifies only where somebody added that Root at ' +
+        '/admin/tls/trust.'
       : (anchor
         ? 'The TLS listeners trust this service\'s Root for client ' +
           'certificates, and a chain through it is an identity only when the ' +
@@ -1200,15 +1727,22 @@ module.exports = {
   slotHolder: slotHolder,
   maxPerHolder: maxPerHolder,
   stillHeld: stillHeld,
+  storedIdentityOf: storedIdentityOf,
   listFor: listFor,
   activeFor: activeFor,
   labelProblem: labelProblem,
   issue: issue,
   pkcs12PasswordProblem: pkcs12PasswordProblem,
   bundle: bundle,
+  pemFiles: pemFiles,
   revoke: revoke,
   trustAnchorPem: trustAnchorPem,
   identityOf: identityOf,
   checkSocket: checkSocket,
+  checkCertificate: checkCertificate,
+  MESSAGE_SIGNING_USE_CASE: MESSAGE_SIGNING_USE_CASE,
+  PURPOSES: PURPOSES,
+  signingIdentityOf: signingIdentityOf,
+  signingCertificateFor: signingCertificateFor,
   report: report
 };

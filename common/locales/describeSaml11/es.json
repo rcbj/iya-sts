@@ -1,0 +1,18 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "Los dos perfiles de navegador, y el respondedor SAML detrás de uno de ellos",
+  "lead": "Este servicio emite aserciones SAML 1.1 por tres puertas, y esta es la más reciente: los <strong>perfiles de navegador</strong>, donde una persona inicia sesión y una aserción llega a una parte confiante. Las otras dos son {wsfed}, que envuelve la misma aserción en un <code>wresult</code>, y {wstrust}, que devuelve una en un <code>RSTR</code>. Las tres llaman a un único constructor, así que un atributo configurado en <code>/admin/saml-attributes</code> aparece en las tres.",
+  "endpoints": "Los endpoints",
+  "endpoint": "Endpoint",
+  "what": "Qué es",
+  "sso": "el servicio de transferencia entre sitios: el nombre que da SAML 1.1 a lo que SAML 2.0 llama el servicio Single Sign-On",
+  "responder": "el respondedor SAML, sobre SOAP. Resuelve artefactos, devuelve aserciones por AssertionID y responde AttributeQuery y AuthenticationQuery: la mitad de autoridad de atributos de SAML 1.1",
+  "metadata": "metadatos firmados. Un documento de metadatos SAML 2.0 que describe un proveedor de identidad SAML 1.1, que es lo que realmente consume toda parte confiante",
+  "different": "Qué lo diferencia de SAML 2.0",
+  "noRequest": "<strong>No hay mensaje de solicitud.</strong> No hay AuthnRequest, así que la parte confiante nunca se identifica, nunca pide un binding, un formato de NameID ni un contexto de autenticación, y nunca recibe un error: no hay nada que responder.",
+  "noSlo": "<strong>No hay Single Logout.</strong> Llegó con SAML 2.0.",
+  "spellings": "<strong>Grafías distintas en todo.</strong> <code>AssertionID</code> y no <code>ID</code>, un atributo <code>Issuer</code> y no un elemento, un código de estado que es un QName y no un URI, <code>AudienceRestrictionCondition</code> y no <code>AudienceRestriction</code>, y una firma que va AL FINAL en una aserción y AL PRINCIPIO en una respuesta.",
+  "artifact": "<strong>Un artefacto de 42 bytes</strong>, tipo 0x0001, donde el de SAML 2.0 es de 44 bytes y tipo 0x0004.",
+  "theMetadata": "Los metadatos"
+}

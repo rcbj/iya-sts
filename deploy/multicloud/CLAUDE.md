@@ -98,6 +98,35 @@ checkers' ranges on 443, to the load balancers only.
   different set of names (its console name), so Let's Encrypt's five-a-week
   limit counts each separately.
 
+## CloudFront in front of both clouds (#1341)
+
+**rcbj's decision (2026-11-13): a CDN on every pattern.** `testidpmc` has the
+AWS primary cell's one CloudFront distribution (`deploy/aws/CLAUDE.md`,
+*CloudFront in front of the cells*). `direct_hostname` is in the cells file,
+so every stack reads one value; `cloudfront_enabled` is in `.aws.tfvars`,
+`cdn_enabled` in `.gcp.tfvars`.
+
+* **interconnect** writes the whole tree at the direct name (the
+  distribution's origin), delegates the direct name's ACME challenge, and
+  admits CloudFront's ranges on 443 to the GCP load balancers. The public
+  name's `default` is the AWS primary's, aliasing the distribution.
+* **The secret**: AWS `global/`'s `edge-secret` reaches the GCP cells with
+  every other global value (`gcp-global`); `gcp-global` also outputs
+  CloudFront's ranges. A GCP cell trusts them only once both are there.
+* **Order**: one apply suffices — AWS global (step 4) makes the secret before
+  the cells' `full` (step 6), where the primary makes the distribution. On an
+  existing environment, the interconnect (step 3) moves the tree off the public
+  name before step 6 points it at the distribution, so the public name is dark
+  for the length of steps 4–6.
+* **Not checked**: how an AWS cell's certificate gets the direct name in a
+  multi-cloud apply (this launcher runs no `certificate` stack); and no
+  offline render of the interconnect was kept or written.
+
+**PROVEN OFFLINE ONLY**: `fmt -check`, `init -backend=false` and `validate` of
+`interconnect` and `gcp-global`, and the GCP cell render
+(`deploy/gcp/environment/tests/cdn.tftest.hcl`, `cell_behind_cloudfront`).
+No `plan` ran.
+
 ## The network
 
 **One HA VPN per jurisdiction pair** (`interconnect/modules/pair`). This is

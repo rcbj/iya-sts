@@ -54,7 +54,7 @@ setting" warning at startup rather than a silent no-op.
 What it costs is that the FIRST fetch of the certificate cannot be verified —
 there is no plain listener left and the key does not exist until the process
 starts. `docs/configuration.md`'s `global.https` section is the user-facing half;
-`tls/CLAUDE.md` says what it takes away from `/tls/trust`, and
+`tls/CLAUDE.md` says what it takes away from the truststore's first add, and
 `tests/tools/trust.js` is what pays for it in a test run.
 
 ## AND THEY ARE WHAT RAISED THE RATE LIMITS (2026-09-06)
@@ -109,6 +109,19 @@ runner's one address, so `sts_metadata_anonymous.js` met a 429 on
 against 60 and have no block. The enrollment jobs that assert the throttle set
 their own limits inside their realms, so the layer hides none of them.
 
+**THE FOURTH USE, #368: `realms.maxCount` at 100000 in the two test files
+only.** The shipped default is 10, counting the default realm, and each realm
+costs memory in every node. The protocol suite leaves the realms it creates
+standing — a kept stack has held well over ten — so `test.js` and
+`docker-tests.js` raise the cap to the setting's own maximum. `local.js`, the
+image default, does not: a deployment's effective value stays 10 until a
+service administrator sets it in the default realm, or `STS_REALMS_MAX_COUNT`
+is set. The in-process suite raises the same variable in `tests/run.js`,
+`tests/tools/service.js` for the throwaway instance a debug, trace or coverage
+run starts on `env/local.js`, and `deploy/aws/environment` (`realms_max_count`)
+for the AWS suite environments.
+`common/CLAUDE.md` argues the cap.
+
 ## The union is also what keeps a file that is NOT this service's loadable
 
 The parent project's in-process Kerberos jobs point `CONFIG_FILE` at that test
@@ -136,3 +149,15 @@ is `KRB5_*` variables, and all fourteen were read against the check on the day
 it was written. A new file here, or a new variable in a launcher, that holds a
 value the console would refuse will stop the stack at start — which is the
 point, and the message says which line.
+
+## The three issuer names are set in no file here (#480, #494)
+
+`saml.issuer`, `wstrust.issuer` and `wsfed.entityId` were set to
+`urn:wstrust:mock:sts` in `local.js`, the image's default, so a product
+deployment signed with the placeholder; #480 unset them there. #494 unset
+them in `docker-tests.js` and `test.js` as well, and emptied the shipped
+default, so the suites run the rule a deployment signs under: in either
+mode an unset name is the realm's SAML 2.0 entityID, and a registered
+application's own (`<entityID>:<application>`) for a token to it
+(`common/issuer_names.ts`). A file that sets one chooses it for every
+application.

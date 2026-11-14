@@ -48,22 +48,28 @@
 // side, and the page says which is which.
 //
 // ---------------------------------------------------------------------------
-// FOUR THINGS ASK THE PDP IN THIS PROCESS, AND ONLY THREE OF THEM ENFORCE.
+// FIVE THINGS ASK THE PDP IN THIS PROCESS, AND THREE OF THEM ENFORCE.
 //
 // The catalogue below is the whole list and it is DATA rather than prose,
 // because `/admin/xacml/monitor` renders it and `GET
-// /admin-api/xacml/monitor` publishes it: a fifth caller added without a row
-// here would be decisions nobody could see, and the count on the page would be
-// quietly short.
+// /admin-api/xacml/monitor` publishes it: a fourth caller added without a
+// row here would be decisions nobody could see, and the count on the page
+// would be quietly short.
 //
-//   `protected`  the DEMONSTRATION PEP at `/xacml/protected`. The only one
-//                whose bias is settable (`xacml.pepBias`) and the only one that
-//                discharges obligations, which is why it is the one the bias
-//                and the section 7.2 rule are demonstrated on.
+// A fourth row, `protected`, was the DEMONSTRATION PEP at `/xacml/protected`
+// — the one whose bias was settable (`xacml.pepBias`) and the one that
+// discharged obligations. It moved to the remote PEP container in #596
+// (`GET /protected` there, `PEP_BIAS`), whose decisions, refusals and
+// undischargeable obligations arrive on its heartbeat as the remote half.
+//
 //   `issuance`   `xacml_role_pep.ts`. Nine issuance sites ask it before this
 //                service mints anything, through `common/issuance_gate.js`.
 //   `access`     `xacml_access_pep.ts`. Every surface `common/access_gate.ts`
 //                lists asks it through that gate.
+//   `fga`        `fga_pep.ts` (#564). An RFC 9396 detail of an application
+//                that enforces fine-grained authorization, asked through
+//                `common/fga_gate.ts` at the authorization, PAR and token
+//                endpoints, against that application's own policy.
 //   `pdp`        `POST /xacml/pdp` — **NOT A PEP AND NOT COUNTED AS ONE.**
 //                Somebody else's PEP asked this service a question and enforced
 //                the answer in their own process. This service saw the
@@ -322,10 +328,10 @@ class XacmlMonitor {
   // the page — is identical to a PEP's, and two lists would have meant two
   // renderers that could disagree about how a decision is displayed.
   //
-  // `bias` is a FUNCTION rather than a value because `xacml.pepBias` is
-  // runtime-settable and per realm: a value read at require time would be the
-  // bias this process started with, printed beside counters that were produced
-  // under a different one.
+  // `bias` is a FUNCTION rather than a value because it was runtime-settable
+  // and per realm while the demonstration PEP was here (`xacml.pepBias`,
+  // #596): a value read at require time would have been the bias this
+  // process started with. Every row left answers a constant.
   // -------------------------------------------------------------------------
   /**
    * Builds the catalogue of every asker of the PDP in this process, in the
@@ -340,29 +346,6 @@ class XacmlMonitor {
                    settings: { value(key: string): any }): PepDefinition[] {
     log.debug("Entering XacmlMonitor.catalogue().");
     const rows: PepDefinition[] = [
-      { id: 'protected',
-        label: 'The demonstration PEP',
-        kind: 'embedded',
-        where: 'GET /xacml/protected',
-        module: 'xacml/xacml.ts',
-        guards: 'One endpoint that exists to be asked. It guards nothing ' +
-                'real — it is the PEP you point a client at to watch a bias ' +
-                'and an obligation do their work.',
-        enforces: true,
-        // THE ONLY ONE WHOSE BIAS IS SETTABLE, and the page says so beside
-        // every other row: `xacml.pepBias` governs THIS PEP. The issuance and
-        // access PEPs are deny-biased by construction — an issuance or an
-        // access that is not permitted does not happen — and a setting that
-        // appeared to change that would silently do nothing.
-        bias: function () {
-          log.debug("Entering bias().");
-          log.debug("Leaving bias().");
-          return settings.value('xacml.pepBias') === 'permit-biased'
-            ? 'permit-biased' : 'deny-biased';
-        },
-        // The one PEP here that discharges obligations at all.
-        obligations: true },
-
       { id: 'issuance',
         label: 'The issuance PEP',
         kind: 'embedded',
@@ -395,6 +378,36 @@ class XacmlMonitor {
         },
         obligations: false },
 
+      // THE FINE-GRAINED AUTHORIZATION PEP (#564): an RFC 9396 detail of an
+      // application that enforces FGA, decided by that application's own
+      // policy at the authorization, PAR and token endpoints. It ENFORCES —
+      // the detail is granted or refused in this process — so it carries
+      // allowed and refused like the two PEPs above. Only decisions the PDP
+      // reached are counted; a policy that cannot be resolved is audited
+      // (`fga.decision`) and not counted, as no engine decided anything.
+      // AN AUTHZEN EVALUATION DECIDED BY AN APPLICATION'S POLICY (#564, P4)
+      // IS NOT COUNTED HERE but on the `authzen` row: this row counts what
+      // this process ENFORCES, and that answer is enforced by the AuthZEN
+      // caller in its own process — counting it here would add an allowed
+      // or refused figure nobody here produced, and counting it on both rows
+      // would count one decision twice.
+      { id: 'fga',
+        label: 'The fine-grained authorization PEP',
+        kind: 'embedded',
+        where: 'common/fga_gate.ts, from the authorization, PAR and token ' +
+               'endpoints',
+        module: 'xacml/fga_pep.ts',
+        guards: 'Every RFC 9396 authorization detail whose type belongs to ' +
+                'an application that enforces fine-grained authorization, ' +
+                'decided against that application\'s own policy.',
+        enforces: true,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return 'deny-biased (fixed)';
+        },
+        obligations: false },
+
       { id: 'pdp',
         label: 'The PDP endpoint',
         kind: 'endpoint',
@@ -410,7 +423,56 @@ class XacmlMonitor {
           log.debug("Leaving bias().");
           return null;
         },
-        obligations: false }
+        obligations: false },
+
+      // THE AUTHZEN ENDPOINTS (#563): the PDP endpoint's case again, in
+      // AuthZEN's shape. A decision is counted; the enforcement was the
+      // caller's, so the allowed and refused cells stay empty. Since #564's
+      // P4 an evaluation about an application that enforces fine-grained
+      // authorization is decided by that application's policy and STILL
+      // counted here, once: the row is the asker's, whichever policy
+      // answered, and the `authzen.decision` audit row names the policy. An
+      // evaluation whose policy could not be used reached no engine and is
+      // not counted.
+      { id: 'authzen',
+        label: 'The AuthZEN endpoints',
+        kind: 'endpoint',
+        where: 'POST /access/v1/evaluation, POST /access/v1/evaluations',
+        module: 'authzen/authzen.ts',
+        guards: 'NOTHING. An AuthZEN Policy Enforcement Point asked a ' +
+                'question and enforced the true or false it was told in ' +
+                'its own process. Counted once per evaluation, a batch\'s ' +
+                'one by one.',
+        enforces: false,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return null;
+        },
+        obligations: false },
+
+      // THE UMA PEP (#1168, #1193): one UMA 2.0 permission — a registered
+      // resource and a scope — decided by the realm's uma-authorization
+      // policy and the resource owner's own document. It ENFORCES — the
+      // permission is put in an RPT or not, in this process — so it carries
+      // allowed and refused. A resource server's fine-grained layer counts
+      // on the `fga` row, as every FGA decision does.
+      { id: 'uma',
+        label: 'The UMA PEP',
+        kind: 'embedded',
+        where: 'POST /oauth2/token with the uma-ticket grant',
+        module: 'uma/uma_pep.ts',
+        guards: 'Every UMA 2.0 permission an RPT would carry: the realm\'s ' +
+                'uma-authorization policy, then the resource owner\'s own ' +
+                'document. Absence of an owner document is NotApplicable, ' +
+                'which refuses.',
+        enforces: true,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return 'deny-biased (fixed)';
+        },
+        obligations: true }
     ];
     log.debug("Leaving XacmlMonitor.catalogue().");
     return rows;

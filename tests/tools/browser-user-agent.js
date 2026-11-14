@@ -22,7 +22,7 @@
 // Chrome, which sends `HeadlessChrome/…` — both of which `isbot` names.
 //
 // **A PRELOAD, BECAUSE THE CLIENTS ARE IN VENDORED FILES**, for
-// `fresh-connections.js`'s reason: the jobs under tests/vendored/ and their
+// `fresh-connections.js`'s reason: the jobs under tests/protocol/ and their
 // helpers (`browser_flags.js`) are the parent project's copies and may not be
 // edited here.
 //

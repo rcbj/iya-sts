@@ -14,7 +14,7 @@
 // entry `krbtgt/<REALM>@<REALM>`, rotated by the `krb5.krbtgt-rotate` job and
 // by hand, with the version a rotation replaces kept for the longest a TGT
 // under it can live. This file holds that in three CHILD PROCESSES, each its
-// own KDC, with `tests/vendored/krb5_wire.js`'s clients over an in-process
+// own KDC, with `tests/protocol/krb5_wire.js`'s clients over an in-process
 // transport that hands each message to `kdc.handleMessage()`:
 //
 //   A. PRODUCT, FIRST START (an ldif store and a key-encryption key file):
@@ -41,7 +41,7 @@
 //      password; "rotate and invalidate" refuses both.
 //
 // The same over the wire, against a running service, is
-// `tests/vendored/sts_kerberos_krbtgt_rotation.js`.
+// `tests/protocol/sts_kerberos_krbtgt_rotation.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -84,7 +84,7 @@ async function child(phase) {
   const kcrypto = require(ROOT + '/kerberos/krb5_crypto.js');
   const prim = require(ROOT + '/kerberos/krb5_primitives.js');
   const asn1 = require(ROOT + '/kerberos/krb5_asn1.js');
-  const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+  const wire = require(ROOT + '/tests/protocol/krb5_wire.js');
   const msgs = wire.msgs;
   // The two product phases run over an ldif store (the parent sets it), so a
   // restart has something to restore; development runs in memory.
@@ -242,7 +242,10 @@ async function child(phase) {
   const PW = 'Krbtgt-Rotation-Passw0rd#169';
   const USER = 'krbalice';
   const SPN = 'HTTP/svc169.' + REALM.toLowerCase();
-  out.userMade = directory.createUser(USER, { invent: false }).ok;
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  out.userMade = directory.createUser(USER, { invent: false, attributes: {
+    givenName: 'Alice', sn: USER, mail: USER + '@example.test' } }).ok;
   out.passwordSet = credentials.setPassword(USER, PW).ok;
   await personKeys.idle();
   const created = actions.kerberosPrincipalsAction(
@@ -567,11 +570,12 @@ function inAChild(t, phase, extra, label) {
 function productEnv(dir, kekFile) {
   log.debug("Entering productEnv().");
   log.debug("Leaving productEnv().");
-  return { STS_MODE: 'product',
+  return { STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
            // Set, and IGNORED in product since #169.
            KRB5_KRBTGT_PASSWORD: 'krbtgt-rotation-ignored-169',
            KRB5_SERVICE_PASSWORD: 'service-rotation-169',
            STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+           STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
            STS_KEYS_KEK_FILE: kekFile, STS_PERSISTENCE_MODE: 'ldif',
            STS_PERSISTENCE_DATA_DIR: path.join(dir, 'store'),
            STS_PERSISTENCE_WRITE_DELAY: '0',

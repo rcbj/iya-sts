@@ -59,10 +59,10 @@ var config = {
     //
     // WHAT IT COSTS is what config.js's own row says it costs: there is then NO
     // plain listener left in this process, and `GET /tls/server-certificate`
-    // and `POST /tls/trust` are the two endpoints a caller reaches BEFORE it
-    // trusts anything — so the first fetch of the certificate has to be made
-    // with verification off (`curl -k`). That is the ordinary bootstrap for a
-    // service that regenerates its key every start, and /tls says so.
+    // is the endpoint a caller reaches BEFORE it trusts anything — so the
+    // first fetch of the certificate has to be made with verification off
+    // (`curl -k`). That is the ordinary bootstrap for a service that
+    // regenerates its key every start, and docs/tls.md says so.
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.
@@ -74,7 +74,8 @@ var config = {
     // front of this service they are headers any client can set, and believing
     // them lets a caller choose what this service thinks its own issuer,
     // endpoints and DPoP htu are. Turn it ON behind a reverse proxy — see
-    // GET /tls/forwarded, which shows what arrived and what was believed.
+    // Monitoring → TLS connection, which shows what arrived and what was
+    // believed.
     trustProxy: false
   },
 
@@ -198,20 +199,10 @@ var config = {
     seedInternal: true
   },
 
-  // --- SAML --------------------------------------------------------------
-  saml: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Trust ----------------------------------------------------------
-  wstrust: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Federation -----------------------------------------------------
-  wsfed: {
-    entityId: "urn:wstrust:mock:sts"
-  },
+  // --- SAML, WS-Trust, WS-Federation: ONE NAME, NOT A SETTING (#523) ----
+  // Every SAML Issuer, identity provider entityID and the WS-Trust STS's name
+  // are the realm's OAuth issuer, which follows global.publicBaseUrl
+  // (`common/issuer_names.ts`). The settings that named them are retired.
 
   // --- TLS ---------------------------------------------------------------
   tls: {
@@ -221,7 +212,10 @@ var config = {
 
   // --- OID4VCI -----------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",
+    // No walletUrl (2026-10-12): an offer is handed to a wallet APP by its
+    // scheme (oid4vci.walletInvocation). Set walletUrl and
+    // walletIssuancePath ("/vc-issuance-1.html" for the embedded
+    // debugger's web wallet) to offer a web wallet beside it.
     authorizationServer: "",
     batchSize: 4,
     deferredReadyMs: 4000,
@@ -243,8 +237,9 @@ var config = {
   // --- OID4VP ------------------------------------------------------------
   oid4vp: {
     clientId: "sts-verifier",
-    // walletUrl: falls back to oid4vci.walletUrl. Uncomment to point the mock
-    //   Verifier at a different wallet from the issuer's.
+    // walletUrl: falls back to oid4vci.walletUrl, a web wallet offered
+    //   beside the oid4vp.walletInvocation link; walletPresentationPath is
+    //   "/vc-presentation-1.html" for the embedded debugger's.
     kbMaxAgeS: 600,
     claims: "given_name,family_name"
   },
@@ -255,8 +250,6 @@ var config = {
     realm: "EXAMPLE.COM",
     kdcPort:
       88,                                                   // restart to apply
-    servicePort:
-      8888,                                             // restart to apply
     servicePrincipal:
       "HTTP/web.example.com",                      // restart to apply
     clockSkew: 300,
@@ -273,14 +266,6 @@ var config = {
       "krbtgt-mock-password",                        // restart to apply
     domainSid:
       "S-1-5-21-1004336348-1177238915-682003330",         // restart to apply
-    trustedRealm:
-      "PARTNER.COM",                                   // restart to apply
-    trustPassword:
-      "inter-realm-trust-password",                   // restart to apply
-    trustedDomainSid:
-      "S-1-5-21-2035427030-2118130302-1178042555", // restart to apply
-    trustedKrbtgtPassword:
-      "partner-krbtgt-password",              // restart to apply
     s2kparams: "omit"
   },
 
@@ -390,60 +375,18 @@ var config = {
 
   // --- Web security --------------------------------------------------------
   //
-  // THE RATE LIMITS ARE RAISED HERE AND NOWHERE ELSE (2026-09-06), AND THE
-  // PLACEMENT IS THE WHOLE POINT.
-  //
-  // `env/defaults.js` ships 5 per identity and 20 per address per 60s, and
-  // those are the right numbers for what the limiter was written for: a
-  // SIGN-IN, where five attempts a minute is generous and a sixth is somebody
-  // guessing. **They are wrong for a test suite**, because every job in it
-  // comes from ONE ADDRESS — the runner — so the address bucket counts the
-  // whole suite as one caller while the identity bucket, the one that is
-  // actually about credential guessing, is nowhere near its limit.
-  //
-  // MEASURED, rather than guessed at (2026-09-06, the whole suite against one
-  // instance with the limiter effectively off):
-  //
-  //   activation   per address   peak 25   — over the shipped limit of 20
-  //   activation   per identity  peak  2   — nowhere near the limit of 5
-  //   xacml-pip    per address   peak  7
-  //   sign-in      per address   never accumulated, because a SUCCESSFUL
-  //                              sign-in calls succeeded() and clears it
-  //
-  // So one door did it: `activation`. `sts_portal_sessions.js` and
-  // `sts_admin_console.js` each issue and open several activation links, and
-  // the address bucket is not cleared by an activation that WORKS the way a
-  // sign-in's is. The symptom was a 429 on a link the console had just handed
-  // over — which reads exactly like a broken handler and is not one.
-  //
-  // 500 and 100 are 20× and 50× the measured peaks, so the suite has room to
-  // grow several times over before this needs looking at again, and both are
-  // still a real control: 500 activation attempts a minute from one address is
-  // abuse by any reading.
-  //
-  // **THIS IS A LAYER, NOT A CHANGE TO THE SETTING.** `env/defaults.js` is
-  // GENERATED from `config.js` and still says 5 and 20, so a service handed
-  // somebody else's appconfig file — or none — gets the shipped limits. It is
-  // the same decision `global.https` records above: what OUR OWN STACKS do
-  // belongs in the appconfig files, and what this service IS belongs in
-  // config.js. Raising the default instead would have weakened a security
-  // control for every deployment, including product mode, to fix a test run.
-  //
-  // The limiter itself is guarded by `tests/rate_limiter.js`, which drives
-  // `websecurity.attempt()` in process with limits of its own — so turning
-  // these up here does not leave the control untested. It was untested before
-  // this change and the 429s were the only thing exercising it.
+  // THE RATE LIMITS ARE NOT SET HERE SINCE #1482 (ASVS 5.0.0 6.3.1): the image
+  // selects this file, so 100 and 500 here were what every deployment got. The
+  // shipped 5 and 20 apply. Our test stacks raise them in `env/docker-tests.js`
+  // and `env/test.js`, and the tests image in `tests/Dockerfile`.
   security: {
-    rateLimitWindowS: 60,
-    rateLimitPerIdentity: 100,
-    rateLimitPerAddress: 500,
     activationTtlMinutes: 1440
   },
 
   // --- ACME's refusal throttle ----------------------------------------------
   // THE SAME ONE-ADDRESS PROBLEM AS `security` ABOVE, ONE FAMILY ALONG
   // (2026-09-13). `acme.attemptsPerAddress` counts REFUSED ACME requests from
-  // one address and ships at 120 a window. `tests/vendored/sts_route_inputs.js`
+  // one address and ships at 120 a window. `tests/protocol/sts_route_inputs.js`
   // sends every route a malformed request on purpose, and measured against one
   // instance it leaves 132 refused ACME requests on the runner's address — so
   // the next job to read `/enroll/acme/directory`, `sts_metadata_anonymous.js`,
@@ -455,6 +398,22 @@ var config = {
   // throttle set their own limits inside the realms they create.
   acme: {
     attemptsPerAddress: 5000
+  },
+
+  // --- Paranoid PKI mode ----------------------------------------------------
+  // FORCED OFF IN EVERY APPCONFIG FILE WE PACKAGE (rcbj, 2026-11-10).
+  // `pki.paranoid` ships `auto`, which is on in product mode (#1360) and holds
+  // every certificate this service relies on to the full set of checks, a
+  // revocation check that never ran counting as a refusal. The first product
+  // node built after #1360 (test-idp.iyasec.io, develop 39c8248c8, revocation
+  // off there by #371) refused Secrets Manager's own TLS certificate
+  // (STS-KEYS-0044) and did not start (STS-CORE-0036). Off, every use case
+  // behaves exactly as it did before #1360; a product node logs STS-PKI-0239
+  // once and /admin/pki/trust draws it red. It is a LAYER, not the setting:
+  // `env/defaults.js` still ships `auto`, and STS_PKI_PARANOID or a runtime
+  // override still sets it back.
+  pki: {
+    paranoid: "off"
   },
 
   // --- SPIFFE / SPIRE ------------------------------------------------------

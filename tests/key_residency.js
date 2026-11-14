@@ -131,6 +131,7 @@ async function run(t) {
     // so a test that used it would silently assert against the defaults.
     process.env.STS_KEYS_SOURCE = 'persisted';
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
+    process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
     process.env.STS_KEYS_KEK_FILE = kekFile;
 
     const store = fakeStore();
@@ -299,6 +300,7 @@ async function run(t) {
     config.clearOverride('keys.plaintextTtlS');
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     t.equal(keystore.persists(), false,

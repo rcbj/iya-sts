@@ -62,6 +62,11 @@ set -euo pipefail
 NAME="${IYA_STS_NAME:-iya-sts}"
 HOME_REGION="${AWS_REGION:-us-west-2}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# Under Cygwin (#512), the shim that takes the CR off what aws.exe prints,
+# and hostPath() for the file it is handed. See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${REPO_ROOT}/tests/tools/host-platform.sh"
 ENVS="${REPO_ROOT}/deploy/aws/environment/envs"
 
 say() { echo "==> $*" >&2; }
@@ -191,7 +196,7 @@ carry_secrets() {
     --name "${CARRYOVER}" --kms-key-id "alias/${NAME}" \
     --description "iya-sts: ${FROM}'s secrets, carried into ${TO} (#98 conversion)" \
     --tags Key=Project,Value=STS Key=Environment,Value="${TO}" \
-    --secret-string "file://${WORK}/carryover.json" >/dev/null || \
+    --secret-string "file://$(hostPath "${WORK}/carryover.json")" >/dev/null || \
     die "could not create ${CARRYOVER}."
   say "wrote ${CARRYOVER} ($(jq -r 'keys | join(", ")' "${WORK}/carryover.json"); values not shown)"
 }

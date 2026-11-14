@@ -29,7 +29,6 @@ this page follows from that. The SAML 2.0 profile is
 | `GET\|POST /saml11/sso[/{rp}]` | the **inter-site transfer service** — SAML 1.1's name for the single sign-on service |
 | `POST /saml11/responder[/{rp}]` | the **SAML responder**, SOAP over HTTP (bindings section 3.1): resolves artifacts, returns assertions by `AssertionID`, and answers `AttributeQuery` and `AuthenticationQuery` |
 | `GET /saml11/metadata[/{rp}]` | signed metadata, one document per relying party |
-| `GET\|POST /saml11/rp` | a **mock relying party** (not part of any specification) |
 | `GET /saml11/autopost.js` | the one script the Browser/POST profile runs |
 | `GET /saml11` | a page describing all of the above and every parameter this realm reads |
 
@@ -52,8 +51,8 @@ A browser arrives at `/saml11/sso` with:
 **Shibboleth's request profile** (`shire`, `target`, `providerId`, `time`,
 identified as `urn:mace:shibboleth:1.0:profiles:AuthnRequest`) is supported and
 advertised in the metadata, although it is not a standard — it is what every
-real SAML 1.1 service provider sends, and a mock that could not be told where to
-send the assertion would be a mock nobody could point at anything.
+real SAML 1.1 service provider sends, and a service that could not be told where to
+send the assertion would be one nobody could point at anything.
 
 **The relying party cannot name itself in the protocol**, so the audience comes
 from `providerId`, from the `{rp}` path segment of a scoped endpoint, or —
@@ -68,6 +67,44 @@ every protocol here uses, so a session from OAuth, SAML 2.0 or WS-Federation is
 reused. A flow is held for `saml11.requestTtlMin` while the person is at the
 screen.
 
+### Who started it, and whether that is allowed
+
+SAML 1.1 has no request message, so **`shire` is what tells the two starts
+apart**:
+
+* a request carrying `shire` (Shibboleth's AuthnRequest profile) is the
+  **relying party's** start, and is answered where `saml11.spInitiatedSso` is
+  on for it — the default; `saml11SpInitiatedSso` FALSE on its entry refuses
+  it with a 403 page (`STS-SAML-0114`);
+* a link carrying only a `TARGET` (and `providerId` or the `{rp}` path
+  segment) is a sign-in **started here**, and is answered only where
+  `saml11.idpInitiatedSso` is on for it. **That is off by default**:
+  `saml11IdpInitiatedSso` TRUE on the relying party's entry turns it on for
+  that relying party, and otherwise the link is refused with a 403 page
+  (`STS-SAML-0113`).
+
+**The request is an unsigned URL**, so turning `saml11.spInitiatedSso` off
+closes a door rather than proving where a request came from: anybody can
+write a URL with a `shire`, or leave it off. Both refusals come before the
+sign-in screen.
+
+**In product mode a person is asked, once per relying party, before a session
+they already have signs them in to it** (ASVS 5.0.0 7.6.2), on the
+[consent screen](oauth-oidc.md#consent) OpenID Connect uses. An Allow is kept
+and answers every later sign-in to that relying party; a Deny is a 403 page
+(`STS-SAML-0120`). `saml11.ssoConsent` turns it on (product) or off
+(development), and `saml11SsoConsent` on the entry overrides it for one
+relying party.
+
+A sign-in started here runs what one the relying party started runs: the
+session, the issuance policy with the session's risk, the CAEP
+`session-presented` event, and the record of the relying party on the
+session. When the policy asks for a **step-up on risk**, the person is sent
+to the sign-in screen with the factor demanded and the held flow is answered
+when they come back; a flow back from that one trip and still refused is a
+403 page (`STS-SAML-0115`), not another trip. The re-prompt for a sign-in
+mechanism the relying party does not allow shares the same one trip.
+
 ### Browser/POST and Browser/Artifact
 
 **The two profiles are chosen here.** Nothing in SAML 1.1 lets a relying
@@ -75,10 +112,10 @@ party ask in the protocol, but a relying party whose metadata was consumed
 registered each assertion consumer service WITH its profile — a Shibboleth SP
 publishes `/SAML/POST` as `browser-post` and `/SAML/Artifact` as
 `artifact-01` — so the `shire` it sends chooses, which is what a Shibboleth
-identity provider does. Otherwise `saml11.defaultProfile` decides, and the
-non-spec `profile` parameter (or an arriving `SAMLart`) overrides it — the same
-kind of device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever
-it appears.
+identity provider does. Otherwise `saml11.defaultProfile` decides. Nothing in
+the request overrides either: the non-spec `profile` parameter that once did
+was removed, and so was `format` (the NameIdentifier format is
+`saml11.nameIdFormat`, or the relying party's `saml11NameIdFormat`).
 
 * **Browser/POST** (profiles section 4.2) puts the whole signed Response in a
   self-submitting form. The assertion is confirmed
@@ -98,7 +135,8 @@ it appears.
 reached the relying party, so the two are not interchangeable: an
 artifact-profile assertion confirmed as `bearer` claims to have travelled
 through the browser when it did not. A relying party that checks refuses it;
-one that does not works with either. The mock relying party checks.
+one that does not works with either. The test peer's relying party
+(`tests/peer/`) checks.
 
 An artifact here stands for an **assertion**, not a message: the
 `<samlp:Response>` around it is built at resolution time, so its `InResponseTo`
@@ -110,8 +148,8 @@ names the SOAP request and its `Recipient` names whoever asked.
 
 | Request | Answer |
 |---|---|
-| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt is refused with a status naming the reason. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
-| `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`; not one-shot, since holding the reference means already holding the assertion |
+| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt — like an unknown artifact, another provider's, or one asked for by the wrong relying party — gets `samlp:Success` with no assertion and no status message, as bindings section 4.1.1.6 requires; the reason is in the log under its error code. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
+| `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`, until the assertion's own `NotOnOrAfter`; not one-shot, since holding the reference means already holding the assertion |
 | `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — in product under a release policy, below |
 | `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — in product under the same policy |
 
@@ -198,24 +236,14 @@ As with SAML 2.0 it is **per relying party and, in development, minted for
 anything asked for** — in product mode `/saml11/metadata/{rp}`,
 `/saml11/sso/{rp}` and `/saml11/responder/{rp}` answer 404 for a name that is
 not a registered SAML 1.1 relying party:
-the providerID becomes `{providerID}:{slug}` and the endpoints sit under the
-same segment (`saml11.perApplicationProviderId`). The slug is the same one the
-SAML 2.0 profile uses for the same application. In development, a relying
+the endpoints sit under the relying party's own segment, and the slug is the
+same one the SAML 2.0 profile uses for the same application. The providerID is
+the realm's OAuth 2.0 issuer, the same for every relying party, and the
+document is the SAML 2.0 one — one entity describing both versions (#523). In development, a relying
 party named for the first time — by a `TARGET`, a metadata request or an
 artifact resolution — gets an application entry when
 `saml11.autocreateApplications` is on; product mode creates nothing because
 something named it.
-
-### The mock relying party
-
-`/saml11/rp` is the default assertion consumer and a test harness. It starts a
-flow on either profile, accepts a Browser/POST response or an artifact (which it
-resolves under the same one-shot rule, so reloading the result page shows the
-second attempt refused), and verifies the Response check by check: SAML version,
-status, `Recipient`, `InResponseTo`, both signatures, `AssertionID`, issuer,
-audience, validity window, the confirmation method against the profile, the
-`DoNotCacheCondition` against the profile, the authentication statement, the
-subject and the attributes.
 
 ### Not implemented
 
@@ -233,11 +261,12 @@ subject and the attributes.
 
 | | Development | Product |
 |---|---|---|
-| `shire` | used as it stands; with none, the mock relying party | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
+| A relying party nobody **registered** — unknown, or recorded only because a development request named it | answered | a 403 page before its addresses are read (#496); the per-RP paths and the responder count only a registered entry |
+| `shire` | used as it stands; with none, the registered one, and with none registered the flow is refused | must be a registered `samlAssertionConsumerService`, exact match; an address development merely observed is refused until confirmed |
 | `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | answered only to a registered, authenticated relying party about a person it holds a live session for, by the NameIdentifier it was given |
 | Artifact resolver authentication | not required (follows `saml2.requireSignedAuthnRequests`) | required |
+| A parameter given twice, or in both the query string and the body | not refused for that reason | refused, 400 (`STS-CORE-0173`) |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
-| Empty `saml11.providerId` | replaced with `urn:sts:idp:saml11` | SSO and metadata refuse, naming the setting |
 
 The query policy in product is not a bare client-certificate gate on purpose:
 a gate alone would answer any holder of any trusted certificate about anybody,
@@ -250,18 +279,21 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `saml11.providerId` | `STS_SAML11_PROVIDER_ID` | `urn:sts:idp:saml11` | yes | This identity provider's name: the assertion `Issuer`, the metadata `entityID`, and what every artifact's SourceID is a hash of. |
-| `saml11.perApplicationProviderId` | `STS_SAML11_PER_APPLICATION_PROVIDER_ID` | `true` | yes | Give each relying party its own providerID, `{providerID}:{slug}`; this also changes every artifact's SourceID. |
 | `saml11.assertionLifetimeMin` | `STS_SAML11_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per relying party with `saml11AssertionLifetimeMin`. |
 | `saml11.signAssertion` | `STS_SAML11_SIGN_ASSERTION` | `true` | yes | Sign the assertion (required by Browser/POST); per relying party with `saml11SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per relying party (#181). |
 | `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |
-| `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format, unless the non-spec `format` overrides it; per relying party with `saml11NameIdFormat`. |
-| `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when the request does not say. |
+| `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format; per relying party with `saml11NameIdFormat`. |
+| `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when no binding is registered for the `shire`. |
 | `saml11.doNotCacheCondition` | `STS_SAML11_DO_NOT_CACHE_CONDITION` | `false` | yes | A `<saml:DoNotCacheCondition/>` on a Browser/POST assertion. Off by default (#189): the profile does not require it, and the Shibboleth SP's stock policy refuses it. **Warning:** turn it on only for relying parties known to honour it. |
 | `saml11.artifactTtlS` | `STS_SAML11_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per relying party with `saml11ArtifactTtlS`. |
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |
+| `saml11.idpInitiatedSso` | `STS_SAML11_IDP_INITIATED_SSO` | `false` | yes | Answer a link with a `TARGET` and no `shire` — a sign-in started here. **Off by default**; per relying party with `saml11IdpInitiatedSso`. |
+| `saml11.spInitiatedSso` | `STS_SAML11_SP_INITIATED_SSO` | `true` | yes | Answer a request carrying `shire` — the relying party's own start. Per relying party with `saml11SpInitiatedSso`. The request is unsigned, so off closes a door rather than proving who opened it. |
+| `saml11.ssoConsent` | `STS_SAML11_SSO_CONSENT` | `true` in product, `false` in development | yes | Ask a person once per relying party before single sign-on signs them in to it. Per relying party with `saml11SsoConsent`. |
 | `saml11.assertionCacheMax` | `STS_SAML11_ASSERTION_CACHE_MAX` | `500` | yes | Assertions kept per realm for `AssertionIDReference`, oldest out first. |
+| `saml11.assertionCacheTtlS` | `STS_SAML11_ASSERTION_CACHE_TTL_S` | `3600` | yes | How long a kept assertion with no NotOnOrAfter stays answerable; one with a NotOnOrAfter is kept until then and no longer. |
+| `saml11.maxArtifacts` | `STS_SAML11_MAX_ARTIFACTS` | `10000` | yes | Unresolved artifacts kept per realm; a store full of live ones refuses the next Browser/Artifact sign-in with a 503 page (`STS-SAML-0110`) rather than forget one. |
 
 The shared `saml.*` settings — signature algorithm, canonicalization, SHA-1
 verification, clock skew, the metadata organisation — are in the
@@ -285,7 +317,7 @@ changed on `/admin/saml11` or `/admin/saml-assertions`, or with
 * **The confirmation method follows the profile.** An artifact-profile
   assertion confirmed as `bearer` would claim to have travelled through the
   browser; a relying party that does not check never notices, which is why the
-  mock checks.
+  test peer's relying party checks.
 * **An artifact resolves into a Response built at that moment**, so
   `InResponseTo` and `Recipient` name the SOAP caller rather than the browser's
   destination.
@@ -305,7 +337,7 @@ changed on `/admin/saml11` or `/admin/saml-assertions`, or with
 
 ## In the running service
 
-* **Protocols → SAML → SAML 1.1 identity provider** (`/admin/saml11`): every
+* **Protocols → SAML** (`/admin/saml2`, SAML 1.1 tab): every
   relying party, its metadata URL, which profile it used and where the
   assertion went, and which identifiers look guessed.
 * **SAML assertions** (`/admin/saml-assertions`) and **Custom SAML attributes**

@@ -52,8 +52,8 @@ const pki = require('../common/pki');
 const realms = require('../common/realms');
 const config = require('../common/config');
 const errorCodes = require('../common/error_codes');
-const keyMaterial = require('../common/vendored/key_material');
-const x509 = require('../common/vendored/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
+const x509 = require('../common/crypto_impl/x509');
 // What fills `cert_enrollment.setDirectory()`. Without it every entry is
 // "no directory" and every assertion below passes for the wrong reason.
 const ldap = require('../ldap/ldap_server');
@@ -917,11 +917,9 @@ function checkMonitorAndSource(t) {
   t.equal(monitor.snapshot('acme').requests, 0,
           'and ACME\'s are its own');
 
-  const ldapSource = fs.readFileSync(path.join(__dirname, '..', 'ldap',
-                                               'ldap_server.js'), 'utf8');
-  const secretBlock = ldapSource.slice(
-    ldapSource.indexOf('const SECRET_ATTRIBUTES = ['),
-    ldapSource.indexOf('];', ldapSource.indexOf('const SECRET_ATTRIBUTES')));
+  const secretBlock = JSON.stringify(JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'models', 'generated',
+      'directory.names.json'), 'utf8')).secret).replace(/"/g, "'");
   core.SECRET_ATTRIBUTES.forEach(function (name) {
     t.check(secretBlock.indexOf("'" + name.toLowerCase() + "'") >= 0,
             name + ' is withheld from every reader of the LDAP socket');

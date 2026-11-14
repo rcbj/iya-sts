@@ -39,7 +39,7 @@
   "entryPointStrategy": "expand",
   "exclude": [
     "**/node_modules/**",
-    "**/vendored/**",
+    "**/protocol/**", "**/crypto_impl/**",
     "**/embedded/**",
     "**/*.d.ts",
     "../../../kerberos/krb5_primitives.js",

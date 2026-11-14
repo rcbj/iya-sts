@@ -274,17 +274,17 @@ async function run(t) {
   const credentials = require('./tools/pep-credential.js');
   const stamp = process.pid + '-' + Date.now();
   const one = await credentials.mint({ rootSubject: 'CN=truststore-persist A ' +
-      stamp + ',O=sts ' +
+      stamp + ',O=iya-sts ' +
       'tests',
                                        subject:
-                                         'CN=truststore-persist-leaf-a,O=sts ' +
-                                                'tests' });
+                                         'CN=truststore-persist-leaf-a,' +
+                                                'O=iya-sts tests' });
   const two = await credentials.mint({ rootSubject: 'CN=truststore-persist B ' +
-      stamp + ',O=sts ' +
+      stamp + ',O=iya-sts ' +
       'tests',
                                        subject:
-                                         'CN=truststore-persist-leaf-b,O=sts ' +
-                                                'tests' });
+                                         'CN=truststore-persist-leaf-b,' +
+                                                'O=iya-sts tests' });
   const pems = { a: one.anchorPem, b: two.anchorPem };
 
   t.log.info('=== 1. the reload rules, against a store this file controls ===');

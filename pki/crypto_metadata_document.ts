@@ -54,7 +54,6 @@ import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
-import nodeCrypto = require('crypto');
 
 type Req = any;
 type Res = any;
@@ -157,15 +156,6 @@ class CryptoMetadataDocument {
     };
   }
 
-  // A certificate PEM as the base64 of its DER, for `x5c`.
-  private der64(pem: string): string {
-    const { log } = this.deps;
-    log.debug("Entering CryptoMetadataDocument.der64().");
-    log.debug("Leaving CryptoMetadataDocument.der64().");
-    return String(pem || '').replace(/-----[^-]+-----/g, '')
-      .replace(/\s+/g, '');
-  }
-
   // One certificate's public facts: the chain leaf first, validity, the
   // SHA-256 fingerprint of the DER, the serial, and where its issuer's CRL,
   // OCSP responder and certificate are.
@@ -186,7 +176,7 @@ class CryptoMetadataDocument {
       log.debug("Leaving CryptoMetadataDocument.certificateOf(). None.");
       return null;
     }
-    const x509 = new nodeCrypto.X509Certificate(pem);
+    const x509 = stsCrypto.parseCertificate(pem);
     let points: Json = null;
     if (record) {
       try {
@@ -198,15 +188,15 @@ class CryptoMetadataDocument {
       }
     }
     const out: Json = {
-      x5c: [this.der64(pem)].concat(((record && record.chainPem) || [])
-        .map(this.der64.bind(this))),
+      // Through the service Root (#1064): helpers.x5cOf(), the one writer of
+      // a published `x5c`, says why.
+      x5c: helpers.x5cOf(pem, (record && record.chainPem) || []),
       subject: x509.subject.replace(/\n/g, ', '),
       issuer: x509.issuer.replace(/\n/g, ', '),
       serialNumber: x509.serialNumber,
       notBefore: new Date(x509.validFrom).toISOString(),
       notAfter: new Date(x509.validTo).toISOString(),
-      sha256Fingerprint: nodeCrypto.createHash('sha256').update(x509.raw)
-        .digest('hex'),
+      sha256Fingerprint: stsCrypto.digest('sha256', x509.raw, 'hex'),
       selfSigned: !record,
       crl: points ? [points.http, points.ldap] : [],
       ocsp: points ? points.ocsp : null,
@@ -232,7 +222,7 @@ class CryptoMetadataDocument {
       let currentPem = '';
       if (row.unit === 'jose:RS256') {
         currentPem = keys.selfSignedCertPem || keys.certPem;
-        current.jwk = Object.assign(nodeCrypto.createPublicKey(currentPem)
+        current.jwk = Object.assign(stsCrypto.publicKeyOf(currentPem)
           .export({ format: 'jwk' }), { kid: row.kid, use: 'sig' });
       } else if (row.unit === 'xml:RS256') {
         currentPem = xml.selfSignedCertPem;
@@ -344,7 +334,12 @@ class CryptoMetadataDocument {
     }
     const out = {
       jose: {
-        signing: stsCrypto.JWS_ASYMMETRIC_ALGS.slice(),
+        // The classical ones alone while `keys.postQuantumSigning` is off
+        // (2026-10-23), as the discovery documents say. The units above are
+        // the key INVENTORY and keep listing what the key set holds. And only
+        // what `keys.signingAlgorithms` lists, if it lists anything (#1348).
+        signing: helpers.listedSigningAlgs(
+          helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS)),
         default: 'RS256',
         signedMetadata: String(config.value('oauth2.signedMetadataAlgorithm') ||
                                'RS256'),
@@ -363,10 +358,41 @@ class CryptoMetadataDocument {
             return row.uri;
           }),
         default: xmlDefault
-      }
+      },
+      // Every other surface, as the policy answers it (#1368). The JOSE and XML
+      // sections above keep their shape for what already reads them.
+      cose: this.surfaceSummary('cose'),
+      dataIntegrity: this.surfaceSummary('di'),
+      x509: this.surfaceSummary('x509'),
+      httpsig: this.surfaceSummary('httpsig'),
+      webauthn: { offered: helpers.webauthnAlgorithmsOffered() },
+      tls: { signatureAlgorithms: String(
+        config.value('tls.signatureAlgorithms') || '').split(':') }
     };
     log.debug("Leaving CryptoMetadataDocument.algorithms().");
     return out;
+  }
+
+  // One surface's lists, in their spellings: what it signs and accepts now.
+  private surfaceSummary(surface: string): Json {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering CryptoMetadataDocument.surfaceSummary(). " + surface);
+    const policy = stsCrypto.signaturePolicy;
+    const row = policy.describe().surfaces[surface];
+    const spellings = function (keep: (one: Json) => boolean): string[] {
+      return row.rows.filter(keep).map(function (one: Json): string {
+        return one.spelling;
+      });
+    };
+    log.debug("Leaving CryptoMetadataDocument.surfaceSummary().");
+    return {
+      signing: spellings(function (one: Json): boolean {
+        return one.signs;
+      }),
+      accepted: spellings(function (one: Json): boolean {
+        return one.accepts;
+      })
+    };
   }
 
   // The rotation policy the realm runs (#42).
@@ -418,9 +444,10 @@ class CryptoMetadataDocument {
       units: this.unitsOf(realmId),
       algorithms: this.algorithms(),
       links: {
-        jwks_uri: base + '/oauth2/jwks',
-        openid_configuration: base + '/.well-known/openid-configuration',
-        saml2_metadata: base + '/saml2/metadata',
+        jwks_uri: helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/jwks',
+        openid_configuration: helpers.rebaseTo(base, 'oauth-oidc') +
+                              '/.well-known/openid-configuration',
+        saml2_metadata: helpers.rebaseTo(base, 'saml2') + '/saml2/metadata',
         wsfed_metadata: base +
                         '/FederationMetadata/2007-06/FederationMetadata.xml',
         json: base + BASE + '.json',
@@ -511,7 +538,7 @@ class CryptoMetadataDocument {
     const a = m.algorithms;
     const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
       '<cm:CryptoMetadata xmlns:cm="' + XML_NS + '" ID="_cm' +
-      nodeCrypto.randomBytes(8).toString('hex') + '" specVersion="' +
+      stsCrypto.randomBytes(8).toString('hex') + '" specVersion="' +
       m.specVersion + '" issuer="' + self.esc(m.issuer) + '" realm="' +
       self.esc(m.realm) + '" generatedAt="' + self.esc(m.generatedAt) + '">' +
       '<cm:Rotation scheduled="' + (m.rotation.scheduled ? 'true' : 'false') +
@@ -544,7 +571,7 @@ class CryptoMetadataDocument {
   // (`saml/saml2_sso.ts`, #42 D8) to say where this document is. It was in
   // no schema at all until then, so a validator loading this one to check
   // that extension found nothing to check it against —
-  // tests/vendored/sts_xml_schema_validation.js loads this file for exactly
+  // tests/protocol/sts_xml_schema_validation.js loads this file for exactly
   // that and refused the metadata until the declaration was here.
   /**
    * Returns the XSD served at `/crypto/metadata.xsd`, which also declares the
@@ -655,6 +682,8 @@ class CryptoMetadataDocument {
       privateKeyPem: signer.privateKeyPem,
       privateKey: signer.privateKey,
       certPem: signer.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(signer),
       sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.FIRST,
       id: id

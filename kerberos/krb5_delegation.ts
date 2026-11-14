@@ -34,8 +34,8 @@
 // that are not policy: the PAC check on an evidence ticket (CVE-2020-17049,
 // and the forged-evidence case behind it) and PA-S4U-X509-USER's encoding.
 // `krb5_kdc.js` requires it LAZILY, so a process that never sees an S4U
-// request never loads it (and the parent project's COPY closure, which
-// `kerberos/CLAUDE.md` tracks, is owed it only when it bumps past #186).
+// request never loads it (and, until #1280, the parent project's COPY
+// closure was owed it only once that project bumped past #186).
 //
 // A LIBRARY with no route and no store.
 // ===========================================================================
@@ -50,6 +50,7 @@ import msgs = require('./krb5_messages');
 import kcrypto = require('./krb5_crypto');
 import kpac = require('./krb5_pac');
 import prim = require('./krb5_primitives');
+import Classes = require('../common/domain_classes');
 
 const { log } = helpers;
 
@@ -86,10 +87,20 @@ class Krb5Delegation {
   }
 
   // The values of one attribute on an application row.
+  // BY NAME FOR THE SEEDS ONLY (#1579): a seed is a table of the attributes
+  // it writes, and this asks whether the entry already holds each one
+  // before writing it. Every other read is a concept's, through `listOf()`.
   private static valuesOf(row: Json, attribute: string): string[] {
     log.debug("Entering Krb5Delegation.valuesOf().");
     const raw = row && row.fields ? row.fields[attribute] : undefined;
     log.debug("Leaving Krb5Delegation.valuesOf().");
+    return Krb5Delegation.listOf(raw);
+  }
+
+  // A concept's value as a list, the empty ones gone.
+  private static listOf(raw: unknown): string[] {
+    log.debug("Entering Krb5Delegation.listOf().");
+    log.debug("Leaving Krb5Delegation.listOf().");
     return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
       raw === '' ? [] : [raw])).map(String).filter(Boolean);
   }
@@ -204,7 +215,8 @@ class Krb5Delegation {
     log.debug("Entering Krb5Delegation.trustedForDelegation().");
     this.ensureSeeded();
     const row = applications.get(Krb5Delegation.identifierOf(name, realm));
-    const out = (Krb5Delegation.valuesOf(row, 'krb5TrustedForDelegation')[0] ||
+    const kdc = Classes.KerberosService.fromEntry((row && row.fields) || {});
+    const out = (Krb5Delegation.listOf(kdc.trustedForDelegation)[0] ||
                  '').toUpperCase() === 'TRUE';
     log.debug("Leaving Krb5Delegation.trustedForDelegation(). " + out);
     return out;
@@ -218,13 +230,16 @@ class Krb5Delegation {
    *
    * @param front - the front end's name components
    * @param back - the back end's name components
-   * @param realm - their realm
+   * @param realm - their realm (the back end's)
+   * @param frontRealm - the front end's realm, where it is another (#430):
+   *   a foreign front end is accepted by name, `SPN@REALM`
    * @returns `{ classic, rbcd, delegatesTo, accepts }`
    */
-  relationship(front: string[], back: string[], realm: string): Json {
+  relationship(front: string[], back: string[], realm: string,
+               frontRealm?: string): Json {
     log.debug("Entering Krb5Delegation.relationship().");
     this.ensureSeeded();
-    const frontId = Krb5Delegation.identifierOf(front, realm);
+    const frontId = Krb5Delegation.identifierOf(front, frontRealm || realm);
     const backId = Krb5Delegation.identifierOf(back, realm);
     const frontFacts = delegationPolicy.partyFacts(frontId) || {};
     const backFacts = delegationPolicy.partyFacts(backId) || {};
@@ -233,10 +248,10 @@ class Krb5Delegation {
     const out = {
       classic: delegatesTo.indexOf(backId) >= 0,
       rbcd: accepts.indexOf(frontId) >= 0,
-      delegatesTo: Krb5Delegation.valuesOf(applications.get(frontId),
-                                           'appAllowedToDelegateTo'),
-      accepts: Krb5Delegation.valuesOf(applications.get(backId),
-                                       'appAllowedToActOnBehalfOf')
+      delegatesTo: Krb5Delegation.listOf(Classes.Application.fromEntry(
+        (applications.get(frontId) || {}).fields || {}).allowedToDelegateTo),
+      accepts: Krb5Delegation.listOf(Classes.Application.fromEntry(
+        (applications.get(backId) || {}).fields || {}).allowedToActOnBehalfOf)
     };
     log.debug("Leaving Krb5Delegation.relationship(). classic=" +
               out.classic + " rbcd=" + out.rbcd);
@@ -248,28 +263,62 @@ class Krb5Delegation {
    * impersonation by the service of itself, S4U2Proxy as a delegation by
    * the front end to the back end.
    *
-   * @param question - `{ mechanism: 'self' | 'proxy', requester, subject,
-   *   subjectRealm, target, realm }`, names as components
+   * @param question - `{ mechanism: 'self' | 'proxy' | 'forwarded',
+   *   requester, subject, subjectRealm, target, realm, rbcd? }`, names as
+   *   components; `rbcd` says resource-based delegation permitted a proxy
+   *   request. ACROSS A TRUST (#430): `trustPartner`, the realm the ticket
+   *   arrived from or is referred to, whose record's facts the policy reads,
+   *   `requesterRealm` / `targetRealm` where those parties are of another
+   *   realm, and `subjectSids`, the SIDs a subject of another realm carries
+   *   once SID-filtered
    * @returns `delegation_policy.decide()`'s decision
    */
   decide(question: Json): Json {
     log.debug("Entering Krb5Delegation.decide(). " + question.mechanism);
     this.ensureSeeded();
+    const requesterRealm = question.requesterRealm || question.realm;
+    const targetRealm = question.targetRealm || question.realm;
     const requesterId = Krb5Delegation.identifierOf(question.requester,
-                                                    question.realm);
+                                                    requesterRealm);
     const targetId = Krb5Delegation.identifierOf(question.target,
-                                                 question.realm);
-    const decision = delegationPolicy.decide({
+                                                 targetRealm);
+    // THE TRUST'S FACTS (#430 Phase 3), from its record, and only for a
+    // question that crossed one.
+    let trust: Json = null;
+    if (question.trustPartner) {
+      const register = principals.trustRegister();
+      trust = register ? register.policyFacts(question.trustPartner) : null;
+      trust = trust || { partner: question.trustPartner, type: '',
+                         direction: '', attributes: [], enabled: false };
+    }
+    const across: Json = trust ? {
+      trust: trust, localRealm: question.realm,
+      subjectRealm: question.subjectRealm || question.realm,
+      actorRealm: requesterRealm, targetRealm: targetRealm,
+      foreignSource: requesterRealm !== question.realm,
+      // A subject of another realm's filtered SIDs (#430): with its name,
+      // the only grants it holds a role by (`common/roles.js`).
+      subjectSids: Array.isArray(question.subjectSids)
+        ? question.subjectSids.map(String) : []
+    } : {};
+    const decision = delegationPolicy.decide(Object.assign({
       protocol: 'Kerberos',
       requested: question.mechanism === 'self' ? 'impersonation'
                                                : 'delegation',
+      // A TGT forwarded across a trust (#430) is acted on by the service
+      // it is forwarded to, for the person whose TGT it is.
       actor: requesterId,
       subject: this.partyName(question.subject,
                               question.subjectRealm || question.realm),
-      source: question.mechanism === 'self' ? [] : [requesterId],
+      source: question.mechanism === 'self' ||
+        question.mechanism === 'forwarded' ? [] : [requesterId],
       targets: [targetId],
-      targetKind: 'audience'
-    });
+      targetKind: 'audience',
+      // #490: the row in Kerberos's words.
+      mechanism: question.mechanism === 'self' ? 'S4U2Self' :
+        (question.mechanism === 'forwarded' ? 'forwarded' : 'S4U2Proxy'),
+      rbcd: !!question.rbcd
+    }, across));
     log.debug("Leaving Krb5Delegation.decide(). " + decision.allowed);
     return decision;
   }
@@ -296,8 +345,17 @@ class Krb5Delegation {
    * @param kdcKey - `{ etype, key }`, the krbtgt key
    * @returns `{ ok, why }`
    */
-  async verifyEvidence(evidencePart: Json, kdcKey: Json): Promise<Json> {
+  async verifyEvidence(evidencePart: Json, kdcKey: Json,
+                       across?: Json): Promise<Json> {
     log.debug("Entering Krb5Delegation.verifyEvidence().");
+    // ACROSS A TRUST (#430): the evidence is a referral TGT whose PAC the
+    // issuing realm signed with the inter-realm key — server, KDC and
+    // ticket signature alike (issueReferral() argues it) — so `kdcKey` is
+    // this realm's INCOMING key from `across.realm` and the server
+    // signature is checked with it too.
+    const whose = across
+      ? 'the inter-realm key from ' + across.realm
+      : 'this KDC\'s key';
     const ad = evidencePart.authorizationData || [];
     const pacs = kpac.findPacs(ad);
     if (!pacs.length) {
@@ -317,7 +375,9 @@ class Krb5Delegation {
       const ticketBytes = msgs.encEncTicketPart(Object.assign({},
         evidencePart, { authorizationData: replaced }));
       results = await kpac.verifySignatures(kpac.parsePac(pacs[0].bytes),
-        { kdcKey: kdcKey, ticketBytes: ticketBytes });
+        across ? { kdcKey: kdcKey, serverKey: kdcKey,
+                   ticketBytes: ticketBytes }
+               : { kdcKey: kdcKey, ticketBytes: ticketBytes });
     } catch (e) {
       log.debug("Caught in Krb5Delegation.verifyEvidence(): " +
                 ((e && e.message) || e));
@@ -338,7 +398,7 @@ class Krb5Delegation {
       log.debug("Leaving Krb5Delegation.verifyEvidence(). Ticket signature.");
       return { ok: false, why: ticket
         ? 'the evidence ticket\'s PAC ticket signature does not verify with ' +
-          'this KDC\'s key, so the ticket was altered after it was issued ' +
+          whose + ', so the ticket was altered after it was issued ' +
           '— its flags among what is covered (CVE-2020-17049)'
         : 'the evidence ticket\'s PAC has no ticket signature, so nothing ' +
           'binds its flags to what this KDC issued' };
@@ -346,8 +406,16 @@ class Krb5Delegation {
     if (!kdc || kdc.verified !== true) {
       log.debug("Leaving Krb5Delegation.verifyEvidence(). KDC signature.");
       return { ok: false, why: 'the evidence ticket\'s PAC KDC signature ' +
-               'does not verify with this KDC\'s key, so this KDC did not ' +
-               'issue the authorization data it carries' };
+               'does not verify with ' + whose + ', so ' +
+               (across ? across.realm + ' did not sign' : 'this KDC did ' +
+                'not issue') + ' the authorization data it carries' };
+    }
+    const server = across ? named(kpac.TYPE.SERVER_CHECKSUM) : null;
+    if (across && (!server || server.verified !== true)) {
+      log.debug("Leaving Krb5Delegation.verifyEvidence(). Server signature.");
+      return { ok: false, why: 'the evidence ticket\'s PAC server ' +
+               'signature does not verify with ' + whose + ', so its ' +
+               'content is not what ' + across.realm + ' signed' };
     }
     log.debug("Leaving Krb5Delegation.verifyEvidence(). Verified.");
     return { ok: true, why: '' };
@@ -493,9 +561,11 @@ export = {
     instance.isProtected(name, realm),
   trustedForDelegation: (name: string[], realm: string): boolean =>
     instance.trustedForDelegation(name, realm),
-  relationship: (front: string[], back: string[], realm: string): Json =>
-    instance.relationship(front, back, realm),
+  relationship: (front: string[], back: string[], realm: string,
+                 frontRealm?: string): Json =>
+    instance.relationship(front, back, realm, frontRealm),
   decide: (question: Json): Json => instance.decide(question),
-  verifyEvidence: (evidencePart: Json, kdcKey: Json): Promise<Json> =>
-    instance.verifyEvidence(evidencePart, kdcKey)
+  verifyEvidence: (evidencePart: Json, kdcKey: Json,
+                   across?: Json): Promise<Json> =>
+    instance.verifyEvidence(evidencePart, kdcKey, across)
 };

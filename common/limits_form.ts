@@ -32,11 +32,15 @@
 //     schema reads it.
 //
 // A STATIC UTILITY CLASS: no route, no store, no state. With script off
-// (there is none on either page) every control is plain markup.
+// (there is none on either page) every control is plain markup. The markup
+// itself is `web_limits_form.ts`'s since #576, so the consent screen, drawn
+// in the browser, draws the same controls.
 // ===========================================================================
 
 import helpers = require('./helpers');
 import AccessLimits = require('./access_limits');
+// The markup, shared with the browser (#576): a `web_` module, a leaf.
+import WebLimitsForm = require('./web_limits_form');
 
 type Json = any;
 
@@ -64,7 +68,7 @@ class LimitsForm {
   static field(t: number, r: number, member: string): string {
     helpers.log.debug("Entering LimitsForm.field().");
     helpers.log.debug("Leaving LimitsForm.field().");
-    return 'lim_t' + t + 'r' + r + '_' + member;
+    return WebLimitsForm.field(t, r, member);
   }
 
   /**
@@ -85,57 +89,13 @@ class LimitsForm {
       log.debug("Leaving LimitsForm.controls(). None.");
       return '';
     }
-    const limits = right.limits;
-    const name = function (member: string): string {
-      log.debug("Entering name().");
-      log.debug("Leaving name().");
-      return LimitsForm.field(t, r, member);
-    };
-    const input = function (member: string, value: string,
-                            mode: string): string {
-      log.debug("Entering input().");
-      log.debug("Leaving input().");
-      return '<input name="' + name(member) + '" value="' + esc(value) +
-        '" inputmode="' + mode + '" size="24">';
-    };
-    const rows: string[] = [];
-    AccessLimits.rows(limits).forEach(function (row: Json): void {
-      const v = limits[row.member];
-      let control = '';
-      if (row.member === 'amount') {
-        control = 'at most ' + input('amount', String(v), 'decimal') + ' ' +
-          esc(String(limits.currency || ''));
-      } else if (row.member === 'currency') {
-        // Drawn beside the amount; a currency never changes.
-        return;
-      } else if (row.member === 'count') {
-        control = 'at most ' + input('count', String(v), 'numeric') +
-          ' operations';
-      } else if (row.member === 'receiver') {
-        control = '<input type="hidden" name="' + name('receiverShown') +
-          '" value="1">only to ' + (AccessLimits.receiversOf(limits) || [])
-          .map(function (one: string): string {
-            return '<label><input type="checkbox" name="' +
-              name('receiver') + '" value="' + esc(one) + '" checked> ' +
-              esc(one) + '</label>';
-          }).join(' ');
-      } else if (row.member === 'interval') {
-        control = 'resetting on ' + input('interval', String(v), 'text') +
-          ' <span class="sub">(ISO 8601: R[n]/start/period; a longer ' +
-          'period or fewer repetitions is lower)</span>';
-      } else if (row.member === 'window' && v && typeof v === 'object') {
-        control = 'not before ' + input('notBefore',
-          String(v.notBefore || ''), 'text') + ' and not after ' +
-          input('notAfter', String(v.notAfter || ''), 'text');
-      } else {
-        control = esc(row.label + ' ' + row.value) + ' <span class="sub">' +
-          '(the API\'s own; it cannot be changed here)</span>';
-      }
-      rows.push('<div>' + control + '</div>');
-    });
+    // THE DRAWING IS `web_limits_form.ts`'s since #576, which the consent
+    // screen's renderer draws in the browser from the same rows: one copy.
+    const out = WebLimitsForm.controls(right.limits,
+                                       AccessLimits.rows(right.limits), t, r,
+                                       esc);
     log.debug("Leaving LimitsForm.controls().");
-    return '<div class="limits"><span>Limits — you may lower any of them, ' +
-      'never raise one:</span>' + rows.join('') + '</div>';
+    return out;
   }
 
   /**

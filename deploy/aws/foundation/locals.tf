@@ -60,6 +60,9 @@ locals {
   # THE SERVICES THE REGION FENCE EXEMPTS: global ones, whose requests carry
   # us-east-1 (Route 53) or no region a fence could compare.
   fence_exempt = ["iam:*", "sts:*", "s3:*", "route53:*"]
+  # What CloudFront needs, whose requests carry us-east-1 (#1336,
+  # iam_deployer.tf, `region_fence`).
+  edge_services = ["acm:*", "cloudfront:*", "wafv2:*"]
 
   state_bucket   = "${var.name}-terraform-state-${local.account_id}"
   reports_bucket = "${var.name}-test-reports-${local.account_id}"

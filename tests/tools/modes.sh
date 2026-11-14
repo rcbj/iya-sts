@@ -3,8 +3,8 @@
 #
 # shellcheck shell=bash
 # ===========================================================================
-# tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE, AND A
-# BARE `./run-tests.sh` RUNS ALL OF THEM (2026-09-21).
+# tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: SIX, AND A
+# BARE `./run-tests.sh` RUNS ALL OF THEM (2026-11-14; three from 2026-09-21).
 #
 # `./run-tests.sh` runs the whole suite once per mode, and this file is
 # the ONE place the modes are defined. It was written when
@@ -62,12 +62,45 @@
 # it runs (tests/teardown_bounds.js holds that arithmetic).
 #
 # ---------------------------------------------------------------------------
-# THE ORDER IS DELIBERATE: cheapest and most fundamental first.
+# SIX SINCE 2026-11-14, BY rcbj: "Make all six part of the standard test run."
+# `mariadb` (#677), `cells` (#98) and `fuzz` (#1299) were asked for by name
+# only until that day, so a bare run never ran them and each went unrun for
+# days at a time between the runs somebody remembered to ask for:
+#
+#   mariadb      `single-node` with its store on MariaDB: a failure here and
+#                not in `single-node` is a finding about the second engine.
+#
+#   cells        two cells of one service, each a single product node on a
+#                database of its own over a shared global tier. The WHOLE
+#                suite runs against cell A; the `sts_cells_*` jobs drive both.
+#
+#   fuzz         `single-node` on a network-isolated stack, for Schemathesis.
+#                It runs ITS OWN JOBS ONLY — stsModeJobFilter() below — which
+#                the launcher applies to this mode alone, so nobody types
+#                `--only=schemathesis` and the other modes in the same run
+#                keep their full lists.
+#
+# `cluster-portable` stays by name only (`--modes=cluster-portable`): it is
+# `cluster` on the statements a second engine runs, and `mariadb` is now that
+# engine in every bare run. The `schema-validation` container (#1353) is not a
+# mode of this file at all and stays named-only too.
+#
+# ---------------------------------------------------------------------------
+# THE ORDER IS DELIBERATE: cheapest and most fundamental first, and the
+# longest, isolated one last.
+#
+#   memory -> single-node -> mariadb -> cluster -> cells -> fuzz
+#
+# one process, then one production node, then the same node on the second
+# engine (read beside `single-node`, which is why it follows it), then two
+# nodes behind a balancer, then two cells on three databases, and the fuzz
+# gate — the longest mode, on a stack with no egress — at the end, so that
+# every functional verdict is in before it starts. A failure in an early mode
+# is reported before the heavier modes fail for the same reason in more words.
 # ===========================================================================
 
-# The mode names a bare run runs, in the order they run. `cells` (#98) is a
-# fourth mode that is NOT here: it runs only when named, `--modes=cells`.
-STS_ALL_MODES=(memory single-node cluster)
+# The mode names a bare run runs, in the order they run.
+STS_ALL_MODES=(memory single-node mariadb cluster cells fuzz)
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +143,9 @@ stsModeEnv()
       cat <<'EOF'
 STS_MODE=development
 STS_PERSISTENCE_MODE=memory
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=false
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
@@ -153,7 +188,45 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    mariadb)
+      # THE SINGLE-NODE PRODUCTION DEPLOYMENT ON MARIADB (#677) — in
+      # STS_ALL_MODES since 2026-11-14, after `single-node`, whose run it is
+      # read beside. Every value `single-node` names, with
+      # `persistence.mode=mariadb`: the store is the database `sts_store` on
+      # the stack's `mariadb` server, built by the layer's one-shot from
+      # mariadb/schema.sql (tests/docker-compose-run-tests-mariadb.yml).
+      # PostgreSQL stays this service's primary store (rcbj on #677); this
+      # mode is the suite run against the second engine, and a failure here
+      # and not in `single-node` is a finding about the MariaDB driver.
+      # Here the `mariadb` server is the whole store, so its buffer pool is
+      # sized for that (STS_MARIADB_BUFFER_POOL); every other mode, where it
+      # serves one job, names the laptop-sized 128M (rcbj on #695) — named
+      # rather than left to the compose default, since a mode that does not
+      # name a variable inherits the previous mode's (unit_job_environment).
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=mariadb
+STS_MARIADB_BUFFER_POOL=1G
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
@@ -223,7 +296,42 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=active-active
+STS_PROXY_PROTOCOL=v2
+STS_TEST_FRESH_CONNECTIONS=1
+STS_TEST_CLUSTER_NODES=2
+STS_TEST_BULK_LAST=1
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    cluster-portable)
+      # THE `cluster` MODE ON THE PORTABLE STATEMENTS (#677) — ASKED FOR BY
+      # NAME ONLY: `--modes=cluster-portable`, the one mode NOT in
+      # STS_ALL_MODES. The same two product nodes active-active on one
+      # postgres, every value `cluster` names, and one more:
+      # `persistence.sqlDialect=portable`, so both nodes coordinate through
+      # the statements MariaDB runs (persistence/cluster_portable.js) —
+      # inserts that do nothing on a duplicate, row locks in
+      # sts_cluster_locks, no LISTEN/NOTIFY and a one-second poll. A failure
+      # here and not in `cluster` is a finding about the portable
+      # statements, which is exactly what rcbj asked this mode to find before
+      # a second database exists.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=portable
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
@@ -240,11 +348,11 @@ STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     cells)
-      # TWO CELLS OF ONE SERVICE (#98, 2026-09-28) — ASKED FOR BY NAME ONLY:
-      # `--modes=cells`. It is NOT in STS_ALL_MODES, so a bare run does not
-      # grow by a fourth stack; the mode exists for the `sts_cells_*.js`
-      # jobs, which prove #98 end to end, and every other job in it asserts
-      # what it always did against cell A (`sts`).
+      # TWO CELLS OF ONE SERVICE (#98, 2026-09-28) — in STS_ALL_MODES since
+      # 2026-11-14 (it was asked for by name only until then). The
+      # `sts_cells_*.js` jobs prove #98 end to end, and every other job in it
+      # asserts what it always did against cell A (`sts`): the WHOLE list
+      # runs here, there is no job filter for this mode.
       #
       # The stack is tests/docker-compose-run-tests-cells.yml over the usual
       # one: cell `cella` (jurisdiction `us`) is `sts` on the `postgres` it
@@ -265,11 +373,44 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    fuzz)
+      # THE `fuzz` MODE (#1299) — in STS_ALL_MODES since 2026-11-14, LAST. A
+      # single-node production deployment (every value `single-node` names) on
+      # a NETWORK-ISOLATED stack (tests/docker-compose-run-tests-fuzz.yml, the
+      # `internal` network: no egress), for `sts_schemathesis.js` to throw
+      # malformed inputs at without anything leaving the device. It runs only
+      # the jobs stsModeJobFilter() names, which the launcher applies itself:
+      # `--modes=fuzz` is the whole command. STS_MARIADB_BUFFER_POOL is named
+      # since the same day, for the rule above: it was the one variable this
+      # arm left to the compose default.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
 STS_KEYS_SOURCE=persisted
 STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
@@ -296,8 +437,11 @@ stsModeDescription()
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
     single-node) echo "a single-node production deployment: product mode, postgres, 3 request workers + 1 surface worker, read-your-write" ;;
+    mariadb)  echo "the single-node production deployment with its store on MariaDB (#677): persistence.mode=mariadb, the database sts_store on the stack's mariadb server" ;;
     cluster)  echo "a multi-node production deployment: 2 such nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
-    cells)    echo "two cells of one service (#98): cella (us) and cellb (ca), product mode, each on its own postgres over a shared global-tier postgres, the inter-cell channel between them — by name only (--modes=cells)" ;;
+    cluster-portable) echo "the cluster mode on the portable coordination statements a second database engine runs (#677): no LISTEN/NOTIFY, lock rows, a one-second poll — by name only (--modes=cluster-portable)" ;;
+    cells)    echo "two cells of one service (#98): cella (us) and cellb (ca), product mode, each on its own postgres over a shared global-tier postgres, the inter-cell channel between them" ;;
+    fuzz)     echo "the single-node production deployment on a network-isolated stack (#1299), for Schemathesis to fuzz the four APIs and the protocol surface — its own jobs only (stsModeJobFilter: schemathesis)" ;;
     *)        echo "unknown" ;;
   esac
 }
@@ -324,6 +468,17 @@ stsModeNeedsPostgres()
 # nothing failing. 100 minutes is that run's pace (about 80) with room;
 # STS_CLUSTER_MODE_TIMEOUT overrides it, as STS_MODE_TIMEOUT does the others.
 # The CI cluster job's own timeout is held above it by tests/teardown_bounds.js.
+# 130 MINUTES SINCE 2026-10-13: CI's cluster run on main 8fe81efa was stopped
+# by the 100-minute bound at job 734 of 774, nothing wedged — the suite had
+# simply grown past it (#591-#604 added jobs and the console's tabs).
+# 200 MINUTES SINCE 2026-10-20: CI's cluster run on main 1f01ce51 (run
+# 39464473145) was stopped by the 130-minute bound at job 841 of 871, nothing
+# wedged — 830 jobs had finished (93 minutes of job time, sts_admin_console
+# alone 26 of them), and the 30 not yet run included the three bulk loads,
+# which took 13.5 minutes between them in that run's single-node mode and
+# are the slowest thing a cluster does (above). On that pace the mode needs
+# about 170 minutes on a GitHub runner; 200 is that with room. The laptop
+# runs it in far less, which is why it passed there.
 #
 # `single-node` HAS ONE OF ITS OWN SINCE 2026-09-24, for the same reason one
 # step smaller: product mode on postgres with request workers, and the same
@@ -333,12 +488,28 @@ stsModeNeedsPostgres()
 # more and nothing failing. 80 minutes is that pace with room;
 # STS_SINGLE_NODE_MODE_TIMEOUT overrides it. tests/teardown_bounds.js holds
 # the CI `tests` job's timeout above the largest of the bounds it runs.
+# 150 MINUTES SINCE 2026-11-10: run 14's single-node mode on 942307fd1 was
+# stopped by the 80-minute bound with 43 of about 1,136 jobs never started —
+# every conformance job among them — nothing wedged. The same suite's memory
+# mode took 104 minutes, 67 of them the OpenID Connect conformance job, and
+# product on postgres is slower than that.
 # ---------------------------------------------------------------------------
 stsModeTimeout()
 {
   case "$1" in
-    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-6000}" ;;
-    single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
+    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    cluster-portable) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    # The whole suite on the second engine: it was stopped at job 948 of 1067
+    # by the 3000 s a mode with no bound of its own gets, nothing wedged (#677).
+    mariadb) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-9000}" ;;
+    # The whole suite on two cells (2026-11-14): a bare run puts every job
+    # in it now, where the named runs were the `sts_cells_*` jobs under the
+    # 3000 s every mode with no bound of its own gets. Product on postgres
+    # with no request workers; single-node's pace (88-112 minutes on the
+    # laptop, 2026-11-14) is the nearest measurement, so single-node's bound.
+    cells)   echo "${STS_CELLS_MODE_TIMEOUT:-9000}" ;;
+    fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-21600}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
 }
@@ -354,7 +525,20 @@ stsModeTimeout()
 stsModeIsCluster()
 {
   case "$1" in
-    cluster) return 0 ;;
+    cluster|cluster-portable) return 0 ;;
+    *)       return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Whether a mode keeps its store on MARIADB (#677): which compose layer is
+# added (tests/docker-compose-run-tests-mariadb.yml) and which one-shot is
+# not attached. Asked as the two questions below it are.
+# ---------------------------------------------------------------------------
+stsModeIsMariadb()
+{
+  case "$1" in
+    mariadb) return 0 ;;
     *)       return 1 ;;
   esac
 }
@@ -373,5 +557,41 @@ stsModeIsCells()
   case "$1" in
     cells) return 0 ;;
     *)     return 1 ;;
+  esac
+}
+
+# Whether a mode runs on the network-isolated fuzzing stack (#1299): which
+# compose layer run-tests.sh adds.
+stsModeIsFuzz()
+{
+  case "$1" in
+    fuzz) return 0 ;;
+    *)    return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# THE JOBS A MODE RUNS, WHEN IT DOES NOT RUN THEM ALL (2026-11-14).
+#
+# Comma-separated fragments in run-report.js's `--only=` grammar (a job is
+# kept when its file name contains one of them); empty is the whole list.
+# run-tests.sh hands a non-empty answer to the runner as `--mode-only=` FOR
+# THAT MODE ALONE, so the other modes of the same invocation keep every job.
+# An operator's own `--only=` still narrows every mode, and for a mode named
+# here the two are INTERSECTED (run-report.js): a job runs only if both keep
+# it. When the intersection is empty the launcher skips the mode and says
+# why, rather than start a stack to run nothing (run-tests.sh,
+# modeFilterLeavesNothing()).
+#
+# `fuzz` is the only mode with a fixed subset: Schemathesis and its two
+# in-process files (`schemathesis_plan`, `schemathesis_realm_lanes`), exactly
+# what `--only=schemathesis` chose while the mode was named by hand. `cells`
+# and `mariadb` run the whole list.
+# ---------------------------------------------------------------------------
+stsModeJobFilter()
+{
+  case "$1" in
+    fuzz) echo "schemathesis" ;;
+    *)    echo "" ;;
   esac
 }

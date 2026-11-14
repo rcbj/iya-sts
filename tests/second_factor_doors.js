@@ -17,7 +17,8 @@
 // process, where the code a refusal carries can be read back:
 //
 //   A. `credentials.verify()` and `verifyAsync()` at each of the five doors:
-//      a person holding a security key in the `mfa` role, one required by
+//      a person holding any passkey (a key has no role since #1135, and the
+//      realm accepts a passkey as a second factor by default), one required by
 //      their entry (stsMfaRequired), everybody required by the realm
 //      (the authentication policy) — refused STS-AUTHN-0213 with `ok: false`, the
 //      shape a wrong password has; a person with neither is verified; the two
@@ -41,7 +42,7 @@
 //
 // WHY IN PROCESS: the code on a refusal is recorded and never sent, so over
 // HTTP a refusal and a wrong password are — deliberately — the same answer.
-// `tests/vendored/sts_second_factor_doors.js` drives the five doors over the
+// `tests/protocol/sts_second_factor_doors.js` drives the five doors over the
 // wire against both modes' containers.
 // ===========================================================================
 
@@ -209,9 +210,9 @@ async function run(t) {
   const key = credentials.addKey(KEYED, {
     credentialId: 'sfd-key-' + STAMP, label: 'sfd key',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-    signCount: 0 }, 'mfa');
+    signCount: 0 });
   t.check(key && key.ok !== false, 'precondition: ' + KEYED + ' holds a ' +
-                                   'security key in the mfa role',
+                                   'passkey',
           JSON.stringify(key));
   const flagged = credentials.setMfaRequired(FLAGGED, true);
   t.check(flagged.ok, 'precondition: a second factor is required of ' +
@@ -232,9 +233,9 @@ async function run(t) {
 
   // -------------------------------------------------------------------------
   t.log.info('=== A. product: the five doors ===');
-  withSettings({ 'global.mode': 'product' }, function () {
+  withSettings({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, function () {
     DOORS.forEach(function (door) {
-      sameAsWrong(t, KEYED, door, 'A1. a person holding an mfa key');
+      sameAsWrong(t, KEYED, door, 'A1. a person holding a passkey');
       sameAsWrong(t, FLAGGED, door, 'A2. a person required by their entry');
       const plain = credentials.verify(PLAIN, PASSWORD, { door: door });
       t.check(plain.ok === true && plain.reason === 'verified',
@@ -281,7 +282,7 @@ async function run(t) {
     t.equal(credentials.passwordOnlyDoors(PLAIN).refused.length, 0,
             'A8. and none for a person with no second factor');
   });
-  await withSettingsAsync({ 'global.mode': 'product' }, async function () {
+  await withSettingsAsync({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, async function () {
     const refusedAsync = await credentials.verifyAsync(KEYED, PASSWORD,
                                                        { door: 'est' });
     t.equal(errorCodes.codeOf(refusedAsync), 'STS-AUTHN-0213',
@@ -293,7 +294,7 @@ async function run(t) {
 
   // -------------------------------------------------------------------------
   t.log.info('=== C. a real LDAP bind ===');
-  await withSettingsAsync({ 'global.mode': 'product' }, async function () {
+  await withSettingsAsync({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, async function () {
     websecurity.reset();
     const dn = ldap.objectFor(KEYED).entry.dn;
     const right = await bind(dn, PASSWORD);
@@ -324,7 +325,7 @@ async function run(t) {
 
   // -------------------------------------------------------------------------
   t.log.info('=== D. EST Basic ===');
-  await withSettingsAsync({ 'global.mode': 'product' }, async function () {
+  await withSettingsAsync({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, async function () {
     const right = await certEnrollment.authenticatePerson(KEYED, PASSWORD,
                                                           'est-basic');
     const wrong = await certEnrollment.authenticatePerson(KEYED, WRONG,
@@ -365,9 +366,9 @@ async function run(t) {
   credentials.addKey(APPUSER, {
     credentialId: 'sfd-appkey-' + STAMP, label: 'k',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-    signCount: 0 }, 'mfa');
+    signCount: 0 });
 
-  await withSettingsAsync({ 'global.mode': 'product' }, async function () {
+  await withSettingsAsync({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, async function () {
     websecurity.reset();
     ['ldap', 'scim'].forEach(function (door) {
       const ok = credentials.verify(APPUSER, made.password, { door: door });
@@ -416,7 +417,7 @@ async function run(t) {
           'E11. its last use is recorded, with the door',
           JSON.stringify(used));
 
-  withSettings({ 'global.mode': 'product' }, function () {
+  withSettings({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, function () {
     credentials.setAccountDisabled(APPUSER, true);
     const disabled = credentials.verify(APPUSER, made.password,
                                         { door: 'ldap' });
@@ -463,7 +464,7 @@ async function run(t) {
   const revoked = credentials.revokeAppPassword(APPUSER, made.id);
   t.check(revoked.ok && revoked.revoked.id === made.id,
           'E15. it is revoked by its id', JSON.stringify(revoked));
-  withSettings({ 'global.mode': 'product' }, function () {
+  withSettings({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, function () {
     const after = credentials.verify(APPUSER, made.password, { door: 'ldap' });
     t.check(after.ok === false && errorCodes.codeOf(after) === 'STS-AUTHN-0054',
             'E15. and after that it is only a wrong password',
@@ -533,7 +534,7 @@ async function run(t) {
             errorCodes.codeOf(appMade)) >= 0,
           'G1. an application is not given an app password',
           JSON.stringify(appMade));
-  withSettings({ 'global.mode': 'product' }, function () {
+  withSettings({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, function () {
     withEverybodyRequired(function () {
       const doors = credentials.passwordOnlyDoors(appDn);
       t.check(doors.secondFactor === false && doors.refused.length === 0,

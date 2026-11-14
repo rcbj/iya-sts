@@ -24,6 +24,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Under Cygwin (#512), the shim that takes the CR off what docker.exe prints;
+# nothing on Linux. See its header.
+# shellcheck source=tests/tools/host-platform.sh
+. tests/tools/host-platform.sh
+
 TAG="${STS_NPM_TEST_IMAGE:-iya-sts-npm-test:local}"
 
 echo "docker-npm-test.sh: building ${TAG} from tests/Dockerfile"

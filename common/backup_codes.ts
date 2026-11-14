@@ -125,7 +125,7 @@
 //
 //   * **`BackupCodes` TAKES ITS DEPENDENCIES THROUGH ITS CONSTRUCTOR** — the
 //     logger, the settings reader, `crypto.js`'s comparison and secret-hashing
-//     half, the error codes and node's `randomInt`. Nothing inside the class
+//     half, the error codes and `crypto.randomInt`. Nothing inside the class
 //     reaches for a module on its own.
 //   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, because `credentials.ts`,
 //     the portal and the console require it by those names. Since #50's R2 the
@@ -136,7 +136,6 @@
 //     beside them for that root.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import crypto = require('./crypto');
@@ -207,7 +206,7 @@ class BackupCodes {
   /**
    * Returns the dependencies the default instance is built from.
    *
-   * @returns the service's own modules and node's `randomInt`
+   * @returns the service's own modules and `crypto.randomInt`
    */
   static defaultDeps(): BackupCodesDeps {
     helpers.log.debug("Entering BackupCodes.defaultDeps().");
@@ -219,7 +218,7 @@ class BackupCodes {
       errorCodes: errorCodes,
       authnPolicy: authnPolicy,
       randomInt: function (min: number, max: number): number {
-        return nodeCrypto.randomInt(min, max);
+        return crypto.randomInt(min, max);
       }
     };
   }
@@ -313,7 +312,7 @@ class BackupCodes {
   // Thirty-two divides 256 exactly, so a modulo would in fact be unbiased here
   // — and that is precisely the kind of accident that stops being true the
   // moment somebody drops the vowels to stop a code spelling something and
-  // leaves twenty-six characters behind. `nodeCrypto.randomInt()` is
+  // leaves twenty-six characters behind. `crypto.randomInt()` (node's) is
   // rejection-sampled inside node and is correct for every alphabet size, so
   // the property does not depend on a coincidence a later reader would have
   // to re-derive.

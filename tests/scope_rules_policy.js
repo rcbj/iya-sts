@@ -30,6 +30,12 @@
 //      (STS-OAUTH-0454) by the policy.
 //   F. NO DECIDER. With the gate's decider removed, the built-in policy
 //      still decides (the gate loads it itself).
+//   G. A TOKEN EXCHANGE'S DELEGATED PERMISSIONS (#549). At stage `exchange`
+//      a delegated permission the caller holds is kept whether or not the
+//      subject_token carried it, one it does not hold is DROPPED
+//      (STS-OAUTH-0954) in both modes, an ordinary scope the subject_token
+//      lacks is still refused in product (STS-OAUTH-0621), and the
+//      request-stage refusal does not apply to an exchange.
 //
 // IN A THROWAWAY REALM: an operator's document is written to that realm's
 // ou=policies and nowhere else.
@@ -252,6 +258,89 @@ function noDecider(t) {
   log.debug("Leaving noDecider().");
 }
 
+// One `issue-scope` question at stage `exchange`, the way the token
+// endpoint asks it, for one scope with the facts given.
+function askExchange(scope, facts) {
+  log.debug("Entering askExchange().");
+  const verdicts = require('../xacml/xacml_scope_verdicts');
+  const A = verdicts.ATTRIBUTE;
+  const attributes = [
+    verdicts.resourceFact(A.SUBJECT_TOKEN_HAS_SCOPE, facts.hasScope),
+    verdicts.resourceFact(A.SCOPE_IN_SUBJECT_TOKEN, facts.inSubject)];
+  if (facts.delegated !== undefined) {
+    attributes.push(verdicts.resourceFact(A.SCOPE_DELEGATED, true),
+                    verdicts.resourceFact(A.SCOPE_GRANTED, facts.delegated));
+  }
+  const answer = gate.checkScopes({
+    subject: { kind: 'application', name: CLIENT, authenticated: true },
+    client: CLIENT, protocol: 'OAuth 2.0',
+    mode: config.value('global.mode'), stage: 'exchange',
+    grantType: 'urn:ietf:params:oauth:grant-type:token-exchange',
+    requested: [scope],
+    facts: [{ scope: scope, attributes: attributes }]
+  });
+  const one = (answer.verdicts || []).filter(function (v) {
+    return v.scope === scope;
+  })[0] || { verdict: 'keep' };
+  log.debug("Leaving askExchange().");
+  return one;
+}
+
+async function exchangePermissions(t) {
+  log.debug("Entering exchangePermissions().");
+  t.log.info('=== G. a token exchange\'s delegated permissions (#549) ===');
+  const perm = BASE + 'read';
+  const modes = ['development', 'product'];
+  for (const m of modes) {
+    await withSettings({ 'global.mode': m }, async function () {
+      const kept = askExchange(perm, { hasScope: true, inSubject: false,
+                                       delegated: true });
+      t.check(kept.verdict === 'keep',
+              'G1 (' + m + '). a delegated permission the caller holds is ' +
+              'kept though the subject_token did not carry it',
+              JSON.stringify(kept));
+      const dropped = askExchange(perm, { hasScope: true, inSubject: true,
+                                          delegated: false });
+      t.check(dropped.verdict === 'drop' &&
+              dropped.code === 'STS-OAUTH-0954',
+              'G2 (' + m + '). one the caller does not hold is dropped ' +
+              '(STS-OAUTH-0954), even when the subject_token carried it',
+              JSON.stringify(dropped));
+      const noClaim = askExchange(perm, { hasScope: false, inSubject: false,
+                                          delegated: false });
+      t.check(noClaim.verdict === 'drop',
+              'G3 (' + m + '). and dropped from a subject_token with no ' +
+              'scope claim', JSON.stringify(noClaim));
+      const ordinary = askExchange('email', { hasScope: true,
+                                              inSubject: false });
+      t.check(m === 'product'
+                ? ordinary.verdict === 'refuse' &&
+                  ordinary.code === 'STS-OAUTH-0621'
+                : ordinary.verdict === 'keep',
+              'G4 (' + m + '). an ordinary scope the subject_token lacks is ' +
+              (m === 'product' ? 'refused (STS-OAUTH-0621)' : 'kept'),
+              JSON.stringify(ordinary));
+    });
+  }
+  await withSettings({ 'global.mode': 'product' }, async function () {
+    const asked = 'openid ' + BASE + 'read';
+    t.check(/has not been granted/.test(oauth2.permissionRefusal(asked,
+                                                                 CLIENT)),
+            'G5. product, no grant type: the request stage refuses');
+    t.equal(oauth2.permissionRefusal(asked, CLIENT,
+              'urn:ietf:params:oauth:grant-type:token-exchange'), '',
+            'G6. product, token exchange: the request stage leaves it to ' +
+            'the exchange stage');
+    // #551: a delegated grant needs a person. On client_credentials the
+    // request stage refuses nothing for it; the role check at issuance
+    // decides (`application-permission-not-authorized`).
+    t.equal(oauth2.permissionRefusal(asked, CLIENT, 'client_credentials'),
+            '', 'G7. product, client_credentials: the delegated grant is ' +
+            'not asked for (#551)');
+  });
+  log.debug("Leaving exchangePermissions().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   // THE ISSUANCE PEP IS THE DECIDER FOR THIS FILE, installed here rather
@@ -271,6 +360,7 @@ async function run(t) {
       consentRules(t);
       authorizationDetailTypes(t);
       noDecider(t);
+      await exchangePermissions(t);
     });
   } finally {
     // THE STATE THE REQUIRE LEFT, not an empty slot: requiring the issuance

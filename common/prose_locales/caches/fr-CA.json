@@ -1,0 +1,10 @@
+{
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "Les défis que /portal/devices a émis pour une preuve de clé, une déclaration App Attest ou une liaison WebAuthn, et les nonces de fraîcheur que EST /nonce a émis pour une attestation de clé TPM, chacun lié à la session (ou au témoin EST) pour laquelle il a été émis et utilisable une seule fois."
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "Boîte d’envoi des courriels"
+  }
+}

@@ -171,7 +171,6 @@
 // ---------------------------------------------------------------------------
 
 import http = require('http');
-import nodeCrypto = require('crypto');
 import https = require('https');
 import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
@@ -205,7 +204,6 @@ interface PushedRequests {
 
 interface RequestObjectDeps {
   http: typeof http;
-  nodeCrypto: typeof nodeCrypto;
   https: typeof https;
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
@@ -256,6 +254,16 @@ const MAX_CACHED_REQUEST_URIS = 256;
 // Described to `/admin/caches` (#74, rule 3ap). Only lookups made while the
 // cache is on are counted: with `oauth2.requestUriCacheS` at 0 a fetch is not
 // a miss, because nothing was asked of the cache.
+// The lifetime sentences below, as templates and a sentence (#543):
+// `lifetime()` picks and fills one and `cache_registry.js`'s `prose()` reads
+// them from the descriptor, so an answer to `GET /admin-api/caches` can be
+// refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: 'oauth2.requestUriCacheS ({{seconds}} s) after the fetch, per ' +
+    'realm; the oldest goes first when full.',
+  lifetimeOff: 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.'
+});
+
 const requestUriCount = cacheRegistry.register({
   name: 'oauth2.request-uri',
   title: 'Fetched request objects',
@@ -270,12 +278,14 @@ const requestUriCount = cacheRegistry.register({
   },
   bound: 'Enforced: ' + MAX_CACHED_REQUEST_URIS + ' fetched request objects ' +
     'per realm, the oldest dropped and fetched again when next used.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
     const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
     return seconds > 0
-      ? 'oauth2.requestUriCacheS (' + seconds + ' s) after the fetch, per ' +
-        'realm; the oldest goes first when full.'
-      : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
+      ? serverProse.fill(CACHE_SENTENCES.lifetime, { seconds: seconds })
+      : CACHE_SENTENCES.lifetimeOff;
   },
   // A fetched Request Object past `until`, which `contentOf()` would fetch
   // again (#49 P5).
@@ -369,7 +379,6 @@ class RequestObject {
     helpers.log.debug("Leaving RequestObject.defaultDeps().");
     return {
       http: http,
-      nodeCrypto: nodeCrypto,
       https: https,
       stsCrypto: stsCrypto,
       pki: pki,
@@ -422,15 +431,30 @@ class RequestObject {
    * @param profile - what the selected authorization server publishes
    * @returns true when one is required
    */
-  signedRequired(client: Json, profile: Json): Json {
+  signedRequired(client: Json, profile: Json, clientId?: string): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
     // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
     // item 1, #139).
-    const required = !!config.value('oauth2.requireSignedRequestObject') ||
-                     !!(client && client.require_signed_request_object) ||
-                     !!(profile && profile.requireSigned === true) ||
-                     this.deps.fapi.requiresSignedRequestObject();
+    const explicit = !!config.value('oauth2.requireSignedRequestObject') ||
+                     !!(client && client.require_signed_request_object);
+    const byProfile = !!(profile && profile.requireSigned === true) ||
+                      this.deps.fapi.requiresSignedRequestObject();
+    // THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT FROM WHAT A PROFILE DEMANDS
+    // (#568): the static console and the static portal sign in from a
+    // browser, as public clients, and hold no registered key a request object
+    // could be signed with — so FAPI 1.0 Advanced or FAPI 2.0 Message
+    // Signing, which demand one of every client, would leave such a realm
+    // with no console and no portal. It is the confidential-only rule's
+    // exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT, #446) read for this
+    // requirement too, and on the same terms: those two clients do not
+    // conform to the profile in that realm, and say so. An operator's own
+    // `oauth2.requireSignedRequestObject`, or the entry's own flag, still
+    // binds them.
+    // The client view carries no `client_id`, so a caller names it.
+    const exempt = !!client && this.deps.fapi.publicClientExempt(
+      clientId || client.client_id, client.token_endpoint_auth_method);
+    const required = explicit || (byProfile && !exempt);
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
   }
@@ -499,12 +523,58 @@ class RequestObject {
   // THE FETCH (section 5.2). Resolves `{ ok, jwt }` or a refusal and NEVER
   // rejects. Only ever called with a URI already matched against the client's
   // registration — see `resolve()`.
+  //
+  // UNDER THE OUTBOUND POLICY'S ADDRESS RULES TOO (ASVS 5.0.0 1.3.6). A
+  // registered request_uri is not the administrator's kind of URL: dynamic
+  // registration takes one from whoever registers, so matching the
+  // registration says the REQUEST cannot choose it, not that nobody did.
+  // So it is dialled the way the RFC 9728 import and back-channel logout
+  // are (`federation/federation_http.ts`): nothing at all with
+  // `federation.outbound` off, a host `security.outboundAllowedHosts` leaves
+  // out refused, and in product every address the name resolves to checked
+  // against the internal ranges and the connection PINNED to the one that
+  // was checked, so a name cannot answer a public address to the check and a
+  // private one to the connection. The certificate is still checked against
+  // the name the client registered.
   // ---------------------------------------------------------------------------
   private fetchRequestUri(uri: Json): Json {
-    const { http, https, config, mode, version, log } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering RequestObject.fetchRequestUri().");
     const target = new URL(self.withoutFragment(uri));
+    // Required lazily: a library, and this file is required from oauth2.ts.
+    const fedHttp = require('../federation/federation_http');
+    if (!fedHttp.outboundAllowed()) {
+      log.debug("Leaving RequestObject.fetchRequestUri(). " +
+                "federation.outbound is off.");
+      return Promise.resolve(self.refusal('STS-OAUTH-1004',
+        'invalid_request_uri', 'the request_uri "' + target.href + '" was ' +
+        'not fetched: federation.outbound is off, so this service makes no ' +
+        'outbound request. Send the request object by value instead.'));
+    }
+    log.debug("Leaving RequestObject.fetchRequestUri(). Vetting the host.");
+    return fedHttp.vetHost(target.hostname).then(function (vetted) {
+      if (!vetted || !vetted.ok) {
+        return self.refusal('STS-OAUTH-1004', 'invalid_request_uri',
+          'the request_uri "' + target.href + '" was not fetched: ' +
+          String((vetted && vetted.why) || 'its host was refused')
+            .replace(/\.+$/, '') + '.');
+      }
+      return self.dialRequestUri(target, vetted, fedHttp);
+    }, function (e) {
+      log.debug("Caught in RequestObject.fetchRequestUri(): " +
+                ((e && e.message) || e));
+      return self.refusal('STS-OAUTH-1004', 'invalid_request_uri',
+        'the request_uri "' + target.href + '" was not fetched: its host ' +
+        'could not be vetted.');
+    });
+  }
+
+  // The connection itself, to the address `vetHost()` answered.
+  private dialRequestUri(target: Json, vetted: Json, fedHttp: Json): Json {
+    const { http, https, config, mode, version, log } = this.deps;
+    const self = this;
+    log.debug("Entering RequestObject.dialRequestUri().");
     const secure = target.protocol === 'https:';
     const cap = Number(config.value('oauth2.requestUriMaxBytes')) || 65536;
     const timeout = Number(config.value('oauth2.requestUriTimeoutMs')) || 5000;
@@ -513,7 +583,7 @@ class RequestObject {
                target.href + ' over plain http, which development mode ' +
                'allows and product mode refuses.');
     }
-    log.debug("Leaving RequestObject.fetchRequestUri(). Dialling " +
+    log.debug("Leaving RequestObject.dialRequestUri(). Dialling " +
               "" + target.origin + ".");
     return new Promise<Json>(function (resolve) {
       let settled = false;
@@ -530,8 +600,7 @@ class RequestObject {
       // names a private CA the host may chain to and development's
       // `federation.outboundSkipTlsVerification` is honoured here too. It
       // dialled with node's store alone until the OpenID conformance suite
-      // registered a request_uri on a host a private CA certifies. Required
-      // lazily: a library, and this file is required from oauth2.ts.
+      // registered a request_uri on a host a private CA certifies.
       const requestOptions: Json = {
         protocol: target.protocol, hostname: target.hostname,
         port: target.port || (secure ? 443 : 80),
@@ -540,9 +609,13 @@ class RequestObject {
                    'User-Agent': version.userAgent('request-uri') },
         timeout: timeout
       };
+      if (vetted.address) {
+        // PINNED: the Host header and the TLS server name still come from
+        // the URL, so the certificate is checked against the registered name.
+        requestOptions.lookup = fedHttp.pinnedLookup(vetted);
+      }
       if (secure) {
-        const policy = require('../federation/federation_http')
-          .tlsFor(target.origin);
+        const policy = fedHttp.tlsFor(target.origin);
         if (!policy.ok) {
           done(self.refusal(policy.errorCode || 'STS-CORE-0104',
             'invalid_request_uri', 'the request_uri "' + target.href +
@@ -552,6 +625,10 @@ class RequestObject {
         requestOptions.rejectUnauthorized = policy.rejectUnauthorized;
         if (policy.ca) {
           requestOptions.ca = policy.ca;
+        }
+        // The host check, and the verified chain held to the path rules.
+        if (policy.checkServerIdentity) {
+          requestOptions.checkServerIdentity = policy.checkServerIdentity;
         }
       }
       let request = null;
@@ -605,19 +682,22 @@ class RequestObject {
                    jwt: Buffer.concat(chunks).toString('utf8').trim() });
           });
           response.on('error', function (e) {
-            log.debug("Caught in RequestObject.fetchRequestUri(): " +
+            log.debug("Caught in RequestObject.dialRequestUri(): " +
                       "" + ((e && e.message) || e));
+            // Here and below, a cause's own trailing full stop is dropped
+            // before ours is added, so the page a client's developer (or a
+            // certification reviewer) reads does not end in two.
             done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
               'the request_uri "' + target.href + '" could not be read: ' +
-              e.message + '.'));
+              String((e && e.message) || e).replace(/\.+$/, '') + '.'));
           });
         });
       } catch (e) {
-        log.debug("Caught in RequestObject.fetchRequestUri(): " +
+        log.debug("Caught in RequestObject.dialRequestUri(): " +
                   "" + ((e && e.message) || e));
         done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
           'the request_uri "' + target.href + '" could not be dialled: ' +
-          e.message + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
         return;
       }
       request.on('timeout', function () {
@@ -625,11 +705,11 @@ class RequestObject {
                                   '(oauth2.requestUriTimeoutMs)'));
       });
       request.on('error', function (e) {
-        log.debug("Caught in RequestObject.fetchRequestUri(): " +
+        log.debug("Caught in RequestObject.dialRequestUri(): " +
                   "" + ((e && e.message) || e));
         done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
           'the request_uri "' + target.href + '" could not be fetched: ' +
-          e.message + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
       });
       request.end();
     });
@@ -641,7 +721,7 @@ class RequestObject {
   // `symmetricKeyFor()`'s; see SYMMETRIC_KEY_BYTES above.
   // -------------------------------------------------------------------------
   private symmetricKeyFor(alg: Json, enc: Json, secret: Json): Json {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering RequestObject.symmetricKeyFor(). " +
               "alg=" + alg + ", enc=" + enc);
     if (/^PBES2-/.test(alg)) {
@@ -658,13 +738,12 @@ class RequestObject {
     }
     const hash = bytes <= 32 ? 'sha256' : bytes <= 48 ? 'sha384' : 'sha512';
     log.debug("Leaving RequestObject.symmetricKeyFor().");
-    return nodeCrypto.createHash(hash)
-      .update(Buffer.from(String(secret), 'utf8'))
-      .digest().subarray(0, bytes);
+    return stsCrypto.digest(hash, Buffer.from(String(secret), 'utf8'))
+      .subarray(0, bytes);
   }
 
-  private decrypt(compact: Json, client: Json, profile: Json,
-                  keySet: Json): Json {
+  private async decrypt(compact: Json, client: Json, profile: Json,
+                        keySet: Json): Promise<Json> {
     const { stsCrypto, applications, helpers, log } = this.deps;
     const self = this;
     log.debug("Entering RequestObject.decrypt().");
@@ -690,7 +769,7 @@ class RequestObject {
     const registeredAlg = String(client.request_object_encryption_alg || '');
     const registeredEnc = registeredAlg && !integrated
       ? String(client.request_object_encryption_enc || '') ||
-        applications.REQUEST_OBJECT_DEFAULT_ENC
+        applications.defaultJweEnc()
       : '';
     if (registeredAlg && (alg !== registeredAlg || enc !== registeredEnc)) {
       log.debug("Leaving RequestObject.decrypt(). Not what the client " +
@@ -764,7 +843,9 @@ class RequestObject {
     }
     let opened = null;
     try {
-      opened = stsCrypto.decryptJweCompact(compact, options);
+      // ASYNC, so that a PBES2 key is derived off the event loop (ASVS
+      // 5.0.0 11.4.4); every other algorithm is opened as before.
+      opened = await stsCrypto.decryptJweCompactAsync(compact, options);
     } catch (e) {
       log.debug("Caught in RequestObject.decrypt(): " +
                 "" + ((e && e.message) || e));
@@ -896,7 +977,8 @@ class RequestObject {
         log.debug("Leaving RequestObject.verify(). The unsigned claims are " +
                   "refused.");
         return self.refusal('STS-OAUTH-0364', 'invalid_request_object',
-          'the unsigned request object is refused: ' + e.message + '.');
+          'the unsigned request object is refused: ' +
+          String((e && e.message) || e).replace(/\.+$/, '') + '.');
       }
     }
     if (applications.REQUEST_OBJECT_SIGNING_ALGS.indexOf(alg) < 0) {
@@ -997,7 +1079,8 @@ class RequestObject {
     const usedX5c = usedKey && usedKey.jwk && Array.isArray(usedKey.jwk.x5c)
       ? usedKey.jwk.x5c : [];
     if (usedX5c.length) {
-      const keyChain = await pki.verifySignerChain(undefined, {
+      const keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
         certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
         source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
                 usedKey.source + ' for "' + clientId + '"'
@@ -1097,7 +1180,7 @@ class RequestObject {
    * @returns a sentence naming the problem, or ''
    */
   fragmentProblem(uri: Json, content: Json): Json {
-    const { nodeCrypto, log, config } = this.deps;
+    const { stsCrypto, log, config } = this.deps;
     log.debug("Entering RequestObject.fragmentProblem().");
     // `oauth2.requestUriFragmentCheck` (#187): the section names the
     // fragment a cache signal and asks no OP to verify it; this one does
@@ -1114,8 +1197,7 @@ class RequestObject {
                 "fragment.");
       return '';
     }
-    const digest = nodeCrypto.createHash('sha256')
-      .update(String(content), 'utf8').digest('base64url');
+    const digest = stsCrypto.digest('sha256', String(content), 'base64url');
     log.debug("Leaving RequestObject.fragmentProblem().");
     return digest === fragment ? '' :
       'the request_uri\'s fragment is "' + fragment + '", which is the ' +
@@ -1210,14 +1292,15 @@ class RequestObject {
     const profile = options.profile || {};
     const clientId = String(options.clientId || '');
     const query = options.query || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile, clientId);
     const compact = String(options.jwt || '').trim();
 
     let jws = compact;
     let encrypted = '';
     const parts = compact.split('.').length;
     if (parts === 5) {
-      const opened = self.decrypt(compact, client, profile, options.keySet);
+      const opened = await self.decrypt(compact, client, profile,
+                                        options.keySet);
       if (!opened.ok) {
         log.debug("Leaving RequestObject.verifyObject(). Decryption refused.");
         return opened;
@@ -1612,7 +1695,8 @@ class RequestObject {
     const query = options.query || {};
     const client = options.client || {};
     const profile = options.profile || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile,
+                                         String(query.client_id || ''));
     const byValue = query.request !== undefined && query.request !== '';
     const byReference = query.request_uri !== undefined &&
                         query.request_uri !== '';

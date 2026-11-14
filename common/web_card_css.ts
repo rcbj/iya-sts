@@ -1,0 +1,353 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: web_card_css.ts
+//
+// ---------------------------------------------------------------------------
+// THE CARD: THE STYLESHEET A PERSON MEETS THIS SERVICE IN (#570, 2026-10-12).
+//
+// The sign-in screen, the federation chooser, the consent screen, GNAP's
+// interaction, the wallet and SPNEGO sign-ins and the emailed-code pages are
+// all drawn as one card on a grey page, with `authn/authn.ts`'s stylesheet
+// inline in each (`authn.CARD_CSS`, which the others import rather than
+// copy). The static public surfaces of #569 are drawn with the same card,
+// as a stylesheet a shell links to (`/web/card.css`,
+// `common/public_assets.ts`): moving the text here, to a `web_` module, is
+// what lets the server pages and the static ones carry ONE copy, and lets a
+// surface's renderer name the classes the card defines with nothing to keep
+// in step. The two strings are byte for byte what `authn.ts` declared; that
+// file's comment above them says why the chooser's rules are a constant of
+// their own.
+//
+// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires only
+// `web_locale.ts` (the language row's CSS, #1289) and logs nothing.
+// ---------------------------------------------------------------------------
+
+import WebLocale = require('./web_locale');
+
+/**
+ * The card's stylesheets. A static utility class of constants.
+ */
+class WebCardCss {
+  /**
+   * The language chooser's stylesheet (#539), small and to one side: a page's
+   * first business is its own form. A constant of its own because the second
+   * factor pages carry stylesheets of their own, and each appends this one —
+   * their `button{width:100%}` and `input{width:100%}` would otherwise stretch
+   * the chooser across the card.
+   */
+  static readonly CHOOSER_CSS =
+    'details.language-row{float:right;font-size:.75em;margin:0 0 6px 8px}' +
+    'form.language-chooser select,form.language-chooser button{width:auto;' +
+    'display:inline;padding:2px 6px;margin:0;font-size:1em}' +
+    'form.language-chooser label{display:inline;margin:0 4px 0 0}' +
+    // The row itself (#1289): collapsed to the page's language.
+    WebLocale.ROW_CSS;
+
+  /**
+   * What the sign-in surface's steps draw beyond the screen (#572, #573):
+   * the notice a resend leaves, the warning of a set of recovery codes
+   * running low, the set-up step's headings, a code's wide field, the ways
+   * round a factor, the technical fold (the QR code's rule is the
+   * wallet's, #574). They were in each step page's own stylesheet while the
+   * server drew the steps.
+   */
+  static readonly STEP_CSS =
+    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:' +
+    '8px 10px;border-radius:5px;font-size:.85em;margin-bottom:12px}.warn{bac' +
+    'kground:#fff8e6;border:1px solid #f0dca8;color:#7a5a00;padding:8px 10px' +
+    ';border-radius:5px;font-size:.85em;margin-bottom:12px}.card h2{font-siz' +
+    'e:1em;margin:18px 0 6px}input.code{font-size:1.4em;letter-spacing:.35em' +
+    ';text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monosp' +
+    'ace}.links div{margin:6px 0;font-size:.85em}details summary{cursor:poin' +
+    'ter;color:#12107c}';
+
+  /**
+   * The console's prose fold (`WebKit.note()`, rcbj 2026-10-12): the
+   * sign-in screen's explanations — the federation, Kerberos and wallet
+   * blurbs and the notes at its foot — are each a `<p class="note">` or,
+   * longer than a line, a `<details class="note fold">` whose summary is
+   * the first sentence. The palette is the text's own (a fold reads as the
+   * sentence it summarises), the marker the console's triangles.
+   */
+  static readonly FOLD_CSS =
+    'p.note{margin:2px 0}.fed p.note,.fed details.note{font-size:.78em;color' +
+    ':#666;margin:0 0 8px}details.fold{margin:2px 0}details.fold>summary{curs' +
+    'or:pointer;color:inherit;list-style:none;display:flex;gap:.45em;align-i' +
+    'tems:baseline}details.fold>summary::-webkit-details-marker{display:none' +
+    '}details.fold>summary::before{content:"\\25b8";flex:none;font-size:.9e' +
+    'm}details.fold[open]>summary::before{content:"\\25be"}details.fold>sum' +
+    'mary:focus-visible{outline:2px solid #555;outline-offset:2px}.foldbody{m' +
+    'argin:.3em 0 0 1.05em}';
+
+  /**
+   * The WIDE card (#575): the SPNEGO sign-in's pages carry tables — the
+   * service principal, the ticket's flags, the acceptor's checks — that do
+   * not fit the 380-pixel card, so `.card.wide` lifts the width and every
+   * rule below is scoped to it, leaving every other page of the card as it
+   * was. The values are `kerberos/spnego.js`'s page shell's, where these
+   * pages were drawn until #575.
+   */
+  static readonly WIDE_CSS =
+    '.card.wide{width:auto;max-width:52rem;margin:2rem;line-height:1.45}.wid' +
+    'e h2{font-size:1em;margin:1.4em 0 .4em}.wide table{border-collapse:coll' +
+    'apse;width:100%;margin:.5rem 0 1rem;font-size:.85em}.wide th,.wide td{b' +
+    'order:1px solid #ddd;padding:.35rem .55rem;text-align:left;vertical-ali' +
+    'gn:top}.wide th{background:#f0f0f5}.wide .pass{color:#0b6b4f;font-weigh' +
+    't:600;white-space:nowrap}.wide .fail{color:#b00020;font-weight:600;whit' +
+    'e-space:nowrap}.wide .ok{background:#e8f5e9;border:1px solid #a5d6a7;pa' +
+    'dding:8px 10px;border-radius:5px;font-size:.9em;margin-bottom:12px}.wid' +
+    'e code{font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;border-r' +
+    'adius:3px;word-break:break-all}.wide a{color:#12107c}';
+
+  /**
+   * The CONSENT SCREEN's card (#576): the rules `oauth-oidc/consent_screen.ts`
+   * appended to the card while it drew the page, scoped to `.card.consent` so
+   * no other page of the card changes — a wider card for the scope rows,
+   * each scope and authorization detail in a box of its own, a detail's
+   * members as a grid, a detail's limits (#432 phase 5), and the fold of
+   * what was already agreed.
+   */
+  static readonly CONSENT_CSS =
+    '.card.consent{width:460px}.consent div.limits{margin:6px 0 0;font-size:' +
+    '.9em}.consent div.limits div{margin:3px 0}.consent p.app{font-size:.9em' +
+    ';margin:0 0 14px}.consent ul.scopes{list-style:none;padding:0;margin:0 ' +
+    '0 8px}.consent ul.scopes li{padding:8px 10px;margin:6px 0;border:1px so' +
+    'lid #e3e3ea;border-radius:6px;background:#fafafd;font-size:.85em}.conse' +
+    'nt ul.scopes li span{display:block;color:#666;font-size:.9em;margin-top' +
+    ':3px}.consent ul.scopes li dl{margin:6px 0 0;display:grid;grid-template' +
+    '-columns:auto 1fr;gap:2px 8px}.consent ul.scopes li dt{color:#555}.cons' +
+    'ent ul.scopes li dd{margin:0;overflow-wrap:anywhere}.consent details{ma' +
+    'rgin:10px 0 0;font-size:.8em;color:#555}';
+
+  /**
+   * GNAP's interaction pages (#578), which carried these in a `<style>` of
+   * their own (`gnap_interact.ts`'s `PAGE_CSS`) until they became a static
+   * surface: the wider card, the client's line and logo, the rights as a
+   * list of boxes, a right's limits under it, and the user code's field.
+   * Every rule is scoped to `.gnap`, the class the surface's card carries,
+   * so no other page of the card changes.
+   */
+  static readonly GNAP_CSS =
+    '.card.gnap{width:520px}.gnap p.app{font-size:.9em;margin:0 0 14px}.gna' +
+    'p ul.rights{list-style:none;padding:0;margin:0 0 8px}.gnap ul.rights l' +
+    'i{padding:8px 10px;margin:6px 0;border:1px solid #e3e3ea;border-radius' +
+    ':6px;background:#fafafd;font-size:.85em}.gnap ul.rights li label{displ' +
+    'ay:flex;gap:8px;align-items:flex-start}.gnap ul.rights li span{display' +
+    ':block;color:#666;font-size:.9em;margin-top:3px}.gnap img.logo{max-wid' +
+    'th:48px;max-height:48px;float:right;margin:0 0 6px 8px}.gnap input.cod' +
+    'e{font-size:1.4em;letter-spacing:.2em;text-transform:uppercase;width:1' +
+    '00%;text-align:left}.gnap div.limits{margin:6px 0 0 24px;font-size:.9e' +
+    'm}.gnap div.limits div{margin:3px 0}.gnap div.limits input{font-size:.' +
+    '95em}';
+
+  /**
+   * The protocol families' description pages (#584): `/saml2`, `/saml11`,
+   * `/xacml`, `/ssf`, `/scim` and `/spiffe`, each a long page of tables
+   * that the server drew in a stylesheet of its own until then — a wider
+   * card, a note, the lists, a third-level heading. Scoped to `.describe`,
+   * the class the surface's card carries, so no other page of the card
+   * changes.
+   */
+  static readonly DESCRIBE_CSS =
+    '.card.wide.describe{max-width:60rem}.describe .note{color:#666}.descr' +
+    'ibe ul{margin:.3em 0;padding-left:1.2em}.describe li{margin:.2em 0}.d' +
+    'escribe h3{font-size:.95em;margin:1.2em 0 .3em}.describe p{line-heigh' +
+    't:1.5}.describe .row a{text-decoration:none}';
+
+  /**
+   * The DIAGNOSTIC pages (#583): the TLS pages, which carried these in the
+   * `<style>` of their own server-drawn shell (`tls_server.js`'s
+   * `pageShell()`) until they became static surfaces — a verdict's band,
+   * the truststore's PEM box, a list's indent — scoped to `.diag`, the
+   * class their card carries, and the TLS page's wider card to `.tls`, so
+   * no other page changes. The SPNEGO demonstration pages drew in it too
+   * until they left the runtime for the companion (#595).
+   */
+  static readonly DIAG_CSS =
+    '.card.tls{max-width:60rem}.diag p.verdict{background:#f0f0f8;border-l' +
+    'eft:4px solid #12107c;padding:.6rem .8rem;margin:.6rem 0}.diag textar' +
+    'ea{width:100%;box-sizing:border-box;font-family:ui-monospace,monospac' +
+    'e;font-size:.8em}.diag ul{margin:.3em 0;padding-left:1.2em}.diag li{m' +
+    'argin:.2em 0}';
+
+  /**
+   * The account control every public surface draws beside the chooser with
+   * several accounts on (#561, `web_accounts.ts`): small and to one side,
+   * as the chooser is, its panel a short list and one link. No page draws
+   * it with the setting off, so these rules then style nothing.
+   */
+  static readonly ACCOUNTS_CSS =
+    'details.sts-accounts{float:right;clear:right;font-size:.75em;margin:0' +
+    ' 0 6px 8px;position:relative}details.sts-accounts>summary{cursor:poin' +
+    'ter;color:#12107c}details.sts-accounts .sts-accounts-panel{position:a' +
+    'bsolute;right:0;z-index:20;min-width:14rem;background:#fff;border:1px' +
+    ' solid #d5d5dd;border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.08' +
+    ');padding:8px 10px}details.sts-accounts p{margin:0 0 4px;color:#666}d' +
+    'etails.sts-accounts ul{margin:0 0 6px;padding-left:1.1em}details.sts-' +
+    'accounts li span{color:#777}a.sts-accounts-another{color:#12107c}';
+
+  /**
+   * WHO IS ASKING (#1300, `authn/web_client_display.ts`): the client's logo,
+   * name and documents at the head of a sign-in page or the consent screen
+   * — the logo bounded, since the client chose its size, and centred above
+   * the name.
+   */
+  static readonly CLIENT_CSS =
+    'div.client-display{text-align:center;margin:0 0 14px;padding-bottom:1' +
+    '0px;border-bottom:1px solid #eee}img.client-logo{display:block;margin' +
+    ':0 auto 6px;max-width:120px;max-height:64px}div.client-name{font-weig' +
+    'ht:600;font-size:.95em;overflow-wrap:anywhere}div.client-links{font-s' +
+    'ize:.75em;margin-top:4px}div.client-links a{color:#12107c;margin:0 4p' +
+    'x}';
+
+  /**
+   * A REALM'S SIGN-IN APPEARANCE (#717, `common/branding.ts`): every colour
+   * the card is drawn in, read through a custom property whose fallback is
+   * the literal it replaced — so with no `/web/theme.css` linked (every
+   * realm that set nothing) the card is drawn exactly as before, and a
+   * realm's theme sets the properties. Applied to the finished stylesheet
+   * rather than written into each rule, so the rules above stay readable
+   * and one table says which literal means what. The order matters: the
+   * accent first, then the text on it.
+   *
+   * @param css - the card's stylesheet as written
+   * @returns the same rules, each colour a custom property with its fallback
+   */
+  static themed(css: string): string {
+    return css
+      .replace(/#12107c/g, 'var(--sts-accent,#12107c)')
+      .replace(/background:var\(--sts-accent,#12107c\);color:#fff/g,
+               'background:var(--sts-accent,#12107c);' +
+               'color:var(--sts-on-accent,#fff)')
+      .replace(/background:#f4f4f7/g, 'background:var(--sts-page,#f4f4f7)')
+      .replace(/background:#fff(?=[;}])/g, 'background:var(--sts-card,#fff)')
+      .replace(/;color:#222(?=[;}])/g, ';color:var(--sts-text,#222)')
+      .replace(/solid #d5d5dd/g, 'solid var(--sts-border,#d5d5dd)')
+      .replace(/solid #eee(?=[;}])/g, 'solid var(--sts-rule,#eee)')
+      .replace(/color:#666(?=[;}])/g, 'color:var(--sts-muted,#666)')
+      .replace(/color:#777(?=[;}])/g, 'color:var(--sts-faint,#777)')
+      .replace(/color:#555(?=[;}])/g, 'color:var(--sts-dim,#555)')
+      // THE PALE BOXES AND THE STATUS WORDS (#717's review): a scope or a
+      // right in its box, a table's head, a verdict's band, a code span.
+      // Their text follows the realm's, so their backgrounds must too, or
+      // light text on a dark card meets a near-white box; and a red or green
+      // word must stay readable on whatever card it is on. Each keeps its own
+      // literal as its fallback, so nothing changes where no theme is linked.
+      .replace(/background:#fafafd/g, 'background:var(--sts-tint,#fafafd)')
+      .replace(/background:(#f0f0f5|#f0f0f8|#f4f4f8)/g,
+               'background:var(--sts-tint-2,$1)')
+      .replace(/(\.bad\{|\.fail\{)color:#b00020/g,
+               '$1color:var(--sts-bad,#b00020)')
+      .replace(/\.pass\{color:#0b6b4f/g,
+               '.pass{color:var(--sts-good,#0b6b4f)');
+  }
+
+  /**
+   * THE THREE LAYOUTS AND THE BRAND HEADER (#717): keyed on `<html
+   * data-sts-layout>`, which a shell carries only for a realm whose
+   * appearance differs from the service's, so none of these rules applies
+   * anywhere else. The header (`sts-brand`) is drawn before the card by the
+   * runtime; the card and its form are untouched in every layout.
+   *
+   *   * centered — the header above the card, both in the middle.
+   *   * banner — the header a band in the accent colour across the top,
+   *     the card below it.
+   *   * split — the header a panel in the accent colour beside the card,
+   *     above it on a screen narrower than 720 pixels.
+   */
+  static readonly BRAND_CSS =
+    'html[data-sts-layout] body{flex-direction:column}.sts-brand{display:fl' +
+    'ex;align-items:center;justify-content:center;gap:12px;margin:24px 0 16' +
+    'px;color:var(--sts-text,#222)}img.sts-brand-logo{display:block;max-wi' +
+    'dth:240px;max-height:64px}a.sts-brand-link{display:block;line-height:0' +
+    '}.sts-brand-name{font-weight:600;font-size:1.15em;overflow-wrap:anywhe' +
+    're}html[data-sts-layout=banner] body{justify-content:flex-start}html[d' +
+    'ata-sts-layout=banner] .sts-brand{align-self:stretch;justify-content:f' +
+    'lex-start;margin:0 0 32px;padding:12px 24px;background:var(--sts-accen' +
+    't,#12107c);color:var(--sts-on-accent,#fff)}html[data-sts-layout=split]' +
+    ' body{flex-direction:row;align-items:stretch}html[data-sts-layout=spli' +
+    't] .sts-brand{flex:0 0 38%;flex-direction:column;margin:0;padding:32px' +
+    ';background:var(--sts-accent,#12107c);color:var(--sts-on-accent,#fff);' +
+    'text-align:center}html[data-sts-layout=split] body>.card{margin:auto;a' +
+    'lign-self:center}@media (max-width:720px){html[data-sts-layout=split] ' +
+    'body{flex-direction:column}html[data-sts-layout=split] .sts-brand{flex' +
+    ':none;padding:16px}html[data-sts-layout=split] body>.card{margin:24px ' +
+    'auto}}' +
+    // The one fixed-colour box whose text was inherited: a passing check's
+    // band on the wide card keeps dark text on its pale green, whatever the
+    // realm's text colour.
+    'html[data-sts-layout] .wide .ok{color:#1d5c1d}';
+
+  /**
+   * The stylesheet of the sign-in screen and the federation chooser, shared
+   * with the consent screen; the wide card's rules after the chooser's.
+   * Every colour a realm may set is a custom property (`themed()`), and the
+   * layouts' rules come last (#717).
+   */
+  static readonly CARD_CSS = WebCardCss.themed(
+    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;bac' +
+    'kground:#f4f4f7;margin:0;display:flex;align-items:center;justify-content' +
+    ':center;min-height:100vh;color:#222}.card{background:#fff;border:1px sol' +
+    'id #d5d5dd;border-radius:10px;padding:28px 32px;width:380px;box-shadow:0' +
+    ' 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}p.sub{color' +
+    ':#666;font-size:.85em;margin:0 0 18px}label{display:block;font-size:.85e' +
+    'm;font-weight:600;margin:12px 0 4px}input[type=text],input[type=password' +
+    ']{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #bb' +
+    'b;border-radius:5px;font-size:1em}.row{display:flex;gap:10px;margin-top:' +
+    '20px}button{flex:1;padding:9px 12px;border-radius:5px;border:1px solid #' +
+    '12107c;background:#12107c;color:#fff;font-size:.95em;cursor:pointer}butt' +
+    'on.secondary{background:#fff;color:#12107c}.err{background:#fdecea;borde' +
+    'r:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;fon' +
+    't-size:.85em;margin-bottom:12px}.meta{margin-top:20px;padding-top:14px;b' +
+    'order-top:1px solid #eee;font-size:.75em;color:#777;word-break:break-all' +
+    '}.meta div{margin:2px 0}code{font-family:ui-monospace,SFMono-Regular,Men' +
+    'lo,monospace}.fed{margin-top:18px;padding-top:14px;border-top:1px solid ' +
+    '#eee}' +
+    // The account picker's rows (rcbj, 2026-10-20): the names on the left
+    // and a small button on the right of the same line, in place of a
+    // full-width button under each account (authn/web_authn_accounts.ts).
+    'form.account{display:flex;align-items:center;gap:10px;padding:10px 0;' +
+    'border-bottom:1px solid #eee}form.account .account-who{flex:1;' +
+    'min-width:0;overflow-wrap:anywhere}form.account div.sub{color:#666;' +
+    'font-size:.8em;margin-top:2px}form.account .account-acts{display:flex;' +
+    'gap:6px;flex:0 0 auto}form.account button{flex:0 0 auto;padding:5px ' +
+    '12px;font-size:.85em}' +
+    '.fed p{font-size:.78em;color:#666;margin:0 0 8px}a.fedbtn{display:b' +
+    'lock;text-align:center;padding:9px 12px;margin:6px 0;border-radius:5px;b' +
+    'order:1px solid #12107c;color:#12107c;background:#fff;text-decoration:no' +
+    'ne;font-size:.9em}a.fedbtn span{display:block;font-size:.75em;color:#777' +
+    '}' +
+    // THE WALLET SIGN-IN'S PAGES (#574), which carried these in a `<style>`
+    // of their own until they became routes of the sign-in surface: the QR
+    // code, the presentation's checks, and the Digital Credentials API
+    // button, which is a button and looks like the link beside it.
+    '.qr{display:block;margin:12px auto;text-align:center}.checks{font-size:' +
+    '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
+    'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
+    'block;font-size:.75em}' +
+    // A BOX THE SCREEN DISABLED (#608): its sentence greyed with it, so
+    // "not available" reads as unavailable before it is read at all.
+    'label.chk.off{color:#9a9aa3;cursor:not-allowed}label.chk.off code{colo' +
+    'r:inherit}' +
+    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS + WebCardCss.FOLD_CSS +
+    // The steps' rules BEFORE the wide card's, which win where both speak.
+    WebCardCss.WIDE_CSS + WebCardCss.CONSENT_CSS +
+    // GNAP's (#578): scoped to its own card, and after the steps'
+    // code field, which its own replaces.
+    WebCardCss.GNAP_CSS +
+    // The description pages' last (#584), scoped to their own card.
+    WebCardCss.DESCRIBE_CSS +
+    // The diagnostic pages' last (#583), scoped to `.diag` and `.tls`.
+    WebCardCss.DIAG_CSS +
+    // The account control's (#561), scoped to its own classes.
+    WebCardCss.ACCOUNTS_CSS +
+    // Who is asking (#1300), scoped to its own classes.
+    WebCardCss.CLIENT_CSS +
+    // A realm's layout and brand header (#717), under `data-sts-layout`.
+    WebCardCss.BRAND_CSS);
+}
+
+export = WebCardCss;

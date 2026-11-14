@@ -33,6 +33,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
+# Under Cygwin (#512), the shim that takes the CR off what docker.exe prints:
+# without it the digest below reaches tests/Dockerfile with a CR on it.
+# shellcheck source=host-platform.sh
+. tests/tools/host-platform.sh
+
 REPO="${STS_CORPORA_REPO:-ghcr.io/rcbj/iya-sts-test-corpora}"
 PUSH=1
 if [ "${1:-}" = "--no-push" ]; then

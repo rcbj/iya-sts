@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>Cada ajuste de este servicio está en la página del protocolo que configura.</strong> Esta página es el índice de eso — y el formulario de las {mine} filas que no pertenecen a ningún protocolo, porque son hechos sobre el proceso y no sobre algo que hable. Contenía los {total} hasta el 2026-08-27; lo que cambió es dónde se DIBUJAN, y nada de lo que hacen ni de cómo se leen.",
+  "fourPlaces": "Un valor puede venir de cuatro lugares, y la columna <em>Source</em> de cada una de estas páginas dice cuál: una anulación en tiempo de ejecución fijada en la página, una variable de entorno, el archivo appconfig con el que arrancó este proceso (<code>{configFile}</code>), o <code>{defaultsFile}</code> — el archivo appconfig predeterminado sobre el que aquel se superpone. El de más arriba gana al de más abajo, así que una variable de entorno fijada en el contenedor sigue ganando al archivo — y eso es lo que mantiene funcionando sin cambios todos los despliegues existentes.",
+  "noFifthPlace": "<strong>No hay un quinto lugar.</strong> Un ajuste sin valor en ninguno de los dos archivos appconfig ni en una variable de entorno impide que este servicio arranque, nombrándolo, en vez de recurrir a una constante escondida en un módulo. Así que cada valor de estas páginas es uno que alguien puede encontrar en un archivo — y eso es lo que hace que valga la pena leer la columna <em>Source</em>.",
+  "survives": "<strong>Los cambios SOBREVIVEN A UN REINICIO.</strong>",
+  "fileLeftAlone": "El archivo no se toca a propósito: un servicio que editara un archivo guardado en un repositorio dejaría allí para siempre el cambio olvidado de una prueba.",
+  "inMemory": "<strong>Los cambios están en memoria y se pierden al reiniciar.</strong> Nada escribe en el archivo appconfig, a propósito: un servicio que editara un archivo guardado en un repositorio dejaría allí para siempre el cambio olvidado de una prueba.",
+  "settingsHeading": "{total} ajustes, {editable} de ellos modificables mientras este servicio se ejecuta",
+  "overridesInForce": "{n} anulación(es) en tiempo de ejecución vigente(s), en cualquier parte del servicio:",
+  "resetAll": "Restablecer todo",
+  "noOverrides": "No hay anulaciones en tiempo de ejecución vigentes en ninguna parte de este servicio: cada valor viene del entorno o de uno de los dos archivos appconfig.",
+  "resetAllHere": "<strong>Restablecer todo está aquí y en ninguna página de protocolo</strong>, porque borra todas las anulaciones del servicio y no solo las de abajo. Un botón con ese alcance desde la página de Kerberos sería el único control de esta consola cuyo radio de impacto no se vería desde donde se pulsa.",
+  "whereEdited": "Dónde se edita cada ajuste",
+  "wholeTable": "La tabla completa, grupo por grupo, en el orden en que <code>config.js</code> los declara. La columna <em>Página</em> es donde se dibuja el formulario de ese grupo; los recuentos son del grupo, y <em>Anulados</em> es cuántos tienen ahora mismo una anulación en tiempo de ejecución vigente.",
+  "thGroup": "Grupo",
+  "thSettings": "Ajustes",
+  "thRestartOnly": "Solo al reiniciar",
+  "thOverridden": "Anulados",
+  "thPage": "Página",
+  "pagesAnd": " y ",
+  "overJson": "La tabla completa en JSON — cada ajuste, lo edite la página que lo edite — está en <code>/admin/config?format=json</code> y <code>GET /admin-api/config</code>; las cuatro acciones de estas páginas son <code>POST /admin-api/config/set</code>, <code>/set-many</code>, <code>/reset</code> y <code>/reset-all</code>."
+}

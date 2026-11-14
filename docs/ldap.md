@@ -29,9 +29,11 @@ place and rolling back on failure is the same thing written so that a bug leaves
 half a change behind. `deleteOldRdn` on a
 modifyDN is honoured, as RFC 4511 section 4.9 requires.
 
-There is no StartTLS, no SASL and no extended operation. The directory is built
-on the [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs) fork, and ldapjs
-implements none of those. LDAPS on 636 is the encrypted way in.
+There is no StartTLS and no extended operation, and the one SASL mechanism is
+EXTERNAL, over LDAPS (see *Binding with a client certificate*, below). The
+directory is built on the [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs)
+fork, and ldapjs implements none of the rest. LDAPS on 636 is the encrypted way
+in.
 
 ### Two sockets, one directory
 
@@ -47,19 +49,83 @@ LDAPTLS_CACERT=/tmp/sts.pem ldapsearch -H ldaps://localhost:636 -x \
   -b "dc=example,dc=com" "(objectClass=*)"
 ```
 
-The certificate is regenerated on every start, unless `tls.certificateFile`
-supplies one, so fetch it again after a restart rather than switching
-verification off — `LDAPTLS_REQCERT=never` is the habit that endpoint exists to
-avoid, and here it would also hide the one thing on this listener worth
-checking. The certificate is re-keyed on 636 whenever the listener certificate
-is re-issued, for example after a new Root is built on `/admin/pki`.
+The certificate is issued under this service's Root, unless
+`tls.certificateFile` supplies one. Its key is kept across restarts only where
+minted state persists ([TLS](tls.md)), so fetch the Root again after a restart
+in development rather than switching verification off —
+`LDAPTLS_REQCERT=never` is the habit that endpoint exists to avoid, and here
+it would also hide the one thing on this listener worth checking. The
+certificate is re-keyed on 636 whenever the listener certificate is
+re-issued, for example after a new Root is built on `/admin/pki`.
 
-**No client certificate is asked for on 636.** This listener proves the
-*server* to the client and nothing more; a certificate offered to it is not
-requested and would not be a login if it were. Signing in with a client
-certificate is the main HTTPS port's business (`GET /tls/sign-in`, see
-[TLS](tls.md)). `/admin/ldap/service` says this, so nobody has to work out why
-the certificate they configured was never sent.
+**No client certificate is asked for on 636, by default.** This listener
+proves the *server* to the client and nothing more. Two settings in the
+**Listener: LDAPS** group on `/admin/listeners` change what it asks for:
+`ldap.ldapsDisableOptionalClientCertificate` (on by default) off asks every
+connection for a certificate and requires none (optional), and
+`ldap.ldapsRequireClientCertificate` (off by default) on refuses at the
+handshake a connection without one that chains to the client truststore
+(required). `/admin/ldap/service` says which of the three is in force, and
+whether a certificate bind is available.
+
+### Binding with a client certificate
+
+A connection that presented a client certificate may bind with **SASL
+EXTERNAL** (RFC 4513 section 5.2.1.2): the bind carries no password, and the
+connection is bound as the person the certificate was issued to. There is no
+setting of its own. It is available **exactly when 636 asks for a
+certificate** — in the optional or the required mode above — because only then
+can a connection carry one. At the defaults 636 asks for nothing, and an
+EXTERNAL bind is refused as having no certificate.
+
+Two kinds of certificate bind, both to a **person's entry that already
+exists** — none is created:
+
+* one **this service issued to a person**: a TLS client certificate from the
+  person's portal (`/portal/signing-key`), or one enrolled over ACME, EST or
+  SCEP, naming the person in its `urn:sts:person:` subjectAltName;
+* one from an **outside certificate authority** trusted through
+  `/admin/tls/trust`, **stored byte for byte in `userCertificate` on exactly
+  one person entry** of the bind's realm. Its common name and subject are
+  never read. Store it on the person's console page (**Stored
+  certificates**), with `POST /admin-api/users/add-certificate`, or with an
+  LDAP modify of `userCertificate;binary`; a renewed certificate is stored
+  again. [TLS](tls.md#a-certificate-from-an-outside-certificate-authority)
+  has the whole rule.
+
+These are refused, each with its own error code:
+
+| Refused | Result code |
+|---|---|
+| a mechanism other than EXTERNAL | 7 authMethodNotSupported |
+| EXTERNAL on the plain listener (389), or no verified certificate on the connection | 48 inappropriateAuthentication |
+| a revoked certificate | 49 invalidCredentials |
+| a certificate from an outside certificate authority stored on no entry of the realm (`STS-LDAP-0192`), or on more than one (`STS-LDAP-0193`) | 49 |
+| a certificate issued in another trust realm, or one that is not a TLS client identity | 49 |
+| an application's certificate (only a person binds to the directory) | 49 |
+| a certificate no longer on its holder's record, a person with no entry, a disabled account | 49 |
+| an authorization identity that names anybody else | 50 insufficientAccessRights |
+
+The bind name should be empty. An authorization identity, if one is sent, must
+be `dn:` followed by that person's entry or `u:` followed by their user name.
+The connection's realm is the realm whose Issuing CA signed the certificate,
+unless the bind names one. A certificate from an outside authority names no
+realm, so its bind is in the **default realm** unless the authorization
+identity is `dn:` followed by the person's entry in another realm.
+
+OpenLDAP's tools send it like this, with the certificate and key the portal
+handed out:
+
+```bash
+LDAPTLS_CACERT=/tmp/sts.pem LDAPTLS_CERT=alice.crt LDAPTLS_KEY=alice.key \
+  ldapwhoami -H ldaps://localhost:636 -Y EXTERNAL
+```
+
+`ldapwhoami` itself is an extended operation this directory does not answer,
+so it reports an error after the bind has succeeded; `ldapsearch -Y EXTERNAL`
+shows the bind by what it may read. The bind behaves the same in both modes:
+the handshake has verified the certificate, and nothing is left unchecked in
+development.
 
 **TLS does not make a bind checked.** What 636 adds is that the password is not
 on the wire in the clear. In development mode it is still not verified — "it is
@@ -75,7 +141,8 @@ a running listener from one whose port another process (the host's own `slapd`,
 say) holds. The console's user page reads the same fields and warns in three
 cases rather than two, because telling somebody no client can connect while
 LDAPS is answering costs them an afternoon. Both sockets bind `global.host`, and LDAPS
-takes `tls.minVersion` and `tls.ciphers`. With `global.proxyProtocol` set to
+takes its TLS settings from the per-listener `listenerLdaps.*` rows, which inherit
+`tls.minVersion` and `tls.ciphers` ([TLS](tls.md)). With `global.proxyProtocol` set to
 `v2`, both sockets read a PROXY protocol header first, so the audit log and the
 bind rate limit see the client's real address.
 
@@ -115,6 +182,8 @@ Every realm's tree has the same containers under its base:
 | `ou=policies` | the XACML policy repository |
 | `ou=peps` | remote XACML Policy Enforcement Points |
 | `ou=passwordPolicies` | password policy profiles |
+| `ou=attributePolicies` | attribute policy profiles: what every person must hold (#396) |
+| `ou=attributeDefinitions` | the realm's custom attributes (#396) |
 | `ou=spiffe` | SPIFFE registration entries (`ou=entries`) and attested agents (`ou=agents`) |
 | `ou=trustAnchors` | the client-certificate truststore, in the default realm only |
 
@@ -128,13 +197,20 @@ this service believes.
 ### An entry for everybody who authenticates
 
 With `ldap.autocreateUsers` on (the default), an entry appears at
-`uid=<name>,ou=users,<base>` the first time somebody authenticates through any
-protocol here. **One person is one entry**, however they arrive. `alice`,
-`alice@REALM` and her `sub` all name one entry, and a client certificate whose
-subject CN is `alice` folds onto that entry too. A DID or a SPIFFE ID, which
-names nobody by itself, is filed under a name made from a digest of it, with the
-identifier on the entry as `didSubject` or `spiffeSubject`. An LDAP bind never
-creates an entry, because the DN it presents already names one.
+`uid=<name>,ou=users,<base>` the first time somebody authenticates through a
+protocol that has no switch of its own. **One person is one entry**, however
+they arrive by those protocols. `alice`, `alice@REALM`, her `sub` and a live sign-in name
+([People](people.md#sign-in-names)) all name
+one entry, and a client certificate whose subject CN is `alice` folds onto
+that entry too. A DID or a SPIFFE ID, which names nobody by itself, is filed
+under a name made from a digest of it, with the identifier on the entry as
+`didSubject` or `spiffeSubject`. An LDAP bind never creates an entry, because
+the DN it presents already names one. A federated sign-in does not follow
+this setting: the relationship's `fedAutocreateUsers` decides. An entry it
+creates under `link-at-first-sign-in` or `jit-namespaced` is
+`<relationship>~<subject>`, so a partner's `alice@partner.example` is not
+this `alice`. `any-existing` creates under the confirm-lookup name
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)).
 
 An add under `ou=users` for a username that another entry already answers to is
 refused `entryAlreadyExists` (68), whichever door it comes through: an LDAP add,
@@ -207,6 +283,16 @@ entries and then `sizeLimitExceeded` (4). The entries already sent are a valid
 partial answer, and the result code is how the client knows the answer is
 partial. Page through a large directory with a narrower filter or base.
 
+### Search time limit
+
+A search also stops at `ldap.timeLimit` seconds (30), or at the client's own
+`timeLimit` when that is shorter, and ends with `timeLimitExceeded` (3) after
+the entries it had already sent. Where the service holds its people as a
+window onto PostgreSQL, a search that no index can narrow (an equality on
+`uid` or `mail`, or a search for groups) reads the store a page at a time
+without holding up anything else, sends each entry as it is found, and stops
+paging as soon as it reaches either limit.
+
 ### Size of the directory
 
 `ldap.maxEntries` (2000) caps how many entries the process holds, counted across
@@ -228,16 +314,23 @@ Tokens can carry the groups a person is in. See the `groups.*` settings below.
 ### The password policy is a directory entry
 
 A realm's password policy is the entry `cn=default,ou=passwordPolicies,<base>`.
-It is not seeded: an absent entry means the built-in defaults apply. Its
-attributes are:
+It is not seeded: an absent entry means the built-in defaults apply. A named
+password policy is `cn=<name>` in the same container with the same
+attributes and `stsPasswordPrecedence`. A group names one in
+`stsPasswordPolicy`, and an application names one in `appPasswordPolicy`.
+An LDAP write of `userPassword` has no application, so the person's groups
+decide and `default` applies where they name none
+([Policies](policies.md#password-policy),
+[named password policies](authentication.md#different-password-rules-for-different-applications-or-groups)).
+Its attributes are:
 
 | Attribute | Default | Meaning |
 |---|---|---|
 | `pwdMinLength` | 12 | minimum length |
 | `pwdInHistory` | 5 | how many previous passwords may not be reused (the current one is refused as well) |
-| `stsPwdMinSymbols` | 1 | how many symbols are required |
-| `stsPwdRequireUppercase` | TRUE | an uppercase letter is required |
-| `stsPwdRequireDigit` | TRUE | a digit is required |
+| `stsPwdMinSymbols` | 0 | always 0: a policy may not ask for symbols (ASVS 5.0.0 6.2.5) |
+| `stsPwdRequireUppercase` | FALSE | always FALSE, for the same reason |
+| `stsPwdRequireDigit` | FALSE | always FALSE, for the same reason |
 | `stsPwdGeneratedLength` | 20 | the length of a generated password |
 
 The `pwd*` names are those of
@@ -271,7 +364,7 @@ closed.
 | Credentials on the wire | A search never returns a secret attribute (`userPassword`, client secrets, reset tokens, private keys). A filter cannot match on one, and a compare against one is refused. Administrators are included | Returned like any attribute |
 | Write | Anonymous writes nothing. Admin Write in the default realm writes anything, and a realm's own administrator writes that realm. Anybody else may modify only the attributes in `ldap.selfWritableAttributes`, on their own entry. Refusals are 50 | Any connection may add, modify, rename or delete any entry in any realm |
 | `userPassword` | Held to the password policy (19). A pre-hashed `$scrypt$` value is refused, and so is a change to `pwdHistory` or `pwdChangedTime` | Hashed. A pre-hashed value is kept as given, which is how a directory moves between two instances |
-| Seed data | The containers only. The `roles.remotePepGroup` and `roles.xacmlUserGroup` groups are created **empty** | `cn=admin`, alice, bob and carol, `cn=developers`, `cn=directory-admins`, and the two privileged identities `cn=remote-pep-1` and `cn=xacml-user-1` |
+| Seed data | The containers only. The `roles.remotePepGroup` and `roles.xacmlUserGroup` groups are created **empty** | `cn=admin`, alice, bob and carol, `uid=sensitive` (never delegated, `stsNotDelegated`), `cn=developers`, `cn=directory-admins`, and the two privileged identities `cn=remote-pep-1` and `cn=xacml-user-1` |
 | Invented attributes | None | A persona for each auto-created person |
 
 The failed-bind limit is the sign-in screen's: `security.rateLimitPerIdentity`
@@ -279,9 +372,10 @@ and `security.rateLimitPerAddress` inside `security.rateLimitWindowS`. **Only
 failures count**, so a connection pool that binds fifty times at once is not
 locked out. On a cluster the count is shared across nodes.
 
-Product mode logs a warning at startup while `ldap.plainListener` is on. A
-verified bind on 389 is a real password sent in the clear, so turn 389 off in
-production. With 389 on, product mode answers only the root DSE there.
+Product mode leaves the plain listener off unless `ldap.plainListener` is set
+on, because a client's password can cross 389 in the clear even when the bind is
+refused. Set on, it logs a warning at startup, refuses every bind there and
+answers only the root DSE.
 
 ### What a bound identity may read (product mode)
 
@@ -313,13 +407,20 @@ provisioning client must.
 |---|---|---|---|---|
 | `ldap.port` | `LDAP_PORT` | `389` | restart | The plain LDAP listener. A host run that is not root fails to bind 389; the failure is recorded, not thrown. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | restart | The LDAPS listener, presenting the service's TLS certificate; it binds independently of 389. |
-| `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in, which product mode wants. |
-| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through any protocol. |
+| `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` (`false` in product) | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in. Product mode leaves it off unless it is set. |
+| `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through a protocol with no switch of its own. A federation relationship follows `fedAutocreateUsers` instead. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
-| `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
+| `ldap.timeLimit` | `LDAP_TIME_LIMIT` | `30` | yes | The server-side search time limit in seconds (a client's shorter `timeLimit` wins), past which a search ends with `timeLimitExceeded` and the entries already sent. |
+| `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
 | `ldap.directoryReadableAttributes` | `LDAP_DIRECTORY_READABLE_ATTRIBUTES` | empty | yes | In product mode, the attributes a person may read on **other** people's entries; empty (the default) means they read only their own. See the warning above before widening it. |
 | `ldap.groupMembersReadable` | `LDAP_GROUP_MEMBERS_READABLE` | `false` | yes | In product mode, whether a person may read the member list of a group they are in. See the warning above. |
+| `ldap.ldapsDisableOptionalClientCertificate` | `STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT` | `true` | yes | LDAPS sends no CertificateRequest (what it always did). |
+| `ldap.ldapsRequireClientCertificate` | `STS_LDAPS_REQUIRE_CLIENT_CERT` | `false` | yes | LDAPS requires a client certificate chaining to the client truststore. |
+| `ldap.workerDirectory` | `LDAP_WORKER_DIRECTORY` | `auto` | **restart** — the directory's store is chosen when the process loads it | How every process — the front process and each request or surface worker — holds the directory. `auto` (the default, #320): `postgres-lru` wherever it can work (`persistence.mode=postgres` and a single cell) and `memory` everywhere else. `memory`: every entry, in every process. `postgres-lru`: the people and devices as a window of at most `ldap.workerCacheEntries` entries per process, the rest read from PostgreSQL when asked for — memory no longer grows with the number of people, and a miss costs one database round trip during which that process does nothing else. Requires `persistence.mode=postgres` and a single cell; set explicitly where it cannot work, the service does not start (STS-LDAP-0133). Measured: 20,000 people cost the front process 47 MB less heap windowed. |
+| `ldap.workerCacheEntries` | `LDAP_WORKER_CACHE_ENTRIES` | `10000` | yes | With `ldap.workerDirectory=postgres-lru`, how many people and devices a request worker holds at once (about 2.5 KB each), the least recently read dropped first. An entry it changed and has not yet written is never dropped. |
+| `ldap.workerDirectoryTimeoutMs` | `LDAP_WORKER_DIRECTORY_TIMEOUT_MS` | `2000` | yes | With `ldap.workerDirectory=postgres-lru`, how long a request worker waits for the database when it needs a directory entry it does not hold. The worker does nothing else while it waits, so this is also the longest a database outage can hold one of its requests; past it the request is refused (503, `STS-LDAP-0130`). |
+| `ldap.workerDirectoryBudgetMs` | `LDAP_WORKER_DIRECTORY_BUDGET_MS` | `5000` | yes | With `ldap.workerDirectory=postgres-lru`, how long one `/admin` or `/admin-api` request may spend waiting, in all, on synchronous directory reads. A question that would pass the budget is refused (503, `STS-LDAP-0175`) and is not asked; one slow question still fails as `STS-LDAP-0130` when it exceeds its own timeout first. Other requests have no such budget. |
 | `groups.claim` | `STS_GROUPS_CLAIM` | `true` | yes | Puts the person's directory groups in every access token, ID Token and SAML assertion, omitted for somebody in no group. |
 | `groups.claimName` | `STS_GROUPS_CLAIM_NAME` | `groups` | yes | The claim or SAML attribute name the groups are carried under. |
 | `groups.claimValue` | `STS_GROUPS_CLAIM_VALUE` | `cn` | yes | Whether each group is named by its common name or its whole DN. |
@@ -350,7 +451,7 @@ changes one, and a runtime setting can be set per trust realm. See
   as well as by name. Putting the realm in the base DN makes
   `ldapsearch -b "dc=acme,dc=example,dc=com"` mean what it says, and new realms
   are reachable at once.
-* **Every bind succeeds in development, except `invalid`.** A mock that checked
+* **Every bind succeeds in development, except `invalid`.** A development service that checked
   passwords could not be pointed at by a client that has none. The reserved
   value keeps `invalidCredentials` (49) reachable, and 49 is the code an LDAP
   client's error handling is built around: a directory that could not produce
@@ -360,9 +461,22 @@ changes one, and a runtime setting can be set per trust realm. See
   directory is still a tree, a leaf is still a leaf, and one person is still one
   entry. Inventing a schema would hide the difference from a real directory
   instead of stating it.
-* **No referential integrity.** It is a feature of some directories, not of the
-  protocol. A dangling group member is the honest result, and the console
-  reports it.
+* **A group lists only what is there.** Adding a group member that names no
+  entry is refused, over LDAP with `constraintViolation` (19), and over SCIM,
+  the console and `/admin-api` with a 400 naming the missing member. The
+  console still reports a dangling member that an older store holds.
+* **A delete takes the entry out of every group and role.** Deleting a person,
+  a group or an application removes its DN from every group that listed it and
+  its name from every role. Something created again under the same name starts
+  with no memberships and no roles, and has to be added back. A deleted
+  application also stops conferring every role it conferred on the people
+  signing in through it, and a deleted person or group is taken off the
+  owners of every role, group, application and service account that named
+  it. Something created again at the same DN owns nothing.
+* **A rename keeps the entry's memberships and what it owns.** A modifyDN
+  updates every group that listed the old DN, every role that listed the old
+  username or group name, and every owner list that named the old DN, to the
+  new one.
 * **Two ports rather than StartTLS.** StartTLS is an extended operation
   (RFC 4511 section 4.14) that upgrades a connection already in progress,
   ldapjs implements none, and LDAPS on 636 is what most clients speak. Which of
@@ -408,12 +522,18 @@ changes one, and a runtime setting can be set per trust realm. See
 ## How an identity becomes an entry
 
 With `ldap.autocreateUsers` on, an entry is grown at `uid=<name>,ou=users,<base>`
-the first time anybody authenticates through **any** family here — the sign-in
-screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a passwordless WebAuthn
-assertion. Every one of those reaches the directory through the single point at
-which a credential is ACCEPTED, so it is one rule and not one per protocol. A
-failure to write the entry is caught and logged: **a directory must never be
-able to fail an authentication.**
+the first time anybody authenticates through a family that has no switch of
+its own — the sign-in screen, WS-Trust, WS-Federation, a Kerberos AS-REQ, a
+passwordless WebAuthn assertion. Every one of those reaches the directory
+through the single point at which a credential is ACCEPTED, so it is one rule
+and not one per protocol. A failure to write the entry is caught and logged:
+**a directory must never be able to fail an authentication.**
+
+Federation is not one of those families. A service-provider relationship
+creates a person only when `fedAutocreateUsers` is on, even if this setting is
+off, and creates nobody when that switch is off, even if this setting is on.
+The `uid` is `<relationship>~<subject>` except under `any-existing`.
+[Federation](federation.md#provisioning-dynamic-or-pre-provisioned).
 
 Two identities are skipped on purpose:
 
@@ -426,7 +546,7 @@ Two identities are skipped on purpose:
 
 ### One entry per person, however they get in
 
-`rcbj` at the sign-in screen, `urn:uuid:<entryUUID>` in a token, `rcbj@STS.MOCK`
+`rcbj` at the sign-in screen, `urn:uuid:<entryUUID>` in a token, `rcbj@EXAMPLE.COM`
 in a Kerberos AS-REQ and `rcbj` on a WS-Security `UsernameToken` are one entry.
 The subject is resolved through the directory, and the realm (and the legacy
 `urn:sts:user:` prefix an older token may carry) is stripped first, so every
@@ -492,10 +612,9 @@ of those attributes.
 
 ### A decentralized identifier
 
-Three places hand over a DID: the subject of an issued `ldp_vc` (a `did:jwk`
-built from the holder key the wallet proved possession of), whatever DID
-presents a credential to the OID4VP Verifier, and the `did:jwk` that
-`/did/generate` mints on request. Each gets an entry, which matters most at the
+Two places hand over a DID: the subject of an issued `ldp_vc` (a `did:jwk`
+built from the holder key the wallet proved possession of), and whatever DID
+presents a credential to the OID4VP Verifier. Each gets an entry, which matters most at the
 Credential Issuer: OID4VCI lets the authorization server be somebody else, so a
 **foreign** access token whose subject this service has never seen is the
 ordinary case, and without an entry the credential would describe somebody with
@@ -523,17 +642,16 @@ the Verifier, the entry that records it is found and nothing new is created. A
 DID with no link still gets its own digest-named entry, because inventing a
 person to attach it to would be worse.
 
-**None of the three is a sign-on**, and each record says so. A presentation to
-the Verifier at `/oid4vp/verifier` starts no session and issues no token; it is
+**Neither is a sign-on**, and each record says so. A presentation to
+the Verifier for a verification started at `POST /admin-api/verifications/start`
+starts no session and issues no token; it is
 *recorded*. (A presentation to `/authn/wallet` is a sign-on, of the entry the
 credential was issued for rather than of its DID — see
 [OpenID4VP and wallet sign-in](oid4vp.md).) A credential request records that an access token was
 presented, not that anybody authenticated; in development mode this service does
 not verify one it did not issue, and product mode refuses one it cannot verify.
-`/did/generate` records an identity this service *created*, with nothing
-presented. The `did:web` that endpoint returns for `?method=web` gets no entry:
-it is this service's OWN identity, published at `/.well-known/did.json`, and an
-entry for it would file the issuer among the people.
+This service's own `did:web`, published at `/.well-known/did.json`, gets no
+entry: an entry for it would file the issuer among the people.
 
 ### A SPIFFE identity
 
@@ -629,6 +747,24 @@ schema — through one function, and a **second spelling of a name already known
 is logged as a warning** naming both, first spelling winning. It is a warning
 and not a failure, because a table of capitalisations must never stop the
 service starting.
+
+## How a filter value is matched
+
+A search filter's equality and substring assertions are matched by **the
+attribute's own equality rule**, as the standard schema defines it. The
+attributes whose rule ignores case — RFC 4519's `uid`, `cn`, `sn`, `givenName`,
+`ou`, `o`, `dc` and the rest of its directory strings, RFC 4524's `mail` and
+COSINE strings, and RFC 2798's `displayName`, `employeeNumber` and the other
+inetOrgPerson strings — match in any case: `(uid=ALICE)` and `(uid=Ali*)` find
+`uid=alice`, and `(mail=Alice@Example.COM)` finds `alice@example.com`. Every
+other attribute — `memberUid` (caseExactIA5Match), the octet strings, and this
+service's own `sts*` attributes — is compared exactly, as it always was, and
+`objectClass` ignores case as it always did. Case is the whole of it: the
+insignificant-space handling of RFC 4518's string preparation is not done.
+
+Until 2026-10-14 (#632) every value but `objectClass`'s was compared exactly,
+so a search for a person in a case other than the one stored found nobody,
+while a sign-in, the console and SCIM found them.
 
 ## Two ldapjs defects this service routes around
 

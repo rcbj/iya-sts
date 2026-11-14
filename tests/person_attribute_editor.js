@@ -69,7 +69,6 @@ function childMain() {
     const editor = require(ROOT + '/ldap/person_editor');
     const actions = require(ROOT + '/admin-core/admin_actions');
     const adminViews = require(ROOT + '/admin-core/admin_views');
-    const admin = require(ROOT + '/admin-ui/admin');
 
     await realms.run(realms.DEFAULT_REALM, async function () {
       const ctx = { via: 'api', actor: 'tester' };
@@ -292,6 +291,16 @@ function childMain() {
                JSON.stringify(answer).slice(0, 300));
         }
       });
+      const codedDesc = act('set-attribute', 'pae-alice', 'description',
+        'kept for the operator (STS-LDAP-0001).');
+      refusedWith(codedDesc, 'STS-LDAP-0211',
+        '4. a description carrying an operator code is refused');
+      note(valuesOf('pae-alice', 'description').join(' ')
+             .indexOf('STS-LDAP-0001') < 0 &&
+           (codedDesc.errors || []).join(' ').indexOf('STS-') < 0 &&
+           !codedDesc.values,
+           '4. the code is not stored and the refusal does not repeat it',
+           JSON.stringify(codedDesc.errors || codedDesc).slice(0, 300));
 
       // ====================================================================
       // 5. THE ACCOUNT OBSERVER
@@ -328,8 +337,11 @@ function childMain() {
              /^uid=pae-alice,/.test(published.dn),
            '6. the person\'s JSON publishes attributeEditor with the values',
            JSON.stringify(titleRow));
-      const page = admin.usersView(req, undefined);
-      const inner = String((page && page.inner) || '');
+      // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/users
+      // drawn by its renderer.
+      const page = await require(ROOT + '/tests/tools/console_page.js')
+        .consolePage(ROOT).draw('/admin/users', { user: 'pae-alice' });
+      const inner = String((page && page.html) || '');
       note(/id="attributes"/.test(inner) &&
              (/value="set-attribute"/.test(inner) ||
               /needs <strong>Admin Write<\/strong>/.test(inner)),
@@ -347,7 +359,7 @@ function childMain() {
            '6. and the address is set through set-mail, from the one held');
       const mailed = act('set-mail', 'pae-alice', undefined, undefined);
       note(mailed.ok === false, '6. set-mail with no address is refused');
-      const setMail = actions.usersAction({ action: 'set-mail',
+      const setMail = await actions.usersAction({ action: 'set-mail',
         user: 'pae-alice', mail: 'pae.alice@example.org' }, ctx);
       note(setMail.ok && setMail.verified === true &&
              editor.editorFor('pae-alice').mail === 'pae.alice@example.org',

@@ -38,10 +38,10 @@
 // and would have interoperated; it would simply not have been what a client
 // author sees in front of a real SPIRE deployment.
 //
-// **Do not edit the four vendored files** (they are in `common/vendored/`). A
+// **Do not edit the four vendored files** (they are in `common/crypto_impl/`). A
 // change here that is not also made there is a fork nobody else can consume,
 // and nothing checks these four for drift automatically — see
-// `common/vendored/CLAUDE.md`.
+// `common/crypto_impl/CLAUDE.md`.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS GENERATED PER START, AND WHAT IS NOT ANY MORE (2026-09-11)
@@ -101,12 +101,10 @@
 // installed, into the module-level variable declared where each was.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // For the federated bundle store below — a persisted per-realm map rather than
 // a plain one, so every process in this service sees the same bundles and no
 // realm sees another's.
 import realms = require('../common/realms');
-import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import pkijs = require('pkijs');
@@ -122,8 +120,9 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import spiffeId = require('./spiffe_id');
-import keys = require('../common/vendored/key_material');
-import x509 = require('../common/vendored/x509');
+import SpiffeModel = require('./spiffe_model');
+import keys = require('../common/crypto_impl/key_material');
+import x509 = require('../common/crypto_impl/x509');
 
 // ---------------------------------------------------------------------------
 // THE SETTINGS, READ WHERE THEY ARE USED.
@@ -168,9 +167,7 @@ const PROCESS_TRUST_DOMAIN =
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface SpiffeCaDeps {
-  crypto: typeof crypto;
   realms: typeof realms;
-  jwt: typeof jwt;
   stsCrypto: typeof stsCrypto;
   pkijs: typeof pkijs;
   log: typeof log;
@@ -210,6 +207,24 @@ class SpiffeCa {
     deps.log.debug("Entering SpiffeCa.constructor().");
     SpiffeCa.describeCache(this);
     deps.log.debug("Leaving SpiffeCa.constructor().");
+  }
+
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * what each key type is, as `state()`'s `keyTypes` answers it. A key
+   * type's `label` is an algorithm's name and is not translated.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeCa.prose().");
+    // LAZILY: `server_prose` requires `config.js` at its load, and this is
+    // asked only when the namespace is first built.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> =
+      harvest('spiffe.ca.keyTypes', KEY_TYPES, ['what']);
+    helpers.log.debug("Leaving SpiffeCa.prose(). " + Object.keys(out).length);
+    return out;
   }
 
   // `x509Unpacked`, described to `/admin/caches` (#74, rule 3ap). Registered
@@ -272,9 +287,7 @@ class SpiffeCa {
     helpers.log.debug("Entering SpiffeCa.defaultDeps().");
     helpers.log.debug("Leaving SpiffeCa.defaultDeps().");
     return {
-      crypto: crypto,
       realms: realms,
-      jwt: jwt,
       stsCrypto: stsCrypto,
       pkijs: pkijs,
       log: log,
@@ -495,9 +508,12 @@ class SpiffeCa {
   // word and both name their trust domain: `{kind}` becomes `CA` or
   // `downstream CA` and `{trustDomain}` the realm's domain. The default
   // rendered the old two strings byte for byte until the product name in every
-  // identifier this service emits became `sts` the same day, so it now renders
-  // `CN=sts SPIFFE CA (<domain>),O=sts`; no migration, because a SPIFFE CA is
-  // minted per start in development and taken from /admin/pki everywhere else.
+  // identifier this service emits became `sts` the same day, so it rendered
+  // `CN=sts SPIFFE CA (<domain>),O=sts`; and since #1294 (2026-11-03), which
+  // made every certificate this service issues say the product's name, it
+  // renders `CN=iya-sts SPIFFE CA (<domain>),O=iya-sts`. No migration either
+  // time, because a SPIFFE CA is minted per start in development and taken
+  // from /admin/pki everywhere else.
   //
   // The PKI path is untouched: a realm with a hierarchy takes its Issuing CA's
   // subject from `common/pki.js`, which owns it.
@@ -523,7 +539,8 @@ class SpiffeCa {
       // about an RDN. Named here instead.
       throw new Error('spiffe.caSubject is empty, and a CA certificate needs ' +
                       'a subject. Set it to an X.501 name — the default is ' +
-                      '`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`.');
+                      '`CN=iya-sts SPIFFE {kind} ({trustDomain}),' +
+                      'O=iya-sts`.');
     }
     log.debug("Leaving SpiffeCa.caSubjectFor().");
     return rendered;
@@ -862,7 +879,7 @@ class SpiffeCa {
     const notBefore = new Date();
     const notAfter = new Date(notBefore.getTime() +
                               (ttlSeconds || 86400) * 1000);
-    const issued = await x509.issueCertificate({
+    const issued = await pki.issueOutsideHierarchy({
       // The CA's own name. A SPIFFE trust domain has no naming rules for it —
       // only the SVIDs it signs are constrained — so this says what it is and
       // which trust domain it belongs to, which is what a person reading
@@ -1010,9 +1027,9 @@ class SpiffeCa {
    * @returns the JWK
    */
   publicJwkOf(publicPem) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering SpiffeCa.publicJwkOf().");
-    const jwk = crypto.createPublicKey(publicPem).export({ format: 'jwk' });
+    const jwk = stsCrypto.publicKeyOf(publicPem).export({ format: 'jwk' });
     // `key_ops` and `ext` are Web Crypto members and are not part of a
     // published JWK. Deleted rather than left: a bundle is a document other
     // software parses strictly, and members it does not expect are members it
@@ -1141,7 +1158,7 @@ class SpiffeCa {
    * @returns the anchors
    */
   trustAnchorsIn(realmId) {
-    const { log, pki, crypto } = this.deps;
+    const { log, pki, stsCrypto } = this.deps;
     log.debug("Entering SpiffeCa.trustAnchorsIn().");
     const id = this.realmIdOf(realmId);
     const issuer = pki.describeIssuer(id, SPIFFE_USE_CASE);
@@ -1154,7 +1171,8 @@ class SpiffeCa {
                 notAfter: issuer.root.notAfter,
                 certificatePem: issuer.root.certificatePem,
                 certificateDer: this.pemToDer(issuer.root.certificatePem),
-                publicKeyPem: crypto.createPublicKey(issuer.root.certificatePem)
+                publicKeyPem: stsCrypto.publicKeyOf(
+                  issuer.root.certificatePem)
                   .export({ type: 'spki', format: 'pem' }) }];
     }
     log.debug("Leaving SpiffeCa.trustAnchorsIn().");
@@ -1218,12 +1236,12 @@ class SpiffeCa {
                // differ: the leaf was signed by the rebuilt SPIFFE Issuing CA
                // and travelled with the old one, and every client failed with
                // `unable to verify the first certificate`
-               // (tests/vendored/sts_spiffe_grpc.js section 7).
+               // (tests/protocol/sts_spiffe_grpc.js section 7).
                chainPem: made.issuerChainPem.slice(),
                chainDer: made.issuerChainDer.slice() };
     }
     const type = this.keyTypeById(authority.keyType) || KEY_TYPES[0];
-    const issued = await x509.issueCertificate({
+    const issued = await pki.issueOutsideHierarchy({
       subject: spec.subject,
       subjectPublicKey: spec.publicKeyPem,
       signatureAlg: type.sigAlg,
@@ -1563,8 +1581,14 @@ class SpiffeCa {
         return false;
       }
       waited = true;
+      // NOT unref'd (#1059): this timer is AWAITED, so it is what keeps the
+      // operation alive. Unref'd, node exits in the middle of the wait
+      // whenever nothing else holds the loop: a served process always has
+      // its listeners, but a script or a shared-process test run does not,
+      // and `tests/run.js` ended with exit 0 and no summary that way. The
+      // wait is bounded by SPIFFE_BRANCH_WAIT_MS, so nothing is held past it.
       await new Promise(function (resolve) {
-        setTimeout(resolve, 250).unref();
+        setTimeout(resolve, 250);
       });
     }
   }
@@ -2073,7 +2097,7 @@ class SpiffeCa {
       subject: opts.subject || this.svidSubject(),
       publicKeyPem: publicPem,
       // **NO PROFILE, AND THAT IS SAFE FOR A REASON WORTH WRITING DOWN.** In
-      // `common/vendored/x509.js` a profile decides exactly one thing at
+      // `common/crypto_impl/x509.js` a profile decides exactly one thing at
       // issuance — a DEFAULT LIFETIME, used only when the caller supplies
       // neither `notBefore` nor `notAfter`. It contributes no extensions. This
       // caller supplies both, so naming one would change nothing and would
@@ -2192,10 +2216,10 @@ class SpiffeCa {
    * @returns its subject, issuer, serial, validity and fingerprint, or null
    */
   certificateFacts(der) {
-    const { log, crypto, dnRfc4514, errorCodes } = this.deps;
+    const { log, stsCrypto, dnRfc4514, errorCodes } = this.deps;
     log.debug('Entering SpiffeCa.certificateFacts().');
     try {
-      const parsed = new crypto.X509Certificate(der);
+      const parsed = stsCrypto.parseCertificate(der);
       log.debug('Leaving SpiffeCa.certificateFacts(). serial=' +
                 parsed.serialNumber);
       return {
@@ -2344,7 +2368,7 @@ class SpiffeCa {
    *   issue
    */
   async mintJwtSvid(id, audiences, options) {
-    const { log, spiffeId, nowSec, b64u, crypto, stsCrypto } = this.deps;
+    const { log, spiffeId, nowSec, b64u, stsCrypto } = this.deps;
     log.debug('Entering SpiffeCa.mintJwtSvid(). id=' + id);
     const opts = options || {};
     await this.ready(this.realmIdOf(opts.realm));
@@ -2387,7 +2411,7 @@ class SpiffeCa {
       aud: list.length === 1 ? list[0] : list,
       exp: expires,
       iat: issuedAt,
-      jti: b64u(crypto.randomBytes(12))
+      jti: b64u(stsCrypto.randomBytes(12))
     };
     // certificate-header: none — the JWT authority has no certificate and no
     // hierarchy to hang from (common/jose_certificate_header.js).
@@ -2397,8 +2421,13 @@ class SpiffeCa {
       // `JWT` rather than the default, and stated rather than left implicit:
       // the JWT-SVID specification says the `typ` header, if present, must be
       // `JWT` or `JOSE`.
-      header: { typ: 'JWT' }
+      header: { typ: JWT_SVID_TYP }
     });
+    // Held to the model's JWT-SVID members (#1579): recorded, not refused.
+    SpiffeModel.hold('jwt-svid-claims', payload, 'a minted JWT-SVID\'s claims');
+    SpiffeModel.hold('jwt-svid-header',
+                     { alg: authority.alg, kid: authority.id,
+                       typ: JWT_SVID_TYP }, 'a minted JWT-SVID\'s header');
     log.debug('Leaving SpiffeCa.mintJwtSvid(). aud=' + list.join(', '));
     return { spiffeId: parsed.id, token: token, audiences: list,
              expiresAt: expires, issuedAt: issuedAt, jti: payload.jti,
@@ -2440,7 +2469,7 @@ class SpiffeCa {
    *   reason, errorCode }`
    */
   async validateJwtSvid(token, audience, options?) {
-    const { log, jwt, spiffeId, stsCrypto } = this.deps;
+    const { log, spiffeId, stsCrypto } = this.deps;
     const self = this;
     log.debug('Entering SpiffeCa.validateJwtSvid().');
     // THE REALM WHOSE BUNDLE IS BEING ASKED. It has an option now for the same
@@ -2448,23 +2477,26 @@ class SpiffeCa {
     // an in-process caller (a test, `/admin-api`) is not inside one.
     const opts = options || {};
     await this.ready(this.realmIdOf(opts.realm));
+    // The two refusals of an empty request field are the model's
+    // (models/spiffe/workload.tsp, ValidateJWTSVIDRequest): the sentence and
+    // the code; the Workload API answers them INVALID_ARGUMENT.
     const text = String(token == null ? '' : token).trim();
-    if (!text) {
+    if (SpiffeModel.isEmpty(text)) {
+      const none = SpiffeModel.refusal('ValidateJWTSVIDRequest', 'svid',
+                                       'empty');
       log.debug('Leaving SpiffeCa.validateJwtSvid(). No token.');
-      return { ok: false, reason: 'No JWT-SVID was given.',
-               errorCode: 'STS-SPIFFE-0031' };
+      return { ok: false, reason: none.message, errorCode: none.code };
     }
     const wanted = String(audience == null ? '' : audience).trim();
-    if (!wanted) {
+    if (SpiffeModel.isEmpty(wanted)) {
+      const none = SpiffeModel.refusal('ValidateJWTSVIDRequest', 'audience',
+                                       'empty');
       log.debug('Leaving SpiffeCa.validateJwtSvid(). No audience.');
-      return { ok: false, reason: 'ValidateJWTSVID requires the audience the ' +
-                                  'validating party goes by; a JWT-SVID is ' +
-                                  'only meaningful against one.',
-               errorCode: 'STS-SPIFFE-0032' };
+      return { ok: false, reason: none.message, errorCode: none.code };
     }
     let unverified;
     try {
-      unverified = jwt.decode(text, { complete: true });
+      unverified = stsCrypto.decodeJws(text, { complete: true });
     } catch (e) {
       log.debug("Caught in SpiffeCa.validateJwtSvid(): " +
                 ((e && e.message) || e));
@@ -2566,7 +2598,7 @@ class SpiffeCa {
    * @returns the keys, or null when the trust domain is not known
    */
   jwkSetFor(trustDomain) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     const self = this;
     log.debug('Entering SpiffeCa.jwkSetFor().');
     // THE AMBIENT REALM'S, because that is the authority a caller reached: a
@@ -2592,7 +2624,7 @@ class SpiffeCa {
     (foreign.document.keys || []).forEach(function (key) {
       if (key.use !== 'jwt-svid') return;
       try {
-        const pem = crypto.createPublicKey({ key: key, format: 'jwk' })
+        const pem = stsCrypto.publicKeyFromJwk(key)
           .export({ type: 'spki', format: 'pem' });
         out.push({ kid: key.kid || '', pem: pem,
                    // The algorithms a key of this type could have signed with.
@@ -2709,6 +2741,9 @@ class SpiffeCa {
       spiffe_sequence: this.sequenceNow(id),
       spiffe_refresh_hint: this.refreshHintSeconds()
     };
+    // Held to the model's bundle (#1579): recorded, not refused.
+    SpiffeModel.hold('bundle', document, 'the ' + (id || 'default') +
+                     ' realm\'s SPIFFE bundle');
     log.debug('Leaving SpiffeCa.bundle(). ' + keyList.length +
               ' key(s), sequence ' +
               this.sequenceNow(id) + '.');
@@ -2848,7 +2883,8 @@ class SpiffeCa {
           'as that realm\'s identities. Realms here are isolated; name a ' +
           'trust domain no realm of this service uses.' };
     }
-    const checked = this.checkBundleDocument(document);
+    const checked = this.checkBundleDocument(document,
+                                             this.realmIdOf(opts.realm));
     if (!checked.ok) {
       log.debug('Leaving SpiffeCa.setFederatedBundle(). Bad document.');
       checked.errorCode = 'STS-SPIFFE-0041';
@@ -2885,6 +2921,9 @@ class SpiffeCa {
     this.bumpSequence(opts.realm,
                       'a federated bundle was ' +
                       (existing ? 'updated' : 'added'));
+    // And the listeners' TLS trust follows it (#438): see the declaration of
+    // `federated`.
+    federationChanged(this.realmIdOf(opts.realm));
     log.debug('Leaving SpiffeCa.setFederatedBundle(). ' + held.size +
               ' federated ' +
         'bundle(s).');
@@ -2909,7 +2948,10 @@ class SpiffeCa {
     const name = String(trustDomain == null ? '' : trustDomain).trim()
       .toLowerCase();
     const had = this.federatedIn(realmId).delete(name);
-    if (had) this.bumpSequence(realmId, 'a federated bundle was removed');
+    if (had) {
+      this.bumpSequence(realmId, 'a federated bundle was removed');
+      federationChanged(this.realmIdOf(realmId));
+    }
     log.debug('Leaving SpiffeCa.deleteFederatedBundle(). ' +
               (had ? 'Removed.' : 'It ' +
         'was not here.'));
@@ -2971,6 +3013,69 @@ class SpiffeCa {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE FEDERATED X.509 AUTHORITIES AS PEM, FOR A LISTENER'S TLS TRUST (#438).
+  //
+  // Every `x509-svid` key's `x5c` of every federated bundle this realm holds —
+  // the same certificates `spiffe_auth.ts`'s `authorityCertificates()` verifies
+  // a federated SVID against, read through `federatedBundles()` so a bundle
+  // named after a served trust domain is left out here exactly as it is there.
+  // Each is its OWN PEM block: node reads concatenated DER as one certificate
+  // and silently ignores the rest (`spiffe_grpc.ts` says the same of the
+  // realm's own anchors). One that is not a certificate is skipped with the
+  // warning `authorityCertificates()` gives it, because the rest of the bundle
+  // is still usable.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns every federated trust domain's X.509 authorities as PEM, for a
+   * listener's trust.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns `{ trustDomain, certificatePem }` per authority
+   */
+  federatedX509AuthoritiesPem(realmId?) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeCa.federatedX509AuthoritiesPem().');
+    const out = [];
+    this.federatedBundles(realmId).forEach(function (foreign) {
+      ((foreign.document || {}).keys || []).forEach(function (key) {
+        if (key.use !== 'x509-svid') return;
+        (key.x5c || []).forEach(function (b64) {
+          try {
+            const pem = stsCrypto.parseCertificate(
+              Buffer.from(String(b64), 'base64')).toString();
+            out.push({ trustDomain: foreign.trustDomain,
+                       certificatePem: pem });
+          } catch (e) {
+            log.warn('spiffe: an x5c entry in the ' + foreign.trustDomain +
+                     ' bundle would not parse, so the listeners do not ' +
+                     'trust it: ' + ((e && e.message) || e));
+          }
+        });
+      });
+    });
+    log.debug('Leaving SpiffeCa.federatedX509AuthoritiesPem(). ' +
+              out.length + ' authority(ies).');
+    return out;
+  }
+
+  // A watcher of every realm's federated bundles: told the realm ('' for the
+  // default) on the next turn after a bundle is added, changed or removed by
+  // any process. See the declaration of `federated`.
+  /**
+   * Subscribes to changes of any realm's federated bundles.
+   *
+   * @param fn - called with the realm's id, '' for the default
+   */
+  onFederationChange(fn: (realmId: string) => void): void {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeCa.onFederationChange().');
+    if (typeof fn === 'function') {
+      federationWatchers.push(fn);
+    }
+    log.debug('Leaving SpiffeCa.onFederationChange().');
+  }
+
   // What a bundle document has to look like before this service will hold it.
   // This IS a refusal, on a service that refuses almost nothing, and it earns
   // its place: a malformed bundle is not stored and quietly ignored, it is
@@ -2984,7 +3089,7 @@ class SpiffeCa {
    * @param value - the document, or its JSON text
    * @returns `{ ok: true, document }`, or `{ ok: false, reason }`
    */
-  checkBundleDocument(value): Record<string, any> {
+  checkBundleDocument(value, realmId?): Record<string, any> {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.checkBundleDocument().');
     let document = value;
@@ -3018,8 +3123,10 @@ class SpiffeCa {
         log.debug('Leaving SpiffeCa.checkBundleDocument(). A key has no kty.');
         return { ok: false, reason: 'Key ' + i + ' has no `kty`.' };
       }
-      if (key.use !== 'x509-svid' && key.use !== 'jwt-svid' &&
-          key.use !== 'wit-svid') {
+      // The uses a bundle's key may name are the model's registry
+      // (models/spiffe/spiffe.tsp, `bundle-key-use`).
+      const uses = SpiffeModel.registry('bundle-key-use');
+      if (uses.indexOf(key.use) < 0) {
         // The specification says a consumer MUST ignore a JWK whose `use` is
         // missing or unknown — so a bundle full of them is a bundle that will
         // verify nothing, and accepting it silently is the worst of the three
@@ -3030,8 +3137,10 @@ class SpiffeCa {
                                     (key.use ? '"' + key.use + '"' :
                                      '(absent)') +
                                     '. Every JWK in a SPIFFE bundle carries ' +
-                                    '`use` of x509-svid, jwt-svid or ' +
-                                    'wit-svid, and a consumer MUST IGNORE ' +
+                                    '`use` of ' + uses.slice(0, -1)
+                                      .join(', ') + ' or ' +
+                                    uses[uses.length - 1] + ', and a ' +
+                                    'consumer MUST IGNORE ' +
                                     'one that does not — so a ' +
                                     'bundle of these would verify ' +
                                     'nothing and report no error.' };
@@ -3044,6 +3153,20 @@ class SpiffeCa {
                  reason: 'Key ' + i + ' is an x509-svid key with no `x5c`; ' +
                                     'the certificate is what an X.509 ' +
                                     'authority IS.' };
+      }
+      // Under paranoid a federated authority's own fields hold when it is
+      // accepted: a CA, in its window, of a strength this deployment takes.
+      const certificates = key.use === 'x509-svid' ? key.x5c : [];
+      for (let c = 0; c < certificates.length; c++) {
+        const held = CertificateTrust.fields('spiffe-svid', certificates[c],
+          { realmId: realmId, variant: 'federated-authority',
+            fieldRole: 'anchor' });
+        if (!held.ok) {
+          log.debug('Leaving SpiffeCa.checkBundleDocument(). An authority ' +
+                    'is refused.');
+          return { ok: false, reason: 'Key ' + i + '\'s certificate is ' +
+                                      'refused: ' + held.why };
+        }
       }
     }
     log.debug('Leaving SpiffeCa.checkBundleDocument(). ' +
@@ -3286,7 +3409,7 @@ class SpiffeCa {
    * @returns the state
    */
   state(realmId?) {
-    const { log, config, spiffeId, crypto, errorCodes } = this.deps;
+    const { log, config, spiffeId, stsCrypto, errorCodes } = this.deps;
     log.debug("Entering SpiffeCa.state().");
     const id = this.realmIdOf(realmId);
     const active = this.activeX509Authority(id);
@@ -3333,7 +3456,8 @@ class SpiffeCa {
       // a reader cannot compare with an `openssl x509 -subject`.
       chainSubjects: active ? active.chainPem.map(function (pem) {
         try {
-          return new crypto.X509Certificate(pem).subject.replace(/\n/g, ', ');
+          return stsCrypto.parseCertificate(pem).subject
+            .replace(/\n/g, ', ');
         } catch (e) {
           // A certificate this service built that node cannot read is a defect
           // here rather than bad input, so it is logged — and it is
@@ -3584,7 +3708,85 @@ let x509Count = cacheRegistry.counter('spiffe.x509-authorities');
 // survive the `JSON.stringify` the journal writes, which is the trap three
 // other stores hit. A row persisted by the shared store restores into the
 // DEFAULT realm's partition, because a shared row carries the empty realm id.
-const federated = realms.map({ persist: 'spiffe.federatedBundles' });
+//
+// ---------------------------------------------------------------------------
+// A CHANGED FEDERATION IS ANNOUNCED, WHEREVER IT CAME FROM (#438, 2026-10-13).
+//
+// The SPIRE Server API's and the Broker API's TLS listeners trust this realm's
+// anchors AND every federated trust domain's X.509 authorities
+// (`spiffe_grpc.ts`'s `listenerTrustPem()`), so the set of bundles held here
+// is part of a bound socket's secure context — which is held by ONE process,
+// the front one, and reachable from no other (the root `CLAUDE.md`, *One front
+// process*). A bundle reaches this store three ways, and each must tell that
+// process:
+//
+//   * written HERE — `setFederatedBundle()` / `deleteFederatedBundle()`;
+//   * written by ANOTHER process — a request worker answering
+//     `BatchCreateFederatedBundle` or `/admin-api/spiffe/federation-set`, or
+//     another node — which arrives through the change log's applier;
+//   * restored at start, before anything is bound, where it changes nothing.
+//
+// The last two reach the store through its `restore` / `remove` accessors and
+// no other door (`realms.js`'s *reconcile* contract), so the reconciler below
+// is where they are seen; it admits every row unchanged and only notes the
+// realm. The note is COALESCED and run on the next turn of the event loop — a
+// reconciler runs BEFORE the row is written, and a batch of fifty bundles is
+// one refresh rather than fifty. One-shot, so not a periodic timer.
+// ---------------------------------------------------------------------------
+const federationWatchers: Array<(realmId: string) => void> = [];
+const federationPending = new Set<string>();
+
+// The default realm is '' to the listeners and `realms.DEFAULT_ID` to a
+// partition; the watchers are told the listeners' spelling.
+/**
+ * Notes that a realm's federated bundles changed, and tells the watchers on
+ * the next turn of the event loop, once per realm however many changed.
+ *
+ * @param realmId - the realm's id, or the default realm's in either spelling
+ */
+function federationChanged(realmId: string): void {
+  log.debug('Entering federationChanged().');
+  const id = !realmId || realmId === realms.DEFAULT_ID ? '' : String(realmId);
+  if (federationPending.has(id)) {
+    log.debug('Leaving federationChanged(). Already pending.');
+    return;
+  }
+  federationPending.add(id);
+  setImmediate(function () {
+    federationPending.delete(id);
+    federationWatchers.forEach(function (watcher) {
+      try {
+        watcher(id);
+      } catch (e) {
+        // A watcher is the listeners' trust; one that throws must not stop
+        // the next, and must not reach the store write that announced it.
+        log.error(errorCodes.tag('STS-SPIFFE-0147') +
+                  'spiffe: a watcher of the "' + (id || 'default') +
+                  '" realm\'s federated bundles threw: ' +
+                  ((e && e.message) || e));
+      }
+    });
+  });
+  log.debug('Leaving federationChanged().');
+}
+
+const federated = realms.map({
+  persist: 'spiffe.federatedBundles',
+  reconcile: {
+    restore: function (key, incoming, held, realmId) {
+      log.debug('Entering restore(). A federated bundle arrived: ' + key);
+      federationChanged(realmId);
+      log.debug('Leaving restore().');
+      return incoming;
+    },
+    remove: function (key, held, realmId) {
+      log.debug('Entering remove(). A federated bundle left: ' + key);
+      federationChanged(realmId);
+      log.debug('Leaving remove().');
+      return true;
+    }
+  }
+});
 
 // What the startup actually did, for the pages that report it. Set once
 // `initialise()` finishes and readable synchronously — see `state()`.
@@ -3641,6 +3843,7 @@ let startError = null;
 // moves nothing in the router, and it requires nothing that requires this
 // module back.
 // ===========================================================================
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 
 // ---------------------------------------------------------------------------
@@ -3659,6 +3862,10 @@ const slot = new InstanceSlot<SpiffeCa>(
   helpers.log);
 
 const SPIFFE_USE_CASE = 'spiffe';
+
+// The `typ` a minted JWT-SVID's header carries: the first of the model's
+// `jwt-svid-typ` registry (JWT-SVID section 2.3).
+const JWT_SVID_TYP: string = SpiffeModel.registry('jwt-svid-typ')[0];
 // How long a realm's SPIFFE start waits for a branch another node is still
 // writing before it falls back to a self-signed authority. A branch is built
 // in well under a second; this is room for a slow key algorithm and a busy
@@ -3770,6 +3977,10 @@ export = {
   installInstance: (instance: SpiffeCa): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   KEY_TYPES: KEY_TYPES,
+  // The `spiffe` namespace's route and English (#543): `keyTypes` is on
+  // `GET /admin-api/spiffe`'s answer.
+  PROSE_ROUTES: ['/admin-api/spiffe'],
+  prose: (): Record<string, string> => SpiffeCa.prose(),
   // A GETTER, so that `admin-core/admin_views.ts` — which reads this member to
   // print the cap — reports the value `spiffe.retainedAuthorities` holds in the
   // ambient realm rather than the default it replaced.
@@ -3826,6 +4037,8 @@ export = {
   deleteFederatedBundle: slot.forward('deleteFederatedBundle'),
   federatedBundle: slot.forward('federatedBundle'),
   federatedBundles: slot.forward('federatedBundles'),
+  federatedX509AuthoritiesPem: slot.forward('federatedX509AuthoritiesPem'),
+  onFederationChange: slot.forward('onFederationChange'),
   checkBundleDocument: slot.forward('checkBundleDocument'),
   rotateX509Authority: slot.forward('rotateX509Authority'),
   rotateJwtAuthority: slot.forward('rotateJwtAuthority'),

@@ -17,7 +17,7 @@
 // a policy tree, and the decision values a PDP is allowed to produce.
 //
 // THE RULE THIS DIRECTORY IS BUILT ON, and it is the same argument
-// `common/vendored/xmldsig.js` makes about canonicalization one layer down: a
+// `common/crypto_impl/xmldsig.js` makes about canonicalization one layer down: a
 // GRAMMAR IS A READING, and three readings of XACML would be three chances to
 // disagree with the PDP at the far end. So there is one model. `xacml_xml.js`
 // reads XML into it, `xacml_json.js` reads and writes the JSON Profile,
@@ -79,6 +79,7 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
+const ownMembers = require('../common/own_members');
 
 // ---------------------------------------------------------------------------
 // DECISIONS.
@@ -432,7 +433,9 @@ function indeterminateOfEffect(effect) {
  */
 function canonicalType(uri) {
   log.debug('Entering canonicalType(). uri=' + uri);
-  const alias = LEGACY_TYPE_ALIASES[uri];
+  // An own member only (2026-11-12): `__proto__` is no legacy spelling, and
+  // answering Object.prototype for it made a datatype of an object.
+  const alias = ownMembers.read(LEGACY_TYPE_ALIASES, uri);
   if (alias) {
     log.debug('Leaving canonicalType(). Legacy duration spelling mapped.');
     return alias;

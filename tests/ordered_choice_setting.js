@@ -29,7 +29,14 @@
 //   5. a save ticking nothing is refused (STS-ADMIN-0840) and changes
 //      nothing;
 //   6. a value outside the list is refused by the setting's own check;
-//   7. a form-encoded post, the shape a browser sends, folds the same way.
+//   7. a form-encoded post, the shape a browser sends, folds the same way;
+//   8. (#1130) the setting describes what Select all ticks, the page draws
+//      the switch and the hidden "choose at least one" line, and
+//      `selectAllValues()` obeys webauthn.insecureAlgorithms and
+//      webauthn.pqcOnly — and never ticks RS1 where the mode forbids it;
+//   9. (#1130) the Metadata tab's report lists the offered algorithms first,
+//      numbered in the order the setting requests them, each other row with
+//      its reason, and follows a save.
 //
 // The setting is reset in a `finally`: it is process-wide.
 // ===========================================================================
@@ -37,8 +44,15 @@
 delete process.env.CONFIG_FILE;
 
 const config = require('../common/config');
-const app = require('../common/app');
-require('../admin-ui/admin').registerRoutes(app);
+// THE PAGE AND ITS FORM AS THE STATIC CONSOLE DRAWS AND SENDS THEM (#446):
+// `GET /admin-api/protocol-settings`-style answer drawn by its renderer, and
+// the form sent to the operation that mirrors it (`web_forms.ts`).
+const consolePage = require('./tools/console_page')
+  .consolePage(require('path').join(__dirname, '..'));
+const WebForms = require('../admin-ui/web_forms');
+const adminApi = require('../mgmt-api/admin_api');
+const SettingsForms = require('../admin-ui/web_settings');
+const webauthnPolicy = require('../authn/webauthn_policy');
 
 const log = require('bunyan').createLogger({
   name: 'ordered_choice_setting',
@@ -46,105 +60,22 @@ const log = require('bunyan').createLogger({
 
 const KEY = 'webauthn.algorithms';
 
-function handlerFor(method, path) {
-  log.debug("Entering handlerFor(). " + method + " " + path);
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === path && one.route.methods[method];
-  })[0];
-  log.debug("Leaving handlerFor(). " + (layer ? "Found." : "Not found."));
-  return layer ? layer.route.stack[layer.route.stack.length - 1].handle :
-                 null;
-}
-
-function fakeRes() {
-  log.debug("Entering fakeRes().");
-  const out = { status: 200, body: '', headers: {} };
-  const res = {
-    out: out,
-    set: function (k, v) {
-      if (typeof k === 'string') {
-        out.headers[k.toLowerCase()] = v;
-      }
-      return this;
-    },
-    status: function (n) {
-      out.status = n;
-      return this;
-    },
-    type: function () {
-      return this;
-    },
-    send: function (text) {
-      out.body = String(text);
-      return this;
-    },
-    end: function () {
-      return this;
-    },
-    redirect: function (code, where) {
-      out.status = typeof code === 'number' ? code : 302;
-      out.headers.location = typeof code === 'number' ? where : code;
-      return this;
-    },
-    get: function () {
-      return undefined;
-    },
-    getHeader: function () {
-      return undefined;
-    },
-    setHeader: function (k, v) {
-      out.headers[String(k).toLowerCase()] = v;
-      return undefined;
-    },
-    locals: {}
-  };
-  log.debug("Leaving fakeRes().");
-  return res;
-}
-
-function fakeReq(method, path, body, type) {
-  log.debug("Entering fakeReq().");
-  log.debug("Leaving fakeReq().");
-  return { method: method, url: path, originalUrl: path, path: path,
-           query: {}, cookies: {}, body: body,
-           headers: type ? { 'content-type': type } : {},
-           get: function () {
-             return '';
-           } };
-}
-
-// The protocol pages answer after a promise (a row may `prepare`), so the
-// draw waits until the body has been sent, a bounded number of turns.
 async function drawPage() {
   log.debug("Entering drawPage().");
-  const res = fakeRes();
-  handlerFor('get', '/admin/webauthn')(fakeReq('GET', '/admin/webauthn'),
-    res, function (e) {
-      log.debug("The page handler called next(): " + ((e && e.message) || e));
-    });
-  for (let i = 0; i < 200 && !res.out.body; i++) {
-    await new Promise(function (resolve) {
-      setImmediate(resolve);
-    });
-  }
-  log.debug("Leaving drawPage(). " + res.out.body.length + " character(s).");
-  return res.out.body;
+  const drawn = await consolePage.draw('/admin/webauthn', {});
+  log.debug("Leaving drawPage(). " + drawn.html.length + " character(s).");
+  return drawn.html;
 }
 
-function post(fields, form) {
+async function post(fields) {
   log.debug("Entering post().");
-  const res = fakeRes();
-  const body = form
-    ? new URLSearchParams(fields).toString()
-    : JSON.stringify(fields);
-  handlerFor('post', '/admin/config')(
-    fakeReq('POST', '/admin/config', body,
-            form ? 'application/x-www-form-urlencoded' : 'application/json'),
-    res, function (e) {
-      log.debug("The save handler called next(): " + ((e && e.message) || e));
-    });
-  log.debug("Leaving post(). " + res.out.status);
-  return res.out;
+  const operation = WebForms.resolve(
+    WebForms.table(adminApi.operationSummaries()), '/admin/config',
+    fields.action);
+  const answer = await consolePage.act(operation, fields);
+  log.debug("Leaving post(). " + answer.status);
+  return { status: answer.status,
+           body: answer.text || JSON.stringify(answer.json || {}) };
 }
 
 // The fields the drawn table posts for `chosen` (value -> number), every
@@ -215,9 +146,49 @@ async function runBody(t) {
   t.check(page.indexOf('post-quantum, RFC 9964') >= 0,
           '2. each value is drawn with its note');
 
+  t.log.info('=== 8. what Select all ticks (#1130) ===');
+  const rules = described.selectAll || {};
+  t.check(JSON.stringify((rules.onlyWhileOn || []).map(function (rule) {
+    return rule.setting + ':' + rule.values.join('|');
+  })) === '["webauthn.insecureAlgorithms:RS1"]' &&
+          JSON.stringify((rules.aloneWhileOn || []).map(function (rule) {
+            return rule.setting + ':' + rule.values.slice().sort().join('|');
+          })) === '["webauthn.pqcOnly:ML-DSA-44|ML-DSA-65|ML-DSA-87"]',
+          '8. the setting describes Select all\'s two rules',
+          JSON.stringify(rules));
+  t.check(other.selectAll === undefined,
+          '8. a setting with no rules describes none');
+  t.check(page.indexOf('data-ordered-all="' + KEY + '"') >= 0 &&
+          page.indexOf('role="switch"') >= 0 &&
+          /data-ordered-none="webauthn\.algorithms" hidden/.test(page),
+          '8. the page draws the switch, and the "choose at least one" ' +
+          'line hidden while something is ticked');
+  const pick = function (on) {
+    return SettingsForms.selectAllValues(described, function (rule) {
+      return !!on[rule.setting];
+    });
+  };
+  const plain = pick({});
+  t.check(plain.length === described.csvValues.length - 1 &&
+          plain.indexOf('RS1') < 0 && plain.indexOf('ML-DSA-87') >= 0,
+          '8. with both switches off, Select all ticks everything but RS1',
+          plain.join(','));
+  t.check(pick({ 'webauthn.insecureAlgorithms': true }).indexOf('RS1') >= 0,
+          '8. with insecure algorithms on, it ticks RS1 too');
+  t.equal(pick({ 'webauthn.pqcOnly': true }).join(','),
+          'ML-DSA-87,ML-DSA-65,ML-DSA-44',
+          '8. with post-quantum only on, it ticks ML-DSA alone');
+  const locked = JSON.parse(JSON.stringify(described));
+  locked.selectAll.onlyWhileOn[0].canBeOn = false;
+  t.check(SettingsForms.selectAllValues(locked, function () {
+    return true;
+  }).indexOf('RS1') < 0,
+          '8. where the mode cannot turn insecure algorithms on, RS1 is ' +
+          'never ticked, whatever the form reads');
+
   try {
     t.log.info('=== 3. a save stores the ticked values in number order ===');
-    const saved = post(fieldsFor({ 'ES256': 3, 'ML-DSA-65': 1,
+    const saved = await post(fieldsFor({ 'ES256': 3, 'ML-DSA-65': 1,
                                    'Ed25519': 2 }));
     t.check(saved.status === 200,
             '3. the save is accepted', saved.status + ' ' +
@@ -235,14 +206,14 @@ async function runBody(t) {
             }).join(','));
 
     t.log.info('=== 4. ties and numbers that are not numbers ===');
-    post(fieldsFor({ 'RS256': 'x', 'ES384': 1, 'ES256': 1 }));
+    await post(fieldsFor({ 'RS256': 'x', 'ES384': 1, 'ES256': 1 }));
     t.equal(config.text(KEY), 'ES384,ES256,RS256',
             '4. a tie keeps the posted order; a number that is not one ' +
             'goes last');
 
     t.log.info('=== 5. ticking nothing is refused ===');
     const before = config.text(KEY);
-    const empty = post(fieldsFor({}));
+    const empty = await post(fieldsFor({}));
     t.check(empty.status === 400 &&
             /choose at least one/.test(empty.body) &&
             config.text(KEY) === before,
@@ -250,21 +221,40 @@ async function runBody(t) {
             empty.status + ' ' + empty.body.slice(0, 200));
 
     t.log.info('=== 6. a value outside the list is refused ===');
-    const outside = post(fieldsFor({ 'ES256': 1, 'NOT-AN-ALG': 2 }));
+    const outside = await post(fieldsFor({ 'ES256': 1, 'NOT-AN-ALG': 2 }));
     t.check(outside.status === 400 && config.text(KEY) === before,
             '6. a value outside the closed list is refused by the ' +
             'setting\'s own check, and nothing changes',
             outside.status + ' ' + outside.body.slice(0, 200));
 
-    t.log.info('=== 7. the shape a browser posts ===');
-    const browser = post(fieldsFor({ 'PS256': 2, 'ML-DSA-44': 1 }), true);
-    t.check(browser.status === 303 &&
-            config.text(KEY) === 'ML-DSA-44,PS256',
-            '7. a form-encoded save folds the same way and redirects back',
-            browser.status + ' ' + config.text(KEY));
-    t.check(String(browser.headers.location || '').indexOf('/admin/webauthn')
-            === 0,
-            '7. back to /admin/webauthn', browser.headers.location);
+    t.log.info('=== 9. the report follows the save, in its order ===');
+    await post(fieldsFor({ 'ES256': 2, 'ML-DSA-87': 1, 'RS256': 3 }));
+    const report = webauthnPolicy.report();
+    t.check(report.algorithms.slice(0, 3).map(function (one) {
+      return one.name + '#' + one.rank;
+    }).join(',') === 'ML-DSA-87#1,ES256#2,RS256#3' &&
+            report.algorithms.slice(3).every(function (one) {
+              return !one.offered && one.rank === undefined &&
+                     !!one.notOfferedBecause;
+            }),
+            '9. the report lists the offered ones first, numbered in the ' +
+            'order the setting requests them, and every other row says why',
+            report.algorithms.slice(0, 5).map(function (one) {
+              return one.name + '#' + one.rank + '/' + one.notOfferedBecause;
+            }).join(','));
+    const rs1 = report.algorithms.filter(function (one) {
+      return one.name === 'RS1';
+    })[0];
+    t.check(rs1 && rs1.notOfferedBecause === 'insecure-off' &&
+            report.algorithmsSource === 'realm',
+            '9. RS1 is not offered because insecure algorithms are off, and ' +
+            'the list is the realm\'s',
+            JSON.stringify(rs1) + ' ' + report.algorithmsSource);
+
+    // 7 WAS THE FORM-ENCODED BODY A BROWSER POSTED TO /admin/config AND
+    // THE REDIRECT BACK: the static console sends every form as JSON to its
+    // operation and draws the answer itself (#446), so there is no such
+    // post or redirect to hold.
   } finally {
     config.clearOverride(KEY);
   }

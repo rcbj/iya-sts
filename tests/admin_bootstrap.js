@@ -112,6 +112,7 @@ function childMain() {
     // ======================================================================
     if (process.env.AB_PART === 'configured') {
       config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
 
       // WHAT THE PROCESS PRINTED WHILE THE BOOTSTRAP RAN. bunyan writes to
       // stdout, so this is the whole of what an operator would find in
@@ -159,6 +160,30 @@ function childMain() {
     }
 
     // ======================================================================
+    // 8e. A HASH IN PLACE OF THE PASSWORD (ASVS 5.0.0 13.3.1): the setting
+    // holds a `$scrypt$` value, the account gets exactly that hash, and the
+    // password it was made from signs in.
+    // ======================================================================
+    if (process.env.AB_PART === 'hashed') {
+      config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
+      const ran = inDefault(function () {
+        return credentials.bootstrap({ username: 'admin' });
+      });
+      const verified = inDefault(function () {
+        return credentials.verify('admin', process.env.AB_PLAIN,
+                                  { via: 'the sign-in screen',
+                                    allowPasswordReset: true });
+      });
+      note(ran.ran === true && ran.supplied === true && verified.ok === true,
+           '8e. a password hash in admin.bootstrapPassword is stored as it ' +
+           'stands, and the password it was made from signs in',
+           JSON.stringify([ran, verified.ok, verified.reason]));
+      require('fs').writeFileSync(OUT, JSON.stringify(findings));
+      process.exit(0);
+    }
+
+    // ======================================================================
     // 9. A CONFIGURED PASSWORD THE POLICY REFUSES (2026-09-17) — a child of
     // its own because the setting is RESTART-ONLY: it is read once, at the
     // one moment the bootstrap acts, so an override set while running is a
@@ -167,6 +192,7 @@ function childMain() {
     // ======================================================================
     if (process.env.AB_PART === 'refused') {
       config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
       let printed = '';
       const realWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = function (chunk) {
@@ -207,9 +233,16 @@ function childMain() {
     // anything was seeded, and `admin.bootstrapUsername` is restart-only.
     // ======================================================================
     if (process.env.AB_PART === 'administered') {
-      inDefault(function () {
+      // The operator who administered it is a PERSON (2026-11-11): a console
+      // role is granted only to somebody with an entry (STS-ADMIN-0920), so
+      // they are made first, as an operator would have been.
+      const operator = inDefault(function () {
+        ldapServer.createUser('operator-ab', {});
         return rbac.grant('operator-ab', 'write', { via: 'test' });
       });
+      note(operator.ok && operator.changed,
+           '4-pre. the roster names an operator who exists',
+           JSON.stringify(operator));
       const administered = inDefault(function () {
         return rbac.seedBootstrapAdministrator();
       });
@@ -324,6 +357,7 @@ function childMain() {
     // 6. PRODUCT MODE: A FLAGGED PASSWORD AT A DOOR THAT CANNOT ASK
     // ======================================================================
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     const strong = 'Bootstrap-Strong-Pass-9!';
     const set = inDefault(function () {
       return credentials.setPassword('admin', strong, { generated: true });
@@ -359,8 +393,9 @@ function childMain() {
     const port = server.address().port;
 
     // PKCE ON EVERY REQUEST, INCLUDING THE DEVELOPMENT ONES (2026-09-17).
-    // `ab-client` is never registered here — development mode creates it
-    // because it was named — so this service cannot see it to be confidential
+    // `ab-client` is registered below as a PUBLIC client (until #496 it was
+    // never registered, and development created it because it was named), so
+    // this service cannot see it to be confidential
     // and RFC 9700 section 2.1.1 requires PKCE of it. Product mode enforces
     // the BCP since public clients were allowed (`common/mode.js`,
     // `enforcesOauthSecurityBcp()`), so without this the product half of
@@ -379,7 +414,7 @@ function childMain() {
                               code_challenge: CHALLENGE,
                               code_challenge_method: 'S256' }).toString());
       const location = String(r.headers.location || '');
-      return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+      return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
     };
     const cookieOf = function (r) {
       return [].concat(r.headers['set-cookie'] || []).map(function (one) {
@@ -388,41 +423,60 @@ function childMain() {
         '';
     };
 
+    // `ab-client` IS REGISTERED FIRST (#496). Product mode serves only a
+    // client registered ahead of time, and an entry development files
+    // because a client was named is a sighting, not a registration — the
+    // product half below got an unredirected 400 (STS-OAUTH-0947) and no
+    // `authn` id. Registered before the development run, so that run does
+    // not file it first.
+    const abClient = inDefault(function () {
+      return require(ROOT + '/common/applications').createApplication({
+        identifier: 'ab-client', protocols: ['oauth2', 'oidc'],
+        fields: { oauthClientId: 'ab-client',
+                  oauthRedirectUri: ['https://rp.ab.example/cb'],
+                  oauthTokenEndpointAuthMethod: 'none' } });
+    });
+    note(abClient && abClient.ok, 'precondition: ab-client is registered',
+         JSON.stringify(abClient));
+
+    // THE SIGN-IN SCREEN AND THE CHANGE STEP ARE A STATIC SURFACE OVER
+    // `/authn-api` SINCE #571: the act answers the next step as JSON, and
+    // `tests/tools/authn_screen.js` drives it as the page does.
+    const screen = require(ROOT + '/tests/tools/authn_screen');
+    const signInAt = function (authnId, password) {
+      return screen.submit({ port: port, jar: {},
+        at: '/authn/login?authn=' + authnId,
+        fields: { action: 'login', username: 'admin', password: password } });
+    };
+    const changeAt = function (changeAt, chosen, again) {
+      return screen.changePassword({ port: port, jar: {}, at: changeAt,
+        fields: { new_password: chosen, confirm_password: again } });
+    };
+
     // Development first: any password, the change page, a mismatch, success.
     config.clearOverride('global.mode');
     let authnId = await startSignIn();
-    let r = await request(port, 'POST', '/authn/login',
-      { authn_id: authnId, username: 'admin', password: 'anything-at-all',
-        action: 'login' });
-    const changeId = (r.text.match(/name="change_id" value="([^"]+)"/) ||
-                      [])[1];
-    note(r.status === 200 && /Choose a new password/.test(r.text) &&
-         changeId && !cookieOf(r),
-         '7a. the sign-in screen draws the change step and starts no session',
-         r.status + ' ' + r.text.slice(0, 120));
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'one-Pass-1!',
-        confirm_password: 'two-Pass-1!' });
-    note(r.status === 200 && /not the same/.test(r.text),
+    let r = await signInAt(authnId, 'anything-at-all');
+    const changeLocation = r.next === 'password-change' ? r.location : '';
+    note(r.next === 'password-change' &&
+         /^\/authn\/password-change(?:\?app=[^#]*)?[?#]change=/.test(changeLocation) &&
+         !cookieOf(r),
+         '7a. the sign-in screen answers the change step (next: ' +
+         'password-change) and starts no session',
+         r.apiStatus + ' ' + r.text.slice(0, 160));
+    r = await changeAt(changeLocation, 'one-Pass-1!', 'two-Pass-1!');
+    note(r.apiStatus === 400 && /not the same/.test(r.errors.join(' ')),
          '7b. two different passwords are refused and the step kept',
-         r.status);
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'invalid',
-        confirm_password: 'invalid' });
-    note(r.status === 200 && /reserved/.test(r.text),
-         '7c. the reserved refusal password is refused', r.status);
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'Chosen-Pass-42!',
-        confirm_password: 'Chosen-Pass-42!' });
+         r.apiStatus + ' ' + r.text.slice(0, 160));
+    r = await changeAt(changeLocation, 'invalid', 'invalid');
+    note(r.apiStatus === 400 && /reserved/.test(r.errors.join(' ')),
+         '7c. the reserved refusal password is refused', r.apiStatus);
+    r = await changeAt(changeLocation, 'Chosen-Pass-42!', 'Chosen-Pass-42!');
     // The resumed sign-in OFFERS the administrator a second factor (#246,
-    // the authentication policy's `offer`); ignored, as rcbj asked of the
-    // tests for the time being.
-    const offered = r.status === 200 && /id="mfa-setup-ignore"/.test(r.text)
-      ? (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || '' : '';
-    if (offered) {
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: offered, action: 'ignore' });
-    }
+    // the authentication policy's `offer`), as its next step; ignored, as
+    // rcbj asked of the tests for the time being. The set-up step is a page
+    // of the sign-in surface since #572, its Ignore an act on `/authn-api`.
+    r = await screen.ignoreOffer({ port: port, jar: {} }, r);
     note((r.status === 302 || r.status === 303) && !!cookieOf(r) &&
          /\/oauth2\/authorize/.test(String(r.headers.location || '')) &&
          !inDefault(function () {
@@ -430,10 +484,12 @@ function childMain() {
          }),
          '7d. a new password resumes the sign-in, starts the session and ' +
          'clears pwdReset', r.status + ' ' + r.headers.location);
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'Chosen-Pass-42!',
-        confirm_password: 'Chosen-Pass-42!' });
-    note(r.status === 400, '7e. the step is spent', r.status);
+    // A spent step has no view to draw (STS-AUTHN-0144), so its page has no
+    // token to send a change with either.
+    const spent = await screen.open({ port: port, jar: {},
+                                      at: changeLocation });
+    note(spent.status === 400 && !spent.view, '7e. the step is spent',
+         spent.status);
 
     // Product: the policy decides what a new password may be.
     //
@@ -446,31 +502,25 @@ function childMain() {
     // That is the rule working; what this section tests is the change step,
     // so the URI is registered the way the refusal itself says to.
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     config.setOverride('oauth2.redirectUris', ['https://rp.ab.example/cb']);
     inDefault(function () {
       credentials.setPassword('admin', strong, { generated: true });
       return credentials.setPasswordResetRequired('admin', true);
     });
     authnId = await startSignIn();
-    r = await request(port, 'POST', '/authn/login',
-      { authn_id: authnId, username: 'admin', password: 'wrong-one',
-        action: 'login' });
-    note(r.status === 200 && !/Choose a new password/.test(r.text),
+    r = await signInAt(authnId, 'wrong-one');
+    note(r.next === 'refused' && r.next !== 'password-change',
          '7f. product: a wrong password never reaches the change step',
-         r.status);
+         r.apiStatus + ' ' + r.next);
     authnId = await startSignIn();
-    r = await request(port, 'POST', '/authn/login',
-      { authn_id: authnId, username: 'admin', password: strong,
-        action: 'login' });
-    const productChange = (r.text.match(/name="change_id" value="([^"]+)"/) ||
-                           [])[1];
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: productChange, new_password: 'short',
-        confirm_password: 'short' });
-    note(productChange && r.status === 200 &&
-         /Choose a new password/.test(r.text) && !cookieOf(r),
+    r = await signInAt(authnId, strong);
+    const productChange = r.next === 'password-change' ? r.location : '';
+    r = await changeAt(productChange, 'short', 'short');
+    note(productChange && r.apiStatus === 400 && r.next === 'refused' &&
+         !cookieOf(r),
          '7g. product: the password policy refuses a weak new password on the ' +
-         'change page', r.status + ' ' + r.text.slice(0, 80));
+         'change page', r.apiStatus + ' ' + r.text.slice(0, 160));
     config.clearOverride('global.mode');
     config.clearOverride('oauth2.redirectUris');
 
@@ -557,6 +607,12 @@ async function run(t) {
   // pass it without testing anything.
   inAChild(t, 'configured', { STS_LOG_LEVEL: 'info',
                               STS_ADMIN_BOOTSTRAP_PASSWORD: SUPPLIED });
+  // The hash is made here, at the default policy's cost, from SUPPLIED.
+  const stsCrypto = require(ROOT + '/common/crypto');
+  inAChild(t, 'hashed', { AB_PLAIN: SUPPLIED,
+                          STS_ADMIN_BOOTSTRAP_PASSWORD:
+                            stsCrypto.hashPassword(SUPPLIED,
+                              stsCrypto.passwordHashSpec()) });
   // `short` breaks three of the four default rules at once (length, an
   // uppercase letter, a digit) and is the shape of the mistake somebody makes
   // when they put a placeholder in a secret store.

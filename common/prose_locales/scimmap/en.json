@@ -1,0 +1,12 @@
+{
+  "scimmap.user.userName.note": "The SCIM uniqueness constraint. It is the RDN of an auto-created entry, so for anybody this service authenticated it is also their sign-in name — but it is NOT the SCIM id, which is the entry's entryUUID.",
+  "scimmap.user.externalId.note": "The provisioning client's own identifier for this person. Stored verbatim and read by nothing here.",
+  "scimmap.user.active.note": "DISABLES THE ACCOUNT. false writes the administrative lock 000001010000Z and ends everything the person holds; every door then refuses them. true removes it. Not sent: unchanged.",
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": "A DN in the directory and an id in SCIM, translated both ways by the SCIM handlers since the id became the entryUUID (2026-09-14). A value naming no entry is kept as it was sent.",
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": "Which federation partners' subjects sign this person in, each { relationship, issuer, subject } — issuer optional on the way in, the relationship's fedPeer. NOT SENT: unchanged, so a provisioning client that knows nothing of this extension cannot unlink anybody by leaving it out. Sent, even empty: replaced, and every link removed ends the sessions that partner signed the person in to. A link another person carries is refused 409.",
+  "scimmap.user.groups.note": "READ-ONLY, as RFC 7643 section 4.1.2 requires. Membership is a fact about the GROUP's entry, so it is changed through a Group resource and never through a User one. Resolved by ldap_server.js's groupsOfUser(), which is the same function the groups claim reads — so a token and a SCIM resource cannot disagree about who is in what.",
+  "scimmap.group.members.note": "READ resolves member, uniqueMember and memberUid alike; WRITE puts a new value in `member`, since a SCIM member id is a DN. A dangling member — a DN nothing is stored at — is returned as a member, because the group saying so is the fact, and this directory does no referential integrity on purpose.",
+  "scimmap.schema.plain": "this service's own (no standard type)",
+  "scimmap.schema.claims": "this service's own (#128; no standard type)",
+  "scimmap.schema.federation": "this service's own (#109; no standard type)"
+}

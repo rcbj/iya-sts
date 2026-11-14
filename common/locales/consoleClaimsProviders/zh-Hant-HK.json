@@ -1,0 +1,9 @@
+{
+  "noLinks": "尚無人連結聲明提供者。用戶可在 <code>/portal/claim-sources</code> 上連結。",
+  "fClientIdHint": "此領域在該提供者處的客戶端",
+  "fSecret": "客戶端密鑰",
+  "fAuthMethod": "客戶端驗證",
+  "noteA": "<strong>OpenID Connect Claims Aggregation。</strong>聲明提供者是另一個 OpenID 提供者，為此領域未持有的某人聲明作擔保。用戶在入口網站上連結一個提供者；此後，請求其某個聲明的依賴方會以<em>彙總</em>聲明（提供者簽署的 JWT，先在此驗證）或<em>分散式</em>聲明（其端點及該用戶在那裡的存取權杖）的形式取得——絕不會取代該用戶自己項目中的值。請在提供者處將此領域註冊為客戶端，其重新導向 URI 為 ",
+  "colClient": "客戶端",
+  "colPerson": "用戶"
+}

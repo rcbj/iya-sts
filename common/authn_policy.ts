@@ -80,11 +80,19 @@
 // scheduler, and nothing that asks "may TOTP be used" should load either.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import mode = require('./mode');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+import Classes = require('./domain_classes');
+// The sentences `describe()` makes are filled from SENTENCES below, so the
+// server can translate them into a console reader's language (#543).
+import serverProse = require('./server_prose');
+// The one ranking every kind's named policies share (#1235, rule 3cx): a
+// leaf of static methods, so requiring it closes no cycle.
+import PolicySelection = require('./policy_selection');
 
 const { log } = helpers;
 
@@ -100,7 +108,8 @@ interface Mechanism {
   primary: boolean | null;       // the built-in default, or null: incapable
   secondFactor: boolean | null;
   email?: boolean;
-  what: string;
+  // Written on the mechanism's attribute in the model; set below.
+  what?: string;
 }
 
 // One row of FIELDS, below.
@@ -126,6 +135,11 @@ interface DirectoryHooks {
   writeAuthnPolicy?(name: string,
                     attributes: Record<string, unknown>): unknown;
   deleteAuthnPolicy?(name: string): unknown;
+  // A person's groups with the policy each names (#1237), and the groups
+  // naming a policy — the directory's group index, no walk.
+  personGroupReferences?(key: string, attribute: string):
+    { cn?: string; dn?: string; value?: string }[];
+  groupsNamingPolicy?(attribute: string, name: string): string[];
   [hook: string]: unknown;
 }
 
@@ -169,6 +183,26 @@ interface AuthnPolicyDeps {
  * The name of the one authentication policy profile, `default`.
  */
 const DEFAULT_PROFILE = 'default';
+// What a reference to a policy nobody holds allows (#1148): a value no
+// mechanism has, so the list matches nothing and the application allows
+// nothing, as a misspelt list did.
+const MISSING_MECHANISM = '(no such authentication policy)';
+
+/**
+ * How `common/policy_selection.ts` ranks a named authentication policy
+ * (#1237): by `stsAuthnPolicyPrecedence`, 1 to 1000, lowest first.
+ */
+const SELECTION = Object.freeze({
+  precedenceAttribute: 'stsAuthnPolicyPrecedence',
+  defaultPrecedence: PolicySelection.DEFAULT_PRECEDENCE
+});
+/**
+ * The attributes that NAME a named authentication policy: the
+ * application's (`appAuthnPolicy`, #1148) and the group's
+ * (`stsAuthnPolicy`, #1237). A person names none of their own.
+ */
+const REFERENCES = Object.freeze({ application: 'appAuthnPolicy',
+                                   group: 'stsAuthnPolicy' });
 
 /**
  * The warning drawn beside the two emailed mechanisms: NIST SP 800-63B-4
@@ -181,63 +215,40 @@ const NIST_EMAIL_WARNING =
   'default for that reason; turn it on only where that is an accepted risk.';
 
 // ---------------------------------------------------------------------------
-// THE MECHANISMS. The rows below are generated from this list, so a mechanism
-// is one line here.
+// THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
+// filled there with `ServerProse.fill()` and matched by
+// `common/server_prose.ts` to refill in a console reader's language. A
+// `param.` key is a phrase that only ever stands inside another sentence.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  firstFactors: 'first factors: {{list}}',
+  secondFactors: 'second factors: {{list}}',
+  'param.none': 'none',
+  secondAlways: 'a second factor is required of everybody',
+  secondIfHeld: 'a second factor is required of those who hold one',
+  adminAlways: 'administrators must set one up (the built-in administrator ' +
+    'is offered one)',
+  adminOffer: 'administrators who hold none are offered one at each sign-in',
+  adminAsked: 'administrators are asked as everybody else is',
+  emailTtl: 'an emailed code or link is valid for {{n}} seconds',
+  emailTtlInactive: 'an emailed code or link is valid for {{n}} seconds — ' +
+    'INACTIVE: this realm cannot send mail'
+});
+
+// ---------------------------------------------------------------------------
+// THE MECHANISMS, written in models/directory/policy_authn.tsp as its
+// `mechanisms` (#1579): each one's label and built-in setting in each role.
+// The rows below are built from them, so a mechanism is one line there; what
+// a mechanism DOES is the code that asks `allows()` of its id.
 // ---------------------------------------------------------------------------
 /**
  * The sign-in mechanisms the policy decides on, each with the roles it can take
  * (first factor, second factor) and its default in each.
  */
-const MECHANISMS: Mechanism[] = [
-  { id: 'password', label: 'Password', primary: true, secondFactor: true,
-    what: 'A password on the sign-in screen. As a SECOND factor it is the ' +
-          'password asked for after a wallet or other passwordless first ' +
-          'factor.' },
-  { id: 'passkey', label: 'Security key or passkey (passwordless)',
-    primary: true, secondFactor: null,
-    what: 'A WebAuthn credential enrolled in the primary role, signing in ' +
-          'with no password.' },
-  { id: 'securityKey', label: 'Security key (second factor)', primary: null,
-    secondFactor: true,
-    what: 'A WebAuthn credential enrolled in the mfa role, asked for after a ' +
-          'first factor.' },
-  { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
-    secondFactor: true,
-    what: 'An RFC 6238 one-time code. Never a first factor: this service ' +
-          'holds the same shared secret the app does. Off here, nobody may ' +
-          'ENROL one; a person who already holds one is still asked for it, ' +
-          'because an off switch that downgraded every enrolled account to a ' +
-          'password alone would do something other than it says (this row ' +
-          'replaced totp.enabled, and keeps its contract).' },
-  { id: 'recoveryCode', label: 'Recovery code', primary: null,
-    secondFactor: true,
-    what: 'A single-use code from a set the person generated. Off here, no ' +
-          'new set may be generated; a set already held still works (this ' +
-          'row replaced backupCodes.enabled, and keeps its contract).' },
-  { id: 'emailCode', label: 'Emailed six-digit code', primary: false,
-    secondFactor: false, email: true,
-    what: 'A six-digit code mailed to the person\'s VERIFIED address. ' +
-          NIST_EMAIL_WARNING },
-  { id: 'emailLink', label: 'Emailed sign-in link', primary: false,
-    secondFactor: false, email: true,
-    what: 'A single-use link mailed to the person\'s VERIFIED address, which ' +
-          'completes the sign-in only in the browser that started it. ' +
-          NIST_EMAIL_WARNING },
-  { id: 'certificate', label: 'TLS client certificate', primary: true,
-    secondFactor: null,
-    what: 'GET /tls/sign-in with a verified client certificate.' },
-  { id: 'kerberos', label: 'Kerberos (SPNEGO)', primary: true,
-    secondFactor: null,
-    what: 'GET /authn/spnego with a Kerberos ticket.' },
-  { id: 'wallet', label: 'Wallet presentation', primary: true,
-    secondFactor: true,
-    what: '/authn/wallet with a credential this realm issued, or a SIOPv2 ' +
-          'self-issued ID Token from an enrolled key. As a SECOND factor, ' +
-          'the wallet presented after a password.' },
-  { id: 'federation', label: 'Federation partner', primary: true,
-    secondFactor: null,
-    what: 'A sign-in asserted by a configured federation partner.' }
-];
+const MECHANISMS: Mechanism[] = ModelTables.facts('policy.authn').mechanisms
+  .map(function (row: Mechanism) {
+    return Object.assign({}, row);
+  });
 
 const MECHANISM_BY_ID: Record<string, Mechanism> = {};
 MECHANISMS.forEach(function (m) {
@@ -266,35 +277,18 @@ function attributeOf(key: string): string {
  * The policy's fields: one table read as the schema, the console form, the API
  * body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = ([
-  { key: 'requireSecondFactor', attribute: 'stsAuthnRequireSecondFactor',
-    type: 'enum', values: ['if-held', 'always'], dflt: 'if-held',
-    label: 'Second factor required',
-    what: '`if-held`: a person is asked for a second factor when they hold ' +
-          'one (or their entry says stsMfaRequired). `always`: everybody in ' +
-          'this realm is, and somebody who holds none is sent to enrol one ' +
-          'at their next sign-in. This replaced authn.mfaRequired. There is ' +
-          'no "never": a held factor is always asked for.' },
-  // #246 (rcbj, 2026-09-26): whether the people who can change everything
-  // must use a second factor "will vary by organization", so it is this
-  // policy's to say, in the default realm and inherited. `offer` is the
-  // default FOR NOW, at rcbj's word: an administrator with no second factor
-  // is shown the set-up step with an Ignore button, every sign-in.
-  { key: 'requireSecondFactorForAdministrators',
-    attribute: 'stsAuthnRequireSecondFactorForAdministrators',
-    type: 'enum', values: ['if-held', 'offer', 'always'], dflt: 'offer',
-    label: 'Second factor for administrators',
-    what: 'For anybody holding a console role (Admin Read or Admin Write) ' +
-          'who holds no second factor. `offer`: they are shown the step ' +
-          'that sets one up, with an Ignore button, at every sign-in. ' +
-          '`always`: they must set one up before they are signed in — ' +
-          'except the default realm\'s built-in administrator ' +
-          '(admin.bootstrapUsername), who is only ever offered one, so a ' +
-          'service is never left with nobody who can sign in. `if-held`: ' +
-          'as everybody else, by the field above. WEAKER THAN `always`: ' +
-          'an administrator on a password alone is an administrator anyone ' +
-          'with the password is.' }
-] as PolicyField[]).concat(MECHANISMS.reduce(function (out: PolicyField[], m) {
+// What each computed row says is written once, on its attribute in the model.
+const TABLE_WHAT = new Map<string, string>(ModelTables.schema('policy.authn').attributes
+  .map(function (row: any) {
+    return [row.name, row.what] as [string, string];
+  }));
+
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_authn.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.authn', {}, {
+    before: 'emailCodeTtlS',
+    rows: MECHANISMS.reduce(function (out: PolicyField[], m) {
   (['primary', 'second-factor'] as Role[]).forEach(function (role) {
     const dflt = role === 'primary' ? m.primary : m.secondFactor;
     if (dflt === null) {
@@ -305,59 +299,16 @@ const FIELDS: PolicyField[] = ([
                dflt: dflt, mechanism: m.id, role: role, email: !!m.email,
                label: m.label + (role === 'primary' ? ' — as a first factor'
                                    : ' — as a second factor'),
-               what: m.what });
+               what: TABLE_WHAT.get(attributeOf(key)) });
   });
   return out;
-}, [])).concat([
-  { key: 'emailCodeTtlS', attribute: 'stsAuthnEmailCodeTtlS', type: 'int',
-    dflt: 300, min: 60, max: 600, unit: 'seconds', email: true,
-    label: 'How long an emailed code or link is valid',
-    what: 'From the moment it is sent. At most ten minutes, NIST SP ' +
-          '800-63B-4 ' +
-          'section 3.1.3.2\'s bound for an out-of-band secret.' },
-  { key: 'emailCodeAttempts', attribute: 'stsAuthnEmailCodeAttempts',
-    type: 'int', dflt: 5, min: 1, max: 10, unit: 'attempts', email: true,
-    label: 'Wrong codes before the sign-in step ends',
-    what: 'How many wrong codes one sign-in step accepts before it is ended ' +
-          'and the person starts again. The per-person and per-network rate ' +
-          'limits apply as well.' },
-  { key: 'emailResendS', attribute: 'stsAuthnEmailResendS', type: 'int',
-    dflt: 60, min: 15, max: 600, unit: 'seconds', email: true,
-    label: 'Shortest wait before another code or link is sent',
-    what: 'A new code or link replaces the last one, which stops working. At ' +
-          'most three are sent for one sign-in step.' },
-  { key: 'emailFailureLimit', attribute: 'stsAuthnEmailFailureLimit',
-    type: 'int', dflt: 100, min: 5, max: 100, unit: 'failures', email: true,
-    label: 'Consecutive failures before a person\'s email factor is turned off',
-    what: 'NIST SP 800-63B-4 section 3.2.2 asks for no more than 100. The ' +
-          'person, and their administrators, are told, and the person turns ' +
-          'it on again from the portal.' },
-  // A REMEMBERED BROWSER MAY STAND IN FOR THE SECOND FACTOR (#265, rcbj):
-  // off by default, for a period an administrator sets per realm (30 days by
-  // default), and never at the admin console or the user portal. It is a
-  // policy of the REALM because it is a statement about which evidence the
-  // realm accepts — the rest of this table's question.
-  { key: 'rememberedBrowserSkipsSecondFactor',
-    attribute: 'stsAuthnRememberedBrowserSkipsSecondFactor', type: 'bool',
-    dflt: false,
-    label: 'A remembered browser may skip the second factor',
-    what: 'OFF BY DEFAULT. On, a person signing in on a browser they chose ' +
-          'to remember is not asked for their second factor again within ' +
-          'the period below of last giving it on that browser. NEVER at the ' +
-          'admin console, the user portal or the protocol debugger; never ' +
-          'for an administrator; never while the sign-in\'s risk is medium ' +
-          'or higher; and the sign-in is then ONE factor to every relying ' +
-          'party — amr ["pwd"] and acr "1", as a password alone — so an ' +
-          'application asking for "mfa" is refused it. The browser is recognised by a ' +
-          'bearer cookie: whoever copies the cookie skips the second factor ' +
-          'too, until the copy is caught.' },
-  { key: 'rememberedBrowserDays', attribute: 'stsAuthnRememberedBrowserDays',
-    type: 'int', dflt: 30, min: 1, max: 400, unit: 'days',
-    label: 'How long a remembered browser skips the second factor',
-    what: 'Counted from the last time the person gave their second factor ' +
-          'on that browser. After it they are asked again, and giving it ' +
-          'starts the period again.' }
-]);
+}, [])
+  });
+
+MECHANISMS.forEach(function (m) {
+  m.what = TABLE_WHAT.get(attributeOf(fieldKeyOf(m.id,
+    m.primary === null ? 'second-factor' : 'primary')));
+});
 
 /**
  * The fields, by key.
@@ -380,31 +331,8 @@ const DEFAULTS: Readonly<Record<string, number | boolean | string>> =
  * The directory schema of `ou=authnPolicies`: its container, object class and
  * attributes, and the two person attributes the emailed factor uses.
  */
-const SCHEMA = {
-  container: 'ou=authnPolicies',
-  objectClasses: [
-    { name: 'stsAuthnPolicy',
-      what: 'This service\'s class for an authentication policy: which ' +
-            'mechanisms are accepted as a first and as a second factor, and ' +
-            'when a second factor is required. The entry is named by the ' +
-            'PROFILE (`cn=default`).' }
-  ],
-  attributes: FIELDS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  }).concat([
-    { name: 'description',
-      what: 'What the profile is for, for the next person.' }
-  ]),
-  personAttributes: [
-    { name: 'stsMailFactor',
-      what: 'Which emailed second factor this person opted in to: `code` or ' +
-            '`link`. Absent: none. Set on /portal/mfa, cleared on /admin/mfa ' +
-            'and after too many consecutive failures.' },
-    { name: 'stsMailFactorFailures',
-      what: 'Consecutive failed emailed codes or links, reset by a success. ' +
-            'Maintained by this service.' }
-  ]
-};
+// The table is written in models/directory/policy_authn.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.authn');
 
 /**
  * The authentication policy: which mechanisms a realm accepts as a first factor
@@ -440,9 +368,21 @@ class AuthnPolicy {
    */
   static readonly SCHEMA = SCHEMA;
   /**
+   * The sentences `describe()` makes, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
+  /**
    * The warning drawn beside the emailed mechanisms.
    */
   static readonly NIST_EMAIL_WARNING = NIST_EMAIL_WARNING;
+  /**
+   * How a named policy ranks (#1237).
+   */
+  static readonly SELECTION = SELECTION;
+  /**
+   * The attributes that name a named policy (#1237).
+   */
+  static readonly REFERENCES = REFERENCES;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -851,6 +791,24 @@ class AuthnPolicy {
     log.debug("Entering AuthnPolicy.requireSecondFactor().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     log.debug("Leaving AuthnPolicy.requireSecondFactor().");
+    // EVERYBODY, IN PRODUCT (#1490, ASVS 5.0.0 6.3.3).
+    return require('./mode').requiresSecondFactorOfEveryone()
+      ? 'always' : String(rules.requireSecondFactor);
+  }
+
+  /**
+   * The realm's rule as configured, without product mode's "everybody": a
+   * service account is held to this one, having no person to answer a second
+   * factor.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the configured value
+   */
+  configuredSecondFactor(profile?: AuthnProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.configuredSecondFactor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving AuthnPolicy.configuredSecondFactor().");
     return String(rules.requireSecondFactor);
   }
 
@@ -868,7 +826,8 @@ class AuthnPolicy {
     log.debug("Entering AuthnPolicy.requireSecondFactorForAdministrators().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     log.debug("Leaving AuthnPolicy.requireSecondFactorForAdministrators().");
-    return String(rules.requireSecondFactorForAdministrators);
+    return require('./mode').requiresSecondFactorOfEveryone()
+      ? 'always' : String(rules.requireSecondFactorForAdministrators);
   }
 
   // Whether a remembered browser may stand in for the second factor, and for
@@ -932,6 +891,7 @@ class AuthnPolicy {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.describe().");
     const rules = profile || this.read(DEFAULT_PROFILE);
+    const fill = serverProse.fill;
     const names = (role: Role): string => {
       log.debug("Entering AuthnPolicy.describe() names().");
       const on = MECHANISMS.filter((m) => {
@@ -940,20 +900,19 @@ class AuthnPolicy {
         return m.label;
       });
       log.debug("Leaving AuthnPolicy.describe() names().");
-      return on.length ? on.join(', ') : 'none';
+      return on.length ? on.join(', ') : SENTENCES['param.none'];
     };
     const out = [
-      'first factors: ' + names('primary'),
-      'second factors: ' + names('second-factor'),
+      fill(SENTENCES.firstFactors, { list: names('primary') }),
+      fill(SENTENCES.secondFactors, { list: names('second-factor') }),
       rules.requireSecondFactor === 'always'
-        ? 'a second factor is required of everybody'
-        : 'a second factor is required of those who hold one',
+        ? SENTENCES.secondAlways
+        : SENTENCES.secondIfHeld,
       rules.requireSecondFactorForAdministrators === 'always'
-        ? 'administrators must set one up (the built-in administrator is ' +
-          'offered one)'
+        ? SENTENCES.adminAlways
         : (rules.requireSecondFactorForAdministrators === 'offer'
-          ? 'administrators who hold none are offered one at each sign-in'
-          : 'administrators are asked as everybody else is')
+          ? SENTENCES.adminOffer
+          : SENTENCES.adminAsked)
     ];
     const email = MECHANISMS.some((m) => {
       return m.email && (this.allows(m.id, 'primary', rules) ||
@@ -961,12 +920,481 @@ class AuthnPolicy {
     });
     if (email) {
       const s = this.emailSettings(rules);
-      out.push('an emailed code or link is valid for ' + s.ttlS +
-               ' seconds' + (this.mailUsable() ? ''
-                 : ' — INACTIVE: this realm cannot send mail'));
+      out.push(fill(this.mailUsable() ? SENTENCES.emailTtl
+                                      : SENTENCES.emailTtlInactive,
+                    { n: s.ttlS }));
     }
     log.debug("Leaving AuthnPolicy.describe().");
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29): "replace the
+  // appAuthnMechanism and appMfaMechanism fields with scoped authentication
+  // policy reference ... one field that points at a named, scoped
+  // authentication policy." rcbj's decisions: the APPLICATION names its policy
+  // (`appAuthnPolicy`, one value) and a named authentication policy holds
+  // TWO LISTS: the first-factor mechanisms allowed (`stsAuthnPolicyMechanism`)
+  // and the second factors allowed (`stsAuthnPolicySecondFactor`), each "none
+  // is every one" exactly as the two application attributes were. Everything
+  // else about authentication stays the realm's, on `cn=default`.
+  //
+  // GROUPS NAME ONE TOO, AND THE POLICIES COMPETE (#1237, rcbj on #1234,
+  // rule 3cx): a group's `stsAuthnPolicy` names a policy as an application's
+  // `appAuthnPolicy` does, and a named policy carries a precedence
+  // (`stsAuthnPolicyPrecedence`, 1 to 1000). For one sign-in the candidates
+  // are the policy the application names and the policy each of the
+  // person's groups names; `PolicySelection.rank()` picks the lowest
+  // precedence, ties by name, and `default` (no narrowing) where none is
+  // named. A person names none of their own. BEFORE THE PERSON IS KNOWN —
+  // the sign-in screen's first draw, the routing in `authn.ts` — only the
+  // application's reference can be a candidate, and the choice is made
+  // again with the person once they are (`startSession()` and the issuance
+  // gate's facts), so a group's policy is held to at the session's start.
+  //
+  // Stored beside `cn=default` in `ou=authnPolicies`, one `cn=<name>` entry
+  // each, in THIS realm only — a realm's applications and groups name its own
+  // policies, so nothing is inherited from the default realm. `default` is
+  // not a named policy: a reference naming it, or nothing, is no candidate.
+  // A NAME THAT RESOLVES TO NO POLICY ALLOWS NO MECHANISM
+  // (`mechanismsFor().missing`, STS-AUTHN-0536), whichever holder named it:
+  // a reference must fail closed, as a misspelt list did. Deleting a policy
+  // an application or a group names is refused (STS-AUTHN-0534), and both
+  // writes are checked, so that is reached only by an `ldapmodify`.
+  // -------------------------------------------------------------------------
+  /**
+   * Reads the named authentication policies held in this realm (#1148).
+   *
+   * @returns each `{ name, dn, description, precedence, mechanisms,
+   *   secondFactors }`, by name
+   */
+  named(): { name: string; dn: string; description: string;
+             precedence: number; mechanisms: string[];
+             secondFactors: string[] }[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.named().");
+    if (!this.haveDirectory()) {
+      log.debug("Leaving AuthnPolicy.named(). No directory.");
+      return [];
+    }
+    // A list as this function has always answered it: trimmed, the empty
+    // ones and the repeats gone. The lists are the concept's (#1579).
+    const listOf = function (values: string[] | undefined): string[] {
+      const out: string[] = [];
+      (values || []).forEach(function (one: any) {
+        const text = String(one).trim();
+        if (text && out.indexOf(text) < 0) {
+          out.push(text);
+        }
+      });
+      return out;
+    };
+    const out = this.directory.allAuthnPolicies().filter(function (entry) {
+      return String(entry.name || '').toLowerCase() !== DEFAULT_PROFILE;
+    }).map(function (entry) {
+      const at = entry.attributes || {};
+      const held = Classes.AuthenticationPolicy.fromEntry(at);
+      return {
+        name: String(entry.name || '').toLowerCase(),
+        dn: String(entry.dn || ''),
+        description: listOf(held.description)[0] || '',
+        precedence: PolicySelection.precedenceOf(at, SELECTION),
+        mechanisms: listOf(held.policyMechanism),
+        secondFactors: listOf(held.policySecondFactor)
+      };
+    }).sort(function (a, b) {
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    log.debug("Leaving AuthnPolicy.named(). " + out.length + " policy(s).");
+    return out;
+  }
+
+  /**
+   * Reads one named authentication policy of this realm, or null.
+   *
+   * @param name - the policy's name
+   * @returns the policy as `named()` lists it, or null
+   */
+  namedPolicy(name: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.namedPolicy().");
+    const wanted = String(name == null ? '' : name).trim().toLowerCase();
+    const found = wanted && wanted !== DEFAULT_PROFILE
+      ? this.named().filter(function (one) {
+        return one.name === wanted;
+      })[0] || null
+      : null;
+    log.debug("Leaving AuthnPolicy.namedPolicy(). " +
+              (found ? found.name : 'None.'));
+    return found;
+  }
+
+  // The references a person's groups make (#1237), from the directory's
+  // group index (`personGroupReferences()`, riding `groupsOfUser()`, no
+  // walk). None where the person is not known or there is no directory.
+  private groupReferencesOf(person: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.groupReferencesOf().");
+    const key = String(person == null ? '' : person).trim();
+    const hook = key && this.directory
+      ? this.directory.personGroupReferences : null;
+    if (typeof hook !== 'function') {
+      log.debug("Leaving AuthnPolicy.groupReferencesOf(). None asked.");
+      return [];
+    }
+    let groups: { cn?: string; dn?: string; value?: string }[] = [];
+    try {
+      groups = hook.call(this.directory, key, REFERENCES.group) || [];
+    } catch (e) {
+      log.debug("Caught in AuthnPolicy.groupReferencesOf(): " +
+                ((e && e.message) || e));
+      // A group index that throws is a directory fault; the application's
+      // reference still applies, and the issuance policy decides as ever.
+      groups = [];
+    }
+    const out = PolicySelection.groupReferences(groups);
+    log.debug("Leaving AuthnPolicy.groupReferencesOf(). " + out.length);
+    return out;
+  }
+
+  // WHAT APPLIES TO A SIGN-IN (#1148, ranked since #1237), the one question
+  // every reader of the two old attributes asks: the application's
+  // `appAuthnPolicy` and, once the person is known, each of their groups'
+  // `stsAuthnPolicy`, ranked by precedence. Nothing named: both lists
+  // empty, which is "every one" for the first factors and "the realm's as it
+  // is" for the second, as unticked lists were. ANY reference to a name no
+  // policy here holds: `missing`, and a list no mechanism matches, so the
+  // sign-in allows nothing (fail closed) — for a group's reference as for
+  // the application's.
+  /**
+   * Resolves the named authentication policy that applies to a sign-in to
+   * its two lists: of the policy the application names and the policies the
+   * person's groups name, the lowest precedence (ties by name).
+   *
+   * @param fields - the application entry's fields, or null
+   * @param person - the person signing in, or '' where not yet known
+   * @returns `{ policy, by, holder, precedence, mechanisms, secondFactors,
+   *   missing }`: `by` is `application`, `group` or `default`
+   */
+  mechanismsFor(fields: any, person?: unknown): {
+      policy: string; by: string; holder: string; precedence: number;
+      mechanisms: string[]; secondFactors: string[]; missing: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.mechanismsFor().");
+    const held = fields ? [].concat(fields[REFERENCES.application] || [])[0]
+      : '';
+    const application = fields
+      ? String([].concat(fields.identifier || fields.cn || [])[0] || '') : '';
+    const references: { by: string; holder?: string; value: unknown }[] = [
+      { by: 'application', holder: application,
+        value: held == null ? '' : held }
+    ];
+    this.groupReferencesOf(person).forEach(function (one) {
+      references.push(one);
+    });
+    const named = references.some(function (one) {
+      const value = PolicySelection.fold(one.value);
+      return !!value && value !== DEFAULT_PROFILE;
+    });
+    if (!named) {
+      log.debug("Leaving AuthnPolicy.mechanismsFor(). The realm's default.");
+      return { policy: DEFAULT_PROFILE, by: DEFAULT_PROFILE, holder: '',
+               precedence: 0, mechanisms: [], secondFactors: [],
+               missing: false };
+    }
+    const entries = this.haveDirectory()
+      ? this.directory.allAuthnPolicies() : [];
+    const ranked = PolicySelection.rank(entries, SELECTION, references);
+    if (ranked.missing.length) {
+      ranked.missing.forEach((one) => {
+        log.warn(this.deps.errorCodes.tag('STS-AUTHN-0536') + 'authn ' +
+                 'policy: the ' + one.by + (one.holder ? ' "' + one.holder +
+                 '"' : '') + ' names the authentication policy "' +
+                 one.name + '", which this realm does not hold; the ' +
+                 'sign-in allows no mechanism until the policy exists or ' +
+                 'the reference (' + (one.by === 'group' ? REFERENCES.group
+                   : REFERENCES.application) + ') changes.');
+      });
+      const first = ranked.missing[0];
+      log.debug("Leaving AuthnPolicy.mechanismsFor(). Missing.");
+      return { policy: first.name, by: first.by, holder: first.holder,
+               precedence: 0, mechanisms: [MISSING_MECHANISM],
+               secondFactors: [MISSING_MECHANISM], missing: true };
+    }
+    const found = ranked.name === DEFAULT_PROFILE ? null
+      : this.namedPolicy(ranked.name);
+    if (!found) {
+      log.debug("Leaving AuthnPolicy.mechanismsFor(). The realm's default.");
+      return { policy: DEFAULT_PROFILE, by: DEFAULT_PROFILE, holder: '',
+               precedence: 0, mechanisms: [], secondFactors: [],
+               missing: false };
+    }
+    log.debug("Leaving AuthnPolicy.mechanismsFor(). " + found.name +
+              " by " + ranked.by);
+    return { policy: found.name, by: ranked.by, holder: ranked.holder,
+             precedence: ranked.precedence,
+             mechanisms: found.mechanisms.slice(0),
+             secondFactors: found.secondFactors.slice(0), missing: false };
+  }
+
+  /**
+   * What names a named authentication policy (#1237): the applications
+   * (the application listing's index, reached lazily because this file is
+   * a leaf) and the groups (the directory's group index) — what refuses its
+   * delete and what the console's Named policies tab lists.
+   *
+   * @param name - the policy's name
+   * @returns `{ applications, groups, people }`; nobody names one from
+   *   their own entry
+   */
+  namedBy(name: unknown): { applications: string[]; groups: string[];
+                            people: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.namedBy().");
+    const wanted = String(name == null ? '' : name).trim().toLowerCase();
+    let applications: string[] = [];
+    try {
+      applications = require('./applications')
+        .applicationsNamingPolicy(REFERENCES.application, wanted) || [];
+    } catch (e) {
+      log.debug("Caught in AuthnPolicy.namedBy(): " +
+                ((e && e.message) || e));
+      // No registry (a library tested on its own): no application names it.
+      applications = [];
+    }
+    const hook = this.directory ? this.directory.groupsNamingPolicy : null;
+    let groups: string[] = [];
+    if (typeof hook === 'function') {
+      try {
+        groups = hook.call(this.directory, REFERENCES.group, wanted) || [];
+      } catch (e) {
+        log.debug("Caught in AuthnPolicy.namedBy() groups: " +
+                  ((e && e.message) || e));
+        // A group index that throws names nobody here; the write-time
+        // check at the group's own door still holds.
+        groups = [];
+      }
+    }
+    log.debug("Leaving AuthnPolicy.namedBy(). " + applications.length +
+              " application(s), " + groups.length + " group(s).");
+    return { applications: applications, groups: groups, people: [] };
+  }
+
+  // The two vocabularies, from the modules that own them, LAZILY: this file
+  // is a leaf, and `federation.js` is not one.
+  private vocabularies(): { mechanisms: string[]; secondFactors: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.vocabularies().");
+    let mechanisms: string[] = [];
+    let secondFactors: string[] = [];
+    try {
+      mechanisms = require('../federation/federation').MECHANISM_IDS.slice(0);
+      secondFactors = require('./mfa_mechanisms').IDS.slice(0);
+    } catch (e) {
+      log.debug("Caught in AuthnPolicy.vocabularies(): " +
+                ((e && e.message) || e));
+      // Not loadable here (a library tested on its own): nothing is known,
+      // so every value is refused rather than every value accepted.
+      mechanisms = [];
+      secondFactors = [];
+    }
+    log.debug("Leaving AuthnPolicy.vocabularies().");
+    return { mechanisms: mechanisms, secondFactors: secondFactors };
+  }
+
+  /**
+   * Creates or replaces a named authentication policy in this realm (#1148).
+   *
+   * @param name - lower-case letters, digits and hyphens, not `default`
+   * @param given - `description`, `precedence` (1 to 1000, 100 when
+   *   omitted, #1237), `mechanisms` and `secondFactors` (lists)
+   * @returns `ok` and the policy, or the errors
+   */
+  saveNamed(name: unknown, given?: Record<string, any> | null) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnPolicy.saveNamed().");
+    const text = String(name == null ? '' : name).trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(text) || text === DEFAULT_PROFILE) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). A bad name.");
+      return errorCodes.mark({ ok: false, errors: ['A named authentication ' +
+        'policy is named with lower-case letters, digits and hyphens, at ' +
+        'most 63, starting with a letter or digit, and is not "' +
+        DEFAULT_PROFILE + '" (the realm\'s own policy); "' +
+        String(name == null ? '' : name).slice(0, 64) + '" is not one.'] },
+        'STS-AUTHN-0532');
+    }
+    const known = this.vocabularies();
+    const listOf = function (value: any): string[] {
+      const out: string[] = [];
+      [].concat(value === undefined || value === null ? [] : value)
+        .forEach(function (one: any) {
+          String(one).split(/[\s,]+/).forEach(function (part) {
+            if (part && out.indexOf(part) < 0) {
+              out.push(part);
+            }
+          });
+        });
+      return out;
+    };
+    const mechanisms = listOf(given && given.mechanisms);
+    const secondFactors = listOf(given && given.secondFactors);
+    const problems: string[] = [];
+    mechanisms.forEach(function (one) {
+      if (known.mechanisms.indexOf(one) < 0) {
+        problems.push('"' + one.slice(0, 40) + '" is not a first-factor ' +
+          'mechanism; one of ' + known.mechanisms.join(', ') + '.');
+      }
+    });
+    secondFactors.forEach(function (one) {
+      if (known.secondFactors.indexOf(one) < 0) {
+        problems.push('"' + one.slice(0, 40) + '" is not a second factor; ' +
+          'one of ' + known.secondFactors.join(', ') + '.');
+      }
+    });
+    if (problems.length) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). Unknown mechanisms.");
+      return errorCodes.mark({ ok: false, errors: problems },
+                             'STS-AUTHN-0533');
+    }
+    // ITS PRECEDENCE (#1237): `PolicySelection.checkPrecedence()`, the one
+    // reading every kind shares; 100 when the save sends none.
+    const ranked = PolicySelection.checkPrecedence(given, SELECTION);
+    if (ranked.problems.length) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). A bad precedence.");
+      return errorCodes.mark({ ok: false, errors: ranked.problems },
+                             'STS-AUTHN-0541');
+    }
+    if (!this.haveDirectory()) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). No directory.");
+      return errorCodes.mark({ ok: false,
+               errors: ['There is no embedded directory in this process, so ' +
+                        'there is nowhere to keep an authentication policy. ' +
+                        'ou=authnPolicies IS the register.'] },
+                             'STS-AUTHN-0245');
+    }
+    const attributes: Record<string, unknown> = {
+      objectClass: ['top', 'stsAuthnPolicy'],
+      stsAuthnPolicyMechanism: mechanisms,
+      stsAuthnPolicySecondFactor: secondFactors,
+      stsAuthnPolicyPrecedence: String(ranked.precedence)
+    };
+    const description = String((given && given.description) || '')
+      .slice(0, 1024);
+    if (description) {
+      attributes.description = description;
+    }
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416). Reading
+    // the store afterwards would answer the old policy, or none when this
+    // name is new, and a save that reports success either way is a lie.
+    // `false` is still the directory being full.
+    const written = this.directory.writeAuthnPolicy(text, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). A description carries " +
+                "an operator code.");
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!written) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). Not stored.");
+      return errorCodes.mark({ ok: false,
+               errors: ['The directory would not store the policy — it is ' +
+                        'at its maximum number of entries.'] },
+                             'STS-AUTHN-0246');
+    }
+    log.debug("Leaving AuthnPolicy.saveNamed(). " + text);
+    const policy = this.namedPolicy(text);
+    return { ok: true, policy: policy, dn: policy ? policy.dn : '',
+             message: 'The authentication policy "' + text + '" is saved' +
+               (policy ? ' at ' + policy.dn : '') + ', precedence ' +
+               ranked.precedence + '. Where it is the policy that applies ' +
+               '— named by the application (appAuthnPolicy) or by one of ' +
+               'the person\'s groups (stsAuthnPolicy), and the lowest ' +
+               'precedence of those named — a sign-in allows ' +
+               (mechanisms.length ? mechanisms.join(', ') : 'every mechanism ' +
+                 'the realm allows') + ' as a first factor and ' +
+               (secondFactors.length ? secondFactors.join(', ')
+                 : 'the realm\'s second factors') + ' as a second.' };
+  }
+
+  /**
+   * Deletes a named authentication policy, refused while an application or
+   * a group of this realm names it (#1148, #1237).
+   *
+   * @param name - the policy's name
+   * @param namedBy - what names it, which refuses the delete: `{
+   *   applications, groups, people }` as `namedBy()` answers, or a list of
+   *   applications; asked of `namedBy()` when omitted
+   * @returns `ok` and whether one was removed, or the errors
+   */
+  deleteNamed(name: unknown,
+              namedBy?: string[] | { applications?: string[];
+                                     groups?: string[];
+                                     people?: string[] }) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnPolicy.deleteNamed().");
+    const found = this.namedPolicy(name);
+    if (!found) {
+      log.debug("Leaving AuthnPolicy.deleteNamed(). No such policy.");
+      return errorCodes.mark({ ok: false, errors: ['This realm holds no ' +
+        'named authentication policy "' +
+        String(name == null ? '' : name).slice(0, 64) + '".'] },
+        'STS-AUTHN-0535');
+    }
+    // NOT WHILE AN APPLICATION OR A GROUP NAMES IT (#1148, #1237): each
+    // would be left naming a policy the realm does not hold, which allows
+    // no mechanism.
+    const holders = Array.isArray(namedBy)
+      ? { applications: namedBy.filter(Boolean), groups: [], people: [] }
+      : (namedBy || this.namedBy(found.name));
+    const held = PolicySelection.deleteProblem('authentication policy',
+                                                found.name, holders);
+    if (held) {
+      log.debug("Leaving AuthnPolicy.deleteNamed(). In use.");
+      return errorCodes.mark({ ok: false, errors: [held + ' Deleting it ' +
+        'would leave them allowing no mechanism (appAuthnPolicy on an ' +
+        'application, stsAuthnPolicy on a group).'] }, 'STS-AUTHN-0534');
+    }
+    const removed = !!this.directory.deleteAuthnPolicy(found.name);
+    log.debug("Leaving AuthnPolicy.deleteNamed(). " + removed);
+    return { ok: true, removed: removed, name: found.name, dn: found.dn,
+             message: 'The authentication policy "' + found.name + '" is ' +
+               'deleted.' };
+  }
+
+  // THE TWO ACTS BESIDE SAVE AND RESET (#1148, `admin-core/policy_kinds.ts`'s
+  // `extraActions`): a named policy saved, and one deleted — refused while an
+  // application or a group names it (`namedBy()`, which reaches the registry
+  // LAZILY: this file is a leaf, and `applications.js` reads it back for its
+  // choices).
+  /**
+   * Answers the authentication policy's acts beside save and reset (#1148).
+   *
+   * @param action - `save-named-authn-policy` or `delete-named-authn-policy`
+   * @param body - the act's body
+   * @returns the act's answer, or a refusal naming the two acts
+   */
+  act(action: string, body: Record<string, any>) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnPolicy.act(). " + action);
+    const given = body || {};
+    if (action === 'save-named-authn-policy') {
+      const out = this.saveNamed(given.name, given);
+      log.debug("Leaving AuthnPolicy.act(). save " + out.ok);
+      return out;
+    }
+    if (action === 'delete-named-authn-policy') {
+      const out = this.deleteNamed(given.name);
+      log.debug("Leaving AuthnPolicy.act(). delete " + out.ok);
+      return out;
+    }
+    log.debug("Leaving AuthnPolicy.act(). Not an act.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + String(action).slice(0, 64) + '" is not an act ' +
+                      'of the authentication policy; its two are ' +
+                      'save-named-authn-policy and ' +
+                      'delete-named-authn-policy.'] }, 'STS-ADMIN-0500');
   }
 
   // -------------------------------------------------------------------------
@@ -978,11 +1406,11 @@ class AuthnPolicy {
     const text = String(name || DEFAULT_PROFILE).trim();
     if (text.toLowerCase() !== DEFAULT_PROFILE) {
       log.debug("Leaving AuthnPolicy.checkProfileName().");
-      return 'There is one authentication policy profile, "' +
-             DEFAULT_PROFILE + '", and it applies to everybody in this ' +
-             'realm. "' + text.slice(0, 64) + '" cannot be created: nothing ' +
-             'assigns a profile to a person, so a second one would decide ' +
-             'nothing while looking exactly like one that does.';
+      return 'The realm\'s authentication policy is "' + DEFAULT_PROFILE +
+             '", and it applies to everybody in this realm. "' +
+             text.slice(0, 64) + '" is not it: a NAMED authentication ' +
+             'policy (#1148) holds only the mechanisms an application ' +
+             'naming it allows, and is saved as one (save-named).';
     }
     log.debug("Leaving AuthnPolicy.checkProfileName().");
     return null;
@@ -1104,8 +1532,17 @@ class AuthnPolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
+    // See saveNamed(): a truthy `{ ok: false }` is a description refusal,
+    // and `false` is the directory being full (#1416).
     const written = this.directory.writeAuthnPolicy(DEFAULT_PROFILE,
-                                                    attributes);
+                                                    attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving AuthnPolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving AuthnPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -1167,6 +1604,20 @@ const slot = new InstanceSlot<AuthnPolicy>(
 
 slot.buildNowUnlessDeferred();
 
+// A GROUP NAMES ITS AUTHENTICATION POLICY (#1237, rule 3cx): declared, so the
+// group page draws its picker and the directory's group writer checks it
+// (STS-LDAP-0194, 0195), offering `default` and the realm's named policies
+// as they stand when asked.
+PolicySelection.declareReference('group', REFERENCES.group,
+  'authentication policy', function () {
+    log.debug("Entering authentication policy reference choices.");
+    const names = slot.get().named().map(function (one) {
+      return one.name;
+    });
+    log.debug("Leaving authentication policy reference choices.");
+    return names;
+  });
+
 /**
  * The authentication policy: which ways of signing in a realm accepts as a
  * first factor and as a second, and when a second is required.
@@ -1193,6 +1644,7 @@ export = {
   FIELD_BY_KEY: AuthnPolicy.FIELD_BY_KEY,
   MECHANISMS: AuthnPolicy.MECHANISMS,
   SCHEMA: AuthnPolicy.SCHEMA,
+  SENTENCES: AuthnPolicy.SENTENCES,
   NIST_EMAIL_WARNING: AuthnPolicy.NIST_EMAIL_WARNING,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
@@ -1206,10 +1658,20 @@ export = {
   active: slot.forward('active'),
   mailUsable: slot.forward('mailUsable'),
   requireSecondFactor: slot.forward('requireSecondFactor'),
+  configuredSecondFactor: slot.forward('configuredSecondFactor'),
   requireSecondFactorForAdministrators:
     slot.forward('requireSecondFactorForAdministrators'),
   emailSettings: slot.forward('emailSettings'),
   rememberedBrowser: slot.forward('rememberedBrowser'),
   describe: slot.forward('describe'),
-  enforced: slot.forward('enforced')
+  enforced: slot.forward('enforced'),
+  named: slot.forward('named'),
+  namedPolicy: slot.forward('namedPolicy'),
+  mechanismsFor: slot.forward('mechanismsFor'),
+  namedBy: slot.forward('namedBy'),
+  SELECTION: AuthnPolicy.SELECTION,
+  REFERENCES: AuthnPolicy.REFERENCES,
+  saveNamed: slot.forward('saveNamed'),
+  deleteNamed: slot.forward('deleteNamed'),
+  act: slot.forward('act')
 };

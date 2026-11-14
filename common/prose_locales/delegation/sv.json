@@ -1,0 +1,262 @@
+{
+  "delegation.modes.impersonation.label": {
+    "en": "0595515700012854",
+    "text": "Personifiering"
+  },
+  "delegation.modes.impersonation.what": {
+    "en": "0abf4e622a5f3af4",
+    "text": "Det som kommer ut namnger den ursprungliga identiteten och ingenting annat. Tjänsten i andra änden kan inte se att en mellanhand var inblandad, och det kan inte heller någon som läser autentiseringsuppgiften efteråt — vilket är varför utfärdaren är det enda ställe där detta någonsin syns."
+  },
+  "delegation.modes.delegation.label": {
+    "en": "a6d910ba93b7f894",
+    "text": "Delegering"
+  },
+  "delegation.modes.delegation.what": {
+    "en": "701b2586c236706c",
+    "text": "Det som kommer ut BÄR kedjan: ett `act`-anspråk, en sammansatt ActAs eller S4U_DELEGATION_INFO i PAC:en. Den andra änden kan se vem som verkligen frågar, och kan besluta annorlunda på grund av det."
+  },
+  "delegation.types.krb5-s4u2self.label": {
+    "en": "3227b5f96dc73440",
+    "text": "S4U2Self (protokollövergång)"
+  },
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "En tjänst bad om en biljett TILL SIG SJÄLV som namnger en användare som inte alls var inblandad — inget lösenord, ingen biljett av deras, inget de samtyckt till. Det är så en tjänst som autentiserat någon på annat sätt får en Kerberos-identitet för dem, och det är inte en behörighet: biljetten är till dig själv. [MS-SFU] kallar det protokollövergång, och det är den enda personifieringen i en Kerberos-kedja: S4U2Proxy-hoppen efter den är delegering (#491)."
+  },
+  "delegation.types.krb5-s4u2proxy-classic.label": {
+    "en": "beee369772174369",
+    "text": "S4U2Proxy — klassisk begränsad delegering"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "Frontend-tjänsten nådde sedan EN ANNAN tjänst som den användaren. Auktoriserad av msDS-AllowedToDelegateTo på FRONTEND-kontot, som bara en domänadministratör kan sätta, och kräver att bevisbiljetten kan vidarebefordras. Delegering även när dess bevis kom från S4U2Self: biljetten bär kedjan i PAC:ens S4U_DELEGATION_INFO ([MS-SFU] begränsad delegering, #491)."
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.label": {
+    "en": "54906f258baae283",
+    "text": "S4U2Proxy — resursbaserad (RBCD)"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.what": {
+    "en": "e8498b3165cb32f2",
+    "text": "Samma meddelanden, auktoriserade från motsatt håll: msDS-AllowedToActOnBehalfOfOtherIdentity på BACKEND-kontot, som den som kontrollerar det objektet kan sätta själv. Det är hela säkerhetshistorien för RBCD. Den kräver PA-PAC-OPTIONS, och sedan uppdateringen för CVE-2020-16996 ([MS-SFU] 3.2.5.2.3) även bevis som kan vidarebefordras (#492). Delegering, liksom den klassiska (#491)."
+  },
+  "delegation.types.krb5-forwarded.label": {
+    "en": "6302b3aa3f095a40",
+    "text": "Vidarebefordrad TGT (obegränsad delegering)"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "Klienten lämnade över hela sin biljettbeviljande biljett. Den som har den kan nå VAD SOM HELST som den klienten tills den går ut, utan vidare hänvisning till den här KDC:n — så det finns ingen lista över tillåtna mål, eftersom det inte finns någon begränsning. Den enda kontrollen sker vid utfärdandet, och den sitter på det KONTO som skyddas (NOT_DELEGATED) snarare än på någon tjänst."
+  },
+  "delegation.types.wstrust-onbehalfof.label": {
+    "en": "097ac27476ff2f74",
+    "text": "WS-Trust OnBehalfOf"
+  },
+  "delegation.types.wstrust-onbehalfof.what": {
+    "en": "035f53a2a0d579d2",
+    "text": "Den begärande bad om en token OM någon annan. Token namnger den personen och namnger inte den begärande, så den förlitande parten ser en vanlig inloggning."
+  },
+  "delegation.types.wstrust-actas.label": {
+    "en": "6198e8f30a16a507",
+    "text": "WS-Trust ActAs (sammansatt)"
+  },
+  "delegation.types.wstrust-actas.what": {
+    "en": "09402014c2ba9b4b",
+    "text": "Tillägget i 1.4, och sammansatt per definition: token handlar om det namngivna subjektet OCH säger att den begärande agerar. Det är elementet att ta till när den andra änden måste kunna se det."
+  },
+  "delegation.types.oauth-impersonation.label": {
+    "en": "0faea9c66541845d",
+    "text": "Tokenutbyte — personifiering"
+  },
+  "delegation.types.oauth-impersonation.what": {
+    "en": "a3c3326ffc08702e",
+    "text": "En subject_token och ingen actor_token. Det som kommer tillbaka är en token för subjektet utan någon uppgift om vem som bytte den."
+  },
+  "delegation.types.oauth-delegation.label": {
+    "en": "00dfa35ca43f5f5d",
+    "text": "Tokenutbyte — delegering"
+  },
+  "delegation.types.oauth-delegation.what": {
+    "en": "3575eb791d8ae545",
+    "text": "En subject_token OCH en actor_token. Det som kommer tillbaka bär ett `act`-anspråk som namnger aktören — och `act` nästlas, så ett andra hopp visas under det första i stället för att ersätta det."
+  },
+  "delegation.types.oauth-assertion-grant.label": {
+    "en": "e8d42c687f71ad96",
+    "text": "Beviljande med JWT bearer-intygande"
+  },
+  "delegation.types.oauth-assertion-grant.what": {
+    "en": "1406839ec28888cb",
+    "text": "En betrodd part signerar en JWT som säger vem token är till för, och den här auktoriseringsservern utfärdar en. Ingen webbläsare, inget lösenord och inget samtyckessteg: signaturen är hela auktoriseringen, vilket är varför utfärdaren måste vara deklarerad på en applikationspost som `oauthAssertionIssuer` innan något av det tros."
+  },
+  "delegation.types.oauth-saml-assertion-grant.label": {
+    "en": "4ea51ffb0d6de32b",
+    "text": "Beviljande med SAML 2.0 bearer-intygande"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "En betrodd part signerar ett SAML 2.0-intygande som säger vem token är till för, och den här auktoriseringsservern utfärdar en. Ingen webbläsare, inget lösenord och inget samtyckessteg: XML Signature är hela auktoriseringen, vilket är varför Issuer måste vara deklarerad på en applikationspost som `oauthSamlAssertionIssuer` och certifikatet registrerat där innan något av det tros. Det är syskon till RFC 7523 och INTE samma mekanism — de två profilerna har separata nyckelpar, och ingen av dem kan signera för den andra."
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "GNAP-beviljande genom användarintygande, utan interaktion"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "En klient som är betrodd att hoppa över interaktion (gnapSkipInteraction) presenterade ett verifierat intygande om en person och fick tokens utfärdade för dem. Personen tillfrågades inte: intygandet är hela deras del i det, och token är deras utan någon uppgift om klienten i den."
+  },
+  "delegation.types.gnap-derivation.label": {
+    "en": "7441b7b960ae3a04",
+    "text": "GNAP-tokenhärledning (resursserver till nedströms)"
+  },
+  "delegation.types.gnap-derivation.what": {
+    "en": "d160cc26eabf4540",
+    "text": "En resursserver presenterade en token den hade fått och bad om en för att nå en nedströms resursserver som samma person. Den härledda token bär inte mer åtkomst än den den kom från, och namnger den härledande resursservern i sin act-kedja."
+  },
+  "delegation.roles.initial.label": {
+    "en": "e28c5dfe701033ab",
+    "text": "Ursprunglig identitet"
+  },
+  "delegation.roles.initial.what": {
+    "en": "9ab21122a5f78d50",
+    "text": "Vem autentiseringsuppgiften handlar OM. Personen som loggade in någon annanstans, eller som aldrig loggade in alls — under S4U2Self och OnBehalfOf var de inte närvarande och bevisade ingenting."
+  },
+  "delegation.roles.intermediary.label": {
+    "en": "cbf2c59661b0c067",
+    "text": "Mellanhand"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "Vem som agerar för deras räkning: frontend-tjänsten, den begärande, klienten som utför utbytet. Det här är den part som presenterade en egen autentiseringsuppgift, och vid en personifiering är det den part som den andra änden aldrig kommer att se."
+  },
+  "delegation.roles.target.label": {
+    "en": "978354db0c00fc78",
+    "text": "Mål"
+  },
+  "delegation.roles.target.what": {
+    "en": "d21e8125ace1bfed",
+    "text": "Det som nås — backend-tjänsten, AppliesTo, målgruppen eller resursen. Det är en applikation snarare än en person, och det är det lager som avgör om något av detta spelade roll."
+  },
+  "delegation.mapKey.table": {
+    "en": "4db151f5c8c7b7ac",
+    "text": "<table class=\"key\"><tr><th>Form</th><th>Vad den betyder</th></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}</td></tr><tr><td class=\"art\">{{art3}}</td><td>{{what3}}</td></tr><tr><td class=\"art\">{{art4}}</td><td>{{what4}}</td></tr><tr><td class=\"art\">{{art5}}</td><td>{{what5}}</td></tr><tr><td class=\"art\">{{art6}}</td><td>{{what6}}</td></tr><tr><td class=\"art\">{{art7}}</td><td>{{what7}}</td></tr><tr><td class=\"art\">{{art8}}</td><td>{{what8}}</td></tr><tr><td class=\"art\">{{art9}}</td><td>{{what9}}</td></tr><tr><td class=\"art\">{{art10}}</td><td>{{what10}}</td></tr><tr><td class=\"art\">{{art11}}</td><td>{{what11}}</td></tr><tr><td class=\"art\">{{art12}}</td><td>{{what12}}</td></tr><tr><td class=\"art\">{{art13}}</td><td>{{what13}}</td></tr></table>"
+  },
+  "delegation.mapKey.tail": {
+    "en": "f364a7825f8f3e5f",
+    "text": "{{last}}</td></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}"
+  },
+  "delegation.federationKey.table": {
+    "en": "dde23dd944f3bc36",
+    "text": "<h3>Rutorna</h3><table><tr><th>Ritas som</th><th>Vad det är</th></tr><tr><td>{{box0}}</td><td>{{boxWhat0}}</td></tr><tr><td>{{box1}}</td><td>{{boxWhat1}}</td></tr><tr><td>{{box2}}</td><td>{{boxWhat2}}</td></tr><tr><td>{{box3}}</td><td>{{boxWhat3}}</td></tr></table><h3>Linjerna</h3>{{note}}<table><tr><th>Färg</th><th>Vad den betyder</th></tr><tr><td>{{line0}}</td><td>{{lineWhat0}}</td></tr><tr><td>{{line1}}</td><td>{{lineWhat1}}</td></tr><tr><td>{{line2}}</td><td>{{lineWhat2}}</td></tr><tr><td>{{line3}}</td><td>{{lineWhat3}}</td></tr></table>"
+  },
+  "delegation.federationKey.fold": {
+    "en": "2ebcf71641b4acc2",
+    "text": "<details class=\"note fold\"><summary>{{summary}}</summary><div class=\"foldbody\">{{body}}</div></details>"
+  },
+  "delegation.mapKey.param.row0": {
+    "en": "9dcdf27572f0fd6c",
+    "text": "<strong>En person.</strong> Något med en post under <code>ou=users</code> — vem som helst som den här tjänsten har autentiserat, i någon av de sexton familjerna."
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>En applikation.</strong> Något med en post under <code>ou=applications</code> — en OAuth-klient, en tjänsteleverantör, en Kerberos-tjänst, en förlitande part i WS-Trust."
+  },
+  "delegation.mapKey.param.row2": {
+    "en": "974ae8fb2049ef51",
+    "text": "<strong>Båda, vilket mellanskiktet oftast är.</strong> <code>HTTP/frontend.example.com</code> autentiserar (så tratten sorterar in den bland personerna) OCH får biljetter utfärdade FÖR sig (så registret har den). Två poster, en part."
+  },
+  "delegation.mapKey.param.row3": {
+    "en": "5e08092d0d84020a",
+    "text": "<strong>Den här tjänsten, i en förtroendesfär.</strong> Varje linje här finns för att den utfärdade eller avvisade en autentiseringsuppgift. Sfären står på rutan eftersom en sfär är en hel logisk kopia av den här tjänsten."
+  },
+  "delegation.mapKey.param.row4": {
+    "en": "863933eca45014e5",
+    "text": "<strong>De två små raderna under ett namn är olika meningar.</strong> Den första är vad rutan ÄR &mdash; vilket av de två lagren som känner till den, eller den roll dess form gissades utifrån. Den andra är <strong>den identifierare som ett protokoll skulle behöva presentera för att nå den, med det protokollets eget ord för den</strong>: ett <code>client_id</code> för OAuth 2.0 och OpenID Connect, ett <code>entityID</code> för båda SAML-profilerna, en <code>wtrealm</code> för WS-Federation, en <code>AppliesTo</code> för WS-Trust, ett <code>SPN</code> för Kerberos. NAMNET på rutan är vad någon KALLADE den här saken &mdash; ett <code>cn</code>, ett <code>appName</code> &mdash; och är till ingen nytta i en begäran du ska bygga, vilket är varför identifieraren står på bilden och inte bara i verktygstipset. Där de två är samma sträng ritas bara ordet, eftersom värdet redan är etiketten; där EN sträng är två familjers identifierare ritas båda orden (<code>AppliesTo / entityID</code>); och där applikationen svarar på flera OLIKA namn är det som ritas det som den här handlingen faktiskt bar &mdash; eller, om handlingen bar något som inget identifierarattribut innehåller, det första deklarerade, och verktygstipset säger det. Varje namn den svarar på finns i det verktygstipset i båda fallen."
+  },
+  "delegation.mapKey.param.row5": {
+    "en": "4954aa8673157fa8",
+    "text": "<strong>En streckad kontur är något som inget av lagren känner till.</strong> Den ritas i den form som dess ROLL antyder och är inte ett fel: en RFC 8693-<code>audience</code> som ingen annars har nämnt är precis detta."
+  },
+  "delegation.mapKey.param.row6": {
+    "en": "87f079ab380e9f00",
+    "text": "<strong>Åt vilket håll en linje går syns i BÅDA dess ändar.</strong> Den lämnar rutan med den runda änden och anländer till rutan med pilspetsen &mdash; så den fråga en läsare faktiskt ställer, stående vid en ruta: <em>är den här linjen min, eller någon annans på mig?</em>, besvaras där de står snarare än i andra änden av en kurva som korsar tre andra på vägen. Varje linje här har båda markeringarna, och ingen linje här är dubbelriktad: två applikationer som når varandra ritas som två linjer."
+  },
+  "delegation.mapKey.param.row7": {
+    "en": "22997b6d1c902ee3",
+    "text": "<strong>agerar för &mdash; en PERSONIFIERING.</strong> Det som kom ut namnger den ursprungliga identiteten och ingenting annat, så ingenting i andra änden kan se att en mellanhand var inblandad. Bärnstensfärgad eftersom den här bilden är det enda ställe där det faktumet någonsin kommer att finnas."
+  },
+  "delegation.mapKey.param.row8": {
+    "en": "94664ec3a3f92920",
+    "text": "<strong>agerar för &mdash; en DELEGERING.</strong> Det som kom ut BÄR kedjan: ett <code>act</code>-anspråk, en sammansatt <code>ActAs</code>, <code>S4U_DELEGATION_INFO</code> i PAC:en."
+  },
+  "delegation.mapKey.param.row9": {
+    "en": "932da9e5324d3417",
+    "text": "<strong>når &mdash; FÖRTROENDE-relationen.</strong> Vad autentiseringsuppgiften är TILL FÖR: backend-tjänsten, <code>AppliesTo</code>, målgruppen eller resursen. Etiketten säger vems namn den bär."
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>En bruten linje hoppar över en part som ingen namngav.</strong> En vidarebefordrad biljettbeviljande biljett har ingen mellanhand och kan inte ha någon — klienten ger den till vilken tjänst den vill och den här KDC:n får aldrig veta vilken."
+  },
+  "delegation.mapKey.param.row11": {
+    "en": "d10f0a35aeebc729",
+    "text": "<strong>får delegera &mdash; en KONFIGURERAD relation, STRECKAD tills en handling har använt den.</strong> En linje per par som en post tillåter: <code>appAllowedToDelegateTo</code> på källan (begränsad) eller <code>appAllowedToActOnBehalfOf</code> på målet (resursbaserad) &mdash; samma kontroller för OAuth 2.0-tokenutbytet, WS-Trust och Kerberos. Heldragen när en handling har korsat den. Ritas om inte handlingarna är filtrerade på utfall, typ eller text."
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>Rött är en kedja som ingenting någonsin utfärdades på.</strong> Verktygstipset bär KDC:ns egna ord för varför, vilket är samma mening som klienten fick."
+  },
+  "delegation.mapKey.param.row13": {
+    "en": "98bf6ee6df94528f",
+    "text": "<strong>Grå och streckad, från hexagonen: den här tjänsten UTFÄRDADE till den parten.</strong> Den går till den som FRÅGADE — mellanhanden där en kedja har en, den ursprungliga identiteten där den inte har det."
+  },
+  "delegation.mapKey.param.issuance0": {
+    "en": "03efeb293124715d",
+    "text": "<strong>Prickad, in i hexagonen: den här personen AUTENTISERADES här.</strong> Etiketten är protokollfamiljen och verktygstipset är metoden — inloggningsskärmen, en AS-REQ, en UsernameToken, ett federerat intygande. Det är därför allt annat på bilden tilläts."
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>Heldragen indigo: ett VANLIGT BEVILJANDE, och etiketten är exakt vilket</strong> — <code>authorization_code</code>, <code>refresh_token</code>, <code>client_credentials</code>, med specifikationsavsnittet i verktygstipset. Ut från PERSONEN betyder den att en autentiseringsuppgift som namnger dem gick till den applikationen; ut från HEXAGONEN betyder den att ingen annan har den — en <code>client_credentials</code>-token handlar om klienten själv och ett X509-SVID har ingen målgrupp, så subjektet och innehavaren är en ruta och det finns en linje snarare än två. Den får varken bärnsten eller grönt, eftersom personifiering och delegering är egenskaper hos en delegeringsmekanism och ett beviljande gör anspråk på ingetdera."
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>Heldragen indigo ut från en APPLIKATION är samma relation ett steg längre: vad den autentiseringsuppgift den har är ADRESSERAD till.</strong> Det är <em>når</em>-linjen ovan, sagd om ett vanligt beviljande i stället för om en delegering — en åtkomsttoken utfärdad till en webbfrontend och adresserad till en API-gateway är den här tjänsten som säger att den första får nå den andra i den här personens namn, utan att något bytts för att komma dit. Mekanismen på etiketten är det som skiljer de två åt: ett beviljande, eller <code>Token exchange</code>. Den målgrupp som token faktiskt bär finns i verktygstipset, eftersom rutan har fått namn efter den applikation som registrerade den målgruppen. <strong>Raden under den namnger de DELEGERADE BEHÖRIGHETERNA på den token</strong> — värdena i dess <code>scope</code>-anspråk som resursen i andra änden har DEFINIERAT, vilket är vad en klient ber om genom att skicka hela behörighetsidentifieraren (resursens bas-URI följd av namnet) som ett omfång. <strong><code>default permissions</code> betyder att token namngav resursen och inte bad om någon av dem</strong>: det är vad ett omfång som namnger resursens eget <code>client_id</code> ger, eftersom det värdet blir målgruppen och tas bort från scope-anspråket. Den säger vad som UTFÄRDADES och inte vad som BEVILJADES — <a href=\"/admin/delegation/allowed\">det konfigurerade registret</a> är den andra frågan, och i utveckling är <code>oauth2.delegatedPermissionsEnforced</code> av som standard, så en token kan bära en behörighet som dess klient aldrig beviljats (produktläge avvisar en sådan)."
+  },
+  "delegation.federationKey.param.box0": {
+    "en": "4c914ed78ba82e25",
+    "text": "Den förtroendesfär du tittar på. Varje linje på bilden börjar eller slutar här, eftersom varje relation är mellan den här sfären och någon annan."
+  },
+  "delegation.federationKey.param.box1": {
+    "en": "c7665e3dec149b4a",
+    "text": "En applikation registrerad HÄR vars personer autentiseras någon annanstans. Det som pekar den mot en partner är <code>appFederationRelationship</code> på dess post under <code>ou=applications</code>."
+  },
+  "delegation.federationKey.param.box2": {
+    "en": "26b7b7ae72e14cd3",
+    "text": "En EXTERN TJÄNSTELEVERANTÖR. Den ber den här tjänsten att autentisera någon. Streckad, eftersom den inte är den här tjänsten och ingenting här kan se in i den."
+  },
+  "delegation.federationKey.param.box3": {
+    "en": "882c09b8e23c53ac",
+    "text": "En EXTERN IDENTITETSLEVERANTÖR. Den autentiserar personen och den här tjänsten konsumerar det den utfärdar. Streckad av samma skäl — och en hexagon snarare än en rektangel eftersom den är en identitetstjänst, vilket den här tjänsten också är."
+  },
+  "delegation.federationKey.param.line0": {
+    "en": "7b7e2aed4da51756",
+    "text": "<strong>Klar</strong> — aktiverad och fullständigt konfigurerad. Den kommer att fungera."
+  },
+  "delegation.federationKey.param.line1": {
+    "en": "42faa997275831ac",
+    "text": "<strong>Inaktiverad</strong> — vilket är hur varje relation börjar. Det här är det vanliga tillståndet för något som någon inte har konfigurerat färdigt, inte ett fel."
+  },
+  "delegation.federationKey.param.line2": {
+    "en": "55067642229aee17",
+    "text": "<strong>Aktiverad och INTE konfigurerad</strong> — den högljudda, och den förtjänar att vara det enda röda på den här sidan: den kommer att AVVISA i samma ögonblick som någon försöker använda den, och den ser färdig ut från alla vinklar utom den här."
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>En mäklare som inte kan förmedla</strong> — relationen är i ordning men relationen den autentiserar GENOM är det inte, så personen möts av inloggningsskärmen i stället för partnern. Den skärmen kontrollerar inget lösenord, vilket är varför detta är värt en egen färg: det är det enda felet här som ger en fungerande inloggning."
+  },
+  "delegation.federationKey.param.noteSummary": {
+    "en": "1d497e16c1a376ab",
+    "text": "En pil är en BEGÄRAN och inte ett intygande, vilket är det enda med den här bilden som&hellip;"
+  },
+  "delegation.federationKey.param.note": {
+    "en": "67dc19dd12a069bd",
+    "text": "<strong>En pil är en BEGÄRAN och inte ett intygande</strong>, vilket är det enda med den här bilden som ser bakvänt ut tills det sägs. Allt till vänster anländer och vill ha någon inloggad; allt till höger ombeds utföra inloggningen. Så en relation på identitetsleverantörssidan — där den här tjänsten INTYGAR för partnern — pekar INÅT, eftersom det partnern gjorde var att fråga. Ritad åt andra hållet är en identitetsmäklare två pilar som lämnar samma ruta utan något som förenar dem; ritad så här är den en rak linje genom mitten, vilket är vad en brygga är."
+  }
+}

@@ -1,0 +1,2042 @@
+{
+  "kinds.password.label": {
+    "en": "21b86a0e7f34e88d",
+    "text": "Lösenordspolicy"
+  },
+  "kinds.password.appliesTo": {
+    "en": "e33b031ac2855712",
+    "text": "NÄSTA lösenord som sätts i den här sfären och inte på något som redan är lagrat"
+  },
+  "kinds.password.fallsBackTo": {
+    "en": "e1a34c11cd145d88",
+    "text": "de inbyggda standardvärdena"
+  },
+  "kinds.password.param.noun": {
+    "en": "3df37c27d5224b9e",
+    "text": "profilen för lösenordspolicyn"
+  },
+  "password.FIELDS.minLength.label": {
+    "en": "54fda5553dbf64a5",
+    "text": "Minimilängd"
+  },
+  "password.FIELDS.minLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "tecken"
+  },
+  "password.FIELDS.minLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "Det kortaste lösenord som den här tjänsten sätter, räknat i tecken (Unicode-kodpunkter, så en emoji är ett). Attributet kommer från draft-behera-ldap-password-policy. Tolv är standardvärdet; NIST SP 800-63B kräver minst 8, och 15 där ett lösenord är den enda faktorn."
+  },
+  "password.FIELDS.history.label": {
+    "en": "58e5a89d48d65a94",
+    "text": "Tidigare lösenord som inte får återanvändas"
+  },
+  "password.FIELDS.history.unit": {
+    "en": "3049a1f8327e0215",
+    "text": "lösenord"
+  },
+  "password.FIELDS.history.what": {
+    "en": "06be7ed15512bb42",
+    "text": "Hur många av en persons TIDIGARE lösenord som kommer ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge detta är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord sparas som den hash det redan var lagrat som (argon2id eller scrypt), i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
+  },
+  "password.FIELDS.minSymbols.label": {
+    "en": "95033032ad043277",
+    "text": "Minsta antal symboler"
+  },
+  "password.FIELDS.minSymbols.unit": {
+    "en": "1ea50a8caf608504",
+    "text": "symboler"
+  },
+  "password.FIELDS.minSymbols.what": {
+    "en": "1121ccc1580b0c86",
+    "text": "Alltid 0. En policy som kräver symboler avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras, så den här policyn frågar bara efter längd."
+  },
+  "password.FIELDS.requireUppercase.label": {
+    "en": "41d8365a4b5a8473",
+    "text": "Kräv en versal"
+  },
+  "password.FIELDS.requireUppercase.what": {
+    "en": "9ab7a52d3b16949e",
+    "text": "Alltid av. En policy som kräver en versal avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
+  },
+  "password.FIELDS.requireDigit.label": {
+    "en": "eaa0c73c3cc00f02",
+    "text": "Kräv en siffra"
+  },
+  "password.FIELDS.requireDigit.what": {
+    "en": "9d7cd7fdbca971d9",
+    "text": "Alltid av. En policy som kräver en siffra avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
+  },
+  "password.FIELDS.generatedLength.label": {
+    "en": "9a6d2215cc16392c",
+    "text": "Längd på ett genererat lösenord"
+  },
+  "password.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "tecken"
+  },
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "Hur långt ett lösenord som den här tjänsten HITTAR PÅ är — för en ny användare som skapas från konsolen eller /admin-api, en operatörs Generera och startkontot i produktläge. Det måste vara minst minimilängden och minst dubbla antalet symboler plus två. Tjugo tecken ur ett alfabet på 90 tecken är ungefär 130 bitar."
+  },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "Hashalgoritm för lösenord"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "1e7d12ba7a86b147",
+    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: scrypt (RFC 7914), standardvalet, eller argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras. En i en annan algoritm, eller i samma algoritm till en strikt lägre kostnad, hashas om vid personens nästa verifierade inloggning. En hash i samma algoritm som redan har minst den här kostnaden lämnas. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "Minne för argon2id"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "Minnet som en argon2id-hash använder, i kibibyte (m). 19456 KiB (19 MiB) är OWASP:s minimum och det minsta den här tjänsten skriver. Att höja det gör ett stulet lager långsammare att angripa, och varje inloggning använder så mycket mer minne."
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "Iterationer för argon2id"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "pass"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Hur många pass argon2id gör över sitt minne (t). 2 är OWASP:s minimum vid 19 MiB; varje pass lägger till samma tid igen."
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "Parallellism för argon2id"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "banor"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Hur många banor argon2id delar upp sitt minne i (p). Det är en del av hashen, inte ett antal trådar: node beräknar en hash på en tråd oavsett vad detta säger. 1 är OWASP:s värde."
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "Kostnad för scrypt (log2 av N)"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "12d941c210e87f99",
+    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 15 (standardvärdet) är N=32768. OWASP:s tabell parar den med parallellismen: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10. Standardvärdet är 2^15 med p=3, ett av de paren. En parallellism under paret för den valda kostnaden nekas."
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "Blockstorlek för scrypt (r)"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "scrypts blockstorlek för ett nyligen lagrat lösenord när algoritmen är scrypt. Minnet är ungefär 128 × N × r byte; 8 är värdet som RFC 7914 och OWASP anger."
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "Parallellism för scrypt (p)"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "82203c87cc0f2354",
+    "text": "scrypts parallellism för ett nyligen lagrat lösenord när algoritmen är scrypt. Node beräknar den på en tråd, så ett högre värde kostar tid snarare än kärnor; kostnadens beskrivning listar de par som OWASP godtar. Standardvärdet är 3. Ett värde under OWASP:s par för den valda kostnaden nekas."
+  },
+  "password.SCHEMA.objectClasses.pwdPolicy.what": {
+    "en": "ab642ea5cb282745",
+    "text": "Klassen från draft-behera-ldap-password-policy för en post med en lösenordspolicy. `pwdAttribute` anger attributet som policyn styr, och här är det alltid `userPassword`."
+  },
+  "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
+    "en": "4a651241a26c3b18",
+    "text": "Den här tjänstens egen klass, som bär sammansättningsreglerna och den genererade längden som utkastet saknar attribut för. Posten namnges efter PROFILEN: `cn=default`, eller en namngiven policys namn."
+  },
+  "password.SCHEMA.attributes.pwdAttribute.what": {
+    "en": "603a95b316f4b6f5",
+    "text": "Attributet som den här policyn styr: `userPassword`."
+  },
+  "password.SCHEMA.attributes.pwdMinLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "Det kortaste lösenord som den här tjänsten sätter, räknat i tecken (Unicode-kodpunkter, så en emoji är ett). Attributet kommer från draft-behera-ldap-password-policy. Tolv är standardvärdet; NIST SP 800-63B kräver minst 8, och 15 där ett lösenord är den enda faktorn."
+  },
+  "password.SCHEMA.attributes.pwdInHistory.what": {
+    "en": "06be7ed15512bb42",
+    "text": "Hur många av en persons TIDIGARE lösenord som kommer ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge detta är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord sparas som den hash det redan var lagrat som (argon2id eller scrypt), i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
+  },
+  "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
+    "en": "1121ccc1580b0c86",
+    "text": "Alltid 0. En policy som kräver symboler avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras, så den här policyn frågar bara efter längd."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
+    "en": "9ab7a52d3b16949e",
+    "text": "Alltid av. En policy som kräver en versal avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
+    "en": "9d7cd7fdbca971d9",
+    "text": "Alltid av. En policy som kräver en siffra avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "Hur långt ett lösenord som den här tjänsten HITTAR PÅ är — för en ny användare som skapas från konsolen eller /admin-api, en operatörs Generera och startkontot i produktläge. Det måste vara minst minimilängden och minst dubbla antalet symboler plus två. Tjugo tecken ur ett alfabet på 90 tecken är ungefär 130 bitar."
+  },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "1e7d12ba7a86b147",
+    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: scrypt (RFC 7914), standardvalet, eller argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras. En i en annan algoritm, eller i samma algoritm till en strikt lägre kostnad, hashas om vid personens nästa verifierade inloggning. En hash i samma algoritm som redan har minst den här kostnaden lämnas. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "Minnet som en argon2id-hash använder, i kibibyte (m). 19456 KiB (19 MiB) är OWASP:s minimum och det minsta den här tjänsten skriver. Att höja det gör ett stulet lager långsammare att angripa, och varje inloggning använder så mycket mer minne."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Hur många pass argon2id gör över sitt minne (t). 2 är OWASP:s minimum vid 19 MiB; varje pass lägger till samma tid igen."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Hur många banor argon2id delar upp sitt minne i (p). Det är en del av hashen, inte ett antal trådar: node beräknar en hash på en tråd oavsett vad detta säger. 1 är OWASP:s värde."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "12d941c210e87f99",
+    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 15 (standardvärdet) är N=32768. OWASP:s tabell parar den med parallellismen: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10. Standardvärdet är 2^15 med p=3, ett av de paren. En parallellism under paret för den valda kostnaden nekas."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "scrypts blockstorlek för ett nyligen lagrat lösenord när algoritmen är scrypt. Minnet är ungefär 128 × N × r byte; 8 är värdet som RFC 7914 och OWASP anger."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "82203c87cc0f2354",
+    "text": "scrypts parallellism för ett nyligen lagrat lösenord när algoritmen är scrypt. Node beräknar den på en tråd, så ett högre värde kostar tid snarare än kärnor; kostnadens beskrivning listar de par som OWASP godtar. Standardvärdet är 3. Ett värde under OWASP:s par för den valda kostnaden nekas."
+  },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Vilken namngiven lösenordspolicy som vinner där flera namnges för en person: den lägsta, från 1 till 1000."
+  },
+  "password.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "password.SCHEMA.personAttributes.pwdHistory.what": {
+    "en": "e800109ca0c5e386",
+    "text": "Ett värde per ihågkommet tidigare lösenord, i utkastets form `time#syntaxOID#length#data` — där data är den hash lösenordet lagrades under, aldrig lösenordet. Underhålls av den här tjänsten och nekas vid en LDAP-add eller -modify, eftersom en historik som vem som helst kan redigera är en historik som vem som helst kan tömma."
+  },
+  "password.SCHEMA.personAttributes.pwdChangedTime.what": {
+    "en": "3c870b2e0c097f36",
+    "text": "När lösenordet senast sattes, som en GeneralizedTime. Underhålls av den här tjänsten."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Vilken namngiven lösenordspolicy som vinner där flera namnges för en person: den lägsta, från 1 till 1000."
+  },
+  "password.sentences.minLength": {
+    "en": "68a35ccf19e404fb",
+    "text": "minst {{n}} tecken"
+  },
+  "password.sentences.history": {
+    "en": "524e6c7233b4e109",
+    "text": "inte ditt nuvarande lösenord eller något av de {{n}} före det"
+  },
+  "kinds.authn.label": {
+    "en": "07e21daf38c77b35",
+    "text": "Autentiseringspolicy"
+  },
+  "kinds.authn.governs": {
+    "en": "2a4cfd66f045124b",
+    "text": "vilka mekanismer som godtas som första och som andra faktor"
+  },
+  "kinds.authn.appliesTo": {
+    "en": "3e20938990b921a7",
+    "text": "NÄSTA inloggning i den här sfären; en redan startad session behåller de faktorer den startades med"
+  },
+  "kinds.authn.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena där den inte har det"
+  },
+  "kinds.authn.param.noun": {
+    "en": "d3123a2955133922",
+    "text": "profilen för autentiseringspolicyn"
+  },
+  "authn.FIELDS.requireSecondFactor.label": {
+    "en": "fac9928873cc8d82",
+    "text": "Andra faktor krävs"
+  },
+  "authn.FIELDS.requireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`: en person ombeds om en andra faktor när hen har en (eller när hens post anger stsMfaRequired). `always`: alla i den här sfären ombeds, och den som inte har någon skickas för att registrera en vid nästa inloggning. Detta ersatte authn.mfaRequired. Det finns inget ”aldrig”: en faktor som personen har efterfrågas alltid."
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.label": {
+    "en": "1bc5adb51edf4c2b",
+    "text": "Andra faktor för administratörer"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "För den som har en konsolroll (Admin Read eller Admin Write) men ingen andra faktor. `offer`: hen visas steget som konfigurerar en, med en Ignorera-knapp, vid varje inloggning. `always`: hen måste konfigurera en innan hen loggas in — utom standardsfärens inbyggda administratör (admin.bootstrapUsername), som bara någonsin erbjuds en, så att en tjänst aldrig blir utan någon som kan logga in. `if-held`: som alla andra, enligt fältet ovan. SVAGARE ÄN `always`: en administratör med enbart ett lösenord är en administratör som vem som helst med lösenordet är."
+  },
+  "authn.FIELDS.passwordPrimary.label": {
+    "en": "8459feba5558b2cd",
+    "text": "Lösenord — som första faktor"
+  },
+  "authn.FIELDS.passwordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
+  },
+  "authn.FIELDS.passwordSecondFactor.label": {
+    "en": "12355f2b5a9fbbc8",
+    "text": "Lösenord — som andra faktor"
+  },
+  "authn.FIELDS.passwordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
+  },
+  "authn.FIELDS.passkeyPrimary.label": {
+    "en": "c825f70e98df3fa4",
+    "text": "Nyckel (lösenordsfri) — som första faktor"
+  },
+  "authn.FIELDS.passkeyPrimary.what": {
+    "en": "1cab77157f5d6263",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte de första faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
+  },
+  "authn.FIELDS.securityKeySecondFactor.label": {
+    "en": "4e99afea50969c29",
+    "text": "Nyckel (andra faktor) — som andra faktor"
+  },
+  "authn.FIELDS.securityKeySecondFactor.what": {
+    "en": "5577b57e8d01187e",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte de andra faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
+  },
+  "authn.FIELDS.totpSecondFactor.label": {
+    "en": "4dbb7fdae02261a7",
+    "text": "Autentiseringsapp (TOTP) — som andra faktor"
+  },
+  "authn.FIELDS.totpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.label": {
+    "en": "ee9982b48a9c6a90",
+    "text": "Återställningskod — som andra faktor"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "En engångskod ur en uppsättning som personen genererat. Avstängd här får ingen ny uppsättning genereras; en uppsättning som redan finns fungerar fortfarande (den här raden ersatte backupCodes.enabled och behåller dess kontrakt)."
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "Sexsiffrig kod via e-post — som första faktor"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "En sexsiffrig kod som skickas till personens VERIFIERADE adress. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "Sexsiffrig kod via e-post — som andra faktor"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "En sexsiffrig kod som skickas till personens VERIFIERADE adress. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "Inloggningslänk via e-post — som första faktor"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "Inloggningslänk via e-post — som andra faktor"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "TLS-klientcertifikat — som första faktor"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "bbf7d091b1854474",
+    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+  },
+  "authn.FIELDS.kerberosPrimary.label": {
+    "en": "f2f6ed9dd0454fdc",
+    "text": "Kerberos (SPNEGO) — som första faktor"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego med en Kerberos-biljett."
+  },
+  "authn.FIELDS.walletPrimary.label": {
+    "en": "f215dfc0a7d74e7f",
+    "text": "Plånbokspresentation — som första faktor"
+  },
+  "authn.FIELDS.walletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet med ett intyg som den här sfären utfärdat, eller en självutfärdad SIOPv2-ID-token från en registrerad nyckel. Som ANDRA faktor: plånboken som visas upp efter ett lösenord."
+  },
+  "authn.FIELDS.walletSecondFactor.label": {
+    "en": "d77b29a6f118e61d",
+    "text": "Plånbokspresentation — som andra faktor"
+  },
+  "authn.FIELDS.walletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet med ett intyg som den här sfären utfärdat, eller en självutfärdad SIOPv2-ID-token från en registrerad nyckel. Som ANDRA faktor: plånboken som visas upp efter ett lösenord."
+  },
+  "authn.FIELDS.federationPrimary.label": {
+    "en": "60fa1bebb39d244f",
+    "text": "Federationspartner — som första faktor"
+  },
+  "authn.FIELDS.federationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "En inloggning som intygas av en konfigurerad federationspartner."
+  },
+  "authn.FIELDS.emailCodeTtlS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "sekunder"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "Hur länge en kod eller länk via e-post är giltig"
+  },
+  "authn.FIELDS.emailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "Från det ögonblick den skickas. Högst tio minuter, gränsen i NIST SP 800-63B-4 avsnitt 3.1.3.2 för en out-of-band-hemlighet."
+  },
+  "authn.FIELDS.emailCodeAttempts.unit": {
+    "en": "1ac7d61d1d29fc2e",
+    "text": "försök"
+  },
+  "authn.FIELDS.emailCodeAttempts.label": {
+    "en": "c0cb3753ee818f64",
+    "text": "Felaktiga koder innan inloggningssteget avslutas"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "Hur många felaktiga koder ett inloggningssteg godtar innan det avslutas och personen får börja om. Hastighetsgränserna per person och per nätverk gäller också."
+  },
+  "authn.FIELDS.emailResendS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "sekunder"
+  },
+  "authn.FIELDS.emailResendS.label": {
+    "en": "0780d5107e58e3e7",
+    "text": "Kortaste väntetid innan en ny kod eller länk skickas"
+  },
+  "authn.FIELDS.emailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "En ny kod eller länk ersätter den förra, som slutar fungera. Högst tre skickas för ett inloggningssteg."
+  },
+  "authn.FIELDS.emailFailureLimit.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "misslyckanden"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "Misslyckanden i följd innan en persons e-postfaktor stängs av"
+  },
+  "authn.FIELDS.emailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 avsnitt 3.2.2 kräver högst 100. Personen och hens administratörer meddelas, och personen slår på den igen från portalen."
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.label": {
+    "en": "3810571654974307",
+    "text": "En ihågkommen webbläsare får hoppa över den andra faktorn"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds en person som loggar in i en webbläsare hen valt att komma ihåg inte om sin andra faktor igen inom perioden nedan sedan hen senast angav den i den webbläsaren. ALDRIG i administratörskonsolen, användarportalen eller protokollfelsökaren; aldrig för en administratör; aldrig när inloggningens risk är medel eller högre; och inloggningen är då EN faktor för varje förlitande part — amr [\"pwd\"] och acr \"1\", som enbart ett lösenord — så en applikation som ber om \"mfa\" nekas det. Webbläsaren känns igen med en bärarcookie: den som kopierar cookien hoppar också över den andra faktorn, tills kopian upptäcks."
+  },
+  "authn.FIELDS.rememberedBrowserDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "authn.FIELDS.rememberedBrowserDays.label": {
+    "en": "dcd7c57a1e61d82f",
+    "text": "Hur länge en ihågkommen webbläsare hoppar över den andra faktorn"
+  },
+  "authn.FIELDS.rememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "Räknat från senaste gången personen angav sin andra faktor i den webbläsaren. Därefter ombeds hen igen, och att ange den startar perioden på nytt."
+  },
+  "authn.SCHEMA.objectClasses.stsAuthnPolicy.what": {
+    "en": "f5f9a5956c21100f",
+    "text": "Den här tjänstens klass för en autentiseringspolicy: vilka mekanismer som godtas som första och som andra faktor, och när en andra faktor krävs. Posten namnges efter PROFILEN (`cn=default`)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`: en person ombeds om en andra faktor när hen har en (eller när hens post anger stsMfaRequired). `always`: alla i den här sfären ombeds, och den som inte har någon skickas för att registrera en vid nästa inloggning. Detta ersatte authn.mfaRequired. Det finns inget ”aldrig”: en faktor som personen har efterfrågas alltid."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "För den som har en konsolroll (Admin Read eller Admin Write) men ingen andra faktor. `offer`: hen visas steget som konfigurerar en, med en Ignorera-knapp, vid varje inloggning. `always`: hen måste konfigurera en innan hen loggas in — utom standardsfärens inbyggda administratör (admin.bootstrapUsername), som bara någonsin erbjuds en, så att en tjänst aldrig blir utan någon som kan logga in. `if-held`: som alla andra, enligt fältet ovan. SVAGARE ÄN `always`: en administratör med enbart ett lösenord är en administratör som vem som helst med lösenordet är."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
+    "en": "1cab77157f5d6263",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte de första faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
+    "en": "5577b57e8d01187e",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte de andra faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
+  },
+  "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "En engångskod ur en uppsättning som personen genererat. Avstängd här får ingen ny uppsättning genereras; en uppsättning som redan finns fungerar fortfarande (den här raden ersatte backupCodes.enabled och behåller dess kontrakt)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "En sexsiffrig kod som skickas till personens VERIFIERADE adress. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "En sexsiffrig kod som skickas till personens VERIFIERADE adress. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "bbf7d091b1854474",
+    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego med en Kerberos-biljett."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet med ett intyg som den här sfären utfärdat, eller en självutfärdad SIOPv2-ID-token från en registrerad nyckel. Som ANDRA faktor: plånboken som visas upp efter ett lösenord."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet med ett intyg som den här sfären utfärdat, eller en självutfärdad SIOPv2-ID-token från en registrerad nyckel. Som ANDRA faktor: plånboken som visas upp efter ett lösenord."
+  },
+  "authn.SCHEMA.attributes.stsAuthnFederationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "En inloggning som intygas av en konfigurerad federationspartner."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "Från det ögonblick den skickas. Högst tio minuter, gränsen i NIST SP 800-63B-4 avsnitt 3.1.3.2 för en out-of-band-hemlighet."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "Hur många felaktiga koder ett inloggningssteg godtar innan det avslutas och personen får börja om. Hastighetsgränserna per person och per nätverk gäller också."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "En ny kod eller länk ersätter den förra, som slutar fungera. Högst tre skickas för ett inloggningssteg."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 avsnitt 3.2.2 kräver högst 100. Personen och hens administratörer meddelas, och personen slår på den igen från portalen."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds en person som loggar in i en webbläsare hen valt att komma ihåg inte om sin andra faktor igen inom perioden nedan sedan hen senast angav den i den webbläsaren. ALDRIG i administratörskonsolen, användarportalen eller protokollfelsökaren; aldrig för en administratör; aldrig när inloggningens risk är medel eller högre; och inloggningen är då EN faktor för varje förlitande part — amr [\"pwd\"] och acr \"1\", som enbart ett lösenord — så en applikation som ber om \"mfa\" nekas det. Webbläsaren känns igen med en bärarcookie: den som kopierar cookien hoppar också över den andra faktorn, tills kopian upptäcks."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "Räknat från senaste gången personen angav sin andra faktor i den webbläsaren. Därefter ombeds hen igen, och att ange den startar perioden på nytt."
+  },
+  "authn.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "66db848b0bb1c58f",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "7c8e4d8b4cce7c08",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en andra faktor som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Ingen lämnar sfärens autentiseringspolicy som den är."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1237): vilken som gäller när flera namnges för samma inloggning — av applikationen (appAuthnPolicy) och av personens grupper (stsAuthnPolicy) — den lägsta, från 1 till 1000, lika avgörs av namnet. 100 när den saknas."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "Vilken andra faktor via e-post den här personen har valt: `code` eller `link`. Saknas: ingen. Sätts på /portal/mfa, rensas på /admin/mfa och efter för många misslyckanden i följd."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "Misslyckade koder eller länkar via e-post i följd, nollställs vid ett lyckat försök. Underhålls av den här tjänsten."
+  },
+  "authn.MECHANISMS.password.label": {
+    "en": "e7cf3ef4f17c3999",
+    "text": "Lösenord"
+  },
+  "authn.MECHANISMS.password.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
+  },
+  "authn.MECHANISMS.passkey.label": {
+    "en": "b6471f84ac5db5d7",
+    "text": "Nyckel (lösenordsfri)"
+  },
+  "authn.MECHANISMS.passkey.what": {
+    "en": "1cab77157f5d6263",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte de första faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
+  },
+  "authn.MECHANISMS.securityKey.label": {
+    "en": "7474add07b92939d",
+    "text": "Nyckel (andra faktor)"
+  },
+  "authn.MECHANISMS.securityKey.what": {
+    "en": "5577b57e8d01187e",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte de andra faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
+  },
+  "authn.MECHANISMS.totp.label": {
+    "en": "6e6d78e296bae6dd",
+    "text": "Autentiseringsapp (TOTP)"
+  },
+  "authn.MECHANISMS.totp.what": {
+    "en": "ea01b0588ad42047",
+    "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
+  },
+  "authn.MECHANISMS.recoveryCode.label": {
+    "en": "5bda8302b5ecf4d3",
+    "text": "Återställningskod"
+  },
+  "authn.MECHANISMS.recoveryCode.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "En engångskod ur en uppsättning som personen genererat. Avstängd här får ingen ny uppsättning genereras; en uppsättning som redan finns fungerar fortfarande (den här raden ersatte backupCodes.enabled och behåller dess kontrakt)."
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "Sexsiffrig kod via e-post"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "En sexsiffrig kod som skickas till personens VERIFIERADE adress. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "Inloggningslänk via e-post"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "TLS-klientcertifikat"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "bbf7d091b1854474",
+    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+  },
+  "authn.MECHANISMS.kerberos.label": {
+    "en": "a8316dcb1a42420f",
+    "text": "Kerberos (SPNEGO)"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego med en Kerberos-biljett."
+  },
+  "authn.MECHANISMS.wallet.label": {
+    "en": "696e7476221a3382",
+    "text": "Plånbokspresentation"
+  },
+  "authn.MECHANISMS.wallet.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet med ett intyg som den här sfären utfärdat, eller en självutfärdad SIOPv2-ID-token från en registrerad nyckel. Som ANDRA faktor: plånboken som visas upp efter ett lösenord."
+  },
+  "authn.MECHANISMS.federation.label": {
+    "en": "a96ac2d1dc7dff02",
+    "text": "Federationspartner"
+  },
+  "authn.MECHANISMS.federation.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "En inloggning som intygas av en konfigurerad federationspartner."
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
+  },
+  "authn.sentences.firstFactors": {
+    "en": "1d98bbbf6bae810b",
+    "text": "första faktorer: {{list}}"
+  },
+  "authn.sentences.secondFactors": {
+    "en": "0e43f24fd8e81289",
+    "text": "andra faktorer: {{list}}"
+  },
+  "authn.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "inga"
+  },
+  "authn.sentences.secondAlways": {
+    "en": "b1727eb39a8cf698",
+    "text": "en andra faktor krävs av alla"
+  },
+  "authn.sentences.secondIfHeld": {
+    "en": "644fee6946608afb",
+    "text": "en andra faktor krävs av dem som har en"
+  },
+  "authn.sentences.adminAlways": {
+    "en": "f38bf66a5f6f79eb",
+    "text": "administratörer måste konfigurera en (den inbyggda administratören erbjuds en)"
+  },
+  "authn.sentences.adminOffer": {
+    "en": "64f9643cf453bfee",
+    "text": "administratörer som inte har någon erbjuds en vid varje inloggning"
+  },
+  "authn.sentences.adminAsked": {
+    "en": "69fccba563079867",
+    "text": "administratörer tillfrågas som alla andra"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "en kod eller länk via e-post är giltig i {{n}} sekunder"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "en kod eller länk via e-post är giltig i {{n}} sekunder — INAKTIV: den här sfären kan inte skicka e-post"
+  },
+  "kinds.serviceAccount.label": {
+    "en": "029b1070484594c2",
+    "text": "Policy för tjänstekonton"
+  },
+  "kinds.serviceAccount.governs": {
+    "en": "dc2f42e8f87a7bcd",
+    "text": "vad ett tjänstekonto får göra — den andra faktorn, webbläsaren, lösenordsdörrarna — och hur dess lösenord roteras"
+  },
+  "kinds.serviceAccount.appliesTo": {
+    "en": "34a64ba365919802",
+    "text": "varje tjänstekonto den styr — de som namnger den, och för `default` de som inte namnger någon — från nästa gång det loggar in, binder eller roteras"
+  },
+  "kinds.serviceAccount.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena där den inte har det"
+  },
+  "kinds.serviceAccount.param.noun": {
+    "en": "35eeb58fca1d2edf",
+    "text": "profilen för tjänstekontopolicyn"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.label": {
+    "en": "5c60d609e3a83940",
+    "text": "Tjänstekonton är undantagna från den andra faktorn"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen gäller inte autentiseringspolicyns krav på andra faktor för ett tjänstekonto i den här sfären, och inte heller nekandet av enbart ett lösenord vid lösenordsdörrarna (#101). Kontots amr anger fortfarande bara pwd, så en förlitande part som ber om mer nekas det. SVAGARE: ett konto med enbart ett lösenord är ett konto som vem som helst med lösenordet är."
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.label": {
+    "en": "4ed97ae3678854cb",
+    "text": "Tjänstekonton får logga in i en webbläsare"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "AVSTÄNGD SOM STANDARD. Avstängd nekar inloggningsskärmen, användarportalen och administratörskonsolen ett tjänstekonto, vilken första faktor det än visar upp, och att göra en person till ett tjänstekonto avslutar personens webbläsarsessioner. Ett tjänstekonto används av ett program, och ett program har inget att göra på en inloggningsskärm."
+  },
+  "serviceAccount.FIELDS.allowLdapBind.label": {
+    "en": "6990793c25a0ff94",
+    "text": "Dörr: enkel LDAP-bindning"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "En bindning på 389 eller 636 (RFC 4513). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.allowWsTrust.label": {
+    "en": "66d43931f786043d",
+    "text": "Dörr: WS-Trust UsernameToken"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "En WS-Security UsernameToken som skickas till säkerhetstokentjänsten. Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.allowScim.label": {
+    "en": "069d413789335b8c",
+    "text": "Dörr: SCIM HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic på /scim/v2 (RFC 7617). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.allowSsf.label": {
+    "en": "bc59f0c260a825d0",
+    "text": "Dörr: Shared Signals HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic på /ssf-slutpunkterna (RFC 7617). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.allowEst.label": {
+    "en": "259d4d38a4e9d8cc",
+    "text": "Dörr: EST HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic på /.well-known/est (RFC 7030 avsnitt 3.2.3). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.allowKerberos.label": {
+    "en": "d9a91a667be2b5f9",
+    "text": "Dörr: Kerberos AS-utbyte"
+  },
+  "serviceAccount.FIELDS.allowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "En AS-REQ vars förautentisering bevisar lösenordets nyckel (RFC 4120), samt MS-KKDCP. Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.label": {
+    "en": "fce855bdcd0e1ba9",
+    "text": "Dörr: OAuth 2.0 password grant"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password vid tokenslutpunkten (RFC 6749 avsnitt 4.3), där sfären över huvud taget tillåter beviljandetypen. Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.FIELDS.rotationEnabled.label": {
+    "en": "365f31e83a78cc6c",
+    "text": "Rotera tjänstekontons lösenord automatiskt"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ger jobbet service-accounts.rotate varje tjänstekonto som anger ett push-mål ett nytt genererat lösenord varje intervall: pushat till målet FÖRST, dess hash sparad först när pushen lyckats, och det föregående lösenordet behållet under överlappningen nedan. En misslyckad push ändrar ingenting. Kan inte slås på så länge den här sfären saknar push-mål."
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.label": {
+    "en": "bb5664abd72273db",
+    "text": "Rotationsintervall"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "Hur länge ett tjänstekontos lösenord behålls innan jobbet ersätter det, räknat från den senaste rotationen (eller kontots senaste lösenordsbyte)."
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.unit": {
+    "en": "90e63d85fa1ab2c8",
+    "text": "minuter"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.label": {
+    "en": "146af6815514852b",
+    "text": "Hur länge det föregående lösenordet fortfarande fungerar"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "Efter en rotation godtas det föregående lösenordet så här länge, så att en konsument som är långsam med att läsa det nya inte nekas — och inte heller räknas som gissning av riskbedömningen (#226). De föregående Kerberos-nycklarna behålls lika länge. 0: det gamla lösenordet slutar fungera direkt."
+  },
+  "serviceAccount.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "tecken"
+  },
+  "serviceAccount.FIELDS.generatedLength.label": {
+    "en": "f2c4928b6c7393e9",
+    "text": "Längd på ett roterat lösenord"
+  },
+  "serviceAccount.FIELDS.generatedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "Dras av lösenordspolicyns generator, så det uppfyller den policyn, och är aldrig kortare än dess minimilängd."
+  },
+  "serviceAccount.FIELDS.requireOwner.label": {
+    "en": "1c075e89b0a877a8",
+    "text": "Ett tjänstekonto måste ange en ägare"
+  },
+  "serviceAccount.FIELDS.requireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "PÅSLAGEN SOM STANDARD. Ägaren — en person eller en grupp i den här sfären — är den som ansvarar för kontot; ett tjänstekonto kan inte sparas utan en så länge detta är påslaget."
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "misslyckanden"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.label": {
+    "en": "74f32eb1fa2cb6f2",
+    "text": "Misslyckade rotationer i följd innan larm"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "En misslyckad rotation försöks igen vid jobbets nästa körning. Efter så här många i följd rapporteras kontot under Övervakning → Tjänstekonton och loggas som ett larm (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
+    "en": "5ef697454678b011",
+    "text": "Den här tjänstens klass för en tjänstekontopolicy: vad ett tjänstekonto i den här sfären får göra och hur dess lösenord roteras. Posten namnges efter PROFILEN: `cn=default`, eller en namngiven profil som ett tjänstekonto namnger i sitt stsServiceAccountPolicy."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen gäller inte autentiseringspolicyns krav på andra faktor för ett tjänstekonto i den här sfären, och inte heller nekandet av enbart ett lösenord vid lösenordsdörrarna (#101). Kontots amr anger fortfarande bara pwd, så en förlitande part som ber om mer nekas det. SVAGARE: ett konto med enbart ett lösenord är ett konto som vem som helst med lösenordet är."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "AVSTÄNGD SOM STANDARD. Avstängd nekar inloggningsskärmen, användarportalen och administratörskonsolen ett tjänstekonto, vilken första faktor det än visar upp, och att göra en person till ett tjänstekonto avslutar personens webbläsarsessioner. Ett tjänstekonto används av ett program, och ett program har inget att göra på en inloggningsskärm."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "En bindning på 389 eller 636 (RFC 4513). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "En WS-Security UsernameToken som skickas till säkerhetstokentjänsten. Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic på /scim/v2 (RFC 7617). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic på /ssf-slutpunkterna (RFC 7617). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic på /.well-known/est (RFC 7030 avsnitt 3.2.3). Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "En AS-REQ vars förautentisering bevisar lösenordets nyckel (RFC 4120), samt MS-KKDCP. Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password vid tokenslutpunkten (RFC 6749 avsnitt 4.3), där sfären över huvud taget tillåter beviljandetypen. Avstängd nekas ett tjänstekontos rätta lösenord där på samma sätt som ett felaktigt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ger jobbet service-accounts.rotate varje tjänstekonto som anger ett push-mål ett nytt genererat lösenord varje intervall: pushat till målet FÖRST, dess hash sparad först när pushen lyckats, och det föregående lösenordet behållet under överlappningen nedan. En misslyckad push ändrar ingenting. Kan inte slås på så länge den här sfären saknar push-mål."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "Hur länge ett tjänstekontos lösenord behålls innan jobbet ersätter det, räknat från den senaste rotationen (eller kontots senaste lösenordsbyte)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "Efter en rotation godtas det föregående lösenordet så här länge, så att en konsument som är långsam med att läsa det nya inte nekas — och inte heller räknas som gissning av riskbedömningen (#226). De föregående Kerberos-nycklarna behålls lika länge. 0: det gamla lösenordet slutar fungera direkt."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctGeneratedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "Dras av lösenordspolicyns generator, så det uppfyller den policyn, och är aldrig kortare än dess minimilängd."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRequireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "PÅSLAGEN SOM STANDARD. Ägaren — en person eller en grupp i den här sfären — är den som ansvarar för kontot; ett tjänstekonto kan inte sparas utan en så länge detta är påslaget."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "En misslyckad rotation försöks igen vid jobbets nästa körning. Efter så här många i följd rapporteras kontot under Övervakning → Tjänstekonton och loggas som ett larm (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Vilken namngiven tjänstekontopolicy som vinner där flera namnges: den lägsta, från 1 till 1000. Ett tjänstekonto namnger en enda policy, så i dag avgör den ingenting."
+  },
+  "serviceAccount.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "serviceAccount.DOORS.allowLdapBind.label": {
+    "en": "02f30171dcced882",
+    "text": "Enkel LDAP-bindning"
+  },
+  "serviceAccount.DOORS.allowWsTrust.label": {
+    "en": "a1d8fa9805648e7d",
+    "text": "WS-Trust UsernameToken"
+  },
+  "serviceAccount.DOORS.allowScim.label": {
+    "en": "13441836ceee258a",
+    "text": "SCIM HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowSsf.label": {
+    "en": "5f0a37c29c6be8ab",
+    "text": "Shared Signals HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowEst.label": {
+    "en": "90892c78280ab239",
+    "text": "EST HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowKerberos.label": {
+    "en": "b707a90f8fd22d69",
+    "text": "Kerberos AS-utbyte"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.label": {
+    "en": "a55abf2085020a8c",
+    "text": "OAuth 2.0 password grant"
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Vilken namngiven tjänstekontopolicy som vinner där flera namnges: den lägsta, från 1 till 1000. Ett tjänstekonto namnger en enda policy, så i dag avgör den ingenting."
+  },
+  "serviceAccount.sentences.exempt": {
+    "en": "b26ecbca5a57dc48",
+    "text": "tjänstekonton är UNDANTAGNA från den andra faktorn"
+  },
+  "serviceAccount.sentences.notExempt": {
+    "en": "b02c592e6db99be5",
+    "text": "tjänstekonton följer samma regler för andra faktor som alla andra"
+  },
+  "serviceAccount.sentences.browser": {
+    "en": "93b1e12955e68cb6",
+    "text": "tjänstekonton får logga in i en webbläsare"
+  },
+  "serviceAccount.sentences.noBrowser": {
+    "en": "63d0aee214048278",
+    "text": "tjänstekonton nekas vid varje inloggning i webbläsare"
+  },
+  "serviceAccount.sentences.doors": {
+    "en": "c501e87ae7952f69",
+    "text": "lösenordsdörrar: {{list}}"
+  },
+  "serviceAccount.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "inga"
+  },
+  "serviceAccount.sentences.rotation": {
+    "en": "12695290fe4a7d33",
+    "text": "lösenord roteras var {{days}}:e dag, och det föregående fungerar i {{minutes}} minuter"
+  },
+  "serviceAccount.sentences.noRotation": {
+    "en": "4ff442ba6a6ee158",
+    "text": "lösenord roteras inte automatiskt"
+  },
+  "serviceAccount.sentences.owner": {
+    "en": "d9eff26803e4db69",
+    "text": "varje tjänstekonto anger en ägare"
+  },
+  "serviceAccount.sentences.noOwner": {
+    "en": "6ad1c61ec9cf3e86",
+    "text": "ett tjänstekonto får sakna ägare"
+  },
+  "kinds.passkey.label": {
+    "en": "dc0e1f0076ac175f",
+    "text": "Nyckelpolicy"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "hur nycklar beter sig — om en inloggning får sakna användarnamn, och vad en säkerhetsnyckel ombeds lagra"
+  },
+  "kinds.passkey.appliesTo": {
+    "en": "1e3aef415c5feb43",
+    "text": "NÄSTA inloggning och NÄSTA nyckel som registreras i den här sfären; en redan registrerad nyckel behåller det som dess autentiserare lagrade"
+  },
+  "kinds.passkey.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena där den inte har det"
+  },
+  "kinds.passkey.param.noun": {
+    "en": "eb904193445442cf",
+    "text": "profilen för nyckelpolicyn"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "Tillåt inloggning med nyckel utan användarnamn"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "PÅSLAGEN SOM STANDARD. Påslagen erbjuder inloggningsskärmen *Logga in med en nyckel* och autofyllning i användarnamnsfältet, som ber webbläsaren om valfri upptäckbar inloggningsuppgift för den här sfären (WebAuthn Level 3 avsnitt 5.4, `allowCredentials` tom) och loggar in det konto som dess användarhandtag anger, med användarverifiering krävd och kontrollerad. Avstängd erbjuds ingetdera och en inloggning anger alltid personen först. Ersätter inställningen webauthn.usernameless."
+  },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Kräv inloggning med nyckel utan användarnamn"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "3f8988c76401d34a",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (autentiseringspolicyn det namnger, appAuthnPolicy, anger `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "Vad ”Använd en säkerhetsnyckel” ber om när inloggning utan användarnamn är påslagen"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "Det `residentKey` som en registrering via *Använd en säkerhetsnyckel* (eller en som inte anger någon typ) skickar MEDAN inloggning utan användarnamn är PÅSLAGEN. När den är avstängd ber knappen alltid om `required`, så den skapar en upptäckbar inloggningsuppgift som *Skapa en nyckel* gör (som alltid ber om `required`). `discouraged` eller `preferred` sparar en säkerhetsnyckels få lagringsplatser, till priset av en nyckel som behöver användarnamnet för att logga in. Ersätter inställningen webauthn.residentKey."
+  },
+  "passkey.FIELDS.backupEligibility.label": {
+    "en": "ddcad787bb43ec66",
+    "text": "Synkroniserade nycklar (backup eligible)"
+  },
+  "passkey.FIELDS.backupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow` (standardvärdet) godtar alla nycklar. `disallow` godtar bara ENHETSBUNDNA: en nyckel vars autentiserare anger att den får säkerhetskopieras eller synkroniseras (BE-flaggan, WebAuthn Level 3 avsnitt 6.1) nekas när den registreras och när den loggar in någon, så en synkroniserad nyckel som registrerades innan sfären sa nej slutar också fungera. BE ändras aldrig för en inloggningsuppgift."
+  },
+  "passkey.FIELDS.enforcePinLength.label": {
+    "en": "31eb482ccf4b3fd1",
+    "text": "Kräv en minsta PIN-längd för säkerhetsnycklar"
+  },
+  "passkey.FIELDS.enforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ber registreringen autentiseraren om dess minsta PIN-längd (CTAP 2.1 avsnitt 12.4, tillägget minPinLength), registrerar den på nyckeln och nekar en nyckel vars minimum ligger under nästa rad, vid registreringen och vid varje inloggning. En nyckel svarar bara för förlitande parter som den konfigurerats att meddela (CTAP 2.1 setMinPINLength med detta RP ID); varje annan nyckel, och varje plattformsnyckel eller synkroniserad nyckel, rapporterar inte och nekas om inte raden därefter är påslagen."
+  },
+  "passkey.FIELDS.minPinLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "tecken"
+  },
+  "passkey.FIELDS.minPinLength.label": {
+    "en": "bd44e050db3c8cd9",
+    "text": "Minsta PIN-längd för säkerhetsnycklar"
+  },
+  "passkey.FIELDS.minPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "Den kortaste PIN-kod som en säkerhetsnyckel får ställas in att godta, så som nyckeln själv rapporterar det, medan raden ovan är påslagen. Mellan 4 (CTAP 2.1:s egen nedre gräns) och 63."
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.label": {
+    "en": "ac66a26b34cdd414",
+    "text": "Godta en nyckel som inte rapporterar sin PIN-längd"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "AVSTÄNGD SOM STANDARD, vilket är den strikta tolkningen: medan PIN-längden tillämpas nekas en nyckel som inte rapporterar den. Påslagen godtas en sådan nyckel och bara ett rapporterat minimum hålls mot regeln — så regeln binder då bara nycklar som konfigurerats att rapportera till den här förlitande parten."
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.label": {
+    "en": "659120b1356b126b",
+    "text": "Håll varje inloggning mot gällande attesteringsregler"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "AVSTÄNGD SOM STANDARD. Attesteringsreglerna (inställningarna webauthn.attestation*: policyn, AAGUID-listan, certifieringsnivån och FIPS) kontrolleras när en nyckel registreras. Påslagen kontrolleras de igen vid varje inloggning mot det som registrerades då och mot FIDO Metadata Service som den ser ut nu, så en nyckel som registrerades innan en regel skärptes, eller vars modell sedan dess rapporterats komprometterad, slutar logga in någon. En nyckel utan betrodd attestering misslyckas med varje regel som kräver en."
+  },
+  "passkey.FIELDS.postQuantumRequired.label": {
+    "en": "011c5d09e4f351f3",
+    "text": "Kräv en postkvantnyckel"
+  },
+  "passkey.FIELDS.postQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Nycklar som en inloggning anger när en postkvantnyckel krävs"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "Algoritmer som en nyckelregistrering erbjuder"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (standardvärdet) erbjuder sfärens webauthn.algorithms. Annars de signaturalgoritmer som en nyckelregistrering erbjuder den här profilens personer, i den ordning de föredras (en autentiserare skapar den första den stöder), bland de algoritmer som webauthn.algorithms kan namnge. Nästa rad kan begränsa eller ordna om listan, och en nyckel vars algoritm inte är en som den här profilen erbjuder nekas när den registreras. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "Postkvantalgoritmer vid registrering"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "En klassisk nyckel och en postkvantnyckel sida vid sida"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcAlongsideClassical. `both` ger den här profilens personer en klassisk nyckel och en postkvantnyckel sida vid sida, var och en under sitt eget användarhandtag, varhelst sfärens inställning är avstängd; `one` ger dem ett spår varhelst den är påslagen. webauthn.pqcOnly innebär fortfarande ett spår. Nekas som `both` med registrationMode classical-only. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "Klienter som en registrering inte erbjuder ML-DSA"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "TOMT SOM STANDARD: varje klient erbjuds listan som den är. Annars upp till 20 regler åtskilda av `;`, var och en `<browser> on <system>`, där varje sida är en familj så som passnyckelceremoniernas rader namnger den (`Chrome`, `Firefox`, `macOS`, `Android`) eller `*` för vilken som helst, eventuellt följd av ett intervall av huvudversioner (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. En passnyckelregistrering från en matchande klient erbjuder listan utan ML-DSA (ES256 och RS256 om inget blir kvar). Tillämpas inte där en klassisk passnyckel inte är tillåten — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, eller i inloggningssteget under postQuantumRequired sign-in — och inte heller på det postkvantsäkra spåret, och ceremonins rad säger att den inte tillämpades. Utelämnad vid en sparning behålls tomt."
+  },
+  "passkey.FIELDS.passkeyHints.label": {
+    "en": "7445bda72b06c415",
+    "text": "Tips som ”Skapa en nyckel” skickar"
+  },
+  "passkey.FIELDS.passkeyHints.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "De WebAuthn-tips (hints, Level 3 avsnitt 5.4.8) som portalens *Skapa en nyckel* skickar, i ordning, bland security-key, client-device och hybrid, eller none. De talar om för webbläsaren vilket sätt att skapa nyckeln den ska börja med. Ett tips får inte motsäga webauthn.authenticatorAttachment: client-device innebär platform, security-key och hybrid innebär cross-platform."
+  },
+  "passkey.FIELDS.securityKeyHints.label": {
+    "en": "3fc22a70aa3a1e64",
+    "text": "Tips som ”Använd en säkerhetsnyckel” skickar"
+  },
+  "passkey.FIELDS.securityKeyHints.what": {
+    "en": "6046d3d271c529e3",
+    "text": "De tips som *Använd en säkerhetsnyckel* skickar, i ordning, eller none. Knappen ber om en cross-platform-autentiserare, så client-device motsäger den och nekas."
+  },
+  "passkey.FIELDS.signInHints.label": {
+    "en": "8b1e49c893942fb6",
+    "text": "Tips som en inloggning med nyckel skickar"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "De tips som en inloggningsceremoni skickar — nyckelsteget, inloggningen utan användarnamn och dess autofyllning — i ordning, eller none (standardvärdet: webbläsaren erbjuder alla sätt den känner till)."
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.label": {
+    "en": "ca9457e38cd942c9",
+    "text": "Katalogattribut som innehåller en persons serienummer för säkerhetsnycklar"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "TOMT SOM STANDARD: inget serienummer kontrolleras. Satt till ett attribut på en persons post (till exempel `serialNumber`, som kan innehålla flera värden) registreras en säkerhetsnyckel bara med en BETRODD företagsattestering vars certifikat anger ett enhetsserienummer som är ett av den personens värden. Kräver att webauthn.attestation är satt till enterprise, och att leverantören eller plattformen är konfigurerad att lämna ut företagsattestering till detta RP ID; annars skickar webbläsaren vanlig attestering och varje registrering nekas."
+  },
+  "passkey.FIELDS.userDisplayName.label": {
+    "en": "357a8bc7ceaa1129",
+    "text": "Namnet som en nyckeldialog visar för personen"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "TOMT SOM STANDARD: namnet som inloggningen känner till, annars användarnamnet. I annat fall upp till sex katalogattribut i ordning, åtskilda med kommatecken; en grupp attribut åtskilda med mellanslag (givenName sn) fogar ihop sina värden. Den första där varje attribut har ett värde blir user.displayName (WebAuthn Level 3 avsnitt 5.4.3), med styrtecken och riktningsändrande tecken borttagna och högst 64 tecken. Användarnamnet är alltid user.name."
+  },
+  "passkey.FIELDS.rpNameExtras.label": {
+    "en": "0b47e644dc75f546",
+    "text": "Vad en nyckeldialog lägger till tjänstens namn"
+  },
+  "passkey.FIELDS.rpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none` (standardvärdet) visar enbart webauthn.rpName. `realm`, `organisation` eller `realm-and-organisation` lägger till sfärens namn och/eller saml.organizationName, så att en person med konton i flera sfärer kan skilja dialogerna åt."
+  },
+  "passkey.FIELDS.credentialLabel.label": {
+    "en": "b9fb7cb97e11075a",
+    "text": "Namnet som en ny nyckel får"
+  },
+  "passkey.FIELDS.credentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "TOMT SOM STANDARD: leverantörens namn, annars ”Nyckel” eller ”Säkerhetsnyckel”. I annat fall den här texten, med {provider} och {kind} ifyllda, högst 60 tecken. Personen kan byta namn på den efteråt, som alltid."
+  },
+  "passkey.FIELDS.aggregateDevices.label": {
+    "en": "f019bccb105e42cd",
+    "text": "Erbjud en persons nycklar som ett enda inloggningsval"
+  },
+  "passkey.FIELDS.aggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "PÅSLAGEN SOM STANDARD: ett enda steg ”Använd nyckel” vars begäran listar var och en av personens nycklar, och webbläsaren erbjuder den som finns till hands. Avstängd visas en person med fler än en ett val per nyckel, efter dess namn, och begäran anger bara den."
+  },
+  "passkey.FIELDS.recoveryAssurance.label": {
+    "en": "f1e6580ee3b2ee9c",
+    "text": "Kontoåterställning för en person som har en nyckel"
+  },
+  "passkey.FIELDS.recoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Algoritmer som en nyckels attestering måste vara signerad med"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "Låt en administratör registrera en nyckel för en person"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` SOM STANDARD. `on` låter en administratör som har konsolrollen Admin Write registrera en nyckel för en person som den här profilen gäller, från personens sida i konsolen eller /admin-api: registreringsceremonin körs i administratörens egen webbläsare, mot en autentiserare som administratören har (en säkerhetsnyckel som ska lämnas över, till exempel), under personens användarhandtag, och den verifieras precis som personens egen registrering — attestering, algoritmer och den här policyns registreringsregler. Ingenting som gjorts någon annanstans kan importeras. Nyckeln antecknar vilken administratör som registrerade den och när, och personen får veta det. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "Kräv en enhetsbunden session"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
+  },
+  "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
+    "en": "44bab556bd6240cc",
+    "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "PÅSLAGEN SOM STANDARD. Påslagen erbjuder inloggningsskärmen *Logga in med en nyckel* och autofyllning i användarnamnsfältet, som ber webbläsaren om valfri upptäckbar inloggningsuppgift för den här sfären (WebAuthn Level 3 avsnitt 5.4, `allowCredentials` tom) och loggar in det konto som dess användarhandtag anger, med användarverifiering krävd och kontrollerad. Avstängd erbjuds ingetdera och en inloggning anger alltid personen först. Ersätter inställningen webauthn.usernameless."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "3f8988c76401d34a",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (autentiseringspolicyn det namnger, appAuthnPolicy, anger `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "Det `residentKey` som en registrering via *Använd en säkerhetsnyckel* (eller en som inte anger någon typ) skickar MEDAN inloggning utan användarnamn är PÅSLAGEN. När den är avstängd ber knappen alltid om `required`, så den skapar en upptäckbar inloggningsuppgift som *Skapa en nyckel* gör (som alltid ber om `required`). `discouraged` eller `preferred` sparar en säkerhetsnyckels få lagringsplatser, till priset av en nyckel som behöver användarnamnet för att logga in. Ersätter inställningen webauthn.residentKey."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyBackupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow` (standardvärdet) godtar alla nycklar. `disallow` godtar bara ENHETSBUNDNA: en nyckel vars autentiserare anger att den får säkerhetskopieras eller synkroniseras (BE-flaggan, WebAuthn Level 3 avsnitt 6.1) nekas när den registreras och när den loggar in någon, så en synkroniserad nyckel som registrerades innan sfären sa nej slutar också fungera. BE ändras aldrig för en inloggningsuppgift."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ber registreringen autentiseraren om dess minsta PIN-längd (CTAP 2.1 avsnitt 12.4, tillägget minPinLength), registrerar den på nyckeln och nekar en nyckel vars minimum ligger under nästa rad, vid registreringen och vid varje inloggning. En nyckel svarar bara för förlitande parter som den konfigurerats att meddela (CTAP 2.1 setMinPINLength med detta RP ID); varje annan nyckel, och varje plattformsnyckel eller synkroniserad nyckel, rapporterar inte och nekas om inte raden därefter är påslagen."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "Den kortaste PIN-kod som en säkerhetsnyckel får ställas in att godta, så som nyckeln själv rapporterar det, medan raden ovan är påslagen. Mellan 4 (CTAP 2.1:s egen nedre gräns) och 63."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "AVSTÄNGD SOM STANDARD, vilket är den strikta tolkningen: medan PIN-längden tillämpas nekas en nyckel som inte rapporterar den. Påslagen godtas en sådan nyckel och bara ett rapporterat minimum hålls mot regeln — så regeln binder då bara nycklar som konfigurerats att rapportera till den här förlitande parten."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "AVSTÄNGD SOM STANDARD. Attesteringsreglerna (inställningarna webauthn.attestation*: policyn, AAGUID-listan, certifieringsnivån och FIPS) kontrolleras när en nyckel registreras. Påslagen kontrolleras de igen vid varje inloggning mot det som registrerades då och mot FIDO Metadata Service som den ser ut nu, så en nyckel som registrerades innan en regel skärptes, eller vars modell sedan dess rapporterats komprometterad, slutar logga in någon. En nyckel utan betrodd attestering misslyckas med varje regel som kräver en."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
+    "en": "ba077a59ecf25ecb",
+    "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (standardvärdet) erbjuder sfärens webauthn.algorithms. Annars de signaturalgoritmer som en nyckelregistrering erbjuder den här profilens personer, i den ordning de föredras (en autentiserare skapar den första den stöder), bland de algoritmer som webauthn.algorithms kan namnge. Nästa rad kan begränsa eller ordna om listan, och en nyckel vars algoritm inte är en som den här profilen erbjuder nekas när den registreras. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcAlongsideClassical. `both` ger den här profilens personer en klassisk nyckel och en postkvantnyckel sida vid sida, var och en under sitt eget användarhandtag, varhelst sfärens inställning är avstängd; `one` ger dem ett spår varhelst den är påslagen. webauthn.pqcOnly innebär fortfarande ett spår. Nekas som `both` med registrationMode classical-only. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "TOMT SOM STANDARD: varje klient erbjuds listan som den är. Annars upp till 20 regler åtskilda av `;`, var och en `<browser> on <system>`, där varje sida är en familj så som passnyckelceremoniernas rader namnger den (`Chrome`, `Firefox`, `macOS`, `Android`) eller `*` för vilken som helst, eventuellt följd av ett intervall av huvudversioner (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. En passnyckelregistrering från en matchande klient erbjuder listan utan ML-DSA (ES256 och RS256 om inget blir kvar). Tillämpas inte där en klassisk passnyckel inte är tillåten — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, eller i inloggningssteget under postQuantumRequired sign-in — och inte heller på det postkvantsäkra spåret, och ceremonins rad säger att den inte tillämpades. Utelämnad vid en sparning behålls tomt."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "De WebAuthn-tips (hints, Level 3 avsnitt 5.4.8) som portalens *Skapa en nyckel* skickar, i ordning, bland security-key, client-device och hybrid, eller none. De talar om för webbläsaren vilket sätt att skapa nyckeln den ska börja med. Ett tips får inte motsäga webauthn.authenticatorAttachment: client-device innebär platform, security-key och hybrid innebär cross-platform."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSecurityKey.what": {
+    "en": "6046d3d271c529e3",
+    "text": "De tips som *Använd en säkerhetsnyckel* skickar, i ordning, eller none. Knappen ber om en cross-platform-autentiserare, så client-device motsäger den och nekas."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "De tips som en inloggningsceremoni skickar — nyckelsteget, inloggningen utan användarnamn och dess autofyllning — i ordning, eller none (standardvärdet: webbläsaren erbjuder alla sätt den känner till)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "TOMT SOM STANDARD: inget serienummer kontrolleras. Satt till ett attribut på en persons post (till exempel `serialNumber`, som kan innehålla flera värden) registreras en säkerhetsnyckel bara med en BETRODD företagsattestering vars certifikat anger ett enhetsserienummer som är ett av den personens värden. Kräver att webauthn.attestation är satt till enterprise, och att leverantören eller plattformen är konfigurerad att lämna ut företagsattestering till detta RP ID; annars skickar webbläsaren vanlig attestering och varje registrering nekas."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "TOMT SOM STANDARD: namnet som inloggningen känner till, annars användarnamnet. I annat fall upp till sex katalogattribut i ordning, åtskilda med kommatecken; en grupp attribut åtskilda med mellanslag (givenName sn) fogar ihop sina värden. Den första där varje attribut har ett värde blir user.displayName (WebAuthn Level 3 avsnitt 5.4.3), med styrtecken och riktningsändrande tecken borttagna och högst 64 tecken. Användarnamnet är alltid user.name."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none` (standardvärdet) visar enbart webauthn.rpName. `realm`, `organisation` eller `realm-and-organisation` lägger till sfärens namn och/eller saml.organizationName, så att en person med konton i flera sfärer kan skilja dialogerna åt."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "TOMT SOM STANDARD: leverantörens namn, annars ”Nyckel” eller ”Säkerhetsnyckel”. I annat fall den här texten, med {provider} och {kind} ifyllda, högst 60 tecken. Personen kan byta namn på den efteråt, som alltid."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "PÅSLAGEN SOM STANDARD: ett enda steg ”Använd nyckel” vars begäran listar var och en av personens nycklar, och webbläsaren erbjuder den som finns till hands. Avstängd visas en person med fler än en ett val per nyckel, efter dess namn, och begäran anger bara den."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
+    "en": "bdbb83ca7b2a2c48",
+    "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` SOM STANDARD. `on` låter en administratör som har konsolrollen Admin Write registrera en nyckel för en person som den här profilen gäller, från personens sida i konsolen eller /admin-api: registreringsceremonin körs i administratörens egen webbläsare, mot en autentiserare som administratören har (en säkerhetsnyckel som ska lämnas över, till exempel), under personens användarhandtag, och den verifieras precis som personens egen registrering — attestering, algoritmer och den här policyns registreringsregler. Ingenting som gjorts någon annanstans kan importeras. Nyckeln antecknar vilken administratör som registrerade den och när, och personen får veta det. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "Vilken namngiven nyckelpolicy som vinner där flera matchar: den lägsta, från 1 till 1000."
+  },
+  "passkey.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "passkey.SCHEMA.personAttributes.stsRecoveryPending.what": {
+    "en": "bb82df307a8e5b9a",
+    "text": "En återställning återgav åtkomsten för den här personen, som har en nyckel, och ingen nyckel har loggat in hen sedan dess: dörren och när, som `<door> <ISO 8601 instant>`. Så länge nyckelpolicyns recoveryAssurance är not-weaker eller operator-only når en inloggning som inte är en nyckel inget program. Underhålls av den här tjänsten."
+  },
+  "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
+    "en": "110d1231fc9be5f4",
+    "text": "Vem som utfärdade länken för lösenordsåterställning på den här posten: `self` (formuläret för glömt lösenord) eller `operator` (en administratör). Skrivs och rensas tillsammans med länken. Underhålls av den här tjänsten."
+  },
+  "passkey.SELECTORS.precedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "Vilken namngiven nyckelpolicy som vinner där flera matchar: den lägsta, från 1 till 1000."
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "en nyckel får logga in en person utan användarnamn (användarverifiering krävs)"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "varje inloggning anger personen först: ingen inloggning med nyckel utan användarnamn"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "ett program som loggar in med enbart en nyckel ber inte om något användarnamn: inloggning med nyckel utan användarnamn är den enda vägen in"
+  },
+  "passkey.sentences.createPasskey": {
+    "en": "69c8c2e4b8f32675",
+    "text": "”Skapa en nyckel” ber om en upptäckbar inloggningsuppgift (residentKey required)"
+  },
+  "passkey.sentences.securityKeyRequired": {
+    "en": "c839fcbdde6e65d6",
+    "text": "”Använd en säkerhetsnyckel” ber om residentKey {{value}}, så den skapar också en upptäckbar inloggningsuppgift"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "”Använd en säkerhetsnyckel” ber om residentKey {{value}}, så en nyckel som registrerats via den kan behöva användarnamnet för att logga in"
+  },
+  "passkey.sentences.deviceBound": {
+    "en": "a427e63844dd9c4c",
+    "text": "endast enhetsbundna nycklar: en synkroniserad (backup-eligible) nyckel nekas vid registrering och vid inloggning"
+  },
+  "passkey.sentences.synced": {
+    "en": "eaf735600d87b945",
+    "text": "synkroniserade (backup-eligible) nycklar godtas"
+  },
+  "passkey.sentences.noPinLength": {
+    "en": "8164ad4cf915e055",
+    "text": "ingen minsta PIN-längd krävs av en säkerhetsnyckel"
+  },
+  "passkey.sentences.pinLengthAccepted": {
+    "en": "02246cda94f0a345",
+    "text": "en säkerhetsnyckel måste rapportera en minsta PIN-längd på minst {{n}} tecken, vid registrering och vid inloggning; en nyckel som inte rapporterar godtas"
+  },
+  "passkey.sentences.pinLengthRefused": {
+    "en": "0c6d08464be7bf6b",
+    "text": "en säkerhetsnyckel måste rapportera en minsta PIN-längd på minst {{n}} tecken, vid registrering och vid inloggning; en nyckel som inte rapporterar nekas"
+  },
+  "passkey.sentences.attestationAtSignIn": {
+    "en": "af2ddecba8c5bae6",
+    "text": "varje inloggning med nyckel hålls mot gällande attesteringsregler"
+  },
+  "passkey.sentences.attestationAtRegistration": {
+    "en": "9a09dd3ab4e05b1e",
+    "text": "attesteringsreglerna kontrolleras när en nyckel registreras"
+  },
+  "passkey.sentences.hints": {
+    "en": "261fe70414f521a7",
+    "text": "”Skapa en nyckel” tipsar om {{passkey}}; ”Använd en säkerhetsnyckel” om {{securityKey}}; en inloggning om {{signIn}}"
+  },
+  "passkey.sentences.param.nothing": {
+    "en": "1785cfc3bc6ac773",
+    "text": "ingenting"
+  },
+  "passkey.sentences.enterpriseSerial": {
+    "en": "983521bbcf6dc708",
+    "text": "en säkerhetsnyckel registreras bara med en betrodd företagsattestering som anger ett serienummer i personens {{attribute}}"
+  },
+  "passkey.sentences.noEnterpriseSerial": {
+    "en": "445b66c4d3c95e44",
+    "text": "inget serienummer för säkerhetsnycklar kontrolleras"
+  },
+  "passkey.sentences.promptAttribute": {
+    "en": "32513ed5a676c725",
+    "text": "en nyckeldialog visar personens {{attribute}}"
+  },
+  "passkey.sentences.promptAttributeExtras": {
+    "en": "f1fb4090f02acc0b",
+    "text": "en nyckeldialog visar personens {{attribute}}, och tjänstens namn med dess {{extras}}"
+  },
+  "passkey.sentences.promptName": {
+    "en": "22388086c95f252f",
+    "text": "en nyckeldialog visar personens namn så som inloggningen känner till det"
+  },
+  "passkey.sentences.promptNameExtras": {
+    "en": "09f9434240ad3432",
+    "text": "en nyckeldialog visar personens namn så som inloggningen känner till det, och tjänstens namn med dess {{extras}}"
+  },
+  "passkey.sentences.chooseOne": {
+    "en": "da1b6a76a9549c9d",
+    "text": "en person med flera nycklar väljer en vid inloggning"
+  },
+  "passkey.sentences.aggregate": {
+    "en": "fa8fc40822659fe4",
+    "text": "en persons nycklar erbjuds som ett enda inloggningsval"
+  },
+  "passkey.sentences.postQuantumOff": {
+    "en": "a8e0e01781dab9b0",
+    "text": "en nyckel loggar in och registreras oavsett signaturalgoritm"
+  },
+  "passkey.sentences.postQuantumSignIn": {
+    "en": "2282f9fa1ff20b26",
+    "text": "bara en postkvantnyckel (ML-DSA) loggar in en person; en klassisk kan fortfarande registreras"
+  },
+  "passkey.sentences.postQuantumEverywhere": {
+    "en": "79742dacfba54ede",
+    "text": "bara en postkvantnyckel (ML-DSA) registreras eller loggar in en person"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "en nyckel registreras bara med en betrodd attestering vars utsaga och certifikatkedja är signerade med {{algorithms}}"
+  },
+  "passkey.sentences.recoveryAny": {
+    "en": "7383156c8eb1e363",
+    "text": "en kontoåterställning återger åtkomsten genast, oavsett vilken nyckel personen har"
+  },
+  "passkey.sentences.recoveryNotWeaker": {
+    "en": "37557fd6d60301ce",
+    "text": "efter en kontoåterställning når en person som har en nyckel inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
+  "passkey.sentences.recoveryOperatorOnly": {
+    "en": "1a8f0b4a3319a435",
+    "text": "en person som har en nyckel återställer sitt konto bara genom en administratör, och når sedan inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "en nyckelregistrering erbjuder {{algorithms}}, i den ordningen, i stället för sfärens lista"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "en nyckelregistrering erbjuder bara postkvantalgoritmer (ML-DSA), bland {{algorithms}}, och inget klassiskt nytt försök"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "en nyckelregistrering erbjuder postkvantalgoritmer (ML-DSA) först och de klassiska efter dem, bland {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "en nyckelregistrering erbjuder bara klassiska algoritmer, bland {{algorithms}}: ingen postkvantnyckel skapas"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "sfärens webauthn.algorithms"
+  },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "en person får ha en klassisk nyckel och en postkvantnyckel sida vid sida, var och en under sitt eget användarhandtag"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "en person har sina nycklar i ett spår, oavsett vad sfärens webauthn.pqcAlongsideClassical säger"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "en administratör får registrera en nyckel för en person, i administratörens egen webbläsare, verifierad som personens egen"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "en passnyckelregistrering från {{rules}} erbjuder inte ML-DSA, där en klassisk passnyckel är tillåten"
+  },
+  "kinds.locale.label": {
+    "en": "1219a9dcfb9aa19f",
+    "text": "Språkpolicy"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "språket en sida faller tillbaka på, språket e-post skrivs på när en person inte anger något, och det preferredLanguage en ny person får"
+  },
+  "kinds.locale.appliesTo": {
+    "en": "b98c6ab7f1daa0a4",
+    "text": "NÄSTA sida som ritas och NÄSTA person som skapas i den här sfären; en person som skapats tidigare behåller sitt preferredLanguage, eller inget"
+  },
+  "kinds.locale.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena där den inte har det"
+  },
+  "kinds.locale.param.noun": {
+    "en": "373333108748fdd2",
+    "text": "profilen för språkpolicyn"
+  },
+  "locale.FIELDS.defaultLocale.label": {
+    "en": "07c569d962377b98",
+    "text": "Standardspråk och region"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "En BCP 47-språktagg (RFC 5646), till exempel en, fr-CA eller zh-TW. Sidor ritas på den när begäran, personens preferredLanguage, språkväljaren och webbläsaren inte anger något som en katalog besvarar; datum och tal formateras för den även där ingen katalog gör det. E-post till en person vars post inte anger något språk skrivs på den. Ersätter inställningen mail.defaultLanguage."
+  },
+  "locale.FIELDS.populatePreferredLanguage.label": {
+    "en": "7b464462632db810",
+    "text": "Ge en ny person det här språket"
+  },
+  "locale.FIELDS.populatePreferredLanguage.what": {
+    "en": "aac6446069dd5f66",
+    "text": "PÅSLAGEN SOM STANDARD. En personpost som skapas i den här sfären utan preferredLanguage (RFC 2798 avsnitt 2.7) får standardspråket ovan som ett sådant — oavsett om den skapas av konsolen, hanterings-API:t, SCIM, en federerad registrering eller självregistrering, eller en massinläsning. En namngiven profil gäller där applikationen som orsakade skapandet namnger den, eller en av personens grupper gör det. Befintliga poster skrivs aldrig om."
+  },
+  "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
+    "en": "796100ae10a7611a",
+    "text": "Den här tjänstens klass för en språkpolicy: språket som en sfärs sidor faller tillbaka på och som ges till en ny person. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som en applikation eller en grupp namnger)."
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "En BCP 47-språktagg (RFC 5646), till exempel en, fr-CA eller zh-TW. Sidor ritas på den när begäran, personens preferredLanguage, språkväljaren och webbläsaren inte anger något som en katalog besvarar; datum och tal formateras för den även där ingen katalog gör det. E-post till en person vars post inte anger något språk skrivs på den. Ersätter inställningen mail.defaultLanguage."
+  },
+  "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
+    "en": "aac6446069dd5f66",
+    "text": "PÅSLAGEN SOM STANDARD. En personpost som skapas i den här sfären utan preferredLanguage (RFC 2798 avsnitt 2.7) får standardspråket ovan som ett sådant — oavsett om den skapas av konsolen, hanterings-API:t, SCIM, en federerad registrering eller självregistrering, eller en massinläsning. En namngiven profil gäller där applikationen som orsakade skapandet namnger den, eller en av personens grupper gör det. Befintliga poster skrivs aldrig om."
+  },
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Vilken namngiven språkpolicy som vinner där flera namnges för en sida: den lägsta, från 1 till 1000."
+  },
+  "locale.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "locale.SCHEMA.personAttributes.stsPreferredLanguagePopulated.what": {
+    "en": "839242d6ed29c817",
+    "text": "Det preferredLanguage som språkpolicyn gav den här personen när hens post skapades. Så länge preferredLanguage fortfarande är lika med det är det POLICYNS val och en sida rangordnar det under webbläsarens språk; så snart någon sätter ett annat är det personens. Skrivs endast av den här tjänsten."
+  },
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Vilken namngiven språkpolicy som vinner där flera namnges för en sida: den lägsta, från 1 till 1000."
+  },
+  "locale.sentences.drawnIn": {
+    "en": "def5bb364db8e407",
+    "text": "en sida vars läsare inte anger något språk som en katalog besvarar ritas på {{tag}}"
+  },
+  "locale.sentences.drawnInUncatalogued": {
+    "en": "86507629ace6469e",
+    "text": "en sida vars läsare inte anger något språk som en katalog besvarar ritas på {{tag}} — som ingen katalog besvarar, så dess ord är engelska och dess datum och tal formateras för {{tag}}"
+  },
+  "locale.sentences.populated": {
+    "en": "357f756fb2f30745",
+    "text": "en person som skapas utan preferredLanguage får {{tag}}"
+  },
+  "locale.sentences.notPopulated": {
+    "en": "bacca940fb64dcc5",
+    "text": "en person som skapas utan preferredLanguage får inget"
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "e-post till en person vars post inte anger något språk skrivs på {{tag}}"
+  },
+  "kinds.attributes.label": {
+    "en": "6619889d4a9f485d",
+    "text": "Attributpolicy"
+  },
+  "kinds.attributes.governs": {
+    "en": "20a9273a811994df",
+    "text": "de attribut som varje person i den här sfären måste ha, och de anpassade attribut som en person här kan få"
+  },
+  "kinds.attributes.appliesTo": {
+    "en": "c68abf6d2b5ec2a2",
+    "text": "NÄSTA person som skapas och NÄSTA ändring i den här sfären; en person som redan saknar ett obligatoriskt attribut behåller alla andra vägar in"
+  },
+  "kinds.attributes.fallsBackTo": {
+    "en": "c352143b534bf909",
+    "text": "standardsfärens profil om den har en, och annars det inbyggda standardvärdet (givenName, sn och mail)"
+  },
+  "kinds.attributes.param.noun": {
+    "en": "58bb93afc775aa81",
+    "text": "attributpolicyprofil"
+  },
+  "attributes.FIELDS.requiredAttributes.label": {
+    "en": "59a6e795223fdea0",
+    "text": "Obligatoriska attribut"
+  },
+  "attributes.FIELDS.requiredAttributes.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
+    "en": "df463dd3d0380799",
+    "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`, eller en namngiven profil som är sfärens egen)."
+  },
+  "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
+    "en": "a1a975c54d05126f",
+    "text": "Tjänstens klass för ett anpassat attribut i en sfär, i ou=attributeDefinitions, namngiven efter attributet (`cn=<name>`)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeRequired.what": {
+    "en": "cb63bcf493bd6a8c",
+    "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
+  },
+  "attributes.SCHEMA.attributes.description.what": {
+    "en": "8e8f462fddce3d22",
+    "text": "Vad profilen eller det anpassade attributet är till för, för nästa person."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeLabel.what": {
+    "en": "8d93b7c14ddfd1af",
+    "text": "Ett anpassat attributs etikett, som visas bredvid namnet."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSyntax.what": {
+    "en": "b5ccce4927fccd38",
+    "text": "Ett anpassat attributs syntax: string, integer, boolean, date, email, uri eller dn. Dess värden kontrolleras mot den."
+  },
+  "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
+    "en": "b6a0dfd5be9d81fd",
+    "text": "TRUE om ett anpassat attribut har ett värde, FALSE om det har flera."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE när en person ser sina egna värden för ett anpassat attribut på användarportalens översikt. FALSE, eller saknas, som standard."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE när en person får ändra sina egna värden för ett anpassat attribut i användarportalen. Innebär stsAttributePortalVisible. FALSE, eller saknas, som standard."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "På en person eller en grupp: attributpolicyn den namnger, `default` eller en namngiven profil i sfären. Ett värde."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
+  },
+  "attributes.SYNTAXES.string.what": {
+    "en": "6f2c36f9a836b2f4",
+    "text": "Text, högst 1024 tecken, utan kontrolltecken."
+  },
+  "attributes.SYNTAXES.integer.what": {
+    "en": "258ac79871ab42ad",
+    "text": "Ett heltal (RFC 4517 avsnitt 3.3.16)."
+  },
+  "attributes.SYNTAXES.boolean.what": {
+    "en": "5ab7cfb21a4d669d",
+    "text": "TRUE eller FALSE (RFC 4517 avsnitt 3.3.3)."
+  },
+  "attributes.SYNTAXES.date.what": {
+    "en": "70f2250e9d5c193d",
+    "text": "Ett datum, lagrat som ÅÅÅÅMMDD och godtaget även som ÅÅÅÅ-MM-DD."
+  },
+  "attributes.SYNTAXES.email.what": {
+    "en": "daebff95f510f8db",
+    "text": "En e-postadress (addr-spec enligt RFC 5322, lokal@domän)."
+  },
+  "attributes.SYNTAXES.uri.what": {
+    "en": "16bf68a2b162f491",
+    "text": "En http- eller https-URL."
+  },
+  "attributes.SYNTAXES.dn.what": {
+    "en": "3feab9c94c12f33d",
+    "text": "Ett distinguished name (RFC 4514)."
+  },
+  "attributes.sentences.required": {
+    "en": "a35b08811463b6be",
+    "text": "en person i den här sfären måste ha {{list}} för att skapas, och en ändring får inte ta bort värdet för något av dem"
+  },
+  "attributes.sentences.enforced": {
+    "en": "babafe534682a510",
+    "text": "tillämpas: den här sfären är i produktläge, så varje väg in som skapar eller ändrar en person nekar en person utan dem"
+  },
+  "attributes.sentences.notEnforced": {
+    "en": "9e7b85236de9223c",
+    "text": "tillämpas inte: den här sfären är i utvecklingsläge, där en person kan skapas med bara ett användarnamn"
+  },
+  "attributes.sentences.custom": {
+    "en": "2296301f35c39ed9",
+    "text": "den här sfären definierar {{n}} anpassade attribut: {{list}}"
+  },
+  "attributes.sentences.noCustom": {
+    "en": "f9d920b6ce8d9d03",
+    "text": "den här sfären definierar inget anpassat attribut"
+  },
+  "attributes.sentences.defined": {
+    "en": "3867ffa1e351efa2",
+    "text": "Det anpassade attributet {{name}} är definierat i den här sfären på {{dn}}. Det kan nu ges till en person och krävas av den här policyn."
+  },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "Det anpassade attributet {{name}} är ändrat. Dess syntax och om det har flera värden är som förut."
+  },
+  "attributes.sentences.undefined": {
+    "en": "36e7b5eba26472f2",
+    "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "den gäller en person som namnger den, eller som ingår i en grupp som namnger den, när ingen annan policy de namnger har lägre precedens än {{precedence}}"
+  },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "Policy för aktivitet efter inloggning"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "vad en person ombeds göra efter inloggningen, innan den skickas tillbaka till programmet — i dag att registrera en postkvantnyckel"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "NÄSTA inloggning för varje person som profilen når i den här sfären; en redan påbörjad session avbryts inte"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena (ingen ombeds något) där den inte har det"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "profilen för policyn för aktivitet efter inloggning"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "Fråga efter inloggning"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "594af708f511f0b5",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR dem den väljs för: medlemmarna i de grupper som namnger den, och en inloggning i en applikation som namnger den."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "Aktivitet"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "93b1483272fe7b46",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm ombeds registrera en postkvantnyckel (ML-DSA). Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "Hoppa över skjuter upp den i"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Hur länge Hoppa över skjuter upp aktiviteten för den personen."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "Tilldelad tid"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Räknas från personens FÖRSTA inbjudan. När den har gått försvinner Hoppa över och inloggningen hålls kvar — ingen session startas — tills aktiviteten är utförd. 0 betyder ingen tidsgräns: den kan alltid hoppas över."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "En person utan nyckel"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "Hur en klassisk nyckel migreras"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: personen använder sin klassiska nyckel en gång, sedan ersätter en ML-DSA-nyckel den på plats på samma autentiserare — en nyckel, ingenting lämnas kvar. alongside: en ML-DSA-nyckel läggs till bredvid den, i postkvantspåret där sfären erbjuder två spår, eller på en annan autentiserare där den erbjuder ett. automatic: alongside där personens nyckelpolicy erbjuder två spår, upgrade där den erbjuder ett."
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "En nyckel räknas som postkvant när"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: dess nyckelalgoritm är ML-DSA. post-quantum: dess nyckelalgoritm är ML-DSA OCH dess registrerade attestering signerades med postkvantalgoritmer hela vägen; en nyckel med en klassisk attestering, eller utan registrerad attestering, räknas inte, och dess innehavare ombeds om en som gör det."
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "En person utan nyckel vars enhet inte kan skapa ML-DSA"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: endast ML-DSA. classical: efter att en ML-DSA-registrering misslyckats på enheten erbjuds ett nytt försök med de klassiska algoritmerna (där nyckelpolicyn tillåter ett) — en klassisk nyckel är bättre än ett lösenord, och dess innehavare ombeds om migreringen senare precis som alla andra."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "b1a01fe693170513",
+    "text": "Den här tjänstens klass för en profil för aktivitet efter inloggning: vad en person ombeds göra efter inloggningen. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som en applikation eller en grupp namnger)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "594af708f511f0b5",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR dem den väljs för: medlemmarna i de grupper som namnger den, och en inloggning i en applikation som namnger den."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "93b1483272fe7b46",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm ombeds registrera en postkvantnyckel (ML-DSA). Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Hur länge Hoppa över skjuter upp aktiviteten för den personen."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Räknas från personens FÖRSTA inbjudan. När den har gått försvinner Hoppa över och inloggningen hålls kvar — ingen session startas — tills aktiviteten är utförd. 0 betyder ingen tidsgräns: den kan alltid hoppas över."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: personen använder sin klassiska nyckel en gång, sedan ersätter en ML-DSA-nyckel den på plats på samma autentiserare — en nyckel, ingenting lämnas kvar. alongside: en ML-DSA-nyckel läggs till bredvid den, i postkvantspåret där sfären erbjuder två spår, eller på en annan autentiserare där den erbjuder ett. automatic: alongside där personens nyckelpolicy erbjuder två spår, upgrade där den erbjuder ett."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: dess nyckelalgoritm är ML-DSA. post-quantum: dess nyckelalgoritm är ML-DSA OCH dess registrerade attestering signerades med postkvantalgoritmer hela vägen; en nyckel med en klassisk attestering, eller utan registrerad attestering, räknas inte, och dess innehavare ombeds om en som gör det."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: endast ML-DSA. classical: efter att en ML-DSA-registrering misslyckats på enheten erbjuds ett nytt försök med de klassiska algoritmerna (där nyckelpolicyn tillåter ett) — en klassisk nyckel är bättre än ett lösenord, och dess innehavare ombeds om migreringen senare precis som alla andra."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "2b5b2ba409912c7d",
+    "text": "Vilken namngiven profil för aktivitet efter inloggning som vinner där flera namnges för samma inloggning – av applikationen och av personens grupper: den lägsta, från 1 till 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "Utgången (#1135): rollen som en person utan nyckel registrerade en i. En nyckel har ingen roll; inget läser den."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "2b5b2ba409912c7d",
+    "text": "Vilken namngiven profil för aktivitet efter inloggning som vinner där flera namnges för samma inloggning – av applikationen och av personens grupper: den lägsta, från 1 till 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "ingen som profilen når ombeds något efter inloggningen"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "f5a41f8e1962f73d",
+    "text": "en person som har en klassisk nyckel ombeds, efter inloggning, registrera en postkvantnyckel (ML-DSA)"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "ML-DSA-nyckeln ersätter den klassiska på plats, efter att personen använt den klassiska en gång"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "ML-DSA-nyckeln läggs till bredvid den klassiska"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "ML-DSA-nyckeln läggs till bredvid den klassiska där två spår erbjuds, och ersätter den på plats där ett erbjuds"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "en nyckel räknas som postkvant när dess nyckelalgoritm är ML-DSA"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "en nyckel räknas som postkvant bara när både dess nyckelalgoritm och dess registrerade attestering är postkvant"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "en person utan nyckel vars enhet inte kan skapa ML-DSA erbjuds en klassisk nyckel i stället"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "Hoppa över skjuter upp den i {{days}} dag(ar)"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "efter {{days}} dag(ar) från den första inbjudan försvinner Hoppa över och inloggningen hålls kvar tills den är utförd"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "den kan alltid hoppas över"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "en person utan nyckel tillfrågas inte"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "f1e2e6217d3d9180",
+    "text": "en person utan nyckel bjuds in att registrera en postkvantnyckel, och får alltid hoppa över det"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "988144ad40324fa8",
+    "text": "en person utan nyckel ombeds registrera en postkvantnyckel, och får hoppa över det tills respitperioden är slut"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "f195acc04e68d15e",
+    "text": "gäller där en applikation eller en grupp namnger den (appPostLoginPolicy, stsPostLoginPolicy), med prioritet {{precedence}}"
+  },
+  "messages.saved": {
+    "en": "aff7d1fa6042bebd",
+    "text": "Följande har sparats på {{dn}}: {{noun}} ”{{name}}”. Den gäller för {{appliesTo}}."
+  },
+  "messages.savedNotEnforced": {
+    "en": "0e2ffb6b206220b6",
+    "text": "Följande har sparats på {{dn}}: {{noun}} ”{{name}}”. Den gäller för {{appliesTo}} — och den tillämpas inte här förrän den här sfären är i produktläge."
+  },
+  "messages.removed": {
+    "en": "07e9be78127c21d9",
+    "text": "Den lagrade profilen är borta, och den här sfären följer {{fallsBackTo}}: {{rules}}."
+  },
+  "messages.nothingStored": {
+    "en": "6e3d9c2876ac0650",
+    "text": "Inget var lagrat i den här sfären, så den följde redan {{fallsBackTo}}."
+  },
+  "page.enforced": {
+    "en": "f7172b346c62f1ca",
+    "text": "TILLÄMPAS. Den här sfären är i produktläge, så varje lösenord som sätts här — vid varje dörr nedan — måste uppfylla profilen, och ett nytt lösenord får inte upprepa ett ihågkommet."
+  },
+  "page.notEnforced": {
+    "en": "d48ea6d943af779a",
+    "text": "TILLÄMPAS INTE. Den här sfären är i utvecklingsläge, där inget lösenord kontrolleras vid någon dörr, så en regel om ett lösenord vore en regel om en inloggningsuppgift som ingenting läser. Historiken REGISTRERAS ändå, så en sfär som byts till produktläge börjar med en. Ett GENERERAT lösenord uppfyller profilen i båda lägena."
+  },
+  "page.source": {
+    "en": "3f584f451203473d",
+    "text": "nodes crypto.randomInt, med förkastningssampling så att inget tecken i poolen är mer sannolikt än ett annat"
+  },
+  "page.drawsUntil": {
+    "en": "c06275d67751acb9",
+    "text": "lösenordet uppfyller profilen, så varje genererat lösenord är likformigt fördelat över de lösenord som profilen godtar"
+  },
+  "page.notDoors": {
+    "en": "8bb9eaa9dc06e164",
+    "text": "SCIM bär inget lösenord (den här tjänsten annonserar changePassword: false), och ett lösenord sätts aldrig genom inloggning. Lösenord som lagrats INNAN en regel ändrades kontrolleras inte på nytt: ingenting här lagrar ett lösenord i en form som skulle göra det möjligt, och regeln gäller från nästa ändring."
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "Den här sfären kan inte skicka e-post, så de två e-postmekanismerna kan inte slås på och erbjuds aldrig. Konfigurera en transport under Serverkonfiguration > E-post."
+  },
+  "page.doors.0.door": {
+    "en": "8327644f61eb973a",
+    "text": "/admin/users/new och /admin/users (Ange lösenord)"
+  },
+  "page.doors.1.door": {
+    "en": "87ea56f7e0e44acd",
+    "text": "POST /admin-api/users/create och /admin-api/users/set-password"
+  },
+  "page.doors.3.door": {
+    "en": "bf7698db188665b7",
+    "text": "/portal/activate (det första lösenord en person sätter)"
+  },
+  "page.doors.4.door": {
+    "en": "68ddb58dcaaf956f",
+    "text": "en LDAP-add eller -modify av userPassword på 389 eller 636"
+  },
+  "page.doors.5.door": {
+    "en": "2ad6798475ed5717",
+    "text": "/authn/password-change (ändringen som en inloggning kräver; applikationen som inloggningen gäller kan namnge policyn)"
+  },
+  "page.doors.6.door": {
+    "en": "f6310f5585f611ea",
+    "text": "/portal/reset-password (en återställningslänk)"
+  },
+  "page.pools.0": {
+    "en": "66175c2ffcf81f48",
+    "text": "gemener"
+  },
+  "page.pools.1": {
+    "en": "d4622acef3c349eb",
+    "text": "versaler"
+  },
+  "page.pools.2": {
+    "en": "cc6b6bad31a0ff4d",
+    "text": "siffror"
+  },
+  "page.pools.3": {
+    "en": "1ea50a8caf608504",
+    "text": "symboler"
+  }
+}

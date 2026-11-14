@@ -1,0 +1,3 @@
+{
+  "gnap.cells.note": "The grants this cell holds. A grant is made where its client arrives and moves to its resource owner's home cell before it is approved, so this is normally all of them; a grant whose client instance is registered in another cell stays there and is listed and revoked there."
+}

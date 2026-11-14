@@ -107,9 +107,9 @@ import realms = require('../common/realms');
 import applications = require('../common/applications');
 import personAssertions = require('../common/person_assertions');
 import helpers = require('../common/helpers');
-import x509 = require('../common/vendored/x509');
+import x509 = require('../common/crypto_impl/x509');
 import pkijs = require('pkijs');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import pqcSupport = require('../common/pqc_support');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
@@ -458,14 +458,21 @@ class CertificateViews {
       });
     });
     this.fromSource('persons', function () {
+      // EVERY KEY PAIR A PERSON HOLDS, per profile (#1290): several each,
+      // revoked and expired ones included — a certificate this service
+      // issued is in the catalogue whatever became of it.
       personAssertions.holders().forEach(function (one) {
-        catalogue.add(one.certificatePem, 'Person "' + one.username +
-                      '", RFC 7523 key pair', 'persons');
-        // A person's RFC 7522 key pair too, since 2026-09-13.
-        if (one.saml && one.saml.certificatePem) {
-          catalogue.add(one.saml.certificatePem, 'Person "' + one.username +
-                        '", RFC 7522 key pair', 'persons');
-        }
+        [['jwt', 'RFC 7523'], ['saml', 'RFC 7522']].forEach(function (p) {
+          ((one[p[0]] || {}).keys || []).forEach(function (key) {
+            if (!key.certificatePem) {
+              return;
+            }
+            catalogue.add(key.certificatePem, 'Person "' + one.username +
+                          '", ' + p[1] + ' key pair' +
+                          (key.label ? ' "' + key.label + '"' : ''),
+                          'persons', details.splitPem(key.chainPem));
+          });
+        });
       });
     });
     log.debug("Leaving CertificateViews.addHolders().");
@@ -588,9 +595,14 @@ class CertificateViews {
     }
     log.debug("Leaving CertificateViews.detailsView(). " + model.chain.length +
               " link(s).");
+    // The key's post-quantum classification (#446), which the dialog's icon
+    // is drawn from: a renderer in a browser parses no certificate.
     return Object.assign({ ok: true,
                            realm: this.scopeOfRealm() || realms.DEFAULT_ID,
-                           appearances: entry.appearances.slice() }, model);
+                           appearances: entry.appearances.slice(),
+                           pqc: this.pqcOf(model.certificate &&
+                                           model.certificate.pem) || null },
+                         model);
   }
 
   // ---------------------------------------------------------------------------
@@ -726,8 +738,7 @@ class CertificateViews {
       log.debug("Leaving CertificateViews.pqcOf(). No certificate.");
       return pqcSupport.of({ certificatePem: pem });
     }
-    const key = 'pqc:' + nodeCrypto.createHash('sha256')
-      .update(String(pem)).digest('hex');
+    const key = 'pqc:' + stsCrypto.digest('sha256', String(pem), 'hex');
     if (facts.has(key)) {
       factsCount.hit();
       log.debug("Leaving CertificateViews.pqcOf(). Held.");

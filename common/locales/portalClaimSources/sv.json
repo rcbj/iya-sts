@@ -1,0 +1,15 @@
+{
+  "heading": "Anslutna anspråkskällor",
+  "sub": "En annan identitetsleverantör kan gå i god för uppgifter om dig som den här tjänsten inte har. När du har länkat en får ett program som ber om de uppgifterna dem så som leverantören signerade dem (aggregerade och distribuerade anspråk i OpenID Connect). När du länkar skickas du till leverantören för att logga in och godkänna.",
+  "none": "Den här tjänsten har inga anspråkskällor att erbjuda.",
+  "supplies": "Tillhandahåller",
+  "distributed": ", genom att ge ett program din token hos den här leverantören så att det hämtar dem själv.",
+  "aggregated": ", hämtade av den här tjänsten och vidarebefordrade så som leverantören signerade dem.",
+  "linked": "Länkad {when}.",
+  "linkedStale": "Länkad {when} – <strong>går inte längre att använda</strong>; länka den igen.",
+  "link": "Länka",
+  "linkAgain": "Länka igen",
+  "unlink": "Ta bort länk",
+  "doneUnlinked": "Länken är borttagen.",
+  "doneLinked": "”{provider}” är länkad."
+}

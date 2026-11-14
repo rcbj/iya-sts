@@ -15,19 +15,29 @@ the barrier that makes one node see what another committed.
 |---|---|
 | `cluster.js` | Membership, heartbeat, leases, the fence provider, fail-stop, the settings agreement, and `gate()` — which `persistence.js` calls before anything is restored. |
 | `cluster_capabilities.js` | The table of what active-active mode depends on, one row per failure #46 describes, each `provide()`d by the module that fixed it. |
-| `cluster_claims.js` | `claim()` / `release()`: an atomic "once" in the store for every single-use value. Memory on a store that cannot be shared. |
+| `cluster_claims.js` | `claim()` / `release()`: an atomic "once" in the store for every single-use value; `claimMany()` / `releaseMany()` / `releaseAtCommit()` for several at once, released in the writer's commit (#628). Memory on a store that cannot be shared. |
 | `cluster_counters.js` | `advance()`: a value that may only go UP, agreed by every node — a WebAuthn signature counter, the last RFC 6238 step spent. One conditional upsert in the store. Memory on a store that cannot be shared. And `countInWindow()`: a rate-limit bucket's count inside a fixed window, one budget for every node. |
 | `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
 | `scheduler.ts` | **The one scheduler every periodic job runs on** (#49, 2026-09-22): a leader on the `ops.scheduler` lease, a claim and a fence per run, slots by the database clock, manual runs and a step-down as command rows in the store, cluster and per-process jobs. `/admin/scheduler` draws it. See *The scheduler*, below. |
 | `node_snapshots.ts` | **Every node on Monitoring → Worker Pools and → Node Health** (#332, 2026-09-28): the per-process job `cluster.node-snapshot` that writes this node's own views to `sts_node_snapshots` every 15 s, one row per node name, and the read every page does — this node live, every other from its row, marked `stale` past 45 s, `gone` when membership has no live row by the name, `no-snapshot` when it has written none; never dropped. Names, never addresses: a name that is an address is drawn as a digest, and IPv4 literals are scrubbed from what is written and answered. See *Every node on two pages*, below. |
+| `spiffe_targets.js` | **The SPIFFE target groups stay equal to the running tasks** (#323): the cluster job `spiffe.target-reconcile`. ECS allows five target groups on a service and the node services use them, so those groups are registered by address at apply time and reconciled afterwards. The algorithm is the file's header; the AWS constraint is `deploy/aws/CLAUDE.md`. |
 
 The SQL is `persistence/persistence_postgres.js`'s — the driver owns every
-statement, as it does for `/admin/database` — and the six tables
+statement, as it does for `/admin/database`, and sends it as raw `$n` text
+over a connection Knex holds since #326 (`persistence/CLAUDE.md`, *Knex is
+the one door*): nothing in this directory touches a connection — and the six
+tables
 (`sts_cluster_nodes`, `sts_cluster_leases`, `sts_cluster_claims`,
 `sts_cluster_secrets`, `sts_cluster_counters`, `sts_cluster_windows`) are in
 `postgres/schema.sql` at schema version 5, beside `sts_change_readers`
-(`persistence/CLAUDE.md`).
+(`persistence/CLAUDE.md`). **Since #677 every coordination statement also has a
+portable form** (`persistence/cluster_portable.js`, used on an engine that is
+not PostgreSQL or with `persistence.sqlDialect=portable`), and the join lock
+is then a row of `sts_cluster_locks`. **Since #770 the fence's share lock is
+a row of that table on every engine**, named with the lease token or the
+origin reservation (*Leases and the fence*). `persistence/CLAUDE.md` says
+what the portable statements cover.
 
 ## rcbj's decisions (2026-09-14)
 
@@ -80,6 +90,8 @@ fingerprint is an HMAC keyed by the key-encryption key, which the keystore opens
 after the join. A bare hash in a database row would be a dictionary attack on
 `krb5.krbtgtPassword`. `AGREEMENT_SETTINGS` is the list; `global.port` is
 deliberately NOT on it (it is per host, and a local two-node test binds two).
+`realms.maxCount` is on it (#368), so every node holds the same cap;
+`common/CLAUDE.md` argues the cap.
 
 ### Two bugs the first real run found, both mine
 
@@ -115,10 +127,13 @@ the load that caused it and the sentence that reported it.
   "has expired or been left", which sends an operator to the database. The
   status object carries `lastStallMs`.
 * **`cluster.nodeTtlMs` is 30000 (it was 10000).** The largest computation a
-  supported console action still makes on the thread is an SLH-DSA-SHAKE-128s
+  supported console action then made on the thread was an SLH-DSA-SHAKE-128s
   signature on `/admin/pki`'s authoring pane: 13.7s measured with the vendored
   signer (`common/CLAUDE.md` 3aa says why that pane does not use the pool),
-  past 10000 − 2000 and inside 30000 − 2000 with its own length to spare. The
+  past 10000 − 2000 and inside 30000 − 2000 with its own length to spare.
+  Since #1464 that signature and the key generation run on libuv's thread
+  pool (`common/crypto_impl/CLAUDE.md`), so the thread no longer stalls on it;
+  the default was not lowered. The
   cost is an active-passive takeover after a CRASH (up to 30s); a clean stop
   releases the lease and hands over in one heartbeat either way, and in
   active-active serving never waited on the lifetime. The fence is unchanged.
@@ -171,8 +186,11 @@ TABLE (#264).** `tls-certificate-changed` at restart compares with a
 fingerprint kept in the shared minted store (`tls.listenerAnnounced`), not
 with anything on a membership row. A membership row belongs to a node id that
 a restart replaces, and a receiver sees the service rather than a node.
-Every node's start is therefore announced, because each node has its own
-listener key. `tls/CLAUDE.md` argues it.
+A node's start is therefore announced whenever another node announced after
+it, because each node has its own listener key; a node restarted with
+nothing else changed presents the key and certificate it kept
+(`tls.listenerKeys`, keyed by `cluster.nodeName` — 2026-10-08), so its own
+restart alone announces nothing. `tls/CLAUDE.md` argues it.
 
 Three things the page decides rather than reads:
 
@@ -227,9 +245,78 @@ so the front process's heartbeat renews it.
 
 `checkFence()` runs first in every `withTransaction()`: the membership row must
 be live (unlocked — only its own heartbeat renews it), and every lease the write
-needs must still be held at its token, **under `FOR SHARE` held to COMMIT**, so a
-takeover — an UPDATE of that row — waits for the transaction and cannot land
-between the check and the write. The error carries `reason: 'node' | 'lease'`:
+needs must still be held at its token. **The share lock is a row of
+`sts_cluster_locks`, not the lease or the claim (#770).** The name is
+`fence:lease:<name>:<token>`, and an origin claim's is
+`fence:origin:<key>:<reservation>`. The check locks that row `FOR SHARE`, held
+to COMMIT, and the next statement reads the lease or the claim with no lock of
+its own. READ COMMITTED rechecks only the locked row after a wait, so locking
+the data row in the same statement would keep a stale holder; the second
+statement takes a new snapshot, and a takeover deletes the name in the same
+transaction as it changes the token, so it waits for this one or the name is
+already gone. `MINTED_FLUSH` stays one statement and fails closed the same
+way: the name it share-locks contains the token, and a takeover's delete of
+that name makes the flush's `FOR SHARE` find nothing. Takeover, release and
+leave delete the row with the data change. The heartbeat and `renewOrigin()`
+update the data rows and do not touch the lock rows.
+
+**A heartbeat that waits is a node that fences itself (#770, observed
+2026-10-20).** On single-node 8081, under LDAP password writes and sign-ins,
+the heartbeat's `UPDATE` sat `Lock:transactionid` for the membership lifetime
+and the node exited (`STS-CLUSTER-0011`) with no `STS-CLUSTER-0003` and no
+`STS-CLUSTER-0025`. Nothing in a write sleeps that long. A lapsed origin
+claim was re-asserted by an `UPDATE` of the claim row inside the write, so
+the exclusive lock lasted as long as that write waited on anything else, the
+heartbeat queued behind it, and the next fence queued behind the heartbeat.
+`reassertOrigin()` is now a short bounded autocommit on the liveness
+connection. The heartbeat's own statement has `lock_timeout` and
+`statement_timeout` — a third of the lifetime, at most two seconds — and a
+timeout rejects (`55P03`, `57014`) instead of answering that the membership
+is dead. The next beat is armed when the previous fires, whether or not it
+has settled, and a beat that has not landed is `STS-CLUSTER-0003`; past the
+lifetime it is still `STS-CLUSTER-0004`. A fenced write can still last as
+long as it waits on other row locks. That wait no longer blocks the renewal.
+A single-node deployment has nothing else to fence against, and its own
+writes no longer cost it the process.
+
+**AND A TAKEOVER WAITS IN BOUNDED ATTEMPTS, BESIDE THE BEAT (#770's review,
+2026-11-13).** #770 left `acquireLease()` unbounded on purpose — a takeover
+deletes the old token's lock row, so it waits for the old holder's fences —
+and a standby asks for the service lease every heartbeat
+(`waitForServiceLease()`), as every node asks for its roles in `contend()`.
+Two ways that brought the hang back, in the node that was TAKING OVER:
+the liveness connection serialises its callers (`liveExclusive()`), so the
+standby's own heartbeat queued in JavaScript behind an acquire waiting on a
+thirty-second write, where the heartbeat's two-second bound had not started;
+and `beat()` returned `contend()`, so a role's acquire that waited held the
+beat in flight and every later beat was skipped. Either way the renewal
+never settled and the node exited (`STS-CLUSTER-0004`). Now:
+
+* **The acquire has the heartbeat's bound** (`renewalBoundMs()`), on both
+  engines — the native statement as a bounded autocommit, the portable one
+  as a bounded liveness transaction (`liveTransact(fn, boundMs)`). A timeout
+  rolls the whole takeover back (token and lock rows) and the driver answers
+  `{ held: false, pending: true }`; the next beat asks again. **The takeover
+  still waits for the fences** — it cannot commit until they have — and
+  meanwhile the old holder's fences find their lease expired and start no
+  new write. `cluster.acquire()` logs `STS-CLUSTER-0165` at info once per
+  wait. `releaseLease()` (a step-down) is bounded the same way and its
+  timeout is `STS-CLUSTER-0041`.
+* **The contention is not part of the beat.** The heartbeat timer runs
+  `renew()`, the renewal alone, and `heartbeatInFlight` clears when it
+  settles; the contention it asks for runs beside the next beats through
+  `contendOnce()`, one at a time, so beats do not stack asks. `beat()`, the
+  exported form, still waits for both.
+
+So the heartbeat now waits behind at most a few bounded statements on the
+liveness connection, never an unbounded one. **What is still unbounded
+there**: `leaveCluster()` (a clean stop, after which the heartbeat is
+moot), and a statement that falls back to the pool when the liveness
+connection cannot be opened on MariaDB (STS-STORE-0070), whose limits are
+the session's and a pooled connection is somebody else's next.
+`tests/cluster_heartbeat_lock.js` sections C, D and E hold it.
+
+The error carries `reason: 'node' | 'lease'`:
 a lost membership, or the service lease in active-passive mode, is fatal
 (`STS-CLUSTER-0011`); a lost role lease under active-active fails that one
 write and the node stays up. `withLease(name, fn)` is how a lease-guarded write
@@ -247,9 +334,10 @@ The heartbeat, `acquireLease()`, `releaseLease()`, `leaveCluster()` and the
 persistence origin's renewal run on the postgres driver's LIVENESS connection
 (`liveQuery()` in `persistence/persistence_postgres.js`), not the pool: on
 testidp a SCIM Bulk load held all four of a worker's pooled connections past
-the origin claim's 30 s, and the worker exited. The fence checks above are
-unchanged — they run inside the write's own transaction, on its client, which
-is the only place they mean anything. `persistence/CLAUDE.md` has the rest.
+the origin claim's 30 s, and the worker exited. The fence checks run inside
+the write's own transaction, on its client, and share-lock `sts_cluster_locks`
+rather than the rows this connection updates (*Leases and the fence*, #770).
+`persistence/CLAUDE.md` has the connection.
 
 ## The two modes
 
@@ -449,6 +537,36 @@ stalled past its lease cannot overwrite the outcome of the one that took over
 response is not 2xx/3xx. On memory or ldif it is this process's map, which is
 exactly as atomic as the map it replaces.
 
+**Several values at once, and a release in the writer's commit (#628,
+2026-10-14).** `claimMany({ entries, ttlMs, realm })` claims every value or
+none under one reservation, in ONE statement on postgres (the driver's
+`claimMany()`: a multi-row `INSERT … ON CONFLICT` in (scope, key) order, whose
+final SELECT turns a PARTIAL take into an ERROR so the statement aborts with
+every row it took — PostgreSQL logs it, naming `sts_cluster_claims: a partial
+claim`); `releaseMany(handles)` is one DELETE; and `releaseAtCommit(handles)`
+hands the rows to `persistence.releaseClaimsAtCommit()`, which deletes them
+AS A STATEMENT OF the flush transaction that commits this process's directory
+writes made so far — or alone, at once, when those have committed already. A
+transaction that fails rolls the release back with the entry, so the claims
+stay until they expire (`STS-CLUSTER-0164`). `claimMany()` and a `releaseMany()` of its own commit
+with `synchronous_commit` off (the driver's `NO_FLUSH_WAIT`, argued there).
+`claim({ noFlushWait: true })` commits that one postgres statement without
+waiting for the WAL flush. The refresh spend is the caller
+(`oauth-oidc/CLAUDE.md`, #886). `release()` is unchanged. **A
+`releaseMany()` deletes a fence lock (#884) only for a handle
+`claim({ fence: true })` fenced**, or for every handle when
+the caller passes `{ fences: true }` because its handles were read back from
+the table (`releaseAbandoned()`); #884 first deleted them for every handle,
+in a synchronous transaction of its own, and every refused directory create
+paid a BEGIN and a COMMIT again (2026-11-12). A store without
+`claimMany` /
+`releaseClaims` (a test's double) is asked row by row. The caller is a
+directory create (`ldap/CLAUDE.md`, *SEVERAL NODES: A CREATE CLAIMS ITS
+NAME*), and **only in `active-active`**: on one node — cluster `off` or
+`active-passive` — its front process decides those claims in memory over the
+worker channel (`ldap/directory_create_arbiter.ts`) and the table is not
+touched.
+
 `cluster_secrets`: values are TEXT (callers derive with the string, as before).
 The front process reads the store's value (sealed; first writer wins) and puts
 it in the environment variable before it forks, so workers inherit it; an
@@ -476,6 +594,21 @@ not got this shape:** the did:web document's JOSE keys are the realm's key set
 (`keys.agreement`); the OpenID4VCI request-encryption key, the RFC 9101 request
 object keys, the refresh-token keys and the post-quantum keys are all members of
 that set (`common/helpers.js`); a did:jwk is made per request by design.
+
+**The process certificate authority is one for the cluster too (#162,
+2026-10-05).** `pki:*process`, the branch every node's TLS listener
+certificate comes from, is a shared, merged row. Each node makes its own
+listener key once and keeps it, sealed, in its own row of the shared minted
+store `tls.listenerKeys`, keyed by `cluster.nodeName` (2026-10-08); no node
+holds another's. Only the certificate's record and serial are shared. **A
+node's name is therefore what its listener key is filed under**: two nodes
+given one name would share it, and a renamed node makes a new one. Any node
+answers OCSP and serves the CRL for any node's listener. No node's own
+address is published anywhere: rcbj refused that outright. A node waits for
+its listener record to land before it serves, and a responder that has no
+record of a serial reads the row once before it answers `unknown`.
+`common/CLAUDE.md`, *THE PROCESS BRANCH IS ONE AUTHORITY FOR THE CLUSTER*,
+has the detail.
 
 ## Counters: when "once" is not the property (2026-09-14)
 
@@ -505,8 +638,8 @@ and the stored value is the highest ever given whatever order commits land in.
 spend `amount` and `count` only while this period's totals stay within the
 limits, reset at a new period, give a failed operation's spend back. A GNAP
 right's limits are kept per grant by the resource server (rcbj's decision 2
-on #432), and the demonstration resource server runs on every node, so a
-read-add-write through a replicated row would be last writer wins on a
+on #432), and `gnap/gnap_spend.ts`, the reference for one, runs on every
+node, so a read-add-write through a replicated row would be last writer wins on a
 ledger. `sts_cluster_budgets` (schema version 15) and one upsert whose
 `SELECT` proposes a row only when the spend alone fits, and whose `DO UPDATE
 … WHERE` writes only totals within the limits and never for a period older
@@ -573,13 +706,60 @@ since, twice the node's request workers and at least four), so for ninety
 seconds
 nothing else on that node reached the store: LDAPS timed out and a provider
 command was never delivered. Now each tick lines up everything due, a
-person's Run now first and then scheduled runs oldest-due first. It starts
-at most `scheduler.maxConcurrentRuns` (2). What waits is not claimed, so it is
+person's Run now first and then the scheduled runs whose slot ends first
+(*The run whose slot ends first goes first*, below). It starts
+at most `scheduler.maxConcurrentRuns`. **Its default is 0 since 2026-11-10
+(rcbj): two runs, or one fewer than the node's protocol request worker threads
+when that is more** (the floor was one for a day, which starved the partner
+refresh again in the memory mode) — a body runs on the least-loaded protocol worker (#408),
+so N − 1 leaves one worker with no body on it; a value of 1 or more is an
+operator's own cap. What waits is not claimed, so it is
 still due at the next tick, and a run that ends asks for that tick at once.
 **The cap is never more than one fewer than the pool holds**, whatever the
 setting says (`maxConcurrentRuns()`), so the scheduler cannot take every
 connection from the requests. `tests/scheduler.js` section M holds it; the
 mutant that drops the tick after a run ends fails three assertions.
+
+**THE RUN WHOSE SLOT ENDS FIRST GOES FIRST (2026-11-13).** The line was
+oldest-due first, and that starved every job with a short interval once the
+line was longer than the cap could clear. `report.drain` is a realm job every
+two seconds: eighty realms are forty runs a second, the memory mode runs them
+inline under a cap of two, and on a loaded machine the line never emptied.
+Each of those runs was due from the start of its own slot, at or before the
+start of `ssf.internal-poll`'s one-second slot, so the poll was always behind
+them, its slot ended unrun, and the next began behind the next two seconds'
+runs: run 23's memory mode did not deliver a broadcast for thirty seconds
+(`sts_broadcast_announcement`), and a development-mode memory service given
+170 realms on an idle machine ran the poll twice and then not again. Only the current slot is ever
+due, so a slot's END is the deadline, and the line is ordered by it, then by
+the lower `nice`, then by the older due time: an hourly job waiting a few
+seconds loses nothing, a one-second job waiting one loses its run. A line
+the cap can never clear still leaves something waiting; it is the run with
+the most time left. `tests/scheduler.js` section Q holds it, with the
+oldest-due order as its mutant. **What it does not change** is the load:
+`report.drain`, `report.retention` and `report.schedule` are realm jobs on
+the front (`report/CLAUDE.md`), so their cost grows with the realms whether
+or not anything is queued in them.
+
+**A TICK READS THE PENDING ROWS, NOT THE HISTORY (#623).** Finding the
+queued manual runs read every row of `scheduler.runs` in every realm, and
+the step-down commands the default realm's whole partition, at every tick:
+13–19 s of the front process's thread at some ticks on 8081, whose history
+was some 42,000 rows. Now the scheduler keeps `pendingRows`, an index of
+every queued or running MANUAL run and every queued COMMAND, and the tick,
+`obeyCommands()` and `requestRun()`'s "already queued" match read it —
+O(pending), whatever the history holds. **KEPT ON WRITE, CHECKED ON READ:** an
+entry is added by `writeRow()` (this process's only writer of run rows) and
+by the store's `watch()` — `runStore`'s `reconcile.restore` hook, which sees
+every row read back at a start or brought by the change log, so a run queued
+by a request worker or another node is indexed where the leader is. Nothing
+removes an entry when a row ends: `pending()` reads each entry's row and
+drops the ones gone (purge, tombstone) or no longer pending, so no path that
+ends a row — several, some in other processes — has to know the index
+exists; `forgetRealm()` drops a removed realm's. A test's store without
+`watch()` is written by this process alone. `tests/scheduler.js` section O
+holds it, counted: 10,000 history rows, a tick that iterates no partition and
+reads twelve rows by key.
 
 **EVERY PROCESS MUST REGISTER THE SAME JOBS (2026-09-22).** A registration is
 the owner's load-time call, so a job registered LAZILY — at a process's first
@@ -621,14 +801,30 @@ remembers a failure as a success.
   recorded `abandoned` (`STS-SCHED-0011`), and the late outcome is fenced out
   (`STS-SCHED-0003`). `ctx.stillOwner()` is the question a job asks before a
   step it cannot take back.
-* **It never starts at require time, in a standby or — for a cluster job — in
-  a request worker.** `server.js` calls `start('front')` after the state is
-  restored and before it binds; `common/request_worker.ts` calls
-  `start('per-process')`.
+* **A run left running in a slot that has PASSED is abandoned too
+  (2026-11-03).** The takeover above happens only when a tick attempts the
+  row again, and a tick attempts only the current slot's run; a claim lasts
+  the run's time limit (600 s by default) while many jobs fall due every two
+  minutes, so a crash's run usually outlived its slot and stayed `running`
+  for good. `abandonOrphans()`, at the end of each leader tick, reads the
+  `runningRows` index (kept as `pendingRows` is: added on every write and
+  every admitted row, pruned on read): a scheduled cluster run nobody here
+  is attempting, not in the current slot and past its expected end, has its
+  claim asked for — granted only once the runner's has lapsed — and is
+  recorded `abandoned` (`STS-SCHED-0011`, `abandonedOf` its own id). The
+  passed slot is not run again. `tests/scheduler_cluster.js` I holds it;
+  the live crash takeover's step 4 found it.
+* **It never starts at require time or in a standby, and a request worker
+  never SCHEDULES a cluster job — but since #408 it RUNS one's body.**
+  `server.js` calls `start('front')` after the state is restored and before
+  it binds; `common/request_worker.ts` calls `start('per-process')`. See
+  *Where a cluster run's body runs*, below.
 * **Everything the page draws is in the store** (`scheduler.runs`, a
   persisted per-realm `realms.map`): runs, the leader's row, each process's
   latest per-process run, and the command rows. A manual run or a step-down
-  asked of any node is a row the leader obeys at its next tick.
+  asked of any node is a row the leader obeys at its next tick. **The page
+  and its API are the FRONT process's since #617** — see *A request worker
+  does not read the history back*, below.
 
 **THE RUN HISTORY'S BOUND IS PER JOB (2026-09-29, #338).** Measured on
 testidp: 126,160 run rows, growing by about a thousand every few minutes, and
@@ -637,7 +833,9 @@ thirty days and 5000 runs PER REALM, and `oauth2.claim-sources-refresh` —
 every minute, in every realm — is 1440 runs a day in each of 135 realms. Now
 a finished run is KEPT while it is one of its job's last
 `scheduler.runHistoryCount` (100) runs in its realm, or it ended within
-`scheduler.runHistoryHours` (24), whichever keeps more; the latest run of
+`scheduler.runHistoryHours` (1 since 2026-10-21, #820 part 3 — at 24 a day
+of every per-minute job in every realm was 199,000 rows on 8081, all read
+back by the front process at every start), whichever keeps more; the latest run of
 every job is always kept (a job that runs every ninety days still shows when
 it last ran), so is every run inside the window, failed ones included, and a
 queued or running row is never touched. A run of a job this build does not
@@ -651,14 +849,16 @@ leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
   every process drops the rows as it applies them, in batches of 2000 with
   the job waiting for each to be written down (`deps.settle`, a
   `flushThrough()`) before the next, at most 25 a run and asking
-  `ctx.stillOwner()` between them. What a run leaves is the next run's. One
-  summary line per run that did anything; `STS-SCHED-0017` when it fails.
+  `ctx.stillOwner()` between them. What a run leaves is the next run's. The
+  run's summary records what it removed or pinned; that log line is debug.
+  `STS-SCHED-0017` when it fails.
 * **A start reads less than the table holds**: the run store declares #333's
   `expiresAt`, answered by `Scheduler.expiryOf()` — for a finished run, its
   end plus the longer of the window and `(count + 1)` of its job's
   intervals, plus two hours of slack; for a command, its end plus the window
-  and the slack; for a per-process row, the longer of the window and three
-  intervals, plus the slack; nothing for the leader's row, a queued or
+  and the slack; nothing for a per-process row (#883: a non-null expiry
+  would leave it out of the front's restore, and the history walk still
+  deletes a stale one by its end); nothing for the leader's row, a queued or
   running run, a run of an on-demand job or of a job not registered here.
   That is never earlier than the purge would first be free to delete the
   row — as long as the job runs on its slots. **A job that stopped running**
@@ -671,6 +871,66 @@ leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
 * **Rows written before #338 carry no expiry** and are all restored until the
   purge has been through them: on testidp, with its backlog, that is a few
   runs of the job after the deploy.
+
+**A REQUEST WORKER DOES NOT READ THE HISTORY BACK (#617, 2026-10-14).** Even
+bounded, the history was **42,740 of the 52,234 minted rows** each of 8081's
+processes restored at every start (34 MB of 55 MB of sealed bodies), and in a
+request worker nothing reads it whole. So `runStore` declares
+`restoreInWorkers: false` (`common/realms.js`), a worker's restore leaves its
+rows out of the query (`persistence_minted.js`, `notInWorkers()`), and
+`/admin/scheduler` and `/admin-api/scheduler` (with `/run` and `/step-down`)
+are pinned to the front process (`request_pool.js`'s `NEVER_DISPATCHED`),
+which restores the rows that carry no expiry (#883, below) and runs the
+front's read barrier before it answers. That also ends the arrangement above
+in which the page was a surface worker's and the API a protocol worker's.
+**What a worker still does:** it
+applies every run row the change log brings after its start, writes its own
+per-process rows and any manual run a request queues (merged with the stored
+row by `mergeRow`, as always), and runs its per-process jobs from
+`processSlots`, which never read the store. What it gives up is the
+"already queued" match of `requestRun()` against a run queued BEFORE it
+started and not yet picked up by the leader — a window of one tick, in which
+a second click on a worker that has just started queues a second manual run.
+`tests/worker_minted_restore.js` holds it.
+
+**THE FRONT DOES NOT RESTORE AN EXPIRING RUN (#883, 2026-11-11).** #617 left
+the history in the front process, and a soak still restored about 239,000
+`scheduler.runs` rows there at every start. `runStore` declares
+`restoreExpiring: false`: the restore's query leaves out a row of that store
+whose `expires_at` is not null, and the restore loop drops one a driver
+returned anyway. What a start still reads is a row with no expiry — the
+leader's, a queued or running run, a finished manual or cron run, a process
+row, and a run written before #338 that still has none. A finished interval
+run is not held after that either: the store's reconciler tells the watchers
+and then deletes it, and a tick drops a body this process wrote once the
+flush has it (`dropHeld`, which refuses a key still journalled, and only when
+minted persistence is on — in development the map is the only copy).
+`scheduler.history` walks only the rows the process holds, so the tighter
+count and hour trim does not reach interval history left in the table; that
+history lives until `expires_at`, which the minted expiry purge deletes. The
+page asks the sort index for a bounded newest window (twenty rows a realm,
+two hundred on the page) and does not cache those rows into the map;
+`lastRun` is the resident rows plus one remembered row per job and realm, and
+a job that has been off for many slots may show none until it runs again,
+because that one row is not restored. A tick learns the current interval slot
+and the one before it from one batch read per realm per slot generation
+(`readMany`). **An absence is remembered for the slot whoever said it**
+(#883's review, 2026-11-13): an id the store has no row for, and since then
+an id a reader with no store answered null for, which until then was asked
+again every tick in every realm; both are forgotten with the slot, as a
+finished one is. **A read that fails holds back only the jobs it could not
+answer**: until #883's review a rejection failed the whole tick
+(`STS-SCHED-0013`), so one row the store could not open stopped every job
+in every realm, manual runs included. Now the realm's batch is asked again
+one job at a time; a job whose read still fails is held back for that tick
+(`unknownSlots`, neither run nor taken as finished) and asked about at the
+next, and the rest run. Two job reads failing in a row is an outage, so the
+tick asks nothing more and holds back every job it has not heard about. One
+`STS-SCHED-0023` line a tick names what was held back. `tests/scheduler.js`
+section P. Rows written before #338 still
+come back once — a keyed digest has no prefix a query can filter on — and the
+history walk deletes them from the rows it holds. Startup was not
+re-measured on 8081.
 
 **A REMOVED REALM'S JOBS GO WITH IT (#338).** A realm job is registered ONCE
 and runs in every realm `realms.list()` names (`realmIdsFor()`), so there is
@@ -701,17 +961,182 @@ standing), and they are live realms whose jobs ought to run.
 
 **The step-down** (`POST /admin-api/scheduler/step-down`, D10) is
 `cluster.stepDown('ops.scheduler')`: the lease is expired at the token held,
-`onLose()` fires, and this node does not campaign for the role again for three
+`onLose()` fires, and this node does not contend for the role again for three
 heartbeats — without the hold-off it would take the lease straight back on its
 next beat. It is the one addition this feature made to `cluster.js`.
 
-**The jobs registered today**, and where each is argued:
+**WHERE A CLUSTER RUN'S BODY RUNS (#408, 2026-10-19).** The leader is a
+front process, the thread that answers the main port, LDAPS and the KDC,
+and #408 found sixteen of fifty-nine jobs doing synchronous work there for
+tens of milliseconds to minutes (a key generation, a walk of every session,
+a CRL encoded per authority). A time limit is a `Promise.race` and cannot
+interrupt that. rcbj's decisions: every cluster job moves off the front by
+default, onto an EXISTING request worker (no dedicated job worker), and the
+per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
+*WHERE A CLUSTER RUN RUNS* has the argument; what a maintainer needs:
+
+* **Only `run()` moves.** The lease, the claim, the fence, the time limit and
+  the run row stay with the leader. `runClaimed()` hands `{ runId, jobId,
+  realm, trigger, params, clockOffsetMs }` to the ready protocol-pool worker
+  with the fewest requests in flight, then the shortest event-loop delay
+  (`request_pool.js`'s `schedulerRunner()`). The worker runs it with
+  `runDelegated()`, flushes, announces its commit, and answers. The leader
+  writes the outcome as before, and the row says where it ran (`ranIn`).
+  Never a surface worker: those are kept for a person waiting on a page.
+* **Nothing new is needed for correctness**, because a cluster job already
+  runs on whichever node leads and reaches the others through the store. In
+  the worker its writes replicate like a request's. The commit is announced
+  BEFORE the answer, so the pool's read-your-write generation moves for them
+  (no request finished to make `CommitAnnouncer` say so otherwise). A key set
+  or hierarchy it makes goes up the key and PKI channels, each change at a
+  newer generation (`receivePublishedKeys()`). A directory sign-out it makes
+  goes to the front on the channel (`{ ldapDrop }`), since no response is in
+  flight.
+* **Fenced, not interrupted.** At its time limit, on a lost lease or a
+  removed realm, the leader sends `{ schedulerFence }` and stops waiting. The
+  worker's `ctx.stillOwner()` answers false from then on. The front's timer
+  now fires on time, because its thread was never the one held. A worker
+  that ends under a run fails it at once with `STS-SCHED-0019`.
+* **AND THE BODY'S OWNERSHIP IS A GRANT, NOT THE ABSENCE OF A FENCE (#1305,
+  2026-11-04).** #695's review of #705 found that `stillOwner()` on the
+  worker was only "no fence has arrived". A fence that never came — the
+  front's thread stuck, the message lost, or a takeover the leader saw
+  only through the change log and sent nothing for — left a body owning a
+  run another node had claimed. And whether the job was on was asked at
+  the tick alone, so a switch-off did not reach a body already running.
+  Both are now decided by the leader, which looks at every run in flight
+  every 5 s (`watchRun()`, `checkRun()`); the worker decides only what
+  needs no message to arrive:
+  * **The worker's `stillOwner()` is true only while** no fence came, no
+    renewal said the job was switched off, the run's time limit has not
+    passed, and its last grant has not run out (`delegatedOwns()`). The
+    hand-off carries `deadlineMs` (the time limit) and `grantUntilMs` (a
+    first grant of 20 s), both instants on the process's clock, which the
+    worker thread shares. Each false is final: a renewal that arrives late
+    cannot hand back a run its body has stopped owning. A request with no
+    instants owns nothing.
+  * **The leader renews while it still owns the run** — what its own
+    `stillOwner()` asks: it leads, the run has not timed out, the realm is
+    defined, the row still carries this attempt's fence — with `{
+    schedulerRenew, runId, untilMs, off }`. If it no longer does, it sends
+    the fence instead, which is the takeover case's fence; that outcome was
+    already not written (`STS-SCHED-0003`). A grant that runs out on the
+    worker is `STS-SCHED-0021`, said once per run, and the body stops at
+    its next step. Four renewals missed is twenty seconds in which the
+    front ran no timer, when the leader cannot stand behind anything it
+    handed out.
+  * **The time limit is the bound that matters across nodes.** A run's
+    claim lasts its time limit and a second, so no other node can claim it
+    while the worker still believes it owns it, even if the leader's thread
+    never runs again. The grant is shorter, for the cases inside that bound:
+    a lost lease, a takeover, a switch-off.
+  * **Rejected: the worker reading the run row itself.** A worker does not
+    restore `scheduler.runs` (#617) and sees the leader's `running` row only
+    once the change log brings it, so "no row" or an older attempt's row
+    would have to mean "owned" — and a stuck front, the case that matters
+    most, changes no row at all.
+  * **A switch-off is the scheduler's three switches**: `scheduler.enabled`
+    off, the job in `scheduler.disabledJobs`, its interval set to 0
+    (`serviceOffReason()`). Once one answers, the run's `stillOwner()` is
+    false INLINE AND ON A WORKER, the leader keeps waiting for the body's
+    answer (no fence), and the run is recorded as it ends — a switch-off is
+    no failure, so no code — with a `why` saying it was switched off. **NOT
+    the job's own `off()`**: that is mostly "nothing to do" (no Claims
+    Provider registered, no post-login activity running), which a body's
+    own work makes true halfway through; a job whose own switch must stop
+    a run reads it itself. `tests/scheduler_workers.js` J and K hold both
+    halves.
+  * **A success may say why it did less (#1313)**: a body whose result is
+    an object with a string `why` has it written on the `succeeded` row,
+    with no code — the minted expiry purge skipping its orphan check while
+    the global registry is down is the one that does. A body on a worker
+    sends it beside its summary (`runDelegated()`'s answer, the pool's
+    `receiveSchedulerRunDone()`), because only the summary's text crosses
+    the channel; a switch-off's own `why` comes first.
+    `tests/scheduler_workers.js` L holds it.
+  * **The 5 s look is a timer of one run**, armed when the run starts and
+    cleared when it ends, like its time limit: a timeout inside one
+    operation, not periodic work (root `CLAUDE.md`).
+* **A worker that does not know the run's realm yet** (one created a moment
+  ago) answers `unknownRealm`, and that one run is inline; a realm removed
+  meanwhile runs nothing (`STS-SCHED-0018`, #338's rule). A worker's load
+  counts the bodies it is already running as well as its requests, and a
+  pool's `stop()` fails the runs of the workers it stops as `reap()` does.
+  The hold below is asked only once a place under the cap is free, so a run
+  waiting for the cap keeps the instant it was first held.
+* **Inline, as before #408,** where there is no ready worker: none
+  configured, a pool that gave up, or a store that does not coordinate,
+  where there are no workers at all. Also for a job a worker answers it has
+  not registered (an owner that registers only in the front process, at
+  `listen()` or a first use there). That job is logged `STS-SCHED-0020` once
+  and runs on the front for the process's life.
+* **An exemption is a reason**: `onFront: '<why>'` on the registration. An
+  empty or non-string one is refused (`STS-SCHED-0009`), and
+  `tests/scheduler_workers.js` F holds it. Five jobs carry one. The first
+  two because they must:
+  `scheduler.history`, which deletes the null-expiry rows only the front
+  restores (`scheduler.runs` is not restored by a worker, #617) and leaves
+  finished interval runs to the minted expiry purge (#883); and
+  `spiffe.target-reconcile` (added in the review of #705), whose halt while
+  stopping reads `SpiffeTargets.stopping`, a static only the front's
+  `beginStop()` sets — in a worker a reconcile would register this task
+  again after `onStop()` had deregistered it. The other cluster jobs were
+  audited against front-only state (sockets, the run store, memory nothing
+  replicates) and found to work through the store or the pool's channels.
+  The ticket key and the TUF root are persisted shared maps, the SPIFFE
+  authorities are a persisted realm map, key rotations bump the key set's
+  generation, and every outbound delivery is claimed per row. The third,
+  fourth and fifth, `report.drain`, `report.retention` and
+  `report.schedule` (#956), stay on the front because the fence of a
+  running report is a set in this process, which a worker does not share
+  (`report/CLAUDE.md`).
+* **Two left the front in #704.** `saml2.sp-metadata-refresh` was there only
+  because `server.js`'s `listen()` was the one place that registered it;
+  `saml/sp_metadata.ts`'s wire step registers it in every process now.
+  `keys.data-key-reencrypt` was there because `keystore.resealOwnRows()`
+  re-seals the rows the RUNNING process holds sealed in memory — and that
+  pin protected the front alone: with `cluster.mode=off` every request
+  worker kept its copy of a realm's key set under the superseded key, and
+  lost its signing keys when the pass later destroyed it
+  (`keystore.applyStoredChange()` did not read a key row where the store
+  does not arbitrate). Every process now takes a re-sealed key-set row of
+  the set it holds (`adoptResealedKeyRow()`, `common/CLAUDE.md`, *Rotation,
+  re-sealing, destruction*), so whichever process runs the pass, the others
+  follow it from the change log, days before any destruction.
+* **A body on any process gives that process's loop turns (#704).** A
+  worker answers requests too, so moving a body off the front moved its
+  stall rather than ending it. A body that walks a store does it in slices
+  — `common/loop_slices.js`'s `walkInSlices()` and `eachInSlices()`, or a
+  `setImmediate()` every few rows — and makes a key pair in node's thread
+  pool rather than with `generateKeyPairSync()`. The per-process jobs, which
+  cannot move at all, do the same: `cluster.cache-report` counts rather
+  than lists (`cacheRegistry.snapshotAsync()`), `caches.eject-expired`
+  ejects in slices (`ejectExpiredAsync()`), and `persistence.change-log-pull`
+  yields every 25 rows of a page. `tests/job_slices.js` holds each.
+* **Nice: a run held for load, never for long.** A due SCHEDULED run of a
+  job whose `nice` (0–19, default 10) is above 0 waits before its claim,
+  while even the least-loaded worker is heavy. Heavy means
+  `scheduler.niceBusyThreshold` requests in flight, or a 99th-percentile loop
+  delay of `scheduler.niceLagMs` in its last ten-second report
+  (`persistence.event-loop-lag` sends `{ loopLag }` up; a report over 30 s
+  old is none). A run is held at most `scheduler.niceMaxDeferS` × nice/19,
+  and never more than half its interval. That bound is measured from when
+  the run was FIRST held, in the leader's memory keyed by runId, so a new
+  slot or a lost lease drops it. Past the bound it runs regardless. Each
+  hold and each forcing through is one info line, and the row keeps
+  `deferredMs`. Never held: a manual run, an on-demand job (registered nice
+  0), a job of nice 0, and an inline run. The front has no queue to measure,
+  and its loop delay is mostly the I/O it exists to do.
+
+**The jobs registered today**, and where each is argued. Every cluster
+row's body runs on a request worker except those marked **front**:
 
 | Job | Kind, scope | Owner and argument |
 |---|---|---|
 | `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
+| `authn.account-set-expiry` | cluster, realm; hourly — every browser's account set brought up to date, a remembered account past `authn.rememberedAccountDays` dropped, an empty set deleted (#561) | `authn/authn.ts`, `authn/CLAUDE.md` |
 | `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
-| `scheduler.history` | cluster, service; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
+| `scheduler.history` | cluster, service, **front**; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
 | `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
@@ -722,7 +1147,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147); off in a realm with no Claims Provider registered and no link request pending (#338) | `oauth-oidc/claims_providers.ts` |
 | `attribute-sources.refresh` | cluster, realm; every minute — for each attribute source whose scheduled interval is due (or asked for by Read everyone now), reads the next `attributeSources.refreshBatch` people after its cursor onto their entries (#94) | `attribute-sources/attribute_sources.ts` |
 | `gnap.grant-expiry` | cluster, realm; every five minutes — finalizes each GNAP grant whose interaction or grant lifetime (`gnap.grantLifetimeS`) ended with no request touching it, recording `expired` or `rejected` (#432 phase 7) | `gnap/gnap_grants.ts` |
-| `gnap.spend-purge` | cluster, realm; hourly — deletes the running totals the demonstration resource server keeps for a GNAP grant's limits once the grant has ended, in `sts_cluster_budgets` and in the ledger a store that cannot be shared keeps (#432 phase 5) | `gnap/gnap_spend.ts` |
+| `gnap.spend-purge` | cluster, realm; hourly — deletes the running totals kept for a GNAP grant's limits once the grant has ended, in `sts_cluster_budgets` and in the ledger a store that cannot be shared keeps (#432 phase 5) | `gnap/gnap_spend.ts` |
 | `oauth2.grant-management-purge` | cluster, realm; hourly — removes each Grant Management grant past its last token's exp, and each token row past its own (#142) | `oauth-oidc/grant_management.ts` |
 | `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
 | `oauth2.device-code-sweep` | cluster, per realm, every 300 s | `oauth-oidc/device_authorization.ts` (#150): expired and answered RFC 8628 device codes removed |
@@ -732,6 +1157,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oidfed.collection-crawl` | cluster, realm; `oidfed.collectionCrawlS` (hourly), off while `global.publicBaseUrl` is empty — a job has no request to take the realm's Entity Identifier from, and Crawl now on `/admin/oidfed` (`POST /admin-api/oidfed/crawl-collection`) runs one with the administrator's; walks every entity beneath the realm and keeps what it finds in `ou=oidfed` for every node (#136) | `oidfed/entity_collection.ts` |
 | `mail.deliver` | cluster, service; `mail.deliverS` — every realm's outbox: the messages due, dead-lettering past `mail.retentionS`, removing finished rows (#63) | `common/mail.ts` |
 | `ssf.dead-letter-sweep` | per-process; `ssf.deadLetterSweepS` — its summary and history are the process's own | `ssf/ssf.ts` (P5) |
+| `ssf.internal-poll` | cluster, service; `ssf.internalPollMs`, `nice` 0 — the console and the portal collect their streams by RFC 8936 poll, each realm walked in the run, only streams with something waiting dialled | `ssf/ssf.ts`, `ssf/ssf_receivers.ts` (#771) |
 | `ssf.stream-maintenance` | cluster, realm; `ssf.streamMaintenanceSweepS`, off while `ssf.inactivityTimeoutS` and `ssf.verificationEveryS` are both 0 — SSF 1.0's inactivity timeout and transmitter-initiated verification | `ssf/ssf.ts` (#144) |
 | `risc.opt-out-effective` | cluster, realm; every 5 minutes, off while `risc.enabled` is off — sends RISC `opt-out-effective` for each account whose holder opted out on `/portal/signals` at least `risc.optOutDelayHours` ago (RISC 1.0 section 2.8, #146) | `ssf/ssf.ts` |
 | `risk.dataset-directory` | cluster, service; `risk.datasetsDirectoryScanS`, off while `risk.datasetsDirectory` is empty — imports each manifest's dataset file once (#62) | `risk/risk_datasets.ts` |
@@ -740,33 +1166,75 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `risk.retention` | cluster, service; hourly — deletes the rows of superseded and refused dataset versions and the failures past their retention (#62) | `risk/risk_datasets.ts` |
 | `risk.stalled-imports` | cluster, service; `risk.uploadSweepS` — refuses a dataset version left `loading` with no progress for `risk.importStallMinutes`, the import whose process stopped (#215) | `risk/risk_datasets.ts` |
 | `risk.upload-cleanup` | per-process, quiet; `risk.uploadSweepS` — touches the upload files this process is importing and deletes the leftovers of one that stopped from `risk.uploadDirectory` (#215) | `risk/risk_upload.ts` |
-| `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
+| `saml2.sp-metadata-refresh` | cluster, service (registered in every process by the module's wire step since #704; on the front until then); `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
-| `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
-| `persistence.minted-expiry-purge` | cluster, service; five minutes, registered at start-up in every process, off where minted state is not persisted — deletes from `sts_minted`, in batches of 5000 and at most 20 batches of each kind per run, the rows no start reads any more: past their own `expires_at`, of a realm no longer in `sts_realms` (written over an hour ago), and a `retain: 'age'` store's rows with no expiry older than `persistence.mintedRetention`. The restore used to do the last of these in every process at every start (#333) | `persistence/persistence_minted.js` |
+| `persistence.minted-index-backfill` | cluster, service; five minutes, registered by every front process's restore that has an on-demand store (since 2026-10-27; until then only where an index was incomplete, so the nodes' job lists disagreed and a non-leader's registration never ran), the run doing nothing once every index is complete — files the rows stored before schema version 24 in `sts_minted_index` and writes the completion mark (#820) | `persistence/persistence_minted.js` |
+| `persistence.granting-key-backfill` | cluster, service; two minutes, at most 45 s of work a run, registered in every process from `common/protocol_stack.ts` (23b-iii-b), off where the directory is not kept in a database and, **in every process, once the done mark is written** ("finished: every directory entry has its grantinggroup keys"; in cells both tiers' marks) — `off()` answers from the mark as the store holds it, primed without waiting at `install()` and from `off()` itself at most once an interval while unseen, cached once true (#1316) — gives every directory entry written before #1306 its `grantinggroup` index keys, 500 rows a page in primary-key order after a cursor kept in `sts_minted_index`, compare-and-set on the blob, then writes a done mark per database (#1311) | `persistence/granting_index_backfill.js`, `persistence/CLAUDE.md` |
+| `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush (and at start-up in every process). In a service deployed as cells it sweeps THIS CELL'S database only (#1313), in batches of 5000 and at most 20 per run, failing under STS-STORE-0055; a single database is swept in the same batches with no tier named (#1315) | `persistence/persistence_minted.js` (P5) |
+| `persistence.tombstone-purge-global` | cluster, service, **a global job** (`GLOBAL_JOBS`, so ONE cell runs each slot: whichever wins `scheduler.run.global`); a cell that loses the claim does not ask again until the claim's lifetime ends, or its oldest-due runs would hold every place under `scheduler.maxConcurrentRuns` (`claimedByAnotherCell`, #98); ten minutes; off unless the store is tiered ("this store has no global tier") — the global tier's tombstones, in the same batches. Until #1313 every cell's tombstone sweep reached the global tier through one `Promise.all` call to both databases; its failure is STS-STORE-0165 and does not touch the cell's sweep. Kept apart from the expiry pair rather than folded into it: another schedule, another rule and its own code | `persistence/persistence_minted.js` |
+| `persistence.minted-expiry-purge` | cluster, service; five minutes, registered at start-up in every process, off where minted state is not persisted — deletes from `sts_minted`, in batches of 5000 and at most 20 batches of each kind per run, the rows no start reads any more: past their own `expires_at`, of a realm no longer in `sts_realms` (written over an hour ago), and a `retain: 'age'` store's rows with no expiry older than `persistence.mintedRetention`. The restore used to do the last of these in every process at every start (#333). In a service deployed as cells it purges THIS CELL'S database only (#695): each tier is its own job, with its own batches, stop test and failure. **An unreadable global realm registry SKIPS its orphan check (#1313)**: the run succeeds with a `why` naming the skip, STS-STORE-0164 is logged once per outage, and only a failure of its own deleting fails it | `persistence/persistence_minted.js` |
+| `persistence.minted-expiry-purge-global` | cluster, service, **a global job** (`tiers.js` `GLOBAL_JOBS`, claimed under `scheduler.run.global` in the global database, so ONE cell runs each slot: whichever wins the claim); five minutes; off unless the store is tiered ("this store has no global tier") — the same three kinds of row and the same bounds as `persistence.minted-expiry-purge`, in the global tier's `sts_minted`. Until #695 every cell's leader purged the global tier, through one call to both databases with one shared limit; its failure is STS-STORE-0162 and does not touch the cell's purge | `persistence/persistence_minted.js` |
 | `persistence.event-loop-lag` | per-process, quiet; ten seconds, in every process that started its store (any mode) — reads and resets `perf_hooks.monitorEventLoopDelay()`, keeps the window for `/admin/persistence`, warns STS-STORE-0068 past 5 s (#351) | `persistence/persistence.js` |
 | `cluster.cache-report` | per-process, quiet; front processes that joined | `cluster/cluster.js` (P5) |
 | `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
 | `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
+| `oauth2.access-token-block-reap` | cluster, service; a minute, registered from `service_state.start()` in every process (before the scheduler starts), off with no shared claims table — releases access-token status-list blocks whose stable origin no longer holds a live origin claim — one lapsed for more than `ORIGIN_LAPSE_GRACE_MS` (90 s, #884's review), so a late renewal keeps its block — or whose node membership has left or expired (#884). A start also releases that process's own origin once, which this job never does | `oauth-oidc/access_token_status.ts` |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
-| `ldap.connection-mirror-maintenance` | per-process, quiet; socket-holding processes | `ldap/ldap_cluster_connections.ts` (P5) |
+| `ldap.connection-mirror-maintenance` | per-process, quiet; registered in every process when wired, off in one holding no mirrored connections | `ldap/ldap_cluster_connections.ts` (P5) |
 | `federation.encryption-key-retire` | cluster, realm; five minutes, off while `federation.enabled` is off — removes the encryption key a relationship's rotation replaced once `federation.encryptionKeyGraceS` has passed (it stopped decrypting at that instant already) | `federation/federation_encryption.ts` (#168) |
+| `federation.client-certificate-renew` | cluster, realm; hourly, off while `federation.enabled` is off — issues a TLS client certificate to each FAPI 1.0 Advanced relationship that holds none, and renews one `federation.clientCertificateRenewDays` before it expires, with the same subject | `federation/federation_client_certificate.ts` (#931) |
+| `federation.provision-idle` | cluster, realm; five minutes, off while `federation.enabled` is off — disables a person whose only sign-in path is one relationship once `federationLastSeen` is older than that relationship's `fedProvisionIdleMinutes`; empty or `0` leaves everybody; the entry and the link are kept. It runs in every cell and is not a global job | `federation/federation_provision.ts` (#358), `federation/CLAUDE.md` |
+| `federation.partner-refresh` | cluster, realm; fifteen seconds, off while `federation.enabled` is off — for an OpenID Connect relationship with `fedRefreshTokens` on, refreshes the partner's tokens of each session holding one once it is due (`fedRefreshEverySeconds`, else the access token's expiry, else an hour), holds the answer to Core section 12.2, and ends the session when the partner refuses or the answer does not name the person; it reads only `federation_sp.partnerRefresh`, never the sessions | `federation/federation_sp.ts` (#930), `federation/CLAUDE.md` |
 | `tls.ticket-key-rotate` | cluster, service; `tls.sessionTicketRotationS`, off outside active-active — replaces the TLS session-ticket key every node's LDAPS listener shares (not the main port's or the debugger's: they ask for client certificates), deleting the old one | `tls/session_tickets.ts`, `tls/CLAUDE.md` |
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 | `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
-| `process.memory-report` | per-process; every 5 minutes — one log line per process (front, protocol worker, surface worker) with its rss, heap used and total, heap limit, external and array buffers; a request worker also sends its figures to the front process, which reports them beside that worker's exit (#341) | `common/process_memory.ts`, `common/CLAUDE.md` |
+| `spiffe.target-reconcile` | cluster, service, **front** (its stopping flag is the front's); every 15 s, off when `ECS_CONTAINER_METADATA_URI_V4` is unset and while this process is stopping — each running node task's private address (a task whose `group` is `service:<cluster>-node-…`; a `run-task` task or another service's is not a node, #695) registered in this cluster's SPIFFE target groups, an address no running task still has deregistered; a failure is `STS-CLUSTER-0027` and the service keeps serving (#323) | `cluster/spiffe_targets.js`, `deploy/aws/CLAUDE.md` |
+| `process.memory-report` | per-process; every 5 minutes — records, in this process, the run's summary with its role and its memory (rss, heap used and total, heap limit, external and array buffers); the log line is debug. A request worker also sends its figures to the front process, which reports them beside that worker's exit (#341) | `common/process_memory.ts`, `common/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
+| `devices.android-status-refresh` | cluster, service; `devices.androidStatusRefreshS` (daily), off while `devices.androidStatusUrl` is empty — downloads Google's Android attestation status list and activates it, which queues the recheck | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
+| `devices.android-status-recheck` | cluster, service (loops over realms); daily and on a list's activation — the people and devices MARKED as holding an Android-attested key, asked of the store asynchronously, a realm skipped when neither the list nor the registrations moved since its last complete recheck (#615) | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
+| `passkeys.client-learning-sweep` | cluster, realm; hourly and Run now — removes the learned passkey clients (#1112) never learned whose failures all aged out of `webauthn.clientLearningWindowHours`; a learned one is kept until a success or a clear | `common/passkey_clients.ts`, `common/CLAUDE.md` 3ch |
+| `pki.pins.audit` | cluster, realm; daily at 03:00 UTC and Run now — holds what the realm pins and its signer truststore to the checks of paranoid PKI mode, keeps the result `/admin/pki/trust` draws, and logs and mails only what changed (#1360) | `common/certificate_trust.ts`, `common/CLAUDE.md` (3dd) |
+| `passkeys.report-recount` | cluster, realm; daily and Recount now (`POST /admin-api/passkey-report/recount`) — counts the realm's passkeys from the HOLDERS of `stsWebauthnCredential`, a slice after a key cursor at a time, `stillOwner()` asked between slices, and makes the count the report's new baseline (#942); then writes the day's passkey history row and removes the rows past `webauthn.passkeyHistoryDays` (#1109) — in this job rather than a sibling, because the scheduler orders no job after another | `common/passkey_report.ts`, `common/CLAUDE.md` 3cs |
+| `post-login.activity-mail` | cluster, realm; every 10 minutes and Run now, off in a realm with no started post-login activity running — one slice of each running one's people after a key cursor (the realm's through `passkeyScanAsync()`, the union of its groups' through `groupMembersAfterAsync()`, #1123), each person `post_login.dueFor()` names mailed a reminder to sign in unless inside the interval or past its maximum; the cursor starts over at the end of the people; `stillOwner()` and its state asked before each person; one audit row per started activity per run (#1111) | `common/post_login_activities.ts`, `common/CLAUDE.md` 3ct |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token, dated by the `exp` the revocation carries since #345 (not per-process: the revocation set is replicated, so one delete on the leader reaches every process) | `common/admin_stats.js` (P5; the ticket's "tracked tokens"), `common/CLAUDE.md` 3b |
 | `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
+| `keys.data-key-reencrypt` | cluster, service; hourly — re-seals every value under a superseded data key and destroys one nothing is sealed under. On the front from #408 to #704, because `keystore.resealOwnRows()` re-seals the rows the running process holds sealed in memory; every other process takes the re-sealed key-set row since #704 (*Two left the front*, above) | `common/data_key_rotation.ts`, `common/CLAUDE.md` (*Rotation, re-sealing, destruction*) |
+| `report.drain` | cluster, realm, **front**; every 2 s — claims queued report jobs up to the concurrency caps and writes each artifact. The fence is a set in this process, so the body stays on the front (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.retention` | cluster, realm, **front**; every 60 s — deletes artifacts past their retention, drops finished job rows past theirs, and fails a running job whose fence is gone (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.schedule` | cluster, realm, **front**; every 60 s — enqueues a job for each due definition, as its owner, while that owner can still run it. A stored parameter default is used; a missing parameter does not consume the slot (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.drain.here` | per-process, realm, quiet; every 2 s — `report.drain` on the process that holds `ops.reporting` (`STS_REPORT_NODE=true`); a no-op otherwise (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.retention.here` | per-process, realm, quiet; every 60 s — `report.retention` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.schedule.here` | per-process, realm, quiet; every 60 s — `report.schedule` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `audit.export` | per-process, realm, quiet; `auditExport.intervalS` — each process delivers its own audit ring to the enabled destinations, cursors `merge: 'own'`, at-least-once (#641) | `common/audit_export.ts`, `common/CLAUDE.md` 3da |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose
 timer has gone. **P5 of #49 emptied the `becomes` half (2026-09-22)**; what is
 left is `permanent`: the heartbeat and origin-claim renewal the scheduler
 stands on, and one-shot timeouts and debounces.
+
+**NO JOB WALKS EVERY PERSON OR DEVICE WITHOUT SAYING WHY (#615,
+2026-10-13).** A job runs on the serving front process, which since #320
+holds the directory as a window: a walk of `ou=users` or `ou=devices` there
+is the container paged through the SYNCHRONOUS bridge on the thread that
+holds every socket — the Android recheck at 191,000 people stopped 8081's
+listeners for minutes. A job reads the HOLDERS of an attribute
+(`eachHolderOfAny()`, or `holdersAsync()` where it can wait), or one page
+after a cursor (`attribute-sources.refresh`'s `peoplePage()` since #615), or
+it is on `tests/no_full_directory_walk_in_jobs.js`'s argued exemption list,
+which follows each job's `run` by name to the walks and only ever shrinks.
+The audit #615 made of every registered job: the Android recheck and the
+attribute-source refresh were fixed; `scim-client.reconcile` reads everybody
+in scope by design (exempt, with what would remove it); `keys.data-key-
+reencrypt` and `keys.data-key-count` walk every row of `sts_ldap_entries`
+store-side, asynchronously on the maintenance pool, which needs an indexed
+data-key column to avoid (recorded as `INDIRECT`, the name-following cannot
+see them); every other job reads holders, resident containers or its own
+stores.
 
 **Two things P5 added to the scheduler for them:**
 
@@ -781,9 +1249,23 @@ stands on, and one-shot timeouts and debounces.
   fetches. The report allows a quiet job's row to be that old before calling
   it stale.
 
+**A JOB'S BODY LOGS ONLY WHEN SOMETHING IS WRONG.** Routine info from
+`run()` and from everything it calls is written at debug
+(`common/job_log.ts`, around the three calls to `run()`). A warning, an
+error, and an info line that carries an `STS-` code — a recorded failure,
+including an audit refusal — are written as asked. `STS_LOG_LEVEL=debug`
+still shows the routine lines. The run row on /admin/scheduler records a
+run that succeeded. That success is not an audit event, so the audit
+export does not send "Scheduler run … succeeded"; a failure and an
+abandonment are audit rows and are exported. Lines outside a body stay:
+who leads, a run held for load, an outcome that cannot be written. A
+job's `quiet: true` is the store's run-row rate limit (`QUIET_RECORD_MS`,
+above) and is a different thing.
+
 **A job registered at first use** (the four purges) requires the scheduler
 LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and
-`used_assertions.js` is in the parent project's Kerberos COPY closure.
+`used_assertions.js` was in the parent project's Kerberos COPY closure (an
+obligation until #1280; the arrangement stands).
 
 ## Every node on two pages (#332, 2026-09-28)
 
@@ -815,9 +1297,9 @@ node draws a page reads every row.
   The names to keep are read FRESH (`cluster.state()`), with this node's own
   added; a read that fails, or a state with no membership, deletes nothing
   and says so in the run's summary. The driver refuses an empty keep list for
-  the same reason. Each deletion is logged once at info, by name; a delete
-  that fails is `STS-CORE-0128`, logged when it starts failing, and thrown so
-  the scheduler records the run as failed.
+  the same reason. The run's summary records each deletion; the log line is
+  debug. A delete that fails is `STS-CORE-0128`, logged when it starts
+  failing, and thrown so the scheduler records the run as failed.
 * **THE ANSWERING NODE IS LIVE.** Its own section is its live view; its own
   row is never drawn. The totals are over the nodes not gone.
 * **NAMES, NEVER ADDRESSES.** Neither page carries a host name any more — it

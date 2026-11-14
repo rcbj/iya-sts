@@ -100,8 +100,9 @@ resource "aws_iam_role" "deployer" {
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
 # The union of what the ECS task role (iya-sts reading its secrets and,
-# since #391, wrapping its data encryption keys with the KEK in KMS, and
-# cert-init exporting the public certificate), the ECS execution role (pulling
+# since #391, wrapping its data encryption keys with the KEK in KMS,
+# cert-init exporting the public certificate, and since #323 registering
+# the nodes in the SPIFFE target groups), the ECS execution role (pulling
 # the images, writing logs, injecting the environment's secrets) and the suite
 # runner's role (uploading its report) can do. A role's effective permissions
 # are the intersection of its own policy and this, so a policy that grants
@@ -212,6 +213,48 @@ data "aws_iam_policy_document" "workload_boundary" {
       variable = "ses:FromAddress"
       values   = local.ses_from_patterns
     }
+  }
+  # THE SPIFFE TARGET GROUPS (#323). A node's task reconciles the groups
+  # Terraform registered by address, which ECS cannot keep current (five
+  # target groups per service, all five already used). The ceiling is every
+  # environment's `<name>-*-sp-*` groups and a cell's `<name>-*-s` plus a
+  # port (two to five characters: an ELB name is 32, and `*-s*` would also
+  # match `-sts` inside `iya-sts-…-https`). The environment's task role
+  # names its own prefix (environment/iam.tf); the effective permission is
+  # the intersection. DescribeTargetGroups has no resource-level permission.
+  # The deployer is not given a wider grant: it already registers targets
+  # for Terraform, and it must not be able to raise this ceiling.
+  statement {
+    sid = "ReconcileSpiffeTargetGroups"
+    actions = [
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:DeregisterTargets",
+      "elasticloadbalancing:DescribeTargetHealth",
+    ]
+    resources = flatten([
+      for p in local.rarn.elasticloadbalancing : [
+        "${p}:targetgroup/${var.name}-*-sp-*/*",
+        "${p}:targetgroup/${var.name}-*-s??/*",
+        "${p}:targetgroup/${var.name}-*-s???/*",
+        "${p}:targetgroup/${var.name}-*-s????/*",
+        "${p}:targetgroup/${var.name}-*-s?????/*",
+      ]
+    ])
+  }
+  statement {
+    sid       = "ListSpiffeTargetGroups"
+    actions   = ["elasticloadbalancing:DescribeTargetGroups"]
+    resources = ["*"]
+  }
+  statement {
+    sid     = "ReadRunningNodeTasks"
+    actions = ["ecs:ListTasks", "ecs:DescribeTasks"]
+    resources = flatten([
+      for p in local.rarn.ecs : [
+        "${p}:cluster/${var.name}-*",
+        "${p}:task/${var.name}-*/*",
+      ]
+    ])
   }
 }
 
@@ -1281,6 +1324,109 @@ resource "aws_iam_policy" "deploy_network" {
   policy = data.aws_iam_policy_document.deploy_network.json
 }
 
+# CLOUDFRONT (environment/cloudfront.tf, #1336). A policy of its own, for the
+# 6,144 characters a managed policy may hold.
+#
+# A distribution carries the Project tag, so the deployer can touch this
+# project's and none of the account's others. A cache policy has neither a tag
+# nor a name in its ARN, so it cannot be scoped: the cost is that the deployer
+# may edit any custom cache policy in the account.
+data "aws_iam_policy_document" "deploy_cloudfront" {
+  statement {
+    sid = "CloudFrontCreateOnlyTagged"
+    actions = [
+      "cloudfront:CreateDistribution", "cloudfront:CreateDistributionWithTags",
+      "cloudfront:TagResource",
+    ]
+    resources = ["arn:${local.partition}:cloudfront::${local.account_id}:distribution/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "CloudFrontChangeOnlyTagged"
+    actions = [
+      "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution",
+      "cloudfront:TagResource", "cloudfront:UntagResource",
+    ]
+    resources = ["arn:${local.partition}:cloudfront::${local.account_id}:distribution/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "CloudFrontRead"
+    actions = [
+      "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig",
+      "cloudfront:ListTagsForResource", "cloudfront:GetCachePolicy",
+      "cloudfront:GetOriginRequestPolicy",
+    ]
+    resources = ["*"]
+  }
+
+  # CLOUDFRONT LOOKS THE CERTIFICATE UP WITH THE CALLER'S OWN PERMISSIONS, AND A
+  # DENIAL THERE COMES BACK AS InvalidViewerCertificate, "doesn't exist, isn't
+  # in us-east-1, isn't valid". The same certificate and the same request
+  # succeeded with an administrator's credentials (#1336, 2026-11-05), so the
+  # deployer's tag-conditioned ACM statements were not enough on that path. So
+  # these reads carry no tag condition: all of them return only public material.
+  statement {
+    sid = "CloudFrontReadsTheCertificate"
+    actions = [
+      "acm:DescribeCertificate", "acm:GetCertificate", "acm:ListCertificates",
+      "iam:GetServerCertificate", "iam:ListServerCertificates",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "CloudFrontCachePolicies"
+    actions = [
+      "cloudfront:CreateCachePolicy", "cloudfront:UpdateCachePolicy",
+      "cloudfront:DeleteCachePolicy",
+    ]
+    resources = ["arn:${local.partition}:cloudfront::${local.account_id}:cache-policy/*"]
+  }
+
+  # A CLOUDFRONT WEB ACL IS GLOBAL AND ITS ARN SAYS us-east-1; the name prefix
+  # is the scope, as it is for everything else this project names.
+  statement {
+    sid = "WafOnlyThisProjectsNames"
+    actions = [
+      "wafv2:CreateIPSet", "wafv2:GetIPSet", "wafv2:UpdateIPSet",
+      "wafv2:DeleteIPSet", "wafv2:CreateWebACL", "wafv2:GetWebACL",
+      "wafv2:UpdateWebACL", "wafv2:DeleteWebACL", "wafv2:TagResource",
+      "wafv2:UntagResource", "wafv2:ListTagsForResource",
+    ]
+    resources = [
+      "arn:${local.partition}:wafv2:us-east-1:${local.account_id}:global/ipset/${var.name}-*",
+      "arn:${local.partition}:wafv2:us-east-1:${local.account_id}:global/webacl/${var.name}-*",
+    ]
+  }
+
+  # CloudFront asks the CALLER to be able to read and write the log bucket's
+  # ACL when a distribution is told to log there.
+  dynamic "statement" {
+    for_each = length(var.cloudfront_log_buckets) > 0 ? [1] : []
+    content {
+      sid       = "CloudFrontLogBucketAcl"
+      actions   = ["s3:GetBucketAcl", "s3:PutBucketAcl"]
+      resources = [for b in var.cloudfront_log_buckets : "arn:${local.partition}:s3:::${b}"]
+    }
+  }
+}
+
+resource "aws_iam_policy" "deploy_cloudfront" {
+  name   = "${var.name}-deploy-cloudfront"
+  policy = data.aws_iam_policy_document.deploy_cloudfront.json
+}
+
 resource "aws_iam_policy" "deploy_edge" {
   name   = "${var.name}-deploy-edge"
   policy = data.aws_iam_policy_document.deploy_edge.json
@@ -1303,11 +1449,12 @@ resource "aws_iam_policy" "deploy_cells" {
 
 resource "aws_iam_role_policy_attachment" "deployer" {
   for_each = {
-    network = aws_iam_policy.deploy_network.arn
-    edge    = aws_iam_policy.deploy_edge.arn
-    data    = aws_iam_policy.deploy_data.arn
-    compute = aws_iam_policy.deploy_compute.arn
-    cells   = aws_iam_policy.deploy_cells.arn
+    network    = aws_iam_policy.deploy_network.arn
+    edge       = aws_iam_policy.deploy_edge.arn
+    cloudfront = aws_iam_policy.deploy_cloudfront.arn
+    data       = aws_iam_policy.deploy_data.arn
+    compute    = aws_iam_policy.deploy_compute.arn
+    cells      = aws_iam_policy.deploy_cells.arn
     # #97: the HA VPN, the inbound resolver and the private inter-cell
     # records of a multi-cloud environment.
     multicloud = aws_iam_policy.deploy_multicloud.arn
@@ -1327,12 +1474,27 @@ data "aws_iam_policy_document" "region_fence" {
   statement {
     sid         = "OnlyPermittedRegionsForRegionalServices"
     effect      = "Deny"
-    not_actions = local.fence_exempt
+    not_actions = concat(local.fence_exempt, local.edge_services)
     resources   = ["*"]
     condition {
       test     = "StringNotEquals"
       variable = "aws:RequestedRegion"
       values   = local.regions
+    }
+  }
+  # CLOUDFRONT'S CERTIFICATE AND WEB ACL EXIST ONLY IN us-east-1, which is not
+  # a region this project otherwise runs in (#1336). Those services are held
+  # to that one more region rather than exempted. The deployer's alone: neither
+  # boundary carries this, because no role it makes has any use for them.
+  statement {
+    sid       = "EdgeServicesOnlyInTheirRegions"
+    effect    = "Deny"
+    actions   = local.edge_services
+    resources = ["*"]
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:RequestedRegion"
+      values   = distinct(concat(local.regions, ["us-east-1"]))
     }
   }
 }

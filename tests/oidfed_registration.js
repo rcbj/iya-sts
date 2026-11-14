@@ -250,7 +250,7 @@ async function body(t) {
   const ended = inRealm(REALM, function () {
     return applications.clientConfigOf(rpId);
   });
-  const swept = inRealm(REALM, function () {
+  const swept = await inRealm(REALM, function () {
     return registration.expireRegistrations();
   });
   const gone = inRealm(REALM, function () {

@@ -18,6 +18,9 @@
 //   3. ANDROID KEY ATTESTATION built here: attested against a configured
 //      test root; a software key, a foreign challenge refused
 //      (STS-DEVICE-0018); a chain to no configured root self-asserted.
+//      (#928) an android-key platform passkey, trusted against its own
+//      anchor, is linked and the device key keeps the chain serials; a
+//      later status list downgrades that key and the device.
 //   4. APPLE APP ATTEST built here: attested; an app not configured refused
 //      (STS-DEVICE-0019).
 //   5. A LINKED WEBAUTHN PLATFORM CREDENTIAL: a fresh assertion links it,
@@ -30,6 +33,11 @@
 //      server key and a re-enrolment refused (STS-DEVICE-0025); a spoiled
 //      statement refused (STS-DEVICE-0020); two attributes refused
 //      (STS-DEVICE-0021); product refuses no attestation (STS-DEVICE-0024).
+//      FRESHNESS (#257): a nonce issued for EST /nonce, carried as the
+//      statement's extraData with its cookie handle, is fresh and spent;
+//      replayed, someone else's, or with no cookie it is UNPROVEN in
+//      development; product refuses an unproven one (STS-DEVICE-0050) and a
+//      TPM statement over SCEP; a fresh one issues in product.
 //   7. RECOGNITION by each of the four ways — x509 (and a revoked
 //      certificate not), webauthn, jwk (a DPoP jkt), native-sso — a
 //      compromised device still recognised, the last use moved, and the
@@ -50,12 +58,18 @@ const pki = require('../common/pki');
 const ldap = require('../ldap/ldap_server');
 const credentials = require('../common/credentials');
 const devices = require('../common/devices');
+// #256: Google's Android attestation status list and its recheck.
+const riskDatasets = require('../risk/risk_datasets');
+const attestationRevocation = require('../common/attestation_revocation');
+const pkiModule = require('../common/pki');
 const enrolment = require('../common/device_enrolment');
 const recognition = require('../common/device_recognition');
 const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
 const core = require('../common/cert_enrollment');
 const kit = require('./webauthn_attestation_kit');
+const webauthn = require('../authn/webauthn');
+const webauthnAttestation = require('../authn/webauthn_attestation');
 
 const log = require('bunyan').createLogger({ name: 'device_enrolment',
   level: process.env.LOG_LEVEL || 'info' });
@@ -241,7 +255,9 @@ function tpm2b(bytes) {
 
 // A TPM key attestation (TPM2_Certify) of an EC P-256 key `jwk`, as an
 // AttestationBundle's DER. spoil: 'name', 'attributes', 'signature'.
-async function tpmBundle(jwk, anchor, spoil) {
+// `extraData` is TPM2_Certify's qualifyingData — a freshness nonce's octets
+// (#257) — and the word "freshness" when none is given, which is no nonce.
+async function tpmBundle(jwk, anchor, spoil, extraData) {
   log.debug("Entering tpmBundle().");
   const pubArea = Buffer.concat([
     u16(0x0023), u16(0x000b),
@@ -254,7 +270,8 @@ async function tpmBundle(jwk, anchor, spoil) {
   const certInfo = Buffer.concat([
     u32(0xff544347), u16(0x8017),
     tpm2b(Buffer.concat([u16(0x000b), nodeCrypto.randomBytes(32)])),
-    tpm2b(Buffer.from('freshness')), Buffer.alloc(17), Buffer.alloc(8),
+    tpm2b(extraData || Buffer.from('freshness')), Buffer.alloc(17),
+    Buffer.alloc(8),
     tpm2b(name),
     tpm2b(Buffer.concat([u16(0x000b), nodeCrypto.randomBytes(32)]))]);
   const ak = await kit.keyPair('rsa');
@@ -273,9 +290,13 @@ async function tpmBundle(jwk, anchor, spoil) {
         })() })] }).toSchema().toBER(false), true),
       extension('2.5.29.37', new pkijs.ExtKeyUsage({
         keyPurposes: ['2.23.133.8.3'] }).toSchema().toBER(false))] });
-  const raw = nodeCrypto.sign('sha256', spoil === 'signature'
-    ? Buffer.from('not certInfo') : certInfo, ak.privateKey);
-  const signature = Buffer.concat([u16(0x0014), u16(0x000b), tpm2b(raw)]);
+  // `sha1` is not spoiled but WEAK (#905): signed RSASSA-SHA1, TPM_ALG_SHA1.
+  const raw = nodeCrypto.sign(spoil === 'sha1' ? 'sha1' : 'sha256',
+    spoil === 'signature' ? Buffer.from('not certInfo') : certInfo,
+    ak.privateKey);
+  const signature = Buffer.concat([u16(0x0014),
+                                   u16(spoil === 'sha1' ? 0x0004 : 0x000b),
+                                   tpm2b(raw)]);
   const octets = function (b) {
     log.debug("Entering octets().");
     log.debug("Leaving octets().");
@@ -463,6 +484,288 @@ async function checkAndroid(t) {
           '3e. a statement chaining to no configured root (Google\'s ' +
           'shipped ones, here) is self-asserted', JSON.stringify(unanchored)
             .slice(0, 500));
+
+  // #256: GOOGLE'S STATUS LIST. A leaf the list names is not attested, the
+  // serials are kept, and the recheck downgrades a key already registered.
+  set('devices.androidAttestationTrustAnchors', anchor.pem);
+  const statusList = async function (serials) {
+    log.debug("Entering statusList().");
+    const entries = {};
+    serials.forEach(function (one) {
+      entries[one.toUpperCase()] = { status: 'REVOKED',
+                                     reason: 'KEY_COMPROMISE' };
+    });
+    const out = await riskDatasets.importVersion({
+      dataset: 'android.attestation-status',
+      format: 'android-attestation-status-json',
+      content: JSON.stringify({ entries: entries, run: RUN + serials.length }),
+      source: 'upload', actor: 'the test' });
+    log.debug("Leaving statusList().");
+    return out;
+  };
+  const withLeaf = async function (leafFor) {
+    log.debug("Entering withLeaf().");
+    const pair = ecPair();
+    const c = enrolment.issueChallenge({ sessionId: 'sr-' + RUN,
+      username: ALICE, purpose: 'key' });
+    const leaf = await androidLeaf(pair, c.challenge, anchor, 1);
+    await leafFor(pkiModule.certificateSerialHex(leaf.der));
+    const out = await enrolment.proveKey({ username: ALICE,
+      sessionId: 'sr-' + RUN, challenge: c.challenge, audience: AUD,
+      proof: proof(pair, c.challenge, { x5c: [leaf.der.toString('base64'),
+                                              anchor.der.toString('base64')] })
+    });
+    log.debug("Leaving withLeaf().");
+    return { out: out, serial: pkiModule.certificateSerialHex(leaf.der) };
+  };
+  const listed = await statusList(['ffff0001']);
+  const kept = await withLeaf(async function () {
+    log.debug("Entering kept leafFor().");
+    log.debug("Leaving kept leafFor().");
+  });
+  const keptKey = kept.out.ok ? kept.out.device.keys[0] : null;
+  t.check(listed.ok && keptKey && keptKey.attestation.level === 'attested' &&
+          Array.isArray(keptKey.attestation.chainSerials) &&
+          keptKey.attestation.chainSerials[0] === kept.serial &&
+          keptKey.attestation.revocation.status === 'good' &&
+          /no certificate of the chain is revoked/
+            .test(keptKey.attestation.summary),
+          '3f. an unlisted chain is attested, its serials and the list ' +
+          'version kept', JSON.stringify(keptKey).slice(0, 700));
+  const revoked = await withLeaf(function (serial) {
+    log.debug("Entering revoked leafFor().");
+    log.debug("Leaving revoked leafFor().");
+    return statusList(['ffff0001', serial]);
+  });
+  const revokedKey = revoked.out.ok ? revoked.out.device.keys[0] : null;
+  t.check(revokedKey && revokedKey.attestation.level === 'self-asserted' &&
+          revokedKey.attestation.revocation.status === 'revoked' &&
+          /REVOKED \(KEY_COMPROMISE\)/.test(revokedKey.attestation.summary),
+          '3g. a chain whose leaf the list revokes is self-asserted, with ' +
+          'the reason', JSON.stringify(revokedKey).slice(0, 700));
+  // #902: the status check reads the path that VERIFIED, not the x5c as
+  // sent. Ten copies of the leaf ahead of the anchor once pushed the anchor
+  // past the ten certificates the check reads, so a revoked one went unseen.
+  const anchorSerial = pkiModule.certificateSerialHex(anchor.der);
+  await statusList(['ffff0001', anchorSerial]);
+  const padded = await (async function () {
+    log.debug("Entering padded().");
+    const pair = ecPair();
+    const c = enrolment.issueChallenge({ sessionId: 'sp-' + RUN,
+      username: ALICE, purpose: 'key' });
+    const leaf = await androidLeaf(pair, c.challenge, anchor, 1);
+    const x5c = [leaf.der.toString('base64')];
+    for (let i = 0; i < 10; i++) {
+      x5c.push(leaf.der.toString('base64'));
+    }
+    x5c.push(anchor.der.toString('base64'));
+    const out = await enrolment.proveKey({ username: ALICE,
+      sessionId: 'sp-' + RUN, challenge: c.challenge, audience: AUD,
+      proof: proof(pair, c.challenge, { x5c: x5c }) });
+    log.debug("Leaving padded().");
+    return out;
+  })();
+  const paddedKey = padded.ok ? padded.device.keys[0] : null;
+  t.check(!paddedKey || (paddedKey.attestation.level !== 'attested' &&
+                         paddedKey.attestation.revocation.status ===
+                           'revoked'),
+          '3g-ii. a revoked certificate behind ten padding entries is still ' +
+          'found: the key is not attested (#902)',
+          JSON.stringify(padded).slice(0, 700));
+  set('global.mode', 'product');
+  try {
+    const refused = await withLeaf(function (serial) {
+      log.debug("Entering refused leafFor().");
+      log.debug("Leaving refused leafFor().");
+      return statusList(['ffff0001', revoked.serial, serial]);
+    });
+    t.equal(code(refused.out), 'STS-DEVICE-0024',
+            '3h. product refuses a key whose chain the list revokes, as an ' +
+            'unattested one');
+  } finally {
+    config.clearOverride('global.mode');
+  }
+  // #903: a device key linked from an android-key PASSKEY carries the
+  // passkey's serials, and the recheck asks about it as it asks about one
+  // proved with an x5c.
+  const DevicesClass = devices.Devices || devices.constructor;
+  t.check(!!DevicesClass && DevicesClass.isAndroidRecheckable({
+    attestation: { level: 'attested', format: 'android-key', summary: '',
+                   verifiedAt: '', chainSerials: ['aa'] } }),
+          '3h-ii. a key linked from an android-key passkey is rechecked (#903)',
+          String(!!DevicesClass));
+  // #928: 3h-ii asks the predicate of an object nobody stored, and 3i
+  // rechecks a key proved with an x5c. The joined path is a platform
+  // passkey whose android-key statement was trusted — `kit.androidKey`,
+  // the same statement C14 verifies — then `finishLink`, which copies the
+  // serials, then a list that revokes one of them. Its root is not
+  // section 3's `anchor`: that certificate is in the x5c chains 3i still
+  // has to downgrade, and revoking it here would downgrade `kept` first.
+  const registerAndroidPasskey = async function (root) {
+    log.debug("Entering registerAndroidPasskey().");
+    const ceremony = await kit.ceremony();
+    const made = await kit.androidKey(ceremony, root);
+    const verdict = webauthn.verifyRegistration(ceremony.input(made));
+    if (!verdict.ok) {
+      log.debug("Leaving registerAndroidPasskey(). Ceremony.");
+      return { ceremony: ceremony, verdict: verdict, assessed: null,
+               stored: null };
+    }
+    const assessed = await webauthnAttestation.assess(verdict);
+    if (!assessed.ok) {
+      log.debug("Leaving registerAndroidPasskey(). Attestation.");
+      return { ceremony: ceremony, verdict: verdict, assessed: assessed,
+               stored: null };
+    }
+    const stored = credentials.addKey(ALICE, {
+      credentialId: verdict.credentialId,
+      publicKeyJwk: verdict.publicKeyJwk,
+      signCount: verdict.signCount,
+      label: 'android platform',
+      attachment: 'platform',
+      aaguid: verdict.aaguid,
+      algorithm: verdict.algorithm,
+      coseAlg: verdict.coseAlg,
+      attestation: assessed.attestation,
+      backupEligible: !!(verdict.flags && verdict.flags.be),
+      backupState: !!(verdict.flags && verdict.flags.bs),
+      userVerified: !!(verdict.flags && verdict.flags.uv)
+    });
+    log.debug("Leaving registerAndroidPasskey().");
+    return { ceremony: ceremony, verdict: verdict, assessed: assessed,
+             stored: stored };
+  };
+  // The assertion `finishLink` verifies has to name the credential the
+  // challenge was issued for. The signature is the credential key's, over
+  // authenticator data and the client-data hash, as section 5's is.
+  const linkAssertion = function (cred, credentialId, challenge) {
+    log.debug("Entering linkAssertion().");
+    const count = Buffer.alloc(4);
+    count.writeUInt32BE(5, 0);
+    const authData = Buffer.concat([sha256(Buffer.from('localhost')),
+                                    Buffer.from([0x05]), count]);
+    const clientData = Buffer.from(JSON.stringify({
+      type: 'webauthn.get', challenge: challenge,
+      origin: 'https://localhost:8081' }));
+    const signed = Buffer.concat([authData, sha256(clientData)]);
+    const sig = cred.sign(signed);
+    const id = String(credentialId || '');
+    log.debug("Leaving linkAssertion().");
+    return { id: id, rawId: id, type: 'public-key',
+             response: {
+               authenticatorData: authData.toString('base64url'),
+               clientDataJSON: clientData.toString('base64url'),
+               signature: sig.toString('base64url') } };
+  };
+  const keyOn = function (device, credentialId) {
+    log.debug("Entering keyOn().");
+    const keys = (device && device.keys) || [];
+    let found = null;
+    keys.forEach(function (k) {
+      const id = k && k.material && k.material.credentialId;
+      if (String(id || '') === String(credentialId || '')) {
+        found = k;
+      }
+    });
+    log.debug("Leaving keyOn().");
+    return found;
+  };
+  const passkeyRoot = await kit.root('Synthetic Google Passkey', 'ec');
+  set('webauthn.attestationPolicy', 'verify-if-present');
+  set('webauthn.attestationTrustAnchors', passkeyRoot.pem);
+  try {
+    const registered = await registerAndroidPasskey(passkeyRoot);
+    const assessed = registered.assessed;
+    const rev = assessed && assessed.attestation &&
+      assessed.attestation.androidRevocation;
+    const credentialId = registered.verdict
+      ? String(registered.verdict.credentialId || '') : '';
+    const passkey = (credentials.keysOf(ALICE) || []).filter(function (k) {
+      return String(k.credentialId) === credentialId;
+    })[0];
+    const recorded = passkey && passkey.attestation &&
+      passkey.attestation.androidRevocation;
+    const serials = rev && Array.isArray(rev.chainSerials)
+      ? rev.chainSerials.map(String) : [];
+    t.check(!!(registered.verdict && registered.verdict.ok && assessed &&
+               assessed.ok && assessed.attestation.trusted === true &&
+               assessed.attestation.format === 'android-key' &&
+               rev && rev.status === 'good' && serials.length &&
+               registered.stored && registered.stored.ok && passkey &&
+               passkey.attachment === 'platform' && recorded &&
+               JSON.stringify(recorded.chainSerials) ===
+                 JSON.stringify(serials)),
+            '3h-iii. an android-key platform passkey chained to a ' +
+            'configured anchor records the chain serials (#928)',
+            JSON.stringify({
+              failed: registered.verdict && registered.verdict.failed,
+              why: assessed && assessed.why,
+              stored: registered.stored && (registered.stored.errors ||
+                                            registered.stored.ok),
+              status: rev && rev.status,
+              serials: serials
+            }).slice(0, 700));
+    const begun = enrolment.beginLink({ username: ALICE,
+      sessionId: 'sap-' + RUN, credentialId: credentialId,
+      label: 'Alice android', platform: 'android' });
+    const cred = registered.ceremony && registered.ceremony.credential;
+    const linked = begun && begun.ok && cred ? await enrolment.finishLink({
+      username: ALICE, sessionId: 'sap-' + RUN,
+      challenge: begun.challenge,
+      credential: linkAssertion(cred, credentialId, begun.challenge),
+      origin: 'https://localhost:8081', rpId: 'localhost' }) : begun;
+    const lk = keyOn(linked && linked.device, credentialId);
+    const copied = lk && lk.attestation;
+    t.check(!!(linked && linked.ok && copied &&
+               copied.level === 'attested' &&
+               copied.format === 'android-key' &&
+               JSON.stringify(copied.chainSerials) ===
+                 JSON.stringify(serials.slice(0, 10)) &&
+               copied.revocation && rev &&
+               copied.revocation.status === rev.status &&
+               DevicesClass.isAndroidRecheckable(lk)),
+            '3h-iii. finishLink copies the serials and the verdict, and ' +
+            'the linked key is attested (#928)',
+            JSON.stringify({
+              link: linked && (linked.ok ? lk && lk.attestation
+                                         : linked.error),
+              code: code(linked)
+            }).slice(0, 700));
+    let listed = null;
+    let again = null;
+    let afterDevice = null;
+    if (linked && linked.ok && serials.length) {
+      listed = await statusList(serials);
+      again = await attestationRevocation.recheckAll();
+      afterDevice = devices.byId(linked.device.id);
+    }
+    const afterKey = keyOn(afterDevice, credentialId);
+    const downgraded = afterKey && afterKey.attestation;
+    t.check(!!(listed && listed.ok && again && again.downgraded >= 1 &&
+               downgraded && downgraded.level === 'self-asserted' &&
+               afterDevice && afterDevice.attestation === 'self-asserted' &&
+               /DOWNGRADED/.test(String(downgraded.summary || ''))),
+            '3h-iii. the recheck downgrades the linked key a newer list ' +
+            'revokes, and the device follows it (#928)',
+            JSON.stringify(again) + ' ' +
+              JSON.stringify(afterKey && afterKey.attestation)
+                .slice(0, 500));
+  } finally {
+    config.clearOverride('webauthn.attestationPolicy');
+    config.clearOverride('webauthn.attestationTrustAnchors');
+  }
+  await statusList(['ffff0001', revoked.serial, kept.serial, 'ffff0002']);
+  const recheck = await attestationRevocation.recheckAll();
+  const after = devices.byId(kept.out.device.id);
+  t.check(recheck.downgraded >= 1 && after &&
+          after.keys[0].attestation.level === 'self-asserted' &&
+          after.attestation === 'self-asserted' &&
+          /DOWNGRADED/.test(after.keys[0].attestation.summary),
+          '3i. the recheck downgrades a registered key a newer list ' +
+          'revokes, and the device follows it', JSON.stringify(recheck) +
+            ' ' + JSON.stringify(after && after.keys[0].attestation)
+              .slice(0, 500));
+  config.clearOverride('devices.androidAttestationTrustAnchors');
   log.debug("Leaving checkAndroid().");
 }
 
@@ -508,13 +811,12 @@ async function checkWebauthn(t) {
     attachment: 'platform', aaguid: '',
     attestation: { verified: true, trusted: true, format: 'packed',
                    type: 'basic', anchor: 'configured', checkedAt: Date.now() }
-  }, 'mfa');
+  });
   const roaming = await kit.credential(-7);
   credentials.addKey(ALICE, { credentialId:
     roaming.id.toString('base64url'),
     publicKeyJwk: roaming.pair.publicKey.export({ format: 'jwk' }),
-    signCount: 0, label: 'on my keyring', attachment: 'cross-platform' },
-    'mfa');
+    signCount: 0, label: 'on my keyring', attachment: 'cross-platform' });
   t.check(stored && stored.ok !== false, 'precondition: the credential is ' +
           'enrolled', JSON.stringify(stored));
   const refusedRoaming = enrolment.beginLink({ username: ALICE,
@@ -677,6 +979,29 @@ async function checkCertificates(t) {
       attestations: read.attestations, via: 'test' })), 'STS-DEVICE-0020',
             '6i. a TPM statement spoiled (' + spoil + ') is refused');
   }
+  // #905: a TPM2_Certify signed with SHA-1 is verified in development and
+  // refused in product, as WebAuthn refuses RS1 outside development.
+  const weak = await deviceCsr([await tpmBundle(spoiledKey.jwk, tpmRoot,
+                                                'sha1')], [],
+                               spoiledKey.pair);
+  const weakRead = await core.parseCsr(weak.der);
+  const weakIssue = function () {
+    log.debug("Entering weakIssue().");
+    log.debug("Leaving weakIssue().");
+    return core.issue({ family: 'est', profile: 'device',
+      principal: person(ALICE), target: { kind: 'person', id: ALICE },
+      publicKeyPem: weakRead.publicKeyPem, requested: {},
+      attestations: weakRead.attestations, via: 'test' });
+  };
+  t.check(code(await weakIssue()) !== 'STS-DEVICE-0020',
+          '6i-sha1a. a SHA-1 TPM statement is verified in development mode');
+  set('global.mode', 'product');
+  try {
+    t.equal(code(await weakIssue()), 'STS-DEVICE-0020',
+            '6i-sha1b. and refused in product mode (#905)');
+  } finally {
+    config.clearOverride('global.mode');
+  }
   const two = await deviceCsr([bundle, bundle], [], first.pair);
   const twoRead = await core.parseCsr(two.der);
   t.equal(code(await core.issue({ family: 'est', profile: 'device',
@@ -696,9 +1021,123 @@ async function checkCertificates(t) {
   } finally {
     config.clearOverride('global.mode');
   }
+  await checkFreshness(t, tpmRoot);
   log.debug("Leaving checkCertificates().");
   return { device: device, certificatePem: renewed.ok
     ? renewed.record.certificatePem : issued.record.certificatePem };
+}
+
+// #257: a TPM statement's freshness, the nonce issued as EST /nonce issues
+// it (the handler itself is `est_handlers.js`'s) and spent by the core.
+async function checkFreshness(t, tpmRoot) {
+  log.debug("Entering checkFreshness().");
+  t.log.info('=== 6l. TPM attestation freshness (#257) ===');
+  const handle = 'est.' + nodeCrypto.randomBytes(32).toString('base64url');
+  const alice = person(ALICE);
+  const nonceFor = function (who, cookie, bytes) {
+    log.debug("Entering nonceFor().");
+    const issued = enrolment.issueChallenge({ purpose: 'csr-attestation',
+      sessionId: cookie, username: who.kind + ':' + who.id, bytes: bytes });
+    log.debug("Leaving nonceFor().");
+    return issued;
+  };
+  const enroll = async function (family, who, cookie, extraData, product) {
+    log.debug("Entering enroll().");
+    const keys = await deviceCsr([]);
+    const request = await deviceCsr([await tpmBundle(keys.jwk, tpmRoot,
+                                                     undefined, extraData)],
+                                    [], keys.pair);
+    const read = await core.parseCsr(request.der);
+    if (product) {
+      set('global.mode', 'product');
+    }
+    try {
+      const out = await core.issue({ family: family, profile: 'device',
+        principal: who, target: { kind: 'person', id: who.id },
+        publicKeyPem: read.publicKeyPem, requested: read.requested,
+        attestations: read.attestations, keySource: 'client', via: 'test',
+        attestationSession: cookie === null ? undefined
+          : { handle: cookie } });
+      const device = out.ok ? devices.byId(out.device) : null;
+      log.debug("Leaving enroll().");
+      return { out: out, key: device ? device.keys[0] : null };
+    } finally {
+      if (product) {
+        config.clearOverride('global.mode');
+      }
+    }
+  };
+  const short = nonceFor(alice, handle, 8);
+  t.check(short.ok && Buffer.from(short.challenge, 'base64url').length ===
+            16 && Buffer.from(nonceFor(alice, handle, 48).challenge,
+                              'base64url').length === 48 &&
+          Buffer.from(nonceFor(alice, handle).challenge, 'base64url')
+            .length === 32,
+          '6l. a nonce is 32 octets by default, the length asked for within ' +
+          '16..64, and an 8-octet ask raised to RANDOM_TOKEN_MIN_BITS');
+  const issued = nonceFor(alice, handle);
+  const nonce = Buffer.from(issued.challenge, 'base64url');
+  const fresh = await enroll('est', alice, handle, nonce);
+  t.check(fresh.out.ok && fresh.key.attestation.level === 'attested' &&
+          fresh.key.attestation.freshness.status === 'fresh' &&
+          /Freshness FRESH/.test(fresh.key.attestation.summary),
+          '6m. extraData that is the nonce issued to this principal and ' +
+          'cookie is FRESH', JSON.stringify(fresh.out.errors ||
+                                            fresh.key.attestation));
+  const replayed = await enroll('est', alice, handle, nonce);
+  t.check(replayed.out.ok &&
+          replayed.key.attestation.freshness.status === 'unproven' &&
+          replayed.key.attestation.level === 'attested' &&
+          /no such challenge/.test(replayed.key.attestation.freshness.detail),
+          '6n. the same nonce again is UNPROVEN in development (spent once) ' +
+          'and keeps its level', JSON.stringify(replayed.key &&
+                                                replayed.key.attestation));
+  const bobs = Buffer.from(nonceFor(person(BOB), handle).challenge,
+                           'base64url');
+  const foreign = await enroll('est', alice, handle, bobs);
+  t.check(foreign.out.ok &&
+          foreign.key.attestation.freshness.status === 'unproven' &&
+          /another session/.test(foreign.key.attestation.freshness.detail),
+          '6o. a nonce issued to another principal is not this request\'s ' +
+          '(section 5.1)', JSON.stringify(foreign.key &&
+                                          foreign.key.attestation));
+  const cookieless = Buffer.from(nonceFor(alice, handle).challenge,
+                                 'base64url');
+  const noCookie = await enroll('est', alice, null, cookieless);
+  t.check(noCookie.out.ok &&
+          noCookie.key.attestation.freshness.status === 'unproven' &&
+          /no EST nonce cookie/.test(noCookie.key.attestation.freshness
+            .detail),
+          '6p. a request without the nonce cookie cannot be associated with ' +
+          'a nonce, whatever its extraData', JSON.stringify(noCookie.key &&
+            noCookie.key.attestation));
+  const overScep = await enroll('scep', person(ADMIN, true), handle,
+                                cookieless);
+  t.check(overScep.out.ok &&
+          overScep.key.attestation.freshness.status === 'unproven' &&
+          /SCEP has no nonce operation/.test(overScep.key.attestation
+            .freshness.detail),
+          '6q. SCEP has no nonce operation: a TPM statement over it is ' +
+          'UNPROVEN', JSON.stringify(overScep.out.errors ||
+                                     (overScep.key &&
+                                      overScep.key.attestation)));
+  t.equal(code((await enroll('est', alice, handle,
+                              Buffer.from('freshness'), true)).out),
+          'STS-DEVICE-0050', '6r. product refuses an attested TPM ' +
+          'statement that is not fresh');
+  t.equal(code((await enroll('scep', person(ADMIN, true), handle,
+                              cookieless, true)).out),
+          'STS-DEVICE-0050', '6s. product refuses a TPM statement over SCEP');
+  const productNonce = Buffer.from(nonceFor(alice, handle).challenge,
+                                   'base64url');
+  const productFresh = await enroll('est', alice, handle, productNonce, true);
+  t.check(productFresh.out.ok &&
+          productFresh.key.attestation.freshness.status === 'fresh',
+          '6t. product issues over a fresh TPM statement',
+          JSON.stringify(productFresh.out.errors ||
+                         (productFresh.key &&
+                          productFresh.key.attestation)));
+  log.debug("Leaving checkFreshness().");
 }
 
 function checkRecognition(t, jwkDevice, linked, certified) {

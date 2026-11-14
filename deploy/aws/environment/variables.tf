@@ -95,6 +95,22 @@ variable "applications_max" {
   default     = 10000
 }
 
+variable "realms_max_count" {
+  description = <<-EOT
+    How many trust realms the cluster may hold, the default realm included
+    (STS_REALMS_MAX_COUNT, #368) on every node. The service default is 10 in
+    every mode, and stays so for a deployment (rcbj, 2026-10-19); every
+    environment this stack builds is a SUITE environment, and one suite run
+    creates dozens of realms and leaves them standing until the next run's
+    reset-environment.js removes them, so the cap is the setting's maximum
+    here, as env/test.js and env/docker-tests.js have it for the local
+    stacks. An environment that is not a suite target sets it lower in its
+    tfvars. Each realm costs memory in every node process.
+  EOT
+  type        = number
+  default     = 100000
+}
+
 variable "runner_task_cpu" {
   description = "Fargate CPU units for the suite task (runner, PEP and credential containers)."
   type        = number
@@ -233,6 +249,31 @@ variable "carryover_secret" {
   default     = ""
 }
 
+variable "bootstrap_admin_username" {
+  description = <<-EOT
+    The bootstrap administrator's username, for an environment whose account
+    already exists under a name this stack did not generate. Read on the apply
+    that first creates the `bootstrap-admin-username` secret and kept; empty
+    (the default) generates `admin-` and sixteen hex digits. Product mode only.
+    Passed as TF_VAR_bootstrap_admin_username, never committed.
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "waf_report_only" {
+  description = <<-EOT
+    With CloudFront on, the web ACL in REPORT-ONLY mode: it blocks nothing,
+    and a Count rule records every request from outside allowed_cidrs (the
+    `outside-allowed-cidrs` metric and its sampled requests). Off (the
+    default), the allowlist blocks them. The direct name stays restricted by
+    the security group either way.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "vpc_cidr" {
   description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string
@@ -260,7 +301,7 @@ variable "mail_ses_domain" {
 }
 
 variable "spiffe_workload_port" {
-  description = "The default realm's SPIFFE Workload API port, the same on the load balancer and the node (spiffe.workloadPort; spiffe_default.tf)."
+  description = "Accepted and no longer published (#324). The Workload API is a local agent's Unix socket; product mode does not bind this port on AWS (#166). Kept so a plan that still passes it, and a destroy of state that published 8092, still succeed."
   type        = number
   default     = 8092
 }
@@ -298,6 +339,38 @@ variable "tags" {
     Stack     = "iya-sts-environment"
     Lifecycle = "destroy-after-test-run"
   }
+}
+
+variable "cloudfront_enabled" {
+  description = <<-EOT
+    A CloudFront distribution in front of the load balancer (cloudfront.tf):
+    public_hostname goes to it, and direct_hostname stays on the load balancer
+    for mutual TLS, Kerberos, LDAP, SPIFFE and the plain-HTTP revocation
+    listener. Needs public_hostname and direct_hostname, and a foundation
+    re-applied by an administrator. In a multi-cell environment (#1341) the
+    primary cell holds the one distribution and the cells' tree moves to
+    direct_hostname (cloudfront.tf, dns_cells.tf).
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the load balancer itself where cloudfront_enabled is on, e.g. `direct.test-idp.iyasec.io` — in a multi-cell environment the cells' Route 53 tree, and CloudFront's origin. The node's certificate names it too (deploy/aws/certificate)."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_log_bucket" {
+  description = "The S3 bucket CloudFront's standard logs go to; empty for none. Foundation's `cloudfront_log_buckets` must list it."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_log_prefix" {
+  description = "The prefix of this distribution's logs in cloudfront_log_bucket."
+  type        = string
+  default     = ""
 }
 
 variable "public_hostname" {
@@ -521,8 +594,9 @@ variable "realm_listeners" {
   description = <<-EOT
     The trust realms that have a front-end listener of their own, each behind
     a network load balancer of its own (realm_listeners.tf, #99): the realm
-    id, the container port the service binds for it (the realm's
-    listener.port; not one of the published ports), the public host name, and
+    id, the container port the service binds for it (the port of the
+    realm's listener in its listeners.realm, #472; not one of the published
+    ports), the public host name, and
     the Route 53 zone to write that name in ("" to write none). The realm's
     own settings are set through /admin-api; the realm_listener_settings
     output prints the calls.

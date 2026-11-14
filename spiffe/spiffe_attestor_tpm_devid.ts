@@ -36,7 +36,6 @@
 // Nothing is claimed: every proof answers a challenge this server chose.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import config = require('../common/config');
@@ -45,6 +44,7 @@ import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
 // Certificate paths and signatures are checked where every other one is
 // (rcbj, 2026-09-21).
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import stsCrypto = require('../common/crypto');
 import tpm = require('./spiffe_tpm');
@@ -58,7 +58,6 @@ const DEVID_NONCE_LENGTH = 32;
 
 interface TpmDevidDeps {
   log: typeof log;
-  crypto: typeof nodeCrypto;
   config: typeof config;
   errorCodes: typeof errorCodes;
   spiffeId: typeof spiffeId;
@@ -109,7 +108,7 @@ class TpmDevidAttestor {
   static defaultDeps(): TpmDevidDeps {
     helpers.log.debug("Entering TpmDevidAttestor.defaultDeps().");
     helpers.log.debug("Leaving TpmDevidAttestor.defaultDeps().");
-    return { log: log, crypto: nodeCrypto, config: config,
+    return { log: log, config: config,
              errorCodes: errorCodes, spiffeId: spiffeId, rpc: rpc,
              pki: pki, stsCrypto: stsCrypto, tpm: tpm };
   }
@@ -199,7 +198,7 @@ class TpmDevidAttestor {
    */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, crypto, config, spiffeId, rpc, pki, stsCrypto,
+    const { log, config, spiffeId, rpc, pki, stsCrypto,
             tpm } = this.deps;
     const self = this;
     log.debug("Entering TpmDevidAttestor.attest().");
@@ -209,7 +208,8 @@ class TpmDevidAttestor {
       config.value('spiffe.tpmDevidCaBundle') || '')).certificates;
     const ekRoots = pki.certificateBundle(String(
       config.value('spiffe.tpmEndorsementCaBundle') || '')).certificates;
-    if (!devidRoots.length || !ekRoots.length) {
+    if (!CertificateTrust.anchorsAvailable('spiffe-attestation', devidRoots) ||
+        !CertificateTrust.anchorsAvailable('spiffe-attestation', ekRoots)) {
       log.debug("Leaving TpmDevidAttestor.attest(). Not configured.");
       throw this.refuse(call, 'STS-SPIFFE-0085', status.FAILED_PRECONDITION,
         'tpm_devid is not configured in this realm: ' +
@@ -240,9 +240,10 @@ class TpmDevidAttestor {
                         'unable to parse DevID certificate');
     }
     // 2. THE DevID PATH.
-    const devidPath = await pki.verifyPathToAnchors(devidChain[0],
-                                                    devidChain.slice(1),
-                                                    devidRoots);
+    const devidPath = await CertificateTrust.path('spiffe-attestation',
+                                                  devidChain[0],
+                                                  devidChain.slice(1),
+                                                  devidRoots);
     if (!devidPath.ok) {
       log.debug("Leaving TpmDevidAttestor.attest(). DevID path.");
       throw this.refuse(call, 'STS-SPIFFE-0089', status.INVALID_ARGUMENT,
@@ -298,8 +299,10 @@ class TpmDevidAttestor {
         'public key in EK certificate differs from public key created via ' +
         'EK template');
     }
-    const ekPath = await pki.verifyPathToAnchors(ekCert.der, [], ekRoots,
-                                                 { allowCritical:
+    const ekPath = await CertificateTrust.path('spiffe-attestation',
+                                               ekCert.der, [], ekRoots,
+                                               { variant: 'tpm-ek',
+                                                 allowCritical:
                                                    ['subjectAltName'] });
     if (!ekPath.ok) {
       log.debug("Leaving TpmDevidAttestor.attest(). EK path.");
@@ -331,13 +334,12 @@ class TpmDevidAttestor {
         certifyProblem);
     }
     // 4. THE CHALLENGES.
-    const devidNonce = crypto.randomBytes(DEVID_NONCE_LENGTH);
+    const devidNonce = stsCrypto.randomBytes(DEVID_NONCE_LENGTH);
     let credential = null;
     let secret = null;
     try {
       // A nonce the size of the EK's name hash, as SPIRE sizes it.
-      secret = crypto.randomBytes(crypto.createHash(
-        tpm.hashName(ekPub.nameAlg)).digest().length);
+      secret = stsCrypto.randomBytes(stsCrypto.tpmDigestSize(ekPub.nameAlg));
       credential = tpm.makeCredential(tpm.name(akPub), ekPub, secret);
     } catch (e) {
       log.debug("Caught in TpmDevidAttestor.attest(): " +

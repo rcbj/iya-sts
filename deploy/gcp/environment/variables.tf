@@ -145,6 +145,12 @@ variable "applications_max" {
   default     = 10000
 }
 
+variable "realms_max_count" {
+  description = "STS_REALMS_MAX_COUNT on every node (#368): deploy/aws/environment/variables.tf argues the value."
+  type        = number
+  default     = 100000
+}
+
 variable "extra_environment" {
   description = "More container environment for every node, laid over what this stack sets."
   type        = map(string)
@@ -169,6 +175,29 @@ variable "public_hostname" {
     The foundation must list the same name for this environment, which is
     what made the certificate's secret.
   EOT
+  type        = string
+  default     = ""
+}
+
+variable "cdn_enabled" {
+  description = <<-EOT
+    A CDN in front of the load balancer (cdn.tf, #1341). Single-region: Cloud
+    CDN behind a global external Application Load Balancer at public_hostname,
+    and direct_hostname on the passthrough load balancer for mutual TLS,
+    Kerberos, LDAP, SPIFFE and the plain-HTTP revocation listener. In a cell
+    of a multi-cloud environment (#97): the AWS primary cell's CloudFront
+    distribution, whose ranges and origin secret the nodes are told.
+  EOT
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.cdn_enabled || (var.public_hostname != "" && var.direct_hostname != "" && var.direct_hostname != var.public_hostname)
+    error_message = "cdn_enabled needs public_hostname and a direct_hostname of its own."
+  }
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the passthrough load balancer itself where cdn_enabled is on, e.g. `direct.test-idp.gcp.iyasec.io`. The node's ACME certificate names it too."
   type        = string
   default     = ""
 }
@@ -273,4 +302,17 @@ variable "schema_init_sslmode" {
     condition     = contains(["verify-ca", "verify-full"], var.schema_init_sslmode)
     error_message = "schema_init_sslmode is verify-ca or verify-full."
   }
+}
+
+variable "bootstrap_admin_username" {
+  description = <<-EOT
+    The bootstrap administrator's username, for an environment whose account
+    already exists under a name this stack did not generate. Read on the apply
+    that first creates the `bootstrap-admin-username` secret and kept; empty
+    (the default) generates `admin-` and sixteen hex digits. Product mode only.
+    Passed as TF_VAR_bootstrap_admin_username, never committed.
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
 }

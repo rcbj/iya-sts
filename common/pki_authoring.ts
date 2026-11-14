@@ -106,7 +106,6 @@
 // ===========================================================================
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('./config');
 
 const log = bunyan.createLogger({
@@ -115,15 +114,17 @@ const log = bunyan.createLogger({
 });
 
 import pki = require('./pki');
+// This service's one cryptographic module (#453), for the random object ids.
+import stsCrypto = require('./crypto');
 // The error-code registry (a leaf). A grammar refusal is thrown with its code
 // marked non-enumerably on the Error, so `issue()` can say WHICH grammar; a
 // refusal returned to a caller carries its code the same way.
 import errorCodes = require('./error_codes');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
-// `common/vendored/CLAUDE.md`. One encoder for this page and for that
+// `common/crypto_impl/CLAUDE.md`. One encoder for this page and for that
 // project's, which is the whole point of vendoring them.
-import x509 = require('./vendored/x509');
-import keyMaterial = require('./vendored/key_material');
+import x509 = require('./crypto_impl/x509');
+import keyMaterial = require('./crypto_impl/key_material');
 import InstanceSlot = require('./instance_slot');
 
 // ---------------------------------------------------------------------------
@@ -382,11 +383,11 @@ interface PkiAuthoringDeps {
   errorCodes: typeof errorCodes;
   x509: typeof x509;
   keyMaterial: typeof keyMaterial;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
 }
 
 /**
- * The Certificate & Key Configuration pane as a model: an arbitrary
+ * The Certificate Workbench as a model: an arbitrary
  * certificate, with every field and extension exposed, issued from any
  * authority whose private key is here.
  *
@@ -424,7 +425,7 @@ class PkiAuthoring {
    * Builds an instance over its dependencies.
    *
    * @param deps - the logger, settings, the certificate authority, error
-   *   codes, the X.509 encoder, the key-material module and node's crypto
+   *   codes, the X.509 encoder, the key-material module and `crypto.js`
    */
   constructor(private readonly deps: PkiAuthoringDeps) {
     deps.log.debug("Entering PkiAuthoring.constructor().");
@@ -448,7 +449,7 @@ class PkiAuthoring {
       errorCodes: errorCodes,
       x509: x509,
       keyMaterial: keyMaterial,
-      nodeCrypto: nodeCrypto
+      stsCrypto: stsCrypto
     };
   }
 
@@ -484,7 +485,7 @@ class PkiAuthoring {
         // `apply-profile` then `issue-certificate` with the draft in between
         // turned every cleared box ON, and the first thing that produced was
         // "reuse the key pair below is ticked and the boxes are empty" about a
-        // caller that never ticked it. `tests/vendored/sts_pki_workbench.js`
+        // caller that never ticked it. `tests/protocol/sts_pki_workbench.js`
         // found it on its first run.
         if (typeof raw === 'boolean') {
           out[field.name] = raw;
@@ -1235,7 +1236,7 @@ class PkiAuthoring {
    */
   keyAlgorithms(pqModeId: unknown) {
     const self = this;
-    const { log, keyMaterial } = this.deps;
+    const { log, keyMaterial, pki } = this.deps;
     log.debug('Entering PkiAuthoring.keyAlgorithms(). mode=' + pqModeId);
     const mode = self.pqModeFor(pqModeId);
     const out = keyMaterial.keyAlgIds().filter(function (id) {
@@ -1254,7 +1255,12 @@ class PkiAuthoring {
                // rather than offering a signature menu that cannot work.
                signs: desc.kind !== 'pqc' || desc.use !== 'kem',
                slow: desc.kind === 'pqc' &&
-                     SLOW_FAMILIES.indexOf(desc.family) >= 0 };
+                     SLOW_FAMILIES.indexOf(desc.family) >= 0,
+               // A composite ML-DSA key, which no TLS peer can be shown
+               // (`pki.js`'s `listenerUnreadableKeyAlg()`): the workbench
+               // still offers it, for what this service verifies itself,
+               // and says so beside it (2026-11-12).
+               tlsUsable: !pki.listenerUnreadableKeyAlg(id) };
     });
     log.debug('Leaving PkiAuthoring.keyAlgorithms(). ' +
               out.length + ' of them.');
@@ -1893,10 +1899,10 @@ class PkiAuthoring {
   // into form values and into `/admin-api` replies, and a counter would make
   // one realm's third object and another's the same string.
   private newObjectId(prefix: string): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering PkiAuthoring.newObjectId().");
     log.debug("Leaving PkiAuthoring.newObjectId().");
-    return prefix + '-' + nodeCrypto.randomBytes(8).toString('hex');
+    return prefix + '-' + stsCrypto.randomBytes(8).toString('hex');
   }
 
   // ---------------------------------------------------------------------------
@@ -2040,7 +2046,7 @@ class PkiAuthoring {
   // ---------------------------------------------------------------------------
   // EXPORT: PEM, DER, a JWK set or a password-protected PKCS#12.
   //
-  // **THE EXPORT IS `common/vendored/key_material.js`'s, NOT A SECOND ONE** —
+  // **THE EXPORT IS `common/crypto_impl/key_material.js`'s, NOT A SECOND ONE** —
   // the same function `/admin/keys` uses, which is what makes a `.p12` from
   // this pane and one from that page import identically into keytool, OpenSSL,
   // Windows and macOS.
@@ -2287,7 +2293,7 @@ class PkiAuthoring {
     const applied = self.applyProfile(draft, self.defaultProfileId());
     // The organisation is this service's setting rather than the encoder's
     // example, because a hierarchy built on the page above carries it and two
-    // certificates from one realm reading `O=Example` and `O=sts` are two
+    // certificates from one realm reading `O=Example` and `O=iya-sts` are two
     // organisations as far as a path validator is concerned.
     applied.pki_dn_o = config.value('pki.organisation');
     // An issuer is preselected where there is exactly one obvious answer — this
@@ -2323,7 +2329,7 @@ const slot = new InstanceSlot<PkiAuthoring>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The Certificate & Key Configuration pane's model, behind `/admin/pki` and
+ * The Certificate Workbench's model, behind `/admin/pki` and
  * `/admin-api`.
  *
  * The functions forward to the instance the composition root installs.

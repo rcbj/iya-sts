@@ -1,0 +1,6 @@
+{
+  "gnap.cells.note": {
+    "en": "26de01686adb3d1c",
+    "text": "Les grants que détient cette cellule. Un grant est créé là où arrive son client et se déplace vers la cellule d’origine de son propriétaire de ressource avant d’être approuvé ; il s’agit donc normalement de tous ; un grant dont l’instance de client est enregistrée dans une autre cellule y reste et y est listé et révoqué."
+  }
+}

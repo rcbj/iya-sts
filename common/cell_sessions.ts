@@ -59,6 +59,7 @@ import config = require('./config');
 import realms = require('./realms');
 import cells = require('./cells');
 import errorCodes = require('./error_codes');
+import DomainMap = require('./domain_map');
 
 const log = bunyan.createLogger({ name: 'sts-cell-sessions' });
 
@@ -144,12 +145,10 @@ class CellSessions {
 
   private static uuidOf(attrs: Record<string, any>): string {
     log.debug("Entering CellSessions.uuidOf().");
-    const key = Object.keys(attrs || {}).filter(function (one) {
-      return one.toLowerCase() === 'entryuuid';
-    })[0];
-    const v = key ? attrs[key] : '';
+    // Any entry's UUID is DirectoryEntry's (#1579).
+    const v = DomainMap.fieldOf('DirectoryEntry', 'entryUuid', attrs || {});
     log.debug("Leaving CellSessions.uuidOf().");
-    return String(Array.isArray(v) ? v[0] || '' : v || '').toLowerCase();
+    return String(v || '').toLowerCase();
   }
 
   private static keyOf(dn: string): string {
@@ -412,7 +411,7 @@ class CellSessions {
   // step only home holds: a consent screen, a second factor. Pinned to the
   // other cell on that answer, the browser took the step there and was told
   // nothing was waiting (STS-OAUTH consent, the `cells` mode's first run,
-  // 2026-09-28, tests/vendored/sts_cells_transfer.js). So the pin moves on
+  // 2026-09-28, tests/protocol/sts_cells_transfer.js). So the pin moves on
   // an answer that takes the browser OUT of this service — a redirect to
   // another origin, which is a flow handing its result to the client — and
   // every answer before it keeps the browser here. A flow that ends in a
@@ -451,9 +450,11 @@ class CellSessions {
   private static pwdChangedTimeOf(username: string): string {
     log.debug("Entering CellSessions.pwdChangedTimeOf().");
     const entry = require('../ldap/ldap_server').existingUserEntry(username);
-    const v = entry && entry.attributes ? entry.attributes.pwdchangedtime : '';
+    // When the password last changed is the Credential's (#1579).
+    const v = entry && entry.attributes ? DomainMap.fieldOf('Credential',
+      'passwordChanged', entry.attributes) : '';
     log.debug("Leaving CellSessions.pwdChangedTimeOf().");
-    return String(Array.isArray(v) ? v[0] || '' : v || '');
+    return String(v || '');
   }
 
   // -------------------------------------------------------------------------
@@ -576,8 +577,10 @@ class CellSessions {
             .indexOf(PROJECTION_ORIGIN) === 0) {
         return;
       }
-      const locked = entry.attributes && entry.attributes.pwdaccountlockedtime;
-      state = locked && [].concat(locked).length ? 'disabled' : 'active';
+      // A lock is the Credential's lockedSince, held or not (#1579).
+      const locked = entry.attributes && DomainMap.fieldOf('Credential',
+        'lockedSince', entry.attributes) !== undefined;
+      state = locked ? 'disabled' : 'active';
     });
     log.debug("Leaving CellSessions.opSubjectState(). " + state);
     return { state: state };

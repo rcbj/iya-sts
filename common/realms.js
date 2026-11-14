@@ -125,6 +125,10 @@ config.registerLogger(log);
  * The id of the default realm, which has an empty path prefix.
  */
 const DEFAULT_ID = 'default';
+// How long an on-demand store remembers a key the store said is absent
+// (#820 part 2; see map()). Every write that could make it present forgets
+// it sooner; this is the backstop.
+const ABSENT_MS = 60 * 1000;
 
 /**
  * The default realm's record: built in, never stored, and never removed or
@@ -373,40 +377,74 @@ function isDefault(realm) {
   return (realm || current()).id === DEFAULT_ID;
 }
 
+// The record `run()` and `bind()` store. An object is the record the caller
+// already holds. A missing value or `default` is the built-in realm. A known
+// id is that realm's record. Anything else keeps the id the caller named and
+// carries empty overrides.
+//
+// The context has to hold a RECORD. #1360's certificate-trust counters passed
+// the id string (`common/certificate_trust.ts`). A string is truthy, so
+// `current()` returned it, `current().id` was undefined, and the flush that
+// `counts.set` armed kept that context. Its read of `persistence.minted`
+// then threw TypeError on `realm.overrides` (STS-STORE-0002) and retried
+// forever, so every later write answered 503. The same string made
+// `noteWrite()` journal the count against the default realm. An unknown id
+// is not filed there either: those rows belong to the name the caller used.
+function asRealm(realm) {
+  log.debug("Entering asRealm().");
+  if (realm && typeof realm === 'object') {
+    log.debug("Leaving asRealm().");
+    return realm;
+  }
+  if (!realm || realm === DEFAULT_ID) {
+    log.debug("Leaving asRealm().");
+    return DEFAULT_REALM;
+  }
+  const found = get(String(realm));
+  if (found) {
+    log.debug("Leaving asRealm().");
+    return found;
+  }
+  log.debug("Leaving asRealm(). Unknown id.");
+  return { id: String(realm), overrides: {} };
+}
+
 // Run `fn` with `realm` as the ambient realm, for `fn` and for everything it
-// awaits, schedules or calls back into. The return value is fn's.
+// awaits, schedules or calls back into. The return value is fn's. `realm`
+// may be the record or its id; see `asRealm()`.
 /**
  * Runs a function with a realm ambient, for it and everything it awaits or
  * schedules.
  *
- * @param realm - the realm record; the default realm when omitted
+ * @param realm - the realm record or its id; the default realm when omitted
  * @param fn - the function to run
  * @returns what `fn` returns
  */
 function run(realm, fn) {
   log.debug("Entering run().");
+  const record = asRealm(realm);
   log.debug("Leaving run().");
-  return als.run(realm || DEFAULT_REALM, fn);
+  return als.run(record, fn);
 }
 
 // The same thing as a wrapper, for the callback-shaped surfaces — an LDAP
 // handler, a gRPC method, a datagram listener — that are handed a function
-// rather than being called inside one.
+// rather than being called inside one. The id is resolved when the callback
+// runs, so a listener wrapped before that realm exists finds the record.
 /**
  * Wraps a callback so that it always runs with a realm ambient.
  *
- * @param realm - the realm record; the default realm when omitted
+ * @param realm - the realm record or its id; the default realm when omitted
  * @param fn - the callback
  * @returns the wrapped callback
  */
 function bind(realm, fn) {
   log.debug("Entering bind().");
-  const captured = realm || DEFAULT_REALM;
   log.debug("Leaving bind().");
   return function () {
     const args = arguments;
     const self = this;
-    return als.run(captured, function () {
+    return als.run(asRealm(realm), function () {
       return fn.apply(self, args);
     });
   };
@@ -530,7 +568,7 @@ function href(path) {
 // and null otherwise — including for a path that opens with the SEGMENT and an
 // undefined realm. That case deliberately falls through to Express's own 404
 // rather than being answered here: `Cannot GET /realm/nope/oauth2/token` is
-// what this repository's own tests/vendored/sts_metadata.js uses to tell an
+// what this repository's own tests/protocol/sts_metadata.js uses to tell an
 // unrouted path from an endpoint legitimately answering 404, and a prettier
 // refusal for unknown realms would break that distinction for every path under
 // the segment. `GET /realms` is where somebody finds out what the realms
@@ -972,31 +1010,18 @@ function validateId(id) {
 // process's value with the id stuck on. The rule the list exists for is
 // unchanged — two realms may not share an identifier — and a unique domain
 // now carries it: `urn:iyasec.io:idp` and `urn:dev.iyasec.io:idp` are
-// distinct because the domains are. rcbj chose URNs over `https://` URLs,
-// because an entityID built from a domain would otherwise read as an ADDRESS
-// the service may not answer at (see the domain's note above). The three that
-// shared `urn:wstrust:mock:sts` by default share `urn:<domain>:sts`, so the
-// relationship between them is kept. `oid4vp.clientId` is a client id rather
+// distinct because the domains are. `oid4vp.clientId` is a client id rather
 // than a name in a domain, and keeps the id suffix it always had.
+//
+// THE FIVE SAML, WS-TRUST AND WS-FEDERATION NAMES WERE SEEDED HERE until #523
+// (2026-10-08) — `urn:<domain>:idp`, `urn:<domain>:idp:saml11` and
+// `urn:<domain>:sts`. Every one of them is the realm's OAuth issuer now
+// (`common/issuer_names.ts`), which is already distinct per realm by its
+// prefix, so there is nothing left to seed.
 //
 // `from(domain, id, base)` answers the seeded value; `base` is the process's
 // own value, read outside any realm.
 const NAMED_BY_REALM = [
-  { key: 'saml2.entityId', from: function (domain) {
-    return 'urn:' + domain + ':idp';
-  } },
-  { key: 'saml11.providerId', from: function (domain) {
-    return 'urn:' + domain + ':idp:saml11';
-  } },
-  { key: 'wsfed.entityId', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
-  { key: 'wstrust.issuer', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
-  { key: 'saml.issuer', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
   { key: 'oid4vp.clientId', from: function (domain, id, base) {
     return base ? String(base) + '-' + id : '';
   } },
@@ -1017,8 +1042,9 @@ const NAMED_BY_REALM = [
   // (STS-KRB-0123), because nothing here could choose a name that was the
   // operator's rather than an invention. The domain IS the operator's choice
   // — `IYASEC.IO` is what RFC 4120 section 6.1's convention makes of
-  // `iyasec.io` — so it is seeded, and still refused if another realm or
-  // krb5.trustedRealm already answers to it (kerberosOverrideProblem()).
+  // `iyasec.io` — so it is seeded, and still refused if another realm, or the
+  // development partner realm the default realm answers as, already answers
+  // to it (kerberosOverrideProblem()).
   // Clearing it on the realm brings the 0123 refusal back.
   { key: 'krb5.realm', from: function (domain) {
     return domain.toUpperCase();
@@ -1202,6 +1228,28 @@ function seededNames(id, domain) {
   return out;
 }
 
+// The creation cap (#368). `count()` includes the default realm, and the
+// value is read directly: 0 is not a legal setting, and `|| n` would hide a
+// legal 0 if one were ever added. A restore does not call this — a registry
+// that is already over the cap must still come back.
+function refusedForCount() {
+  log.debug("Entering refusedForCount().");
+  const limit = config.value('realms.maxCount');
+  const held = count();
+  if (typeof limit === 'number' && held >= limit) {
+    log.debug("Leaving refusedForCount(). Refused.");
+    return errorCodes.mark({ ok: false, errors: [
+      'This cluster already holds ' + held + ' trust realm(s), which is ' +
+      'realms.maxCount (' + limit + '). The count includes the default ' +
+      'realm. A service administrator raises the limit in the default ' +
+      'realm — /admin/realms, or POST /admin-api/config/set with no realm ' +
+      'prefix — and lowering it does not remove realms that already exist.'
+    ] }, 'STS-CORE-0161');
+  }
+  log.debug("Leaving refusedForCount().");
+  return null;
+}
+
 /**
  * Defines a realm, builds its stores and announces it.
  *
@@ -1211,6 +1259,24 @@ function seededNames(id, domain) {
  *   `restored` marks a realm read back from the store or another process
  * @returns `{ ok: true, errors: [], realm }`, or a refusal
  */
+// A realm's `name` and `description` are free text, and the registry's row
+// is written in the flush that also carries the directory, so a NUL here
+// stops every later write in the process (#1463). Refused at both doors; the
+// sentence quotes nothing a caller sent.
+function realmTextErrors(spec) {
+  log.debug("Entering realmTextErrors().");
+  const errors = [];
+  ['name', 'description'].forEach(function (field) {
+    if (config.unstorableText((spec || {})[field])) {
+      errors.push('A realm\'s ' + field + ' may not hold a NUL character ' +
+                  'or half of a surrogate pair.');
+      firstCode(errors, 'STS-CORE-0171');
+    }
+  });
+  log.debug("Leaving realmTextErrors(). " + errors.length);
+  return errors;
+}
+
 function create(spec) {
   log.debug("Entering create(). id=" + (spec || {}).id);
   const id = String((spec || {}).id || '').trim().toLowerCase();
@@ -1229,6 +1295,12 @@ function create(spec) {
     log.debug("Leaving create(). Refused for its domain.");
     return errorCodes.mark({ ok: false, errors: domainErrors },
                            errorCodes.codeOf(domainErrors));
+  }
+  const textErrors = realmTextErrors(spec);
+  if (textErrors.length) {
+    log.debug("Leaving create(). Refused for its text.");
+    return errorCodes.mark({ ok: false, errors: textErrors },
+                           errorCodes.codeOf(textErrors));
   }
   const overrideErrors = checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
@@ -1252,6 +1324,11 @@ function create(spec) {
       log.debug("Leaving create(). Refused for its Kerberos settings.");
       return kerberos;
     }
+    const counted = refusedForCount();
+    if (counted) {
+      log.debug("Leaving create(). Refused for the realm count.");
+      return counted;
+    }
   }
   const realm = {
     id: id,
@@ -1265,6 +1342,21 @@ function create(spec) {
     overrides: Object.assign(seededNames(id, domain),
                              (spec || {}).overrides || {})
   };
+  // AN ID REMOVED BEFORE IS PURGED AGAIN FIRST (ASVS 5.0.0 2.3.3): remove()
+  // carries on past a store that refused to purge, so the new realm must not
+  // inherit what that store kept for the old one. Each purge empties one
+  // partition and is safe to run twice.
+  if (retired.has(id)) {
+    purges.forEach(function (purge) {
+      try {
+        purge(id);
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-CORE-0020') +
+                 'realms: a store refused to purge "' + id + '" before it ' +
+                 'was defined again: ' + ((e && e.message) || e));
+      }
+    });
+  }
   realms.set(id, realm);
   // A realm removed and defined again takes rows again. See acceptsRows().
   retired.delete(id);
@@ -1273,7 +1365,8 @@ function create(spec) {
   // AFTER the row is written, because a builder may want to read the realm
   // back through get() — and because a builder that throws must leave a realm
   // that exists rather than half of one. See onCreate() above.
-  built(realm);
+  built(realm, { restored: !!(spec && spec.restored),
+                 replicated: !!(spec && spec.replicated) });
   // And after the builders, so that a watcher writing the registry down does
   // it once the realm is whole. See onChange() above.
   // `restored` rides along for a watcher that must tell a realm somebody
@@ -1319,6 +1412,12 @@ function update(id, changes) {
         'authority issued and every key its KDC holds. Remove the realm and ' +
         'create it again under the new domain.'] },
                            'STS-CORE-0101');
+  }
+  const textErrors = realmTextErrors(spec);
+  if (textErrors.length) {
+    log.debug("Leaving update(). Refused for its text.");
+    return errorCodes.mark({ ok: false, errors: textErrors },
+                           errorCodes.codeOf(textErrors));
   }
   if (spec.overrides !== undefined) {
     const overrideErrors = checkOverrides(spec.overrides);
@@ -1394,9 +1493,12 @@ function update(id, changes) {
 // than three copies, for the reason `gateStateFor()` exists: the two that were
 // written separately disagreed within the hour.
 //
-// It matches by PREFIX rather than naming the two settings, so a third
-// `realms.*` setting is refused the day it is added rather than the day
-// somebody remembers this function.
+// It matches by PREFIX rather than naming the settings, so a new `realms.*`
+// setting is refused the day it is added rather than the day somebody
+// remembers this function. `realms.maxCount` (#368) is covered here like the
+// others — it cannot be set ON a realm — and config.js refuses a process-wide
+// write of it unless the default realm is ambient, which this function never
+// sees: realmFor() answers null and the write does not come through here.
 //
 // THE SECOND REFUSAL IS `perProcess`, AND IT IS A DIFFERENT RULE. A setting
 // carrying that flag is a property of the OS PROCESS rather than of the
@@ -1652,8 +1754,11 @@ function checkOverrides(overrides) {
 //      is a request the KDC cannot route. rcbj's decision was that the operator
 //      names it, so nothing is seeded and turning it on without one is refused.
 //   2. **A NAME ANOTHER REALM ALREADY ANSWERS TO** (STS-KRB-0124) — another
-//      realm's own `krb5.realm`, the default realm's, or `krb5.trustedRealm`,
-//      which the default realm answers for in development. Compared without
+//      realm's own `krb5.realm`, the default realm's, or a Kerberos realm the
+//      default realm's KDC answers as besides its own (the development
+//      partner, PARTNER.COM, since #430 retired `krb5.trustedRealm`; asked of
+//      the principal database, LAZILY — it requires this file). Compared
+//      without
 //      regard to case: Kerberos names are case-sensitive on the wire, and two
 //      realms that differ only in case are two realms a person cannot tell
 //      apart in a krb5.conf.
@@ -1728,13 +1833,24 @@ function kerberosOverrideProblem(id, after, before) {
     if (processName.toUpperCase() === wanted) {
       taken.push('the default realm, whose Kerberos realm is ' + processName);
     }
-    const trusted = String(run(DEFAULT_REALM, function () {
-      return config.value('krb5.trustedRealm');
-    }) || '');
-    if (trusted.toUpperCase() === wanted) {
-      taken.push('krb5.trustedRealm, the second realm the default realm ' +
-                 'answers for in development mode');
+    let alsoServed = [];
+    try {
+      alsoServed = require('../kerberos/krb5_principals.js')
+        .servedIn(DEFAULT_ID).filter(function (one) {
+          return String(one).toUpperCase() !== processName.toUpperCase();
+        });
+    } catch (e) {
+      // A process without the KDC answers as no other realm.
+      log.debug('Caught in kerberosOverrideProblem(): ' +
+                ((e && e.message) || e));
+      alsoServed = [];
     }
+    alsoServed.forEach(function (one) {
+      if (String(one).toUpperCase() === wanted) {
+        taken.push(one + ', the second Kerberos realm the default realm ' +
+                   'answers as in development mode');
+      }
+    });
     realms.forEach(function (other) {
       if (other.id !== id &&
           ownKerberosName(other.overrides).toUpperCase() === wanted) {
@@ -1758,37 +1874,15 @@ function kerberosOverrideProblem(id, after, before) {
 // The same, as the `{ ok:false, errors }` answer every door here returns, or
 // null when there is nothing to refuse.
 // ---------------------------------------------------------------------------
-// A REALM'S OWN LISTENER (#99, 2026-10-02): the rules a realm's `listener.*`
-// overrides must meet, taken together. The realm is still told apart by its
-// path prefix; what the settings give it is a port of its own on every node
-// and a public base its URLs are built on, so a load balancer of its own can
-// stand in front of it.
-//
-//   * the default realm has no listener of its own — it IS the main port;
-//   * a port needs a public base, an https origin with no path;
-//   * a port is no other realm's and none of this process's own listeners';
-//   (an operator's certificate and its key are set one at a time, so the
-//   pair is held at bind time by tls/realm_listeners.js, STS-TLS-0040);
-//   * not while this service runs as several cells: a cell's public name and
-//     a realm's would both claim the browser (#98), and that is a follow-up.
+// A REALM'S OWN LISTENERS, ITS MAPPING AND ITS COOKIE DOMAIN (#99 2026-10-02,
+// #472 2026-10-07): the rules `listeners.realm`, `listeners.applications` and
+// `authn.cookieDomain` must meet together, with every other realm's and the
+// process's as they are. `common/listener_map.js` owns them, and is required
+// LAZILY: it requires this file, and by the time a realm is written both are
+// loaded.
 // ---------------------------------------------------------------------------
-// The process's own listeners, by setting: a realm port may be none of them.
-const PROCESS_PORT_SETTINGS = [
-  'global.port', 'pki.httpPort', 'debugger.port', 'krb5.kdcPort',
-  'krb5.servicePort', 'ldap.port', 'ldap.tlsPort', 'spiffe.workloadPort',
-  'spiffe.serverPort', 'spiffe.brokerPort', 'cells.port'
-];
-
-function ownListenerPort(overrides) {
-  log.debug("Entering ownListenerPort().");
-  const raw = overrides && overrides['listener.port'];
-  const n = Number(raw);
-  log.debug("Leaving ownListenerPort().");
-  return Number.isInteger(n) && n > 0 ? n : 0;
-}
-
 /**
- * The rules a realm's `listener.*` overrides must meet, taken together.
+ * The rules a realm's listener overrides must meet, taken together.
  *
  * @param id - the realm id
  * @param after - the realm's overrides as they would be
@@ -1796,118 +1890,15 @@ function ownListenerPort(overrides) {
  */
 function listenerOverrideProblem(id, after) {
   log.debug("Entering listenerOverrideProblem(). id=" + id);
-  const o = after || {};
-  const keys = Object.keys(o).filter(function (k) {
-    return k.indexOf('listener.') === 0 && String(o[k] || '') !== '' &&
-      !(k === 'listener.port' && Number(o[k]) === 0);
-  });
-  if (!keys.length) {
-    log.debug("Leaving listenerOverrideProblem(). None set.");
-    return null;
-  }
-  if (id === DEFAULT_ID) {
-    log.debug("Leaving listenerOverrideProblem(). The default realm.");
-    return { code: 'STS-CORE-0145',
-             message: 'The default realm has no listener of its own: it is ' +
-               'served on the main port (global.port) under ' +
-               'global.publicBaseUrl. ' + keys.join(', ') + ' can only be ' +
-               'set on another realm.' };
-  }
-  const base = String(o['listener.publicBaseUrl'] || '').trim();
-  let parsed = null;
-  if (base) {
-    try {
-      parsed = new URL(base);
-    } catch (e) {
-      log.debug("Caught in listenerOverrideProblem(): " + e.message);
-    }
-    if (!parsed || parsed.protocol !== 'https:' || parsed.username ||
-        parsed.password || (parsed.pathname && parsed.pathname !== '/') ||
-        parsed.search || parsed.hash) {
-      log.debug("Leaving listenerOverrideProblem(). A bad base.");
-      return { code: 'STS-CORE-0146',
-               message: 'listener.publicBaseUrl on realm "' + id + '" must ' +
-                 'be an https origin with no path, query or user — ' +
-                 'https://acme.example.com or https://acme.example.com:8443 ' +
-                 '— and "' + base + '" is not. The realm\'s /realm/' + id +
-                 ' prefix is added after it.' };
-    }
-  }
-  const port = ownListenerPort(o);
-  if (port && !base) {
-    log.debug("Leaving listenerOverrideProblem(). A port and no base.");
-    return { code: 'STS-CORE-0146',
-             message: 'listener.port on realm "' + id + '" needs ' +
-               'listener.publicBaseUrl: the address its load balancer ' +
-               'answers under, which every URL the realm builds is on.' };
-  }
-  if (port) {
-    const taken = PROCESS_PORT_SETTINGS.filter(function (key) {
-      let v = 0;
-      try {
-        v = Number(config.processValue(key));
-      } catch (e) {
-        log.debug("Caught in listenerOverrideProblem(): " + e.message);
-      }
-      return v === port;
-    });
-    realms.forEach(function (other) {
-      if (other.id !== id && ownListenerPort(other.overrides) === port) {
-        taken.push('realm "' + other.id + '"');
-      }
-    });
-    if (taken.length) {
-      log.debug("Leaving listenerOverrideProblem(). The port is taken.");
-      return { code: 'STS-CORE-0147',
-               message: 'listener.port ' + port + ' on realm "' + id + '" is ' +
-                 'already used by ' + taken.join(', ') + '. Every node binds ' +
-                 'every realm\'s port, so each must be its own.' };
-    }
-  }
-  // THE LISTENER'S OWN POST-QUANTUM ONLY (#423) needs a 256-bit TLS 1.3 suite
-  // in the list it will use — its own, or the process's it inherits — or the
-  // listener would refuse every client. tls/tls_server.js holds the same rule
-  // for the process's settings.
-  if (String(o['listener.pqcOnly'] || '') === 'on') {
-    const own = String(o['listener.tls13CipherSuites'] || '').trim();
-    const suites = (own || String(config.processValue(
-      'tls.tls13CipherSuites') || '')).split(',').map(function (one) {
-      return one.trim();
-    });
-    if (suites.indexOf('TLS_AES_256_GCM_SHA384') < 0 &&
-        suites.indexOf('TLS_CHACHA20_POLY1305_SHA256') < 0) {
-      log.debug("Leaving listenerOverrideProblem(). No post-quantum suite.");
-      return { code: 'STS-TLS-0043',
-               message: 'listener.pqcOnly on realm "' + id + '" needs a ' +
-                 '256-bit TLS 1.3 suite (TLS_AES_256_GCM_SHA384 or ' +
-                 'TLS_CHACHA20_POLY1305_SHA256) in ' +
-                 (own ? 'listener.tls13CipherSuites'
-                      : 'tls.tls13CipherSuites, which it inherits') +
-                 ', and there is none.' };
-    }
-  }
-  let multiCell = false;
-  try {
-    multiCell = !!require('./cells').isMulti();
-  } catch (e) {
-    log.debug("Caught in listenerOverrideProblem(): " + e.message);
-  }
-  if (port && multiCell) {
-    log.debug("Leaving listenerOverrideProblem(). Several cells.");
-    return { code: 'STS-CORE-0148',
-             message: 'A realm listener (listener.port on realm "' + id +
-               '") is not supported while this service runs as several ' +
-               'cells: a cell\'s public name and the realm\'s would both ' +
-               'claim the browser. It is a follow-up of #99.' };
-  }
+  const found = require('./listener_map').realmOverridesProblem(id, after);
   log.debug("Leaving listenerOverrideProblem().");
-  return null;
+  return found;
 }
 
 function refusedForKerberos(id, after, before) {
   log.debug("Entering refusedForKerberos().");
-  // AND THE REALM LISTENER'S RULES (#99), asked at the same four doors for the
-  // same reason: a set of overrides is accepted or refused WHOLE.
+  // AND THE LISTENERS' RULES (#99, #472), asked at the same four doors for
+  // the same reason: a set of overrides is accepted or refused WHOLE.
   const problem = kerberosOverrideProblem(id, after, before) ||
     listenerOverrideProblem(id, after);
   log.debug("Leaving refusedForKerberos().");
@@ -2028,7 +2019,10 @@ const builders = [];
 /**
  * Registers a builder that runs when a realm is created.
  *
- * @param fn - called with `(id, realm)`
+ * @param fn - called with `(id, realm, origin)`; `origin` is
+ *   `{ restored, replicated }` — `restored` for a realm read back from the
+ *   store or learnt from another process, `replicated` for the second kind
+ *   only, whose rows are on their way (`ldap_server.js`'s builder)
  */
 function onCreate(fn) {
   log.debug("Entering onCreate().");
@@ -2036,11 +2030,11 @@ function onCreate(fn) {
   log.debug("Leaving onCreate().");
 }
 
-function built(realm) {
+function built(realm, origin) {
   log.debug("Entering built(). id=" + realm.id);
   builders.forEach(function (build) {
     try {
-      build(realm.id, realm);
+      build(realm.id, realm, origin || {});
     } catch (e) {
       log.warn(errorCodes.tag('STS-CORE-0019') +
                'realms: a store could not build itself for "' + realm.id +
@@ -2591,6 +2585,27 @@ function remove(id) {
 // ---------------------------------------------------------------------------
 let persistObserver = null;
 
+// THE ON-DEMAND READER (#820): `{ active(handle), read(handle, realmId, key),
+// byIndex(handle, realmId, indexKey), journalled(handle, realmId, key) }`,
+// installed by `persistence_minted.js` once a driver that can answer is
+// open. Absent, or not `active()` for the store — an indexed store is not
+// until its index is complete — an `onDemand` store is an ordinary Map read
+// back whole: memory mode, development, every test with no store.
+let onDemandReader = null;
+
+/**
+ * Installs the reader an `onDemand` store asks for a row it does not hold.
+ *
+ * @param reader - the reader, or null to remove it
+ */
+function setOnDemandReader(reader) {
+  log.debug("Entering setOnDemandReader().");
+  onDemandReader = reader && typeof reader.read === 'function' &&
+    typeof reader.active === 'function' &&
+    typeof reader.journalled === 'function' ? reader : null;
+  log.debug("Leaving setOnDemandReader(). " + !!onDemandReader);
+}
+
 /**
  * Installs the observer every declared store reports its writes to, so
  * that minted state is written down.
@@ -2691,6 +2706,19 @@ function declareHandle(options, shape, accessors) {
     // -----------------------------------------------------------------------
     merge: options.merge === 'own' ? 'own' : 'replace',
     // -----------------------------------------------------------------------
+    // `contributionsOnRead: true` (2026-10-21, #820), for a `merge: 'own'`
+    // store whose other processes' rows only a console page reads: another
+    // process's change is NOTED, not read and opened, and the page asks
+    // `persistence_replication.refreshContributions()` for the noted rows,
+    // in one batch, before it draws. The audit ring is this: each event
+    // rewrote a sealed segment of up to 32 events that every process read,
+    // opened and parsed — about 5,000 rows a minute on 8081 under a password
+    // load, in each of nine processes — for a page nobody had open. A row
+    // rewritten many times between two reads is read once.
+    // -----------------------------------------------------------------------
+    contributionsOnRead: options.merge === 'own' &&
+      options.contributionsOnRead === true,
+    // -----------------------------------------------------------------------
     // TWO MORE THINGS A STORE SAYS ABOUT ITS ROWS WHEN SEVERAL NODES WRITE
     // THEM (2026-09-14, #46 section 3), both argued in
     // `persistence/persistence_minted.js`:
@@ -2766,6 +2794,77 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
       : null,
+    // `indexOf(value)` answers the columns of a side table written in the
+    // same transaction as the sealed body (#350). Null when the store has
+    // none. An option the handle does not keep is not how that table is
+    // wired, which is why this is copied the way `expiresAt` is.
+    indexOf: typeof options.indexOf === 'function' ? options.indexOf : null,
+    // ---------------------------------------------------------------------
+    // `restoreInWorkers: false` (#617, 2026-10-14): a REQUEST WORKER does not
+    // read this store's rows back at its start. For a store nothing a worker
+    // answers reads whole — its only readers are pinned to the front process
+    // (`common/request_pool.js`, NEVER_DISPATCHED), which restores it as
+    // every process did. A worker still writes its own rows (merged with the
+    // stored row at flush, as always) and still applies what the change log
+    // brings from the moment it starts, so it never answers from less than
+    // what arrived since then; it only skips the history. `scheduler.runs`
+    // is the one store that says so: 42,740 of the 52,234 rows each of
+    // 8081's processes read back at every start, and read by nothing but
+    // /admin/scheduler and its API.
+    // ---------------------------------------------------------------------
+    restoreInWorkers: options.restoreInWorkers !== false,
+    // ---------------------------------------------------------------------
+    // `restoreExpiring: false` (#883, 2026-11-11): a start reads this
+    // store's rows whose `expires_at` is NULL and leaves the rest. For a
+    // store whose bulk is short-lived history and whose live rows — a
+    // leader, a queued or running run — carry no expiry. The expiring rows
+    // stay in the table until the expiry purge; they are not decrypted into
+    // this process. `scheduler.runs` is the store that says so. A worker
+    // that also declares `restoreInWorkers: false` still skips the WHOLE
+    // store (`skipHandles`); this only narrows what the front reads.
+    // ---------------------------------------------------------------------
+    restoreExpiring: options.restoreExpiring !== false,
+    // ---------------------------------------------------------------------
+    // `onDemand` (#820, 2026-10-21): the store is NOT read back whole at a
+    // start. A process holds a bounded set of its rows and reads one it does
+    // not hold from `sts_minted` by key when it is asked for (see map()
+    // below and `persistence_minted.js`'s on-demand reader). For the stores
+    // that grow with every person — refresh and grant tokens, families,
+    // account sets — which made every start read millions of rows. With
+    // `indexBy`, the index is written to `sts_minted_index` beside each row
+    // (`lookupsOf`), since a store not held whole cannot be walked.
+    // ---------------------------------------------------------------------
+    onDemand: !!options.onDemand,
+    lookupsOf: options.onDemand && typeof options.indexBy === 'function'
+      ? options.indexBy : null,
+    // `sortBy(value)` answers a number a console list of the store's
+    // newest rows is ordered by, or null (2026-10-22, #820). Written as
+    // one more `sts_minted_index` row beside the row (`sort_at`), so
+    // `minted.newest` walks a partial index instead of sorting every row
+    // by `written_at`, which has only a BRIN: a btree on `written_at`
+    // would make every update of `sts_minted` non-HOT
+    // (`persistence/CLAUDE.md`, *The newest rows by an index*).
+    // NOT GATED ON `onDemand` (#883): a store the front still holds, minus
+    // its expiring rows, has the same need — `/admin/scheduler` asks for a
+    // newest window of runs it does not keep. `owesMark` stays an index or
+    // an expiry backfill, so a sort alone does not start one.
+    sortOf: typeof options.sortBy === 'function' ? options.sortBy : null,
+    // A store whose rows written before it declared an `expiresAt` have
+    // none (#820 part 2): how long after its write such a row lives, in
+    // ms. The store is read back whole until those rows are given one
+    // (`persistence_minted.js`'s backfill job), since on demand only the
+    // store's expiry purge deletes a dead row.
+    expiryFromWrittenMs: options.onDemand &&
+      typeof options.onDemand.expiryFromWrittenMs === 'function'
+      ? options.onDemand.expiryFromWrittenMs : null,
+    // Run by the backfill job in the front process, in each realm, while the
+    // store is still held whole and just before its completion mark is
+    // written (#820 part 3): for an owner that derives a second store from
+    // this one and has to fill it once, from everything, before nothing is
+    // held whole again. Synchronous; a throw keeps the store whole.
+    beforeLive: options.onDemand &&
+      typeof options.onDemand.beforeLive === 'function'
+      ? options.onDemand.beforeLive : null,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
@@ -2777,6 +2876,14 @@ function declareHandle(options, shape, accessors) {
     // `Object.keys()` and a spread all answer what they always did.
     // ---------------------------------------------------------------------
     dump: accessors.dump,
+    // The partition's own Map, uncopied, where the store has one: for a walk
+    // of a store too large to copy (#820's backfill). Read it, never write.
+    partition: accessors.partition,
+    forgetAbsent: accessors.forgetAbsent,
+    residentAdd: accessors.residentAdd,
+    residentRemove: accessors.residentRemove,
+    residentClear: accessors.residentClear,
+    keysResident: !!(options.onDemand && options.onDemand.keysResident),
     read: accessors.read,
     restore: accessors.restore,
     remove: accessors.remove
@@ -2992,6 +3099,99 @@ function keyed(factory, onLookup) {
 // A Map, per realm. Every member of the Map interface is delegated, including
 // the iterator — `for (const [k, v] of store)` is a shape this codebase uses.
 //
+// ---------------------------------------------------------------------------
+// A SECONDARY INDEX, KEPT BY THE PARTITION ITSELF (#766, 2026-10-20).
+//
+// `options.indexBy(value, key)` answers the index keys a record is filed
+// under (an array of strings, possibly empty), and `lookup(indexKey)` answers
+// the keys of the ambient realm's records filed under one. It is kept by the
+// partition Map, in its own `set`, `delete` and `clear`, because every way a
+// record enters or leaves a store ends there — the facade, the journalling
+// view, a restore and a row another process wrote (the handle's `restore` and
+// `remove`, `reconciledRestore()`) — so no door can forget it, and a store
+// that offers no `indexBy` gets a plain Map as before.
+//
+// **AN INDEXED FIELD CHANGES ONLY THROUGH `set`.** A record mutated in place
+// is not re-filed; the owner's `indexBy` names fields that never change on
+// a record (a token's `username` and `sub`), or the owner writes it back.
+// ---------------------------------------------------------------------------
+// A HOT PATH, ALL OF IT: `file()`, `unfile()`, `indexKeysOf()`, `set()`,
+// `delete()`, `clear()` and `lookup()` run on every write to an indexed
+// store and every question asked of one, so none has an Entering/Leaving
+// pair — the exception the code style allows, stated as it requires.
+class IndexedMap extends Map {
+  constructor(indexBy) {
+    super();
+    this.indexBy = indexBy;
+    /** @type {Map<string, Set<any>>} */
+    this.byIndex = new Map();
+  }
+
+  indexKeysOf(value, key) {
+    let keys = [];
+    try {
+      keys = value === undefined ? [] : (this.indexBy(value, key) || []);
+    } catch (e) {
+      // A record the owner cannot index is filed under nothing; it is still
+      // in the Map, so a walk finds it.
+      keys = [];
+    }
+    return keys;
+  }
+
+  file(value, key) {
+    this.indexKeysOf(value, key).forEach((ik) => {
+      if (!ik) {
+        return;
+      }
+      let held = this.byIndex.get(ik);
+      if (!held) {
+        held = new Set();
+        this.byIndex.set(ik, held);
+      }
+      held.add(key);
+    });
+  }
+
+  unfile(value, key) {
+    this.indexKeysOf(value, key).forEach((ik) => {
+      const held = this.byIndex.get(ik);
+      if (held) {
+        held.delete(key);
+        if (!held.size) {
+          this.byIndex.delete(ik);
+        }
+      }
+    });
+  }
+
+  set(key, value) {
+    if (super.has(key)) {
+      this.unfile(super.get(key), key);
+    }
+    super.set(key, value);
+    this.file(value, key);
+    return this;
+  }
+
+  delete(key) {
+    if (super.has(key)) {
+      this.unfile(super.get(key), key);
+    }
+    return super.delete(key);
+  }
+
+  clear() {
+    this.byIndex.clear();
+    super.clear();
+  }
+
+  lookup(indexKey) {
+    const held = this.byIndex.get(String(indexKey));
+    return held ? Array.from(held) : [];
+  }
+}
+
 // The JSDoc (#50) says what a caller holds: a Map, plus `realmMap()`. The
 // facade is built as a plain object with the iterator attached afterwards,
 // which the checker cannot see as a Map, so the return is cast.
@@ -2999,11 +3199,35 @@ function keyed(factory, onLookup) {
  * Makes a Map partitioned by realm, answering the ambient realm's Map.
  *
  * @param {any} [options]
- * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any> }}
+ * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
+ *   dropHeld: (realmId: string, key: string) => boolean,
+ *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
+ *   lookupEntries: (indexKey: string) =>
+ *     { key: any, origin: string, own: boolean, value: any }[],
+ *   scan: (fn: (value: any, key: any) => void) => void,
+ *   scanAsync: (fn: (value: any, key: any) => void | boolean) =>
+ *     Promise<void>,
+ *   warm: (keys: any[]) => Promise<void>, peek: (k: any) => any,
+ *   lookupEntriesAsync: (indexKey: string) =>
+ *     Promise<{ key: any, origin?: string, own?: boolean, value: any }[]>,
+ *   newestAsync: (limit: number) =>
+ *     Promise<{ key: any, value: any }[] | null>,
+ *   countAsync: () => Promise<number | null>,
+ *   countEstimateAsync: () => Promise<{ count: number, exact: boolean }> }}
  */
 function map(options) {
   log.debug("Entering map().");
-  const per = keyed(function () { return new Map(); });
+  const indexBy = options && typeof options.indexBy === 'function'
+    ? options.indexBy : null;
+  // AN ON-DEMAND STORE KEEPS NO INDEX IN MEMORY (#820): its index is
+  // `sts_minted_index`, and `lookup()` walks only what is held. Until its
+  // index is complete it is held WHOLE — two million refresh and grant
+  // tokens on 8081 — and a family-to-keys Map over all of them cost every
+  // process hundreds of MB: the first start of #823 ran out of heap.
+  const per = keyed(function () {
+    return indexBy && !(options && options.onDemand)
+      ? new IndexedMap(indexBy) : new Map();
+  });
   // `reconcile`, for a per-realm store partly built from code — see the
   // contract above sharedMap(). The two accessors below ask it exactly as
   // sharedMap()'s do, through the same two functions, with the realm the row
@@ -3023,6 +3247,50 @@ function map(options) {
       });
       log.debug("Leaving dump().");
       return out;
+    },
+    partition: function (realmId) {
+      log.debug("Entering partition().");
+      log.debug("Leaving partition().");
+      return per.of(partitionId(realmId));
+    },
+    // A key another process wrote, or this one restored: forgotten as
+    // absent (#820 part 2). Called by the appliers whether or not the row is
+    // held. A no-op for a store that is not on demand.
+    forgetAbsent: function (realmId, k) {
+      log.debug("Entering forgetAbsent().");
+      if (absentPer) {
+        absentPer.of(partitionId(realmId)).delete(k);
+      }
+      warming.forEach(function (touched) {
+        touched.add(partitionId(realmId) + '\u0000' + k);
+      });
+      log.debug("Leaving forgetAbsent().");
+    },
+    // A key-resident store's digests (#820 part 2): `add` for a row read
+    // at a start or changed by another process, `clear` before a start's
+    // load. A no-op for any other store.
+    residentAdd: function (realmId, digest) {
+      log.debug("Entering residentAdd().");
+      if (residentPer && digest) {
+        residentPer.of(partitionId(realmId)).add(String(digest));
+      }
+      log.debug("Leaving residentAdd().");
+    },
+    residentRemove: function (realmId, digest) {
+      log.debug("Entering residentRemove().");
+      if (residentPer && digest) {
+        residentPer.of(partitionId(realmId)).delete(String(digest));
+      }
+      log.debug("Leaving residentRemove().");
+    },
+    residentClear: function () {
+      log.debug("Entering residentClear().");
+      if (residentPer) {
+        list().concat([DEFAULT_REALM]).forEach(function (one) {
+          residentPer.of(partitionId(one.id)).clear();
+        });
+      }
+      log.debug("Leaving residentClear().");
     },
     read: function (realmId, k) {
       log.debug("Entering read().");
@@ -3134,7 +3402,591 @@ function map(options) {
     return view;
   }
 
+  // -------------------------------------------------------------------------
+  // ON DEMAND (#820, 2026-10-21). With `options.onDemand` and a reader that
+  // is `active()`, the realm's Map is a bounded CACHE over `sts_minted`: a
+  // key it does not hold is read from the store by key and kept, and the
+  // oldest keys are dropped past `onDemand.maxEntries` — never one the
+  // minted journal still holds, because the flush reads a journalled key's
+  // value from here and would take its absence for a delete. A journalled
+  // key that is NOT held is a delete not yet written, and reads as absent
+  // rather than from the store, where the old row still is. `forEach`,
+  // `size` and the rest see only what is held: a store declared on-demand
+  // is not walked for what it holds, and `lookup()` asks the index.
+  // -------------------------------------------------------------------------
+  const onDemand = !!(options && options.onDemand);
+  const demandBound = onDemand && Number(options.onDemand.maxEntries) > 0
+    ? Math.floor(Number(options.onDemand.maxEntries)) : 20000;
+  function demandOn() {
+    return onDemand && !!onDemandReader && onDemandReader.active(handleName);
+  }
+  // -------------------------------------------------------------------------
+  // WHAT THE STORE SAID IS NOT THERE (#820 part 2): a key read and found
+  // absent is remembered for `ABSENT_MS`, at most `demandBound` of them, so a
+  // question that is usually "no" — is this token revoked? — is not a read
+  // of the store per request. A stale "no" would be a wrong answer, so
+  // everything that can make a remembered key present forgets it: a write
+  // here (`set()`), and another process's change, which the appliers in
+  // `persistence_minted.js` report through the handle's `forgetAbsent()`
+  // even when they skip the row. The bound in time is the backstop.
+  // -------------------------------------------------------------------------
+  const absentPer = onDemand ? keyed(function () {
+    return new Map();
+  }) : null;
+  // -------------------------------------------------------------------------
+  // KEY-RESIDENT (#820 part 2): `onDemand: { keysResident: true }`. The
+  // process holds the KEY COLUMN of every live row — the keyed digest the
+  // store files a row under, loaded at a start without reading one body —
+  // and no records beyond the bounded cache. A key whose digest is not held
+  // is absent, answered without the store; one that is is read. For a store
+  // whose question is membership on a hot path with keys that are usually
+  // absent — `admin_stats.revokedJtis`: is this token revoked? — where a
+  // read per question would be a read per request. `has()` is answered from
+  // the digests alone, with no read; `get()` reads a held digest's row.
+  // `size` is the count of digests. They are kept EXACT by every change: a
+  // write or delete here, and another process's, which the appliers read to
+  // learn whether it was a write or a delete (`residentAdd`/`residentRemove`
+  // in `persistence_minted.js`). What only the store's expiry purge removes
+  // stays until a read finds it gone — a row past its own expiry, which a
+  // store declares only where an expired row answers like an absent one.
+  // -------------------------------------------------------------------------
+  const keysResident = onDemand && options.onDemand.keysResident === true;
+  const residentPer = keysResident ? keyed(function () {
+    return new Set();
+  }) : null;
+  // Hot path: every key-resident question. No Entering/Leaving pair.
+  function digestOf(realmId, k) {
+    return typeof onDemandReader.digestOf === 'function'
+      ? onDemandReader.digestOf(handleName, realmId, k) : null;
+  }
+  // THE KEYS A CHANGE TOUCHED WHILE A WARM-UP WAS READING (`warm()`), one
+  // Set per warm-up in flight: its answer for such a key may predate the
+  // change, so it is not held. Filled by `forgetAbsent()`, which the
+  // appliers call for every change to a row this process does not hold.
+  const warming = new Set();
+  // Hot path: every on-demand miss. No Entering/Leaving pair.
+  function absentKnown(k) {
+    const absent = absentPer();
+    const until = absent.get(k);
+    if (until === undefined) {
+      return false;
+    }
+    if (until > Date.now()) {
+      return true;
+    }
+    absent.delete(k);
+    return false;
+  }
+  // Hot path: every on-demand miss. No Entering/Leaving pair.
+  function absentNote(k) {
+    const absent = absentPer();
+    absent.delete(k);
+    absent.set(k, Date.now() + ABSENT_MS);
+    if (absent.size > demandBound) {
+      absent.delete(absent.keys().next().value);
+    }
+  }
+  // Hot path: every on-demand write and read. No Entering/Leaving pair.
+  function demandTrim(realmId, target) {
+    if (target.size <= demandBound) {
+      return;
+    }
+    for (const key of target.keys()) {
+      if (target.size <= demandBound) {
+        break;
+      }
+      if (!onDemandReader.journalled(handleName, realmId, key)) {
+        target.delete(key);
+      }
+    }
+  }
+  // Hot path: every on-demand read. No Entering/Leaving pair.
+  function demandGet(k) {
+    const target = per();
+    if (target.has(k) || !demandOn()) {
+      return target.get(k);
+    }
+    const realmId = partitionId(currentId());
+    if (onDemandReader.journalled(handleName, realmId, k)) {
+      return undefined;
+    }
+    let digest = null;
+    if (keysResident) {
+      digest = digestOf(realmId, k);
+      if (digest && !residentPer().has(digest)) {
+        return undefined;
+      }
+    } else if (absentKnown(k)) {
+      return undefined;
+    }
+    const found = onDemandReader.read(handleName, realmId, k);
+    if (!found || !found.present) {
+      // A FAILED read is not remembered: only the store's own "absent".
+      if (found && found.present === false) {
+        if (digest) {
+          residentPer().delete(digest);
+        } else {
+          absentNote(k);
+        }
+      }
+      return undefined;
+    }
+    target.set(k, found.value);
+    demandTrim(realmId, target);
+    return found.value;
+  }
+
+  // The keys held here that are filed under an index value.
+  function heldUnder(target, indexKey) {
+    log.debug("Entering heldUnder().");
+    let held = [];
+    if (typeof target.lookup === 'function') {
+      held = target.lookup(indexKey);
+    } else if (indexBy) {
+      // An on-demand store: a walk of what is held — the bounded cache
+      // when live, the whole store until then, which is what the callers
+      // did before #820 (`membersOf()` walked every token at a revoke).
+      target.forEach(function (value, key) {
+        let keys = [];
+        try {
+          keys = indexBy(value, key) || [];
+        } catch (e) {
+          log.debug("Caught in heldUnder(): " + ((e && e.message) || e));
+          keys = [];
+        }
+        if (keys.indexOf(indexKey) >= 0) {
+          held.push(key);
+        }
+      });
+    }
+    log.debug("Leaving heldUnder(). " + held.length + " key(s).");
+    return held;
+  }
+
   const facade = {
+    // FORGET A HELD ROW WITHOUT JOURNALING A DELETE (#883). The flush reads
+    // a journalled key from this map and writes a delete when it is gone, so
+    // a key the journal still holds is left where it is. A store with no
+    // reader is not journalled. Returns whether the bare map lost the key.
+    dropHeld: function (realmId, key) {
+      log.debug("Entering dropHeld().");
+      const id = partitionId(realmId);
+      const k = key === undefined || key === null ? '' : String(key);
+      if (onDemandReader &&
+          typeof onDemandReader.journalled === 'function' &&
+          onDemandReader.journalled(handleName, id, k)) {
+        log.debug("Leaving dropHeld(). Still journalled.");
+        return false;
+      }
+      const gone = per.of(id).delete(k);
+      log.debug("Leaving dropHeld(). " + gone);
+      return gone;
+    },
+    // The keys of the ambient realm's records filed under one index key
+    // (`options.indexBy`, #766); empty for a store that has no index. On
+    // demand, the index's rows as well (#820): each kept as it is read, a
+    // key held here as it is, and a delete not yet written left out.
+    lookup: function (indexKey) {
+      log.debug("Entering lookup().");
+      const target = per();
+      const held = heldUnder(target, indexKey);
+      if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
+        log.debug("Leaving lookup().");
+        return held;
+      }
+      const realmId = partitionId(currentId());
+      const out = new Set(held);
+      (onDemandReader.byIndex(handleName, realmId, indexKey) || [])
+        .forEach(function (row) {
+          // ANOTHER PROCESS'S ROW of a `merge: 'own'` store (#1001) is not
+          // a key of this Map: it cannot be `get()`, and cached under the
+          // bare key it would be written back under THIS origin. It is
+          // answered by `lookupEntries()` below, never here.
+          if (row.own === false) {
+            return;
+          }
+          if (onDemandReader.journalled(handleName, realmId, row.key)) {
+            if (target.has(row.key)) {
+              out.add(row.key);
+            }
+            return;
+          }
+          if (!target.has(row.key)) {
+            target.set(row.key, row.value);
+          }
+          out.add(row.key);
+        });
+      demandTrim(realmId, target);
+      log.debug("Leaving lookup(). " + out.size + " key(s).");
+      return Array.from(out);
+    },
+    // EVERY ROW FILED UNDER AN INDEX VALUE, WITH WHOSE IT IS (#1001,
+    // 2026-10-27). `lookup()` answers KEYS, which is the whole answer for a
+    // store with one row per key. A `merge: 'own'` store on demand
+    // (`admin_stats.users`) has a row per PROCESS for one key, and a reader
+    // that wants the person wants all of them: this process's — held, or
+    // read from the index and held, as `lookup()` does — and every other
+    // origin's, read and handed over with its origin and NOT cached. An
+    // entry is `{ key, origin, own, value }`; `origin` is '' for this
+    // process's row. Synchronous, for the request paths that ask (a sign-in
+    // count, `knownUser()`); a console page that can wait has
+    // `lookupEntriesAsync()`.
+    lookupEntries: function (indexKey) {
+      log.debug("Entering lookupEntries().");
+      const target = per();
+      const out = [];
+      const seen = new Set();
+      heldUnder(target, indexKey).forEach(function (key) {
+        seen.add(key);
+        out.push({ key: key, origin: '', own: true, value: target.get(key) });
+      });
+      if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
+        log.debug("Leaving lookupEntries(). Held only.");
+        return out;
+      }
+      const realmId = partitionId(currentId());
+      (onDemandReader.byIndex(handleName, realmId, indexKey) || [])
+        .forEach(function (row) {
+          if (row.own === false) {
+            out.push({ key: row.key, origin: String(row.origin || ''),
+                       own: false, value: row.value });
+            return;
+          }
+          if (seen.has(row.key)) {
+            return;
+          }
+          if (onDemandReader.journalled(handleName, realmId, row.key)) {
+            // A write of this key is pending: the Map's value is the truth
+            // and the store's row is behind it (or it is deleted).
+            if (target.has(row.key)) {
+              seen.add(row.key);
+              out.push({ key: row.key, origin: '', own: true,
+                         value: target.get(row.key) });
+            }
+            return;
+          }
+          if (!target.has(row.key)) {
+            target.set(row.key, row.value);
+          }
+          seen.add(row.key);
+          out.push({ key: row.key, origin: '', own: true,
+                     value: target.get(row.key) });
+        });
+      demandTrim(realmId, target);
+      log.debug("Leaving lookupEntries(). " + out.length + " row(s).");
+      return out;
+    },
+    // THE ROWS A REQUEST IS ABOUT TO ASK FOR, READ IN ONE ASYNCHRONOUS BATCH
+    // (2026-10-21): a refresh knows its token's jti, family and register
+    // record the moment the token is opened, and asked each one with a
+    // synchronous read of the store that held the worker's event loop.
+    // Here each key not held, not pending and not known absent is read
+    // together with the others, off the event loop, and then held — unless
+    // a change to it arrived meanwhile (`warming`), or it is held or
+    // pending by then, when the read's answer may be the older one and is
+    // dropped. A key the store answers absent is remembered as such. A
+    // failed read holds nothing, and the request's own reads ask as they
+    // always did. A key-resident store asks only for a key whose digest it
+    // holds (2026-10-22, #820): one it does not hold is absent, known
+    // without the store, and its `has()` is free anyway — what a warm-up
+    // buys there is the BODY, which a writer reading the held value needs.
+    warm: async function (keys) {
+      log.debug("Entering warm().");
+      if (!demandOn() || typeof onDemandReader.readMany !== 'function') {
+        log.debug("Leaving warm(). Not here.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const target = per();
+      const wanted = Array.from(new Set((keys || []).filter(function (k) {
+        if (k === undefined || k === null || k === '' || target.has(k) ||
+            onDemandReader.journalled(handleName, realmId, k)) {
+          return false;
+        }
+        if (keysResident) {
+          const digest = digestOf(realmId, k);
+          return !digest || residentPer().has(digest);
+        }
+        return !absentKnown(k);
+      })));
+      if (!wanted.length) {
+        log.debug("Leaving warm(). Nothing to read.");
+        return;
+      }
+      const touched = new Set();
+      warming.add(touched);
+      let found = null;
+      try {
+        found = await onDemandReader.readMany(handleName, realmId, wanted);
+      } catch (e) {
+        log.debug("Caught in warm(): " + ((e && e.message) || e));
+        found = null;
+      } finally {
+        warming.delete(touched);
+      }
+      if (!found) {
+        log.debug("Leaving warm(). The read failed.");
+        return;
+      }
+      wanted.forEach(function (k) {
+        if (touched.has(realmId + '\u0000' + k) || target.has(k) ||
+            onDemandReader.journalled(handleName, realmId, k)) {
+          return;
+        }
+        if (found.has(k)) {
+          target.set(k, found.get(k));
+        } else if (keysResident) {
+          const digest = digestOf(realmId, k);
+          if (digest) {
+            residentPer().delete(digest);
+          }
+        } else {
+          absentNote(k);
+        }
+      });
+      demandTrim(realmId, target);
+      log.debug("Leaving warm(). " + wanted.length + " key(s) asked.");
+    },
+    // EVERY ROW OF THE AMBIENT REALM, held or not (#820 part 3): for the
+    // few walks that must see the whole store — an administrator's
+    // revoke-all — where `forEach` sees only what is held. On demand, the
+    // held rows first (they are the newest, and a pending write is only
+    // here), then the store a page at a time, skipping what was seen and a
+    // key with a write not yet committed. Synchronous, through the bridge:
+    // a walk of the whole store, for the rare caller that has to. A page
+    // that cannot be read throws. Not on demand, `forEach`.
+    scan: function (fn) {
+      log.debug("Entering scan().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.page !== 'function') {
+        target.forEach(function (value, key) {
+          fn(value, key);
+        });
+        log.debug("Leaving scan(). Held whole.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const seen = new Set();
+      Array.from(target.entries()).forEach(function (entry) {
+        seen.add(entry[0]);
+        fn(entry[1], entry[0]);
+      });
+      let after = '';
+      let pages = 0;
+      do {
+        const page = onDemandReader.page(handleName, realmId, after);
+        pages++;
+        (page.rows || []).forEach(function (row) {
+          if (seen.has(row.key) ||
+              onDemandReader.journalled(handleName, realmId, row.key)) {
+            return;
+          }
+          seen.add(row.key);
+          fn(row.value, row.key);
+        });
+        after = page.next || '';
+      } while (after);
+      log.debug("Leaving scan(). " + seen.size + " row(s) in " + pages +
+                " page(s).");
+    },
+    // `scan()` that gives the event loop back between pages (#820): for a
+    // walk of the whole store a request is waiting on — an administrator's
+    // revoke-all through /admin-api — so the other requests the process is
+    // serving are answered between pages instead of after the whole walk.
+    // The realm is fixed when it is called. A promise; not on demand, the
+    // held rows and then resolved. A `fn` that answers `false` ENDS the walk
+    // (#1110): a report reading a store stops at its limit, its time budget
+    // or a cancellation, and must not page the rest of the store to get
+    // there. Any other answer, `undefined` included, goes on.
+    scanAsync: async function (fn) {
+      log.debug("Entering scanAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.page !== 'function') {
+        for (const entry of Array.from(target.entries())) {
+          if (fn(entry[1], entry[0]) === false) {
+            log.debug("Leaving scanAsync(). Held whole; stopped.");
+            return;
+          }
+        }
+        log.debug("Leaving scanAsync(). Held whole.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const seen = new Set();
+      for (const entry of Array.from(target.entries())) {
+        seen.add(entry[0]);
+        if (fn(entry[1], entry[0]) === false) {
+          log.debug("Leaving scanAsync(). Stopped among the held rows.");
+          return;
+        }
+      }
+      let after = '';
+      let pages = 0;
+      let stopped = false;
+      do {
+        await new Promise(function (resolve) {
+          setImmediate(resolve);
+        });
+        const page = onDemandReader.page(handleName, realmId, after);
+        pages++;
+        for (const row of (page.rows || [])) {
+          if (seen.has(row.key) ||
+              onDemandReader.journalled(handleName, realmId, row.key)) {
+            continue;
+          }
+          seen.add(row.key);
+          if (fn(row.value, row.key) === false) {
+            stopped = true;
+            break;
+          }
+        }
+        after = stopped ? '' : (page.next || '');
+      } while (after);
+      log.debug("Leaving scanAsync(). " + seen.size + " row(s) in " + pages +
+                " page(s)" + (stopped ? ", stopped." : "."));
+    },
+    // -----------------------------------------------------------------------
+    // THREE CONSOLE QUESTIONS ASKED WITHOUT HOLDING THE EVENT LOOP
+    // (2026-10-22, #820): one index key's rows, the newest rows, and how
+    // many there are. On demand they ask the store on the driver's read
+    // pool (`persistence_minted.js`), merged with what this process holds
+    // as `lookup()` merges it — a held row is the fresher, and a key with a
+    // write not yet committed is answered from here or not at all. Held
+    // whole, they answer from the Map: the store and the Map are one.
+    // -----------------------------------------------------------------------
+    // The ambient realm's records filed under one index key, as
+    // `[{ key, value }]`. A store that cannot be asked rejects.
+    lookupEntriesAsync: async function (indexKey) {
+      log.debug("Entering lookupEntriesAsync().");
+      const target = per();
+      const out = new Map();
+      if (typeof target.lookup === 'function') {
+        target.lookup(indexKey).forEach(function (key) {
+          out.set(key, target.get(key));
+        });
+      } else if (indexBy) {
+        target.forEach(function (value, key) {
+          let keys = [];
+          try {
+            keys = indexBy(value, key) || [];
+          } catch (e) {
+            log.debug("Caught in lookupEntriesAsync(): " +
+                      ((e && e.message) || e));
+            keys = [];
+          }
+          if (keys.indexOf(indexKey) >= 0) {
+            out.set(key, value);
+          }
+        });
+      }
+      if (!demandOn() || typeof onDemandReader.byIndexAsync !== 'function') {
+        log.debug("Leaving lookupEntriesAsync(). Held.");
+        return Array.from(out, function (e) {
+          return { key: e[0], value: e[1] };
+        });
+      }
+      const realmId = partitionId(currentId());
+      const rows = await onDemandReader.byIndexAsync(handleName, realmId,
+                                                     indexKey);
+      // ANOTHER PROCESS'S ROWS of a `merge: 'own'` store (#1001) are handed
+      // over as they are, each with its origin, beside this process's; a
+      // held row is the fresher only for THIS process's own row.
+      const foreign = [];
+      (rows || []).forEach(function (row) {
+        if (row.own === false) {
+          foreign.push({ key: row.key, origin: String(row.origin || ''),
+                         own: false, value: row.value });
+          return;
+        }
+        if (out.has(row.key) ||
+            onDemandReader.journalled(handleName, realmId, row.key)) {
+          return;
+        }
+        out.set(row.key, row.value);
+      });
+      log.debug("Leaving lookupEntriesAsync(). " + (out.size +
+                foreign.length) + " row(s).");
+      return Array.from(out, function (e) {
+        return { key: e[0], origin: '', own: true, value: e[1] };
+      }).concat(foreign);
+    },
+    // The newest rows of the ambient realm, highest `sortBy` first, as
+    // `[{ key, value }]`: the store's newest `limit` and every held row
+    // with a write not yet committed (which the store has not got). Null
+    // where the store is held whole: the caller walks the Map, as before.
+    newestAsync: async function (limit) {
+      log.debug("Entering newestAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.newestAsync !== 'function') {
+        log.debug("Leaving newestAsync(). Held whole.");
+        return null;
+      }
+      const realmId = partitionId(currentId());
+      const rows = await onDemandReader.newestAsync(handleName, realmId,
+                                                    limit);
+      const out = new Map();
+      target.forEach(function (value, key) {
+        if (onDemandReader.journalled(handleName, realmId, key)) {
+          out.set(key, value);
+        }
+      });
+      (rows || []).forEach(function (row) {
+        if (out.has(row.key) ||
+            onDemandReader.journalled(handleName, realmId, row.key)) {
+          return;
+        }
+        out.set(row.key, target.has(row.key) ? target.get(row.key)
+                                             : row.value);
+      });
+      log.debug("Leaving newestAsync(). " + out.size + " row(s).");
+      return Array.from(out, function (e) {
+        return { key: e[0], value: e[1] };
+      });
+    },
+    // How many live rows the ambient realm holds: the store's committed
+    // count on demand, the Map's size otherwise. Rejects where the store
+    // cannot be asked.
+    countAsync: async function () {
+      log.debug("Entering countAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.countAsync !== 'function') {
+        log.debug("Leaving countAsync(). Held whole.");
+        return target.size;
+      }
+      const n = await onDemandReader.countAsync(handleName,
+                                                partitionId(currentId()));
+      log.debug("Leaving countAsync(). " + n + ".");
+      return n;
+    },
+    // How many live rows the ambient realm holds, as cheaply as is honest
+    // (2026-10-22, #820): the Map's size held whole; on demand the store's
+    // planner estimate for a large store and its exact count for a small
+    // one (`persistence_minted.js` argues the threshold). `exact` says
+    // which. A reader with no estimate answers its exact count. Rejects
+    // where the store cannot be asked.
+    countEstimateAsync: async function () {
+      log.debug("Entering countEstimateAsync().");
+      const target = per();
+      if (!demandOn()) {
+        log.debug("Leaving countEstimateAsync(). Held whole.");
+        return { count: target.size, exact: true };
+      }
+      const realm = partitionId(currentId());
+      if (typeof onDemandReader.countEstimateAsync === 'function') {
+        const answer = await onDemandReader.countEstimateAsync(handleName,
+                                                               realm);
+        log.debug("Leaving countEstimateAsync(). " + answer.count +
+                  (answer.exact ? "." : " (estimated)."));
+        return { count: Number(answer.count) || 0, exact: !!answer.exact };
+      }
+      if (typeof onDemandReader.countAsync !== 'function') {
+        log.debug("Leaving countEstimateAsync(). No count; held size.");
+        return { count: target.size, exact: true };
+      }
+      const n = await onDemandReader.countAsync(handleName, realm);
+      log.debug("Leaving countEstimateAsync(). " + n + ".");
+      return { count: Number(n) || 0, exact: true };
+    },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a
     // JOURNALLING VIEW — see viewOf() above.
@@ -3146,26 +3998,71 @@ function map(options) {
         // target as before; journal on the RESOLVED id
         : viewOf(partitionId(id), per.of(id));
     },
+    // Whether this store is a cache over the store right now (#820): what
+    // `size`, `forEach` and the rest see is then only what is held, and a
+    // bound kept by walking it is the cache's business, not the caller's.
+    onDemandLive: function () {
+      log.debug("Entering onDemandLive().");
+      log.debug("Leaving onDemandLive().");
+      return demandOn();
+    },
     get: function (k) {
       log.debug("Entering get().");
       log.debug("Leaving get().");
+      return onDemand ? demandGet(k) : per().get(k);
+    },
+    // WHAT THIS PROCESS HOLDS FOR A KEY, AND NEVER A READ OF THE STORE
+    // (2026-10-22, #820): for a writer on a hot path that must not block on
+    // a miss — `admin_stats.js`'s `noteTokenHolder()`, once per JWT — and
+    // that writes blindly when nothing is held, leaving the store's
+    // `mergeRow` to combine its row with the one already there. Held whole,
+    // it is `get()`.
+    // Hot path: every recorded JWT. No Entering/Leaving pair.
+    peek: function (k) {
       return per().get(k);
     },
     set: function (k, v) {
       log.debug("Entering set().");
-      per().set(k, v);
+      const target = per();
+      target.set(k, v);
       noteWrite(handle, k);
+      if (absentPer) {
+        absentPer().delete(k);
+      }
+      if (keysResident && demandOn()) {
+        const digest = digestOf(partitionId(currentId()), k);
+        if (digest) {
+          residentPer().add(digest);
+        }
+      }
+      if (demandOn()) {
+        demandTrim(partitionId(currentId()), target);
+      }
       log.debug("Leaving set().");
       return facade;
     },
     has: function (k) {
       log.debug("Entering has().");
+      if (keysResident && demandOn() && !per().has(k)) {
+        // From the digests alone (see `keysResident`): a key with a write
+        // not committed and not held is a delete not yet written.
+        const realmId = partitionId(currentId());
+        const digest = digestOf(realmId, k);
+        if (digest && !onDemandReader.journalled(handleName, realmId, k)) {
+          log.debug("Leaving has(). Resident.");
+          return residentPer().has(digest);
+        }
+      }
       log.debug("Leaving has().");
-      return per().has(k);
+      return onDemand ? demandGet(k) !== undefined : per().has(k);
     },
     delete: function (k) {
       log.debug("Entering delete().");
-      const gone = per().delete(k);
+      let gone = per().delete(k);
+      if (keysResident && demandOn()) {
+        const digest = digestOf(partitionId(currentId()), k);
+        gone = (!!digest && residentPer().delete(digest)) || gone;
+      }
       // Reported whether or not the key was there. A delete of a key this
       // process never held may still have a ROW — restored from the store and
       // swept before anything read it — and reporting only the hits would
@@ -3209,7 +4106,9 @@ function map(options) {
     get size() {
       log.debug("Entering size().");
       log.debug("Leaving size().");
-      return per().size;
+      // Key-resident and live: every live row's digest is held, so the count
+      // is the store's, not the cache's (see `keysResident` above).
+      return keysResident && demandOn() ? residentPer().size : per().size;
     }
   };
   facade[Symbol.iterator] = function () { return per()[Symbol.iterator](); };
@@ -4080,7 +4979,7 @@ function realmSupport() {
             'GET /oauth2/rfc9700 reports which.' },
     { family: 'Authentication service', state: 'full', by: 'path',
       cards: ['WebAuthn / CTAP', 'One-time passwords (TOTP)', 'Recovery codes',
-              'Email codes and links'],
+              'Email codes and links', 'Device Bound Session Credentials'],
       note: 'Its own sessions and second factors — WebAuthn credentials, ' +
             'TOTP secrets and recovery codes — so signing in to one ' +
             'realm signs you in to that realm only. That is the point of a ' +
@@ -4144,6 +5043,24 @@ function realmSupport() {
             'belongs ' +
             'to the realm it is registered in, and its HTTPS listener ' +
             'certificate is issued by that realm\'s pep-tls Issuing CA.' },
+    { family: 'AuthZEN', state: 'full', by: 'path',
+      cards: ['AuthZEN'],
+      note: 'The realm is AuthZEN\'s tenant: a caller is looked up in the ' +
+            'realm\'s own directory, so another realm\'s caller is ' +
+            'nobody here, and a question is decided against the realm\'s ' +
+            'own root policy. The attribute catalogue is the realm\'s ' +
+            'sts-authzen-api object, and every authzen.* setting is the ' +
+            'realm\'s.' },
+    { family: 'UMA 2.0', state: 'full', by: 'path',
+      cards: ['UMA 2.0'],
+      note: 'The realm is UMA\'s tenant: its resource servers are the ' +
+            'realm\'s applications declared for uma, its protection API ' +
+            'token is the realm\'s own access token, its six stores — ' +
+            'the registered resources, the owners\' documents, the ' +
+            'tickets, PCTs, RPTs and pending approvals — are the realm\'s, ' +
+            'its realm-layer policy is the realm\'s uma-authorization ' +
+            'entry or the built-in template, and every uma.* setting is ' +
+            'the realm\'s.' },
     { family: 'Federation', state: 'full', by: 'path',
       cards: ['Federation'],
       note: 'Its own relationships — ou=federations is in the realm\'s ' +
@@ -4159,6 +5076,11 @@ function realmSupport() {
             'client seeded in every realm, and every page reads and writes ' +
             'the person\'s entry in that realm\'s directory, held to that ' +
             'realm\'s password policy.' },
+    { family: 'Reporting', state: 'full', by: 'path',
+      cards: ['Reporting'],
+      note: 'The application and its API are reached under the realm ' +
+            'path. Definitions and jobs stay in that realm\'s maps, and a ' +
+            'share is a group in that realm\'s directory.' },
     { family: 'Global logout', state: 'full', by: 'path',
       cards: [],
       note: 'It holds no state of its own: /logout, /admin/logout and ' +
@@ -4198,7 +5120,7 @@ function realmSupport() {
             'the realm it is reached in, and the plain /admin and /portal ' +
             'ask which realm first when realms are defined. /admin-api takes ' +
             'the default realm\'s token everywhere and a realm\'s own ' +
-            'sts-management-api token in that realm only.' },
+            'sts-api-client token in that realm only.' },
     { family: 'LDAP (389 / 636)', state: 'full', by: 'dn',
       cards: ['LDAP'],
       note: 'A DIRECTORY PER REALM behind one socket — a separate store, not ' +
@@ -4248,8 +5170,9 @@ function realmSupport() {
             'the name; a realm\'s own /realm/<id>/KdcProxy is pinned to that ' +
             'realm and refuses another realm\'s name with ' +
             'KDC_ERR_WRONG_REALM. What is still the PROCESS\'s: the two ' +
-            'sockets, and the development-mode trust with krb5.trustedRealm ' +
-            '— trust realms do not trust each other\'s Kerberos. Before ' +
+            'sockets. A Kerberos trust is a record in the realm\'s own ' +
+            'directory (ou=kerberosTrusts), so two trust realms may trust ' +
+            'each other\'s Kerberos through a record on each side. Before ' +
             '2026-09-15 there was one KDC, one principal database and one ' +
             'realm name for the whole process. SPNEGO carries the same ' +
             'tickets over HTTP, so its routes answer under each realm\'s ' +
@@ -4350,6 +5273,43 @@ function realmSupport() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// THE REALMS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b): each support
+// row's `family` and `note`, which `GET /admin-api/realms` carries as
+// `support`. `by` and `state` are codes, `cards` names `sts_metadata.ts`'s
+// cards, and a retiring realm's `why`, `refusing` and `finish` are the
+// refusal's own text, which stays English. A row is keyed by its family made
+// a slug rather than by its place, so a row added in the middle moves no
+// other row's key.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/realms'];
+
+/**
+ * Extracts the realms namespace (#543 phase 2b): every support row's family
+ * and note.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const rows = {};
+  realmSupport().forEach(function (row) {
+    const slug = String(row.family).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    rows[slug] = { family: row.family, note: row.note };
+  });
+  const out = harvest('realms.support', rows, ['family', 'note']);
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Trust realms: several logical copies of this service in one process,
  * told apart by a path prefix.
@@ -4407,8 +5367,11 @@ module.exports = {
   sharedMap: sharedMap,
   expiryField: expiryField,
   setPersistObserver: setPersistObserver,
+  setOnDemandReader: setOnDemandReader,
   unknownRealmPath: unknownRealmPath,
   handles: handles,
   handleFor: handleFor,
-  realmSupport: realmSupport
+  realmSupport: realmSupport,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

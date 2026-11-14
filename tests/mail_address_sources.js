@@ -79,7 +79,7 @@ function ldapModify(dn, changes, boundDn) {
   return out;
 }
 
-function consoleAndApi(t) {
+async function consoleAndApi(t) {
   log.debug('Entering consoleAndApi().');
   const typed = ldap.createUser('mas-typed', {
     origin: 'console', attributes: { mail: 'typed@example.com' } });
@@ -90,7 +90,7 @@ function consoleAndApi(t) {
   t.check(invented.ok && !verified('mas-invented'),
           '1b. an address namePlan() INVENTED is not: nobody provided it',
           addressOf('mas-invented'));
-  const set = adminActions.usersAction({ action: 'set-mail',
+  const set = await adminActions.usersAction({ action: 'set-mail',
     user: 'mas-invented', mail: 'set@example.com' }, { via: 'api' });
   t.check(set.ok && addressOf('mas-invented') === 'set@example.com' &&
           verified('mas-invented'),
@@ -183,7 +183,7 @@ module.exports = {
             'and an invented address do not',
   run: async function (t) {
     log.debug('Entering run().');
-    consoleAndApi(t);
+    await consoleAndApi(t);
     scim(t);
     ldapDoor(t);
     federation(t);

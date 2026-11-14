@@ -28,7 +28,58 @@ git submodule update --init --recursive
 through the [OAuth2/OIDC Debugger](https://idptools.com), where it is itself a
 submodule: a plain `--init` there stops one level short of this one.
 
+## On Windows, under Cygwin
+
+The scripts you run from a checkout work in a [Cygwin](https://cygwin.com)
+shell on Windows the same way they work on Linux. That covers
+`./run-tests.sh`, `./run-coverage.sh`, `./run-jsdoc.sh`,
+`./docker-npm-test.sh`, `./clean.sh`, the `deploy/*/terraform-local.sh` and
+`deploy/*/bootstrap-state.sh` launchers, and the scripts in `utilities/`.
+Everything they build and run is still a Linux container. What you need:
+
+* **Docker Desktop**, running, with `docker.exe` on your Windows `PATH`. A
+  Cygwin shell inherits that `PATH`.
+* **Cygwin's own** `bash`, `git`, `coreutils`, `sed`, `curl` and `jq`
+  packages. Install the Windows versions of node, the AWS CLI, gcloud and
+  az, the ones each project ships for Windows. The scripts convert paths
+  for them and remove the CRLF line endings they print.
+* **A checkout with LF line endings.** The repository's `.gitattributes` turns
+  line-ending conversion off, so a clone made with Git for Windows (whose
+  default is `core.autocrlf=true`) still has the LF endings the scripts and
+  images need. A checkout made before that file existed may have CRLF
+  endings. Commit or stash your work, then refresh the checkout with
+  `git rm -r --cached -q . && git reset --hard`.
+
+Three things behave differently on Windows:
+
+* **AWS sessions are passed as a snapshot.** On Linux,
+  `deploy/aws/terraform-local.sh` serves your `aws login` or SSO session to
+  the container as it refreshes. Docker Desktop's containers cannot reach
+  that endpoint, so on Windows the container gets the session as it stands
+  when the run starts. An apply can outlive that session. For a long one,
+  export the deployer user's key as `AWS_ACCESS_KEY_ID` and
+  `AWS_SECRET_ACCESS_KEY`.
+* **The Azure CLI's token cache must be plain JSON.** On Windows the Azure
+  CLI encrypts its token cache for your account by default, and the
+  container cannot read it. `deploy/azure/terraform-local.sh` stops and
+  tells you to run
+  `az config set core.encrypt_token_cache=false && az login`.
+* **No `sudo`, and no file ownership to fix.** If Docker Desktop is not
+  running, a script says so instead of trying `sudo`. Files a container
+  writes into your checkout are owned by you, so the `--user` and
+  chown-back steps that Linux needs are skipped.
+
+Git Bash (MSYS) is detected and handled the same way, but Cygwin is the
+supported shell.
+
 ## Run it
+```docker-compose up```
+
+or  
+
+```docker compose up```
+
+or
 
 ```bash
 docker build -t iya-sts .
@@ -42,7 +93,7 @@ shown as an environment variable is passed with `-e`.
 
 `CONFIG_FILE` selects a file in `env/` — `local.js`, `test.js` or
 `docker-tests.js`. At the default `debug` level every endpoint call and every
-artifact before and after signing is logged. That is the point of a mock, so
+artifact before and after signing is logged. That is the point of development mode, so
 resist quietening it; `env/test.js` is the quiet one if you need it — and it is
 what the three test launchers select for themselves, since a suite that passes
 throws its log away and the level is about half of this service's CPU. Ask any
@@ -62,7 +113,6 @@ will not bind on an ordinary user account.
 |---|---|---|---|
 | 8081 | The main service — every protocol endpoint, the console, the API. **HTTPS**, since every appconfig file here sets `global.https`; `STS_HTTPS=false` makes it plain HTTP. It asks every connection for a client certificate and requires none, so it is also where mutual TLS happens | `global.port` | `STS_PORT` |
 | 88 (TCP+UDP) | The Kerberos KDC | `krb5.kdcPort` | `KRB5_KDC_PORT` |
-| 8888 | The Kerberos-protected test service | `krb5.servicePort` | `KRB5_SERVICE_PORT` |
 | 389 | The LDAP directory | `ldap.port` | `LDAP_PORT` |
 | 636 | The same directory over TLS (LDAPS) | `ldap.tlsPort` | `LDAPS_PORT` |
 | 8092 | The SPIFFE Workload API over gRPC (product mode: only where `spiffe.workloadTcpSourceAuthenticated` is on) | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
@@ -79,7 +129,8 @@ is not" is the ordinary outcome and one flag could only report one of them:
   (an admin console page, so it needs a session; `GET
   /admin-api/ldap/service` is the same object and is not gated)
 - `GET /spiffe` — all four SPIFFE sockets, separately
-- `GET /krb5/principals` — the KDC
+- the KDC — its startup log line (`krb5: the KDC is reachable on TCP and UDP …`,
+  or `STS-CORE-0029` naming why it could not bind)
 
 So a page answering 200 is not evidence that the listener behind it came up. Read
 the flag.
@@ -105,7 +156,7 @@ second process — but every default port collides. Give the second one its own:
 docker run --rm -p 8091:8091 \
   -e CONFIG_FILE=./env/local.js \
   -e STS_PORT=8091 -e LDAP_PORT=3891 -e LDAPS_PORT=6391 \
-  -e KRB5_KDC_PORT=8891 -e KRB5_SERVICE_PORT=8891 \
+  -e KRB5_KDC_PORT=8891 \
   -e STS_SPIFFE_WORKLOAD_PORT=8093 -e STS_SPIFFE_SERVER_PORT=8182 \
   -e STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
   iya-sts
@@ -122,14 +173,33 @@ log when it does.
 ## In a container
 
 ```bash
-docker build -t rcbj/sts .
-docker run --rm -p 8081:8081 rcbj/sts
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts
 ```
 
 The image copies the whole build context (`.dockerignore` decides what is in it)
 so that adding a protocol directory cannot be forgotten, installs with
 `--omit=dev`, and defaults `CONFIG_FILE` to `./env/local.js`. `EXPOSE` documents
 every port above; publishing them is the caller's decision.
+
+**The service runs as `sts`, uid and gid 10001, not as root.** It still binds
+88, 389 and 636 inside the container, because Docker sets
+`net.ipv4.ip_unprivileged_port_start=0` in every container's network
+namespace; a runtime that does not set it needs
+`--sysctl net.ipv4.ip_unprivileged_port_start=0`. The one directory the
+service writes under its tree, `/usr/src/sts/data`, belongs to that user, so
+a volume mounted there must be writable by uid 10001. A file you mount for
+the service to read, such as a key-encryption key file, must be readable by
+uid 10001.
+
+**The image is Debian 12 (bookworm) slim with Node.js 24.22.1 and little
+else.** It carries the `node` binary but not npm, corepack or a compiler, and
+of the operating system's tools only the base's and `iproute2` (for `ip addr
+add`, which a realm's SPIFFE listeners on an address of their own need). There
+is no `curl`, `wget` or `jq` in it: a health check is `node -e`, as the compose
+file's is. To add a package to an image of your own, build `FROM` this one
+and install it there. A cloud SDK is a build argument instead
+(`STS_CLOUD_SDKS`).
 
 **The image's JavaScript carries no comments.** The build takes them out of
 every `.js` it ships, compiled from TypeScript or not, because Node keeps the
@@ -147,15 +217,20 @@ read differently from the repository while meaning the same.
 
 The Workload API's Unix socket is inside the container. To reach it from the host
 or another container, mount its directory as a volume — publishing 8092 is the
-alternative and needs the client pointed at `tcp://host:8092` explicitly.
+alternative on a network that authenticates source addresses, and needs the
+client pointed at `tcp://host:8092` explicitly. An AWS product cluster does not
+publish 8092. A workload there runs `spiffe/workload_agent.js` beside it and
+points `SPIFFE_ENDPOINT_SOCKET` at that agent's Unix socket
+([SPIFFE](spiffe.md#a-workload-agent-beside-the-workload)).
 
 ## With PostgreSQL and OpenBao, from published images
 
 `docker compose up` in a checkout builds the image and starts the service the
 way a deployment runs it: **product mode**, its store in **PostgreSQL**, and
 its key-encryption key and database password in an **OpenBao** secret store.
-The same stack can be run from published images alone, with no checkout and
-nothing built:
+[The compose stack](docker-compose.md) describes that file: its services,
+ports, volumes and variables. The same stack can be run from published images
+alone, with no checkout and nothing built:
 
 | Image | From |
 |---|---|
@@ -170,21 +245,13 @@ into volumes before anything else starts.
 Put this in a directory of its own as `docker-compose.yml`:
 
 ```yaml
-# IYA STS with its PostgreSQL store and an OpenBao secret store, from
-# published images only: no checkout and nothing built.
-#
-# The files the database and OpenBao need (postgres/ and openbao/ in the
-# repository) are inside the iya-sts image, so two one-shot containers of
-# that image copy them into named volumes before anything else starts.
-#
-# Set three secrets in a .env file beside this one first (see the page).
 name: iya-sts
 
 services:
-  # Copies the database's TLS, require-TLS and schema scripts into volumes.
   postgres-init:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
+    user: "0"
     volumes:
       - db-initdb:/out/initdb
       - db-share:/out/share
@@ -209,8 +276,10 @@ services:
       POSTGRES_DB: sts
       STS_DB_APP_USER: sts_app
       STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+      POSTGRES_TLS_PUBLIC_DIR: /run/sts-db-ca
     volumes:
       - db-data:/var/lib/postgresql
+      - db-ca:/run/sts-db-ca
       - db-initdb:/docker-entrypoint-initdb.d:ro
       - db-share:/usr/local/share/sts:ro
     command:
@@ -219,6 +288,22 @@ services:
       - >-
         /usr/local/share/sts/generate-tls.sh &&
         exec docker-entrypoint.sh postgres
+        -c max_connections=200
+        -c shared_buffers=${STS_POSTGRES_SHARED_BUFFERS:-2GB}
+        -c max_wal_size=8GB
+        -c checkpoint_timeout=15min
+        -c wal_compression=lz4
+        -c max_parallel_workers_per_gather=0
+        -c track_io_timing=on
+        -c shared_preload_libraries=pg_stat_statements,auto_explain
+        -c pg_stat_statements.track=all
+        -c pg_stat_statements.max=10000
+        -c auto_explain.log_min_duration=200ms
+        -c auto_explain.log_analyze=on
+        -c auto_explain.log_timing=off
+        -c auto_explain.log_buffers=on
+        -c auto_explain.log_nested_statements=on
+        -c log_lock_waits=on
         -c ssl=on
         -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
         -c ssl_key_file=/var/lib/postgresql/tls/server.key
@@ -228,10 +313,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # OpenBao's listener certificate and its configuration file.
   openbao-tls:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
+    user: "0"
     environment:
       STS_BAO_TLS_DIR: /openbao/file/tls
       STS_BAO_TLS_NAMES: openbao,localhost
@@ -262,11 +347,10 @@ services:
       - bao-file:/openbao/file
     command: ["server", "-config=/openbao/file/config/bao.hcl"]
 
-  # Initialises OpenBao, writes the database password and the Transit
-  # key-encryption key, and issues iya-sts its read-only client certificate.
   openbao-seed:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
+    user: "0"
     depends_on:
       openbao:
         condition: service_started
@@ -276,55 +360,69 @@ services:
       STS_BAO_POLICY_FILE: /usr/src/sts/openbao/read-only.hcl
       STS_BAO_CLIENT_CN: sts
       STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+      STS_ADMIN_API_CLIENT_SECRET: ${ADMIN_API_CLIENT_SECRET:-}
+      STS_BAO_STARTUP_NODES: sts
+      STS_BAO_STARTUP_DIR: /openbao/startup
+      STS_BAO_PRINT_CREDENTIALS: "true"
     volumes:
       - bao-file:/openbao/file
       - bao-client:/openbao/client
+      - bao-startup:/openbao/startup
     command: ["node", "openbao/seed.js"]
 
   sts:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     hostname: sts
+    user: "0"
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
     depends_on:
       postgres:
         condition: service_healthy
       openbao-seed:
         condition: service_completed_successfully
     ports:
-      - "${STS_PORT:-8081}:8081"   # every HTTP protocol, /admin, /portal, /admin-api
-      - "${PKI_PORT:-8082}:8082"   # plain HTTP /pki/: CRLs, OCSP, CA certificates
+      - "${STS_PORT:-8081}:8081"
+      - "${PKI_PORT:-8082}:8082"
+      - "${KDC_PORT:-88}:88"
+      - "${KDC_PORT:-88}:88/udp"
+      - "${DEBUGGER_PORT:-8444}:${DEBUGGER_PORT:-8444}"
     environment:
       STS_MODE: product
+      STS_DEBUGGER_ENABLED: "${STS_DEBUGGER_ENABLED:-on}"
+      STS_DEBUGGER_PORT: "${DEBUGGER_PORT:-8444}"
+      STS_DEBUGGER_ALLOWED_DESTINATIONS: ${STS_DEBUGGER_ALLOWED_DESTINATIONS:-}
+      KRB5_SERVICE_PRINCIPAL: ${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       STS_PERSISTENCE_MODE: postgres
-      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=require
+      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=verify-full
+      STS_DATABASE_TLS_CA_FILE: /run/secrets/database-ca/postgres.crt
       STS_DATABASE_PASSWORD_PROVIDER: vault
       STS_DATABASE_PASSWORD_REF: secret/data/sts
       STS_DATABASE_PASSWORD_FIELD: databasePassword
       STS_KEYS_KEK_PROVIDER: vault-transit
       STS_KEYS_KEK_VAULT: https://openbao:8200
       STS_KEYS_KEK_REF: sts-kek
-      STS_KEYS_VAULT_CLIENT_CERT: /run/secrets/bao/client.crt
-      STS_KEYS_VAULT_CLIENT_KEY: /run/secrets/bao/client.key
-      STS_KEYS_VAULT_CA_CERT: /run/secrets/bao/bao-ca.crt
+      STS_KEYS_VAULT_CLIENT_CERT: /run/secrets/openbao/client.crt
+      STS_KEYS_VAULT_CLIENT_KEY: /run/secrets/openbao/client.key
+      STS_KEYS_VAULT_CA_CERT: /run/secrets/openbao/bao-ca.crt
       PKI_DISTRIBUTION_PORT: "${PKI_PORT:-8082}"
-      # The first console password; empty, one is generated and logged once.
       STS_ADMIN_BOOTSTRAP_PASSWORD: ${STS_ADMIN_BOOTSTRAP_PASSWORD:-}
     volumes:
-      - bao-client:/run/secrets/bao:ro
+      - bao-client:/run/secrets/openbao:ro
+      - bao-startup:/run/secrets/openbao-startup
+      - db-ca:/run/secrets/database-ca:ro
       - sts-data:/usr/src/sts/data
-      - sts-run:/run/sts
+    tmpfs:
+      - /run/sts-startup:mode=0700,uid=10001,gid=10001
     command:
       - sh
       - -c
       - |
-        # The secret of the seeded `sts-management-api` client, which mints
-        # /admin-api tokens: generated on the first start, kept in a volume.
-        if [ ! -s /run/sts/admin-api-secret ]; then
-          head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24 \
-            > /run/sts/admin-api-secret
-          chmod 600 /run/sts/admin-api-secret
-        fi
-        export ADMIN_API_CLIENT_SECRET="$$(cat /run/sts/admin-api-secret)"
-        exec node server.js
+        find /usr/src/sts/data ! -user 10001 -exec chown 10001:10001 {} +
+        STARTUP="$$(node openbao/startup-secrets.js)" || exit 1
+        eval "$$STARTUP"
+        exec setpriv --reuid=10001 --regid=10001 --clear-groups \
+          --inh-caps=-all --bounding-set=-all --no-new-privs node server.js
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
@@ -334,12 +432,13 @@ services:
 
 volumes:
   db-data:
+  db-ca:
   db-initdb:
   db-share:
   bao-file:
   bao-client:
+  bao-startup:
   sts-data:
-  sts-run:
 ```
 
 Beside it, a `.env` file with three secrets of your own. The seal key unseals
@@ -357,38 +456,122 @@ docker compose up -d --wait
 
 `--wait` returns once `sts` is healthy, a minute or two on a first start.
 
-* **Signing in.** The console's first account is `admin`, with a password
-  generated on the first start and printed once in the log; it has to be
-  changed at the first sign-in. To choose it instead, put
-  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start.
+* **Signing in.** The console's first account has a generated name and a
+  password generated on the first start. Both are written, as `name:password`,
+  to `data/bootstrap-admin-password`, which only the service can read; the log
+  names the account and says where. The password has to be changed at the
+  first sign-in. To choose the password instead, put
+  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start; the log
+  then names the account, and no file is written.
 
   ```bash
-  docker compose logs sts | grep -A6 'PRODUCT MODE BOOTSTRAP'
+  docker compose exec sts cat data/bootstrap-admin-password
+  ```
+
+  Product mode requires a second factor, so you enrol one at that first
+  sign-in. To script a sign-in with an authenticator app's secret, generate the
+  code with `oathtool`:
+
+  ```bash
+  oathtool --totp -b "$TOTP_SECRET"
   ```
 
   Then open `https://localhost:8081/admin` and accept the certificate.
-* **`/admin-api`.** The seeded `sts-management-api` client's secret is
-  generated on the first start:
+* **The debugger.** `https://localhost:8444/` is the embedded
+  [identity protocol debugger](admin-console.md#the-embedded-protocol-debugger),
+  signed in to through the console's account — the same sign-on, so a browser
+  already signed in to `/admin` goes straight in. Only a console administrator
+  gets past it, and in product mode the first account must have signed in to
+  `/admin` with its password once. `STS_DEBUGGER_ENABLED=off` in `.env` turns it
+  off; `DEBUGGER_PORT` moves it (both sides together). It needs an image built
+  with the debugger in it, which every build is from #1743 on.
+* **`/admin-api`, the first time.** The seeded client `sts-api-client`'s
+  secret is generated by the seeder on the first start and kept in
+  OpenBao at `secret/sts-admin`. The service reads it once at each `up`,
+  and its own OpenBao identity cannot read it at all. To read it yourself,
+  take the **operator token** the seeder prints (read-only on that one path,
+  for 24 hours):
 
   ```bash
-  SECRET=$(docker compose exec -T sts cat /run/sts/admin-api-secret)
-  curl -sk -u "sts-management-api:$SECRET" \
+  docker compose logs --no-log-prefix openbao-seed \
+    | grep 'OPERATOR TOKEN' | tail -1 | jq -r .msg   # the token ends the line
+  BAO_OPERATOR_TOKEN='<token>'
+
+  SECRET=$(docker compose exec -T -e BAO_TOKEN="$BAO_OPERATOR_TOKEN" openbao \
+    bao kv get -address=https://127.0.0.1:8200 \
+      -ca-cert=/openbao/file/tls/server.crt \
+      -field=adminApiClientSecret secret/sts-admin)
+  curl -sk -u "sts-api-client:$SECRET" \
     --data-urlencode grant_type=client_credentials \
     --data-urlencode 'scope=admin:read admin:write' \
     --data-urlencode resource=https://localhost:8081/admin-api \
     https://localhost:8081/oauth2/token
   ```
+
+  **Use that token once**, to create an application of your own with the
+  `ADMIN_READ` and `ADMIN_WRITE` roles and a client secret, and get every
+  later token as that application with the client credentials grant.
+  [Management API → An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)
+  has the steps. To choose the management API secret instead of having it
+  generated, put `ADMIN_API_CLIENT_SECRET=...` in `.env` before the first
+  start; it goes to the seeder, not to the service.
+* **The OpenBao recovery key.** On the first start the seeder prints the
+  store's recovery key, once (`docker compose logs openbao-seed | grep
+  'RECOVERY KEY'`), and then revokes the root token. Nothing on disk keeps
+  either one. Keep the recovery key: `bao operator generate-root` needs it
+  to make a root token again.
+* **`docker compose up`, not `restart`.** Every `up` runs the seeder, which
+  gives the service a new single-use start-up token. `docker compose restart
+  sts` does not run the seeder, so the service starts without the pinned
+  management API secret and mints one that nobody can read.
+* **The service runs as uid 10001, not root.** The `sts` container starts as
+  root only to take the start-up secret, then drops to uid 10001 with every
+  capability removed before the service starts. A shell as that user can read
+  the service's own OpenBao client credential (mode 0600), and no other
+  secret on disk or in its environment.
+* **Upgrading to a newer image.** Pull it and `docker compose up -d`, then
+  bring the database's schema up to the image's: the `postgres-init`
+  container copies the new `schema.sql` on every `up`, but the database runs
+  it by itself only on its first start, and the service refuses to start on
+  an older schema (`STS-STORE-0029` in `docker compose logs sts`). Run it
+  once as the owner, then start the service again:
+
+  ```bash
+  docker compose exec postgres bash -c 'psql -v ON_ERROR_STOP=1 -U sts -d sts \
+    -v sts_schema=sts -v sts_app_role="$STS_DB_APP_USER" \
+    -v sts_app_password="$STS_DB_APP_PASSWORD" \
+    -f /usr/local/share/sts/schema.sql'
+  docker compose up -d sts
+  ```
+
+  Every statement in it can be run again, so running it when nothing changed
+  does no harm. A change to the database's server settings in this file takes
+  effect when the `postgres` container is recreated, which `up -d` does.
 * **Stopping it.** `docker compose down` keeps everything in the named
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, and every build also has its `M.N.O`. `STS_PORT` and
-  `PKI_PORT` move the two published ports.
+  build of `main`, and each build of `main` is a release of its own, the
+  next patch (`1.0.1`, `1.0.2`, …), so the release's `M.N.O` names one
+  merge into `main`. The full `M.N.O.<build>` (`1.0.1.0`, or
+  `1.0.1.20261112090000`) names exactly one build. The repository's git
+  tags follow the same rule: `v1.0.1` is the commit of that release, and
+  `v1.0.1.<build>` the commit of exactly one build. Each release also has
+  a page on the repository's GitHub Releases, naming its images, their
+  digests and the pull requests merged since the release before it.
+  `STS_PORT`, `PKI_PORT`
+  and `KDC_PORT` move the published ports.
+* **Kerberos works from the start.** The KDC is published on 88 (TCP and
+  UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
+  asks for at `https://localhost:8081`, under a random key the service makes
+  itself. Set `KRB5_SERVICE_PRINCIPAL` to `HTTP/<host>` when you reach the
+  service by another name. The client side is in
+  [Kerberos: signing in from a browser](kerberos.md#signing-in-from-a-browser-on-the-base-installation).
 
 What the checkout's own `docker-compose.yml` has and this does not: the optional
 remote XACML PEP (the `xacml` profile), and the extra addresses a realm's own
-SPIFFE listeners bind. Kerberos and LDAP are running but not published; add
-`88`, `389` or `636` to `ports` to reach them from the host.
+SPIFFE listeners bind. LDAP is running but not published; add `389` or `636`
+to `ports` to reach it from the host.
 [Configuration](configuration.md) covers every setting the `environment` block
 can take.
 
@@ -422,10 +605,9 @@ its default `development` mode. There is no setting that opens the console;
 `admin.authRequired` is gone; `global.mode` answers that question. `/admin-api` reads the same service for a program, and takes an OAuth
 2.0 access token of its own.
 
-A protocol you can drive end to end in a browser with nothing else installed is
-**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick one of the three bindings, sign
-in with any username, and the mock service provider verifies the response it gets
-back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
+**SAML 2.0** needs a service provider of your own to drive end to end — there
+is no built-in one in the service (#592); the test suite's is the test peer
+(`tests/peer/`). `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its
 own for a service provider by that name, minted on the spot — in development mode
 only. In product mode that is a 404 until the service provider is registered.
@@ -439,26 +621,46 @@ its own description of itself.
 
 ## Which build am I running?
 
-Every page says so, and so does the log. The version is **M.N.O** — a release
-from the repo-root `VERSION` file plus a build number:
+Every page says so, and so does the log. The version is **M.N.O.build**:
+the release, followed by a **build number**. An ordinary build is numbered
+by the UTC instant the image was built, `YYYYMMDDHHMMSS`; a **release build**
+names its own number, so the 1.0.0 release is `1.0.0.0`. The commit it was
+built from and the build instant are reported beside it.
+
+**Each merge into `main` is the next patch**: 1.0.0, then 1.0.1, 1.0.2 and
+so on. The build works it out from the repository's `vM.N.P` git tags, and
+nothing is written back to the repository, so the repo-root `VERSION` file
+still says the release a person last set (`1.0.0`). Editing `VERSION` is how
+a new minor or major release starts: set to `1.1.0`, the next build of
+`main` is `1.1.0` and the ones after it `1.1.1`, `1.1.2`. **A release that
+needs a database upgrade script is always a new minor or major release**,
+never a patch, so moving between patch releases never asks you to run one. A build of any
+other branch, or from a checkout, carries `VERSION` as written.
+
+Every build of `main` that publishes its images is also a **GitHub
+release**, `v1.0.1`, titled with the full version the image reports
+(`v1.0.1 (1.0.1.20261112090000)`). Its notes list both images under every
+tag they were published with, their digests, the commit, and the pull
+requests merged since the previous release.
 
 ```
-0.1.20260906143205
-│ │ └── the build: the UTC instant the image was built (or BUILD_NUMBER)
-│ └──── minor
-└────── major
+1.0.0.20261104120000      an ordinary build of release 1.0.0
+1.0.0.0                   the 1.0.0 release build
+Build 20261104120000 — Built 2026-11-04T12:00:00Z — commit 0123456789ab
 ```
 
 The quickest ways to read it:
 
 ```bash
-curl -sk https://localhost:8081/admin-api | head -8   # version, build, commit, stamped
-curl -sk https://localhost:8081/                      # the front page's version line
+curl -sk https://localhost:8081/admin-api | head -10  # version, build, release, commit, builtAt, stamped
+curl -sk https://localhost:8081/home-api/front        # the front page's version
 node common/version.js                                # from a checkout, without running it
 ```
 
-It is also in the foot of every admin console page and every user portal page,
-in the first paragraph of `/admin/sts-metadata`, and in the first line the
+It is also in the foot of every admin console page and every user portal page
+(the build in the tooltip), in the first paragraph of `/admin/sts-metadata`
+(whose JSON carries `build.number`, `build.release`, `build.commit` and
+`build.at`), and in the first line the
 service logs when it starts.
 
 **The remote XACML PEP reports one too**, if you are running it
@@ -469,24 +671,107 @@ and in the Version column of `/admin/xacml/peps` on this service's console:
 curl -s http://localhost:9090/ | head -20      # the PEP's own page
 ```
 
-Its **M.N always matches** this service's — both images are built from one tree
-and one `VERSION` file — while its **build number is its own**, because they are
-two images built at two instants. So a different release on that row is a PEP
-left behind across an upgrade, and a different build number is just two
-artifacts. Pass one `BUILD_NUMBER` to both builds to say they are one release.
+Its **release always matches** this service's — both images are built from
+one tree and one `VERSION` file — while an ordinary build's **build number is
+its own** (its `build.number` and `build.at`), because they are two images
+built at two instants. Built as the same release, both are the same version
+(`1.0.0.0`). So a different release on that row is a PEP left behind across an
+upgrade, and a different build number is just two artifacts.
 
 **`stamped` is the field worth knowing about.** A container reports a build
-number that was fixed when the image was built, so restarting it reports the
-same one. A checkout run with `node server.js` was never built at all — it
-computes a number when the process starts and reports `stamped: false`, and
-every page says so in as many words. Two instances of the same release with
-different build numbers mean nothing if neither was ever built.
+that was fixed when the image was built, so restarting it reports the same
+one. A checkout run with `node server.js` was never built at all — it records
+the instant the process started and reports `stamped: false`, and every page
+says so in as many words. Two instances of the same release with different
+build times mean nothing if neither was ever built.
 
-To give an image a build number and a commit of your own:
+To name the commit an image was built from:
 
 ```bash
-BUILD_NUMBER=1234 GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
+GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
 ```
 
 The commit is a build argument rather than something the image works out,
 because the build context deliberately carries no `.git`.
+
+### Building a release
+
+A release build is flagged and names its build number. Pass both build
+arguments, to both images:
+
+```bash
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 \
+  -f xacml-pep/Dockerfile .
+# or, both at once:
+STS_RELEASE=true BUILD_NUMBER=0 docker compose --profile xacml build
+```
+
+That is `1.0.0.0`. The build number is a non-negative integer with no leading
+zero. `STS_RELEASE=true` with no valid `BUILD_NUMBER` fails the build
+(`STS-CORE-0164`) rather than making a release with a date in it. Without
+`STS_RELEASE=true`, `BUILD_NUMBER` is ignored and the build is numbered by its
+build instant, so a CI system's own `BUILD_NUMBER` cannot make an ordinary
+build look like a release.
+
+
+## First-Time Admin Login
+
+The console is at `https://localhost:8081/admin`. Who signs in first depends
+on the mode the service is running in.
+
+### In development mode
+
+A plain `docker run` (*In a container*, above) starts in development mode. The
+first account is `admin`, and development mode checks no password, so any
+password signs it in.
+
+### In product mode
+
+The compose stack (*With PostgreSQL and OpenBao*, above) starts in product
+mode, where a default account name such as `admin` is not allowed (ASVS 5.0.0
+6.3.2). On the first start, with nobody in the directory holding a credential,
+the service makes the first administrator with:
+
+* **A generated username**, `admin-` followed by 16 hexadecimal characters,
+  for example `admin-3f9c2a71d04e8b65`. It is derived from the cluster's shared
+  key, so every node and every restart arrives at the same name.
+* **A generated password**, written to the file `bootstrap-admin-password` in
+  the data directory, readable only by the service. It is not written to the
+  log.
+
+The file holds both, as `username:password`. Read it with:
+
+```bash
+docker compose exec sts cat data/bootstrap-admin-password
+```
+
+Everything after the first colon is the password. The startup log names the
+account and the file, once:
+
+```text
+PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.
+
+  username: admin-3f9c2a71d04e8b65
+  password: in the file /usr/src/sts/data/bootstrap-admin-password
+```
+
+Then:
+
+1. Go to `https://localhost:8081/admin` and enter the username and the
+   password from the file.
+2. Change the password when asked. The new one must meet the password policy,
+   which you can change later under Directory → Policies.
+3. Enrol a second factor when asked: product mode requires one.
+
+The file is written once and never updated, so it holds the generated password
+even after you change it. Delete it once you have signed in.
+
+Four settings change this, and each must be set before the first start:
+
+| Setting | Environment variable | Effect |
+|---|---|---|
+| `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | A name that is not a default one (`admin`, `root`, `sa`, `administrator`) is used as given. |
+| `admin.allowDefaultUsername` | `STS_ADMIN_ALLOW_DEFAULT_USERNAME` | On, a default name is used as given instead of a generated one. |
+| `admin.bootstrapPassword` | `STS_ADMIN_BOOTSTRAP_PASSWORD` | The password is yours instead of generated; no file is written and the log does not print it. |
+| `admin.logBootstrapPassword` | `STS_ADMIN_LOG_BOOTSTRAP_PASSWORD` | On, the generated password is printed in the log instead of written to the file. |

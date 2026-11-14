@@ -70,6 +70,15 @@ process.env.STS_RISK_BREACH_CHECK = process.env.STS_RISK_BREACH_CHECK || 'off';
 // process of its own and never meets it. The environment layer, so a test
 // that sets the setting itself still wins.
 process.env.LDAP_MAX_ENTRIES = process.env.LDAP_MAX_ENTRIES || '100000';
+// AND THE REALM CAP IS RAISED FOR IT (#368). realms.maxCount ships at 10,
+// counting the default realm, and this process runs every file against one
+// registry whose realms stay until the file removes them. A file that creates
+// past ten would be refused for the cap rather than for what it is testing.
+// The environment layer, so a test that sets the setting itself still wins.
+// env/test.js and env/docker-tests.js raise the same cap for the protocol
+// suite; env/local.js, the image default, does not.
+process.env.STS_REALMS_MAX_COUNT = process.env.STS_REALMS_MAX_COUNT ||
+  '100000';
 
 const fs = require('fs');
 const path = require('path');
@@ -161,6 +170,34 @@ const USAGE = [
 // at all — which the caller reports as a HARD failure rather than as an
 // assertion failure, because a test that did not run has not passed.
 // ---------------------------------------------------------------------------
+// The file whose `run()` is being awaited, for `stalled()` below.
+let running = null;
+
+// ---------------------------------------------------------------------------
+// A RUN THAT STOPPED WITHOUT FINISHING IS A FAILURE, NOT A PASS (#1059).
+//
+// Node exits with code 0 when its event loop has nothing left to wait on,
+// and it does not care that `main()` is still suspended in an `await`. So a
+// test whose promise can never settle, because what it waits on is an
+// unref'd timer or a handle somebody else closed, ended the whole run with
+// exit 0 and no summary line: the silent pass this directory exists to
+// prevent. Seen with `SpiffeCa.awaitSpiffeIssuer()`'s unref'd poll, when an
+// earlier file in the same process had made a Root.
+//
+// `beforeExit` fires exactly then, and never after `process.exit()`, so it is
+// reached only when the loop drained under an unfinished run.
+// ---------------------------------------------------------------------------
+function stalled() {
+  log.debug('Entering stalled().');
+  log.error('THE RUN STOPPED WITHOUT FINISHING: the event loop drained while ' +
+            (running ? running + ' was still running'
+              : 'the runner was between files') +
+            '. Something it awaited can never settle (an unref\'d timer, ' +
+            'a closed handle). Nothing after it was checked.');
+  log.debug('Leaving stalled().');
+  process.exit(1);
+}
+
 async function runOne(file) {
   log.debug('Entering runOne(). file=' + file);
   let mod;
@@ -180,6 +217,7 @@ async function runOne(file) {
   }
   log.info(mod.name || file + ' — ' + (mod.describe || ''));
   const t = harness.createHarness(mod.name || file.replace(/\.js$/, ''));
+  running = file;
   try {
     await mod.run(t);
   } catch (e) {
@@ -188,6 +226,7 @@ async function runOne(file) {
     // this is the case where the stack is the information.
     t.bad('the test itself threw', e && e.stack ? e.stack : String(e));
   }
+  running = null;
   log.debug('Leaving runOne().');
   return t;
 }
@@ -263,5 +302,6 @@ async function main() {
 module.exports = { testFiles: testFiles };
 
 if (require.main === module) {
+  process.on('beforeExit', stalled);
   main();
 }

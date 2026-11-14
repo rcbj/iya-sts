@@ -1,0 +1,3 @@
+{
+  "sweeps.note": "Las últimas veinte pasadas de este proceso en este dominio, la más reciente primero. <em>Nuevos</em> cuenta los mensajes que este proceso añadió desde su pasada anterior; <em>guardados</em>, <em>caducados</em>, <em>sobre el límite</em> y <em>huérfanos</em> (un mensaje cuyo flujo ya no existe) son el almacén compartido tal como lo encontró este proceso."
+}

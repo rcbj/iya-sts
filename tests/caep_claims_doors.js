@@ -319,7 +319,7 @@ function childMain() {
     const now = helpers.nowSec();
     helpers.signJwt({ iss: 'https://sts.example', sub: 'urn:uuid:ccd',
       aud: 'https://ccd-api.test/', typ: 'Bearer', jti: 'ccd-at-1',
-      username: ALICE, client_id: 'ccd-client', scope: 'openid ssf:read',
+      username: ALICE, client_id: 'ccd-client', scope: 'openid ssf.read',
       iat: now, exp: now + 300 }, {});
     const bearers = stats.liveClaimBearers(function (token) {
       return token.client_id === 'ccd-client';
@@ -346,10 +346,10 @@ function childMain() {
        { ccd_dept: null }, 'H. and null once it is gone');
     applications.createApplication({ identifier: 'ccd-client',
       protocols: ['oauth2'], fields: { oauthClientId: 'ccd-client',
-        oauthAllowedScope: ['openid', 'ssf:read'] } });
+        oauthAllowedScope: ['openid', 'ssf.read'] } });
     clear();
     applications.updateApplication('ccd-client', {
-      attribute: 'oauthAllowedScope', mode: 'remove', value: 'ssf:read' });
+      attribute: 'oauthAllowedScope', mode: 'remove', value: 'ssf.read' });
     const withdrawn = via('claimsFanOut')[0];
     note(withdrawn && withdrawn.match(Object.assign({},
       bearers[0].record, { claimSet: 'access_token' })),
@@ -359,7 +359,7 @@ function childMain() {
        'H. with the scope less what went');
     clear();
     applications.updateApplication('ccd-client', {
-      attribute: 'oauthAllowedScope', mode: 'add', value: 'ssf:read' });
+      attribute: 'oauthAllowedScope', mode: 'add', value: 'ssf.read' });
     eq(via('claimsFanOut').length, 0,
        'H. a scope added moves no token already issued');
     clear();

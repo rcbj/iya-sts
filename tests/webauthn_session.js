@@ -237,7 +237,7 @@ function run(t) {
   t.equal(assertion.ok, true,
           'and the key it enrolled then ASSERTS successfully');
 
-  // THE NEGATIVE, which carries the weight for tests/vendored/sts_dpop.js's
+  // THE NEGATIVE, which carries the weight for tests/protocol/sts_dpop.js's
   // reason: a verifier that accepts everything passes every positive check ever
   // written.
   const wrong = makeAuthenticator();

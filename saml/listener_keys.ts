@@ -78,7 +78,8 @@ interface ListenerKeysDeps {
   config: { value(key: string): unknown };
   errorCodes: { tag(code: string): string };
   stripPem(pem: string): string;
-  loadTlsServer(): { presentedCertificatePems(): string[] };
+  loadTlsServer(): { presentedCertificatePems(): string[];
+                    serverCertificate(): { chainPem: string[] } };
   cluster: { listenerCertificatesOfLiveNodes(): string[] };
 }
 
@@ -182,10 +183,22 @@ class ListenerKeys {
   keyDescriptors(): string {
     const { log } = this.deps;
     log.debug("Entering ListenerKeys.keyDescriptors().");
+    // THE LISTENER'S CHAIN AND THE SERVICE ROOT AFTER EACH LEAF (#1064),
+    // written by helpers.x509DataXml(), the one writer of an X509Data here.
+    // Every node's listener certificate is issued by the same TLS Issuing
+    // CA (the process branch the cluster shares), so this node's chain is
+    // the chain of each.
+    let chainPem: string[] = [];
+    try {
+      chainPem = this.deps.loadTlsServer().serverCertificate().chainPem || [];
+    } catch (e) {
+      log.debug("Caught in ListenerKeys.keyDescriptors(): " +
+                ((e && e.message) || e));
+      chainPem = [];
+    }
     const xml = this.certificates().map(function (b64) {
       return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
-        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + b64 +
-        '</ds:X509Certificate></ds:X509Data></ds:KeyInfo>' +
+        NS_DS + '">' + helpers.x509DataXml(b64, chainPem) + '</ds:KeyInfo>' +
         '</md:KeyDescriptor>';
     }).join('');
     log.debug("Leaving ListenerKeys.keyDescriptors().");

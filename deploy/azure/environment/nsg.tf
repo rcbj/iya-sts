@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # THE NETWORK SECURITY GROUPS: AWS'S THREE SECURITY GROUPS, ON TWO SUBNETS.
 #
-#   allowed_cidrs ──443,389,636,80,88,8092,8181──▶ LB ──▶ nodes (8081, …)
+#   allowed_cidrs ──443,636,80,88,8092,8181──▶ LB ──▶ nodes (8081, …)
 #   the LB's own outbound address ──same──▶ nodes      (the service calling
 #                                                       its own public name)
 #   Azure's load balancer probes ──any──▶ nodes
@@ -105,6 +105,17 @@ locals {
         description = "Traffic Manager's health probes of /healthcheck"
         priority    = 130, direction = "Inbound", protocol = "Tcp"
         sources     = [], source_tag = "AzureTrafficManager"
+        dests       = [local.nodes_cidr], ports = [tostring(local.published_ports.https.container)]
+      }
+    } : {},
+    # FRONT DOOR'S EDGES (frontdoor.tf, #1341), to the main port only — by
+    # service tag, which stays current by itself. Every Front Door
+    # customer's, which is what the origin secret is for.
+    local.cdn ? {
+      front-door = {
+        description = "Azure Front Door's edges, to the main port (#1341)"
+        priority    = 145, direction = "Inbound", protocol = "Tcp"
+        sources     = [], source_tag = "AzureFrontDoor.Backend"
         dests       = [local.nodes_cidr], ports = [tostring(local.published_ports.https.container)]
       }
     } : {},

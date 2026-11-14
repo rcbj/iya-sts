@@ -1,0 +1,420 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: response_model_kit.ts
+//
+// ---------------------------------------------------------------------------
+// THE WORDS A RESPONSE MODEL IS WRITTEN IN (#1353).
+//
+// Every model in this service's OpenAPI documents is closed: an object declares
+// its members and refuses any other (`common/response_models.ts` holds every
+// answer to its model). Writing `additionalProperties: false` by hand hundreds
+// of times is how one gets forgotten, so a model is built from these.
+//
+// **THREE SHAPES AN OBJECT MAY HAVE, AND ONLY THREE:**
+//
+//   * `closed({...})`: its members are the service's own vocabulary. Almost
+//     everything.
+//   * `mapOf(value)`: its KEYS are data (a directory entry's attribute names, a
+//     count per status). The values are still typed; no key is "extra", because
+//     no key is a member.
+//   * `freeForm('why')`: the service relays something whose shape is not its
+//     own to state (an OpenAPI document, a token's claims as a person
+//     configured them). The reason is required and is published as
+//     `x-free-form`, so `tests/openapi_response_models.js` can list every one.
+//     **It is the exception and it is argued each time.**
+//
+// **A MEMBER IS `required` ONLY WHERE EVERY BRANCH SENDS IT.** The management
+// API removes members from some answers after a view built them (an owner's
+// projection, the console-only members), so a view's member is optional unless
+// the answer is built here. Closed and optional is the normal case: what the
+// validator catches is a member nobody declared and a value of the wrong type.
+//
+// **`nullable()` IS WRITTEN WHEREVER A MEMBER CAN BE NULL**, which is common in
+// these views. A nullable schema is `type: ['x', 'null']`, OpenAPI 3.1's form.
+//
+// A LIBRARY of static helpers (rule 3) with no dependency: it may be required
+// from anywhere, including a browser-free schema module required at any point
+// in the require order. It logs nothing, because each helper runs only while a
+// document's tables are built and a line per schema would drown that log.
+// ---------------------------------------------------------------------------
+
+type Json = any;
+
+interface Options {
+  required?: string[];
+  description?: string;
+}
+
+// Where a schema keeps its subschemas: everything else in one is a value.
+const SINGLE_SCHEMA_KEYWORDS = ['items', 'additionalProperties'];
+const LIST_SCHEMA_KEYWORDS = ['anyOf', 'oneOf', 'allOf'];
+const MAP_SCHEMA_KEYWORDS = ['properties', 'patternProperties'];
+
+class ResponseModelKit {
+  // A STRING MEMBER. `description` is optional on all of these.
+  static str(description?: string): Json {
+    return description ? { type: 'string', description: description }
+      : { type: 'string' };
+  }
+
+  static int(description?: string): Json {
+    return description ? { type: 'integer', description: description }
+      : { type: 'integer' };
+  }
+
+  static num(description?: string): Json {
+    return description ? { type: 'number', description: description }
+      : { type: 'number' };
+  }
+
+  static bool(description?: string): Json {
+    return description ? { type: 'boolean', description: description }
+      : { type: 'boolean' };
+  }
+
+  static strEnum(values: string[], description?: string): Json {
+    const out: Json = { type: 'string', enum: values };
+    if (description) {
+      out.description = description;
+    }
+    return out;
+  }
+
+  static listOf(items: Json, description?: string): Json {
+    const out: Json = { type: 'array', items: items };
+    if (description) {
+      out.description = description;
+    }
+    return out;
+  }
+
+  // An object whose members are the service's own, and no others.
+  static closed(properties: Json, options?: Options): Json {
+    const out: Json = { type: 'object', additionalProperties: false,
+                        properties: properties };
+    if (options && options.required && options.required.length) {
+      out.required = options.required;
+    }
+    if (options && options.description) {
+      out.description = options.description;
+    }
+    return out;
+  }
+
+  // An object whose keys are data and whose values are all `value`.
+  static mapOf(value: Json, description?: string): Json {
+    const out: Json = { type: 'object', additionalProperties: value };
+    if (description) {
+      out.description = description;
+    }
+    return out;
+  }
+
+  // Null, or what `schema` says. A `$ref` or a union cannot take a type list,
+  // so it becomes a `oneOf`.
+  static nullable(schema: Json): Json {
+    if (schema && typeof schema.type === 'string') {
+      const out = Object.assign({}, schema, { type: [schema.type, 'null'] });
+      if (out.enum) {
+        out.enum = out.enum.concat([null]);
+      }
+      return out;
+    }
+    return { oneOf: [{ type: 'null' }, schema] };
+  }
+
+  // One of several shapes: a list view and a detail view on one operation.
+  static oneOf(...schemas: Json[]): Json {
+    return { anyOf: schemas };
+  }
+
+  // Anything, for a stated reason: see the header.
+  static freeForm(reason: string): Json {
+    return { 'x-free-form': reason, description: reason };
+  }
+
+  // A member that is sometimes a list and sometimes a lone value, as a
+  // directory attribute is.
+  static oneOrMany(item: Json): Json {
+    return { anyOf: [item, { type: 'array', items: item }] };
+  }
+
+  // An answer that is not JSON. `types` are the media types it is sent as.
+  static media(...types: string[]): Json {
+    const content: Json = {};
+    types.forEach(function (type) {
+      content[type] = { schema: { type: 'string' } };
+    });
+    return { 'x-media': content };
+  }
+
+  // Two statuses from one model is the action resources' ordinary case; this
+  // is the refusal the management API's actions answer, plus what `extra`
+  // names, with `ok` and `errors` always allowed.
+  static action(extra?: Json): Json {
+    return ResponseModelKit.closed(Object.assign({
+      ok: { type: 'boolean' },
+      message: { type: 'string' },
+      errors: { type: 'array', items: { type: 'string' } }
+    }, extra || {}), { required: ['ok'] });
+  }
+
+  // WHAT AN ACT'S ANSWER CARRIES OF A ROW (#1355): the row a page reads back,
+  // less the code. A code may be sent only to the page that draws it, and no
+  // page draws an act's answer: it reads the row again from its own GET.
+  static withoutCodes(model: Json): Json {
+    if (!model || typeof model !== 'object') {
+      return model;
+    }
+    if (Array.isArray(model)) {
+      return model.map(ResponseModelKit.withoutCodes);
+    }
+    const out: Json = {};
+    Object.keys(model).forEach(function (key: string): void {
+      out[key] = ResponseModelKit.withoutCodes(model[key]);
+    });
+    if (out.properties && typeof out.properties === 'object') {
+      delete out.properties.errorCode;
+    }
+    return out;
+  }
+
+  // An answer as its door sends it: an act's carries no `errorCode` at any
+  // depth, though it may hand back a row the page's GET carries one on. Every
+  // door answering such a row calls this; a closed model refuses it otherwise.
+  static actAnswer(res: any, body: any): any {
+    return res && res.req && res.req.method === 'POST'
+      ? ResponseModelKit.stripCodes(body) : body;
+  }
+
+  // The answer `withoutCodes()` models: the same value with every `errorCode`
+  // gone, at any depth. A mark on it is not carried, so this is the last thing
+  // done to a body.
+  static stripCodes(body: any): any {
+    if (!body || typeof body !== 'object') {
+      return body;
+    }
+    if (Array.isArray(body)) {
+      return body.map(ResponseModelKit.stripCodes);
+    }
+    const out: Json = {};
+    Object.keys(body).forEach(function (key: string): void {
+      if (key !== 'errorCode') {
+        out[key] = ResponseModelKit.stripCodes(body[key]);
+      }
+    });
+    return out;
+  }
+
+  // A status's model, as an OpenAPI `content`. `media()` carries its own; an
+  // operation answering JSON as well lists the model under `schema` beside it.
+  static contentOf(model: Json): Json {
+    if (model && model['x-media']) {
+      const content = Object.assign({}, model['x-media']);
+      if (model.schema) {
+        content['application/json'] = { schema: model.schema };
+      }
+      return content;
+    }
+    return { 'application/json': { schema: model } };
+  }
+
+  /**
+   * Writes an operation's models over what its builder declared. Every status
+   * of a refusal with no model of its own takes `error`, and so does `default`:
+   * a gate refuses before any handler, with the same words for every operation.
+   *
+   * @param operation - the OpenAPI operation being built
+   * @param models - its models by status, or undefined
+   * @param error - the API's refusal
+   * @returns the operation
+   */
+  // ---------------------------------------------------------------------------
+  // AN OPERATION'S EXAMPLE (#1475's rules, extended by #1483). `example` is
+  // `{ query, path, body }`, each member optional: a query or path parameter
+  // takes its value as `example`, a body as the media type's `example`, what
+  // Schemathesis's Examples phase and the public reference both read. An
+  // operation with no parameter and no body has nothing an example could
+  // fill in and is left alone.
+  // ---------------------------------------------------------------------------
+  /**
+   * Writes an operation's example onto its parameters and request body.
+   *
+   * @param operation - the OpenAPI operation
+   * @param example - its example, or nothing
+   * @returns the operation
+   */
+  static applyExample(operation: Json, example: Json): Json {
+    if (!example) {
+      return operation;
+    }
+    (operation.parameters || []).forEach(function (one: Json) {
+      const values = one.in === 'query' ? example.query
+        : (one.in === 'path' ? example.path : null);
+      if (values && Object.prototype.hasOwnProperty.call(values, one.name)) {
+        one.example = values[one.name];
+      }
+    });
+    const media = operation.requestBody && operation.requestBody.content &&
+      operation.requestBody.content['application/json'];
+    if (media && example.body !== undefined) {
+      media.example = example.body;
+    }
+    return operation;
+  }
+
+  static applyModels(operation: Json, models: Json, error: Json): Json {
+    const own = models || {};
+    Object.keys(own).forEach(function (status) {
+      operation.responses[status] = {
+        description: (operation.responses[status] || {}).description ||
+          'The answer.',
+        content: ResponseModelKit.contentOf(own[status])
+      };
+    });
+    // A refusal of an action carries what its success does (the management
+    // API's `{ ok, errors, ... }`), unless the operation says otherwise. Only
+    // a model that HAS `ok` is such an answer: a read's 400 is `error`, below,
+    // and giving it a list view's model would refuse every refusal it sends.
+    const answersOk = own['200'] && own['200'].properties &&
+      own['200'].properties.ok;
+    if (answersOk && !own['400'] && operation.responses['400']) {
+      operation.responses['400'] = {
+        description: operation.responses['400'].description,
+        content: ResponseModelKit.contentOf(own['200'])
+      };
+    }
+    if (own['200'] && !answersOk && !own['400'] && operation.responses['400']) {
+      delete operation.responses['400'].content;
+    }
+    Object.keys(operation.responses).forEach(function (status) {
+      if (Number(status) >= 300 && !operation.responses[status].content) {
+        operation.responses[status].content = {
+          'application/json': { schema: error } };
+      }
+    });
+    operation.responses.default = {
+      description: 'A refusal or a failure.',
+      content: { 'application/json': { schema: error } }
+    };
+    return operation;
+  }
+
+  /**
+   * Moves every model repeated across a document's responses into
+   * `components`, leaving a `$ref` at each use. A model is written once in its
+   * family's file and reached by many operations, so inlining all of them made
+   * `GET /admin-api/openapi.json` several times its size, and the console reads
+   * that document for its forms. What a model says does not change.
+   *
+   * @param doc - the OpenAPI document
+   * @returns the document
+   */
+  static shareRepeated(doc: Json): Json {
+    const counts = new Map<string, number>();
+    const MIN = 240;
+    const count = function (node: Json): void {
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      const text = JSON.stringify(node);
+      if (text.length >= MIN) {
+        counts.set(text, (counts.get(text) || 0) + 1);
+      }
+      ResponseModelKit.subschemas(node).forEach(count);
+    };
+    const shared = new Map<string, string>();
+    // A copy: the table behind `components` is shared by every document built.
+    const schemas = Object.assign({}, doc.components.schemas);
+    doc.components = Object.assign({}, doc.components, { schemas: schemas });
+    const share = function (node: Json): Json {
+      if (!node || typeof node !== 'object') {
+        return node;
+      }
+      const text = JSON.stringify(node);
+      if ((counts.get(text) || 0) > 1) {
+        let name = shared.get(text);
+        if (!name) {
+          name = 'SharedModel' + (shared.size + 1);
+          shared.set(text, name);
+          schemas[name] = ResponseModelKit.withSubschemas(node, share);
+        }
+        return { $ref: '#/components/schemas/' + name };
+      }
+      return ResponseModelKit.withSubschemas(node, share);
+    };
+    const eachContent = function (visit: (media: Json) => void): void {
+      Object.keys(doc.paths).forEach(function (path) {
+        Object.keys(doc.paths[path]).forEach(function (method) {
+          const responses = doc.paths[path][method].responses || {};
+          Object.keys(responses).forEach(function (status) {
+            const content = responses[status].content || {};
+            Object.keys(content).forEach(function (type) {
+              visit(content[type]);
+            });
+          });
+        });
+      });
+    };
+    eachContent(function (media) {
+      count(media.schema);
+    });
+    eachContent(function (media) {
+      media.schema = share(media.schema);
+    });
+    return doc;
+  }
+
+  // THE WALK KNOWS WHERE A SCHEMA IS, because a member of a model may be NAMED
+  // like a keyword. A generic walk took the `properties` map of a model with a
+  // member called `type` for a schema, moved the map itself to `components`, and
+  // every answer with such a member was then refused (the first live run).
+  private static subschemas(node: Json): Json[] {
+    const out: Json[] = [];
+    SINGLE_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (node[key] && typeof node[key] === 'object') {
+        out.push(node[key]);
+      }
+    });
+    LIST_SCHEMA_KEYWORDS.forEach(function (key) {
+      (Array.isArray(node[key]) ? node[key] : []).forEach(function (one: Json) {
+        out.push(one);
+      });
+    });
+    MAP_SCHEMA_KEYWORDS.forEach(function (key) {
+      Object.keys(node[key] || {}).forEach(function (name) {
+        out.push(node[key][name]);
+      });
+    });
+    return out;
+  }
+
+  private static withSubschemas(node: Json, share: (n: Json) => Json): Json {
+    const out = Object.assign({}, node);
+    SINGLE_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (out[key] && typeof out[key] === 'object') {
+        out[key] = share(out[key]);
+      }
+    });
+    LIST_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (Array.isArray(out[key])) {
+        out[key] = out[key].map(share);
+      }
+    });
+    MAP_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (out[key] && typeof out[key] === 'object') {
+        const map: Json = {};
+        Object.keys(out[key]).forEach(function (name) {
+          map[name] = share(out[key][name]);
+        });
+        out[key] = map;
+      }
+    });
+    return out;
+  }
+}
+
+export = ResponseModelKit;

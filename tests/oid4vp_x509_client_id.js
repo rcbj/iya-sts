@@ -129,7 +129,8 @@ async function run(t) {
   try {
     await body(t);
   } finally {
-    ['oid4vp.clientIdPrefix', 'oid4vp.x509DnsName', 'global.mode',
+    ['oid4vp.clientIdPrefix', 'oid4vp.signInClientIdPrefix',
+     'oid4vp.x509DnsName', 'global.mode',
      'global.publicBaseUrl'].forEach(function (key) {
       config.clearOverride(key);
     });
@@ -222,6 +223,26 @@ async function body(t) {
           '5a. a configured name that is not the Response URI\'s host is ' +
           'refused before anything is certified',
           refused && refused.message);
+  // THE START ANSWERS IT AS A REFUSAL OF WHAT WAS ASKED: 400 with its
+  // reason where the caller named the prefix (product mode hides a 500's
+  // detail, and this is not a failure), and still a 500 where the prefix
+  // that cannot be built is the realm's own default.
+  const named = await verifier.startVerification(fakeReq(),
+    { client_id_prefix: 'x509_san_dns' }, 'body');
+  t.check(named && named.ok === false && named.status === 400 &&
+          named.code === 'STS-VC-0111' &&
+          /not the host of the Response URI/.test(String(named.error)),
+          '5a-ii. a start that NAMED x509_san_dns is refused 400 with the ' +
+          'reason, STS-VC-0111', JSON.stringify(named));
+  config.setOverride('oid4vp.clientIdPrefix', 'x509_san_dns');
+  const realmDefault = await verifier.startVerification(fakeReq(),
+    { by: 'reference' }, 'body');
+  config.setOverride('oid4vp.clientIdPrefix', 'pre-registered');
+  t.check(realmDefault && realmDefault.ok === false &&
+          realmDefault.status === 500 &&
+          realmDefault.code === 'STS-VC-0111',
+          '5a-iii. the realm\'s own default prefix that cannot be built is ' +
+          'still a 500', JSON.stringify(realmDefault));
   config.clearOverride('oid4vp.x509DnsName');
   refused = await refusalOf(function () {
     return verifier.prepareSignedClientId(fakeReq('127.0.0.1:8081'),
@@ -300,7 +321,8 @@ async function body(t) {
           'dNSName', renewed && renewed.subjectAltName);
 
   t.log.info('=== 8. the Digital Credentials API request ===');
-  config.setOverride('oid4vp.clientIdPrefix', 'x509_san_dns');
+  // A sign-in's prefix is `oid4vp.signInClientIdPrefix` since 2026-10-12.
+  config.setOverride('oid4vp.signInClientIdPrefix', 'x509_san_dns');
   const signIn = verifier.buildVpRequest(fakeReq(), {
     signIn: { authnId: 'x509-test', bindingHash: 'h', completePath: '/x',
               ttlMs: 60000, crossDevice: false, issuerDids: [],

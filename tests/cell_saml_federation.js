@@ -382,6 +382,13 @@ async function inboundFederation(t, cells) {
         log.debug("Entering namespacedName().");
         log.debug("Leaving namespacedName().");
         return id + '~' + name;
+      },
+      // homeOfSubject asks this before it routes (#358). The homes lookup
+      // is by the mapped username, so the returned name is not asserted.
+      provisionedName: function (id, subject) {
+        log.debug("Entering provisionedName().");
+        log.debug("Leaving provisionedName().");
+        return id + '~' + subject;
       }
     },
     federation: Object.assign({}, fedSp.FederationSp.defaultDeps().federation,

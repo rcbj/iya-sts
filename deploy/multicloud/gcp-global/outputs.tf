@@ -57,3 +57,8 @@ output "copies" {
     }
   }
 }
+
+output "cloudfront_cidrs" {
+  description = "CloudFront's IPv4 ranges: the edges a GCP cell behind the distribution believes (#1341)."
+  value       = data.aws_ip_ranges.cloudfront.cidr_blocks
+}

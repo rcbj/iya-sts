@@ -106,6 +106,8 @@
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
+// The file destination's paths (#221 P3).
+const path = require('path');
 // A LOGGER OF ITS OWN RATHER THAN helpers.js's, AND IT HAS TO BE.
 // `helpers.js` requires this module — it is where the signing keys are built —
 // so requiring it back would close a cycle, and a cycle in node does not fail
@@ -114,13 +116,19 @@ const fs = require('fs');
 // function (rule 2). `crypto.js` and `config.js` make their own for the same
 // reason.
 const bunyan = require('bunyan');
-// NODE'S OWN `crypto`, and not this repository's `common/crypto.js`. It is
-// here for `X509Certificate` alone — the client certificate this service
-// presents to a secret store is reported as facts rather than as a PEM — and
-// requiring the module beside this one would close a cycle, because that one
-// is where the signing keys are built.
-const nodeCrypto = require('crypto');
 const config = require('./config');
+// THIS REPOSITORY'S `common/crypto.js` (#453), and no longer node's own: the
+// client certificate this service presents to a secret store is parsed and
+// reported as facts rather than as a PEM, and Key Vault's AAD binding is a
+// digest compared in constant time. It was node's until #453 on the belief
+// that the module beside this one would close a cycle; it would not —
+// `crypto.js` is a LEAF requiring `config`, `error_codes`, `mode` and
+// libraries of its own, none of which requires this file, and the signing
+// keys are built in `helpers.js`, which this file does not require.
+const crypto = require('./crypto');
+// THE MODE, for the one destination that exists in development only (#221
+// P3). A LEAF requiring `config` and `error_codes`, both already here.
+const mode = require('./mode');
 // THE FAILURE CODES. A LEAF with no requires, and NOT audit.js, which requires
 // helpers.js, which requires keystore.js, which requires this. A provider's
 // error is marked with its condition NON-ENUMERABLY (the message is left alone,
@@ -165,7 +173,7 @@ function missingModule(pkg, provider, err) {
   return errorCodes.mark(new Error(
     'the "' + provider + '" key-encryption-key provider needs the ' + pkg +
     ' package and it is not installed. It is deliberately NOT a dependency ' +
-    'of this service — it is a mock first, and four cloud SDKs nobody uses ' +
+    'of this service — four cloud SDKs nobody uses ' +
     'would be carried by every install. Run `npm ' +
     'install ' + pkg + '` in this ' +
     'deployment, or use keys.kekProvider=file, which needs nothing. The ' +
@@ -571,7 +579,7 @@ const fileProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'file');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no path configured)',
+    return { from: at.where || SOURCE_PROSE.noPath,
              shared: at.borrowed || undefined };
   },
   read: function (spec) {
@@ -632,9 +640,10 @@ const awsProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no secret id configured)',
+    return { from: at.where || SOURCE_PROSE.noSecretId,
              shared: at.borrowed || undefined,
-             region: reachOf(spec || KEK, 'region') || '(the SDK default)' };
+             region: reachOf(spec || KEK, 'region') ||
+                     SOURCE_PROSE.sdkDefault };
   },
   read: async function (spec) {
     log.debug('Entering awsProvider.read().');
@@ -687,7 +696,7 @@ const gcpProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no resource name configured)',
+    return { from: at.where || SOURCE_PROSE.noResourceName,
              shared: at.borrowed || undefined };
   },
   read: async function (spec) {
@@ -743,10 +752,10 @@ const azureProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no secret name configured)',
+    return { from: at.where || SOURCE_PROSE.noSecretName,
              shared: at.borrowed || undefined,
              vault: reachOf(spec || KEK, 'vault') ||
-                    '(no vault url configured)' };
+                    SOURCE_PROSE.noVaultUrl };
   },
   read: async function (spec) {
     log.debug('Entering azureProvider.read().');
@@ -808,7 +817,28 @@ const azureProvider = {
 // merges `rpDefaults` into the request library's defaults, which is what
 // `client.request()` — the escape hatch below — uses. Passing only one of them
 // gives a login that works and a read that does not, or the reverse.
+//
+// **EACH FILE IS READ ONCE PER PROCESS (#254, 2026-10-06)**, the first time a
+// path is asked for, and held in memory after — it was read again at every
+// connection. The client key is the identity that opens the key-encryption
+// key, so the file is something a deployment may want to make unreadable once
+// the service has started, and a process that went back to it for every
+// Transit call could not allow that. A path that changes (the settings are
+// read on every call) is read when it is first named; a certificate RENEWED
+// at the same path is read at the next start, which is inside the renewal
+// window `openbao/seed.js` leaves (`STS_BAO_RENEW_WITHIN_DAYS`).
 // ---------------------------------------------------------------------------
+const tlsFiles = new Map();
+
+function tlsFile(path) {
+  log.debug("Entering tlsFile(). path=" + path);
+  if (!tlsFiles.has(path)) {
+    tlsFiles.set(path, fs.readFileSync(path));
+  }
+  log.debug("Leaving tlsFile().");
+  return tlsFiles.get(path);
+}
+
 function vaultTls() {
   log.debug("Entering vaultTls().");
   const certPath = String(config.value('keys.vaultClientCert') || '').trim();
@@ -816,12 +846,20 @@ function vaultTls() {
   const caPath = String(config.value('keys.vaultCaCert') || '').trim();
   const out = {};
   if (certPath && keyPath) {
-    out.cert = fs.readFileSync(certPath);
-    out.key = fs.readFileSync(keyPath);
+    out.cert = tlsFile(certPath);
+    out.key = tlsFile(keyPath);
   }
   if (caPath) {
-    out.ca = fs.readFileSync(caPath);
+    out.ca = tlsFile(caPath);
   }
+  // ONE CONNECTION FOR MANY CALLS (#639, 2026-10-15). The SDK builds one
+  // agent from these options, and without `keepAlive` it opened a new TLS
+  // connection — a handshake with the client certificate — for every call: a
+  // Transit KEK unwraps each data key with one, 204 of them at every start of
+  // every process on the 50.2M-entry stack, about a third of a second each.
+  // Kept alive, the calls reuse a few connections (`maxSockets`); an idle one
+  // closes with the server's own timeout and never holds the process open.
+  out.agentOptions = { keepAlive: true, maxSockets: 8 };
   log.debug("Leaving vaultTls().");
   return { options: out, authenticates: !!(certPath && keyPath),
            where: { cert: certPath, key: keyPath, ca: caPath } };
@@ -899,7 +937,8 @@ async function vaultConnect(spec) {
               'the SDK\'s own VAULT_TOKEN handling, is the identity.');
     return { client: client, login: null, tls: tls, role: role,
              endpoint: endpoint || '(VAULT_ADDR)',
-             how: token ? 'a configured token' : 'the SDK\'s VAULT_TOKEN' };
+             how: token ? SOURCE_PROSE.byConfiguredToken
+                        : SOURCE_PROSE.bySdkToken };
   }
   // **`client.request()` RATHER THAN `client.certLogin()`, AND THAT IS A
   // BUG IN THE SDK RATHER THAN A PREFERENCE.** node-vault 0.10.2 declares
@@ -937,7 +976,7 @@ async function vaultConnect(spec) {
   log.debug('Leaving vaultConnect(). Authenticated with a certificate.');
   return { client: client, login: login, tls: tls, role: role,
            endpoint: endpoint || '(VAULT_ADDR)',
-           how: 'a client certificate' };
+           how: SOURCE_PROSE.byCertificate };
 }
 
 // ---------------------------------------------------------------------------
@@ -958,16 +997,17 @@ const vaultProvider = {
     const at = locationOf(spec || KEK, 'ref');
     const cert = String(config.value('keys.vaultClientCert') || '').trim();
     log.debug("Leaving describe().");
-    return { from: at.where || '(no path configured)',
+    return { from: at.where || SOURCE_PROSE.noPath,
              shared: at.borrowed || undefined,
              endpoint: reachOf(spec || KEK, 'vault') || '(VAULT_ADDR)',
              field: fieldOf(spec || KEK) || 'value',
              // HOW, and never WITH WHAT: the path to a certificate is a fact
              // about the deployment and the certificate is public anyway; a
              // token would be neither and is reported as its presence only.
-             authenticates: cert ? 'a client certificate (' + cert + ')'
-                                 : (reachOf(spec || KEK, 'token')
-                                     ? 'a token' : 'the SDK\'s VAULT_TOKEN') };
+             authenticates: cert
+               ? sourceText('byCertificateAt', { cert: cert })
+               : (reachOf(spec || KEK, 'token') ? SOURCE_PROSE.byToken
+                                                : SOURCE_PROSE.bySdkToken) };
   },
   read: async function (spec) {
     log.debug('Entering vaultProvider.read().');
@@ -1107,9 +1147,9 @@ const transitProvider = {
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving transitProvider.describe().");
     return { from: at.where ? transitMount() + '/keys/' + at.where
-                            : '(no key configured)',
+                            : SOURCE_PROSE.noKey,
              endpoint: reachOf(spec || KEK, 'vault') || '(VAULT_ADDR)',
-             wraps: 'each data encryption key, in the KMS' };
+             wraps: SOURCE_PROSE.wrapsInKms };
   },
   read: async function (spec) {
     log.debug('Entering transitProvider.read().');
@@ -1249,9 +1289,9 @@ const awsKmsProvider = {
     log.debug("Entering awsKmsProvider.describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving awsKmsProvider.describe().");
-    return { from: at.where || '(no key configured)',
-             region: reachOf(spec || KEK, 'region') || '(the SDK default)',
-             wraps: 'each data encryption key, in the KMS' };
+    return { from: at.where || SOURCE_PROSE.noKey,
+             region: reachOf(spec || KEK, 'region') || SOURCE_PROSE.sdkDefault,
+             wraps: SOURCE_PROSE.wrapsInKms };
   },
   read: async function (spec) {
     log.debug('Entering awsKmsProvider.read().');
@@ -1383,8 +1423,8 @@ const gcpKmsProvider = {
     log.debug("Entering gcpKmsProvider.describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving gcpKmsProvider.describe().");
-    return { from: at.where || '(no key configured)',
-             wraps: 'each data encryption key, in the KMS' };
+    return { from: at.where || SOURCE_PROSE.noKey,
+             wraps: SOURCE_PROSE.wrapsInKms };
   },
   read: async function (spec) {
     log.debug('Entering gcpKmsProvider.read().');
@@ -1538,10 +1578,10 @@ const azureKeysProvider = {
     log.debug("Entering azureKeysProvider.describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving azureKeysProvider.describe().");
-    return { from: at.where || '(no key name configured)',
+    return { from: at.where || SOURCE_PROSE.noKeyName,
              vault: reachOf(spec || KEK, 'vault') ||
-                    '(no vault url configured)',
-             wraps: 'each data encryption key, in the vault' };
+                    SOURCE_PROSE.noVaultUrl,
+             wraps: SOURCE_PROSE.wrapsInVault };
   },
   read: async function (spec) {
     log.debug('Entering azureKeysProvider.read().');
@@ -1609,8 +1649,7 @@ const azureKeysProvider = {
     function aadDigest(aad) {
       log.debug('Entering azureKeysProvider.aadDigest().');
       log.debug('Leaving azureKeysProvider.aadDigest().');
-      return nodeCrypto.createHash('sha256').update(String(aad), 'utf8')
-        .digest();
+      return crypto.digest('sha256', String(aad));
     }
     const handle = {
       remote: true, provider: 'azure-keys', keyRef: keyRef,
@@ -1682,7 +1721,7 @@ const azureKeysProvider = {
         const dek = out.subarray(0, Math.max(0, out.length - want.length));
         const got = out.subarray(dek.length);
         if ((dek.length !== 32 && dek.length !== 64) ||
-            !nodeCrypto.timingSafeEqual(got, want)) {
+            !crypto.bytesEqualConstantTime(got, want)) {
           throw errorCodes.mark(new Error('the wrapped data key unwrapped ' +
             'under "' + keyRef + '" but is bound to another data key\'s id, ' +
             'scope, realm or class: it was moved onto this row'),
@@ -1869,8 +1908,28 @@ function tagReadFailure(spec, err) {
  * @throws an Error, tagged with its code, when the provider is unknown or
  *   the read fails
  */
+// A KEY-ENCRYPTION KEY IN A FILE IS REFUSED IN PRODUCT (ASVS 5.0.0 13.3.1),
+// unless secrets.allowLocalSecrets is on: the key that wraps every other key
+// would otherwise sit on the host beside what it protects. The PREVIOUS key is
+// not asked, because reading it is how a deployment moves off a file.
+function refuseFileKek(setting) {
+  log.debug('Entering refuseFileKek(). ' + setting);
+  if (String(config.value(setting) || '') === 'file' &&
+      require('./mode').requiresSecretStore()) {
+    log.debug('Leaving refuseFileKek(). Refused.');
+    throw new Error(errorCodes.tag('STS-KEYS-0197') + setting + ' is ' +
+                    '"file", and product mode takes a key-encryption key ' +
+                    'from a secret store or a key management service ' +
+                    '(vault, vault-transit, aws, aws-kms, gcp, gcp-kms, ' +
+                    'azure or azure-keys). Configure one, or turn on ' +
+                    'secrets.allowLocalSecrets to accept the file.');
+  }
+  log.debug('Leaving refuseFileKek().');
+}
+
 async function readKek() {
   log.debug('Entering readKek().');
+  refuseFileKek(KEK.provider);
   const value = await read(KEK);
   log.debug('Leaving readKek().');
   return value;
@@ -1973,6 +2032,7 @@ async function readCellKek() {
     log.debug('Leaving readCellKek(). Not configured.');
     return null;
   }
+  refuseFileKek(CELL_KEK.provider);
   const provider = String(config.value(CELL_KEK.provider) || '');
   const serviceProvider = String(config.value(KEK.provider) || '');
   // The service key's location is `keys.kekFile` for a file and
@@ -2137,7 +2197,7 @@ function describeSecret(spec) {
     configured: configured,
     provider: configured ? (provider ? provider.id : named) : 'none',
     label: configured ? (provider ? provider.label : 'unknown')
-                      : 'not configured',
+                      : SOURCE_PROSE.notConfigured,
     known: configured ? !!provider : true,
     where: (configured && provider) ? provider.describe(spec) : {},
     // WHETHER IT IS SHARING THE KEK'S LOCATION, which is the one fact an
@@ -2417,7 +2477,7 @@ async function runProbe(id, what, fn) {
 function certificateFacts(pemPath) {
   log.debug('Entering certificateFacts(). path=' + pemPath);
   const pem = fs.readFileSync(pemPath);
-  const x509 = new nodeCrypto.X509Certificate(pem);
+  const x509 = crypto.parseCertificate(pem);
   const notAfter = new Date(x509.validTo);
   const days = Math.floor((notAfter.getTime() - Date.now()) / 86400000);
   log.debug('Leaving certificateFacts().');
@@ -2458,6 +2518,243 @@ function certificateFacts(pemPath) {
 // connection for the life of one report, so a render costs ONE login, which is
 // also the one the startup read makes.
 // ===========================================================================
+// ---------------------------------------------------------------------------
+// WHAT THIS MODULE SAYS IN WORDS, as tables (#543 phase 2c), so that the
+// secretstore namespace can carry them and `common/server_prose.ts` refill an
+// answer to `GET /admin-api/secrets`, `GET /admin-api/encryption` and the
+// three answers that describe the database password (`/admin-api/database`,
+// `/admin-api/persistence`, `/admin-api/ldap/service`) in a console reader's
+// language. Each is what the code wrote inline until #543, byte for byte; a
+// `{{name}}` is a value filled with `ServerProse.fill()` — a path, a region, a
+// setting's name (carried over as data) — or another phrase of this table.
+//
+// `SOURCE_PROSE` is what a secret's description, a store's label and a
+// probe's answer say; `PROBE_WHAT` is what each probe asks, by provider and
+// probe id. A provider's `label` is on the provider itself. What is NOT
+// here: an error's text (errors stay English, rcbj's rule from #539), a
+// failed read's reason, and a key handle's label ("Transit key <mount>/<name>",
+// a name with a word in front of it).
+// ---------------------------------------------------------------------------
+const SOURCE_PROSE = Object.freeze({
+  reportWhat:
+    'Where this service reads its primordial secrets from — the ' +
+    'key-encryption key everything it seals is sealed under, and the ' +
+    'database password — whether it actually read them, and what the store ' +
+    'at the other end is doing.',
+  notConfigured: 'not configured',
+  noPath: '(no path configured)',
+  noSecretId: '(no secret id configured)',
+  noResourceName: '(no resource name configured)',
+  noSecretName: '(no secret name configured)',
+  noVaultUrl: '(no vault url configured)',
+  noKey: '(no key configured)',
+  noKeyName: '(no key name configured)',
+  sdkDefault: '(the SDK default)',
+  sdkDefaultEndpoint: '(the SDK default endpoint)',
+  wrapsInKms: 'each data encryption key, in the KMS',
+  wrapsInVault: 'each data encryption key, in the vault',
+  byCertificateAt: 'a client certificate ({{cert}})',
+  byCertificate: 'a client certificate',
+  byToken: 'a token',
+  byConfiguredToken: 'a configured token',
+  bySdkToken: 'the SDK\'s VAULT_TOKEN',
+  noRole: '(none named)',
+  fileNotObject:
+    'The file is not a JSON object, so whatever is in it is taken whole. ' +
+    'That is what a raw key file is.',
+  memberNames:
+    'Member NAMES only. Which one a secret takes is its own field setting.',
+  noField: 'No field is configured, so the whole file is this secret.',
+  sharesKekFile:
+    'This secret shares the key-encryption key\'s file and that file is not ' +
+    'a JSON object — so what is in it is the KEY, and reading this secret ' +
+    'is REFUSED rather than handing that key to a database.',
+  fileNotJson:
+    'The file is not JSON, so the whole of it is this secret and the field ' +
+    'is not used.',
+  noLogin:
+    'No client certificate is configured, so no login was made: the token ' +
+    'is whatever {{token}} or the SDK\'s VAULT_TOKEN supplies.',
+  canWrite:
+    'THIS IDENTITY CAN WRITE. It could replace the key-encryption key, and ' +
+    'everything sealed under the old one would be unreadable.',
+  readOnly:
+    'Read-only on every path it was asked about, which is what the policy ' +
+    'is supposed to say.',
+  reachesNothing:
+    'This identity may not reach any of the paths it is configured to read. ' +
+    'A read at startup would be refused.',
+  // `{{label}}` is a provider's label, and these three are never matched
+  // as written: `passwordTemplates()` fills each with every provider that
+  // can hold a password, so that a matched phrase begins with a label and an
+  // operator's own "Name (detail)" is never taken for one.
+  passwordFrom: '{{label}} ({{from}})',
+  passwordShared: '{{label}}, shared with the key-encryption key',
+  passwordFromShared:
+    '{{label}} ({{from}}), shared with the key-encryption key',
+  connectionString: 'the connection string'
+});
+
+const PROBE_WHAT = Object.freeze({
+  'file/file':
+    'The file itself: whether it is there, who can read it, and when it ' +
+    'last changed.',
+  'file/members':
+    'Whether the file holds a JSON object, and which members are in it — ' +
+    'the NAMES and never the values.',
+  'file/field':
+    'Whether the member this secret is configured to take is actually in ' +
+    'the file.',
+  'vault/client-certificate':
+    'The certificate this service presents to the store, and when it ' +
+    'expires.',
+  'vault/store-ca':
+    'The anchor this service verifies the store\'s own listener against.',
+  'vault/seal-status':
+    'Whether the store is initialised, whether it is sealed, what kind of ' +
+    'seal it has, and which build it is.',
+  'vault/health':
+    'The store\'s own health summary: its clock, its cluster, and whether ' +
+    'this node is the active one.',
+  'vault/leader':
+    'High availability: whether this node is the leader, and where the ' +
+    'leader is.',
+  'vault/authentication':
+    'Logging in the way a startup read does, and what the store handed back.',
+  'vault/token':
+    'What the store says about the token that login produced, asked of the ' +
+    'store rather than read off the login reply.',
+  'vault/capabilities':
+    'What this identity may actually do, asked of the store: the paths it ' +
+    'reads, and a write it must not be able to make.',
+  'vault/mounts':
+    'The secret engines this identity can see — which is fewer than the ' +
+    'store has, and should be.',
+  'vault/versions':
+    'The KV metadata for this secret: when it was written, how many ' +
+    'versions there are, and which one a read gets.',
+  'aws/describe':
+    'Everything AWS Secrets Manager knows about this secret EXCEPT its ' +
+    'value: rotation, the KMS key, the versions and their staging labels.',
+  'vault-transit/transit-key':
+    'What Transit says about the key that wraps the data keys: its type, ' +
+    'its versions, and whether it may ever leave the KMS.',
+  'aws-kms/kms-key':
+    'What AWS KMS says about the key that wraps the data keys: its state ' +
+    'and whether AWS rotates it.',
+  'gcp-kms/kms-key':
+    'What Cloud KMS says about the key that wraps the data keys: its ' +
+    'purpose, its primary version and its rotation schedule.',
+  'azure-keys/vault-key':
+    'What the vault says about the key that wraps the data keys: its type, ' +
+    'size, operations, version and rotation.',
+  'gcp/secret':
+    'The secret\'s own metadata: replication, labels, rotation and expiry.',
+  'gcp/version':
+    'The version a read would get: whether it is enabled, disabled or ' +
+    'destroyed.',
+  'azure/versions':
+    'Every version of this secret and its properties — enabled, created, ' +
+    'updated, expiry — and never the value.'
+});
+
+// The routes whose answers carry the secretstore namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/secrets', '/admin-api/encryption',
+                      '/admin-api/database', '/admin-api/persistence',
+                      '/admin-api/ldap/service'];
+
+// A phrase of `SOURCE_PROSE`, filled. LAZILY required: this module is read
+// by `keystore.js` long before `server_prose.ts` and its neighbours are
+// loaded, and `server_prose.ts` requires config.js.
+function sourceText(key, params) {
+  log.debug("Entering sourceText(). " + key);
+  const out = require('./server_prose').fill(SOURCE_PROSE[key],
+                                             params || {});
+  log.debug("Leaving sourceText().");
+  return out;
+}
+
+// The three password phrases with a provider's label filled in, by key:
+// what `passwordFromText()` fills and what the namespace matches against.
+// The key-management providers are left out: they hold keys, not passwords.
+function passwordTemplates() {
+  log.debug("Entering passwordTemplates().");
+  const fill = require('./server_prose').fill;
+  const out = {};
+  PROVIDERS.filter(function (one) {
+    return !one.remote;
+  }).forEach(function (one) {
+    ['passwordFrom', 'passwordShared', 'passwordFromShared']
+      .forEach(function (key) {
+        out[key + '.' + one.id] = fill(SOURCE_PROSE[key],
+                                       { label: one.label });
+      });
+  });
+  log.debug("Leaving passwordTemplates().");
+  return out;
+}
+
+/**
+ * Says where the database password comes from in one phrase — the
+ * provider's label, the location, and whether it is the key-encryption
+ * key's — for `persistence.js`'s description of the database (#543 phase
+ * 2c: the templates are this namespace's, beside the labels they hold).
+ *
+ * @param password - `describeDatabasePassword()`'s answer
+ * @returns the phrase
+ */
+function passwordFromText(password) {
+  log.debug("Entering passwordFromText().");
+  if (!password || !password.configured) {
+    log.debug("Leaving passwordFromText(). The connection string.");
+    return SOURCE_PROSE.connectionString;
+  }
+  const from = password.where && password.where.from
+    ? password.where.from : '';
+  let out = password.label;
+  if (from && password.shared) {
+    out = sourceText('passwordFromShared', { label: password.label,
+                                             from: from });
+  } else if (from) {
+    out = sourceText('passwordFrom', { label: password.label, from: from });
+  } else if (password.shared) {
+    out = sourceText('passwordShared', { label: password.label });
+  }
+  log.debug("Leaving passwordFromText().");
+  return out;
+}
+
+/**
+ * Extracts the secretstore namespace (#543 phase 2c): every provider's
+ * label, what each probe asks, the phrases a description, a store's label
+ * and a probe's answer carry, and the password phrases once per provider.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const serverProse = require('./server_prose');
+  // The three password templates go in once per provider, below, and never
+  // with `{{label}}` unfilled.
+  const phrases = {};
+  Object.keys(SOURCE_PROSE).filter(function (key) {
+    return !/^password/.test(key);
+  }).forEach(function (key) {
+    phrases[key] = SOURCE_PROSE[key];
+  });
+  const passwords = passwordTemplates();
+  const out = Object.assign({},
+    serverProse.harvest('secretstore.providers', PROVIDERS, ['label']),
+    serverProse.harvest('secretstore.source', phrases,
+                        Object.keys(phrases)),
+    serverProse.harvest('secretstore.password', passwords,
+                        Object.keys(passwords)),
+    serverProse.harvest('secretstore.probe', PROBE_WHAT,
+                        Object.keys(PROBE_WHAT)));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The probes the secret-store report runs, by id: asked once per store or
  * once per secret location, each handed a session that memoizes the
@@ -2484,8 +2781,7 @@ PROBES.file = {
     const at = locationOf(spec, 'file');
     log.debug("Leaving store().");
     return [
-      runProbe('file', 'The file itself: whether it is there, who can read ' +
-               'it, and when it last changed.', function () {
+      runProbe('file', PROBE_WHAT['file/file'], function () {
         const path = at.where;
         if (!path) {
           throw new Error('no path is configured');
@@ -2513,8 +2809,7 @@ PROBES.file = {
         }
         return out;
       }),
-      runProbe('members', 'Whether the file holds a JSON object, and which ' +
-               'members are in it — the NAMES and never the values.',
+      runProbe('members', PROBE_WHAT['file/members'],
                function () {
         const path = at.where;
         if (!path) {
@@ -2534,12 +2829,10 @@ PROBES.file = {
         }
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
           return { json: false,
-                   note: 'The file is not a JSON object, so whatever is in ' +
-                         'it is taken whole. That is what a raw key file is.' };
+                   note: SOURCE_PROSE.fileNotObject };
         }
         return { json: true, members: Object.keys(parsed),
-                 note: 'Member NAMES only. Which one a secret takes is its ' +
-                       'own field setting.' };
+                 note: SOURCE_PROSE.memberNames };
       })
     ];
   },
@@ -2549,12 +2842,10 @@ PROBES.file = {
     const field = fieldOf(spec);
     log.debug("Leaving secret().");
     return [
-      runProbe('field', 'Whether the member this secret is configured to ' +
-               'take is actually in the file.', function () {
+      runProbe('field', PROBE_WHAT['file/field'], function () {
         if (!field) {
           return { field: null,
-                   note: 'No field is configured, so the whole file is this ' +
-                         'secret.' };
+                   note: SOURCE_PROSE.noField };
         }
         const text = fs.readFileSync(at.where).toString('utf8');
         let parsed = null;
@@ -2570,15 +2861,10 @@ PROBES.file = {
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
           if (at.borrowed) {
             return { field: field, present: false, wouldRefuse: true,
-                     note: 'This secret shares the key-encryption key\'s ' +
-                           'file and that file is not a JSON object — so ' +
-                           'what is in it is the KEY, and reading this ' +
-                           'secret is REFUSED rather than handing that key ' +
-                           'to a database.' };
+                     note: SOURCE_PROSE.sharesKekFile };
           }
           return { field: field, present: false,
-                   note: 'The file is not JSON, so the whole of it is this ' +
-                         'secret and the field is not used.' };
+                   note: SOURCE_PROSE.fileNotJson };
         }
         return { field: field,
                  present: Object.keys(parsed).indexOf(field) >= 0,
@@ -2618,15 +2904,13 @@ PROBES.vault = {
     // certificate is why the store is "down".
     if (certPath) {
       rows.push(runProbe('client-certificate',
-                         'The certificate this service presents to the ' +
-                         'store, and when it expires.', function () {
+                         PROBE_WHAT['vault/client-certificate'], function () {
         return certificateFacts(certPath);
       }));
     }
     if (caPath) {
       rows.push(runProbe('store-ca',
-                         'The anchor this service verifies the store\'s own ' +
-                         'listener against.', function () {
+                         PROBE_WHAT['vault/store-ca'], function () {
         return certificateFacts(caPath);
       }));
     }
@@ -2636,9 +2920,7 @@ PROBES.vault = {
     // established, so a store that is up and SEALED is reported as exactly
     // that rather than as a login failure.
     rows.push(runProbe('seal-status',
-                       'Whether the store is initialised, whether it is ' +
-                       'sealed, what kind of seal it has, and which build ' +
-                       'it is.', async function () {
+                       PROBE_WHAT['vault/seal-status'], async function () {
       const client = (await connectUnauthenticated(session, spec)).client;
       const answer = await client.request({ path: '/sys/seal-status',
                                             method: 'GET' });
@@ -2651,8 +2933,7 @@ PROBES.vault = {
     // which is why node-vault special-cases this one path and resolves it
     // anyway. Forcing them makes the reply unambiguous either way.
     rows.push(runProbe('health',
-                       'The store\'s own health summary: its clock, its ' +
-                       'cluster, and whether this node is the active one.',
+                       PROBE_WHAT['vault/health'],
                        async function () {
       const client = (await connectUnauthenticated(session, spec)).client;
       const answer = await client.request({
@@ -2677,8 +2958,7 @@ PROBES.vault = {
     }));
 
     rows.push(runProbe('leader',
-                       'High availability: whether this node is the leader, ' +
-                       'and where the leader is.', async function () {
+                       PROBE_WHAT['vault/leader'], async function () {
       const client = (await connectUnauthenticated(session, spec)).client;
       return client.request({ path: '/sys/leader', method: 'GET' });
     }));
@@ -2689,21 +2969,18 @@ PROBES.vault = {
     // saying it could not prove who it is to the store it keeps its master
     // key in.
     rows.push(runProbe('authentication',
-                       'Logging in the way a startup read does, and what ' +
-                       'the store handed back.', async function () {
+                       PROBE_WHAT['vault/authentication'], async function () {
       const connected = await connect(session, spec);
       if (!connected.login) {
         return { how: connected.how, endpoint: connected.endpoint,
-                 note: 'No client certificate is configured, so no login was ' +
-                       'made: the token is whatever ' +
-                       ((spec && spec.token) || 'keys.kekToken') +
-                       ' or the SDK\'s VAULT_TOKEN supplies.' };
+                 note: sourceText('noLogin', {
+                   token: (spec && spec.token) || 'keys.kekToken' }) };
       }
       const auth = connected.login.auth || {};
       return {
         how: connected.how,
         endpoint: connected.endpoint,
-        role: connected.role || '(none named)',
+        role: connected.role || SOURCE_PROSE.noRole,
         policies: auth.policies || [],
         tokenPolicies: auth.token_policies || [],
         leaseDurationS: auth.lease_duration,
@@ -2716,9 +2993,7 @@ PROBES.vault = {
     }));
 
     rows.push(runProbe('token',
-                       'What the store says about the token that login ' +
-                       'produced, asked of the store rather than read off ' +
-                       'the login reply.', async function () {
+                       PROBE_WHAT['vault/token'], async function () {
       const client = (await connect(session, spec)).client;
       const answer = await client.request({ path: '/auth/token/lookup-self',
                                             method: 'GET' });
@@ -2749,9 +3024,7 @@ PROBES.vault = {
     // store by the RUNNING service: capabilities on the two paths it reads,
     // and on a path it must never be able to write.
     rows.push(runProbe('capabilities',
-                       'What this identity may actually do, asked of the ' +
-                       'store: the paths it reads, and a write it must not ' +
-                       'be able to make.', async function () {
+                       PROBE_WHAT['vault/capabilities'], async function () {
       const client = (await connect(session, spec)).client;
       const paths = [];
       [KEK, DATABASE_PASSWORD].filter(function (one) {
@@ -2808,13 +3081,9 @@ PROBES.vault = {
         return has(one, ['deny']);
       });
       out.verdict = out.canWrite.length
-        ? 'THIS IDENTITY CAN WRITE. It could replace the key-encryption key, ' +
-          'and everything sealed under the old one would be unreadable.'
-        : (out.canRead.length
-            ? 'Read-only on every path it was asked about, which is what the ' +
-              'policy is supposed to say.'
-            : 'This identity may not reach any of the paths it is configured ' +
-              'to read. A read at startup would be refused.');
+        ? SOURCE_PROSE.canWrite
+        : (out.canRead.length ? SOURCE_PROSE.readOnly
+                              : SOURCE_PROSE.reachesNothing);
       return out;
     }));
 
@@ -2823,8 +3092,7 @@ PROBES.vault = {
     // Vault's own `default` policy and answers only what this token may
     // reach, which is the honest list for an identity that holds two paths.
     rows.push(runProbe('mounts',
-                       'The secret engines this identity can see — which is ' +
-                       'fewer than the store has, and should be.',
+                       PROBE_WHAT['vault/mounts'],
                        async function () {
       const client = (await connect(session, spec)).client;
       const answer = await client.request({ path: '/sys/internal/ui/mounts',
@@ -2850,8 +3118,7 @@ PROBES.vault = {
     log.debug("Leaving secret().");
     return [
       runProbe('versions',
-               'The KV metadata for this secret: when it was written, how ' +
-               'many versions there are, and which one a read gets.',
+               PROBE_WHAT['vault/versions'],
                async function () {
         const meta = metadataPathFor(at.where);
         if (!meta) {
@@ -2996,9 +3263,7 @@ PROBES.aws = {
     log.debug("Leaving secret().");
     return [
       runProbe('describe',
-               'Everything AWS Secrets Manager knows about this secret ' +
-               'EXCEPT its value: rotation, the KMS key, the versions and ' +
-               'their staging labels.', async function () {
+               PROBE_WHAT['aws/describe'], async function () {
         let sdk;
         try {
           sdk = require('@aws-sdk/client-secrets-manager');
@@ -3064,9 +3329,8 @@ PROBES['vault-transit'] = {
     const name = locationOf(spec, 'ref').where;
     log.debug("Leaving secret().");
     return [
-      runProbe('transit-key', 'What Transit says about the key that wraps ' +
-               'the data keys: its type, its versions, and whether it may ' +
-               'ever leave the KMS.', async function () {
+      runProbe('transit-key', PROBE_WHAT['vault-transit/transit-key'],
+               async function () {
         if (!name) {
           throw new Error('no Transit key is configured');
         }
@@ -3104,8 +3368,7 @@ PROBES['aws-kms'] = {
     const keyId = locationOf(spec, 'ref').where;
     log.debug("Leaving secret().");
     return [
-      runProbe('kms-key', 'What AWS KMS says about the key that wraps the ' +
-               'data keys: its state and whether AWS rotates it.',
+      runProbe('kms-key', PROBE_WHAT['aws-kms/kms-key'],
                async function () {
         let sdk;
         try {
@@ -3158,9 +3421,7 @@ PROBES['gcp-kms'] = {
     const name = locationOf(spec, 'ref').where;
     log.debug("Leaving secret().");
     return [
-      runProbe('kms-key', 'What Cloud KMS says about the key that wraps the ' +
-               'data keys: its purpose, its primary version and its ' +
-               'rotation schedule.', async function () {
+      runProbe('kms-key', PROBE_WHAT['gcp-kms/kms-key'], async function () {
         let sdk;
         try {
           sdk = loadSdk('@google-cloud/kms');
@@ -3204,9 +3465,8 @@ PROBES['azure-keys'] = {
     const vault = String(reachOf(spec, 'vault') || '').replace(/\/+$/, '');
     log.debug("Leaving secret().");
     return [
-      runProbe('vault-key', 'What the vault says about the key that wraps ' +
-               'the data keys: its type, size, operations, version and ' +
-               'rotation.', async function () {
+      runProbe('vault-key', PROBE_WHAT['azure-keys/vault-key'],
+               async function () {
         let keysSdk;
         let identitySdk;
         try {
@@ -3275,8 +3535,7 @@ PROBES.gcp = {
     log.debug("Leaving secret().");
     return [
       runProbe('secret',
-               'The secret\'s own metadata: replication, labels, rotation ' +
-               'and expiry.', async function () {
+               PROBE_WHAT['gcp/secret'], async function () {
         const client = gcpClient();
         const name = String(at.where || '').replace(/\/versions\/.*$/, '');
         if (!name) {
@@ -3296,8 +3555,7 @@ PROBES.gcp = {
         };
       }),
       runProbe('version',
-               'The version a read would get: whether it is enabled, ' +
-               'disabled or destroyed.', async function () {
+               PROBE_WHAT['gcp/version'], async function () {
         const client = gcpClient();
         let name = String(at.where || '');
         if (!name) {
@@ -3360,8 +3618,7 @@ PROBES.azure = {
     log.debug("Leaving secret().");
     return [
       runProbe('versions',
-               'Every version of this secret and its properties — enabled, ' +
-               'created, updated, expiry — and never the value.',
+               PROBE_WHAT['azure/versions'],
                async function () {
         let secretsSdk;
         let identitySdk;
@@ -3465,14 +3722,17 @@ function storeLabelFor(spec, provider) {
   log.debug("Entering storeLabelFor().");
   if (provider.id === 'file') {
     log.debug("Leaving storeLabelFor().");
-    return locationOf(spec, 'file').where || '(no path configured)';
+    return locationOf(spec, 'file').where || SOURCE_PROSE.noPath;
   }
   if (provider.id === 'vault' || provider.id === 'azure') {
     log.debug("Leaving storeLabelFor().");
-    return reachOf(spec, 'vault') || '(the SDK default endpoint)';
+    return reachOf(spec, 'vault') || SOURCE_PROSE.sdkDefaultEndpoint;
   }
   if (provider.id === 'aws') {
     log.debug("Leaving storeLabelFor().");
+    // A word and a region's name: data with a word in front of it, left as
+    // written (#543), since a template would match any "region …" an
+    // answer on these routes carried.
     return 'region ' + (reachOf(spec, 'region') || '(the SDK default)');
   }
   log.debug("Leaving storeLabelFor().");
@@ -3489,10 +3749,7 @@ function storeLabelFor(spec, provider) {
 async function storeReport() {
   log.debug('Entering storeReport().');
   const out = {
-    what: 'Where this service reads its primordial secrets from — the ' +
-          'key-encryption key everything it seals is sealed under, and the ' +
-          'database password — whether it actually read them, and what the ' +
-          'store at the other end is doing.',
+    what: SOURCE_PROSE.reportWhat,
     timeoutMs: probeTimeoutMs(),
     providers: PROVIDERS.map(function (one) {
       return { id: one.id, label: one.label };
@@ -3626,8 +3883,565 @@ async function storeReport() {
  * A library: no route. No secret is ever logged or cached on disk.
  * @namespace
  */
+// ===========================================================================
+// THE WRITE PATH (#221 P3, 2026-10-06): A SERVICE ACCOUNT'S ROTATED PASSWORD,
+// PUSHED TO A SECRETS MANAGER.
+//
+// Everything above READS: this service's own key-encryption key and database
+// password, with read-only credentials. Below is the other direction, beside
+// the read path rather than in a module of its own, because it is the same
+// four stores reached through the same SDKs: a service account's password is
+// generated here, pushed as a NEW VERSION of a secret, and only then committed
+// (rcbj's decision 5 on #221 — P4's rotation calls this through
+// `common/secret_destinations.ts`, which owns WHERE; this owns HOW).
+//
+//   aws     Secrets Manager `PutSecretValue`
+//   gcp     Secret Manager `AddSecretVersion`
+//   azure   Key Vault `setSecret`, after a check that the secret exists
+//   vault   a KV version 2 write with check-and-set (`options.cas`)
+//   file    DEVELOPMENT MODE AND THE TEST SUITE ONLY
+//           (`mode.acceptsFileSecretDestinations()`)
+//
+// The KMS providers are not destinations: they hold keys, not secrets.
+//
+// **A PUSH NEVER CREATES A SECRET.** The secret must already exist, so the
+// destination's credential needs write on NAMED secrets and nothing else —
+// least privilege, rcbj's decision. `PutSecretValue` and `AddSecretVersion`
+// refuse a secret that does not exist by themselves; Key Vault's `setSecret`
+// would create one, so its versions are LISTED first (metadata only, the
+// `list` permission — never a value), and Vault's metadata is read first for
+// the version the check-and-set names. A missing secret is STS-SECDEST-0003.
+// Key Vault's check and its write are two calls, and a secret deleted between
+// them is created by the second; the window is the operator's own act.
+//
+// **THE CREDENTIAL ARRIVES WITH THE TARGET AND IS NEVER THE PROCESS'S.** Each
+// destination holds its own write credential, sealed on its application entry
+// (`applications.secretDestinationCredentialOf()`), separate from the
+// read-only ones above. So no SDK here is handed its ambient chain: an AWS
+// client is built with the destination's keys, a Google client with its
+// service account, Azure's with a client-secret credential, Vault's request
+// with its token. A destination with no credential is refused before any SDK
+// is loaded (`secret_destinations.ts` reports it as not usable).
+//
+// **NOTHING WRITTEN IS LOGGED OR RETURNED**: the payload, the password and the
+// credential go to the store and nowhere else. A failure's message names the
+// destination, the secret's name and what the store said — never what was
+// being written. A provider's own error text is passed on, because it is the
+// sentence that fixes a permission, and no store echoes a value in one.
+//
+// **EVERY ADDRESS IS THE OPERATOR'S.** The provider, region, vault URL,
+// endpoint and directory are attributes of the destination's entry, written by
+// an administrator (Admin Write); no request can name one. Anything dialled by
+// URL is https only (STS-SECDEST-0008) and verified — Vault's request through
+// `common/outbound_tls.ts`'s `verifiedOptions()`, beside the destination's own
+// CA certificates, and the SDKs through the process-wide host check that
+// module installs. The root `CLAUDE.md`'s seventeenth outbound row.
+// ===========================================================================
+/**
+ * The providers a secret push destination may name.
+ */
+const DESTINATION_PROVIDERS = ['aws', 'gcp', 'azure', 'vault', 'file'];
+
+/**
+ * What a push may write: the bare password, or the JSON object.
+ */
+const DESTINATION_PAYLOADS = ['password', 'json'];
+
+// A refusal carrying its code, as every failure in this file does.
+function pushRefusal(message, code) {
+  log.debug("Entering pushRefusal(). " + code);
+  log.debug("Leaving pushRefusal().");
+  return errorCodes.mark(new Error(message), code);
+}
+
+// The one sentence for a missing SDK, said for a destination rather than for
+// the key-encryption key (missingModule()'s).
+function missingDestinationSdk(pkg, provider, err) {
+  log.debug("Entering missingDestinationSdk().");
+  log.debug("Leaving missingDestinationSdk().");
+  return pushRefusal('a "' + provider + '" secret destination needs the ' +
+    pkg + ' package and it is not installed. It is an optional package, ' +
+    'installed into the image with STS_CLOUD_SDKS. The underlying error ' +
+    'was: ' + ((err && err.message) || err), 'STS-SECDEST-0001');
+}
+
+// What is written: the password alone, or the object a reader takes it out
+// of by its field.
+function payloadOf(target) {
+  log.debug("Entering payloadOf(). " + target.payload);
+  const value = target.value || {};
+  if (target.payload === 'json') {
+    log.debug("Leaving payloadOf(). The object.");
+    return { text: JSON.stringify({ username: String(value.username || ''),
+                                    password: String(value.password || ''),
+                                    realm: String(value.realm || ''),
+                                    rotatedAt: String(value.rotatedAt ||
+                                                      '') }),
+             object: { username: String(value.username || ''),
+                       password: String(value.password || ''),
+                       realm: String(value.realm || ''),
+                       rotatedAt: String(value.rotatedAt || '') } };
+  }
+  log.debug("Leaving payloadOf(). The password.");
+  return { text: String(value.password || ''), object: null };
+}
+
+// A credential given as a JSON object, with the members a provider needs.
+function credentialObject(target, members, shape) {
+  log.debug("Entering credentialObject(). " + target.provider);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(target.credential || ''));
+  } catch (e) {
+    log.debug("Caught in credentialObject(): " + ((e && e.message) || e));
+    parsed = null;
+  }
+  const missing = !parsed || typeof parsed !== 'object' ||
+    Array.isArray(parsed) ? members : members.filter(function (one) {
+      return !parsed[one];
+    });
+  if (missing.length) {
+    // The members are named and the value is not, ever.
+    throw pushRefusal('the write credential of secret destination "' +
+      target.label + '" is not ' + shape + ': it needs ' +
+      missing.join(', ') + '.', 'STS-SECDEST-0016');
+  }
+  log.debug("Leaving credentialObject().");
+  return parsed;
+}
+
+// What a provider's error said, for a refusal: its name and message.
+function storeSaid(e) {
+  log.debug("Entering storeSaid().");
+  log.debug("Leaving storeSaid().");
+  return String((e && (e.name || e.code)) || 'Error') + ': ' +
+    String((e && e.message) || e);
+}
+
+// ---------------------------------------------------------------------------
+// aws — PutSecretValue, which adds a version to a secret that exists and
+// answers ResourceNotFoundException for one that does not. It never creates.
+// ---------------------------------------------------------------------------
+async function pushAws(target) {
+  log.debug("Entering pushAws().");
+  const credential = credentialObject(target,
+    ['accessKeyId', 'secretAccessKey'],
+    'an AWS access key as JSON {"accessKeyId", "secretAccessKey"}');
+  let sdk;
+  try {
+    sdk = loadSdk('@aws-sdk/client-secrets-manager');
+  } catch (e) {
+    throw missingDestinationSdk('@aws-sdk/client-secrets-manager', 'aws', e);
+  }
+  const client = new sdk.SecretsManagerClient({
+    region: target.region,
+    credentials: { accessKeyId: String(credential.accessKeyId),
+                   secretAccessKey: String(credential.secretAccessKey),
+                   sessionToken: credential.sessionToken
+                     ? String(credential.sessionToken) : undefined }
+  });
+  let answer;
+  try {
+    answer = await client.send(new sdk.PutSecretValueCommand({
+      SecretId: target.secretName,
+      SecretString: payloadOf(target).text }));
+  } catch (e) {
+    if (e && (e.name === 'ResourceNotFoundException' ||
+              e.__type === 'ResourceNotFoundException')) {
+      throw pushRefusal('AWS Secrets Manager has no secret "' +
+        target.secretName + '" in ' + target.region + ': a push writes a ' +
+        'version of a secret that exists and never creates one.',
+        'STS-SECDEST-0003');
+    }
+    throw pushRefusal('AWS Secrets Manager refused the new version of "' +
+      target.secretName + '": ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  log.debug("Leaving pushAws().");
+  return String((answer && answer.VersionId) || '');
+}
+
+// ---------------------------------------------------------------------------
+// gcp — AddSecretVersion, under `projects/<p>/secrets/<name>`; a short name is
+// completed with the destination's project. NOT_FOUND (5) for a secret that
+// does not exist; it never creates one.
+// ---------------------------------------------------------------------------
+async function pushGcp(target) {
+  log.debug("Entering pushGcp().");
+  const credential = credentialObject(target, ['client_email', 'private_key'],
+    'a Google service account key (its JSON file)');
+  let parent = String(target.secretName);
+  if (parent.indexOf('projects/') !== 0) {
+    if (!target.project) {
+      throw pushRefusal('secret destination "' + target.label + '" names ' +
+        'no project, so the short secret name "' + parent + '" says nothing ' +
+        'about where it is. Set its project, or name the secret as ' +
+        'projects/<project>/secrets/<name>.', 'STS-SECDEST-0002');
+    }
+    parent = 'projects/' + target.project + '/secrets/' + parent;
+  }
+  let sdk;
+  try {
+    sdk = loadSdk('@google-cloud/secret-manager');
+  } catch (e) {
+    throw missingDestinationSdk('@google-cloud/secret-manager', 'gcp', e);
+  }
+  const client = new sdk.SecretManagerServiceClient({
+    credentials: { client_email: String(credential.client_email),
+                   private_key: String(credential.private_key) },
+    projectId: target.project || credential.project_id || undefined });
+  let answer;
+  try {
+    [answer] = await client.addSecretVersion({
+      parent: parent,
+      payload: { data: Buffer.from(payloadOf(target).text, 'utf8') } });
+  } catch (e) {
+    if (e && (e.code === 5 || e.code === 'NOT_FOUND')) {
+      throw pushRefusal('Google Cloud Secret Manager has no secret "' +
+        parent + '": a push adds a version to a secret that exists and ' +
+        'never creates one.', 'STS-SECDEST-0003');
+    }
+    throw pushRefusal('Google Cloud Secret Manager refused the new version ' +
+      'of "' + parent + '": ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  const name = String((answer && answer.name) || '');
+  log.debug("Leaving pushGcp().");
+  return name.slice(name.lastIndexOf('/') + 1);
+}
+
+// ---------------------------------------------------------------------------
+// azure — setSecret, which CREATES a secret that does not exist; so the
+// secret's versions are listed first (metadata, the `list` permission), and a
+// secret with none is refused here rather than created there.
+// ---------------------------------------------------------------------------
+async function pushAzure(target) {
+  log.debug("Entering pushAzure().");
+  const credential = credentialObject(target,
+    ['tenantId', 'clientId', 'clientSecret'],
+    'an Entra ID client secret as JSON {"tenantId", "clientId", ' +
+    '"clientSecret"}');
+  let secretsSdk;
+  let identitySdk;
+  try {
+    secretsSdk = loadSdk('@azure/keyvault-secrets');
+  } catch (e) {
+    throw missingDestinationSdk('@azure/keyvault-secrets', 'azure', e);
+  }
+  try {
+    identitySdk = loadSdk('@azure/identity');
+  } catch (e) {
+    throw missingDestinationSdk('@azure/identity', 'azure', e);
+  }
+  const client = new secretsSdk.SecretClient(target.endpoint,
+    new identitySdk.ClientSecretCredential(String(credential.tenantId),
+                                           String(credential.clientId),
+                                           String(credential.clientSecret)));
+  let exists = false;
+  try {
+    const versions = client.listPropertiesOfSecretVersions(target.secretName);
+    for await (const one of versions) {
+      exists = !!one;
+      break;
+    }
+  } catch (e) {
+    if (!(e && (e.statusCode === 404 || e.code === 'SecretNotFound'))) {
+      throw pushRefusal('Azure Key Vault ' + target.endpoint + ' would not ' +
+        'say whether "' + target.secretName + '" exists: ' + storeSaid(e) +
+        '. The destination\'s credential needs list (metadata) and set on ' +
+        'secrets.', 'STS-SECDEST-0005');
+    }
+    log.debug("Caught in pushAzure(): " + ((e && e.message) || e));
+    exists = false;
+  }
+  if (!exists) {
+    throw pushRefusal('Azure Key Vault ' + target.endpoint + ' has no ' +
+      'secret "' + target.secretName + '": a push adds a version to a ' +
+      'secret that exists and never creates one.', 'STS-SECDEST-0003');
+  }
+  const payload = payloadOf(target);
+  let answer;
+  try {
+    answer = await client.setSecret(target.secretName, payload.text,
+      payload.object ? { contentType: 'application/json' } : {});
+  } catch (e) {
+    throw pushRefusal('Azure Key Vault ' + target.endpoint + ' refused the ' +
+      'new version of "' + target.secretName + '": ' + storeSaid(e),
+      'STS-SECDEST-0005');
+  }
+  log.debug("Leaving pushAzure().");
+  return String((answer && answer.properties && answer.properties.version) ||
+                '');
+}
+
+// A path segment of a Vault request line: refused rather than spliced when it
+// is not one, for certAuthMount()'s reason.
+function vaultSegment(text, what, code) {
+  log.debug("Entering vaultSegment(). " + what);
+  const raw = String(text || '').trim().replace(/^\/+|\/+$/g, '');
+  if (!raw || !/^[A-Za-z0-9._\-\/]+$/.test(raw) ||
+      /(^|\/)\.\.?(\/|$)/.test(raw)) {
+    throw pushRefusal(what + ' "' + raw + '" is not a path this service ' +
+      'will put into a request. Use letters, digits, "-", "_", "." and "/" ' +
+      'only.', code);
+  }
+  log.debug("Leaving vaultSegment().");
+  return raw;
+}
+
+// One request to Vault over verified TLS: the destination's CA beside the
+// public roots, RFC 9525's host check, ten seconds.
+function vaultRequest(target, method, path, body) {
+  log.debug("Entering vaultRequest(). " + method + " " + path);
+  const https = require('https');
+  // LAZILY: `outbound_tls` requires `helpers`, which requires `keystore`,
+  // which requires this file — a require at load would close that cycle.
+  const OutboundTls = require('./outbound_tls');
+  const url = new URL(path, String(target.endpoint).replace(/\/+$/, '') + '/');
+  const text = body === undefined ? '' : JSON.stringify(body);
+  const options = Object.assign({
+    method: method,
+    headers: Object.assign({ 'X-Vault-Token': String(target.credential),
+                             'Accept': 'application/json' },
+      text ? { 'Content-Type': 'application/json',
+               'Content-Length': Buffer.byteLength(text) } : {}),
+    timeout: 10000
+  }, OutboundTls.verifiedOptions(target.caCertificates || null));
+  log.debug("Leaving vaultRequest(). Sent.");
+  return new Promise(function (resolve, reject) {
+    const req = https.request(url, options, function (res) {
+      const chunks = [];
+      res.on('data', function (chunk) { chunks.push(chunk); });
+      res.on('end', function () {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        let json = null;
+        try {
+          json = raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          log.debug("Caught in vaultRequest(): " + ((e && e.message) || e));
+          json = null;
+        }
+        resolve({ status: res.statusCode || 0, json: json });
+      });
+    });
+    req.on('timeout', function () {
+      req.destroy(new Error('no answer within 10 seconds'));
+    });
+    req.on('error', reject);
+    req.end(text || undefined);
+  });
+}
+
+// What a Vault error body said, for a refusal.
+function vaultSaid(answer) {
+  log.debug("Entering vaultSaid().");
+  const errors = answer && answer.json && answer.json.errors;
+  log.debug("Leaving vaultSaid().");
+  return 'HTTP ' + (answer ? answer.status : 0) +
+    (Array.isArray(errors) && errors.length ? ' — ' + errors.join('; ') : '');
+}
+
+// ---------------------------------------------------------------------------
+// vault — HashiCorp Vault or OpenBao, a KV version 2 engine. The secret's
+// METADATA is read first (the `read` capability on <mount>/metadata/<name>,
+// which holds no value): 404 is a secret that does not exist, and its
+// `current_version` is what the write's check-and-set names, so a version
+// written by somebody else since is a conflict (STS-SECDEST-0004) and never
+// overwritten.
+// ---------------------------------------------------------------------------
+async function pushVault(target) {
+  log.debug("Entering pushVault().");
+  const mount = vaultSegment(target.mount || 'secret', 'The KV mount',
+                             'STS-SECDEST-0002');
+  const name = vaultSegment(target.secretName, 'The secret name',
+                            'STS-SECDEST-0014');
+  let meta;
+  try {
+    meta = await vaultRequest(target, 'GET', 'v1/' + mount + '/metadata/' +
+                              name);
+  } catch (e) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' could not be ' +
+      'reached: ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  if (meta.status === 404) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' has no secret "' +
+      mount + '/' + name + '": a push writes a version of a secret that ' +
+      'exists and never creates one.', 'STS-SECDEST-0003');
+  }
+  if (meta.status !== 200 || !meta.json || !meta.json.data) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' would not give ' +
+      'the metadata of "' + mount + '/' + name + '": ' + vaultSaid(meta) +
+      '. The destination\'s token needs read on ' + mount + '/metadata/' +
+      name + ' and create or update on ' + mount + '/data/' + name + '.',
+      'STS-SECDEST-0005');
+  }
+  const current = Number(meta.json.data.current_version || 0);
+  const payload = payloadOf(target);
+  const data = payload.object ||
+    { [String(target.field || 'value')]: payload.text };
+  let written;
+  try {
+    written = await vaultRequest(target, 'POST', 'v1/' + mount + '/data/' +
+                                 name, { options: { cas: current },
+                                         data: data });
+  } catch (e) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' could not be ' +
+      'reached: ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  const said = vaultSaid(written);
+  if (written.status !== 200 && /check-and-set/i.test(said)) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' holds a newer ' +
+      'version of "' + mount + '/' + name + '" than the ' + current +
+      ' this push read, so it was not overwritten: ' + said + '. Nothing ' +
+      'changed; the next push reads the version again.', 'STS-SECDEST-0004');
+  }
+  if (written.status !== 200 || !written.json || !written.json.data) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' refused the new ' +
+      'version of "' + mount + '/' + name + '": ' + said,
+      'STS-SECDEST-0005');
+  }
+  log.debug("Leaving pushVault().");
+  return String(written.json.data.version || '');
+}
+
+// ---------------------------------------------------------------------------
+// file — DEVELOPMENT MODE AND THE TEST SUITE ONLY (rcbj's answer 5 on #221).
+// The secret's name is a file under the destination's directory; it must
+// exist and be a regular file, and it is opened with O_NOFOLLOW and without
+// O_CREAT — so a push cannot create a file, and cannot be led out of the
+// directory by a name or a link. Written in place, truncated, mode untouched.
+// ---------------------------------------------------------------------------
+function pushFile(target) {
+  log.debug("Entering pushFile().");
+  if (!mode.acceptsFileSecretDestinations()) {
+    throw pushRefusal('secret destination "' + target.label + '" is a file, ' +
+      'and a file is a destination in development mode only: a password ' +
+      'written to this container\'s disk is not a secrets manager.',
+      'STS-SECDEST-0006');
+  }
+  const directory = String(target.directory || '');
+  if (!directory || !path.isAbsolute(directory)) {
+    throw pushRefusal('secret destination "' + target.label + '" names no ' +
+      'absolute directory.', 'STS-SECDEST-0002');
+  }
+  const base = path.resolve(directory);
+  const file = path.resolve(base, String(target.secretName || ''));
+  if (file === base || file.indexOf(base + path.sep) !== 0) {
+    throw pushRefusal('the secret name "' + target.secretName + '" leaves ' +
+      'the directory of secret destination "' + target.label + '".',
+      'STS-SECDEST-0007');
+  }
+  let stat = null;
+  try {
+    stat = fs.lstatSync(file);
+  } catch (e) {
+    log.debug("Caught in pushFile(): " + ((e && e.message) || e));
+    stat = null;
+  }
+  if (!stat) {
+    throw pushRefusal('there is no file "' + file + '" for secret ' +
+      'destination "' + target.label + '": a push writes a secret that ' +
+      'exists and never creates one.', 'STS-SECDEST-0003');
+  }
+  if (!stat.isFile()) {
+    throw pushRefusal('"' + file + '" is not a regular file (a link or a ' +
+      'directory), so it is not written.', 'STS-SECDEST-0007');
+  }
+  const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW || 0);
+  const fd = fs.openSync(file, flags);
+  try {
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, payloadOf(target).text);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  log.debug("Leaving pushFile().");
+  return String(fs.statSync(file).mtimeMs);
+}
+
+/**
+ * Pushes a new version of one secret to a secrets manager: the write path a
+ * service account's rotation stands on (#221). Never creates a secret.
+ *
+ * @param target - the destination and the write: `provider`, `label`,
+ *   `secretName`, `payload` ('password' or 'json'), `value` ({ username,
+ *   password, realm, rotatedAt }), `credential`, and the provider's own
+ *   `region`, `project`, `endpoint`, `mount`, `field`, `directory`,
+ *   `caCertificates`
+ * @returns the version the store answered, as text
+ * @throws an Error carrying an STS-SECDEST code; its message never holds
+ *   the value written or the credential
+ */
+async function pushSecret(target) {
+  log.debug("Entering pushSecret(). provider=" +
+            (target && target.provider));
+  const t = target || {};
+  if (DESTINATION_PROVIDERS.indexOf(t.provider) < 0) {
+    throw pushRefusal('"' + t.provider + '" is not a secret destination ' +
+      'provider. It is one of ' + DESTINATION_PROVIDERS.join(', ') + '.',
+      'STS-SECDEST-0002');
+  }
+  if (DESTINATION_PAYLOADS.indexOf(t.payload) < 0) {
+    throw pushRefusal('"' + t.payload + '" is not a payload a destination ' +
+      'writes. It is one of ' + DESTINATION_PAYLOADS.join(', ') + '.',
+      'STS-SECDEST-0002');
+  }
+  if (!String(t.secretName || '').trim() ||
+      String(t.secretName).length > 512 || /[\r\n\0]/.test(t.secretName)) {
+    throw pushRefusal('a secret name is required: one line, at most 512 ' +
+      'characters.', 'STS-SECDEST-0014');
+  }
+  if (!(t.value && t.value.password)) {
+    throw pushRefusal('there is no password to push.', 'STS-SECDEST-0014');
+  }
+  if (t.provider !== 'file' && !t.credential) {
+    throw pushRefusal('secret destination "' + t.label + '" holds no write ' +
+      'credential.', 'STS-SECDEST-0002');
+  }
+  if ((t.provider === 'azure' || t.provider === 'vault') &&
+      !/^https:\/\/[^\s\/?#]+/i.test(String(t.endpoint || ''))) {
+    // An endpoint that is absent is said to be absent, not quoted as "".
+    throw pushRefusal('secret destination "' + t.label + '" ' +
+      (t.endpoint ? 'is reached at "' + t.endpoint + '", which is not an ' +
+        'https URL'
+        : 'names no endpoint, and it must name an https URL') +
+      '. A write credential and a password do not cross plain http.',
+      'STS-SECDEST-0008');
+  }
+  if (t.provider === 'aws' && !t.region) {
+    throw pushRefusal('secret destination "' + t.label + '" names no AWS ' +
+      'region.', 'STS-SECDEST-0002');
+  }
+  let version = '';
+  if (t.provider === 'aws') {
+    version = await pushAws(t);
+  } else if (t.provider === 'gcp') {
+    version = await pushGcp(t);
+  } else if (t.provider === 'azure') {
+    version = await pushAzure(t);
+  } else if (t.provider === 'vault') {
+    version = await pushVault(t);
+  } else {
+    version = pushFile(t);
+  }
+  log.info('secrets: a new version of "' + t.secretName + '" was pushed to ' +
+           'secret destination "' + t.label + '" (' + t.provider + ')' +
+           (version ? ', version ' + version : '') + '.');
+  log.debug("Leaving pushSecret().");
+  return { version: version };
+}
+
 module.exports = {
+  // The secretstore namespace's routes and English (#543 phase 2c), and the
+  // phrase persistence.js says where the database password comes from in.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
+  passwordFromText: passwordFromText,
   PROVIDER_IDS: PROVIDER_IDS,
+  // The write path (#221 P3): a service account's rotated password pushed
+  // to a secrets manager, and the two closed sets a destination names.
+  DESTINATION_PROVIDERS: DESTINATION_PROVIDERS,
+  DESTINATION_PAYLOADS: DESTINATION_PAYLOADS,
+  pushSecret: pushSecret,
   providerFor: providerFor,
   current: current,
   readKek: readKek,

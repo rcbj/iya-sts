@@ -1,0 +1,5 @@
+{
+  "sub": "Votre portefeuille peut détenir une attestation vous concernant, émise par ce service avec OpenID for Verifiable Credential Issuance. Choisissez-en une, et cette page affiche une offre que votre portefeuille peut balayer. Elle est faite pour vous, sur la connexion que vous utilisez maintenant, et elle ne peut pas être utilisée sans le code affiché à côté.",
+  "offerHeading": "Balayez ceci avec votre portefeuille",
+  "doneOffered": "Votre offre est prête. Balayez-la avec votre portefeuille, puis saisissez le code de transaction."
+}

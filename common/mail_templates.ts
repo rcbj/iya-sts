@@ -44,10 +44,34 @@
 // one category a person may decline. A realm may reword a template; it may
 // not move it to another category, because that is what decides whether a
 // person can refuse it.
+//
+// **5. THE BUILT-IN WORDING SHIPS IN EVERY CATALOG LANGUAGE (#539).** rcbj:
+// "ship default templates in the eight languages, picked by the existing
+// languageOrder(). A realm can still override any of them." English stays
+// here in `BUILT_IN`; every other language is DATA in `common/mail_locales/
+// <catalog tag>.json` — the tags of `common/locales/catalogs.json` — each an
+// object `{ templates: { <id>: { subject, text, html } }, layout: {...},
+// categories: { <id>: { reason } } }`. Not under `common/locales/`, whose
+// messages are ICU and would refuse `{{name}}`. A BASE file (`fr`) holds
+// every message; a regional OVERLAY (`fr-CA`) only what is worded
+// differently there ("courriel", "電郵"), the rest found in its base along
+// `i18n.chainFor()`'s chain, so `zh-TW` reads Traditional and `zh-HK` never
+// Simplified. Every translation keeps the four rules above:
+// `tests/mail_template_catalogs.js` holds each to `problem()` and to its
+// English placeholders. They were written by Claude and are unreviewed, as
+// the page catalogs are. MAIL IS NOT AN ERROR PAGE: rcbj's "errors stay
+// English" is about this service's refusals, and a security notice is
+// translated like every other message a person reads.
 // ===========================================================================
 
+import fs = require('fs');
+import path = require('path');
 import Html = require('./html');
 import helpers = require('./helpers');
+// sanitize-html ships no declarations this build reads; `any` as for busboy.
+const sanitizeHtml: any = require('sanitize-html');
+import i18n = require('./i18n');
+import errorCodes = require('./error_codes');
 
 type Json = any;
 
@@ -137,6 +161,23 @@ const BUILT_IN: TemplateSpec[] = [
           'Confirm that this is your address</a> within {{expiresMinutes}} ' +
           'minutes.</p><p>If this is not your account, ignore this ' +
           'message.</p>' },
+  // #644: a name the person can sign in with. Not the recovery address,
+  // and not spent by /portal/verify-email.
+  { id: 'pseudonym-verification', category: 'account',
+    title: 'A sign-in name verification link',
+    values: ['username', 'address', 'expiresMinutes'],
+    links: ['link'],
+    subject: 'Confirm a name you can sign in with for {{service}}',
+    text: 'The account {{username}} asked to sign in as {{address}}.\n\n' +
+          'To confirm that you can sign in with this name, open this ' +
+          'link within {{expiresMinutes}} minutes:\n\n{{link}}\n\nUntil ' +
+          'you open it, that name does not sign you in. If this is not ' +
+          'your account, ignore this message.\n',
+    html: '<p>The account <strong>{{username}}</strong> asked to sign in ' +
+          'as {{address}}.</p><p><a href="{{link}}">Confirm that you can ' +
+          'sign in with this name</a> within {{expiresMinutes}} minutes. ' +
+          'Until you open it, that name does not sign you in.</p><p>If ' +
+          'this is not your account, ignore this message.</p>' },
   { id: 'password-changed', category: 'security',
     title: 'Your password was changed',
     values: ['username', 'when', 'how'],
@@ -208,6 +249,24 @@ const BUILT_IN: TemplateSpec[] = [
           '</strong> was changed at {{when}}, to {{address}}. This message ' +
           'went to the address it had before.</p><p>If you did not expect ' +
           'this, contact whoever manages your account now.</p>' },
+  // #565: a consumer or social provider connected to the account from the
+  // portal (`federation_sp.ts`'s `finishConnect()`). From then on that
+  // provider signs this person in, so it is a security notice: one nobody
+  // can decline.
+  { id: 'account-connected', category: 'security',
+    title: 'An account was connected',
+    values: ['username', 'when', 'provider'],
+    links: [],
+    subject: 'An account was connected to your {{service}} account',
+    text: 'An account at {{provider}} was connected to the account ' +
+          '{{username}} at {{when}}, and can now be used to sign in to it.' +
+          '\n\nIf this was not you, disconnect it under Connected accounts ' +
+          'and contact whoever manages your account now.\n',
+    html: '<p>An account at {{provider}} was connected to the account ' +
+          '<strong>{{username}}</strong> at {{when}}, and can now be used to ' +
+          'sign in to it.</p><p>If this was not you, disconnect it under ' +
+          'Connected accounts and contact whoever manages your account ' +
+          'now.</p>' },
   // -------------------------------------------------------------------------
   // #432 PHASE 6: A GNAP GRANT WAITING FOR ITS RESOURCE OWNER (RFC 9635
   // section 1.4). A NOTIFICATION, the one category a person may decline: the
@@ -234,6 +293,101 @@ const BUILT_IN: TemplateSpec[] = [
           '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
           'request, deny it there or ignore this message: it runs out by ' +
           'itself.</p>' },
+  // -------------------------------------------------------------------------
+  // #1180: AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS. A
+  // NOTIFICATION, for `access-request`'s reason: the request waits on
+  // /portal/access-requests whether or not this is sent, nothing is
+  // approved by mail, and the link is the portal page, never anything the
+  // requester named. The requester is the PEP's trusted name, the subject,
+  // action and resource the denied tuple's — data, never wording.
+  // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // #1194: A UMA 2.0 REQUEST WAITING FOR ITS RESOURCE OWNER. A NOTIFICATION,
+  // for `access-request`'s reason: the request waits on /portal/shared
+  // whether or not this is sent, nothing is approved by mail, and the link
+  // is the portal page. The requester is a username and the client its
+  // registered identifier; the resource is the owner's own name for it.
+  // -------------------------------------------------------------------------
+  { id: 'uma-approval', category: 'notification',
+    title: 'Somebody asks to reach a resource you share',
+    values: ['username', 'requester', 'client', 'resource', 'scopes',
+             'expiresMinutes'],
+    links: ['link'],
+    subject: '{{service}}: somebody asks to reach a resource you share',
+    text: '{{requester}} asks, through {{client}}, to reach your resource ' +
+          '{{resource}} ({{scopes}}). You asked to be asked each time.\n\n' +
+          'Nothing is allowed until you approve it. To approve or refuse ' +
+          'it, sign in and open this page within {{expiresMinutes}} ' +
+          'minutes:\n\n{{link}}\n\nIf you do not recognise the request, ' +
+          'refuse it there or ignore this message: it runs out by itself.\n',
+    html: '<p><strong>{{requester}}</strong> asks, through ' +
+          '<strong>{{client}}</strong>, to reach your resource ' +
+          '<strong>{{resource}}</strong> ({{scopes}}). You asked to be asked ' +
+          'each time.</p><p>Nothing is allowed until you approve it. ' +
+          '<a href="{{link}}">Approve or refuse it</a> within ' +
+          '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
+          'request, refuse it there or ignore this message: it runs out by ' +
+          'itself.</p>' },
+  { id: 'authzen-access-request', category: 'notification',
+    title: 'An access request waits for your approval',
+    values: ['username', 'requester', 'subject', 'action', 'resource',
+             'application', 'expiresMinutes'],
+    links: ['link'],
+    subject: '{{service}}: an access request waits for your approval',
+    text: 'An access request names you, {{username}}, as one of its ' +
+          'approvers: {{subject}} asks to {{action}} {{resource}} in the ' +
+          'application {{application}}, through {{requester}}.\n\nNothing ' +
+          'is allowed until an approver approves it. To approve or deny it, ' +
+          'sign in and open this page within {{expiresMinutes}} ' +
+          'minutes:\n\n{{link}}\n\nIf you do not recognise the request, ' +
+          'deny it there or ignore this message: it runs out by itself.\n',
+    html: '<p>An access request names you, <strong>{{username}}</strong>, ' +
+          'as one of its approvers: <strong>{{subject}}</strong> asks to ' +
+          '<strong>{{action}}</strong> <strong>{{resource}}</strong> in ' +
+          'the application <strong>{{application}}</strong>, through ' +
+          '{{requester}}.</p><p>Nothing is allowed until an approver ' +
+          'approves it. <a href="{{link}}">Approve or deny it</a> within ' +
+          '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
+          'request, deny it there or ignore this message: it runs out by ' +
+          'itself.</p>' },
+  // AND AN EMERGENCY ACCESS ALREADY GRANTED (#1180), for the review after
+  // use the profile asks for. SECURITY, so nobody can decline it: an
+  // approver must hear that access was given in their name's place.
+  { id: 'authzen-emergency-access', category: 'security',
+    title: 'Emergency access was granted and needs your review',
+    values: ['username', 'requester', 'subject', 'action', 'resource',
+             'application', 'justification'],
+    links: ['link'],
+    subject: '{{service}}: emergency access was granted, for your review',
+    text: 'Emergency access was granted at once, without an approver, to a ' +
+          'request that names you, {{username}}, as one of its approvers: ' +
+          '{{subject}} may {{action}} {{resource}} in the application ' +
+          '{{application}}, through {{requester}}, for a short time.\n\n' +
+          'The justification given: {{justification}}\n\nThe policy ' +
+          'allows emergency access to this. Review it, and revoke it if it ' +
+          'was not warranted:\n\n{{link}}\n',
+    html: '<p>Emergency access was granted at once, without an approver, ' +
+          'to a request that names you, <strong>{{username}}</strong>, as ' +
+          'one of its approvers: <strong>{{subject}}</strong> may ' +
+          '<strong>{{action}}</strong> <strong>{{resource}}</strong> in ' +
+          'the application <strong>{{application}}</strong>, through ' +
+          '{{requester}}, for a short time.</p><p>The justification given: ' +
+          '{{justification}}</p><p>The policy allows emergency access to ' +
+          'this. <a href="{{link}}">Review it</a>, and revoke it if it was ' +
+          'not warranted.</p>' },
+  { id: 'pki-pin-status', category: 'security',
+    title: 'A certificate this realm relies on changed state',
+    values: ['changes'],
+    links: [],
+    subject: '{{service}}: a certificate this realm relies on changed state',
+    text: 'The daily audit of the certificates this realm relies on found ' +
+          'these changes:\n\n{{changes}}\n\nThe PKI trust page of the admin ' +
+          'console shows every one. You receive this because you hold Admin ' +
+          'Write in this realm.\n',
+    html: '<p>The daily audit of the certificates this realm relies on found ' +
+          'these changes:</p><p>{{changes}}</p><p>The PKI trust page of the ' +
+          'admin console shows every one. You receive this because you hold ' +
+          'Admin Write in this realm.</p>' },
   { id: 'administrator-alert', category: 'security',
     title: 'An act of the service, for administrators',
     values: ['username', 'when', 'act', 'why'],
@@ -286,6 +440,44 @@ const BUILT_IN: TemplateSpec[] = [
           '{{minutes}} minutes.</p><p>It works once, and only in that ' +
           'browser.</p><p>If you are not signing in, ignore this message: ' +
           'the link cannot sign anybody else in.</p>' },
+  // #956: a finished report, when the definition asked to be told. A
+  // notification, so a person may decline it. The link is this service's
+  // own reports page, never an address the query named. Failure to send
+  // does not fail the job (STS-REPORT-0027).
+  { id: 'report-ready', category: 'notification',
+    title: 'A report is ready',
+    values: ['username', 'definition', 'status'],
+    links: ['report'],
+    subject: 'Your {{service}} report is {{status}}',
+    text: 'The report {{definition}} for {{username}} is {{status}}.\n\n' +
+          'Open it:\n\n{{report}}\n',
+    html: '<p>The report <strong>{{definition}}</strong> for ' +
+          '{{username}} is {{status}}.</p><p><a href="{{report}}">Open ' +
+          'it</a>.</p>' },
+  // #1111: a started post-login activity's reminder. A NOTIFICATION, so a
+  // person may decline it: it asks them to sign in, and the activity itself
+  // is asked at the sign-in whatever they chose here. The one link is the
+  // portal's path on this service's own origin; it signs nobody in and
+  // carries nothing about the person.
+  { id: 'post-login-reminder', category: 'notification',
+    title: 'A reminder to register a post-quantum passkey',
+    values: ['username'],
+    links: ['signin'],
+    subject: 'Register a post-quantum passkey for {{service}}',
+    text: '{{service}} asks {{username}} to register a new passkey that ' +
+          'uses post-quantum cryptography (ML-DSA).\n\nSign in here, and ' +
+          'you will be asked to register it right after you sign in:\n\n' +
+          '{{signin}}\n\nThe link only opens the sign-in page. It does not ' +
+          'sign you in and carries nothing about your account. If you did ' +
+          'not expect this message, ignore it, or ask whoever manages your ' +
+          'account.\n',
+    html: '<p>{{service}} asks <strong>{{username}}</strong> to register a ' +
+          'new passkey that uses post-quantum cryptography (ML-DSA).</p>' +
+          '<p><a href="{{signin}}">Sign in</a>, and you will be asked to ' +
+          'register it right after you sign in.</p><p>The link only opens ' +
+          'the sign-in page. It does not sign you in and carries nothing ' +
+          'about your account. If you did not expect this message, ignore ' +
+          'it, or ask whoever manages your account.</p>' },
   { id: 'reset-refused-attempt', category: 'security',
     title: 'A password reset was refused',
     values: ['username', 'when'],
@@ -334,19 +526,39 @@ const BUILT_IN: TemplateSpec[] = [
           '<strong>{{username}}</strong>.</p>' }
 ];
 
-// The HTML a template may not contain (header point 3). Case-insensitive.
-const FORBIDDEN_HTML: Array<[RegExp, string]> = [
-  [/<\s*(script|img|image|iframe|frame|object|embed|link|style|form|input|button|video|audio|source|svg|math|meta|base)\b/i,
-   'an element that loads or runs something'],
-  [/\s(src|srcset|background|poster|formaction|action|data|xlink:href|style)\s*=/i,
-   'an attribute that loads something (src, srcset, background, style…)'],
-  [/\son[a-z]+\s*=/i, 'an event handler attribute'],
-  [/url\s*\(/i, 'a CSS url()'],
-  [/(javascript|data|vbscript)\s*:/i, 'a javascript:, data: or vbscript: URI']
-];
+// WHAT A TEMPLATE'S HTML MAY CONTAIN (header point 3; #1477, ASVS 5.0.0 1.3.1):
+// an allow-list held by a well-known sanitizer, in place of a list of things to
+// refuse, which can only ever refuse what somebody thought of. A template it
+// would change is refused rather than quietly altered: the administrator should
+// see what will be sent. `problem()` compares against a run that keeps
+// everything, so that only the sanitizer's removals count and not its
+// re-serialisation of the markup.
+const MAIL_HTML_ALLOWED = {
+  allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2',
+                'h3', 'h4', 'hr', 'i', 'li', 'ol', 'p', 'pre', 'small', 'span',
+                'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u',
+                'ul'],
+  allowedAttributes: { a: ['href', 'title'], '*': ['dir', 'lang'] },
+  allowedSchemes: [],
+  allowProtocolRelative: false
+};
+const MAIL_HTML_KEEP_ALL = {
+  allowedTags: false,
+  allowedAttributes: false,
+  allowVulnerableTags: true,
+  allowedSchemesAppliedToAttributes: []
+};
 
 // #64: the id of the layout every message is wrapped in.
 const LAYOUT_ID = 'layout';
+
+// #539: the built-in translations, one file per catalog tag, read ONCE and
+// lazily — the first message that asks — and held for the process. A file
+// that cannot be read or parsed is logged and left out, never thrown: its
+// messages go out in the next language of the chain, English at the last,
+// which is better than a person getting no reset link at all.
+const LOCALES_DIR = path.join(__dirname, 'mail_locales');
+let localeFiles: { [tag: string]: Json } | null = null;
 
 /**
  * The mail channel's messages: the built-in template of every message this
@@ -404,6 +616,168 @@ class MailTemplates {
     return CATEGORIES.filter(function (one) {
       return one.id === id;
     })[0] || null;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BUILT-IN TRANSLATIONS (#539, header point 5).
+  // -------------------------------------------------------------------------
+  /**
+   * Reads `common/mail_locales/*.json` once, keyed by catalog tag. An
+   * unreadable file is logged (`STS-I18N-0001`) and left out.
+   *
+   * @returns every translation file, by catalog tag
+   */
+  static localeFiles(): { [tag: string]: Json } {
+    helpers.log.debug("Entering MailTemplates.localeFiles().");
+    if (localeFiles) {
+      helpers.log.debug("Leaving MailTemplates.localeFiles(). Cached.");
+      return localeFiles;
+    }
+    const out: { [tag: string]: Json } = {};
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(LOCALES_DIR).filter(function (name) {
+        return /\.json$/.test(name);
+      });
+    } catch (e) {
+      helpers.log.debug("Caught in MailTemplates.localeFiles(): " +
+                        ((e && e.message) || e));
+      helpers.log.error(errorCodes.tag('STS-I18N-0001') + 'mail: ' +
+                        LOCALES_DIR + ' could not be listed (' +
+                        ((e && e.message) || e) + '); every message goes ' +
+                        'out in English.');
+    }
+    names.forEach(function (name) {
+      const tag = name.replace(/\.json$/, '');
+      try {
+        const body = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, name),
+                                                'utf8'));
+        if (!body || typeof body !== 'object') {
+          throw new Error('not an object');
+        }
+        out[tag] = body;
+      } catch (e) {
+        helpers.log.debug("Caught in MailTemplates.localeFiles(): " +
+                          ((e && e.message) || e));
+        helpers.log.error(errorCodes.tag('STS-I18N-0001') + 'mail: ' +
+                          'mail_locales/' + name + ' could not be read (' +
+                          ((e && e.message) || e) + '); its messages go ' +
+                          'out in the next language of the chain.');
+      }
+    });
+    localeFiles = out;
+    helpers.log.debug("Leaving MailTemplates.localeFiles(). " +
+                      Object.keys(out).join(','));
+    return out;
+  }
+
+  // The catalog tags to read for a language tag, most specific first, and
+  // never English (which is `BUILT_IN`): `zh-tw` is `zh-Hant`, `zh-hk` is
+  // `zh-Hant-HK` then `zh-Hant`, `de` is nothing.
+  /**
+   * Lists the translation files to read for a language tag, overlay first,
+   * English left out; empty when no catalog answers the tag.
+   *
+   * @param language - a language tag, in any case
+   * @returns catalog tags, most specific first
+   */
+  static chainFor(language: string): string[] {
+    helpers.log.debug("Entering MailTemplates.chainFor(). " + language);
+    const tag = i18n.canonical(language);
+    if (!tag) {
+      helpers.log.debug("Leaving MailTemplates.chainFor(). Not a tag.");
+      return [];
+    }
+    const found = i18n.chainFor(tag);
+    const out = found.matched ? found.chain.filter(function (one: string) {
+      return one !== i18n.SOURCE;
+    }) : [];
+    helpers.log.debug("Leaving MailTemplates.chainFor(). " + out.join(','));
+    return out;
+  }
+
+  /**
+   * Finds the built-in translation of a message (or of the layout) for a
+   * language: the first file along the language's chain that has it.
+   *
+   * @param id - the message's id, or `layout`
+   * @param language - a language tag, in any case
+   * @returns `{ parts, lang }` with `lang` the catalog tag that answered, or
+   * null for English, a language no catalog answers, or an unknown id
+   */
+  static builtInFor(id: string, language: string): Json {
+    helpers.log.debug("Entering MailTemplates.builtInFor(). " + id + " " +
+                      language);
+    if (!MailTemplates.builtIn(id)) {
+      helpers.log.debug("Leaving MailTemplates.builtInFor(). Unknown.");
+      return null;
+    }
+    const files = MailTemplates.localeFiles();
+    const chain = MailTemplates.chainFor(language);
+    for (let i = 0; i < chain.length; i++) {
+      const file = files[chain[i]];
+      const parts = file && (id === LAYOUT_ID ? file.layout
+        : file.templates && file.templates[id]);
+      if (parts && typeof parts === 'object') {
+        helpers.log.debug("Leaving MailTemplates.builtInFor(). " + chain[i]);
+        return { parts: { subject: String(parts.subject || ''),
+                          text: String(parts.text || ''),
+                          html: String(parts.html || '') },
+                 lang: chain[i] };
+      }
+    }
+    helpers.log.debug("Leaving MailTemplates.builtInFor(). None.");
+    return null;
+  }
+
+  /**
+   * Lists the catalog tags a message has a built-in translation in (an
+   * overlay counts when its base has the message).
+   *
+   * @param id - the message's id, or `layout`
+   * @returns catalog tags, sorted
+   */
+  static builtInLanguages(id: string): string[] {
+    helpers.log.debug("Entering MailTemplates.builtInLanguages(). " + id);
+    const out = Object.keys(MailTemplates.localeFiles()).filter(
+      function (tag) {
+        const found = MailTemplates.builtInFor(id, tag);
+        return !!found;
+      }).sort();
+    helpers.log.debug("Leaving MailTemplates.builtInLanguages().");
+    return out;
+  }
+
+  // The layout's `{{reason}}` for a category in a language: the
+  // translation along the chain, else the English of `CATEGORIES`.
+  /**
+   * Says why a person received a message of a category, in a language: the
+   * words the layout finishes "because it is ..." with.
+   *
+   * @param id - the category's id
+   * @param language - the language the layout went out in
+   * @returns the reason
+   */
+  static reasonFor(id: string, language: string): string {
+    helpers.log.debug("Entering MailTemplates.reasonFor(). " + id + " " +
+                      language);
+    const cat = MailTemplates.category(id);
+    if (!cat) {
+      helpers.log.debug("Leaving MailTemplates.reasonFor(). Unknown.");
+      return 'a message from this service';
+    }
+    const files = MailTemplates.localeFiles();
+    const chain = MailTemplates.chainFor(language);
+    for (let i = 0; i < chain.length; i++) {
+      const file = files[chain[i]];
+      const one = file && file.categories && file.categories[id];
+      if (one && typeof one.reason === 'string' && one.reason) {
+        helpers.log.debug("Leaving MailTemplates.reasonFor(). " + chain[i]);
+        return one.reason;
+      }
+    }
+    helpers.log.debug("Leaving MailTemplates.reasonFor(). English.");
+    return cat.reason;
   }
 
   // Every `{{name}}` in a piece of text.
@@ -517,13 +891,12 @@ class MailTemplates {
              spec.links.map(function (l) { return '{{' + l + '}}'; })
                .join(', ') + '), because a reader may see no HTML at all';
     }
-    for (let i = 0; i < FORBIDDEN_HTML.length; i++) {
-      if (FORBIDDEN_HTML[i][0].test(html)) {
-        helpers.log.debug("Leaving MailTemplates.problem(). Forbidden.");
-        return 'the HTML part may not carry ' + FORBIDDEN_HTML[i][1] +
-               ': a message this service sends loads nothing and runs ' +
-               'nothing when it is opened';
-      }
+    if (/<!/.test(html) || sanitizeHtml(html, MAIL_HTML_ALLOWED) !==
+        sanitizeHtml(html, MAIL_HTML_KEEP_ALL)) {
+      helpers.log.debug("Leaving MailTemplates.problem(). Not allowed.");
+      return 'the HTML part may carry only text formatting, tables and links: ' +
+             'a message this service sends loads nothing and runs nothing ' +
+             'when it is opened';
     }
     const hrefs = html.match(/\shref\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi) || [];
     const badHref = hrefs.filter(function (one) {

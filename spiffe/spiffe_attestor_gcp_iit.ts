@@ -212,6 +212,9 @@ class GcpIitAttestor {
     const sdk = load(COMPUTE_PACKAGE);
     const file = String(config.value('spiffe.gcpIitServiceAccountFile') ||
                         '');
+    if (file) {
+      require('../common/outbound_tls').assertNamedFile(file);
+    }
     const client = new sdk.InstancesClient(file ? { keyFilename: file } : {});
     const answer = await client.get({ project: identity.project_id,
                                       zone: identity.zone,

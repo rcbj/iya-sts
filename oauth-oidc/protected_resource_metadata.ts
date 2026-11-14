@@ -857,7 +857,9 @@ class ProtectedResourceMetadata {
         request.on('error', function (e) {
           log.debug("Caught in ProtectedResourceMetadata.fetchDocument(): " +
                     ((e && e.message) || e));
-          done(self.refusal('STS-REG-0086', 'The request failed: ' + e.message +
+          // The cause's own full stop is dropped before ours is added.
+          done(self.refusal('STS-REG-0086', 'The request failed: ' +
+                       String((e && e.message) || e).replace(/\.+$/, '') +
                        '.'));
         });
       });
@@ -881,7 +883,8 @@ class ProtectedResourceMetadata {
   authorizationServersOf(req: Req) {
     const { helpers, jwtAccessToken, authorizationServers, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.authorizationServersOf().");
-    const base = helpers.baseUrlOf(req);
+    // The authorization server's base, wherever the resource is (#472).
+    const base = helpers.baseUrlOf(req, 'oauth-oidc');
     const rows = [{ id: authorizationServers.DEFAULT_ID, label: 'default',
                     issuer: jwtAccessToken.issuerFor(base) }];
     authorizationServers.list().forEach(function (profile) {

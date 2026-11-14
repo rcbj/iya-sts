@@ -15,7 +15,7 @@
 // process rather than a request — that it implies RFC 9700 mode, and that it
 // moves `global.https` for the process and not for a realm.
 //
-// What is asked over HTTP instead is `tests/vendored/sts_oauth21.js`: the
+// What is asked over HTTP instead is `tests/protocol/sts_oauth21.js`: the
 // endpoints answering these decisions, which nothing here can show.
 //
 // Each section names the mutant it is there to catch.
@@ -302,7 +302,9 @@ function tokenClient(t) {
   applications.seen({ identifier: sighted, kind: 'oauth2-client',
                       protocol: 'OAuth 2.0 / OIDC', counts: false,
                       fields: { oauthClientId: sighted, oauthScope: ['openid'],
-                                oauthGrantType: 'authorization_code',
+                                // What a sighting records since #289; the
+                                // declared oauthGrantType is not its to set.
+                                oauthGrantTypeObserved: 'authorization_code',
                                 appRedirectUriObserved:
                                     'https://sighted.example/cb' } });
   const sightedConfig = applications.clientConfigOf(sighted);
@@ -403,10 +405,13 @@ function redirects(t) {
     const withheld = bcp.checkRedirectUri({ redirectUri: LISTED,
       client: { known: true, redirect_uris: [],
                 unconfirmed_redirect_uris: [LISTED] }, clientId: 'x' });
+    // #1331: told so, and the observed addresses are never named.
     t.check(!withheld.ok && withheld.errorCode === 'STS-OAUTH-0272' &&
-            withheld.description.indexOf(LISTED) >= 0,
-            'and one holding only unconfirmed addresses is told so, by name',
-            withheld);
+            /only redirect URIs this service observed/
+              .test(withheld.description) &&
+            withheld.description.indexOf(LISTED) < 0,
+            'and one holding only unconfirmed addresses is told so, without ' +
+            'naming them (#1331)', withheld);
   });
   inRealm(V21, function () {
     const one = oauth21.defaultRedirectUri({ redirect_uris: [LISTED] }, 'x');

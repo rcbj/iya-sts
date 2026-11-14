@@ -24,20 +24,44 @@
 //
 // This file holds the first two. Neither can be seen without a database or a
 // driver double: both are about the ORDER and the SHAPE of SQL statements, and
-// `tests/postgres_schema.js` reads only the DDL. `pg` is required lazily inside
-// the driver's `create()`, so a module placed in the require cache for the
-// length of one `create()` call is the whole of the double.
+// `tests/postgres_schema.js` reads only the DDL. The door to the store
+// (`persistence/knex_store.js`, #326) is required lazily inside the driver's
+// `create()`, so a module placed in the require cache for the length of one
+// `create()` call is the whole of the double (`tests/tools/store_double.js`).
+//
+// SINCE 2026-10-22 (#820) A FLUSH IS ONE STATEMENT, MINTED_FLUSH, so the two
+// claims are read off it: its `lock_*` arrays in (handle, realm, key) order
+// with upserts and deletes interleaved, the statement locking every row
+// (`lk`) before anything reads `ok` — and every write reads `ok`, which reads
+// the lock's count — and the change log as ARRAYS, so a flush of any size is
+// the layout's fixed number of bind parameters. The statement is played by
+// `tests/tools/minted_flush_double.js`, so the driver is answered as by a
+// database; `tests/minted_flush_one_statement.js` counts the round trips.
 // ===========================================================================
 
+const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 const path = require('path');
+
+const log = require('bunyan').createLogger({ name: 'postgres_minted_writes',
+  level: process.env.LOG_LEVEL || 'info' });
 
 const postgres = require('../persistence/persistence_postgres');
 
-// A `pg` that connects to nothing and remembers every statement it was handed.
+// A `pg` that connects to nothing, remembers every statement it was handed,
+// and plays the minted flush against Maps.
 function fakePg(statements) {
+  log.debug("Entering fakePg().");
+  const db = flushDouble.state();
   function FakeClient() {}
   FakeClient.prototype.query = function (sql, params) {
-    statements.push({ sql: String(sql), params: params || [] });
+    const flush = flushDouble.isFlush(sql);
+    statements.push({ sql: String(flush ? sql.text : sql),
+                      params: flush ? sql.values : (params || []),
+                      flush: flush });
+    if (flush) {
+      return Promise.resolve(flushDouble.play(db, sql));
+    }
     return Promise.resolve({ rows: [], rowCount: 0 });
   };
   FakeClient.prototype.release = function () {};
@@ -53,41 +77,31 @@ function fakePg(statements) {
   };
   FakePool.prototype.query = FakeClient.prototype.query;
   FakePool.prototype.end = function () { return Promise.resolve(); };
+  log.debug("Leaving fakePg().");
   return { Pool: FakePool, Client: FakeClient };
 }
 
-// Build a driver with the fake in place of `pg`, and take the fake out again
-// before anything else in this process can require the real one.
+// Build a driver with the fake in the place of its door to the store
+// (`knex_store.js`, #326), and take the fake out again before anything else
+// in this process can require the real one.
 function driverWith(statements) {
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = {
-    id: pgPath, filename: pgPath, loaded: true,
-    exports: fakePg(statements)
-  };
+  log.debug("Entering driverWith().");
+  const restore = storeDouble.install(fakePg(statements));
   try {
+    log.debug("Leaving driverWith().");
     return postgres.create({
       url: 'postgres://sts_app@localhost:5432/sts',
       log: { debug: function () {}, info: function () {},
              warn: function () {}, error: function () {} }
     });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
 }
 
-function mintedStatements(statements) {
-  return statements.filter(function (one) {
-    return /sts_minted/.test(one.sql) && !/^SELECT/i.test(one.sql.trim());
-  });
-}
-
 async function run(t) {
-  t.log.info('=== A. one lock order for every transaction ===');
+  log.debug("Entering run().");
+  t.log.info('=== A. one lock order for every flush ===');
   const statements = [];
   const driver = driverWith(statements);
 
@@ -105,28 +119,63 @@ async function run(t) {
   ];
   await driver.saveMinted(upserts, deletes);
 
-  const order = mintedStatements(statements).map(function (one) {
-    return one.params.slice(0, 3).join('/');
+  const flushes = statements.filter(function (one) { return one.flush; });
+  t.equal(flushes.length, 1, 'the flush is ONE statement (#820)');
+  const p = flushes.length ? flushDouble.named(null, flushes[0].params) : {};
+  const zip = function (prefix) {
+    return (p[prefix + '_h'] || []).map(function (h, i) {
+      return [h, p[prefix + '_r'][i], p[prefix + '_k'][i]].join('/');
+    });
+  };
+  const sorted = 'admin_stats.calls/default/k authn.sessions/acme/sid-a ' +
+    'authn.sessions/default/sid-a authn.sessions/default/sid-b ' +
+    'oauth2.authzCodes/default/zz';
+  t.equal(zip('lock').join(' '), sorted,
+          'every row is locked in (handle, realm, key) order, upserts and ' +
+          'deletes interleaved — the order two concurrent flushes must agree ' +
+          'on for a deadlock between them to be impossible rather than rare');
+  const text = postgres.MINTED_FLUSH;
+  const at = function (s) { return text.indexOf(s); };
+  t.check(/lk AS MATERIALIZED \(SELECT handle, realm, key, body FROM sts_minted .* ORDER BY handle, realm, key FOR UPDATE\)/
+            .test(text),
+          'the statement locks those rows FOR UPDATE in that order (`lk`)');
+  t.check(at('lk AS MATERIALIZED') >= 0 &&
+          /lkn AS MATERIALIZED \(SELECT count\(\*\) AS n FROM lk\)/
+            .test(text) &&
+          /ok AS MATERIALIZED \(SELECT f\.ok AND c\.bad = 0 AND l\.n >= 0 AS go FROM fence f CROSS JOIN chk c CROSS JOIN lkn l\)/
+            .test(text),
+          'and `ok` reads the lock to its end (`lkn`) before it answers');
+  const writers = ['ins AS (INSERT INTO sts_minted',
+                   'del AS (DELETE FROM sts_minted',
+                   'ses AS (INSERT INTO sts_sessions',
+                   'sdel AS (DELETE FROM sts_sessions',
+                   'ixd AS (DELETE FROM sts_minted_index',
+                   'ixi AS (INSERT INTO sts_minted_index',
+                   'chg AS (INSERT INTO sts_changes'];
+  const gated = writers.every(function (w) {
+    const start = at(w);
+    const next = text.indexOf(' AS (', start + w.length);
+    const body = text.slice(start, next < 0 ? text.length : next);
+    return start > at('lk AS MATERIALIZED') &&
+      body.indexOf('(SELECT go FROM ok)') > 0;
   });
-  t.equal(order.join(' '),
-          'admin_stats.calls/default/k authn.sessions/acme/sid-a ' +
-          'authn.sessions/default/sid-a authn.sessions/default/sid-b ' +
-          'oauth2.authzCodes/default/zz',
-          'every row lock is taken in (handle, realm, key) order, upserts ' +
-          'and deletes interleaved — the order two concurrent flushes must ' +
-          'agree on for a deadlock between them to be impossible rather than ' +
-          'rare');
-  const kinds = mintedStatements(statements).map(function (one) {
-    return /^\s*DELETE/i.test(one.sql) ? 'D' : 'U';
+  t.check(gated, 'and NOTHING IS WRITTEN BEFORE THE LOCKS: every write ' +
+          'reads `ok`');
+  t.check(/ORDER BY u\.h, u\.r, u\.k ON CONFLICT/.test(text),
+          'and the upserts — a new key is locked by its insert — go in the ' +
+          'same order, in one INSERT');
+  const deleted = new Set(zip('del'));
+  const kinds = sorted.split(' ').map(function (id) {
+    return deleted.has(id) ? 'D' : 'U';
   }).join('');
   t.equal(kinds, 'DUDUU',
-          'and each row still gets the statement it was handed: a delete ' +
+          'and each row still gets the write it was handed: a delete ' +
           'stays a delete when it sorts between two upserts');
-  t.check(/^BEGIN$/.test((statements[0] || {}).sql) &&
-          statements.some(function (one) { return one.sql === 'COMMIT'; }),
-          'inside one transaction, as before');
+  t.check(!statements.some(function (one) {
+    return /^(BEGIN|COMMIT)$/.test(one.sql);
+  }), 'with no BEGIN and no COMMIT: one statement is its own transaction');
 
-  t.log.info('=== B. the change log is chunked under the bind limit ===');
+  t.log.info('=== B. the change log is arrays, under the bind limit ===');
   statements.length = 0;
   const many = [];
   for (let i = 0; i < 17000; i++) {
@@ -134,33 +183,31 @@ async function run(t) {
                 key: 'k' + String(i).padStart(5, '0'), body: 'x', own: true });
   }
   await driver.saveMinted(many, []);
-  const changeInserts = statements.filter(function (one) {
-    return /INSERT INTO sts_changes/.test(one.sql);
-  });
-  const rowsLogged = changeInserts.reduce(function (sum, one) {
-    return sum + one.params.length / 4;
-  }, 0);
-  t.equal(rowsLogged, 17000,
+  const big = statements.filter(function (one) { return one.flush; });
+  const q = big.length ? flushDouble.named(null, big[0].params) : {};
+  t.equal((q.chg_kind || []).length, 17000,
           'every minted row still gets its change-log row');
-  t.check(changeInserts.length > 1 && changeInserts.every(function (one) {
-            return one.params.length <= 65535;
-          }),
-          'AND NO STATEMENT CARRIES MORE THAN 65,535 PARAMETERS. At four a ' +
-          'row, 17,000 rows in one INSERT is 68,000 — which the protocol\'s ' +
-          '16-bit count wraps, and PostgreSQL refuses as "bind message has N ' +
-          'parameter formats but 0 parameters"',
-          changeInserts.map(function (one) {
+  t.check(big.length === 1 && big[0].params.length ===
+            postgres.MINTED_FLUSH_LAYOUT.length &&
+          big[0].params.length <= 65535,
+          'AND THE STATEMENT CARRIES THE LAYOUT\'S FIXED NUMBER OF ' +
+          'PARAMETERS, whatever the rows. 17,000 rows at four a row was ' +
+          '68,000 — which the protocol\'s 16-bit count wraps, and ' +
+          'PostgreSQL refuses as "bind message has N parameter formats but 0 ' +
+          'parameters"',
+          big.map(function (one) {
             return one.params.length;
           }).join(', '));
 
   // The path is reported so a failure names the file it is about.
   t.log.info('driver: ' + path.relative(process.cwd(),
     require.resolve('../persistence/persistence_postgres')));
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'postgres_minted_writes',
-  describe: 'the postgres driver takes minted row locks in one order and ' +
-            'chunks the change log under the bind-parameter limit',
+  describe: 'the postgres driver takes minted row locks in one order before ' +
+            'any write and sends the change log as arrays',
   run: run
 };

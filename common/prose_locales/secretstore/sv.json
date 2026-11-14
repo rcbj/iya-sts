@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "En fil monterad i containern"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault eller OpenBao Transit (nyckeln lämnar den aldrig)"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS (nyckeln lämnar den aldrig)"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS (nyckeln lämnar den aldrig)"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "Nyckel i Azure Key Vault eller Managed HSM (nyckeln lämnar den aldrig)"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "Var den här tjänsten läser sina ursprungliga hemligheter från — nyckelkrypteringsnyckeln som allt den förseglar är förseglat under, och databaslösenordet — om den faktiskt läste dem, och vad lagret i andra änden gör."
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "inte konfigurerad"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "(ingen sökväg konfigurerad)"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "(inget hemlighets-id konfigurerat)"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "(inget resursnamn konfigurerat)"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "(inget hemlighetsnamn konfigurerat)"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "(ingen valv-URL konfigurerad)"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "(ingen nyckel konfigurerad)"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "(inget nyckelnamn konfigurerat)"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "(SDK:ns standardvärde)"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "(SDK:ns standardslutpunkt)"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "varje datakrypteringsnyckel, i KMS:en"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "varje datakrypteringsnyckel, i valvet"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "ett klientcertifikat ({{cert}})"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "ett klientcertifikat"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "en token"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "en konfigurerad token"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "SDK:ns VAULT_TOKEN"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "(ingen angiven)"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "Filen är inte ett JSON-objekt, så vad den än innehåller tas i sin helhet. Det är vad en rå nyckelfil är."
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "Endast medlems-NAMN. Vilken av dem en hemlighet tar avgörs av dess egen fältinställning."
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "Inget fält är konfigurerat, så hela filen är den här hemligheten."
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "Den här hemligheten delar fil med nyckelkrypteringsnyckeln och den filen är inte ett JSON-objekt — så det den innehåller är NYCKELN, och läsning av den här hemligheten AVVISAS i stället för att lämna ut den nyckeln till en databas."
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "Filen är inte JSON, så hela dess innehåll är den här hemligheten och fältet används inte."
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "Inget klientcertifikat är konfigurerat, så ingen inloggning gjordes: token är vad {{token}} eller SDK:ns VAULT_TOKEN än tillhandahåller."
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "DEN HÄR IDENTITETEN KAN SKRIVA. Den skulle kunna ersätta nyckelkrypteringsnyckeln, och allt som förseglats under den gamla skulle bli oläsbart."
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "Skrivskyddad på varje sökväg den tillfrågades om, vilket är vad policyn ska säga."
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "Den här identiteten får inte nå någon av de sökvägar den är konfigurerad att läsa. En läsning vid start skulle avvisas."
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "anslutningssträngen"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "En fil monterad i containern ({{from}})"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "En fil monterad i containern, delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "En fil monterad i containern ({{from}}), delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager, delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager ({{from}}), delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager, delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager ({{from}}), delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault, delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault ({{from}}), delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault, delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault ({{from}}), delad med nyckelkrypteringsnyckeln"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "Själva filen: om den finns där, vem som kan läsa den och när den senast ändrades."
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "Om filen innehåller ett JSON-objekt, och vilka medlemmar som finns i det — NAMNEN och aldrig värdena."
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "Om den medlem som den här hemligheten är konfigurerad att ta faktiskt finns i filen."
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "Certifikatet som den här tjänsten uppvisar för lagret, och när det går ut."
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "Ankaret som den här tjänsten verifierar lagrets egen lyssnare mot."
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "Om lagret är initierat, om det är förseglat, vilken sorts försegling det har och vilket bygge det är."
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "Lagrets egen hälsosammanfattning: dess klocka, dess kluster och om den här noden är den aktiva."
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "Hög tillgänglighet: om den här noden är ledaren, och var ledaren finns."
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "Inloggning på samma sätt som en läsning vid start gör, och vad lagret lämnade tillbaka."
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "Vad lagret säger om den token som inloggningen gav, frågat av lagret snarare än avläst ur inloggningssvaret."
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "Vad den här identiteten faktiskt får göra, frågat av lagret: sökvägarna den läser, och en skrivning den inte ska kunna göra."
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "De hemlighetsmotorer som den här identiteten kan se — vilket är färre än lagret har, och ska vara det."
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "KV-metadatan för den här hemligheten: när den skrevs, hur många versioner det finns och vilken en läsning får."
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "Allt som AWS Secrets Manager vet om den här hemligheten UTOM dess värde: rotation, KMS-nyckeln, versionerna och deras staging-etiketter."
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Vad Transit säger om nyckeln som omsluter datanycklarna: dess typ, dess versioner och om den någonsin får lämna KMS:en."
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "Vad AWS KMS säger om nyckeln som omsluter datanycklarna: dess tillstånd och om AWS roterar den."
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Vad Cloud KMS säger om nyckeln som omsluter datanycklarna: dess syfte, dess primära version och dess rotationsschema."
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "Vad valvet säger om nyckeln som omsluter datanycklarna: dess typ, storlek, operationer, version och rotation."
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "Hemlighetens egen metadata: replikering, etiketter, rotation och utgång."
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "Den version som en läsning skulle få: om den är aktiverad, inaktiverad eller förstörd."
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "Varje version av den här hemligheten och dess egenskaper — aktiverad, skapad, uppdaterad, utgång — och aldrig värdet."
+  }
+}

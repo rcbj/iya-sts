@@ -69,6 +69,13 @@ const ROOT = path.join(__dirname, '..');
 const SCHEMA_SQL = path.join(ROOT, 'postgres', 'schema.sql');
 const APPLY_SH = path.join(ROOT, 'postgres', 'apply-schema.sh');
 const COMPOSE = path.join(ROOT, 'docker-compose.yml');
+// THE TWO OTHER FILES THAT START THIS DATABASE (#633): the quick start from
+// published images, and the containerized suite (whose cells layer `extends`
+// its postgres, so it is covered by this one).
+const OTHER_COMPOSE = [
+  path.join(ROOT, 'docker-compose-quick.yml'),
+  path.join(ROOT, 'docker-compose-run-tests.yml')
+];
 
 // The default the script, the wrapper and the compose file all have to agree
 // on. Spelt once here so that a deliberate rename is one edit in four files
@@ -143,8 +150,10 @@ function checkTheDdlAgrees(t, sql) {
   // EXISTS` reaches only a new database — the driver's and the script's have
   // to be the same statement, or re-running the script leaves an old database
   // a column short of what the driver reads.
+  // ADD COLUMN only: since #630 the script also sets storage parameters
+  // and swaps two keys, which are SCHEMA_UPGRADES' (checkTheUpgradesAgree).
   const alters = statementsIn(sql).filter(function (statement) {
-    return /^ALTER TABLE/i.test(statement);
+    return /^ALTER TABLE \S+ ADD COLUMN/i.test(statement);
   });
   const columns = (driver.SCHEMA_COLUMNS || []).map(function (one) {
     return normalize(one.statement);
@@ -158,6 +167,257 @@ function checkTheDdlAgrees(t, sql) {
             JSON.stringify(alters));
   });
   log.debug("Leaving checkTheDdlAgrees().");
+}
+
+// Statements split on `;` OUTSIDE a dollar-quoted body (#618): a plpgsql
+// function holds semicolons of its own, which `statementsIn()` cuts through
+// — harmless there, since it compares only tables and indexes.
+function quotedAwareStatements(sql) {
+  log.debug("Entering quotedAwareStatements().");
+  const body = sql.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line) && !/^\s*\\/.test(line);
+  }).join('\n');
+  const out = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < body.length; i++) {
+    if (body.slice(i, i + 2) === '$$') {
+      quoted = !quoted;
+      current += '$$';
+      i += 1;
+      continue;
+    }
+    if (body[i] === ';' && !quoted) {
+      out.push(normalize(current));
+      current = '';
+      continue;
+    }
+    current += body[i];
+  }
+  out.push(normalize(current));
+  log.debug("Leaving quotedAwareStatements().");
+  return out.filter(function (statement) {
+    return statement.length > 0;
+  });
+}
+
+// THE COUNTS' FUNCTIONS AND TRIGGERS (#618) are the driver's, statement for
+// statement, and the script starts the counters with the driver's one count.
+function checkTheRoutinesAgree(t, sql) {
+  log.debug("Entering checkTheRoutinesAgree().");
+  const all = quotedAwareStatements(sql);
+  const fromScript = all.filter(function (statement) {
+    return /^CREATE (OR REPLACE |CONSTRAINT )*(FUNCTION|TRIGGER)/i
+      .test(statement);
+  });
+  const fromDriver = (driver.SCHEMA_ROUTINES || []).map(function (one) {
+    return normalize(one.statement);
+  });
+  t.equal(fromScript.length, fromDriver.length,
+          'postgres/schema.sql holds as many functions and triggers as the ' +
+          'driver (' + fromDriver.length + ')');
+  fromDriver.forEach(function (statement) {
+    t.check(fromScript.indexOf(statement) >= 0,
+            'postgres/schema.sql carries the driver\'s ' +
+            statement.slice(0, 70) + '…', statement);
+  });
+  t.check(all.indexOf(normalize(driver.COUNTS_BACKFILL)) >= 0,
+          'and starts the counters with the driver\'s one count');
+  t.check(all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)) >= 0 &&
+          all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)) <
+            all.indexOf(normalize(driver.COUNTS_BACKFILL)),
+          'under the lock that keeps every writer out, taken first');
+  t.check(all.indexOf(normalize(driver.DEK_COUNTS_BACKFILL)) >
+            all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)),
+          'and starts the per-data-key counters with the driver\'s ' +
+          'statement, under the same lock (#623)');
+  log.debug("Leaving checkTheRoutinesAgree().");
+}
+
+// WHAT AN OLDER STORE IS OWED BEYOND AN OBJECT OR A COLUMN (#630, schema
+// version 19): every statement of every SCHEMA_UPGRADES step, and the
+// condition it runs under where the script has one, is in the script — so
+// an owner's run of it and the driver's own open() bring a store to the
+// same shape. And the shapes this version is for, named: the counters'
+// keys hold `shard`, the folds add to it, readers sum it; `sts_minted`'s
+// `written_at` index is a BRIN (no btree left to block HOT) at fillfactor
+// 80; and the change log and the directory carry their autovacuum
+// parameters.
+function checkTheUpgradesAgree(t, sql) {
+  log.debug("Entering checkTheUpgradesAgree().");
+  const text = normalize(sql.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line) && !/^\s*\\/.test(line);
+  }).join('\n'));
+  const steps = driver.SCHEMA_UPGRADES || [];
+  t.check(steps.length > 0, 'the driver declares SCHEMA_UPGRADES');
+  steps.forEach(function (step) {
+    step.statements.forEach(function (statement) {
+      t.check(text.indexOf(normalize(statement)) >= 0,
+              'postgres/schema.sql carries ' + step.name + ': ' +
+              normalize(statement).slice(0, 70), statement);
+    });
+    if (/KEY|shard_key/i.test(step.name)) {
+      t.check(text.indexOf('IF ' + normalize(step.when) + ' THEN') >= 0,
+              'and runs ' + step.name + ' under the driver\'s condition',
+              step.when);
+    }
+  });
+  const named = function (re, what) {
+    t.check(re.test(text), what, String(re));
+  };
+  named(/PRIMARY KEY \(realm, base_key, attribute, shard\) ?\)/,
+        'sts_ldap_counts is created with shard in its key');
+  named(/PRIMARY KEY \(dek_id, shard\) ?\)/,
+        'sts_ldap_dek_counts is created with shard in its key');
+  named(/ON CONFLICT \(realm, base_key, attribute, shard\)/,
+        'the count fold adds to a shard');
+  named(/ON CONFLICT \(dek_id, shard\)/, 'the data-key fold adds to a shard');
+  named(/USING brin \(written_at\)/,
+        'sts_minted.written_at is indexed by a BRIN, which leaves HOT alone');
+  t.check(!/ON sts_minted \(written_at\)/.test(text) &&
+          !driver.SCHEMA.some(function (statement) {
+            return /ON sts_minted \(written_at\)/.test(statement);
+          }), 'and by no btree, in the script or the driver');
+  named(/DROP INDEX IF EXISTS sts_minted_written;/,
+        'the btree an older store has is dropped');
+  named(/ALTER TABLE sts_minted SET \(fillfactor=80\)/,
+        'sts_minted is at fillfactor 80 — the minted-HOT reloption');
+  named(/ALTER TABLE sts_changes SET \(autovacuum_vacuum_scale_factor=0\.02, autovacuum_vacuum_cost_limit=2000\)/,
+        'sts_changes carries its autovacuum parameters');
+  named(/ALTER TABLE sts_ldap_entries SET \(autovacuum_vacuum_insert_scale_factor=0\.01\)/,
+        'sts_ldap_entries carries its insert-vacuum parameter');
+  // #639, schema version 20: the parents' count said, not sampled, and the
+  // one column analyzed so it takes effect at once.
+  named(/ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET \(n_distinct=100000\); ANALYZE sts_ldap_entries \(parent_key\);/,
+        'sts_ldap_entries.parent_key\'s n_distinct is set, then analyzed');
+  const parents = steps.filter(function (step) {
+    return step.name === 'sts_ldap_entries_parent_ndistinct';
+  })[0];
+  t.check(!!parents && parents.advisory === true &&
+          /pg_attribute/.test(parents.when) &&
+          /a\.attname = 'parent_key'/.test(parents.when),
+          'and the driver owes it as an advisory step, probed in the ' +
+          'column\'s attoptions', parents && parents.when);
+  named(/DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON sts_ldap_count_deltas; DROP FUNCTION IF EXISTS sts_ldap_count_fold\(\);/,
+        'the unsharded count fold is dropped before the sharded one arrives');
+  named(/DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON sts_ldap_dek_deltas; DROP FUNCTION IF EXISTS sts_ldap_dek_fold\(\);/,
+        'and so is the unsharded data-key fold');
+  // The driver's reloption probes name the parameters its statements set.
+  steps.filter(function (step) {
+    return /SET \(/.test(step.statements.join(' '));
+  }).forEach(function (step) {
+    const set = /SET \((.*)\)/.exec(step.statements[0])[1].split(/,\s*/);
+    set.forEach(function (one) {
+      t.check(step.when.indexOf('\'' + one + '\'') >= 0,
+              step.name + ' probes for ' + one + ', as it sets it',
+              step.when);
+    });
+  });
+  // AND THE OTHER WAY ROUND: every storage parameter the script sets, and
+  // every index or routine it drops, is a step the driver takes too — or a
+  // store the driver brings level is slower than one the script did.
+  const driverStatements = [].concat.apply([], steps.map(function (step) {
+    return step.statements.map(normalize);
+  }));
+  statementsIn(sql).filter(function (statement) {
+    return /^ALTER TABLE \S+ SET \(/.test(statement) ||
+      /^DROP (INDEX|FUNCTION) IF EXISTS sts_(minted_written|ldap_count_fold|ldap_dek_fold)\b/
+        .test(statement);
+  }).forEach(function (statement) {
+    t.check(driverStatements.indexOf(statement) >= 0,
+            'the driver takes the script\'s ' + statement.slice(0, 70),
+            JSON.stringify(driverStatements));
+  });
+  t.check(text.indexOf('CREATE EXTENSION IF NOT EXISTS pg_stat_statements') >=
+            0, 'the script creates pg_stat_statements');
+  log.debug("Leaving checkTheUpgradesAgree().");
+}
+
+// WHAT A LATER VERSION REPLACED (#618 phase 2, schema version 18): the
+// script drops every index the driver retired, and nothing else — an index
+// left behind is still written on every insert, which is the cost the
+// version exists to remove — and drops each only AFTER the index that
+// replaces it is built, so no question is ever without one.
+function checkTheRetiredAgree(t, sql) {
+  log.debug("Entering checkTheRetiredAgree().");
+  const all = statementsIn(sql);
+  const drops = all.filter(function (statement) {
+    return /^DROP INDEX/i.test(statement);
+  });
+  const retired = (driver.SCHEMA_RETIRED || []).map(function (one) {
+    return normalize(one.statement);
+  });
+  t.check(retired.length === 2 &&
+          retired.indexOf('DROP INDEX IF EXISTS ' +
+                          'sts_ldap_entries_attr_names') >= 0 &&
+          retired.indexOf('DROP INDEX IF EXISTS sts_ldap_entries_classes') >=
+            0,
+          'the driver retires the two indexes version 18 replaced',
+          JSON.stringify(retired));
+  // And the advisory drop of #630's SCHEMA_UPGRADES (the minted btree), a
+  // retirement a role that does not own the table may skip.
+  const upgraded = [].concat.apply([], (driver.SCHEMA_UPGRADES || [])
+    .map(function (step) {
+      return step.statements.filter(function (statement) {
+        return /^DROP INDEX/i.test(statement);
+      }).map(normalize);
+    }));
+  t.equal(JSON.stringify(drops.slice().sort()),
+          JSON.stringify(retired.concat(upgraded).sort()),
+          'postgres/schema.sql drops exactly the indexes the driver retired');
+  const at = function (pattern) {
+    return all.findIndex(function (statement) {
+      return pattern.test(statement);
+    });
+  };
+  const askedAt = at(/^CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names /);
+  const groupsAt = at(/^CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes /);
+  t.check(askedAt >= 0 && groupsAt >= 0 &&
+          at(/sts_ldap_entries_attr_names$/) > askedAt &&
+          at(/sts_ldap_entries_classes$/) > groupsAt,
+          'and drops each after the index that replaces it is built');
+  log.debug("Leaving checkTheRetiredAgree().");
+}
+
+// THE DIRECTORY'S GIN INDEXES TAKE EVERY INSERT DIRECTLY (#618, version 18):
+// each is created `WITH (fastupdate = off)`, an existing one is switched by
+// the driver's SCHEMA_RELOPTIONS — the same statements in the script, after
+// the CREATE — and its pending list flushed once, after the switch.
+function checkTheReloptionsAgree(t, sql) {
+  log.debug("Entering checkTheReloptionsAgree().");
+  const all = statementsIn(sql);
+  const wanted = driver.SCHEMA_RELOPTIONS || [];
+  t.equal(wanted.map(function (one) { return one.name; }).sort().join(','),
+          ['sts_ldap_entries_asked_names', 'sts_ldap_entries_group_classes',
+           'sts_ldap_entries_mails', 'sts_ldap_entries_names',
+           'sts_ldap_entries_uuids', 'sts_ldap_entries_values'].join(','),
+          'the driver turns the pending list off on the directory\'s six ' +
+          'GIN indexes');
+  wanted.forEach(function (one) {
+    const createAt = all.findIndex(function (statement) {
+      return statement.indexOf('CREATE INDEX IF NOT EXISTS ' + one.name +
+                               ' ') === 0;
+    });
+    const alterAt = all.indexOf(normalize(one.statement));
+    const flushAt = all.indexOf(normalize(one.flush));
+    t.check(createAt >= 0 &&
+            all[createAt].indexOf(' WITH (fastupdate = off)') > 0 &&
+            alterAt > createAt && flushAt > alterAt &&
+            one.option === 'fastupdate=off',
+            one.name + ' is created with fastupdate off, switched on an ' +
+            'existing store and its pending list flushed, in that order',
+            JSON.stringify({ createAt: createAt, alterAt: alterAt,
+                             flushAt: flushAt }));
+  });
+  const gins = driver.SCHEMA.filter(function (statement) {
+    return /ON sts_ldap_entries USING gin/.test(statement) &&
+      !/sts_ldap_entries_dek_keys /.test(statement);
+  });
+  t.check(gins.length === 7 && gins.every(function (statement) {
+    return statement.indexOf('WITH (fastupdate = off)') > 0;
+  }), 'every directory GIN index but the data keys\' is created with it',
+          String(gins.length));
+  log.debug("Leaving checkTheReloptionsAgree().");
 }
 
 function checkTheVersionAgrees(t, sql) {
@@ -174,6 +434,197 @@ function checkTheVersionAgrees(t, sql) {
             'and the version it writes is the driver\'s SCHEMA_VERSION');
   }
   log.debug("Leaving checkTheVersionAgrees().");
+}
+
+// Schema 21 (#350): `sts_sessions` beside `sts_minted`, six partial indexes,
+// a nullable `expires_at`, and the primary key `(realm, key)`. Schema 22
+// (#754) adds the seventh, `sts_sessions_surface`. #876 adds the eighth,
+// `sts_sessions_subject_band`, without a new schema version. Schema 32
+// (#882) adds the ninth, `sts_sessions_started`.
+function checkTheSessionIndex(t, sql) {
+  log.debug("Entering checkTheSessionIndex().");
+  t.equal(driver.SCHEMA_VERSION, 32,
+          'the driver\'s schema version is 32 (#350, #754, the uid ' +
+          'trigram index, #820\'s on-demand index and its sort_at, #956, ' +
+          '#1024\'s asked-names rebuild, #1028\'s date B-trees, #1045\'s ' +
+          'report pieces, #677\'s lock rows, #1290\'s key pair names, ' +
+          '#882\'s newest-first session index)');
+  // #820: the on-demand stores' index, in the driver and in the script,
+  // and (version 25) the partial index `minted.newest` walks.
+  ['sts_minted_index', 'sts_minted_index_key',
+   'sts_minted_index_sort'].forEach(function (name) {
+    t.check((driver.SCHEMA_OBJECTS || []).some(function (one) {
+      return one.name === name;
+    }) && statementsIn(sql).some(function (statement) {
+      return statement.indexOf(name) >= 0;
+    }), name + ' is in the driver\'s schema and in the script');
+  });
+  const names = ['sts_sessions_subject', 'sts_sessions_subject_band',
+                 'sts_sessions_username', 'sts_sessions_expires',
+                 'sts_sessions_parent', 'sts_sessions_credential',
+                 'sts_sessions_partner', 'sts_sessions_surface',
+                 'sts_sessions_started'];
+  const predicates = [
+    'WHERE chosen AND subject_key <> \'\'',
+    'WHERE chosen AND subject_key <> \'\'',
+    'WHERE username_key <> \'\'',
+    'WHERE expires_at IS NOT NULL',
+    'WHERE parent_key <> \'\'',
+    'WHERE credential_key <> \'\'',
+    'WHERE partner_relationship <> \'\'',
+    'WHERE rp_surface <> \'\'',
+    'WHERE chosen'
+  ];
+  const script = statementsIn(sql);
+  names.forEach(function (name, i) {
+    const fromDriver = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    t.check(!!fromDriver &&
+            fromDriver.statement.indexOf(predicates[i]) >= 0,
+            name + ' is partial: ' + predicates[i],
+            fromDriver && fromDriver.statement);
+    t.check(script.some(function (statement) {
+      return statement.indexOf(name) >= 0 &&
+             statement.indexOf(predicates[i]) >= 0;
+    }), 'postgres/schema.sql carries ' + name);
+  });
+  const band = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_sessions_subject_band';
+  })[0];
+  t.check(!!band && /COLLATE "C"/.test(band.statement) &&
+          script.some(function (statement) {
+            return statement.indexOf('sts_sessions_subject_band') >= 0 &&
+                   statement.indexOf('COLLATE "C"') >= 0;
+          }),
+          'sts_sessions_subject_band orders subject_key with COLLATE "C"');
+  const started = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_sessions_started';
+  })[0];
+  const startedText = started ? started.statement : '';
+  t.check(!!started &&
+          startedText.indexOf('(realm, started_at DESC, key)') >= 0 &&
+          startedText.indexOf('subject_key') < 0 &&
+          startedText.indexOf('key DESC') < 0 &&
+          startedText.indexOf('INCLUDE') < 0 &&
+          script.some(function (statement) {
+            return statement.indexOf('sts_sessions_started') >= 0 &&
+                   statement.indexOf('(realm, started_at DESC, key)') >= 0 &&
+                   statement.indexOf('key DESC') < 0 &&
+                   statement.indexOf('INCLUDE') < 0;
+          }),
+          'sts_sessions_started orders started_at DESC, key ASC, ' +
+          'WHERE chosen');
+  const table = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_sessions';
+  })[0];
+  t.check(!!table && /expires_at\s+bigint,/.test(table.statement) &&
+          !/expires_at\s+bigint\s+NOT NULL/.test(table.statement) &&
+          /PRIMARY KEY \(realm, key\)/.test(table.statement),
+          'sts_sessions.expires_at is nullable and the primary key is ' +
+          '(realm, key)', table && table.statement);
+  log.debug("Leaving checkTheSessionIndex().");
+}
+
+// Release 1.0.0 is schema version 31. postgres/upgrade-1.0.0.sql is the
+// live-store step to version 32: the two session indexes schema.sql gained
+// after that tag, built with CREATE INDEX CONCURRENTLY, and the same
+// version insert. It must not open a transaction (CONCURRENTLY cannot) and
+// must not repeat schema.sql's asked-names rebuild. The text, apart from
+// the word CONCURRENTLY, is the script's, so the two cannot drift.
+function checkTheReleaseUpgrade(t, sql) {
+  log.debug("Entering checkTheReleaseUpgrade().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'postgres', 'upgrade-1.0.0.sql'), 'utf8');
+  const fromSchema = statementsIn(sql).filter(function (statement) {
+    return /^CREATE INDEX/i.test(statement) &&
+           (statement.indexOf('sts_sessions_subject_band') >= 0 ||
+            statement.indexOf('sts_sessions_started') >= 0);
+  });
+  const fromUpgrade = statementsIn(upgrade).filter(function (statement) {
+    return /^CREATE INDEX/i.test(statement);
+  });
+  t.equal(fromSchema.length, 2,
+          'schema.sql has the two session indexes added since release 1.0.0');
+  t.equal(fromUpgrade.length, 2,
+          'upgrade-1.0.0.sql builds those two indexes and no others');
+  fromSchema.forEach(function (statement) {
+    const concurrent = statement.replace(/^CREATE INDEX IF NOT EXISTS/i,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS');
+    t.check(fromUpgrade.some(function (one) {
+      return normalize(one) === normalize(concurrent);
+    }), 'upgrade-1.0.0.sql matches schema.sql, plus CONCURRENTLY',
+    statement);
+  });
+  // THE DRIVER NEVER BUILDS THESE IN open()'s TRANSACTION (#876, #882):
+  // the objects it marks `online` — told to a role that does not own the
+  // table, built CONCURRENTLY by one that does — are exactly the indexes
+  // this script builds, so a release that adds another owes both.
+  const online = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.online === true;
+  }).map(function (one) { return one.name; }).sort();
+  const upgraded = fromUpgrade.map(function (statement) {
+    const m = /^CREATE INDEX CONCURRENTLY IF NOT EXISTS\s+(\w+)/i
+      .exec(statement);
+    return m ? m[1] : statement;
+  }).sort();
+  t.equal(JSON.stringify(online), JSON.stringify(upgraded),
+          'the driver\'s online indexes are the ones upgrade-1.0.0.sql ' +
+          'builds concurrently');
+  const body = statementsIn(upgrade);
+  // A DO block's BEGIN is the start of a larger statement. A transaction
+  // boundary is the statement by itself (BEGIN, COMMIT, START TRANSACTION).
+  t.check(!body.some(function (statement) {
+    return /^BEGIN(\s+(WORK|TRANSACTION))?\s*$/i.test(statement) ||
+           /^COMMIT(\s+(WORK|TRANSACTION))?\s*$/i.test(statement) ||
+           /^START\s+TRANSACTION\b/i.test(statement);
+  }), 'upgrade-1.0.0.sql opens no transaction');
+  t.check(!body.some(function (statement) {
+    return /(?:DROP|CREATE)\s+INDEX[\s\S]*sts_ldap_entries_asked_names/i
+      .test(statement);
+  }), 'upgrade-1.0.0.sql does not rebuild asked_names');
+  const version = statementsIn(sql).filter(function (statement) {
+    return statement.indexOf('INSERT INTO sts_schema') >= 0;
+  });
+  t.equal(version.length, 1,
+          'schema.sql writes one sts_schema version row');
+  t.check(version.length === 1 && body.some(function (statement) {
+    return normalize(statement) === normalize(version[0]);
+  }), 'upgrade-1.0.0.sql records that same version row');
+  log.debug("Leaving checkTheReleaseUpgrade().");
+}
+
+// Schema 23 (2026-10-20, `/portal/delegate`): the uid trigram index, a GIN
+// with `pg_trgm`'s operator class over `rdn_value`, partial on the children
+// of a realm's `ou=users` — the predicate `uidContains` repeats, or the
+// planner cannot use it — and the extension created before it, in the
+// script and in the driver.
+function checkTheUidTrigramIndex(t, sql) {
+  log.debug("Entering checkTheUidTrigramIndex().");
+  const queries = require('../persistence/directory_queries');
+  const object = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_ldap_entries_uid_trgm';
+  })[0];
+  t.check(!!object && object.extension === 'pg_trgm' &&
+          object.afterColumns === true &&
+          /USING gin \(rdn_value gin_trgm_ops\)/.test(object.statement) &&
+          object.statement.indexOf('WHERE ' + queries.USERS_PARENT) > 0,
+          'the driver declares the uid trigram index, partial on ' +
+          queries.USERS_PARENT + ', after pg_trgm',
+          object && object.statement);
+  const statement = queries.uidContains('r', 'ou=users,dc=x', 'abc', 5);
+  t.check(statement.text.indexOf(queries.USERS_PARENT) > 0,
+          'uidContains repeats the index\'s predicate', statement.text);
+  const all = statementsIn(sql);
+  const extensionAt = all.indexOf('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+  const indexAt = all.findIndex(function (one) {
+    return one.indexOf('CREATE INDEX IF NOT EXISTS ' +
+                       'sts_ldap_entries_uid_trgm ') === 0;
+  });
+  t.check(extensionAt >= 0 && indexAt > extensionAt,
+          'the script creates pg_trgm before the index',
+          JSON.stringify({ extensionAt: extensionAt, indexAt: indexAt }));
+  log.debug("Leaving checkTheUidTrigramIndex().");
 }
 
 function checkThePrivilegeIsNarrow(t, sql) {
@@ -267,20 +718,112 @@ function checkTheRoleNameAgrees(t) {
     t.check(new RegExp('://' + APP_ROLE + '[:@]').test(url[1]),
             'and it dials as ' + APP_ROLE + ' rather than as the schema owner',
             url[1]);
-    t.check(url[1].indexOf('sslmode=require') > 0,
-            'and still asks for TLS, which the database still requires',
+    // verify-full since 2026-10-12: TLS, which the database still
+    // requires, and the server authenticated against the certificate the
+    // stack shares (persistence.databaseTlsCaFile).
+    t.check(url[1].indexOf('sslmode=verify-full') > 0,
+            'and asks for TLS with the server verified, chain and host name',
             url[1]);
+    t.check(/STS_DATABASE_TLS_CA_FILE=\$\{STS_DATABASE_TLS_CA_FILE:-\/run\/secrets\/database-ca\/postgres\.crt\}/
+              .test(compose) &&
+            /- sts-db-ca:\/run\/secrets\/database-ca:ro/.test(compose),
+            'and names the certificate the postgres service shares, mounted ' +
+            'read-only, as its trust anchor');
+    t.check(/POSTGRES_TLS_PUBLIC_DIR=\/run\/sts-db-ca/.test(compose) &&
+            !/sts-db:\/run\/secrets/.test(compose),
+            'which the postgres service writes without its key: the data ' +
+            'volume, where the key is, never reaches sts');
   }
   log.debug("Leaving checkTheRoleNameAgrees().");
+}
+
+// THE SERVER'S SETTINGS ARE THE SAME IN EVERY FILE THAT STARTS IT (#633).
+// #630 measured them under a bulk load and put them in docker-compose.yml
+// alone, so the quick start and the suite ran the defaults it had measured
+// against — 128 MB of buffers, no statement statistics, and (the quick start)
+// the default 100 connections that 200 had replaced. Read as `-c name=value`
+// pairs from the postgres command; every name and value has to match,
+// shared_buffers' substitution included.
+function serverSettings(text) {
+  log.debug("Entering serverSettings().");
+  const at = text.indexOf('exec docker-entrypoint.sh postgres');
+  const settings = {};
+  if (at < 0) {
+    log.debug("Leaving serverSettings().");
+    return null;
+  }
+  const end = text.indexOf('healthcheck:', at);
+  const command = text.slice(at, end < 0 ? undefined : end);
+  const pair = /-c\s+([a-z_.]+)=([^\s']+)/g;
+  let m;
+  while ((m = pair.exec(command)) !== null) {
+    settings[m[1]] = m[2];
+  }
+  log.debug("Leaving serverSettings().");
+  return settings;
+}
+
+function checkTheServerSettingsAgree(t) {
+  log.debug("Entering checkTheServerSettingsAgree().");
+  const want = serverSettings(fs.readFileSync(COMPOSE, 'utf8'));
+  t.check(!!want && Object.keys(want).length > 0,
+          'docker-compose.yml starts postgres with settings on its command');
+  t.check(!!want && /pg_stat_statements/.test(
+            want.shared_preload_libraries || ''),
+          'and preloads pg_stat_statements, the extension schema.sql makes');
+  for (const file of OTHER_COMPOSE) {
+    const name = path.basename(file);
+    const got = serverSettings(fs.readFileSync(file, 'utf8'));
+    t.check(!!got, name + ' starts postgres through docker-entrypoint.sh');
+    if (!want || !got) {
+      continue;
+    }
+    for (const key of Object.keys(want)) {
+      t.check(got[key] === want[key],
+              name + ' sets ' + key + ' as docker-compose.yml does',
+              key + '=' + got[key] + ', want ' + want[key]);
+    }
+    for (const key of Object.keys(got)) {
+      t.check(key in want,
+              name + ' sets nothing docker-compose.yml does not: ' + key);
+    }
+  }
+  log.debug("Leaving checkTheServerSettingsAgree().");
+}
+
+// AND THE QUICK START IS PRINTED, WHOLE, IN docs/getting-started.md (#633),
+// for a reader with no checkout. The copy had drifted from nothing until the
+// file gained the settings above, and a reader who pastes the page gets the
+// page, so the first yaml block there is held to the file, its two SPDX
+// lines aside.
+function checkTheQuickStartPageAgrees(t) {
+  log.debug("Entering checkTheQuickStartPageAgrees().");
+  const page = fs.readFileSync(path.join(ROOT, 'docs', 'getting-started.md'),
+                               'utf8');
+  const block = /```yaml\n([\s\S]*?)```/.exec(page);
+  const file = fs.readFileSync(OTHER_COMPOSE[0], 'utf8')
+    .split('\n').slice(2).join('\n');
+  t.check(!!block && block[1] === file,
+          'docs/getting-started.md prints docker-compose-quick.yml as it is');
+  log.debug("Leaving checkTheQuickStartPageAgrees().");
 }
 
 function run(t) {
   log.debug("Entering run().");
   const sql = fs.readFileSync(SCHEMA_SQL, 'utf8');
   checkTheDdlAgrees(t, sql);
+  checkTheRoutinesAgree(t, sql);
+  checkTheUpgradesAgree(t, sql);
+  checkTheRetiredAgree(t, sql);
+  checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
+  checkTheSessionIndex(t, sql);
+  checkTheReleaseUpgrade(t, sql);
+  checkTheUidTrigramIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
+  checkTheServerSettingsAgree(t);
+  checkTheQuickStartPageAgrees(t);
   log.debug("Leaving run().");
 }
 

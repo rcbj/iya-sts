@@ -69,8 +69,9 @@
 //      and that is a total authentication bypass which cannot survive into a
 //      product. Since 2026-09-09 an OAuth 2.0 access token is required in BOTH
 //      modes (`adminApi.authRequired`, on by default); what this file decides
-//      is what happens with that setting OFF — open in development, the
-//      console's session and roles in product. See `gatesManagementApi()`.
+//      is whether that setting may be turned OFF — in development it may, and
+//      the API is then open; in product it is ignored and the token is
+//      required (#446). See `opensManagementApi()`.
 //
 // ---------------------------------------------------------------------------
 // IT IS PER TRUST REALM, and that is worth stating because it is unusual.
@@ -438,6 +439,424 @@ function usesBrokenAlgorithms() {
   return !isProduct();
 }
 
+// Are this service's cookies `__Host-` / `__Secure-` on the wire (#1441, ASVS
+// 5.0.0 3.3.1)? `common/cookie_wire.ts` asks. Development keeps the plain names
+// a person reads in a browser's tools and a test reads out of a jar.
+/**
+ * Tells whether cookies carry a `__Host-` or `__Secure-` prefix over TLS.
+ *
+ * @returns true in product mode
+ */
+function prefixesCookies() {
+  log.debug("Entering prefixesCookies().");
+  log.debug("Leaving prefixesCookies().");
+  return isProduct();
+}
+
+// May the main port run in cleartext (#1457, ASVS 5.0.0 12.2.1)?
+/**
+ * Answers why this process must not start, where product mode has the main
+ * port in cleartext.
+ *
+ * @param useHttps - whether the main port is HTTPS
+ * @returns the reason, or '' where it may start
+ */
+function cleartextStartupProblem(useHttps) {
+  log.debug("Entering cleartextStartupProblem().");
+  log.debug("Leaving cleartextStartupProblem().");
+  return isProduct() && !useHttps
+    ? 'global.https is off, and product mode serves its main port over TLS ' +
+      'only (ASVS 5.0.0 12.2.1). Unset STS_HTTPS, or use development mode.'
+    : '';
+}
+
+// May a client that declares no grant types use any grant (#1453, ASVS 5.0.0
+// 10.4.4)? RFC 7591 section 2 makes authorization_code the default.
+/**
+ * Tells whether a client with no grant list is limited to the code flow.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function narrowsUndeclaredGrants() {
+  log.debug("Entering narrowsUndeclaredGrants().");
+  log.debug("Leaving narrowsUndeclaredGrants().");
+  return isProduct() && config.value('oauth2.allowUndeclaredGrants') !== true;
+}
+
+// Does SCEP answer here (#1455, ASVS 5.0.0 11.3.1)? RFC 8894 needs ciphers
+// product otherwise refuses.
+/**
+ * Tells whether SCEP may answer in the ambient realm.
+ *
+ * @returns true in development, and in product where an operator opted in
+ */
+function answersScep() {
+  log.debug("Entering answersScep().");
+  log.debug("Leaving answersScep().");
+  return !isProduct() || config.value('scep.allowInProduct') === true;
+}
+
+// Does ending a session revoke the access tokens issued on it (#1449, ASVS
+// 5.0.0 7.4.1)? Development leaves them, so a client can be exercised against
+// a token that outlives its session.
+/**
+ * Tells whether a sign-out revokes the access tokens issued on the session.
+ *
+ * @returns true in product mode
+ */
+function revokesAccessTokensAtSignOut() {
+  log.debug("Entering revokesAccessTokensAtSignOut().");
+  log.debug("Leaving revokesAccessTokensAtSignOut().");
+  return isProduct();
+}
+
+// Is a default-named bootstrap administrator replaced by a generated name
+// (#1447, ASVS 5.0.0 6.3.2)? `common/bootstrap_name.ts` asks.
+/**
+ * Tells whether a default bootstrap name gives way to a generated one.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function generatesBootstrapName() {
+  log.debug("Entering generatesBootstrapName().");
+  log.debug("Leaving generatesBootstrapName().");
+  return isProduct() && config.value('admin.allowDefaultUsername') !== true;
+}
+
+// Is a sign-in step tied to the browser that first asks about it (#1454, ASVS
+// 5.0.0 14.2.1)? `authn/authn_api.ts` asks.
+/**
+ * Tells whether a sign-in step answers only one browser.
+ *
+ * @returns true in product mode
+ */
+function bindsSignInSteps() {
+  log.debug("Entering bindsSignInSteps().");
+  log.debug("Leaving bindsSignInSteps().");
+  return isProduct();
+}
+
+// May a disallowed hash be used where a protocol still calls for one (#1469,
+// ASVS 5.0.0 11.4.1)? The capability stays, behind a setting, for compatibility.
+/**
+ * Tells whether SHA-1 and MD5 may be used in OAEP, PKINIT and S4U2Self.
+ *
+ * @returns true in development, and in product where an operator opted in
+ */
+function allowsLegacyHashes() {
+  log.debug("Entering allowsLegacyHashes().");
+  log.debug("Leaving allowsLegacyHashes().");
+  return !isProduct() || config.value('crypto.allowLegacyHashes') === true;
+}
+
+// Are sign-in step ids kept out of what a server is sent (#1454, ASVS 5.0.0
+// 14.2.1)? `common/step_address.ts` and the sign-in pages ask.
+/**
+ * Tells whether a sign-in step's id travels in the fragment and a header.
+ *
+ * @returns true in product mode
+ */
+function hidesStepIds() {
+  log.debug("Entering hidesStepIds().");
+  log.debug("Leaving hidesStepIds().");
+  return isProduct();
+}
+
+// Does a credential with no scope need a console role at SCIM and Shared
+// Signals (#1473, ASVS 5.0.0 8.2.1, 8.2.2)?
+/**
+ * Tells whether a person with no scope needs a role at SCIM and SSF.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function restrictsUnscopedPeople() {
+  log.debug("Entering restrictsUnscopedPeople().");
+  log.debug("Leaving restrictsUnscopedPeople().");
+  return isProduct() && config.value('security.allowUnscopedPeople') !== true;
+}
+
+// Is a second factor required of everybody (#1490, ASVS 5.0.0 6.3.3)?
+/**
+ * Tells whether everybody needs a second factor, whatever the policy says.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function requiresSecondFactorOfEveryone() {
+  log.debug("Entering requiresSecondFactorOfEveryone().");
+  log.debug("Leaving requiresSecondFactorOfEveryone().");
+  return isProduct() && config.value('authn.allowOptionalSecondFactor') !== true;
+}
+
+// Must an administrator state how a person was verified before clearing their
+// second factor (#1504, ASVS 5.0.0 6.4.4)?
+/**
+ * @returns true when clearing a factor needs a stated proof of identity
+ */
+function requiresEvidenceToClearFactor() {
+  log.debug("Entering requiresEvidenceToClearFactor().");
+  log.debug("Leaving requiresEvidenceToClearFactor().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a repeated token parameter is refused
+ */
+function refusesRepeatedTokenParameters() {
+  log.debug("Entering refusesRepeatedTokenParameters().");
+  log.debug("Leaving refusesRepeatedTokenParameters().");
+  return isProduct();
+}
+
+/**
+ * @returns true when forwarded addresses need a list of trusted proxies
+ */
+function requiresTrustedProxyRanges() {
+  log.debug("Entering requiresTrustedProxyRanges().");
+  log.debug("Leaving requiresTrustedProxyRanges().");
+  return isProduct();
+}
+
+/**
+ * @returns true when an internal error's text is kept from the caller
+ */
+function hidesFailureDetail() {
+  log.debug("Entering hidesFailureDetail().");
+  log.debug("Leaving hidesFailureDetail().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a partner's Logout Token must carry logout+jwt
+ */
+function requiresTypedLogoutToken() {
+  log.debug("Entering requiresTypedLogoutToken().");
+  log.debug("Leaving requiresTypedLogoutToken().");
+  return isProduct() &&
+    config.value('federation.allowUntypedLogoutToken') !== true;
+}
+
+/**
+ * @returns true when request logs leave out credentials and bodies
+ */
+function redactsRequestLog() {
+  log.debug("Entering redactsRequestLog().");
+  log.debug("Leaving redactsRequestLog().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a default database password stops the service
+ */
+function refusesDefaultDatabasePassword() {
+  log.debug("Entering refusesDefaultDatabasePassword().");
+  log.debug("Leaving refusesDefaultDatabasePassword().");
+  return isProduct() &&
+    config.value('persistence.allowDefaultDatabasePassword') !== true;
+}
+
+/**
+ * @returns true when the key-encryption keys and the database passwords must
+ *   come from a secret store or a key management service, not from a file on
+ *   the host or the connection string (ASVS 5.0.0 13.3.1)
+ */
+function requiresSecretStore() {
+  log.debug("Entering requiresSecretStore().");
+  log.debug("Leaving requiresSecretStore().");
+  return isProduct() &&
+    config.value('secrets.allowLocalSecrets') !== true;
+}
+
+/**
+ * @returns true when a syslog destination must use tls
+ */
+function refusesPlainSyslog() {
+  log.debug("Entering refusesPlainSyslog().");
+  log.debug("Leaving refusesPlainSyslog().");
+  return isProduct() &&
+    config.value('audit.allowPlainSyslog') !== true;
+}
+
+/**
+ * @returns true when ES256K is used only if keys.signingAlgorithms lists it
+ */
+function omitsUnapprovedSigningCurves() {
+  log.debug("Entering omitsUnapprovedSigningCurves().");
+  log.debug("Leaving omitsUnapprovedSigningCurves().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a realm with no audit destination is warned about
+ */
+function warnsWithoutAuditDestination() {
+  log.debug("Entering warnsWithoutAuditDestination().");
+  log.debug("Leaving warnsWithoutAuditDestination().");
+  return isProduct();
+}
+
+/**
+ * @returns true when an inbound assertion must name its audience
+ */
+function refusesAssertionWithoutAudience() {
+  log.debug("Entering refusesAssertionWithoutAudience().");
+  log.debug("Leaving refusesAssertionWithoutAudience().");
+  return isProduct() &&
+    config.value('federation.allowAssertionWithoutAudience') !== true;
+}
+
+/**
+ * @returns true when a token whose sub no longer resolves is refused
+ */
+function refusesTokenForGoneSubject() {
+  log.debug("Entering refusesTokenForGoneSubject().");
+  log.debug("Leaving refusesTokenForGoneSubject().");
+  return isProduct();
+}
+
+/**
+ * @returns the least scrypt parallelism a new password is hashed with
+ */
+function minScryptParallelism() {
+  log.debug("Entering minScryptParallelism().");
+  log.debug("Leaving minScryptParallelism().");
+  return isProduct() ? 3 : 1;
+}
+
+// Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
+/**
+ * @returns true when a plain icap:// address may not be used
+ */
+function requiresTlsToMalwareScanner() {
+  log.debug("Entering requiresTlsToMalwareScanner().");
+  log.debug("Leaving requiresTlsToMalwareScanner().");
+  return isProduct() && config.value('malwareScan.allowCleartext') !== true;
+}
+
+// Are new RSA keys made at 3072 bits where no setting says (#1491, ASVS 5.0.0
+// 11.2.3)?
+/**
+ * The size of a new RSA key that no setting names.
+ *
+ * @returns 3072 in product mode, 2048 otherwise
+ */
+function defaultRsaBits() {
+  log.debug("Entering defaultRsaBits().");
+  log.debug("Leaving defaultRsaBits().");
+  return isProduct() ? 3072 : 2048;
+}
+
+// Must every code-flow client use PKCE (#1495, ASVS 5.0.0 10.4.6)?
+/**
+ * Tells whether a confidential client must also use PKCE.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function requiresPkceOfEveryClient() {
+  log.debug("Entering requiresPkceOfEveryClient().");
+  log.debug("Leaving requiresPkceOfEveryClient().");
+  return isProduct() &&
+    config.value('oauth2.allowConfidentialWithoutPkce') !== true;
+}
+
+// May JWE use AES-CBC with HMAC (#1486, ASVS 5.0.0 11.3.2)?
+/**
+ * Tells whether JWE's CBC-HMAC content encryption is available.
+ *
+ * @returns true in development, and in product where an operator opted in
+ */
+function allowsCbcJwe() {
+  log.debug("Entering allowsCbcJwe().");
+  log.debug("Leaving allowsCbcJwe().");
+  return !isProduct() || config.value('crypto.allowCbcJwe') === true;
+}
+
+// Is a file an administrator names held to `security.fileRoots` (#1481,
+// ASVS 5.0.0 5.3.2)? `common/outbound_tls.ts` asks.
+/**
+ * Tells whether a named CA file is confined to the certificate directories.
+ *
+ * @returns true in product mode
+ */
+function confinesNamedFiles() {
+  log.debug("Entering confinesNamedFiles().");
+  log.debug("Leaving confinesNamedFiles().");
+  return isProduct();
+}
+
+// How long past `exp` a GNAP user assertion is honoured (#1474, ASVS 5.0.0
+// 9.2.1). RFC 9635 section 2.4 permits a grace and does not ask for one, so
+// product takes none unless an operator set one.
+/**
+ * The grace on an expired GNAP user assertion, in seconds.
+ *
+ * @returns the setting, or 0 in product where nobody set it
+ */
+function expiredAssertionGraceS() {
+  log.debug("Entering expiredAssertionGraceS().");
+  const key = 'gnap.assertionMaxAgeS';
+  const source = String(config.sourceOf(key));
+  log.debug("Leaving expiredAssertionGraceS().");
+  return isProduct() && /^default/.test(source)
+    ? 0 : (Number(config.value(key)) || 0);
+}
+
+// May a request be allowed when no access decision could be made (#1450, ASVS
+// 5.0.0 8.2.1)? `common/access_gate.ts` asks at each such fault.
+/**
+ * Tells whether a fault in the access gate allows the request.
+ *
+ * @returns true in development mode
+ */
+function failsOpenOnPolicyFault() {
+  log.debug("Entering failsOpenOnPolicyFault().");
+  log.debug("Leaving failsOpenOnPolicyFault().");
+  return !isProduct();
+}
+
+// A listener certificate this service minted, as the data `report()` carries
+// on its row (#1457, ASVS 5.0.0 12.2.2). It does not stop the service, so a new
+// install stays self-contained; it must show.
+function certificateWaivers() {
+  log.debug("Entering certificateWaivers().");
+  log.debug("Leaving certificateWaivers().");
+  return config.value('tls.certificateFile') ? [] : [
+    { requirement: 'public-certificate', section: 'ASVS 5.0.0 12.2.2',
+      level: 'MUST', setting: 'tls.certificateFile' }];
+}
+
+// The switches that turn access decisions off in this process, as the data
+// `report()` carries on the row they qualify: a product operator may need one
+// to recover from a policy that denies its own repair, and it must show.
+function accessEnforcementWaivers() {
+  log.debug("Entering accessEnforcementWaivers().");
+  const off = ['xacml.enforceAccess', 'roles.enforceIssuance'].filter(
+    function (key) {
+      return config.value(key) === false;
+    });
+  log.debug("Leaving accessEnforcementWaivers().");
+  return off.map(function (key) {
+    return { requirement: 'access-by-policy', section: 'ASVS 5.0.0 8.2.1',
+             level: 'MUST', setting: key };
+  });
+}
+
+// May a response over TLS go out without Strict-Transport-Security (#1438,
+// ASVS 5.0.0 3.4.1)? HSTS binds a whole host name, every port of it, and takes
+// away the click-through on a certificate a browser does not trust. On a
+// development machine that host is `localhost` and the certificate is this
+// service's own, and the pin would outlast the container, so development does
+// not send it.
+/**
+ * Tells whether a response over TLS may omit Strict-Transport-Security.
+ *
+ * @returns true in development mode
+ */
+function omitsStrictTransportSecurity() {
+  log.debug("Entering omitsStrictTransportSecurity().");
+  log.debug("Leaving omitsStrictTransportSecurity().");
+  return !isProduct();
+}
+
 // May a SAML assertion or a SAML 1.1 Response go out UNSIGNED (#181,
 // 2026-09-23)? Development says yes where `saml2.signAssertion`,
 // `saml11.signAssertion` or `saml11.signResponse` is off, or an application
@@ -603,6 +1022,30 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does this service DESCRIBE ITSELF as a test double? (#543's review.) The
+// service metadata document (`GET /admin-api/sts-metadata`) carries a
+// `testDouble` member so that a reader of an endpoint list cannot take it for
+// a claim that every one of those endpoints checks what it is handed. It was
+// the literal `true` and said so in product mode too, where passwords are
+// verified and access tokens validated — the one place the document was
+// wrong about the service that served it. The console's index asks it too
+// (#753): its *What it deliberately does not do* is almost all about what
+// development mode does not check, so it is drawn only where this answers
+// yes.
+/**
+ * Tells whether the service describes itself as a test double, one that
+ * checks no password and validates no access token: the service metadata
+ * document's `testDouble`, and the console index's list of what it does not
+ * do.
+ *
+ * @returns true in development mode
+ */
+function describesItselfAsTestDouble() {
+  log.debug("Entering describesItselfAsTestDouble().");
+  log.debug("Leaving describesItselfAsTestDouble().");
+  return !isProduct();
+}
+
 // Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
 // Product keeps a key set for as long as the store does, so a key that is
 // never replaced is a key whose compromise never ends; each unit gets a
@@ -663,6 +1106,27 @@ function derivesKrbtgtFromPassword() {
   return !isProduct();
 }
 
+// Does the KDC key its own ACCEPTOR'S SPN at random when krb5.servicePassword
+// is empty or the published default? (2026-10-12.) Product refuses both
+// passwords (STS-KRB-0060, STS-KRB-0061), and until this a base installation's
+// acceptor therefore accepted no ticket until an operator invented a password
+// for an SPN no other KDC issues. Product now makes a random key for the SPN,
+// sealed on its application entry as an operator's create-service would, once
+// for the cluster — and a password an operator sets wins over it. Development
+// keeps building the account from the published password, so a reader can
+// derive the key; its empty password still means no account.
+/**
+ * Tells whether the acceptor's SPN is keyed at random when its configured
+ * password is empty or the published default.
+ *
+ * @returns true in product mode
+ */
+function generatesAcceptorKey() {
+  log.debug("Entering generatesAcceptorKey().");
+  log.debug("Leaving generatesAcceptorKey().");
+  return isProduct();
+}
+
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
@@ -677,25 +1141,6 @@ function refusesExpiredClientSecrets() {
   log.debug("Entering refusesExpiredClientSecrets().");
   log.debug("Leaving refusesExpiredClientSecrets().");
   return isProduct();
-}
-
-// Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
-// (2026-09-14, #32.) A person arriving at either surface with no session, on a
-// service with realms defined, chooses which realm to sign in through.
-// Development draws every realm in a list, because the list is what somebody
-// exercising the service wants; product asks for the realm's id in a text box,
-// because a list drawn to anybody who can reach the page publishes every
-// tenant this deployment serves.
-/**
- * Tells whether the realm chooser in front of `/admin` and `/portal` lists the
- * realms; product asks for the realm's id instead.
- *
- * @returns true in development mode
- */
-function listsRealmsBeforeSignIn() {
-  log.debug("Entering listsRealmsBeforeSignIn().");
-  log.debug("Leaving listsRealmsBeforeSignIn().");
-  return !isProduct();
 }
 
 // May a claim VALUE be invented where the store holds none? A persona surname,
@@ -713,6 +1158,26 @@ function listsRealmsBeforeSignIn() {
 function inventsClaimValues() {
   log.debug("Entering inventsClaimValues().");
   log.debug("Leaving inventsClaimValues().");
+  return !isProduct();
+}
+
+// May a person be created without what the realm's attribute policy requires
+// (#396)? `common/attribute_policy.ts` holds a realm's list of the attributes
+// every person must carry — `uid`, `cn` and `sn` always, `givenName` and
+// `mail` by default — and development creates a person without them, as it
+// creates one at a sign-in with nothing typed: a client under test needs a
+// subject, and a fixture that had to describe somebody in full before it
+// could exist would be the same refusal at every door for nothing. Product
+// refuses the create, and an edit that would take a required value away.
+/**
+ * Tells whether a person may be created, or edited, without the attributes
+ * the realm's attribute policy requires.
+ *
+ * @returns true in development mode
+ */
+function createsIncompletePeople() {
+  log.debug("Entering createsIncompletePeople().");
+  log.debug("Leaving createsIncompletePeople().");
   return !isProduct();
 }
 
@@ -735,9 +1200,9 @@ function acceptsUnregisteredAddresses() {
   return !isProduct();
 }
 
-// Are the TEST CONTROLS open to anybody who can reach the port? Adding a trust
-// anchor at POST /tls/trust, switching DPoP nonces, reading the Kerberos
-// fixture passwords off /krb5/principals, signing somebody ELSE out with
+// Are the TEST CONTROLS open to anybody who can reach the port? Reading the
+// Kerberos fixture passwords off /krb5/principals (until #595 deleted it),
+// signing somebody ELSE out with
 // ?username=, registering an OAuth client with no initial credential, asking a
 // SAML 1.1 attribute authority about any named person. Each exists so a test
 // can drive a state; in product each is either refused or behind the credential
@@ -1015,6 +1480,36 @@ function refusesUnknownRevocationStatus() {
 function refusesUnrevocableCertificates() {
   log.debug("Entering refusesUnrevocableCertificates().");
   log.debug("Leaving refusesUnrevocableCertificates().");
+  return isProduct();
+}
+
+// Is every X.509 certificate this service relies on held to the FULL set of
+// checks — a path to an anchor it was told about, validity, revocation, the
+// basicConstraints, keyUsage and extendedKeyUsage the use case asks, and the
+// pin rule — through the one validation door (#1360, 2026-11-06)? This is
+// what `pki.paranoid=auto` resolves to: product answers yes, development no.
+//
+// **DEVELOPMENT IS LEFT EXACTLY AS IT WAS, BY rcbj's DECISION (2026-11-06).**
+// The audit behind #1360 found pinned certificates never validity-checked,
+// revocation skipped on outbound peers and attestors, EKU never a path rule,
+// and anchor admission checking nothing; paranoid PKI mode closes each of
+// those, per use case, and a product deployment gets all of it by default. A
+// development stack is where a client author points a half-built client, and
+// the certificate it presents is usually the first one they ever minted, so
+// development keeps every site's behaviour as the audit recorded it and an
+// operator who wants the checks there switches the master on. The per-use-case
+// rows (`pki.paranoid<UseCase>`) are consulted only while the master is in
+// force, and each one off is exactly today's behaviour for that use case.
+// `common/certificate_trust.ts` is the door and argues the rest.
+/**
+ * Tells whether paranoid PKI mode is in force: what `pki.paranoid=auto`
+ * resolves to (on in product, off in development).
+ *
+ * @returns true in product mode
+ */
+function enforcesParanoidPki() {
+  log.debug("Entering enforcesParanoidPki().");
+  log.debug("Leaving enforcesParanoidPki().");
   return isProduct();
 }
 
@@ -1304,6 +1799,65 @@ function enrolsKeysOnFirstUse() {
   return !isProduct();
 }
 
+// Does a SIOPv2 `did:web` subject enrolled BEFORE #693 — so with no key
+// thumbprint pinned on its enrolment — sign in with whatever key its document
+// names today, and have that key pinned on the spot (2026-10-20, #693)?
+// Development says yes, trust on first use, with a log line and an audit row,
+// so an enrolment a tester made last week keeps working. Product says no: the
+// key the document names now is whoever controls that host now, and nothing
+// recorded says it is the key the person or the administrator enrolled, so
+// the sign-in is refused (STS-VC-0127) and the person enrols again by a fresh
+// proof. A did:web enrolled since #693 always carries its pin, and a key the
+// pin does not name is refused in both modes (STS-VC-0126). `oid4vc/siop.ts`
+// asks it.
+/**
+ * Tells whether a `did:web` self-issued subject enrolled with no pinned key
+ * is pinned to the key it signs in with the first time (trust on first use).
+ *
+ * @returns true in development mode
+ */
+function pinsSelfIssuedKeysOnFirstUse() {
+  log.debug("Entering pinsSelfIssuedKeysOnFirstUse().");
+  log.debug("Leaving pinsSelfIssuedKeysOnFirstUse().");
+  return !isProduct();
+}
+
+// May a PERSON'S PUBLISHED did:web be minted on the address the request
+// arrived at, when no public base URL is pinned (#1291)? The DID is FIXED
+// when it is created and stored on the person's entry, so whatever base it
+// is built on becomes part of a stored identifier for good. Development
+// says yes and builds it on the request's base (`helpers.baseUrlOf()`), so a
+// tester reaching the service as localhost can publish one. Product says no:
+// a `Host` header must never become part of a stored identifier, so creating
+// one is refused (STS-VC-0168) until `global.publicBaseUrl` (or the
+// verifiable credentials application's advertised listener) pins the base.
+// `oid4vc/person_did.ts` asks it.
+// `common/profile_photo.ts` asks it (#719): a photo's address goes into tokens
+// and onto the entry, so it is the same question as the DID's.
+/**
+ * Tells whether a profile photo's address may be built on the request's own
+ * base URL when no public base URL is pinned.
+ *
+ * @returns true in development mode
+ */
+function mintsPhotoAddressesOnRequestAddress() {
+  log.debug("Entering mintsPhotoAddressesOnRequestAddress().");
+  log.debug("Leaving mintsPhotoAddressesOnRequestAddress().");
+  return !isProduct();
+}
+
+/**
+ * Tells whether a person's published `did:web` may be minted on the request's
+ * own base URL when no public base URL is pinned.
+ *
+ * @returns true in development mode
+ */
+function mintsPersonDidsOnRequestAddress() {
+  log.debug("Entering mintsPersonDidsOnRequestAddress().");
+  log.debug("Leaving mintsPersonDidsOnRequestAddress().");
+  return !isProduct();
+}
+
 // May a WebAuthn registration's ATTESTATION STATEMENT go unverified (#105,
 // 2026-09-23)? `webauthn.attestationPolicy`'s default, `by-mode`, asks it:
 // development records the statement's format and verifies nothing, as it
@@ -1350,6 +1904,53 @@ function acceptsUnattestedDeviceKeys() {
   log.debug("Entering acceptsUnattestedDeviceKeys().");
   log.debug("Leaving acceptsUnattestedDeviceKeys().");
   return !isProduct();
+}
+
+// Must a TPM key attestation in a device certificate request be FRESH (#257,
+// 2026-10-06)? draft-ietf-lamps-csr-attestation section 6.2 lets the CA
+// "ignore attestations that are stale, or whose freshness cannot be
+// determined", and draft-ietf-lamps-attestation-freshness gives EST a /nonce
+// for the TPM to sign as TPM2_Certify's qualifyingData, which comes back as
+// TPMS_ATTEST's extraData. Without it a captured statement — which says
+// nothing more than that SOME TPM certified this key once — could be sent
+// again, in a new request for the same key, by whoever holds the key now.
+// Development records such a statement's freshness UNPROVEN and keeps its
+// level, because a client under test may have no nonce exchange (and SCEP
+// has none at all). Product REFUSES it (STS-DEVICE-0050).
+// `common/cert_enrollment.ts` asks it.
+/**
+ * Tells whether a TPM key attestation must carry a live nonce this realm
+ * issued (EST /nonce) for a device certificate to be issued.
+ *
+ * @returns true in product mode
+ */
+function requiresFreshKeyAttestation() {
+  log.debug("Entering requiresFreshKeyAttestation().");
+  log.debug("Leaving requiresFreshKeyAttestation().");
+  return isProduct();
+}
+
+// Is an Android attestation whose REVOCATION could not be checked — no
+// current Android attestation status list (#256), never fetched, failing, or
+// stale — refused as unattested? Development records it attested with the
+// reason, whatever the setting, because a client under test reaches no
+// Google. Product does the same unless `devices.androidRevocationRequired`
+// is on (off by default, so an install that cannot reach Google still
+// attests), and then records the chain self-asserted — which
+// `acceptsUnattestedDeviceKeys()` then refuses for a device key, and which
+// makes a WebAuthn `android-key` statement untrusted.
+// `common/attestation_revocation.ts` asks it.
+/**
+ * Tells whether an Android attestation whose revocation status could not be
+ * checked is treated as unattested.
+ *
+ * @returns true in product mode with devices.androidRevocationRequired on
+ */
+function refusesUncheckedAttestationRevocation() {
+  log.debug("Entering refusesUncheckedAttestationRevocation().");
+  log.debug("Leaving refusesUncheckedAttestationRevocation().");
+  return isProduct() &&
+         config.value('devices.androidRevocationRequired') === true;
 }
 
 // May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
@@ -1400,6 +2001,49 @@ function issuesTicketsOnPasswordAlone() {
   return !isProduct();
 }
 
+// Must a Kerberos trust FILTER SIDS to be used at all (#430, rcbj's decision
+// 4)? Product says yes: a trust record with `quarantined` off would let the
+// partner assert any SID it likes in a PAC this realm re-signs, and
+// `kerberos/krb5_trusts.ts` does not honour one — unless the realm turns
+// krb5.requireSidFilteringInProduct off, which is the operator saying so.
+// Development uses such a record, as it uses every other configuration, so
+// a client can be exercised against an unfiltered trust.
+/**
+ * Tells whether a Kerberos trust must filter SIDs (`quarantined`) to be
+ * honoured, where the realm has not turned krb5.requireSidFilteringInProduct
+ * off.
+ *
+ * @returns true in product mode
+ */
+function requiresSidFilteringOnTrusts() {
+  log.debug("Entering requiresSidFilteringOnTrusts().");
+  log.debug("Leaving requiresSidFilteringOnTrusts().");
+  return isProduct();
+}
+
+// Does a way back into an account that asks for no passkey — a password
+// reset link, an activation link, a recovery code, an emailed code or link —
+// restore access to applications at once, for a person who holds a passkey
+// (#724, 2026-10-19)? It is the DEFAULT of the passkey policy's
+// `recoveryAssurance` row, never a rule of its own: a realm's row says
+// otherwise in either mode. Development says yes (`any`), what this service
+// did before the row existed. Product says no (`not-weaker`): the session a
+// recovery leads to may only register a passkey satisfying the profile, and
+// reaches no application until a passkey has signed the person in — rcbj's
+// decision on #724, 2026-10-19 ("not-weaker in product is fine for now").
+// `common/passkey_policy.ts` asks it for the built-in default.
+/**
+ * Tells whether an account recovery restores access before a passkey has
+ * signed the person in, by default (`recoveryAssurance: any`).
+ *
+ * @returns true in development mode
+ */
+function recoversWeakerThanPasskeys() {
+  log.debug("Entering recoversWeakerThanPasskeys().");
+  log.debug("Leaving recoversWeakerThanPasskeys().");
+  return !isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -1420,6 +2064,26 @@ function issuesTicketsOnPasswordAlone() {
 function matchesFederatedNames() {
   log.debug("Entering matchesFederatedNames().");
   log.debug("Leaving matchesFederatedNames().");
+  return !isProduct();
+}
+
+// Does a NEW service-provider relationship create a directory entry for a
+// partner's subject nobody has linked (#358)? Development says yes — a mock
+// pointed at a partner is there to see the person arrive. Product says no:
+// a partner is the one source of identities whose volume this service does
+// not control, and creating them is the operator's act (`fedAutocreateUsers`
+// written TRUE), not the default. A relationship that already stores TRUE
+// or FALSE is that value in both modes; this predicate is only what a
+// missing one, and a relationship created now, means.
+/**
+ * Tells whether a new federation relationship creates entries for unlinked
+ * subjects (`fedAutocreateUsers`). A stored TRUE or FALSE wins in both modes.
+ *
+ * @returns true in development mode
+ */
+function defaultsFederatedAutocreate() {
+  log.debug("Entering defaultsFederatedAutocreate().");
+  log.debug("Leaving defaultsFederatedAutocreate().");
   return !isProduct();
 }
 
@@ -1625,6 +2289,40 @@ function publishesMetadataForUnregisteredProviders() {
   return !isProduct();
 }
 
+// Does this service ISSUE a token to an application nobody registered
+// (#496, rcbj 2026-10-06)? A WS-Trust AppliesTo and a WS-Federation wtrealm
+// name the relying party a token is FOR. Development answers yes: a token is
+// issued for any of them under the shared entityID, and the protocol's
+// `seen()` files the application, which is how a relying party can be pointed
+// here before anything is provisioned. Product answers no: an application
+// nobody registered (no `appRegisteredBy` — an entry `seen()` filed in
+// development is not a registration) is refused before anything is issued or
+// recorded, in that protocol's own vocabulary, and an RST naming no AppliesTo
+// at all is refused with it, because a token with no audience is one every
+// relying party would be entitled to accept. The rule is rcbj's on #496: in
+// product an unregistered application gets nothing but a 404 or its
+// protocol's own "unknown application" error.
+// The same question is asked of every door where a request names an
+// application (#496, widened by rcbj the same day): an OAuth 2.0 client and
+// an RFC 8693 target, a SAML service provider or relying party, a GNAP
+// client — each refusing in its own protocol's words, each with its own row
+// in REQUIREMENTS below. And (#505) of the two doors that name the party a
+// token is FOR by an address rather than a client: an RFC 8707 resource and
+// a GNAP access right's locations, through `common/registered_targets.ts`.
+/**
+ * Tells whether a token may be issued for an application nobody registered
+ * (a WS-Trust AppliesTo, a WS-Federation wtrealm, an OAuth client, a SAML
+ * service provider, a GNAP client, the target an RFC 8707 resource or a GNAP
+ * location names), or for no application.
+ *
+ * @returns true in development mode
+ */
+function issuesToUnregisteredApplications() {
+  log.debug("Entering issuesToUnregisteredApplications().");
+  log.debug("Leaving issuesToUnregisteredApplications().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -1756,6 +2454,25 @@ function capturesMail() {
   return !isProduct();
 }
 
+// May a secret push destination be a FILE on this container's disk (#221 P3)?
+// rcbj's answer 5 on #221: the file destination is for development mode only.
+// Development answers yes — it is how the test suite exercises a rotation
+// without a secrets manager. Product answers no: a destination naming
+// `file` is reported unusable, and a push to it is refused
+// (STS-SECDEST-0006), because a password written to the service's own disk
+// is not in a secrets manager.
+/**
+ * Tells whether a secret push destination may write a file on this
+ * container's disk rather than to a secrets manager.
+ *
+ * @returns true in development mode
+ */
+function acceptsFileSecretDestinations() {
+  log.debug("Entering acceptsFileSecretDestinations().");
+  log.debug("Leaving acceptsFileSecretDestinations().");
+  return !isProduct();
+}
+
 // May a link this service MAILS be built on the listener's configured address
 // when `global.publicBaseUrl` is empty (#63)? Never on the request's — a link
 // in a message is not answered to whoever asked, so a `Host` header it came
@@ -1794,22 +2511,30 @@ function acceptsNonconformingResourceMetadata() {
   return !isProduct();
 }
 
-// Is the management API gated by the console's session and roles WHEN
-// `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
-// default, in both modes — puts an access token in front of `/admin-api`
-// first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
-// above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
-// TURNS ON**, because it is the only one that was ever off.
+// May `adminApi.authRequired` be turned OFF, opening the management API to
+// anybody who can reach the port (#446, 2026-10-05)? Since 2026-09-09 that
+// setting — on by default, in both modes — puts an access token in front of
+// `/admin-api`. Development may turn it off: it is what a test drives and the
+// way back in when nobody can mint a token. **Product may not.** Until #446
+// product fell back to the console's session and roles with the setting off
+// (`gatesManagementApi()`, #411); the console is becoming a static
+// application whose only gate IS this API's, so a setting that opened the
+// API would open the console with it, and a console session is no longer a
+// thing to fall back on. The row carries the `onlyWhile` marker on this
+// predicate: `false` is refused on write in product (STS-CORE-0103) and
+// ignored where it is read (`valueInForce()`, STS-CORE-0106). The way back
+// in for a product deployment is `adminApi.clientSecret`, pinned before the
+// start.
 /**
- * Tells whether the management API is gated by the console's session and roles
- * when `adminApi.authRequired` is off.
+ * Tells whether `adminApi.authRequired` may be turned off, which opens the
+ * management API to anybody who can reach the port.
  *
- * @returns true in product mode
+ * @returns true in development mode
  */
-function gatesManagementApi() {
-  log.debug("Entering gatesManagementApi().");
-  log.debug("Leaving gatesManagementApi().");
-  return isProduct();
+function opensManagementApi() {
+  log.debug("Entering opensManagementApi().");
+  log.debug("Leaving opensManagementApi().");
+  return !isProduct();
 }
 
 // ---------------------------------------------------------------------------
@@ -1925,7 +2650,8 @@ function observesRiskOnly() {
 // product inbox should not hold forgeries either). Development keeps the
 // debugger's posture — accept it and say why it did not verify, which is the
 // question a person testing a transmitter is asking — unless the setting
-// turns the refusal on. `/ssf/receive` and `ssf/ssf_receivers.ts` ask it.
+// turns the refusal on. `ssf/ssf_receivers.ts` and `ssf/ssf_transmitters.ts`
+// ask it.
 /**
  * Tells whether a receiver here refuses a Security Event Token whose signature
  * does not verify.
@@ -2013,15 +2739,24 @@ const REQUIREMENTS = [
   { id: 'unverified-signals',
     what: 'A received Security Event Token whose signature does not verify ' +
           'is refused',
-    development: 'POST /ssf/receive and the console\'s and portal\'s own ' +
+    development: 'The console\'s and portal\'s own ' +
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
-                 'ssf.receiveRequireSignature is on. Nothing acts on it.',
-    product: 'Every receiver answers 400 invalid_key, whatever ' +
-             'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
-             'authenticates nobody, records nothing; the console\'s and ' +
-             'portal\'s receivers, behind their stream\'s own secret, keep ' +
-             'it on their inbox marked refused.' },
+                 'ssf.receiveRequireSignature is on. Nothing acts on it. A ' +
+                 'federation partner\'s Shared Signals, pushed to ' +
+                 '/federation/signals/{id} or polled, are treated the same: ' +
+                 'an unverified SET is recorded on the relationship\'s ' +
+                 'inbox as unverified and acted on in no way, unless ' +
+                 'ssf.receiveRequireSignature is on.',
+    product: 'The console\'s and portal\'s receivers answer 400 ' +
+             'invalid_key, whatever ssf.receiveRequireSignature says ' +
+             '(#117), and keep it on their inbox marked refused. ' +
+             'A federation partner\'s unverified SET is refused ' +
+             'invalid_key too — HTTP 400 to a push to ' +
+             '/federation/signals/{id}, and in setErrs on the next poll ' +
+             'request for a polled one — kept on the relationship\'s inbox ' +
+             'marked refused, and never acted on.',
+    where: 'ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -2033,7 +2768,11 @@ const REQUIREMENTS = [
              'session-revoked, credential-change, a RISC account or ' +
              'credential event, a risk-level-change to HIGH, by default — ' +
              'ends the receiving surface\'s own sessions for the person it ' +
-             'names. An unverified event is never acted on in either mode.' },
+             'names. An unverified event is never acted on in either mode.',
+    // The policy is xacml_signal_pep.ts's; ssf_transmitters.ts asks the
+    // same predicate before a federation partner's signal is acted on.
+    where: 'ssf/ssf_receivers.ts, xacml/xacml_signal_pep.ts, ' +
+           'ssf/ssf_transmitters.ts' },
   { id: 'risk-decisions',
     what: 'The issuance policy\'s decisions on the RISK of an ' +
           'authentication are enforced',
@@ -2153,6 +2892,19 @@ const REQUIREMENTS = [
              'the console-administrator refusal.',
     where: 'federation/federation_sp.ts, federation/federation_links.ts, ' +
            'federation/federation.js' },
+  { id: 'federated-autocreate',
+    what: 'A new federation relationship creates a directory entry for a ' +
+          'partner subject nobody has linked',
+    development: 'fedAutocreateUsers is written TRUE when the relationship ' +
+                 'is created, and a relationship that does not store the ' +
+                 'attribute creates. A stored FALSE still creates nobody.',
+    product: 'fedAutocreateUsers is written FALSE when the relationship is ' +
+             'created, and a missing attribute creates nobody ' +
+             '(STS-FED-0090). A relationship that already stores TRUE keeps ' +
+             'creating until it is edited. link-at-first-sign-in still ' +
+             'links an existing mapped person in both modes.',
+    where: 'common/mode.js, federation/federation.js, ' +
+           'federation/federation_sp.ts' },
   { id: 'federated-logout-signature',
     what: 'A federation partner\'s SAML sign-out is signed by that partner',
     development: 'A relationship whose fedRequireSignedLogout is set off ' +
@@ -2181,14 +2933,49 @@ const REQUIREMENTS = [
              '(STS-FED-0139).',
     where: 'federation/federation_encryption.ts, federation/federation_sp.ts' },
   { id: 'passkey-first-use',
-    what: 'The sign-in screen does not enrol a security key for somebody ' +
+    what: 'The sign-in screen does not enrol a passkey for somebody ' +
           'who has not proved who they are',
     development: 'A passwordless sign-in naming somebody who holds no ' +
-                 'primary key enrols one on the spot, with no password read ' +
+                 'passkey enrols one on the spot, with no password read ' +
                  '— the first person to claim a name gets it.',
-    product: 'It is refused. A primary key is added on /portal/keys behind ' +
+    product: 'It is refused. A passkey is added on /portal/keys behind ' +
              'a session, by an activation link, or by an operator.',
     where: 'authn/authn.ts' },
+  // #693 (2026-10-20).
+  { id: 'siop-did-web-pin',
+    what: 'A did:web self-issued subject signs in only with a key pinned ' +
+          'when it was enrolled',
+    development: 'A did:web enrolled before key pinning, with no key ' +
+                 'pinned, signs in with the key its document names on its ' +
+                 'next sign-in, and that key is pinned then (trust on first ' +
+                 'use), with a log line and an audit row.',
+    product: 'That sign-in is refused (STS-VC-0127), audited, and the ' +
+             'person enrols the DID again by proving it on ' +
+             '/portal/self-issued. In both modes a key the pin does not ' +
+             'name is refused (STS-VC-0126).',
+    where: 'oid4vc/siop.ts' },
+  // #1291 (2026-11-03).
+  { id: 'photo-address-base',
+    what: 'A profile photo\'s address is built on the pinned public base URL',
+    development: 'With no public base URL pinned, a photo set on /portal or ' +
+                 'copied from a federation partner is addressed on the host ' +
+                 'the request arrived at, and tokens carry that address.',
+    product: 'Setting one is refused (STS-PORTAL-0635), and a partner\'s is ' +
+             'not copied (STS-FED-0220), until global.publicBaseUrl pins ' +
+             'the base: a Host header never becomes part of an address a ' +
+             'token carries.',
+    where: 'common/profile_photo.ts' },
+  { id: 'person-did-base',
+    what: 'A person\'s published did:web is minted on the pinned public ' +
+          'base URL',
+    development: 'With no public base URL pinned, a DID published from ' +
+                 '/portal/self-issued is built on the address the request ' +
+                 'arrived at, and that address is part of the DID for good.',
+    product: 'Publishing one is refused (STS-VC-0168) until ' +
+             'global.publicBaseUrl, or the advertised listener of the ' +
+             'verifiable credentials application, pins the base: a Host ' +
+             'header never becomes part of a stored identifier.',
+    where: 'oid4vc/person_did.ts' },
   // #105 (2026-09-23).
   { id: 'webauthn-attestation',
     what: 'A security key\'s attestation statement is verified before the ' +
@@ -2206,7 +2993,10 @@ const REQUIREMENTS = [
              'refused on write and read as by-mode.',
     where: 'authn/webauthn_attestation.ts, common/credentials.ts, ' +
            'authn/authn.ts' },
-  // #101 (2026-09-22).
+  // #101 (2026-09-22). Until #1135 only a key enrolled in the `mfa` role
+  // counted here and in `kerberos-second-factor`; a passkey has no role
+  // since, so any passkey counts where a passkey is accepted as a second
+  // factor (`credentials.passwordOnlyDoors()`).
   { id: 'second-factor-doors',
     what: 'A person who holds or must hold a second factor is refused their ' +
           'password alone at the password-only doors',
@@ -2217,15 +3007,29 @@ const REQUIREMENTS = [
     product: 'At those five doors the person\'s own password is refused — ' +
              'answered exactly as a wrong password, and counted against the ' +
              'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
-             'log only) — whenever they hold an authenticator app or a ' +
-             'security key in the mfa role, or a second factor is required ' +
-             'of them (stsMfaRequired, the authentication policy). An APP ' +
-             'PASSWORD ' +
-             'they made on /portal/app-passwords, scoped to the door, is ' +
-             'accepted instead. authn.passwordAloneDoors names doors that ' +
+             'log only) — whenever they hold an authenticator app or any ' +
+             'passkey where the realm (or the authentication policy the ' +
+             'application names) accepts a passkey as a second factor, or ' +
+             'a second factor is required of them (stsMfaRequired, the ' +
+             'authentication policy). An APP PASSWORD they made on ' +
+             '/portal/app-passwords, scoped to the door, is accepted ' +
+             'instead. authn.passwordAloneDoors names doors that ' +
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
+  { id: 'kerberos-sid-filtering',
+    what: 'A Kerberos trust is honoured only while it filters SIDs',
+    development: 'A trust record with quarantined off is used like any ' +
+                 'other: tickets are referred through it and accepted from ' +
+                 'it, and a PAC arriving across it is filtered as its ' +
+                 'trust boundary says, without the quarantine\'s rule ' +
+                 'that only the trusted domain\'s SIDs pass.',
+    product: 'A trust record with quarantined off refers nobody and ' +
+             'accepts nothing (STS-KRB-0229 names why) while ' +
+             'krb5.requireSidFilteringInProduct is on, which is the ' +
+             'default. Turning that setting off on the realm is the ' +
+             'operator accepting the partner\'s SIDs.',
+    where: 'kerberos/krb5_trusts.ts, kerberos/krb5_kdc.js' },
   { id: 'kerberos-second-factor',
     what: 'A person who holds or must hold a second factor gets no Kerberos ' +
           'ticket on a password alone',
@@ -2235,13 +3039,31 @@ const REQUIREMENTS = [
     product: 'That AS-REQ is refused KDC_ERR_POLICY (12), STS-KRB-0135, ' +
              'after the password verified (a wrong one is still ' +
              'KDC_ERR_PREAUTH_FAILED), whenever the person holds an ' +
-             'authenticator app or a security key in the mfa role, or a ' +
-             'second factor is required of them. A person with an ' +
-             'authenticator app gets a ticket through RFC 6113 FAST armor ' +
+             'authenticator app or any passkey where the realm (or the ' +
+             'authentication policy the application names) accepts a ' +
+             'passkey as a second factor, or a second factor is required ' +
+             'of them. A person with an authenticator app gets a ticket ' +
+             'through RFC 6113 FAST armor ' +
              'with RFC 6560 OTP pre-authentication — password and code in ' +
              'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
              'app password is never a Kerberos key.',
     where: 'kerberos/krb5_kdc.js, kerberos/krb5_fast.ts' },
+  // #724 (2026-10-19).
+  { id: 'recovery-assurance',
+    what: 'An account recovery is no weaker than the passkey it replaces, ' +
+          'by default',
+    development: 'The passkey policy\'s recoveryAssurance defaults to any: ' +
+                 'a password reset link, an activation link, a recovery ' +
+                 'code or an emailed code or link restores access at once, ' +
+                 'whatever passkey the person holds.',
+    product: 'It defaults to not-weaker: for a person who holds a passkey, ' +
+             'the first sign-in after a recovery that is not a passkey ' +
+             'sign-in reaches no application (STS-AUTHN-0381). The sign-in ' +
+             'screen asks them to register a passkey that satisfies the ' +
+             'passkey policy, and then to sign in with it. A realm\'s own ' +
+             'row says otherwise in either mode.',
+    where: 'common/passkey_policy.ts, authn/authn.ts, ' +
+           'portal/account_reset.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -2270,6 +3092,19 @@ const REQUIREMENTS = [
              'link is mailed only when global.publicBaseUrl is set ' +
              '(STS-MAIL-0015).',
     where: 'common/mail.ts' },
+  { id: 'secret-destinations',
+    what: 'A service account\'s rotated password is pushed to a secrets ' +
+          'manager, never to this container\'s disk',
+    development: 'A secret push destination may be a FILE: a push writes ' +
+                 'the password into an existing file under the ' +
+                 'destination\'s directory, which is how the test suite ' +
+                 'exercises a rotation without a secrets manager.',
+    product: 'A destination naming `file` is reported unusable and a push ' +
+             'to it is refused (STS-SECDEST-0006). AWS Secrets Manager, ' +
+             'Google Cloud Secret Manager, Azure Key Vault and a Vault or ' +
+             'OpenBao KV version 2 engine remain, each over verified TLS ' +
+             'with the destination\'s own write credential (#221).',
+    where: 'common/secrets.js, common/secret_destinations.ts' },
   { id: 'outbound-tls',
     what: 'An outbound request verifies the certificate of whoever answers, ' +
           'and does not go out over plain http',
@@ -2328,7 +3163,8 @@ const REQUIREMENTS = [
     product: 'Each weak value is IGNORED where it is read (logged once, ' +
              'STS-CORE-0106) and refused on write (STS-CORE-0103, and ' +
              'STS-REG-0193 on an application): XML is signed with the ' +
-             'default rsa-sha256, keys are wrapped with rsa-oaep-mgf1p, a ' +
+             'default rsa-sha256, keys are wrapped with rsa-oaep (and ' +
+             'rsa-oaep-mgf1p only with crypto.allowLegacyHashes on), a ' +
              'SHA-1 signature is refused, a CA build or key pair naming ' +
              'SHA-1 is refused (STS-PKI-0191) and one inherited from a ' +
              'branch built in development is replaced by the key\'s ' +
@@ -2359,6 +3195,18 @@ const REQUIREMENTS = [
              'or whose key_ops lack "verify", and a segment that is not ' +
              'canonical base64url are refused.',
     where: 'common/crypto.js' },
+  // #1533, #1577 (signing), ASVS 5.0.0 11.6.1 (verifying).
+  { id: 'unapproved-curves',
+    what: 'secp256k1 is used only where a list names it',
+    development: 'ES256K is signed with, offered and accepted like any ' +
+                 'other algorithm.',
+    product: 'ES256K is not signed with or offered unless ' +
+             'keys.signingAlgorithms lists it, and a signature in it is ' +
+             'refused unless keys.acceptedSigningAlgorithms or ' +
+             'keys.signingAlgorithms lists it (cose.acceptedAlgorithms for ' +
+             'COSE). The published algorithm lists, DPoP\'s among them, ' +
+             'leave it out.',
+    where: 'common/signature_policy.ts' },
   { id: 'xml-ecdsa-curves',
     what: 'An XML ECDSA signature is verified only on a curve of at least ' +
           '256 bits',
@@ -2366,9 +3214,11 @@ const REQUIREMENTS = [
                  'secp192, secp224 among them — so a partner on one can be ' +
                  'exercised. WEAKER THAN NIST SP 800-57\'s 112-bit floor for ' +
                  'the smallest of them.',
-    product: 'Only P-256, P-384, P-521, secp256k1 and brainpoolP256r1 and ' +
-             'larger verify; any other curve is refused (STS-KEYS-0077) and ' +
-             'a certificate on one is not registered.',
+    product: 'Only P-256, P-384, P-521 and brainpoolP256r1 and larger ' +
+             'verify, and secp256k1 where keys.acceptedSigningAlgorithms or ' +
+             'keys.signingAlgorithms names ES256K; any other curve is ' +
+             'refused (STS-KEYS-0077) and a certificate on one is not ' +
+             'registered.',
     where: 'common/crypto.js' },
   // #182 (2026-09-23).
   { id: 'kerberos-deprecated-enctypes',
@@ -2385,10 +3235,222 @@ const REQUIREMENTS = [
              'AS-REQ or TGS-REQ offering nothing else is refused ' +
              'KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); an RC4 session key or ' +
              'subkey in a TGS-REQ, an AP-REQ or FAST armor is refused ' +
-             '(STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) is what is ' +
-             'left.',
+             '(STS-KRB-0157, 0158, 0159). AES is what is left.',
     where: 'kerberos/krb5_principals.js, kerberos/krb5_kdc.js, ' +
            'kerberos/krb5_service.js, kerberos/krb5_fast.ts' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'main-port-https',
+    what: 'The main port is HTTPS',
+    development: 'STS_HTTPS=false runs the main port in cleartext.',
+    product: 'A process with global.https off does not start ' +
+             '(STS-CORE-0167). The plain-HTTP revocation and SCEP ' +
+             'listener stays, as RFC 5280, RFC 5019 and RFC 8894 expect.',
+    where: 'server.js' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'public-certificate',
+    what: 'The listener certificate is publicly trusted',
+    development: 'This service\'s own certificate authority mints it.',
+    product: 'Set tls.certificateFile to a publicly trusted chain. A ' +
+             'certificate this service minted does not stop it starting, ' +
+             'and is shown on this row.',
+    where: 'common/mode.js' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'legacy-ciphers',
+    what: 'SCEP, XML encryption and Kerberos avoid legacy ciphers',
+    development: 'SCEP answers, and XML encryption may use AES-CBC, and ' +
+                 'Kerberos offers enctypes 17 and 18.',
+    product: 'SCEP answers only with scep.allowInProduct on ' +
+             '(STS-SCEP-0067). XML encryption selects and accepts AES-GCM ' +
+             'only (STS-KEYS-0195). Kerberos uses 19 and 20 unless ' +
+             'krb5.allowSha1Enctypes is on.',
+    where: 'scep/scep.ts, common/crypto.js, common/config.js' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'declared-grants',
+    what: 'A client uses only the grants it needs',
+    development: 'A client that declares no grant types may use any grant.',
+    product: 'A client that declares no grant types may use ' +
+             'authorization_code and refresh_token alone, unless ' +
+             'oauth2.allowUndeclaredGrants is on (STS-OAUTH-0598).',
+    where: 'oauth-oidc/oauth2.ts' },
+  // #1447 (ASVS 5.0.0 6.3.2).
+  { id: 'no-default-admin-name',
+    what: 'No account carries a default administrator name',
+    development: 'The bootstrap administrator is admin, which every test and ' +
+                 'walkthrough signs in as.',
+    product: 'A bootstrap administrator named admin, root, sa or ' +
+             'administrator, or with no name, is given an unpredictable ' +
+             'generated name, printed with its password at first start, ' +
+             'unless admin.allowDefaultUsername is on.',
+    where: 'common/bootstrap_name.ts' },
+  // #1469 (ASVS 5.0.0 11.4.1).
+  { id: 'legacy-hashes',
+    what: 'Disallowed hashes are not used',
+    development: 'OAEP over SHA-1, the SHA-1 PKINIT key derivation and the ' +
+                 'HMAC-MD5 checksum of S4U2Self are available.',
+    product: 'They are off unless crypto.allowLegacyHashes is on. TOTP ' +
+             'remains HMAC-SHA-1 by default, for authenticator ' +
+             'compatibility, and PKINIT keeps the SHA-1 paChecksum RFC ' +
+             '4556 defines.',
+    where: 'common/crypto.js, kerberos/krb5_pkinit.ts, kerberos/krb5_kdc.js' },
+  // #1481 (ASVS 5.0.0 5.3.2).
+  { id: 'named-file-roots',
+    what: 'A named file must be in an allowed directory',
+    development: 'A file an administrator names is read from wherever it says.',
+    product: 'A file is read only if its real path is inside a directory ' +
+             'security.fileRoots lists, and the answer does not say why a ' +
+             'path failed.',
+    where: 'common/outbound_tls.ts' },
+  // #1490 (ASVS 5.0.0 6.3.3).
+  { id: 'second-factor-everyone',
+    what: 'A second factor is required of everybody',
+    development: 'The authentication policy decides, and by default only ' +
+                 'those who hold a second factor are asked for it.',
+    product: 'Everybody needs a second factor, whatever the policy says, ' +
+             'unless authn.allowOptionalSecondFactor is on.',
+    where: 'common/authn_policy.ts' },
+  // #1504 (ASVS 5.0.0 6.4.4).
+  { id: 'factor-clear-evidence',
+    what: 'Clearing a second factor needs a stated proof of identity',
+    development: 'An administrator may clear a factor by naming the person.',
+    product: 'An administrator must say how the person\'s identity was ' +
+             'verified. The statement goes on the audit row.',
+    where: 'admin-core/admin_actions.ts' },
+  { id: 'strict-protocol-input',
+    what: 'Protocol input is held to the strict reading',
+    development: 'A repeated token parameter takes its last value, a ' +
+                 'partner\'s Logout Token needs no explicit type, forwarded ' +
+                 'addresses are believed from anyone when global.trustProxy ' +
+                 'is on with no list, and an internal error\'s text reaches ' +
+                 'the caller.',
+    product: 'A repeated token parameter is refused, a partner\'s Logout ' +
+             'Token must be typed logout+jwt unless ' +
+             'federation.allowUntypedLogoutToken is on, forwarded ' +
+             'addresses need global.trustedProxies, and an internal ' +
+             'error\'s text stays in the log.',
+    where: 'common/mode.js' },
+  { id: 'no-known-secrets',
+    what: 'Logs and the database hold no well-known secrets',
+    development: 'At debug level the log carries whole requests and ' +
+                 'responses, and the database may use a demonstration ' +
+                 'password.',
+    product: 'Request logs leave out credentials and bodies at every ' +
+             'level, a signed token or assertion is logged by its size and ' +
+             'digest only, and a default database password stops the ' +
+             'service unless persistence.allowDefaultDatabasePassword is ' +
+             'on.',
+    where: 'common/helpers.js, persistence/persistence.js' },
+  // ASVS 5.0.0 13.3.1.
+  // ASVS 5.0.0 7.6.2.
+  { id: 'sso-consent',
+    what: 'Single sign-on asks before it signs a person in to an application',
+    development: 'SAML 2.0, SAML 1.1 and WS-Federation sign a person in from ' +
+                 'their session without asking.',
+    product: 'A person is asked once per application before SAML 2.0, SAML ' +
+             '1.1 or WS-Federation signs them in to it, and the answer is ' +
+             'kept. saml2.ssoConsent, saml11.ssoConsent and ' +
+             'wsfed.ssoConsent turn it off per protocol, and an ' +
+             'application\'s own value overrides them.',
+    where: 'common/sso_consent.ts' },
+  { id: 'secrets-from-store',
+    what: 'Backend secrets come from a secret store',
+    development: 'The key-encryption key may be a file, and the database ' +
+                 'password may be in a file or in the connection string.',
+    product: 'The key-encryption keys come from a secret store or a key ' +
+             'management service, and a database password from a secret ' +
+             'store. A file or a password in the connection string stops ' +
+             'the service unless secrets.allowLocalSecrets is on. A ' +
+             'previous key-encryption key may still be a file, so that a ' +
+             'deployment can move off one.',
+    where: 'common/secrets.js, persistence/persistence.js' },
+  { id: 'audit-destination',
+    what: 'The audit log should leave this service',
+    development: 'Nothing is said about audit export.',
+    product: 'Add an audit export destination, so that a copy of the log ' +
+             'is out of reach of a compromise here. Until one exists the ' +
+             'service logs a warning for that realm.',
+    where: 'common/audit_export.ts' },
+  // #1501 (ASVS 5.0.0 12.3.1).
+  { id: 'malware-scan-tls',
+    what: 'Files reach the malware scanner encrypted',
+    development: 'An icap:// or icaps:// address may be used.',
+    product: 'Only an icaps:// address is used, unless ' +
+             'malwareScan.allowCleartext is on.',
+    where: 'common/malware_scan.ts' },
+  // #1491 (ASVS 5.0.0 7.3.1, 11.2.3).
+  { id: 'session-key-defaults',
+    what: 'Sessions and RSA keys have stricter defaults',
+    development: 'A session has no idle timeout, and new RSA keys are 2048 ' +
+                 'bits.',
+    product: 'A session ends after 30 idle minutes and new RSA keys are ' +
+             '3072 bits, unless a setting says otherwise.',
+    where: 'common/config.js, common/helpers.js' },
+  // #1493 (ASVS 5.0.0 16.2.5).
+  { id: 'bootstrap-password-file',
+    what: 'The bootstrap password stays out of the log',
+    development: 'The generated password is written to the service log.',
+    product: 'It is written to a file only this service can read, and the ' +
+             'log says where, unless admin.logBootstrapPassword is on.',
+    where: 'common/credentials.ts' },
+  // #1495 (ASVS 5.0.0 10.4.6).
+  { id: 'pkce-every-client',
+    what: 'Every client must use PKCE',
+    development: 'A confidential client that sends no code_challenge is only ' +
+                 'logged.',
+    product: 'It is refused unless oauth2.allowConfidentialWithoutPkce is ' +
+             'on.',
+    where: 'oauth-oidc/oauth2_bcp.js' },
+  // #1486 (ASVS 5.0.0 11.3.2).
+  { id: 'jwe-cbc',
+    what: 'JWE content encryption is AES-GCM only',
+    development: 'A128CBC-HS256, A192CBC-HS384 and A256CBC-HS512 are offered ' +
+                 'and accepted, and A128CBC-HS256 is the default.',
+    product: 'Only AES-GCM is offered or accepted, and it is used where a ' +
+             'client names no enc, unless crypto.allowCbcJwe is on.',
+    where: 'common/crypto.js, common/applications.js' },
+  // #1473 (ASVS 5.0.0 8.2.1, 8.2.2).
+  { id: 'unscoped-people',
+    what: 'A person needs a role at SCIM and Shared Signals',
+    development: 'Any authenticated person may read and write, whatever ' +
+                 'scheme they used.',
+    product: 'A scheme that carries no scope needs Admin Read to read and ' +
+             'Admin Write to write, unless security.allowUnscopedPeople ' +
+             'is on. OAuth scopes and an application certificate work as ' +
+             'before.',
+    where: 'scim/scim_auth.ts, ssf/ssf_auth.ts' },
+  // #1441 (ASVS 5.0.0 3.3.1).
+  { id: 'prefixed-cookies',
+    what: 'Every cookie carries a __Host- or __Secure- prefix',
+    development: 'Cookies keep their plain names (sts_session and the rest), ' +
+                 'which a person reads in browser tools.',
+    product: 'Over TLS every cookie is __Host- prefixed, or __Secure- ' +
+             'where it carries a Domain, and an unprefixed one is ' +
+             'ignored. The prefix is applied once, by the process holding ' +
+             'the socket.',
+    where: 'common/cookie_wire.ts' },
+  // #1450 (ASVS 5.0.0 8.2.1).
+  { id: 'access-decisions-fail-closed',
+    what: 'An access decision that cannot be made is a refusal',
+    development: 'A decider that throws, an empty answer, or a check naming ' +
+                 'no resource or action allows the request and is logged, so ' +
+                 'a half-loaded development process still answers.',
+    product: 'Each of those is a refusal (STS-XACML-0051, 0181, 0182). ' +
+             'xacml.enforceAccess and roles.enforceIssuance remain as the ' +
+             'way back from a policy that denies its own repair, and one ' +
+             'turned off is shown on this row.',
+    where: 'common/access_gate.ts' },
+  // #1438 (ASVS 5.0.0 3.4.1).
+  { id: 'strict-transport-security',
+    what: 'Every response over TLS tells a browser to use only HTTPS ' +
+          '(Strict-Transport-Security)',
+    development: 'The header is not sent: HSTS binds every port of a host ' +
+                 'name and removes the click-through on an untrusted ' +
+                 'certificate, and on localhost that would outlast the ' +
+                 'container.',
+    product: 'Every response that arrived over TLS carries ' +
+             'Strict-Transport-Security: max-age=31536000 (RFC 6797). A ' +
+             'response on the plain-HTTP revocation and SCEP listener ' +
+             'never does.',
+    where: 'common/app.js' },
   { id: 'signed-assertions',
     what: 'Every SAML assertion is signed, and every SAML 1.1 Response',
     development: 'saml2.signAssertion, saml11.signAssertion and ' +
@@ -2432,15 +3494,6 @@ const REQUIREMENTS = [
              'disclose its credentialStatus, is always refused. own-only ' +
              'and the per-issuer exemption are allowed.',
     where: 'oid4vc/vc_verifier.ts, oid4vc/vc_status.ts' },
-  { id: 'realm-chooser',
-    what: 'The realm chooser before sign-in lists every realm',
-    development: 'A browser with no session at /admin or /portal, on a ' +
-                 'service with trust realms defined, is shown a list of every ' +
-                 'realm to sign in through.',
-    product: 'The same page asks for the realm\'s id in a text box, so the ' +
-             'deployment\'s realms are not published to anybody who can ' +
-             'reach it.',
-    where: 'common/realm_chooser.ts' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +
@@ -2574,23 +3627,28 @@ const REQUIREMENTS = [
              'refused invalid_request_object otherwise. A registered ' +
              'request_uri must be https and must answer ' +
              'application/oauth-authz-req+jwt or application/jwt, or the ' +
-             'request is refused invalid_request_uri. In both modes a ' +
-             'request_uri is fetched only when the client registered it.',
+             'request is refused invalid_request_uri, as it is when its ' +
+             'host resolves to a loopback, private, link-local or ' +
+             'reserved address. In both modes a request_uri is fetched ' +
+             'only when the client registered it.',
     where: 'oauth-oidc/request_object.ts' },
   // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
-  // access token in front of this surface, so the two columns below are what
-  // happens with that setting OFF. Both columns say so.
+  // access token in front of this surface. Since #446 (2026-10-05) product
+  // ignores the setting turned off, where it fell back to the console's
+  // session and roles until then.
   { id: 'management-api',
-    what: '/admin-api requires a sign-in and a role',
+    what: '/admin-api requires an access token and a role',
     development: 'An OAuth 2.0 access token carrying admin:read or ' +
                  'admin:write, while adminApi.authRequired is on (the ' +
                  'default). With it off: open. It is what the tests drive ' +
                  'and the way back in when nobody holds a role — which also ' +
                  'means anybody who can reach this port can grant themselves ' +
                  'both roles through it.',
-    product: 'The same access token while adminApi.authRequired is on. With ' +
-             'it off: gated exactly as /admin is — the same session, the ' +
-             'same two roles.',
+    product: 'The same access token, always. adminApi.authRequired=false ' +
+             'is refused on write and ignored where it is stored: this ' +
+             'API\'s gate is the console\'s only gate, so nothing may open ' +
+             'it. The way back in is adminApi.clientSecret, pinned before ' +
+             'the start.',
     where: 'mgmt-api/admin_api.ts' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
@@ -2673,6 +3731,17 @@ const REQUIREMENTS = [
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'spiffe/spiffe_registry.ts' },
+  { id: 'test-double',
+    what: 'The service describes itself as a test double',
+    development: '`testDouble` is true in GET /admin-api/sts-metadata: this ' +
+                 'service checks no password and validates no access ' +
+                 'token, and an endpoint list must not read as a claim that ' +
+                 'it does. The console index draws What it deliberately ' +
+                 'does not do.',
+    product: '`testDouble` is false: passwords are verified and access ' +
+             'tokens validated, and the document says so. The console ' +
+             'index does not draw that list.',
+    where: 'sts_metadata.ts, admin-ui/admin.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -2685,11 +3754,35 @@ const REQUIREMENTS = [
     product: 'A value comes from the person\'s directory entry or is ' +
              'omitted; `verified_claims` are released only from a ' +
              'verification recorded on the entry, and email_verified is ' +
-             'true only for an address the person verified through a ' +
-             'mailed link (#63).',
+             'true only for a verified address: one the person proved ' +
+             'through a mailed link (#63), or one a trusted source wrote — ' +
+             'an administrator (the console, /admin-api, or an LDAP write ' +
+             'holding Admin Write), SCIM, or a federation partner that did ' +
+             'not say email_verified false (#64).',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
+  // 2026-10-19 (#396).
+  { id: 'required-attributes',
+    what: 'A person carries the attributes the realm\'s attribute policy ' +
+          'requires',
+    development: 'The policy is stored and drawn on Directory > Policies ' +
+                 'and not enforced: a person may be created with no more ' +
+                 'than a username, and an edit may empty any attribute ' +
+                 'but cn and sn.',
+    product: 'A create that leaves a required attribute without a value is ' +
+             'refused (STS-LDAP-0162) at every door — the console, ' +
+             '/admin-api, SCIM, an LDAP add (objectClassViolation, 65), a ' +
+             'HOBA registration and the bulk import (STS-LDAP-0163) — and a ' +
+             'federated first sign-in whose partner did not supply one ' +
+             'creates nobody (STS-FED-0158). An edit that would take a ' +
+             'required value away is refused (STS-LDAP-0164). uid, cn and ' +
+             'sn are always required; givenName and mail by default. A ' +
+             'person who already lacked one is not refused a sign-in or an ' +
+             'edit of something else.',
+    where: 'common/attribute_policy.ts, ldap/ldap_server.js, ' +
+           'ldap/person_editor.ts, scim/scim.ts, scim/scim_auth.ts, ' +
+           'persistence/bulk_import.js' },
   { id: 'saml-request-signatures',
     what: 'A SAML 2.0 service provider\'s request is signed',
     development: 'An unsigned AuthnRequest or LogoutRequest is accepted ' +
@@ -2739,6 +3832,73 @@ const REQUIREMENTS = [
              '1.1 relying party (STS-SAML-0083). The unscoped documents are ' +
              'unchanged.',
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts' },
+  { id: 'unregistered-applications',
+    what: 'A token is issued only for a registered application (#496)',
+    development: 'A WS-Trust RST is answered for any AppliesTo, and for none ' +
+                 '(a token with no audience restriction); a WS-Federation ' +
+                 'wsignin1.0 for any wtrealm. Each is issued under the ' +
+                 'shared entityID, and the application is filed in the ' +
+                 'register by its first sighting.',
+    product: 'An RST whose AppliesTo resolves to no registered application ' +
+             '(appRegisteredBy unset — a sighting is not a registration) is ' +
+             'refused with wst:InvalidScope (STS-WSTRUST-0030), and one with ' +
+             'no AppliesTo with wst:InvalidRequest (STS-WSTRUST-0031), for ' +
+             'every token type and OnBehalfOf / ActAs, before the requester ' +
+             'is authenticated or anything is recorded. A wsignin1.0 whose ' +
+             'wtrealm names no registered relying party is refused with a ' +
+             '404 page (STS-WSFED-0021) before the sign-in screen.',
+    where: 'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
+  { id: 'unregistered-oauth-clients',
+    what: 'An OAuth 2.0 client is served only when registered (#496)',
+    development: 'The authorization endpoint asks nothing about the ' +
+                 'client_id beyond its redirect URIs, and the token ' +
+                 'endpoint files a client it has seen before refusing it. ' +
+                 'An RFC 8693 audience a sighting filed is a target, and an ' +
+                 'assertion\'s audience naming one is a relying party.',
+    product: 'An authorization request or PAR naming a client_id nobody ' +
+             'registered (appRegisteredBy unset — a sighting is not a ' +
+             'registration) is a 400 on this server, never redirected ' +
+             '(STS-OAUTH-0947; none named: STS-OAUTH-0948); a token request ' +
+             'naming one is 401 invalid_client (STS-OAUTH-0949) before it ' +
+             'is counted or recorded. An RFC 8693 audience or resource ' +
+             'naming an unregistered application is the policy\'s ' +
+             'unregistered-target (invalid_target, STS-OAUTH-0793), and an ' +
+             'exchanged assertion\'s audience must be a registered ' +
+             'application under any-declared-relying-party.',
+    where: 'oauth-oidc/oauth2.ts, common/delegation_policy.ts, ' +
+           'oauth-oidc/exchange_assertions.ts' },
+  { id: 'unregistered-saml-providers',
+    what: 'A SAML service provider or relying party is answered only when ' +
+          'registered (#496)',
+    development: 'An AuthnRequest, a LogoutRequest and a SAML 1.1 browser ' +
+                 'flow are answered for any Issuer; the signature check ' +
+                 'records it, and an entry a sighting filed counts as a ' +
+                 'service provider on the per-SP paths.',
+    product: 'An AuthnRequest whose Issuer is no registered SAML 2.0 ' +
+             'service provider (appRegisteredBy unset — a sighting is not ' +
+             'a registration) is a 403 page before its signature is ' +
+             'checked (STS-SAML-0103; only a Metadata Query lookup for an ' +
+             'unknown entityID is still queued, under the trust-anchor ' +
+             'rule); a LogoutRequest from one ends nothing (STS-SAML-0104); ' +
+             'a SAML 1.1 flow for an unregistered relying party is a 403 ' +
+             'page (STS-SAML-0105). The per-SP paths, the attribute ' +
+             'authority and the SAML 1.1 responder count only a registered ' +
+             'entry, and an MDQ lookup treats an unregistered entry as ' +
+             'unknown.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, saml/sp_metadata.ts' },
+  { id: 'unregistered-gnap-clients',
+    what: 'A GNAP client or resource server is served only when ' +
+          'registered (#496)',
+    development: 'An unknown proved key is made an application entry on ' +
+                 'first sight, and that entry\'s key and instance ' +
+                 'identifier are accepted from then on.',
+    product: 'An unknown key is refused (STS-GNAP-0082), and so is a key or ' +
+             'an instance identifier belonging to an entry nobody ' +
+             'registered (appRegisteredBy unset — one created on first ' +
+             'sight is not a registration): 401 invalid_client or ' +
+             'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
+             'sighted again or anything is issued.',
+    where: 'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -2763,11 +3923,7 @@ const REQUIREMENTS = [
            'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
   { id: 'test-controls',
     what: 'Test controls are open',
-    development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
-                 'device\'s compliance, without the device:compliance ' +
-                 'scope, #164), the passwords on ' +
-                 '/krb5/principals, signing another person out with ' +
+    development: 'Signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
                  'answer anybody, a refused SCIM Digest challenge prints ' +
@@ -2786,9 +3942,8 @@ const REQUIREMENTS = [
              'oauth2.softwareStatementOpensRegistration is on, which is the ' +
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
-    where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
-           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
+    where: 'oauth-oidc/oauth2.ts, logout/logout.ts, saml/saml11_sso.ts, ' +
+           'scim/scim_auth.ts, admin-core/admin_actions.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -2999,6 +4154,31 @@ const REQUIREMENTS = [
              'information exists (section 4 skips the check). Setting ' +
              'the setting to off accepts the rest, with a warning.',
     where: 'common/revocation_status.js' },
+  // #1360, 2026-11-06. One row for the master switch of paranoid PKI mode;
+  // the per-use-case rows are settings, drawn with their state on
+  // /admin/pki/trust rather than listed here one by one.
+  { id: 'paranoid-pki',
+    what: 'Every X.509 certificate relied on is held to the full checks ' +
+          '(path, validity, revocation, usage fields) through one door',
+    development: 'OFF (pki.paranoid=auto): every use case behaves as it did ' +
+                 'before #1360 — a pinned certificate is not validity-' +
+                 'checked, revocation is not consulted for an outbound peer, ' +
+                 'an attestor or a partner\'s signer, and extendedKeyUsage ' +
+                 'is asked only where a site asks it by hand. Set ' +
+                 'pki.paranoid=on to exercise the checks here.',
+    product: 'ON (pki.paranoid=auto): common/certificate_trust.ts holds ' +
+             'every certificate — at a TLS handshake in either direction, ' +
+             'under a signature, as an encryption recipient, in an ' +
+             'attestation — to a path to an anchor this service was told ' +
+             'about (the client or signer truststore, the realm\'s CA, a ' +
+             'family\'s own setting), validity at now, revocation, and the ' +
+             'basicConstraints, keyUsage and extendedKeyUsage its use case ' +
+             'asks; a check the use case never ran is a refusal. One ' +
+             'pki.paranoid<UseCase> row per use case restores that use ' +
+             'case\'s earlier behaviour when off, and is drawn red on ' +
+             '/admin/pki/trust (STS-PKI-0239).',
+    where: 'common/certificate_trust.ts, common/pki.js, common/crypto.js, ' +
+           'common/signer_truststore.ts' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -3084,6 +4264,20 @@ const REQUIREMENTS = [
              'realm is refused KRB_AP_ERR_BADKEYVER.',
     where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
            'kerberos/krb5_principals.js' },
+  // 2026-10-12: a base installation's acceptor keyed without a password.
+  { id: 'kerberos-acceptor-key',
+    what: 'The key the Kerberos acceptor decrypts tickets with when ' +
+          'krb5.servicePassword is empty or the published default',
+    development: 'DERIVED from the published krb5.servicePassword, so a ' +
+                 'reader can derive it; an empty password creates no ' +
+                 'account and the acceptor accepts no ticket.',
+    product: 'RANDOM — a key per enctype in krb5.enctypes for the SPN ' +
+             'krb5.servicePrincipal names, made once per realm at the start ' +
+             '(or when the acceptor first asks), sealed on the application ' +
+             'entry <spn>@<REALM> and never shown. Rotate it at ' +
+             '/admin/kerberos/principals for a keytab. A ' +
+             'krb5.servicePassword of the operator\'s own wins over it.',
+    where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_principals.js' },
   // 2026-09-26 (#164 decision 9, phase 2).
   { id: 'unattested-device-keys',
     what: 'A device key presented without a verifiable attestation is ' +
@@ -3099,7 +4293,39 @@ const REQUIREMENTS = [
              'chained to an anchor registers a key. An administrator ' +
              'entering a key by value is an administrator\'s act and is ' +
              'accepted in both modes, recorded proof admin, self-asserted.',
-    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' }
+    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' },
+  // 2026-10-06 (#256).
+  { id: 'android-attestation-revocation',
+    what: 'An Android attestation whose revocation could not be checked is ' +
+          'not trusted, where the realm says so',
+    development: 'With no current Android attestation status list (never ' +
+                 'downloaded, the download failing, or stale) an Android ' +
+                 'chain is recorded attested, its revocation UNCHECKED, ' +
+                 'whatever devices.androidRevocationRequired says. A chain ' +
+                 'the list revokes or suspends is self-asserted in both ' +
+                 'modes.',
+    product: 'The same by default. With devices.androidRevocationRequired ' +
+             'on, an unchecked chain is recorded self-asserted: a device key ' +
+             'is then refused (STS-DEVICE-0024) and a WebAuthn android-key ' +
+             'statement untrusted.',
+    where: 'common/attestation_revocation.ts' },
+  // 2026-10-06 (#257).
+  { id: 'fresh-key-attestation',
+    what: 'A TPM key attestation in a device certificate request must be ' +
+          'fresh',
+    development: 'A TPM2_Certify statement whose extraData is not a live ' +
+                 'nonce issued at EST /nonce to the same client and cookie ' +
+                 '(none fetched, expired, already spent, another client\'s, ' +
+                 'or a request over SCEP, which has no nonce operation) ' +
+                 'keeps its level and is recorded with freshness UNPROVEN ' +
+                 'and the reason. A nonce that matches is spent.',
+    product: 'Such a statement is refused (STS-DEVICE-0050): a captured ' +
+             'attestation replayed in a new request for the same key is ' +
+             'not a key made and held in a TPM now. A device certificate ' +
+             'with a TPM attestation is therefore issued over EST only, ' +
+             'after /nonce (draft-ietf-lamps-attestation-freshness section ' +
+             '5.1).',
+    where: 'common/cert_enrollment.ts, common/device_enrolment.ts, est/est.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -3417,7 +4643,10 @@ function inForce(key, value, source) {
 // asking about one enctype passes a number.
 function marked(row, list) {
   log.debug("Entering marked(). key=" + row.key);
-  const names = (row.onlyWhileValues || []).map(String);
+  const unless = row.onlyWhileValuesUnless;
+  const names = (row.onlyWhileValues || []).concat(
+    unless && config.value(unless.setting) !== true ? unless.values : []
+  ).map(String);
   log.debug("Leaving marked().");
   return list.filter(function (one) {
     return names.indexOf(String(one)) >= 0;
@@ -3492,8 +4721,15 @@ const WRITE_REFUSALS = {
     'without the workload.spiffe.io header MUST be refused.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
-    'on the directory, so no password is read for it.'
+    'on the directory, so no password is read for it.',
+  opensManagementApi:
+    'the management API always requires an access token there, because ' +
+    'its gate is the admin console\'s only gate; pin adminApi.clientSecret ' +
+    'before the start to be able to mint one.'
 };
+
+// What a marked row whose predicate has no sentence above ends with.
+const DEFAULT_WRITE_REFUSAL = 'the setting is for development mode only.';
 
 /**
  * Explains why a development-only value is not allowed in product, by the
@@ -3506,8 +4742,7 @@ const WRITE_REFUSALS = {
 function writeRefusalReason(predicate) {
   log.debug("Entering writeRefusalReason(). " + predicate);
   log.debug("Leaving writeRefusalReason().");
-  return WRITE_REFUSALS[predicate] ||
-    'the setting is for development mode only.';
+  return WRITE_REFUSALS[predicate] || DEFAULT_WRITE_REFUSAL;
 }
 
 // Every row carrying the `onlyWhile` marker, with the value the ambient realm
@@ -3547,17 +4782,70 @@ function report() {
   log.debug("Entering report().");
   const product = isProduct();
   log.debug("Leaving report().");
+  // #1295: what an administrator waived of the BCP in this realm, carried on
+  // the row it qualifies as DATA (ids and a setting's name, no sentence), so
+  // the prose namespace below is unchanged and the page says it in the
+  // reader's language. `oauth2_bcp.js` is required LAZILY: it requires this
+  // file at load.
+  const waived = require('../oauth-oidc/oauth2_bcp').waivers();
+  const accessOff = product ? accessEnforcementWaivers() : [];
+  const certificate = product ? certificateWaivers() : [];
   return {
     mode: current(),
     isProduct: product,
     requirements: REQUIREMENTS.map(function (row) {
+      const extra = row.id === 'oauth-security-bcp' && waived.length
+        ? { waived: waived }
+        : row.id === 'access-decisions-fail-closed' && accessOff.length
+          ? { waived: accessOff }
+          : row.id === 'public-certificate' && certificate.length
+            ? { waived: certificate } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
-                           row);
+                           row, extra);
     }),
     developmentOnlySettings: developmentOnlySettings(),
     notYet: NOT_YET
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE MODE NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b). `GET
+// /admin-api/mode` answers `report()`, and what it carries that is prose is
+// this file's: each requirement's `what`, `development` and `product` (and
+// `inForce`, which is one of the two copied, so the exact match finds it), each
+// NOT_YET row's `what`, and each development-only setting's `why` — a
+// WRITE_REFUSALS sentence, which is also the end of the write REFUSAL and the
+// ignored-value warning. Those two stay English: the refusal is answered on
+// other routes and the warning is written to the log, and a phrase is matched
+// only on the routes listed here. `where` is file paths, every `id` a code.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/mode'];
+
+/**
+ * Extracts the mode namespace (#543 phase 2b): the requirements, NOT_YET and
+ * the sentence a development-only setting's `why` carries.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const out = {};
+  Object.assign(out, harvest('mode.requirements', REQUIREMENTS,
+                             ['what', 'development', 'product']));
+  Object.assign(out, harvest('mode.notYet', NOT_YET, ['what']));
+  Object.assign(out, harvest('mode.why', WRITE_REFUSALS,
+                             Object.keys(WRITE_REFUSALS)));
+  out['mode.why.default'] = DEFAULT_WRITE_REFUSAL;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
 }
 
 /**
@@ -3588,14 +4876,16 @@ module.exports = {
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
-  gatesManagementApi: gatesManagementApi,
+  opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
+  describesItselfAsTestDouble: describesItselfAsTestDouble,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
+  generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
-  listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
+  createsIncompletePeople: createsIncompletePeople,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
@@ -3610,6 +4900,7 @@ module.exports = {
   sendsWeakerThanAsked: sendsWeakerThanAsked,
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   refusesUnrevocableCertificates: refusesUnrevocableCertificates,
+  enforcesParanoidPki: enforcesParanoidPki,
   requiresPkiForGnapMtls: requiresPkiForGnapMtls,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
@@ -3622,12 +4913,20 @@ module.exports = {
   grantsUncataloguedAccess: grantsUncataloguedAccess,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
+  pinsSelfIssuedKeysOnFirstUse: pinsSelfIssuedKeysOnFirstUse,
+  mintsPersonDidsOnRequestAddress: mintsPersonDidsOnRequestAddress,
+  mintsPhotoAddressesOnRequestAddress: mintsPhotoAddressesOnRequestAddress,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
+  refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,
+  requiresFreshKeyAttestation: requiresFreshKeyAttestation,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
+  requiresSidFilteringOnTrusts: requiresSidFilteringOnTrusts,
+  recoversWeakerThanPasskeys: recoversWeakerThanPasskeys,
   matchesFederatedNames: matchesFederatedNames,
+  defaultsFederatedAutocreate: defaultsFederatedAutocreate,
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,
   acceptsUnencryptedFederatedAssertions: acceptsUnencryptedFederatedAssertions,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
@@ -3638,12 +4937,14 @@ module.exports = {
   registersFromMetadataQuery: registersFromMetadataQuery,
   publishesMetadataForUnregisteredProviders:
     publishesMetadataForUnregisteredProviders,
+  issuesToUnregisteredApplications: issuesToUnregisteredApplications,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
   skipsOutboundTlsVerification: skipsOutboundTlsVerification,
   dialsPlainHttpOutbound: dialsPlainHttpOutbound,
   capturesMail: capturesMail,
+  acceptsFileSecretDestinations: acceptsFileSecretDestinations,
   mailsLinksFromListenerAddress: mailsLinksFromListenerAddress,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,
@@ -3654,6 +4955,41 @@ module.exports = {
   observesSignalsOnly: observesSignalsOnly,
   refusesUnverifiedSignals: refusesUnverifiedSignals,
   usesBrokenAlgorithms: usesBrokenAlgorithms,
+  omitsStrictTransportSecurity: omitsStrictTransportSecurity,
+  failsOpenOnPolicyFault: failsOpenOnPolicyFault,
+  restrictsUnscopedPeople: restrictsUnscopedPeople,
+  confinesNamedFiles: confinesNamedFiles,
+  allowsCbcJwe: allowsCbcJwe,
+  requiresPkceOfEveryClient: requiresPkceOfEveryClient,
+  requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
+  requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  minScryptParallelism: minScryptParallelism,
+  refusesTokenForGoneSubject: refusesTokenForGoneSubject,
+  refusesAssertionWithoutAudience: refusesAssertionWithoutAudience,
+  warnsWithoutAuditDestination: warnsWithoutAuditDestination,
+  omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
+  refusesPlainSyslog: refusesPlainSyslog,
+  refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  requiresSecretStore: requiresSecretStore,
+  redactsRequestLog: redactsRequestLog,
+  requiresTypedLogoutToken: requiresTypedLogoutToken,
+  hidesFailureDetail: hidesFailureDetail,
+  requiresTrustedProxyRanges: requiresTrustedProxyRanges,
+  refusesRepeatedTokenParameters: refusesRepeatedTokenParameters,
+  requiresEvidenceToClearFactor: requiresEvidenceToClearFactor,
+  defaultRsaBits: defaultRsaBits,
+  expiredAssertionGraceS: expiredAssertionGraceS,
+  hidesStepIds: hidesStepIds,
+  allowsLegacyHashes: allowsLegacyHashes,
+  bindsSignInSteps: bindsSignInSteps,
+  generatesBootstrapName: generatesBootstrapName,
+  revokesAccessTokensAtSignOut: revokesAccessTokensAtSignOut,
+  cleartextStartupProblem: cleartextStartupProblem,
+  narrowsUndeclaredGrants: narrowsUndeclaredGrants,
+  answersScep: answersScep,
+  certificateWaivers: certificateWaivers,
+  prefixesCookies: prefixesCookies,
+  accessEnforcementWaivers: accessEnforcementWaivers,
   issuesUnsignedAssertions: issuesUnsignedAssertions,
   servesWithoutSecurityHeader: servesWithoutSecurityHeader,
   allowsValue: allowsValue,
@@ -3662,5 +4998,7 @@ module.exports = {
   writeRefusalReason: writeRefusalReason,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,
-  report: report
+  report: report,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

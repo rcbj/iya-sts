@@ -27,7 +27,7 @@
 //      claim, reused while it is good, issued again before it runs out, and
 //      waited for when another process holds the claim.
 //
-// `tests/vendored/sts_fapi_baseline.js` holds the same rules over the wire.
+// `tests/protocol/sts_fapi_baseline.js` holds the same rules over the wire.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -253,12 +253,17 @@ function childMain() {
     }), 'I. every requirement row has a unique id and a known enforcement');
 
     // --- J ----------------------------------------------------------------
-    ['sts-admin-console', 'sts-user-portal'].forEach(function (id) {
+    // The console and the portal are the two public clients a FAPI realm
+    // allows (#446, #568): they hold no credential at all, and their tokens
+    // are DPoP-bound.
+    [['sts-admin-console', 'none'],
+     ['sts-user-portal', 'none']].forEach(function (pair) {
+      const id = pair[0];
       const entry = applications.clientConfigOf(id);
       if (note(!!(entry && entry.registered),
                'J. ' + id + ' is seeded', JSON.stringify(entry))) {
-        eq(entry.token_endpoint_auth_method, 'private_key_jwt',
-           'J. ' + id + ' authenticates by private_key_jwt');
+        eq(entry.token_endpoint_auth_method, pair[1],
+           'J. ' + id + ' authenticates by ' + pair[1]);
         eq(entry.client_secret || '', '',
            'J. and holds no client secret');
       }
@@ -333,6 +338,10 @@ function childMain() {
         applications: fakeApplications,
         loadPki: function () {
           return fakePki;
+        },
+        // The door answers as this function does out of force, and asks it.
+        signerChain: function (material) {
+          return fakePki.verifySignerChain('', material);
         },
         clusterClaims: {
           claim: async function () {

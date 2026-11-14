@@ -1,0 +1,9 @@
+{
+  "noClients": "沒有客戶端註冊 <code>command_endpoint</code>。它是一個註冊成員（RFC 7591，<code>POST /oauth2/register</code>），也是 <code>/admin/applications</code> 上的一個欄位。",
+  "client": "客戶端",
+  "person": "用戶",
+  "colClient": "客戶端",
+  "colPerson": "用戶",
+  "colQueued": "排入隊列時間",
+  "deliveriesNote": "本服務以 POST 方式送往客戶端註冊地址的<strong>每一次外送投遞</strong>，都在同一個持久隊列上：每次投遞是一列持久化記錄，在已領取的租約下為整個叢集嘗試一次；當逾時、連線失敗、5xx、408 或 429 使重試有意義時依退避重試，否則成為<strong>無法投遞</strong>——僅當操作員按下「重試」時才會再次傳送，並開始新的一代。"
+}

@@ -131,6 +131,11 @@ import passwordPolicy = require('./password_policy');
 // THE AUTHENTICATION POLICY (#64): which mechanisms are first and second
 // factors, and when a second is required. A LEAF, like the password policy.
 import authnPolicy = require('./authn_policy');
+// SERVICE ACCOUNTS AND THEIR POLICY (#221): which doors a service account may
+// use, whether it is exempt from the second factor, and the previous password
+// a rotation keeps for its overlap. Two LEAVES, like the policies above.
+import serviceAccounts = require('./service_accounts');
+import serviceAccountPolicy = require('./service_account_policy');
 // THE SECURITY KEY'S POLICY, AND IT IS THE ONE REQUIRE IN THIS FILE THAT
 // POINTS OUT OF `common/` (2026-09-10).
 //
@@ -145,6 +150,9 @@ import authnPolicy = require('./authn_policy');
 // answer: `/portal/keys` would have refused an eleventh key while
 // `/admin-api` allowed it, or the other way round, with nothing failing.
 import webauthnPolicy = require('../authn/webauthn_policy');
+// The passkey policy (#527, #528): a leaf over the directory, which
+// `webauthn_policy` above already requires.
+import passkeyPolicy = require('./passkey_policy');
 // THE VERIFIER, for the two-step key enrolment below. A LEAF on the same terms
 // as the policy module beside it — it registers nothing and requires only npm
 // packages, `common/crypto` and `common/helpers`, so it can neither move a
@@ -158,6 +166,14 @@ import webauthnVerifier = require('../authn/webauthn');
 // `webauthn_policy`, `crypto`, `pki` and `error_codes`, and the FIDO metadata
 // and revocation lazily — none of which requires this file.
 import webauthnAttestation = require('../authn/webauthn_attestation');
+// EVERY CEREMONY'S AUDIT ROW (#943): `confirmKeyEnrolment()` is where
+// /portal/keys and an activation link verify a registration. A library over
+// the audit log and the passkey policy; it requires nothing back here.
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
+// THE CLIENTS A REGISTRATION OFFERS NO ML-DSA (#1112), asked where an
+// enrolment is armed. A library over the passkey policy and its own store,
+// requiring nothing that requires this module.
+import passkeyClients = require('./passkey_clients');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -182,6 +198,7 @@ import claims = require('../cluster/cluster_claims');
 import counters = require('../cluster/cluster_counters');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+import DomainMap = require('./domain_map');
 // THE CACHE REGISTRY (#74, rule 3ap), for the one cache this file keeps — the
 // TOTP verdicts below (#352). A LEAF in JavaScript that requires `config` and
 // `error_codes`, so it can close no cycle from here.
@@ -270,15 +287,16 @@ interface CredentialsDeps {
   appPasswords: typeof appPasswords;
   passwordPolicy: typeof passwordPolicy;
   authnPolicy: typeof authnPolicy;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
   webauthnPolicy: typeof webauthnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnAttestation: typeof webauthnAttestation;
   errorCodes: typeof errorCodes;
   claims: typeof claims;
   counters: typeof counters;
   capabilities: typeof capabilities;
-  // Node's `crypto`, for random bytes only, loaded where it is used.
-  nodeCrypto(): typeof import('crypto');
   // `persistence/persistence.js`, loaded where it is used — see
   // `sharedStore()`.
   loadPersistence(): typeof import('../persistence/persistence');
@@ -341,10 +359,23 @@ const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
 // generate the set stores nothing. The codes are in the clear in the RECORD —
 // they have to be, the page shows them — and sealed in the ROW, which is gone
 // when the set is confirmed, discarded, replaced or swept.
+//
+// **KEYED BY `credentialDigest(handle)` (#614).** The handle is what lets a
+// form confirm the set, and the store only looks it up and spends it, so it
+// holds the digest — hashed when the handle is minted and when the form
+// brings it back (`pendingCodesKey()`). The CODES stay whole in the record,
+// because the page shows them again until they are confirmed.
 const pendingBackupCodes = realms.map({
   persist: 'credentials.pendingBackupCodes', retain: 'age',
   // #333: the pending set's `expires`, ms.
   expiresAt: realms.expiryField('expires', 1) });
+
+// The key a pending set's handle is held under (#614).
+function pendingCodesKey(handle: unknown): string {
+  helpers.log.debug("Entering pendingCodesKey().");
+  helpers.log.debug("Leaving pendingCodesKey().");
+  return crypto.credentialDigest(String(handle || ''));
+}
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
@@ -360,6 +391,28 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
                                  // #333: the ceremony's `expires`, ms.
                                  expiresAt: realms.expiryField('expires', 1) });
 
+// AN ADMINISTRATOR'S PENDING ENROLMENTS ON SOMEBODY'S BEHALF (#945), a store
+// of their own and NOT `pendingKeys`: that one is keyed by the person, so an
+// administrator beginning a ceremony for alice would have replaced the one
+// alice had armed on `/portal/keys` herself, and alice's `finish` would have
+// answered the administrator's challenge. Keyed by the ADMINISTRATOR AND THE
+// PERSON (`adminEnrolmentKey()`), so the challenge is bound to both, and
+// carrying the lane, so it is bound to that too. Persisted for
+// `pendingKeys`' reason: the begin and the finish can land on two nodes.
+const pendingAdminKeys = realms.map({
+  persist: 'credentials.pendingAdminKeys', retain: 'age',
+  // #333: the ceremony's `expires`, ms.
+  expiresAt: realms.expiryField('expires', 1) });
+
+// The key an administrator's pending enrolment for a person is held under
+// (#945): both names, lower case, joined by a character neither may hold.
+function adminEnrolmentKey(admin: unknown, username: unknown): string {
+  helpers.log.debug("Entering adminEnrolmentKey().");
+  helpers.log.debug("Leaving adminEnrolmentKey().");
+  return String(admin || '').trim().toLowerCase() + '\n' +
+         String(username || '').trim().toLowerCase();
+}
+
 /**
  * The one place a presented password is verified, and the store of every
  * credential a person holds on their own entry: the password, security
@@ -370,6 +423,23 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
  * accepted unchecked; product mode verifies every one.
  */
 class Credentials {
+  /**
+   * The minimum PIN length a registration's authenticator reported (#529),
+   * CTAP 2.1 section 12.4's `minPinLength` extension output, or null where it
+   * reported none.
+   *
+   * @param verdict - `authn/webauthn.js`'s registration verdict
+   * @returns a whole number from 0 to 255, or null
+   */
+  static reportedMinPinLength(verdict: any): number | null {
+    helpers.log.debug("Entering Credentials.reportedMinPinLength().");
+    const ext = verdict && verdict.extensions;
+    const value = ext && typeof ext === 'object' ? ext.minPinLength : null;
+    helpers.log.debug("Leaving Credentials.reportedMinPinLength().");
+    return typeof value === 'number' && Number.isInteger(value) &&
+           value >= 0 && value <= 255 ? value : null;
+  }
+
   // An AAGUID as the UUID string CAEP and the FIDO metadata service write
   // (`01020304-0506-...`), from the 32 hex digits `authn/webauthn.js` parses
   // out of the attested credential data. All zeros — an authenticator that
@@ -393,6 +463,45 @@ class Credentials {
       hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
+  // WHAT THE BROWSER SAID ABOUT A NEW CREDENTIAL (#470), read off the JSON the
+  // ceremony script posts: the transports `getTransports()` reported
+  // (WebAuthn Level 3 section 5.2.1) and whether the credProps extension
+  // says it is discoverable (section 10.1.3). Both are the CLIENT's claims,
+  // unsigned, and used only to describe a key — never to decide anything.
+  /**
+   * Reads the transports a registration response reported.
+   *
+   * @param credential - the posted registration response
+   * @returns the transport names, or []
+   */
+  static transportsOf(credential: any): string[] {
+    helpers.log.debug("Entering Credentials.transportsOf().");
+    const said = credential && credential.response &&
+                 credential.response.transports;
+    const out = Array.isArray(said)
+      ? said.map(String).filter(function (t) {
+        return /^[a-z-]{1,20}$/.test(t);
+      }).slice(0, 8)
+      : [];
+    helpers.log.debug("Leaving Credentials.transportsOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Reads whether a registration response's credProps says the credential
+   * is discoverable.
+   *
+   * @param credential - the posted registration response
+   * @returns true or false, or null where the browser did not say
+   */
+  static discoverableOf(credential: any): boolean | null {
+    helpers.log.debug("Entering Credentials.discoverableOf().");
+    const ext = (credential && credential.clientExtensionResults) || {};
+    const rk = ext.credProps && ext.credProps.rk;
+    helpers.log.debug("Leaving Credentials.discoverableOf().");
+    return typeof rk === 'boolean' ? rk : null;
+  }
+
   // WHICH SIGNATURE ALGORITHM ONE STORED KEY USES (2026-10-01, rcbj:
   // "record the algorithm that was actually used ... display it on the
   // passkey list"). The key's own `algorithm` and `coseAlg`, written at
@@ -405,11 +514,13 @@ class Credentials {
    * Says which COSE signature algorithm one stored key uses.
    *
    * @param key - the stored WebAuthn key
-   * @returns `{ name, coseAlg, text, postQuantum, insecure }`
+   * @returns `{ name, coseAlg, text, postQuantum, insecure, lane }`, where
+   *   `lane` (#643) is the lane the key was created in (`keyLane()`), carried
+   *   here so that every page and answer that shows the algorithm shows it
    */
   static keyAlgorithm(key: any): { name: string; coseAlg: number;
                                    text: string; postQuantum: boolean;
-                                   insecure: boolean } {
+                                   insecure: boolean; lane: string } {
     helpers.log.debug("Entering Credentials.keyAlgorithm().");
     const k = key || {};
     const coseAlg = Number(k.coseAlg) ||
@@ -420,7 +531,99 @@ class Credentials {
     return { name: name, coseAlg: coseAlg, text: name + ' (' + coseAlg + ')',
              postQuantum: /^ML-DSA-/.test(name),
              insecure: webauthnVerifier.INSECURE_COSE_ALGS
-               .indexOf(coseAlg) >= 0 };
+               .indexOf(coseAlg) >= 0,
+             lane: Credentials.keyLane(k) };
+  }
+
+  // THE ALGORITHMS ONE STORED KEY'S ATTESTATION WAS SIGNED WITH (#941), in
+  // the one shape every reader takes: the console's key rows, `GET
+  // /admin-api/users`, the passkey policy's `attestation-algorithm`
+  // facts, and a realm-wide report of how strong a realm's attestations
+  // are. The record `authn/webauthn_attestation.ts` wrote is the source
+  // (`attestation.algorithms`, its header argues the fields); this is
+  // `recordedAlgorithms()`'s reading of it — `verified`, `trusted`,
+  // `recorded` (false for a key registered before #941, or by a door that
+  // verified nothing), the `statement` algorithm, every `statements` and
+  // `certificates` entry (leaf first, the anchor last, a compound's
+  // members flattened) and `postQuantum`, true only where every one of
+  // them is. A key with no attestation record answers `recorded: false`.
+  /**
+   * Reads the algorithms one stored key's attestation was signed with
+   * (#941).
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ verified, trusted, recorded, statement, statements,
+   *   certificates, postQuantum }`
+   */
+  static attestationAlgorithms(key: any): any {
+    helpers.log.debug("Entering Credentials.attestationAlgorithms().");
+    const out = webauthnAttestation.recordedAlgorithms(
+      (key || {}).attestation);
+    helpers.log.debug("Leaving Credentials.attestationAlgorithms(). " +
+                      (out.recorded ? 'recorded' : 'none'));
+    return out;
+  }
+
+  /** Renews due RFC 4998 passkey evidence records for one directory entry. */
+  async renewAttestationEvidence(username: string,
+                                 targetAlgorithm?: string): Promise<number> {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    log.debug('Entering Credentials.renewAttestationEvidence().');
+    if (!directory || typeof directory.readWebauthn !== 'function' ||
+        typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.renewAttestationEvidence(). No store.');
+      return 0;
+    }
+    const raw = directory.readWebauthn(name) || [];
+    const evidence = require('./passkey_evidence');
+    let changed = 0;
+    const kept: string[] = [];
+    const rank: { [key: string]: number } = {
+      sha256: 1, sha384: 2, sha512: 3
+    };
+    for (let i = 0; i < raw.length; i += 1) {
+      let one: any;
+      try {
+        one = JSON.parse(raw[i]);
+      } catch (e) {
+        // A value this service cannot parse is outside evidence renewal's
+        // ownership. Preserve it exactly, as keysOfValues() does for reads.
+        kept.push(raw[i]);
+        continue;
+      }
+      const evidenceRecord = one && one.attestation &&
+        one.attestation.evidence;
+      const current = evidenceRecord &&
+        (evidenceRecord.hashAlgorithm || 'sha256');
+      const migrate = !!targetAlgorithm && rank[targetAlgorithm] >
+        (rank[current] || 1);
+      if (one && one.credentialId && evidenceRecord &&
+          (Number(evidenceRecord.renewAfter || 0) <= Date.now() || migrate)) {
+        one.attestation.evidence = migrate
+          ? await evidence.renewHashTree(evidenceRecord, targetAlgorithm)
+          : await evidence.renew(evidenceRecord, Date.now());
+        kept.push(JSON.stringify(one));
+        changed += 1;
+      } else {
+        kept.push(raw[i]);
+      }
+    }
+    if (changed) {
+      try {
+        if (!directory.replaceWebauthn(name, kept)) {
+          throw new Error('The person no longer has a directory entry.');
+        }
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0419') + 'credentials: renewed ' +
+                  'passkey evidence for ' + name + ' could not be stored: ' +
+                  ((e && e.message) || e));
+        throw e;
+      }
+    }
+    log.debug('Leaving Credentials.renewAttestationEvidence(). ' + changed);
+    return changed;
   }
 
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
@@ -471,6 +674,199 @@ class Credentials {
              text: 'not reported by your browser' };
   }
 
+  // WHICH OF THE TWO GROUPS A PASSKEY IS LISTED UNDER (#470, 2026-10-06).
+  //
+  // The passkey management guidelines #470 follows put every kind of passkey
+  // under one heading and split it in two, in a person's words: *passkeys on
+  // your devices* and *passkeys on security keys* — never "synced" and
+  // "device-bound", which are the specification's words and not a reader's.
+  //
+  // **THE BACKUP ELIGIBILITY FLAG DECIDES FIRST** (WebAuthn Level 3 section
+  // 6.1, BE): a credential that may be backed up lives in a credential
+  // manager, and that is "on your devices" even when it was reached over
+  // hybrid from a phone, which the browser reports as `cross-platform`.
+  // Otherwise the attachment decides — a `platform` credential is on this
+  // device whether or not it syncs (Windows Hello is device-bound, and the
+  // guideline lists it with the devices) — and a `cross-platform` one that
+  // cannot be backed up is a security key. A key enrolled before BE was kept
+  // and whose browser reported no attachment is classified by its transports
+  // when they were kept, and is "on your devices" when nothing says
+  // otherwise: that is the commoner case, and the row still names its
+  // provider and kind.
+  /**
+   * Says which group a stored key is listed under on the passkey pages.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `device` (passkeys on your devices) or `security-key`
+   */
+  static keyGroup(key: any): 'device' | 'security-key' {
+    helpers.log.debug("Entering Credentials.keyGroup().");
+    const k = key || {};
+    if (k.backupEligible === true) {
+      helpers.log.debug("Leaving Credentials.keyGroup(). Backup eligible.");
+      return 'device';
+    }
+    const attachment = String(k.attachment || '');
+    if (attachment === 'platform') {
+      helpers.log.debug("Leaving Credentials.keyGroup(). Platform.");
+      return 'device';
+    }
+    if (attachment === 'cross-platform') {
+      helpers.log.debug("Leaving Credentials.keyGroup(). Roaming.");
+      return 'security-key';
+    }
+    const transports = Array.isArray(k.transports) ? k.transports : [];
+    const roaming = transports.length > 0 &&
+      transports.every(function (t) {
+        return t === 'usb' || t === 'nfc' || t === 'ble' ||
+               t === 'smart-card';
+      });
+    helpers.log.debug("Leaving Credentials.keyGroup(). Unreported, " +
+                      (roaming ? 'roaming transports.' : 'so a device.'));
+    return roaming ? 'security-key' : 'device';
+  }
+
+  // WHO MADE OR HOLDS A PASSKEY, in a person's words (#470).
+  //
+  // **THE FIDO METADATA SERVICE FIRST, AND ALONE WHERE IT IS LOADED** (rcbj,
+  // #470): when the realm holds a usable MDS3 BLOB (`risk/risk_datasets.ts`,
+  // the `fido.mds3` dataset), the name is the description MDS lists for the
+  // key's AAGUID and nothing else — a model MDS does not list is named by its
+  // group. Only where no BLOB is loaded does `authn/passkey_providers.ts`'s
+  // short table of credential managers name it. Which source answered is
+  // decided ONCE, at enrolment (`keyProviderFor()`), and kept on the key as
+  // `provider` and `providerSource`, because a page is drawn synchronously
+  // and an MDS lookup is a query.
+  //
+  // A NAME AND NOT A PROOF: for an attestation that did not chain to an
+  // anchor the AAGUID is the authenticator's say-so, and a name only helps
+  // its owner tell their own passkeys apart — nothing that decides reads it.
+  // A key enrolled before #470 kept neither field, and is named by the model
+  // its attestation recorded (MDS's, looked up at the time), else the table.
+  /**
+   * Names the credential manager or authenticator model behind a stored key.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns the provider's name, or ''
+   */
+  static keyProvider(key: any): string {
+    helpers.log.debug("Entering Credentials.keyProvider().");
+    const k = key || {};
+    if (k.providerSource === 'mds' || k.providerSource === 'table' ||
+        k.providerSource === '') {
+      helpers.log.debug("Leaving Credentials.keyProvider(). Recorded (" +
+                        (k.providerSource || 'none') + ").");
+      return String(k.provider || '');
+    }
+    const att = k.attestation || {};
+    if (att.model) {
+      helpers.log.debug("Leaving Credentials.keyProvider(). By MDS.");
+      return String(att.model);
+    }
+    // LAZILY, which kept this data module out of the parent project's
+    // Kerberos COPY closure that carried this file (an obligation until
+    // #1280; the arrangement stands).
+    const providers = require('../authn/passkey_providers');
+    const named = providers.nameOf(k.aaguid);
+    helpers.log.debug("Leaving Credentials.keyProvider(). " +
+                      (named ? 'By the table.' : 'Unknown.'));
+    return named;
+  }
+
+  // Which source names a key being enrolled, and what it says: the rule
+  // `keyProvider()` describes, asked once at enrolment by each door that
+  // writes a key. Never refuses — a lookup that fails names nothing.
+  /**
+   * Resolves the provider's name for a key being enrolled: MDS where a
+   * usable BLOB is loaded, else the credential-manager table.
+   *
+   * @param aaguid - the key's AAGUID
+   * @param attestation - what the attestation assessment recorded, if any
+   * @returns a promise of `{ provider, providerSource }`
+   */
+  static async keyProviderFor(aaguid: unknown, attestation: any):
+      Promise<{ provider: string; providerSource: string }> {
+    helpers.log.debug("Entering Credentials.keyProviderFor().");
+    const id = Credentials.aaguidString(aaguid);
+    let mds = null;
+    try {
+      // Lazily: the risk store is no business of this file's load.
+      const datasets = require('../risk/risk_datasets');
+      const state = await datasets.mdsState();
+      if (state && state.active && !state.stale) {
+        mds = datasets;
+      }
+    } catch (e) {
+      helpers.log.debug("Caught in Credentials.keyProviderFor(): " +
+                        ((e && e.message) || e));
+      // No usable BLOB as far as this enrolment can tell; the table names it.
+      mds = null;
+    }
+    if (mds) {
+      let model = String((attestation && attestation.model) || '');
+      if (!model && id) {
+        try {
+          const listed = await mds.lookupAuthenticator(id);
+          model = String((listed && listed.model &&
+                          listed.model.description) || '');
+        } catch (e) {
+          helpers.log.debug("Caught in Credentials.keyProviderFor(): " +
+                            ((e && e.message) || e));
+          // A failed query names nothing; the group names the key.
+          model = '';
+        }
+      }
+      helpers.log.debug("Leaving Credentials.keyProviderFor(). MDS: " +
+                        (model || 'not listed') + ".");
+      return { provider: model, providerSource: 'mds' };
+    }
+    const providers = require('../authn/passkey_providers');
+    const named = providers.nameOf(id);
+    helpers.log.debug("Leaving Credentials.keyProviderFor(). Table: " +
+                      (named || 'not listed') + ".");
+    return { provider: named, providerSource: named ? 'table' : '' };
+  }
+
+  // THE NAME A NEW PASSKEY IS GIVEN until its owner gives it another (#470):
+  // its provider's, else its group's. The guideline asks for a nickname
+  // AFTER enrolment rather than a box before it, so this is what the row
+  // says in the meantime — and what it goes back to when a rename is empty.
+  /**
+   * Answers the name a key is given when nobody named it.
+   *
+   * @param key - the stored WebAuthn key, or what its ceremony produced
+   * @returns the provider's name, "Passkey" or "Security key"
+   */
+  static defaultKeyName(key: any): string {
+    helpers.log.debug("Entering Credentials.defaultKeyName().");
+    const provider = Credentials.keyProvider(key);
+    const name = provider ||
+      (Credentials.keyGroup(key) === 'security-key' ? 'Security key'
+                                                    : 'Passkey');
+    helpers.log.debug("Leaving Credentials.defaultKeyName(). " + name);
+    return name;
+  }
+
+  // A KEY'S NAME AS A PAGE DRAWS IT (#470): the label its owner gave it, and
+  // the default for a key written before labels defaulted to the provider —
+  // every one of those says "security key", or "this device" from the
+  // sign-in screen's enrolment, which named nothing.
+  /**
+   * Answers the name a page draws for a stored key.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns its label, or its default name
+   */
+  static keyName(key: any): string {
+    helpers.log.debug("Entering Credentials.keyName().");
+    const label = String((key && key.label) || '').trim();
+    const legacy = !label || label === 'security key' ||
+                   label === 'this device' ||
+                   /^security key \(.*\)$/.test(label);
+    helpers.log.debug("Leaving Credentials.keyName().");
+    return legacy ? Credentials.defaultKeyName(key) : label;
+  }
+
   /**
    * Builds the credential store over the given dependencies.
    *
@@ -505,16 +901,16 @@ class Credentials {
       appPasswords: appPasswords,
       passwordPolicy: passwordPolicy,
       authnPolicy: authnPolicy,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
       webauthnPolicy: webauthnPolicy,
+      passkeyPolicy: passkeyPolicy,
       webauthnVerifier: webauthnVerifier,
       webauthnAttestation: webauthnAttestation,
       errorCodes: errorCodes,
       claims: claims,
       counters: counters,
       capabilities: capabilities,
-      nodeCrypto: function () {
-        return require('crypto');
-      },
       consoleRolesOf: function consoleRolesOf(username: string) {
         helpers.log.debug("Entering consoleRolesOf().");
         let held = { read: false, write: false };
@@ -614,13 +1010,14 @@ class Credentials {
   // created. A store with no writer looks exactly like a store nobody uses.
   //
   // `authn/authn.ts` writes here now — its own header carries the argument —
-  // and `tests/vendored/sts_webauthn_second_factor.js` drives a real ceremony
+  // and `tests/protocol/sts_webauthn_second_factor.js` drives a real ceremony
   // and reads the key back out of `GET /admin-api/users`, which is the
   // assertion that would have caught it.
   //
   // **THE VALUE IS JSON AND THE ATTRIBUTE IS MULTI-VALUED**, because a person
   // may hold several keys (a laptop and a phone, which is the ordinary case and
-  // the reason WebAuthn has a credential id at all). Each carries its own ROLE.
+  // the reason WebAuthn has a credential id at all). None carries a role
+  // (#1135, below).
   //
   // **THE PUBLIC KEY IS NOT A SECRET AND IS NOT HASHED**, which is the one
   // place this file departs from what it does with a password. A WebAuthn
@@ -631,21 +1028,34 @@ class Credentials {
   /** The attribute that holds a person's security keys. */
   static readonly WEBAUTHN_ATTRIBUTE = 'stsWebauthnCredential';
 
-  // WHAT A KEY IS FOR. Two roles and no third, because a key can do exactly two
-  // things here (this was written when a key was the only second factor; an
-  // authenticator app and recovery codes joined it on 2026-09-10, and neither
-  // has a role — see the TOTP section below):
+  // THE ANDROID MARKER (#615): the credential id of every key on the entry
+  // whose trusted `android-key` attestation kept its chain's serials — the
+  // keys the Android attestation recheck asks about. DERIVED, never written
+  // by hand: `ldap_server.js` recomputes it from `androidMarkerOf()` on every
+  // write of `stsWebauthnCredential`, so a removal and an untrusting take it
+  // off as surely as a registration puts it on. It exists so that the
+  // recheck's question is "who holds this attribute" — one statement against
+  // the store's `attr_names` index — rather than "read everybody's keys".
+  /** The derived attribute naming a person's Android-attested keys. */
+  static readonly ANDROID_MARKER_ATTRIBUTE = 'stsAndroidAttestedCredential';
+
+  // WHAT A KEY IS FOR: NOTHING THE KEY SAYS (#1135, rcbj's decision). Until
+  // then every key carried a ROLE, `primary` (it signed somebody in on its
+  // own) or `mfa` (a second factor beside a password), the person chose it at
+  // every enrolment, and the sign-in offered a step only the keys of its role.
+  // That was one question too many for a person registering a passkey, and it
+  // kept one key from serving both purposes. Now a key has no role: every key
+  // a person holds may sign them in passwordless and may be their second
+  // factor, as the REALM allows — `webauthnPolicy.useAllowed()`, which reads
+  // `webauthn.primaryAllowed`, `webauthn.mfaAllowed` and the authentication
+  // policy at the sign-in. A row stored with a `role` keeps it on disk until
+  // it is next rewritten, and nothing reads it (`keysFromValues()` drops it).
   //
-  //   'primary'  the key signs somebody in ON ITS OWN — passwordless. The
-  //              credential IS the account.
-  //   'mfa'      the key is a SECOND factor and a password is the first. A
-  //              person whose only key is `mfa` and who has no password cannot
-  //              sign in at all, which is why the setup flow refuses that
-  //              combination rather than letting somebody lock themselves out.
-  /**
-   * What a key is for: `primary` (passwordless) or `mfa` (a second factor).
-   */
-  static readonly ROLES = ['primary', 'mfa'];
+  // What a role still names is a USE — the step a key answers in one
+  // ceremony, `primary` or `mfa` — and that is a fact of the ceremony,
+  // recorded on its row (`webauthnCeremonies`), never of the key.
+  /** The two uses a key may answer: `primary` (passwordless) and `mfa`. */
+  static readonly USES = ['primary', 'mfa'];
 
   // THE RESERVED REFUSAL, honoured in BOTH modes. See the header.
   /** The password refused in both modes: `invalid`. */
@@ -694,16 +1104,38 @@ class Credentials {
     return true;
   }
 
+  /**
+   * The directory hooks the slot holds, so a test that wraps one function
+   * can put that same function back. Nothing in the service calls this:
+   * the slot is filled once, at the directory's require.
+   *
+   * @returns the hooks, or null when none are installed
+   */
+  directoryInstalled() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.directoryInstalled().");
+    log.debug("Leaving Credentials.directoryInstalled().");
+    return this.directory;
+  }
+
   // ---------------------------------------------------------------------------
   // THE POPULATION HOOKS (#352, 2026-09-29): two more functions of the SAME
   // directory, offered after `setDirectory()` rather than inside it.
   //
   //   * `credentialCensus(names)` — for each name, the RAW values of the
   //     credential attributes this file reads, off the entry it names; see
-  //     `factorCensus()` for what it replaced and why it is raw.
+  //     `factorCensus()` for what it replaced and why it is raw. And
+  //     `credentialCensusAsync(names)` (#621), the same answer with the
+  //     store read asynchronously, for `factorCensusAsync()`.
   //   * `applicationMatcher()` — a function that says whether a key names an
   //     application registered in this realm, built from one listing, for the
   //     people list's *an application is not a person* rule.
+  //   * `personCount()` and `personNamesUpTo(limit)` (#610) — how many people
+  //     the realm defines, COUNTED (the store's `count(*)` in a windowed
+  //     process), and the first `limit` names with whether there were more,
+  //     so the roster neither lists everybody to cap the list nor reports
+  //     the length of a capped list as the size of the directory.
+  //     `personCountAsync()` (#798) is that count for a caller that can wait.
   //
   // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
   // installs a stub directory with `setDirectory()` and no census must not be
@@ -717,7 +1149,8 @@ class Credentials {
   /**
    * Adds the population hooks to the directory slot already filled.
    *
-   * @param hooks - `credentialCensus` and `applicationMatcher`
+   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`,
+   *   `personCountAsync` and `personNamesUpTo`
    * @returns true when added, false when no directory is installed
    */
   addDirectoryHooks(hooks) {
@@ -860,7 +1293,8 @@ class Credentials {
   // the work: a derivation queued for the old password and started after a
   // reset landed would otherwise stamp the old password's keys as the new
   // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
-  private notifyPassword(name, password, event, hash?) {
+  private notifyPassword(name, password, event, hash?, retainPreviousMs?,
+                         previousHash?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
@@ -868,8 +1302,13 @@ class Credentials {
       return;
     }
     try {
+      // `retainPreviousMs` (#221): a service account's rotation overlap, for
+      // which the KDC holds the retired key version at least as long.
       this.passwordObserver(name, String(password),
-                            { event: event, hash: hash || null });
+                            { event: event, hash: hash || null,
+                              retainPreviousMs: Number(retainPreviousMs) ||
+                                                0,
+                              previousHash: previousHash || null });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -942,6 +1381,19 @@ class Credentials {
                via + ').');
       log.debug('Leaving Credentials.verifyPrepare(). Disabled.');
       return { done: this.disabledRefusal(name, via) };
+    }
+
+    // A SERVICE ACCOUNT AT A DOOR ITS POLICY DOES NOT OPEN (#221), in BOTH
+    // MODES and before the development-mode pass, for the disabled account's
+    // reason: it is the realm's policy about the account, not a check of the
+    // password — and so it is asked before the password is, which tells a
+    // guesser nothing.
+    const accountRefused = name ? this.serviceAccountDoorRefusal(name, opts)
+                                : null;
+    if (accountRefused) {
+      log.debug('Leaving Credentials.verifyPrepare(). A service account at ' +
+                'a door its policy closes.');
+      return { done: accountRefused };
     }
 
     if (!mode.verifiesCredentials()) {
@@ -1023,6 +1475,107 @@ class Credentials {
   }
 
   // The answer, once the comparison has been made in whichever process made it.
+  // ---------------------------------------------------------------------------
+  // A SERVICE ACCOUNT AND THE DOOR IT CAME THROUGH (#221). The door is what
+  // the caller declared: `door` for the password-only doors (`ldap`,
+  // `wstrust`, `scim`, `ssf`, `est`) and the password grant (`ropc`), and a
+  // `secondFactor` exemption for a BROWSER — the sign-in screen and its
+  // password-factor step say `asked-next`, the portal says `session-held`.
+  // A caller that declares NOTHING is refused for a service account: refuse
+  // by default, `secondFactorRefusal()`'s rule, so a door added tomorrow
+  // that says nothing is not a way round the policy. The answer is a wrong
+  // password's, with the code beside it.
+  // ---------------------------------------------------------------------------
+  private serviceAccountDoorOf(opts) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.serviceAccountDoorOf().');
+    const options = opts || {};
+    const door = options.secondFactor === 'asked-next' ||
+                 options.secondFactor === 'session-held'
+      ? 'browser' : String(options.door || '');
+    log.debug('Leaving Credentials.serviceAccountDoorOf(). ' + door);
+    return door;
+  }
+
+  /**
+   * Says whether a service account's policy closes a door to it.
+   *
+   * @param username - the account (any key the directory locates)
+   * @param door - `browser`, a password door's id, or `kerberos`
+   * @returns true when the name is a service account and ITS
+   *   service-account policy (#1240: the profile it names, else `default`)
+   *   does not open that door
+   */
+  serviceAccountRefusesDoor(username, door) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug('Entering Credentials.serviceAccountRefusesDoor(). ' + door);
+    const name = String(username == null ? '' : username).trim();
+    if (!name || !serviceAccounts.isServiceAccountName(name)) {
+      log.debug('Leaving Credentials.serviceAccountRefusesDoor(). Not one.');
+      return false;
+    }
+    const out = !serviceAccountPolicy.allowsDoor(String(door || ''),
+      serviceAccountPolicy.profileFor(name));
+    log.debug('Leaving Credentials.serviceAccountRefusesDoor(). ' + out);
+    return out;
+  }
+
+  private serviceAccountDoorRefusal(name, opts) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.serviceAccountDoorRefusal().');
+    const door = this.serviceAccountDoorOf(opts);
+    if (!this.serviceAccountRefusesDoor(name, door)) {
+      log.debug('Leaving Credentials.serviceAccountDoorRefusal(). Open.');
+      return null;
+    }
+    const via = (opts && opts.via) || 'unstated';
+    const browser = door === 'browser';
+    log.info('credentials: ' + name + ' is a SERVICE ACCOUNT and was refused ' +
+             'at ' + via + ': this realm\'s service-account policy ' +
+             (browser ? 'refuses it every browser sign-in'
+                      : (door ? 'does not open the "' + door + '" door to it'
+                              : 'opens no door that says nothing of itself')) +
+             '.');
+    log.debug('Leaving Credentials.serviceAccountDoorRefusal(). Refused.');
+    return coded(browser ? 'STS-SVCACCT-0010' : 'STS-SVCACCT-0011',
+      { ok: false, reason: 'service-account-door',
+        detail: name + ' is a service account, and this realm\'s ' +
+                'service-account policy does not let it in at ' + via +
+                ' (Directory → Policies)' });
+  }
+
+  // The previous password's hash while a rotation's overlap lasts, or ''.
+  private previousPasswordHash(name) {
+    const { log, serviceAccounts } = this.deps;
+    log.debug('Entering Credentials.previousPasswordHash().');
+    let out = '';
+    try {
+      const held = name ? serviceAccounts.previousPassword(name) : null;
+      out = held ? held.hash : '';
+    } catch (e) {
+      log.debug('Caught in Credentials.previousPasswordHash(): ' +
+                ((e && e.message) || e));
+      out = '';
+    }
+    log.debug('Leaving Credentials.previousPasswordHash(). ' + !!out);
+    return out;
+  }
+
+  // A match on the previous password is logged: it is the signal that a
+  // consumer has not picked the new one up yet.
+  private notePrevious(name, via, matched) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.notePrevious().');
+    if (matched) {
+      log.info('credentials: ' + name + ' presented its PREVIOUS password at ' +
+               (via || 'unstated') + ', inside the rotation\'s overlap; ' +
+               'accepted. Whatever sent it has not read the new one yet.');
+    }
+    log.debug('Leaving Credentials.notePrevious(). ' + !!matched);
+    return !!matched;
+  }
+
   private verifyFinish(ok, name, via) {
     const { log } = this.deps;
     const { PASSWORD_ATTRIBUTE } = Credentials;
@@ -1165,7 +1718,8 @@ class Credentials {
     log.debug('Entering Credentials.noteRefusal().');
     const reason = String((answer && answer.reason) || '');
     if (!answer || answer.ok || reason === 'no-store' ||
-        reason === 'store-error' || reason === 'password-reset-required') {
+        reason === 'store-error' || reason === 'password-reset-required' ||
+        reason === 'service-account-door') {
       log.debug('Leaving Credentials.noteRefusal(). Not a failure to record.');
       return;
     }
@@ -1220,17 +1774,204 @@ class Credentials {
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
     }
-    const ok = crypto.verifySecret(password, ready.stored);
-    const finished = this.verifyFinish(ok, ready.name, ready.via);
+    // A ROTATED SERVICE ACCOUNT'S PREVIOUS PASSWORD (#221), during the
+    // overlap only, and only where the current one did not match.
+    const previous = this.previousPasswordHash(ready.name);
+    const current = crypto.verifySecret(password, ready.stored);
+    const byPrevious = !current && !!previous &&
+      this.notePrevious(ready.name, ready.via,
+                        crypto.verifySecret(password, previous));
+    const finished = this.verifyFinish(current || byPrevious, ready.name,
+                                       ready.via);
     const answer = this.resetRefusal(finished, ready.name, opts) ||
       this.secondFactorRefusal(finished, ready.name, opts) || finished;
-    if (answer.ok && answer.reason === 'verified') {
-      // The plaintext was just CONFIRMED — see the password observer above.
+    // The plaintext was just CONFIRMED — see the password observer above —
+    // but NEVER the previous one (#221): the observer derives the KDC's
+    // keys from what it is handed against the CURRENT hash, and the old
+    // password would be stored as the new one's keys.
+    if (answer.ok && answer.reason === 'verified' && !byPrevious) {
       this.notifyPassword(ready.name, password, 'verified', ready.stored);
+      // #847: the stored hash brought up to the policy's form, on this
+      // thread, as everything else this door does.
+      this.upgradeHash(ready.name, password, ready.stored);
     }
     this.noteRefusal(username, opts, answer);
     log.debug('Leaving Credentials.verify().');
     return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE UPGRADE ON SIGN-IN (2026-10-22, #847).
+  //
+  // A password that has just VERIFIED against the stored hash is hashed again
+  // under the policy and written back when the stored hash is a different
+  // algorithm, or the same algorithm at a strictly lower cost (#872). rcbj's
+  // decision 4 on #847 still holds for an algorithm change and for a cost
+  // that goes up. A same-algorithm hash that is already at least the policy's
+  // cost is left, so a stronger stored hash is not rewritten down onto the
+  // new default. It is the only way an old hash can move — there is no bulk
+  // rehash, because the plaintext exists only at a sign-in. The one-time
+  // extra hash of each weaker password is still on this sign-in: the Kerberos
+  // keys are re-stamped inside the write, and the new hash has to be the one
+  // the caller sees when the promise resolves.
+  //
+  // Five rules, each a way to get it wrong:
+  //
+  //   * ONLY A VERIFIED PASSWORD, and only one the CURRENT hash verified —
+  //     never development mode's unchecked "yes" (that would replace a
+  //     person's hash with whatever was typed) and never a service account's
+  //     previous password during its rotation overlap.
+  //   * COMPARE AND SET. The write happens only while the entry still holds
+  //     the hash that verified, read with no await between it and the
+  //     write: a password changed in the meantime, here or on another node,
+  //     is never overwritten by a rehash of the old one.
+  //   * THE HASH ALONE. `writePassword()` without a history: `pwdHistory` and
+  //     `pwdChangedTime` are untouched, because the password did not change.
+  //     No credential-change signal and no "your password was changed"
+  //     message, for the same reason.
+  //   * THE KERBEROS KEYS FOLLOW THE STAMP. They are bound to the stored hash
+  //     (`kerberos/krb5_person_keys.ts`), so the observer is told of a
+  //     `rehash`, which re-stamps them at the SAME kvno: the password, and so
+  //     every key, is the one it was.
+  //   * A FAILED UPGRADE NEVER COSTS THE SIGN-IN. A hash or a write that
+  //     fails is logged (STS-AUTHN-0409) and the person is signed in as they
+  //     would have been; the next verified sign-in tries again. A successful
+  //     one is awaited, for the reason above.
+  // ---------------------------------------------------------------------------
+  private rehashSpecFor(name, stored) {
+    const { log, crypto, passwordPolicy } = this.deps;
+    log.debug('Entering Credentials.rehashSpecFor().');
+    if (!this.directory || typeof this.directory.writePassword !== 'function' ||
+        !crypto.isHashedSecret(stored)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Nothing to upgrade.');
+      return null;
+    }
+    const spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
+    if (crypto.storedSecretMatchesSpec(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Already in force.');
+      return null;
+    }
+    // Same algorithm and not strictly weaker (#872): left as stored. A
+    // different algorithm is weaker here, so it is still upgraded.
+    if (!crypto.storedSecretIsWeaker(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Not weaker.');
+      return null;
+    }
+    log.debug('Leaving Credentials.rehashSpecFor(). Out of date.');
+    return spec;
+  }
+
+  // The compare-and-set write, with no await between the read and the write.
+  private rehashWrite(name, password, stored, hash) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.rehashWrite().');
+    try {
+      const now = String(this.directory.readPassword(name) || '');
+      if (now !== String(stored)) {
+        log.info('credentials: the stored password hash for ' + name +
+                 ' changed while it was being upgraded, so the upgrade was ' +
+                 'dropped; the newer password stands.');
+        log.debug('Leaving Credentials.rehashWrite(). Superseded.');
+        return false;
+      }
+      if (!this.directory.writePassword(name, hash)) {
+        log.warn(errorCodes.tag('STS-AUTHN-0409') +
+                 'credentials: the upgraded password hash for ' + name +
+                 ' could not be written (no entry); the sign-in stands.');
+        log.debug('Leaving Credentials.rehashWrite(). Not written.');
+        return false;
+      }
+    } catch (e) {
+      log.debug('Caught in Credentials.rehashWrite(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHN-0409') +
+                'credentials: writing the upgraded password hash for ' + name +
+                ' threw, and the sign-in stands: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving Credentials.rehashWrite(). The store threw.');
+      return false;
+    }
+    const from = crypto.storedSecretParameters(stored);
+    const to = crypto.storedSecretParameters(hash);
+    log.info('credentials: the stored password hash for ' + name + ' was ' +
+             'upgraded at a verified sign-in, from ' +
+             (from ? from.algorithm : 'an unknown form') + ' to ' +
+             (to ? to.algorithm : 'an unknown form') + ' at the password ' +
+             'policy\'s parameters.');
+    // THE HASH IT REPLACED GOES WITH IT (2026-10-22, #820): the Kerberos
+    // keys were stamped with that one, and are the same keys under the new
+    // one, since the password did not change. krb5_person_keys.ts re-stamps
+    // them instead of deriving them again.
+    this.notifyPassword(name, password, 'rehash', hash, 0, stored);
+    log.debug('Leaving Credentials.rehashWrite(). Written.');
+    return true;
+  }
+
+  /**
+   * Hashes a just-verified password again under the password policy and
+   * writes it back where the stored hash is another algorithm, or the same
+   * one at a strictly lower cost (#847, #872). On this thread; never throws.
+   *
+   * @param name - the person
+   * @param password - the password the stored hash just verified
+   * @param stored - that stored hash
+   * @returns true when a new hash was written
+   */
+  upgradeHash(name, password, stored) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.upgradeHash().');
+    const spec = this.rehashSpecFor(name, stored);
+    if (!spec) {
+      log.debug('Leaving Credentials.upgradeHash(). Nothing to do.');
+      return false;
+    }
+    let hash;
+    try {
+      hash = crypto.hashPassword(password, spec);
+    } catch (e) {
+      log.debug('Caught in Credentials.upgradeHash(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0409') +
+               'credentials: the password hash for ' + name + ' could not ' +
+               'be upgraded, and the sign-in stands: ' +
+               ((e && e.message) || e));
+      log.debug('Leaving Credentials.upgradeHash(). The hash failed.');
+      return false;
+    }
+    const written = this.rehashWrite(name, password, stored, hash);
+    log.debug('Leaving Credentials.upgradeHash(). ' + written);
+    return written;
+  }
+
+  /**
+   * As `upgradeHash()`, with the new hash made on libuv's thread pool. Never
+   * rejects.
+   *
+   * @param name - the person
+   * @param password - the password the stored hash just verified
+   * @param stored - that stored hash
+   * @returns a promise of true when a new hash was written
+   */
+  upgradeHashAsync(name, password, stored) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.upgradeHashAsync().');
+    const spec = this.rehashSpecFor(name, stored);
+    if (!spec) {
+      log.debug('Leaving Credentials.upgradeHashAsync(). Nothing to do.');
+      return Promise.resolve(false);
+    }
+    log.debug('Leaving Credentials.upgradeHashAsync(). On libuv.');
+    return crypto.hashPasswordAsync(password, spec).then((hash) => {
+      return this.rehashWrite(name, password, stored, hash);
+    }, (e) => {
+      log.debug('Caught in Credentials.upgradeHashAsync(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0409') +
+               'credentials: the password hash for ' + name + ' could not ' +
+               'be upgraded, and the sign-in stands: ' +
+               ((e && e.message) || e));
+      return false;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1270,14 +2011,36 @@ class Credentials {
       }
       log.debug('Leaving Credentials.verifyAsync() password step. On ' +
                 'libuv.');
+      const previous = this.previousPasswordHash(ready.name);
+      let byPrevious = false;
       return crypto.verifySecretAsync(password, ready.stored)
+        .then((current) => {
+          // #221: the previous password during a rotation's overlap, as in
+          // `verify()`.
+          if (current || !previous) {
+            return current;
+          }
+          return crypto.verifySecretAsync(password, previous)
+            .then((matched) => {
+              byPrevious = this.notePrevious(ready.name, ready.via, matched);
+              return byPrevious;
+            });
+        })
         .then((ok) => {
           const finished = this.verifyFinish(ok, ready.name, ready.via);
           const answer = this.resetRefusal(finished, ready.name, opts) ||
             this.secondFactorRefusal(finished, ready.name, opts) || finished;
-          if (answer.ok && answer.reason === 'verified') {
+          // Never the previous password to the observer — see `verify()`.
+          if (answer.ok && answer.reason === 'verified' && !byPrevious) {
             this.notifyPassword(ready.name, password, 'verified',
                                 ready.stored);
+            this.noteRefusal(username, opts, answer);
+            // #847: the stored hash brought up to the policy's form before
+            // the answer, which `upgradeHashAsync()` never fails.
+            return this.upgradeHashAsync(ready.name, password, ready.stored)
+              .then(() => {
+                return answer;
+              });
           }
           this.noteRefusal(username, opts, answer);
           return answer;
@@ -1307,7 +2070,8 @@ class Credentials {
   // and EST Basic authenticate with a password and nothing else, and no
   // specification behind any of them defines a second factor. So the rule is
   // the ACCOUNT's: in product mode a person who HOLDS a second factor (an
-  // authenticator app, or a security key in the `mfa` role — what
+  // authenticator app, or any passkey where the realm lets one be a second
+  // factor (#1135; until then a key in the `mfa` role) — what
   // `mechanismsFor().mfaRequired` means) or of whom one is REQUIRED
   // (`mfaRequirementFor()`: stsMfaRequired, or the authentication policy for
   // the
@@ -1425,16 +2189,23 @@ class Credentials {
       log.debug('Leaving Credentials.secondFactorDemand(). Not a person.');
       return none;
     }
-    const key = this.keysOf(name).some((one) => {
-      return one.role === 'mfa';
-    });
+    // ANY KEY IS A HELD SECOND FACTOR (#1135, rcbj's decision 3) where the
+    // realm lets a key be one: a key has no role, and every key may answer
+    // the second step.
+    const key = this.keyUses(this.keysOf(name).length).mfa > 0;
     const totp = !!this.totpOf(name);
     const requirement = this.mfaRequirementFor(name);
     const holds = key || totp;
+    // AN EXEMPT SERVICE ACCOUNT (#221) is asked for nothing at a door that
+    // cannot ask: the realm's service-account policy took it out of the
+    // second-factor rules, and a factor it happens to hold does not put it
+    // back in. Its `amr` is still `pwd` alone.
+    const exempt = !!requirement.exemptServiceAccount;
     const answer = { person: true, totp: totp, key: key, holds: holds,
                      required: !!requirement.required,
                      byUser: !!requirement.byUser,
-                     needed: holds || !!requirement.required };
+                     exemptServiceAccount: exempt,
+                     needed: !exempt && (holds || !!requirement.required) };
     log.debug('Leaving Credentials.secondFactorDemand(). needed=' +
               answer.needed);
     return answer;
@@ -1540,17 +2311,19 @@ class Credentials {
    *
    * @param password - the password
    * @param username - the person
+   * @param application - the application the password is set for, where
+   *   one is known (#1236): it may name the profile
    * @returns the problem as one sentence, or empty when there is none or
    *   nothing is checked
    */
-  passwordProblem(password, username) {
+  passwordProblem(password, username, application?) {
     const { log, mode, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.passwordProblem().");
     if (!mode.verifiesCredentials()) {
       log.debug("Leaving Credentials.passwordProblem().");
       return '';
     }
-    const profile = passwordPolicy.profileFor(username);
+    const profile = passwordPolicy.profileFor(username, application);
     const problems = passwordPolicy.problemsWith(password, profile);
     if (!problems.length) {
       log.debug("Leaving Credentials.passwordProblem().");
@@ -1569,13 +2342,16 @@ class Credentials {
    * Returns the password rules as a person reads them, and whether they are
    * enforced, for a form to print before it refuses anything.
    *
-   * @param username - the person
+   * @param username - the person; the profile is the one their groups name
+   *   (#1236), `default` for nobody
+   * @param application - the application, where one is known: it may name
+   *   the profile too
    * @returns `{ enforced, … }`
    */
-  passwordRules(username) {
+  passwordRules(username, application?) {
     const { log, mode, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.passwordRules().");
-    const profile = passwordPolicy.profileFor(username);
+    const profile = passwordPolicy.profileFor(username, application);
     log.debug("Leaving Credentials.passwordRules().");
     return { enforced: mode.verifiesCredentials(),
              profile: profile.name,
@@ -1595,7 +2371,9 @@ class Credentials {
       .filter((one) => { return !!one; });
     for (let i = 0; i < candidates.length; i++) {
       const stored = String(candidates[i]);
-      const same = stored.indexOf('$scrypt$') === 0
+      // Each remembered hash verified by its OWN form (#847): scrypt or
+      // argon2id, at the parameters it names.
+      const same = crypto.isHashedSecret(stored)
         ? crypto.verifySecret(password, stored)
         : crypto.constantTimeEquals(password, stored);
       if (same) {
@@ -1665,10 +2443,36 @@ class Credentials {
    * @param username - the person
    * @param password - the new password
    * @param opts - `current` and `history` from an entry the caller holds,
-   *   and `generated` for a password this service just made up
+   *   `generated` for a password this service just made up, and
+   *   `hashOfThisPassword`, a hash of exactly this password the caller
+   *   already made with `crypto.hashSecretAsync()` (#756), and
+   *   `application`, the application the password is set for where the door
+   *   knows one, which may name the profile (#1236)
    * @returns `{ ok: true, hash, history, … }`, or a refusal with its reason
    *   and code
    */
+  /**
+   * Says whether a person is a service account whose password the realm
+   * rotates through a push destination (#221): rotation on in the policy, and
+   * a destination named on the account.
+   *
+   * @param username - the person
+   * @returns true when only the rotation may set its password
+   */
+  rotatesThroughDestination(username) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug('Entering Credentials.rotatesThroughDestination().');
+    const facts = username ? serviceAccounts.of(username) : null;
+    // THE ACCOUNT'S OWN PROFILE (#1240): the one its facts name.
+    const out = !!facts && !!facts.destination &&
+                serviceAccountPolicy.rotation(
+                  serviceAccountPolicy.profileForReference(facts.policy,
+                                                           facts.username))
+                  .enabled;
+    log.debug('Leaving Credentials.rotatesThroughDestination(). ' + out);
+    return out;
+  }
+
   preparePassword(username, password, opts?) {
     const { log, crypto, mode, passwordPolicy } = this.deps;
     const { PASSWORD_ATTRIBUTE } = Credentials;
@@ -1685,12 +2489,35 @@ class Credentials {
                                    'the ' + PASSWORD_ATTRIBUTE + ' attribute ' +
                                    'from the entry.'] });
     }
-    const profile = passwordPolicy.profileFor(name);
+    // A ROTATING SERVICE ACCOUNT'S PASSWORD IS SET BY ITS ROTATION ONLY
+    // (#221), at every door that sets a password — the console, the API, an
+    // LDAP modify — in both modes: the push destination is the source of
+    // truth, and a password set by hand would never reach it, so whatever
+    // reads it there would be refused at once.
+    if (!options.rotation && this.rotatesThroughDestination(name)) {
+      log.info('credentials: a password for ' + name + ' was refused: it ' +
+               'is a service account whose password rotates through its ' +
+               'push destination.');
+      log.debug('Leaving Credentials.preparePassword(). A rotating service ' +
+                'account.');
+      return coded('STS-SVCACCT-0013', { ok: false,
+        reason: 'service-account-rotates',
+        errors: [name + ' is a service account whose password rotates ' +
+                 'through its push destination, so it cannot be set by ' +
+                 'hand: the destination is where its consumers read it. ' +
+                 'Use Rotate now on its page, or POST /admin-api/users/' +
+                 'rotate-password.'] });
+    }
+    // THE PERSON'S PROFILE (#1236): the one their groups name, or the
+    // application's where the door knows one (`opts.application`, the
+    // sign-in's forced change), ranked; `default` where nothing names one.
+    const profile = passwordPolicy.profileFor(name, options.application);
     const enforced = mode.verifiesCredentials();
     if (enforced) {
       const problems = passwordPolicy.problemsWith(password, profile);
       if (problems.length) {
-        const said = this.passwordProblem(password, name);
+        const said = this.passwordProblem(password, name,
+                                          options.application);
         log.info('credentials: a password for ' + name + ' was refused by ' +
                  'the password policy: ' + problems.join('; ') + '.');
         log.debug('Leaving Credentials.preparePassword(). It breaks the ' +
@@ -1752,13 +2579,29 @@ class Credentials {
     // a hash — a clear value an older `ldapmodify` left behind is not written
     // into a second attribute where it would outlive the password it was.
     const next = [];
-    if (current && current.indexOf('$scrypt$') === 0) {
+    // A hash of either form (#847): a remembered password keeps the form it
+    // was stored in, and the history check verifies each by its own.
+    if (current && crypto.isHashedSecret(current)) {
       next.push(passwordPolicy.historyValue(current));
     }
     const history = next.concat(storedHistory).slice(0, profile.history);
     log.debug('Leaving Credentials.preparePassword(). Prepared; ' +
               history.length + ' remembered.');
-    return { ok: true, hash: crypto.hashSecret(password), history: history,
+    // HASHED AS THE POLICY SAYS (#847): argon2id or scrypt, at the profile's
+    // parameters — `password_policy.ts`'s `hashSpec()`. Every other secret
+    // this file hashes stays `hashSecret()`'s scrypt.
+    const spec = passwordPolicy.hashSpec(profile);
+    // A HASH THE CALLER ALREADY MADE OFF THE EVENT LOOP (#756): an LDAP
+    // write hashes its clear password on libuv's thread pool before this
+    // synchronous body runs. It is only ever a hash of this same plaintext
+    // (the caller looks it up by the value), and it must be one of ours in
+    // the policy's form now; anything else is ignored and the hash is made
+    // here.
+    const given = options.hashOfThisPassword;
+    const hash = typeof given === 'string' && crypto.isHashedSecret(given) &&
+                 crypto.storedSecretMatchesSpec(given, spec)
+      ? given : crypto.hashPassword(password, spec);
+    return { ok: true, hash: hash, history: history,
              profile: profile.name };
   }
 
@@ -1775,7 +2618,8 @@ class Credentials {
    *
    * @param username - the person
    * @param password - the new password
-   * @param opts - `generated` for a password from `generatePassword()`
+   * @param opts - `generated` for a password from `generatePassword()`, and
+   *   `application`, the application it is set for where known (#1236)
    * @returns `{ ok: true, username, … }`, or a refusal `{ ok: false, errors }`
    */
   setPassword(username, password, opts?) {
@@ -1814,6 +2658,19 @@ class Credentials {
       log.debug('Leaving Credentials.setPassword(). Refused.');
       return prepared;
     }
+    // A ROTATION (#221) keeps the hash it replaces for its overlap: read
+    // here, with no await before the write below.
+    const rotation = opts && opts.rotation ? opts.rotation : null;
+    let replaced = '';
+    if (rotation) {
+      try {
+        replaced = directory.readPassword(name) || '';
+      } catch (e) {
+        log.debug('Caught in Credentials.setPassword(): ' +
+                  ((e && e.message) || e));
+        replaced = '';
+      }
+    }
     let written = false;
     try {
       written = directory.writePassword(name, prepared.hash,
@@ -1836,13 +2693,21 @@ class Credentials {
                                    'created ahead of time.'] });
     }
     log.info('credentials: a password was set for ' + name + '. It is stored ' +
-             'as a scrypt hash and CANNOT BE READ BACK — this service can ' +
+             'as a hash and CANNOT BE READ BACK — this service can ' +
              'never show it again, which is why the caller is given it once ' +
              'and only at the moment it is created.');
+    const overlapMs = rotation ? Math.max(0, Number(rotation.overlapMs) || 0)
+                               : 0;
+    if (rotation) {
+      // THE PREVIOUS PASSWORD, accepted until the overlap ends, and the
+      // rotation's time — `service_accounts.ts` keeps both on the entry.
+      this.deps.serviceAccounts.recordRotated(name, replaced,
+        Date.now() + overlapMs, this.deps.passwordPolicy.generalizedTime());
+    }
     // The plaintext was just WRITTEN — see the password observer above. After
     // the write and not before it, so an observer reading the stored hash back
     // reads the one this password produced.
-    this.notifyPassword(name, password, 'set', prepared.hash);
+    this.notifyPassword(name, password, 'set', prepared.hash, overlapMs);
     log.debug('Leaving Credentials.setPassword(). Written.');
     return { ok: true, username: name,
              message: 'The password for ' + name + ' is set. It is stored as ' +
@@ -1943,6 +2808,69 @@ class Credentials {
   // account with a password that changes nothing and a log line that alarms
   // people.
   /**
+   * Stores a password hash an operator supplied in `admin.bootstrapPassword`
+   * as the bootstrap administrator's password, as it stands.
+   *
+   * @param username - the account
+   * @param hash - a `$scrypt$` or argon2id hash
+   * @returns `{ ok: true, username }`, or a refusal
+   */
+  writeSuppliedHash(username: string, hash: string): any {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.writeSuppliedHash().");
+    let written = false;
+    try {
+      written = directory.writePassword(username, hash, { history: [] });
+    } catch (e) {
+      log.debug("Caught in Credentials.writeSuppliedHash(): " +
+                ((e && e.message) || e));
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeSuppliedHash(). Not written.");
+      return errorCodes.mark({ ok: false, errors: ['The bootstrap ' +
+        'password hash could not be stored for ' + username + '.'] },
+        'STS-AUTHN-0060');
+    }
+    log.debug("Leaving Credentials.writeSuppliedHash().");
+    return { ok: true, username: username };
+  }
+
+  /**
+   * Writes a generated bootstrap password to a file only this user can read.
+   *
+   * @param username - the account
+   * @param password - the generated password
+   * @returns the file's path, or '' where the password is to be logged
+   */
+  writeBootstrapPassword(username: string, password: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Credentials.writeBootstrapPassword().");
+    if (config.value('admin.logBootstrapPassword') === true) {
+      log.debug("Leaving Credentials.writeBootstrapPassword(). Logged.");
+      return '';
+    }
+    const nodeFs = require('fs');
+    const nodePath = require('path');
+    const dir = nodePath.resolve(String(config.value('persistence.dataDir')));
+    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    try {
+      nodeFs.mkdirSync(dir, { recursive: true });
+      nodeFs.writeFileSync(file, username + ':' + password + '\n',
+                           { mode: 0o600 });
+      nodeFs.chmodSync(file, 0o600);
+    } catch (e) {
+      log.debug("Caught in Credentials.writeBootstrapPassword(): " +
+                ((e && e.message) || e));
+      // A service nobody can sign in to is worse than this line in its log.
+      log.debug("Leaving Credentials.writeBootstrapPassword(). Not written.");
+      return '';
+    }
+    log.debug("Leaving Credentials.writeBootstrapPassword().");
+    return file;
+  }
+
+  /**
    * Creates the bootstrap administrator a fresh product-mode service is
    * reached through, with a generated password announced in the log.
    *
@@ -2012,13 +2940,21 @@ class Credentials {
     // decides only what the password is.
     const supplied = String(config.value('admin.bootstrapPassword') || '');
     const password = supplied || this.generatePassword(username);
+    // A HASH IN PLACE OF THE PASSWORD (ASVS 5.0.0 13.3.1): a `$scrypt$` or
+    // argon2id value is stored as it stands, so the plaintext need never be
+    // in this service's configuration or its secret store. It is the
+    // operator's to have made at the policy's strength; nothing derived from
+    // the plaintext (a Kerberos key) exists for it until the password is
+    // changed, which the bootstrap banner asks for anyway.
+    const hashed = !!supplied && this.deps.crypto.isHashedSecret(supplied);
     // `generated` is TRUE only for one this service made up: it is what tells
     // `preparePassword()` to skip the checks that are about a person choosing
     // a password. A SUPPLIED one is somebody's choice and is held to the
     // policy, so that a value the policy refuses is found here rather than at
     // the first sign-in that cannot happen.
-    const written = this.setPassword(username, password,
-                                     { generated: !supplied });
+    const written = hashed
+      ? this.writeSuppliedHash(username, supplied)
+      : this.setPassword(username, password, { generated: !supplied });
     if (!written.ok && supplied) {
       // NOT REPLACED WITH A GENERATED ONE. Falling back would put a working
       // credential in the log of a deployment whose operator set this setting
@@ -2061,20 +2997,25 @@ class Credentials {
                '  password: from admin.bootstrapPassword — NOT PRINTED, and ' +
                'not printed anywhere else either.\n\nNobody in this ' +
                'realm\'s directory held a credential, so this account was ' +
-               'given the password you configured. It is stored as a scrypt ' +
+               'given the password you configured. It is stored as a ' +
                'hash and CANNOT be read back — only reset.\n\nCHANGE IT. ' +
                'Sign in at /admin, or POST /admin-api/users/set-password.\n' +
                '=======================================================');
       log.debug('Leaving Credentials.bootstrap(). A configured password.');
       return { ran: true, username: username, supplied: true };
     }
+    // NOT IN THE LOG (#1493, ASVS 5.0.0 16.2.5): the password goes to a file only
+    // this service's user can read, unless an operator asked for the old way.
+    const held = this.writeBootstrapPassword(username, password);
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
              '\n' +
              '  username: ' + username + '\n' +
-             '  password: ' + password + '\n\nNobody in this realm\'s ' +
+             (held ? '  password: in the file ' + held + '\n'
+                   : '  password: ' + password + '\n') +
+             '\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
-             'the service is reachable. It is stored as a scrypt hash and ' +
+             'the service is reachable. It is stored as a hash and ' +
              'CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at ' +
              '/admin, or POST ' +
              '/admin-api/users/set-password.\n' +
@@ -2232,25 +3173,509 @@ class Credentials {
   // and both must agree about which values are keys at all.
   private keysFromValues(raw, username) {
     const { log } = this.deps;
-    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     log.debug('Entering Credentials.keysFromValues().');
+    const out = Credentials.keysOfValues(raw, username);
+    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
+    return out;
+  }
+
+  // THE SAME RULE FOR A CALLER WITH NO INSTANCE IN HAND (#942): the passkey
+  // report (`common/passkey_report.ts`) is handed a person's raw values by
+  // the directory, at the two doors that write them and a page at a time by
+  // its recount, and must count exactly the values `keysOf()` calls keys —
+  // a second parse there would be a second answer to "which values are
+  // keys". `keysFromValues()` above is this, so the two cannot drift.
+  /**
+   * Reads a person's stored `stsWebauthnCredential` values as keys: each
+   * value that is JSON this service wrote, with a credential id and a public
+   * key. Anything else is skipped with a warning.
+   *
+   * @param raw - the attribute's values, as the directory holds them
+   * @param username - whose they are, for the warning
+   * @returns the parsed keys
+   */
+  static keysOfValues(raw: unknown, username: unknown): any[] {
+    helpers.log.debug('Entering Credentials.keysOfValues().');
+    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     const out = [];
-    (raw || []).forEach((value) => {
+    (Array.isArray(raw) ? raw : []).forEach((value) => {
       try {
         const parsed = JSON.parse(value);
         if (parsed && parsed.credentialId && parsed.publicKeyJwk) {
+          // A ROLE STORED BEFORE #1135 is dropped here, the one place a
+          // value becomes a key, so no reader can decide on it and the next
+          // rewrite of the attribute leaves it off.
+          delete parsed.role;
           out.push(parsed);
         }
       } catch (e) {
         // A value some other client wrote. Skipped with a warning rather than
         // throwing: one malformed key must not stop the others being usable.
-        log.warn('credentials: a ' + WEBAUTHN_ATTRIBUTE + ' value on ' +
-                 username + ' is not JSON this service wrote and is being ' +
-                 'ignored: ' + e.message);
+        helpers.log.warn('credentials: a ' + WEBAUTHN_ATTRIBUTE + ' value ' +
+                         'on ' + String(username) + ' is not JSON this ' +
+                         'service wrote and is being ignored: ' + e.message);
       }
     });
-    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
+    helpers.log.debug('Leaving Credentials.keysOfValues(). ' + out.length +
+                      '.');
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE USER HANDLE (#474, 2026-10-06): the `user.id` every credential this
+  // person registers is created under, and what a DISCOVERABLE credential
+  // hands back as `userHandle` to say whose it is.
+  //
+  // **IT WAS THE USERNAME'S BYTES**, at every door that registered a key and
+  // in the Signal API's `userId`. WebAuthn Level 3 section 5.4.3 says the
+  // handle MUST NOT carry personally identifying information and SHOULD be 64
+  // random bytes, and it is the ONE thing a usernameless sign-in identifies
+  // the account by: a name as the handle is a name stored on every
+  // authenticator the person ever used, and a handle that stops matching the
+  // day the account is renamed.
+  //
+  // **ONE PER PERSON, KEPT FOR GOOD**, on their entry as
+  // `stsWebauthnUserHandle`: every key they register carries the same one,
+  // so a credential manager groups them as one account, and removing the
+  // last key does not remove it. Minted the first time a ceremony needs one.
+  // Each key also records the handle IT was created under (`userHandle` on
+  // the row), because that is what its authenticator will hand back.
+  //
+  // **A KEY REGISTERED BEFORE THIS HAS NO `userHandle` ON ITS ROW** and was
+  // created under the username's bytes. rcbj's decision on #474: it goes on
+  // working where the username is typed first (it is found by its credential
+  // id, as always), and it NEVER identifies anybody in the usernameless
+  // flow — a name is not a handle this service minted, and accepting one
+  // would make the username the credential's identifier after all. No
+  // migration: the person registers the key again to sign in without a name.
+  // ---------------------------------------------------------------------------
+  /** The attribute that holds a person's WebAuthn user handle. */
+  static readonly WEBAUTHN_USER_HANDLE_ATTRIBUTE = 'stsWebauthnUserHandle';
+
+  // ---------------------------------------------------------------------------
+  // THE TWO LANES (#643, 2026-10-19): a classical passkey and a post-quantum
+  // one, held by one person at once, on one authenticator if it can make both.
+  // `authn/webauthn_policy.ts` argues why a lane needs its own handle, its own
+  // algorithms and its own exclude list; this file keeps the person's half:
+  //
+  //   * A SECOND HANDLE, `stsWebauthnPqcUserHandle`, minted the first time a
+  //     post-quantum ceremony needs one and kept for good, like the first —
+  //     and only ever BESIDE the first, which the directory's owner index
+  //     walks (`ldap_server.js`, `webauthnUserHandleHolder()`).
+  //   * THE LANE ON THE KEY ROW (`lane`), chosen when the enrolment began and
+  //     carried on the pending record like the role, never read back off the
+  //     browser's answer. A row with none — every key enrolled before #643 —
+  //     is CLASSICAL (`keyLane()`).
+  //   * THE NAME A CREDENTIAL MANAGER SHOWS for the post-quantum lane NAMES
+  //     ITS ALGORITHM (rcbj on #643): `<username>+ml-dsa` and a display name
+  //     ending ` (ML-DSA)` at creation (`laneUser()`), when the algorithm the
+  //     authenticator will pick is not yet known; and, once the rows record
+  //     it, `<username>+ml-dsa-65` in the Signal API's
+  //     `signalCurrentUserDetails` where every post-quantum key the person
+  //     holds uses that one algorithm (`laneSignalUser()`) — the generic
+  //     name again where they use more than one. **IT IS NEVER A SIGN-IN
+  //     NAME**: nothing here strips the suffix, and the sign-in screen
+  //     refuses a typed name ending in one (`isLaneName()`, STS-AUTHN-0354).
+  //     The handle, not the name, is what an assertion is matched by.
+  // ---------------------------------------------------------------------------
+  /** The attribute that holds a person's post-quantum lane handle (#643). */
+  static readonly WEBAUTHN_PQC_USER_HANDLE_ATTRIBUTE =
+    'stsWebauthnPqcUserHandle';
+
+  /** The two lanes (#643), in the order a page offers them. */
+  static readonly LANES: ReadonlyArray<string> = ['classical', 'pqc'];
+
+  /**
+   * What the post-quantum lane appends to `user.name` at creation (#643),
+   * before the algorithm is known.
+   */
+  static readonly PQC_NAME_SUFFIX = '+ml-dsa';
+
+  /** What it appends to `user.displayName` at creation (#643). */
+  static readonly PQC_DISPLAY_SUFFIX = ' (ML-DSA)';
+
+  // A NAME THAT ENDS IN A LANE'S SUFFIX (#643): `+ml-dsa`, `+ml-dsa-65` and
+  // the like, and `+pqc`, the name the plan first carried. What a
+  // credential manager shows for the post-quantum lane, so never a name
+  // anybody signs in with.
+  private static readonly LANE_NAME_SHAPE = /\+(ml-dsa(-[0-9]+)?|pqc)$/i;
+
+  /**
+   * Says whether a typed name has the shape of a post-quantum lane's
+   * credential-manager name (#643): it ends `+ml-dsa`, `+ml-dsa-<n>` or
+   * `+pqc`. The sign-in screen refuses such a name.
+   *
+   * @param name - the typed name
+   * @returns true where it does
+   */
+  static isLaneName(name: unknown): boolean {
+    helpers.log.debug("Entering Credentials.isLaneName().");
+    const out = Credentials.LANE_NAME_SHAPE.test(String(name || '').trim());
+    helpers.log.debug("Leaving Credentials.isLaneName(). " + out);
+    return out;
+  }
+
+  /**
+   * The lane a stored key was created in (#643): its row's `lane`, and
+   * `classical` for a row with none — every key enrolled before the lanes.
+   *
+   * @param key - the stored key row
+   * @returns `classical` or `pqc`
+   */
+  static keyLane(key: any): string {
+    helpers.log.debug("Entering Credentials.keyLane().");
+    const lane = key && key.lane === 'pqc' ? 'pqc' : 'classical';
+    helpers.log.debug("Leaving Credentials.keyLane(). " + lane);
+    return lane;
+  }
+
+  /**
+   * The `user.name` and `user.displayName` a registration in a lane sends
+   * (#643): as given for the classical lane; `<username>+ml-dsa` and the
+   * display name with ` (ML-DSA)` for the post-quantum one, within the 64
+   * characters the display name is held to.
+   *
+   * @param username - the person
+   * @param display - the display name the door would send
+   * @param lane - `classical` or `pqc`
+   * @returns `{ name, displayName }`
+   */
+  static laneUser(username: string, display: string,
+                  lane?: string): { name: string; displayName: string } {
+    helpers.log.debug("Entering Credentials.laneUser(). lane=" +
+                      String(lane || ''));
+    const name = String(username || '');
+    const shown = String(display || name);
+    if (String(lane || '') !== 'pqc') {
+      helpers.log.debug("Leaving Credentials.laneUser(). Classical.");
+      return { name: name, displayName: shown };
+    }
+    helpers.log.debug("Leaving Credentials.laneUser(). Post-quantum.");
+    return Credentials.suffixed(name, shown, Credentials.PQC_NAME_SUFFIX,
+                                Credentials.PQC_DISPLAY_SUFFIX);
+  }
+
+  /**
+   * The name and display name the Signal API sends for a lane (#643): the
+   * classical lane's as given; the post-quantum lane's naming its algorithm
+   * — `<username>+ml-dsa-65`, `<display> (ML-DSA-65)` — where every key of
+   * that lane the person holds uses one algorithm, and the creation name
+   * (`laneUser()`) where they use more than one, or none is recorded.
+   *
+   * @param username - the person
+   * @param display - the display name the door would send
+   * @param lane - `classical` or `pqc`
+   * @param keys - the person's stored keys (every lane; filtered here)
+   * @returns `{ name, displayName }`
+   */
+  static laneSignalUser(username: string, display: string, lane: string,
+                        keys: any[]): { name: string; displayName: string } {
+    helpers.log.debug("Entering Credentials.laneSignalUser(). lane=" + lane);
+    if (String(lane || '') !== 'pqc') {
+      helpers.log.debug("Leaving Credentials.laneSignalUser(). Classical.");
+      return Credentials.laneUser(username, display, lane);
+    }
+    const names = (keys || []).filter(function (one) {
+      return Credentials.keyLane(one) === 'pqc';
+    }).map(function (one) {
+      return Credentials.keyAlgorithm(one).name;
+    }).filter(function (name, i, all) {
+      return all.indexOf(name) === i;
+    });
+    if (names.length !== 1 || !/^ML-DSA-[0-9]+$/.test(names[0])) {
+      helpers.log.debug("Leaving Credentials.laneSignalUser(). " +
+                        names.length + " algorithm(s); the generic name.");
+      return Credentials.laneUser(username, display, lane);
+    }
+    helpers.log.debug("Leaving Credentials.laneSignalUser(). " + names[0]);
+    return Credentials.suffixed(String(username || ''),
+                                String(display || username || ''),
+                                '+' + names[0].toLowerCase(),
+                                ' (' + names[0] + ')');
+  }
+
+  // A name and a display name with a lane's suffixes, the display name kept
+  // within the 64 characters `passkeyPolicy.displayNameFor()` holds it to.
+  private static suffixed(name: string, shown: string, nameSuffix: string,
+                          displaySuffix: string) {
+    helpers.log.debug("Entering Credentials.suffixed().");
+    const room = 64 - displaySuffix.length;
+    helpers.log.debug("Leaving Credentials.suffixed().");
+    return { name: name + nameSuffix,
+             displayName: Array.from(shown).slice(0, room).join('').trim() +
+                          displaySuffix };
+  }
+
+  // A handle this service minted: 64 bytes (section 5.4.3), base64url, so
+  // exactly 86 characters. Anything else on an entry or a key row is not one.
+  private static readonly USER_HANDLE_SHAPE = /^[A-Za-z0-9_-]{86}$/;
+
+  /**
+   * Mints a WebAuthn user handle: 64 random bytes (WebAuthn Level 3 section
+   * 5.4.3), base64url.
+   *
+   * @returns the handle
+   */
+  newUserHandle() {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Credentials.newUserHandle().");
+    const handle = crypto.randomToken(512);
+    log.debug("Leaving Credentials.newUserHandle().");
+    return handle;
+  }
+
+  /**
+   * Says whether a value is a user handle this service minted.
+   *
+   * @param value - the value
+   * @returns true for 64 bytes of base64url
+   */
+  static isUserHandle(value: unknown): boolean {
+    helpers.log.debug("Entering Credentials.isUserHandle().");
+    helpers.log.debug("Leaving Credentials.isUserHandle().");
+    return typeof value === 'string' &&
+      Credentials.USER_HANDLE_SHAPE.test(value);
+  }
+
+  /**
+   * The handle a key registered before #474 was created under: the
+   * username's UTF-8 bytes, base64url.
+   *
+   * @param username - the person
+   * @returns the handle
+   */
+  static legacyUserHandle(username: string): string {
+    helpers.log.debug("Entering Credentials.legacyUserHandle().");
+    helpers.log.debug("Leaving Credentials.legacyUserHandle().");
+    return Buffer.from(String(username || ''), 'utf8').toString('base64url');
+  }
+
+  // WHETHER A KEY CAN ANSWER THE USERNAMELESS SIGN-IN (#474), for the pages
+  // that list keys: a PRIMARY key created under a minted handle, and not one
+  // the browser said is not discoverable. `null` from credProps is "probably":
+  // nothing signed says, and the setting asks the authenticator for one.
+  /**
+   * Says whether a stored key can sign its owner in with no username, and
+   * why not, in a person's words.
+   *
+   * @param key - the stored key row
+   * @returns `{ ready, text }`
+   */
+  static withoutUsername(key: any): { ready: boolean; text: string } {
+    helpers.log.debug("Entering Credentials.withoutUsername().");
+    const one = key || {};
+    // Every key may sign its owner in on its own since #1135, so what is
+    // left to say is whether the browser can find it.
+    const out = !Credentials.isUserHandle(one.userHandle)
+        ? { ready: false, text: 'no — it was created before passkeys could ' +
+            'sign in without a username; create it again to use it that way' }
+        : (one.discoverable === false
+          ? { ready: false, text: 'no — it is not stored on the ' +
+              'authenticator, so the browser cannot find it by itself' }
+          : { ready: true, text: one.discoverable === true ? 'yes'
+              : 'probably — the browser did not say whether it is stored on ' +
+                'the authenticator' });
+    helpers.log.debug("Leaving Credentials.withoutUsername(). " + out.ready);
+    return out;
+  }
+
+  /**
+   * Returns a person's WebAuthn user handle, minting and storing one where
+   * `mint` is asked and their entry holds none.
+   *
+   * @param username - the person
+   * @param opts - `mint`: store a new handle on an entry that holds none;
+   *   `lane` (#643): `pqc` for the post-quantum lane's handle, which is
+   *   minted only beside the classical one (minted first where `mint` is
+   *   asked)
+   * @returns the handle, or '' where there is none (no entry, no store, or
+   *   none held and none asked for)
+   */
+  userHandleOf(username, opts?: { mint?: boolean; lane?: string }) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    const lane = opts && opts.lane === 'pqc' ? 'pqc' : 'classical';
+    log.debug("Entering Credentials.userHandleOf(). username=" + name +
+              ", lane=" + lane);
+    if (!directory || typeof directory.readWebauthnUserHandle !== 'function') {
+      log.debug("Leaving Credentials.userHandleOf(). No store.");
+      return '';
+    }
+    // THE POST-QUANTUM HANDLE STANDS BESIDE THE CLASSICAL ONE (#643): the
+    // directory refuses it otherwise, so a ceremony that mints the second
+    // mints the first before it.
+    const mint = !!(opts && opts.mint);
+    if (lane === 'pqc' && !this.userHandleOf(name, { mint: mint })) {
+      log.debug("Leaving Credentials.userHandleOf(). No classical handle " +
+                "for the post-quantum one to stand beside.");
+      return '';
+    }
+    let held = '';
+    try {
+      held = String(directory.readWebauthnUserHandle(name, lane) || '');
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0065') + 'credentials: reading ' +
+                'the WebAuthn user handle of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.userHandleOf(). The read threw.");
+      return '';
+    }
+    if (Credentials.isUserHandle(held)) {
+      log.debug("Leaving Credentials.userHandleOf(). Held.");
+      return held;
+    }
+    if (!mint || typeof directory.writeWebauthnUserHandle !== 'function') {
+      log.debug("Leaving Credentials.userHandleOf(). None held.");
+      return '';
+    }
+    const minted = this.newUserHandle();
+    let written = false;
+    try {
+      written = !!directory.writeWebauthnUserHandle(name, minted, lane);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0068') + 'credentials: storing ' +
+                'a WebAuthn user handle for ' + name + ' threw: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Credentials.userHandleOf(). " +
+              (written ? 'Minted.' : 'No entry to hold one.'));
+    return written ? minted : '';
+  }
+
+  /**
+   * Finds the person whose entry holds a WebAuthn user handle, and the lane
+   * it is the handle of (#643): either of a person's two handles names them.
+   *
+   * @param handle - the handle an assertion returned, base64url
+   * @returns `{ username, lane }`, or null when nobody holds it (or it is
+   *   not a handle this service mints)
+   */
+  userHandleHolder(handle): { username: string; lane: string } | null {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.userHandleHolder().");
+    if (!Credentials.isUserHandle(handle) || !directory ||
+        typeof directory.webauthnUserHandleHolder !== 'function') {
+      log.debug("Leaving Credentials.userHandleHolder(). Not a handle, or " +
+                "no store.");
+      return null;
+    }
+    let found: any = null;
+    try {
+      found = directory.webauthnUserHandleHolder(String(handle));
+    } catch (e) {
+      log.debug("Caught in Credentials.userHandleHolder(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const out = found && found.owner
+      ? { username: String(found.owner),
+          lane: found.lane === 'pqc' ? 'pqc' : 'classical' }
+      : null;
+    log.debug("Leaving Credentials.userHandleHolder(). " +
+              (out ? 'Found, ' + out.lane + '.' : 'Nobody.'));
+    return out;
+  }
+
+  /**
+   * Finds the person whose entry holds a WebAuthn user handle — in either
+   * lane since #643.
+   *
+   * @param handle - the handle an assertion returned, base64url
+   * @returns their username, or '' when nobody holds it (or it is not a
+   *   handle this service mints)
+   */
+  ownerOfUserHandle(handle) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.ownerOfUserHandle().");
+    if (!Credentials.isUserHandle(handle) || !directory ||
+        typeof directory.webauthnUserHandleOwner !== 'function') {
+      log.debug("Leaving Credentials.ownerOfUserHandle(). Not a handle, or " +
+                "no store.");
+      return '';
+    }
+    let owner = '';
+    try {
+      owner = String(directory.webauthnUserHandleOwner(String(handle)) || '');
+    } catch (e) {
+      log.debug("Caught in Credentials.ownerOfUserHandle(): " +
+                ((e && e.message) || e));
+      owner = '';
+    }
+    log.debug("Leaving Credentials.ownerOfUserHandle(). " +
+              (owner ? 'Found.' : 'Nobody.'));
+    return owner;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WEBAUTHN LEVEL 3 SECTION 7.2, STEP 6 (#474): an assertion's `userHandle`
+  // must name the account that owns the credential. The browser has always
+  // sent it; nothing here read it until now.
+  //
+  //   * ABSENT, where the person was named before the ceremony (the username
+  //     was typed): allowed — the specification makes it optional there, and
+  //     a non-discoverable credential has none to send.
+  //   * ABSENT in a usernameless ceremony: refused by the caller, which has
+  //     nobody to check it against (`requireHandle`).
+  //   * PRESENT: it must be the handle the KEY was created under, which for a
+  //     key registered since #474 is the person's own handle and for one
+  //     registered before is the username's bytes. A legacy key's name
+  //     handle is accepted ONLY where the username was typed
+  //     (`requireHandle` false) — the decision in the header above.
+  // ---------------------------------------------------------------------------
+  /**
+   * Checks an assertion's `userHandle` against the key it names (WebAuthn
+   * Level 3 section 7.2 step 6).
+   *
+   * @param username - the person the key is enrolled for
+   * @param key - the stored key row
+   * @param presented - the `userHandle` the browser returned, base64url, or
+   *   empty
+   * @param requireHandle - true in a usernameless ceremony
+   * @returns `{ ok: true }`, or `{ ok: false, why }` marked with its code
+   */
+  userHandleRefusal(username, key, presented, requireHandle) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Credentials.userHandleRefusal().");
+    const given = String(presented || '');
+    const own = String((key && key.userHandle) || '');
+    if (!given) {
+      log.debug("Leaving Credentials.userHandleRefusal(). None presented.");
+      return requireHandle
+        ? errorCodes.mark({ ok: false, why: 'the authenticator returned no ' +
+                            'user handle, so the passkey names no account' },
+                          'STS-AUTHN-0302')
+        : { ok: true };
+    }
+    if (own) {
+      // The KEY's handle, which is the person's own unless two ceremonies
+      // minted one each before either was stored; the owner lookup of a
+      // usernameless sign-in reads the ENTRY's, so such a key is simply not
+      // found there and still works where the username is typed.
+      const ok = given === own;
+      log.debug("Leaving Credentials.userHandleRefusal(). " +
+                (ok ? 'Matched.' : 'Does not match.'));
+      return ok ? { ok: true }
+        : errorCodes.mark({ ok: false, why: 'the user handle the ' +
+                            'authenticator returned is not the one the key ' +
+                            'was registered under' }, 'STS-AUTHN-0303');
+    }
+    if (requireHandle) {
+      log.debug("Leaving Credentials.userHandleRefusal(). A key registered " +
+                "before #474, in a usernameless ceremony.");
+      return errorCodes.mark({ ok: false, why: 'this passkey was registered ' +
+                               'before passkeys could sign in without a ' +
+                               'username' }, 'STS-AUTHN-0304');
+    }
+    const ok = given === Credentials.legacyUserHandle(username);
+    log.debug("Leaving Credentials.userHandleRefusal(). A key registered " +
+              "before #474: " + (ok ? 'matched' : 'does not match') + ".");
+    return ok ? { ok: true }
+      : errorCodes.mark({ ok: false, why: 'the user handle the ' +
+                          'authenticator returned is not the one the key ' +
+                          'was registered under' }, 'STS-AUTHN-0303');
   }
 
   // Add one. The caller has already verified the registration ceremony — this
@@ -2261,32 +3686,23 @@ class Credentials {
    *
    * @param username - the person
    * @param credential - what the ceremony produced
-   * @param role - `primary` or `mfa`
-   * @returns `{ ok: true, username, role, … }`, or a refusal
+   * @param opts - `upgrade` (#939): `{ credentialId, mode }`, the classical
+   *   passkey this key upgrades and what the write does to it — `replace`
+   *   puts this key in its place, `alongside` keeps it beside this one
+   * @returns `{ ok: true, username, credentialId, … }`, or a refusal
    */
-  addKey(username, credential, role) {
+  addKey(username, credential, opts?) {
     const { log, backupCodes, webauthnPolicy, errorCodes } = this.deps;
-    const { ROLES } = Credentials;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.addKey().");
     const name = String(username || '').trim();
-    log.debug('Entering Credentials.addKey(). username=' + name + ', role=' +
-              role);
+    log.debug('Entering Credentials.addKey(). username=' + name);
     if (!directory || typeof directory.writeWebauthn !== 'function') {
       log.debug("Leaving Credentials.addKey().");
       return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
                                    'store is installed, so a security key ' +
                                    'cannot be recorded.'] });
-    }
-    if (ROLES.indexOf(String(role)) < 0) {
-      log.debug("Leaving Credentials.addKey().");
-      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
-                                   'is either "primary" (it signs somebody ' +
-                                   'in on its own) or "mfa" (it is a second ' +
-                                   'factor ' +
-                                   'beside a password). ' +
-                                   '"' + role + '" is neither.'] });
     }
     // ---------------------------------------------------------------------
     // THE `webauthn.*` POLICY, CHECKED AT THE ONE PLACE A KEY IS WRITTEN
@@ -2300,19 +3716,144 @@ class Credentials {
     // only function that puts a key on an entry, so a policy enforced here is a
     // policy enforced everywhere.
     //
-    // **IT REFUSES AN ENROLMENT AND NEVER AN AUTHENTICATION.** A key already on
-    // the entry goes on working when the role that produced it is switched off,
-    // for `webauthn.enabled`'s reason — an operator moving a knob must not lock
-    // somebody out of their own account, which for a `primary` key would be the
-    // whole account.
-    const allowed = webauthnPolicy.roleAllowed(role);
+    // **WHAT IT ASKS IS WHETHER A KEY MAY BE ENROLLED AT ALL** (#1135): a
+    // key has no role, so how it is used is asked at the sign-in
+    // (`webauthnPolicy.useAllowed()`), and here only whether WebAuthn is on
+    // and the realm accepts a key in at least one use.
+    const allowed = webauthnPolicy.enrolmentAllowed();
     if (!allowed.ok) {
-      log.info('credentials: a "' + role +
-               '" security key was NOT enrolled for ' +
+      log.info('credentials: a passkey was NOT enrolled for ' +
                name + '. ' + allowed.why);
       log.debug("Leaving Credentials.addKey().");
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
+    }
+    // THE LANE (#643), asked here for the same reason: the enforcement is
+    // at the one writer, so a switch turned off while somebody was touching
+    // their key refuses the post-quantum one here whatever door began it. A
+    // key written with no lane is classical, as every key before #643 is.
+    const lane = String((credential || {}).lane || 'classical');
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.info('credentials: a passkey in the "' + lane + '" lane was NOT ' +
+               'enrolled for ' + name + '. ' + laneAllowed.why);
+      log.debug("Leaving Credentials.addKey(). The lane is not offered.");
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
+    }
+    // A SYNCED PASSKEY WHERE THE REALM TAKES ONLY DEVICE-BOUND ONES (#528):
+    // the passkey policy's `backupEligibility`, asked of the authenticator
+    // data's BE flag, which both ceremony doors put on the record. Here for
+    // the enrolment check's reason — the one writer — and ahead of the cap,
+    // so the answer names the rule rather than a count.
+    // THE PERSON'S PASSKEY POLICY (#535) where the door selected none.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    // AN ADMINISTRATOR'S ENROLMENT (#945), refused HERE, the one writer, while
+    // the person's passkey policy does not allow it (`adminEnrolment` off,
+    // the default) — whatever door began it and however long ago, so a
+    // switch turned off while the administrator was touching the key
+    // refuses it. Only a record `enrolledByOf()` accepts says an
+    // administrator enrolled the key; anything else is no such claim.
+    const enrolledBy = Credentials.enrolledByOf((credential || {}).enrolledBy);
+    if (enrolledBy && !this.deps.passkeyPolicy.adminEnrolmentAllowed()) {
+      log.info('credentials: a passkey ' + enrolledBy.username + ' enrolled ' +
+               'for ' + name + ' was NOT written: the passkey policy does ' +
+               'not let an administrator enrol one (adminEnrolment off).');
+      log.debug("Leaving Credentials.addKey(). Administrator enrolment off.");
+      return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
+               errors: [Credentials.ADMIN_ENROLMENT_OFF] });
+    }
+    // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
+    // minimum PIN length it reported (#529), the device serial its
+    // trusted attestation named (#532), and its signature algorithm with
+    // the lane it is being made in (#718) — the policy decides, in that
+    // order, under the selected passkey policy's rows. A flag the ceremony
+    // never read is not asked about. The algorithm is always known: the
+    // ceremony's, else what `keyAlgorithm()` reads off the key itself, so
+    // a key written by value is held to a post-quantum requirement too;
+    // whether it IS post-quantum is the question's to say, not this door's.
+    // The same fact holds it to the algorithms the person's passkey profile
+    // offers at registration (#940, the `profile-algorithm` group), whichever
+    // door made it.
+    const given = credential || {};
+    const facts: Record<string, any> = {
+      username: name,
+      minPinLength: given.minPinLength,
+      serial: (given.attestation || {}).deviceSerial,
+      algorithm: Credentials.keyAlgorithm({
+        algorithm: given.algorithm, coseAlg: given.coseAlg,
+        publicKeyJwk: given.publicKeyJwk }).name,
+      lane: lane,
+      // AND WHAT ITS ATTESTATION WAS SIGNED WITH (#941), as the verifier
+      // recorded it: always carried, so a key written by value with no
+      // attestation (an import, a test) is held to a profile's
+      // attestationAlgorithms too — it recorded none, which satisfies no
+      // list. Whether they satisfy it is the question's to say.
+      attestationAlgorithms: webauthnAttestation.recordedAlgorithms(
+        given.attestation)
+    };
+    if (typeof given.backupEligible === 'boolean') {
+      facts.backupEligible = given.backupEligible;
+    }
+    // AN UPGRADE (#939): the classical passkey it upgrades, looked up NOW
+    // among this person's keys — the entry as it is at the write, not as
+    // it was at the proof — and its algorithm sent to the policy beside
+    // what the write will do. Gone since the proof, nothing is written:
+    // the classical key it was to replace or annotate is not there to be
+    // left untouched, and a key added "beside" a key nobody holds is an
+    // ordinary registration nobody began.
+    const upgrade = opts && opts.upgrade ? opts.upgrade : null;
+    const upgrading = upgrade ? this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(upgrade.credentialId);
+    })[0] || null : null;
+    if (upgrade && (!upgrading ||
+                    Credentials.keyAlgorithm(upgrading).postQuantum ||
+                    (upgrade.mode === 'alongside' &&
+                     upgrading.upgradedTo &&
+                     this.keysOf(name).some(function (one) {
+                       return String(one.credentialId) ===
+                              String(upgrading.upgradedTo);
+                     })))) {
+      log.info('credentials: the passkey upgrade of ' + name + ' found ' +
+               'the classical passkey gone or already upgraded at the ' +
+               'write; nothing was written.');
+      log.debug("Leaving Credentials.addKey(). The upgraded key is gone.");
+      return coded('STS-AUTHN-0457', { ok: false, reason: 'upgrade',
+               errors: ['The passkey you were upgrading was removed or ' +
+                        'upgraded by another request since you used it, ' +
+                        'so nothing was changed.'] });
+    }
+    if (upgrading) {
+      facts.upgrade = { mode: upgrade.mode,
+                        previousAlgorithm:
+                          Credentials.keyAlgorithm(upgrading).name };
+    }
+    // WHO ENROLLED IT (#945): an administrator, on the person's behalf, in
+    // the administrator's browser — told to the issuance policy as a fact
+    // (the `enrolment` group), so a realm can forbid it by its own rule.
+    // The person's own enrolment carries none, as before.
+    if (enrolledBy) {
+      facts.enrolledBy = enrolledBy;
+    }
+    const synced = this.deps.passkeyPolicy.refusalFor('registration', facts);
+    if (synced) {
+      const reason = synced.reason === 'pin-length' ? 'pin-length'
+        : (synced.reason === 'backup-eligible' ? 'backup-eligible'
+          : (synced.reason === 'post-quantum' ? 'post-quantum'
+            : (synced.reason === 'attestation-algorithm'
+              ? 'attestation-algorithm'
+              // #940: an algorithm the person's profile does not offer.
+              : (synced.reason === 'profile-algorithm' ? 'profile-algorithm'
+                : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                  : 'passkey-policy')))));
+      log.info('credentials: a passkey was NOT enrolled for ' + name +
+               ' (' + synced.code + ', ' + reason + '): ' + synced.why);
+      log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
+                "policy.");
+      return coded(synced.code, { ok: false, reason: reason,
+                                  errors: [synced.why] });
     }
     // HOW MANY. Several keys is the ordinary case and the specification expects
     // it — an assertion NAMES the credential that produced it, so there is none
@@ -2340,9 +3881,13 @@ class Credentials {
                         'with the original.'] });
     }
     const cap = webauthnPolicy.settings().maxKeysPerPerson;
-    if (held.length >= cap) {
+    // AN UPGRADE IN PLACE (#939) ADDS NO KEY: the one it replaces is not
+    // counted, so a person at the cap may still upgrade. Beside it, it is
+    // one more key, and counted.
+    const replacing = !!(upgrading && upgrade.mode === 'replace');
+    if (held.length - (replacing ? 1 : 0) >= cap) {
       log.info('credentials: ' + name + ' already holds ' + held.length +
-               ' security key(s) and webauthn.maxKeysPerPerson is ' + cap +
+               ' passkey(s) and webauthn.maxKeysPerPerson is ' + cap +
                ', so another was not enrolled.');
       log.debug("Leaving Credentials.addKey().");
       return coded('STS-AUTHN-0067', { ok: false,
@@ -2354,11 +3899,11 @@ class Credentials {
       credentialId: String(credential.credentialId),
       publicKeyJwk: credential.publicKeyJwk,
       signCount: Number(credential.signCount || 0),
-      role: String(role),
       enrolledAt: Date.now(),
       // A label so a person with three keys can tell them apart on the portal.
-      // Theirs to set; this is only the default.
-      label: String(credential.label || 'security key'),
+      // Theirs to set (`renameKey()`); the default is the provider's name or
+      // the group's (#470), filled in below once the fields it reads exist.
+      label: String(credential.label || '').trim().slice(0, 60),
       // WHAT KIND OF AUTHENTICATOR (#145, 2026-09-22), kept because CAEP's
       // credential-change names it: the attachment the browser reported
       // (`platform` or `cross-platform`, WebAuthn Level 3 section 5.1), which
@@ -2382,11 +3927,113 @@ class Credentials {
       // record, drawn beside the key on `/portal/keys`, `/admin/users` and
       // `GET /admin-api/users`. A key written by a door that verified nothing
       // (an operator's import, a test) has none, and is shown as claimed.
-      attestation: credential.attestation || null
+      attestation: credential.attestation || null,
+      // WHAT THE PASSKEY PAGES GROUP AND DESCRIBE IT BY (#470, 2026-10-06).
+      // The backup flags (WebAuthn Level 3 section 6.1, BE and BS) were
+      // parsed and checked by `webauthn.js` and then dropped, so no page could
+      // tell a passkey in a credential manager from one on a security key —
+      // which is the one distinction the guideline's two groups draw.
+      // `backupState` can change after enrolment, and `noteKeyUsed()` keeps
+      // it current from each assertion. `transports` is the browser's
+      // `getTransports()` (section 5.2.1), `discoverable` the credProps
+      // extension's `rk` (section 10.1.3) — null where the browser did not
+      // say — and `userVerified` the UV flag at enrolment, which the callers
+      // handed in and this record dropped until now.
+      backupEligible: typeof credential.backupEligible === 'boolean'
+        ? credential.backupEligible : null,
+      backupState: typeof credential.backupState === 'boolean'
+        ? credential.backupState : null,
+      transports: Array.isArray(credential.transports)
+        ? credential.transports.map(String).filter(function (t) {
+          return /^[a-z-]{1,20}$/.test(t);
+        }).slice(0, 8)
+        : [],
+      discoverable: typeof credential.discoverable === 'boolean'
+        ? credential.discoverable : null,
+      userVerified: typeof credential.userVerified === 'boolean'
+        ? credential.userVerified : null,
+      // THE MINIMUM PIN LENGTH THE KEY REPORTED (#529), CTAP 2.1 section
+      // 12.4, or null where it reported none: what the passkey policy holds
+      // every later sign-in to while it enforces a PIN length.
+      minPinLength: typeof credential.minPinLength === 'number'
+        ? credential.minPinLength : null,
+      // THE USER HANDLE IT WAS CREATED UNDER (#474): what its authenticator
+      // hands back, and what `userHandleRefusal()` holds an assertion to.
+      // Only a handle this service mints; a key written without one (before
+      // #474, or by a door that ran no ceremony) was made under the
+      // username's bytes, and the field is absent.
+      userHandle: Credentials.isUserHandle(credential.userHandle)
+        ? String(credential.userHandle) : undefined,
+      // THE LANE IT WAS CREATED IN (#643), as the enrolment was begun —
+      // never the browser's say: `pqc` for the post-quantum lane, and absent
+      // for the classical one, which is what every key before the lanes
+      // records and what `keyLane()` reads as classical. So with the switch
+      // off a row is written exactly as it was.
+      lane: lane === 'pqc' ? 'pqc' : undefined,
+      // WHO ENROLLED IT, WHERE AN ADMINISTRATOR DID (#945): `{ username,
+      // sub, at }` — the administrator's name and token subject and when —
+      // for the key lists to say "enrolled by an administrator" and the
+      // audit to be read against. Absent for the person's own enrolment,
+      // which is every key before #945.
+      enrolledBy: enrolledBy || undefined,
+      // Who made or holds it, and which source said so (`keyProvider()`).
+      provider: String(credential.provider || '').slice(0, 120),
+      providerSource: ['mds', 'table'].indexOf(
+        String(credential.providerSource || '')) >= 0
+        ? String(credential.providerSource) : ''
     };
+    // THE UPGRADE'S HISTORY (#939), on the new key: when, from which
+    // algorithm and which credential, and what the write did. In place the
+    // key keeps the name and the enrolment date of the one it replaces —
+    // it is that passkey, made stronger — and beside it, the name only.
+    if (upgrading) {
+      const before = Credentials.keyAlgorithm(upgrading);
+      const extra: Record<string, any> = record;
+      extra.upgradedAt = record.enrolledAt;
+      extra.previousAlgorithm = before.name;
+      extra.previousCoseAlg = before.coseAlg || null;
+      extra.previousCredentialId = String(upgrading.credentialId);
+      extra.upgradeMode = upgrade.mode === 'alongside' ? 'alongside'
+                                                       : 'replace';
+      record.label = String(Credentials.keyName(upgrading) || '')
+        .slice(0, 60);
+      if (replacing) {
+        record.enrolledAt = Number(upgrading.enrolledAt) || record.enrolledAt;
+        // ITS LAST USE STAYS ITS OWN: the proof was a use of the classical
+        // key, and this one has not signed anybody in yet.
+      }
+    }
+    if (!record.label) {
+      // THE PASSKEY POLICY'S LABEL FIRST (#533), with {provider} and {kind}
+      // filled in; else the provider's or the group's name, as before.
+      record.label = this.deps.passkeyPolicy.credentialLabelFor(
+        Credentials.keyProvider(record),
+        Credentials.keyGroup(record) === 'security-key' ? 'Security key'
+                                                        : 'Passkey') ||
+        Credentials.defaultKeyName(record);
+    }
     let written = false;
     try {
-      written = directory.writeWebauthn(name, JSON.stringify(record));
+      // AN UPGRADE IS ONE WRITE OF THE WHOLE SET (#939), so the classical
+      // key is changed in the same act that adds the new one and never
+      // before it: in place, the new key where the old one was; beside it,
+      // the old one marked with its successor and the new one appended.
+      // Every other row is written back as it was read, at the write.
+      written = upgrading
+        ? directory.replaceWebauthn(name, this.keysOf(name).map(
+            function (one) {
+              if (String(one.credentialId) !==
+                  String(upgrading.credentialId)) {
+                return JSON.stringify(one);
+              }
+              if (replacing) {
+                return JSON.stringify(record);
+              }
+              return JSON.stringify(Object.assign({}, one, {
+                upgradedTo: record.credentialId,
+                upgradedAt: (record as Record<string, any>).upgradedAt }));
+            }).concat(replacing ? [] : [JSON.stringify(record)])) !== false
+        : directory.writeWebauthn(name, JSON.stringify(record));
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0068') +
                 'credentials: writing a security key for ' + name + ' threw: ' +
@@ -2402,41 +4049,67 @@ class Credentials {
           'called "' + name + '" ' +
                                    'in this realm\'s directory.'] });
     }
-    log.info('credentials: a security key was enrolled for ' + name +
-             ' as a ' + role + ' credential.');
+    log.info('credentials: a passkey was enrolled for ' + name + '.');
+    // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
+    // for an upgrade, whose write already replaced or marked the old row.
+    if (!upgrading) {
+      this.markPossiblyReplaced(name, record);
+    }
+    // AN ANDROID-ATTESTED KEY MOVES THE RECHECK'S REGISTRATION MARK (#615),
+    // so the next recheck does not skip as "nothing changed". The key was
+    // asked about at registration, so this is the belt to that brace; the
+    // marker itself is derived by the directory on the write above.
+    if (Credentials.androidMarkerOf([JSON.stringify(record)]).length) {
+      Credentials.noteAndroidRegistration('a security key of ' + name);
+    }
+    // THE HANDLE ADOPTED (#474): a ceremony for somebody whose entry did not
+    // exist yet (the sign-in screen's first use, in development) created the
+    // key under a handle nobody stored. It becomes theirs if they hold none —
+    // the LANE's handle (#643), the post-quantum one beside a classical one
+    // minted now where none is held, as the directory requires.
+    if (record.userHandle && !this.userHandleOf(name, { lane: lane }) &&
+        typeof directory.writeWebauthnUserHandle === 'function' &&
+        (lane !== 'pqc' || this.userHandleOf(name, { mint: true }))) {
+      try {
+        directory.writeWebauthnUserHandle(name, record.userHandle, lane);
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-AUTHN-0068') + 'credentials: storing ' +
+                 'the WebAuthn user handle of the key just enrolled for ' +
+                 name + ' threw: ' + ((e && e.message) || e) + '. The key ' +
+                 'works where the username is typed.');
+      }
+    }
     // ---------------------------------------------------------------------
-    // THE RECOVERY CODES, AND **ONLY FOR AN `mfa` KEY** (2026-09-10).
+    // THE RECOVERY CODES ARE ADVISED, NEVER ISSUED (2026-09-10, 2026-09-11).
     //
-    // The other call site is `confirmTotpEnrolment()`, and the condition here
-    // is the whole difference between them: a `primary` key is a way IN rather
-    // than a second factor, and issuing recovery codes for one would hand
-    // somebody a list of strings that no screen in this service ever asks for.
-    // The recovery screen stands in for a SECOND factor; an account whose only
-    // credential is a passwordless key has no second-factor step to stand in
-    // for, and its lost-key story is an operator and an activation link.
+    // The other call site is `confirmTotpEnrolment()`. The recovery screen
+    // stands in for a SECOND factor, so the advice is for a key that can be
+    // one: since #1135 every key may answer the second step where the realm
+    // allows a key there (`useAllowed('mfa')`), and it is that step only for
+    // a person with a password to be the first. (Until #1135 the condition was
+    // the key's `mfa` role; a `primary` key was a way IN, and its lost-key
+    // story an operator and an activation link, which it still is for a
+    // person with no password.)
     //
-    // (Until 2026-09-11 the issue here could not fail the enrolment, and did
-    // nothing when a set already existed, so enrolling a fourth key left the
-    // list issued with the first one working. The `mfa`-only condition above
-    // now decides the ADVICE below instead.)
-    // **NO SET IS ISSUED HERE ANY MORE (2026-09-11)**, and what replaces it is
-    // an ADVICE flag rather than silence. The header on the recovery-codes
+    // **NO SET IS ISSUED HERE (2026-09-11)**, and what replaces it is an
+    // ADVICE flag rather than silence. The header on the recovery-codes
     // section carries the argument and what it costs; the short version is that
     // a set is hashed now, and a hash can only be made while the code is in the
     // clear — so issuing one here would store a credential the person never
     // saw. `recoveryAdvised` is what `/portal/mfa` draws its standing prompt
     // from.
-    const advised = role === 'mfa' && backupCodes.offered() &&
+    const advised = webauthnPolicy.useAllowed('mfa').ok &&
+                    this.hasPassword(name) && backupCodes.offered() &&
                     !this.backupCodesOf(name);
     log.debug("Leaving Credentials.addKey().");
-    return { ok: true, username: name, role: role,
+    return { ok: true, username: name,
              credentialId: record.credentialId,
              recoveryAdvised: advised,
              recoveryNote: advised
-               ? 'This key is a SECOND factor, and you hold no recovery ' +
-                 'codes. Generate a set from your account page before you ' +
-                 'need it — this service will not issue one for you, and a ' +
-                 'set is shown once.'
+               ? 'This passkey can be your SECOND factor, and you hold no ' +
+                 'recovery codes. Generate a set from your account page ' +
+                 'before you need it — this service will not issue one for ' +
+                 'you, and a set is shown once.'
                : '' };
   }
 
@@ -2510,11 +4183,11 @@ class Credentials {
    *
    * @param username - the person
    * @param credential - what the ceremony produced
-   * @param role - `primary` or `mfa`
+   * @param opts - as `addKey()`'s: `upgrade` (#939)
    * @returns a promise of `addKey()`'s answer, or a refusal (`duplicate`,
    *   `store`)
    */
-  addKeyClaimed(username, credential, role) {
+  addKeyClaimed(username, credential, opts?) {
     const { log, realms, errorCodes, claims } = this.deps;
     const {
       WEBAUTHN_REGISTRATION_SCOPE,
@@ -2526,7 +4199,7 @@ class Credentials {
     if (!credentialId) {
       log.debug("Leaving Credentials.addKeyClaimed(). No id to claim; " +
                 "addKey() decides.");
-      return Promise.resolve(this.addKey(username, credential, role));
+      return Promise.resolve(this.addKey(username, credential, opts));
     }
     const name = String(username || '').trim();
     log.debug("Leaving Credentials.addKeyClaimed(). Claiming the " +
@@ -2554,7 +4227,7 @@ class Credentials {
           errors: ['The security key could not be registered just now. Try ' +
                    'again.'] });
       }
-      const stored = this.addKey(username, credential, role);
+      const stored = this.addKey(username, credential, opts);
       if (!stored.ok) {
         claims.release(claimed.handle);
       }
@@ -2567,7 +4240,8 @@ class Credentials {
    * once, the signature counter advanced.
    *
    * A refused counter gives the challenge back.
-   * @param spec - `username`, `credentialId`, `challenge` and `signCount`
+   * @param spec - `username`, `credentialId`, `challenge` and `signCount`,
+   *   and optionally `flags` (the assertion's, whose backup state is kept)
    * @returns a promise of `{ ok: true, recorded, advanced }`, or a refusal
    *   (`replay`, `counter`, `store`)
    */
@@ -2637,10 +4311,510 @@ class Credentials {
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
             detail: 'the signature counter could not be checked just now' });
         }
-        const recorded = this.noteKeyUsed(name, credentialId, signCount);
+        const recorded = this.noteKeyUsed(name, credentialId, signCount,
+                                          s.flags);
         return { ok: true, recorded: !!recorded, advanced: answer.advanced };
       });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANDROID ATTESTATION REVOKED AFTER THE FACT (#256), for a person's WebAuthn
+  // credential as `devices.ts` does it for a device key: the keys whose
+  // `android-key` statement was TRUSTED and whose chain serials were kept,
+  // and the one write that makes such a statement untrusted when a newer
+  // status list revokes or suspends a certificate of it. The key stays and
+  // signs the person in as before; what changes is what its attestation is
+  // said to prove, which is what a policy reads.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists every WebAuthn credential in the realm whose trusted `android-key`
+   * attestation kept its chain's serials.
+   *
+   * @returns `[{ username, credentialId, chainSerials }]`
+   */
+  androidAttestedCredentials() {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.androidAttestedCredentials().');
+    const out = [];
+    let people = [];
+    try {
+      people = directory && typeof directory.persons === 'function'
+        ? directory.persons() || [] : [];
+    } catch (e) {
+      log.debug('Caught in Credentials.androidAttestedCredentials(): ' +
+                ((e && e.message) || e));
+      people = [];
+    }
+    people.forEach((name) => {
+      this.keysOf(name).forEach(function (key) {
+        if (Credentials.isAndroidRecheckable(key)) {
+          out.push({ username: String(name),
+                     credentialId: String(key.credentialId),
+                     chainSerials: key.attestation.androidRevocation
+                       .chainSerials.slice() });
+        }
+      });
+    });
+    log.debug('Leaving Credentials.androidAttestedCredentials(). ' +
+              out.length + '.');
+    return out;
+  }
+
+  /**
+   * Says whether a stored key is one the Android attestation recheck asks
+   * about: a trusted `android-key` statement whose chain's serials were kept.
+   *
+   * @param key - a stored key row
+   * @returns true for such a key
+   */
+  static isAndroidRecheckable(key: any): boolean {
+    helpers.log.debug("Entering Credentials.isAndroidRecheckable().");
+    const att = key && key.attestation;
+    const out = !!(att && att.format === 'android-key' &&
+      att.trusted === true && att.androidRevocation &&
+      Array.isArray(att.androidRevocation.chainSerials) &&
+      att.androidRevocation.chainSerials.length && key.credentialId);
+    helpers.log.debug("Leaving Credentials.isAndroidRecheckable(). " + out);
+    return out;
+  }
+
+  /**
+   * The Android marker's values for a person's stored
+   * `stsWebauthnCredential` values: the credential id of each key
+   * `isAndroidRecheckable()` says yes to, sorted. What `ldap_server.js`
+   * writes as `stsAndroidAttestedCredential` on every write of the keys
+   * (#615); a value that is not JSON this service wrote is skipped, and
+   * `keysOf()` is what warns about it.
+   *
+   * @param values - the stored values
+   * @returns the credential ids, sorted; empty for none
+   */
+  static androidMarkerOf(values: unknown[]): string[] {
+    helpers.log.debug("Entering Credentials.androidMarkerOf().");
+    const out: string[] = [];
+    (Array.isArray(values) ? values : []).forEach(function (value) {
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(String(value));
+      } catch (e) {
+        helpers.log.debug("Caught in Credentials.androidMarkerOf(): " +
+                          ((e && e.message) || e));
+        // Not a key this service wrote: not a key the recheck can ask
+        // about, and `keysOf()` reports it where it is read.
+        parsed = null;
+      }
+      if (parsed && Credentials.isAndroidRecheckable(parsed)) {
+        out.push(String(parsed.credentialId));
+      }
+    });
+    out.sort();
+    helpers.log.debug("Leaving Credentials.androidMarkerOf(). " + out.length +
+                      ".");
+    return out;
+  }
+
+  // ===========================================================================
+  // THE RECHECK'S POPULATION, READ FROM THE HOLDERS ONLY (#615, 2026-10-13).
+  //
+  // `androidAttestedCredentials()` above asks `persons()` for every name in
+  // the realm and then `keysOf()` for each — in a windowed process a
+  // synchronous store read per person. At about 191,000 people on 8081 the
+  // daily recheck held the front process's event loop for minutes, every
+  // listener with it, to find the one person who held a security key.
+  //
+  // **THE DIRECTORY HANDS OVER RAW VALUES OF ITS HOLDERS AND THIS FILE
+  // INTERPRETS THEM**, the census's rule (`factorCensus()`): the directory's
+  // `holdersAsync()` answers the people holding the Android marker — one
+  // statement a page against the store's `attr_names` index, asked on the
+  // driver's read pool, the event loop given back between pages — with
+  // their `stsWebauthnCredential` values, and `keysFromValues()` and
+  // `isAndroidRecheckable()` decide which of those are the keys asked
+  // about, exactly as for one person. The marker narrows WHO is read; it
+  // never decides WHAT is rechecked — a marked id whose key no longer
+  // qualifies is not rechecked, and every qualifying key of a marked
+  // person is.
+  //
+  // **WHERE THE DIRECTORY OFFERS NO `holdersAsync()`** (a test's stub, an
+  // older `ldap_server.js`) the old walk answers, which is the old cost and
+  // the same answer; `viaHolders` says which happened.
+  // ===========================================================================
+  /**
+   * Lists every WebAuthn credential in the realm whose trusted `android-key`
+   * attestation kept its chain's serials, reading only the people the
+   * directory says carry the Android marker.
+   *
+   * @returns a promise of `{ rows: [{ username, credentialId, chainSerials
+   *   }], holders, viaHolders }`
+   */
+  async androidAttestedCredentialsAsync(): Promise<any> {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, ANDROID_MARKER_ATTRIBUTE } = Credentials;
+    const directory = this.directory;
+    log.debug('Entering Credentials.androidAttestedCredentialsAsync().');
+    if (!directory || typeof directory.holdersAsync !== 'function') {
+      const walked = this.androidAttestedCredentials();
+      log.debug('Leaving Credentials.androidAttestedCredentialsAsync(). ' +
+                'Walked: no holder query.');
+      return { rows: walked, holders: null, viaHolders: false };
+    }
+    const webauthn = WEBAUTHN_ATTRIBUTE.toLowerCase();
+    const holders = await directory.holdersAsync('person',
+      ANDROID_MARKER_ATTRIBUTE, [webauthn]) || [];
+    const rows = [];
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const name = String(holder.id);
+      // The holder query named the attribute; its values are read as the
+      // Credential's passkeys (#1579).
+      const raw = DomainMap.fieldOf('Credential', 'passkeys',
+        holder.attributes || {}) || [];
+      this.keysFromValues(raw, name).forEach(function (key) {
+        if (Credentials.isAndroidRecheckable(key)) {
+          rows.push({ username: name,
+                      credentialId: String(key.credentialId),
+                      chainSerials: key.attestation.androidRevocation
+                        .chainSerials.slice() });
+        }
+      });
+      if ((i + 1) % Credentials.HOLDER_BATCH === 0) {
+        await Credentials.yieldToLoop();
+      }
+    }
+    log.debug('Leaving Credentials.androidAttestedCredentialsAsync(). ' +
+              rows.length + ' key(s) of ' + holders.length + ' holder(s).');
+    return { rows: rows, holders: holders.length, viaHolders: true };
+  }
+
+  // How many holders are interpreted between two yields to the event loop.
+  private static readonly HOLDER_BATCH = 200;
+
+  // Tells `attestation_revocation.ts` an Android-attested key was registered
+  // (#615). Reached lazily, as every other module here reaches it: it is
+  // built later in the composition root, and a registration must not fail
+  // because the recheck's bookkeeping could not be reached — the daily run
+  // after a list change reaches the key regardless.
+  /**
+   * Moves the Android recheck's registration mark.
+   *
+   * @param what - what was registered, for the log
+   */
+  static noteAndroidRegistration(what: string): void {
+    helpers.log.debug("Entering Credentials.noteAndroidRegistration().");
+    try {
+      const revocation = require('./attestation_revocation');
+      if (typeof revocation.noteRegistration === 'function') {
+        revocation.noteRegistration(what);
+      }
+    } catch (e) {
+      helpers.log.warn(errorCodes.tag('STS-DEVICE-0051') + 'credentials: ' +
+                       'the Android recheck was not told of ' + what + ': ' +
+                       ((e && e.message) || e) + '. A recheck after the ' +
+                       'next status list reaches it regardless.');
+    }
+    helpers.log.debug("Leaving Credentials.noteAndroidRegistration().");
+  }
+
+  // The event loop's turn, between two batches of a background job's work.
+  private static yieldToLoop(): Promise<void> {
+    helpers.log.debug("Entering Credentials.yieldToLoop().");
+    helpers.log.debug("Leaving Credentials.yieldToLoop().");
+    return new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MARKER'S BACKFILL (#615): a key registered before the marker existed
+  // carries none, so the first recheck after the upgrade puts it where it
+  // belongs. It reads the holders of `stsWebauthnCredential` itself — every
+  // person with a security key, which is the population the marker is a
+  // subset of, never everybody — and rewrites the keys of each whose marker
+  // is not what `androidMarkerOf()` says, so `ldap_server.js` derives it.
+  //
+  // **THE REWRITE READS THE KEYS AGAIN, SYNCHRONOUSLY, IN THE SAME TICK AS
+  // THE WRITE**, never the values the holder query answered: those are as
+  // old as the page, and a sign-in between the two moves a key's signature
+  // counter, which writing the old values back would undo. One lookup per
+  // person whose marker is wrong, which after the first run is nobody.
+  // ---------------------------------------------------------------------------
+  /**
+   * Puts the Android marker on every person whose security keys say it
+   * belongs there and takes it off where they do not.
+   *
+   * @param stillOwner - asked between batches; false stops the backfill
+   * @returns a promise of `{ available, holders, written, failed, stopped }`
+   */
+  async backfillAndroidMarkers(stillOwner?: () => boolean): Promise<any> {
+    const { log, errorCodes } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, ANDROID_MARKER_ATTRIBUTE } = Credentials;
+    const directory = this.directory;
+    log.debug('Entering Credentials.backfillAndroidMarkers().');
+    const out = { available: false, holders: 0, written: 0, failed: 0,
+                  stopped: false };
+    if (!directory || typeof directory.holdersAsync !== 'function' ||
+        typeof directory.readWebauthn !== 'function' ||
+        typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.backfillAndroidMarkers(). No holder ' +
+                'query.');
+      return out;
+    }
+    out.available = true;
+    const webauthn = WEBAUTHN_ATTRIBUTE.toLowerCase();
+    const marker = ANDROID_MARKER_ATTRIBUTE.toLowerCase();
+    const holders = await directory.holdersAsync('person', WEBAUTHN_ATTRIBUTE,
+                                                 [webauthn, marker]) || [];
+    out.holders = holders.length;
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const attrs = holder.attributes || {};
+      const want = Credentials.androidMarkerOf(
+        DomainMap.fieldOf('Credential', 'passkeys', attrs) || []);
+      const have = (DomainMap.fieldOf('Credential',
+        'androidAttestedCredential', attrs) || []).slice().sort();
+      if (want.join('\n') !== have.join('\n')) {
+        try {
+          const name = String(holder.id);
+          const fresh = directory.readWebauthn(name) || [];
+          if (directory.replaceWebauthn(name, fresh)) {
+            out.written += 1;
+          } else {
+            out.failed += 1;
+          }
+        } catch (e) {
+          out.failed += 1;
+          log.error(errorCodes.tag('STS-AUTHN-0336') + 'credentials: the ' +
+                    'Android marker of ' + holder.id + ' could not be ' +
+                    'written: ' + ((e && e.message) || e));
+        }
+      }
+      if ((i + 1) % Credentials.HOLDER_BATCH === 0) {
+        if (stillOwner && !stillOwner()) {
+          out.stopped = true;
+          break;
+        }
+        await Credentials.yieldToLoop();
+      }
+    }
+    log.debug('Leaving Credentials.backfillAndroidMarkers(). ' +
+              out.written + ' written of ' + out.holders + '.');
+    return out;
+  }
+
+  // ONE WRITE OF ONE KEY (#929). The five writers below each used to read
+  // the list, find the key, maybe change it and write every key back.
+  // `noteKeyUsed()` runs on every passkey sign-in, so this adds no store
+  // read: `keysOf()` once, with the username the caller passes (four of
+  // them pass it raw; `renameKey()` has already trimmed), and
+  // `replaceWebauthn` only when `mutate` says the row changed. A write of
+  // a mark that was already there is what sent CAEP credential-change a
+  // second time (#910). No store means the keys are not read. `mutate` is
+  // handed the object already in the list, so the written values include
+  // the change.
+  /**
+   * Rewrites one of a person's keys when `mutate` says it changed.
+   *
+   * @param username - as the caller passes it to `keysOf`
+   * @param credentialId - the key's credential id
+   * @param mutate - given the key already in the list; returns true when
+   *   that object changed and should be written
+   * @returns `{ reason }` of `no-store`, `missing` or `unchanged`, or
+   *   `{ reason: 'written', result, found }`, or
+   *   `{ reason: 'threw', error }`
+   */
+  private rewriteKey(username, credentialId, mutate) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.rewriteKey().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.rewriteKey(). No store.');
+      return { reason: 'no-store' };
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter((one) => {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found) {
+      log.debug('Leaving Credentials.rewriteKey(). No key.');
+      return { reason: 'missing' };
+    }
+    // False, including a refusal to touch a mark already stored: the write
+    // is what a second CAEP credential-change would follow (#910).
+    if (!mutate(found)) {
+      log.debug('Leaving Credentials.rewriteKey(). Nothing changed.');
+      return { reason: 'unchanged' };
+    }
+    try {
+      const result = directory.replaceWebauthn(
+        String(username || '').trim(), keys.map((one) => {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.rewriteKey(). Written.');
+      return { reason: 'written', result: result, found: found };
+    } catch (e) {
+      log.debug('Caught in Credentials.rewriteKey(): ' +
+                ((e && e.message) || e));
+      // The writer logs its own code. A failed counter must not undo a
+      // sign-in that already succeeded, and a failed mark must not look
+      // like one that was recorded.
+      log.debug('Leaving Credentials.rewriteKey(). Threw.');
+      return { reason: 'threw', error: e };
+    }
+  }
+
+  /**
+   * Makes a WebAuthn credential's `android-key` attestation untrusted because
+   * Google's status list revokes or suspends a certificate of its chain.
+   *
+   * @param username - the person
+   * @param credentialId - the credential
+   * @param revocation - `attestation_revocation.consult()`'s answer
+   * @returns true when the record was rewritten
+   */
+  untrustKeyAttestation(username, credentialId, revocation) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.untrustKeyAttestation().');
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      if (!found.attestation || found.attestation.trusted !== true) {
+        return false;
+      }
+      found.attestation = Object.assign({}, found.attestation, {
+        trusted: false, anchor: '',
+        androidRevocation: Object.assign({},
+          found.attestation.androidRevocation || {}, revocation || {}) });
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
+      log.debug('Leaving Credentials.untrustKeyAttestation(). No store.');
+      return false;
+    }
+    if (outcome.reason === 'threw') {
+      log.error(errorCodes.tag('STS-AUTHN-0296') + 'credentials: the ' +
+                'revoked attestation of a security key of ' + username +
+                ' could not be recorded: ' + outcome.error.message);
+      log.debug('Leaving Credentials.untrustKeyAttestation(). Threw.');
+      return false;
+    }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.untrustKeyAttestation(). ' +
+                'Nothing to do.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.untrustKeyAttestation(). ' + written);
+    return written;
+  }
+
+  // A KEY THE ATTESTATION RULES NOW REFUSE AT SIGN-IN (#530): marked on its
+  // row once, so the Shared Signals credential-change it causes is sent once
+  // rather than at every attempt, and the key lists can say why it stopped.
+  /**
+   * Marks a key as refused at sign-in by the attestation rules in force.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param code - the refusal's error code
+   * @param why - the refusal's sentence
+   * @returns true when the mark is new, false when it was already there or
+   *   could not be written
+   */
+  noteKeyAttestationRefused(username, credentialId, code, why) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.noteKeyAttestationRefused().');
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      // Compared as it is stored, truncated (#910): an untruncated reason
+      // over 500 characters never matched, so every attempt rewrote the key
+      // and sent CAEP credential-change again. Returning false is what
+      // stops that second write.
+      if (found.attestationRefused &&
+          found.attestationRefused.why ===
+            String(why || '').slice(0, 500)) {
+        return false;
+      }
+      found.attestationRefused = { code: String(code || ''),
+                                   why: String(why || '').slice(0, 500),
+                                   at: Date.now() };
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). No store.');
+      return false;
+    }
+    if (outcome.reason === 'threw') {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refused attestation of a passkey of ' + username +
+                ' could not be recorded: ' + outcome.error.message);
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
+      return false;
+    }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
+                'Nothing new.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' + written);
+    return written;
+  }
+
+  // A KEY THE ISSUANCE POLICY'S PASSKEY RULES NOW REFUSE AT SIGN-IN, BY
+  // REASON (#718): #530's mark generalised, so a refusal that changes a
+  // credential's standing — today the post-quantum requirement — sends its
+  // Shared Signals credential-change ONCE per key and reason rather than at
+  // every attempt. A map on the row (`policyRefused`, reason → `{ code,
+  // why, at }`) rather than #530's single field, which the attestation
+  // refusal keeps and the key lists draw as they did: two reasons for one
+  // key are two first times. The same sentence again is nothing new.
+  /**
+   * Marks a key as refused at sign-in by the passkey rules for a reason.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param reason - the rule's reason (`post-quantum`)
+   * @param code - the refusal's error code
+   * @param why - the refusal's sentence
+   * @returns true when the mark is new, false when it was already there or
+   *   could not be written
+   */
+  noteKeyPolicyRefused(username, credentialId, reason, code, why) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.noteKeyPolicyRefused(). ' + reason);
+    const which = String(reason || '');
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      // `&&` binds tighter than `?:`, which is the reading the old line
+      // had: an object already stored, otherwise none. An empty reason is
+      // nothing new, and the keys are still read — the old door read them
+      // before it noticed the reason.
+      const held = found.policyRefused &&
+        typeof found.policyRefused === 'object' ? found.policyRefused : {};
+      if (!which || (held[which] &&
+                     held[which].why === String(why || '').slice(0, 500))) {
+        return false;
+      }
+      found.policyRefused = Object.assign({}, held, {
+        [which]: { code: String(code || ''),
+                   why: String(why || '').slice(0, 500), at: Date.now() } });
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). No store.');
+      return false;
+    }
+    if (outcome.reason === 'threw') {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refusal of a passkey of ' + username + ' (' + which + ') ' +
+                'could not be recorded: ' + outcome.error.message);
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Threw.');
+      return false;
+    }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
+    return written;
   }
 
   // Update the signature counter after a successful assertion. WebAuthn's
@@ -2653,40 +4827,50 @@ class Credentials {
    * @param username - the person
    * @param credentialId - the key's credential id
    * @param signCount - the counter the assertion carried
+   * @param flags - the assertion's authenticator data flags, when known; its
+   *   backup state is kept (#470)
    * @returns what the directory write answered, or false
    */
-  noteKeyUsed(username, credentialId, signCount) {
+  noteKeyUsed(username, credentialId, signCount, flags?) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyUsed().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return false;
-    }
-    const keys = this.keysOf(username);
-    const found = keys.filter((one) => {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found) {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return false;
-    }
-    found.signCount = Number(signCount || 0);
-    found.lastUsedAt = Date.now();
-    try {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return directory.replaceWebauthn(String(username || '').trim(),
-        keys.map((one) => { return JSON.stringify(one); }));
-    } catch (e) {
-      // The assertion already succeeded; failing to record the counter must not
-      // undo it. Logged, because a counter that stops advancing is a replay
-      // defence that stops defending.
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      found.signCount = Number(signCount || 0);
+      found.lastUsedAt = Date.now();
+      // IT SIGNED SOMEBODY IN, SO IT WAS NOT REPLACED (#1101).
+      delete found.possiblyReplacedBy;
+      delete found.possiblyReplacedAt;
+      // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3
+      // section 6.1.3: BS "can change over time"), so each assertion's is
+      // kept — and BE for a key enrolled before #470 kept it, since BE
+      // never changes and an assertion carries it too.
+      if (flags && typeof flags.bs === 'boolean') {
+        found.backupState = flags.bs;
+      }
+      if (flags && typeof flags.be === 'boolean' &&
+          typeof found.backupEligible !== 'boolean') {
+        found.backupEligible = flags.be;
+      }
+      return true;
+    });
+    if (outcome.reason === 'threw') {
+      // The assertion already succeeded; failing to record the counter
+      // must not undo it. Logged, because a counter that stops advancing
+      // is a replay defence that stops defending.
       log.error(errorCodes.tag('STS-AUTHN-0038') +
                 'credentials: the signature counter for ' + username +
-                ' could not be recorded: ' + e.message);
+                ' could not be recorded: ' + outcome.error.message);
       log.debug("Leaving Credentials.noteKeyUsed().");
       return false;
     }
+    if (outcome.reason === 'written') {
+      // The directory's own answer, not `!!` of it: a caller that recorded
+      // the counter reads whatever `replaceWebauthn` returned.
+      log.debug("Leaving Credentials.noteKeyUsed().");
+      return outcome.result;
+    }
+    log.debug("Leaving Credentials.noteKeyUsed().");
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -2877,48 +5061,43 @@ class Credentials {
                                    name + '.'] });
     }
     // ---------------------------------------------------------------------
-    // **REFUSE TO REMOVE THE LAST WAY IN — AND AN `mfa` KEY IS NOT ONE.**
+    // **REFUSE TO REMOVE THE LAST WAY IN.**
     //
-    // A person whose only credential is a PRIMARY key would be locked out by
-    // their own click, and an identity provider that lets somebody do that has
-    // a support queue rather than a security control. That much is unchanged.
+    // A person whose only credential is a key would be locked out by their own
+    // click, and an identity provider that lets somebody do that has a support
+    // queue rather than a security control.
     //
-    // **THE ROLE OF THE KEY BEING REMOVED WAS NOT LOOKED AT, AND THAT WAS A
-    // REAL REFUSAL IN THE ONE CASE THE BUTTON EXISTS FOR (2026-09-10).** The
-    // guard asked only *will they have a way in afterwards*, which is the right
-    // question — and then answered it about a key that was never a way in.
-    // Removing a SECOND FACTOR cannot reduce the number of ways in, because it
-    // was not one: `mechanismsFor().usable` counts a password and `primary`
-    // keys and nothing else, which is the same table this function is reasoning
-    // about. So somebody with an `mfa` key and no password — the ordinary state
-    // in development mode, where no password is ever CHECKED and most people
-    // therefore have none SET — could not have that key cleared, and the
-    // refusal said *that is the only way they can sign in* about a credential
-    // that could not sign them in at all.
-    //
-    // It surfaced through the door it costs most at: `POST
-    // /admin-api/users/clear-key`, which `admin-ui/CLAUDE.md` calls the way
-    // back for somebody who lost their key.
-    // `tests/vendored/sts_webauthn_second_factor.js` found it in its first run,
-    // in the section after the one that made keys reachable at all.
+    // **SINCE #1135 EVERY KEY IS A WAY IN WHERE THE REALM LETS A KEY SIGN
+    // SOMEBODY IN ON ITS OWN** (`useAllowed('primary')`), because a key has no
+    // role. Until then only a `primary` key was, and removing an `mfa` key
+    // could not reduce the ways in (2026-09-10, when the guard asked about a
+    // second factor as though it were one, and `POST
+    // /admin-api/users/clear-key` could not clear it). Where the realm does
+    // NOT let a key sign anybody in on its own, no key is a way in, and the
+    // removal is never refused here — the same reasoning, asked of the realm
+    // rather than of the key.
     //
     // **THE PERSON MAY STILL BE UNABLE TO SIGN IN AFTERWARDS**, and that is not
-    // this function's to fix: an account holding only a second factor is one
-    // nobody can sign in to before the removal and after it. `usable: false` is
-    // what reports that, and an activation link is what ends it.
+    // this function's to fix: `usable: false` is what reports that, and an
+    // activation link is what ends it.
     // ---------------------------------------------------------------------
     const removed = keys.filter((one) => {
       return one.credentialId === String(credentialId);
     })[0];
-    const stillHasPrimary =
-        kept.some((one) => { return one.role === 'primary'; });
-    if (removed && removed.role === 'primary' &&
-        !this.hasPassword(name) && !stillHasPrimary) {
+    // A ROW MARKED AS POSSIBLY REPLACED ON ITS AUTHENTICATOR (#1101) is not
+    // counted as a way in: the credential it describes may be gone.
+    const keyIsWayIn = this.deps.webauthnPolicy.useAllowed('primary').ok;
+    const stillHasKey =
+        kept.some((one) => {
+          return !one.possiblyReplacedBy;
+        });
+    if (removed && keyIsWayIn &&
+        !this.hasPassword(name) && !stillHasKey) {
       log.debug("Leaving Credentials.removeKey().");
       return coded('STS-AUTHN-0070',
                    { ok: false, errors: ['That is the only way ' + name + ' ' +
                                    'can sign in — there is no password and ' +
-                                   'no other primary security key. Set a ' +
+                                   'no other passkey. Set a ' +
                                    'password first, or enrol another key.'] });
     }
     try {
@@ -2931,9 +5110,146 @@ class Credentials {
           'store refused the write: ' +
                                    e.message] });
     }
-    log.info('credentials: a security key was removed for ' + name + '.');
+    log.info('credentials: a passkey was removed for ' + name + '.');
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ROW A LATER REGISTRATION MAY HAVE REPLACED (#1101, 2026-10-28).
+  //
+  // A discoverable credential created on an authenticator under the same RP
+  // ID and the same user handle as one it already holds REPLACES that one
+  // on the device, while this service keeps both rows: the person and an
+  // administrator see two passkeys where the authenticator holds one, and
+  // the removal guard could count a row that signs nobody in. So when a key
+  // is written under a handle another of the person's keys uses, with the
+  // same AAGUID, the OLDER row is marked `possiblyReplacedBy` — a MARKER and
+  // never a deletion, since an AAGUID names a model, not a device, and two
+  // keys of one model are two devices. A row with no handle (from before
+  // #474) or no AAGUID (attestation `none`) is not marked: nothing says it
+  // was the same authenticator. The mark goes when the row signs somebody
+  // in (`noteKeyUsed()`), and the removal guard does not count a marked row.
+  // ---------------------------------------------------------------------------
+  private markPossiblyReplaced(name: string, record: any): void {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.markPossiblyReplaced().');
+    const handle = String(record.userHandle || '');
+    const aaguid = Credentials.aaguidString(record.aaguid);
+    if (!handle || !aaguid || record.discoverable === false) {
+      log.debug('Leaving Credentials.markPossiblyReplaced(). Not ' +
+                'comparable.');
+      return;
+    }
+    const older = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) !== String(record.credentialId) &&
+             String(one.userHandle || '') === handle &&
+             Credentials.aaguidString(one.aaguid) === aaguid &&
+             one.discoverable !== false && !one.possiblyReplacedBy;
+    });
+    older.forEach((one) => {
+      const at = Date.now();
+      const marked = this.rewriteKey(name, one.credentialId, (found) => {
+        found.possiblyReplacedBy = String(record.credentialId);
+        found.possiblyReplacedAt = at;
+        return true;
+      });
+      if (marked.reason === 'written') {
+        log.info('credentials: a passkey of ' + name + ' may have been ' +
+                 'replaced on its authenticator by the one just registered ' +
+                 '(same user handle, AAGUID ' + aaguid + '); marked.');
+        webauthnCeremonies.possiblyReplaced({ username: name,
+          credentialId: String(one.credentialId),
+          by: String(record.credentialId), aaguid: aaguid });
+      }
+    });
+    log.debug('Leaving Credentials.markPossiblyReplaced(). ' + older.length +
+              ' marked.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // RENAMING A PASSKEY (#470, 2026-10-06).
+  //
+  // The guideline #470 follows asks for a nickname AFTER enrolment — "Give
+  // your security key a nickname so you know which keys you registered" —
+  // and for a rename on every row; there was neither, only a box before the
+  // ceremony that most people left empty, so most rows said "security key".
+  //
+  // **ONE WRITER FOR BOTH DOORS**: the person on `/portal/keys` and an
+  // administrator through `/admin-api` (rcbj's decision on #470) both come
+  // here, and the id is looked up among THIS person's keys, which is
+  // `removeKey()`'s A01 rule — an id belonging to somebody else matches
+  // nothing.
+  //
+  // **A NAME IS NOT A CREDENTIAL**: nothing about what the key proves
+  // changes, so no CAEP credential-change is sent for it (the caller audits
+  // it). An EMPTY name puts the default back — the provider's or the group's
+  // (`defaultKeyName()`) — rather than being refused, so a person can undo a
+  // nickname. A control character is refused: the name is drawn on pages
+  // and written to the audit, and nothing a person means by a nickname needs
+  // one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Renames one of a person's passkeys; an empty name restores the default.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param label - the new name, at most 60 characters
+   * @returns `{ ok: true, label, previous }`, or a refusal
+   */
+  renameKey(username, credentialId, label) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.renameKey().');
+    // The store is asked before the label, as it always was: no store and
+    // a label that is not a name is still "no store" (STS-AUTHN-0059).
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug("Leaving Credentials.renameKey(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
+    }
+    const wanted = String(label === undefined || label === null ? ''
+                                                                : label)
+      .trim();
+    if (wanted.length > 60 || /[\u0000-\u001f\u007f]/.test(wanted)) {
+      log.debug("Leaving Credentials.renameKey(). Not a name.");
+      return coded('STS-AUTHN-0300', { ok: false, errors: ['A passkey\'s ' +
+          'name is at most 60 characters, with no control characters.'] });
+    }
+    const name = String(username || '').trim();
+    let previous = '';
+    // The name is already trimmed, and that is what `keysOf` is given —
+    // the other four writers pass the raw username. A found key is always
+    // written, even when the label is the one already stored: the old door
+    // wrote on every hit. An empty name puts the default back.
+    const outcome = this.rewriteKey(name, credentialId, (found) => {
+      previous = Credentials.keyName(found);
+      found.label = wanted || Credentials.defaultKeyName(found);
+      return true;
+    });
+    if (outcome.reason === 'missing') {
+      log.debug("Leaving Credentials.renameKey(). Not theirs.");
+      return coded('STS-AUTHN-0299', { ok: false, errors: ['No passkey of ' +
+          'that id is registered for ' + name + '.'] });
+    }
+    if (outcome.reason === 'threw') {
+      log.debug("Leaving Credentials.renameKey(). The store threw.");
+      return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential ' +
+          'store refused the write: ' + outcome.error.message] });
+    }
+    if (outcome.reason === 'no-store') {
+      // The store was present above. This is it having gone between the
+      // check and the write: the same refusal. 'unchanged' is not this
+      // answer — a found key's mutation returns true, so it always writes,
+      // and a key that is theirs must not be reported as no store.
+      log.debug("Leaving Credentials.renameKey(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
+    }
+    log.info('credentials: a passkey of ' + name + ' was renamed.');
+    log.debug("Leaving Credentials.renameKey().");
+    return { ok: true, label: outcome.found.label, previous: previous };
   }
 
   // ===========================================================================
@@ -3336,6 +5652,16 @@ class Credentials {
       return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
                                    'to enrol an authenticator for.'] });
     }
+    // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD (run
+    // 21's fuzz stage): it is the record's key, and PostgreSQL cannot store
+    // a NUL (STS-STORE-0063). The passkey door's rule, STS-AUTHN-0556.
+    if (/[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginTotpEnrolment(). A name no " +
+                "person holds.");
+      return coded('STS-AUTHN-0557', { ok: false, errors: ['The name ' +
+                                   'holds a control character, so no ' +
+                                   'person has it. Nothing was started.'] });
+    }
     // `entryExists()` AND NOT `hasEntry()` (2026-09-18). That one answers
     // false always — it is the bootstrap's, so the bootstrap always attempts
     // its create — and here it refused EVERY enrolment in product mode, for
@@ -3403,7 +5729,15 @@ class Credentials {
   abandonTotpEnrolment(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonTotpEnrolment().");
-    pendingTotp.delete(this.pendingKeyOf(username));
+    // Only what is HELD is deleted (run 21's fuzz stage, STS-STORE-0063). A
+    // delete of a key the map never held still journals a row, so
+    // `/admin-api/mfa/clear-totp` sent a name holding a NUL character wrote
+    // a key PostgreSQL cannot store, for an enrolment that never existed. A
+    // name that was never pending can now reach the journal through nothing.
+    const key = this.pendingKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
     log.debug("Leaving Credentials.abandonTotpEnrolment().");
   }
 
@@ -3763,6 +6097,7 @@ class Credentials {
               ' person/people.');
     return { rows: rows, scanned: population.scanned,
              capped: population.capped, limit: population.limit,
+             directoryPeople: population.directoryPeople,
              store: population.store };
   }
 
@@ -3801,9 +6136,14 @@ class Credentials {
    * reading anything per name.
    *
    * @param alsoKnown - names the caller has seen
-   * @param opts - `limit`; `credentials.factorScanLimit` when omitted
+   * @param opts - `limit`; `credentials.factorScanLimit` when omitted;
+   *   `directoryFirst`, the `{ names, more }` a caller already asked for
+   *   (`directoryFirstNames()`, #616), so the directory is not asked again;
+   *   `directoryPeople`, the count already asked (`directoryPeopleCount()`,
+   *   #798) — null where it was asked and failed, and 0 a count, so a
+   *   missing count is omitted rather than passed as `undefined`
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
-   *   limit, store, isApplication }`
+   *   limit, directoryPeople, store, isApplication }`
    */
   secondFactorPopulation(alsoKnown, opts?) {
     const { log, errorCodes } = this.deps;
@@ -3826,23 +6166,61 @@ class Credentials {
       seen.get(key)[source] = true;
       log.debug("Leaving add().");
     };
+    // `scanned` is how many of the directory's names the list read, and
+    // `capped` whether the directory held more than that (#610: it used to
+    // be the length of a listing of everybody, which was also the only
+    // count of the people there was). `directoryPeople` is that count now,
+    // asked of the directory rather than read off a list; null where the
+    // directory offers no count, and the caller then has only the list.
     let scanned = 0;
     let capped = false;
-    if (directory && typeof directory.persons === 'function') {
+    let directoryPeople = null;
+    const upTo = this.directoryHook('personNamesUpTo');
+    const counter = this.directoryHook('personCount');
+    if (directory && (upTo || typeof directory.persons === 'function')) {
       let people = [];
       try {
-        people = directory.persons() || [];
+        if (options.directoryFirst) {
+          // Asked already, asynchronously, by a caller that could wait
+          // (#616): `directoryFirstNames()`.
+          people = options.directoryFirst.names || [];
+          capped = !!options.directoryFirst.more;
+        } else if (upTo) {
+          // The first `limit` names and whether there were more, without
+          // listing the rest.
+          const first = upTo(limit) || { names: [], more: false };
+          people = first.names || [];
+          capped = !!first.more;
+        } else {
+          people = directory.persons() || [];
+          directoryPeople = people.length;
+          if (people.length > limit) {
+            capped = true;
+            people = people.slice(0, limit);
+          }
+        }
       } catch (e) {
         log.error(errorCodes.tag('STS-AUTHN-0079') +
                   'credentials: listing this realm\'s people threw: ' +
                   e.message);
       }
       scanned = people.length;
-      if (people.length > limit) {
-        capped = true;
-        people = people.slice(0, limit);
-      }
       people.forEach((name) => { add(name, 'inDirectory'); });
+    }
+    if (options.directoryPeople !== undefined) {
+      // Asked already, asynchronously (#798): `directoryPeopleCount()`.
+      // Null means the count was asked and failed. 0 is a count, so this
+      // is not `options.directoryPeople || counter()`.
+      directoryPeople = options.directoryPeople;
+    } else if (counter) {
+      try {
+        directoryPeople = Number(counter()) || 0;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0334') +
+                  'credentials: counting this realm\'s people threw: ' +
+                  ((e && e.message) || e));
+        directoryPeople = null;
+      }
     }
     (alsoKnown || []).forEach((name) => { add(name, 'known'); });
 
@@ -3872,9 +6250,82 @@ class Credentials {
     log.debug('Leaving Credentials.secondFactorPopulation(). ' + rows.length +
               ' name(s).');
     return { rows: rows, scanned: scanned, capped: capped, limit: limit,
-             store: !!directory,
+             directoryPeople: directoryPeople, store: !!directory,
              isApplication: typeof isApplication === 'function'
                ? isApplication : null };
+  }
+
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY'S FIRST NAMES, ASKED WITHOUT HOLDING THE EVENT LOOP
+  // (#616). `secondFactorPopulation()` is synchronous and asks the
+  // directory's `personNamesUpTo` hook, which in a windowed process is a
+  // handful of synchronous statements to the store; a caller that can wait
+  // — `GET /admin-api/users` — asks this first, through the hook's
+  // asynchronous twin, and hands the answer over as `directoryFirst`. A
+  // directory without the twin is asked the synchronous question.
+  // ---------------------------------------------------------------------
+  /**
+   * The first `credentials.factorScanLimit` (or `limit`) people's names
+   * and whether there were more, asked of the directory asynchronously.
+   *
+   * @param limit - optional; how many at most
+   * @returns a promise of `{ names, more }`, or of null where no directory
+   *   offers the question
+   */
+  async directoryFirstNames(limit?) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryFirstNames().');
+    const most = Math.max(1, Number(limit || this.factorScanLimit()));
+    const asyncUpTo = this.directoryHook('personNamesUpToAsync');
+    const upTo = this.directoryHook('personNamesUpTo');
+    let first = null;
+    if (asyncUpTo) {
+      first = await asyncUpTo(most);
+    } else if (upTo) {
+      first = upTo(most);
+    }
+    log.debug('Leaving Credentials.directoryFirstNames(). ' +
+              (first ? (first.names || []).length + ' name(s).'
+                : 'No directory.'));
+    return first || null;
+  }
+
+  // THE PEOPLE COUNT, ASKED WITHOUT HOLDING THE EVENT LOOP (#798).
+  // `secondFactorPopulation()` asks `personCount()` synchronously, and in a
+  // windowed process that is one `count` of `ou=users` on the worker that
+  // serves sign-ins. A caller that can wait asks this first and hands the
+  // answer over as `directoryPeople`. No hook means `undefined`, and the
+  // caller omits the option so the synchronous count still runs. A count
+  // of 0 is a count; a throw is null (the page draws no count) under the
+  // code the synchronous count already records.
+  /**
+   * How many people the realm defines, asked of the directory
+   * asynchronously.
+   *
+   * @returns a promise of the count, of null where the count threw, or of
+   *   undefined where the directory offers no asynchronous count
+   */
+  async directoryPeopleCount() {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleCount().');
+    const hook = this.directoryHook('personCountAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleCount(). No count.');
+      return undefined;
+    }
+    let n: number | null = null;
+    try {
+      const raw = Number(await hook());
+      // `Number.isFinite` and not `raw || 0`: a count of 0 is a count.
+      n = Number.isFinite(raw) ? raw : 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0334') +
+                'credentials: counting this realm\'s people threw: ' +
+                ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleCount(). ' + n);
+    return n;
   }
 
   /**
@@ -3913,6 +6364,218 @@ class Credentials {
       secondFactor: mechanisms.secondFactor,
       usable: mechanisms.usable
     };
+  }
+
+  // ===========================================================================
+  // THE SHOWN ROWS' FACTORS, READ TOGETHER (#820, 2026-10-22).
+  //
+  // `factorHolderRow()` is `mechanismsFor()` for one name — about nine
+  // directory reads (the keys, the password, the authenticator, the recovery
+  // codes twice, the emailed factor, the requirement, the reset link, the
+  // lock) — and `/admin/users` asked it of every row it showed. In a windowed
+  // process each read that missed the window was a SYNCHRONOUS round trip
+  // through the bridge, every one charged to the request's store budget. On
+  // 8081 (product, postgres, 4 request workers, ~660,000 people, a sign-in
+  // load) fifty rows spent the 5,000 ms budget: the log carried
+  // STS-AUTHN-0071, -0065 and -0080 wrapping STS-LDAP-0175, the console said
+  // the page could not be drawn, and code exchanges on the same worker were
+  // refused for a database connection while it stood still.
+  //
+  // So a caller that can wait asks for EVERY shown row at once: the
+  // directory's `credentialRowsAsync()` reads each name by the census's
+  // resolution, asynchronously and a page at a time, and hands the values
+  // back raw. `interpretValues()` reads them ONCE — `keysFromValues()`,
+  // `totpStatusFromValue()` and the mail factor's `heldOfAttributes()` —
+  // and returns the census facts `factsFromValues()` returns, so a shown
+  // row does not parse the keys or the authenticator a second time (#820,
+  // #929). Recovery codes are read only for the row
+  // (`backupCodesFromValue()`, `backupCodeStatusOfHeld()`); the census does
+  // not start computing them. A row is the row `factorHolderRow()` gives,
+  // member for member. `tests/users_page_rows_async.js` compares them.
+  //
+  // **A REFUSAL IS UNKNOWN, NOT NONE**: where the store could not be read
+  // (unavailable, or the budget spent) every row is answered null — drawn
+  // with no factors, as a row nothing folded into always was — rather than
+  // as a person who holds nothing, and the page is still drawn. Any other
+  // throw is asked one row at a time, the census's fallback.
+  // ===========================================================================
+  /**
+   * Builds the roster rows of several population rows at once, the
+   * directory asked asynchronously.
+   *
+   * @param rows - population rows, `{ username, inDirectory, known }`
+   * @returns a promise of one roster row per row, as `factorHolderRow()`
+   *   builds it, or null for each where the store refused
+   */
+  async factorHolderRowsAsync(rows) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorHolderRowsAsync(). ' +
+              (rows || []).length + ' row(s).');
+    const list = rows || [];
+    const hook = this.directoryHook('credentialRowsAsync');
+    if (!hook || !list.length) {
+      log.debug('Leaving Credentials.factorHolderRowsAsync(). ' +
+                (list.length ? 'No asynchronous door; one at a time.'
+                  : 'Nothing to read.'));
+      return list.map((row) => {
+        return this.factorHolderRow(row);
+      });
+    }
+    const names = this.censusNames(list.map((row) => {
+      return row.username;
+    }));
+    let raws = null;
+    try {
+      raws = await hook(names);
+    } catch (e) {
+      if (Credentials.storeRefused(errorCodes, e)) {
+        log.error(errorCodes.tag('STS-AUTHN-0410') +
+                  'credentials: the credentials of ' + list.length +
+                  ' shown row(s) could not be read from the store, so they ' +
+                  'are drawn with their factors unknown: ' + e.message);
+        log.debug('Leaving Credentials.factorHolderRowsAsync(). Store ' +
+                  'refused.');
+        return list.map(() => {
+          return null;
+        });
+      }
+      log.error(errorCodes.tag('STS-AUTHN-0410') +
+                'credentials: reading the credentials of ' + list.length +
+                ' shown row(s) together threw, so each row is asked on its ' +
+                'own: ' + e.message);
+      raws = null;
+    }
+    if (!Array.isArray(raws) || raws.length !== list.length) {
+      log.debug('Leaving Credentials.factorHolderRowsAsync(). One at a ' +
+                'time.');
+      return list.map((row) => {
+        return this.factorHolderRow(row);
+      });
+    }
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.factorHolderRowsAsync(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    const out = list.map((row, index) => {
+      return this.factorHolderRowFromValues(row, raws[index], names[index],
+                                            mailFactor);
+    });
+    log.debug('Leaving Credentials.factorHolderRowsAsync(). ' + out.length +
+              ' row(s), read together.');
+    return out;
+  }
+
+  // One roster row from the values the directory handed over. The eight
+  // facts and the authenticator come from `interpretValues()`, read once;
+  // the row adds only what the census does not carry (`totpDetail`, the
+  // recovery-code count, `recoveryAdvised`). Called once per shown row
+  // (#820), so this must not parse the keys or the authenticator again.
+  // `raw` null finds no entry and holds nothing, as `mechanismsFor()`
+  // answers for one.
+  private factorHolderRowFromValues(row, raw, name, mailFactor) {
+    const { log, backupCodes } = this.deps;
+    log.debug('Entering Credentials.factorHolderRowFromValues().');
+    const read = this.interpretValues(raw, name, mailFactor, true);
+    const facts = read.facts;
+    const authenticator = read.authenticator;
+    const held = read.held;
+    const mfaKeys = facts.mfaKeys;
+    const totpEnrolled = facts.totp;
+    log.debug('Leaving Credentials.factorHolderRowFromValues().');
+    return {
+      username: row.username,
+      inDirectory: row.inDirectory,
+      known: row.known,
+      password: facts.password,
+      primaryKeys: facts.primaryKeys,
+      mfaKeys: mfaKeys,
+      totp: totpEnrolled,
+      totpUsable: facts.totpUsable,
+      // `mechanismsFor()`'s `totpDetail`, member for member.
+      totpDetail: totpEnrolled
+        ? { enrolledAt: authenticator.enrolledAt || 0,
+            lastUsedAt: authenticator.lastUsedAt || 0,
+            algorithm: authenticator.algorithm || '',
+            digits: authenticator.digits || 0,
+            period: authenticator.period || 0,
+            sealed: !!authenticator.sealed,
+            unusable: !!authenticator.unusable,
+            why: authenticator.why || '' }
+        : null,
+      // A count and never the codes — `factorHolderRow()`'s reason.
+      backupCodes: this.backupCodeStatusOfHeld(held),
+      // A key beside a password only (#1135), as `mechanismsFor()` reads it.
+      recoveryAdvised: backupCodes.offered() &&
+                       ((mfaKeys > 0 && facts.password) || totpEnrolled) &&
+                       !held,
+      mfaRequired: facts.mfaRequired,
+      secondFactor: facts.secondFactor,
+      usable: facts.usable
+    };
+  }
+
+  // THE SHOWN ROWS' DNs, ASKED TOGETHER (#820): one DN per name by
+  // `personDnOf()`'s rule, from the directory's `personDnsAsync()`; where
+  // the directory offers none, `personDnOf()` one name at a time. A name the
+  // store could not answer is '' — a row drawn without a DN, which the
+  // console's search already reads as a person who cannot be named.
+  /**
+   * The entry DN of each named person, asked asynchronously.
+   *
+   * @param names - the usernames
+   * @returns a promise of one DN per name, '' where there is none
+   */
+  async personDnsAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.personDnsAsync(). ' +
+              (names || []).length + ' name(s).');
+    const list = (names || []).map((name) => {
+      return String(name == null ? '' : name);
+    });
+    const hook = this.directoryHook('personDnsAsync');
+    if (hook && list.length) {
+      try {
+        const dns = await hook(list);
+        if (Array.isArray(dns) && dns.length === list.length) {
+          log.debug('Leaving Credentials.personDnsAsync(). Asked together.');
+          return dns.map((dn) => {
+            return String(dn || '');
+          });
+        }
+      } catch (e) {
+        if (Credentials.storeRefused(errorCodes, e)) {
+          log.error(errorCodes.tag('STS-AUTHN-0410') +
+                    'credentials: the DNs of ' + list.length + ' shown ' +
+                    'row(s) could not be read from the store, so they are ' +
+                    'drawn without one: ' + e.message);
+          log.debug('Leaving Credentials.personDnsAsync(). Store refused.');
+          return list.map(() => {
+            return '';
+          });
+        }
+        log.error(errorCodes.tag('STS-AUTHN-0410') +
+                  'credentials: reading the DNs of ' + list.length + ' shown ' +
+                  'row(s) together threw, so each is asked on its own: ' +
+                  e.message);
+      }
+    }
+    const out = list.map((name) => {
+      try {
+        return String(this.deviceStore('personDnOf', [name]) || '');
+      } catch (e) {
+        log.debug('Caught in Credentials.personDnsAsync(): ' +
+                  ((e && e.message) || e));
+        // Drawn without a DN, as `personDnOf()`'s caller draws one.
+        return '';
+      }
+    });
+    log.debug('Leaving Credentials.personDnsAsync(). One at a time.');
+    return out;
   }
 
   // ===========================================================================
@@ -3966,27 +6629,192 @@ class Credentials {
   factorCensus(names) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Credentials.factorCensus().');
-    const list = (names || []).map((name) => {
-      return String(name == null ? '' : name).trim();
-    });
-    const out = new Map();
+    const list = this.censusNames(names);
     const census = this.directoryHook('credentialCensus');
     let raws = null;
     if (census) {
       try {
         raws = census(list);
       } catch (e) {
+        if (this.censusFailureRefuses(e)) {
+          log.error(errorCodes.tag('STS-AUTHN-0293') +
+                    'credentials: the directory\'s credential census could ' +
+                    'not read the store, so ' + list.length + ' name(s) are ' +
+                    'answered unknown rather than one at a time: ' +
+                    e.message);
+          log.debug('Leaving Credentials.factorCensus(). Store refused.');
+          return new Map();
+        }
         log.error(errorCodes.tag('STS-AUTHN-0293') +
                   'credentials: the directory\'s credential census threw, so ' +
                   'each person is asked on their own: ' + e.message);
         raws = null;
       }
     }
+    const out = this.censusFacts(list, raws);
+    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+              ' name(s).');
+    return out;
+  }
+
+  // ===========================================================================
+  // THE CENSUS FOR A CALLER THAT CAN WAIT (#621, 2026-10-14).
+  //
+  // `GET /admin-api/users` and `/admin-api/mfa` asked `factorCensus()` for
+  // up to `factorScanLimit` names, and in a windowed process the directory
+  // answered each with a synchronous round trip to the store — 5,000 of them
+  // and a request worker frozen for 10 s on 8081 at 382,000 people. The
+  // directory's `credentialCensusAsync()` reads the same raw values for the
+  // same names, resolved by the same rule, a page at a time without holding
+  // the event loop (`ldap_server.js` argues it), and they are interpreted
+  // here by the SAME code (`censusFacts()`), so the two doors cannot give
+  // different facts. Where the directory offers no asynchronous census — a
+  // test's stub, an older `ldap_server.js` — this is `factorCensus()`. A
+  // census that FAILED (the store could not be read) is the synchronous
+  // census's failure: logged under STS-AUTHN-0293 and, where the store
+  // refused it or the directory is windowed, answered unknown; otherwise one
+  // person at a time (`censusFailureRefuses()`).
+  // ===========================================================================
+  /**
+   * `factorCensus()`, with the directory asked asynchronously.
+   *
+   * @param names - the names, as the population lists them
+   * @returns a promise of a Map from each name (trimmed) to its facts
+   */
+  async factorCensusAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorCensusAsync().');
+    const census = this.directoryHook('credentialCensusAsync');
+    if (!census) {
+      log.debug('Leaving Credentials.factorCensusAsync(). No asynchronous ' +
+                'census; asked synchronously.');
+      return this.factorCensus(names);
+    }
+    const list = this.censusNames(names);
+    let raws = null;
+    try {
+      raws = await census(list);
+    } catch (e) {
+      if (this.censusFailureRefuses(e)) {
+        log.error(errorCodes.tag('STS-AUTHN-0293') +
+                  'credentials: the directory\'s credential census could not ' +
+                  'read the store, so ' + list.length + ' name(s) are ' +
+                  'answered unknown rather than one at a time: ' + e.message);
+        log.debug('Leaving Credentials.factorCensusAsync(). Store refused.');
+        return new Map();
+      }
+      log.error(errorCodes.tag('STS-AUTHN-0293') +
+                'credentials: the directory\'s credential census threw, so ' +
+                'each person is asked on their own: ' + e.message);
+      raws = null;
+    }
+    const out = this.censusFacts(list, raws);
+    log.debug('Leaving Credentials.factorCensusAsync(). ' + out.size +
+              ' name(s).');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CENSUS THE STORE REFUSED IS NOT ASKED AGAIN ONE PERSON AT A TIME (#786).
+  // The census failing because the store could not be read — the directory
+  // unavailable (STS-LDAP-0130, -0131) or this request's directory budget
+  // spent (STS-LDAP-0175) — is a failure every one-person read would meet
+  // too: on 8081 the users list fell back to three reads per person for
+  // ~165,000 names, every one refused and logged, and a request worker was
+  // held for minutes. Those names are answered unknown instead (an empty
+  // Map: the list draws them with no factors, counted in no tile), and the
+  // census is logged once. Since #786's review any store-side failure, and
+  // any failure at all in a windowed process, is answered the same way
+  // (`censusFailureRefuses()`, below); only a failure that is not the
+  // store's, in a process holding the directory in memory, is still
+  // answered one at a time, as is a directory that offers no census. That
+  // answer passes
+  // `withoutRecoveryCodes`, so neither recovery-code read runs:
+  // `backupCodeStatus()`, or `recoveryAdvised`'s `backupCodesOf()` for a
+  // person who holds a second factor.
+  // ---------------------------------------------------------------------------
+  private static storeRefused(errorCodes, e) {
+    helpers.log.debug("Entering Credentials.storeRefused().");
+    const code = errorCodes.codeOf(e);
+    helpers.log.debug("Leaving Credentials.storeRefused(). " + code);
+    return code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
+           code === 'STS-LDAP-0175';
+  }
+
+  // ---------------------------------------------------------------------------
+  // AND ANY OTHER STORE-SIDE FAILURE IS REFUSED TOO (#786's review,
+  // 2026-11-13). `storeRefused()` lists three codes, and a census can fail on
+  // the store for others: a pool that timed out (STS-STORE-0066), a query the
+  // driver refused, a page the window could not read. Each of those sent the
+  // census back to `mechanismsFor()` one name at a time, which on a large
+  // realm is the multi-minute outage #786 was about. So a census failure is
+  // answered unknown, and the page says the census is unavailable, when:
+  //
+  //   * `storeRefused()` names its code, as before;
+  //   * its code is any STS-STORE- or STS-LDAP- code: the store or the
+  //     directory said it could not answer, and a one-name read meets the
+  //     same store;
+  //   * the directory is a window onto the store (`directoryWindowed`, a
+  //     hook `ldap_server.js` offers), whatever the failure was: there every
+  //     one-name read is a synchronous store round trip, so a fallback over
+  //     `factorScanLimit` names holds the event loop for as long as the
+  //     store takes.
+  //
+  // A process holding the whole directory in memory, with a failure that is
+  // not the store's, still answers one name at a time, as it always did:
+  // there `mechanismsFor()` reads the Map.
+  // ---------------------------------------------------------------------------
+  private censusFailureRefuses(e) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.censusFailureRefuses().');
+    if (Credentials.storeRefused(errorCodes, e)) {
+      log.debug('Leaving Credentials.censusFailureRefuses(). Listed.');
+      return true;
+    }
+    const code = String(errorCodes.codeOf(e) || '');
+    if (/^STS-(STORE|LDAP)-/.test(code)) {
+      log.debug('Leaving Credentials.censusFailureRefuses(). ' + code + '.');
+      return true;
+    }
+    const windowed = this.directoryHook('directoryWindowed');
+    let inWindow = false;
+    try {
+      inWindow = !!(windowed && windowed());
+    } catch (err) {
+      log.debug('Caught in Credentials.censusFailureRefuses(): ' +
+                ((err && err.message) || err));
+      // Not known: a window is the safe reading, since the fallback is what
+      // costs a windowed process minutes.
+      inWindow = true;
+    }
+    log.debug('Leaving Credentials.censusFailureRefuses(). windowed=' +
+              inWindow);
+    return inWindow;
+  }
+
+  // The names a census is asked about, as both doors trim them.
+  private censusNames(names) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.censusNames().');
+    log.debug('Leaving Credentials.censusNames().');
+    return (names || []).map((name) => {
+      return String(name == null ? '' : name).trim();
+    });
+  }
+
+  // The census's facts from the directory's raw values — or, where it gave
+  // none that fit, from `mechanismsFor()` one name at a time. Both doors'
+  // second half, so they interpret the values identically.
+  private censusFacts(list, raws) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.censusFacts().');
+    const out = new Map();
     if (!Array.isArray(raws) || raws.length !== list.length) {
       list.forEach((name) => {
-        out.set(name, this.factsOf(this.mechanismsFor(name)));
+        out.set(name, this.factsOf(this.mechanismsFor(name,
+          { withoutRecoveryCodes: true })));
       });
-      log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+      log.debug('Leaving Credentials.censusFacts(). ' + out.size +
                 ' name(s), one at a time.');
       return out;
     }
@@ -3994,7 +6822,7 @@ class Credentials {
     try {
       mailFactor = require('./mail_factor');
     } catch (e) {
-      log.debug('Caught in Credentials.factorCensus(): ' +
+      log.debug('Caught in Credentials.censusFacts(): ' +
                 ((e && e.message) || e));
       // Not held, for `mailFactorOf()`'s reason.
       mailFactor = null;
@@ -4002,9 +6830,252 @@ class Credentials {
     list.forEach((name, index) => {
       out.set(name, this.factsFromValues(raws[index], name, mailFactor));
     });
-    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+    log.debug('Leaving Credentials.censusFacts(). ' + out.size +
               ' name(s), in one pass.');
     return out;
+  }
+
+  // ===========================================================================
+  // THE TILES OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
+  //
+  // The tiles on `/admin/users` counted the CAPPED list. These are the same
+  // facts over every person the realm's directory defines, without listing
+  // them: the directory COUNTS its people and those holding a password, and
+  // hands over, raw, only the people holding one of the attributes named
+  // here — the ones without any of them hold no key, no authenticator and
+  // no emailed factor by this file's own rules, so their facts are known
+  // without reading them: a password or nothing. The holders are
+  // interpreted by `factsFromValues()`, the census's function, so a key's
+  // role, the sealed TOTP verdict (`sealedSecretVerdict()`, each secret
+  // opened at most once per process and key set) and the emailed factor
+  // under the realm's policy are decided exactly as for one person.
+  // **Nothing here is approximated by presence** except the password, which
+  // the directory counts by the attribute holding a value — the census
+  // reads its first value as well, so an empty first value counts there as
+  // no password and here as one.
+  //
+  // The definitions, over the realm's people (`ou=users`):
+  //   people        everybody there;
+  //   withSecond    holds a second factor (`mfaRequired`);
+  //   withTotp, withKeys, primaryKeys, unreadable — as the census's own;
+  //   passwordOnly  holds a password and no second factor;
+  //   noWayIn       holds neither a password nor a sign-in key (`usable`).
+  // Null where the directory offers no tally; the caller then has only the
+  // list.
+  // ===========================================================================
+  /**
+   * Counts the census's facts over every person the realm's directory
+   * defines, reading only the people who hold a credential attribute.
+   *
+   * @returns `{ people, withPassword, withSecond, withTotp, withKeys,
+   *   primaryKeys, passwordOnly, unreadable, noWayIn }`, or null
+   */
+  directoryFactorCounts() {
+    const { log, errorCodes } = this.deps;
+    const { PASSWORD_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.directoryFactorCounts().');
+    const tallies = this.directoryHook('credentialTallies');
+    if (!tallies) {
+      log.debug('Leaving Credentials.directoryFactorCounts(). No tally.');
+      return null;
+    }
+    const mailFactor = this.mailFactorModule();
+    let tally = null;
+    try {
+      tally = tallies({ password: PASSWORD_ATTRIBUTE,
+                        holding: this.holdingAttributes(mailFactor) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting this realm\'s credential holders ' +
+                'threw: ' + ((e && e.message) || e));
+      tally = null;
+    }
+    const out = this.factorCountsOf(tally, mailFactor);
+    log.debug('Leaving Credentials.directoryFactorCounts().');
+    return out;
+  }
+
+  // `directoryFactorCounts()` FOR A CALLER THAT CAN WAIT (2026-10-21): the
+  // directory's tallies asked on the driver's read pool where it offers that
+  // (`credentialTalliesAsync`), and the same arithmetic over them. The
+  // synchronous door stood a request worker still for up to nine seconds on
+  // a realm of 280,000 people (8081), sign-ins and all.
+  /**
+   * `directoryFactorCounts()`, the directory asked asynchronously.
+   *
+   * @returns a promise of the counts, or of null
+   */
+  async directoryFactorCountsAsync() {
+    const { log, errorCodes } = this.deps;
+    const { PASSWORD_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.directoryFactorCountsAsync().');
+    const tallies = this.directoryHook('credentialTalliesAsync');
+    if (!tallies) {
+      log.debug('Leaving Credentials.directoryFactorCountsAsync(). No ' +
+                'asynchronous tally: the synchronous one.');
+      return this.directoryFactorCounts();
+    }
+    const mailFactor = this.mailFactorModule();
+    let tally = null;
+    try {
+      tally = await tallies({ password: PASSWORD_ATTRIBUTE,
+                              holding: this.holdingAttributes(mailFactor) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting this realm\'s credential holders ' +
+                'threw: ' + ((e && e.message) || e));
+      tally = null;
+    }
+    const out = this.factorCountsOf(tally, mailFactor);
+    log.debug('Leaving Credentials.directoryFactorCountsAsync().');
+    return out;
+  }
+
+  // The census's module for emailed codes, or null where it is not held.
+  private mailFactorModule() {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.mailFactorModule().');
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.mailFactorModule(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    log.debug('Leaving Credentials.mailFactorModule().');
+    return mailFactor;
+  }
+
+  // The credential attributes whose holders the tallies read.
+  private holdingAttributes(mailFactor) {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.holdingAttributes().');
+    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
+    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
+      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
+    }
+    log.debug('Leaving Credentials.holdingAttributes().');
+    return holding;
+  }
+
+  // The tiles' counts from the directory's tallies; null for no answer.
+  private factorCountsOf(tally, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factorCountsOf().');
+    if (!tally) {
+      log.debug('Leaving Credentials.factorCountsOf(). No answer.');
+      return null;
+    }
+    const out = { people: Number(tally.people) || 0,
+                  withPassword: Number(tally.withPassword) || 0,
+                  withSecond: 0, withTotp: 0, withKeys: 0, primaryKeys: 0,
+                  passwordOnly: 0, unreadable: 0, noWayIn: 0,
+                  // WHEN THE DIRECTORY COUNTED THEM, AND FOR HOW LONG IT
+                  // KEEPS A COUNT AGAINST ANOTHER PROCESS'S WRITES (#684):
+                  // `ldap_server.js`'s `credentialTallies()` says why.
+                  // Not tiles: `AdminViews.directoryTilesOf()` lifts both
+                  // out beside them. Null where the directory did not say.
+                  countedAt: Number(tally.countedAt) || null,
+                  keptForSeconds: tally.keptForSeconds === undefined ||
+                                  tally.keptForSeconds === null
+                    ? null : Number(tally.keptForSeconds) };
+    // The holders with a password and a second factor come off
+    // `passwordOnly`, and those with no password and a sign-in key off
+    // `noWayIn`; everybody else is a password or nothing.
+    let passwordAndSecond = 0;
+    let keyWithoutPassword = 0;
+    (tally.holders || []).forEach((holder) => {
+      const f = this.factsFromValues(holder.raw, holder.name, mailFactor);
+      out.withSecond += f.mfaRequired ? 1 : 0;
+      out.withTotp += f.totp ? 1 : 0;
+      out.withKeys += f.mfaKeys > 0 ? 1 : 0;
+      out.primaryKeys += f.primaryKeys > 0 ? 1 : 0;
+      out.unreadable += f.totp && !f.totpUsable ? 1 : 0;
+      passwordAndSecond += f.password && f.mfaRequired ? 1 : 0;
+      keyWithoutPassword += !f.password && f.primaryKeys > 0 ? 1 : 0;
+    });
+    out.passwordOnly = Math.max(0, out.withPassword - passwordAndSecond);
+    out.noWayIn = Math.max(0, out.people - out.withPassword -
+                           keyWithoutPassword);
+    log.debug('Leaving Credentials.factorCountsOf(). ' + out.people +
+              ' people, ' + (tally.holders || []).length + ' read.');
+    return out;
+  }
+
+  /**
+   * Counts how many of the given names answer to a person in the realm's
+   * directory — the register's names, asked per name, never per person.
+   *
+   * @param names - the names
+   * @returns the count, or null where the directory offers no such count
+   */
+  directoryPeopleNamed(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleNamed().');
+    const hook = this.directoryHook('countPeopleNamed');
+    let n = null;
+    if (hook) {
+      try {
+        n = Number(hook(names || [])) || 0;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0335') +
+                  'credentials: counting which names are people here ' +
+                  'threw: ' + ((e && e.message) || e));
+        n = null;
+      }
+    }
+    log.debug('Leaving Credentials.directoryPeopleNamed(). ' + n);
+    return n;
+  }
+
+  // THE DIRECTORY'S VERSION OF ITS PEOPLE (2026-10-21): a number every write
+  // under `ou=users` moves, for a caller that keeps something built from
+  // them (`/admin/users`' population). Null where no directory offers one.
+  /**
+   * The ambient realm's people's version, as the directory counts it.
+   *
+   * @returns a number, or null
+   */
+  directoryPeopleVersion() {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleVersion().');
+    const hook = this.directoryHook('peopleVersion');
+    const version = hook ? Number(hook()) : null;
+    log.debug('Leaving Credentials.directoryPeopleVersion().');
+    return version === null || Number.isFinite(version) ? version : null;
+  }
+
+  // `directoryPeopleNamed()` FOR A CALLER THAT CAN WAIT (2026-10-21), for
+  // `directoryFactorCountsAsync()`'s reason.
+  /**
+   * `directoryPeopleNamed()`, the directory asked asynchronously.
+   *
+   * @param names - the names
+   * @returns a promise of the count, or of null
+   */
+  async directoryPeopleNamedAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleNamedAsync().');
+    const hook = this.directoryHook('countPeopleNamedAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleNamedAsync(). The ' +
+                'synchronous one.');
+      return this.directoryPeopleNamed(names);
+    }
+    let n = null;
+    try {
+      n = Number(await hook(names || [])) || 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting which names are people here ' +
+                'threw: ' + ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleNamedAsync(). ' + n);
+    return n;
   }
 
   // `mechanismsFor()`'s answer cut down to the census's members, for the
@@ -4025,20 +7096,34 @@ class Credentials {
     };
   }
 
-  // One person's census facts from the raw values the directory handed over.
-  // `raw` is null for a name that finds no entry, which answers what
-  // `mechanismsFor()` answers for one: nothing held.
-  private factsFromValues(raw, name, mailFactor) {
+  // ONE PARSE OF A PERSON'S CREDENTIAL VALUES (#929). The census
+  // (`factsFromValues()`) and a shown row (`factorHolderRowFromValues()`)
+  // each used to parse the keys, the authenticator and the mailed factor
+  // and then compute the same eight facts. The Users page builds a row for
+  // every person it shows (#820), so a second parse there is the cost this
+  // removes. Recovery codes are read only when the caller asks: the census
+  // does not carry them and must not start computing them. `raw` null is a
+  // name that finds no entry, which holds nothing, as `mechanismsFor()`
+  // answers for one.
+  /**
+   * Interprets one person's raw credential values into the census facts,
+   * the authenticator record and, when asked, the held recovery codes.
+   *
+   * @param raw - the directory's values, or null
+   * @param name - the person
+   * @param mailFactor - the mailed-factor module, or null
+   * @param withBackup - whether to read the recovery codes
+   * @returns `{ facts, authenticator, held }`; `held` is null when the
+   *   recovery codes were not asked for
+   */
+  private interpretValues(raw, name, mailFactor, withBackup) {
     const { log } = this.deps;
-    log.debug('Entering Credentials.factsFromValues().');
+    log.debug('Entering Credentials.interpretValues().');
     const values = raw || {};
     const keys = this.keysFromValues(values.webauthn || [], name);
-    const primaryKeys = keys.filter((one) => {
-      return one.role === 'primary';
-    }).length;
-    const mfaKeys = keys.filter((one) => {
-      return one.role === 'mfa';
-    }).length;
+    const uses = this.keyUses(keys.length);
+    const primaryKeys = uses.primary;
+    const mfaKeys = uses.mfa;
     const authenticator = this.totpStatusFromValue(values.totp || '', name);
     const totpEnrolled = !!authenticator;
     let mailHeld = '';
@@ -4047,27 +7132,45 @@ class Credentials {
       try {
         mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
       } catch (e) {
-        log.debug('Caught in Credentials.factsFromValues(): ' +
+        log.debug('Caught in Credentials.interpretValues(): ' +
                   ((e && e.message) || e));
         // Not held, for `mailFactorOf()`'s reason.
         mailHeld = '';
       }
     }
     const password = !!values.password;
-    log.debug('Leaving Credentials.factsFromValues().');
+    // Only a roster row asks. The census's callers (`censusFacts()`,
+    // `factorCountsOf()`) pass false, so they do not open the codes.
+    const held = withBackup ?
+      this.backupCodesFromValue(values.backupCodes || '', name) : null;
+    log.debug('Leaving Credentials.interpretValues().');
     return {
-      password: password,
-      primaryKeys: primaryKeys,
-      mfaKeys: mfaKeys,
-      totp: totpEnrolled,
-      totpUsable: totpEnrolled && !authenticator.unusable,
-      // `mechanismsFor()`'s two lines, read against the same three facts.
-      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
-      secondFactor: mfaKeys > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
-                     (mailHeld ? 'email-' + mailHeld : '')),
-      usable: password || primaryKeys > 0
+      facts: {
+        password: password,
+        primaryKeys: primaryKeys,
+        mfaKeys: mfaKeys,
+        totp: totpEnrolled,
+        totpUsable: totpEnrolled && !authenticator.unusable,
+        // `mechanismsFor()`'s two lines, read against the same three facts.
+        mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+        secondFactor: mfaKeys > 0 ? 'webauthn' :
+                      (totpEnrolled ? 'totp' :
+                       (mailHeld ? 'email-' + mailHeld : '')),
+        usable: password || primaryKeys > 0
+      },
+      authenticator: authenticator,
+      held: held
     };
+  }
+
+  // The census's facts: `interpretValues()`'s object and nothing else.
+  // Recovery codes are not read here.
+  private factsFromValues(raw, name, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsFromValues().');
+    const facts = this.interpretValues(raw, name, mailFactor, false).facts;
+    log.debug('Leaving Credentials.factsFromValues().');
+    return facts;
   }
 
   // ---------------------------------------------------------------------------
@@ -4263,8 +7366,7 @@ class Credentials {
   // second set be issued over a list somebody is holding on paper.
   // ---------------------------------------------------------------------------
   private backupCodesOf(username) {
-    const { log, keystore, backupCodes, errorCodes } = this.deps;
-    const { BACKUP_CODES_ATTRIBUTE } = Credentials;
+    const { log, errorCodes } = this.deps;
     const directory = this.directory;
     log.debug("Entering Credentials.backupCodesOf().");
     const name = String(username || '').trim();
@@ -4283,8 +7385,21 @@ class Credentials {
       log.debug('Leaving Credentials.backupCodesOf(). It threw.');
       return null;
     }
+    const out = this.backupCodesFromValue(raw, name);
+    log.debug('Leaving Credentials.backupCodesOf().');
+    return out;
+  }
+
+  // WHAT A STORED VALUE IS AS A SET OF RECOVERY CODES, in one place (#820,
+  // 2026-10-22): `backupCodesOf()` reads the value for one person and
+  // `factorHolderRowsAsync()` is handed it for the rows a page shows, and
+  // both must read it alike — `keysFromValues()`'s arrangement.
+  private backupCodesFromValue(raw, name) {
+    const { log, keystore, backupCodes } = this.deps;
+    const { BACKUP_CODES_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.backupCodesFromValue().');
     if (!raw) {
-      log.debug('Leaving Credentials.backupCodesOf(). None issued.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). None issued.');
       return null;
     }
     let parsed;
@@ -4294,7 +7409,7 @@ class Credentials {
       log.warn('credentials: the ' + BACKUP_CODES_ATTRIBUTE + ' value on ' +
                name + ' is not JSON this service wrote and is being reported ' +
                'as an unusable set rather than ignored: ' + e.message);
-      log.debug('Leaving Credentials.backupCodesOf(). Not JSON.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). Not JSON.');
       return { unusable: true, why: 'the stored value is not readable' };
     }
     let vault = parsed.vault;
@@ -4307,7 +7422,7 @@ class Credentials {
                  'They are reported as UNUSABLE rather than as absent, ' +
                  'because absent would let a second set be issued over the ' +
                  'one that person is holding.');
-        log.debug('Leaving Credentials.backupCodesOf(). Sealed under ' +
+        log.debug('Leaving Credentials.backupCodesFromValue(). Sealed under ' +
                   'another key.');
         return { unusable: true, sealed: true,
                  total: Number(parsed.total || 0),
@@ -4325,13 +7440,13 @@ class Credentials {
     } catch (e) {
       log.warn('credentials: the recovery code list for ' + name + ' opened ' +
                'and is not the array this service writes: ' + e.message);
-      log.debug('Leaving Credentials.backupCodesOf(). The vault is not an ' +
-                'array.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). The vault is ' +
+                'not an array.');
       return { unusable: true, why: 'the stored code list is not readable' };
     }
     if (!Array.isArray(codes)) {
-      log.debug('Leaving Credentials.backupCodesOf(). The vault is not an ' +
-                'array.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). The vault is ' +
+                'not an array.');
       return { unusable: true, why: 'the stored code list is not a list' };
     }
     // **NORMALISED TO ONE SHAPE HERE, WHICH IS WHY NOTHING ABOVE THIS LINE
@@ -4356,8 +7471,8 @@ class Credentials {
     const legacy = normalised.some((one) => {
       return one.hash && !backupCodes.isHash(one.hash);
     });
-    log.debug('Leaving Credentials.backupCodesOf(). ' + normalised.length +
-              ' code(s), ' +
+    log.debug('Leaving Credentials.backupCodesFromValue(). ' +
+              normalised.length + ' code(s), ' +
               normalised.filter((one) => { return !one.usedAt; }).length +
               ' unused, hashed=' + !legacy + '.');
     return {
@@ -4539,7 +7654,7 @@ class Credentials {
    * @returns `{ ok: true, handle, codes, … }`, or a refusal
    */
   beginBackupCodes(username, opts?) {
-    const { log, backupCodes, errorCodes, nodeCrypto } = this.deps;
+    const { log, backupCodes, errorCodes, crypto } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginBackupCodes().");
@@ -4589,14 +7704,11 @@ class Credentials {
       }
     });
     // A handle and not the username: two tabs must not be able to confirm each
-    // other's set, and the form carries this back. `require('crypto')` inline
-    // (as `generatePassword()` above once did, before the password policy drew
-    // its passwords) because the module name `crypto` is taken here by THIS
-    // service's crypto module, and shadowing that at the top of the file to
-    // save a require is how somebody later reaches for `crypto.hashSecret()`
-    // and gets node's.
-    const handle = nodeCrypto().randomBytes(24).toString('base64url');
-    pendingBackupCodes.set(handle, {
+    // other's set, and the form carries this back. The bytes are this
+    // service's crypto module's (#453): node's `crypto` is required nowhere
+    // but there.
+    const handle = crypto.randomBytes(24).toString('base64url');
+    pendingBackupCodes.set(pendingCodesKey(handle), {
       username: name,
       codes: minted,
       begunAt: Date.now(),
@@ -4625,7 +7737,7 @@ class Credentials {
     const { log } = this.deps;
     log.debug("Entering Credentials.pendingBackupCodesFor().");
     this.forgetExpiredPending();
-    const record = pendingBackupCodes.get(String(handle || ''));
+    const record = pendingBackupCodes.get(pendingCodesKey(handle));
     if (!record || record.username !== String(username || '').trim()) {
       log.debug("Leaving Credentials.pendingBackupCodesFor().");
       return null;
@@ -4696,7 +7808,7 @@ class Credentials {
                    { ok: false, reason: 'store', retryable: true,
                errors: written.errors });
     }
-    pendingBackupCodes.delete(handle);
+    pendingBackupCodes.delete(pendingCodesKey(handle));
     log.info('credentials: ' + name + ' confirmed a set of ' + written.total +
              ' recovery codes. Only the hashes are stored — this service can ' +
              'never show them again.');
@@ -4723,7 +7835,7 @@ class Credentials {
       log.debug("Leaving Credentials.discardBackupCodes().");
       return { ok: true, discarded: false };
     }
-    pendingBackupCodes.delete(handle);
+    pendingBackupCodes.delete(pendingCodesKey(handle));
     log.info('credentials: a pending set of recovery codes for ' +
              String(username) + ' was discarded without being stored.');
     log.debug("Leaving Credentials.discardBackupCodes().");
@@ -4753,14 +7865,23 @@ class Credentials {
     log.debug("Entering Credentials.backupCodeStatus().");
     const name = String(username || '').trim();
     log.debug('Entering Credentials.backupCodeStatus(). username=' + name);
-    const held = this.backupCodesOf(name);
+    const out = this.backupCodeStatusOfHeld(this.backupCodesOf(name));
+    log.debug("Leaving Credentials.backupCodeStatus().");
+    return out;
+  }
+
+  // `backupCodeStatus()`'s answer from a set already read (#820), so a
+  // roster row built from values read together reports it exactly alike.
+  private backupCodeStatusOfHeld(held) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.backupCodeStatusOfHeld().");
     if (!held) {
-      log.debug('Leaving Credentials.backupCodeStatus(). None issued.');
+      log.debug('Leaving Credentials.backupCodeStatusOfHeld(). None issued.');
       return { present: false, usable: false, total: 0, remaining: 0,
                used: 0, generatedAt: 0, lastUsedAt: 0, sealed: false, why: '' };
     }
     if (held.unusable) {
-      log.debug('Leaving Credentials.backupCodeStatus(). Present and ' +
+      log.debug('Leaving Credentials.backupCodeStatusOfHeld(). Present and ' +
                 'unreadable.');
       // The counts come off the record's CLEAR half, which is exactly what the
       // header says that half is for: a console can be honest about a set this
@@ -4776,9 +7897,9 @@ class Credentials {
                sealed: !!held.sealed, why: held.why || '' };
     }
     const remaining = held.codes.filter((one) => { return !one.usedAt; });
-    log.debug('Leaving Credentials.backupCodeStatus(). ' + remaining.length +
-              ' of ' + held.codes.length + ' unused, hashed=' +
-              !!held.hashed + '.');
+    log.debug('Leaving Credentials.backupCodeStatusOfHeld(). ' +
+              remaining.length + ' of ' + held.codes.length +
+              ' unused, hashed=' + !!held.hashed + '.');
     return { present: true, usable: true,
              total: held.codes.length, remaining: remaining.length,
              used: held.codes.length - remaining.length,
@@ -5588,6 +8709,50 @@ class Credentials {
     return owner;
   }
 
+  // A person's PUBLISHED DIDs (#1291), for `oid4vc/person_did.ts`: the
+  // values as stored (null where there is no store or no entry) and the
+  // whole list written back — hooks the directory passes in, as the
+  // self-issued subjects' are.
+  /**
+   * Reads a person's published DIDs.
+   *
+   * @param username - the person
+   * @returns the values as stored, or null with no store or entry
+   */
+  readPublishedDids(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.readPublishedDids().');
+    if (!directory || typeof directory.readPublishedDids !== 'function') {
+      log.debug('Leaving Credentials.readPublishedDids(). No store.');
+      return null;
+    }
+    const values = directory.readPublishedDids(String(username || ''));
+    log.debug('Leaving Credentials.readPublishedDids().');
+    return values;
+  }
+
+  /**
+   * Writes a person's whole list of published DIDs.
+   *
+   * @param username - the person
+   * @param values - the list
+   * @returns what the directory write answered, or false with no store
+   */
+  writePublishedDids(username, values) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writePublishedDids().');
+    if (!directory || typeof directory.writePublishedDids !== 'function') {
+      log.debug('Leaving Credentials.writePublishedDids(). No store.');
+      return false;
+    }
+    const written = !!directory.writePublishedDids(String(username || ''),
+                                                   values);
+    log.debug('Leaving Credentials.writePublishedDids(). ' + written);
+    return written;
+  }
+
   // THE DEVICE REGISTER (#130), for `common/devices.ts`: the directory's
   // seven hooks, each answering nothing (an empty list, false, '', null)
   // where no directory is loaded in this process — and `hasHook`, which says
@@ -5610,7 +8775,8 @@ class Credentials {
       log.debug('Leaving Credentials.deviceStore(). hasHook ' + offered);
       return offered;
     }
-    const empty = operation === 'listDeviceEntries' ? [] :
+    const empty = (operation === 'listDeviceEntries' ||
+                   operation === 'deviceEntriesOwnedBy') ? [] :
       (operation === 'personDnOf' || operation === 'applicationDnOf') ? '' :
       (operation === 'ownerOf' || operation === 'deviceEntryByIndex')
         ? null : false;
@@ -6028,9 +9194,9 @@ class Credentials {
     log.debug('Entering Credentials.passwordOnlyDoors().');
     const name = String(username || '').trim();
     const person = !!name && this.isPersonEntry(name);
-    const holds = person && (this.keysOf(name).some((one) => {
-      return one.role === 'mfa';
-    }) || !!this.totpOf(name));
+    // Any key, where the realm lets a key be a second factor (#1135).
+    const holds = person &&
+      (this.keyUses(this.keysOf(name).length).mfa > 0 || !!this.totpOf(name));
     const requirement = person ? this.mfaRequirementFor(name)
       : { required: false, byUser: false, byRealm: false };
     const secondFactor = holds || requirement.required;
@@ -6182,22 +9348,50 @@ class Credentials {
     return out;
   }
 
+  // WHAT A PERSON'S KEYS COUNT AS (#1135): a key has no role, so each one
+  // the person holds counts as a way IN where the realm lets a key sign
+  // somebody in on its own, and as a SECOND FACTOR where it lets a key be
+  // one — `webauthnPolicy.useAllowed()`, the same question the sign-in asks.
+  // `primaryKeys` and `mfaKeys` keep their names on the facts they always
+  // fed (`usable`, `mfaRequired`, `secondFactor`), and are now the same keys
+  // counted twice, or once, or not at all, as the realm decides.
   /**
-   * Returns what a person holds to sign in with: password, keys by role, the
+   * Counts a person's keys by the uses this realm accepts for a key.
+   *
+   * @param held - how many keys the person holds
+   * @returns `{ primary, mfa }`: the keys usable passwordless, and as a
+   *   second factor
+   */
+  private keyUses(held: number): { primary: number; mfa: number } {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug('Entering Credentials.keyUses().');
+    const n = held > 0 ? held : 0;
+    const out = {
+      primary: n && webauthnPolicy.useAllowed('primary').ok ? n : 0,
+      mfa: n && webauthnPolicy.useAllowed('mfa').ok ? n : 0
+    };
+    log.debug('Leaving Credentials.keyUses(). primary=' + out.primary +
+              ', mfa=' + out.mfa);
+    return out;
+  }
+
+  /**
+   * Returns what a person holds to sign in with: password, keys by use, the
    * authenticator app and recovery codes.
    *
    * @param username - the person
+   * @param [opts] - `withoutRecoveryCodes` skips both recovery-code reads
+   *   (#786). The census asks for that: no tile reports them, and it
+   *   throws `recoveryAdvised` away
    * @returns `{ username, password, primaryKeys, mfaKeys, keys, totp, … }`
    */
-  mechanismsFor(username) {
+  mechanismsFor(username, opts?) {
     const { log, totp, backupCodes } = this.deps;
     log.debug("Entering Credentials.mechanismsFor().");
     const name = String(username || '').trim();
     const keys = this.keysOf(name);
     const password = this.hasPassword(name);
-    const primaryKeys =
-        keys.filter((one) => { return one.role === 'primary'; });
-    const mfaKeys = keys.filter((one) => { return one.role === 'mfa'; });
+    const uses = this.keyUses(keys.length);
     // THE ENROLMENT WITHOUT ITS SECRET (#352): nothing below reads the
     // secret, only whether it opens, and `totpStatusOf()` remembers that per
     // sealed text rather than unsealing on every call — this is asked for
@@ -6212,12 +9406,19 @@ class Credentials {
     // address verified (`common/mail_factor.ts` argues why). Asked lazily —
     // that module reaches the mail channel, which requires the directory.
     const mailFactor = this.mailFactorOf(name);
+    // Not read for a caller that counts and filters a list (#786): no tile
+    // and no filter reads a recovery code, and on a large directory each
+    // read was another store round trip per person. `recoveryAdvised`
+    // reads the same attribute again (`backupCodesOf()`), and the census
+    // throws that flag away (`factsOf()`), so it is left false rather
+    // than computed.
+    const skipRecovery = !!(opts && opts.withoutRecoveryCodes);
     log.debug("Leaving Credentials.mechanismsFor().");
     return {
       username: name,
       password: password,
-      primaryKeys: primaryKeys.length,
-      mfaKeys: mfaKeys.length,
+      primaryKeys: uses.primary,
+      mfaKeys: uses.mfa,
       keys: keys,
       // The authenticator app, reported as three separate facts because they
       // lead to three different sentences on a page: enrolled, when, and
@@ -6237,7 +9438,7 @@ class Credentials {
       // Can they get in at all? UNCHANGED, and see the header: a second factor
       // has never been a way in on its own and an authenticator app is not one
       // either.
-      usable: password || primaryKeys.length > 0,
+      usable: password || uses.primary > 0,
       // THE RECOVERY CODES (2026-09-10), reported as a STATUS OBJECT and never
       // as the codes themselves. `backupCodeStatus()` is what fills it and its
       // header argues the split: one function answers *how many are left* and a
@@ -6255,13 +9456,14 @@ class Credentials {
       // is generated when the person asks to see one and stored — hashed — only
       // once they confirm they have kept it. `recoveryAdvised` below is what
       // replaced the automatic issue.
-      backupCodes: this.backupCodeStatus(name),
+      // Skipped with `recoveryAdvised` when `skipRecovery` is set, above.
+      backupCodes: skipRecovery ? null : this.backupCodeStatus(name),
       // Is a second factor required of them? A person holding an `mfa` key or
       // an enrolled authenticator is saying their password alone is not enough,
       // so the sign-in screen demands it as well — which is what makes the flag
       // mean anything. **The recovery codes are deliberately not on this line**
       // — see the field above.
-      mfaRequired: mfaKeys.length > 0 || totpEnrolled || !!mailFactor.held,
+      mfaRequired: uses.mfa > 0 || totpEnrolled || !!mailFactor.held,
       // The emailed factor (#64): `held` is `code`, `link` or '', and the
       // rest says why it is not held where it is opted into.
       mailFactor: mailFactor,
@@ -6273,7 +9475,7 @@ class Credentials {
       // The emailed factor comes LAST (#64): it is the weakest of the three
       // (NIST SP 800-63B-4 section 3.1.3.1), so a person holding another is
       // asked for that, and offered the email as a way round it.
-      secondFactor: mfaKeys.length > 0 ? 'webauthn' :
+      secondFactor: uses.mfa > 0 ? 'webauthn' :
                     (totpEnrolled ? 'totp' :
                      (mailFactor.held ? 'email-' + mailFactor.held : '')),
       // Has this person finished setting themselves up? What product mode asks
@@ -6301,9 +9503,15 @@ class Credentials {
       // **A LEGACY SET COUNTS AS HAVING ONE.** It still works, its owner may be
       // holding it on paper, and telling them to replace it would be this
       // service inventing urgency about a credential that is fine.
-      recoveryAdvised: backupCodes.offered() &&
-                       (mfaKeys.length > 0 || totpEnrolled) &&
-                       !this.backupCodesOf(name),
+      // A KEY IS A SECOND FACTOR ONLY BESIDE A PASSWORD (#1135), as
+      // `addKey()`'s advice reads it: a passwordless person's keys are their
+      // way in, with no second step for a code to stand in for.
+      // False, unread, when the caller asked not to read recovery codes
+      // (#786): the census does not report this flag.
+      recoveryAdvised: skipRecovery ? false :
+                       (backupCodes.offered() &&
+                        ((uses.mfa > 0 && password) || totpEnrolled) &&
+                        !this.backupCodesOf(name)),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is
       // NOT `mfaRequired` above, which is what they HOLD: somebody required to
@@ -6404,8 +9612,8 @@ class Credentials {
   // STEP ONE: MINT A CHALLENGE AND SAY WHAT THE CEREMONY WILL BE.
   //
   // It REFUSES here rather than at the end wherever it can — the mechanism
-  // being off, the role not allowed, the cap reached, the person not existing
-  // in product mode — because a person who has touched their key and then been
+  // being off, no use of a key allowed, the cap reached, the person not
+  // existing in product mode — because a person who has touched their key and then been
   // told the realm does not allow it has spent a ceremony on a refusal that was
   // knowable before it started. `addKey()` makes the same checks at the end and
   // that is not duplication: this one is a COURTESY and that one is the
@@ -6416,32 +9624,79 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default), `kind` and `label`
+   * @param opts - `kind`, `lane` (#643:
+   *   `classical` by default, or `pqc`), and `classicalOnly` (#944: the
+   *   classical retry of a registration that failed on the device)
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
    */
   beginKeyEnrolment(username, opts?) {
     const { log, mode, webauthnPolicy, errorCodes,
-      nodeCrypto } = this.deps;
-    const { ROLES } = Credentials;
+      crypto } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginKeyEnrolment().");
     const name = String(username || '').trim();
     log.debug('Entering Credentials.beginKeyEnrolment(). username=' + name);
     const options = opts || {};
-    const role = String(options.role || 'mfa');
-    if (ROLES.indexOf(role) < 0) {
-      log.debug('Leaving Credentials.beginKeyEnrolment(). Not a role.');
-      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
-                                   'is either "primary" or "mfa". ' +
-                                   '"' + role + '" is neither.'] });
-    }
-    const allowed = webauthnPolicy.roleAllowed(role);
+    // NO ROLE IS ASKED (#1135): whether a key may be enrolled at all.
+    const allowed = webauthnPolicy.enrolmentAllowed();
     if (!allowed.ok) {
-      log.debug('Leaving Credentials.beginKeyEnrolment(). The role is not ' +
-                'allowed here.');
+      log.debug('Leaving Credentials.beginKeyEnrolment(). No key may be ' +
+                'enrolled here.');
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
+    }
+    // THE LANE (#643), chosen now and carried to the finish: `classical`
+    // where none is named, which is every enrolment while the switch is off.
+    // Refused here as a courtesy and again at the write (`addKey()`). While
+    // the passkey policy requires a post-quantum passkey at registration
+    // and both lanes are on (#718), `enrolmentLane()` answers the
+    // post-quantum lane for a classical choice or none: it is the only one
+    // whose key the policy would take, and the page offered no other.
+    // THE PERSON'S PASSKEY POLICY (#535) where the door selected none, as
+    // `addKey()` selects it, so the lane is the one the write will hold.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    let lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    // THE CLASSICAL RETRY (#944), refused here — not only on the page that
+    // offers it — where the realm forbids a classical passkey (pqcOnly, or
+    // a post-quantum passkey required at registration): STS-AUTHN-0420.
+    // Allowed, it is carried on the pending record, so the finish holds the
+    // credential to the retry's list, and it is made in the classical lane
+    // while both lanes are on.
+    const classicalOnly = options.classicalOnly === true;
+    if (classicalOnly) {
+      const retryAllowed = webauthnPolicy.classicalRetryRefusal();
+      if (!retryAllowed.ok) {
+        log.debug('Leaving Credentials.beginKeyEnrolment(). The classical ' +
+                  'retry is refused here.');
+        return coded(errorCodes.codeOf(retryAllowed) || 'STS-AUTHN-0420',
+                     { ok: false, reason: 'algorithms',
+                       errors: [retryAllowed.why] });
+      }
+      lane = webauthnPolicy.classicalRetryLane(lane);
+    }
+    // A CLIENT KNOWN NOT TO MAKE AN ML-DSA PASSKEY (#1112): the person's
+    // profile's `clientRules`, or a client this realm learned, arms the
+    // enrolment as the classical retry from the start — never where a
+    // classical passkey is not allowed (`offerFor()` asks the retry's own
+    // refusal) nor in the post-quantum lane. Carried on the pending record
+    // with what the ceremony row records.
+    let clientRule: { narrowed: boolean; record: string } | null = null;
+    if (!classicalOnly) {
+      const decided = passkeyClients.offerFor({ lane: lane });
+      clientRule = decided.record
+        ? { narrowed: decided.narrowed, record: decided.record } : null;
+    }
+    const offerClassical = classicalOnly ||
+                           !!(clientRule && clientRule.narrowed);
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
+                'offered here.');
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
     }
     if (!directory || typeof directory.writeWebauthn !== 'function') {
       log.debug("Leaving Credentials.beginKeyEnrolment().");
@@ -6471,8 +9726,9 @@ class Credentials {
                         'Remove one first.'] });
     }
     this.sweepPendingKeys();
-    // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `platform` or
-    // `roaming`, from `/portal/keys`' choice, carried like the role so the
+    // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `passkey` or
+    // `security-key` since #470 — which of `/portal/keys`' two calls to
+    // action was pressed — carried to the finish so the
     // armed ceremony asks for what was chosen. A kind the policy does not
     // offer is dropped rather than refused — `webauthn.authenticatorAttachment`
     // decides the ceremony either way (`creationOptions()`), so it is a
@@ -6480,30 +9736,62 @@ class Credentials {
     const kind = webauthnPolicy.authenticatorKinds()
       .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
     const record = {
-      // `require('crypto')` inline, which is what `issueActivation()` below
-      // also does: the module-level `crypto` here is this service's OWN
-      // crypto module, and node's is wanted for nothing but random bytes.
-      id: nodeCrypto().randomBytes(24).toString('base64url'),
+      // Random bytes from this service's own crypto module (#453), as
+      // `issueActivation()` below draws them.
+      id: crypto.randomBytes(24).toString('base64url'),
       username: name,
-      challenge: nodeCrypto().randomBytes(32).toString('base64url'),
-      role: role,
+      challenge: crypto.randomBytes(32).toString('base64url'),
       kind: kind,
-      label: String(options.label || '').trim(),
-      // EVERY key they hold and not only the ones of this role: the point is
+      lane: lane,
+      // The classical retry (#944): the algorithms less ML-DSA — asked for,
+      // or armed by a client rule (#1112).
+      classicalOnly: offerClassical,
+      clientRule: clientRule,
+      // WHAT THIS CEREMONY OFFERS (#940), under the person's passkey
+      // profile as selected above: the finish holds the credential to it as
+      // well as to what is offered then (`heldToOffer()`), so neither a
+      // client nor a profile changed in between widens it.
+      offered: webauthnPolicy.algorithmIds(lane, offerClassical),
+      // NO LABEL (#470): the key takes its provider's or its group's name, and
+      // the page asks for a nickname once it is registered.
+      label: '',
+      // THE PERSON'S USER HANDLE (#474), minted and stored now if they hold
+      // none: the page creates the credential under it and the row records
+      // it. Their entry exists (product refused above otherwise); where it
+      // does not, in development, a fresh handle is used and adopted at the
+      // write. THE LANE'S HANDLE since #643: the post-quantum lane's own, so
+      // its credential does not replace the classical one on the device.
+      userHandle: this.userHandleOf(name, { mint: true, lane: lane }) ||
+                  this.newUserHandle(),
+      // EVERY key they hold IN THIS LANE (#643): the point is
       // *this authenticator is already registered here*, which is a fact about
-      // the device rather than about what the credential is for.
-      exclude: held.map((one) => { return one.credentialId; }),
+      // the device rather than about what the credential is for — and, since
+      // the lanes, about the handle it was registered under: a device holding
+      // this person's classical passkey is exactly where their post-quantum
+      // one may go. With the switch off every key is classical (a key with no
+      // lane is), so the list is every key, as it always was.
+      exclude: held.filter((one) => {
+        return Credentials.keyLane(one) === lane;
+      }).map((one) => { return one.credentialId; }),
+      // WHEN THESE OPTIONS WERE ISSUED (#1108): the ceremony row's
+      // `durationMs` is measured from it at the finish.
+      issuedAt: Date.now(),
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
-    log.info('credentials: ' + name + ' started enrolling a "' + role +
-             '" security key' + (kind ? ' (' + kind + ')' : '') + '. ' +
+    log.info('credentials: ' + name + ' started enrolling a ' +
+             'passkey' + (kind ? ' (' + kind + ')' : '') +
+             (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') + '. ' +
              record.exclude.length +
              ' authenticator(s) already enrolled are excluded.');
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, exclude: record.exclude.slice(),
+             kind: kind, lane: lane, classicalOnly: classicalOnly,
+             // What a client rule did to the offer (#1112), or null.
+             clientRule: clientRule,
+             exclude: record.exclude.slice(),
+             userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
   }
 
@@ -6552,15 +9840,58 @@ class Credentials {
    * @param username - the person
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
-   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @param opts - `origin` and `rpId`, what the browser was talking to,
+   *   and `door` (#943), `portal` or `activation`, and `application`
+   *   (#1108), for the ceremony's row
    * @returns a promise of `addKey()`'s answer, or a refusal
    */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.confirmKeyEnrolment().");
+    // THE CEREMONY'S ROW (#943), however it ends: the pending enrolment is
+    // read FIRST, because a completed one is dropped — its lane is what the
+    // credential's algorithm was held to (`expectedAlgorithms`).
+    const name = String(username || '').trim();
+    const held = this.pendingKeyEnrolmentFor(name) || null;
+    const door = (opts || {}).door === 'activation' ? 'activation' : 'portal';
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: door, username: name,
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        // THE OFFER AS IT WAS ARMED (#940's `offered`), so a retry's or a
+        // client rule's narrower list (#1112) is the one recorded.
+        offered: held && Array.isArray(held.offered) && held.offered.length
+          ? held.offered
+          : this.deps.webauthnPolicy.algorithmIds(
+            (held && held.lane) || 'classical'),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null,
+        narrowed: held && held.clientRule
+          ? String(held.clientRule.record || '') : '',
+        // (#1108) No application at `/portal/keys` or an activation link.
+        application: String((opts || {}).application || ''),
+        issuedAt: held ? Number(held.issuedAt) || 0 : 0 });
+      log.debug("Leaving confirmKeyEnrolment() note().");
+    };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");
     return Promise.resolve().then(() => {
       return this.checkKeyEnrolment(username, enrolmentId, credential, opts);
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
     });
   }
 
@@ -6580,6 +9911,17 @@ class Credentials {
     // THE ID IS CHECKED, so that a ceremony begun in one tab cannot be finished
     // with the challenge of another. It is the same rule the sign-in screen's
     // `mfa_id` follows.
+    // AN UPGRADE IN PROGRESS (#939) IS NOT AN ENROLMENT: it is finished
+    // through `confirmKeyUpgrade()`, whose write replaces or annotates the
+    // classical key. Finished here it would add a key without the proof of
+    // possession the upgrade's first step asks for.
+    if (held.upgrade) {
+      log.debug('Leaving Credentials.checkKeyEnrolment(). An upgrade, not ' +
+                'an enrolment.');
+      return coded('STS-AUTHN-0456', { ok: false, reason: 'mismatch',
+               errors: ['A passkey upgrade is in progress, not a new ' +
+                        'passkey. Finish or cancel the upgrade.'] });
+    }
     if (String(enrolmentId || '') !== held.id) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). A different ' +
                 'enrolment.');
@@ -6587,6 +9929,31 @@ class Credentials {
                errors: ['That enrolment is not the one in progress. Start ' +
                         'again.'] });
     }
+    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+              'registration.');
+    return this.verifyKeyRegistration(name, held, credential, options,
+      (stored) => {
+        return this.keyEnrolmentWritten(name, held, stored);
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE VERIFICATION BOTH REGISTRATION CEREMONIES SHARE (#945): the person's
+  // own (`checkKeyEnrolment()`, above) and an administrator's on their behalf
+  // (`checkAdminKeyEnrolment()`, below). Everything from the browser's answer
+  // to the write is ONE copy, so an administrator's enrolment is verified
+  // exactly as self-enrolment is — the challenge, the origin and RP ID, user
+  // verification, the algorithms the lane offered (#643, #944), the
+  // exclusion, the attestation statement (#105) and its algorithms (#941),
+  // and then `addKeyClaimed()` and so `addKey()`, the one writer, where the
+  // passkey policy and the issuance policy decide (#536, #718). `held` is the
+  // pending record either door minted; `written` turns the claimed write's
+  // answer into the door's.
+  // ---------------------------------------------------------------------------
+  private verifyKeyRegistration(name, held, credential, options, written) {
+    const { log, webauthnPolicy, webauthnVerifier } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.verifyKeyRegistration().");
     if (!credential || !credential.response ||
         !credential.response.attestationObject) {
       // The browser reports one error for a declined prompt, a missing
@@ -6595,11 +9962,17 @@ class Credentials {
       const said = credential && credential.error
         ? credential.error + ': ' + (credential.message || '')
         : 'the browser sent no credential';
-      log.debug('Leaving Credentials.checkKeyEnrolment(). No credential.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). No credential.');
       return coded('STS-AUTHN-0022',
                    { ok: false, reason: 'browser', errors: [said] });
     }
 
+    // THE PERSON'S PASSKEY PROFILE (#940) where the door selected none, as
+    // the begin selected it, so the list now is read under the profile the
+    // ceremony was armed under.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
     let verdict;
     try {
       verdict = webauthnVerifier.verifyRegistration({
@@ -6610,11 +9983,20 @@ class Credentials {
         expectedRpId: String(options.rpId || ''),
         requireUserVerification: webauthnPolicy.requireUserVerification(),
         // WebAuthn Level 3 section 7.1: the credential's alg must be one of
-        // the pubKeyCredParams this realm offered (#105).
-        expectedAlgorithms: webauthnPolicy.algorithmIds()
+        // the pubKeyCredParams this realm offered (#105) — IN THE LANE THE
+        // ENROLMENT WAS BEGUN IN (#643), so an ML-DSA key answering the
+        // classical lane, or a classical key the post-quantum one, is refused
+        // as an algorithm that was not offered (STS-AUTHN-0228).
+        // The classical retry's list where it was begun as one (#944).
+        // And no wider than what the begin offered under the person's
+        // passkey profile (#940), whatever the browser posted.
+        expectedAlgorithms: webauthnPolicy.heldToOffer(
+          webauthnPolicy.algorithmIds(held.lane, held.classicalOnly === true),
+          held.offered)
       });
     } catch (e) {
-      log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). Verification ' +
+                'threw.');
       return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
                errors: ['The registration could not be checked: ' +
                         e.message] });
@@ -6622,7 +10004,8 @@ class Credentials {
     if (!verdict.ok) {
       log.info('credentials: a security key enrolment for ' + name +
                ' did not verify — ' + (verdict.failed || []).join('; '));
-      log.debug('Leaving Credentials.checkKeyEnrolment(). It did not verify.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). It did not ' +
+                'verify.');
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
                errors: ['The registration did not verify — ' +
@@ -6638,7 +10021,8 @@ class Credentials {
     if (held.exclude.indexOf(String(verdict.credentialId)) >= 0) {
       log.info('credentials: ' + name + ' presented an authenticator that is ' +
                'already enrolled. Refused as a duplicate.');
-      log.debug('Leaving Credentials.checkKeyEnrolment(). Already enrolled.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). Already ' +
+                'enrolled.');
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
                errors: ['That authenticator is already enrolled. Use a ' +
                         'DIFFERENT one — a backup on the same device is lost ' +
@@ -6650,7 +10034,7 @@ class Credentials {
     // function answers a promise now — see `addKeyClaimed()`. A refused
     // statement is refused like a ceremony that did not verify, and the
     // pending enrolment is kept, as for a refused write below.
-    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+    log.debug('Leaving Credentials.verifyKeyRegistration(). Verifying the ' +
               'attestation, then writing through the claim.');
     return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
       if (!attested.ok) {
@@ -6661,21 +10045,58 @@ class Credentials {
                      { ok: false, reason: 'attestation',
                        errors: [attested.why] });
       }
-      return this.addKeyClaimed(name, {
-        credentialId: verdict.credentialId,
-        publicKeyJwk: verdict.publicKeyJwk,
-        signCount: verdict.signCount,
-        label: held.label || undefined,
-        attachment: credential.authenticatorAttachment || null,
-        userVerified: !!(verdict.flags && verdict.flags.uv),
-        aaguid: verdict.aaguid || null,
-        algorithm: verdict.algorithm || null,
-        coseAlg: verdict.coseAlg || null,
-        attestation: attested.attestation
-      }, held.role).then((stored) => {
-        return this.keyEnrolmentWritten(name, held, stored);
+      return Credentials.keyProviderFor(verdict.aaguid,
+        attested.attestation).then((named) => {
+      return this.addKeyClaimed(name,
+        Credentials.registeredKey(verdict, credential, attested, named,
+                                  held)).then((stored) => {
+        // THE DOOR'S EPILOGUE (#964), not keyEnrolmentWritten here: an
+        // administrator's enrolment must keep the person's pending record
+        // and answer lane and enrolledBy. Self-enrolment passes that
+        // function; the administrator's door passes its own.
+        return written(stored);
+      });
       });
     });
+  }
+
+  // WHAT A VERIFIED REGISTRATION HANDS THE ONE WRITER, `addKey()`: the
+  // verifier's verdict, the browser's reports, the attestation's record and
+  // the provider's name, and what the pending record carried. One builder
+  // for the enrolment's finish and the upgrade's (#939), so the two write
+  // the same row for the same ceremony.
+  private static registeredKey(verdict, credential, attested, named,
+                               held): Record<string, any> {
+    helpers.log.debug("Entering Credentials.registeredKey().");
+    helpers.log.debug("Leaving Credentials.registeredKey().");
+    return {
+      provider: named.provider,
+      providerSource: named.providerSource,
+      credentialId: verdict.credentialId,
+      publicKeyJwk: verdict.publicKeyJwk,
+      signCount: verdict.signCount,
+      label: held.label || undefined,
+      attachment: credential.authenticatorAttachment || null,
+      userVerified: !!(verdict.flags && verdict.flags.uv),
+      aaguid: verdict.aaguid || null,
+      algorithm: verdict.algorithm || null,
+      coseAlg: verdict.coseAlg || null,
+      attestation: attested.attestation,
+      // #470: what the passkey pages group and describe the key by.
+      backupEligible: !!(verdict.flags && verdict.flags.be),
+      backupState: !!(verdict.flags && verdict.flags.bs),
+      transports: Credentials.transportsOf(credential),
+      discoverable: Credentials.discoverableOf(credential),
+      // CTAP 2.1's minPinLength, as the key reported it (#529).
+      minPinLength: Credentials.reportedMinPinLength(verdict),
+      // The handle the page created it under (#474), and its lane (#643),
+      // both off the pending record.
+      userHandle: held.userHandle,
+      lane: held.lane || 'classical',
+      // WHO ENROLLED IT, where an administrator did (#945): off the pending
+      // record that door minted, never off the browser's answer.
+      enrolledBy: held.enrolledBy || undefined
+    };
   }
 
   // The end of `confirmKeyEnrolment()`, once the claimed write has answered.
@@ -6685,7 +10106,7 @@ class Credentials {
     log.debug("Entering Credentials.keyEnrolmentWritten().");
     if (!stored.ok) {
       // NOT ABANDONED. The ceremony was good and the write was refused — the
-      // cap reached in another tab, the role turned off while they were
+      // cap reached in another tab, passkeys turned off while they were
       // touching the key — so the pending record stays and the page can say
       // what happened without making them start over for a reason that may have
       // gone away.
@@ -6695,15 +10116,1093 @@ class Credentials {
                    { ok: false, reason: 'refused', errors: stored.errors });
     }
     this.abandonKeyEnrolment(name);
-    log.info('credentials: ' + name + ' enrolled a "' + held.role +
-             '" security key. They now hold ' + this.keysOf(name).length + '.');
+    log.info('credentials: ' + name + ' enrolled a passkey' +
+             (held.lane === 'pqc' ? ' in the pqc lane' : '') +
+             '. They now hold ' + this.keysOf(name).length + '.');
     log.debug('Leaving Credentials.keyEnrolmentWritten(). Enrolled.');
-    return { ok: true, username: name, role: held.role,
+    return { ok: true, username: name,
              credentialId: stored.credentialId,
              held: this.keysOf(name).length };
   }
 
+  // ===========================================================================
+  // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, 2026-10-23; rule
+  // 3ct).
+  //
+  // A person with a classical passkey and an authenticator that can make an
+  // ML-DSA one could register a second passkey (two rows for one device) or
+  // remove the classical one and register again (locked out if the new
+  // registration fails after the removal). The upgrade is three steps on
+  // the ONE pending record an enrolment uses (`pendingKeys`, persisted and
+  // per realm, so a ceremony begun on one node is finished on another), with
+  // `upgrade` on it — so beginning an ordinary enrolment drops an upgrade in
+  // progress and the reverse, and `checkKeyEnrolment()` refuses to finish an
+  // upgrade as an enrolment (STS-AUTHN-0456):
+  //
+  //   1. `beginKeyUpgrade()` refuses whatever it can know before a ceremony
+  //      (`keyUpgradeRefusal()`, and the issuance policy asked with the
+  //      `upgrade` fact group), and mints an ASSERTION challenge bound to
+  //      this upgrade and this one credential.
+  //   2. `proveKeyUpgrade()` verifies an assertion BY THAT CREDENTIAL over
+  //      that challenge — proof of possession, fresh, and spent across the
+  //      cluster like a sign-in's (`spendAssertion()`: the challenge claimed
+  //      once, the counter advanced) — and only then mints the REGISTRATION
+  //      challenge, with an exclude list that leaves the classical
+  //      credential out so the same authenticator may answer.
+  //   3. `confirmKeyUpgrade()` verifies the registration against ML-DSA
+  //      only (`webauthnPolicy.upgradeAlgorithmIds()`, section 7.1's
+  //      offered-algorithm check), its attestation as any registration's,
+  //      and hands the key to `addKeyClaimed()` with `upgrade`, whose ONE
+  //      write of the whole set replaces the classical row (`replace`) or
+  //      marks it with its successor and appends the new one
+  //      (`alongside`). Every registration rule applies — the passkey
+  //      policy's post-quantum and attestation-algorithm rows (#718, #941)
+  //      among them — and the classical row is touched by nothing before
+  //      that write, so any refusal leaves it as it was.
+  //
+  // **THE DEVICE IS NOT THIS SERVICE'S TO PROTECT, AND IT IS SAID**: in
+  // place, the registration is made under the classical lane's user handle,
+  // so an authenticator replaces the classical credential it holds as soon
+  // as it makes the new one — before this service has seen the answer. A
+  // write refused after that (the cap reached in another tab, a policy row
+  // changed mid-ceremony) leaves the classical row here and no classical
+  // credential on that device; the person signs in with another passkey or
+  // another way, and upgrades again. Every check that can be made before
+  // the ceremony is made before it for that reason. A key registered before
+  // #474 has no minted handle, and its upgrade is made under the one the
+  // person holds now, which a device keeps beside the old credential.
+  //
+  // **NO SESSION ENDS**: the classical key that signed sessions in is
+  // replaced by its own holder, who just proved possession of it — #722's
+  // removal ends sessions so that somebody removing a key they do not
+  // recognise signs out whoever enrolled it, and nobody here is a stranger
+  // to the key.
+  // ===========================================================================
+
+  /**
+   * The upgrade history one stored key carries (#939), or null: on a key
+   * that IS an upgrade, when, from which algorithm and credential, and
+   * what the write did; on a classical key upgraded beside it, which key
+   * succeeded it and when.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ upgradedAt, mode, previousAlgorithm, previousCredentialId,
+   *   upgradedTo }`, or null for a key no upgrade touched
+   */
+  static keyUpgradeHistory(key: any): { upgradedAt: number; mode: string;
+                                        previousAlgorithm: string;
+                                        previousCredentialId: string;
+                                        upgradedTo: string } | null {
+    helpers.log.debug("Entering Credentials.keyUpgradeHistory().");
+    const k = key || {};
+    if (!k.upgradedAt && !k.upgradedTo && !k.previousCredentialId) {
+      helpers.log.debug("Leaving Credentials.keyUpgradeHistory(). None.");
+      return null;
+    }
+    const out = {
+      upgradedAt: Number(k.upgradedAt) || 0,
+      mode: k.previousCredentialId
+        ? (k.upgradeMode === 'alongside' ? 'alongside' : 'replace') : '',
+      previousAlgorithm: String(k.previousAlgorithm || ''),
+      previousCredentialId: String(k.previousCredentialId || ''),
+      upgradedTo: String(k.upgradedTo || '') };
+    helpers.log.debug("Leaving Credentials.keyUpgradeHistory().");
+    return out;
+  }
+
+  /**
+   * Decides whether one of a person's keys may be upgraded to an ML-DSA
+   * one (#939), by everything knowable without the issuance policy: the
+   * realm offers it, the key is theirs and classical, it has no
+   * post-quantum successor still held, a key may still be enrolled,
+   * and — beside it — the cap leaves room.
+   *
+   * @param username - the person
+   * @param key - one of their stored keys, or null for an id that named
+   *   none of theirs
+   * @param mode - `replace` or `alongside` where the caller names it
+   *   (#1100); the lanes' `upgradeMode()` otherwise
+   * @returns `{ ok: true }`, or a refusal carrying its code
+   */
+  keyUpgradeRefusal(username, key, mode?) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.keyUpgradeRefusal().");
+    const realm = webauthnPolicy.upgradeRefusal();
+    if (!realm.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Not offered.");
+      return coded(errorCodes.codeOf(realm) || 'STS-AUTHN-0450',
+                   { ok: false, reason: 'upgrade', errors: [realm.why] });
+    }
+    if (!key) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Not theirs.");
+      return coded('STS-AUTHN-0451', { ok: false, reason: 'upgrade',
+               errors: ['No passkey of that id is registered for ' +
+                        String(username || '') + '.'] });
+    }
+    if (Credentials.keyAlgorithm(key).postQuantum) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Already " +
+                "post-quantum.");
+      return coded('STS-AUTHN-0452', { ok: false, reason: 'upgrade',
+               errors: ['That passkey is already post-quantum (' +
+                        Credentials.keyAlgorithm(key).name + '); there is ' +
+                        'nothing to upgrade.'] });
+    }
+    const held = this.keysOf(username);
+    if (key.upgradedTo && held.some(function (one) {
+      return String(one.credentialId) === String(key.upgradedTo);
+    })) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Upgraded " +
+                "already.");
+      return coded('STS-AUTHN-0453', { ok: false, reason: 'upgrade',
+               errors: ['That passkey was already upgraded: its ' +
+                        'post-quantum passkey is beside it. Remove that one ' +
+                        'first to upgrade again.'] });
+    }
+    const enrolment = webauthnPolicy.enrolmentAllowed();
+    if (!enrolment.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). No key may be " +
+                "allowed.");
+      return coded(errorCodes.codeOf(enrolment) || 'STS-AUTHN-0044',
+                   { ok: false, reason: 'upgrade', errors: [enrolment.why] });
+    }
+    if ((mode || webauthnPolicy.upgradeMode()) === 'alongside' &&
+        held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
+      return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
+               errors: ['You already hold ' + held.length + ' passkey(s), ' +
+                        'the most this realm allows, and the upgrade adds ' +
+                        'one beside this passkey. Remove one first.'] });
+    }
+    log.debug("Leaving Credentials.keyUpgradeRefusal(). Allowed.");
+    return { ok: true };
+  }
+
+  /**
+   * The person's keys an upgrade may be begun for (#939), by
+   * `keyUpgradeRefusal()`.
+   *
+   * @param username - the person
+   * @returns the stored keys, possibly none
+   */
+  upgradableKeysOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.upgradableKeysOf().");
+    const out = this.keysOf(username).filter((one) => {
+      return this.keyUpgradeRefusal(username, one).ok;
+    });
+    log.debug("Leaving Credentials.upgradableKeysOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The upgrade in progress (#939), if the pending record is one.
+   *
+   * @param username - the person
+   * @returns the pending record, or null
+   */
+  pendingKeyUpgradeFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingKeyUpgradeFor().");
+    const held = this.pendingKeyEnrolmentFor(username);
+    log.debug("Leaving Credentials.pendingKeyUpgradeFor().");
+    return held && held.upgrade ? held : null;
+  }
+
+  /**
+   * Begins the upgrade of one of a person's classical passkeys to an
+   * ML-DSA one (#939): refuses what it can before any ceremony and mints
+   * the assertion challenge the classical key proves possession over.
+   *
+   * @param username - the person
+   * @param credentialId - the classical passkey's credential id, looked up
+   *   among this person's keys
+   * @param opts - `mode`: `replace` or `alongside` to name what the write
+   *   does (#1100); the lanes decide where it is left out
+   * @returns `{ ok: true, upgradeId, challenge, credentialId, mode, lane,
+   *   expiresAt }`, or a refusal
+   */
+  beginKeyUpgrade(username, credentialId, opts?) {
+    const { log, webauthnPolicy, crypto } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginKeyUpgrade().");
+    const name = String(username || '').trim();
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    const directory = this.directory;
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                   'store is installed, so no passkey can be upgraded.'] });
+    }
+    const key = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(credentialId || '');
+    })[0] || null;
+    // THE MODE A CALLER NAMES (#1100): the post-login activity asks for
+    // `replace` — the ML-DSA passkey in the classical one's place, under its
+    // handle, on its authenticator — whatever the lanes; otherwise the
+    // lanes decide (`upgradeMode()`), as they always did.
+    const mode = opts && (opts.mode === 'replace' ||
+                          opts.mode === 'alongside')
+      ? String(opts.mode) : webauthnPolicy.upgradeMode();
+    const refused = this.keyUpgradeRefusal(name, key, mode);
+    if (!refused.ok) {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). Refused.");
+      return refused;
+    }
+    const previousAlgorithm = Credentials.keyAlgorithm(key).name;
+    // THE ISSUANCE POLICY, ASKED BEFORE ANY CEREMONY with what is known
+    // now: that this is an upgrade, what it does and from which
+    // algorithm. No built-in rule refuses on it; a realm's own rule that
+    // forbids upgrades is met here rather than after two ceremonies. The
+    // new key's own facts are asked at the write, as any registration's.
+    const policy = this.deps.passkeyPolicy.refusalFor('registration',
+      { username: name, upgrade: { mode: mode,
+                                   previousAlgorithm: previousAlgorithm } });
+    if (policy) {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). The policy " +
+                "refused it.");
+      return coded(policy.code, { ok: false, reason: 'upgrade',
+                                  errors: [policy.why] });
+    }
+    this.sweepPendingKeys();
+    const record = {
+      id: crypto.randomBytes(24).toString('base64url'),
+      username: name,
+      // THE PROOF'S CHALLENGE, an assertion's, replaced by the
+      // registration's once the proof is in.
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      // The kind of authenticator the classical key is on, so the
+      // registration asks for the same kind (`creationOptions()`).
+      kind: Credentials.keyGroup(key) === 'security-key' ? 'security-key'
+                                                         : 'passkey',
+      lane: mode === 'alongside' ? 'pqc' : 'classical',
+      classicalOnly: false,
+      // ITS NAME, which the upgraded key keeps.
+      label: String(Credentials.keyName(key) || '').slice(0, 60),
+      userHandle: '',
+      exclude: [],
+      upgrade: { credentialId: String(key.credentialId), mode: mode,
+                 phase: 'proof', previousAlgorithm: previousAlgorithm,
+                 provenAt: 0 },
+      // When the proof's options were issued (#1108); the registration's
+      // are `upgrade.provenAt`.
+      issuedAt: Date.now(),
+      expires: Date.now() + this.keyEnrolmentTtlMs()
+    };
+    pendingKeys.set(name.toLowerCase(), record);
+    log.info('credentials: ' + name + ' began upgrading a ' +
+             previousAlgorithm + ' passkey to a post-quantum one (' + mode +
+             ').');
+    log.debug("Leaving Credentials.beginKeyUpgrade(). The proof's " +
+              "challenge is minted and held.");
+    return { ok: true, upgradeId: record.id, challenge: record.challenge,
+             credentialId: record.upgrade.credentialId, mode: mode,
+             lane: record.lane,
+             previousAlgorithm: previousAlgorithm,
+             expiresAt: new Date(record.expires).toISOString() };
+  }
+
+  // The pending upgrade a step answers, or the refusal that says why
+  // there is none to answer: nothing pending (0425), another one (0425),
+  // or the step out of order (0427).
+  private upgradeInHand(name, upgradeId, phase) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.upgradeInHand(). " + phase);
+    const held = this.pendingKeyEnrolmentFor(name);
+    if (!held || !held.upgrade || String(upgradeId || '') !== held.id) {
+      log.debug("Leaving Credentials.upgradeInHand(). None in progress.");
+      return { held: null, refused: coded('STS-AUTHN-0454',
+        { ok: false, reason: 'expired',
+          errors: ['That passkey upgrade is not the one in progress, or it ' +
+                   'has expired. Your passkey is unchanged; start again.'] }) };
+    }
+    if (held.upgrade.phase !== phase) {
+      log.debug("Leaving Credentials.upgradeInHand(). Out of order.");
+      return { held: null, refused: coded('STS-AUTHN-0456',
+        { ok: false, reason: 'mismatch',
+          errors: [phase === 'proof'
+            ? 'This passkey has already been used for this upgrade; create ' +
+              'the post-quantum passkey now.'
+            : 'Use your passkey first, to show it is yours, before the ' +
+              'post-quantum passkey is created.'] }) };
+    }
+    log.debug("Leaving Credentials.upgradeInHand().");
+    return { held: held, refused: null };
+  }
+
+  /**
+   * The upgrade's proof of possession (#939): verifies an assertion by the
+   * classical passkey over the challenge `beginKeyUpgrade()` minted,
+   * spends it across the cluster, and mints the registration's challenge.
+   * A refused proof drops the upgrade; the passkey is unchanged.
+   *
+   * @param username - the person
+   * @param upgradeId - the upgrade in progress
+   * @param assertion - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, challenge, userHandle, exclude,
+   *   lane }`, or a refusal
+   */
+  proveKeyUpgrade(username, upgradeId, assertion, opts?) {
+    const { log, webauthnPolicy, webauthnVerifier, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.proveKeyUpgrade().");
+    const name = String(username || '').trim();
+    const options = opts || {};
+    const inHand = this.upgradeInHand(name, upgradeId, 'proof');
+    if (!inHand.held) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). Nothing to prove.");
+      return Promise.resolve(inHand.refused);
+    }
+    const held = inHand.held;
+    const key = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(held.upgrade.credentialId);
+    })[0] || null;
+    // THE CEREMONY'S ROW (#943), however it ends: an assertion at the
+    // upgrade's door, by the key being upgraded.
+    const note = (answer, algorithm?) => {
+      log.debug("Entering proveKeyUpgrade() note().");
+      webauthnCeremonies.record({
+        ceremony: 'assertion', door: 'upgrade', username: name,
+        lane: key ? Credentials.keyLane(key) : 'classical',
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(errorCodes.codeOf(answer) || ''),
+        offered: key ? [Credentials.keyAlgorithm(key).name] : [],
+        algorithm: String(algorithm || ''), posted: assertion,
+        application: String(options.application || ''),
+        issuedAt: Number(held.issuedAt) || 0 });
+      log.debug("Leaving proveKeyUpgrade() note().");
+      return answer;
+    };
+    const dropped = (code, why) => {
+      log.debug("Entering proveKeyUpgrade() dropped().");
+      this.abandonKeyEnrolment(name);
+      log.debug("Leaving proveKeyUpgrade() dropped().");
+      return note(coded(code, { ok: false, reason: 'proof', errors: [why] }));
+    };
+    if (!key) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). The key is gone.");
+      return Promise.resolve(dropped('STS-AUTHN-0457', 'The passkey you ' +
+        'were upgrading is no longer registered, so nothing was changed.'));
+    }
+    const response = assertion && assertion.response;
+    if (!assertion || assertion.error || !response ||
+        !response.authenticatorData || !response.signature) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). No assertion.");
+      return Promise.resolve(dropped('STS-AUTHN-0455',
+        (assertion && assertion.error
+          ? 'Your browser did not use the passkey (' + assertion.error +
+            '). '
+          : 'Your browser did not use the passkey. ') +
+        'Nothing was changed; start the upgrade again when you are ready.'));
+    }
+    if (String(assertion.rawId || assertion.id || '') !==
+        String(key.credentialId)) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). Another key.");
+      return Promise.resolve(dropped('STS-AUTHN-0455', 'That was a ' +
+        'different passkey from the one you are upgrading. Nothing was ' +
+        'changed; start again and use the passkey you chose.'));
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyAssertion({
+        authenticatorData: response.authenticatorData,
+        clientDataJSON: response.clientDataJSON,
+        signature: response.signature,
+        publicKeyJwk: key.publicKeyJwk,
+        expectedChallenge: held.challenge,
+        expectedOrigin: String(options.origin || ''),
+        expectedRpId: String(options.rpId || ''),
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        previousSignCount: key.signCount,
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+      });
+    } catch (e) {
+      log.debug("Caught in Credentials.proveKeyUpgrade(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.proveKeyUpgrade(). It threw.");
+      return Promise.resolve(dropped('STS-AUTHN-0027', 'The passkey could ' +
+        'not be checked: ' + ((e && e.message) || e) + '. Nothing was ' +
+        'changed.'));
+    }
+    if (Credentials.clonedKeyVerdict(verdict)) {
+      this.noteKeyCloned(name, key.credentialId, 'signature counter ' +
+                         verdict.signCount + ', last recorded ' +
+                         key.signCount + ' (a passkey upgrade)');
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). It did not verify.");
+      return Promise.resolve(dropped(webauthnPolicy.failureCodeFor(verdict),
+        'The passkey did not verify — ' + (verdict.failed || []).join('; ') +
+        '. Nothing was changed.'));
+    }
+    log.debug("Leaving Credentials.proveKeyUpgrade(). Spending the proof.");
+    return this.spendAssertion({
+      username: name, credentialId: key.credentialId,
+      signCount: verdict.signCount, flags: verdict.flags,
+      challenge: held.challenge, ttlMs: this.keyEnrolmentTtlMs()
+    }).then((spent) => {
+      if (!spent.ok) {
+        return dropped(errorCodes.codeOf(spent) || 'STS-AUTHN-0182',
+          'The passkey could not be accepted just now (' +
+          String(spent.detail || spent.reason) + '). Nothing was changed.');
+      }
+      // THE REGISTRATION'S CHALLENGE, ITS HANDLE AND ITS EXCLUDE LIST, now
+      // and not at the begin: only a proven upgrade may arm a ceremony
+      // that, in place, replaces the classical credential on the device.
+      // The handle is the lane's — the classical key's own in place, so
+      // the device replaces it; the post-quantum lane's beside it, so it
+      // does not. The exclude list is the lane's keys LESS the classical
+      // one, so the authenticator that holds it may answer.
+      const lane = String(held.lane || 'classical');
+      const own = Credentials.isUserHandle(key.userHandle) && lane !==
+        'pqc' ? String(key.userHandle) : '';
+      held.userHandle = own ||
+        this.userHandleOf(name, { mint: true, lane: lane }) ||
+        this.newUserHandle();
+      held.exclude = this.keysOf(name).filter(function (one) {
+        return Credentials.keyLane(one) === lane &&
+               String(one.credentialId) !== String(key.credentialId);
+      }).map(function (one) {
+        return String(one.credentialId);
+      });
+      held.challenge = this.deps.crypto.randomBytes(32).toString('base64url');
+      held.upgrade.phase = 'registration';
+      held.upgrade.provenAt = Date.now();
+      held.expires = Date.now() + this.keyEnrolmentTtlMs();
+      pendingKeys.set(name.toLowerCase(), held);
+      log.info('credentials: ' + name + ' proved possession of the passkey ' +
+               'being upgraded; the post-quantum registration is armed.');
+      note({ ok: true }, String(verdict.algorithm ||
+                                Credentials.keyAlgorithm(key).name));
+      return { ok: true, challenge: held.challenge,
+               userHandle: held.userHandle, exclude: held.exclude.slice(),
+               lane: lane };
+    });
+  }
+
+  /**
+   * The upgrade's registration (#939): verifies the new passkey against
+   * ML-DSA only and its attestation, and writes it — in place of the
+   * classical key, or beside it — in one write. Any refusal leaves the
+   * classical key as it was.
+   *
+   * @param username - the person
+   * @param upgradeId - the upgrade in progress
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, credentialId, previousCredentialId,
+   *   previousAlgorithm, algorithm, mode, lane, held }`, or a refusal
+   */
+  confirmKeyUpgrade(username, upgradeId, credential, opts?) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    log.debug("Entering Credentials.confirmKeyUpgrade().");
+    const name = String(username || '').trim();
+    const inHand = this.upgradeInHand(name, upgradeId, 'registration');
+    if (!inHand.held) {
+      log.debug("Leaving Credentials.confirmKeyUpgrade(). Nothing to " +
+                "confirm.");
+      return Promise.resolve(inHand.refused);
+    }
+    const held = inHand.held;
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyUpgrade() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: 'upgrade', username: name,
+        lane: String(held.lane || ''),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        offered: webauthnPolicy.upgradeAlgorithmIds(),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null,
+        // (#1108) The registration's options were issued when the proof
+        // was accepted.
+        application: String((opts || {}).application || ''),
+        issuedAt: Number((held.upgrade || {}).provenAt) || 0 });
+      log.debug("Leaving confirmKeyUpgrade() note().");
+    };
+    log.debug("Leaving Credentials.confirmKeyUpgrade().");
+    return Promise.resolve().then(() => {
+      return this.checkKeyUpgrade(name, held, credential, opts || {});
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
+    });
+  }
+
+  private checkKeyUpgrade(name, held, credential, options) {
+    const { log, webauthnPolicy, webauthnVerifier } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.checkKeyUpgrade().");
+    if (!credential || credential.error || !credential.response ||
+        !credential.response.attestationObject) {
+      // THE BROWSER COULD NOT MAKE IT, and nothing classical is offered
+      // instead (#944's retry is not an upgrade's): the upgrade is dropped,
+      // so the page offers the passkey's Upgrade again rather than a
+      // ceremony against a challenge it has spent its patience on.
+      this.abandonKeyEnrolment(name);
+      log.debug("Leaving Credentials.checkKeyUpgrade(). No credential.");
+      return coded('STS-AUTHN-0458', { ok: false, reason: 'browser',
+        errors: [(credential && credential.error
+          ? 'Your browser did not create the post-quantum passkey (' +
+            credential.error + '). '
+          : 'Your browser did not create the post-quantum passkey. ') +
+          'Your passkey is unchanged.'] });
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyRegistration({
+        attestationObject: credential.response.attestationObject,
+        clientDataJSON: credential.response.clientDataJSON,
+        expectedChallenge: held.challenge,
+        expectedOrigin: String(options.origin || ''),
+        expectedRpId: String(options.rpId || ''),
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        // ML-DSA ONLY: a classical credential answering an upgrade is
+        // section 7.1's algorithm that was not offered (STS-AUTHN-0228).
+        expectedAlgorithms: webauthnPolicy.upgradeAlgorithmIds()
+      });
+    } catch (e) {
+      log.debug("Caught in Credentials.checkKeyUpgrade(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.checkKeyUpgrade(). It threw.");
+      return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
+               errors: ['The registration could not be checked: ' +
+                        ((e && e.message) || e) + '. Your passkey is ' +
+                        'unchanged.'] });
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.checkKeyUpgrade(). It did not verify.");
+      return coded(webauthnPolicy.failureCodeFor(verdict),
+                   { ok: false, reason: 'invalid',
+               errors: ['The post-quantum passkey did not verify — ' +
+                        (verdict.failed || []).join('; ') + '. Your ' +
+                        'passkey is unchanged.'] });
+    }
+    // THE EXCLUSION, as an enrolment checks it, and the classical
+    // credential itself: an authenticator answering with the key being
+    // upgraded made nothing new.
+    if (held.exclude.indexOf(String(verdict.credentialId)) >= 0 ||
+        String(verdict.credentialId) === String(held.upgrade.credentialId)) {
+      log.debug("Leaving Credentials.checkKeyUpgrade(). Already enrolled.");
+      return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
+               errors: ['That authenticator is already enrolled. Your ' +
+                        'passkey is unchanged.'] });
+    }
+    log.debug("Leaving Credentials.checkKeyUpgrade(). Verifying the " +
+              "attestation, then writing through the claim.");
+    return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
+      if (!attested.ok) {
+        return coded(this.deps.errorCodes.codeOf(attested) ||
+                     'STS-AUTHN-0241',
+                     { ok: false, reason: 'attestation',
+                       errors: [attested.why + ' Your passkey is ' +
+                                'unchanged.'] });
+      }
+      return Credentials.keyProviderFor(verdict.aaguid,
+        attested.attestation).then((named) => {
+        return this.addKeyClaimed(name,
+          Credentials.registeredKey(verdict, credential, attested, named,
+                                    held),
+          { upgrade: { credentialId: held.upgrade.credentialId,
+                       mode: held.upgrade.mode } });
+      }).then((stored) => {
+        return this.keyUpgradeWritten(name, held, stored);
+      });
+    });
+  }
+
+  // The end of `confirmKeyUpgrade()`, once the claimed write has answered.
+  private keyUpgradeWritten(name, held, stored) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.keyUpgradeWritten().");
+    if (!stored.ok) {
+      // KEPT, AS A REFUSED ENROLMENT IS, unless the classical key is what
+      // went (0428): the proof stands and a reason that may go away (the
+      // cap in another tab) need not cost the person their proof. The
+      // classical row was not written either way.
+      if (errorCodes.codeOf(stored) === 'STS-AUTHN-0457') {
+        this.abandonKeyEnrolment(name);
+      }
+      log.debug("Leaving Credentials.keyUpgradeWritten(). Refused.");
+      return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
+                   { ok: false, reason: stored.reason || 'refused',
+                     errors: (stored.errors || []).map(function (one) {
+                       return String(one) + ' Your passkey is unchanged.';
+                     }) });
+    }
+    this.abandonKeyEnrolment(name);
+    const now = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(stored.credentialId);
+    })[0] || {};
+    log.info('credentials: ' + name + ' upgraded a ' +
+             held.upgrade.previousAlgorithm + ' passkey to ' +
+             Credentials.keyAlgorithm(now).name + ' (' + held.upgrade.mode +
+             ').');
+    log.debug("Leaving Credentials.keyUpgradeWritten(). Upgraded.");
+    return { ok: true, username: name,
+             credentialId: stored.credentialId,
+             previousCredentialId: held.upgrade.credentialId,
+             previousAlgorithm: held.upgrade.previousAlgorithm,
+             algorithm: Credentials.keyAlgorithm(now).name,
+             mode: held.upgrade.mode, lane: String(held.lane || 'classical'),
+             held: this.keysOf(name).length };
+  }
+
   // ---------------------------------------------------------------------------
+
+  // ===========================================================================
+
+  // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule 3cv).
+  //
+  // rcbj's decision on the ticket: **a registration ceremony run in the
+  // ADMINISTRATOR'S browser, for the PERSON's user handle and lane, with the
+  // attestation verified as for self-enrolment — and no import of a
+  // registration produced elsewhere.** The case is a hardware authenticator
+  // an organisation hands out already registered (an ML-DSA security key,
+  // say): the administrator plugs it in at the console, the ceremony runs
+  // there against the realm's RP ID, and the credential is created under the
+  // person's own handle, so it signs the person in exactly as one they made
+  // themselves would. Nothing is imported: the attestation statement is the
+  // authenticator's, verified here, and an operator cannot type a key in.
+  //
+  // THE SAME TWO STEPS AS THE PERSON'S OWN, with these differences, each a
+  // reason rather than a preference:
+  //
+  //   * **THE CHALLENGE IS BOUND TO THE ADMINISTRATOR, THE PERSON AND THE
+  //     LANE** — held in `pendingAdminKeys` under both names, so it neither
+  //     replaces nor answers a ceremony the person armed themselves, and one
+  //     administrator cannot finish another's.
+  //   * **SHORT-LIVED**: `ADMIN_ENROLMENT_TTL_MS`, five minutes, or the
+  //     person's own TTL where that is shorter. The administrator is at the
+  //     console with the key in hand; "long enough to find it in a drawer"
+  //     is the person's reason and not theirs.
+  //   * **SINGLE USE, WHATEVER THE OUTCOME.** The finish takes the pending
+  //     record before it verifies anything and claims the challenge across
+  //     the cluster (`ADMIN_ENROLMENT_SCOPE`), so a second finish — a replay,
+  //     a double click, a second node — finds nothing (STS-AUTHN-0442) or a
+  //     spent challenge (STS-AUTHN-0443). The person's own pending record is
+  //     kept on a refused write so they need not start again; an operator's
+  //     act on somebody else's account starts again instead.
+  //   * **THE PERSON MUST EXIST IN THIS REALM, IN EVERY MODE**
+  //     (STS-AUTHN-0441): development creates a person at their first
+  //     sign-in, and an administrator's act on a name nobody holds would
+  //     create one. The directory is the realm's (the ambient realm), so a
+  //     realm administrator reaches their own realm's people and nobody
+  //     else's (#32).
+  //   * **THE PASSKEY POLICY MUST ALLOW IT**: the person's profile's
+  //     `adminEnrolment`, `off` by default (STS-AUTHN-0440), asked at the
+  //     begin as a courtesy and at `addKey()`, the one writer, as the
+  //     enforcement — beside the console role the API's gate already asks
+  //     for (Admin Write, `admin:write`).
+  //   * **THE KEY RECORDS WHO DID IT**: `enrolledBy { username, sub, at }`,
+  //     drawn as "enrolled by an administrator" on the console, the API and
+  //     the person's own passkey page, and told to the issuance policy as a
+  //     fact (the `enrolment` group) so a realm can forbid it by policy.
+  //
+  // What the ceremony offers is ONE CALL SITE, `adminEnrolmentAlgorithms()`:
+  // the pending record carries the list, the options are built from it, and
+  // the verifier holds the credential to it.
+  // ===========================================================================
+  /** The claim scope an administrator's enrolment challenge is spent under. */
+  static readonly ADMIN_ENROLMENT_SCOPE = 'authn.webauthn-admin-enrolment';
+  /** The longest an administrator's enrolment challenge is held. */
+  static readonly ADMIN_ENROLMENT_TTL_MS = 5 * 60 * 1000;
+  /** The refusal while the passkey policy's `adminEnrolment` is off. */
+  static readonly ADMIN_ENROLMENT_OFF = 'This person\'s passkey policy does ' +
+    'not let an administrator enrol a passkey for them (adminEnrolment is ' +
+    'off). Turn it on under Directory → Policies → Passkeys, or have them ' +
+    'create one themselves on their account page.';
+
+  /**
+   * Reads an `enrolledBy` record (#945): `{ username, sub, at }`, the
+   * administrator's name and token subject and when, each bounded. Anything
+   * that names no administrator is not one.
+   *
+   * @param raw - what a key or a pending record carries
+   * @returns the record, or null
+   */
+  static enrolledByOf(raw: unknown): { username: string; sub: string;
+                                       at: number } | null {
+    helpers.log.debug("Entering Credentials.enrolledByOf().");
+    const given: any = raw && typeof raw === 'object' ? raw : null;
+    const clean = function (value: unknown): string {
+      helpers.log.debug("Entering enrolledByOf() clean().");
+      helpers.log.debug("Leaving enrolledByOf() clean().");
+      return String(value || '').trim()
+        .replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 256);
+    };
+    const username = given ? clean(given.username) : '';
+    if (!username) {
+      helpers.log.debug("Leaving Credentials.enrolledByOf(). None.");
+      return null;
+    }
+    const at = Number(given.at);
+    helpers.log.debug("Leaving Credentials.enrolledByOf().");
+    return { username: username, sub: clean(given.sub),
+             at: Number.isFinite(at) && at > 0 ? Math.floor(at) : 0 };
+  }
+
+  // THE ALGORITHMS AN ADMINISTRATOR'S CEREMONY OFFERS (#945), IN ORDER — THE
+  // ONE CALL SITE. The realm's list for the lane (`webauthn_policy.ts`'s
+  // `algorithmIds()`, the same the person's own ceremony offers); a
+  // per-population registration list (#940) replaces THIS LINE and nothing
+  // else, because the pending record carries what it answers, the console's
+  // options are built from that, and the verifier holds the credential to it.
+  private adminEnrolmentAlgorithms(lane: string): number[] {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering Credentials.adminEnrolmentAlgorithms().");
+    const out = webauthnPolicy.algorithmIds(lane, false);
+    log.debug("Leaving Credentials.adminEnrolmentAlgorithms().");
+    return Array.isArray(out) ? out.slice() : [];
+  }
+
+  /**
+   * Mints the challenge of a passkey registration an administrator runs in
+   * their own browser on a person's behalf (#945), refusing anything
+   * knowable before the authenticator is touched.
+   *
+   * @param username - the person the passkey is for
+   * @param admin - `{ username, sub }`: the administrator
+   * @param opts - `kind` and `lane`
+   * @returns `{ ok: true, enrolmentId, challenge, kind, lane,
+   *   userHandle, exclude, algorithms, expiresAt }`, or a refusal
+   */
+  beginAdminKeyEnrolment(username, admin, opts?) {
+    const { log, webauthnPolicy, errorCodes, crypto } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginAdminKeyEnrolment().");
+    const name = String(username || '').trim();
+    const options = opts || {};
+    const by = Credentials.enrolledByOf(admin);
+    if (!by) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No " +
+                "administrator.");
+      return coded('STS-AUTHN-0445', { ok: false, reason: 'admin',
+               errors: ['An administrator\'s enrolment names the ' +
+                        'administrator, and this request names nobody: it ' +
+                        'carried no access token whose subject is a ' +
+                        'person. Sign in to the console and try again.'] });
+    }
+    if (!directory || typeof directory.writeWebauthn !== 'function') {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                   'store is installed, so a security key ' +
+                                   'cannot be enrolled.'] });
+    }
+    // THE PERSON, IN THIS REALM, IN EVERY MODE — see the header.
+    if (!name || !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Nobody " +
+                "of that name here.");
+      return coded('STS-AUTHN-0441', { ok: false, reason: 'person',
+               errors: ['There is nobody called "' + name.slice(0, 80) +
+                        '" in this realm\'s directory, so there is nobody ' +
+                        'to enrol a passkey for.'] });
+    }
+    // THE PERSON'S PASSKEY POLICY (#535), which every check below reads,
+    // and its switch, asked first so the answer names the switch.
+    this.deps.passkeyPolicy.select(name, '');
+    if (!this.deps.passkeyPolicy.adminEnrolmentAllowed()) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The switch " +
+                "is off.");
+      return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
+               errors: [Credentials.ADMIN_ENROLMENT_OFF] });
+    }
+    // NO ROLE IS ASKED (#1135): whether a key may be enrolled at all.
+    const allowed = webauthnPolicy.enrolmentAllowed();
+    if (!allowed.ok) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No key may " +
+                "be enrolled here.");
+      return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
+                   { ok: false, errors: [allowed.why] });
+    }
+    // THE LANE (#643), as the person's own ceremony chooses it — including
+    // #718's answer of the post-quantum lane where only its key would be
+    // taken.
+    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The lane is " +
+                "not offered here.");
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
+    }
+    const held = this.keysOf(name);
+    const cap = webauthnPolicy.settings().maxKeysPerPerson;
+    if (held.length >= cap) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). At the cap.");
+      return coded('STS-AUTHN-0067', { ok: false,
+               errors: [name + ' already holds ' + held.length + ' security ' +
+                        'key(s), which is the most this realm allows ' +
+                        '(webauthn.maxKeysPerPerson). Remove one first.'] });
+    }
+    this.sweepPendingAdminKeys();
+    const kind = webauthnPolicy.authenticatorKinds()
+      .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
+    const record = {
+      id: crypto.randomBytes(24).toString('base64url'),
+      username: name,
+      admin: by.username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      kind: kind,
+      lane: lane,
+      label: '',
+      // THE PERSON'S HANDLE IN THE LANE (#474, #643), minted now if they hold
+      // none: the credential is created under it, so it is theirs on the
+      // authenticator as one they made would be.
+      userHandle: this.userHandleOf(name, { mint: true, lane: lane }) ||
+                  this.newUserHandle(),
+      // Every key they hold in this lane, as the person's own ceremony
+      // excludes them.
+      exclude: held.filter((one) => {
+        return Credentials.keyLane(one) === lane;
+      }).map((one) => { return one.credentialId; }),
+      // WHAT THE CEREMONY OFFERS, the one call site's answer, carried so the
+      // options and the verifier cannot disagree.
+      offered: this.adminEnrolmentAlgorithms(lane),
+      enrolledBy: { username: by.username, sub: by.sub, at: 0 },
+      // When the options were issued (#1108), for the ceremony row.
+      issuedAt: Date.now(),
+      expires: Date.now() + Math.min(this.keyEnrolmentTtlMs(),
+                                     Credentials.ADMIN_ENROLMENT_TTL_MS)
+    };
+    pendingAdminKeys.set(adminEnrolmentKey(by.username, name), record);
+    log.info('credentials: ' + by.username + ' started enrolling a ' +
+             'passkey for ' + name +
+             (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') +
+             ', in their own browser. ' + record.exclude.length +
+             ' authenticator(s) already enrolled are excluded.');
+    log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Challenge " +
+              "minted and held.");
+    return { ok: true, enrolmentId: record.id, challenge: record.challenge,
+             kind: kind, lane: lane,
+             userHandle: record.userHandle, exclude: record.exclude.slice(),
+             algorithms: record.offered.slice(),
+             expiresAt: new Date(record.expires).toISOString() };
+  }
+
+  // The administrators' pending records past their time, dropped as they
+  // are read — the read is where an expired one must not be answered.
+  private sweepPendingAdminKeys() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.sweepPendingAdminKeys().");
+    const now = Date.now();
+    pendingAdminKeys.forEach((value, key) => {
+      if (!value || value.expires < now) {
+        pendingAdminKeys.delete(key);
+      }
+    });
+    log.debug("Leaving Credentials.sweepPendingAdminKeys().");
+  }
+
+  /**
+   * Returns an administrator's pending enrolment for a person (#945), if
+   * one is held and has not expired.
+   *
+   * @param admin - the administrator's username
+   * @param username - the person
+   * @returns the pending record, or null
+   */
+  pendingAdminKeyEnrolment(admin, username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingAdminKeyEnrolment().");
+    this.sweepPendingAdminKeys();
+    const held = pendingAdminKeys.get(adminEnrolmentKey(admin, username));
+    log.debug("Leaving Credentials.pendingAdminKeyEnrolment().");
+    return held || null;
+  }
+
+  /**
+   * Forgets an administrator's pending enrolment for a person (#945).
+   *
+   * @param admin - the administrator's username
+   * @param username - the person
+   */
+  abandonAdminKeyEnrolment(admin, username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonAdminKeyEnrolment().");
+    // A NAME WITH A CONTROL CHARACTER WAS NEVER A KEY HERE: the begin
+    // requires a directory entry, and no entry's name holds one. A delete of
+    // it is still journalled, and a NUL in a journalled key is a row
+    // PostgreSQL cannot hold (STS-STORE-0063, the fuzz run on 7fc43a1de),
+    // so it is not asked. The door refuses it first (STS-AUTHN-0556).
+    if (/[\u0000-\u001f\u007f]/.test(String(admin || '') +
+                                     String(username || ''))) {
+      log.debug("Leaving Credentials.abandonAdminKeyEnrolment(). No " +
+                "record can be held under that name.");
+      return;
+    }
+    pendingAdminKeys.delete(adminEnrolmentKey(admin, username));
+    log.debug("Leaving Credentials.abandonAdminKeyEnrolment().");
+  }
+
+  /**
+   * Verifies the registration an administrator's browser produced for a
+   * person (#945) exactly as the person's own is verified, and only then
+   * writes the key, marked `enrolledBy`. The pending record is spent first,
+   * whatever the outcome.
+   *
+   * @param username - the person
+   * @param admin - `{ username, sub }`: the administrator finishing it
+   * @param enrolmentId - the pending enrolment's id
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, username, credentialId, held,
+   *   lane, enrolledBy }`, or a refusal
+   */
+  confirmAdminKeyEnrolment(username, admin, enrolmentId, credential, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.confirmAdminKeyEnrolment().");
+    const name = String(username || '').trim();
+    const by = Credentials.enrolledByOf(admin);
+    const held = by ? this.pendingAdminKeyEnrolment(by.username, name) : null;
+    // THE CEREMONY'S ROW (#943), however it ends, at the administrator's
+    // door: the person is the actor, as for every ceremony row — who ran
+    // it is the door's to say, and
+    // `admin.passkey.enrolled` names the administrator.
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmAdminKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: 'admin-enrolment', username: name,
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0447' : '')),
+        offered: (held && held.offered) || [],
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null,
+        issuedAt: held ? Number(held.issuedAt) || 0 : 0 });
+      log.debug("Leaving confirmAdminKeyEnrolment() note().");
+    };
+    log.debug("Leaving Credentials.confirmAdminKeyEnrolment().");
+    return Promise.resolve().then(() => {
+      return this.checkAdminKeyEnrolment(name, by, held, enrolmentId,
+                                         credential, opts || {});
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
+    });
+  }
+
+  private checkAdminKeyEnrolment(name, by, held, enrolmentId, credential,
+                                 options) {
+    const { log, realms, errorCodes, claims } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.checkAdminKeyEnrolment().");
+    if (!by) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). No " +
+                "administrator.");
+      return coded('STS-AUTHN-0445', { ok: false, reason: 'admin',
+               errors: ['An administrator\'s enrolment names the ' +
+                        'administrator, and this request names nobody.'] });
+    }
+    if (!held) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). Nothing " +
+                "pending.");
+      return coded('STS-AUTHN-0442', { ok: false, reason: 'expired',
+               errors: ['There is no enrolment of yours in progress for ' +
+                        name.slice(0, 80) + ': it expired, it was already ' +
+                        'finished, or it was begun by another ' +
+                        'administrator. Start again.'] });
+    }
+    // SPENT NOW, WHATEVER FOLLOWS — see the header.
+    this.abandonAdminKeyEnrolment(by.username, name);
+    if (String(enrolmentId || '') !== String(held.id)) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). A different " +
+                "enrolment.");
+      return coded('STS-AUTHN-0443', { ok: false, reason: 'mismatch',
+               errors: ['That enrolment is not the one in progress, so ' +
+                        'nothing was registered and the one in progress ' +
+                        'is cancelled. Start again.'] });
+    }
+    log.debug("Leaving Credentials.checkAdminKeyEnrolment(). Claiming the " +
+              "challenge.");
+    return claims.claim({
+      scope: Credentials.ADMIN_ENROLMENT_SCOPE, value: String(held.challenge),
+      ttlMs: Credentials.ADMIN_ENROLMENT_TTL_MS, realm: realms.currentId()
+    }).then((claimed) => {
+      if (!claimed.ok && claimed.reason === 'used') {
+        log.warn('credentials: an administrator\'s passkey enrolment for ' +
+                 name + ' was REFUSED: its challenge had already been ' +
+                 'answered, by another node or a request racing this one.');
+        return coded('STS-AUTHN-0443', { ok: false, reason: 'replay',
+          errors: ['That enrolment has already been answered. Start ' +
+                   'again.'] });
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-AUTHN-0444') + 'credentials: whether ' +
+                  'the challenge of an administrator\'s passkey enrolment ' +
+                  'for ' + name + ' was already answered could not be asked ' +
+                  '(' + (claimed.why || claimed.reason) + '), so it was ' +
+                  'refused.');
+        return coded('STS-AUTHN-0444', { ok: false, reason: 'store',
+          errors: ['The passkey could not be registered just now. Start ' +
+                   'again.'] });
+      }
+      // THE PERSON'S PASSKEY POLICY (#535), which the shared verification
+      // and the writer read.
+      this.deps.passkeyPolicy.select(name, '');
+      const pending = Object.assign({}, held, {
+        enrolledBy: { username: by.username,
+                      sub: by.sub || String((held.enrolledBy || {}).sub || ''),
+                      at: Date.now() } });
+      return this.verifyKeyRegistration(name, pending, credential, options,
+        (stored) => {
+          return this.adminKeyEnrolmentWritten(name, pending, stored);
+        });
+    });
+  }
+
+  // The end of `confirmAdminKeyEnrolment()`, once the claimed write has
+  // answered. Nothing to keep: the pending record was spent at the start.
+  private adminKeyEnrolmentWritten(name, held, stored) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.adminKeyEnrolmentWritten().");
+    if (!stored.ok) {
+      log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). The store " +
+                "refused it.");
+      return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
+                   { ok: false, reason: stored.reason || 'refused',
+                     errors: stored.errors });
+    }
+    log.info('credentials: ' + held.enrolledBy.username + ' enrolled a ' +
+             'passkey for ' + name + '. They now hold ' +
+             this.keysOf(name).length + '.');
+    log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). Enrolled.");
+    return { ok: true, username: name,
+             credentialId: stored.credentialId, lane: held.lane,
+             enrolledBy: held.enrolledBy,
+             held: this.keysOf(name).length };
+  }
+
+  // ---------------------------------------------------------------------------
+
   // THE ACTIVATION LINK (2026-09-06). HOW SOMEBODY WHO WAS PROVISIONED COMES TO
   // HOLD A CREDENTIAL.
   //
@@ -6763,7 +11262,7 @@ class Credentials {
    * @returns `{ ok: true, username, token, expires, … }`, or a refusal
    */
   issueActivation(username) {
-    const { log, crypto, errorCodes, nodeCrypto } = this.deps;
+    const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.issueActivation().");
@@ -6780,7 +11279,7 @@ class Credentials {
                                    'store is installed, so an activation ' +
                                    'link cannot be issued.'] });
     }
-    const token = nodeCrypto().randomBytes(32).toString('base64url');
+    const token = crypto.randomBytes(32).toString('base64url');
     const expires = Date.now() + this.activationTtlMs();
     let written = false;
     try {
@@ -7087,12 +11586,14 @@ class Credentials {
   //     use, `security.passwordResetTtlMinutes`, shown once. Its own attributes
   //     and not the activation token's, so issuing one does not throw away an
   //     activation somebody else is in the middle of.
-  //   * **`removePrimaryKeys()`** takes every PRIMARY security key off, and
-  //     refuses where that would leave no way in — `removeKey()`'s rule about
-  //     the last way in, applied to all of them at once.
+  //   * **`removePrimaryKeys()`** takes every passkey off (since #1135, when
+  //     a key lost its role; until then only the PRIMARY ones), and refuses
+  //     where that would leave no way in — `removeKey()`'s rule about the
+  //     last way in, applied to all of them at once.
   //   * **`removeSecondFactors()`** takes every second factor off: the
-  //     authenticator app, every `mfa` key and the recovery codes. It cannot
-  //     lock anybody out, because none of those is a way in.
+  //     authenticator app, every passkey and the recovery codes. Until #1135
+  //     it took only the `mfa` keys and could lock nobody out; every key may
+  //     be a way in now, so it refuses as `removePrimaryKeys()` does.
   //   * **`mfaRequirementFor()`** is whether a second factor is REQUIRED of
   //     somebody who may hold none: `stsMfaRequired` on their entry, or
   //     the authentication policy (#64). `mfaRequired` beside it in
@@ -7139,7 +11640,7 @@ class Credentials {
    * @returns `{ ok: true, username, removed }`, or a refusal
    */
   removePassword(username) {
-    const { log, passwordPolicy, errorCodes } = this.deps;
+    const { log, passwordPolicy, errorCodes, crypto } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.removePassword().");
@@ -7165,7 +11666,7 @@ class Credentials {
       return { ok: true, username: name, removed: false };
     }
     const profile = passwordPolicy.profileFor(name);
-    const next = current.indexOf('$scrypt$') === 0
+    const next = crypto.isHashedSecret(current)
       ? [passwordPolicy.historyValue(current)] : [];
     let written = false;
     try {
@@ -7195,10 +11696,13 @@ class Credentials {
    * returned in the clear once; its hash is stored.
    *
    * @param username - the person
+   * @param options - `{ source }`: who issued it, `self` (the
+   *   forgot-password form) or `operator` (the default), recorded beside it
+   *   for the recovery question at its spend (#724)
    * @returns `{ ok: true, username, token, expires, … }`, or a refusal
    */
-  issuePasswordReset(username) {
-    const { log, crypto, errorCodes, nodeCrypto } = this.deps;
+  issuePasswordReset(username, options?) {
+    const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.issuePasswordReset().");
@@ -7220,12 +11724,12 @@ class Credentials {
       return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
           'called "' + name + '" in this realm\'s directory.'] });
     }
-    const token = nodeCrypto().randomBytes(32).toString('base64url');
+    const token = crypto.randomBytes(32).toString('base64url');
     const expires = Date.now() + this.passwordResetTtlMs();
     let written = false;
     try {
       written = directory.writePasswordResetLink(name, crypto.hashSecret(token),
-                                                 expires);
+        expires, options && options.source === 'self' ? 'self' : 'operator');
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0164') + 'credentials: writing a ' +
                 'password reset link for ' + name + ' threw: ' + e.message);
@@ -7291,13 +11795,205 @@ class Credentials {
       return coded('STS-AUTHN-0167', { ok: false, reason: 'mismatch' });
     }
     log.debug("Leaving Credentials.checkPasswordReset(). Valid.");
-    return { ok: true, reason: 'valid', expires: held.expires };
+    // WHO ISSUED IT (#724): a link written before the source was recorded
+    // is an operator's, which is the only door that existed then that the
+    // recovery question would not refuse.
+    return { ok: true, reason: 'valid', expires: held.expires,
+             source: held.source === 'self' ? 'self' : 'operator' };
   }
 
   // Spend it — when the new password is STORED, not when the link is opened,
   // for the activation link's reason: a link burned by a mail scanner or a
   // prefetch would strand somebody whose password was removed when it was
   // issued.
+  // -------------------------------------------------------------------------
+  // A RECOVERY WAITING FOR A PASSKEY SIGN-IN (#724). Written on the person's
+  // entry (`stsRecoveryPending`, `<door> <instant>`) when a recovery door is
+  // spent for a person who holds a passkey, read by `authn.ts`'s
+  // `startSessionHere()` for the recovery question, and cleared by the first
+  // passkey sign-in after it. On the ENTRY, not in a map, so every node and
+  // a restart agree on it.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells whether the person holds a passkey (#724): what a
+   * recovery would be weaker than.
+   *
+   * @param username - the person
+   * @returns true when they hold at least one
+   */
+  holdsPasskey(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.holdsPasskey().");
+    // The keys themselves (#911), not mechanismsFor(): that is nine store
+    // reads and a TOTP unseal for a yes/no asked on every second-factor
+    // step and recovery door. Any key, since a key has no role (#1135).
+    const out = this.keysOf(String(username || '').trim()).length > 0;
+    log.debug("Leaving Credentials.holdsPasskey(). " + out);
+    return out;
+  }
+
+  /**
+   * The pending recovery on a person's entry (#724).
+   *
+   * @param username - the person
+   * @returns `{ door, at }`, or null where none is pending
+   */
+  recoveryPending(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.recoveryPending().");
+    if (!directory || typeof directory.readRecoveryPending !== 'function') {
+      log.debug("Leaving Credentials.recoveryPending(). No store.");
+      return null;
+    }
+    let raw = '';
+    try {
+      raw = String(directory.readRecoveryPending(
+        String(username || '').trim()) || '');
+    } catch (e) {
+      log.debug("Caught in Credentials.recoveryPending(): " +
+                ((e && e.message) || e));
+      raw = '';
+    }
+    if (!raw) {
+      log.debug("Leaving Credentials.recoveryPending(). None.");
+      return null;
+    }
+    const parts = raw.split(' ');
+    log.debug("Leaving Credentials.recoveryPending(). " + parts[0]);
+    return { door: parts[0] || '', at: parts[1] || '' };
+  }
+
+  /**
+   * Records, or clears, a pending recovery on a person's entry (#724).
+   *
+   * @param username - the person
+   * @param door - the recovery door, or '' to clear it
+   * @returns true when it was written
+   */
+  setRecoveryPending(username, door) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.setRecoveryPending(). door=" + door);
+    if (!directory || typeof directory.writeRecoveryPending !== 'function') {
+      log.debug("Leaving Credentials.setRecoveryPending(). No store.");
+      return false;
+    }
+    const name = String(username || '').trim();
+    const value = door ? String(door) + ' ' + new Date().toISOString() : '';
+    let written = false;
+    try {
+      written = !!directory.writeRecoveryPending(name, value);
+    } catch (e) {
+      log.debug("Caught in Credentials.setRecoveryPending(): " +
+                ((e && e.message) || e));
+      written = false;
+    }
+    if (!written) {
+      log.error(errorCodes.tag('STS-AUTHN-0382') + 'credentials: the ' +
+                'pending recovery of ' + name + ' could not be ' +
+                (door ? 'written' : 'cleared') + '.');
+    }
+    log.debug("Leaving Credentials.setRecoveryPending(). " + written);
+    return written;
+  }
+
+  /**
+   * Whether a recovery has to be recorded before a reset can stand (#962).
+   * The same test `noteRecovery()` uses, so a caller that treats a false
+   * `noteRecovery()` as a failed reset does not invent a second rule: a
+   * person who holds a passkey, and the passkey policy selected for them
+   * is not `any`. No passkey, and `any`, are not a failed write — nothing
+   * was supposed to be written, and a later change of the row does not
+   * reach back to a recovery made while it allowed one.
+   *
+   * @param username - the person
+   * @returns true when a pending recovery has to be written
+   */
+  recoveryHoldRequired(username) {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Credentials.recoveryHoldRequired().");
+    const name = String(username || '').trim();
+    if (!name || !this.holdsPasskey(name)) {
+      log.debug("Leaving Credentials.recoveryHoldRequired(). Holds no " +
+                "passkey.");
+      return false;
+    }
+    if (!passkeyPolicy.hasSelection()) {
+      passkeyPolicy.select(name, '');
+    }
+    const required = passkeyPolicy.recoveryAssurance() !== 'any';
+    log.debug("Leaving Credentials.recoveryHoldRequired(). " + required);
+    return required;
+  }
+
+  /**
+   * Records that a recovery door restored access (#724), where it matters:
+   * `recoveryHoldRequired()` — the person holds a passkey and the passkey
+   * policy selected for them holds a recovery to it (`recoveryAssurance`
+   * not `any`). Under `any`, and for a person who holds no passkey, nothing
+   * is written and false is not a failed write. A false return when a hold
+   * WAS required is the directory write failing (`setRecoveryPending`,
+   * STS-AUTHN-0382); the caller decides what that does to the reset.
+   *
+   * @param username - the person
+   * @param door - the recovery door (`passkey_policy.ts`'s RECOVERY_DOORS)
+   * @returns true when a pending recovery was written
+   */
+  noteRecovery(username, door) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.noteRecovery(). door=" + door);
+    const name = String(username || '').trim();
+    if (!this.recoveryHoldRequired(name)) {
+      log.debug("Leaving Credentials.noteRecovery(). No hold is required.");
+      return false;
+    }
+    const written = this.setRecoveryPending(name, String(door || ''));
+    log.debug("Leaving Credentials.noteRecovery(). " + written);
+    return written;
+  }
+
+  /**
+   * Records an activation link as a recovery (#724) where the person held a
+   * passkey BEFORE the link was issued — an administrator's link to somebody
+   * who had already set up an account. A passkey the activation itself
+   * enrolled is not one it could be weaker than. Called before the link is
+   * consumed, while its expiry (and so its issue, the TTL before it) can
+   * still be read.
+   *
+   * @param username - the person
+   * @returns true when a pending recovery was written
+   */
+  noteActivationRecovery(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.noteActivationRecovery().");
+    const name = String(username || '').trim();
+    let held = null;
+    try {
+      held = directory && typeof directory.readActivation === 'function'
+        ? directory.readActivation(name) : null;
+    } catch (e) {
+      log.debug("Caught in Credentials.noteActivationRecovery(): " +
+                ((e && e.message) || e));
+      held = null;
+    }
+    const issuedAt = held && held.expires
+      ? Number(held.expires) - this.activationTtlMs() : 0;
+    const before = issuedAt > 0 && this.keysOf(name).some(function (one) {
+      return Number(one.enrolledAt || 0) > 0 &&
+             Number(one.enrolledAt) < issuedAt;
+    });
+    if (!before) {
+      log.debug("Leaving Credentials.noteActivationRecovery(). No passkey " +
+                "held before the link.");
+      return false;
+    }
+    const out = this.noteRecovery(name, 'activation');
+    log.debug("Leaving Credentials.noteActivationRecovery(). " + out);
+    return out;
+  }
+
   /**
    * Spends the password reset token, when the new password is stored.
    *
@@ -7370,6 +12066,18 @@ class Credentials {
     const directory = this.directory;
     log.debug("Entering Credentials.mfaRequirementFor().");
     const name = String(username || '').trim();
+    // A SERVICE ACCOUNT WHOSE POLICY EXEMPTS IT (#221; its own profile
+    // since #1240): nothing is required of it, by its entry, the realm or a
+    // console role.
+    if (name && this.deps.serviceAccounts.isServiceAccountName(name) &&
+        this.deps.serviceAccountPolicy.exemptFromSecondFactor(
+          this.deps.serviceAccountPolicy.profileFor(name))) {
+      log.debug("Leaving Credentials.mfaRequirementFor(). An exempt service " +
+                "account.");
+      return { required: false, byUser: false, byRealm: false,
+               byAdministrator: false, offered: false,
+               exemptServiceAccount: true };
+    }
     let byUser = false;
     if (name && directory && typeof directory.readMfaRequired === 'function') {
       try {
@@ -7382,7 +12090,11 @@ class Credentials {
     }
     // #64: the authentication policy's `requireSecondFactor`, which replaced
     // `authn.mfaRequired`. `always` is the old `true`.
-    const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
+    // A SERVICE ACCOUNT has nobody to answer one, so product mode's "everybody"
+    // (#1490) means people; what the realm configured still applies to it.
+    const byRealm = (name && this.deps.serviceAccounts.isServiceAccountName(name)
+      ? this.deps.authnPolicy.configuredSecondFactor()
+      : this.deps.authnPolicy.requireSecondFactor()) === 'always';
     // #246: ADMINISTRATORS, by the same policy's own field — `offer` (the
     // default for now) shows the set-up step with an Ignore button, `always`
     // requires it. The default realm's built-in administrator is only ever
@@ -7397,8 +12109,7 @@ class Credentials {
       const roles = this.deps.consoleRolesOf(name);
       if (roles.read || roles.write) {
         const builtIn = this.deps.realms.currentId() === 'default' &&
-          name === String(config.value('admin.bootstrapUsername') || '')
-            .trim();
+          name === require('./bootstrap_name').current();
         byAdministrator = forAdmins === 'always' && !builtIn;
         offered = !byAdministrator;
       }
@@ -7409,7 +12120,7 @@ class Credentials {
               ", offered=" + (offered && !required));
     return { required: required, byUser: byUser, byRealm: byRealm,
              byAdministrator: byAdministrator,
-             offered: offered && !required };
+             offered: offered && !required, exemptServiceAccount: false };
   }
 
   /**
@@ -7640,6 +12351,42 @@ class Credentials {
     return { ok: true, username: name, mayAct: dn };
   }
 
+  // THE PEOPLE A PERSON MAY FIND AS THEIR DELEGATE (2026-10-20,
+  // `/portal/delegate`): native people of this realm whose `uid` contains
+  // what they typed, the person themselves left out — `ldap_server.js`'s
+  // `delegateCandidates()` decides who, and this only says who is asking.
+  // What is chosen from the answer is still named through `setMayAct()`
+  // above, which checks the DN again.
+  /**
+   * Finds the native people of this realm a person may name as their
+   * delegate, by part of their `uid`.
+   *
+   * @param username - the person asking
+   * @param query - the text they typed
+   * @returns a promise of `{ ok: true, people, more }`, or a refusal where
+   *   no directory can answer
+   */
+  async findDelegateCandidates(username, query) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.findDelegateCandidates().");
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.delegateCandidates !== 'function') {
+      log.debug("Leaving Credentials.findDelegateCandidates(). No store.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    const self = this.delegationFactsFor(name) || {};
+    const found = await directory.delegateCandidates(String(query || ''),
+      { selfDn: String(self.dn || '') });
+    log.debug("Leaving Credentials.findDelegateCandidates(). " +
+              ((found && found.people) || []).length);
+    return { ok: true, people: (found && found.people) || [],
+             more: !!(found && found.more) };
+  }
+
   // #186: the semantics a person allows — `delegation`, `impersonation`, both,
   // or none (an empty set, which the exchange policy reads as both for a
   // subject and as delegation only for an actor) — and their default.
@@ -7839,13 +12586,17 @@ class Credentials {
     const { log } = this.deps;
     log.debug("Entering Credentials.keySummary().");
     log.debug("Leaving Credentials.keySummary().");
-    return { credentialId: one.credentialId, role: one.role,
+    return { credentialId: one.credentialId,
              label: one.label || '', enrolledAt: one.enrolledAt || 0 };
   }
 
+  // AN ADMINISTRATOR'S "DISABLE PASSWORDLESS SIGN-IN" (2026-09-13), which
+  // since #1135 removes every key the person holds: a key has no role, so
+  // the keys that signed them in on their own are all of them. The name
+  // stays the operation's, which the console and `/admin-api` call it by.
   /**
-   * Removes every passwordless security key a person holds, refusing where
-   * that would leave them unable to sign in.
+   * Removes every passkey a person holds, refusing where that would leave
+   * them unable to sign in.
    *
    * @param username - the person
    * @returns `{ ok: true, username, … }`, or a refusal
@@ -7862,41 +12613,35 @@ class Credentials {
           'store is installed.'] });
     }
     const keys = this.keysOf(name);
-    const primary = keys.filter((one) => {
-      return one.role === 'primary';
-    });
+    const primary = keys;
     if (!primary.length) {
       log.debug("Leaving Credentials.removePrimaryKeys(). None held.");
       return coded('STS-AUTHN-0160', { ok: false, errors: [name + ' holds no ' +
-          'security key in the primary role, so there is no passwordless ' +
-          'sign-in to disable.'] });
+          'passkey, so there is no passwordless sign-in to disable.'] });
     }
-    // THE LAST WAY IN, for every primary key at once. A person with no password
-    // whose primary keys all go cannot sign in, and an operator must not do
-    // what `removeKey()` refuses the owner.
-    if (!this.hasPassword(name)) {
+    // THE LAST WAY IN, for every key at once. A person with no password
+    // whose keys all go cannot sign in, and an operator must not do what
+    // `removeKey()` refuses the owner — where a key is a way in at all.
+    if (!this.hasPassword(name) &&
+        this.deps.webauthnPolicy.useAllowed('primary').ok) {
       log.debug("Leaving Credentials.removePrimaryKeys(). They would have " +
                 "no way in.");
       return coded('STS-AUTHN-0161', { ok: false, errors: [name + ' has no ' +
-          'password, so their primary security keys are the only way they ' +
+          'password, so their passkeys are the only way they ' +
           'can sign in. Reset their password (or issue a reset link) ' +
           'first, then disable the keys.'] });
     }
     try {
-      directory.replaceWebauthn(name, keys.filter((one) => {
-        return one.role !== 'primary';
-      }).map((one) => {
-        return JSON.stringify(one);
-      }));
+      directory.replaceWebauthn(name, []);
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0163') + 'credentials: removing ' +
-                'the primary security keys of ' + name + ' threw: ' +
+                'the passkeys of ' + name + ' threw: ' +
                 e.message);
       log.debug("Leaving Credentials.removePrimaryKeys(). The store threw.");
       return coded('STS-AUTHN-0163', { ok: false, errors: ['The credential ' +
           'store refused the write: ' + e.message] });
     }
-    log.info('credentials: ' + primary.length + ' primary security key(s) of ' +
+    log.info('credentials: ' + primary.length + ' passkey(s) of ' +
              name + ' were removed; they sign in with their password now.');
     log.debug("Leaving Credentials.removePrimaryKeys(). Removed " +
               primary.length + ".");
@@ -7904,8 +12649,13 @@ class Credentials {
              removed: primary.map((one) => this.keySummary(one)) };
   }
 
+  // AN ADMINISTRATOR'S "DISABLE SECOND FACTORS": the authenticator app, the
+  // recovery codes and — since #1135, when every key may be a second factor
+  // — every passkey. Refused whole, as `removePrimaryKeys()` is, where the
+  // keys are a person's only way in.
   /**
-   * Removes every second-factor security key a person holds.
+   * Removes a person's second factors: the authenticator app, the recovery
+   * codes and every passkey.
    *
    * @param username - the person
    * @returns `{ ok: true, username, removed }`, or a refusal
@@ -7922,25 +12672,28 @@ class Credentials {
           'store is installed.'] });
     }
     const keys = this.keysOf(name);
-    const mfa = keys.filter((one) => {
-      return one.role === 'mfa';
-    });
+    const mfa = keys;
     const hadTotp = !!this.totpOf(name);
     const hadCodes = !!this.backupCodesOf(name);
     if (!mfa.length && !hadTotp && !hadCodes) {
       log.debug("Leaving Credentials.removeSecondFactors(). None held.");
       return coded('STS-AUTHN-0162', { ok: false, errors: [name + ' holds no ' +
-          'second factor — no authenticator app, no security key in the mfa ' +
-          'role and no recovery codes — so there is nothing to disable.'] });
+          'second factor — no authenticator app, no passkey ' +
+          'and no recovery codes — so there is nothing to disable.'] });
+    }
+    if (mfa.length && !this.hasPassword(name) &&
+        this.deps.webauthnPolicy.useAllowed('primary').ok) {
+      log.debug("Leaving Credentials.removeSecondFactors(). The keys are " +
+                "their only way in.");
+      return coded('STS-AUTHN-0161', { ok: false, errors: [name + ' has no ' +
+          'password, so their passkeys are the only way they can sign in. ' +
+          'Reset their password (or issue a reset link) first, then ' +
+          'disable their second factors.'] });
     }
     const done = { totp: false, keys: [], backupCodes: false };
     try {
       if (mfa.length) {
-        directory.replaceWebauthn(name, keys.filter((one) => {
-          return one.role !== 'mfa';
-        }).map((one) => {
-          return JSON.stringify(one);
-        }));
+        directory.replaceWebauthn(name, []);
         done.keys = mfa.map((one) => this.keySummary(one));
       }
       if (hadTotp) {
@@ -8024,6 +12777,8 @@ export = {
   readIdaVerifications: slot.forward('readIdaVerifications'),
   writeIdaVerifications: slot.forward('writeIdaVerifications'),
   readSelfIssuedSubjects: slot.forward('readSelfIssuedSubjects'),
+  readPublishedDids: slot.forward('readPublishedDids'),
+  writePublishedDids: slot.forward('writePublishedDids'),
   writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
@@ -8083,19 +12838,59 @@ export = {
   // THE USERS LIST'S THREE STEPS (#352): list, then decorate the shown rows,
   // and count everybody in one pass — see `secondFactorPopulation()`.
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
+  directoryFirstNames: slot.forward('directoryFirstNames'),
+  directoryPeopleCount: slot.forward('directoryPeopleCount'),
   factorHolderRow: slot.forward('factorHolderRow'),
+  factorHolderRowsAsync: slot.forward('factorHolderRowsAsync'),
+  personDnsAsync: slot.forward('personDnsAsync'),
   factorCensus: slot.forward('factorCensus'),
+  factorCensusAsync: slot.forward('factorCensusAsync'),
+  directoryFactorCountsAsync: slot.forward('directoryFactorCountsAsync'),
+  directoryPeopleNamedAsync: slot.forward('directoryPeopleNamedAsync'),
+  directoryPeopleVersion: slot.forward('directoryPeopleVersion'),
+  directoryFactorCounts: slot.forward('directoryFactorCounts'),
+  directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),
   checkActivation: slot.forward('checkActivation'),
   consumeActivation: slot.forward('consumeActivation'),
   activationPending: slot.forward('activationPending'),
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
-  ROLES: Credentials.ROLES,
+  USES: Credentials.USES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
+  // #942: the report names an authenticator model by this string.
+  aaguidString: Credentials.aaguidString,
+  // #942: which stored values are keys, for the passkey report.
+  keysOfValues: Credentials.keysOfValues,
+  attestationAlgorithms: Credentials.attestationAlgorithms,
+  renewAttestationEvidence: slot.forward('renewAttestationEvidence'),
+  // #470: the passkey pages' group, provider and name for a stored key.
+  keyGroup: Credentials.keyGroup,
+  keyProvider: Credentials.keyProvider,
+  keyName: Credentials.keyName,
+  defaultKeyName: Credentials.defaultKeyName,
+  keyProviderFor: Credentials.keyProviderFor,
+  transportsOf: Credentials.transportsOf,
+  discoverableOf: Credentials.discoverableOf,
   keysOf: slot.forward('keysOf'),
+  // The WebAuthn user handle (#474).
+  isUserHandle: Credentials.isUserHandle,
+  withoutUsername: Credentials.withoutUsername,
+  legacyUserHandle: Credentials.legacyUserHandle,
+  newUserHandle: slot.forward('newUserHandle'),
+  userHandleOf: slot.forward('userHandleOf'),
+  ownerOfUserHandle: slot.forward('ownerOfUserHandle'),
+  // The two lanes (#643).
+  userHandleHolder: slot.forward('userHandleHolder'),
+  keyLane: Credentials.keyLane,
+  laneUser: Credentials.laneUser,
+  laneSignalUser: Credentials.laneSignalUser,
+  isLaneName: Credentials.isLaneName,
+  LANES: Credentials.LANES,
+  userHandleRefusal: slot.forward('userHandleRefusal'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),
+  renameKey: slot.forward('renameKey'),
   // THE TWO-STEP ENROLMENT (2026-09-10), which is what lets somebody hold a
   // BACKUP key. `/portal/keys` drives all four; the sign-in screen's
   // enrol-on-first-use path does not, because there the ceremony is part of a
@@ -8104,22 +12899,56 @@ export = {
   pendingKeyEnrolmentFor: slot.forward('pendingKeyEnrolmentFor'),
   abandonKeyEnrolment: slot.forward('abandonKeyEnrolment'),
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
+  // Upgrading a classical passkey to an ML-DSA one (#939).
+  keyUpgradeHistory: Credentials.keyUpgradeHistory,
+  keyUpgradeRefusal: slot.forward('keyUpgradeRefusal'),
+  upgradableKeysOf: slot.forward('upgradableKeysOf'),
+  pendingKeyUpgradeFor: slot.forward('pendingKeyUpgradeFor'),
+  beginKeyUpgrade: slot.forward('beginKeyUpgrade'),
+  proveKeyUpgrade: slot.forward('proveKeyUpgrade'),
+  confirmKeyUpgrade: slot.forward('confirmKeyUpgrade'),
+  // AN ADMINISTRATOR'S ENROLMENT ON SOMEBODY'S BEHALF (#945): the same two
+  // steps, bound to the administrator and the person, and `enrolledBy`.
+  beginAdminKeyEnrolment: slot.forward('beginAdminKeyEnrolment'),
+  pendingAdminKeyEnrolment: slot.forward('pendingAdminKeyEnrolment'),
+  abandonAdminKeyEnrolment: slot.forward('abandonAdminKeyEnrolment'),
+  confirmAdminKeyEnrolment: slot.forward('confirmAdminKeyEnrolment'),
+  enrolledByOf: Credentials.enrolledByOf,
+  ADMIN_ENROLMENT_SCOPE: Credentials.ADMIN_ENROLMENT_SCOPE,
+  ADMIN_ENROLMENT_TTL_MS: Credentials.ADMIN_ENROLMENT_TTL_MS,
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
+  androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
+  androidAttestedCredentialsAsync:
+    slot.forward('androidAttestedCredentialsAsync'),
+  backfillAndroidMarkers: slot.forward('backfillAndroidMarkers'),
+  androidMarkerOf: Credentials.androidMarkerOf,
+  noteAndroidRegistration: Credentials.noteAndroidRegistration,
+  isAndroidRecheckable: Credentials.isAndroidRecheckable,
+  ANDROID_MARKER_ATTRIBUTE: Credentials.ANDROID_MARKER_ATTRIBUTE,
+  untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
+  noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
+  noteKeyPolicyRefused: slot.forward('noteKeyPolicyRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
   secondFactorDemand: slot.forward('secondFactorDemand'),
+  serviceAccountRefusesDoor: slot.forward('serviceAccountRefusesDoor'),
+  rotatesThroughDestination: slot.forward('rotatesThroughDestination'),
   bootstrap: slot.forward('bootstrap'),
+  writeBootstrapPassword: slot.forward('writeBootstrapPassword'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
   addDirectoryHooks: slot.forward('addDirectoryHooks'),
   // The plaintext-password observer (2026-09-12) — see the block above it.
   setPasswordObserver: slot.forward('setPasswordObserver'),
   storable: slot.forward('storable'),
   verify: slot.forward('verify'),
   verifyAsync: slot.forward('verifyAsync'),
+  upgradeHash: slot.forward('upgradeHash'),
+  upgradeHashAsync: slot.forward('upgradeHashAsync'),
   // A PASSWORD THAT MUST BE CHANGED (2026-09-13) — see resetRefusal().
   passwordResetRequired: slot.forward('passwordResetRequired'),
   setPasswordResetRequired: slot.forward('setPasswordResetRequired'),
@@ -8141,6 +12970,12 @@ export = {
   issuePasswordReset: slot.forward('issuePasswordReset'),
   checkPasswordReset: slot.forward('checkPasswordReset'),
   consumePasswordReset: slot.forward('consumePasswordReset'),
+  holdsPasskey: slot.forward('holdsPasskey'),
+  recoveryPending: slot.forward('recoveryPending'),
+  setRecoveryPending: slot.forward('setRecoveryPending'),
+  recoveryHoldRequired: slot.forward('recoveryHoldRequired'),
+  noteRecovery: slot.forward('noteRecovery'),
+  noteActivationRecovery: slot.forward('noteActivationRecovery'),
   passwordResetPending: slot.forward('passwordResetPending'),
   mfaRequirementFor: slot.forward('mfaRequirementFor'),
   accountDisabled: slot.forward('accountDisabled'),
@@ -8152,6 +12987,7 @@ export = {
   delegationFlaggedPersons: slot.forward('delegationFlaggedPersons'),
   setNotDelegated: slot.forward('setNotDelegated'),
   setMayAct: slot.forward('setMayAct'),
+  findDelegateCandidates: slot.forward('findDelegateCandidates'),
   setDelegationSemantics: slot.forward('setDelegationSemantics'),
   removePrimaryKeys: slot.forward('removePrimaryKeys'),
   removeSecondFactors: slot.forward('removeSecondFactors'),

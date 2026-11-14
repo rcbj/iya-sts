@@ -17,8 +17,8 @@
 // somebody compares it.
 //
 // The list it is compared with is `sts_metadata.ts`'s PROTOCOLS, which is
-// already held to the router (`tests/vendored/sts_metadata.js`) and to
-// `/admin/crypto-metadata` (`tests/vendored/admin_api.js`). Each realm row
+// already held to the router (`tests/protocol/sts_metadata.js`) and to
+// `/admin/crypto-metadata` (`tests/protocol/admin_api.js`). Each realm row
 // names the cards it answers for in `cards`, and this file checks:
 //
 //   A. every PROTOCOLS card is named by exactly ONE row — none missing, which

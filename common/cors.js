@@ -103,8 +103,9 @@
 // and moves nothing in the route order.
 // ===========================================================================
 
-const cors = require('cors');
 const helpers = require('./helpers');
+// Every listener's origin is this service's own (#472). A LEAF.
+const listenerMap = require('./listener_map');
 const { log } = helpers;
 const config = require('./config');
 const mode = require('./mode');
@@ -211,10 +212,42 @@ function configuredOrigins() {
  * talking to itself.
  *
  * The address the request was made to, `global.publicBaseUrl`, the embedded
- * debugger's listener and whatever `global.corsOrigins` names.
+ * debugger's listener, every custom listener's public base (#472) and
+ * whatever `global.corsOrigins` names.
  * @param req - the express request
  * @returns the normalised origins
  */
+/**
+ * Tells whether a state-changing request carrying a browser's cookies came
+ * from a page that is not this service's (#1442, ASVS 5.0.0 3.5.1).
+ *
+ * `Origin` decides when it names one. `null` is not a verdict: this service
+ * sends `Referrer-Policy: no-referrer`, under which a browser serializes the
+ * Origin of its own same-origin form POST as `null`, so `Sec-Fetch-Site`
+ * decides then. A request with neither did not come from a browser, and a
+ * cookie a program presents on purpose is not a forgery.
+ *
+ * @param req - the request
+ * @returns true when the request must be refused
+ */
+function crossSiteBrowserRequest(req) {
+  log.debug("Entering crossSiteBrowserRequest().");
+  const headers = (req && req.headers) || {};
+  const origin = String(headers.origin || '');
+  const site = String(headers['sec-fetch-site'] || '').toLowerCase();
+  let foreign;
+  if (origin && origin !== 'null') {
+    foreign = ownOrigins(req).indexOf(origin) < 0;
+  } else if (site) {
+    foreign = site !== 'same-origin' &&
+      !(site === 'same-site' && !!config.value('authn.cookieDomain'));
+  } else {
+    foreign = origin === 'null';
+  }
+  log.debug("Leaving crossSiteBrowserRequest(). " + foreign);
+  return foreign;
+}
+
 function ownOrigins(req) {
   log.debug("Entering ownOrigins().");
   const out = [];
@@ -254,6 +287,20 @@ function ownOrigins(req) {
   });
   if (mode.embedsProtocolDebugger()) {
     add(originOfUrl(config.value('debugger.publicBaseUrl')));
+  }
+  // EVERY LISTENER'S ORIGIN (#472): the console on one listener calls the
+  // management API and the token endpoint on another, and a page served by
+  // any listener of this service is this service's own. With a custom
+  // listener defined, the main port on the request's own host name is one
+  // too, for the request that arrived on the custom one.
+  if (!listenerMap.isTrivial()) {
+    listenerMap.ownOrigins().forEach(add);
+    hostnames.filter(function (one) {
+      return !!one;
+    }).forEach(function (hostname) {
+      add(originOfUrl(scheme + '://' + hostname + ':' +
+                      config.value('global.port')));
+    });
   }
   configuredOrigins().forEach(add);
   log.debug("Leaving ownOrigins(). " + out.length + " origin(s).");
@@ -536,7 +583,11 @@ function isNavigation(req) {
 function continuesToRoute(req) {
   log.debug("Entering continuesToRoute().");
   log.debug("Leaving continuesToRoute().");
-  return /(^|\/)gnap$/.test(String(req.path || ''));
+  // `/gnap` and a named server's `/:as/gnap`, and not a published API's page
+  // that happens to end in the word: `/account-api/gnap` is the portal's list
+  // of a person's grants and has no OPTIONS operation (#1503).
+  const path = String(req.path || '');
+  return /(^|\/)gnap$/.test(path) && !/^\/[^/]*-api\//.test(path);
 }
 
 // Every OPTIONS request. Registered as `app.use()` above the body parsers and
@@ -545,6 +596,17 @@ function continuesToRoute(req) {
 // already decided straight on — deciding again would log a refused origin
 // twice for one request.
 const PREFLIGHT_DECIDED = Symbol('cors.preflightDecided');
+
+// The methods a preflight allows. The default is what the `cors` package
+// 2.8.5 sent (no OPTIONS). A GNAP grant endpoint adds OPTIONS, because RFC
+// 9635 section 9's discovery IS an OPTIONS request and a browser sends it
+// only when the answer lists it (#1214). Written here, not through
+// `cors({ origin })`: that option is what js/cors-permissive-configuration
+// reports when the origin was taken from the request, even after decide()
+// has allowlisted it. Joined with ',' and no spaces, as that package did.
+const DEFAULT_PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST',
+                                   'DELETE'];
+const GNAP_PREFLIGHT_METHODS = DEFAULT_PREFLIGHT_METHODS.concat(['OPTIONS']);
 
 /**
  * Builds the middleware that answers every OPTIONS request.
@@ -569,8 +631,29 @@ function preflight() {
     const decision = decide(req, { preflight: true });
     const onward = continuesToRoute(req);
     if (decision.allowed) {
-      cors({ origin: decision.origin, preflightContinue: onward,
-             exposedHeaders: EXPOSED_HEADERS })(req, res, next);
+      // The same headers cors 2.8.5 set for a string origin: the allowlisted
+      // origin echoed as given, the method list above, the request's
+      // Access-Control-Request-Headers reflected, and Vary on that header.
+      // No credentials, no max-age. A GNAP grant endpoint continues so the
+      // route can answer RFC 9635 section 9; every other preflight is 204.
+      res.setHeader('Access-Control-Allow-Origin', decision.origin);
+      const methods = onward ? GNAP_PREFLIGHT_METHODS
+        : DEFAULT_PREFLIGHT_METHODS;
+      res.setHeader('Access-Control-Allow-Methods', methods.join(','));
+      res.vary('Access-Control-Request-Headers');
+      const asked = req.headers['access-control-request-headers'];
+      if (asked) {
+        res.setHeader('Access-Control-Allow-Headers', asked);
+      }
+      res.setHeader('Access-Control-Expose-Headers',
+                    EXPOSED_HEADERS.join(','));
+      if (onward) {
+        next();
+        return;
+      }
+      res.statusCode = 204;
+      res.setHeader('Content-Length', '0');
+      res.end();
       return;
     }
     if (decision.code) {
@@ -652,5 +735,6 @@ module.exports = {
   decide: decide,
   namedClients: namedClients,
   ownOrigins: ownOrigins,
+  crossSiteBrowserRequest: crossSiteBrowserRequest,
   EXPOSED_HEADERS: EXPOSED_HEADERS
 };

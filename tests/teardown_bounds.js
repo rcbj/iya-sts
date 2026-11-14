@@ -377,15 +377,31 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   // How many modes a full run does. Read from the file that defines them
   // rather than written down here, for the reason that file gives about
   // itself: a fourth mode must not leave this arithmetic quietly stale.
+  // Six since 2026-11-14 (rcbj: all six in the standard run).
   const declared = /STS_ALL_MODES=\(([^)]*)\)/.exec(modes);
-  const modeCount = declared
-    ? declared[1].split(/\s+/).filter(function (w) { return w.trim(); }).length
-    : 3;
-  t.check(modeCount >= 1,
+  const allModes = declared
+    ? declared[1].split(/\s+/).filter(function (w) { return w.trim(); })
+    : [];
+  t.check(allModes.length === 6,
           'the mode list is readable from tests/tools/modes.sh (' +
-            modeCount + ' mode(s))',
-          'the budget below is per mode, so a fourth mode changes it and ' +
+            allModes.length + ' mode(s): ' + allModes.join(', ') + ')',
+          'the budget below is per mode, so a seventh mode changes it and ' +
           'this file must not be the place that goes stale');
+
+  // THE TEARDOWNS ARE THE `tests` JOB'S MODES, not a bare run's: that job
+  // names `--modes=`, so it pays one teardown per mode it names plus the
+  // one before them. With no `--modes=` it is a bare run, all six.
+  const testsModes = /run-tests\.sh[^\n]*--modes=([a-z,-]+)/.exec(testsJob);
+  const modeCount = testsModes
+    ? testsModes[1].split(',').filter(function (w) { return w; }).length
+    : allModes.length;
+  t.check(!testsModes || testsModes[1].split(',').every(function (m) {
+    return allModes.indexOf(m) >= 0;
+  }),
+          'every mode the `tests` job names is a mode of a bare run (' +
+            (testsModes ? testsModes[1] : 'a bare run') + ')',
+          'a CI job naming a mode the file no longer defines runs nothing ' +
+          'for it');
 
   // The `tests` job (sliced above), which is the one that runs this
   // launcher. The coverage job runs ./run-coverage.sh, has a number of its
@@ -406,7 +422,8 @@ function checkTheJobTimeoutIsAboveOurs(t) {
 
   // And it must not be so large that a genuinely wedged runner is held for a
   // shift. The workflow's own header makes this argument about six hours.
-  t.check(jobMinutes <= 180,
+  // 240 since 2026-11-10, when single-node's own bound went to 150 minutes.
+  t.check(jobMinutes <= 240,
           'and it is still an outer bound rather than a licence (' +
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
@@ -424,30 +441,59 @@ function checkTheJobTimeoutIsAboveOurs(t) {
           'the `tests` job empties STS_TEST_CONFORMANCE_MODES, so without a ' +
           '`openid-conformance` job CI would run none of the OpenID ' +
           'Foundation plans');
+  // SINCE #930 THE PLANS ARE TWO JOBS, split by lane: `openid-conformance`
+  // runs every lane but the OpenID Provider job's and
+  // `openid-conformance-oidcc` that lane alone, so the browser jobs could
+  // join without either outgrowing six hours. Each is held to the same
+  // arithmetic, and together they must cover every lane: one names
+  // `--not-lanes=conformance`, the other `--lanes=conformance`.
+  const oidccAt = workflow.indexOf('\n  openid-conformance-oidcc:');
   if (conformanceAt !== -1) {
-    const conformanceJob = workflow.slice(
-      conformanceAt, workflow.indexOf('\n  cluster:', conformanceAt));
-    const conformanceMinutes = Number(
-      (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
-    // The SAML peers' bound too, unless the job empties their modes.
-    const conformancePeers =
-      /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0 : peersBound;
-    const conformanceWorst = buildAllowance + sharedBound +
-      conformanceBound + conformancePeers + teardownBound * 2;
-    t.check(/--modes=memory\b/.test(conformanceJob) &&
-            /--conformance-only\b/.test(conformanceJob),
-            'the `openid-conformance` job runs the memory mode\'s ' +
-            'conformance jobs, by the manifest flag',
-            'the launcher runs the suite only in the modes ' +
-            'STS_TEST_CONFORMANCE_MODES names, `memory` by default');
-    t.check(conformanceMinutes * 60 > conformanceWorst &&
-            conformanceMinutes <= 360,
-            'the `openid-conformance` job timeout (' + conformanceMinutes +
-              'm) is above the image build, its mode\'s bound and two ' +
-              'teardowns (' +
-              Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
-            'the launcher\'s bound must be the one that fires, and GitHub ' +
-            'cancels any job at six hours whatever it says');
+    const jobsOf = [
+      { name: 'openid-conformance', lanes: /--not-lanes=conformance\b/,
+        text: workflow.slice(conformanceAt, oidccAt !== -1 ? oidccAt
+          : workflow.indexOf('\n  cluster:', conformanceAt)) },
+      { name: 'openid-conformance-oidcc', lanes: /--lanes=conformance\b/,
+        text: oidccAt !== -1
+          ? workflow.slice(oidccAt, workflow.indexOf('\n  cluster:', oidccAt))
+          : '' }];
+    t.check(oidccAt !== -1,
+            'the workflow has an `openid-conformance-oidcc` job',
+            'without it the OpenID Provider lane, which ' +
+            '`openid-conformance` leaves out by --not-lanes, runs nowhere');
+    jobsOf.forEach(function (job) {
+      if (!job.text) {
+        return;
+      }
+      const conformanceJob = job.text;
+      const conformanceMinutes = Number(
+        (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
+      // The SAML peers' bound too, unless the job empties their modes.
+      const conformancePeers =
+        /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0
+                                                              : peersBound;
+      const conformanceWorst = buildAllowance + sharedBound +
+        conformanceBound + conformancePeers + teardownBound * 2;
+      t.check(/--modes=memory\b/.test(conformanceJob) &&
+              /--conformance-only\b/.test(conformanceJob) &&
+              job.lanes.test(conformanceJob) &&
+              !/--no-browser\b/.test(conformanceJob),
+              'the `' + job.name + '` job runs the memory mode\'s ' +
+              'conformance jobs of its lanes, by the manifest flag, with ' +
+              'the browser jobs',
+              'the launcher runs the suite only in the modes ' +
+              'STS_TEST_CONFORMANCE_MODES names, `memory` by default; the ' +
+              'two jobs split the lanes; and rcbj asked for the ' +
+              'Chrome-driven conformance jobs in CI (#930)');
+      t.check(conformanceMinutes * 60 > conformanceWorst &&
+              conformanceMinutes <= 360,
+              'the `' + job.name + '` job timeout (' + conformanceMinutes +
+                'm) is above the image build, its mode\'s bound and two ' +
+                'teardowns (' +
+                Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
+              'the launcher\'s bound must be the one that fires, and ' +
+              'GitHub cancels any job at six hours whatever it says');
+    });
   }
 
   // THE `cluster` JOB (2026-09-15) runs the same launcher for ONE mode, so the
@@ -486,7 +532,13 @@ function checkTheJobTimeoutIsAboveOurs(t) {
               Math.ceil(clusterWorst / 60) + 'm)',
             'the tests job\'s argument for one mode: the bound that fires ' +
             'must be the one that can explain itself');
-    t.check(clusterMinutes <= 180,
+    // 300 RATHER THAN THE `tests` JOB'S 180 SINCE 2026-10-20: one mode of
+    // two production nodes outgrew a 130-minute bound on a GitHub runner
+    // (run 39464473145, job 841 of 871), so its own bound is 200 minutes and
+    // this job's number sits above that and the build. It is still an outer
+    // bound — the `openid-conformance` job's 280 is the precedent — and
+    // still an hour inside the six GitHub allows any job.
+    t.check(clusterMinutes <= 300,
             'and the `cluster` job\'s is still an outer bound (' +
               clusterMinutes + 'm)',
             'the six-hour argument again, for the second job running this ' +

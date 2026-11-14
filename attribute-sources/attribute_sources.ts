@@ -46,9 +46,11 @@
 // nothing that registers one. `ldap_server.js` fills its directory slot.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+// The one place this service hashes (#453).
+import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import audit = require('../common/audit');
@@ -87,6 +89,15 @@ const CACHE_MS = 30000;
 const CACHE_MAX = 2000;
 const lookups: Map<string, { at: number; row: Record<string, string[]> | null }>
   = new Map();
+
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: '{{seconds}} s after the lookup; a change to the source drops ' +
+    'its rows.'
+});
+
 const lookupCount = cacheRegistry.register({
   name: 'attribute-sources.lookups',
   title: 'Attribute source lookups',
@@ -100,9 +111,12 @@ const lookupCount = cacheRegistry.register({
     return CACHE_MAX;
   },
   bound: 'Enforced: ' + CACHE_MAX + ' rows per process, the oldest dropped.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
-    return (CACHE_MS / 1000) + ' s after the lookup; a change to the source ' +
-      'drops its rows.';
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
+    return serverProse.fill(CACHE_SENTENCES.lifetime,
+                            { seconds: CACHE_MS / 1000 });
   },
   // ROWS AND NOT A COUNT (#352). This answered `lookups.size`, which
   // `cacheRegistry.report()` maps over, so /admin/caches threw from the
@@ -144,6 +158,10 @@ interface DirectoryHooks {
   deleteSource(cn: string): boolean;
   personAttributes(key: string): Record<string, string[]> | null;
   people(after: string, limit: number): string[];
+  // One page by key after an opaque cursor (#615); absent from an older
+  // directory, and `people()` is asked instead.
+  peoplePage?(after: string, limit: number):
+    { names: string[]; cursor: string; more: boolean };
   apply(key: string, sourceId: string,
         changes: Record<string, string[] | null>):
     { found: boolean; changed: string[] };
@@ -168,6 +186,17 @@ interface AttributeSourcesDeps {
  * The register of attribute sources, and the refresh that reads them onto
  * people's entries.
  */
+// Every member `AttributeSources.normalise()` writes, by its JSON kind.
+const DEFINITION_KINDS: Record<string, string> = {
+  dialect: 'string', host: 'string', port: 'number', database: 'string',
+  user: 'string', passwordProvider: 'string', passwordRef: 'string',
+  passwordField: 'string', caFile: 'string', caCertificates: 'string',
+  trustPublicRoots: 'boolean', serverName: 'string', table: 'string',
+  keyColumn: 'string', keyAttribute: 'string', columns: 'map', refresh: 'list',
+  scheduleS: 'number', timeoutMs: 'number', onFailure: 'string',
+  enabled: 'boolean'
+};
+
 class AttributeSources {
   deps: AttributeSourcesDeps;
 
@@ -212,19 +241,50 @@ class AttributeSources {
   // THE REGISTER.
   // ===========================================================================
 
+  // A stored definition held to what `normalise()` writes. An LDAP client can
+  // write this attribute, so one entry with an extra member or a wrong type
+  // made the whole register unanswerable, and could throw where a member is
+  // used (#1353). A member of the wrong kind is left out, as if never set.
+  private static definitionFrom(parsed: Json): Json {
+    const out: Json = {};
+    const given = parsed && typeof parsed === 'object' &&
+      !Array.isArray(parsed) ? parsed : {};
+    Object.keys(DEFINITION_KINDS).forEach(function (name) {
+      const value = given[name];
+      const kind = DEFINITION_KINDS[name];
+      const kept = kind === 'list'
+        ? Array.isArray(value) && value.every(function (one) {
+          return typeof one === 'string';
+        })
+        : (kind === 'map'
+          ? value && typeof value === 'object' && !Array.isArray(value) &&
+            Object.keys(value).every(function (key) {
+              return typeof value[key] === 'string';
+            })
+          : (kind === 'number' ? Number.isFinite(value)
+            : typeof value === kind));
+      if (kept) {
+        out[name] = value;
+      }
+    });
+    return out;
+  }
+
   // One entry's definition: the JSON value, with the id from its `cn`.
   private recordOf(entry: { attributes: Record<string, string[]> }):
       Json | null {
     const { log } = this.deps;
     log.debug("Entering AttributeSources.recordOf().");
-    const at = entry.attributes || {};
-    const data = (at.stsattributesourcedata || at.stsAttributeSourceData ||
-                  [])[0];
-    const cn = (at.cn || [])[0];
+    // The domain model's reading (#1390), whatever case the directory
+    // answered in, which is why neither spelling is named here any more.
+    const held = Classes.AttributeSource.fromEntry(entry.attributes || {});
+    const data = held.data;
+    const cn = (held.cn || [])[0];
     try {
       const parsed = JSON.parse(String(data || '{}'));
       log.debug("Leaving AttributeSources.recordOf().");
-      return Object.assign(parsed, { id: String(cn || parsed.id || '') });
+      return Object.assign(AttributeSources.definitionFrom(parsed),
+        { id: String(cn || (parsed && parsed.id) || '') });
     } catch (e) {
       log.debug("Caught in AttributeSources.recordOf(): " +
                 ((e && e.message) || e));
@@ -590,8 +650,7 @@ class AttributeSources {
     // another node) holds its own — so a row read under the old definition
     // must not be reachable under the new one anywhere.
     const cacheKey = realmId + '\n' + source.id + '\n' + key + '\n' +
-      nodeCrypto.createHash('sha256').update(JSON.stringify(source))
-        .digest('base64url');
+      stsCrypto.digest('sha256', JSON.stringify(source), 'base64url');
     const held = cached ? lookups.get(cacheKey) : undefined;
     if (held && now() - held.at <= CACHE_MS) {
       lookupCount.hit();
@@ -795,17 +854,36 @@ class AttributeSources {
         log.debug("Leaving AttributeSources.runScheduled(). Not the owner.");
         return { sources: done, stopped: 'no longer the owner' };
       }
-      const after = running ? String(was.cursor || '') : '';
-      const page = dir.people(after, batch);
+      // A PAGE BY KEY where the directory offers it (#615): one store
+      // question a run, where `people()` listed and sorted every person to
+      // answer two hundred. Its cursor is the directory's opaque key, so a
+      // cursor of the older kind (a username) starts the cycle again.
+      const paged = typeof dir.peoplePage === 'function';
+      const byKey = was.cursorKind === 'key';
+      const after = running && paged === byKey ? String(was.cursor || '')
+                                               : '';
+      let page: string[] = [];
+      let next = '';
+      let ended = true;
+      if (paged) {
+        const answer = dir.peoplePage!(after, batch);
+        page = answer.names;
+        next = answer.cursor;
+        ended = !answer.more;
+      } else {
+        page = dir.people(after, batch);
+        next = page[page.length - 1] || '';
+        ended = page.length < batch;
+      }
       let failures = 0;
       for (const username of page) {
         const result = await this.refreshPerson(username, 'schedule',
                                                 source.id);
         failures += result.failures.length;
       }
-      const ended = page.length < batch;
       this.noteStatus(source, { force: true, cleared: failures === 0,
-        fields: { cursor: ended ? '' : page[page.length - 1],
+        fields: { cursor: ended ? '' : next,
+                  cursorKind: paged ? 'key' : 'name',
                   cursorOpen: !ended,
                   cycleEndedAt: ended ? now() : was.cycleEndedAt,
                   lastRunAt: new Date(now()).toISOString(),
@@ -1062,16 +1140,23 @@ class AttributeSources {
          (only || 'the on-demand sources') + ': ' +
          (result.changed.join(', ') || 'nothing changed'));
     log.debug("Leaving AttributeSources.refreshPersonAct().");
-    return { ok: result.failures.length === 0, changed: result.changed,
-             failures: result.failures,
-             errors: result.failures.map(function (one) {
-               return one.source + ': ' + one.why;
-             }),
-             message: username + ' was read: ' +
-                      (result.changed.length ? result.changed.join(', ') +
-                        ' changed' : 'nothing changed') +
-                      (result.failures.length ? '; ' + result.failures.length +
-                        ' source(s) failed' : '') + '.' };
+    const answer: Json = {
+      ok: result.failures.length === 0, changed: result.changed,
+      // Each failure's code was logged where it happened; the first is the
+      // mark the handler records, and none is answered (#1355).
+      failures: result.failures.map(function (one) {
+        return { source: one.source, why: one.why };
+      }),
+      errors: result.failures.map(function (one) {
+        return one.source + ': ' + one.why;
+      }),
+      message: username + ' was read: ' +
+               (result.changed.length ? result.changed.join(', ') +
+                 ' changed' : 'nothing changed') +
+               (result.failures.length ? '; ' + result.failures.length +
+                 ' source(s) failed' : '') + '.' };
+    return result.failures.length
+      ? errorCodes.mark(answer, result.failures[0].code) : answer;
   }
 }
 

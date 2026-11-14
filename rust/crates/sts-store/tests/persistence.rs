@@ -222,7 +222,7 @@ async fn what_is_written_is_read_back() {
     w.persistence
         .directory_changed(Some("dc=acme,dc=example,dc=com"));
     w.settings
-        .set_override("saml2.entityId", json!("urn:process"))
+        .set_override("saml.organizationName", json!("urn:process"))
         .unwrap();
     w.persistence.config_changed(None);
     assert_eq!(
@@ -264,7 +264,7 @@ async fn what_is_written_is_read_back() {
         (4, 1, 1)
     );
     assert_eq!(
-        again.settings.value_of("saml2.entityId").as_str(),
+        again.settings.value_of("saml.organizationName").as_str(),
         "urn:process"
     );
     assert_eq!(again.lifecycle.registry().get("acme").unwrap().name, "Acme");

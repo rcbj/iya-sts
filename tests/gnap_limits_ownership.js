@@ -13,7 +13,7 @@
 //      a repeating interval's periods (fixed and calendar), millionths.
 //   B. THE CATALOGUE READS IT FOR BOTH PROTOCOLS: a GNAP right (STS-GNAP-
 //      0860) and an RFC 9396 detail (STS-OAUTH-0916) whose limits mean
-//      nothing, the demonstration type's built-in limits schema.
+//      nothing; the demonstration type no longer built in (#593).
 //   C. OWNERSHIP FROM A REGISTERED RESOURCE SET: the person, a member of the
 //      owner group, somebody else; what a DN may name.
 //   D. OWNERSHIP BY A LOOKUP the resource server declares, through a stubbed
@@ -44,15 +44,16 @@
 //      hands the SAME one to the refreshed token; Grant Management's
 //      `grant_id` is used where there is one; the consent record keeps the
 //      details themselves (the screen's controls, a lowered Allow and a
-//      raised one refused are `tests/vendored/sts_gnap_catalogue.js`'s
+//      raised one refused are `tests/protocol/sts_gnap_catalogue.js`'s
 //      section 8, over HTTP).
 //
 // IN PROCESS, in a throwaway realm. The over-HTTP half is
-// `tests/vendored/sts_gnap_limits.js`.
+// `tests/protocol/sts_gnap_limits.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const config = require('../common/config');
 const realms = require('../common/realms');
 require('../common/app');
@@ -318,15 +319,11 @@ function conformance(t) {
   t.check(parse([{ type: 'lo-acct', actions: ['spend'],
                    limits: { count: 1 } }]).ok,
           'B4. RFC 9396: readable limits are accepted');
-  const demo = rights.entryOf({ type: rights.DEMO_TYPE });
-  t.check(demo && !!demo.validateLimits &&
-          rights.conformanceRefusal(tok([{ type: rights.DEMO_TYPE,
-            limits: { count: 5 } }])) === null &&
-          errorCodes.codeOf(rights.conformanceRefusal(tok([{
-            type: rights.DEMO_TYPE, limits: { colour: 'red' } }]))) ===
-            'STS-GNAP-0814',
-          'B5. the demonstration type declares a limits schema of the ' +
-          'vocabulary and nothing else');
+  // The demonstration type went with the demonstration resource server
+  // (#593): nothing catalogues it, in either mode.
+  t.check(rights.DEMO_TYPE === undefined &&
+          !rights.entryOf({ type: 'urn:iya-sts:gnap:demo' }),
+          'B5. the demonstration type is no longer built in (#593)');
   log.debug("Leaving conformance().");
 }
 
@@ -603,8 +600,6 @@ async function totals(t) {
 async function sharedStore(t) {
   log.debug("Entering sharedStore().");
   t.log.info('=== H. the shared store ===');
-  const pgPath = require.resolve(ROOT + '/node_modules/pg');
-  const previous = require.cache[pgPath];
   const statements = [];
   const FakeClient = function () {};
   FakeClient.prototype.query = function (sql, params) {
@@ -622,8 +617,8 @@ async function sharedStore(t) {
     return Promise.resolve(new FakeClient());
   };
   FakePool.prototype.end = function () { return Promise.resolve(); };
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: { Pool: FakePool, Client: FakeClient } };
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: FakeClient });
   const driverPath = require.resolve(ROOT +
                                      '/persistence/persistence_postgres');
   const previousDriver = require.cache[driverPath];
@@ -653,18 +648,16 @@ async function sharedStore(t) {
             'reset at a new one; no row back is the refusal',
             spend ? spend.sql : 'no statement');
     const refund = statements.filter(function (one) {
-      return /UPDATE sts_cluster_budgets/.test(one.sql);
+      return /sts:refundBudget /.test(one.sql);
     })[0];
-    t.check(!!refund && /period = \$4::bigint/.test(refund.sql) &&
-            /amount >= \$5::bigint AND count >= \$6::bigint/.test(refund.sql),
+    // Built with the Knex builder since #677: the same three conditions in
+    // the compiler's spelling.
+    t.check(!!refund && /"period" = \$6/.test(refund.sql) &&
+            /"amount" >= \$7 and "count" >= \$8/.test(refund.sql),
             'H2. a refund takes back only from its own period, never below ' +
             'zero', refund ? refund.sql : 'no statement');
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
     require.cache[driverPath] = previousDriver;
   }
   const Cls = spendModule.GnapSpend;

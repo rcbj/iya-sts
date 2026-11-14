@@ -22,8 +22,18 @@
 //   * NATIVE permissions of this service, named in its own convention rather
 //     than as base + name (rcbj's decision 1 on #303): `admin:read` and
 //     `admin:write`, authorized by the two console roles ADMIN_READ and
-//     ADMIN_WRITE. Always gated — the management API is this service's own
-//     resource and it opted in by being written this way.
+//     ADMIN_WRITE, `ssf.read` and `ssf.manage`, authorized by the
+//     ordinary native roles SSF_READ and SSF_MANAGE, and since #1030
+//     `report:use` and `report:admin`, authorized by REPORT_USE and
+//     REPORT_ADMIN. Always gated — the management API, the transmitter and
+//     the report API are this service's own resources and they opted in by
+//     being written this way. SSF_READ and SSF_MANAGE are not the console
+//     roster: a person is issued one only while they belong to the role's
+//     group and the application is a member, and an application's own
+//     token only while the application is a member. SSF_MANAGE does not
+//     authorize `ssf.read`. The report roles are held through their groups
+//     or as a member, with no condition on the application (`roles.js`),
+//     and since #1038 by a person on the console roster (`heldRoles()`).
 //   * APPLICATION permissions — a resource's `oauthPermissionBaseUri` +
 //     `oauthPermission` name — gated only where that resource lists the name
 //     in `oauthRoleGatedPermission`. Every other scope, `openid` and a
@@ -115,7 +125,15 @@ interface RolePermissionsDeps {
   applications: typeof applications;
   audit: typeof audit;
   adminRbac: typeof adminRbac;
+  // Whether a person owns anything (#607), asked lazily: the owner roles
+  // are computed from it.
+  ownsAnything: (username: string) => boolean;
 }
+
+// The admin console's own client, whose issuance is a sign-in to the console
+// (`noteConsoleSignIn()`, #446). `common/applications.js` seeds it in every
+// realm under this identifier.
+const CONSOLE_CLIENT_ID = 'sts-admin-console';
 
 // Who a decision is about: `roles.rolesOf()`'s context, less the scopes.
 interface Subject {
@@ -152,10 +170,21 @@ interface Narrowed {
  * where a scope is narrowed, and again where a token is used.
  *
  * A scope is a request; a role is what authorizes it (#88, #303). Native
- * permissions (`admin:read`, `admin:write`) are always gated; an application
- * permission only where its resource lists it in `oauthRoleGatedPermission`.
+ * permissions (`admin:read`, `admin:write`, `ssf.read`, `ssf.manage`) are
+ * always gated; an application permission only where its resource lists it
+ * in `oauthRoleGatedPermission`.
  */
 class RolePermissions {
+  /**
+   * The report roles a console roster entry carries (#1038): each pair is a
+   * roster key (`read`, `write`) and a role it brings.
+   */
+  static readonly REPORT_ROLES_OF_ROSTER = Object.freeze([
+    { consoleRole: 'write', role: 'REPORT_ADMIN' },
+    { consoleRole: 'write', role: 'REPORT_USE' },
+    { consoleRole: 'read', role: 'REPORT_USE' }
+  ]);
+
   /**
    * Builds the instance over its dependencies.
    *
@@ -177,7 +206,12 @@ class RolePermissions {
     helpers.log.debug("Entering RolePermissions.defaultDeps().");
     helpers.log.debug("Leaving RolePermissions.defaultDeps().");
     return { log: log, realms: realms, roles: roles,
-             applications: applications, audit: audit, adminRbac: adminRbac };
+             applications: applications, audit: audit, adminRbac: adminRbac,
+             ownsAnything: function ownsAnything(username: string): boolean {
+               log.debug("Entering ownsAnything().");
+               log.debug("Leaving ownsAnything().");
+               return require('./ownership').ownsAnything(username);
+             } };
   }
 
   // The values of a space-delimited scope.
@@ -205,9 +239,13 @@ class RolePermissions {
 
   // ---------------------------------------------------------------------------
   // isGated(value) — whether a requested scope value is a permission that
-  // needs a role: a native one (a console role's permission), or an
-  // application permission its resource listed in `oauthRoleGatedPermission`.
-  // Asked in the ambient realm, whose registry defines the permission.
+  // needs a role: a native one (a console role's permission, or ssf.read
+  // or ssf.manage), or an application permission its resource listed in
+  // `oauthRoleGatedPermission`. Asked in the ambient realm, whose registry
+  // defines the permission. ssf.read and ssf.manage are not the console
+  // roster; narrowScope() keeps a role that authorizes them only while the
+  // application is a member and, for a person, only while they belong to
+  // the role's group.
   // ---------------------------------------------------------------------------
   /**
    * Tells whether a scope value is a permission that needs a role, in the
@@ -219,11 +257,17 @@ class RolePermissions {
   isGated(value: string): boolean {
     const { log, roles, applications } = this.deps;
     log.debug("Entering RolePermissions.isGated().");
-    // THE NATIVE PERMISSIONS (#303, #309): admin:read, admin:write and
-    // device:compliance, each authorized by its native role.
-    const native = roles.NATIVE_ROLES.some(function (row) {
-      return row.permission === value;
-    });
+    // THE NATIVE PERMISSIONS (#303, #309): admin:read, admin:write,
+    // device:compliance, ssf.read and ssf.manage, each authorized by its
+    // native role — and since #607 owner:read and owner:write, each by its
+    // computed owner role.
+    const permissionOf = function (row: { permission: string }): string {
+      log.debug("Entering permissionOf().");
+      log.debug("Leaving permissionOf().");
+      return row.permission;
+    };
+    const native = roles.NATIVE_ROLES.map(permissionOf)
+      .concat(roles.OWNER_ROLES.map(permissionOf)).indexOf(value) >= 0;
     if (native) {
       log.debug("Leaving RolePermissions.isGated(). Native.");
       return true;
@@ -265,6 +309,72 @@ class RolePermissions {
   }
 
   // ---------------------------------------------------------------------------
+  // AN APPLICATION'S PERMISSION COMES FROM A ROLE (#551, 2026-10-10).
+  //
+  // A permission a resource application exposes (`oauthPermissionBaseUri`
+  // plus a name) is DELEGATED to a client by `oauthDelegatedPermission`, and
+  // a delegated permission is exercised on a signed-in person's behalf. With
+  // no person — a client_credentials token, whose subject is the client —
+  // the client needs the permission for ITSELF, and that is a role it holds
+  // whose `rolePermission` authorizes it (#303, #310), whether or not the
+  // resource gates the permission with `oauthRoleGatedPermission`. So for an
+  // APPLICATION subject every application permission is asked about here,
+  // with the fact `scope-application-permission`, and the issuance policy's
+  // `application-permission-not-authorized` drops one no held role
+  // authorizes (STS-OAUTH-0957). A person's permissions are unchanged.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether a scope value is an application permission (a resource's
+   * base URI plus a name) that the role check takes for an application
+   * subject (#551): defined by an application, and not already gated.
+   *
+   * @param value - one scope value
+   * @returns true for an ungated application permission
+   */
+  isApplicationPermission(value: string): boolean {
+    const { log, applications } = this.deps;
+    log.debug("Entering RolePermissions.isApplicationPermission().");
+    let found = null;
+    try {
+      found = applications.forPermission(value);
+    } catch (e) {
+      // A registry that cannot be read names no permission: the value is
+      // then an ordinary scope, decided by the rules every scope has.
+      log.debug("Caught in RolePermissions.isApplicationPermission(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const answer = !!found && !this.isGated(value);
+    log.debug("Leaving RolePermissions.isApplicationPermission(). " + answer);
+    return answer;
+  }
+
+  /**
+   * Tells whether a scope asks for anything the role check decides for this
+   * subject: a gated permission for anybody, and for an application subject
+   * any application permission as well (#551).
+   *
+   * @param scope - a space-delimited scope
+   * @param subject - `{ kind, name, authenticated }`
+   * @returns true when narrowScope() has something to decide
+   */
+  asksFor(scope: unknown, subject: Subject): boolean {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering RolePermissions.asksFor().");
+    if (self.asksForGated(scope)) {
+      log.debug("Leaving RolePermissions.asksFor(). A gated permission.");
+      return true;
+    }
+    const asked = !!subject && subject.kind === 'application' &&
+      RolePermissions.split(scope).some(function (one) {
+        return self.isApplicationPermission(one);
+      });
+    log.debug("Leaving RolePermissions.asksFor(). " + asked);
+    return asked;
+  }
+
+  // ---------------------------------------------------------------------------
   // heldRoles(subject, realmId) — the roles the subject holds NOW, in the
   // named realm (the ambient one by default). See the header for the console
   // roles and a person.
@@ -288,6 +398,7 @@ class RolePermissions {
     const who = subject || {};
     const name = String(who.name || '').trim();
     const kind = who.kind === 'application' ? 'application' : 'user';
+    const self = this;
     return this.inRealm(realmId, function () {
       // `ids` (#310): an application's role by its full
       // `<role>@<application>`, the name its rolePermission is keyed by and
@@ -337,6 +448,22 @@ class RolePermissions {
               configured.push(row.name);
             }
           });
+          // THE REPORT ROLES COME WITH THE ROSTER (#1038, rcbj 2026-10-27:
+          // "The admin user for the default domain should have /report
+          // access in all realms. The realm admins should have report
+          // access in their realms."). This reverses #1030's "a console
+          // administrator is NOT a report administrator by holding the
+          // console roster": Admin Write holds REPORT_ADMIN and
+          // REPORT_USE, Admin Read holds REPORT_USE, in the realm whose
+          // roster says so — the groups still grant them to anybody else.
+          // A service administrator's reach into OTHER realms is the
+          // report API's (`report/report_api.ts`), as `/admin-api`'s is.
+          RolePermissions.REPORT_ROLES_OF_ROSTER.forEach(function (pair) {
+            if (roster[pair.consoleRole] === true &&
+                configured.indexOf(pair.role) < 0) {
+              configured.push(pair.role);
+            }
+          });
           if (!roster.read) {
             why = name + ' holds neither Admin Read nor Admin Write on the ' +
                   'console roster of the realm "' + realms.currentId() + '"';
@@ -348,12 +475,137 @@ class RolePermissions {
           why = 'the console roster of the realm "' + realms.currentId() +
                 '" could not be read';
         }
+        // THE OWNER ROLES (#607): computed — rcbj's decision 2 — from
+        // whether anything in this realm names the person or a group of
+        // theirs as an owner, NOW. They are built-in roles that authorize a
+        // permission, so they go with the configured ones: what can
+        // authorize is what this list is.
+        let owns = false;
+        try {
+          owns = self.deps.ownsAnything(name);
+        } catch (e) {
+          // Not knowing whether somebody owns anything owns them nothing.
+          log.debug("Caught in RolePermissions.heldRoles(): " +
+                    ((e && e.message) || e));
+          owns = false;
+        }
+        if (owns) {
+          roles.OWNER_ROLES.forEach(function (row) {
+            if (configured.indexOf(row.name) < 0) {
+              configured.push(row.name);
+            }
+          });
+        }
       }
       log.debug("Leaving RolePermissions.heldRoles(). " +
                 (configured.join(', ') || 'no configured role'));
       return { all: builtIn.concat(configured), configured: configured,
                why: why };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE BOOTSTRAP ADMINISTRATOR'S CLAIM, AT ISSUANCE (#446, 2026-10-05).
+  //
+  // The bootstrap administrator holds its console roles only once it has
+  // CLAIMED the console (#103): signed in to it, and in product with a
+  // password this service verified. The server-rendered console made that
+  // claim itself, from its own callback, on the first request of its session
+  // (`admin-ui/admin_rbac.ts`'s `noteConsoleSignIn()`). A console that is a
+  // static client of `/admin-api` has no callback on the server, and until
+  // the claim is made `heldRoles()` above gives that account no console role
+  // — so the authorization endpoint would narrow `admin:read` and
+  // `admin:write` off the very token the console needs, and nobody could
+  // ever make the claim.
+  //
+  // So the claim is made HERE, by the authorization endpoint, when the
+  // CONSOLE'S OWN CLIENT asks for a gated permission for somebody: that is
+  // the moment a sign-in to the console happens, as the callback was. It is
+  // the same function and so the same rule — in product only a `pwd` sign-in
+  // this service itself vouched for claims anything, and any other sign-in
+  // as that account claims nothing and is then narrowed as before.
+  //
+  // ONLY THE CONSOLE'S CLIENT. Another application asking for `admin:read`
+  // on the bootstrap administrator's session is not a sign-in to the
+  // console, and must not close the window or be handed the roles.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes the bootstrap administrator's claim of the console when the
+   * console's own client is being issued a gated permission for them.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param signIn - `{ clientId, amr, signInAuthority }`: the client asking,
+   *   how the person authenticated and who vouched for it
+   * @returns true when this call closed the bootstrap window
+   */
+  noteConsoleSignIn(subject: Subject, signIn: any): boolean {
+    const { log, adminRbac, realms } = this.deps;
+    log.debug("Entering RolePermissions.noteConsoleSignIn().");
+    const who = subject || {};
+    const how = signIn || {};
+    if (String(how.clientId || '') !== CONSOLE_CLIENT_ID ||
+        who.kind === 'application' || who.authenticated === false ||
+        !String(who.name || '').trim()) {
+      log.debug("Leaving RolePermissions.noteConsoleSignIn(). Not a " +
+                "sign-in to the console.");
+      return false;
+    }
+    let closed = false;
+    try {
+      closed = adminRbac.noteConsoleSignIn(String(who.name), {
+        derivedFromRealm: realms.currentId(),
+        amr: Array.isArray(how.amr) ? how.amr.slice(0) : [],
+        signInAuthority: String(how.signInAuthority || '')
+      }, realms.DEFAULT_ID) === true;
+    } catch (e) {
+      // A roster that cannot be written claims nothing: the narrowing that
+      // follows then gives the account no console role, which is the safe
+      // direction.
+      log.debug("Caught in RolePermissions.noteConsoleSignIn(): " +
+                ((e && e.message) || e));
+      closed = false;
+    }
+    log.debug("Leaving RolePermissions.noteConsoleSignIn(). " +
+              (closed ? 'Claimed.' : 'Nothing claimed.'));
+    return closed;
+  }
+
+  // ---------------------------------------------------------------------------
+  // conferredOn(subject, clientId) — THE ROLES A CLIENT CONFERS (#454).
+  //
+  // The third way of holding a role. A person holds a role as a member or
+  // through the console roster, an application as a member for its own
+  // `client_credentials` token, and — this — a PERSON holds every role the
+  // client they signed in through names them in `roleConferredBy`, on that
+  // client's token and no other. It is read in the ambient realm, which is
+  // the realm that issues the token or, at a resource server, the one that
+  // issued it (`effectiveRoles()` runs this inside `inRealm()`).
+  //
+  // **NOT FOR AN APPLICATION'S OWN TOKEN**: a client conferring a role on
+  // itself would be a membership nobody wrote down. And not for a subject
+  // that did not authenticate or has no name, who holds no configured role.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles a client confers on the person a token is for.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param clientId - the client the person signed in through
+   * @returns the role names; empty for an application or an anonymous subject
+   */
+  conferredOn(subject: Subject, clientId: unknown): string[] {
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.conferredOn().");
+    const who = subject || {};
+    const client = String(clientId == null ? '' : clientId);
+    if (!client || who.kind === 'application' || who.authenticated === false ||
+        !String(who.name || '').trim()) {
+      log.debug("Leaving RolePermissions.conferredOn(). Nothing conferred.");
+      return [];
+    }
+    const out = roles.conferredBy(client);
+    log.debug("Leaving RolePermissions.conferredOn(). " + out.length +
+              " role(s).");
+    return out;
   }
 
   // The configured roles of a subject, for the PIP's role designator. The
@@ -393,8 +645,145 @@ class RolePermissions {
     roles.NATIVE_ROLES.forEach(function (row) {
       out[row.name] = [row.permission];
     });
+    // And the two owner roles (#607), built in and each authorizing its own.
+    roles.OWNER_ROLES.forEach(function (row) {
+      out[row.name] = [row.permission];
+    });
     log.debug("Leaving RolePermissions.permissionsByRole().");
     return out;
+  }
+
+  // Whether a role that authorizes an SSF permission may stand for it on
+  // this grant. Every other role stands. SSF_READ and SSF_MANAGE stand only
+  // for their own permission, and only while the client is a member of the
+  // role. A person must also belong to one of the role's groups. A direct
+  // user member and a conferring client do not stand in for the group.
+  // An application's own token needs no group.
+  private ssfRoleStands(role: string, value: string, who: Subject,
+                        clientId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RolePermissions.ssfRoleStands().");
+    const stands = this.ssfRoleCheck(role, value, who, clientId).stands;
+    log.debug("Leaving RolePermissions.ssfRoleStands(). " + stands);
+    return stands;
+  }
+
+  // ssfRoleStands()'s answer with the reason a role does not stand, for the
+  // STS-ADMIN-0821 row: which of the two halves is missing.
+  private ssfRoleCheck(role: string, value: string, who: Subject,
+                       clientId: string): { stands: boolean; why: string } {
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.ssfRoleCheck().");
+    const native = roles.NATIVE_ROLES.filter(function (row) {
+      return row.name === role;
+    })[0];
+    if (!native || (native.name !== 'SSF_READ' &&
+                    native.name !== 'SSF_MANAGE')) {
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). Not an SSF role.");
+      return { stands: true, why: '' };
+    }
+    if (native.permission !== value) {
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). Another " +
+                "permission.");
+      return { stands: false,
+               why: role + ' does not authorize ' + value };
+    }
+    const client = String(clientId || '');
+    if (!client) {
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). No client.");
+      return { stands: false,
+               why: 'no client is named, and ' + role + ' needs the ' +
+                    'client to be a member' };
+    }
+    let row = null;
+    try {
+      row = roles.read(role);
+    } catch (e) {
+      log.debug("Caught in RolePermissions.ssfRoleCheck(): " +
+                ((e && (e as Error).message) || e));
+      row = null;
+    }
+    if (!row) {
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). No role.");
+      return { stands: false,
+               why: 'the role ' + role + ' could not be read' };
+    }
+    const mapped = (row.applications || []).some(function (one: string) {
+      return String(one).toLowerCase() === client.toLowerCase();
+    });
+    if (!mapped) {
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). The application " +
+                "is not a member.");
+      return { stands: false,
+               why: 'the application "' + client + '" is not a member of ' +
+                    'the role ' + role };
+    }
+    if (who.kind === 'application') {
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). The " +
+                "application's own token.");
+      return { stands: true, why: '' };
+    }
+    let groups: string[] = [];
+    try {
+      groups = typeof roles.groupsOf === 'function'
+        ? roles.groupsOf(String(who.name || '')) || [] : [];
+    } catch (e) {
+      log.debug("Caught in RolePermissions.ssfRoleCheck(): " +
+                ((e && (e as Error).message) || e));
+      groups = [];
+    }
+    const lower = groups.map(function (one) {
+      return String(one).toLowerCase();
+    });
+    const roleGroups: string[] = (row.groups || []).map(String);
+    const inGroup = roleGroups.some(function (group: string) {
+      return lower.indexOf(group.toLowerCase()) >= 0;
+    });
+    log.debug("Leaving RolePermissions.ssfRoleCheck(). " + inGroup);
+    return { stands: inGroup,
+             why: inGroup ? '' : String(who.name || 'the person') +
+               ' is in none of the groups of the role ' + role + ' (' +
+               (roleGroups.join(', ') || 'it lists none') + ')' };
+  }
+
+  // Why one gated permission was taken off, for the STS-ADMIN-0821 row.
+  // `held.why` is about the console roster, so it explains admin:read and
+  // admin:write only, unless nobody authenticated, which explains every
+  // value. An SSF permission names the half of its role that is missing.
+  private whyRemoved(value: string, held: Held, who: Subject,
+                     clientId: string): string {
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.whyRemoved().");
+    const name = String(who.name || '').trim();
+    const nobody = !name ||
+      (who.kind !== 'application' && who.authenticated === false);
+    if (held.why && nobody) {
+      log.debug("Leaving RolePermissions.whyRemoved(). Nobody " +
+                "authenticated.");
+      return held.why;
+    }
+    const onRoster = roles.CONSOLE_ROLES.some(function (row: any) {
+      return row.permission === value;
+    });
+    if (onRoster && held.why) {
+      log.debug("Leaving RolePermissions.whyRemoved(). The roster.");
+      return held.why;
+    }
+    const ssf = roles.NATIVE_ROLES.filter(function (row: any) {
+      return row.permission === value &&
+             (row.name === 'SSF_READ' || row.name === 'SSF_MANAGE');
+    })[0];
+    if (ssf) {
+      const check = this.ssfRoleCheck(ssf.name, value, who, clientId);
+      if (!check.stands) {
+        log.debug("Leaving RolePermissions.whyRemoved(). An SSF role.");
+        return check.why;
+      }
+    }
+    log.debug("Leaving RolePermissions.whyRemoved(). No role.");
+    return (name || 'an unnamed subject') + ' holds no role authorizing ' +
+      value + (held.configured.length
+        ? ' (holds ' + held.configured.join(', ') + ')' : '');
   }
 
   // ---------------------------------------------------------------------------
@@ -414,7 +803,8 @@ class RolePermissions {
    * nothing gated comes back unchanged.
    * @param scope - the requested scope
    * @param subject - `{ kind, name, authenticated }`
-   * @param context - optional `{ clientId, grant }` for the audit row
+   * @param context - optional `{ clientId, grant, stage, record }`; `record:
+   *   false` asks without writing the audit row (#1181)
    * @returns `{ scope, removed, emptied, why }`
    */
   narrowScope(scope: unknown, subject: Subject, context?: any): Narrowed {
@@ -428,13 +818,32 @@ class RolePermissions {
     const gated = values.filter(function (one) {
       return self.isGated(one);
     });
-    if (!gated.length) {
+    const who = subject || {};
+    // #551: for an application subject, every application permission.
+    const applicationPermissions = who.kind === 'application'
+      ? values.filter(function (one) {
+        return gated.indexOf(one) < 0 && self.isApplicationPermission(one);
+      }) : [];
+    // What a missing verdict drops: checkScopes()'s fail-closed reading.
+    const decidedHere = gated.concat(applicationPermissions);
+    if (!decidedHere.length) {
       log.debug("Leaving RolePermissions.narrowScope(). Nothing gated.");
       return unchanged;
     }
-    const who = subject || {};
     const ctx = context || {};
     const held = this.heldRoles(who);
+    // AND WHAT THE CLIENT CONFERS ON THEM (#454): a person signing in
+    // through a client holds the roles that client confers, on this token,
+    // beside their own — the console's client conferring ADMIN_CONSOLE is
+    // what lets every person who signs in to the console be issued
+    // `admin:console`. Never for a client's own token.
+    const conferred = this.conferredOn(who, ctx.clientId);
+    conferred.forEach(function (role) {
+      if (held.configured.indexOf(role) < 0) {
+        held.configured.push(role);
+        held.all.push(role);
+      }
+    });
     const authorizes = this.permissionsByRole();
     // THE FACTS, AND THE POLICY DECIDES (#304, part C of #88). Every value
     // of the scope goes to the issuance policy with whether its resource
@@ -444,17 +853,24 @@ class RolePermissions {
     // back to the built-in policy where the configured one gives no verdict.
     const facts = values.map(function (value) {
       const isGated = gated.indexOf(value) >= 0;
+      const attributes = [
+        scopeVerdicts.resourceFact(scopeVerdicts.ATTRIBUTE.SCOPE_GATED,
+                                   isGated),
+        scopeVerdicts.resourceStrings(
+          scopeVerdicts.ATTRIBUTE.AUTHORIZING_ROLE,
+          Object.keys(authorizes).filter(function (role) {
+            return authorizes[role].indexOf(value) >= 0 &&
+                   self.ssfRoleStands(role, value, who,
+                                      String(ctx.clientId || ''));
+          }))];
+      if (applicationPermissions.indexOf(value) >= 0) {
+        attributes.push(scopeVerdicts.resourceFact(
+          scopeVerdicts.ATTRIBUTE.SCOPE_APPLICATION_PERMISSION, true));
+      }
       return {
         scope: value,
         gated: isGated,
-        attributes: [
-          scopeVerdicts.resourceFact(scopeVerdicts.ATTRIBUTE.SCOPE_GATED,
-                                     isGated),
-          scopeVerdicts.resourceStrings(
-            scopeVerdicts.ATTRIBUTE.AUTHORIZING_ROLE,
-            Object.keys(authorizes).filter(function (role) {
-              return authorizes[role].indexOf(value) >= 0;
-            }))]
+        attributes: attributes
       };
     });
     const answer = gate.checkScopes({
@@ -477,9 +893,15 @@ class RolePermissions {
     // A value the answer did not mention is a gated one dropped and an
     // ungated one kept — checkScopes()'s own fail-closed reading.
     const decided = function (value: string): any {
-      return verdictOf[value] ||
-        { verdict: gated.indexOf(value) >= 0 ? 'drop' : 'keep',
-          code: gated.indexOf(value) >= 0 ? 'STS-ADMIN-0821' : '' };
+      if (verdictOf[value]) {
+        return verdictOf[value];
+      }
+      if (gated.indexOf(value) >= 0) {
+        return { verdict: 'drop', code: 'STS-ADMIN-0821' };
+      }
+      return applicationPermissions.indexOf(value) >= 0
+        ? { verdict: 'drop', code: 'STS-OAUTH-0957' }
+        : { verdict: 'keep', code: '' };
     };
     const refused = values.filter(function (one) {
       return decided(one).verdict === 'refuse';
@@ -495,14 +917,27 @@ class RolePermissions {
       return removed.indexOf(one) < 0;
     });
     const name = String(who.name || '');
-    const reason = held.why ||
-      (name || 'an unnamed subject') + ' holds no role authorizing ' +
-      removed.join(', ') + (held.configured.length
-        ? ' (holds ' + held.configured.join(', ') + ')' : '');
+    const reason = removed.map(function (value) {
+      return self.whyRemoved(value, held, who, String(ctx.clientId || ''));
+    }).filter(function (one, at, all) {
+      return all.indexOf(one) === at;
+    }).join('; ');
     // ONE line in the log, and it is the audit row's: `audit.js` writes a row
     // carrying an errorCode to the log itself.
     // STS-ADMIN-0821 unless the policy named another code for the first
     // scope it took off.
+    // `record: false` (#1181): the same question asked for a decision this
+    // service does not issue on — AuthZEN's token-exchange binding answering
+    // another authorization server — writes no row here, since nothing was
+    // taken off a token; the binding's own audit row says what it decided.
+    if (ctx.record === false) {
+      log.debug("Leaving RolePermissions.narrowScope(). " + removed.length +
+                " would be taken off; not recorded.");
+      return { scope: kept.join(' '), removed: removed,
+               emptied: kept.length === 0 || refused.length > 0,
+               why: 'the permission(s) ' + removed.join(', ') + ' cannot ' +
+                    'be issued: ' + reason };
+    }
     audit.failure(decided(removed[0]).code || 'STS-ADMIN-0821', {
       actor: name,
       protocol: 'OAuth 2.0 / OIDC',
@@ -584,13 +1019,35 @@ class RolePermissions {
     const c = claims || {};
     const scopes = (carried || []).slice(0);
     const client = this.isClientToken(c);
-    const subject: Subject = client
-      ? { kind: 'application', name: String(c.client_id || ''),
-          authenticated: true }
-      : { kind: 'user', authenticated: true,
-          name: String(c.username || c.preferred_username || c.sub || '') };
     return this.inRealm(tokenRealm, function () {
+      // THE SUBJECT IS RESOLVED IN THE REALM THAT ISSUED THE TOKEN (2026-11-10).
+      // A `urn:uuid:` names an entry of that realm's directory, and the
+      // resolver answers in the ambient one. Resolved outside, a service
+      // administrator's default-realm token at `/realm/<id>/admin-api` named
+      // an entry the realm does not hold, so in product (#1536's gone-subject
+      // rule) the subject was nobody and every call was 403 STS-API-0125 —
+      // a realm's console never drew for the service roster.
+      const subject: Subject = client
+        ? { kind: 'application', name: String(c.client_id || ''),
+            authenticated: true }
+        : { kind: 'user', authenticated: true,
+            // `sub` first: it cannot be reassigned and a username can (#1536).
+            name: require('./helpers').subjectIsGone(c.sub) &&
+                  require('./mode').refusesTokenForGoneSubject()
+              ? '' : String(require('./helpers').nameForSubject(c.sub) ||
+                            c.username || c.preferred_username || c.sub ||
+                            '') };
       const held = self.heldRoles(subject);
+      // THE CLIENT'S CONFERRED ROLES, MIXED WITH THE PERSON'S OWN (#454),
+      // read NOW in the realm that issued the token, as the person's are: a
+      // client taken off `roleConferredBy` stops conferring on the tokens it
+      // already holds at once.
+      self.conferredOn(subject, client ? '' : c.client_id)
+        .forEach(function (role) {
+          if (held.configured.indexOf(role) < 0) {
+            held.configured.push(role);
+          }
+        });
       const builtIn = roles.rolesOf({ kind: subject.kind, name: subject.name,
                                       authenticated: true, scopes: scopes })
         .filter(function (one) {
@@ -611,10 +1068,21 @@ class RolePermissions {
       log.debug("Leaving RolePermissions.effectiveRoles(). " +
                 effective.length + " configured, " + withdrawn.length +
                 " withdrawn.");
+      // `held.why` is about the console roster, so it explains a withdrawn
+      // admin:read or admin:write and nothing else — `whyRemoved()`'s rule.
+      // Since #1038 the roster is closed in more of the cases a report scope
+      // is asked in, and its sentence named the wrong reason for one.
+      const rosterScope = withdrawn.some(function (one) {
+        return roles.CONSOLE_ROLES.some(function (row: any) {
+          return row.permission === one;
+        });
+      });
+      const why = held.why && (rosterScope ||
+        !String(subject.name || '').trim())
+        ? held.why
+        : subject.name + ' holds no role authorizing ' + withdrawn.join(', ');
       return { roles: builtIn.concat(effective), withdrawn: withdrawn,
-               why: held.why || (subject.name + ' holds no role authorizing ' +
-                                 withdrawn.join(', ')),
-               subject: subject };
+               why: why, subject: subject };
     });
   }
 }
@@ -657,9 +1125,13 @@ export = {
   split: RolePermissions.split,
   isGated: slot.forward('isGated'),
   asksForGated: slot.forward('asksForGated'),
+  asksFor: slot.forward('asksFor'),
+  isApplicationPermission: slot.forward('isApplicationPermission'),
   heldRoles: slot.forward('heldRoles'),
   configuredRolesOf: slot.forward('configuredRolesOf'),
   narrowScope: slot.forward('narrowScope'),
+  noteConsoleSignIn: slot.forward('noteConsoleSignIn'),
+  CONSOLE_CLIENT_ID: CONSOLE_CLIENT_ID,
   isClientToken: slot.forward('isClientToken'),
   effectiveRoles: slot.forward('effectiveRoles')
 };

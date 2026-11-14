@@ -86,10 +86,16 @@ class SystemdWorkloadAttestor {
   readonly type = 'systemd';
   /**
    * One sentence for `GET /spiffe` and the console: what this attestor
-   * verifies.
+   * verifies. STATIC as well (#543), so that `spiffe_server.ts`'s
+   * `prose()` reads it without building an attestor.
    */
-  readonly verifies = 'The systemd unit that holds the caller\'s process, ' +
+  static readonly VERIFIES =
+    'The systemd unit that holds the caller\'s process, ' +
     'as systemd reports it over D-Bus: its id and its unit file.';
+  /**
+   * The same sentence, on the instance the attestation table holds.
+   */
+  readonly verifies = SystemdWorkloadAttestor.VERIFIES;
 
   // The system bus, opened on first use and kept, as SPIRE keeps its
   // connection; dropped when a call on it fails so the next attestation

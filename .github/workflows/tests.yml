@@ -22,11 +22,18 @@
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
 #   openid-conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
-#             --modes=memory --conformance-only — the OpenID Foundation
-#             conformance suite's plans (#176, #187), which the `tests` job
-#             leaves out because they take over two hours. Only those: every
-#             other third-party suite (the SAML peers, Samba, Heimdal,
-#             tlsfuzzer, the W3C and SCIM suites) runs in `tests`.
+#             --modes=memory --conformance-only --not-lanes=conformance — the
+#             OpenID Foundation conformance suite's plans (#176, #187, #930)
+#             in every lane but the OpenID Provider job's: FAPI, the
+#             relying-party plans, and `conformance-b`'s Shared Signals,
+#             OpenID Federation, OpenID4VCI and OpenID4VP jobs. Only those:
+#             every other third-party suite (the SAML peers, Samba,
+#             Heimdal, tlsfuzzer, the W3C and SCIM suites) runs in `tests`.
+#   openid-conformance-oidcc  the same with --lanes=conformance: the OpenID
+#             Provider plans and their classical twins, the suite's longest
+#             lane, alone in a job of its own (#930).
+#             Neither passes --no-browser since #930 (rcbj): the jobs that
+#             play the suite's person in Chrome run in CI too.
 #   cluster   ./run-tests.sh --modes=cluster — the third mode of
 #             tests/tools/modes.sh, which the `tests` job does not name: two
 #             production nodes (product mode, request workers) active-active
@@ -53,7 +60,7 @@
 # image and waits for /healthcheck, which proves every module resolved and the
 # port bound — the failure mode this repository has actually had most often.
 # This one drives the running service: the in-process jobs that assert module
-# contracts, and the protocol jobs (tests/vendored/MANIFEST.js is the count)
+# contracts, and the protocol jobs (tests/protocol/MANIFEST.js is the count)
 # that exercise every protocol family, the management API and — in a real
 # browser — the admin console. The two overlap
 # only in that both start the image.
@@ -62,7 +69,7 @@
 # authored in ../id-proto-debugger/tests/ (the root CLAUDE.md argues that
 # decision), and their CI drives the `sts/` gitlink — which is a PIN. A change
 # made here is not covered by that run until somebody bumps it. Many of
-# those jobs are vendored into tests/vendored/ precisely so that this repository
+# those jobs are vendored into tests/protocol/ precisely so that this repository
 # can run them against its own working tree; this workflow is where that
 # happens on every push. It does not replace bumping the pin, because that is
 # what gates the other project.
@@ -118,6 +125,21 @@ jobs:
         run: .github/scripts/mirror-images.sh missing
 
   # ---------------------------------------------------------------------------
+  # THE ADVISORY WINDOWS OF SECURITY.md (#1458). No install: `npm audit` reads
+  # the lockfile.
+  # ---------------------------------------------------------------------------
+  dependency-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Fail on an advisory past its window
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tests/tools/dependency-windows.js
+
+  # ---------------------------------------------------------------------------
   # THE PLAIN SUITE. Every job, service and runner both in
   # containers, nothing instrumented. This is the one whose status means "the
   # tree is green".
@@ -152,12 +174,22 @@ jobs:
     # minutes building the images before any mode starts, which no mode bound
     # covers; tests/teardown_bounds.js adds thirty for it.
     #
+    # 240 SINCE 2026-11-10, with the ceiling tests/teardown_bounds.js allows:
+    # `single-node`'s own bound went from 80 to 150 minutes (tests/tools/
+    # modes.sh), and one wedged single-node mode plus the build and every
+    # teardown is 215 minutes.
+    #
+    # 180 SINCE 2026-10-13, the ceiling tests/teardown_bounds.js allows: on
+    # main 8fe81efa the build took 23 minutes, `memory` 56 and `single-node`
+    # was still running, healthy, when 150 cancelled it — two whole modes
+    # and the build no longer fit.
+    #
     # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
     # outgrew the launcher's 25-minute mode bound, which went to 50; this has
     # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
     # and above three healthy modes, measured at about 70 minutes on a
     # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 150
+    timeout-minutes: 240
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git
@@ -204,7 +236,8 @@ jobs:
       #
       # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance
       # suite's jobs take about two hours and a quarter on their own, which
-      # is the `openid-conformance` job's below; here they are reported SKIPPED
+      # is the two `openid-conformance*` jobs' below (split by lane since
+      # #930); here they are reported SKIPPED
       # with the reason, as they are in every mode that does not run them.
       - name: Run the containerized test suite
         env:
@@ -270,6 +303,21 @@ jobs:
   # project is iya-sts-coverage, which is what keeps the two runs from reaching
   # each other's containers even when they land on one machine.
   # ---------------------------------------------------------------------------
+  # WHAT A CALLER RELIES ON HAS NOT GONE (#1390). Compares the OpenAPI documents
+  # the model generates here with the ones generated from the target branch. A
+  # pull request labelled `api-breaking` says the break is intended.
+  openapi-breaking:
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Fail on a breaking change to a published API
+        run: tests/tools/oasdiff-gate.sh "origin/${{ github.base_ref }}"
+
   coverage:
     needs: mirror
     runs-on: ubuntu-latest
@@ -280,7 +328,10 @@ jobs:
     # 150 since 2026-09-27: on a runner with no layer cache the build took
     # nineteen minutes, and the instrumented suite had reached 386 of its jobs
     # when 90 cancelled it.
-    timeout-minutes: 150
+    # 210 since 2026-10-13: on main 8fe81efa the suite took 6,312s after the
+    # build (about 128 minutes in all), and on develop d2221e6f 150 cancelled
+    # it — the suite grew by #591-#607 in a day.
+    timeout-minutes: 210
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -363,7 +414,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, #187). The six jobs
-  # marked `conformance: true` in tests/vendored/MANIFEST.js — FAPI, OpenID
+  # marked `conformance: true` in tests/protocol/MANIFEST.js — FAPI, OpenID
   # Connect with its logout plans and Identity Assurance, Shared Signals,
   # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
   # three containers under the `conformance` compose profile, in the
@@ -376,18 +427,18 @@ jobs:
   #
   # A JOB OF ITS OWN because of the time: the plans took about two hours and
   # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
-  # STS_CONFORMANCE_TIMEOUT (180m) and no ceiling the `tests` job may have
-  # fits it. The same argument as that job's number: above the mode's bound
-  # (50m + 180m) and two teardowns (5m each) — and, since 2026-09-27, thirty
-  # minutes for the image build before any mode starts — so the launcher's
-  # bound is the
-  # one that fires, and under GitHub's own six hours
-  # (tests/teardown_bounds.js asserts both).
+  # STS_CONFORMANCE_TIMEOUT (260m since 2026-10-23, when four of the jobs
+  # gained a classical twin of every plan; 180m until then) and no ceiling
+  # the `tests` job may have fits it. The same argument as that job's
+  # number: above the mode's bound (50m + 260m) and two teardowns (5m each)
+  # — and, since 2026-09-27, thirty minutes for the image build before any
+  # mode starts — so the launcher's bound is the one that fires, and under
+  # GitHub's own six hours (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
   openid-conformance:
     needs: mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 280
+    timeout-minutes: 355
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
@@ -412,7 +463,13 @@ jobs:
         env:
           STS_TEST_CONFORMANCE_MODES: memory
           STS_TEST_SAML_PEERS_MODES: ""
-        run: ./run-tests.sh --modes=memory --conformance-only --no-browser
+        # EVERY LANE BUT THE OPENID PROVIDER JOB'S (#930): with the browser
+        # jobs, since rcbj asked for the Chrome-driven conformance jobs in
+        # CI, the lanes no longer fit one job beside the OpenID Provider
+        # lane, which is the suite's longest; that lane is
+        # `openid-conformance-oidcc` below. A job added to any other lane
+        # lands here without a list to edit.
+        run: ./run-tests.sh --modes=memory --conformance-only --not-lanes=conformance
 
       # See the tests job: the runner writes tests/report as root.
       - name: Normalize report permissions
@@ -426,6 +483,68 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: conformance-test-report
+          path: |
+            tests/report
+            !tests/report/pep-credential
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # THE OPENID PROVIDER PLANS, A JOB OF THEIR OWN (#930, 2026-11-03). Until
+  # then one job ran every conformance job without a browser, which left out
+  # every job that plays the suite's person in Chrome — this lane's among
+  # them. With them in, the lanes run side by side as they do locally, and
+  # this lane — the OpenID Provider certification profiles, oidcc-test-plan
+  # and the logout plans, each also as its classical twin — is the long
+  # pole the launcher's STS_CONFORMANCE_TIMEOUT is sized for, so it is the
+  # one given a runner alone. The arithmetic is the job above's, and
+  # tests/teardown_bounds.js holds both.
+  # ---------------------------------------------------------------------------
+  openid-conformance-oidcc:
+    needs: mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      # See the tests job: recursive, for the nested node-ldapjs submodule.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # See the tests job: the corpora and the image mirror are private.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Show docker and compose versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Run the OpenID conformance suite's plans
+        # The SAML interoperability peers (#189-#192) are the tests job's;
+        # the launcher would start them in `memory` by default, for jobs
+        # `--conformance-only` does not run.
+        env:
+          STS_TEST_CONFORMANCE_MODES: memory
+          STS_TEST_SAML_PEERS_MODES: ""
+        # THE OPENID PROVIDER LANE ALONE (#930): sts_oidcc_conformance, its
+        # plans and their classical twins, the lane the launcher's
+        # STS_CONFORMANCE_TIMEOUT is sized for.
+        run: ./run-tests.sh --modes=memory --conformance-only --lanes=conformance
+
+      # See the tests job: the runner writes tests/report as root.
+      - name: Normalize report permissions
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
+
+      # Each job's log names the suite's plan ids and every module's result;
+      # pep-credential/ is excluded for the tests job's reason.
+      - name: Upload the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-oidcc-test-report
           path: |
             tests/report
             !tests/report/pep-credential
@@ -461,7 +580,7 @@ jobs:
     needs: mirror
     runs-on: ubuntu-latest
     # The `tests` job's argument, for ONE mode: above the cluster mode's own
-    # bound (STS_CLUSTER_MODE_TIMEOUT, 100m — tests/tools/modes.sh) plus its
+    # bound (STS_CLUSTER_MODE_TIMEOUT, 200m — tests/tools/modes.sh) plus its
     # teardowns (STS_TEARDOWN_TIMEOUT, 5m each), so the bound that fires is the
     # one that can explain itself — tests/teardown_bounds.js asserts it. The
     # mode took 24.7 minutes on 2026-09-15 in development mode with one process
@@ -469,8 +588,14 @@ jobs:
     # outran the shared 50-minute bound. 150 since 2026-09-27: 115 did not
     # count the image build (nineteen minutes on a cold runner), so a run was
     # cancelled at 527 jobs before the mode's own bound could fire; the test
-    # now adds thirty minutes for it.
-    timeout-minutes: 150
+    # now adds thirty minutes for it. 175 since 2026-10-13, with the mode's
+    # bound raised to 130m (main 8fe81efa outgrew 100m at job 734 of 774).
+    # 245 since 2026-10-20, with the mode's bound raised to 200m: main
+    # 1f01ce51 (run 39464473145) outgrew 130m at job 841 of 871, its
+    # bulk loads still to run, after a 23-minute build. Above the 180 the
+    # `tests` job keeps, and under GitHub's six hours; tests/teardown_bounds.js
+    # holds the cluster job to 300 for the reason it gives.
+    timeout-minutes: 245
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

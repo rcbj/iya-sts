@@ -1,0 +1,6 @@
+{
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "Un administrador, en Directorio → Dispositivos o POST /admin-api/devices/create: propiedad de una persona o de una aplicación, con claves introducidas por valor. Una clave añadida así se registra como no demostrada por nadie y autoafirmada."
+  }
+}

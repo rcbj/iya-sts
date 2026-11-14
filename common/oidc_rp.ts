@@ -157,7 +157,6 @@
 
 import https = require('https');
 import http = require('http');
-import nodeCrypto = require('crypto');
 
 import helpers = require('./helpers');
 import config = require('./config');
@@ -190,8 +189,14 @@ import fapi = require('../oauth-oidc/fapi');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('./worker_channel');
+// WHERE THE AUTHORIZATION SERVER IS (#472): its advertised base for the
+// browser, and the listener this process dials for the back channel, when
+// `oauth-oidc` is not on the listener the surface is. A LEAF.
+import listenerMap = require('./listener_map');
+import hostedApplications = require('./hosted_applications');
+import tlsModule = require('tls');
 
-type SurfaceId = 'admin' | 'portal' | 'debugger';
+type SurfaceId = 'admin' | 'portal' | 'report' | 'debugger';
 
 interface Surface {
   id: SurfaceId;
@@ -268,6 +273,7 @@ interface OidcRelyingPartyDeps {
   clusterClaims: typeof clusterClaims;
   clusterBarrier: typeof clusterBarrier;
   fapi: typeof fapi;
+  signerChain: (material: any) => Promise<any>;
   http: typeof http;
   https: typeof https;
   // `tls/tls_server.js`, required only when the back channel runs — see the
@@ -333,8 +339,8 @@ interface OidcRelyingPartyDeps {
 // ---------------------------------------------------------------------------
 /**
  * The hosted surfaces that sign in as OpenID Connect relying parties of this
- * service (`admin`, `portal`, `debugger`): each one's client id, callback path,
- * cookie, realms and scopes.
+ * service (`admin`, `portal`, `report`, `debugger`): each one's client id,
+ * callback path, cookie, realms and scopes.
  */
 const SURFACES: Record<SurfaceId, Surface> = {
   admin: {
@@ -357,6 +363,21 @@ const SURFACES: Record<SurfaceId, Surface> = {
     sessionRealm: 'ambient',
     scopes: ['openid', 'profile', 'email', 'offline_access']
   },
+  // THE REPORTS APPLICATION (#956), on the portal's pattern: a static
+  // application on this origin, signing in in the browser as the public
+  // client `sts-report`. The report scopes are not on this list. The
+  // browser asks for them, and the registration declares them; issuance
+  // narrows them (`report/rights.ts`).
+  report: {
+    id: 'report',
+    clientId: 'sts-report',
+    label: 'Reports',
+    callbackPath: '/report/callback',
+    cookie: 'sts_report',
+    flowRealm: 'ambient',
+    sessionRealm: 'ambient',
+    scopes: ['openid', 'profile', 'email', 'offline_access']
+  },
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the first surface that
   // is NOT ON THIS SERVICE'S ORIGIN: it is served by
   // `debugger/debugger_server.ts` on a listener of its own. Two things follow
@@ -366,7 +387,7 @@ const SURFACES: Record<SurfaceId, Surface> = {
   //   * the redirect URI is on the debugger's origin and the authorization
   //     endpoint is on the main port's, so `beginSignIn()` and
   //     `handleCallback()` take `callbackBase` and `authorizationBase` where
-  //     the other two surfaces use one base for both;
+  //     the surfaces on this origin use one base for both;
   //   * the back channel's Host header is the AUTHORIZATION base's, because
   //     that is the issuer the browser was sent to.
   //
@@ -374,12 +395,10 @@ const SURFACES: Record<SurfaceId, Surface> = {
   // and the roster that decides who may use the debugger is the default
   // realm's.
   //
-  // THE FOURTH SCOPE IS THE DEBUGGER API'S PERMISSION, written out here for
-  // the reason `applications.js` writes it out — this library is read by
-  // every hosted surface and must not depend on a feature directory — and
-  // compared with `debugger/debugger_access.ts` by `tests/debugger_access.js`.
-  // The authorization server takes it off the grant for anybody who is not a
-  // console administrator, and the debugger's gate reports that.
+  // THE SAME FOUR SCOPES AS THE OTHER SURFACES (#1717, 2026-11-13). There
+  // was a fifth, the separate debugger api's permission, which the debugger's
+  // gate checked the session's access token for; the UI and its api are one
+  // client now, and the gate asks who the session's person is instead.
   debugger: {
     id: 'debugger',
     clientId: 'sts-debugger-ui',
@@ -388,8 +407,7 @@ const SURFACES: Record<SurfaceId, Surface> = {
     cookie: 'sts_debugger',
     flowRealm: 'default',
     sessionRealm: 'default',
-    scopes: ['openid', 'profile', 'email', 'offline_access',
-             'urn:sts:debugger-api:debugger']
+    scopes: ['openid', 'profile', 'email', 'offline_access']
   }
 };
 
@@ -459,7 +477,12 @@ const ASSERTION_LIFETIME_S = 60;
 const REQUEST_OBJECT_LIFETIME_S = 300;
 const PAR_PATH = '/oauth2/par';
 
-// A flow in progress, per realm, keyed by `state`. `federation_sp.ts`'s
+// A flow in progress, per realm, keyed by the DIGEST of its `state` (#614,
+// `crypto.credentialDigest()`): the state is only ever looked up and spent
+// by the value a callback presents, so it is hashed as it is minted and as
+// it comes back, and no row holds one. The PKCE verifier stays whole — it is
+// sent to the token endpoint — and so does the nonce, read against the ID
+// Token's. `federation_sp.ts`'s
 // decision 3 exactly: the partner — here, the browser — carries an opaque
 // handle and every fact about the request stays on this side. The `returnTo`
 // in particular must never ride in a parameter, because a return address a
@@ -613,6 +636,10 @@ class OidcRelyingParty {
         return require('../tls/tls_server');
       },
       fapi: fapi,
+      signerChain: function (material: any): Promise<any> {
+        return require('./certificate_trust')
+          .signerChain('jose-signer', material);
+      },
       loadPki: function () {
         return require('./pki');
       },
@@ -765,6 +792,25 @@ class OidcRelyingParty {
     return baseUrlOf(req);
   }
 
+  // THE AUTHORIZATION SERVER'S BASE, when it is not the surface's (#472). A
+  // surface and the authorization server were one base until custom
+  // listeners: the request's own. When the listener the request arrived on
+  // still answers `oauth-oidc`, that is still the answer (`fallback`, which
+  // keeps a cell's console base where #361 set one); when it does not, the
+  // browser is sent to, and the back channel names, oauth-oidc's advertised
+  // base — so the issuer the surface checks is the one the tokens carry.
+  private authorizationBaseOf(req: any, fallback: string): string {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering OidcRelyingParty.authorizationBaseOf().");
+    if (!req || listenerMap.isTrivial() ||
+        listenerMap.admits(listenerMap.listenerOf(req), 'oauth-oidc')) {
+      log.debug("Leaving OidcRelyingParty.authorizationBaseOf(). Here.");
+      return fallback;
+    }
+    log.debug("Leaving OidcRelyingParty.authorizationBaseOf(). Elsewhere.");
+    return baseUrlOf(req, 'oauth-oidc');
+  }
+
   // -------------------------------------------------------------------------
   // A CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With `global.
   // publicBaseUrl` set, every redirect URI is on the shared public name —
@@ -828,17 +874,18 @@ class OidcRelyingParty {
     return out;
   }
 
-  // A REALM'S OWN LISTENER (#99, 2026-10-02). A realm with
-  // `listener.publicBaseUrl` builds its console's and portal's callbacks on
-  // that base, which an ADMINISTRATOR configured — not a Host header a request
-  // carried — so it is registered on the surface's client in every mode, as a
-  // configured cell's console address is. Only the exact callback under the
-  // realm's own prefix, on the base the ambient realm configured.
+  // A CUSTOM LISTENER'S CALLBACK (#99 2026-10-02, #472 2026-10-07). A surface
+  // advertised on a custom listener — a realm's own, or one the service
+  // defined — builds its callback on that listener's `publicBaseUrl`, which
+  // an ADMINISTRATOR configured — not a Host header a request carried — so it
+  // is registered on the surface's client in every mode, as a configured
+  // cell's console address is. Only the exact callback under the ambient
+  // realm's prefix, on the base the surface's application is advertised on.
   private isRealmListenerCallback(surface: Surface, uri: string): boolean {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.isRealmListenerCallback().");
-    const base = String(config.value('listener.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    const app = hostedApplications.classify(surface.callbackPath);
+    const base = app ? listenerMap.advertisedBase(app) : '';
     if (!base) {
       log.debug("Leaving OidcRelyingParty.isRealmListenerCallback(). No.");
       return false;
@@ -879,6 +926,61 @@ class OidcRelyingParty {
     log.debug("Entering OidcRelyingParty.hostHeaderFrom().");
     log.debug("Leaving OidcRelyingParty.hostHeaderFrom().");
     return String(publicBase).replace(/^https?:\/\//i, '').split('/')[0];
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE STATIC CONSOLE'S CALLBACK (#446, the cutover). The console signs in
+  // in the browser now, as the public client, and comes back to the realm's
+  // `/admin/callback`; this service runs no flow for it. What it still owes
+  // is the address on the entry: `ensureRedirectUri()`'s three answers — a
+  // pinned base learns nothing, development learns the address it is
+  // reached at, product refuses one nobody registered — asked when the
+  // shell is served, which is the moment a sign-in is about to start.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes sure the console's client entry carries the callback the static
+   * console is about to sign in with, in the realm the request is under.
+   *
+   * @param req - the request for the shell
+   * @returns `{ ok, why }`, as `ensureRedirectUri()` answers
+   */
+  ensureConsoleCallback(req: any): any {
+    const { log } = this.deps;
+    log.debug('Entering OidcRelyingParty.ensureConsoleCallback().');
+    log.debug('Leaving OidcRelyingParty.ensureConsoleCallback().');
+    return this.ensureSurfaceCallback(req, 'admin');
+  }
+
+  // AND THE STATIC PORTAL'S (#568): the portal signs in in the browser too
+  // since it became a static application, as the public client
+  // `sts-user-portal`, and comes back to the realm's `/portal/callback`. The
+  // same three answers, asked when its shell is served.
+  /**
+   * Makes sure a static surface's client entry carries the callback it is
+   * about to sign in with, in the realm the request is under.
+   *
+   * @param req - the request for the shell
+   * @param id - the surface, `admin`, `portal` or `report`
+   * @returns `{ ok, why }`, as `ensureRedirectUri()` answers
+   */
+  ensureSurfaceCallback(req: any, id: string): any {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering OidcRelyingParty.ensureSurfaceCallback(). ' + id);
+    const surface = SURFACES[id];
+    const answer = this.inFlowRealm(surface, function () {
+      const found = self.clientOf(surface);
+      if (!found.ok) {
+        return found;
+      }
+      const base = self.cellConsoleBase(req, surface) ||
+                   self.publicBaseOf(req);
+      return self.ensureRedirectUri(surface, found.client,
+                                    base + surface.callbackPath);
+    });
+    log.debug('Leaving OidcRelyingParty.ensureSurfaceCallback(). ' +
+              (answer && answer.ok !== false ? 'Registered.' : 'Refused.'));
+    return answer;
   }
 
   // -------------------------------------------------------------------------
@@ -1158,10 +1260,8 @@ class OidcRelyingParty {
   private pkcePair(): { verifier: string; challenge: string } {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.pkcePair().");
-    const verifier = nodeCrypto.randomBytes(32).toString('base64url');
-    const challenge = nodeCrypto.createHash('sha256')
-                                .update(verifier)
-                                .digest('base64url');
+    const verifier = stsCrypto.randomBytes(32).toString('base64url');
+    const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     log.debug("Leaving OidcRelyingParty.pkcePair().");
     return { verifier: verifier, challenge: challenge };
   }
@@ -1240,7 +1340,11 @@ class OidcRelyingParty {
               ' ' + options.path);
     log.debug("Leaving OidcRelyingParty.backChannel().");
     return new Promise(function (resolve) {
-      const useHttps = config.value('global.https');
+      // WHICH LISTENER (#472): the main port while `oauth-oidc` is on it, as
+      // always; otherwise one of the custom listeners it is on, which are
+      // HTTPS whatever the main port is.
+      const target = listenerMap.dialTarget('oauth-oidc');
+      const useHttps = target.main ? config.value('global.https') : true;
       // THE LAZY REQUIRE. See the header: at the top of this file it would
       // move every /tls route; here every module is loaded and it is a cache
       // hit.
@@ -1343,7 +1447,7 @@ class OidcRelyingParty {
         // an IPv6 literal here without brackets, which is why this is
         // `loopbackHost()` and not `hostForUrl()`.
         host: helpers.loopbackHost(),
-        port: PORT,
+        port: target.main ? PORT : target.port,
         method: options.method,
         path: options.path,
         headers: headers,
@@ -1353,7 +1457,11 @@ class OidcRelyingParty {
         // certificate names this service and the connection names the
         // loopback interface. Pinning the anchor is the stronger half of the
         // two.
-        ca: anchor ? [anchor] : undefined,
+        // A custom listener presenting an operator's certificate (#472)
+        // chains to a public CA, which the pin cannot reach: node's own
+        // roots join it there, and only there.
+        ca: anchor ? [anchor].concat(target.publicCa
+          ? tlsModule.rootCertificates.slice() : []) : undefined,
         // THE SURFACE'S CLIENT CERTIFICATE (#139), where FAPI 1.0 Advanced
         // requires every access token to be bound to one: the certificate
         // this realm's CA issued with the surface's signing key.
@@ -1508,8 +1616,7 @@ class OidcRelyingParty {
     for (let i = 0; i < candidates.length; i++) {
       let key = null;
       try {
-        key = nodeCrypto.createPublicKey({ key: candidates[i],
-                                           format: 'jwk' });
+        key = stsCrypto.publicKeyFromJwk(candidates[i]);
       } catch (e) {
         lastWhy = 'a published key could not be read: ' + e.message;
         continue;
@@ -1601,8 +1708,8 @@ class OidcRelyingParty {
   dpopKey(): DpopKey {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.dpopKey().");
-    const pair = nodeCrypto.generateKeyPairSync('ec',
-                                                { namedCurve: 'P-256' });
+    const pair = stsCrypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'P-256' });
     const jwk = pair.publicKey.export({ format: 'jwk' });
     log.debug("Leaving OidcRelyingParty.dpopKey().");
     return {
@@ -1635,7 +1742,7 @@ class OidcRelyingParty {
     log.debug("Entering OidcRelyingParty.dpopProof(). " + method + " " + url);
     const o = opts || {};
     const payload: Record<string, unknown> = {
-      jti: nodeCrypto.randomBytes(16).toString('hex'),
+      jti: stsCrypto.randomBytes(16).toString('hex'),
       htm: String(method || 'POST').toUpperCase(),
       // WITHOUT QUERY OR FRAGMENT, which is what section 4.2 asks for and
       // what `dpop.htuOf()` compares against on the other side.
@@ -1646,8 +1753,9 @@ class OidcRelyingParty {
       payload.nonce = String(o.nonce);
     }
     if (o.accessToken) {
-      payload.ath = stsCrypto.b64u(nodeCrypto.createHash('sha256')
-        .update(String(o.accessToken), 'ascii').digest());
+      // The token's bytes as `ascii` read them, as they always were here.
+      payload.ath = stsCrypto.b64u(stsCrypto.digest('sha256',
+        Buffer.from(String(o.accessToken), 'ascii')));
     }
     // A DPoP proof is verified by the `jwk` in its own header (RFC 9449
     // section 4.2) — an x5c or x5t beside it would name a certificate nobody
@@ -1769,7 +1877,7 @@ class OidcRelyingParty {
       iss: surface.clientId,
       sub: surface.clientId,
       aud: this.assertionAudience(host),
-      jti: nodeCrypto.randomBytes(16).toString('base64url'),
+      jti: stsCrypto.randomBytes(16).toString('base64url'),
       iat: now,
       exp: now + ASSERTION_LIFETIME_S
     }, key.privateKeyPem, { algorithm: SURFACE_SIGNING_ALG,
@@ -1794,7 +1902,9 @@ class OidcRelyingParty {
         return String(name).toLowerCase() === 'host' ? host : undefined;
       }
     };
-    const base = baseUrlOf(view as any);
+    // The authorization server's base (#472), whichever application this
+    // back channel was asked from.
+    const base = baseUrlOf(view as any, 'oauth-oidc');
     const issuer = this.deps.loadJwtAccessTokens().issuerFor(base);
     log.debug("Leaving OidcRelyingParty.assertionAudience(). " + issuer);
     return issuer;
@@ -1849,7 +1959,7 @@ class OidcRelyingParty {
     }
     let verdict: any = null;
     try {
-      verdict = await pki.verifySignerChain(undefined, {
+      verdict = await this.deps.signerChain({
         certificate: held.certificatePem, chain: held.chainPem,
         source: 'the key the ' + surface.label + ' holds'
       });
@@ -1944,7 +2054,7 @@ class OidcRelyingParty {
     claims.iat = now;
     claims.nbf = now;
     claims.exp = now + REQUEST_OBJECT_LIFETIME_S;
-    claims.jti = nodeCrypto.randomBytes(16).toString('base64url');
+    claims.jti = stsCrypto.randomBytes(16).toString('base64url');
     // certificate-header: none — a request object is verified against the
     // key registered on the surface's own entry.
     const requestObject = stsCrypto.signJws(claims, key.privateKeyPem,
@@ -1999,7 +2109,8 @@ class OidcRelyingParty {
                                  jwt: string): Promise<any> {
     const { log, realms, stsCrypto } = this.deps;
     log.debug("Entering OidcRelyingParty.openJarmResponse().");
-    const publicBase = opts.authorizationBase || this.publicBaseOf(req);
+    const publicBase = opts.authorizationBase ||
+      this.authorizationBaseOf(req, this.publicBaseOf(req));
     const host = this.hostHeaderFrom(publicBase);
     const refuse = function (why: string): any {
       log.debug("Leaving OidcRelyingParty.openJarmResponse(). " + why);
@@ -2019,6 +2130,13 @@ class OidcRelyingParty {
     }
     const alg = String((header && header.alg) || '');
     const spec = stsCrypto.JWS_ALGS[alg];
+    // An empty or "none" alg is said to be unsigned rather than quoted
+    // as "" (2026-11-04, the wording of verifyIdTokenHint()'s fix).
+    if (!alg || alg.toLowerCase() === 'none') {
+      return refuse('it is unsigned (alg ' + (alg || 'missing') + '), and ' +
+                    'a response from this service is signed with one of ' +
+                    'its own published keys');
+    }
     if (!spec || spec.family === 'hmac') {
       return refuse('it is signed "' + alg + '", and a response from this ' +
                     'service is signed with one of its own published keys');
@@ -2041,24 +2159,29 @@ class OidcRelyingParty {
       return one && one.kid === header.kid;
     })[0];
     if (!jwk) {
-      return refuse('it names key "' + String(header.kid || '') + '", which ' +
-                    'this realm\'s JWKS does not hold');
+      return refuse(header.kid
+        ? 'it names key "' + String(header.kid) + '", which this realm\'s ' +
+          'JWKS does not hold'
+        : 'it names no key (no kid), so this surface cannot tell which of ' +
+          'this realm\'s keys to verify it with');
     }
     let verified: any = null;
     try {
       const key = spec.family === 'pq' ? jwk
-        : nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' })
+        : stsCrypto.publicKeyFromJwk(jwk)
           .export({ type: 'spki', format: 'pem' });
       verified = stsCrypto.verifyCompactJws(jwt, key, { algorithms: [alg] });
     } catch (e) {
       log.debug("Caught in OidcRelyingParty.openJarmResponse(): " +
                 ((e && e.message) || e));
-      return refuse('its signature: ' + ((e && e.message) || e));
+      return refuse('the signature check failed: ' +
+                    String((e && e.message) || e).replace(/\.+$/, ''));
     }
     const claims = (verified && verified.claims) || peeked || {};
     const issuer = this.assertionAudience(host);
     if (String(claims.iss || '') !== issuer) {
-      return refuse('its iss is "' + String(claims.iss || '') + '", and ' +
+      return refuse((claims.iss ? 'its iss is "' + String(claims.iss) + '"'
+                                : 'it carries no iss') + ', and ' +
                     'this surface expects "' + issuer + '"');
     }
     const audiences = Array.isArray(claims.aud) ? claims.aud.map(String)
@@ -2259,6 +2382,13 @@ class OidcRelyingParty {
     const kept = previous || {};
     const expiresIn = Number(json.expires_in);
     const tokens = {
+      // KEPT WHOLE, AND CHECKED FOR (#614). The issue asked whether the
+      // access token is only compared — the renewal's race check below — so
+      // that a digest would do. It is not: the embedded debugger, the one
+      // surface still a relying party of this module, VERIFIES it on every
+      // request (`debugger_server.ts`'s gate: signature, audience,
+      // permission), which needs the token itself. The refresh token is
+      // redeemed and the ID Token re-read, so neither can be a digest either.
       accessToken: String(json.access_token || ''),
       tokenType: String(json.token_type || 'Bearer'),
       scope: String(json.scope || kept.scope || ''),
@@ -2423,9 +2553,9 @@ class OidcRelyingParty {
       }
 
       const pkce = self.pkcePair();
-      const state = nodeCrypto.randomBytes(24).toString('base64url');
-      const nonce = nodeCrypto.randomBytes(24).toString('base64url');
-      store.set(state, {
+      const state = stsCrypto.randomBytes(24).toString('base64url');
+      const nonce = stsCrypto.randomBytes(24).toString('base64url');
+      store.set(stsCrypto.credentialDigest(state), {
         surface: surface.id,
         nonce: nonce,
         verifier: pkce.verifier,
@@ -2464,14 +2594,14 @@ class OidcRelyingParty {
       // FAPI 2.0 (#140) takes the same path without JARM: its section
       // 5.3.2.2 requires the push and `code`, and a signed object inside the
       // push is allowed.
+      const authorizationBase = opts.authorizationBase ||
+        self.authorizationBaseOf(req, publicBase);
       if (self.deps.fapi.advanced() || self.deps.fapi.fapi2()) {
         log.debug('Leaving OidcRelyingParty.beginSignIn(). FAPI Advanced.');
         return self.advancedRedirect(req, res, surface, found.client, query,
-                                     opts.authorizationBase || publicBase,
-                                     state, opts.poolPin);
+                                     authorizationBase, state, opts.poolPin);
       }
-      const to = (opts.authorizationBase || publicBase) + AUTHORIZE_PATH +
-                 '?' + query.toString();
+      const to = authorizationBase + AUTHORIZE_PATH + '?' + query.toString();
       log.info('oidc_rp: sending a browser to the authorization endpoint ' +
                'for the ' + surface.label + ' (client_id ' +
                surface.clientId + ', state ' + state + '). It comes back ' +
@@ -2574,13 +2704,15 @@ class OidcRelyingParty {
 
     log.debug("Leaving OidcRelyingParty.handleCallback().");
     return this.inFlowRealm(surface, async function () {
-      const flow = flows.get(state);
+      // Hashed as it is presented (#614).
+      const flowKey = stsCrypto.credentialDigest(state);
+      const flow = flows.get(flowKey);
       // SPENT ON SIGHT, whatever happens next. A state is single use: the
       // second presentation of one is either a browser reloading a page it
       // should not reload or somebody replaying a code, and both must fail.
       // Deleting before the work rather than after it is what makes that
       // true even where the work throws.
-      flows.delete(state);
+      flows.delete(flowKey);
       if (!flow) {
         log.debug('Leaving OidcRelyingParty.handleCallback(). No such ' +
                   'flow.');
@@ -2623,8 +2755,9 @@ class OidcRelyingParty {
       // console and the portal and the main port's for the debugger — see
       // the surface table.
       const publicBase = opts.authorizationBase ||
-                         self.cellConsoleBase(req, surface) ||
-                         self.publicBaseOf(req);
+                         self.authorizationBaseOf(req,
+                           self.cellConsoleBase(req, surface) ||
+                           self.publicBaseOf(req));
       const host = self.hostHeaderFrom(publicBase);
 
       // ---------------------------------------------------------------------
@@ -2744,7 +2877,8 @@ class OidcRelyingParty {
           outcome: 'refused',
           summary: 'the ' + surface.label + ' refused an ID Token from ' +
                    'this service: ' + verified.why,
-          detail: { surface: surface.id, client_id: surface.clientId,
+          detail: { method: 'ID Token',
+                    surface: surface.id, client_id: surface.clientId,
                     why: verified.why }
         });
         return self.coded(idTokenCode, { ok: false,
@@ -2799,7 +2933,10 @@ class OidcRelyingParty {
       // for this redemption becomes the key the session keeps (#34).
       const tokens = self.tokensFrom(tokenAnswer.json, claims, parentRealm,
                                      host, { dpop: dpop });
-      const refreshTtlS = Number(applications.settingFor(
+      // #825: the three hosted session clients take the shorter of their
+      // own refresh lifetime and the realm. The debugger is not one of
+      // them, so this stays the client's own setting for that surface.
+      const refreshTtlS = Number(applications.hostedEffective(
         surface.clientId, 'oauth2.refreshTokenTtlS', config));
       const renewableUntil = tokens.refreshToken && isFinite(refreshTtlS) &&
                              refreshTtlS > 0
@@ -2837,6 +2974,13 @@ class OidcRelyingParty {
           renewableUntil: renewableUntil
         });
       });
+      if (!session) {
+        log.debug('Leaving OidcRelyingParty.handleCallback(). The realm ' +
+                  'is at authn.maxSessions.');
+        return self.coded('STS-AUTHN-0337', { ok: false,
+                 why: 'the realm is at its session cap, so this sign-in ' +
+                      'was not admitted' }, res);
+      }
       log.info('oidc_rp: ' + username + ' completed the authorization code ' +
                'flow for ' +
                'the ' + surface.label + ' and holds session ' + session.id +
@@ -3023,7 +3167,8 @@ class OidcRelyingParty {
                                 found.why);
     }
     const host = tokens.host ||
-      this.hostHeaderFrom(this.publicBaseOf(req));
+      this.hostHeaderFrom(this.authorizationBaseOf(req,
+                                                   this.publicBaseOf(req)));
     const form = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: tokens.refreshToken
@@ -3470,6 +3615,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SURFACES: SURFACES,
   surfaceOf: slot.forward('surfaceOf'),
+  ensureConsoleCallback: slot.forward('ensureConsoleCallback'),
+  ensureSurfaceCallback: slot.forward('ensureSurfaceCallback'),
   beginSignIn: slot.forward('beginSignIn'),
   handleCallback: slot.forward('handleCallback'),
   sessionFor: slot.forward('sessionFor'),

@@ -55,10 +55,12 @@
 //   POST /ssf/subjects/remove             remove one
 //   POST /ssf/verify                      ask for a verification event
 //   POST /ssf/poll                        RFC 8936 delivery
-//   POST /ssf/receive                     THE ROLES REVERSED: a SET pushed AT
-//                                         this service, so the debugger can be
-//                                         the transmitter
-//   GET  /ssf/received                    what has arrived that way
+//
+// `POST /ssf/receive` and `GET /ssf/received` — the roles reversed, a SET
+// pushed AT this service so the debugger could be the transmitter — were
+// deleted by #593 (2026-10-12): the test peer is that push receiver, and the
+// console's and portal's own receivers (`ssf_receivers.ts`) are this
+// service's.
 //
 // **THE SUBJECT PATHS USE A SLASH AND NOT A COLON.** SSF's own examples write
 // `/subjects:add`, and express reads `:add` as a ROUTE PARAMETER — so a route
@@ -157,8 +159,7 @@
 import app = require('../common/app');
 // `allSigningKeys`, `STS`, node's `crypto` and `common/crypto` left this list
 // on 2026-09-10 with the three functions that read a received SET — they are
-// `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
-// the note above POST /ssf/receive.
+// `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -205,13 +206,14 @@ import ssfAuth = require('./ssf_auth');
 // transition, one prober for the cluster, and a GNAP key proof spent across
 // every node before the gate reads it. A LIBRARY; see its header.
 import ssfCluster = require('./ssf_cluster');
+// The model the answers are held to (#1579): a leaf.
+import SsfModel = require('./ssf_model');
 // The error-code registry, a LEAF. An HTTP refusal is marked on the response
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
 import errorCodes = require('../common/error_codes');
-// For `refusesUnverifiedSignals()` at /ssf/receive (#117). A leaf that
-// requires only config.
-import mode = require('../common/mode');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 
 // A loose JSON-shaped object: the reports, stream records and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -285,6 +287,10 @@ const MAINTENANCE_JOB = 'ssf.stream-maintenance';
 // See scheduleOptOuts().
 const OPT_OUT_JOB = 'risc.opt-out-effective';
 
+// This service's own console and portal collecting their streams by RFC 8936
+// poll (#771). See scheduleInternalPoll().
+const INTERNAL_POLL_JOB = 'ssf.internal-poll';
+
 /**
  * The Shared Signals Framework transmitter (OpenID SSF 1.0) and its CAEP and
  * RISC emission: the configuration metadata, the stream management, status,
@@ -304,12 +310,12 @@ class SharedSignals {
    */
   static readonly WELL_KNOWN = '/.well-known/ssf-configuration';
 
-  // The seven actions of the signals slot; see consoleAction().
+  // The six actions of the signals slot; see consoleAction().
   /**
    * The actions of the signals console and `POST /admin-api/ssf/:action`.
    */
   static readonly CONSOLE_ACTIONS: string[] = ['status', 'delete', 'transmit',
-    'clear-received', 'revive', 'clear-dead-letters', 'verify'];
+    'revive', 'clear-dead-letters', 'verify'];
 
   // The three actions of the CAEP slot; see caepAction().
   /**
@@ -460,6 +466,14 @@ class SharedSignals {
                headers?: Json): void {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.fail(). ' + status + ' ' + err);
+    // HELD TO THE MODEL (#1579): every `err` this family sends is declared
+    // in `models/ssf/ssf.tsp`. One that is not is recorded, and sent as it
+    // was built — the model describes the wire, it does not reshape it.
+    if (SsfModel.unknownError(err)) {
+      log.error(this.deps.errorCodes.tag('STS-SSF-0160') + 'the err value "' +
+                err + '" is not declared in models/ssf/ssf.tsp; it is sent ' +
+                'as it is.');
+    }
     const extra = headers || {};
     Object.keys(extra).forEach(function (name) {
       res.set(name, extra[name]);
@@ -468,6 +482,34 @@ class SharedSignals {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify({ err: err, description: description }, null, 2));
     log.debug('Leaving SharedSignals.fail().');
+  }
+
+  /**
+   * Holds an answer to its document in the model (#1579) and records what
+   * the document does not allow, under STS-SSF-0159. The answer is not
+   * changed: the model describes the wire and does not reshape it, so a
+   * problem here is a model gap. A stream configuration's `delivery` is held
+   * to its own document too.
+   *
+   * @param id - the document's id in `models/ssf/ssf.tsp`
+   * @param value - the answer as it is about to be sent
+   * @returns the value, unchanged
+   */
+  holdToModel(id: string, value: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.holdToModel(). ' + id);
+    let problems = SsfModel.undeclared(id, value);
+    if (id === 'stream-configuration' && value && value.delivery) {
+      problems = problems.concat(SsfModel.undeclared('stream-delivery',
+                                                     value.delivery));
+    }
+    if (problems.length > 0) {
+      log.error(errorCodes.tag('STS-SSF-0159') + 'the ' + id + ' answer is ' +
+                'not the model\'s (models/ssf/ssf.tsp): ' +
+                problems.join('; ') + '.');
+    }
+    log.debug('Leaving SharedSignals.holdToModel().');
+    return value;
   }
 
   // Answers 501 rather than 404 when the family is switched off: the feature
@@ -596,6 +638,89 @@ class SharedSignals {
     log.debug('Entering SharedSignals.newTxn().');
     log.debug('Leaving SharedSignals.newTxn().');
     return this.deps.helpers.randomId(16);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154).
+  //
+  // A person is named `iss_sub`, and a receiver matches that pair against
+  // the issuer it discovered — the issuer of the person's ID Tokens, which is
+  // the stream's `iss` and the SET's. The doors that raise an event with no
+  // request in hand (an administrator's password change, disable and enable
+  // through /admin-api, the RISC and CAEP automatic emissions) named the
+  // person under `issuerFor(null)`: this process's own address, which behind
+  // a published port or a proxy is an address no receiver discovered. The
+  // receiver then refused the event as naming an unknown subject — a failure
+  // that looks like a bad subject rather than a misconfigured transmitter —
+  // and a stream that had ADDED the person under the discovered issuer was
+  // not even sent it, the stream's subject key being the pair.
+  //
+  // So, per stream: an `iss_sub` naming THAT request-less issuer — at the
+  // top, or as a complex subject's member — is re-issued under the stream's
+  // `iss`. Nothing else is touched: a federation partner's subject keeps its
+  // partner's issuer, and one already named under the stream's is as it was.
+  // -------------------------------------------------------------------------
+  /**
+   * Names a subject this transmitter built under its request-less issuer
+   * under the stream's issuer instead (#154).
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns the subject, re-issued where it named the request-less issuer
+   */
+  subjectUnderStreamIssuer(record: Json, subject: Json): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.subjectUnderStreamIssuer().');
+    const streamIss = String((record && record.iss) || '');
+    const ownIss = this.issuerFor(null);
+    if (!subject || typeof subject !== 'object' || !streamIss ||
+        streamIss === ownIss) {
+      log.debug('Leaving SharedSignals.subjectUnderStreamIssuer(). ' +
+                'Nothing to re-issue.');
+      return subject;
+    }
+    let changed = 0;
+    const reissue = function (one: Json): Json {
+      if (one && typeof one === 'object' && one.format === 'iss_sub' &&
+          one.iss === ownIss) {
+        changed += 1;
+        return Object.assign({}, one, { iss: streamIss });
+      }
+      return one;
+    };
+    let out = reissue(subject);
+    if (out && out.format === 'complex') {
+      const copy: Json = Object.assign({}, out);
+      Object.keys(copy).forEach(function (member) {
+        if (member !== 'format') {
+          copy[member] = reissue(copy[member]);
+        }
+      });
+      out = copy;
+    }
+    log.debug('Leaving SharedSignals.subjectUnderStreamIssuer(). ' + changed +
+              ' member(s) re-issued.');
+    return changed ? out : subject;
+  }
+
+  /**
+   * Whether a stream covers a subject, asked under the stream's issuer
+   * (#154). Every emitter chooses its candidate streams with this BEFORE it
+   * transmits, so a stream that added the person under the issuer it
+   * discovered is a candidate at all — `transmitNow()` re-issuing the
+   * subject would come too late for a stream never handed the event.
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns true when the stream covers it
+   */
+  coversSubject(record: Json, subject: Json): boolean {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.coversSubject().');
+    const covered = streams.streamCoversSubject(record,
+      this.subjectUnderStreamIssuer(record, subject));
+    log.debug('Leaving SharedSignals.coversSubject(). ' + covered);
+    return covered;
   }
 
   // THE SUBJECT AS THIS RECEIVER KNOWS THE PERSON (#149). A stream's owner
@@ -730,7 +855,15 @@ class SharedSignals {
             errorCodes } = this.deps;
     const { iso } = this.deps.helpers;
     log.debug('Entering SharedSignals.transmitNow(). ' + record.stream_id);
-    const asked = options || {};
+    // #154: a subject this transmitter named under its request-less issuer is
+    // named under the STREAM's — before the coverage check, whose key is the
+    // issuer and the subject together. See subjectUnderStreamIssuer().
+    const given = options || {};
+    const asked = given.subject
+      ? Object.assign({}, given,
+                      { subject: this.subjectUnderStreamIssuer(record,
+                                                               given.subject) })
+      : given;
     const uri = String(asked.uri || '');
     // SSF'S OWN TWO EVENTS ARE ABOUT THE PIPE, AND THE SPECIFICATION LETS THE
     // TRANSMITTER SEND THEM WHETHER OR NOT THEY WERE AGREED (#144): a
@@ -1590,6 +1723,8 @@ class SharedSignals {
                'ssf.deadLetterMaxPerStream; ' + dead.length +
                ' dead stream(s). Inspect them on /admin/ssf.');
     } else if (summary.expired || summary.orphaned) {
+      // Nothing failed. This count is debug while the sweep is a scheduler
+      // job (common/job_log.ts). A delivery failure is the warning above.
       log.info('ssf: ' + summary.expired + ' dead letter(s) older than ' +
                'ssf.deadLetterRetentionS and ' + summary.orphaned + ' of ' +
                'deleted streams were removed in the "' + realms.currentId() +
@@ -1626,7 +1761,18 @@ class SharedSignals {
     const now = Date.now();
     const all = realms.list();
     let chain: Promise<unknown> = Promise.resolve();
-    all.forEach((realm) => {
+    // A TURN OF THE EVENT LOOP BETWEEN REALMS (#704). The chain is
+    // promises, which settle in microtasks: a realm whose sweep had no probe
+    // to await went straight on to the next, so every realm's walk of its
+    // dead letters ran in one turn of the process running the job.
+    all.forEach((realm, i) => {
+      if (i > 0) {
+        chain = chain.then(function (): Promise<void> {
+          return new Promise(function (resolve: () => void): void {
+            setImmediate(resolve);
+          });
+        });
+      }
       chain = chain.then(() => {
         return realms.run(realm, () => {
           try {
@@ -1731,8 +1877,9 @@ class SharedSignals {
         'ssf.verificationEveryS').value);
       const every = Number.isFinite(everyValue) && everyValue > 0
         ? Math.floor(everyValue) : 0;
-      const action = String(streams.ownerSetting(record,
-        'ssf.inactivityAction').value || 'pause');
+      // `inactivityAction()` (#1094): a person's poll stream timed out by
+      // its own default takes that default's action.
+      const action = streams.inactivityAction(record);
       const idle = now - Number(record.lastActivityAt ||
         Math.floor(Date.parse(record.createdAt || '') / 1000) || now);
       if (timeout && idle >= timeout) {
@@ -1812,17 +1959,19 @@ class SharedSignals {
         // Off only while BOTH are 0 for every stream: an application may
         // turn either on for its own streams when the setting is 0.
         const streams = this.deps.streams;
+        // `inactivityTimeout()` and not the setting (#1094), so a person's
+        // poll stream under its own default keeps the job on.
         const anyStream = streams.listStreams().some((record: Json) => {
           return !streams.isInternal(record) &&
-            (Number(streams.ownerSetting(record,
-              'ssf.inactivityTimeoutS').value) > 0 ||
+            (streams.inactivityTimeout(record) > 0 ||
              Number(streams.ownerSetting(record,
                'ssf.verificationEveryS').value) > 0);
         });
         return !anyStream && !Number(config.value('ssf.inactivityTimeoutS')) &&
                !Number(config.value('ssf.verificationEveryS'))
           ? 'ssf.inactivityTimeoutS and ssf.verificationEveryS are both 0, ' +
-            'and no application sets either for its streams'
+            'no application sets either for its streams, and no person ' +
+            'holds a poll stream'
           : '';
       },
       run: () => {
@@ -1877,6 +2026,55 @@ class SharedSignals {
       }
     });
     log.debug('Leaving SharedSignals.scheduleOptOuts(). On the scheduler.');
+  }
+
+  // -------------------------------------------------------------------------
+  // THIS SERVICE'S OWN TWO RECEIVERS COLLECT BY POLL (#771), AS A SCHEDULER
+  // JOB — rcbj's rule that anything periodic is one. `ssf/ssf_receivers.ts`
+  // carries the argument for poll; this is only its clock.
+  //
+  // A CLUSTER job, once for the service: a SET is collected and acknowledged
+  // once, and a run that walks every realm itself dials only the streams
+  // with something waiting, where a per-realm job would claim a slot per
+  // realm every second to find most of them empty. Its body is handed to a
+  // request worker (#408), so neither the polls' verification nor what a
+  // received signal ends runs on the front process's thread. `nice` 0: it is
+  // the latency of a revocation reaching a surface, and a busy worker is
+  // exactly when there is most to collect.
+  // -------------------------------------------------------------------------
+  /**
+   * Registers the `ssf.internal-poll` cluster scheduler job, once.
+   */
+  scheduleInternalPoll(): void {
+    const { log, config, receivers } = this.deps;
+    log.debug('Entering SharedSignals.scheduleInternalPoll().');
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(INTERNAL_POLL_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleInternalPoll(). Registered.');
+      return;
+    }
+    scheduler.register({
+      id: INTERNAL_POLL_JOB,
+      title: 'Console and portal Shared Signals poll',
+      describe: 'This service\'s own admin console and user portal collect ' +
+                'the Security Event Tokens waiting on their streams, in ' +
+                'every realm, over RFC 8936 poll from /ssf/poll — verified, ' +
+                'recorded, acted on and acknowledged (#771).',
+      owner: 'ssf/ssf.ts',
+      kind: 'cluster',
+      everySetting: 'ssf.internalPollMs', everySettingUnit: 'ms',
+      nice: 0,
+      off: function () {
+        return !config.value('ssf.enabled') ? 'ssf.enabled is off'
+          : (!config.value('ssf.internalReceivers')
+            ? 'ssf.internalReceivers is off' : '');
+      },
+      run: function () {
+        return receivers.pollAll();
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleInternalPoll(). On the ' +
+              'scheduler.');
   }
 
   // The job's body: one opt-out-effective per account that is due.
@@ -1955,7 +2153,7 @@ class SharedSignals {
       spec_version: '1_0',
       issuer: this.issuerFor(req),
       // baseUrlOf() carries the realm prefix already; see issuerFor().
-      jwks_uri: baseUrlOf(req) + '/oauth2/jwks',
+      jwks_uri: baseUrlOf(req, 'oauth-oidc') + '/oauth2/jwks',
       delivery_methods_supported: streams.offeredDeliveryMethods(),
       configuration_endpoint: base + '/stream',
       status_endpoint: base + '/status',
@@ -2017,7 +2215,7 @@ class SharedSignals {
       includeSecrets: !!(decision && !decision.anonymous)
     });
     log.debug('Leaving SharedSignals.streamView().');
-    return view;
+    return this.holdToModel('stream-configuration', view);
   }
 
   // -------------------------------------------------------------------------
@@ -2044,20 +2242,6 @@ class SharedSignals {
     streams.noteActivity(record);
     log.debug('Leaving SharedSignals.ownedStream().');
     return record;
-  }
-
-  // A csv setting read as a list, with `fallback` when it is empty — what
-  // `/ssf/receive`'s issuer and audience checks accept.
-  private receiveList(key: string, fallback: string): string[] {
-    const { log, config } = this.deps;
-    log.debug('Entering SharedSignals.receiveList(). ' + key);
-    const asked = config.value(key);
-    const list = (Array.isArray(asked) ? asked : String(asked || '')
-      .split(',')).map(function (one) {
-      return String(one).trim();
-    }).filter(Boolean);
-    log.debug('Leaving SharedSignals.receiveList().');
-    return list.length ? list : [fallback];
   }
 
   private updateRoute(req: Req, res: Res, mode: string): void {
@@ -2128,7 +2312,8 @@ class SharedSignals {
       log.debug('Entering GET ' + WELL_KNOWN + '.');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(this.metadata(req), null, 2));
+         .send(JSON.stringify(this.holdToModel('transmitter-metadata',
+                                               this.metadata(req)), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '.');
     });
 
@@ -2190,7 +2375,8 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(found, null, 2));
+         .send(JSON.stringify(this.holdToModel('transmitter-metadata',
+                                               found), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '/*. ' + found.issuer);
     });
 
@@ -2386,8 +2572,9 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ stream_id: record.stream_id,
-           status: record.status, reason: record.statusReason }, null, 2));
+         .send(JSON.stringify(this.holdToModel('stream-status',
+           { stream_id: record.stream_id, status: record.status,
+             reason: record.statusReason }), null, 2));
       log.debug('Leaving GET /ssf/status. ' + record.status);
     });
 
@@ -2437,9 +2624,10 @@ class SharedSignals {
               ? (changed.report.ok ? 'sent' : changed.report.why) : 'none' } });
         res.status(200).type('application/json')
            .set('Cache-Control', 'no-store')
-           .send(JSON.stringify({ stream_id: changed.stream.stream_id,
-             status: changed.stream.status,
-             reason: changed.stream.statusReason }, null, 2));
+           .send(JSON.stringify(this.holdToModel('stream-status',
+             { stream_id: changed.stream.stream_id,
+               status: changed.stream.status,
+               reason: changed.stream.statusReason }), null, 2));
         log.debug('Leaving POST /ssf/status. ' + changed.stream.status);
       });
     });
@@ -2694,29 +2882,66 @@ class SharedSignals {
         log.debug('Leaving POST /ssf/poll. Off.');
         return;
       }
-      const decision = this.gate(req, res, 'read');
-      if (!decision) {
-        log.debug('Leaving POST /ssf/poll. Refused.');
-        return;
+      // THIS SERVICE'S OWN TWO RECEIVERS (#771). Their streams are nobody's
+      // to manage over these endpoints (#144), so the ordinary gate and
+      // ownership would refuse them; what they present instead is the
+      // credential `ssf_receivers.ts` derives for each, and nothing else
+      // answers for one of those streams. The id is read before the gate for
+      // that reason only — every other stream is refused below exactly as
+      // before, with the same 404 for one that is not the caller's.
+      const early = this.jsonBody(req);
+      const earlyId = String((early && early.stream_id) ||
+                             req.query.stream_id || '');
+      const internal: Json = earlyId ? streams.getStream(earlyId) : null;
+      let record: Json = null;
+      let body: Json = early;
+      if (internal && streams.isInternal(internal)) {
+        if (!this.deps.receivers.authorizesPoll(internal,
+              (req.headers || {}).authorization)) {
+          errorCodes.mark(res, 'STS-SSF-0145');
+          this.fail(res, 401, 'access_denied',
+            'Stream ' + earlyId + ' is one of this service\'s own receiver ' +
+            'streams, and only that receiver holds the credential a poll ' +
+            'of it presents.');
+          log.debug('Leaving POST /ssf/poll. Not its receiver.');
+          return;
+        }
+        record = internal;
+      } else {
+        // ACKNOWLEDGING IS A WRITE (rcbj on #695). RFC 8936's `ack` and
+        // `setErrs` delete the events they name from the stream's queue, so
+        // a poll that carries either changes what this transmitter still
+        // holds for the receiver — more than a read scope gives. A poll
+        // that only collects stays a read.
+        const acks = !!early && typeof early === 'object' &&
+          ((Array.isArray(early.ack) && early.ack.length > 0) ||
+           (!!early.setErrs && typeof early.setErrs === 'object' &&
+            Object.keys(early.setErrs).length > 0));
+        const decision = this.gate(req, res, acks ? 'write' : 'read');
+        if (!decision) {
+          log.debug('Leaving POST /ssf/poll. Refused' +
+                    (acks ? ' an acknowledgement.' : '.'));
+          return;
+        }
+        if (!body) {
+          errorCodes.mark(res, 'STS-SSF-0011');
+          this.fail(res, 400, 'invalid_request',
+                    'The request body is not JSON.');
+          log.debug('Leaving POST /ssf/poll. Not JSON.');
+          return;
+        }
+        const id = String(body.stream_id || req.query.stream_id || '');
+        record = this.ownedStream(res, decision, id,
+          'RFC 8936 has no stream_id member — a real poll endpoint is per ' +
+          'stream, and this transmitter publishes one URL, so the id goes ' +
+          'in the body or the query string. The stream configuration says ' +
+          'so in delivery.endpoint_url.');
+        if (!record) {
+          log.debug('Leaving POST /ssf/poll. No such stream.');
+          return;
+        }
       }
-      const body = this.jsonBody(req);
-      if (!body) {
-        errorCodes.mark(res, 'STS-SSF-0011');
-        this.fail(res, 400, 'invalid_request',
-                  'The request body is not JSON.');
-        log.debug('Leaving POST /ssf/poll. Not JSON.');
-        return;
-      }
-      const id = String(body.stream_id || req.query.stream_id || '');
-      const record: Json = this.ownedStream(res, decision, id,
-        'RFC 8936 has no stream_id member — a real poll endpoint is per ' +
-        'stream, and this transmitter publishes one URL, so the id goes in ' +
-        'the body or the query string. The stream configuration says so in ' +
-        'delivery.endpoint_url.');
-      if (!record) {
-        log.debug('Leaving POST /ssf/poll. No such stream.');
-        return;
-      }
+      const id = String(record.stream_id);
       if (record.delivery.method !== streams.DELIVERY_POLL) {
         errorCodes.mark(res, 'STS-SSF-0021');
         this.fail(res, 400, 'invalid_request',
@@ -2728,336 +2953,51 @@ class SharedSignals {
         return;
       }
       const result: Json = streams.poll(record, body);
+      // This service's own receiver, collecting on the scheduler. A 200
+      // is the run row. The audit export would otherwise send one line
+      // per poll. A remote receiver's poll is recorded as before.
+      if (record === internal) {
+        res.locals.auditQuietWhenOk = true;
+      }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ sets: result.sets,
-           moreAvailable: result.moreAvailable }, null, 2));
+         .send(JSON.stringify(this.holdToModel('poll-response',
+           { sets: result.sets, moreAvailable: result.moreAvailable }), null,
+                              2));
       log.debug('Leaving POST /ssf/poll. ' + Object.keys(result.sets).length +
                 ' set(s).');
     });
 
-    // -----------------------------------------------------------------------
-    // THE ROLES REVERSED: A SET PUSHED **AT** THIS SERVICE.
-    //
-    // The debugger can be a transmitter, and something has to be at the far
-    // end of its push. This is that, and it is what makes the debugger's
-    // "send an event" half testable at all.
-    //
-    // **IT ACCEPTS A SET WHOSE SIGNATURE DOES NOT VERIFY, BY DEFAULT, AND
-    // REPORTS WHY.** That is this service's ordinary posture and it is
-    // exactly right for a debugger: a receiver that refused an unverifiable
-    // event could not show anybody WHAT arrived or WHY it did not verify,
-    // which is the question being asked. `ssf.receiveRequireSignature` turns
-    // the 400 on, which is what a real receiver does and is the negative a
-    // transmitter needs to be able to reach. **PRODUCT MODE ALWAYS REFUSES
-    // (#117, 2026-09-23)**: there it was an unauthenticated write into a
-    // stored inbox (`mode.refusesUnverifiedSignals()`).
-    //
-    // The verification is against THIS SERVICE'S OWN key, because that is the
-    // only key it has. A SET signed by somebody else is reported as "not
-    // verifiable here" rather than as invalid — those are different sentences
-    // and conflating them would be a receiver blaming a transmitter for its
-    // own missing key.
-    // -----------------------------------------------------------------------
-    // THE READING AND THE VERIFICATION ARE `ssf_events.js`'s SINCE 2026-09-10,
-    // AND THEY MOVED BECAUSE A SECOND RECEIVER ARRIVED.
-    // `publicKeyForHeader()`, `verifyReceivedSet()` and `readSetForDisplay()`
-    // were private to this file while this endpoint was the only thing in the
-    // service that ever read a SET it was handed. The admin console and the
-    // user portal are receivers of their own now (`ssf/ssf_receivers.ts`),
-    // with a receive endpoint each, and three receivers reading a SET three
-    // ways would be three opinions about what arrived. `events.readSet()` and
-    // `events.verifySet()` are the same code in the file that owns the
-    // envelope — building a SET and reading one back are the two directions
-    // of one format.
-
-    app.post('/ssf/receive', (req, res) => {
-      log.debug('Entering POST /ssf/receive.');
-      if (this.offCheck(res)) {
-        log.debug('Leaving POST /ssf/receive. Off.');
-        return;
-      }
-      if (!config.value('ssf.receiveEnabled')) {
-        errorCodes.mark(res, 'STS-SSF-0022');
-        this.fail(res, 501, 'invalid_request',
-          'This service is not accepting pushed events (ssf.receiveEnabled). ' +
-          'It is a RECEIVER only for the debugger\'s benefit — the roles ' +
-          'reversed — and turning it off leaves the transmitter half working.');
-        log.debug('Leaving POST /ssf/receive. Off.');
-        return;
-      }
-      const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8')
-        : (typeof req.body === 'string' ? req.body
-          : String((req.body && req.body.token) || ''));
-      const token = raw.trim();
-      if (!token) {
-        errorCodes.mark(res, 'STS-SSF-0023');
-        this.fail(res, 400, 'invalid_request',
-          'The body is empty. RFC 8935 section 2.1 puts the Security Event ' +
-          'Token in the body as application/secevent+jwt, with no form ' +
-          'encoding and no JSON wrapper around it.');
-        log.debug('Leaving POST /ssf/receive. Empty body.');
-        return;
-      }
-      const contentType = String((req.headers || {})['content-type'] || '')
-        .split(';')[0].trim().toLowerCase();
-      const read: Json = events.readSet(token);
-      const verdict: Json = events.verifySet(token, read.header);
-      const verified = verdict.verified;
-      const verificationNote = verdict.note;
-      // Refused in product mode whatever the setting says (#117).
-      if (!verified && mode.refusesUnverifiedSignals()) {
-        errorCodes.mark(res, 'STS-SSF-0024');
-        this.fail(res, 400, 'invalid_key', verificationNote);
-        log.debug('Leaving POST /ssf/receive. Signature required.');
-        return;
-      }
-      // ---------------------------------------------------------------------
-      // WHAT A RECEIVER MUST CHECK, AND THIS ONE DID NOT (#144): the explicit
-      // type (SSF 1.0 section 4.1.1), the issuer (section 4.1.6) and the
-      // audience (RFC 8417 section 2.2, SSF section 4.1.8). There is no
-      // stream behind this endpoint to read an issuer or an audience off, so
-      // they are settings — `ssf.receiveIssuers` and `ssf.receiveAudiences` —
-      // and each defaults to the one value this receiver can stand behind:
-      // this realm's own transmitter issuer (the only issuer whose key it
-      // holds) and this endpoint's own URL. Each failure is RECORDED and then
-      // refused, because what arrived is still the question a person at
-      // /admin/ssf is asking.
-      // ---------------------------------------------------------------------
-      const claims: Json = read.claims || {};
-      const acceptedIssuers = this.receiveList('ssf.receiveIssuers',
-                                               this.issuerFor(req));
-      const acceptedAudiences = this.receiveList('ssf.receiveAudiences',
-        this.ssfBase(req) + '/receive');
-      const typOk = !read.problem && receivers.isSetTyp(read.header);
-      const issuerOk = !read.problem &&
-        acceptedIssuers.indexOf(String(claims.iss || '')) >= 0;
-      const audienceOk = !read.problem &&
-        receivers.audienceNames(claims.aud).some(function (one: string) {
-          return acceptedAudiences.indexOf(one) >= 0;
-        });
-      const entry = {
-        at: iso(),
-        token: token,
-        contentType: contentType,
-        correctMediaType: contentType === transport.SET_MEDIA_TYPE,
-        header: read.header,
-        claims: read.claims,
-        problem: read.problem,
-        verified: verified,
-        verificationNote: verificationNote,
-        typOk: typOk,
-        issuerOk: issuerOk,
-        audienceOk: audienceOk,
-        summary: read.claims ? events.describeSet(read.claims) : null
-      };
-      streams.recordReceived(entry);
-      audit.audit({ action: 'ssf.event.receive', category: 'signals',
-        protocol: 'SSF', channel: 'http',
-        outcome: (read.problem || !typOk || !issuerOk || !audienceOk)
-          ? 'failure' : 'success',
-        errorCode: read.problem ? 'STS-SSF-0025'
-          : (!typOk ? 'STS-SSF-0104' : (!issuerOk ? 'STS-SSF-0105'
-            : (!audienceOk ? 'STS-SSF-0106' : ''))),
-        target: String((read.claims || {}).jti || ''),
-        summary: 'A Security Event Token was pushed at this service' +
-          (verified ? ' and verified' : ''),
-        detail: { types: Object.keys((read.claims || {}).events || {}),
-          contentType: contentType } });
-      if (read.problem) {
-        errorCodes.mark(res, 'STS-SSF-0025');
-        this.fail(res, 400, 'invalid_request', read.problem +
-          ' It has been recorded anyway and is on /admin/ssf, because what ' +
-          'arrived is the question being asked.');
-        log.debug('Leaving POST /ssf/receive. Malformed.');
-        return;
-      }
-      if (!typOk) {
-        errorCodes.mark(res, 'STS-SSF-0104');
-        this.fail(res, 400, 'invalid_request', 'The header\'s typ is ' +
-          JSON.stringify((read.header || {}).typ || null) + '; SSF 1.0 ' +
-          'section 4.1.1 requires "secevent+jwt". It has been recorded and ' +
-          'is on /admin/ssf.');
-        log.debug('Leaving POST /ssf/receive. Not explicitly typed.');
-        return;
-      }
-      if (!issuerOk) {
-        errorCodes.mark(res, 'STS-SSF-0105');
-        this.fail(res, 400, 'invalid_issuer', 'The iss is ' +
-          JSON.stringify(claims.iss || null) + ', and this receiver accepts ' +
-          acceptedIssuers.map(function (one) {
-            return JSON.stringify(one);
-          }).join(', ') + ' (ssf.receiveIssuers). It has been recorded and ' +
-          'is on /admin/ssf.');
-        log.debug('Leaving POST /ssf/receive. Wrong issuer.');
-        return;
-      }
-      if (!audienceOk) {
-        errorCodes.mark(res, 'STS-SSF-0106');
-        this.fail(res, 400, 'invalid_audience', 'The aud is ' +
-          JSON.stringify(claims.aud || null) + ', and this receiver answers ' +
-          'to ' + acceptedAudiences.map(function (one) {
-            return JSON.stringify(one);
-          }).join(', ') + ' (ssf.receiveAudiences). It has been recorded and ' +
-          'is on /admin/ssf.');
-        log.debug('Leaving POST /ssf/receive. Wrong audience.');
-        return;
-      }
-      // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says. A
-      // document here would be something a transmitter could come to depend
-      // on that no receiver has to send.
-      res.status(202).set('Cache-Control', 'no-store').end();
-      log.debug('Leaving POST /ssf/receive. Accepted.');
-    });
-
-    app.get('/ssf/received', ssfCluster.spendGnapProof, (req, res) => {
-      log.debug('Entering GET /ssf/received.');
-      if (this.offCheck(res)) {
-        log.debug('Leaving GET /ssf/received. Off.');
-        return;
-      }
-      const decision = this.gate(req, res, 'read');
-      if (!decision) {
-        log.debug('Leaving GET /ssf/received. Refused.');
-        return;
-      }
-      res.status(200).type('application/json')
-         .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ received: streams.listReceived() }, null, 2));
-      log.debug('Leaving GET /ssf/received.');
-    });
-
+    // THE DESCRIPTION PAGE (#584): not an SSF endpoint, as it says, and so
+    // a static surface's shell since #584, drawn in the browser
+    // (`web_ssf_description.ts`) from the document `?format=json` answers.
+    // `/.well-known/ssf-configuration` and the stream endpoints are SSF's
+    // and unchanged.
     app.get('/ssf', (req, res) => {
       log.debug('Entering GET /ssf.');
       const info = this.description(req);
-      if (String(req.query.format || '').toLowerCase() === 'json') {
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
         res.status(200).set('Cache-Control', 'no-store').json(info);
         log.debug('Leaving GET /ssf. JSON.');
         return;
       }
-      const endpointRows = info.endpoints.map(function (row) {
-        return '<tr><td><code>' + xmlEscape(row.method) +
-          '</code></td><td><code>' +
-          xmlEscape(row.path) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td></tr>';
-      }).join('');
-      const eventRows = info.eventTypes.map(function (row) {
-        return '<tr><td>' + xmlEscape(row.name) + '</td><td><code>' +
-          xmlEscape(row.uri) + '</code></td><td>' +
-          (row.offered ? 'offered' : 'NOT offered') + '</td><td>' +
-          xmlEscape(row.what) + '</td></tr>';
-      }).join('');
-      const formatRows = info.subjectFormats.map(function (row) {
-        return '<tr><td><code>' + xmlEscape(row.format) +
-          '</code></td><td><code>' +
-          xmlEscape(row.members.join(', ')) + '</code></td><td>' +
-          xmlEscape(row.what) + '</td></tr>';
-      }).join('');
-      const streamRows = info.streams.length
-        ? info.streams.map(function (row) {
-            return '<tr><td><code>' + xmlEscape(row.stream_id) +
-              '</code></td><td>' + xmlEscape(row.status) + '</td><td>' +
-              xmlEscape(streams.deliveryName(row.delivery)) + '</td><td>' +
-              row.subjects + '</td><td>' + row.queued + '</td><td>' +
-              row.counters.delivered + ' delivered, ' + row.counters.failed +
-              ' failed</td></tr>';
-          }).join('')
-        : '<tr><td colspan="6">No streams. A receiver creates one by ' +
-          'POSTing a Stream Configuration to the configuration endpoint ' +
-          'above.</td></tr>';
-      const negativeRows = info.reachableNegatives.map(function (row) {
-        return '<tr><td>' + xmlEscape(row.what) + '</td><td>' +
-          xmlEscape(row.answer) + '</td></tr>';
-      }).join('');
-      const schemeRows = info.authentication.schemes.map(function (row) {
-        return '<tr><td>' + xmlEscape(row.name) + '</td><td><code>' +
-          xmlEscape(row.spec_urn) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td></tr>';
-      }).join('');
-
-      const inner = '<h1>Shared Signals — a transmitter lives here</h1>' +
-        '<p class="sub">OpenID SSF 1.0 (final, 2 September 2025) over RFC ' +
-        '8417 Security Event Tokens, RFC 9493 subject identifiers, and RFC ' +
-        '8935 / 8936 delivery. The issuer is <code>' +
-        xmlEscape(info.issuer) +
-        '</code>. ' + (info.enabled ? '' : '<strong>Turned off</strong> ' +
-          '(<code>ssf.enabled</code>) — every endpoint but the metadata ' +
-          'answers 501. ') + 'This page is not an SSF endpoint; a real ' +
-        'transmitter publishes nothing like it.</p>' +
-        '<div class="warn"><strong>SSF is the PIPE and not the ' +
-        'vocabulary.</strong> ' +
-        'It defines how two parties agree a stream, who the events are ' +
-        'about, what they travel in and how they get there &mdash; and ' +
-        'exactly TWO events of its own, both about the pipe. The ' +
-        'vocabularies are CAEP (what happened to a session) and RISC (what ' +
-        'happened to an account), and neither is here yet. <strong>Nothing ' +
-        'generates an event on its own</strong>: every SET this service ' +
-        'transmits was asked for, at the verification endpoint, on ' +
-        '<a href="/admin/ssf">the console page</a> or through the ' +
-        'management API.</div>' +
-        '<h2>Discovery</h2>' +
-        '<p>Everything below is published at <code>' +
-        xmlEscape(info.metadataUrl) + '</code>, which is <strong>never ' +
-        'gated</strong> &mdash; a receiver has to be able to read what the ' +
-        'endpoints are before it can authenticate to one.</p>' +
-        '<h2>Endpoints</h2>' +
-        '<table><tr><th>Method</th><th>Path</th><th>What</th></tr>' +
-        endpointRows + '</table>' +
-        '<h2>Event types</h2>' +
-        '<table><tr><th>Name</th><th>URI</th><th>State</th><th>What</th>' +
-        '</tr>' +
-        eventRows + '</table>' +
-        '<p>Every SET is signed with <code>' +
-        xmlEscape(info.signingAlgorithm) + '</code> (<code>' +
-        'ssf.signingAlgorithm</code>), through the same signer every other ' +
-        'JWT here goes through &mdash; so the post-quantum algorithms are ' +
-        'available: ML-DSA at three sizes, SLH-DSA at two, and the six ' +
-        'composite ML-DSA + traditional ones. This is the document most ' +
-        'worth signing that way: a SET records that something happened and ' +
-        'RFC 8417 section 4.1.4 forbids it to expire, so it is read long ' +
-        'after it was written.</p>' +
-        '<h2>Subject identifier formats (RFC 9493)</h2>' +
-        '<table><tr><th>format</th><th>Members</th><th>What</th></tr>' +
-        formatRows + '</table>' +
-        '<p>A <strong>complex</strong> subject has no <code>format</code> ' +
-        'and carries any of <code>' +
-        xmlEscape(info.complexSubjectMembers.map(function (row) {
-          return row.name;
-        }).join('</code>, <code>')) + '</code>, each itself a subject ' +
-        'identifier. That is what makes &ldquo;this session was ' +
-        'revoked&rdquo; expressible: the person is not revoked, one session ' +
-        'of theirs is. Critical members here: <code>' +
-        xmlEscape(info.criticalSubjectMembers.join(', ') || '(none)') +
-        '</code>.</p>' +
-        '<h2>Authentication</h2>' +
-        '<p>SSF 1.0 section 8 requires these endpoints to be protected and ' +
-        'has the transmitter PUBLISH what it accepts, in ' +
-        '<code>authorization_schemes</code> &mdash; so a receiver discovers ' +
-        'how to authenticate rather than guessing. It is ' +
-        (info.authentication.required ? 'ON' : 'OFF (<code>unreachable ' +
-          'since 2026-09-06</code>)') + '. ' +
-        xmlEscape(info.authentication.note) +
-        '</p><table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
-        schemeRows + '</table>' +
-        '<h2>Streams right now</h2>' +
-        '<table><tr><th>stream_id</th><th>Status</th><th>Delivery</th>' +
-        '<th>Subjects</th><th>Queued</th><th>Events</th></tr>' + streamRows +
-        '</table>' +
-        '<h2>What it deliberately does not do</h2><ul>' +
-        info.doesNotDo.map(function (text) {
-          return '<li>' + xmlEscape(text) + '</li>';
-        }).join('') + '</ul>' +
-        '<h2>Things you can make fail</h2>' +
-        '<table><tr><th>Do this</th><th>Get this</th></tr>' + negativeRows +
-        '</table>' +
-        '<p class="sub"><a href="/ssf?format=json">This page as JSON</a> ' +
-        '&middot; <a href="' + xmlEscape(info.metadataUrl) + '">the ' +
-        'transmitter metadata</a> &middot; <a href="/admin/ssf">the console ' +
-        'page</a> &middot; <a href="/oauth2/jwks">the key every SET is ' +
-        'signed with</a></p>';
-      res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.pageShell('Shared Signals Framework', inner));
+      // Each stream's delivery method by its name, which the page drew and
+      // the document does not carry.
+      const deliveryNames: Json = {};
+      info.streams.forEach(function (row: Json): void {
+        deliveryNames[row.delivery] = streams.deliveryName(row.delivery);
+      });
+      DescriptionPages.send(req, res, { base: '/ssf',
+        title: 'Shared Signals Framework',
+        view: { kind: 'ssf', document: info, deliveryNames: deliveryNames } });
       log.debug('Leaving GET /ssf.');
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath('/ssf'), (req, res) => {
+      log.debug('Entering GET /ssf/description.js.');
+      DescriptionPages.script(req, res);
+      log.debug('Leaving GET /ssf/description.js.');
     });
 
     log.debug('Leaving SharedSignals.registerRoutes().');
@@ -3134,7 +3074,6 @@ class SharedSignals {
           counters: record.counters, createdAt: record.createdAt,
           lastPushError: record.lastPushError };
       }),
-      received: streams.listReceived().length,
       endpoints: [
         { method: 'GET', path: WELL_KNOWN,
           what: 'The transmitter configuration metadata. NEVER gated — a ' +
@@ -3172,12 +3111,7 @@ class SharedSignals {
                 'stream has.' },
         { method: 'POST', path: base + '/poll',
           what: 'RFC 8936 poll delivery. ack what you stored, setErrs what ' +
-                'you refused.' },
-        { method: 'POST', path: base + '/receive',
-          what: 'THE ROLES REVERSED: a SET pushed AT this service, so a ' +
-                'client can be the transmitter. Not an SSF endpoint.' },
-        { method: 'GET', path: base + '/received',
-          what: 'What has arrived that way. Not an SSF endpoint either.' }
+                'you refused.' }
       ],
       reachableNegatives: [
         { what: 'Create a stream asking for delivery.method "push"',
@@ -3210,7 +3144,8 @@ class SharedSignals {
       ],
       doesNotDo: [
         'It does not retry a failed push unless ssf.pushRetries says to, ' +
-          'and that is 0 by default. RFC 8935 permits a retry; a mock that ' +
+          'and that is 0 by default. RFC 8935 permits a retry; a service ' +
+          'that ' +
           'retried would make a receiver\'s one-shot failure invisible.',
         'It generates no event on its own. Nothing watches a session — every ' +
           'SET was asked for. SSF defines no event about a session, so a ' +
@@ -3236,36 +3171,6 @@ class SharedSignals {
     return out;
   }
 
-  private pageShell(title: string, inner: string): string {
-    const { log } = this.deps;
-    const { xmlEscape } = this.deps.helpers;
-    log.debug('Entering SharedSignals.pageShell().');
-    log.debug('Leaving SharedSignals.pageShell().');
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>' + xmlEscape(title) + '</title><style>' +
-      'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
-      'background:#f4f4f7;margin:0;padding:2rem;color:#222;line-height:1.45}' +
-      '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
-      'padding:24px 28px;max-width:60rem;margin:0 auto;' +
-      'box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
-      'h1{font-size:1.3em;margin:0 0 4px;color:#12107c}' +
-      'h2{font-size:1em;margin:1.4em 0 .4em}' +
-      'p.sub{color:#666;font-size:.85em;margin:0 0 18px}' +
-      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
-      'border-radius:5px;font-size:.82em;margin:0 0 16px}' +
-      'table{border-collapse:collapse;width:100%;margin:.5rem 0 1rem;' +
-      'font-size:.85em}' +
-      'th,td{border:1px solid #ddd;padding:.35rem .55rem;text-align:left;' +
-      'vertical-align:top}th{background:#f0f0f5}' +
-      'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-      'font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}a{color:#12107c}' +
-      'ul{margin:.3em 0;padding-left:1.2em}li{margin:.2em 0}' +
-      '</style></head><body><div class="card">' + inner +
-      '</div></body></html>\n';
-  }
-
   // ---------------------------------------------------------------------------
   // WHAT THE CONSOLE AND THE MANAGEMENT API CALL.
   //
@@ -3287,7 +3192,7 @@ class SharedSignals {
   // ---------------------------------------------------------------------------
   /**
    * Builds `/admin/ssf`'s report: the description plus every stream's detail,
-   * its queue, dead letters and log, and what this service has received.
+   * its queue, dead letters and log.
    *
    * @param req - the request
    * @returns the report
@@ -3357,7 +3262,6 @@ class SharedSignals {
       deadStreamTimeoutS: config.value('ssf.deadStreamTimeoutS'),
       pushes: transport.pushGateState()
     };
-    info.receivedDetail = streams.listReceived().slice().reverse();
     log.debug('Leaving SharedSignals.consoleReport().');
     return info;
   }
@@ -3529,12 +3433,6 @@ class SharedSignals {
           report: report };
       });
     }
-    if (name === 'clear-received') {
-      const gone = streams.clearReceived();
-      log.debug('Leaving SharedSignals.consoleAction(). Cleared.');
-      return Promise.resolve({ ok: true, errors: [],
-        message: gone + ' received event(s) dropped.' });
-    }
     // REVIVE A DEAD PUSH STREAM BY HAND (2026-09-14): it is pushed to again at
     // once. Refused for a stream that is not dead, which is a refusal a caller
     // can act on — reviving a live stream would do nothing and report success.
@@ -3582,10 +3480,10 @@ class SharedSignals {
     // AND IT WAS NOT UNTIL 2026-09-01. It said `"x" is not an action on this
     // resource. The ones that are: …`, which reads perfectly well and is
     // INVISIBLE to the two checks that actually depend on this sentence:
-    // `tests/vendored/admin_api.js` requires /unknown action/i before it will
+    // `tests/protocol/admin_api.js` requires /unknown action/i before it will
     // parse the list — that is the console/API parity check, so /ssf's four
     // actions were being compared against nothing — and
-    // `tests/vendored/sts_admin_api_operations.js` matches `Unknown action "x".
+    // `tests/protocol/sts_admin_api_operations.js` matches `Unknown action "x".
     // <count phrase>: <list>.` across every documented resource, which is what
     // caught it. The lesson is the one `helpers.numberWord()`'s header already
     // states: this sentence is not prose, it is READ, and a handler that writes
@@ -3654,14 +3552,15 @@ class SharedSignals {
     // refused, which reads at the far end as a bad subject rather than as a
     // misconfigured transmitter.
     const due: Json = caep.observe(Object.assign({}, notice || {},
-        { issuer: this.issuerFor((notice || {}).req || null) }));
+        { issuer: this.issuerFor((notice || {}).req || null),
+          classifyPrincipal: this.principalOfSession.bind(this) }));
     if (!due) {
       log.debug('Leaving SharedSignals.caepAutoEmit(). Nothing is due.');
       return Promise.resolve({ sent: 0, streams: 0 });
     }
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
-             streams.streamCoversSubject(record, due.subject);
+             this.coversSubject(record, due.subject);
     });
     if (!candidates.length) {
       // SAID ONCE, AT INFO, AND IT IS THE MOST USEFUL LINE THIS FEATURE
@@ -3715,6 +3614,66 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // WHO A SESSION IS ABOUT, WHEN IT IS NOT A PERSON (#221 P5, rcbj's question 4
+  // of 2026-09-27: whether such sessions are announced, and under what).
+  //
+  // Three families start a session for a caller that need not be a person —
+  // a SCIM client (`scim_auth.ts`), a SPIRE Server API caller
+  // (`spiffe_grpc.ts`) and a WS-Trust requester (`wstrust.ts`) — and they
+  // ARE announced, as they were: a receiver that cares what an application
+  // or a workload is doing with this service is owed the same
+  // session-established / presented / revoked a person's sign-in gets. What
+  // changed is the subject. Until #221 it was a `user` naming "whatever the
+  // directory filed that caller under", which for a SCIM client
+  // authenticated with its own client credentials was an `iss_sub` whose
+  // `sub` was empty or a client_id. Now:
+  //
+  //   * a SPIFFE ID (`spiffe://...`) is a WORKLOAD — `application` with
+  //     format `uri` — even where the directory filed a person entry under
+  //     it: what authenticated is the workload's SVID;
+  //   * a name that resolves to a PERSON entry (it has a `urn:uuid:` `sub`)
+  //     is a person, unchanged — a service account (#221 P1) among them;
+  //   * a name that is an APPLICATION entry's identifier is the application
+  //     — `application` with format `opaque`;
+  //   * anything else is left as it was.
+  //
+  // Asked once per session, when its CAEP row is made (`caep.observe()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Says what kind of principal a session's subject is when it is not a
+   * person: a SPIFFE workload or an application entry.
+   *
+   * @param username - the name the session was started for
+   * @param sub - the person subject the directory gave it, or ''
+   * @returns `{ workload }`, `{ application }`, or null for a person (or a
+   * name nothing here recognises)
+   */
+  principalOfSession(username: string, sub: string): Json {
+    const { log, applications } = this.deps;
+    log.debug('Entering SharedSignals.principalOfSession().');
+    const name = String(username || '');
+    if (/^spiffe:\/\//i.test(name)) {
+      log.debug('Leaving SharedSignals.principalOfSession(). A workload.');
+      return { workload: name };
+    }
+    if (!name || /^urn:uuid:/i.test(String(sub || ''))) {
+      log.debug('Leaving SharedSignals.principalOfSession(). A person.');
+      return null;
+    }
+    let known = false;
+    try {
+      known = !!applications.get(name);
+    } catch (e) {
+      log.debug('Caught in SharedSignals.principalOfSession(): ' +
+                ((e && e.message) || e));
+      known = false;
+    }
+    log.debug('Leaving SharedSignals.principalOfSession(). ' +
+              (known ? 'An application.' : 'Unknown.'));
+    return known ? { application: name } : null;
+  }
+
+  // ---------------------------------------------------------------------------
   // A REALM'S SIGNING KEYS ROTATED (#42, rcbj's D4) — this service's own event,
   // to every stream that delivers it, from `common/signing_rotation.ts` after
   // the rotation has happened. It has no subject, so every stream that asked
@@ -3753,8 +3712,10 @@ class SharedSignals {
       rotated: (n.rotated || []).map(function (r: Json): string {
         return r.unit + ' ' + r.from + ' -> ' + r.to;
       }).join(', '),
-      jwks_uri: base ? base + '/oauth2/jwks' : '',
-      crypto_metadata_uri: base ? base + '/crypto/metadata.json' : ''
+      jwks_uri: base ? helpers.rebaseTo(base, 'oauth-oidc') +
+                       '/oauth2/jwks' : '',
+      crypto_metadata_uri: base ? helpers.rebaseTo(base, 'pki') +
+                                  '/crypto/metadata.json' : ''
     });
     const candidates = streams.listStreams().filter((record: Json) => {
       return streams.deliversEvent(record, uri);
@@ -3785,6 +3746,179 @@ class SharedSignals {
                 'signing-key-rotated event could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ANNOUNCEMENT TO THE PEOPLE SIGNED IN (#1086) — this service's own
+  // `announcement` event, from Server configuration → Broadcast Announcement
+  // and `POST /admin-api/broadcast/send`. Sent ONLY to this service's own
+  // receiver streams (`ssf_receivers.ts`, the streams CAEP and RISC reach the
+  // console, the portal and reports on), for the surfaces chosen: it is a
+  // message to the people using those three applications, and a remote
+  // receiver that asked for every `sts` type has no tab to draw it in. Each
+  // surface's receiver collects it over `/ssf/poll`, keeps it, and its open
+  // tabs collect it from their own API.
+  //
+  // `everyRealm` sends it in every realm, each realm's own streams under its
+  // own issuer; WHO may ask for that is the caller's to decide (the console
+  // and the management API allow it to a service administrator in the
+  // default realm). Never throws.
+  // ---------------------------------------------------------------------------
+  /**
+   * Broadcasts an administrator's announcement to the open tabs of this
+   * service's own admin console, user portal and reports application.
+   *
+   * @param asked - `message`, `surfaces` (ids of `receivers.SURFACES`),
+   *   `everyRealm`, and `by` (who, for the audit row)
+   * @returns a promise of `{ ok, errors?, sent, streams, realms, why? }`;
+   *   it never rejects
+   */
+  async broadcastAnnouncement(asked?: Json): Promise<Json> {
+    const { log, events, streams, errorCodes, config, realms, audit,
+            receivers } = this.deps;
+    log.debug('Entering SharedSignals.broadcastAnnouncement().');
+    const a = asked || {};
+    const message = String(a.message || '').trim();
+    const known = (receivers.SURFACES as Json[]).map(function (one: Json) {
+      return String(one.id);
+    });
+    const chosen = (Array.isArray(a.surfaces) ? a.surfaces
+                                              : (a.surfaces ? [a.surfaces]
+                                                            : []))
+      .map(String).filter(function (one: string, i: number, all: string[]) {
+        return one !== '' && all.indexOf(one) === i;
+      });
+    const max = Number(config.value('ssf.announcementMaxChars'));
+    const errors: string[] = [];
+    if (!message) {
+      errors.push('An announcement needs a message.');
+    } else if (message.length > max) {
+      errors.push('The message is ' + message.length + ' characters; ' +
+                  'ssf.announcementMaxChars allows ' + max + '.');
+    }
+    if (!chosen.length) {
+      errors.push('Choose at least one application to show it in.');
+    }
+    const unknown = chosen.filter(function (one: string) {
+      return known.indexOf(one) < 0;
+    });
+    if (unknown.length) {
+      errors.push('Not an application this service has: ' +
+                  unknown.join(', ') + '. The three are: ' +
+                  known.join(', ') + '.');
+    }
+    if (errors.length) {
+      log.debug('Leaving SharedSignals.broadcastAnnouncement(). Refused.');
+      return errorCodes.mark({ ok: false, errors: errors, sent: 0,
+                               streams: 0, realms: [] }, 'STS-SSF-0153');
+    }
+    const uri = events.ANNOUNCEMENT;
+    const targets = a.everyRealm ? realms.list() : [realms.current()];
+    const outcome: Json = { ok: true, sent: 0, streams: 0, realms: [] };
+    if (!this.enabled() || !receivers.enabled()) {
+      outcome.why = !this.enabled() ? 'Shared Signals is off (ssf.enabled).'
+        : 'This service\'s own receivers are off (ssf.internalReceivers).';
+    } else {
+      for (const realm of targets) {
+        await realms.run(realm, async () => {
+          const here: Json = { realm: realms.currentId(), sent: 0,
+                               streams: 0, skipped: [] };
+          // EACH SURFACE'S STREAM BY `streamFor()`, NEVER BY THE MARKER
+          // ALONE (#1088): `internalSurface` is not an SSF member and is the
+          // half of a record a persisted round trip can lose, which is why
+          // `streamFor()` asks for the derived id first. Selecting on the
+          // marker sent nothing on 8081, whose records came from the store.
+          const candidates: Json[] = [];
+          chosen.forEach((surfaceId: string) => {
+            const record = receivers.streamFor(surfaceId);
+            // A STREAM THE STORE CARRIED OVER asks for the event here, once,
+            // before it is judged (#1091): seeding's own ask ran before the
+            // store's record arrived, and `pollAll()` may not have run yet.
+            if (record) {
+              receivers.askForAnnouncements(receivers.surfaceOf(surfaceId),
+                                            record);
+            }
+            const why = !record ? 'has no receiver stream in this realm'
+              : (record.status === 'disabled' ? 'its stream is disabled'
+                : (!streams.deliversEvent(record, uri)
+                  ? 'its stream does not take the announcement event'
+                  : ''));
+            if (why) {
+              here.skipped.push(surfaceId + ' ' + why);
+            } else if (candidates.indexOf(record) < 0) {
+              candidates.push(record);
+            }
+          });
+          here.streams = candidates.length;
+          if (candidates.length) {
+            const payload = events.EVENT_BY_URI[uri].generate({
+              realm: here.realm, message: message, surfaces: chosen });
+            // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0
+            // section 4.1.9).
+            const txn = this.newTxn();
+            try {
+              const reports = await Promise.all(candidates.map(
+                (record: Json) => {
+                  return this.transmit(record, { txn: txn, uri: uri,
+                    payload: payload, toe: payload.event_timestamp });
+                }));
+              here.sent = reports.filter(function (one: Json) {
+                return one && one.ok;
+              }).length;
+            } catch (e) {
+              log.debug('Caught in SharedSignals.broadcastAnnouncement(): ' +
+                        ((e && e.message) || e));
+              log.error(errorCodes.tag('STS-SSF-0155') + 'ssf: an ' +
+                        'announcement could not be sent in the "' +
+                        here.realm + '" realm: ' + ((e && e.message) || e));
+              here.why = String((e && e.message) || e);
+            }
+          }
+          outcome.sent += here.sent;
+          outcome.streams += here.streams;
+          outcome.realms.push(here);
+        });
+      }
+      if (!outcome.sent) {
+        const reasons = [].concat(...outcome.realms.map((one: Json) => {
+          return (one.skipped || []).map((what: string) => {
+            return what + (outcome.realms.length > 1
+              ? ' (realm ' + one.realm + ')' : '');
+          });
+        }));
+        outcome.why = (reasons.length ? reasons.join('; ')
+          : 'no receiver stream of the chosen applications took it') +
+          '. See /admin/ssf.';
+      }
+    }
+    if (!outcome.sent) {
+      log.warn(errorCodes.tag('STS-SSF-0154') + 'ssf: an announcement ' +
+               'reached no stream: ' + outcome.why);
+    }
+    audit.audit({ action: 'ssf.announcement.broadcast', category: 'signals',
+      protocol: 'SSF', channel: 'internal',
+      outcome: outcome.sent ? 'success' : 'failure',
+      errorCode: outcome.sent ? '' : 'STS-SSF-0154',
+      target: chosen.join(','),
+      summary: 'An announcement was broadcast to ' + chosen.join(', ') +
+               (a.everyRealm ? ' in every realm' : '') + ' by ' +
+               String(a.by || 'an administrator'),
+      detail: { surfaces: chosen, everyRealm: !!a.everyRealm,
+                characters: message.length, sent: outcome.sent,
+                streams: outcome.streams } });
+    // WHAT THE CONSOLE SAYS when the act is done: English, as every answer
+    // of the management API is.
+    outcome.message = outcome.sent
+      ? 'The announcement went to ' + outcome.sent + ' of ' +
+        outcome.streams + ' receiver stream(s) in ' +
+        outcome.realms.length + ' realm(s); open tabs show it within ' +
+        'seconds.'
+      : 'Nothing was sent: ' + outcome.why;
+    log.info('ssf: an announcement went to ' + outcome.sent + ' of ' +
+             outcome.streams + ' receiver stream(s) in ' +
+             outcome.realms.length + ' realm(s).');
+    log.debug('Leaving SharedSignals.broadcastAnnouncement().');
+    return outcome;
   }
 
   // ---------------------------------------------------------------------------
@@ -4038,7 +4172,7 @@ class SharedSignals {
     const subject = options.subject;
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             (!subject || streams.streamCoversSubject(record, subject));
+             (!subject || this.coversSubject(record, subject));
     });
     if (!candidates.length) {
       // The same line caepAutoEmit() says, for the same reason: "nothing
@@ -4366,7 +4500,7 @@ class SharedSignals {
     const subject = caep.subjectFor(known);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'caep.event.emit', category: 'signals',
       protocol: 'CAEP', channel: 'http', target: sessionId,
@@ -4464,7 +4598,7 @@ class SharedSignals {
     }
     // Spelled the way every other action handler here spells it, with the count
     // from the list rather than from a word typed beside it. That sentence is
-    // READ — `tests/vendored/admin_api.js` requires /unknown action/i before it
+    // READ — `tests/protocol/admin_api.js` requires /unknown action/i before it
     // will parse the list, and `sts_admin_api_operations.js` matches the whole
     // shape — so a handler that writes it its own way turns two checks off with
     // nothing failing.
@@ -4644,11 +4778,13 @@ class SharedSignals {
   // ---------------------------------------------------------------------------
   // CAEP token-claims-change TO EVERY HOLDER A CONFIGURATION CHANGE MOVED
   // (#238): an application's permissions or allowed scopes, a claim set, a
-  // claim setting, a federation release list. One event PER PERSON — a CAEP
-  // subject names a principal, and an application-scoped subject waits on
-  // #221 — to each person holding a live artifact `match` accepts
-  // (`admin_stats.liveClaimBearers()`, which is the live-issuance check), with
-  // the claims `claimsFor(bearer)` answers for their newest such artifact.
+  // claim setting, a federation release list. One event PER HOLDER — a CAEP
+  // subject names a principal — to each person holding a live artifact
+  // `match` accepts (`admin_stats.liveClaimBearers()`, which is the
+  // live-issuance check), with the claims `claimsFor(bearer)` answers for
+  // their newest such artifact. An application holding a live token of its
+  // OWN (client_credentials, no person) is a holder too since #221 P5, and is
+  // told under the application subject (`applicationClaimsEmit()`).
   //
   // **IN SLICES, SO A LARGE REALM DOES NOT WEDGE ANYTHING.** FAN_OUT_SLICE
   // holders at a time, each slice's deliveries awaited and the next slice
@@ -4703,6 +4839,11 @@ class SharedSignals {
       }
       const slice = bearers.slice(from, from + SharedSignals.FAN_OUT_SLICE);
       return Promise.all(slice.map((bearer: Json) => {
+        // AN APPLICATION'S OWN TOKENS (#221 P5): a client_credentials token
+        // is about no person, and is announced under the application.
+        if (bearer.application) {
+          return this.applicationClaimsEmit(bearer, asked);
+        }
         return this.claimsAutoEmit({ kind: 'claims',
           username: bearer.username, liveChecked: true,
           claims: function () {
@@ -4733,6 +4874,76 @@ class SharedSignals {
                ((e && e.message) || e));
       return { sent: sent, streams: people,
                why: String((e && e.message) || e) };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change ABOUT AN APPLICATION'S OWN TOKENS (#221 P5).
+  //
+  // A client_credentials token names no person: `admin_stats.js` files it
+  // under the client, and until #221 the fan-out sent it as an `iss_sub`
+  // "person" whose `sub` was the client_id — a receiver told that somebody
+  // it had never heard of held changed claims. The holder is the APPLICATION
+  // (`ssf_subjects.js`, *A non-human principal's subject*), and it is told
+  // exactly what claimsAutoEmit() tells a person: the claims `claimsFor()`
+  // answers for its newest live token, through the same act switch
+  // (`claims`) and the same streams, with no session (the token is the
+  // application's own, from no sign-on). `bearer` is a row
+  // `liveClaimBearers()` answered with `application` set, so the live check
+  // is already made. Never rejects.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `token-claims-change` about an application's own live token
+   * (client_credentials), under the application subject.
+   *
+   * @param bearer - a `liveClaimBearers()` row with `application` set
+   * @param asked - the fan-out's notice: `claimsFor`, `protocol`, the
+   * initiating entity and the reasons
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
+  applicationClaimsEmit(bearer: Json, asked: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    log.debug('Entering SharedSignals.applicationClaimsEmit().');
+    const application = String((bearer && bearer.application) || '');
+    const notice = asked || {};
+    if (!this.enabled() || !application ||
+        caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.applicationClaimsEmit(). Off, not an ' +
+                'emitted act, or no application named.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    return Promise.resolve().then(() => {
+      const given: Json = typeof notice.claimsFor === 'function'
+        ? notice.claimsFor(bearer) : null;
+      const claims = given && typeof given === 'object' &&
+        !Array.isArray(given) ? given : null;
+      if (!claims || !Object.keys(claims).length) {
+        log.debug('Leaving SharedSignals.applicationClaimsEmit(). No claim ' +
+                  'moved.');
+        return { sent: 0, streams: 0, why: 'no claim moved' };
+      }
+      const which = Object.keys(claims).join(', ');
+      log.debug('Leaving SharedSignals.applicationClaimsEmit().');
+      return this.emitProtocolEvent({
+        req: null, protocol: String(notice.protocol || 'Applications'),
+        type: 'token-claims-change',
+        subject: subjects.applicationSubject(application, ''),
+        values: { claims: claims },
+        initiatingEntity: String(notice.initiatingEntity || 'admin'),
+        reasonAdmin: (notice.reasonAdmin
+          ? String(notice.reasonAdmin) : 'A configuration change') +
+          ' (the application ' + application + '\'s own token: ' + which +
+          ')',
+        reasonUser: 'Claims in an access token already issued to this ' +
+                    'application changed.' });
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.applicationClaimsEmit(): ' +
+                ((e && e.message) || e));
+      log.warn(this.deps.errorCodes.tag('STS-SSF-0140') + 'caep: a ' +
+               'token-claims-change about the application ' + application +
+               ' could not be decided: ' + ((e && e.message) || e));
+      return { sent: 0, streams: 0, why: String((e && e.message) || e) };
     });
   }
 
@@ -4940,7 +5151,7 @@ class SharedSignals {
     log.debug('Entering SharedSignals.sendOneRiscEvent(). ' + due.uri);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
-             streams.streamCoversSubject(record, due.subject);
+             this.coversSubject(record, due.subject);
     });
     const type = due.uri.slice(events.RISC_PREFIX.length);
     if (!candidates.length) {
@@ -4968,6 +5179,13 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.sendOneRiscEvent().");
     // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
     const txn = this.newTxn();
+    // AN ACT THE ACCOUNT HOLDER MADE (2026-11-03) is noted on the account's
+    // row under this `txn`, before any SET of it is built, so this service's
+    // own receivers can leave a person's own report alone — RISC has no
+    // `initiating_entity` to say it on the wire. See risc.ts's noteOwnAct().
+    if (due.initiatingEntity === 'user') {
+      risc.noteOwnAct(due.row, txn);
+    }
     this.riscBurst.open += 1;
     return Promise.all(candidates.map((record) => {
       return this.transmit(record, { txn: txn, uri: due.uri,
@@ -5160,7 +5378,13 @@ class SharedSignals {
     const { subjectForName: helpersSubjectFor } = this.deps.helpers;
     log.debug('Entering SharedSignals.emitCredentialChange().');
     const options = asked || {};
-    const username = String(options.username || '');
+    // WHOSE CREDENTIAL (#221 P5): a person by `username`, an application
+    // entry by `application` (its identifier) or a SPIFFE workload by
+    // `workload` (its SPIFFE ID). `username` below is the name the log, the
+    // audit row and the reasons use for whichever it is.
+    const application = String(options.application || '');
+    const workload = String(options.workload || '');
+    const username = String(options.username || application || workload);
     if (!this.enabled() || !username) {
       log.debug('Leaving SharedSignals.emitCredentialChange(). ' +
                 'SSF is off or nobody named.');
@@ -5208,13 +5432,18 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0,
                                why: verdict.errors.join(' ') });
     }
-    // The person's own subject, as every token names them (2026-09-14).
-    const subject = subjects.complexSubject({ user: { format: 'iss_sub',
-      iss: this.issuerFor(null),
-      sub: helpersSubjectFor(username) || username } });
+    // The person's own subject, as every token names them (2026-09-14); an
+    // application's or a workload's as `ssf_subjects.js` argues (#221 P5).
+    const subject = application
+      ? subjects.applicationSubject(application, '')
+      : workload
+        ? subjects.workloadSubject(workload)
+        : subjects.complexSubject({ user: { format: 'iss_sub',
+            iss: this.issuerFor(null),
+            sub: helpersSubjectFor(username) || username } });
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'caep.event.auto', category: 'signals',
       protocol: 'CAEP', channel: 'http', target: username,
@@ -5278,8 +5507,10 @@ class SharedSignals {
   // events carry the same `device` member (`caep.subjectFor()`), so a
   // receiver that added the device to its stream sees both.
   //
-  // An application's device has no `user`: an application has no CAEP user
-  // subject here (#145), and the device alone is still one principal.
+  // An application's device has no `user`: there is no person, and the
+  // device alone is still one principal. (Its owner application is not added
+  // as an `application` member: the register names the owner, but a device's
+  // events are about the DEVICE, and #221 P5 changed nothing here.)
   // ---------------------------------------------------------------------------
   /**
    * Returns a registered device's subject: `iss_sub` with this realm's issuer
@@ -5299,7 +5530,8 @@ class SharedSignals {
   /**
    * Sends a CAEP event about a registered device (a compliance change, a risk
    * level change, or a credential change for a device key or secret), with a
-   * complex subject naming the device and, for a person's device, its owner.
+   * complex subject naming the device and its owner: a person, or (#221) an
+   * application.
    *
    * @param asked - `type`, `act`, `deviceId`, `username`, `values`,
    * `initiatingEntity` and the reasons
@@ -5326,9 +5558,14 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
     }
     const username = String(o.username || '');
+    // AN APPLICATION'S DEVICE (#221) names the application as the owner,
+    // with the `application` member a person's device has as `user`.
+    const application = username ? '' : String(o.application || '');
     const subject = subjects.complexSubject({
       user: username ? { format: 'iss_sub', iss: this.issuerFor(null),
                          sub: subjectForName(username) || username } : null,
+      application: application ? subjects.applicationMember(application)
+                               : null,
       device: this.deviceSubjectOf(deviceId) });
     log.debug('Leaving SharedSignals.emitDeviceEvent().');
     return this.emitProtocolEvent({
@@ -5630,7 +5867,7 @@ class SharedSignals {
     }
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'risc.event.emit', category: 'signals',
       protocol: 'RISC', channel: 'http', target: accountId,
@@ -5732,7 +5969,7 @@ class SharedSignals {
     }
     // Spelled the way every other action handler here spells it, with the count
     // from the list rather than from a word typed beside it. That sentence is
-    // READ by `tests/vendored/admin_api.js` and by
+    // READ by `tests/protocol/admin_api.js` and by
     // `sts_admin_api_operations.js`, so a handler that writes it its own way
     // turns two checks off with nothing failing.
     log.debug('Leaving SharedSignals.riscAction(). Unknown action.');
@@ -5998,7 +6235,7 @@ class SharedSignals {
   //
   // One stream each, per trust realm, asking for every CAEP and every RISC
   // event type. `ssf/ssf_receivers.ts` carries the whole argument — why
-  // delivery is a real RFC 8935 push over the loopback interface rather than a
+  // delivery is a real RFC 8936 poll (#771) over the loopback interface, not a
   // function call, why the streams are in every realm, and what an empty inbox
   // page can mean.
   //
@@ -6078,7 +6315,7 @@ class SharedSignals {
   // between the capability and the hooks, are registered by the composition
   // root right after it installs the instance.
   /**
-   * Runs the installed instance's load-time steps: the three scheduler jobs,
+   * Runs the installed instance's load-time steps: the four scheduler jobs,
    * the capability, the hooks and the receivers.
    *
    * @param instance - the installed instance
@@ -6088,6 +6325,7 @@ class SharedSignals {
     instance.scheduleSweep();
     instance.scheduleMaintenance();
     instance.scheduleOptOuts();
+    instance.scheduleInternalPoll();
     instance.provideCapability();
     instance.installHooks();
     instance.seedOwnReceivers();
@@ -6154,6 +6392,7 @@ export = {
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
+  broadcastAnnouncement: slot.forward('broadcastAnnouncement'),
   kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
   serviceKeyChanged: slot.forward('serviceKeyChanged'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
@@ -6173,6 +6412,10 @@ export = {
   emitClaimsChange: slot.forward('emitClaimsChange'),
   claimsFanOut: slot.forward('claimsFanOut'),
   emitIdentityAssuranceChange: slot.forward('emitIdentityAssuranceChange'),
+  // An application's own token's claims, and what kind of principal a
+  // session is (#221 P5), for `tests/application_signals.js`.
+  applicationClaimsEmit: slot.forward('applicationClaimsEmit'),
+  principalOfSession: slot.forward('principalOfSession'),
   // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
   riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),

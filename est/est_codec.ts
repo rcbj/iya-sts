@@ -50,7 +50,7 @@
 // exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
@@ -97,7 +97,7 @@ const SIGNATURE_ALGORITHMS = [
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface EstCodecDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   log: typeof log;
 }
 
@@ -113,8 +113,8 @@ class EstCodec {
   /**
    * Builds the codec from its dependencies.
    *
-   * @param deps - node's crypto and the logger, from `EstCodec.defaultDeps()`
-   * or the composition root
+   * @param deps - `common/crypto.js` and the logger, from
+   * `EstCodec.defaultDeps()` or the composition root
    */
   constructor(private readonly deps: EstCodecDeps) {
     deps.log.debug("Entering EstCodec.constructor().");
@@ -133,7 +133,7 @@ class EstCodec {
     log.debug("Entering EstCodec.defaultDeps().");
     log.debug("Leaving EstCodec.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       log: log
     };
   }
@@ -415,10 +415,10 @@ class EstCodec {
    * @returns `{ boundary, body }`
    */
   multipartMixed(parts) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering EstCodec.multipartMixed().");
-    const boundary = 'est-' + nodeCrypto.randomBytes(12).toString('hex');
+    const boundary = 'est-' + stsCrypto.randomBytes(12).toString('hex');
     const chunks = [];
     (parts || []).forEach(function (part) {
       chunks.push('--' + boundary + '\r\n' +

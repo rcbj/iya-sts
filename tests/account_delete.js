@@ -109,18 +109,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
-
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
@@ -184,19 +172,20 @@ function childMain() {
         scope: 'openid', state: 's',
         nonce: 'n' + crypto.randomBytes(3).toString('hex') }).toString());
     };
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (b, username) {
       let r = await authorize(b);
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
-        const page = await b.go('GET', r.headers.location);
-        const form = hiddenFields(page.text);
-        form.username = username;
-        form.password = 'anything';
-        form.action = 'login';
-        const screen = String(r.headers.location).split('?')[0]
-          .replace(/^https?:\/\/[^/]+/, '');
-        const sent = await b.go('POST', screen, { form: form });
-        r = await b.go('GET', String(sent.headers.location || ''));
+        // THE SCREEN OVER `/authn-api` (#571), in this browser's jar.
+        const sent = await authnScreen.submit({ port: port, jar: b.jar,
+          at: String(r.headers.location),
+          fields: { action: 'login', username: username,
+                    password: 'anything' } });
+        if (sent.next !== 'redirect') {
+          return false;
+        }
+        r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
       const code = r.status === 302 && loc.indexOf(REDIRECT) === 0

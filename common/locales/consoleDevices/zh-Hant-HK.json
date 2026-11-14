@@ -1,0 +1,11 @@
+{
+  "listHtml.registerNote": "歸屬於一位人員（用戶名稱）或一個應用程式（其識別碼）。在此輸入的金鑰是公開數據——PEM 憑證、公開 JWK，或擁有者登記之安全金鑰的 credential id——會記錄為未經任何人證明且為<strong>自我宣告</strong>。已達到 <code>devices.maxPerPerson</code> 的人員會被拒絕，而不是捨棄一台裝置來騰出空間。",
+  "deviceHtml.keysNote": "每把金鑰都是識別此裝置的一種方式。指紋是對證書 SubjectPublicKeyInfo 的 SHA-256，或對 JWK 的 RFC 7638 指紋——即 DPoP 的 <code>jkt</code>。",
+  "deviceHtml.compromisedNote": "此裝置已標記為<strong>已遭入侵</strong>。還原它會恢復因遭入侵而提高的風險等級；已撤銷的內容不會回來——證書會在下次登入時重新簽發，Native SSO 機密值會重新產生。",
+  "deviceHtml.addKeyNote": "僅限公開數據；記錄為未經任何人證明且為自我宣告。",
+  "deviceHtml.removeNote": "移除它會撤銷本服務為其簽發的證書（cessationOfOperation，若已遭入侵則為 keyCompromise），並結束它驗證過的登入工作階段。",
+  "androidStatusHtml.noteBefore": "Android Key Attestation 證書鏈中的每張證書——在裝置註冊時以及在 WebAuthn android-key 聲明中——都會在 Google 的已撤銷及已暫停證明證書清單中查詢。清單中列出的證書鏈不視為已證明。此清單是風險數據集 <code>android.attestation-status</code>，位於",
+  "androidStatusHtml.active": "<code>{name}</code>，{rows} 張證書，載入於 {loaded}",
+  "registrationHtml.doorMdm": "MDM 或裝置狀態數據來源",
+  "registrationHtml.mdmHow": "<code>{path}</code>，使用攜帶 <code>{scope}</code> 的存取權杖——這是一個受保護的範圍，只簽發給宣告它的客戶端，也是該作業唯一接受的範圍：數據來源不需要任何管理範圍，也不會得到。最多 {max} 份報告，每份以 {by} 指明其裝置。來源 <code>mdm</code>，客戶端為操作者。"
+}

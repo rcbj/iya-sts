@@ -50,7 +50,7 @@
 // meets one rather than guessing.
 //
 // ---------------------------------------------------------------------------
-// FOUR PLACES THIS DIALECT IS EXPLICIT WHERE ALFA IS VAGUE, AND EACH IS
+// FIVE PLACES THIS DIALECT IS EXPLICIT WHERE ALFA IS VAGUE, AND EACH IS
 // WRITTEN DOWN BECAUSE A READER WILL OTHERWISE THINK IT IS A BUG.
 //
 // 1. TYPED LITERALS. ALFA has native syntax for strings, integers, booleans
@@ -92,6 +92,12 @@
 //    not hand a designator a short name that a function already owns, and
 //    numbers it instead. Point 3's refusal is unchanged for every name that is
 //    neither — it just says so about both kinds now.
+//
+// 5. MUSTBEPRESENT AND ISSUER BELONG TO A USE, NOT TO A DECLARATION. They are
+//    written in brackets after the short name, as Axiomatics' ALFA reference
+//    spells them: `role[mustbepresent]`, `role[issuer="..."]` and
+//    `role[mustbepresent issuer="..."]`. Two uses of one attribute may differ,
+//    which is why the `attribute` declaration does not carry them.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -115,6 +121,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ownMembers = require('../common/own_members');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 import functions = require('./xacml_functions');
@@ -206,7 +213,7 @@ const OPERATORS = [
 // THE TOKENIZER.
 // ---------------------------------------------------------------------------
 const PUNCTUATION = ['==', '!=', '>=', '<=', '&&', '||', '{', '}', '(', ')',
-                     ',', '=', '>', '<', '!', '$'];
+                     ',', '=', '>', '<', '!', '$', '[', ']'];
 
 /**
  * Reads and writes ALFA, the Abbreviated Language for Authorization, over
@@ -301,7 +308,8 @@ class AlfaLanguage {
       return letter.toUpperCase();
     });
     log.debug("Leaving AlfaLanguage.algorithmNameOf().");
-    return ALGORITHM_NAMES[camel] ? camel : null;
+    // An own member only (2026-11-12): `constructor` names no algorithm.
+    return ownMembers.read(ALGORITHM_NAMES, camel) ? camel : null;
   }
 
   /**
@@ -316,7 +324,7 @@ class AlfaLanguage {
   algorithmUriOf(name: string, forPolicySet?: boolean): string | null {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.algorithmUriOf().");
-    const pair = ALGORITHM_NAMES[name];
+    const pair = ownMembers.read(ALGORITHM_NAMES, name);
     if (!pair) {
       log.debug("Leaving AlfaLanguage.algorithmUriOf().");
       return null;
@@ -329,14 +337,20 @@ class AlfaLanguage {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.operatorFor().");
     const short = String(functionId).replace(/^.*:function:/, '');
+    // The LONGEST suffix wins. `-equal` is also the tail of
+    // `-greater-than-or-equal` and `-less-than-or-equal`, so taking the first
+    // match in table order wrote `integer-greater-than-or-equal` as `==`, and
+    // the parser read that back as `integer-equal`: a different policy, with
+    // no error anywhere.
+    let found: { symbol: string, suffix: string } | null = null;
     for (let i = 0; i < OPERATORS.length; i += 1) {
-      if (short.slice(-OPERATORS[i].suffix.length) === OPERATORS[i].suffix) {
-        log.debug("Leaving AlfaLanguage.operatorFor().");
-        return OPERATORS[i].symbol;
+      if (short.slice(-OPERATORS[i].suffix.length) === OPERATORS[i].suffix &&
+          (!found || OPERATORS[i].suffix.length > found.suffix.length)) {
+        found = OPERATORS[i];
       }
     }
     log.debug("Leaving AlfaLanguage.operatorFor().");
-    return null;
+    return found ? found.symbol : null;
   }
 
   // The function a `<type> <symbol> <type>` comparison means. Resolved through
@@ -421,7 +435,7 @@ class AlfaLanguage {
       // for the whole document and turn a higher-order argument into a bag. It
       // is vanishingly rare and costs one comparison to make impossible.
       while (order.some(function (one) { return one.name === name; }) ||
-             self.functionByShortName[name]) {
+             ownMembers.read(self.functionByShortName, name)) {
         name = base + n;
         n += 1;
       }
@@ -579,6 +593,37 @@ class AlfaLanguage {
     return '"' + String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   }
 
+  /**
+   * The qualifiers ALFA writes after a designator's short name:
+   * `[mustbepresent]`, `[issuer="..."]` or both, in that order, as Axiomatics'
+   * ALFA reference spells them (`role[mustbepresent issuer="Axiomatics"]`).
+   * They belong to one USE of an attribute, not to its declaration, which is
+   * why the declaration does not carry them. Without them a MustBePresent
+   * designator came back as MustBePresent="false" and an Issuer as none: a
+   * missing attribute's Indeterminate became NotApplicable, and an attribute
+   * from any issuer matched.
+   *
+   * @param designator - the AttributeDesignator
+   * @returns the bracketed qualifiers, or '' when there are none
+   */
+  private designatorQualifiers(designator: ModelNode): string {
+    const { log } = this.deps;
+    log.debug("Entering AlfaLanguage.designatorQualifiers().");
+    const parts: string[] = [];
+    if (designator.mustBePresent) {
+      parts.push('mustbepresent');
+    }
+    if (designator.issuer !== null && designator.issuer !== undefined) {
+      parts.push('issuer=' + this.quote(designator.issuer));
+    }
+    if (!parts.length) {
+      log.debug("Leaving AlfaLanguage.designatorQualifiers(). None.");
+      return '';
+    }
+    log.debug("Leaving AlfaLanguage.designatorQualifiers().");
+    return '[' + parts.join(' ') + ']';
+  }
+
   private emitExpression(expression: ModelNode,
                          attributes: AttributeNames): string {
     const self = this;
@@ -595,9 +640,10 @@ class AlfaLanguage {
     if (expression.kind === 'designator') {
       const key = expression.category + '|' + expression.attributeId + '|' +
                   expression.dataType;
-      log.debug("Leaving AlfaLanguage.emitExpression().");
-      return attributes.byKey[key] || self.shortNameForAttribute(
+      const name = attributes.byKey[key] || self.shortNameForAttribute(
         expression.attributeId);
+      log.debug("Leaving AlfaLanguage.emitExpression().");
+      return name + self.designatorQualifiers(expression);
     }
     if (expression.kind === 'variableRef') {
       log.debug("Leaving AlfaLanguage.emitExpression().");
@@ -878,7 +924,8 @@ class AlfaLanguage {
     const declarations = attributes.order.map(function (one) {
       const row = datatypes.typeOf(one.dataType);
       return '    attribute ' + one.name + ' {\n' +
-        '        category = ' + (CATEGORY_URIS[one.category] ||
+        '        category = ' + (ownMembers.read(CATEGORY_URIS,
+                                             one.category) ||
                                  self.quote(one.category)) + '\n' +
         '        id = ' + self.quote(one.attributeId) + '\n' +
         '        type = ' + (row ? row.name : 'string') + '\n' +
@@ -1091,7 +1138,7 @@ class AlfaLanguage {
         if (key === 'category') {
           const token = next();
           declared.category = token.kind === 'string' ? token.value
-            : CATEGORY_NAMES[token.value];
+            : ownMembers.read(CATEGORY_NAMES, token.value);
           if (!declared.category) {
             throw model.syntaxError(
               'Unknown category "' + token.value + '" at line ' + token.line +
@@ -1123,13 +1170,15 @@ class AlfaLanguage {
           'The attribute "' + name + '" must declare all three of category, ' +
           'id and type.');
       }
-      attributes[name] = declared;
+      ownMembers.put(attributes, name, declared);
       log.debug('Leaving attributeDeclaration(). name=' + name);
     }
 
     function designatorFor(name, token) {
       log.debug("Entering designatorFor().");
-      const declared = attributes[name];
+      // Own members only (2026-11-12): an undeclared `toString` is refused
+      // as undeclared, not read as Function.
+      const declared = ownMembers.read(attributes, name);
       if (!declared) {
         // THE MOST USEFUL REFUSAL IN THIS FILE. See point 3 in the header: a
         // typo in an attribute name is otherwise a policy that quietly matches
@@ -1163,11 +1212,11 @@ class AlfaLanguage {
     // most useful one in this file.
     function nameReference(name, token) {
       log.debug("Entering nameReference().");
-      if (attributes[name]) {
+      if (ownMembers.read(attributes, name)) {
         log.debug("Leaving nameReference().");
         return designatorFor(name, token);
       }
-      const uri = self.functionByShortName[name];
+      const uri = ownMembers.read(self.functionByShortName, name);
       if (uri) {
         log.debug('nameReference(): "' + name + '" is the function ' + uri +
                   '.');
@@ -1176,6 +1225,47 @@ class AlfaLanguage {
       }
       log.debug("Leaving nameReference().");
       return designatorFor(name, token);
+    }
+
+    // A designator's qualifiers, `[mustbepresent issuer="..."]` — see
+    // designatorQualifiers(). Either may be left out, each may appear once,
+    // and the brackets follow the attribute's short name.
+    function qualified(designator, token) {
+      log.debug("Entering qualified().");
+      const open = expect('[');
+      if (designator.kind !== 'designator') {
+        log.debug("Leaving qualified(). Not an attribute.");
+        throw model.syntaxError(
+          '"' + token.value + '" at line ' + open.line + ' is a function, ' +
+          'and only an attribute takes [mustbepresent] or [issuer="..."].');
+      }
+      const seen = {};
+      while (!is(']')) {
+        const word = expectWord();
+        if (word !== 'mustbepresent' && word !== 'issuer') {
+          log.debug("Leaving qualified(). Unknown qualifier.");
+          throw model.syntaxError(
+            'Unknown qualifier "' + word + '" on "' + token.value +
+            '" at line ' + open.line + '. An attribute takes mustbepresent ' +
+            'and issuer="...".');
+        }
+        if (ownMembers.has(seen, word)) {
+          log.debug("Leaving qualified(). Repeated qualifier.");
+          throw model.syntaxError(
+            '"' + word + '" is given twice on "' + token.value +
+            '" at line ' + open.line + '.');
+        }
+        ownMembers.put(seen, word, true);
+        if (word === 'mustbepresent') {
+          designator.mustBePresent = true;
+        } else {
+          expect('=');
+          designator.issuer = expectString();
+        }
+      }
+      expect(']');
+      log.debug("Leaving qualified().");
+      return designator;
     }
 
     // --- expressions ---------------------------------------------------------
@@ -1236,7 +1326,8 @@ class AlfaLanguage {
             }
           }
           expect(')');
-          const uri = self.functionByShortName[token.value];
+          const uri = ownMembers.read(self.functionByShortName,
+                                      token.value);
           if (!uri) {
             throw model.syntaxError(
               'There is no function called "' + token.value + '" at line ' +
@@ -1245,8 +1336,9 @@ class AlfaLanguage {
           log.debug("Leaving primary().");
           return { kind: 'apply', functionId: uri, args: args };
         }
+        const named = nameReference(token.value, token);
         log.debug("Leaving primary().");
-        return nameReference(token.value, token);
+        return is('[') ? qualified(named, token) : named;
       }
       log.debug("Leaving primary().");
       throw model.syntaxError('Unexpected "' + token.value + '" at line ' +
@@ -1410,7 +1502,7 @@ class AlfaLanguage {
       // own argument order, value first, because that is what the function
       // declares.
       if (token.kind === 'word' && is('(', 1) &&
-          self.functionByShortName[token.value]) {
+          ownMembers.read(self.functionByShortName, token.value)) {
         const call = primary();
         if (call.kind !== 'apply' || call.args.length !== 2) {
           throw model.syntaxError(
@@ -1613,7 +1705,7 @@ class AlfaLanguage {
           next();
           const id = expectWord();
           expect('=');
-          policy.variables[id] = expression();
+          ownMembers.put(policy.variables, id, expression());
           continue;
         }
         const token = peek();

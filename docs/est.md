@@ -30,8 +30,9 @@ All under the realm's base URL (`https://host:8081` in the default realm,
 | `POST` | `/.well-known/est/serverkeygen` | 4.4 | yes |
 | `GET` | `/.well-known/est/csrattrs` | 4.5 | no |
 | `POST` | `/.well-known/est/fullcmc` | 4.3 | answers **501** |
+| `GET`, `POST` | `/.well-known/est/nonce` | draft-ietf-lamps-attestation-freshness 5.1 | yes |
 
-The same six answer under a **label**, `/.well-known/est/<profile>/…`, where
+The same seven answer under a **label**, `/.well-known/est/<profile>/…`, where
 the label is a certificate profile. The unlabelled path issues the realm's
 `est.defaultProfile` (`tls-client` unless changed).
 
@@ -62,7 +63,7 @@ certificates. The rules:
   `/.well-known/est/a/b/cacerts` — is refused 404 (`STS-EST-0022`), never
   read as a second realm or as a profile.
 * An unknown name in the label position is an unknown label: 404.
-* `/admin/est` in a realm, and `GET /realms` for every realm (`estLabelUrl`),
+* `/admin/cert-issuance#cert-tab-est` in a realm, and `GET /realms` for every realm (`estLabelUrl`),
   show the label-form address.
 
 | Profile (label) | Needs |
@@ -80,15 +81,16 @@ certificates. The rules:
 
 **Never issued over EST** (403): `root-ca`, `intermediate-ca`, `issuing-ca`,
 `ocsp-responder` and `kdc`. Each makes its holder an authority over everybody
-else in the realm; `/admin/est` gives the reason for each. An unknown label is
+else in the realm; `/admin/cert-issuance#cert-tab-est` gives the reason for each. An unknown label is
 404. `est.allowedProfiles` narrows the nine further per realm.
 
 ## Configuring EST
 
 ### For the realm: Protocols → Cert issuance → EST
 
-The EST page of the console (`/admin/est`) holds the realm's server: the
-endpoints and every profile's labelled URLs, the EST Issuing CA, the
+The EST tab of the console (`/admin/cert-issuance#cert-tab-est`) holds the realm's server (its
+endpoints and the label form are on the Metadata tab, under EST): every
+profile's labelled URLs, the EST Issuing CA, the
 profiles, the credentials EST accepts, **Issue a certificate with a
 server-generated key**, the **certificate host names**, the enrolled
 certificates (each with a **Revoke**), and the `est.*` settings (see
@@ -170,6 +172,8 @@ service already has; EST has none of its own:
   application in the realm.
 * In **product** mode a request that did not arrive over TLS is refused.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a client certificate must also carry the clientAuth extendedKeyUsage and permit digitalSignature. `pki.paranoidEnrollmentCredential` turns this row off.
+
 ## Requesting a certificate with curl and openssl
 
 Get the CA certificates first (unauthenticated):
@@ -194,7 +198,7 @@ base64 alice.csr.der | curl -s --cacert sts-root.pem \
 ```
 
 A **server certificate** needs its host name registered on the entry first
-(on `/admin/est`, or `POST /admin-api/est/add-host-name`), and the request must
+(on `/admin/cert-issuance#cert-tab-est`, or `POST /admin-api/est/add-host-name`), and the request must
 ask for it:
 
 ```sh
@@ -211,7 +215,7 @@ subjectAltName of the certificate being renewed; the old one goes on the EST
 CRL as `superseded`:
 
 ```sh
-openssl req -new -key alice-new.key -subj "/CN=alice/O=sts" \
+openssl req -new -key alice-new.key -subj "/CN=alice/O=iya-sts" \
   -addext "subjectAltName=URI:urn:sts:person:alice" -outform DER \
   -out renew.csr.der
 base64 renew.csr.der | curl -s --cacert sts-root.pem \
@@ -245,7 +249,7 @@ estclient -e -s host -p 8081 -o out -y web.csr --path-seg tls-server -u alice -h
 ```
 
 Things to know, each found by the suite's run of it
-(`tests/vendored/sts_est_libest.js`):
+(`tests/protocol/sts_est_libest.js`):
 
 * **It reaches another realm through the label** (#251): estclient builds its
   URL as `https://host:port/.well-known/est[/label]/op` and accepts ONE label
@@ -262,6 +266,10 @@ Things to know, each found by the suite's run of it
   (`key-0-0.key`) is base64 PKCS#8 without PEM armour.
 * It exits 0 whether or not it enrolled; read what it wrote.
 * It builds against OpenSSL 1.1 only (`FIPS_mode()` is gone from 3.0).
+  It therefore negotiates TLS 1.2, which every listener refuses by default
+  (`tls.disableTls12`, on since #429): set `tls.disableTls12` to `false`, or
+  the main port's `listenerMain.disableTls12` to `off`, before running it. The
+  suite's job turns `tls.disableTls12` off for its run and resets it after.
 * `-z` enrolls, but the challengePassword is not read (see *Not implemented*),
   and `--srp` is refused at the handshake.
 
@@ -284,6 +292,56 @@ with (ECDSA with SHA-256 and SHA-384, RSA with SHA-256, Ed25519, ML-DSA-44/65/87
 the `extensionRequest` attribute, the profile's extended key usages, and — for
 the server, email and smartcard profiles — a hint naming the subjectAltName kind
 it needs (`dNSName`, `iPAddress`, `rfc822Name`, or the UPN otherName).
+
+## The attestation freshness nonce
+
+A device certificate (the `device` label) may be requested with a TPM key
+attestation in the request
+([devices](devices.md#a-certificate-over-est-or-scep)). The attestation proves
+the key was made in a TPM and cannot leave it, but not that the TPM produced
+the attestation **now**. A captured statement could be sent again, in a new
+request for the same key. So the service follows
+[draft-ietf-lamps-attestation-freshness](https://datatracker.ietf.org/doc/draft-ietf-lamps-attestation-freshness/)
+section 5.1, which draft-ietf-lamps-csr-attestation section 6.2 points to:
+
+1. Ask for a nonce, authenticated as for an enrollment:
+
+   ```
+   GET /.well-known/est/device/nonce            (no content)
+   POST /.well-known/est/device/nonce           (to choose a length)
+   Content-Type: application/est-attestation-freshness+json
+
+   {"len": 32}
+   ```
+
+   The answer is `200`, `application/est-attestation-freshness+json`:
+   `{"nonce": "<unpadded base64url>", "expiry": <seconds>}`, and a
+   `Set-Cookie: sts_est_nonce=…` that binds the nonce to this client.
+2. Pass the nonce's octets to the TPM as `TPM2_Certify`'s `qualifyingData`.
+   They come back as the `TPMS_ATTEST`'s `extraData`. Use the octets
+   exactly as received, with no hashing or other transformation.
+3. Send the `/simpleenroll` **with the same cookie and the same
+   credential**. The nonce is spent once.
+
+The nonce is 32 octets unless `len` asks for a length from 8 to 64. A length
+below 16 is raised to 16, the service's minimum for random values. The nonce
+lives `devices.challengeTtlSeconds`, and a new request with the same cookie
+replaces it. A nonce issued to another client, or to the same client under
+another cookie, does not count, whatever its octets.
+
+**Which mode refuses what.** In **product mode**, a TPM statement whose
+`extraData` is not a live nonce issued to this client is **refused**
+(`403`, STS-DEVICE-0050). In **development mode** the key is still certified,
+and its attestation records freshness `unproven`, with the reason. **SCEP has
+no nonce operation**, because the draft defines one for CMP, EST and CMC only.
+A TPM statement sent over SCEP is therefore never fresh, and product mode
+refuses it. Enroll attested devices over EST.
+
+A label naming any other profile answers `{"nonce": ""}`, the draft's "no
+freshness proof required", because nothing it issues reads an attestation.
+`len` outside 8..64, an unknown member, or a body that is not one JSON
+object is refused `400`. So is any other media type. A `reqTypeInfo` is
+answered `503`: this service defines no request types.
 
 ## What the CA decides, not the request
 
@@ -311,11 +369,14 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
   the proof of possession. Use `/serverkeygen`.
 * An EST credential of its own: EST uses passwords, client secrets and
   certificates the service already has.
+* A `reqTypeInfo` / `respInfo` type for `/nonce`
+  (draft-ietf-lamps-attestation-freshness section 3): none is defined, so a
+  request naming one is answered `503`.
 
 ## Configuration
 
 Every `est.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → EST**
-(`/admin/est`).
+(`/admin/cert-issuance#cert-tab-est`).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
@@ -345,7 +406,7 @@ value resolves and where it is changed — the console page, or
   one 403.
 * **Authentication uses credentials the service already has.** A person's
   password, an application's client secret or a certificate this realm issued —
-  EST gets no credential of its own. See [above](#authenticating).
+  EST gets no credential of its own. See [above](#authenticating-the-caller).
 * **A Basic username is a person first.** Then an application's `client_id`,
   so a person and an application sharing a name authenticate as the person.
 * **Nothing is parsed for an unauthenticated client.** The query string,
@@ -378,7 +439,7 @@ value resolves and where it is changed — the console page, or
 
 ## Console and management API
 
-* **Protocols → Cert issuance → EST** (`/admin/est`): the endpoints and every profile's
+* **Protocols → Cert issuance → EST** (`/admin/cert-issuance#cert-tab-est`): the endpoints and every profile's
   labelled URLs, the EST Issuing CA, the credentials EST accepts, issuing with a
   server-generated key, certificate host names, the enrolled certificates with a
   Revoke on each, and the `est.*` settings.

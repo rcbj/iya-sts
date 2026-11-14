@@ -14,9 +14,9 @@
 // anything being configured. Both are refused in product too, and that is
 // argued beside the LDAP copy: it can only turn a bind that would have been
 // verified into a refusal, so nobody can HOLD `invalid` as a password. Nothing
-// held either half (#113 item 5): `tests/vendored/sts_xml_schema_validation.js`
+// held either half (#113 item 5): `tests/protocol/sts_xml_schema_validation.js`
 // sends the literal in a UsernameToken but only validates the fault's schema,
-// and `tests/vendored/sts_ldaps.js` binds with a different wrong password.
+// and `tests/protocol/sts_ldaps.js` binds with a different wrong password.
 //
 // In a CHILD PROCESS with the whole stack, one person with a real password:
 //
@@ -73,6 +73,12 @@ function childMain() {
     const PERSON = 'rpr-person-' + stamp;
     const HOLDER = 'rpr-holder-' + stamp;
     let address = 0;
+    const APPLIES_TO = 'https://rpr-' + stamp + '.example';
+    const app = require(ROOT_DIR + '/common/applications').createApplication({
+      identifier: 'rpr-app-' + stamp, protocols: ['wstrust'],
+      fields: { wstrustAppliesTo: [APPLIES_TO] } });
+    note(app && app.ok, 'precondition: the AppliesTo is registered',
+         JSON.stringify(app));
 
     ldap.createUser(PERSON, { invent: false });
     const set = credentials.setPassword(PERSON, PASSWORD);
@@ -123,6 +129,12 @@ function childMain() {
         '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/' +
         'ws-sx/ws-trust/200512"><wst:RequestType>http://docs.oasis-open.org/' +
         'ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
+        // #496: a REGISTERED AppliesTo — product refuses an RST naming
+        // none before the credential is read.
+        '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+        'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/' +
+        '08/addressing"><wsa:Address>' + APPLIES_TO + '</wsa:Address>' +
+        '</wsa:EndpointReference></wsp:AppliesTo>' +
         '</wst:RequestSecurityToken></s:Body></s:Envelope>',
         'application/soap+xml');
     };
@@ -165,6 +177,7 @@ function childMain() {
 
     // --- B. and C. product -----------------------------------------------
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     try {
       r = await bind(PERSON, PASSWORD);
       note(r.ok === true, 'B1. PRODUCT: an LDAP bind with the person\'s ' +
@@ -212,6 +225,7 @@ function childMain() {
            'C2. PRODUCT: and a WS-Trust Issue with it', brief(r));
     } finally {
       config.clearOverride('global.mode');
+      config.clearOverride('authn.allowOptionalSecondFactor');
     }
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

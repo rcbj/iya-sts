@@ -1,0 +1,16 @@
+{
+  "about": "Affiche un court message à toutes les personnes connectées à la console d'administration, au portail utilisateur ou à l'application de rapports, dans un bandeau en haut de chacun de leurs onglets ouverts. Il est envoyé comme événement Shared Signals propre à ce service sur le flux récepteur de chaque application, et un onglet l'affiche en {seconds, plural, one {# seconde} other {# secondes}} environ. Le bandeau se ferme seul après dix secondes. Un onglet ouvert plus tard ne l'affiche pas.",
+  "notReady": "Rien ne peut être distribué pour le moment :",
+  "readOnly": "Envoyer une annonce nécessite Admin Write.",
+  "message": "Message",
+  "maxChars": "Texte brut, {max} caractères au plus.",
+  "surfaces": "L'afficher dans",
+  "scope.legend": "L'envoyer à",
+  "scope.realm": "Ce domaine (<code>{realm}</code>)",
+  "scope.every": "Tous les domaines ({count, plural, one {# domaine} other {# domaines}})",
+  "scope.only": "Il est envoyé aux personnes connectées à ce domaine, <code>{realm}</code>.",
+  "send": "Diffuser",
+  "streamsLink": "Les flux récepteurs qui le transportent (Shared Signals)",
+  "banner.heading": "Annonce",
+  "banner.close": "Fermer"
+}

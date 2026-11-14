@@ -1,0 +1,15 @@
+{
+  "sub": "The AuthZEN access requests that name you as an approver: an application's enforcement point was denied something the realm's policy lets be asked for, and waits for one of the people the policy named. <strong>Approving does not grant anything by itself</strong>: the application asks again, carrying the approval, and the realm's policy decides afresh.",
+  "off": "Access requests are turned off in this realm.",
+  "none": "No access request is waiting for you.",
+  "asks": "An enforcement point asks for this access:",
+  "subject": "For",
+  "action": "To",
+  "resource": "On",
+  "application": "Application",
+  "requester": "Asked by",
+  "waits": "It waits until {when}.",
+  "approve": "Approve",
+  "deny": "Deny",
+  "done": "{status, select, approved {The access request is approved. The application can ask again now.} denied {The access request is denied.} other {The access request is {status}.}}"
+}

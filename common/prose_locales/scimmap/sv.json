@@ -1,0 +1,42 @@
+{
+  "scimmap.user.userName.note": {
+    "en": "e802eafbefe0f779",
+    "text": "SCIM:s unikhetsvillkor. Det är RDN för en automatiskt skapad post, så för alla som den här tjänsten autentiserat är det också deras inloggningsnamn — men det är INTE SCIM-id:t, som är postens entryUUID."
+  },
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "Provisioneringsklientens egen identifierare för den här personen. Lagras ordagrant och läses inte av något här."
+  },
+  "scimmap.user.active.note": {
+    "en": "eef190d9fd08aa38",
+    "text": "INAKTIVERAR KONTOT. false skriver det administrativa låset 000001010000Z och avslutar allt personen innehar; varje dörr vägrar sedan personen. true tar bort det. Ej skickat: oförändrat."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": {
+    "en": "c77936e2f9b505c6",
+    "text": "Ett DN i katalogen och ett id i SCIM, översatt åt båda hållen av SCIM-hanterarna sedan id:t blev entryUUID (2026-09-14). Ett värde som inte anger någon post behålls som det skickades."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "Vilka federationspartners subjekt som loggar in den här personen, var och en { relationship, issuer, subject } — issuer valfri vid inskick, relationens fedPeer. EJ SKICKAT: oförändrat, så att en provisioneringsklient som inte känner till det här tillägget inte kan avlänka någon genom att utelämna det. Skickat, även tomt: ersatt, och varje borttagen länk avslutar de sessioner som den partnern loggat in personen i. En länk som en annan person bär avvisas med 409."
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "SKRIVSKYDDAT, som RFC 7643 avsnitt 4.1.2 kräver. Medlemskap är ett faktum om GRUPPENS post, så det ändras genom en Group-resurs och aldrig genom en User-resurs. Upplöses av ldap_server.js groupsOfUser(), som är samma funktion som groups-anspråket läser — så en token och en SCIM-resurs kan inte vara oense om vem som är med i vad."
+  },
+  "scimmap.group.members.note": {
+    "en": "e791c95075db5178",
+    "text": "LÄSNING upplöser member, uniqueMember och memberUid likadant; SKRIVNING lägger ett nytt värde i `member`, eftersom ett SCIM-medlems-id är ett DN. En dinglande medlem — ett DN där ingenting är lagrat — returneras som medlem, eftersom gruppens påstående är faktumet, och den här katalogen gör avsiktligt ingen referensintegritet."
+  },
+  "scimmap.schema.plain": {
+    "en": "9eb4e31a2b06f959",
+    "text": "den här tjänstens egen (ingen standardtyp)"
+  },
+  "scimmap.schema.claims": {
+    "en": "1af3e6d95ddf4877",
+    "text": "den här tjänstens egen (#128; ingen standardtyp)"
+  },
+  "scimmap.schema.federation": {
+    "en": "e45ae284f8f1439e",
+    "text": "den här tjänstens egen (#109; ingen standardtyp)"
+  }
+}

@@ -480,7 +480,13 @@ async function productChild() {
 
   // --- a person, a password, keys ---
   const PW = 'Correct-Horse-Battery-9!';
-  const made = directory.createUser('kpalice', { invent: false });
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode.
+  const person = function (name) {
+    return { invent: false, attributes: { givenName: 'Kp', sn: name,
+                                          mail: name + '@example.test' } };
+  };
+  const made = directory.createUser('kpalice', person('kpalice'));
   out.steps.created = made.ok;
   const set = credentials.setPassword('kpalice', PW);
   out.steps.set = set.ok;
@@ -516,7 +522,7 @@ async function productChild() {
   out.boundName = opened.name;
 
   // --- a person with a password and NO keys, then the upgrade on a verify ---
-  directory.createUser('kpbob', { invent: false });
+  directory.createUser('kpbob', person('kpbob'));
   config.setOverride('krb5.personKeys', 'false');
   credentials.setPassword('kpbob', PW);
   await personKeys.idle();
@@ -531,6 +537,46 @@ async function productChild() {
   const upgraded = await asReq('kpbob', PW);
   out.upgradedAs = { ok: upgraded.ok, code: upgraded.code,
                      eText: upgraded.eText };
+  // --- a REHASH re-stamps the keys and does not derive them (#820) ---
+  // Signed in under a scrypt policy, then once more after the policy moved
+  // to argon2id: the stored hash is upgraded, the password is the same, so
+  // the keys must be the same keys at the same kvno, derived no later.
+  const passwordPolicy = require(R + '/common/password_policy');
+  const policyWith = function (changes) {
+    return Object.assign({}, passwordPolicy.DEFAULTS, changes);
+  };
+  const keysOf = function (name) {
+    const raw = (entryOf(name).attributes.stskrb5keys) || [];
+    return raw.length
+      ? JSON.parse(keystore.open(String(raw[0]), 'kerberos-keys')) : null;
+  };
+  directory.createUser('kpdan', person('kpdan'));
+  out.rehash = { scryptSaved: passwordPolicy.save('default', policyWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 15, scryptParallelism: 3 })).ok };
+  credentials.setPassword('kpdan', PW);
+  await personKeys.idle();
+  const danBefore = keysOf('kpdan');
+  const danHashBefore = String(entryOf('kpdan').attributes.userpassword[0]);
+  out.rehash.argonSaved = passwordPolicy.save('default', policyWith(
+    { hashAlgorithm: 'argon2id' })).ok;
+  out.rehash.verified = (await credentials.verifyAsync('kpdan', PW,
+                                                       { via: 'test' })).ok;
+  await personKeys.idle();
+  const danAfter = keysOf('kpdan');
+  const danHashAfter = String(entryOf('kpdan').attributes.userpassword[0]);
+  out.rehash.upgraded = danHashBefore.indexOf('$scrypt$') === 0 &&
+                        danHashAfter.indexOf('$argon2id$') === 0;
+  out.rehash.sameKeys = !!danBefore && !!danAfter &&
+    JSON.stringify(danBefore.keys) === JSON.stringify(danAfter.keys) &&
+    danBefore.kvno === danAfter.kvno;
+  out.rehash.notDerived = !!danBefore && !!danAfter &&
+    danBefore.derivedAt === danAfter.derivedAt;
+  out.rehash.restamped = !!danAfter &&
+    danAfter.stamp === personKeys.stampOf(danHashAfter);
+  const danAs = await asReq('kpdan', PW);
+  out.rehash.asOk = danAs.ok;
+  passwordPolicy.save('default', policyWith({}));
+
   const wrongVerify = await credentials.verifyAsync('kpcarol-nobody', PW,
                                                     { via: 'test' });
   out.nobodyVerified = wrongVerify.ok;
@@ -712,6 +758,20 @@ async function productChild() {
   out.withheldHelper = personKeys.withheldValues('stskrb5keys', ['abc'])[0];
 
   // --- a service principal: create, keytab, KDC, acceptor, rotate ---
+  // THE SERVICE KEYED ITS OWN ACCEPTOR FIRST (2026-10-12): product makes a
+  // random key for the acceptor's SPN when its password is the published one,
+  // the moment anything asks about the acceptor. An operator who wants that
+  // SPN's keytab from a create deletes the service's key and creates it; the
+  // rest of this section is that operator's create.
+  const generated = personKeys.currentDirectory()
+    .readService('HTTP/web.example.com@' + principals.REALM);
+  out.generatedFirst = !!(generated && generated.keys &&
+    /"generated":"acceptor"/.test(String(generated.info || '')));
+  if (out.generatedFirst) {
+    out.generatedDeleted = actions.kerberosPrincipalsAction(
+      { action: 'delete-service', spn: 'HTTP/web.example.com' },
+      { actor: 'test', via: 'api' }).ok;
+  }
   const created = actions.kerberosPrincipalsAction(
     { action: 'create-service', spn: 'HTTP/web.example.com' },
     { actor: 'test', via: 'api' });
@@ -907,9 +967,10 @@ function inAProductChild(t) {
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign(clean, {
       LOG_LEVEL: 'fatal', KP_ROOT: ROOT, KP_OUT: outFile,
-      STS_MODE: 'product',
+      STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
       KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret',
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: kekFile
     }),
     encoding: 'utf8', timeout: 180000
@@ -1002,6 +1063,15 @@ function productModeRefusesAndUpgrades(t, r) {
           'A VERIFIED SIGN-IN DERIVES THE MISSING KEYS, and the next AS-REQ ' +
           'succeeds',
           JSON.stringify(r.upgradedAs));
+  t.check(r.rehash && r.rehash.scryptSaved && r.rehash.argonSaved &&
+          r.rehash.verified && r.rehash.upgraded,
+          'a sign-in after the policy moved from scrypt to argon2id upgrades ' +
+          'the stored hash', JSON.stringify(r.rehash));
+  t.check(r.rehash && r.rehash.sameKeys && r.rehash.notDerived &&
+          r.rehash.restamped && r.rehash.asOk,
+          'A REHASH RE-STAMPS THE KERBEROS KEYS: the same keys at the same ' +
+          'kvno, not derived again, stamped with the new hash, and the ' +
+          'password still gets a ticket (#820)', JSON.stringify(r.rehash));
   t.check(r.nobodyVerified === false && r.unknownAs.ok === false &&
           r.unknownAs.code === 6 &&
           /nobody by that name/.test(r.unknownAs.eText),
@@ -1054,6 +1124,11 @@ function servicePrincipalsWork(t, r) {
   log.debug("Entering servicePrincipalsWork().");
   t.log.info('=== a service principal: keytab, KDC, acceptor, rotate, delete ' +
              '===');
+  t.check(r.generatedFirst === true && r.generatedDeleted === true,
+          'the service had keyed its acceptor\'s SPN itself (product, the ' +
+          'published password), and an operator can delete that key',
+          JSON.stringify({ generated: r.generatedFirst,
+                           deleted: r.generatedDeleted }));
   t.check(r.createOk === true && r.createKvno === 3 && r.keytab.length > 100,
           'create-service answers with a keytab at kvno krb5.kvno',
           JSON.stringify({ ok: r.createOk, errors: r.createErrors,

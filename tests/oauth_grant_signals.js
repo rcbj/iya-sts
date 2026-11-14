@@ -28,7 +28,7 @@
 //      none of them. The next door written without it fails here by name.
 //
 // The end-to-end half — a stream, the real doors, the SETs — is
-// `tests/vendored/sts_caep_oauth_grants.js`.
+// `tests/protocol/sts_caep_oauth_grants.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

@@ -15,7 +15,7 @@
 //!   plus the write, so a product-mode realm refuses a development-only
 //!   value (`STS-CORE-0103`) whatever the service's mode.
 //! * **Names that must be distinct are seeded from the realm's domain** —
-//!   entityIDs, issuers, the SPIFFE trust domain, the Kerberos realm — and
+//!   the OpenID4VP client id, the SPIFFE trust domain, the Kerberos realm — and
 //!   the things that bind sockets or mint credentials another service will
 //!   believe are seeded OFF (Kerberos, SPIFFE, its listeners and admins).
 //! * **A realm is removed in four steps (#262)**: marked retiring (refusing
@@ -228,24 +228,10 @@ fn named_by_realm(
     base: impl Fn(&str) -> String,
 ) -> Vec<(&'static str, Json)> {
     let client = base("oid4vp.clientId");
+    // The five SAML, WS-Trust and WS-Federation names were seeded here until
+    // #523 (2026-10-08): each is the realm's OAuth issuer now, already
+    // distinct per realm by its prefix, so there is nothing left to seed.
     vec![
-        (
-            "saml2.entityId",
-            Json::String(format!("urn:{}:idp", domain)),
-        ),
-        (
-            "saml11.providerId",
-            Json::String(format!("urn:{}:idp:saml11", domain)),
-        ),
-        (
-            "wsfed.entityId",
-            Json::String(format!("urn:{}:sts", domain)),
-        ),
-        (
-            "wstrust.issuer",
-            Json::String(format!("urn:{}:sts", domain)),
-        ),
-        ("saml.issuer", Json::String(format!("urn:{}:sts", domain))),
         (
             "oid4vp.clientId",
             Json::String(if client.is_empty() {

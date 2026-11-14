@@ -7,11 +7,15 @@ more than one family needs it, not because it felt general.
 | File | What it is |
 |---|---|
 | `compiled_tree.js` | **IS THIS TREE COMPILED (#50, 2026-09-16)?** Lists every `dir/x.ts` with no `x.js` beside it; `server.js` and `tests/run.js` call `refuseUncompiledTree()` first, which exits with `STS-CORE-0093` and says to use the containers. Requires nothing of this service and has no logger, for `config_file.js`'s reason. |
+| `xml_model.ts` | **AN XML FAMILY'S MODEL, AS THE CODE READS IT (#1579).** The one reader of the facts `models/lib/saml_lib.mjs` writes — a vocabulary's terms, a message's attributes and children in their order, a parameter set — over one or more generated files merged (`saml.json`; `ws.json` with `saml.json`, so an RSTR's assertion is held to SAML's own model). `term()`, `terms()`, `read()`, the writers' order (`attributes()`, `children()`, which throw on a part the model does not name) and `hold()`, which logs a gap under the family's code and answers the document unchanged; a fragment whose prefixes its document declares is held with them (`declarations`). `saml/saml_model.ts` and `ws-trust/ws_model.ts` are its instances. A leaf. |
+| `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
+| `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
-| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8), and since 2026-09-22 (#173) the Kerberos PRF and KRB-FX-CF2 (section 9), and since 2026-09-23 (#105) WebAuthn's COSE signatures (`verifyCoseSignature()`, RFC 9053/8230/9964 — PS256/384/512 and ML-DSA-44/65/87 among them) and the attestation structures: a TPM's TPMT_PUBLIC, TPMS_ATTEST and TPMT_SIGNATURE, Android's KeyDescription, Apple's nonce and FIDO's AAGUID extension (section 10). **And since 2026-09-23 (#168) XML Encryption 1.1's `rsa-oaep` with a named digest and MGF1 (SHA-256 by default) and ECDH-ES key agreement (ConcatKDF, AES key wrap) in both directions, and a caller's allow-list on `decryptElement()` (`allowedCiphers`, `allowedKeyManagement`, `allowedOaepDigests`), asked before any key operation** — which is what a federation relationship decrypts a partner's assertion under (`federation/CLAUDE.md`). **And since 2026-09-22 (#63) DKIM signing (RFC 6376 relaxed/relaxed, rsa-sha256 and RFC 8463 ed25519-sha256) and a verifier for this service's own tests (section 12)**, so the mail channel's SMTP transport signs through here and never through nodemailer's own signer (3ba). A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
+| `job_log.ts` | A scheduler job's routine `info` is written at debug: `JobLog.during()` around each of `cluster/scheduler.ts`'s three `job.run()` calls. A warning, an error, and an info line that carries an `STS-` code stay at the level asked. `cluster/CLAUDE.md`, *A job's body logs only when something is wrong*. |
+| `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8), and since 2026-09-22 (#173) the Kerberos PRF and KRB-FX-CF2 (section 9), and since 2026-09-23 (#105) WebAuthn's COSE signatures (`verifyCoseSignature()`, RFC 9053/8230/9964 — PS256/384/512 and ML-DSA-44/65/87 among them) and the attestation structures: a TPM's TPMT_PUBLIC, TPMS_ATTEST and TPMT_SIGNATURE, Android's KeyDescription, Apple's nonce and FIDO's AAGUID extension (section 10). **And since 2026-09-23 (#168) XML Encryption 1.1's `rsa-oaep` with a named digest and MGF1 (SHA-256 by default) and ECDH-ES key agreement (ConcatKDF, AES key wrap) in both directions, and a caller's allow-list on `decryptElement()` (`allowedCiphers`, `allowedKeyManagement`, `allowedOaepDigests`), asked before any key operation** — which is what a federation relationship decrypts a partner's assertion under (`federation/CLAUDE.md`). **And since 2026-09-22 (#63) DKIM signing (RFC 6376 relaxed/relaxed, rsa-sha256 and RFC 8463 ed25519-sha256) and a verifier for this service's own tests (section 12)**, so the mail channel's SMTP transport signs through here and never through nodemailer's own signer (3ba). **And since 2026-10-05 (#178) HTTP Message Signatures (RFC 9421, `;req` included, every JWS algorithm under section 3.3.7 with post-quantum ones among them) and Content-Digest (RFC 9530) (section 14), moved here out of `gnap/`, and `digest()`, `hkdf()`, `publicKeyFromJwk()`, `publicKeyOf()` and `spkiDerOf()` (section 15). rcbj's rule as restated that day covers EVERY cryptographic operation in every protocol, digests and key import included, not only signatures and ciphers**: a feature module calls this file and never node's `crypto`. **#453 (2026-10-07) moved the rest of the service onto it** — 130 files — with section 17: `sha1Digest(purpose, …)` (SHA-1 only for a closed list of purposes a specification fixes: SAML artifact SourceID, UUIDv5, key identifiers, OCSP CertID and ETag, a displayed fingerprint, SPIRE agent paths), `hmac()`, `parseCertificate()`, `privateKeyFrom()`, `generateKeyPairSync/Async()`, `signBytes()` / `signatureValid()`, `digestSupported()`, and each sweep group's own region (GNAP's macaroon, zcap and Biscuit libraries held here and nowhere else; OCSP CertID hashes and pkijs's engine; SCEP's content cipher and key transport; TPM name digests; RFC 7616 HTTP Digest; `bytesEqualConstantTime()` for bytes, where `constantTimeEquals()` compares text). `tests/crypto_centralised.js` fails on `require('crypto')` anywhere but here, `pq_native.js`, `pq_jose.js` and the vendored copies, and on a token-format library required outside this file; its PENDING list (`authn/webauthn.js`'s standalone path for the parent's cross-implementation test) may only shrink. Its RFC 8941 codec is `structured_fields.ts`, a static utility class, because a module `crypto.js` requires is loaded before the composition root and cannot hold an instance it builds. A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
@@ -34,18 +38,34 @@ more than one family needs it, not because it felt general.
 | `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension; since #201 a BACKTRACKING builder over the one set of RFC 5280 rules (`pathRuleProblem()`, name constraints EVALUATED — see *3w, CONTINUED: ONE SET OF PATH RULES*) — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.ts` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.ts` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
-| `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. |
+| `enrollment_model.ts` | **THE CERTIFICATE-ENROLLMENT MODEL, AS ACME, EST AND SCEP READ IT (#1579).** Builds every request document's zod validator from `models/generated/enrollment.json` (`body()`, with the hand-written schemas' bounds in their order, so a refusal's sentence is unchanged), answers the registers and operations the three families branch on (`rows()`, `names()`, `map()`, `operations()`), and holds an answer to its model (`undeclared()`, `unknownTerm()`) for the caller to record. A LEAF: `validation`, `model_tables` and bunyan. `acme/CLAUDE.md`, *THE REQUEST SHAPES ARE THE MODEL'S*, has the rest. |
+| `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. **`awaitsCertificate()` (2026-11-04)** says a signature wants a header its key has no certificate for HERE; `helpers.certificateHeaderForAsync()` then reads the store and asks for one (`pki.certifyKeySetWhenBranched()`, which also lets `certifyLater()` certify keys made before their realm's branch — the cluster case where a credential went out without the `x5c` its setting asks for) and logs `STS-PKI-0227` if it still has none. |
 | `jose_kid.js` | **WHICH `kid` A SIGNED TOKEN CARRIES (2026-09-13)** — `keys.kidFormat`, per realm: `internal` (the default, `sts-…`) or `jwk-thumbprint-uri`, the signing key's RFC 9278 JWK Thumbprint URI. A TRANSLATION at the edges — the header a signer writes, the JWKS, a lookup of one of this service's own tokens — while the key set, the keystore, the certificate register and `certificateHeaderFor()` go on naming a key by its internal kid. A LIBRARY over `config`, `crypto` and `error_codes`. See *3af, continued* below. |
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
-| `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list of every realm, in both modes (2026-10-18), remembered on the `sts_realm` cookie — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `access_limits.ts` | **WHAT A RIGHT'S LIMITS MEAN (#432 phase 5, 2026-10-03).** A catalogue type's `limits` schema says a limit's shape; this static utility class says what its six meaningful members mean — `amount` with its `currency`, `count`, `receiver`, an ISO 8601 repeating `interval`, a `window` — to the three parties that must agree: `authorization_details.conformance()` (RFC 9396 and GNAP alike), the GNAP approval page that lets a person LOWER a limit (`raised()`, member by member; a shorter period is a raise), and the resource server counting against it (`periodAt()`, amounts in millionths as BigInt). A leaf: no route, no store. `gnap/CLAUDE.md`, *Ownership and limits*. |
 | `limits_form.ts` | **A LIMIT AS A FORM A PERSON CAN LOWER (#432 phase 5).** The controls under each right or detail carrying `limits`, and the reading back that accepts only lower values and values still meeting the type: one static utility class for GNAP's approval page, `/portal/ciba`'s absent-owner approvals and OAuth's consent screen, so the three cannot draw or judge a limit differently. In `common/` because two protocol directories read it. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
+| `http2_express.ts` | **EXPRESS 4 ON AN HTTP/2 REQUEST, FOR THE TWO APPS THIS SERVICE BUILDS AND NO OTHER (#407, 2026-10-19).** `adapt(app)` gives one app an own `lazyrouter` — express 4's: the router, the query parser, then an `init` that is express's six lines with the request's and response's prototypes chosen by protocol (express's methods over `Http2ServerRequest`/`Http2ServerResponse` for HTTP/2; express's own for HTTP/1.1). `common/app.js` adapts the shared app and `debugger/debugger_server.ts` its own; **nothing on the express module changes**, which is why it replaced the `http2-express` package #703 first used: that replaced `express.application.lazyrouter` for every app in the process. The same `init` writes `host` from `:authority` and refuses 400, `STS-HTTP-0024`, a request whose two name different hosts (RFC 9113 section 8.3.1; default port and case are not a difference); `hostProblem()` is asked again by `request_pool.proxy()` and the debugger's API proxy. **And an HTTP/2 response's `write()` and `end()` hand a chunk over 64 KiB to the stream a slice at a time, each after `drain` (#1725)**: `res.send()` gave node's stream a 6.5 MB `/admin-api/openapi.json` whole, two of them passed the session's `maxSessionMemory` (10 MB), node refused every new stream on the connection ENHANCE_YOUR_CALM and then tore the session down, and a body whose headers had arrived never ended. `writableEnded` and `finished` read true from the `end()` call; a small body and HTTP/1.1 are node's and express's own. `tests/http2_large_body.js`. A static utility class over node, express and the error-code table, so the pool may require it. |
+| `http2_framing.ts` | **AN HTTP/2 BODY WITH NO `content-length` IS STILL A BODY (#407).** `markFramedBody()`, on each TLS HTTP listener's `request` event ahead of the app, adds `transfer-encoding: chunked` to an HTTP/2 request whose HEADERS did not end the stream and that sent no length, so body-parser's `hasBody()` reads it. **The header is SYNTHETIC and exists only on this service's side**: HTTP/2 forbids `transfer-encoding` (RFC 9113 section 8.2.2) and no client sent it — it is what the request pool forwards to a worker as the chunked body node's client sends there anyway, so it is real on that HTTP/1.1 hop and nowhere else. **It also appears in anything that captures `req.headers`** (the call log, the debugger's capture, a test echo) as though the client had sent it; read it there as "framed by HTTP/2", never as a client's request header. |
+| `connect_refusal.ts` | **CONNECT IS ANSWERED 501 ON EVERY HTTP LISTENER (#1304, 2026-11-04).** This service is an origin server, never a proxy, so it implements no CONNECT (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the application — its target is an authority, not a path. With no `connect` listener node answered on its own, wrongly over both protocols: a bare 405 with no `Allow` over HTTP/2 (RFC 9110 section 15.5.6 says a 405 MUST carry one), and over HTTP/1.1 nothing at all — the connection was destroyed. `install(server, label)` answers 501 over either, `no-store`, with `frame-ancestors 'none'`, marked `STS-HTTP-0025`; `server.js` installs it on the main port (TLS and plain) and every custom listener, `debugger_server.ts` on its own. **Logged sparingly** — the first, then a count at most once a minute, with no timer — because a CONNECT is what a scanner sends. `tests/main_port_http2.js` 13. |
+| `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
+| `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
-| `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
+| `model_ir.ts` | **THE JSON THE MODEL'S IMPORTERS AND EMITTERS SHARE (#1390).** `stable()` sorts keys for the directory and persistence catalogues. An OpenAPI document is never passed through it. A library, no route. |
+| `directory_spellings.ts` | **`STANDARD_NAMES` AND `OWN_NAMES`, READ AS TEXT (#1390).** The directory server registers routes when it is required, so the lists are taken from the source. |
+| `directory_model_catalog.ts` | **THE DIRECTORY OBJECTS WITH NO `SCHEMA` TABLE (#1390).** People, groups, attribute sources, the operational attributes, the OpenID Federation, claims provider, Kerberos trust and trust anchor registers, and the links between objects. A name the directory's spelling list describes takes that list's comment as its sentence. |
+| `directory_model.ts` | **THE DIRECTORY NAMESPACE (#1390).** Collects each `SCHEMA` and the catalogue, and adds what the RFCs publish from `models/directory/rfc_schema.json`. The directory still enforces nothing. |
+| `postgres_import.ts` | **THE PERSISTENCE NAMESPACE (#1390).** Reads both DDL copies into tables, columns and each statement's place. `emit()` returns the file's own bytes, so comparing it to that file proves nothing; `tests/model_typespec.js` is the comparison that does. |
+| `mariadb_import.ts` | **THE MARIADB SCRIPT (#1390).** Reads `mariadb/schema.sql` and `persistence/schema_mariadb.js`. `emit()` returns the SQL file's own bytes. |
+| `openapi_import.ts` | **THE API NAMESPACE (#1390).** Captures a built OpenAPI document's bytes and indexes every operation. `emit()` returns those bytes. |
+| `model_emit.ts` | **TYPESPEC, CLASSES, RFC 4512 DEFINITIONS AND THE READING PAGES (#1390).** `tests/model_typespec.js` compiles what it writes. It does not write an object whose TypeSpec is the source (`AUTHORED`; `models/CLAUDE.md`). |
+| `own_members.ts` | **A NAME A CALLER CHOSE READS AN OWN MEMBER, NEVER AN INHERITED ONE (2026-11-12).** `has(node, key)` (an own member, or digits below an array's length — #1664's `ownStep()`, moved here), `read(node, key)` (that member or `undefined`) and `put(node, key, value)` (an own data member, `__proto__` included, never the prototype). Every lookup of a name from a request, an RFC 9396 detail, an AuthZEN request, a policy or a stored row in a plain-object table in `xacml/`, `authzen/` and `oauth-oidc/authorization_details.ts` goes through it; `xacml/CLAUDE.md` lists them. A leaf over `helpers`. `tests/own_members.js`. |
+| `model_tables.ts` | **WHAT THE SERVICE READS FROM THE MODEL (#1390).** `schema(id)` returns the table the image build generated. A leaf, so it can be required from anywhere. |
+| `crypto_impl/` | The crypto engines `crypto.js` rests on; copies of the parent project's files until #1280, this service's own since — see `common/crypto_impl/CLAUDE.md`. |
 
 **`config_file.js` is new with the 2026-08-23 reorganisation and it exists
 because of it.** Fourteen modules read the appconfig file directly for the one
@@ -62,9 +82,10 @@ first and between them cover every way this service is loaded — `server.js`,
 removed it) — and it is
 idempotent, so all of them calling costs nothing. Those counts are from
 2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
-them are VENDORED (the `common/vendored/` modules and the Kerberos codec copies)
-this repository may not edit, which is why the fix is a mutation of
-`process.env` rather than an edit per reader. `config_file.js`'s header keeps
+them were VENDORED then (the `common/crypto_impl/` modules and the Kerberos
+codec copies, this service's own since #1280) and could not be edited here,
+which is why the fix is a mutation of `process.env` rather than an edit per
+reader. `config_file.js`'s header keeps
 the list.
 
 ---
@@ -74,10 +95,10 @@ the list.
 **AND THE FIRST TWO ARE TYPESCRIPT**: `realm_chooser.ts`, the pilot — a
 `RealmChooser` class built from injected dependencies, with a transitional
 instance exporting the old names for `admin-ui/admin.ts` and
-`portal/portal.ts` — and `html.ts`. Neither is in the parent project's
-Kerberos COPY set (`kerberos/CLAUDE.md`), which is the constraint on choosing
-what to convert next: a file on that list cannot become `.ts` without the
-parent building it.
+`portal/portal.ts` — and `html.ts`. Neither was in the parent project's
+Kerberos COPY set, which was then the constraint on choosing what to convert
+next; that obligation ended with #1280 (`kerberos/CLAUDE.md`), and any file
+here may now become `.ts`.
 
 **`common/` went first and every other service directory followed the same
 day**, with the same three kinds of fix below; the second pass also gave
@@ -126,8 +147,8 @@ an unusable scope would have written it.
 `userFor`, `parseBody`, `bodyValues`, `oauthError`, `vciError`, `signJwt` and
 `firstByLocal`/`textByLocal` are in `helpers.js` because more than one protocol needs
 them, not because they are especially general. The last two are read by three parsers
-— the WS-Trust RST, WS-Federation's `wreq`, and the `wresult` the mock relying party
-is POSTed — and they match on **local name with the namespace ignored** because the
+— the WS-Trust RST, WS-Federation's `wreq`, and once the `wresult` the mock relying
+party was POSTed (deleted, #592) — and they match on **local name with the namespace ignored** because the
 trust namespace alone has four versions in use. That is what lets one parser answer
 WS-Trust 1.0 through 1.4 instead of four.
 
@@ -168,6 +189,15 @@ produces** — the object from `getPeerCertificate()` and the newline-separated
 string from `crypto.X509Certificate` — which is the whole reason it is one
 function and not two that agree today.
 
+**`subjectsForNamesAsync()` ASKS MANY NAMES AT ONCE (#881).** It is the
+resolver's optional `subjectsForAsync`, filled by `ldap/ldap_server.js`, and
+`admin_stats.js` calls it for the shown rows of `/admin/users` while the
+token register is on demand. It never rejects. A throw, or a spent directory
+budget, is `''` for each name under the existing `STS-CORE-0091` and the
+quiet-budget rule, and it does not fall back to `subjectForName()` per name
+the way `namesForSubjectsAsync()` does: that fallback is the blocking read
+the batch exists to retire. No method at all is `subjectForName()` per name,
+which is what a process with no window already does.
 
 ---
 
@@ -203,7 +233,7 @@ SAML 1.1 assertion this service ever issued carried an attribute the schema does
 not have, it verified anyway so it survived for months, and the fix had to be
 applied to EACH SIGNER SEPARATELY.
 
-**The mechanism is `common/vendored/xmldsig.js` and the policy is here**, and
+**The mechanism is `common/crypto_impl/xmldsig.js` and the policy is here**, and
 that split is the design rather than tidiness. The vendored file is the parent
 project's own XML security module, copied byte-identical, and it is the OTHER
 END of most of these exchanges: `tests/xmlsec_interop.js` over there already
@@ -222,7 +252,7 @@ encrypted under DK(key, "prf")), the two RFC 8009 ones (KDF-HMAC-SHA2) and RC4
 (HMAC-SHA1), `krb5PrfPlus()` and `krbFxCf2()`. An enctype with no PRF here is
 refused by name. `tests/kerberos_fast_otp.js` holds it to RFC 3961's n-fold
 vectors and MIT's `t_prf.c` and `t_cf2.expected`, which are external answers;
-the suite's own client (`tests/vendored/krb5_wire.js`) has an independent copy
+the suite's own client (`tests/protocol/krb5_wire.js`) has an independent copy
 written from the RFCs, and MIT's `kinit` agrees with both.
 
 **SECTION 8: SIGNATURES OVER RAW BYTES, AND THE TPM (2026-09-21, #40).**
@@ -272,6 +302,24 @@ verifier is told which element, takes the signature that is that element's own
 DIRECT CHILD, and additionally refuses a signature whose reference names
 something else, which none of the four ever checked. `tests/crypto_module.js`
 asserts all of it and was mutation-tested against eight mutants.
+
+**HMAC, FOR A KERBEROS TOKEN'S KEY, AND THE PROFILE'S SHA-1 IDENTIFIER (#658,
+2026-11-03).** Three additions, each confined to the one caller that needs it:
+
+* **`verifyWsSecurityHmac()`**: a WS-Security signature keyed by the session
+  key a Kerberos token established (the Kerberos Token Profile 1.1 section
+  3.2). It applies every guard of `readWsSecuritySignature()`, then requires
+  an HMAC method, refuses an `HMACOutputLength` (CVE-2009-0217), and compares
+  in constant time.
+* **The four HMAC methods** are registered with key type `secret`. Every path
+  that verifies with a certificate therefore refuses one at
+  `verifyXmlSignatureValue()`'s key-type check. HMAC-SHA1 is SHA-1 to the
+  algorithm policy.
+* **Key references.** `keyReferenceOf()` reads a Reference to a Kerberos
+  BinarySecurityToken and the `#Kerberosv5APREQSHA1` KeyIdentifier.
+  `kerberosTokenKeyIdentifier()` is the SHA-1 that identifier is: the
+  profile fixes it, it is compared and never trusted for integrity, so
+  `digest()`'s list, which refuses SHA-1 to anything new, was not widened.
 
 **EVERY SIGNATURE FAMILY NODE VERIFIES IS VERIFIED, AND SHA-1 IS A SETTING
 (2026-09-17, #37 follow-up; section 1a of the file).** Until then every XML
@@ -508,7 +556,7 @@ four changes:
 * **`rsa-oaep-mgf1p` and `rsa-1_5` wrap and unwrap through node's
   `publicEncrypt()` / `privateDecrypt()`**, and `transportOptions()` is gone.
   RSA-1_5 decryption needs OpenSSL's implicit rejection, which node 24 has
-  (both images run 24.16).
+  (both images run 24.22.1).
 * **`scep/scep_cms.ts`'s PKCS#1 v1.5 unwrap is node's `privateDecrypt()`**,
   where it was forge's non-constant-time JavaScript (the Marvin attack's
   target); a runtime without implicit rejection logs `STS-SCEP-0066` once.
@@ -519,8 +567,8 @@ And the handles below section 13's floor were raised to 128 bits (the
 OID4VCI `credential_offer_uri` id, the mock SP's `RelayState` and the mock
 RP's `wctx`), the LDAP cluster instruction's nonce to 16 bytes, and
 `admin_stats.js`'s `ARTIFACT_TAG` takes four random bytes where it took the
-start time. `krb5_service.js`'s sequence number (7 random bits) is in a locked
-file and RFC 4121 does not require it to be random.
+start time. `krb5_service.js`'s sequence number (7 random bits) was left as it
+is: RFC 4121 does not require it to be random.
 
 **AND THE TESTS.** GitHub's code scanning (CodeQL `js/insecure-randomness`)
 had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
@@ -597,6 +645,156 @@ external references (this service fetches nothing a signed document names),
 XSLT, and the Decryption Transform. `tests/w3c_xmlsec.js`'s `EXCEPTIONS`
 names each.
 
+## POST-QUANTUM JOSE SIGNING AS A PER-REALM SWITCH (rcbj, 2026-10-23)
+
+**`keys.postQuantumSigning`, on by default, turns a realm into a classical
+JOSE issuer and verifier.** It exists so the OpenID conformance jobs can run
+every plan in such a realm with no post-quantum exemption in the ledger
+(`tests/CLAUDE.md`, *The classical twins*), and for any client whose JOSE
+library rejects an AKP key. The row in `config.js` says what it turns off and
+what it does not; this is where each piece is and why it is there.
+
+* **One reader, in the leaf**: `crypto.js`'s `postQuantumSigningOn()`, read
+  per call in the ambient realm, and `isPqJwsAlg()` (`family: 'pq'` in
+  `JWS_ALGS`, so the ML-KEM JWE algs are never caught). `crypto.js` may not
+  require `helpers.js` (rule 3r), so the filters live in `helpers.js` and
+  ask it.
+* **Inbound, at the one choke point** (`common/signature_policy.ts`, #1368):
+  `refuseUnacceptableJws()` is asked by `prepareVerification()` and by
+  `jwsSignatureValid()`, after the caller's own list and before the signature,
+  so EVERY JOSE verifier refuses it whatever list it was handed — request
+  objects, client assertions, DPoP, key proofs, presentations, federation
+  statements, and GNAP's `jws` and `jwsd`, which until #1368 were never asked.
+  `httpsigVerifyOne()` asks the same class for an HTTP message signature
+  (`STS-KEYS-0176`). `STS-KEYS-0157` is MARKED on the Error (`errorCodes.mark()`),
+  never put in its message: callers copy the message into an
+  `error_description`, and a code is never sent.
+* **Outbound, at the one choke point**: `signingKeyFor()` and its twin
+  refuse a post-quantum alg (`STS-KEYS-0158`, logged once per realm), which
+  every JOSE signer and the HTTP message signer go through — a signature made
+  with a key the realm no longer publishes verifies for nobody, and a client
+  that registered one while the setting was on is the case it catches.
+  `groupSignerFor()` offers no post-quantum group key either.
+* **What is published**: `withoutPqSigningKeys()` filters the FINISHED JWKS
+  list (every source at once — per-algorithm, standby, pinned, a signer
+  group's bare partner — so a source added later cannot be missed; `use:
+  "enc"` AKP keys stay); `withoutPqSigningAlgs()` narrows every
+  `*alg_values_supported` / `*_alg_values` member of a document at any depth
+  as it leaves (`oauth2.ts`'s `asMetadata()` and `oidcMetadata()`, before the
+  profile as the modes are; the Entity Configuration's protocol metadata;
+  the OpenID4VCI issuer metadata), COPYING nested objects rather than editing
+  them, since one may be a module constant; `offeredJwsAlgs()` narrows a
+  list built in one place (the verifier's `vp_formats_supported`, SIOP,
+  `/crypto/metadata`, and every registration check and option list in
+  `applications.js`, which refuse with their existing codes, as
+  `offeredJweAlgs()`'s do).
+* **Not changed, deliberately**: COSE, XML, TLS and certificates are not
+  JOSE; a `hybrid-groups` certificate keeps its ML-DSA alternative key (the
+  certificates are not reissued); `oidfed.signingAlg` is the federation
+  layer's own choice, so an ML-DSA federation key keeps signing — and that
+  realm then refuses ML-DSA statements it verifies, which the row tells an
+  operator to avoid rather than this code refusing the combination.
+
+`tests/pq_signing_switch.js` holds it.
+
+## EdDSA JOSE SIGNING AS A PER-REALM SWITCH (#1292, 2026-11-03)
+
+**`keys.eddsaSigning`, OFF BY DEFAULT.** rcbj, applying for OpenID Connect
+certification: "make the default be whatever passes OIDC conformance". The
+suite's nimbus throws `unknown key type 'OKP'` on an Ed25519 or Ed448 key in
+a rotated JWKS (`oidcc-server-rotate-keys`'s `VerifyNewJwksHasNewSigningKey`)
+instead of skipping it as RFC 7517 section 5 says, so by default no realm
+publishes one. It is the post-quantum switch above, mirrored, **with one
+deliberate difference: it is about what this realm SIGNS, never about what
+it ACCEPTS.** nimbus reads this realm's JWKS and no client's key, so an EdDSA
+client assertion, DPoP proof, request object or wallet proof is still
+verified, and the lists advertising what is accepted
+(`token_endpoint_auth_signing_alg_values_supported`, `dpop_…`,
+`request_object_…`, OpenID4VCI's proof types) still name EdDSA. Refusing
+them by default would refuse conforming clients for nothing.
+
+* **One reader, in `helpers.js`**: `eddsaSigningOn()` (the ambient realm,
+  per call) and `isEddsaJwsAlg()` (`EdDSA`, and the fully-specified
+  `Ed25519` / `Ed448`). Not in `crypto.js`: nothing on the verifying side
+  asks.
+* **What is published**: `withoutEddsaSigningKeys()` filters `/oauth2/jwks`'s
+  finished list after `withoutPqSigningKeys()` — a kty OKP key not marked
+  `use: "enc"` — so standby, pinned and signer-group keys leave together.
+* **What is advertised**: `withoutEddsaSigningAlgs()` narrows the four
+  members that list what THIS realm signs (`OWN_SIGNING_ALG_MEMBERS`: ID
+  Token, UserInfo, introspection, authorization/JARM), top level only,
+  replacing rather than editing; `oauth2.ts` calls it after both
+  `withoutPqSigningAlgs()` calls.
+* **What a client may choose**: `signableJwsAlgs()` is `offeredJwsAlgs()`
+  less EdDSA, and `applications.js` uses it for the four choices and the
+  three registration checks of those responses (`signedResponseAlgProblem()`,
+  `jarmMetadataProblem()`, `introspectionResponseProblem()`), which refuse
+  with their existing codes. `vc_configs.ts`'s `vciSigningAlgsFor()` drops
+  EdDSA from a portal offer's choices unless it is the configured algorithm.
+* **What is refused**: `signJwt()`, `signJwtAs()` and their asynchronous twins
+  refuse an EdDSA signature (`signatureRefusal()`, `common/signature_policy.ts`,
+  `STS-KEYS-0165`, logged once per realm); `signJwt()` joined them with #1368,
+  except where the verifying key travels in an `x5c` or a DID document
+  (`keyNamedElsewhere`). `oauth2.accessTokenSigningAlg` is replaced with RS256
+  rather than refused (`usableSigningAlg()`), because nothing a client did asked
+  for it. **`signingKeyFor()` and `ownPublicJwkFor()` are still NOT refused**:
+  they sign what an operator CONFIGURED (`oidfed.signingAlg`, the credential
+  algorithm, the DID and status-list signers), and the row says not to configure
+  EdDSA with the switch off rather than this code breaking those surfaces.
+* **Not changed**: the DID document, COSE, XML signatures (EdDSA there
+  too), DKIM's ed25519-sha256, the GNAP Ed25519 key and TLS.
+
+`tests/oidcc_conformance_defaults.js` section E holds it.
+
+## A REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05)
+
+**`keys.signingAlgorithms`, EMPTY BY DEFAULT.** rcbj: the OpenID Connect
+certification configuration has only RS256 enabled. It is the EdDSA switch
+above applied to any algorithm, at the same places, and both switches still win
+over it.
+
+* **One reader, in `helpers.js`**: `signingAlgAllowlist()` (the ambient realm,
+  per call). **RS256 is always in it**: `signingAlgorithmsWriteRule()` refuses a
+  list without it (`STS-KEYS-0167`), and the reader adds it for a value from an
+  appconfig file or the environment, which reaches no write rule. That is what
+  makes "use RS256 instead" safe in `accessTokenAlg()` and what keeps an RSA key
+  in the JWKS whatever else the list says.
+* **What is published and advertised**: `withoutUnlistedSigningKeys()` filters
+  `/oauth2/jwks`'s finished list and `withoutUnlistedSigningAlgs()` narrows
+  `OWN_SIGNING_ALG_MEMBERS`, after the EdDSA filters.
+* **What a client may choose**: `signableJwsAlgs()` applies the list, so the
+  console's choices and the registration checks follow.
+* **What is refused**: `signJwt()`, `signJwtAs()` and their asynchronous twins
+  (`signatureRefusal()`, `STS-KEYS-0166`, logged once per realm), AHEAD of the
+  HMAC branch, because the list governs HS256 too. `accessTokenAlg()` replaces
+  rather than refuses, as it does for FAPI. **`signingKeyFor()` is NOT
+  refused**, for the EdDSA switch's reason, and `signing_rotation.ts` reads a
+  key's kid through it.
+* **`none` is not governed**: a UserInfo response may be plain JSON.
+* **It does not shrink the generations.** An RS256-only realm still publishes
+  every live generation of its RSA key.
+* **EMPTY IN PRODUCT STILL LEAVES ES256K OUT (#1533, ASVS 11.6.1; made real by
+  #1577).** secp256k1 is not an approved curve, so with no list
+  `mode.omitsUnapprovedSigningCurves()` takes ES256K out of everything above —
+  the JWK Set, the signing lists, `signableJwsAlgs()`, and `signatureRefusal()`
+  (`STS-KEYS-0166`, the list's code, because a list is what admits it). **ONE
+  PREDICATE**: `SignaturePolicy.unapprovedCurve()` inside `signCause()`, which
+  `helpers.signingAlgListed()` asks too, and which the three narrowing helpers
+  now go through. Until #1577 the rule lived only in `signingAlgListed()`,
+  which nothing but tests called, so product still offered and signed it. An
+  operator who LISTS ES256K is obeyed. Development is unchanged.
+
+`tests/signing_algorithm_allowlist.js` holds it (section F for ES256K).
+
+## A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05)
+
+**`keys.jwksCertificateUrl`, OFF BY DEFAULT.** `withCertificateUrls()` in
+`jose_certificate_header.js` filters `/oauth2/jwks`'s finished list, replacing
+`x5c` with `x5u` from `chainUrlFor()`. **A key keeps its `x5c` where
+`chainPemFor()` would not serve the address**, because a dead link loses the
+chain and an inline one only costs bytes. `tests/signing_algorithm_allowlist.js`
+section E holds it.
+
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 
 **JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service
@@ -606,7 +804,7 @@ two families behind the SAME two functions, `encryptJweCompact()` and
 algs by naming them.
 
 * **ML-KEM**, per draft-ietf-jose-pqc-kem-**05**. **-06 (2026-07-06) is
-  COSE-only**; the parent project's `tests/vendored/pqc.js` read -06 and
+  COSE-only**; the parent project's `tests/protocol/pqc.js` read -06 and
   concluded there was no JWE binding. -05 has one: the KEM ciphertext goes in
   `ek`, and the key comes from KMAC256 over RFC 7518's AlgorithmID ||
   SuppPubInfo, with PartyU and PartyV left out. It is direct (`ML-KEM-768`)
@@ -718,6 +916,23 @@ of the few declaration attributes a PROTOCOL also writes, because a receiver
 authenticating and being agreed a stream is exactly the kind of event this
 registry exists to hold.
 
+## A permission name or description may not carry an operator error code (#1426)
+
+`oauthPermission` is `name` or `name|description`, and both halves are returned
+on every page that lists the permission: the register, the delegation picture,
+and the directory read. A code stored in either half is sent. `STS-AUTHN-0294`
+is a legal scope token, so `permissionNameProblem()` accepts it, and a
+description has no grammar at all — a setting description, which may name a
+code, pastes straight in.
+
+`permissionOperatorCodeProblem()` refuses both, at the add in
+`updateApplication()` and on the create walk (a create never reaches the
+update). The sentence quotes neither value: a 400 body is scanned raw, and a
+quoted code is the same finding. The check runs before
+`permissionNameProblem()`, whose illegal-token sentence quotes the name.
+`STS-REG-0367`. An `ldapmodify` still writes the attribute unchecked, as the
+schema row says.
+
 ## A SAML SIGNING CERTIFICATE HAS A PROVENANCE TOO (2026-09-17, #37)
 
 `samlSigningCertificate` became the trust anchor a service provider's request
@@ -729,7 +944,11 @@ carries is written to it; the `ds:KeyInfo` certificate goes on
 consuming SP metadata makes, over a CLOSED list of attributes because it writes
 derived ones), and `samlCertificateProblem()`, which `updateApplication()` asks
 of every add or set of `samlSigningCertificate` and
-`samlSpMetadataSigningCertificate` (RSA X.509 only, `STS-REG-0160`). An explicit
+`samlSpMetadataSigningCertificate` (an X.509 certificate whose key makes an XML
+signature this service verifies — RSA, EC, EdDSA, DSA, ML-DSA or SLH-DSA —
+`STS-REG-0160`). The metadata writer takes the selected protocol label for its
+audit row; SAML 1.1-only applications are recorded as SAML 1.1, while the
+legacy and SAML 2.0 paths retain SAML 2.0. An explicit
 `add` of the observed value confirms it. `saml/CLAUDE.md` argues why the
 certificate is a separate attribute where a return address is a mark, and the
 two `mode.js` predicates it added — `acceptsUnsignedSamlRequests()` and
@@ -808,8 +1027,20 @@ JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
 checkboxes. Seven of them had no check at a console or API write until this
 change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
 them at update and create (`STS-REG-0203`). The rest already have a validator
-that says more. `oauthGrantType` and `oauthResponseType` are not on the list,
-because they are an open record of what a client was seen doing.
+that says more. **`oauthGrantType` and `oauthResponseType` joined the list
+with #706** (rcbj: checkboxes, no free text). Until then they were open text,
+because an extension grant is a URI nobody lists in advance (RFC 6749 section
+4.5). That argument did not hold: the token endpoint refuses a grant it does
+not implement, so declaring one declared nothing usable. Their choices are
+`FLOW_GRANT_TYPES` and `FLOW_RESPONSE_TYPES`, which are every grant and response
+type implemented, not only the ones the realm advertises.
+`tests/flow_type_choices.js` holds them to the metadata with every switch on.
+A response type is stored with its words sorted (`canonicalResponseType()`),
+the order the console ticks. **Dynamic registration is unchanged**: it still
+records what a client registers, and the grid draws a value outside the set as
+a marked box, so a Save does not drop it. The endpoints still refuse what a
+client did not declare (`oauth-oidc/CLAUDE.md`, *OpenID Connect
+Registration*).
 
 **A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
 Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
@@ -836,6 +1067,114 @@ reason language must also be a BCP 47 tag. A value an `ldapmodify` wrote that
 does not parse is still read as the setting, with `STS-REG-0025` logged. They
 are `families: ['ssf']` and `'set'` in `EDITABLE`, so the field grid draws them
 in its Shared Signals group and `update-fields` writes them.
+
+## AN APPLICATION AS AN LDIF FILE: DECLARED ONLY, CREDENTIALS ON REQUEST, NEVER OVER AN ENTRY (#546, 2026-10-09)
+
+`exportApplicationLdif()` and `importApplicationLdif()` in `applications.js`,
+reached as `export-ldif` and `import-ldif` on the application page's Import /
+Export tab and at `/admin-api/applications/{action}` (rule 7). The file is
+`persistence/persistence_ldif.js`'s codec, one record. rcbj's four decisions
+(2026-10-09), argued in the header above the two functions:
+
+* **Declared attributes only** — the SCHEMA rows `editable` marks. A derived
+  attribute in an imported file is REFUSED (`STS-REG-0350`), not dropped: a
+  file that says when an application was first seen is claiming history this
+  realm did not record.
+* **No credential unless asked, and then UNENCRYPTED.** `PORTABLE_CREDENTIALS`
+  is the list an administrator could have typed (the client secret, the
+  registration access token, both assertion keys, the DID keys, a secret
+  destination's credential, a GNAP symmetric key); each sealed value is
+  OPENED for the file, and one that will not open refuses the export
+  (`STS-REG-0346`) rather than writing a sealed blob another realm's key
+  cannot open. The credentials a subsystem MINTS (Kerberos keys, an enrolled
+  certificate's key, an ACME EAB key, a SCEP challenge, a GNAP macaroon key)
+  are never exported and refused on import (`STS-REG-0351`): no import door
+  can write them, and a copy would be a credential nobody issued here.
+* **An existing identifier is refused** (`STS-REG-0349`); an import never
+  overwrites, so it cannot change the page's own application.
+* **The DN is the source's, and only its SHAPE is read** — `cn=…,
+  ou=applications,…` with `appIdentifier` — so a file from another realm or
+  deployment imports into the realm the console is in. The client secrets go
+  through `writeClientSecretRecords()` after the create, so several records
+  keep their ids and expiries; a failure there leaves the entry made and says
+  so (`STS-REG-0352`).
+
+Both acts are audited (`application.export`, `application.import`) with the
+attribute NAMES and never a value. `tests/application_ldif.js` and
+`tests/protocol/sts_application_ldif.js` hold it.
+
+## Fine-grained authorization: the application's half, and the `setFgaLifecycle()` slot (#564, 2026-10-29)
+
+Every application created gets a fine-grained authorization policy it owns
+in `ou=policies`, and every application deleted has that policy retired —
+disabled, marked orphaned, kept (rcbj's decisions 2 and 3 on #564). The
+policy and the lifecycle are `xacml/fga_policies.ts`'s and argued in
+`xacml/CLAUDE.md` (*Application-scoped fine-grained authorization*); this
+module keeps two attributes and says WHEN.
+
+* **`appFgaPolicy`** names the policy's entry and **`appFgaEnforced`** is
+  the switch (`TRUE`; absent or `FALSE` is off, the default). Both are
+  schema rows and in NO `EDITABLE` row: switching enforcement on creates the
+  policy first, and an ordinary field write through `update-fields` would
+  skip that. `fgaStateOf()` reads them and `setFgaState()` is the one door
+  that writes them, audited as `application.update`. Being derived, an LDIF
+  export leaves them out and an import refuses them (`STS-REG-0350`), so an
+  imported application gets a policy of its own.
+* **`createApplication()` calls the `created` hook and `deleteApplication()`
+  the `deleted` one**, the second with the `appFgaPolicy` read before the
+  entry went. Not `seen()`, `register()` or `seedInternalApplication()`:
+  each files an entry no administrator created, the first two at a possibly
+  unauthenticated caller's request, and a policy per entry there would let
+  such a caller fill `ou=policies` to its applications' ceiling
+  (`xacml.maxApplicationPolicies` since #1210, `xacml/CLAUDE.md`) and stop
+  administrators' own applications getting one. They get their policy at
+  first enable. A hook's failure or throw is logged
+  (`STS-FGA-0010`) and never fails the create or delete it follows.
+
+**`setFgaLifecycle()` is a rule 3e slot, and the test answers yes both ways
+round.** A require of `xacml/fga_policies` from here AT LOAD closes a cycle
+(that module requires this one for the two attributes) and loads the XACML
+store and templates into whatever first requires this module — nearly
+everything, long before 23c — where their `InstanceSlot`s would build
+default instances and the composition root's install would then be refused.
+A LAZY require at the write, as `authzenAttributeProblem()` takes, avoids
+both, and was passed over for a third cost that ended with #1280: this module
+was in the parent project's Kerberos COPY closure through
+`kerberos/krb5_delegation.ts`, and a create or delete in those jobs would have
+reached for a file their image did not carry. The slot adds no require at
+all, and stands. The other direction is the natural one, and is what
+`fga_policies.ts` does; its wire step at 23c fills the slot. VALIDATED WHOLE
+(`STS-FGA-0011`): `created` without `deleted` would make policies nothing
+retires. `fgaLifecycleInstalled()` is for a test that replaces it.
+
+**And the type's write door (#564, P3).** `updateApplication()` refuses an
+`oauthAuthorizationDetailsType` value written to an application whose
+`appFgaEnforced` is TRUE when `fga_map.ts`'s `uncovered()` is not empty for
+it (`fgaCoverageProblem()`, `STS-FGA-0019`) — the same rule `enable()`
+holds at the switch (`STS-FGA-0018`). `fga_map.ts` is required LAZILY and
+only for an enforcing application, which is `authorizationDetailsTypeOf()`'s
+arrangement for the mapping grammar: the slot above is about the policy's
+lifecycle, not about a definition, and no process without the console (the
+parent's in-process Kerberos jobs among them) ever switches enforcement on.
+
+## `fga_gate.ts`: fine-grained authorization at issuance, and the slot that REFUSES when empty (#564, P3)
+
+A leaf in `access_gate.ts`'s shape — `helpers`, the error-code table,
+`InstanceSlot` — whose `setDecider()` `xacml/fga_pep.ts` fills at 23c. It is
+asked one RFC 9396 detail at a time, by `oauth-oidc/authorization_details.ts`'s
+`fineGrainedRefusal()`, and ONLY for a detail whose type's application has
+`appFgaEnforced` TRUE — `fgaStateOf()` above answers that without the XACML
+family. **An empty slot REFUSES (`STS-FGA-0016`), the opposite of
+`issuance_gate.js`, and of `access_gate.ts` in development** (in product an
+empty access gate refuses too, `STS-XACML-0181`, #1450), because here somebody asked for a
+restriction: issuing an enforcing application's detail undecided would be
+the switch silently not applying. A decider that throws or answers nothing
+is a failure too (`STS-FGA-0015`). Rule 3e both ways round, as for the
+issuance gate: a require from `oauth2.ts` (9) to the PEP would load the
+policy store and the lifecycle far ahead of the composition root and reach
+the console through the XACML surface (a cycle); the PEP reaching into
+`oauth2.ts` would make it know every issuance site. The root builds it beside
+`access_gate`; the answer is `{ outcome: permit | deny | failure, code, why }`.
 
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
@@ -930,6 +1269,11 @@ to say about.
 
 **GNAP'S `OPTIONS /gnap` MOVED HERE WITH IT**: it continues to its route
 whatever the decision (RFC 9635 section 9), carrying the headers when allowed.
+**And its preflight lists `OPTIONS` in `Access-Control-Allow-Methods` (#1214)**:
+a browser's discovery request IS an `OPTIONS`, which is not CORS-safelisted,
+so the browser sends it only when the preflight answer names the method, and
+the `cors` package's default list (`GET,HEAD,PUT,PATCH,POST,DELETE`) does not.
+Every other path keeps that default.
 
 Values are normalised when written (`validation.normaliseOrigin()`: case, the
 default port, IDN) and again when read, for `ldapmodify`. Refused: a path, a
@@ -950,8 +1294,8 @@ nothing drives it against the running container yet.
 
 **This service is one node process and it owns every listener** — the express
 app (on the main port and on the plain-HTTP revocation port), the KDC on TCP
-and UDP 88, the Kerberos service on 8888, the LDAP directory, the gRPC
-surfaces and the embedded debugger's listener — and node runs all of them on
+and UDP 88, the LDAP directory (and the Kerberos test service on 8888, until
+#595), the gRPC surfaces and the embedded debugger's listener — and node runs all of them on
 ONE THREAD, so a synchronous computation does not slow it down, it STOPS it.
 **A KDC that does not answer looks from the outside exactly like a KDC that is
 not there.**
@@ -1023,6 +1367,18 @@ and DNS work.
    specifications — and since #363 its lattice primitive is OpenSSL where the
    debugger's is `@noble/post-quantum`, so the cross-check now covers ML-DSA
    itself too.
+6. **A SEED-ONLY EXPORT IS EXPANDED, NOT RETURNED.** Node 24.22.1 (OpenSSL
+   3.5.9) writes an ML-DSA or ML-KEM PKCS#8 as the seed alone (context tag
+   `0x80`). OpenSSL 3.5.6 wrote the expanded key or the "both" form, and
+   those two are still read. There is no node API for the expanded key, and
+   `OPENSSL_CONF` does not override the formats `InitCryptoOnce` sets
+   (`ml-dsa.output_formats` and `ml-kem.output_formats` are
+   `seed-only,priv-only`). `expandedFrom()` expands that seed with
+   `@noble/post-quantum` 0.4.1 `keygen` and returns the FIPS expanded key,
+   the same bytes noble and the older OpenSSL export agreed on. The library
+   is used for that expansion only; every signature, verification,
+   encapsulation and decapsulation stays on OpenSSL. SLH-DSA never takes
+   this path. Node still imports the expanded key as PKCS#8 tag `0x04`.
 
 ### scrypt is the other slow thing, and it is on libuv's thread pool too
 
@@ -1045,6 +1401,75 @@ keeps verifying** — `$scrypt$N$r$p$salt$hash` names its own parameters, which 
 why the stored form was made self-describing — and the async door reads the
 parameters ONCE, so the encoded value always names the cost the derivation
 really used. `tests/password_policy.js` pins both halves.
+
+**SINCE #847 (2026-10-22) THOSE SETTINGS COST EVERY SECRET BUT A PASSWORD.**
+A person's password is hashed by `hashPassword()` / `hashPasswordAsync()` at
+the password POLICY's algorithm and parameters (3ac, *How a password is
+stored*); `hashSecret()` — client secrets, activation and reset tokens,
+recovery codes, app passwords — is unchanged. See the next section.
+
+### A person's password is argon2id, and every stored form verifies (2026-10-22, #847)
+
+rcbj's four decisions on #847, in `crypto.js`'s *ARGON2ID FOR A PERSON'S
+PASSWORD* block:
+
+1. **argon2id (RFC 9106) at OWASP's minimum**, m=19456 KiB, t=2, p=1, through
+   node's own `crypto.argon2()` / `argon2Sync()` (node 24.7 and later; the
+   image runs 24.22.1, and the asynchronous one is a CryptoJob on libuv's
+   thread pool like scrypt's). No package. A runtime without it hashes a new
+   password with scrypt and says so once (`STS-KEYS-0155`), and refuses to
+   verify an argon2id value (`STS-KEYS-0156`) rather than claim it.
+2. **The stored form is the PHC string** every argon2 library reads,
+   `$argon2id$v=19$m=…,t=…,p=…$<salt>$<hash>`, base64 without padding, a
+   16-byte salt and a 32-byte tag. `decodeStoredSecret()` reads both forms,
+   so `verifySecret()` / `verifySecretAsync()` dispatch on the prefix and
+   every hash already stored keeps verifying. `isHashedSecret()` is the one
+   "is this one of our hashes" test (`/^\$(scrypt|argon2id)\$/`); the five
+   places that matched `$scrypt$` themselves ask it now.
+3. **The floors are OWASP's in both modes, and here as well as in the
+   policy**: `passwordHashSpec()` clamps a spec to `ARGON2_LIMITS` and
+   `SCRYPT_PASSWORD_LIMITS` and raises scrypt's p to OWASP's table for its N
+   (`scryptOwaspMinP()`: 2^17 p=1, 2^16 p=2, 2^15 p=3, 2^14 p=5, 2^13
+   p=10), whatever reached it. A spec it is not given is scrypt at 2^15,
+   r=8, p=3 (#872).
+4. **`storedSecretMatchesSpec()`** says whether a stored hash is already the
+   spec's algorithm with every parameter equal — what the upgrade on sign-in
+   asks (3ac).
+
+Measured in the tests image on this machine: one argon2id hash at the default
+about **35 ms**, scrypt at 2^15 (p=3) about **250 ms** and at 2^17 (p=1) about
+**460 ms**, `hashSecret()`'s scrypt at 2^15 p=1 about **97 ms** —
+`tests/password_argon2id.js` logs the figures every run.
+
+**THE DEFAULT IS scrypt AT 2^15, r=8, p=3 SINCE 2026-11-11 (#872), AND
+ARGON2ID STAYS SELECTABLE.** #820 had put the default back to scrypt at
+N=2^15, r=8, p=1, because #847's argon2id default rehashed every stored
+password at its next sign-in and on the load host 8081 sign-in went from
+about 206 ms to about 387 ms. #889 priced this pair at about 250 ms against
+that 97 ms hash; 2^17 with p=1 was about 460 ms and was not chosen. 8081 was
+not measured again for #872. `passwordHashSpec()` with no spec, and the
+policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=3, and
+`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 stands in both
+modes: `passwordHashSpec()` raises scrypt's p to OWASP's table, and the
+policy refuses a save that NAMES scrypt below it. **Only when scrypt is the
+algorithm (the review of #872, 2026-11-13)**: asked whatever the algorithm,
+every profile stored at #820's p=1 — argon2id ones included — refused every
+unrelated edit, since a save sends the whole profile. And `read()` answers a
+stored p below the table AT the table (`raisedToTable()`), the value
+`passwordHashSpec()` hashes with anyway, so such a profile reports no
+problem and the console's next save of it writes the raised value; a read
+writes nothing. Product also applies
+`mode.minScryptParallelism()` (at least 3) before that clamp, so a profile
+saved at 2^17 with p=1 is written at p=3 there and stays p=1 in development.
+The rehash rule is a strictly lower cost within one algorithm, or a change
+of algorithm. A same-algorithm hash already at least the policy's cost is
+left, so a stronger hash is not rewritten down onto the new default, and an
+equal cost with different parameters is left too. A person whose stored hash
+is argon2id is still hashed again with scrypt at the next verified sign-in.
+The plaintext exists only then, so there is no bulk rehash, and development
+mode never verifies, so the rewrite is product-only. The one-time extra hash
+of each weaker password stays on that awaited sign-in, because the Kerberos
+keys are re-stamped inside the write.
 
 ### The four scrypt functions are one implementation with two doors
 
@@ -1072,6 +1497,77 @@ different sets of circumstances.
 this tree in process, and a caller that cannot be made asynchronous is better
 off blocking than wrong.
 
+## A REALM'S SIGN-IN APPEARANCE: `branding.ts` (#717, 2026-11-04)
+
+rcbj's ticket asked for colour, layout and a company logo on the sign-in
+screen, per realm, and decided six questions on it (D1–D6, on the ticket).
+`branding.ts` is all of it but the console page and the API operations
+(`admin-ui/`, `mgmt-api/`), which call it.
+
+* **NINE SETTINGS, A NEW TYPE.** `branding.layout` (`centered`, `split`,
+  `banner`), four colours (`accentColor`, `pageColor`, `cardColor`,
+  `textColor`), `displayName`, `logoAlt`, `logoLinkUrl` and the per-process
+  `logoMaxBytes`, group *Sign-in appearance*, every one realm-settable.
+  The colours are `config.js`'s `color` type (`#rgb` read as `#rrggbb`,
+  anything else refused), and `string` gained an optional `maxLength`. Every
+  default is the look the service always had.
+* **COLOURS ARRIVE IN ONE WAY: `/web/theme.css`.** The sign-in shells are
+  sent with `style-src 'self'`, so no inline style could carry a colour.
+  The route answers the ambient realm's custom properties — the four set and
+  six derived (the text on a button, black or white by contrast; the muted,
+  faint and dim text mixed toward the card no further than AA allows; the
+  borders and rules) — built only from values the `color` type has held to
+  six hex digits. `web_card_css.ts`'s `themed()` turns every colour of the
+  card into `var(--sts-…, <the old literal>)`, so with no theme linked the
+  card is the bytes it rendered before. A realm whose text and card are the
+  defaults keeps the old literals for the derived tones exactly, and
+  **the stylesheet carries only the properties that differ** from a realm
+  that set nothing (`DEFAULT_PROPERTIES`), so each page keeps its OWN
+  fallback for the rest — the portal its blue accent, a table head its own
+  grey. The pale boxes (a scope's, a right's, a table head, a verdict's
+  band) and the red and green status words are properties too (`tint`,
+  `tint-2`, `bad`, `good`), because their text follows the realm's and a
+  dark card with light text met a near-white box (#717's review).
+* **A SHELL CARRIES THE FACTS, THE RUNTIME DRAWS THE HEADER.**
+  `ShellDocument.document()` asks `shellParts()` for any shell that links
+  `/web/card.css` (or says `branded: true`): the theme's address (`?v=` its
+  digest, cached for good under it) after the card's, and `data-sts-layout`
+  and the brand facts on `<html>`. A realm that set nothing gets neither,
+  so its shell is byte for byte what it was (`tests/branding.js` A2).
+  `WebSurface.put()` draws the header (`brandHeader()`, escaped, an https
+  link only) on every page, because it replaces the body each time — a
+  header the server drew would be gone at the first page — and ends the
+  title with the realm's name. The layouts are CSS under
+  `[data-sts-layout]` (`BRAND_CSS`); the form is never touched, so every
+  element id the tests and the Selenium walks drive is where it was.
+  **`shell_document.ts` requires this file lazily**, because this file
+  draws its preview with that one's escaping: a require at load would close
+  a cycle.
+* **CONTRAST IS A WRITE RULE (D3).** `writeRule()` is added with
+  `config.addWriteRule()`, so every door — the console, `/admin-api`, a
+  restored value — refuses text or an accent below 4.5:1 against the card
+  (STS-AUTHN-0544), a `logoAlt` emptied while a logo is held (0548), and a
+  `logoLinkUrl` that is not absolute https (0551). `saveSettings()` judges
+  several at once inside `withWriteBatch()`, so a dark card with light text,
+  legal only together, is saved together.
+* **THE LOGO IS UPLOADED AND SERVED FROM THIS ORIGIN (D1, D2).** PNG, JPEG
+  or WebP, decided by the bytes (`sniff()`, which also reads the sides: 16 to
+  2048 pixels), at most `branding.logoMaxBytes`, with alternative text. It
+  is kept in `realms.map({ persist: 'branding.assets' })` — per realm at the
+  declaration, replicated by the change log, a global store in cells
+  (`persistence/tiers.js`), not sealed because a logo is public — and served
+  at `/web/branding/logo` with the type its bytes are, `nosniff`, a
+  sandboxing CSP through `app.contentSecurityPolicy()` (#1337) and an ETag. **Under `/web` on purpose**: the sign-in pages,
+  the front door and the portal draw it, and they may be on different
+  listeners; everything under `/web` answers on every one
+  (`hosted_applications.js`). No third-party origin ever joins `img-src`.
+* **THE PREVIEW (D5)** is `/web/branding/preview`, a server-drawn sample of
+  the card with pending colours and a layout in the query — checked as the
+  settings would be (0550) — and no script and no live form. The console
+  opens it in a new tab; nothing about framing changed.
+* **DARK MODE IS #1324**: a second palette under `prefers-color-scheme`,
+  which the custom properties make a small change.
+
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.**
@@ -1087,9 +1583,11 @@ exports `registerRoutes(app)`, and `load()` requires it and then calls
 `register(app, module, name)` on the next line — at the point where requiring it
 used to register the routes, so the route order did not move (Express's layer
 list, 603 layers with their handlers, is identical before and after). The
-JavaScript route modules — the parent project's locked `krb5_kdc`,
-`krb5_service` and `spnego`, `tls/tls_server` and `ldap/ldap_server` — still
-register at their require, which `load()` makes at its
+JavaScript route modules — `krb5_kdc`, `krb5_service` and `spnego`
+(this repository's own, kept JavaScript while the parent's tests image was
+owed them, until #1280, and convertible since; `kerberos/CLAUDE.md`),
+`tls/tls_server` and `ldap/ldap_server` —
+still register at their require, which `load()` makes at its
 old place. So the file now holds two interleaved orders: the REQUIRE order,
 which decides load-time effects (slot fills, stores, cycles, and where a
 JavaScript module's routes land), and the order of `register()` calls, which
@@ -1155,12 +1653,13 @@ mid-request.
 
 **Deferred, because a worker never needs them**: `@grpc/grpc-js` and
 `@grpc/proto-loader` in `spiffe/spiffe_grpc.ts` (the protos too — see
-`spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and the vendored
-`bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
+`spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and
+`common/crypto_impl/bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
 `vc_verifier` and `admin-ui/crypto_metadata`. **`helpers.js` defers
-`bbs2023.js` BY HAND** (`bbs2023Suite()`), because it is in the parent
+`bbs2023.js` BY HAND** (`bbs2023Suite()`), because it was in the parent
 project's Kerberos COPY closure and a require of `lazy_module` from it would
-add a file to that closure (`kerberos/CLAUDE.md`). Together about 8 MB of heap
+have added a file to that closure (an obligation until #1280; the hand-rolled
+deferral stands and may move to `lazy_module`). Together about 8 MB of heap
 and 10 MB of resident memory per process, and 250 fewer modules; the
 measurements are on #348.
 
@@ -1218,8 +1717,9 @@ the totals.
 **The remote PEP has its own copy of the process half** (`xacml-pep/pep.js`,
 `STS-XPEP-0033`/`0034`): its image compiles no TypeScript.
 
-**Not from `app.js`**, which is in the parent project's Kerberos COPY closure
-(`kerberos/CLAUDE.md`): `server.js` and `request_worker.ts` call the guard. (The
+**Not from `app.js`**, which was in the parent project's Kerberos COPY closure
+(an obligation until #1280; the arrangement stands): `server.js` and
+`request_worker.ts` call the guard. (The
 computation worker that also installed it went with its pool in #363.)
 
 **What it does not change**: every existing `catch`, its line and its code.
@@ -1330,6 +1830,14 @@ it.)
 **The goal is one sentence: the front process should be doing
 request/response I/O and nothing else.**
 
+**AND SINCE #408 A PROTOCOL WORKER ALSO RUNS THE BODY OF A CLUSTER
+SCHEDULER JOB** that the leader (a front process) hands it over the channel
+(`schedulerRunner()`: `{ schedulerRun }` out, `{ schedulerRunDone }` back,
+`{ schedulerFence }` to stop it). It also reports its event-loop delay
+(`{ loopLag }`), and sends a directory sign-out with no response to ride on
+as `{ ldapDrop }`. A worker that ends fails its runs with `STS-SCHED-0019`.
+`cluster/CLAUDE.md`, *Where a cluster run's body runs*, has the design.
+
 **ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
 **sessionless versus session-bearing**, not stateless versus stateful.
 `workers.fanout` names the exceptions and everything else dispatched holds
@@ -1354,8 +1862,21 @@ it, and why an operation holds affinity to its CONNECTION) and
 that do not cross, and the channel forked `serialization: 'advanced'`) argue
 them.
 
-The same mechanism is what the KDC would use, and what the first two families
-cost is the index of what a third one owes: a request shape and a result shape,
+**AND THE KDC IS THE THIRD, SINCE 2026-10-07 (rcbj's decision: keep the
+front process's event loop as free as possible)** — every message on TCP and
+UDP 88 is the operation `krb5.message`, the front keeping the sockets and the
+framing; and the SPIFFE Broker API's FetchJWTSVID is cut after the attestation
+the front process must do, its entitlement and minting the operation
+`spiffe.broker.FetchJWTSVID`. Both were cross-process races —
+`sts_kerberos_signout` (a KDC write in the front not yet seen by the worker
+answering a global logout) and `sts_spiffe_broker` (an entry written by a
+worker not yet seen by the Broker API in the front) — closed by
+`runOperation()`'s barrier once the writer and the reader are both workers,
+with no new barrier and no flush before a hand-off. `kerberos/CLAUDE.md` (*PORT
+88 IS ANSWERED IN A REQUEST WORKER*) and `spiffe/CLAUDE.md` (*THE BROKER API'S
+FetchJWTSVID, CUT AFTER THE ATTESTATION*) argue them, and what still races.
+
+What the families cost is the index of what the next one owes: a request shape and a result shape,
 an error that crosses as a NAME or a CODE rather than as a rebuilt table, a
 decision about what may not cross (`unbind` may not, because it ends a file
 descriptor; a server stream may not, because it is a subscription), and a test
@@ -1475,16 +1996,23 @@ on the front process's one thread. rcbj met it more than once. `reap()` now asks
 `replacementFor()` and forks one worker into the dead one's POOL AND SLOT — the
 slot names the persistence origin, which the replacement adopts once the dead
 worker's claim lapses (`adoptOrigin()`, inside the worker's start timeout) —
-**not while `stop()` is draining, not once the pool has given up, and never
-past `size()`**. A worker that reports it could not start (`ready: false`) is
-ENDED, where it used to stay alive and never ready, holding its place; so it
-goes through the same path, and a failed start is now any worker that never
-became ready as well as one gone within `QUICK_EXIT_MS` having served nothing.
-`QUICK_EXIT_LIMIT` (3) failed starts in a row still give the pool up, so a
-worker that can never start is tried three times rather than forked for ever.
-`STS-WORKER-0043` names each replacement and `stats().pools[].replaced` counts
-them. `tests/request_worker_replacement.js` drives the real `fork()` and
-`reap()` with a stub worker.
+**not while `stop()` is draining, not once the pool has given up (except the
+one worker its cool-down tries), and never past `size()`**. A worker that
+reports it could not start (`ready: false`) is ENDED, where it used to stay
+alive and never ready, holding its place; so it goes through the same path,
+and a failed start is now any worker that never became ready as well as one
+gone within `QUICK_EXIT_MS` having served nothing. `QUICK_EXIT_LIMIT` (3)
+failed starts in a row still give the pool up, so a worker that can never
+start is tried three times rather than forked for ever. Since #333 that
+give-up is not for the life of the process. `workers.giveUpRetryMs` (five
+minutes; `0` is the old behaviour) later tries ONE worker while routing stays
+where the give-up put it — the front process, or the protocol pool for the
+surfaces. A worker that reports ready clears the give-up and the rest of the
+pool is forked through the start gate. Another three failures doubles the
+wait, up to an hour (`STS-WORKER-0050` names each wait). `STS-WORKER-0043`
+names each replacement and `stats().pools[].replaced` counts them.
+`tests/request_worker_replacement.js` drives the real `fork()` and `reap()`
+with a stub worker.
 
 **WORKERS START ONE AT A TIME (#342, 2026-09-29).** Each worker's start
 restores the whole store into its own heap, and `start()` forked every worker
@@ -1510,11 +2038,52 @@ false`, a failed channel, or an exit). Four decisions:
   set, when it has settled.
 * **The start timeout is each worker's own.** It is armed in the child after
   `begin`, so a worker waiting in the queue uses none of its time.
-* **A queued fork is dropped** when the pool is stopping or has given up. A
+* **A queued fork is dropped** when the pool is stopping or has given up,
+  except the one worker a give-up's cool-down try forks (`probing`, #333). A
   fork that throws is `STS-WORKER-0045`, and the gate moves on to the next.
 
 `stats().starts` reports the width of the gate, the number starting and the
 number queued. `tests/request_worker_replacement.js` section 5 holds it.
+
+**#613 (2026-10-13) LOOKED AT STARTING THEM TOGETHER AND KEPT THE GATE**: the
+reason above is memory, and a start still restores the store into its own
+heap. What it did instead was take the work out of each start that grew with
+the data — the identity register pre-fill, a re-publication of every CRL, the
+minted restore held in one piece — which `persistence/CLAUDE.md`, *What a
+start costs*, measures.
+
+**AND #639 (2026-10-15) WIDENED IT TO WHAT MEMORY HOLDS.** By then a start
+read its resident entries and its live minted rows and nothing that grew
+with the directory, and on the 50.2M-entry stack six workers one at a time
+were 17 of its 23 seconds to all serving. The default is now
+`workers.startConcurrency` **0, the automatic width** (`request_pool.js`,
+`startWidthFor()`):
+
+* **The first start is measured.** It goes alone (the width is 1 until it
+  is measured), as the listener needs it to; what it added to the
+  PROCESS's resident set between its fork and its settling — every worker
+  is a thread of it — is what one start costs, floored at 128 MiB (389 MiB
+  in a private stack shaped like the 50.2M one).
+* **The rest go as many at once as the room holds**, each priced at one and
+  a half measured starts for the garbage a start makes and drops. The room
+  is the container's limit (`process_memory.ts`'s budget: the cgroup's, or
+  the ECS task's) less the process's resident set now, less a reserve of
+  15% and at least 256 MiB; with no limit visible it is
+  `process.availableMemory()` less the same reserve. At least one, at most
+  64. It is asked again whenever a fork is due, so a node filling up
+  narrows its own gate, and a replacement after a crash goes through it.
+* **The steady state does not change**: every worker ends up holding what
+  it holds whatever the width. What the width decides is how many starts'
+  TRANSIENT memory is in the air at once — #342's failure — and that is now
+  measured rather than assumed to be one. A number from 1 up is still a
+  fixed width; 1 is what every start did before.
+
+`stats().starts` says whether the width is automatic and what a start was
+measured at; `tests/request_worker_replacement.js` holds the width as a
+decision over its inputs and the gate with stubs (the first alone, the
+rest together). On the private stack: all six serving in 8.7–9.4 s, from
+19.6–21.2 s (`persistence/CLAUDE.md`, *What a start costs at fifty million
+entries*).
 
 **EVERY PROCESS HAS A HEAP LIMIT, AND A DEATH BY MEMORY SAYS WHICH KIND (#341,
 2026-09-29).** Nothing set a V8 heap limit, so each process's heap was sized to
@@ -1560,11 +2129,11 @@ the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
   `stats().memory.exits` keeps the last twenty exits.
 * **`process.memory-report`**, a per-process scheduler job every five minutes
   (registered in `protocol_stack.ts` beside the scheduler's page, so every
-  process lists it). It logs one line per process with the role, rss, heap
-  used and total, the heap limit, external memory and array buffers. A request
-  worker also sends its figures to the front process over the pool's channel.
-  The scheduler records the run's summary, so Monitoring → Scheduler shows
-  every process's latest figures.
+  process lists it). Each run records its summary with the role, rss, heap
+  used and total, the heap limit, external memory and array buffers; the log
+  line is debug. A request worker also sends its figures to the front process
+  over the pool's channel. The scheduler records the run's summary, so
+  Monitoring → Scheduler shows every process's latest figures.
 
 `tests/process_memory.js` holds it, including a real re-exec and a real heap
 exhaustion.
@@ -1610,6 +2179,131 @@ Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
 30ms to 37ms per write. **It is OFF by default** because that is the behaviour
 that existed before it, and because whether the wait is worth it is a question
 about the callers rather than about the pool.
+
+**THE CODE FLOW NEEDS IT (2026-10-22, #820).** On 8081, with 4 workers and it
+off, about 20% of `/oauth2/token` code exchanges answered "Unknown or
+already-used authorization code". Each one was a code another worker had just
+written. Turning it off is not a performance setting.
+
+**AND IT IS PER CLIENT SINCE THE SAME DAY: `session`, THE DEFAULT (rcbj,
+#820).** The barrier was global — every request waited for every ticket
+answered on another worker and for the generation every write had moved —
+which was 17–26 ms p50 of `/oauth2/authorize` and `/oauth2/token` on 8081,
+nearly all of it other browsers' writes. `workers.readYourWrite` is a mode
+now: `session`, `global` (the old barrier, whole) or `off`; `true` reads as
+`session` and `false` as `off`, so a stored boolean needs no rewrite. What
+each mode guarantees, exactly:
+
+* **`session`, a request carrying client keys** — every session cookie
+  (`s:<sid>`), the pool pin (`p:<pid>`) and every flow parameter in its URL
+  (`clientKeysOf()`, all of them, not affinity's first): it is answered only
+  after every ticket filed under any of its keys and answered before it
+  arrived has been announced committed (its own worker's excepted, which hold
+  the write in memory), and after its worker reached the generation of those
+  keys' writes ON OTHER WORKERS and of the front process's own writes. A
+  ticket is filed under the keys its request carried AND the session cookies
+  and flows its answer handed out (`learnTicketKeys()`), so the sign-in that
+  mints a session counts as that session's write. Bayou's read-your-writes,
+  and nothing more: no monotonic reads.
+* **`session`, a code exchange whose code the pool learnt** (since the same
+  day, second change): an answer whose `Location` query carries `code=` files
+  its ticket under `code:<value>`, which inherits the tickets and write
+  generations outstanding under that request's keys. A `POST` to a token
+  endpoint (`/realm/<id>`, `/<as>` or neither) that would wait globally, with
+  a form body of a declared length of at most 16 KiB and no transfer or
+  content encoding, is read before the barrier and handed to the worker byte
+  for byte. An `authorization_code` grant naming one code the pool holds
+  state for, or pruned once settled (`settledCodes`), waits for that key
+  only. An unknown code, a larger, chunked or unframed (HTTP/2 with no
+  length) body is the global wait, never "wait for nothing": the code may
+  have come by `form_post`, a fragment, the front process or another node.
+  `stats().sessionBarrier.codeKeyed` counts them. 8081 before it:
+  `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
+  session.
+* **`session`, a refresh grant** (2026-11-11, #879): the same small form,
+  naming one `refresh_token` of at most 12 KiB, waits for its key
+  (`rt:` and the token's SHA-256 through `crypto.credentialDigest()`, never
+  the token — the review of #879) whether or not this process has seen that
+  token, for keyless writes and for REVOKE_KEY (below), and not for another
+  browser or another token. A 200 JSON token response
+  of a declared length of at most 64 KiB files its ticket under the
+  `refresh_token` it names, before those bytes are sent. A response this
+  process could not read is filed under the keyless key, so the next
+  refresh still waits for it. A token this process never saw is that key,
+  empty: no rotation of it is unfinished here, which is "unknown = old",
+  never "wait for nothing". A grant this process cannot read (more than one
+  token, a longer token, a body over 16 KiB, chunked or unframed) stays the
+  global wait. The refresh's own ticket is not a keyless write, so a
+  browser and the next refresh of a different token do not wait for it.
+  `stats().sessionBarrier.refreshKeyed` counts them. 8081 was not
+  re-measured.
+* **`session`, the writes a refresh must not answer ahead of** (2026-11-13,
+  the review of #879, which found the gap #879 opened): #879's module
+  comment said a sign-out reached the refresh grant "when the workers
+  converge", so in product a refresh routed to a lagging worker was issued
+  new tokens from a session just signed out. Now one key, `REVOKE_KEY`,
+  holds every write that ends what a refresh token rests on, and every
+  token request keyed by its token, its code or a browser's cookie waits
+  for it; an ordinary browser request does not, so #879's and #820's gains
+  for unrelated browser writes stand. A ticket is filed there by its PATH
+  at dispatch (`revokingRequest()`: any sign-out door, writes to
+  `/oauth2/revoke`, `/oauth2/grants`, `/admin-api`, `/account-api`,
+  `/scim`, `/ssf`, any DELETE — the backstop) and by its ANSWER: the
+  funnels — `admin_stats.revoke()` (not a token superseded on rotation),
+  `oauth2_bcp.revokeFamily()`, `authn.dropSession()`,
+  `account_state.setDisabled()`, `grant_management.revoke()` — call
+  `revoking_writes.ts`'s `note()`, which in a worker sets
+  `x-sts-pool-revoking` on the answer in flight
+  (`RequestWorker.markRevokingAnswer()`), and the pool files the ticket
+  before forwarding a byte and strips the header. A revocation after the
+  headers went is `STS-WORKER-0052`; a cluster job's revocation has no
+  answer to ride (an expiry is read as ended anyway).
+  `tests/request_ryw_session.js` R16 and `tests/revoking_writes.js`.
+* **`session`, a request with no key, or whose pool pin the route did not
+  honour** — today's global wait, unchanged. That is every other back
+  channel, apart from a refresh grant this process could read. A pin not
+  honoured is global because `oidc_rp.ts`'s back channel pins to the worker
+  holding a code ANOTHER client (the browser) wrote, which only that worker is
+  sure to hold.
+* **`global`** — every request waits for every write answered before it;
+  **`off`** — nobody waits.
+* **What `session` gives up**: a request does not wait for another client's
+  write, a refresh of one token does not wait for a refresh of another, and
+  operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
+  page now sees another session's writes — a SCIM create, a token another
+  client redeemed, a KDC write, another administrator's change — only after
+  the workers converge** (0.5–1 s). A suite job that writes as one client and
+  reads as another at once needs `global`.
+* **Kept as they were**: the reaper, the 2,000 ms ticket bound and the
+  5,000 ms barrier bound (a keyed waiter times out and reaps exactly as a
+  global one), client-gone handling, both pools, and `runOperation()` with
+  #626's narrowing, which still waits globally.
+* **Bounded without a timer**: at most 20,000 keys, least recently used
+  first; each dispatch drops up to four of the oldest that hold no ticket and
+  whose writes every other worker has passed; a key evicted while it still
+  holds a ticket or a write SPILLS them to every keyed request
+  (`stats().sessionBarrier.spilled`), so eviction costs waiting, never a stale
+  read. A sync round now stamps the worker with the generation at the round's
+  START (`startSyncRound()`), which the sharing rule already allowed, so a
+  keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
+
+**WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
+`common/request_phases.js`.
+- **The front** times the ticket wait, the read barrier, and `connect`: how
+  long the per-worker agent took to give it a socket, from the moment it
+  asked (`workers.maxSockets`).
+- **The worker** times the rest. Its commit barrier reports the handler, the
+  commit hold, the time its loop was blocked in synchronous store reads, and
+  the instant its middleware started. The front subtracts the socket instant
+  from that and records `loop` — the listen backlog and the worker's event
+  loop (#887). Until then those two waits were one `queue` number. The trip
+  back to the front stays in `total` only. The worker sends its half in
+  `x-sts-pool-phases`, which the front asks for and takes off.
+- **Reporting:** once a minute, one `request phases` log line per busiest
+  route, with p50/p95 for each phase. The last window is also kept in the
+  pool's `stats().phases`.
+- **Why it exists:** refreshes stopped at about 160 a second with 4 workers
+  and with 8 alike, and nothing measured where the time went.
 
 **A WORKER NO LONGER ANSWERS A WRITE BEFORE IT COMMITS (2026-09-29, #351).**
 `request_worker.ts`'s header still says the worker "answers immediately" and
@@ -1668,6 +2362,127 @@ had been outstanding at one worker, holding the store's pool), a proxied request
 whose client left is released instead of staying queued behind
 `workers.maxSockets`, and the two barrier timeouts log once a second with a
 count. `tests/request_barrier.js` sections 6–9.
+
+**AND AN ANSWER ALREADY COMMITTED WAITED FOR ONE MORE FLUSH TO BE ANNOUNCED
+(#620, 2026-10-14).** Under an LDAPS bulk load on 8081 (two protocol workers,
+postgres, `workers.readYourWrite` on) STS-WORKER-0008 dropped six tickets in
+forty minutes, each answered and unannounced for thirty seconds, and every read
+on the other worker paid the 2,000 ms bound until it went. Since #351 a postgres
+worker answers a write only after its commit, yet the worker's announcement
+still named a ticket only once a LATER flush had finished — so a ticket whose
+write was in the store stayed armed for as long as that flush took or the
+worker's loop was blocked before finishing it. The first drop has its cause in
+the log: worker 2 missed two read barriers (STS-WORKER-0027) and a thread
+reported its loop blocked for 61.7 s (STS-STORE-0068) around it — a
+synchronous walk, which is #616 and #618. Now, where the store holds answers
+for their commit, a finished response and a settled operation are announced
+IN THE SAME TICK as the answer (`common/commit_announcer.ts`,
+`announceAnswered()`, with a truthful `wrote` so a released reader is still
+synced); a response cut off before `finish`, a handler that threw, and every
+answer on ldif or memory still wait for the flush. The flush-gated announcement
+runs beside it for the rows no answer is held for (the call log's success row,
+a search's audit rows) — never the barrier's business. **STS-WORKER-0008 now
+names each ticket it drops** — method and path or operation kind, worker, ages,
+and whether that worker has announced anything since: nothing means STALLED
+or a slow flush, something means the announcement was LOST.
+`tests/request_ticket_announce.js`.
+
+**AND A REQUEST WHOSE CLIENT LEFT WHILE IT WAITED WAS SENT TO A WORKER AS AN
+EMPTY CONNECTION (#624, 2026-10-14).** The first two LOST tickets that line
+named, under the 1M → 10M LDAP load on 8081, were both `GET /healthcheck` on
+worker 4: dispatched, then ANSWERED 93 to 96 s after they were sent, with 6 and
+2579 commits announced since. The log gives the sequence: the probe took its
+ticket, the read barrier held it until worker 4 missed the round
+(STS-WORKER-0027, at the exact second each was sent), and the compose
+healthcheck's 5 s timeout had closed it by then. `proxy()` hangs its
+client-gone handlers only when it is called, so it missed the `close`; and a
+destroyed request never emits `end`, so `upstream.end()` never ran and node
+never sent even the headers. The worker's HTTP parser answered the empty
+connection 408 at `headersTimeout` (70 s, noticed on node's 30 s check), the
+front process took the 408 as an answer and armed the ticket, and the worker —
+which never saw a request, so never ran `finish` or `close` — never named it.
+**So the cause was not the flush-gated announcement** (it is bounded by the
+worker's next two flushes, `persistence.flush()`'s one queued flush); the
+announcement was never owed. `proxy()` now refuses to send a request whose
+response is already destroyed and drops its ticket (`ticketAbandoned()`'s
+argument: nobody is waiting, so nobody is owed it).
+
+Two smaller changes ride with it. **`/healthcheck` is answered by the front
+process with no barrier at all** (`ANSWERED_AT_ONCE`): it is documented as
+liveness only and reads no state, so neither the ticket wait (2,000 ms), the
+worker's barrier (5,000 ms), a `workers.maxSockets` queue nor a blocked worker
+may hold it past a probe's timeout; it says nothing about the workers, by
+design (the cluster barrier, which is not the pool's, still runs). **`OPTIONS
+*` is answered the same way since #1304** (`answeredAtOnce()`): the asterisk
+form names no resource, only the server (RFC 9110 section 9.3.7), its answer
+is the preflight's 204 and reads no state, and no dispatch prefix can name it
+— `*` in `workers.dispatch` means every PATH, and `*` is not one. It was
+dispatched like any path until then. **And a
+worker's response whose `end()` ran before its peer left is announced at once**
+(`CommitAnnouncer.watchResponse()`): `holdUntilCommitted()` calls the real
+`end()` only after the commit, so `writableEnded` means everything the answer
+was held for is in the store; only one closed BEFORE its `end()` still waits
+for the flush, because its handler may yet write. `tests/request_client_gone.js`.
+
+**AND A DISPATCHED LDAP WRITE PAID A CHANGE-LOG PULL IT DID NOT NEED (#626,
+2026-10-14).** `runOperation()` sent every operation through the barrier, so
+under a bulk add from several connections over several workers every add found
+another worker ahead and its worker ran `syncNow()` before the handler. What
+the others wrote was almost always PEOPLE — WINDOWED directory rows, which a
+windowed worker reads from the store whenever it does not hold them, and which
+since #351 are committed before they are answered. The pull mattered only for
+a key the worker HELD (an LRU copy, an absence remembered) and for everything
+that is not a windowed row at all (groups, policies, roles, realms, settings,
+key sets, minted sessions), which a worker learns of only from the pull. So:
+
+* **Every announcement says what it committed** (`commit_announcer.ts`,
+  `windowedKeys`): the realm and key of each windowed directory row, when that
+  is all bar `minted-own` tallies; absent is SHARED. The counts by kind are the
+  driver's, moved at the same COMMIT as `written`
+  (`persistence_postgres.js` `committedMark()` / `committedSince()`, the last
+  4,096 directory keys kept); `persistence.committedChangesSince()` asks the
+  window which keys are windowed. The front process classifies its own commits
+  the same way (`localWriteKinds()`); ldif, memory and the tiered driver keep
+  no counts, so every commit there is shared.
+* **The front process keeps the keys** per announcement (`keyLog`, bounded at
+  4,096 keys, a floor that rises over what it drops) and the generation of the
+  last shared write (`lastSharedGeneration`).
+* **A write in `BARRIER_FREE_WRITES`** (`ldap.add`, `ldap.modify`, `ldap.del`,
+  `ldap.modifyDN`) sent to a worker behind only on windowed rows — no shared
+  write since it last synced, the log reaching back to it, at most 512 keys —
+  skips the sync round and carries `staleKeys`: the keys every OTHER process
+  wrote since it last synced or was last handed keys (`entry.keysThrough`).
+  The worker applies them before the handler (`persistence.applyStaleKeys()`:
+  one `byKeys` per realm, then the pull's own windowed applier key for key —
+  forget, or `markStale()` when busy, and `forgetEntry()` tells the indexes),
+  and pulls after all where it cannot (no window, a resident key, an
+  unreadable store, STS-STORE-0081). **Every later operation on that worker
+  waits for the keys** (`request_worker.ts`, `applyingStaleKeys`), because the
+  front counts them applied from the moment it sends them. The worker is NOT
+  counted synced: an HTTP request there is not gated behind the keys.
+* **Unchanged:** a read (search, compare, bind) takes the barrier; the ticket
+  wait still runs first for a write (a ticket answered and not yet announced
+  is a write whose kind nobody knows — an LDAP operation's announcement goes
+  before its answer on one channel, so under an LDAP load nothing blocks).
+
+**Why no client can see a different answer:** after the keys are applied the
+worker holds, for every row this node announced up to the generation the
+write was sent at, what the pull would have left it — a held windowed copy
+gone or marked stale exactly as the pull marks it, everything else already
+synced. What the pull would add is another NODE's rows, which the generation
+never covered (the cluster barrier is `cluster/CLAUDE.md`'s), and `minted-own`
+tallies, which the barrier never waited for. `claimingTheAdd()` still holds
+the DN and the names across processes. `stats().writes` (`current` / `keyed`
+/ `synced`, `keysSent`, the key log), `stats().syncRounds` and
+`stats().tickets.waited` count it. `tests/request_write_barrier.js`: stub
+workers count the syncs (an add with another worker ahead asks for none and
+waits on no ticket, a search still syncs; a shared write, too many keys or a
+lost floor send the add through the barrier); a windowed child shows each
+hazard with nothing applied and the barrier's answer once the keys are
+(a parent another worker created found, a duplicate by DN or by a name given
+to an existing entry refused, a delete or modify of a deleted entry and a
+rename onto a created DN refused); the driver's counts and the announcement
+are driven too. Six mutants, all caught.
 
 **THE WORKERS HAD THE OTHER HALF OF IT, AND SO DID EVERY POSTGRES PROCESS.**
 `persistence.flush()` answered a caller arriving during a flush with a waiter of
@@ -1766,6 +2581,19 @@ by itself says `Content-Type:`. Legal — field names are case-insensitive (RFC
 libest's estclient compares names byte for byte and failed every EST request
 in `single-node` and in no other mode. The spelling is read from
 `rawHeaders`; `tests/request_barrier.js` section 11 holds it on the wire.
+
+**THE FRONT READS A WORKER'S ANSWER WITH A 1 MiB HEADER LIMIT (2026-10-30,
+#1225).** Node's response parser refuses a header block past 16 KiB, so an
+answer the worker built correctly was a 502 naming `STS-WORKER-0030` and
+`Parse Error: Header overflow` — on 8081 a SAML 2.0 Response on the Redirect
+binding, signed and with an encrypted assertion, 19,633 characters in its
+`Location`. Without request workers the same answer was delivered, so the
+hop between this process and its own thread was deciding what an answer may
+carry. `proxy()`'s request passes `maxHeaderSize:
+WORKER_ANSWER_MAX_HEADER_BYTES`; a constant and not a setting, because it
+bounds memory on a trusted hop and nothing a client sends (the listener's
+limit on request headers is unchanged). Past it the answer is still the 502.
+`tests/worker_answer_headers.js` holds both sides.
 
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
@@ -1895,6 +2723,17 @@ worker's `process.memoryUsage()`, `process.cpuUsage()` and uptime, which
 nothing outside the process can read (the heap is in no `/proc` file). Node
 Health's paths are in
 `NEVER_DISPATCHED` for the same reason as Worker Pools'.
+
+**AND A WORKER COLLECTS ITS OWN GARBAGE WHEN ASKED (#611).**
+`collectWorkerGarbage(ids, timeoutMs)` sends `{ collectGarbage, id }` to the
+ready workers named (all, for `null`) over the same channel, and each answers
+`{ collectGarbage, id, pid, collection }` from `request_worker.ts`'s
+`collectGarbage()`: what `heap_collector.ts` measured in that worker's own
+isolate, which nothing else can collect. The answer is `{ asked, answers }`,
+so a caller can tell a worker that was asked and did not answer from one that
+was never asked. Node Health's Collect buttons are the only caller
+(`admin-ui/CLAUDE.md`); `/admin-api/node-health/collect-garbage` is under
+the page's API path, so `NEVER_DISPATCHED` already holds it.
 
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 
@@ -2084,7 +2923,9 @@ when the path does not open with the prefix — so the same middleware enters
 it, a request worker derives it by the same rule from the same `originalUrl`,
 and `unknownRealmPath()` catches up on it the same way. A realm may not be
 called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
-from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+from the data leaf `enrollment_profiles.js` — JavaScript because realms.js
+was in the parent's load-time closure (#300; an obligation until #1280) —
+which realms.js may require and
 `cert_enrollment.ts` could not be), and a realm that already was is never
 read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
 and the "named once" refusal. **A third way needs the argument made again**,
@@ -2161,7 +3002,7 @@ It is seeded by the FACTORY now. **The lesson is that the two halves of ONE
 claim set were held in two modules and only one of them was per realm**, so
 the rule to check a converted store against is not "is it `realms.map()`"
 but "is everything this thing is made of". This repository's own
-`tests/vendored/sts_admin_api_operations.js` is the guard for both: it mints
+`tests/protocol/sts_admin_api_operations.js` is the guard for both: it mints
 a token in a realm and looks for the claim in the default realm's.
 
 **A THIRD WAS FOUND ON 2026-09-06 AND IT IS THE SAME EXPIRED REASON AGAIN.**
@@ -2249,7 +3090,7 @@ two mutants caught.
 ### Rule 3m: the realm's overrides are an inverted hook into `config.js`
 
 `realms.js` requires `config.js` in the ordinary direction — it validates a
-realm's settings through `checkOverride()` and reads its own two settings
+realm's settings through `checkOverride()` and reads its own settings
 through `value()`. `config.js` needs the current realm's overrides and cannot
 require this module back, so it offers `setRealmContext()` and this fills it at
 require time. That is rule 3e's shape and it passes rule 3e's test in the one
@@ -2264,12 +3105,14 @@ since 2026-08-27.
 Setting a value while `acme` is ambient means setting it for `acme`; anything
 else would be a console page that reads one realm and writes another.
 
-**TWO SETTINGS ARE EXEMPT IN BOTH DIRECTIONS** and it is not caution:
-`realms.enabled` and `realms.pathSegment` are read below the realm layer,
-always. A realm that could switch realms off would be doing it from inside the
-request that found it, and a realm that could move its own prefix would change
-the prefix that had already been used to find it. They are refused at the writing
-end as well, but the reading end is the lock that cannot be got around.
+**EVERY `realms.*` KEY IS EXEMPT IN BOTH DIRECTIONS** and it is not caution:
+`realms.enabled`, `realms.pathSegment`, `realms.removalDeliveryTimeoutS` and
+`realms.maxCount` are read below the realm layer, always. A realm that could
+switch realms off would be doing it from inside the request that found it, and
+a realm that could move its own prefix would change the prefix that had already
+been used to find it. They are refused at the writing end as well, but the
+reading end is the lock that cannot be got around. The prefix match is what
+makes a new `realms.*` key exempt the day it is added.
 
 **THE WRITING-END LOCK WAS MISSING UNTIL 2026-08-25, AND THE SENTENCE ABOVE
 DESCRIBED IT ANYWAY** — which is the whole lesson. `realms.setOverride()` went
@@ -2285,14 +3128,16 @@ look at. **A dead write is not harmless when something publishes what was
 written.**
 
 The lock is `checkRealmOverride()` in `realms.js`, and two things about it are
-deliberate. It matches by PREFIX rather than naming the two settings, so a third
+deliberate. It matches by PREFIX rather than naming the settings, so a new
 `realms.*` setting is refused the day it is added rather than the day somebody
-remembers this function. And **every writing path goes through it** —
-`setOverride()`, and `checkOverrides()`, which is what `create()` and `update()`
-validate a whole object with — because the two were written separately at first
-and that is exactly how one of them came to be missing.
+remembers this function. And **every writing path into a realm's overrides
+goes through it** — `setOverride()`, and `checkOverrides()`, which is what
+`create()` and `update()` validate a whole object with — because the two were
+written separately at first and that is exactly how one of them came to be
+missing.
 
-**One door still accepts those two keys and must**: `POST
+**One door still accepts `realms.enabled`, `realms.pathSegment` and
+`realms.removalDeliveryTimeoutS`, and must**: `POST
 /realm/acme/admin-api/config/set` goes through `config.setOverride()`, where
 `realmFor()` answers null and the write lands PROCESS-WIDE. That is the
 documented behaviour rather than a hole — it is the same exemption read from
@@ -2300,6 +3145,51 @@ the other side — and the reply names no realm, which is what tells the caller
 where it went. Do not "fix" that one to match: refusing it would leave
 `realms.enabled` unsettable from inside any realm, which is every request in a
 process where realms are switched on.
+
+**`realms.maxCount` is the exception to that door (#368).** It is still
+process-wide and still refused ON a realm (`STS-CORE-0014`), and a write or a
+clear of it while a non-default realm is ambient is refused as well
+(`STS-CORE-0162`), in `checkOverride()` and `clearOverride()`. The console
+describes the row with `editRefusal` and `editable: false` from inside that
+realm, so a section's all-or-nothing Save does not post the key. A service
+administrator changes it on `/admin/realms` in the default realm, or with
+`POST /admin-api/config/set` and no realm prefix. A realm administrator is
+already refused by the `realms.` prefix (`admin-ui/admin_scope.ts`).
+
+### How many realms one cluster may hold (#368)
+
+Each realm costs memory in every node process, so `realms.maxCount` caps how
+many this cluster may hold. The default is **10, and the count includes the
+built-in default realm**, so that is the default plus nine others. The minimum
+is 1, because the default realm always exists; the maximum a write may name is
+100000. It is on `AGREEMENT_SETTINGS`, so two nodes that disagree about it
+refuse to join (`STS-CLUSTER-0002`).
+
+**Adding the key changed the must-agree digest itself**, so a node built
+before #368 and one built after it disagree whatever their settings say. **A
+rolling upgrade across this change therefore restarts every node together**
+— stop them all, start them all on the new image. There is no migration shim
+that lets the old and new digest agree for a while: this repository keeps no
+backwards compatibility.
+
+`create()` refuses a new realm once `count()` is at the cap (`STS-CORE-0161`).
+**A restore skips the check** — `spec.restored`, the same skip the mode and
+Kerberos checks already make — because a restart or a replicated create of a
+registry that is already over the cap must still come up. Lowering the cap
+below the live count removes nothing; creates stay refused until the count is
+back under it. The chooser, OpenID Federation and the metadata keep listing
+every realm that exists.
+
+Two nodes can both pass a local count check and both persist, because the
+realm-registry save merges rather than claims. That race is accepted: the cap
+is a memory bound, and it does not grow a new cluster claim.
+
+The image default (`env/local.js`) does not raise it. `env/test.js` and
+`env/docker-tests.js` set it to 100000, because the protocol suite leaves its
+realms standing and a product default of 10 would refuse the next create on a
+stack that already holds more. The in-process suite sets
+`STS_REALMS_MAX_COUNT` the same way, in `tests/run.js`, under any override a
+test makes itself.
 
 ### A realm has a DNS DOMAIN, and it is the root of every NAME the realm invents (2026-09-18)
 
@@ -2531,7 +3421,7 @@ answers `{ realm, since, why }` marked `STS-CORE-0121`, and:
 
 | Where | What refuses |
 |---|---|
-| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the locked KDC records its own policy code, and the gate's log line carries 0121) |
+| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the KDC records its own policy code, and the gate's log line carries 0121) |
 | `authn.startSession()` | FIRST, for every door — the sign-in screen asks the gate early and then passes `gated: true` |
 | `cert_enrollment.issue()`, OpenID4VCI's credential and deferred endpoints, `SpiffeCa`'s three mints | ask `retiringRefusal()` themselves, not being gate sites: 503, `credential_request_denied`, a thrown mint |
 
@@ -2632,6 +3522,70 @@ would call the DEFAULT realm's API: the page would look right, the call would
 succeed, and it would have changed the wrong service. Another page that builds
 URLs in a script would need the same treatment and would not get it for free.
 
+## Disabled debug lines: one comparison, and a guard where the MESSAGE costs (#627, 2026-10-14)
+
+**The root style rule makes every named function log its entry and exit at
+debug, and every appconfig file runs at info**, so nearly all of those calls
+write nothing. They were not free: bunyan's emitter (`mkLogEmitter()`) copies
+its arguments into a new array and fires the level's dtrace probe (the stub
+on Linux) BEFORE it compares the level. The live all-thread profiles of an
+LDAP bulk load put `(anon)@lib/bunyan.js:1013` at 250–1040 ms per 30 s under
+`realmFor`, `isUnder`, `settingFor`, `partitionId`, the keystore's
+`sealed()`/`dekFor()`, the applications register and the minted applier.
+
+**The mechanism is in `config.js`, just after its `require('bunyan')`, and it
+is two lines**: `quietBelowLevel()` replaces `debug` and `trace` ON BUNYAN'S
+SHARED PROTOTYPE with a wrapper that returns at once when `this._level` is
+above the method's level and there are arguments, and otherwise hands the
+call to bunyan's own emitter unchanged. Why each property holds:
+
+* **Every logger, no call-site edit.** A method is looked up on the prototype
+  at each call, so the shared `sts` logger, the hundred-odd module loggers,
+  child loggers, the vendored and krb5 codec loggers, and a logger made before
+  `config.js` loaded are all covered. A request worker is its own isolate and
+  loads `config.js` too.
+* **A runtime level change works both ways**, because the level is read at the
+  call: `applyLogLevel()`, `STS_LOG_LEVEL`, a console write of
+  `global.logLevel`. A child bunyan gave its own level is judged by it.
+* **`log.debug()` with no arguments is still bunyan's "is debug enabled?"**,
+  answering bunyan's boolean, because a call without arguments is not
+  intercepted. So is a call whose `this` is not a logger (bunyan's warning).
+* **Installed once**: the wrapper carries `quietBelowLevel` and
+  `bunyanEmitter` (bunyan's own function), and a second load of `config.js`
+  over the same bunyan (a test clearing the require cache) leaves it alone.
+* **Why `config.js`**: it is the first module every process loads that holds
+  bunyan, so no new require (and, while the parent project's Kerberos COPY
+  closure was owed, until #1280, no new COPY line).
+* **Given up**: a real dtrace consumer would not see probes for lines below
+  the level. Linux has none.
+
+**What it cannot do is skip the caller's ARGUMENT**, which JavaScript evaluates
+before entering any function. `'Entering f(). ' + list.length + ' names.'` or
+a `JSON.stringify()` is still built and thrown away. **On a path the profiles
+show hot, such a call is guarded** with bunyan's own check:
+`if (log.debug()) { log.debug('… ' + JSON.stringify(x)); }`. Only there,
+and only where the argument costs something: a constant string, or one
+concatenated with a name already in hand, is left as it is, because the
+wrapper already makes it nearly free and a guard on every line would bury
+the rule the pairs exist for. The `Entering`/`Leaving` pairs are never
+removed: the rule is unchanged, only its cost. Where a pair's own line
+carries a computed message it is guarded in place, and stays where the rule
+puts it.
+
+The sites guarded on 2026-10-14, each because the profiles (or the issue's
+list of hot paths) put it on a per-operation path and its argument allocates:
+`ldap_server.js`'s `ldapAddNow()` and `attributeSnapshot()` (an
+`Object.keys()` per add), `request_pool.js`'s `leastLoaded()` (a `map` and
+`join` over the pool per routed request) and `workerFor()` (a `split` per
+routed request), `admin_rbac.ts`'s `rolesOf()` (a `join` per console and API
+request) and `admin_stats.js`'s `buildUserRowsResolved()` (a second pass
+over every row). The remaining computed messages on those paths are a
+`.length` or a name already in hand, which costs a concatenation and nothing
+else.
+
+`tests/debug_level_cost.js` holds all of it, counting entries into bunyan's
+emitter through a getter on a logger's `_emit` (the emitter's first read).
+
 ## `config.js` is the only place a setting is read
 
 Configuration used to be forty-odd `process.env.X || 'a default'` expressions spread
@@ -2702,7 +3656,7 @@ realm may carry the setting it was refusing. The whole page was unusable inside
 a realm. `checkOverride()` now defaults the argument from `realmFor(key)`, which
 fixes all four call sites at once and leaves an explicit `true` and an explicit
 `false` meaning exactly what they did. The parent project's
-`tests/vendored/sts_admin_console.js` presses that Save button and is the guard; the
+`tests/protocol/sts_admin_console.js` presses that Save button and is the guard; the
 in-process half is `tests/appconfig_persistence.js`, which asserts the rule
 itself.
 
@@ -2728,7 +3682,7 @@ is created with `krb5.enabled` off and builds its principal database when it is
 turned on, rebuilding it when one of those ten changes. So for a realm nothing
 was consumed at any startup, which is the same argument SPIFFE's ten made on
 2026-09-12. What is still consumed for the PROCESS is still a no: `krb5.kdcPort`
-and `krb5.servicePort` are bound sockets, and `krb5.trustedRealm` and its three
+is a bound socket (and `krb5.servicePort` was, until #595), and `krb5.trustedRealm` and its three
 build the development-mode second realm at startup.
 
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
@@ -2784,13 +3738,13 @@ cannot change, and it fails in the direction that looks like the console is brok
 existing container and test working: nothing in the parent project sets these
 variables in compose, but
 `tests/krb5_spnego_http.js` sets `KRB5_REALM`, `KRB5_KDC_PORT` and
-`KRB5_SERVICE_PORT` before requiring the KDC in-process, and that still wins. The
-legacy level has exactly one occupant: `STS_ISSUER`, which used to be a single value
-serving as the SAML assertion issuer, the WS-Trust token issuer AND the
-WS-Federation entityID. Those are three different things that shared a default — an
-entityID names the identity provider, an Issuer names whoever signed an assertion —
-so they are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, all three still
-fed by `STS_ISSUER` when it is set.
+`KRB5_SERVICE_PORT` before requiring the KDC in-process, and that still wins
+(the last names a setting #595 removed, so it is ignored now). The
+legacy level has NO occupant since #523 (2026-10-08): its one, `STS_ISSUER`, fed
+`saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, and all four went when every
+name became the realm's OAuth issuer (`issuer_names.ts`). A start that still names
+one is refused (`REPLACED_SETTINGS`, `STS-CORE-0105`). The level, and `legacyEnv`,
+stay for the next one.
 
 **AND THERE IS NO SIXTH LEVEL — `requireComplete()` REFUSES TO START INSTEAD.**
 A setting with no value in either appconfig file and no environment variable
@@ -2958,9 +3912,9 @@ with `Cannot find module` naming a file the operator never mentioned.
    argument for a slot has two halves:
    - that module delivers through `ssf/ssf.ts`, which requires this file at
      load, so a load-time require from here closes the cycle;
-   - a lazy require would put `oauth-oidc/` and `ssf/` into the parent
-     project's Kerberos COPY closure, which reaches this file
-     (`kerberos/CLAUDE.md`).
+   - a lazy require would have put `oauth-oidc/` and `ssf/` into the parent
+     project's Kerberos COPY closure, which reached this file (an obligation
+     until #1280; the slot stands).
 
    It is here, and not at the doors, because every door that revokes an OAuth
    token (`/oauth2/revoke`, Grant Management, a replay, a consent withdrawn,
@@ -2970,6 +3924,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    revocation is what is authoritative. The record carries `grantId` and
    `grantRefresh`, which the issuer states in `signJwt()`'s context as it
    states `setId` (`oauth2.ts`'s `issuanceContext()`).
+
+   **`setStatusMarker()` (#820 part 3, 2026-10-21) IS A THIRD, AND IT PASSED
+   THE TEST BOTH WAYS ROUND.** `revoke()` calls it for every jti newly
+   revoked and `restore()` for every one un-revoked, with `(jti, revoked,
+   kind)`; `oauth-oidc/access_token_status.ts` fills it when it loads and
+   writes or clears the token's bit in `access_token_status.invalid`, the
+   store the status list is built from now that the entries are on demand.
+   The two halves: that module requires this file (`isRevoked()`), so a
+   require from here closes a cycle; and the revocation observer above
+   cannot carry it, since it hears only first revocations, not un-revoking,
+   and has one occupant whose failures mean something else. It is here for
+   the observer's reason — every door that revokes comes through these two
+   functions. A throw is logged (STS-OAUTH-0978) and never undoes the
+   revocation; introspection still refuses the token.
 
    **ITS ONE OBSERVER SLOT NOW CARRIES THREE KINDS OF EVENT, AND THAT IS NOT A
    SIXTH HOOK.** `setUserObserver()` is still one slot filled by one module at
@@ -3031,6 +3999,18 @@ with `Cannot find module` naming a file the operator never mentioned.
      forgotten — the shortest window in which a revoked token works again —
      with an undated one last, and `STS-OAUTH-0787` logged at most once a
      minute. `tests/revoked_jti_expiry.js` holds all three.
+   - **THE TOKEN REGISTER IS INDEXED BY PERSON (#766, 2026-10-20).**
+     `holdsLiveIssuance()`, asked before every CAEP token-claims-change,
+     walked every record of the realm (up to `MAX_TOKENS`) — 9% of a request
+     worker under a password-write load on 8081. `realms.map()` takes
+     `indexBy(value, key)` and offers `lookup(indexKey)`: the index is kept
+     by the PARTITION Map (`IndexedMap`) in its own `set`, `delete` and
+     `clear`, which is where every way a record enters or leaves a store
+     ends — the facade, the journalling view, a restore, a replicated row —
+     so no door can forget it. `tokens` files each record under `u:<username>`
+     and `s:<sub>`; the question visits those and asks the walk's own test.
+     **An indexed field changes only through `set`**: neither changes on a
+     token record. `tests/token_register_index.js`.
 
 3c. **`audit.js` is a library too, it sits BESIDE `admin_stats.js` rather than
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
@@ -3039,7 +4019,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    table, the replication fan-in and `client_address.js` (a leaf `helpers.js`
    already loads) and NOTHING ELSE in this repository, and
    that has to stay true: it is called from `app.js`'s call log,
-   from `admin_stats.js`'s `recordAuthentication()`, from `authn.js`'s session
+   from `admin_stats.js`'s `recordAuthentication()` and
+   `recordRefusedAuthentication()`, from `authn.js`'s session
    store and from every LDAP handler, which between them are most of the
    service. In particular it must not require `admin_stats.js`, because that
    module requires THIS one — so the identity normalisation an audit row wants
@@ -3055,6 +4036,35 @@ with `Cannot find module` naming a file the operator never mentioned.
    operation, because ldapjs dispatches straight into the handler and what a row
    says genuinely differs per operation. Do not add a recording site beside a
    funnel — that is how a category comes to be counted twice for one act.
+
+   **A refusal is not that funnel (#954).** `recordRefusedAuthentication()`
+   writes `authentication.refused`: the acceptance's detail, outcome refused,
+   and no counter and no user. Putting a refusal inside
+   `recordAuthentication()` would count an attempt that was turned away and
+   file the name on `/admin/users`. The acceptance's detail also carries
+   `application`, the name the door had, beside `client_id`. That name is
+   not handed to `applications.recordAuthentication()`, which counts, and
+   the protocols that already know the identifier call `seen()` themselves.
+   The application's Authentication attempts tab reads both actions, and
+   `session.refuse` and `session.refused` when `detail.client_id` or
+   `detail.application` is the identifier or one of `identifiersOf()`'s
+   values, through `authenticationEventsFor()`. `session.reauthenticate` is
+   the acceptance written a second time and is not in that list.
+   **`session.presented` is (2026-10-26)**: `authn.notePresented()` writes it
+   where it reports CAEP's `session-presented`, naming the application the
+   door passes as its fourth argument, because single sign-on presents no
+   credential and so wrote no row either tab read — a person who reached an
+   application on the session they held was on neither. Its `method` is
+   `existing session`. `report/sources.ts`'s `authActivity` keeps its own
+   four-action list and does not include it. The sign-in
+   screen calls the refusal line; it does not call `audit()` itself. A door
+   that knows its protocol's identifier passes it as `application` — a
+   Kerberos service principal, an LDAP bind DN, a client-certificate
+   subject, a WS-Trust AppliesTo, a SPIFFE ID, a SCIM bearer token's
+   client_id — and not as `client_id`, so the tab matches and the count is
+   not moved twice. `session.refuse` carries `method` beside that name,
+   ahead of the reason, inside the twelve-key cap. `session.start` and
+   `session.reauthenticate` carry both as well; neither action is on the tab.
 
    **One request is deliberately not an event: a `/healthcheck` that answered
    200** (`QUIET_WHEN_OK` / `isQuietProbe()` in `recordHttp()`). It is asked
@@ -3080,6 +4090,13 @@ with `Cannot find module` naming a file the operator never mentioned.
    deliberately NOT `sessionOf()`: that function deletes an expired session as
    it finds it, and an observer that quietly ended sessions while reporting on
    them would be changing the thing it describes.
+   **Its sibling `setActorSessionResolver()` (#561)** names the SESSION the
+   actor acted as, which `recordHttp()` puts in `detail.sessionId` — only
+   where it names one, which is where a browser holds several signed-in
+   accounts (`authn/CLAUDE.md`), so a row is otherwise unchanged. The same
+   contract: no side effects, never throws. `admin_stats.js`'s
+   `recordAccountChoice()` and `accountChoiceCounts()` are those account
+   sets' counters (`merge: 'own'`, `scimCounts`' reason).
 
    **EVERY ROW CARRIES THE CLIENT'S ADDRESS (2026-09-18), which reverses what
    this file decided when it was written** — a row named the CHANNEL and never
@@ -3197,6 +4214,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    nothing else; a code is an operator's name for the condition. The table's
    `spec` column records what the client IS told, so the documentation page can
    say it without anybody reading the handler.
+   **An administrator's console page may still draw a code for someone
+   diagnosing a recorded failure** (rcbj, 2026-11-06, #1355; the root file).
 
    **`audit.js` CHANGED IN THREE WAYS FOR IT, AND EACH IS A RULE.**
    * A row with `errorCode` and no `outcome` is a REFUSAL, not a success — a
@@ -3291,7 +4310,33 @@ with `Cannot find module` naming a file the operator never mentioned.
    tokens issued without their configured attributes and `admin.js` requiring it
    would only make that true by accident.
 
-   **Nothing is selected on a fresh start, in any of the five sets.** Unlike
+   **THE SIXTH SET, `kerberos-pac`, HAS A SELECTION TOO (#498, 2026-10-06)**,
+   kept here like the other five and drawn on `/admin/kerberos/claims` with the
+   same table. It is read differently: `admin_stats.js`'s `kerberosPacClaims()`
+   asks this module only WHICH names are ticked — a FOURTH member of the same
+   slot, `selectedAttributes(setId)`, for the reason the third is a member and
+   not a slot — and reads every value off the entry itself as a PAC string
+   claim, never the persona `claimsFor()` falls back to. `isKnownSet()` asks
+   `SET_IDS` rather than the partition's keys, so a partition persisted before
+   a set existed still accepts it. No application selection for it
+   (`APP_SELECTION_ATTRIBUTES` has no row; `applicationClaimSelections()`
+   leaves it out).
+
+   **A REALM'S CUSTOM ATTRIBUTES ARE CATALOGUE ROWS TOO (#700)**, made per
+   realm by `customRows()` from `attribute_policy.ts`'s register (3co) and
+   walked after the catalogue's own wherever `CATALOGUE` was walked —
+   `rowsInRealm()`, which `ssf/caep.ts` reads too. The catalogue is the
+   process's and fixed at load, the register the realm's and changed while
+   the service runs, which is why they are joined at the read and never
+   merged into `CATALOGUE`. A custom row is claimed under its own name, its
+   value is the directory's only (`from` null, so nothing is invented in
+   either mode), and its syntax types it in a JWT (integer a number, boolean
+   true/false, date YYYY-MM-DD); in an assertion it is text, a multi-valued
+   one as `values`. A name that is also a catalogue claim name is left out
+   (STS-REG-0366). A stored selection naming a removed attribute keeps the
+   name and selects nothing.
+
+   **Nothing is selected on a fresh start, in any of the sets.** Unlike
    `/admin/vc`'s ten defaults — which reproduce what that issuer already carried
    — this page changes what every client of this service receives, so it does
    nothing until it is asked to.
@@ -3490,7 +4535,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    has no schema subsystem (its whole `lib/` mentions objectClass three times: a
    default filter and two result-code names) and it is a submodule this repo does
    not modify, so there was nothing to register with. `SCHEMA.attributes` is the
-   definition: the entry is built by WALKING it, `/admin/ldap/applications` publishes
+   definition (written in `models/directory/application.tsp` since #1390): the entry is built by WALKING it, `/admin/ldap/applications` publishes
    it, and an attribute not in it is REFUSED rather than written. `multi`
    accumulates and `single` is assigned — get that backwards on a counter and the
    entry grows a value per sign-in, which is `applyVcAttributes()`'s second rule.
@@ -3720,9 +4765,11 @@ with `Cannot find module` naming a file the operator never mentioned.
    gives every client_id that ever reached an endpoint an entry. `declared` is
    *anything on the entry a sighting never writes* — a registration, a redirect
    URI of its own, an authentication method, a credential, an assertion issuer,
-   or `appAllowedProtocol` naming an OAuth family — so the list of what an OAuth
+   the grant or response types it may use (since #289), or
+   `appAllowedProtocol` naming an OAuth family — so the list of what an OAuth
    sighting writes (`oauthClientId`, `appAuthorizationServer`, `oauthScope`,
-   `oauthResponseType`, `oauthGrantType`, `appRedirectUriObserved`) is a
+   `oauthResponseTypeObserved`, `oauthGrantTypeObserved`,
+   `appRedirectUriObserved`) is a
    constraint on `seen()` callers now: **a sighting that started writing a
    credential attribute would make every client it touched look declared.**
 
@@ -3747,8 +4794,30 @@ with `Cannot find module` naming a file the operator never mentioned.
    the RFC 9700 checks in `oauth2.js` pass `clientConfigOf()`, which is built
    from the ATTRIBUTES; `appRegistered` records how an application got here and
    not whether what it holds counts. `registrationOf()` is still what RFC 7592
-   and the UserInfo signing algorithm read, because those are genuinely
-   questions about the registration.
+   reads, because that is genuinely a question about the registration.
+
+   **HOW A RESPONSE TO A CLIENT IS SIGNED AND ENCRYPTED IS AN ATTRIBUTE, AND
+   SO ARE ITS REQUEST DEFAULTS (#290, 2026-10-08).** Eleven members lived only
+   in `appRegistrationJson` — the ID Token's and UserInfo's
+   `*_signed_response_alg` / `*_encrypted_response_alg` / `_enc`, JARM's three
+   and `default_acr_values` / `default_max_age` — so a client created on the
+   console could not have an ES256 ID Token without registering again, a hole
+   in rule 7. `CLIENT_RESPONSE_ATTRIBUTES` maps each to an attribute
+   (`oauthIdToken*`, `oauthUserinfo*`, `oauthAuthorization*`,
+   `oauthDefaultAcrValues` as ONE ordered value, `oauthDefaultMaxAge`). Three
+   rules. ONE GRAMMAR: `clientResponseMetadataProblem()` is the
+   registration's own checks (the ID Token and UserInfo encryption, JARM, the
+   two signing algorithms and the defaults split out of
+   `oidcRegistrationProblem()`), and `clientResponseAttributeProblem()` holds
+   a console or API write to it (`STS-REG-0340`). REPLACED by a registration
+   (`applyRegistrationFields()`), an absent member cleared. ONE READING:
+   `clientConfigOf()` carries them under their registration names and every
+   reader — `idToken()`, UserInfo, `jarmUrl()` and `vetAuthorizationRequest()`,
+   the Logout and Command Tokens, step-up's defaults, the `jwks_uri` prefetch
+   — reads that rather than `registrationOf()`, which returns null for a
+   client nobody registered. A registration stored before #290 holds them in
+   its document only and is read without them until it registers again; no
+   migration (rcbj's standing rule).
 
    **THE TWO APPLICATIONS THAT ARE THIS PROCESS ARE SEEDED AT STARTUP, AND
    THEY ARE REGISTRATIONS RATHER THAN LABELS.** Every other entry arrives
@@ -3792,8 +4861,9 @@ with `Cannot find module` naming a file the operator never mentioned.
      `/portal` reads the ambient realm's session; the console's since
      2026-09-11, when its code flow moved to the ambient realm (it was the
      DEFAULT realm's alone until then); the management API's since 2026-09-14
-     (#32), for a realm's own administrators. The embedded debugger's two
-     entries are the default realm's alone.
+     (#32), for a realm's own administrators — that client is `sts-api-client`
+     since #1139, below. The embedded debugger's two entries are the default
+     realm's alone.
    * **BOTH CARRY `oauthGlobalConsent`.** `oauth2.consentRequired` is on by
      default and is the only policy here that is, so without it a person
      signing in to look at their own account would first be asked to consent to
@@ -3817,6 +4887,66 @@ with `Cannot find module` naming a file the operator never mentioned.
      at all (it passed one object where `updateApplication()` takes an
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
+
+   **THIS SERVICE'S OWN APIS ARE APPLICATION OBJECTS SINCE #1139 (2026-10-29),
+   AND THE IDENTIFIER `sts-management-api` CHANGED MEANING.** rcbj's model: an
+   API object represents the API as an OAuth 2.0 RESOURCE — the audience and
+   the scopes valid at it — and NEVER authenticates; a caller is always a
+   separate client application configured to call it. Until then the
+   audiences were recognised by code alone (`registered_targets.ts`'s
+   `ownResourceServer()`) and `sts-management-api` was the bootstrap CLIENT.
+   `apiResourceApplications()` seeds four rows in every realm, kind
+   `oauth2-resource-server` (a new entry in `KINDS`, label *OAuth 2.0 resource
+   server*), with no secret, no registration access token, no redirect URI,
+   no grant and an empty `scope`:
+
+   | Identifier | Name | `oauthAudience` |
+   |---|---|---|
+   | `sts-management-api` | Management API | base + `/admin-api`; the default realm's also carries `adminApi.audience` |
+   | `sts-account-api` | Account API | base + `/account-api` |
+   | `sts-report-api` | Reporting API | base + `/report-api` (#1030 deleted an object of this name as a grant's home; this is the API's representation, `report/CLAUDE.md`) |
+   | `sts-resource` | Default resource | base + `/resource`, RFC 9068's default for a request naming none, which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management accept |
+
+   The base is `internalBaseUrl()` (`global.publicBaseUrl` with the realm's
+   prefix, else `localhost:<port>`), moved onto the API's listener by
+   `helpers.rebaseTo()`. **The audience is the pinned name** (rcbj's
+   decision): a service reached under another name does not add one here.
+
+   **A RESOURCE IS NEVER A CLIENT, AND THAT IS ENFORCED, NOT IMPLIED.**
+   `isResourceServer()` answers for an entry that is `oauth2-resource-server`
+   and NOT also `oauth2-client` (a client that defines an API is allowed, as
+   RFC 9767 allows a GNAP resource server), and `oauth-oidc/oauth2.ts`
+   refuses such a client_id at the authorization, token, PAR, introspection,
+   revocation, device authorization and CIBA endpoints, in every mode
+   (`STS-OAUTH-0985`: `invalid_client`, 401; 400 at the authorization
+   endpoint, never redirected). Emptying the grant lists would not have done
+   it: an entry declaring no grant type is held to none
+   (`declaredFlowsOf()`), and development verifies no client credential.
+
+   **THE BOOTSTRAP CLIENT IS `sts-api-client`** (*API client*), which took over
+   everything the old client carried: confidential, `client_secret_basic`,
+   `client_credentials` only, scope `admin:read admin:write report:use`, in
+   every realm, seeded a member of ADMIN_READ, ADMIN_WRITE and REPORT_USE
+   (`roles.js`). `adminApi.clientSecret` (and OpenBao's
+   `secret/sts-admin` field `adminApiClientSecret`) pins ITS secret, in the
+   default realm only (`pinnedSecretOf()`, `STS-REG-0061`, `STS-REG-0210`);
+   a realm's copy is minted, the #32 machine door. It does NOT call
+   `/account-api`, which acts only on a person (rcbj's decision): a
+   `client_credentials` token has no account there. `tests/tools/
+   admin-api-token.js` is still the one place the client id is written for
+   the launchers.
+
+   #1140 refuses any token whose audience no application object holds, in
+   both modes — which these four rows exist to make possible. **#1141 made a
+   delegated permission grant on one of these objects the CLIENT's half of
+   the scope check** (`scope_policy.ts`, 3au, *The scopes a delegated
+   permission grant declares*): the three API rows define their scopes as
+   permissions from `API_PERMISSIONS` under fixed `urn:sts:<api>:` bases,
+   the client rows hold delegated permission grants of what they use
+   (`delegatedPermissionGrants()`), and their registration `scope` lists
+   none of those words. The API rows are seeded FIRST, so a permission is
+   defined before anything holds a delegated permission grant of it (the
+   debugger's rule).
 
    **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
    2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
@@ -3909,9 +5039,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    there — `seq` is monotonic only within one process, so the sort is by TIME,
    and the cap is per process. **The test to apply to the next `merge: 'own'`
    store is not "is it declared right" but "does everything that REPORTS it
-   fan in"**: three stores in this service still do not, and each is a page
+   fan in"**: two stores in this service still do not, and each is a page
    that under-reports rather than a page that is wrong —
-   `admin_stats.scimCounts`, `admin_stats.users` and `ssf_streams.received`.
+   `admin_stats.scimCounts` and `admin_stats.users` (`ssf_streams.received`
+   was the third, until #593 deleted it with `POST /ssf/receive`).
 
    **`record()` CANNOT THROW.** The whole body is wrapped and a caller must
    never guard it — the fourth place that rule applies (after `audit()`,
@@ -4284,6 +5415,19 @@ with `Cannot find module` naming a file the operator never mentioned.
    in* are opposite answers to one question. The chooser offers both and each
    row says which side it came from.
 
+   **WHILE THE TOKEN REGISTER IS ON DEMAND, A CHOOSER GETS
+   `userCatalogue()`, NOT `userList()` (2026-10-22, #820).** `userList()`
+   builds a row for every identity — about 470,000 on 8081 — for a pane that
+   shows ten. `userCatalogue(wanted)` answers the whole list, searched by any
+   part, while the register is held whole (`stats.userKeyTest()` null);
+   otherwise the delegation register's identities (bounded by
+   `delegation.maxRecords`) and the ONE person the search names EXACTLY — as
+   typed, in lower case, as `identityKeyOf()` normalises it — each built as the
+   one row `stats.userRow()` answers, and it says so: `search: 'exact'`,
+   `complete: false`, `exactKey`. `userEntry(key)` is one identity's row the
+   same way, which `activityFor()` reads. Nothing in either walks the
+   register. `tests/console_delegation_roles_scale.js` (D) holds it.
+
 ---
 
 3q. **`credential_graph.ts` is the same union asked a NARROWER question, and it
@@ -4353,7 +5497,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    no descendants, into a page explaining itself in two directions. The forward
    direction is what `/admin/delegation` and its map are for.
 
-## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
+## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au, and rule 3bt
 
 **THE RULES ARE THE ISSUANCE POLICY'S SINCE #305 (part D of #88).** This file
 gathers the FACTS about each requested scope — protected, declared,
@@ -4386,10 +5530,13 @@ reads.
 **THREE KINDS OF SCOPE, READ THREE WAYS.**
 
 * **This service's own protected scopes**, in BOTH modes: `admin:read`,
-  `admin:write`, the SCIM pair and the Shared Signals pair BY THEIR SETTINGS
-  (`scim.scopeRead`/`scopeWrite`, `ssf.authScopeRead`/`authScopeWrite` — a list
-  written out would go stale the day one was renamed, and the renamed scope
-  would be issued to anybody), and the debugger permission. Development already
+  `admin:write`, the SCIM pair BY ITS SETTINGS (`scim.scopeRead` /
+  `scopeWrite` — a list written out would go stale the day one was renamed,
+  and the renamed scope would be issued to anybody), the Shared Signals
+  scopes by their settings PLUS the fixed names `ssf.read` and `ssf.manage`
+  (`common/ssf_scopes.ts`, #334; renaming a setting adds a name and
+  unprotects neither — `ssf/CLAUDE.md`), and the
+  debugger permission. Development already
   gates the resource servers behind them; a gate any client can mint the key to
   is not one. The debugger permission keeps its own role rule on top
   (`debugger_access.ts`).
@@ -4406,8 +5553,10 @@ reads.
 **`declares()` IS THE RESOURCE SERVERS' QUESTION.** `/admin-api`
 (`declaredAdminScopes()`, `STS-API-0123`), SCIM (`STS-SCIM-0079`) and Shared
 Signals (`STS-SSF-0107`, OAuth and GNAP) ask it of every token, in the realm
-that issued it, so an allowance removed from a client stops the tokens it
-already holds. That is what replaced the realm gate's "only
+that issued it. Shared Signals asks the permission the call needs, and write
+includes read (`ssf/CLAUDE.md`). An allowance removed
+from a client stops the tokens it already holds. That is what replaced the
+realm gate's "only
 `sts-management-api`" (`STS-API-0111`, retired): one rule for both realms.
 
 **A LIBRARY, built by the composition root** beside `account_state`. It
@@ -4417,12 +5566,54 @@ resource servers can require it without a cycle. The debugger permission's
 spelling is written out rather than required from `debugger/`, for
 `applications.js`'s reason, and `tests/scope_policy.js` compares the two.
 
+**THE SCOPES A DELEGATED PERMISSION GRANT DECLARES (#1141, rcbj's decision,
+2026-10-29).** "Grant" in this section, its code and its docs is ALWAYS a
+delegated permission grant — a permission identifier on a client's
+`oauthDelegatedPermission` — and never RFC 6749's authorization grant
+(`grant_type`), Grant Management's or GNAP's; rcbj asked for the whole phrase
+every time, because the bare word is ambiguous across the specifications.
+For this service's own three APIs the client's half of "may it ask for this
+scope" is a DELEGATED PERMISSION GRANT on the API's resource object
+(#1139), Microsoft Entra ID's `requiredResourceAccess`, and NOT
+`oauthAllowedScope`. The
+vocabulary is `applications.js`'s `API_PERMISSIONS` — `admin:read`,
+`admin:write`, `admin:console`, `owner:read`, `owner:write` on
+`sts-management-api` (`urn:sts:admin-api:`), `account:manage` on
+`sts-account-api`, `report:use` and `report:admin` on `sts-report-api` —
+and `delegatedPermissionApiOf()` names a word's API. Three consequences, each
+deliberate:
+
+* **`declaredScopes()` takes these words OFF the list**, so listing one in
+  `oauthAllowedScope` declares nothing; `declares()` answers them from
+  `delegatedPermissionScopes()` alone, and the issuance fact
+  `SCOPE_DECLARED` asks `declares()` for them. Every resource server's
+  per-call re-check (`admin_api.ts`, `report_api.ts`, `account_api.ts`) is
+  `declares()`, so a revoked delegated permission grant stops the tokens a
+  client holds.
+* **The permission must be defined by THAT API's own object**
+  (`forPermission(id).identifier === api`): an operator entry defining the
+  same identifier does not stand in for it.
+* **A FIXED `urn:sts:` BASE, NOT THE API'S URL**, because an own API's
+  audience is a URL under any name this service is reached by (#1140) and a
+  delegated permission grant must not depend on a host. A client still asks
+  for the BARE word with `resource`, which is the path #1030 found never
+  consulted a delegated permission grant; it does now. A client asking for
+  the full identifier gets the base as `aud` (`audienceScopes()`'s rule),
+  which the API's own audience check refuses — the bare word is the way.
+
+Roles are unchanged as the subject's half (3u, `role_permissions.ts`): a
+delegated permission grant says what a client may ASK for, never whether its
+subject holds it.
+
 **NO MIGRATION.** A persisted `sts-management-api` or `sts-admin-console` seeded
 before #110 is left alone by `seedInternalApplication()` and carries no
 declaration: add `admin:read admin:write` to its `oauthAllowedScope` on the
 console (the application's page — the console's own gate is a session, which
 this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
-tokens; or delete the entry and restart.
+tokens; or delete the entry and restart. **The same rule meets #1139**: a
+store persisted before it keeps `sts-management-api` as the CLIENT it was
+written as (a seeded row never overwrites), and gains `sts-api-client` beside
+it; deleting the old entry and restarting reseeds it as the resource.
 
 ## 3az. `delegation_policy.ts`: who may act for whom, and as what (#108, 2026-09-23; #186, 2026-10-03)
 
@@ -4531,7 +5722,14 @@ over 20,976 combinations, `tests/exchange_policy_exhaustive.js` over all
 2,488,320 — the policy alone, no directory; `tests/delegation_policy.js`
 gathers the facts from real entries in both modes and drives WS-Trust's
 `handleRst()`; `tests/token_exchange_product.js` and the local job
-`tests/vendored/sts_delegation_policy.js` are every outcome at the doors.
+`tests/protocol/sts_delegation_policy.js` are every outcome at the doors.
+
+**A FOURTH CALLER, AND NOT A FOURTH REGISTER (#1181).** AuthZEN's OAuth
+token-exchange binding (`authzen/authzen_exchange.ts`) asks `decide()` the
+question the token endpoint asks, for an exchange another authorization
+server is about to perform; `DecideQuestion.authzen`, which no local door
+sends, is carried into the facts untouched and written to the request only
+when present (`authzen/CLAUDE.md`). Nothing here reads it.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 
@@ -4559,15 +5757,17 @@ SAYING.** Every attribute here used to be either RECORDED (what happened) or
 DECLARED (what somebody said, which nothing reads). These are declared AND read:
 `saml/saml2_sso.ts` and `saml/saml11_sso.ts` resolve every one of their five
 settings through `settingFor()` on every assertion. They join
-`appFederationRelationship` and `appAuthnMechanism` on the short list of
-declarations that actually do something — and unlike those two, what they change
-is not WHERE somebody signs in but what the document they get looks like.
+`appFederationRelationship` and `appAuthnMechanism` (`appAuthnPolicy` since
+#1148) on the short list of declarations that actually do something — and unlike
+those two, what they change is not WHERE somebody signs in but what the document
+they get looks like.
 
 **THE MAPPING IS BUILT FROM THE SCHEMA, ONCE, AND THERE IS NO SECOND TABLE.**
 `OVERRIDE_ATTRIBUTES` is derived from the rows' own `overrides` members at
 require time; `settingFor()` reads it, `overridableSettings()` publishes it, and
 `/admin/saml-assertions` and `/admin/applications/new` both draw from that.
-Adding an eleventh override is a row in `SCHEMA.attributes` and nothing else — a
+Adding an eleventh override is a row in `models/directory/application.tsp` and
+nothing else — a
 map written by hand here would be the first thing to disagree with the schema.
 
 **`config` IS PASSED IN**, which keeps the resolver testable with a stub. (It
@@ -4582,7 +5782,8 @@ a list would be a question with no rule for which value won.
 **IT IS TWENTY-ONE ATTRIBUTES ACROSS FOUR PROTOCOLS SINCE THE SECOND PASS**, and
 the mechanism did not change to take them: SIX OAuth 2.0 / OIDC per-client
 settings, the SAML ten, WS-Federation's assertion lifetime, and the group
-claim's four. Each is a row in `SCHEMA.attributes` carrying `overrides`, and
+claim's four. Each is a row in `models/directory/application.tsp` carrying
+`overrides`, and
 that is the whole of what adding one costs — `settingFor()`, the New Application
 form, both defaults pages and `GET /admin-api/saml-assertions` all read the same
 derived table.
@@ -4641,15 +5842,28 @@ the estate this service issues into, decided once, and a per-application answer
 would be a question two applications could not meaningfully answer differently.
 And not a socket, a port, a key or a limit anywhere.
 
-**AN APPLICATION DECLARED FOR SAML GETS AN ENTITYID.** `createApplication()`
-fills `samlEntityId` from the identifier when `saml2` or `saml11` is ticked and
-no entityID was given — because that is what the same application would have got
-by ARRIVING on its own, where the registry files a service provider under its
-entityID. Without it the declaration was a note and nothing more: `samlEntityId`
-is what both SAML modules file an application under and what their
-per-service-provider metadata is published for. It is a default and not a rule —
-an explicit value wins, and nothing is refused, because this service accepts any
-entityID on sight everywhere else.
+**AN APPLICATION DECLARED FOR A FAMILY GETS THAT FAMILY'S PRIMARY NAME (#393;
+SAML only, from 2026-08-27).** `createApplication()` calls
+`fillPrimaryNames()`, which writes the identifier into each ticked family's
+identifier attribute that was left empty — `oauthClientId`, `samlEntityId`,
+`wsfedRealm` and the rest — because that is what the same application would have
+got by ARRIVING on its own, where a sighting files it under the string it
+presented. Without it a SAML declaration was a note and nothing more, and an
+OAuth client's creator typed one string three times (identifier, name,
+client_id). It is a default and not a rule: an explicit value wins, and a list
+typed on the create is the WHOLE list (the identifier is not forced in beside
+it), so an application that answers to several client ids keeps working. The
+attributes stay `multi`. `updateApplicationFields()` fills a family NEWLY
+declared by a save, once, and only when the body did not name the attribute; a
+re-save of the same families writes nothing, so a deliberately cleared
+client_id stays cleared. **Three identifier attributes are never filled**
+(`NOT_THE_REGISTRY_IDENTIFIER`): `oauthTlsClientAuthSubjectDn`, because RFC 8705
+would then match a subject nobody has; `ldapBindDn`, a DN rather than the key;
+and `spiffeWorkloadId`, a `spiffe://` URI filed under `ou=spiffe`. The field
+grid marks the filled kind `primaryName`: the create form's simplified view
+leaves it out, and the application page folds it into the advanced view while
+its only value is the identifier. Existing entries are not rewritten (no
+migration).
 
 ---
 
@@ -4731,6 +5945,30 @@ rather than being an error.
 
 ### `appAuthnMechanism` — the THIRD of that group, and the generalisation of the other two
 
+**#1148 (2026-10-29): GONE, WITH `appMfaMechanism` BELOW, AND REPLACED BY ONE
+REFERENCE.** `appAuthnPolicy` (`single`, checked at the write against
+`default` and the realm's named policies) names a NAMED AUTHENTICATION POLICY
+(3bd, below), whose first-factor list is what this attribute's list was and
+whose second-factor list is what `appMfaMechanism`'s was. What follows is the
+history and the behaviour of the LIST, which is unchanged: it is read through
+`authn_mechanisms.ts`'s and `mfa_mechanisms.ts`'s `allowedOf()` from
+`authn_policy.ts`'s `mechanismsFor()` instead of off the entry.
+
+**#457 (2026-10-06): A LIST OF THE MECHANISMS THE APPLICATION ALLOWS, AND
+ENFORCED.** What follows describes the single routing value it was. Now it is
+`multi`, one checkbox per mechanism, a value checked at the write
+(`CHOICES_CHECKED_HERE`); none listed allows every one. Every BROWSER sign-in
+to the application is put to the issuance policy with what the session
+satisfies — `common/authn_mechanisms.ts`, a leaf that reads an authentication
+event's authority, `amr`, `acr` and credential kind (`federation`,
+`spnego`, `password`, `password-mfa`, `webauthn` off the credential and not
+`hwk`, which a wallet also sets, `wallet` off `pop`) — and its
+`authn-mechanism` rule decides (`xacml/CLAUDE.md`). A session on the wrong
+mechanism is re-prompted, not refused: OAuth's authorization endpoint
+(`STS-OAUTH-0945`, `login_required` for prompt=none), SAML 2.0 and SAML 1.1
+(a held request, one trip), WS-Federation (one trip, a marker on the return
+address). Non-browser doors are not covered (rcbj).
+
 Added 2026-08-26. The pair above can say "send my people to a federated identity
 provider" and can say nothing else, because until then there was nothing else to
 say: every way of authenticating somebody here was either this service's own
@@ -4770,6 +6008,23 @@ follows:
 screen for every application whether or not one declares this, so what the
 attribute changes is the DEFAULT ROUTE and nothing about what is then
 accepted — exactly what `appFederationRelationship` changes.
+
+### `appMfaMechanism` — the FOURTH of that group: which second factors (#475)
+
+**Since #1148 the second-factor list of the named authentication policy
+`appAuthnPolicy` names, as above.** The second factors an application allows
+(rcbj, 2026-10-07), `multi`, one checkbox per second-factor mechanism of the
+authentication policy, checked at the write (`CHOICES_CHECKED_HERE`). **It only
+narrows the realm's policy and never says a second factor is needed**; none
+listed leaves the realm's. `common/mfa_mechanisms.ts` is its leaf,
+`authn_mechanisms.ts`'s arrangement: the ids (held to `authn_policy.ts`'s
+MECHANISMS by `tests/mfa_mechanism_enforcement.js`), what an EVENT gave — only a
+local event with `acr` `mfa`, named by the credential that answered last,
+`webauthn` only after a first factor because a passkey alone is a first factor —
+the union over a session, and the entry's list. `issuance_gate.js`'s
+`mfaFactsOf()` sends the two bags on #457's four browser kinds, and only when a
+second factor was given: a one-factor session is not the rule's to deny. The
+sign-in side is `authn/CLAUDE.md`; the rule, `xacml/CLAUDE.md`.
 
 ## WHERE THE ONE CRYPTO MODULE IS DESCRIBED TO A READER
 
@@ -4981,6 +6236,25 @@ consent revokes their sessions' tokens, each ends at its next renewal, and the
 person signs in again and is asked — nobody is locked out, and the reply says
 which surface it was.
 
+### A global consent that answered is recorded, and decides nothing (#537)
+
+The override is not a record, and that stays true: `outstanding()` never
+reads one about the person. But `/portal/consents` had nothing to show a
+person for an application whose scopes an administrator agreed to for
+everybody. So the authorization endpoint calls `noteApplied()` once consent
+has passed, with the scopes a global consent answered and the person had not
+agreed to themselves. That writes `oauthConsentApplied` on their entry, in
+`oauthConsent`'s grammar, the first time for each (application, scope) only:
+a sign-in costs a directory read and, the first time, one write.
+
+`appliedConsentsOf()` is what the portal draws. It lists only the records
+whose global consent still stands and that the person has not also agreed to
+themselves. Taking the global consent away hides a record rather than
+deleting it, so it shows again if the consent comes back. The directory hooks
+(`appliedConsentsOf`, `addAppliedConsent`, `removeAppliedConsent`) are
+OPTIONAL in the slot: without them nothing is recorded and nothing is listed.
+The attribute is merged by value across nodes (`directory_merge.js`).
+
 ### Two more things
 
 **THE RULE ABOUT WHAT A SCOPE MAY BE LIVES IN `applications.js`.** RFC 6749
@@ -5002,6 +6276,86 @@ is a subtree per realm, and `applications.js`'s registry is that subtree's
 `ou=applications`. So a consent agreed in `acme` is invisible in the default
 realm without one line in this file mentioning a realm — which is the property
 to check a new store against, answered here by having no store.
+
+**WHERE THE DIRECTORY IS A WINDOW, THE RECORDED HALF IS READ A PAGE AT A TIME
+(2026-10-22, #820).** `register()` walks every holder of `oauthConsent`
+through the synchronous bridge and opens each entry, which on 8081 was about
+470,000 people per request. `recordedPageAsync(spec)` asks the directory's two
+optional hooks instead — `consentHoldersPageAsync(offset, limit)` (the count
+from the asked names' index and one page of PEOPLE) and
+`consentHolderNamedAsync(name)` — and answers null where they are absent or
+answer null, so the old path is unchanged in memory. Its paging is over
+people, its rows newest first per page, its counts of consents the page's
+(`countsOf: 'page'`), and its search EXACT: a whole username asked by name,
+and a client_id or scope looked for among at most `CONSENT_SEARCH_SCAN`
+holders, the answer's `search.complete` saying whether that was everybody.
+`register({ recorded: false })` answers the overrides alone. The people
+count is a Set now; it was an O(P²) reduce. `tests/console_consent_scale.js`.
+
+## The token list, the metrics and the dashboard, read from the store (2026-10-22, #820)
+
+On demand the token register holds at most 20,000 records a process
+(persistence, *A store that grows with every person is read on demand*), so
+`issuedSets()` answered with what the answering worker happened to hold, and
+Metrics and the dashboard built `userRowsAsync()`, a row per person, to keep
+four numbers. `admin_stats.js` answers each from the store now:
+
+* **`issuedSetsAsync({ session })`** reads one session's every record through
+  the register's `sid:` index, or the newest `ISSUED_NEWEST` (500) records by
+  when each row was written, with the store's count as the total. It says
+  what it covers (`coverage`: `source` `held` or `store`, `newest`,
+  `session`, `complete`, `unread`). A store that cannot be asked falls back to
+  what is held and says so (`unread`, `STS-ADMIN-0890`), never an empty list.
+* **`issuedSetByKeyAsync(setKey)`** finds a `set:<id>` through the index key
+  `set:` the token store now files (the issuer states the set id once, at
+  issuance), and a `one:` set by its key.
+* **`userCountsAsync()`** gives `snapshot().users`' four counts with no row:
+  the bounded sources are walked as `buildUserRowsResolved()` walks them, and
+  the token holders, the one source that grows with the population, are
+  counted by the partition's size and its `client` index (`tokenHolders`'
+  `indexBy`), maintained as rows are written in every process. A maintained
+  counter (merge-own) and a scheduler job were rejected: a write and a fan-in
+  per new holder, or the same O(people) walk every few minutes.
+  `snapshot({ userCounts })` takes them.
+
+Held whole (memory, development, in-process tests) each answers what its
+synchronous twin answers. `tests/console_tokens_metrics_scale.js`.
+
+### The token holders on demand (2026-10-22, #820)
+
+`admin_stats.tokenHolders` — one row per identity a token was issued to,
+what `/admin/users` lists beside the register — was held whole, so every
+request worker read back every row at its start (562,120 on 8081, a
+worker's start from 16 s to 52 s). It is `onDemand` with
+`keysResident: true` and `maxEntries` 20,000, so a process holds the rows it
+was asked about and the key digest of every row:
+
+* **`has()` and `size` answer from the digests with no read.** That is what
+  the console's synchronous readers ask (`knownUserKeys()`, `userKeyTest()`,
+  `userCountsResolved()`), so none of them had to become asynchronous; the
+  cost is a digest per holder per process (about 45 MB at 562,000).
+* **A write never waits on a read.** `noteTokenHolder()` runs for every JWT
+  and asks `peek()` — `realms.js`'s new facade member, what is held and never
+  a read of the store. A holder not held is written blindly (`firstAt` now,
+  `lastExp` the token's plus the headroom), and the store's `mergeRow` joins
+  it with the stored row under the row's lock: the earliest positive
+  `firstAt`, the latest `lastExp`, and a client once a client. The refresh
+  grant and the code grant warm the holder's row first
+  (`stats.warmTokenHolders()`, one `readMany` beside the other warm-ups), so
+  the blind write is the rare case. `warm()` now works on a key-resident
+  store: it asks only for a key whose digest is held, and drops a digest the
+  store answers absent.
+* **The counts are of every holder; the lists are of the held ones.**
+  `userCountsAsync()` counts the holders by the resident digests and the
+  clients through the store's `client` index (`lookupEntriesAsync()`, never
+  the blocking `lookup()`; a failure is `STS-ADMIN-0895` and the held clients
+  are counted). `collectUserKeys()` and `buildUserRowsResolved()` list the
+  holders this process holds, because a digest names nobody.
+* **The one-time backfill and its job (`oauth2.token-holders-backfill`) are
+  gone**: on demand they would walk the whole register, and the holders of
+  older tokens are written again by their next token.
+
+`tests/token_holders_on_demand.js` holds it.
 
 ## `roles.js` and `issuance_gate.js`: the fourth register, and the leaf that asks about it
 
@@ -5044,6 +6398,12 @@ across from the answer.
 
 ### `EVERYBODY` is what makes this off by default without being absent
 
+**Except for a principal that arrived through a Kerberos trust** (#430, rcbj
+2026-10-19): `rolesOf()` with `crossRealm: true` answers no built-in role at
+all, and a configured one only by the whole name or a filtered SID
+(`sids`). `kerberos/CLAUDE.md` (*A principal that arrived through a trust
+holds only its grants*) argues it and its consequence.
+
 Six roles are BUILT IN, computed from the context of the decision, and in no
 container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
@@ -5067,7 +6427,7 @@ it exists in the realm most deployments only ever have.
 `/xacml/pep/*` and `POST /xacml/pip` — the documents this service enforces its
 own access with, and a named person's directory attributes. `XACML_USER`
 reaches the four XACML endpoints proper. One group granting both would make
-admitting a caller to the demonstration surface silently admit it to those,
+admitting a caller to the XACML surface proper silently admit it to those,
 which is the collapse the split exists to prevent.
 
 **A PERSON IS GRANTED ONE BY GOING IN THE GROUP**, not by a role entry: the
@@ -5091,7 +6451,7 @@ The consequence for a reader is the sentence `/admin/ldap/roles` and
 state of a service refusing nobody**, not a sign that the feature failed to
 load.
 
-### A role authorizes permissions (#303, part B of #88, 2026-09-27)
+### 3bq. A role authorizes permissions (#303, part B of #88, 2026-09-27) — and rule 3bs's facts (#304)
 
 A THIRD relation, beside membership and requirement, stored on the ROLE entry
 because rcbj decided it lives there: `rolePermission` names what a holder may
@@ -5131,7 +6491,8 @@ is written down.
 **ADMIN_READ AND ADMIN_WRITE ARE THE TWO CONSOLE ROLES.** Configured entries
 seeded in every realm (`seedConsoleRoles()`, beside the internal
 applications), each authorizing its own admin scope, each held by the
-realm's `sts-management-api`. Their groups are `admin.readGroup` /
+realm's `sts-api-client` (`sts-management-api` until #1139 made that the
+management API's resource object). Their groups are `admin.readGroup` /
 `admin.writeGroup`, read when the entry is read rather than stored; a PERSON's
 membership is answered by the console roster (`admin_rbac.ts`), which carries
 development's open console and the bootstrap administrator's claim to the API
@@ -5147,9 +6508,75 @@ each authorizes one native permission, is seeded in every realm, cannot be
 deleted and cannot authorize anything else. DEVICE_COMPLIANCE is otherwise an
 ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 (rcbj's decision): no client is the MDM feed until an operator adds it, and
-`sts-management-api` is not one — the separation #164 decision 2 made.
+`sts-api-client` is not one — the separation #164 decision 2 made.
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
+
+#### A role conferred by a client (#454, 2026-10-06) — rule 3cc
+
+**A THIRD WAY OF HOLDING A ROLE: CONFERRED BY A CLIENT (#454, 2026-10-06).**
+A person holds a role as a member (or, for the console roles, through the
+roster), and an application as a member for its own `client_credentials`
+token. `roleConferredBy` on the role entry adds the third: every PERSON who
+signs in through a named client holds the role **on that client's token and
+no other**. It is a fact about the TOKEN, so:
+
+* **It is mixed in, not stored on the person.** `conferredOn()` in
+  `role_permissions.ts` adds the client's roles to the person's own at
+  issuance (`narrowScope()`, whose context carries the client) and on every
+  call at `/admin-api` (`effectiveRoles()`, read NOW in the issuing realm, so
+  taking a client off the role takes it off that client's tokens at once).
+  The issuance policy decides on the union as it did on the person's roles.
+* **Never for a client's own token**, which would be a membership nobody
+  wrote down; and not for a subject that did not authenticate.
+* **Not the PIP's**: `configuredRolesOf()` answers what a SUBJECT holds, and a
+  conferred role is not one — the built-in roles' reason.
+* **Two kinds of role cannot be conferred** (`roles.write()`): one only
+  applications may hold (`STS-XACML-0088`), and the two console roles, whose
+  people are the roster's (`STS-XACML-0089`) — the reason a person cannot be
+  written onto them is the reason a client cannot hand them out.
+* **`write()` keeps `roleConferredBy` when a caller does not name it.** Every
+  caller writes the whole record and all but one predate the attribute; a
+  describe-role that dropped it would silently stop the console's client
+  conferring.
+
+**ADMIN_CONSOLE is the native role it was built for**: it authorizes
+`admin:console`, the scope of the console's own operations under
+`/admin-api/console` (`mgmt-api/CLAUDE.md`), has no members, and is seeded
+conferred by `sts-admin-console`. So every person who signs in to the console
+is issued `admin:console` beside whatever Admin Read or Admin Write they hold
+themselves, and the gate asks for both kinds together through the
+access-control document's every-one-of conjunct (`xacml/CLAUDE.md`).
+`admin:console` is one of `scope_policy.ts`'s `ADMIN_SCOPES`, so a client must
+declare it as well.
+
+**THE BOOTSTRAP ADMINISTRATOR'S CLAIM IS MADE AT ISSUANCE TOO (#446,
+2026-10-05).** That account holds no console role until it has claimed the
+console (#103, `admin-ui/CLAUDE.md` 8a), and the server-rendered console made
+the claim from its own callback. A console that is a static client of
+`/admin-api` has no callback on the server, so until the claim `heldRoles()`
+would narrow `admin:read` and `admin:write` off the token the console needs
+and nobody could ever claim it. `noteConsoleSignIn(subject, signIn)` makes the
+claim when the CONSOLE'S OWN CLIENT is being issued a gated permission, and the
+authorization endpoint calls it before it narrows.
+
+* **It is `admin_rbac.noteConsoleSignIn()`, so it is the same rule**: in
+  product only a `pwd` sign-in this service itself vouched for claims
+  anything. A federated sign-in, a Kerberos one or a security key as that
+  account claims nothing and is narrowed as before. Development closes the
+  window on any sign-in, as it did.
+* **Only the console's client.** Another application asking for `admin:read`
+  on that account's session is not a sign-in to the console.
+* **The realm is the ambient one**, where the code flow ran: a realm's own
+  `admin` closes that realm's window and no other (#32).
+* **Not at `tokenSet()`**: a redemption or a refresh has no sign-in in hand.
+  The claim was made when the code was issued, and `tokenSet()`'s narrowing
+  reads the roster after it.
+
+`tests/console_claim_at_issuance.js` holds the rule against the real roster.
+**The call from the authorization endpoint is not driven end to end by any
+test yet**: no client asks for the admin scopes through the code flow until
+the console's browser sign-in exists.
 
 ### Roles that belong to ONE application (#310, 2026-09-28)
 
@@ -5172,6 +6599,41 @@ name — `rolePermission` (it may authorize only its own application's
 permissions, `STS-ADMIN-0831`), the PIP's role designator — and outside it by
 its name inside the application. `roles.rolesOf()` takes `application(s)` for
 the first reading and `ids: true` for the second.
+
+### A role has owners (#604)
+
+`owner` on the role entry: people and groups of the realm who answer for the
+role, the rule a group's owners follow (#603). `addOwner()` and
+`removeOwner()` resolve through the directory's `resolveOwner` hook (the
+service account's resolver), refuse what names nobody (`STS-XACML-0174`), no
+owner (`0173`), a value not listed (`0176`) and more than `MAX_OWNERS`
+(`0175`), and write through `write()`. **`write()` keeps the owners when a
+caller does not name them** (`given.owners === undefined`), for
+`conferredBy`'s reason: every older caller writes the whole record. An owner
+grants nothing; `ownersOf()` reports one naming nobody with `kind: ''` (since
+2026-11-13 a delete takes the DN off, so only a value written before that or
+by hand), and
+`entryOf()` answers the role's directory entry for its page.
+
+**A DELETED OWNER OWNS NOTHING, AND A DELETED CLIENT CONFERS NOTHING
+(2026-11-13, #1612's review).** "Keeps what the entry holds" is also why the
+first pass of #1612 left both behind: `forgetMember()` writes the role back
+without naming `conferredBy` or `owners`, so both survived the delete of what
+they named. `forgetConferrer(identifier)` takes a deleted application off every
+role it conferred (`STS-ADMIN-0921`), and `forgetOwner(dn)` /
+`renameOwner(from, to)` take a deleted person's or group's DN off every role's
+owners or move a renamed one's (`STS-ADMIN-0922`); `applications.forgetOwner()`
+/ `renameOwner()` do the same for `appOwner`, off the kept listing. The
+directory calls all of them where it deletes and renames
+(`ldap/CLAUDE.md`, *the four structural rules*), and writes the audit rows:
+`roles.unconfer` (registered in `audit.ACTIONS` with `roles.confer` that day —
+`admin_actions.ts` had written both through a ternary the vocabulary test could
+not read) and each register's remove-owner action.
+
+**An application has owners too (#604)**: `appOwner` on its entry, written by
+`applications.addOwner()` and `removeOwner()` alone (in no EDITABLE row, so the
+field grid never draws it), with the same rules and its own codes
+(`STS-REG-0353` to `0358`), resolved through the directory's `resolveOwner`.
 
 ### `roles.js` is a LEAF and must stay one
 
@@ -5249,8 +6711,8 @@ and it is worth knowing which because they are three different kinds of answer:
 file**, and that is the lesson the bug in `authn.js`'s sign-in gate taught: a
 suite that narrows applications only to CONFIGURED roles cannot see a wrong
 answer in `holds()` at all, because `configuredRolesOf()` answers those the
-same whatever the context says. `tests/vendored/sts_roles.js` is the configured
-half and `tests/vendored/sts_roles_builtin.js` is the computed one, and neither
+same whatever the context says. `tests/protocol/sts_roles.js` is the configured
+half and `tests/protocol/sts_roles_builtin.js` is the computed one, and neither
 substitutes for the other.
 
 **`EVERYBODY` HAS NO NEGATIVE CASE AND THAT IS A PROPERTY OF THE ROLE.** Its
@@ -5382,7 +6844,7 @@ keys, and every document that carries or describes the key is served
 that header too.
 
 **THAT SECOND RULE IS ENFORCED SINCE 2026-09-10 AND WAS BEING BROKEN WHEN IT
-STARTED BEING.** `tests/vendored/sts_metadata_anonymous.js` asks it of every
+STARTED BEING.** `tests/protocol/sts_metadata_anonymous.js` asks it of every
 metadata document at once — nineteen of them — and `/sts/cert` was the one
 served without the header: a WS-Trust STS certificate this process mints at
 startup and throws away at exit, cacheable by anything between here and a
@@ -5558,7 +7020,7 @@ key-encryption key from the OpenBao container: a realm created at runtime had
 other and each written down. `/oauth2/jwks` answered a different key per worker,
 so an assertion encrypted to the key one worker published would not decrypt on
 another — which is how it was found, as an "intermittent" OAEP failure in
-`tests/vendored/sts_jwt_bearer_grant.js` that had been written down as a flake.
+`tests/protocol/sts_jwt_bearer_grant.js` that had been written down as a flake.
 
 **PRODUCT MODE WITH REQUEST WORKERS HAD THIS ALL ALONG.** In development with no
 keystore `storedFor()` answers null, so the channel worked and nothing anywhere
@@ -5720,7 +7182,18 @@ holds.**
   (`adoptStoredKeys()`), published over the pool marked `confirmed` so
   `request_pool.js`'s `receivePublishedKeys()` adopts it instead of arbitrating
   it away. The same set is JOINED: a member one side lacks (post-quantum keys,
-  the three encryption key pairs) is taken from the other.
+  the three encryption key pairs) is taken from the other. A higher generation
+  replaces that row only when it is the same birth certificate, or names that
+  certificate in `generations.parentCerts` or on a retired standby entry
+  (`supersedes()`). A generation minted from a set the store, or the key
+  channel, already refused does not win: `replaceKeySet()` publishes it marked
+  confirmed, and `receivePublishedKeys()` refuses that publish and sends the
+  set it holds back. That is what kept `sts_saml_interop_pysaml2` verifying
+  every response against a certificate the service had already stopped signing
+  with. Signer groups on a publish that is refused are still joined onto the
+  set that is kept (`offeredSignerGroups()`): `joinSignerGroups()` offers the
+  worker's own blob, often a generation behind, and without the join the JWKS
+  never gains them (`sts_signer_groups`, and the CRL that realm then publishes).
 * **A CERTIFICATE AUTHORITY ROW IS A THREE-WAY MERGE** against `pkiBase`, the
   ciphertext this process last read or wrote — equal ciphertexts are the fast
   path, since every seal has a fresh IV. `pki_merge.js` has the rules: a
@@ -5810,9 +7283,11 @@ thread and its lifetime*, has the numbers either side of the fix).
 * **Node's own asynchronous door**: RSA and EC generation is node's OpenSSL
   with an asynchronous door of its own, on libuv's thread pool, which costs no
   IPC and no child — the door the post-quantum keys use too since #363. 3aa's
-  reason for keeping `pki_authoring.ts` synchronous is about the post-quantum
-  encoders and is untouched — and that pane's SLH-DSA signature (13.7s
-  measured) is what `cluster.nodeTtlMs`'s new default is sized against.
+  reason for keeping `pki_authoring.ts` off the worker pool is about the
+  post-quantum encoders and is untouched — and that pane's SLH-DSA signature
+  (13.7s measured) is what `cluster.nodeTtlMs`'s new default was sized against,
+  until #1464 moved it and the key generation onto libuv's thread pool through
+  the same primitive (`common/crypto_impl/CLAUDE.md`).
 
 ### `secrets.js` — the key-encryption key
 
@@ -5999,6 +7474,26 @@ KEYS* block; what a caller needs:
 
 `docs/encryption-at-rest.md` is the operator-facing half.
 
+### A START'S UNWRAPS GO TOGETHER, OVER KEPT CONNECTIONS (#639, 2026-10-15)
+
+With a KMS as the KEK every DEK is one network call at every start of every
+process, and they were awaited one after another, each on a NEW TLS
+connection: `node-vault` builds one `https.Agent` from the options
+`secrets.js` hands it, and without `keepAlive` that agent handshook — with
+the client certificate — per call. 204 data keys on the 50.2M-entry stack,
+0.55–0.9 s of each process's start. Now `vaultTls()` adds `agentOptions: {
+keepAlive: true, maxSockets: 8 }` (every Vault call reuses a few
+connections; an idle one closes on the server's timeout and holds nothing
+open), and `adoptDekRow()` unwraps a row's new DEKs `UNWRAPS_AT_ONCE` (8) at
+a time while `startOnce()` adopts `DEK_ROWS_AT_ONCE` (4) rows at once — rows
+are a scope and realm each, and nothing in one row's adoption reads
+another's. What each unwrap answered is applied afterwards in the row's own
+order, exactly as the loop applied it (a destroyed DEK stays destroyed, a
+newer wrap wins, `chooseActive()` after), and a start still stops on the
+first failure. In a private stack of that shape: the keystore's part of a
+start 0.78–1.0 s before, 0.18–0.36 s after (`persistence/CLAUDE.md`, *What a
+start costs at fifty million entries*).
+
 ### ROTATION, RE-SEALING, DESTRUCTION AND A ROTATED KEK (#391 P2)
 
 rcbj's decision: a yearly scheduled rotation of every DEK, a re-encryption job,
@@ -6014,10 +7509,11 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   replaces is SUPERSEDED: it opens, nothing new is sealed under it.
 * **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
   realm and class, so `reseal(cipher)` opens under the old DEK and seals under
-  that slot's current one. The store does the walk (`countSealed()` and
+  that slot's current one. The store finds the rows (`countSealed()` and
   `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
   row with a change-log row, over `sts_keys`, `sts_minted`,
-  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  `sts_ldap_entries` and `sts_cluster_secrets` — the directory by its
+  data-key index since #623, below); `resealOwnRows()` rewrites
   this file's own key and PKI rows. **The process running the pass applies the
   directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
   through `applyDirectoryChange()`): the applier skips a process's own change
@@ -6025,6 +7521,19 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   naming the old DEK would be written back by its next flush — after the DEK
   may be gone. A minted row is held in the clear and re-sealed at its next
   flush; a cluster secret is held opened.
+* **EVERY OTHER PROCESS TAKES A RE-SEALED KEY-SET ROW (#704)**, cluster or
+  not. `resealOwnRows()` writes the running process's copies; until #704
+  `applyStoredChange()` read a key row only where the store ARBITRATES, so
+  with `cluster.mode=off` a request worker (or the front, had a worker run
+  the pass) kept its copy sealed under the superseded DEK, and at the
+  destruction lost its signing keys until it restarted — the count saw only
+  the store. Where the store does not arbitrate it now reads the row and
+  `adoptResealedKeyRow()` takes the new ciphertext ONLY when it seals the set
+  already held: a re-seal decides nothing between two sets, so the reason the
+  early return exists does not reach it, and a different set or a removal is
+  still left to the pool's key channel. A certificate-authority row was
+  already adopted wherever it merges. This is what lets
+  `keys.data-key-reencrypt` run on any process (`cluster/CLAUDE.md`).
 * **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
   `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
   (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
@@ -6043,8 +7552,44 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
   rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
   is kept — nothing a digest names outlives the process there.
+* **THE HMAC KEY EACH LABEL DERIVES IS KEPT (#760, 2026-10-20)**, beside the
+  input it came from (the digest key, or the KEK's bytes), which is compared
+  on every call: HKDF ran per digest, and the minted store asks one for every
+  row it flushes, prefetches or applies — about 5% of a request worker under
+  a sign-in load. A new digest key or KEK derives again at once and the
+  digests are the ones they always were. It holds nothing the process does
+  not already hold in the clear (the KEK and the digest key are resident),
+  so it is outside `keys.plaintextRetention`'s claim, which is about
+  decrypted signing keys. `keys.derived-digest-keys` on `/admin/caches`,
+  label only; `tests/keyed_digest_derivation.js`.
 * **The settings are per process** (`perProcess`): the jobs run once for the
   service, and a realm cannot carry them.
+* **A PASS WITH NOTHING TO DO READS NOTHING (#623).** On 8081, at 1.5M
+  entries, every hourly pass walked the whole directory twice (re-seal, then
+  count), opening every row on the front process — about 90 s of its thread
+  — for the week after a rotation while the replaced keys waited out the
+  retire period, and re-sealed nothing. Two changes:
+  * `reencrypt()` SKIPS the re-seal and the count when every superseded key's
+    last recorded count (`supersededDeks()` carries `values` and
+    `countedAt`) is 0, that count was taken AFTER the key was superseded
+    (before, the key was still sealing), and no key is due to be destroyed.
+    A key that IS due is re-sealed and counted again in the pass that would
+    destroy it — the #391 rule, a key destroyed only on a zero taken in that
+    pass, is untouched, and a value written back under the key after its
+    zero (a stale copy flushed by some process) is moved then.
+  * THE DIRECTORY HAS A DATA-KEY INDEX (schema version 17,
+    `persistence/CLAUDE.md`): every writer records the keys an entry holds
+    values under in `sts_ldap_entries.dek_keys` (`directory_codec.js`'s
+    `dekKeysOf()`: the blob's key and each inner value's), triggers keep
+    `sts_ldap_dek_counts`, a re-seal reads only `dek_keys ?| <ids>`, and a
+    count reads the counters. Entries written before the column read NULL —
+    keys NOT KNOWN — and both jobs first catch the index up
+    (`store.index()`, the driver's `indexSealed()`: a page at a time through
+    a partial index, opened, yielding between pages, for at most
+    `INDEX_BUDGET_MS`, 10 s, per pass). Until it is complete the store
+    REFUSES a count (`STS-STORE-0080`) rather than answer it short, so the
+    re-encryption job re-seals what the index finds and destroys nothing,
+    and the count job records nothing.
 
 ### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
 
@@ -6058,7 +7603,10 @@ forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
 * **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
   scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
   every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
-  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  a row holding two counts two. The directory's part of both is a read of
+  `sts_ldap_dek_counts` since #623, never a walk; the other tables' LIKE and
+  regexp scans are still linear in those tables (`sts_minted` above all),
+  which is what the re-encryption pass's skip spares the hourly run. `keys.data-key-count` runs it daily and by
   hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
   and `countedAt` on the record and its row, merged newest-count-wins in
   `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.
@@ -6240,7 +7788,7 @@ module about certificates would be a require nothing needs.
 ### THE MECHANISM IS THE VENDORED MODULE'S AND THE POLICY IS HERE
 
 That is `crypto.js`'s own split, made a second time and for the same reason.
-`common/vendored/x509.js` is the parent project's PKI code, byte-identical —
+`common/crypto_impl/x509.js` is the parent project's PKI code, byte-identical —
 already held to roughly 240 certificates against OpenSSL over there, already
 what `spiffe/spiffe_ca.ts` mints every X509-SVID with. What this file adds is
 what is true of THIS service: which three tiers, which realm they belong to,
@@ -6294,7 +7842,7 @@ it is. Nothing those callers did before this change stopped working.
 ~~**WHAT IS DELIBERATELY NOT A LEAF**, said here because an absence is what
 nothing reports: the eleven post-quantum keys per realm, which come from
 `common/pq_jose.js`, whose independence from the vendored encoder is the point
-of it — see `common/vendored/CLAUDE.md`. It is stated on `/admin/pki` rather
+of it — see `common/crypto_impl/CLAUDE.md`. It is stated on `/admin/pki` rather
 than left to be discovered.~~
 
 **THE POST-QUANTUM KEYS ARE LEAVES TOO, SINCE 2026-09-13, AND THE INDEPENDENCE
@@ -6303,7 +7851,7 @@ from that realm's JOSE Issuing CA — reached from `pqKeysForAsync()` and
 `pqKeysFor()` when they are made (by the process whose set the realm keeps,
 `remember()`'s rule), from a store restore, and from `certifyKeySet()` — and the
 ML-DSA listener certificate from the TLS Issuing CA. Four things decide whether
-it is still the arrangement `common/vendored/CLAUDE.md` asks for:
+it is still the arrangement `common/crypto_impl/CLAUDE.md` asks for:
 
 * **ONLY THE PUBLIC KEY CROSSES.** `helpers.js` hands `certifyPqLater()` the
   `alg` and `publicJwk` of each and nothing else; generation, the private bytes
@@ -6494,6 +8042,51 @@ had recently put there. The two-node revocation probe read one beginning `SELECT
 seq, origin, realm, key FROM sts_changes`. Pinned in
 `tests/cluster_key_pki_agreement.js` section 12.
 
+### THE PROCESS BRANCH IS ONE AUTHORITY FOR THE CLUSTER (#162, 2026-10-05)
+
+`/pki/ocsp/process/tls` answered `unknown` through the load balancer for the
+other node's listener certificate. rcbj's decisions on #162:
+
+1. **One process CA for the cluster.** `pki:*process` is a shared row like a
+   realm's, and every node's listener certificate is recorded in it, so any
+   node answers OCSP and serves the CRL for any node's certificate. **No node
+   address is ever published** (a certificate, a distribution point, an AIA,
+   metadata): naming the node in the OCSP address was refused outright, not
+   traded off.
+2. **Each node keeps its own listener key.** It generates the key and is
+   issued its certificate from the shared CA; only the record and the serial
+   are shared. **Since 2026-10-08 "keeps" is literal**: the key is generated
+   only when none is stored for the node, and kept sealed in the node's own
+   row of `tls.listenerKeys` (`unit@node`), with the certificate it was last
+   issued, which `heldCertificateCurrent()` here lets the next start present
+   again while it is current. Until then a restart made a new key under the
+   kept CA. `tls/CLAUDE.md`, *THE LISTENER KEY IS KEPT PER NODE*.
+3. **Any node may sign**, under the merge rules above: issued serials and
+   revocations are unions, tiers first writer wins, the build claimed once.
+4. **One code path**: a single node is a cluster of one. Development keeps the
+   in-memory branch regenerated per start.
+
+Most of this was already true when the decision was made — the row is shared
+and merged, and `pki_merge.js` keeps a displaced `tls:server` slot's serial in
+`issuedKeyPairs`, so the register holds every node's listener. What was left
+was WHEN a node reads it. Two halves close that:
+
+* **The writer**: `service_state.ts` awaits `keystore.pkiSettled(PROCESS_SCOPE)`
+  after `pki.start()` where the row merges, so a node's listener record is in
+  the store before the node serves that certificate.
+* **The reader**: `pki_revocation.js`'s `answerOcsp()` asks the store once
+  (`pki.refreshScope()`, through `catchUpWithTheStore()`) before answering
+  `unknown` for want of a record. Concurrent questions about one scope share
+  the read in flight, because the responder is anonymous and every serial
+  nobody issued takes this path. Where the row is not merged it reads nothing.
+
+The `tls:server` slot itself still holds one node's record, first writer
+wins; the others' serials are `displaced` records in `issuedKeyPairs`. That
+is all the responder and the CRL need. A record per node would be a slot
+named for a node, which decision 1 rules out. `tests/ocsp_cluster_catch_up.js`
+holds the reader's half; `sts_pki_distribution_points` in the `cluster` mode
+is the end-to-end check, and it still asks the address the certificate names.
+
 ### A BRANCH IN ONE ACT, OR NONE
 
 A trust chain is only worth anything WHOLE — and since the shape changed that
@@ -6611,7 +8204,7 @@ where it is PUBLISHED and VERIFIED: a `pinned` row in `ownRsaCertificates()`
 `certificateHeaderFor()` (its slot is `slot@kid`), `pinnedPublishedJwks()` for
 the JWKS, and `/crypto/metadata`'s `pinned`, `pinned-pending` and
 `pinned-retired` states. `tests/pinned_signers.js` holds it;
-`tests/vendored/sts_pinned_signer.js` verifies an ID token against the pinned
+`tests/protocol/sts_pinned_signer.js` verifies an ID token against the pinned
 key's JWKS entry over HTTP.
 
 **AN `xml` PIN IS ALSO THE REALM'S DECRYPTION KEY** (rcbj's extension, the
@@ -6687,7 +8280,18 @@ anything rotated goes on its issuer's list as `superseded` automatically.
 **From the root `CLAUDE.md`'s index of things this service does not do:** the
 lists and responders are served at `/pki/crl/{scope}/{ca}`,
 `/pki/ocsp/{scope}/{ca}` and `/pki/ca/{scope}/{ca}.cer` with an index at
-`/pki/revocation`, published into the directory under `ou=crl`, and named inside
+`/pki/revocation`, published into the directory under `ou=crl` (by the
+front process once its listener is bound — `publishStartupCrls()` from
+`server.js`'s `announce()`, since #617; it was inside `pki.start()`, 4 s of
+8081's way to the socket — and by the `pki.crl-directory-refresh` job; not by
+a request worker, since #613: `pki.js`'s `start()` argues both; and since
+#639 the start leaves alone a list the directory already holds that
+verifies under the authority's current certificate, lists exactly its
+revocations, was made for the lifetime in force and has more than half of it
+left, so it is current until the job's next run: `pki_revocation.js`'s
+`stillCurrent()`, read through the directory slot's optional
+`publishedCrl()`; 279 lists kept and none signed on a restart of a stack of
+23 realms), and named inside
 every certificate this service issues in TWO SCHEMES (http, ldap — it was three,
 with ldaps, until 2026-09-13; `pki_revocation.js`'s `httpBase()` argues it). A
 pane on `/admin/pki` revokes by hand with any of the nine reasons RFC 5280
@@ -6854,7 +8458,17 @@ neither.
 SHA-384 chain signs RS384 — the certificate's digest decides. An EC key does
 NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
-assertions nothing can verify. `tests/pki.js` asserts both readings.
+assertions nothing can verify. `tests/pki.js` asserts both readings. A
+post-quantum subject key names its own JOSE algorithm (`ML-DSA-65` on an
+ML-DSA-65 leaf), whichever key signed the certificate (#1418). The public JWK
+comes from `keyMaterial.pubToJwk()`, because Node's decoder throws
+`error:03000072` on these SPKIs and that throw was an uncaught 500 on
+`POST /admin-api/pki/issue`. `alg` is assigned before the RFC 7638 thumbprint,
+because an AKP thumbprint hashes `alg`. A composite ML-DSA key, and a
+key-establishment algorithm asked to sign, are refused as STS-PKI-0269 before
+that thumbprint. The composite has no JWK form here (the X.509 bytes and the
+JOSE bytes differ), and the refusal is the same `{ok:false, errors}` the other
+issuance refusals already are, so the management API answers 400.
 
 ### 3w, CONTINUED: HYBRID AUTHORITIES, OFF BY DEFAULT (2026-09-26, #68 phase 1)
 
@@ -6914,6 +8528,33 @@ ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
 #68 (2026-09-26): no published profile defines an alternative signature on
 either, so nothing could verify one. `tests/pki_hybrid.js` holds all of it,
 including OpenSSL verifying the classical chain untouched.
+
+**A process branch is also held to the listener's certificate list** (#1421,
+#1432). The main port presents that branch's leaf, its TLS Issuing CA, the
+Intermediate and the Root. OpenSSL's default certificate list is 102400
+bytes. A scope build does not replace the Root, so the leaf and the Issuing
+CA are the two certificates the build signs. A hybrid branch adds the
+alternative signature on those two, and a post-quantum signing key replaces
+the classical signature on those two. When those signatures plus the
+certificates would exceed 102400 bytes, `buildScope()` refuses before
+anything is stored (`STS-PKI-0270`) and the socket keeps the chain it is
+already presenting. SLH-DSA-256f (49856 bytes) is past the limit as either
+key. ML-DSA-87 is not. A realm branch is not that chain and is not refused
+for size.
+
+**No branch, and not the Root, may hold a composite ML-DSA key** (2026-11-12;
+`listenerChainOptions()`). OpenSSL — node's, grpc-js's — cannot read one, and
+`tls.createSecureContext()` throws `03000072 decode error` for a chain
+holding a composite-keyed CA. The Root and the process branch are on the main
+port's and LDAPS's chain (`STS-PKI-0272`), and a realm's INTERMEDIATE is on
+its SPIFFE gRPC listeners' (the server SVID), its Remote PEP listeners' and
+its custom listeners' (`STS-PKI-0274`) — the Intermediate alone is enough to
+break the load, so no choice of Issuing CA key could save a composite realm
+branch. A caller naming one is refused before anything is made; the
+`pki.keyAlgorithm` setting naming one makes the build classical and says so
+(`STS-PKI-0273`, `STS-PKI-0275`), so a deployment that stored it still starts.
+A branch already stored composite is left as it is. A composite LEAF key is
+not this rule's business: nothing here loads one into OpenSSL.
 
 ### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
 
@@ -7135,6 +8776,62 @@ verification path in the same act. `tests/pki.js` asserts that, the ciphertext
 at rest, the PEM at the surface, that an unrelated edit to the same entry does
 not rewrite the key in the clear, and the double-seal refusal.
 
+### 3w, CONTINUED: EVERY REPORTED CHAIN ENDS WITH THE ROOT, AND ONE FUNCTION SAYS SO (#1064, 2026-10-27)
+
+**`chainThroughRoot(certificatePem, chainPem, opts)` is the one place a chain
+this service reports about its OWN certificates is completed.** It returns
+the leaf, the stored chain, and the Root that signs the chain's top, checked
+by SIGNATURE (the two Roots it has to tell apart have the same subject). It
+takes PEM or bare base64. Where no candidate signs the top (a drifted
+hierarchy, an uploaded chain under a foreign Root), the chain comes back as
+stored, without a Root. A certificate with no chain comes back alone.
+`opts.anchors` adds candidates (a TLS listener's supplied anchor), and
+`opts.withoutRoot` leaves the Root off. **`withoutRoot` is for HAIP 1.0 and
+nothing else**: sections 5, 6.1 and 6.1.1 forbid the trust anchor in the
+`x5c` of a credential, a Status List Token and a signed OpenID4VP request.
+Its callers state that at the call site.
+
+**WHY.** Every Root is `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts`
+before #1294) and a fresh install builds a new one, so a reader never handed the
+current Root matched the top certificate's issuer NAME to an older Root it
+already held: "the Root is the same on every install", reported from Windows,
+when it never was. Sending the Root trusts nothing (RFC 5280 section 6.1); it
+lets a reader show the thumbprint.
+
+**`chainPem` keeps its meaning everywhere: what a certificate is STORED with,
+no Root.** Only the REPORTING sites go through this function. Each has one
+writer for its format:
+
+| Format | Writer | Readers it serves |
+|---|---|---|
+| a TLS socket's `cert` bundle | `tls/tls_server.js` `presentedBundlePem()` | every listener (`tls/CLAUDE.md`, *Every listener presents the Root*) |
+| a JOSE header `x5c` | `common/jose_certificate_header.js` `chainPemsOf()`, its memo kept | every token's `x5c`; `withoutAnchor` rows unchanged |
+| a published JWK `x5c` | `helpers.x5cOf()` | the realm JWKS and its standby keys, pinned and grouped signers, `pki.js`'s certified key pairs, `/crypto/metadata` |
+| an XML `ds:X509Data` | `helpers.x509DataXml()`, `helpers.xmlSignerKeyInfo(view)` | every XML signature's KeyInfo (handed to `crypto.js` `signXml()` as `keyInfoXml` by the seven signers), every metadata KeyDescriptor, signing and encryption |
+| PEM text | `chainThroughRoot()` itself | the remote PEP's `fullChainPem`, the console's `-chain.pem` download |
+
+**`crypto.js` does not complete chains, because it is a leaf (3r)**: a signer
+passes the finished `ds:X509Data` as `keyInfoXml`. The vendored `xmldsig.js`
+is unchanged (rcbj's D8): `signEnveloped()` wraps a caller's `keyInfoXml`, and
+the general engine's `buildKeyInfo()` takes it as is and AHEAD of its `none`
+check, so `signXml()` wraps it on that path and passes nothing when
+`includeKeyInfo` is false. **The signer's own certificate stays FIRST** in
+every X509Data: XML Signature 1.1 section 4.5.4 sets no order, but this
+service's verifier and xml-crypto's `getCertFromKeyInfo` take the first.
+**It is repeated after the Root** when the chain is longer than that one
+certificate. pysaml2 7.5.5 keeps a single `X509Certificate` per `X509Data`
+(cardinality max 1, and a later element overwrites), so the certificate it
+verifies with is the last, and a chain ending at the Root made every SAML
+response fail that check (`sts_saml_interop_pysaml2`). JOSE `x5c` still
+ends at the Root. `tests/tls_presented_root.js` section C holds both ends.
+
+**Outside it, on purpose**: the SPIFFE trust bundle (its `x5c` IS the
+anchors), the SAML EncryptedKey's KeyInfo (the RECIPIENT's certificate, whose
+chain this service does not hold), a client certificate this service presents
+when dialling out, and the enrollment protocols' issued chains (ACME, EST,
+SCEP), which answer what each protocol asks. `tests/tls_presented_root.js`
+holds the function and every format.
+
 ## 3ab. `person_assertions.js`: a PERSON as an RFC 7523 issuer, and the one refusal it exists for
 
 Added 2026-09-11. `oauth-oidc/assertion_grant.js` accepted an assertion grant
@@ -7232,7 +8929,7 @@ anybody already holds, which is the TOTP row's contract (it was `totp.enabled` u
 argues the page.
 
 `tests/rfc7523_person_issuer.js` is the in-process half and section 13 of
-`tests/vendored/sts_jwt_bearer_grant.js` the over-HTTP one. Two of the claims
+`tests/protocol/sts_jwt_bearer_grant.js` the over-HTTP one. Two of the claims
 cannot be reached over HTTP at all: the sealing is a property of what is on the
 entry rather than of any reply, and a certificate issued to somebody who has
 since been deleted is a state no sequence of endpoint calls can produce while
@@ -7280,7 +8977,7 @@ of them away. **They converge; what they do not do is converge before
 answering**, and every response served inside that window carries a key set the
 service is about to disown.
 
-It reached the suite as `tests/vendored/sts_jwt_bearer_grant.js` section 7 — an
+It reached the suite as `tests/protocol/sts_jwt_bearer_grant.js` section 7 — an
 RSA public key read from `/oauth2/jwks` on one worker, an assertion encrypted
 to it, a token request decrypted on another — **`oaep decoding error`**, which
 names nothing and reads as a broken JWE.
@@ -7312,6 +9009,208 @@ making them**. `common/service_state.ts` supplies it as
 `helpers.stsKeysFor.existing()`, and `tests/key_agreement_storm.js` asserts
 that — the fix lives in two files, and a mutation run showed that pinning only
 `pki.js` leaves the production wiring free to be deleted with everything green.
+
+### 3ab, continued: SEVERAL KEY PAIRS PER PROFILE, REVOKED ONE AT A TIME (#1290, 2026-11-03)
+
+rcbj's decisions on #1290: a person may hold **several** key pairs per
+profile, Generate ADDS one (optionally labelled) instead of replacing, a key
+pair is removed by **revoking** it row by row with the TLS card's two reasons
+(`REVOCATION_REASONS`), and `pki.personSigningKeyMax` (5) caps the VALID ones
+per profile. Everything above about the refusal, the seal and the one-time
+hand-over still holds; what changed is the storage and the lifecycle.
+
+* **ONE RECORD PER KEY PAIR, ON THE ENTRY.** `stsAssertionKeyPair` /
+  `stsSamlAssertionKeyPair` hold one JSON record per key pair (handle, label,
+  source, serial, `caId`, certificate, chain, for JWT the public JWK, validity,
+  and `withdrawnAt`/`withdrawnReason` when revoked here);
+  `stsAssertionPrivateKey` / `stsSamlAssertionPrivateKey` hold one value per
+  key pair issued here, `{ id, pem }` with the WHOLE VALUE sealed so that
+  `cell_rehome.ts` re-seals it like any other. The seven single-valued
+  attributes per profile are gone (no back-compat, rcbj's standing rule).
+* **WHY NOT THE TLS CARD'S REGISTER.** `tls_client_certificates.js` keeps a
+  person's certificates in `pki.certify()`'s register by slot. A signing key is
+  found by the VERIFIER off the entry its `iss` resolves to (`kid` in a JWKS,
+  a certificate thumbprint), the register holds no JWK, and an uploaded
+  certificate from an external authority is in no register of ours — so the
+  records stay on the entry and the BEHAVIOUR is mirrored: states, labels, the
+  cap counting valid ones, revocation through `pki_revocation.js`, expired
+  records forgotten at the next write.
+* **STATE IS READ FROM THE AUTHORITY.** A record names the authority that
+  signed it (`pki.issueSigningKeyPair()` returns `useCase` now; an uploaded
+  realm certificate's is found by `issuedHere()`), and `isRevoked()` on that
+  list wins over the record — so a serial revoked on `/admin/pki`'s revocation
+  pane reads revoked here too. An external authority's certificate has only
+  the record's own mark.
+* **THE VERIFIERS READ VALID KEY PAIRS ONLY**: `recordFor()` answers `jwks`
+  (RFC 7523) and `samlCertificates` (RFC 7522) built from the valid records, so
+  a revoked or expired key finds no registered key and is refused; the `x5c`
+  path is refused by the CRL as before. `issuerFor()` needs a VALID key pair.
+* **`revoke()` REPLACED `clear()`** on every door (portal, console, API): it
+  revokes on the CRL where the certificate is ours, marks the record, drops the
+  private half, clears the profile's issuer declaration when the last valid key
+  pair goes (take-off's old invariant), and raises CAEP `revoke` (and RISC
+  credential-compromise for `keyCompromise`). There is no per-key clear for
+  administrators either: the ticket retired take-off, and an administrator who
+  wants a key pair gone wants it revoked.
+* **THE CAP** is checked by every door BEFORE a key pair is generated
+  (`atCap()`), and again in `write()` (`STS-PKI-0223`); a label is held to the
+  TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
+  nothing under is `STS-PKI-0224`.
+
+## 3dd. `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` SECTION 18: PARANOID PKI MODE (#1360, 2026-11-06)
+
+**Every X.509 certificate this service relies on goes through one door with a
+purpose, and the door answers one verdict.** rcbj's decision, after the audit of
+2026-11-06 (82 sites, on #1360) found pinned certificates never validity-checked,
+revocation skipped for outbound peers and attestors, EKU never a path rule, and
+anchor admission checking nothing. **ON IN PRODUCT, OFF IN DEVELOPMENT**: rcbj's
+second decision that day, `mode.enforcesParanoidPki()`.
+
+**THE SPLIT IS THE LEAF RULE'S.** `crypto.js` may require nothing that reads a
+store or dials, and a chain needs anchors and a revocation answer needs a network,
+so: section 18 is what one certificate's bytes decide (pure; the mode is not
+asked, because a caller reaching it has decided the checks apply); `pki.js` is the
+path builder and the admission rule, `anchorProblem()`; the door composes them with
+revocation, the table and the settings. A DN is compared by the door, because
+`certificate_subject.js` requires `crypto.js`.
+
+**A ROW OFF IS THE BASELINE, AND THE BASELINE IS THE DOOR'S.** Each purpose names
+one (`none`, `peer-chain`, `signer-chain`, `caller-path`, `direct`, `realm-leaf`):
+the central functions its site called before #1360. A site therefore has one code
+path, and "off restores today's behaviour" is true by construction.
+
+**THE RULE UNDER PARANOID: A CHECK NOBODY MADE IS A REFUSAL.** `not-asked` fails a
+verdict in force, `name-match` excepted. What a use case does not ask at all, since
+no specification asks it, PASSES rather than being `not-asked`; the plan's table
+gives a JOSE signer no EKU, and reading that as `not-asked` would refuse every one.
+So `pki.revocationCheck=off` under paranoid refuses, on purpose: the way out is the
+row, which is red on the page.
+
+**A LEAF ACCEPTED SELF-SIGNED MAY CARRY cA=TRUE**, `verifySignerChain()`'s `pinned`
+argument of 2026-09-13: every `openssl req -x509` certificate does, and a method
+defined as certificate equality has no chain for the flag to mean anything in. The
+table's `mayBeCa: false` is about a leaf on a chain.
+
+**WHAT A NEW SITE OWES.** The rollout was by phase: Phase 0 wired one row,
+`anchor-admission`, at the client truststore, and each later phase took its sites
+out of `tests/certificate_trust_callers.js`'s `ALLOWED`, which only shrank and has
+been empty since Phase 5. So a new site that relies on a certificate asks the door
+from the start: it is named in its row's `sites` (the same test fails on a named
+site that does not ask), and it extends
+`tests/protocol/sts_paranoid_pki_settings.js`'s proof.
+
+**THE SIGNER TRUSTSTORE IS THE DIRECTORY'S**, per realm, in
+`ou=signerTrustAnchors`, through a slot `ldap/ldap_server.js` fills (rule 3e,
+`passkey_report`'s reason), with a realm id on each call because the door's caller
+may be in another realm. **ITS ADMISSION HAS NO OFF SWITCH**: it has no earlier
+behaviour to restore. Every read asks the directory, whose `entriesUnder()` caches
+the listing until something is written there, so a validation walks no realm.
+
+**PHASE 1: THE HOLD AND ITS THREE SHAPES.** A handshake cannot wait for a fetch at
+the main port (`socket.authorized` is read synchronously, and an HTTP parser reads
+past a pause), so `holdPeer()` is synchronous: the rules, the leaf's fields, and the
+register where asked. Revocation then takes the shape of the listener: the main
+port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
+until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
+`settledRequest()`. A worker needs nothing new: the front process demotes
+`socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
+**A SERVER'S SELF-SIGNED CERTIFICATE IS ACCEPTED CASE BY CASE (rcbj).** Row kind
+`accepted` in the signer truststore, or the same bytes as the dialer's own `ca`
+(`acceptedByName()`), which is what keeps a new install self-contained: the shipped
+OpenBao and postgres pairs are self-signed leaves, and refusing them stopped the
+service starting in product mode, which no memory-mode probe could show. A public
+root or a truststore anchor in `ca` does not count, since nobody named this server.
+**`pinnedSync(..., { named: true })` IS AN ADMINISTRATOR'S ACT (rcbj: "the application signer cert setup, especially from a metadata document should create the trust anchor").** It skips the path and the self-signed refusal and keeps the fields and revocation. A site passes it only for a certificate no request can have put there: `saml/CLAUDE.md` for metadata, and the WS-Security site only for one stored on exactly one entry. `bareKey()` always passes it, because the same key with no `x5c` is accepted, so a path there refuses only the key that says more.
+
+**A CERTIFICATE NAMING NO SOURCE HAS NO CHECK TO PERFORM (rcbj).** Under paranoid
+`policy()` drops the `auto` distribution-point requirement, a link naming nothing
+whose issuer is absent is not refused, and `nothingToAsk()` covers what the walk
+leaves `not-asked`. The register is still asked first, so a certificate this service
+issued cannot lose its revocation. A leaf naming nothing under a CA naming a source
+gets no lookup of its own: the CA's link is what is asked.
+
+**A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
+a resumed connection the leaf alone, so the verdict rides beside the chain on the
+replicated `tls.presentedChains` row, written together at the full handshake's
+hold. A row is not there yet on another node, so `resumedProblem()` leaves the
+socket marked and `awaitResumedChain()` settles it before any request is answered,
+bounded by `tls.resumedChainWaitMs`: a refusal or nothing arriving demotes it.
+**The chain's own write once dropped the verdict from the row**, which refused
+every resumption on the main port in product mode while LDAPS and the debugger's
+test stayed green, because only the main port's sign-in wrote the chain later.
+What is not frozen at the full handshake: the leaf's fields, its window included,
+are asked on every connection, and revocation by the request's own verdict (on
+LDAPS and the debugger, by the hold's) as before #1360. The cell channel needs
+none of this: it requires the issuer on the connection and asks the rules itself.
+
+**A HANDSHAKE'S HOLD READS THE DEFAULT REALM'S ROWS**: a handshake has no realm in it
+(the root file's *Trust realms*, item 5), so on the main port, custom listeners, LDAPS
+and the debugger another realm's `pki.paranoid` and `pki.paranoidTlsClient` decide
+nothing, in either direction (`tls_server.js`'s `holdToPathRules()` and
+`holdConnectionsOn()`). The cell channel asks `cell-peer` with no realm. SPIFFE's
+sockets have no such hold (the next paragraph): the realm's row decides only whether
+the SPIRE Server API may bind plain. `docs/tls.md` says all of this.
+
+**SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
+off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict
+to demote. **RFC 8705 section 3 binds a token to a certificate, not to a CA**, so the
+two `certificateMatches` terms that always passed were removed rather than made
+`.verified`, which would have refused a self-signed client's own bound token: only
+AuthZEN's `mtls+bearer`, which asks for a verified certificate by name, and
+`certificateVerified` at the token endpoint, read `.verified`.
+
+**PHASE 3: A SIGNER, AND A DOOR THAT CANNOT WAIT.** `signerChain()` is what the RFC
+7523 and 7522 verifiers call in place of `pki.verifySignerChain()`, with its answer's
+shape, so those sites changed one line. A SAML request's signature and a WS-Security
+token are answered inside handlers that hand back a value, so the plan's `assess()`
+could not be awaited there without rewriting `singleSignOnChecked()` and
+`singleLogout()`. **`pinnedSync()` is what they call instead**: fields, the pin rule
+and one hop through the signer truststore are decided now, and revocation is read from
+`pinVerdicts`, a cache on `/admin/caches` filled by the first ask. So a non-self-signed
+signer naming a list is refused ONCE, on the request that starts the fetch, because a
+check nobody made is a refusal. A self-signed one, and one naming no list, costs nothing.
+A partner's signer goes through it too, from `signerStillAccepted()`, for one code
+path. `reachesHeld()` is the plan's "AIA is followed, but the result must chain".
+
+**THE COUNTERS ARE NOT ON `/admin/caches`**: not a cache, one row per realm and
+purpose, bounded by construction, and per process, which the page says. **`pki.pins.
+audit`** is a cluster job per realm, logging and mailing only what CHANGED against
+`pki.pins.lastAudit`, so a restart does not re-announce anything. An owner of a pin
+registers a source with `registerPinSource()`: a registry a library fills, not a
+slot, since no require would move a route. Phase 6 registers them.
+
+**PHASE 5: A SITE KEEPS ITS OWN SHAPE.** `path()`, `direct()` and `realmLeaf()`
+answer what `verifyPathToAnchors()`, `verifyIssuedDirectly()` and `verifyLeaf()`
+answer, so each site's error wording and code stand, and out of force each IS
+that call. `fields()` is for a certificate something else already decided to
+trust: a delegated responder, a CRL signer, AWS's pin, a federated authority.
+**`anchorsAvailable()`** lets a site with no configured anchors
+reach the signer truststore where its row may, also rcbj's decision.
+**`siteAsksRevocation`** is for WebAuthn, PKINIT and FIDO MDS, which ask next with
+their own codes, and in MDS's case an override that a positive revocation must
+still beat: a refusal from the door would have let that override load a revoked
+BLOB, which is what `tests/risk_mds.js` K4 caught with the master forced on.
+`assessSync()` passes a certificate that names no list, since a door that cannot
+wait has nothing to wait for: every self-signed SPIFFE authority's SVID is one.
+`verifyKeyAttestation()` became asynchronous for the real path.
+`tests/certificate_trust_callers.js`'s `ALLOWED` is empty, and `PERMANENT` holds
+the calls that decide nothing, each with its reason.
+
+**PHASE 6: THE INVENTORY READS `certificate_pins.ts`.** Applications, federation
+relationships, the settings holding certificates, federated SPIFFE bundles, GNAP
+clients' keys, the shipped cloud anchors and the client truststore, each owner
+reached lazily. A setting of anchors is judged as `anchor-admission`, so a root
+reads as a root. `tests/certificate_pins.js` fails on a setting of that shape the
+list omits, and `tests/certificate_trust_callers.js` on a row whose named site
+does not ask for it, which is what found five stale `sites` entries in the table.
+
+**THE ONE ROW A SITE FORCES (#1713).** `policy-signer`, the signer of a
+policy export (`admin-core/policy_transfer.ts`): rcbj asked for full paranoid
+validation of it, so while `pki.paranoidPolicySigner` is on the site passes
+`force` and development checks what product does; off, it is an ordinary row.
+`force` is the door's existing option, so nothing about the door changed, and
+the use case's own `policy-signing` Issuing CA is `pki.js`'s thirteenth realm
+use case. `admin-core/CLAUDE.md` argues the rest.
 
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
@@ -7510,7 +9409,7 @@ read, which RFC 5280 section 6.3 calls an undetermined status.
 **THE SUITE'S OWN CHAINS PAY FOR IT.** Every chain a job or launcher mints and
 presents to a product-mode service — the remote PEP credential, XACML users,
 certificate sign-ins, uploaded application and person keys — names its CAs'
-lists now, served by `tests/vendored/test_crl_host.js` from the job's own
+lists now, served by `tests/protocol/test_crl_host.js` from the job's own
 process, or (for the launcher's PEP credential, whose minter exits) written by
 `tests/tools/pep-credential.js --crl-base` and served by the PEP container at
 `GET /crl/<name>`. None of it is committed key material.
@@ -7564,7 +9463,7 @@ mutants caught.
 
 ## 3aa. `pki_authoring.ts`: the pane, and the two things it is NOT
 
-Added 2026-09-10 with `/admin/pki`'s Certificate & Key Configuration pane — the
+Added 2026-09-10 with `/admin/pki`'s Certificate Workbench — the
 parent project's *PKI / X.509* workflow drawn by a server for a console with no
 script on it — drawn as ONE FORM of a hundred and fifteen fields, where that
 page has event handlers. `admin-ui/CLAUDE.md` argues
@@ -7616,7 +9515,7 @@ carry those flags as JSON booleans, so a `false` posted back must be `false`.
 Without that line `apply-profile` followed by `issue-certificate` with the draft
 in between turned every cleared box ON, and the first thing it produced was a
 refusal about a reuse checkbox nobody had ticked.
-`tests/vendored/sts_pki_workbench.js` found it on its first run;
+`tests/protocol/sts_pki_workbench.js` found it on its first run;
 `"false"` and `"0"` are excluded for the same reason one step along.
 
 ### `FIELDS` is a table because the page and the parser are two files
@@ -7654,7 +9553,7 @@ this service's OWN reading of the post-quantum constructions and is
 independent of the engine's on purpose — and handing a
 key generated by one to an encoder that expects the other's byte layout is
 exactly the class of defect that independence exists to expose.
-`common/vendored/CLAUDE.md` argues the same thing from the other end.
+`common/crypto_impl/CLAUDE.md` argues the same thing from the other end.
 
 So `SLOW_FAMILIES` is what the page warns with. In `dispatch` mode the console
 holds affinity to a REQUEST worker, so the stall is that worker's rather than
@@ -7698,15 +9597,54 @@ realm, and rcbj chose that over a settings group for the reasons every register
 here is in the directory: per realm, persisted and replicated with it, visible
 to `ldapsearch`, and a container that can hold a second profile the day one can
 be assigned. Six fields — `pwdMinLength` (12), `pwdInHistory` (5),
-`stsPwdMinSymbols` (1), `stsPwdRequireUppercase` (TRUE), `stsPwdRequireDigit`
-(TRUE), `stsPwdGeneratedLength` (20). **The `pwd*` names are
+`stsPwdMinSymbols` (0), `stsPwdRequireUppercase` (FALSE), `stsPwdRequireDigit`
+(FALSE) — those three may hold no other value since #1444 (ASVS 5.0.0 6.2.5), and
+the row stays only so the entry's shape does not change —
+`stsPwdGeneratedLength` (20). **The `pwd*` names are
 draft-behera-ldap-password-policy's**, which is what OpenLDAP's ppolicy overlay
 reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with the
 current one refused beside them. The draft defines no composition rule, so those
 are `stsPwd*` and nobody mistakes them for the draft's.
 
-**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and `crypto.js`,
-and its directory arrives through a slot
+**NAMED POLICIES, AND WHAT NAMES ONE (#1236, 2026-10-30).** The container
+now holds named policies beside `cn=default` — every row, plus
+`stsPasswordPrecedence` — on rule 3cx's recipe: an application names one in
+`appPasswordPolicy`, a group in `stsPasswordPolicy`, a person none of their
+own. `profileFor(username, application)` was written in 2026-09 with a
+username it ignored precisely so that this day would change its body and no
+caller, and that is how it went: every door already handed the person in,
+so `setPassword()`/`preparePassword()` (the console, `/admin-api`, the
+portal's password page, activation, a reset link, an LDAP add or modify and
+the LDAP off-loop prehash), `generatePassword()`, `passwordRules()` and the
+sign-in upgrade's `rehashSpecFor()` resolve the person's groups' policy with
+no edit. Two readers gained an argument: the sign-in's forced change hands
+`step.authn.application` in as `opts.application`, the one door that holds
+an application; and service-account rotation draws from the account's own
+profile (`profileFor(facts.username)`) so its commit cannot be refused by
+it. **A reader with no person in hand reads `default`** — the
+service-account policy's save check of its rotated length against the
+password minimum is one, and is right to be: it is a property of the realm,
+not of an account. SCIM writes no password (`changePassword: false`).
+
+**A REFERENCE TO A POLICY THE REALM DOES NOT HOLD IS DROPPED, AND THE VALID
+REFERENCES THAT REMAIN STILL RANK** (STS-AUTHN-0539, logged once per
+reference per process — the sign-in upgrade asks at every verified
+password, and a per-event log of one misconfiguration is the flood the log
+rules forbid); `default` applies only where none remains. **The first cut
+(the same day) made the WHOLE answer `default` on any dangling reference,
+and was reversed on review**: that let a broken reference override a
+stricter policy a VALID reference names — an application's twenty-character
+minimum undone by a stale value on some group — which is a weakening
+dressed as failing closed. A dangling reference never named anything the
+realm can apply, so dropping it removes nothing that was in force. Only a
+write past the console can make one (both doors check, and a named policy
+still named is not deleted, STS-AUTHN-0540). The ranking is skipped
+outright where the realm holds no named policy, so the common case costs
+no group lookup. Named policies are the realm's own; neither they nor
+`default` are inherited (this kind never inherited).
+
+**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js`, `crypto.js` and
+`policy_selection.ts`, and its directory arrives through a slot
 `ldap_server.js` fills — `roles.js`'s arrangement exactly. **`FIELDS` is one
 table read five ways**: the schema, the console's form, the management API's
 request schema, the validation and the parse. Three decisions in it:
@@ -7744,12 +9682,44 @@ RECORDED in both modes, because moving the previous hash into `pwdHistory` costs
 no new hash and a realm switched to product should not start empty.
 `opts.generated` skips the history comparison (up to six scrypt derivations on
 the one thread every socket is served from, for a password nothing could have
-used before). A stored value that is not a scrypt hash is compared in constant
-time as the string it is, and never copied into the history.
-`tests/password_policy.js` holds all of it, eight mutants caught.
+used before). A stored value that is not one of this service's hashes
+(scrypt or argon2id) is compared in constant time as the string it is, and
+never copied into the history; each remembered hash is verified by its own
+form. `tests/password_policy.js` holds all of it, eight mutants caught.
+
+**HOW A PASSWORD IS STORED IS A RULE OF THE PROFILE TOO (#847, 2026-10-22).**
+Seven more rows: `hashAlgorithm` (`stsPwdHashAlgorithm`, `argon2id` or
+`scrypt`, an `enum` row), `argon2Memory` / `argon2Iterations` /
+`argon2Parallelism` (min 19456 KiB / 2 / 1) and `scryptLogN` /
+`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1). The default is
+scrypt at 2^15, r=8, p=3 (#872). OWASP's N-and-p table is a cross-field rule
+again, and `passwordHashSpec()` raises a new scrypt hash to it in both modes.
+Product also applies `minScryptParallelism()` (at least 3) before that clamp
+(see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
+out keeps the value in force rather than being refused, because every caller
+written before them sends the six composition rows only.
+`hashSpec(profile)` answers them in `crypto.hashPassword()`'s shape, and
+`preparePassword()` hashes with it (a hash an LDAP write made off the loop is
+used only when it already matches the spec). Not mode-dependent.
+
+**THE UPGRADE ON SIGN-IN** (`credentials.ts`'s `upgradeHash()` /
+`upgradeHashAsync()`, after `verify()` and `verifyAsync()`): a password the
+CURRENT stored hash has just verified — never development's unchecked yes,
+never a service account's previous password — is hashed again and written
+back where the stored hash is another algorithm, or the same algorithm at a
+strictly lower cost (#847's decision 4, narrowed by #872: a same-algorithm
+hash already at least that cost is left). Compare and set: the entry's
+hash is read again with no await before the write, and a hash changed
+meanwhile is not overwritten. The hash alone is written — no `pwdHistory`, no
+`pwdChangedTime`, no credential-change signal or mail — and the Kerberos
+password observer is told `rehash`, which re-stamps the stored keys at the
+SAME kvno (`kerberos/krb5_person_keys.ts`). A failure is logged
+(`STS-AUTHN-0409`) and never costs the sign-in. There is no bulk rehash: the
+plaintext exists only at a sign-in. `tests/password_argon2id.js` holds it.
 
 **From the root `CLAUDE.md`'s `common/` row:** the profile is drawn at
-*Directory → Policies* (`/admin/policies`), ENFORCED IN PRODUCT MODE at every
+*Directory → Policies* (`/admin/policies`, Default / Named policies / New
+policy since #1236), ENFORCED IN PRODUCT MODE at every
 door that sets a password, and is the generator every made-up password is
 drawn from, which is now the default credential for a new user on the console
 and on `/admin-api`.
@@ -7853,9 +9823,12 @@ this service once, as the keytab its create hands over, so `view()` replaces it 
 in `fields` AND in `attributes`, ciphertext included — with a sentence saying how
 much was kept back. The ENTRY still holds it; the KDC reads it through the
 directory, never through here. **It is a schema row and not a raw attribute for a
-reason that is not optional**: `writeApplication()` replaces an entry from its
-record, and an attribute the schema does not list would be erased by the next
-sighting — for a Kerberos service, the next ticket issued for it. **And it is written
+reason that was not optional until #1230**: `writeApplication()` replaced an
+entry from its record, and an attribute the schema did not list was erased by
+the next sighting — for a Kerberos service, the next ticket issued for it.
+Since #1230 the store replaces only `ownedAttributeNames()` and keeps every
+other attribute (`ldap/CLAUDE.md`); the row stays because the pages describe
+it. **And it is written
 through the directory slot, never through `updateApplication()`**, whose audit
 summary, log line and reply all quote the value written.
 
@@ -7908,8 +9881,9 @@ front of it is unchecked, the name is unchecked, and any name may enrol.
 
 ### It can never be a first factor, and that is arithmetic rather than policy
 
-A WebAuthn credential can be `primary` or `mfa` because the authenticator keeps
-a private key this service never sees. **A TOTP secret proves possession of
+A WebAuthn credential may sign somebody in on its own (the realm's
+`webauthn.primaryAllowed`; until #1135 it was a key ENROLLED `primary`)
+because the authenticator keeps a private key this service never sees. **A TOTP secret proves possession of
 something THIS SERVICE ALSO HOLDS** — anybody who can read the store can
 generate the same codes. That is fine for proving somebody still has the app and
 is not a thing to hang an account on, so there is no `role` on a TOTP record and
@@ -7964,6 +9938,13 @@ under `/admin/users`.
 **An unconfirmed secret on somebody's entry would be a second factor they cannot
 produce** — a person who opens the page and never scans it would be locked out
 by a form they abandoned.
+
+**`credentials.pendingBackupCodes` is keyed by `credentialDigest(handle)`
+since #614** (`pendingCodesKey()`): the handle is what lets a form confirm the
+set and is only looked up and spent. The CODES stay whole in the record — the
+page shows them again until they are confirmed, and they are scrypt-hashed
+then. `pendingTotp` and `pendingKeys` are keyed by a username, which is not a
+credential; the TOTP seed and the WebAuthn options in them are re-drawn.
 
 **The three pending stores are persisted since 2026-09-14 (#46)** —
 `credentials.pendingTotp`, `credentials.pendingBackupCodes` and
@@ -8042,6 +10023,31 @@ hourly `signing.retire` ran during it). The displaced serial is now kept in
 `issuedKeyPairs` with `pki_merge.js`'s `displacedRecord()`, the record a
 cluster merge already keeps: `good` until it expires, `revoked` once something
 revokes it, never unknown. `tests/signing_rotation.js` section J.
+
+### And its `x5u` keeps answering until it expires (2026-10-13, #318)
+
+#185 kept the serial and not the certificate, so `/pki/chain/{scope}/{sha256}.pem`
+— the `x5u` every still-valid token signed under it names — answered 404
+(`STS-PKI-0162`) while OCSP answered `good` for the same certificate. Seen on
+testidp: the realm's Issuing CA was re-issued, the slot re-certified over the
+SAME key, and every token from the previous ten minutes named a chain nobody
+served. For the `jose` use case `displacedRecord()` now also keeps
+`thumbprint`, `certificatePem` and the `chainPem` it was issued with, and
+`jose_certificate_header.js`'s `chainPemFor()` falls back to those (via
+`pki.displacedCertificatesFor()`) after the current certificates:
+
+* **The chain it was issued with, never re-rooted** onto the slot's current
+  one; a revoked one is still served, and its OCSP status says so.
+* **Until `notAfter`**, when the register drops the record anyway.
+* **Bounded**: `pki_merge.trimPublished()` leaves PEMs on the newest
+  `PUBLISHED_PER_SLOT` (8) of a slot; an older record keeps its serial only.
+  A suite that rebuilds the CAs repeatedly would otherwise grow the row by a
+  chain per slot per rebuild for a year. Both writers in `pki.js` and the
+  cluster merge trim, and the merge keeps the copy that still has the PEMs.
+* **Not `xml`**: an XML signature carries its certificate in KeyInfo, so
+  nothing addresses one later.
+
+`tests/pki_rebuild_recertifies.js` section D.
 
 ### And it records only what the CURRENT authority signed (2026-09-15, #46)
 
@@ -8232,7 +10238,7 @@ enrolled an authenticator, with nothing anywhere having decided that it should.
 **A new attribute this service invents cannot appear on the account page**, and
 that is a property of the list rather than of anybody remembering.
 
-`tests/vendored/sts_portal_directory_attributes.js` is where that is held: it
+`tests/protocol/sts_portal_directory_attributes.js` is where that is held: it
 confirms an enrolment, checks through `/admin-api` that the secret really is on
 the entry, and then requires that it is nowhere in the HTML. **Every other
 assertion in that file passes against the dump-the-entry implementation. Only
@@ -8397,9 +10403,45 @@ SPIRE Server API and the admin console are a turnstile rather than a lock, and
 demonstration data, invent a claim value, or open a test control to anybody.**
 No seeded people, groups, Kerberos fixture accounts or SPIFFE entries; no
 persona surname, `@sts.example` address or `email_verified: true`;
-`POST /tls/trust`, `POST /dpop/nonce-mode`, open client registration, the SAML
-1.1 attribute authority and a sign-out naming somebody else are refused.
-Development keeps all of it, which is what the test suite drives.
+open client registration, the SAML 1.1 attribute authority and a sign-out
+naming somebody else are refused. Development keeps all of it, which is what
+the test suite drives.
+
+**AND SINCE #591 (rcbj, 2026-10-12) THE RUNTIME SHIPS NO DEMONSTRATION,
+STAND-IN OR TEST-CONTROL ENDPOINT IN ANY MODE.** #585 first made them
+development-only: a mark on the route in `common/app.js` (`next('route')`
+where the realm was product, so the answer was Express's own 404), a
+predicate here, a `demo` flag on the route's `sts_metadata.ts` row, and every
+list — the metadata page, the Protocols pages, the hosted-applications
+catalogue, the Listeners page, `/admin/crypto-metadata`, the protocol settings
+pages' links — reading the mark off the router. rcbj's view was that "at
+some point, those become a liability", so #592 to #598 took each one out of
+the runtime instead:
+
+* the relying parties, receivers and resource-server stand-ins the suite
+  needed went to the test peer (`tests/peer/`, #586) or were deleted (#592,
+  #593, #596);
+* the click-through demonstrations a person uses — the OpenID4VC issuer and
+  verifier, SPNEGO and the Kerberos-protected service with its socket — went
+  to the development companion (`companion/`, #594, #595);
+* `/xacml/protected` went to the remote PEP (#596);
+* the test controls became a setting, the MDM feed, a console page and
+  `/admin-api` operations (#597), and the W3C VC API a product surface off by
+  default (#598).
+
+**#599 then removed the mechanism**, with nothing left to mark: the mark and
+its readers, the predicate and its `/admin/mode` row, the metadata flag and
+its `demoMarkMismatches` drift report, `demoPrefixes`. The per-handler
+product refusals #585 retired (`STS-OAUTH-0178`, `STS-TLS-0024`,
+`STS-VC-0100`, `STS-DEVICE-0035`) stay retired; the mechanism itself recorded
+no code. `tests/demo_endpoints.js` is the guard: no route carries a mark or a
+retired demonstration path, the symbols are gone from the source, and the
+metadata page describes none. **A new endpoint that exists only to be
+exercised belongs in the test peer or the companion, never here.** What is
+left in this file is `opensTestControls()`, a test control on a REAL endpoint
+(the CIBA answer, `restore-kerberos`, `/logout ?username=`, open
+registration, the SAML 1.1 attribute responder, SCIM key add), which #591
+left out of scope.
 
 **NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
 FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is
@@ -8672,10 +10714,16 @@ reach outside it and this is the index of them:
    sign-in waiting for a key nobody issued (STS-AUTHN-0208). A waiter now
    re-claims on each turn, so it takes over from a holder that finished,
    failed or died. `tests/oidc_rp_surface_key.js` and
-   `tests/vendored/sts_console_after_root.js` hold it. **Deleting one takes its surface offline
+   `tests/protocol/sts_console_after_root.js` hold it. **Deleting one takes its surface offline
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above
+   **The console, the portal and the reports application each keep a session
+   bound of their own (#825)**: maximum authentication age, refresh lifetime
+   and refresh idle, the shorter of the application's positive number and the
+   realm's matching limit (`authn.sessionLifetimeS` for the age). The debugger
+   is not one of them. The age is enforced at authorization even when the
+   request sends no `max_age`, and it is not on `/admin/token-lifetimes`.
 2. **THE BACK CHANNEL IS A REAL HTTP REQUEST AND IS THIS REPOSITORY'S FOURTH
    OUTBOUND ONE.** It dials ITSELF, at a loopback address it computes, on a port
    it is listening on, pinned to its own TLS certificate, carrying the BROWSER'S
@@ -8791,17 +10839,30 @@ session's `derivedFromRealm`, where its adopted children live (`derivedFrom()`'s
 `portal/CLAUDE.md` argues the rest. `authn.adoptRelyingPartySession()` is the
 function, and the portal is its only caller.
 
-## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
+**WHAT IT KEEPS OF A CREDENTIAL (#614, 2026-10-13).** A flow in progress
+(`oidc_rp.flows`) is keyed by the DIGEST of its `state`
+(`crypto.credentialDigest()`), hashed as it is minted and as the callback
+presents it, so no row holds a state; the PKCE verifier and the nonce stay on
+the row, the first because it is sent to the token endpoint. `rpTokens` keeps
+its access token WHOLE: the issue asked whether it is only compared (the
+renewal's race check) so that a digest would do, and it is not — the embedded
+debugger, the one surface still a relying party here, verifies it on every
+request at its gate. The refresh token is redeemed and the ID Token re-read,
+so neither can be a digest.
 
-**It is a PORT of the parent project's `client/version.js`, not an invention**,
+## `version.js`: M.N.O.<build>, and why the build is not recorded at startup (2026-09-06; #1298; #1317)
+
+**It is a PORT of the parent project's `client/version.js`, not an invention**
+(though since #1298 its release is a whole M.N.O and the parent's is M.N —
+the scheme below),
 and the whole reason to say so first is that this repository is a submodule of
 that one: its container is built beside that project's two, and a reader who
 has learnt to read one version string should not have to learn a second. What
-changed in the port is written down in this file's own header — four things,
+changed in the port is written down in this file's own header — five things,
 each with its reason — and is not repeated here. The scheme, the surfaces it
 reaches and the one number this repository cannot reconcile with the parent are
-under *The scheme, and the number is fixed when an artifact is BUILT* at the end
-of this section, moved from the root `CLAUDE.md`'s *Versioning*.
+under *The scheme: M.N.O is the release, and the build number follows it*
+at the end of this section, moved from the root `CLAUDE.md`'s *Versioning*.
 
 What belongs here is the four properties that make it a `common/` module rather
 than a script.
@@ -8835,7 +10896,7 @@ the life of the process.
 
 **A VERSION MAY NEVER STOP THIS SERVICE STARTING**, and this is the one place in
 `common/` where a read failure is deliberately survivable. An unreadable
-`VERSION` falls back to `0.0` with a message on stderr; a corrupt `version.json`
+`VERSION` falls back to `0.0.0` with a message on stderr; a corrupt `version.json`
 falls back to a computed record. Compare `keystore.js` two sections up, where a
 key that cannot be read is FATAL and the argument for that is spelt out: a wrong
 version misinforms a reader, and a wrong key invalidates every token this
@@ -8855,70 +10916,166 @@ to the container root rather than beside the shim.
 **`userAgent()` LIVES HERE FOR THE REASON THE MODULE DOES.** This service makes
 four outbound requests and three of them reach somebody else's server —
 federation's, SSF's RFC 8935 push, and XACML's change nudge. Each says
-`sts/<M.N.O> (<component>)` in RFC 9110 product form, built from one copy
+`sts/<M.N.O.build> (<component>)` in RFC 9110 product form, built from one copy
 of the product token, because three hand-written strings in three modules is
 three places for a rename to reach two of. It is not a claim about HTTP living
 in a version module: it is the one string in this service that is *made of* the
 version.
 
-### The scheme, and the number is fixed when an artifact is BUILT
+### The scheme: M.N.O is the release, and the build number follows it
 
 **This moved here from the root `CLAUDE.md`'s *Versioning* when that file was
 broken up.** Its `xacml-pep/` half is in `xacml-pep/CLAUDE.md`.
 
-Since 2026-09-06, and it is **the parent project's scheme rather than one of
-this repository's own** — `id-proto-debugger/client/version.js` is where it was
-written, `common/version.js` is a port of it, and the differences are listed in
-that file's header rather than here.
+**The release is read WHOLE from the repo-root `VERSION` file — `1.0.0`
+(rcbj, #1298) — and the version every surface draws is that release followed
+by a BUILD NUMBER (#1317).** rcbj, 2026-11-04: *"there continues to be the
+usual build number based on date + time by default, unless it is flagged as a
+release version, which the build number will be specified."*
+
+* **By default** the build number is the UTC build instant, `YYYYMMDDHHMMSS`
+  — `1.0.0.20261104151200`.
+* **A RELEASE build** is flagged with `STS_RELEASE=true` and names its number
+  in `BUILD_NUMBER`, a non-negative integer with no leading zero (`0` itself
+  allowed): `1.0.0.0`. The flag is `true`, `false` or empty; anything else is
+  refused rather than guessed at.
+* **A release flag without a valid number is REFUSED** at `--stamp`
+  (`STS-CORE-0164`, naming both variables, non-zero exit), so the image does
+  not build: a "release" carrying a date is the artifact nobody can name.
+* **Without the flag `BUILD_NUMBER` is IGNORED**, and the stamp says so on
+  stdout. Until #1298 it overrode the date on its own; a CI system exports a
+  variable of that name for its own purposes, and a stray one must not pass an
+  ordinary build off as a release.
+* **Only `--stamp` reads the two variables.** A record computed from a
+  checkout uses the instant the process started and is never a release.
+
+For one day (#1298) the version was the bare release with no build number at
+all; a stamp a build of that day wrote (no `build`, no `release`) is still
+read and reports the bare `M.N.O` it was written with. Before #1298 it was the
+parent project's scheme (`id-proto-debugger/client/version.js`): `VERSION`
+held M.N and the third component was the build instant or `BUILD_NUMBER`.
 
 ```
-0.1.20260906143205
-│ │ └── the BUILD NUMBER: the UTC build instant, YYYYMMDDHHMMSS, or BUILD_NUMBER
-│ └──── minor ┐ both from the repo-root VERSION file, which is the single
-└────── major ┘ source of M.N. Bump a release by editing it.
+1.0.0.20261104151200  version   M.N.O.<build>
+                      major, minor, patch   VERSION's M.N.O
+                      build     YYYYMMDDHHMMSS, or a release's BUILD_NUMBER
+                      release   true only for a build flagged STS_RELEASE=true
+                      commit    the first twelve characters of GIT_COMMIT (or git)
+                      builtAt   the instant the image was built (or the process started)
+                      stamped   whether the record came off version.json
 ```
 
-**THE BUILD NUMBER IS DECIDED AT IMAGE BUILD TIME AND NOT AT STARTUP, AND THAT
-IS THE WHOLE DESIGN.** `Dockerfile` runs `node common/version.js --stamp .`
+**How to build a release**: `docker build --build-arg STS_RELEASE=true
+--build-arg BUILD_NUMBER=0 .` (and the same two arguments to
+`-f xacml-pep/Dockerfile`, so the PEP is the same release build);
+`STS_RELEASE=true BUILD_NUMBER=0 docker compose build` passes both through
+`docker-compose.yml`; and `.github/workflows/build-container.yml`'s manual
+run takes `release` and `build_number`. Every build of main publishes
+`:<M.N.O.build>`, `:<M.N.O>` and `:latest`, the release being the patch
+worked out below.
+
+**EVERY BUILD OF `main` IS THE NEXT PATCH (rcbj, 2026-11-11).** 1.0.0 is
+followed by 1.0.1, 1.0.2 and so on, one per merge, worked out WHEN THE IMAGES
+ARE BUILT from the repository's git tags, and **nothing is committed back**:
+`VERSION` goes on saying what a person wrote in it, and the patch a build of
+main carries is in its image, its Docker tags and its git tags.
+
+* **The rule** (`tests/tools/release-number.js`, held by
+  `tests/release_number.js`), with `VERSION`'s content `M.N.O`: only release
+  tags count, `vM.N.P` with exactly three numeric components (a build's own
+  `vM.N.O.<build>` and any other line's tags are ignored). If the commit being
+  built already carries one, that release is reused (a re-run). Otherwise, if
+  no `vM.N.*` tag exists, or `VERSION`'s `O` is above the highest `P`,
+  `VERSION` is used as written; otherwise it is `M.N.(highest P + 1)`.
+* **The override is editing `VERSION`**, and it is the only one (no labels,
+  no inputs): a change that sets it to `1.1.0` or `2.0.0` makes the first
+  build of it exactly that, and the builds after it `1.1.1`, `1.1.2`.
+* **`STS_VERSION_RELEASE`** carries it into the stamp. `--stamp` (here and
+  in `sts-core::version`, for the PEP) records it in place of `VERSION`'s
+  release, as `major`, `minor` and `patch` and in `version`; it must be
+  `M.N.O` exactly or the stamp is refused (`STS-CORE-0175`) and writes
+  nothing. **Unset or empty it changes nothing** — the release is `VERSION`'s,
+  exactly as before — and only `--stamp` reads it. It composes with a release
+  build: `STS_VERSION_RELEASE=1.0.1 STS_RELEASE=true BUILD_NUMBER=0` is
+  `1.0.1.0`.
+* **`.github/workflows/build-container.yml`** works the number out in *Work
+  out the release* before either image is built — from `git ls-remote`,
+  because its checkout is shallow and has no tags — and passes it to both
+  builds on `main` only (a run started by hand from `main` included); a
+  develop build passes nothing and stamps `VERSION`. Builds of `main` run one
+  at a time (its `concurrency` group), *Decide what to publish* works the
+  number out again and stops before any push if another build took it, and
+  *Tag the release in git* makes `v<M.N.P>` on the commit — never moving it,
+  since it is what the next build counts from — keeping it on a re-run of the
+  same commit and refusing one that names another, as for the full
+  `v<M.N.P>.<build>`. The published `:<M.N.P>` image tag therefore names one
+  merge. (From #1639 and #1647 until this, every build of main was `VERSION`'s
+  release, and `v1.0.0` and `:1.0.0` moved to the newest.)
+
+The `VERSION` file must be exactly three non-negative integers with no leading zero; a
+`v1.0.0`, a `-rc.1`, the old two-component `0.1` or a fourth component is
+`STS-CORE-0039` and the version is `0.0.0` — never a failure (below). **No
+pre-release suffix is accepted**, because nothing needs one and every reader
+of the version (the User-Agent, the PEP's comparison with the PDP, the
+published image tag) would have to be taught what it means. The build number
+is the fourth component and is never in `VERSION`.
+
+**WHICH BUILD IS DECIDED AT IMAGE BUILD TIME AND NOT AT STARTUP, AND THAT IS
+STILL THE WHOLE DESIGN.** `Dockerfile` runs `node common/version.js --stamp .`
 after the source is copied, which writes a `version.json` that ships inside the
 image; `load()` prefers that record and computes one only when there is none. A
-service that numbered itself when the process started would report a different
-build every time its container restarted — which makes *which build is this*
-unanswerable in exactly the situation where it gets asked, because restarting is
-what somebody does when they suspect the build. **A record that was computed
-rather than stamped says so**, and every surface that draws the version repeats
-it: `stamped: false` means a checkout is being run and the number is when it
-started.
+service that recorded its build when the process started would report a
+different one every time its container restarted — which makes *which build is
+this* unanswerable in exactly the situation where it gets asked, because
+restarting is what somebody does when they suspect the build. **A record that
+was computed rather than stamped says so**, and every surface that draws the
+version repeats it: `stamped: false` means a checkout is being run and its
+build number and `builtAt` are when it started.
+
+**`buildId()` is the one opaque key of a build** — the build instant's digits
+and the commit, never drawn as a version. It exists because the static
+surfaces' catalogs are served `immutable` under `?v=<build>`
+(`common/public_assets.ts`, the shell's `data-sts-build`): they were keyed by
+the version until #1298, when every build of 1.0.0 was 1.0.0, and it stays the
+key since #1317 because two release builds that name the same `BUILD_NUMBER`
+are two different builds of `1.0.0.0`, and a rebuild's corrected words must
+not sit behind an address the browser was told to keep for a year.
 
 **SEVEN SURFACES DRAW IT AND THERE IS ONE SOURCE.** The startup banner, the front
 page's version line, the foot of every admin console page, the foot of every
-user portal page, `GET /admin-api` (with `build`, `commit`, `builtAt` and
-`stamped` broken out beside it, so a client reads fields rather than writing a
-regular expression), `/admin/sts-metadata` — the one page whose subject is
-what this service IS, where it is in the lead paragraph and in the JSON — and
+user portal page, `GET /admin-api` (with `build`, `release`, `commit`, `builtAt` and
+`stamped` broken out beside it — version.json's own names — so a client reads
+fields rather than writing a regular expression), `/admin/sts-metadata` — the
+one page whose subject is what this service IS, where it is in the lead
+paragraph and in the JSON (`build.number`, `build.release`, `build.commit`,
+`build.at`, `build.stamped`) — and
 **the remote PEP's own `GET /`, together with the row it registers on the PDP's
 `/admin/xacml/peps`**, which is the seventh and the subject of
 `xacml-pep/CLAUDE.md`. **Two
-of them used to read `require('../package.json').version`**, which is `M.N.0`
-with a placeholder patch, so the front page and the management API reported the
-same string for every build ever made. `tests/version.js` asserts the SOURCE
+of them used to read `require('../package.json').version`**, which was `M.N.0`
+with a placeholder patch while the version carried a build number, so the
+front page and the management API reported the same string for every build
+ever made. `tests/version.js` asserts the SOURCE
 each of them reads and not the string it renders, because two surfaces reading
 two different sources agree perfectly right up until they stop.
 
 **THE THREE OUTBOUND REQUESTS SAY WHICH BUILD IS CALLING**, in RFC 9110 product
-form — `sts/0.1.<build> (federation)`, `(ssf-transmitter)`,
+form — `sts/1.0.0.20261104151200 (federation)`, `(ssf-transmitter)`,
 `(xacml-pdp-notify)` — built by `version.userAgent()` so there is one copy of
 the product token. Each of those reaches somebody else's server, and their
 access log is where an integration with a mock they did not install gets
 diagnosed.
 
-**Both `package.json` files carry the same M.N as `M.N.0`** (semver needs three
-parts, and the real build number is not one of them). `node common/version.js
---check-manifests` reports drift and `--sync-manifests` fixes it.
+**`package.json` carries VERSION's M.N.O exactly** since #1298 (it was `M.N.0`,
+semver's three parts with the build number not one of them), and never the
+build number (#1317). `node
+common/version.js --check-manifests` reports drift and `--sync-manifests` fixes
+it. The Rust crates' `Cargo.toml` versions are Cargo's and are not kept in
+step: nothing reads them at runtime, and the PEP reports `VERSION`.
 
 **ONE NUMBER IS NOT RECONCILED WITH THE PARENT AND CANNOT BE FROM HERE.** That
 project's own `--sync-manifests` carries `sts` in its manifest list and rewrites
-`sts/package.json` to the PARENT's M.N.0. That checkout is this repository, so
+`sts/package.json` to the PARENT's version. That checkout is this repository, so
 after a parent sync the two say different things — which is correct: they answer
 *which release of the debugger is this submodule pinned into* and *which release
 of IYA STS is this*, and those are different questions. `--check-manifests`
@@ -9093,7 +11250,7 @@ passed, and no cross-verifier check), one by the source check (the grant keying
 by a prefixed issuer, which no in-process request reaches), and one equivalent
 (the restore's expiry filter, which the sweep every read runs makes
 unobservable) — and sections 14
-and 13 of `tests/vendored/sts_jwt_bearer_grant.js` and
+and 13 of `tests/protocol/sts_jwt_bearer_grant.js` and
 `sts_saml2_bearer_grant.js` the HTTP half, with four service mutants caught
 there.
 
@@ -9164,8 +11321,9 @@ its certificate. Four things reach outside the module:
   algorithms by name; their comments give the missing row as the reason and
   predate it.
 * **NOT TRANSLATED**: HMAC (no kid), the SPIFFE JWT-SVID (a separate
-  authority), and the three DID-bound kids — the DIF Domain Linkage Credential,
-  `/did/generate`'s credential, and the DID document's verification method ids.
+  authority), and the DID-bound kids — the DIF Domain Linkage Credential and
+  the DID document's verification method ids (`/did/generate`'s credential
+  was a third until it was deleted on #594).
   A key whose thumbprint cannot be computed signs under its internal kid and
   logs `STS-KEYS-0055` once.
 
@@ -9205,8 +11363,59 @@ because a leaf failing two at once hid two deleted checks in the first round:
 * for `tls-client`, that name is also the CN, which `issue()` writes from one
   username.
 
-A chain through NO held authority answers `issuedHere: false` and every door
-treats it exactly as before — that is an anchor somebody installed at `/tls/trust`.
+A chain through NO held authority answers `issuedHere: false` — an anchor
+somebody installed through `/admin-api/tls/trust`, an OUTSIDE authority — and
+since #1061 it is an identity only as the entry STORING it (below).
+
+**AN OUTSIDE CERTIFICATE IS THE ONE ENTRY STORING IT (#1061, rcbj
+2026-10-27).** Until then every door that met one read a name off it — the CN
+at `/tls/sign-in` (and the handshake SEEDED `cn=<CN>,ou=users` through
+`certificatePlan()`), the RFC 4514 subject at SCIM, `certificatePlan()`'s CN at
+the XACML gates — and any authority an operator trusted could therefore name
+anybody. rcbj's rule, whole: it verifies against the truststore, passes
+revocation, and is byte for byte (the SHA-256 of its DER) a leaf stored in
+`userCertificate` (RFC 4523) on EXACTLY ONE entry of the request's realm. Never
+by CN or subject; no entry created or seeded; stored on two, refused; renewed,
+stored again. What carries it:
+
+* **ONE MAPPING, OPTED INTO.** `identityOf(input, { stored: true, realm })`
+  and `checkSocket(socket, { stored: true })` answer an outside leaf with
+  `storedIdentityOf()`: `outside: true`, and either `accepted`, `stored`,
+  `kind` (`person` or `application`), `username`, `dn`, `fingerprint`, or
+  `error` `NOT_STORED` / `STORED_TWICE`. `checkSocket()` turns the refusal into
+  `{ ok: false, error }`, so a door that checks `gate.ok` refuses it, and each
+  door marks its own two codes. Asked per call and never memoised (the memo
+  still says WHETHER a leaf is outside) — `currentHolderOf()`'s reason.
+  `stillHeld()` answers true for a stored identity: the lookup that made it one
+  is that question.
+* **WHO DOES NOT ASK.** RFC 8705 client authentication at the token endpoint
+  keeps the client's registered `tls_client_auth` metadata (rcbj on #1061), and
+  GNAP's key proof and the certificate-bound token read a certificate as a KEY,
+  not a person. Neither passes `stored`, so neither pays for the lookup nor sees
+  its answer; `mtls.js`, `client_auth.js` and `gnap/` are unchanged. PKINIT
+  (`kerberos/krb5_pkinit.ts`) is not a TLS door and binds by RFC 4556's
+  `id-pkinit-san`, which is not a CN match; it was left as it is.
+* **THE DIRECTORY THROUGH AN EXISTING SLOT.** `cert_enrollment.ts`'s
+  `certificateHolders(sha256)` forwards to `certificateHolders` on the
+  directory slot `ldap/ldap_server.js` already fills for this module's
+  `findEnrolled()` — the slot that answers "which entry is this certificate
+  on". A slot of its own would have passed rule 3e's test the same way (a
+  require of the JavaScript `ldap_server.js` drags its routes forward) and
+  added only an indirection, so none was added. The member is OPTIONAL in
+  `setDirectory()`: a test's stub without it maps no outside certificate to
+  anybody.
+* **THE ADMIN DOORS** (`admin-core/admin_actions.ts`): `add-certificate` and
+  `remove-certificate` on the Users resource and `storedCertificatesOf()` for
+  `GET /admin-api/users/certificates`. Storing refuses a certificate already on
+  ANOTHER entry (`STS-ADMIN-0899`) rather than creating the two-holder state
+  every door would then refuse with nothing on either page saying why; LDAP can
+  still create it, and the doors refuse it then. Each change says CAEP
+  credential-change `x509`. **An application's half** (#1227):
+  `add-certificate` / `remove-certificate` on the Applications resource and
+  `applicationStoredCertificatesOf()` (`credentials.stored` of its
+  `?application=` answer), the same refusals but `STS-ADMIN-0906` for an
+  identifier the registry does not hold, and the CAEP event under the
+  application's own subject.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and
@@ -9231,7 +11440,7 @@ names the `openssl pkcs12 -export -legacy` rebuild for an older macOS that refus
 that, rather than this service writing a second, weaker format.
 
 `tests/tls_client_certificates.js` pins it (nine mutants) and section 9 of
-`tests/vendored/sts_portal_signing_key.js` the portal half (two service mutants).
+`tests/protocol/sts_portal_signing_key.js` the portal half (two service mutants).
 
 **AN APPLICATION MAY HOLD ONE SINCE 2026-09-13.** `issue()`, `listFor()`,
 `activeFor()` and `revoke()` take a holder KIND, and an application's slot is
@@ -9329,7 +11538,7 @@ back as its CN plus its dNSNames, so with `CN=alice` on a certificate for
 say the same thing. The UID is what keeps the subject DN naming exactly ONE
 entry, since a host may be registered on two and `ldap_server.js`'s
 `locateEntry()` turns a person's subject DN back into an entry.
-`tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
+`tests/protocol/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
 
 **A REQUEST THAT NAMES NO PROFILE AND ONLY HOSTS IS A `tls-server` REQUEST
 (2026-09-26, #252, rcbj's decision on #207).** `profileForIdentifiers(family,
@@ -9474,6 +11683,22 @@ entry. `issue()` hands it to `issueForDevice()`:
   now returns them as `attestations`; more than one is `STS-DEVICE-0021`),
   verified by `device_attestation.csrAttestation()`; product refuses a key
   with no anchored TPM attestation (`STS-DEVICE-0024`).
+* **Freshness** (#257) — a TPM statement's TPMS_ATTEST `extraData` is spent
+  (`attestationFreshness()` calls `device_enrolment.spendAttestationNonce()`)
+  as the nonce EST `/nonce` issued to the same principal under the same
+  `sts_est_nonce` cookie (`attestationSession.handle`). It is asked AFTER
+  the level, so a statement product refuses for its anchor spends nothing.
+  Fresh, the key's attestation records `freshness: fresh`. Anything else is
+  `unproven`: no cookie, an empty extraData, a nonce expired, spent or
+  issued to another principal, or any request over SCEP, which has no nonce
+  operation. Development certifies it with the reason. Product refuses it
+  (`mode.requiresFreshKeyAttestation()`, `STS-DEVICE-0050`). A claim store
+  that cannot be asked refuses in both modes (`STS-DEVICE-0028`).
+  **extraData IS the nonce's octets**, untransformed. The CSR-attestation
+  draft leaves "nonce selection" to the statement's own specification
+  (revision 29 section 4.3), and none exists for `tcg-attest-tpm-certify`.
+  `crypto.js` lists the seven places revision 20, the last text to define
+  the statement, disagrees with itself.
 * **Kept ON THE DEVICE** as an `x509` key (`proof` the family, the serial and
   expiry in its material), NOT on the owner's entry — it names the device —
   and recorded by `pki.issueEnrolled()` (subject kind `device`) so OCSP and
@@ -9507,11 +11732,14 @@ For the *Password and second factors* section of a person's console page.
   `stsMfaRequired` on the entry OR the authentication policy's `requireSecondFactor` (it was `authn.mfaRequired` until #64) — and `setMfaRequired()`
   writes the first (`0170`). `mechanismsFor()` carries it as `mfaRequirement`,
   beside `passwordResetLink`.
-* **`removePrimaryKeys()`** removes every key in the `primary` role and refuses
-  somebody holding no password (`0161`), which is what stops it being a lockout;
-  **`removeSecondFactors()`** removes the authenticator app, every `mfa` key and
-  the recovery codes, and on a partial failure (`0163`) reports what it removed
-  so the caller's signals describe what really happened.
+* **`removePrimaryKeys()`** removes every key (every key in the `primary`
+  role until #1135) and **`removeSecondFactors()`** the authenticator app,
+  every key (every `mfa` key until #1135) and the recovery codes; both refuse
+  (`0161`) somebody holding no password while a key is a way in, which is
+  what stops either being a lockout — now that a key has no role, either
+  reset takes the passwordless person's keys. On a partial failure (`0163`)
+  each reports what it removed so the caller's signals describe what really
+  happened.
 * **`entryExists()`** asks the directory's `personExists`, because `hasEntry()`
   answers false by design (the bootstrap's). **It is the ONLY "does this
   person exist" check here since 2026-09-18**: `beginTotpEnrolment()` asked
@@ -9526,6 +11754,53 @@ on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 `risc.autoEmitTypes` names `account-credential-change-required` and
 `recovery-information-changed` — `ssf/CLAUDE.md` has the table of which door
 sends what.
+
+## `credentials.ts` and `webauthn_policy.ts`: A PASSKEY HAS NO ROLE (#1135, 2026-10-29)
+
+rcbjBlueMars, 2026-10-29: a WebAuthn key carries no role. Until then each key
+was enrolled `primary` (passwordless) or `mfa` (a second factor beside a
+password), and the person was asked which at every enrolment — a question a
+non-technical person cannot answer, and the reason for the change: register a
+passkey, nothing else asked. **When a passkey is used is the authentication
+policy's decision, in layers, for every key alike; the key has no role and no
+say.** The realm's policy says what the realm supports (its `passkey`
+first-factor and `securityKey` second-factor rows, with
+`webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
+`webauthnPolicy.useAllowed()`). An application overrides it through the
+named authentication policy it names (`appAuthnPolicy`, #1148): its first
+factors (`webauthn` among them, enforced by the issuance policy's
+authn-mechanism rule) and its second factors (`securityKey` among them,
+applied where the second step is chosen: `authn.ts`'s `mfaAllowedFor()` /
+`narrowSecondFactor()`). So a held passkey
+makes a second step only where the realm, and the application if it
+overrides, accepts a passkey as a second factor.
+
+* **`Credentials.ROLES` is `Credentials.USES`** (`primary` | `mfa`, exported
+  as `USES`): the two ways a key may be USED, never a property of a key.
+  `addKey(username, credential, opts?)` and `addKeyClaimed()` lost their role
+  parameter; `beginKeyEnrolment()` / `beginAdminKeyEnrolment()` ignore an
+  `opts.role` and answer none; confirm and upgrade answers carry none.
+* **A stored role is dropped where a value becomes a key**
+  (`keysOfValues()` deletes it), so no reader — the sign-in, the portal, the
+  console, the reports — sees one, and no migration rewrites the entries.
+* **`webauthn_policy.ts`'s `roleAllowed(role)` is gone.** `useAllowed(use)`
+  answers whether a key may answer that sign-in step (`webauthn.primaryAllowed`
+  / `webauthn.mfaAllowed` and the authentication policy's `passkey` /
+  `securityKey` rows, which kept their names and now gate USE);
+  `enrolmentAllowed()` answers whether a key may be enrolled at all — WebAuthn
+  on and at least one use accepted (`STS-AUTHN-0531`). `STS-AUTHN-0066` is
+  retired. `authn/CLAUDE.md` has the sign-in half (`keyForAssertion()`).
+* **`mechanismsFor()`'s `primaryKeys` / `mfaKeys` are counts of ALL keys by
+  the use the realm allows** (both `keys.length` by default). A screen shows
+  `keys.length` once and never two role counts.
+* **Holding any key is holding a second factor** where the realm lets a key be
+  one (and, at a sign-in, the application where it overrides — above): `secondFactorRefusal()` (3ax) refuses a bare password to such a person
+  in product, and `withoutUsername()` no longer says "it is a second step".
+* **`keySummary()` has no role**, and the ceremony rows keep a `role` field
+  meaning the USE of an assertion, `''` for a registration
+  (`authn/webauthn_ceremonies.ts`).
+* **The two console resets** — `removePrimaryKeys()` and
+  `removeSecondFactors()` — each take every key now (see the section above).
 
 ## 3ax. `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`: the password-only doors and what they take instead (#101, 2026-09-22)
 
@@ -9543,8 +11818,8 @@ What is this directory's is where it is decided and what an app password is.
   answer, only in product (`mode.acceptsPasswordAloneFromSecondFactorAccounts()`
   — the named predicate, and a `REQUIREMENTS` row `second-factor-doors`), only
   for a PERSON (the slot's `isPerson`; where the hook is missing the answer is
-  yes — refuse by default), only when they hold an `mfa` key or an
-  authenticator app or `mfaRequirementFor()` says required, and never for a
+  yes — refuse by default), only when they hold a key (any key since #1135;
+  an `mfa` key until then) or an authenticator app or `mfaRequirementFor()` says required, and never for a
   caller declaring `secondFactor: 'asked-next'` or `'session-held'`. A `door`
   listed in `authn.passwordAloneDoors` passes, with a WARN per use. The
   refusal is `STS-AUTHN-0213`, shaped exactly as a wrong password's verdict,
@@ -9580,22 +11855,57 @@ What is this directory's is where it is decided and what an app password is.
   `appPasswords.maxPerPerson`.
 
 `tests/second_factor_doors.js` is the in-process half;
-`tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
+`tests/protocol/sts_second_factor_doors.js` drives the five doors over the wire.
 
 ### An application's own claim sets (2026-10-01)
 
-Each of `admin_stats.js`'s five claim sets may also be configured on an
+Each of `admin_stats.js`'s claim sets may also be configured on an
 APPLICATION: one JSON array of rows per set on its entry
 (`APP_CLAIM_ATTRIBUTES`: `oauthClaimsAccessToken`, `oauthClaimsIdToken`,
-`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`).
+`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`,
+and since #493 `krb5ClaimsPac`).
+
+**THE SIXTH SET, `kerberos-pac` (#493, 2026-10-06)**, is the claims a Kerberos
+ticket's PAC carries (`kind: 'kerberos'`, on `/admin/kerberos/claims` and
+`/admin-api/kerberos/claims`). It shares `checkClaimEntries()`, the
+`claims.change` audit row, `claimsAction()` and the CAEP announcement, and
+differs in three ways: every row carries a PAC TYPE (`PAC_CLAIM_TYPES`:
+string, int64, uint64, boolean — a fixed value is held to it at the write,
+`STS-REG-0338`), its name must make a claim id (`STS-REG-0336`;
+`pacClaimId()` derives `ad://ext/<name>:<first 16 hex of SHA-256>`), and its
+TICKED CATALOGUE (#498; #493 had none and refused it with `STS-ADMIN-0848`,
+now retired) is read off the ENTRY alone — a ticked attribute the entry holds
+is a STRING claim of every value, named by its catalogue spelling, under the
+rows and the roles claim, which win by claim id. The KDC reads it through
+`kerberosPacClaims()` (a TGT: the set, the person's realm-wide roles as a
+string claim, and the ticked attributes) and `kerberosApplicationPacClaims()`
+(an SPN's own rows, found by
+`applications.forServicePrincipal()`), and merges by claim id itself
+(`kerberos/CLAUDE.md`, *PAC CLIENT CLAIMS*). A ticket that carried claims is
+recorded with `claimSet: 'kerberos-pac'` and its username, so
+`liveClaimBearers()` lists it.
+
+**THE SEVENTH SET, `gnap_access_token` (#1250)**, is the claims a GNAP
+access-token JWT carries besides the protocol's own (`kind: 'gnap'`). It is
+on none of the claim-set pages: an application's GNAP configuration tab draws
+it (`gnapClaimsAccessToken`). `configuredJwtClaims()` reads the rows only, so
+the groups claim, the roles claim and the ticked catalogue are not added.
+The two JWT formats (`jwt-signed`, and the JWT inside `jwt-encrypted`) merge
+that object under the protocol claims, so a protocol name wins. Macaroon,
+biscuit and zcap do not carry it. A read that throws is `STS-GNAP-0908` and
+the token is still minted. Reserved names are the JWT list plus `access`,
+`flags`, `label` and `grant_id`. There is no directory-attribute selection
+and no combine attribute: unset stays union.
+
 `jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
 instead of `claimSet(id)`. That is the realm's rows, with the application's
 **added and winning by name** (rcbj's choice), so an application with none
 issues exactly what the realm does.
 
 * **Which application:** `applicationForClaims()` finds it by `client_id`
-  for the three JSON sets and by `audience` for the two SAML sets, reading
-  by identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
+  for the three JSON sets and for the GNAP set (the client instance
+  identifier), and by `audience` for the two SAML sets, reading by
+  identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
   keys `applications.settingFor()` already answers per-application settings
   for.
 * **One set of rules:** `checkClaimEntries()` was lifted out of
@@ -9610,6 +11920,52 @@ issues exactly what the realm does.
   (`announceClaimsReshaped()`); the live-holder fan-out is realm-wide today.
 
 `tests/application_claims.js` holds it.
+
+### An application's own attribute selections and credential claims (#495, 2026-10-06)
+
+The other half of each set — `claim_attributes.ts`'s ticked catalogue — and
+`vc_claims.ts`'s Credential claims selection may also be held per
+application, one JSON array of catalogue attribute names on its entry
+(`claim_attributes.APP_SELECTION_ATTRIBUTES`: `oauthClaimAttributesAccessToken`,
+`oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`,
+`saml2ClaimAttributes`, `saml11ClaimAttributes`; and
+`vcCredentialClaimAttributes`). **A different rule from the rows: held, it
+REPLACES the realm's selection** — a selection is a set, not a list of named
+rows, and "the application scope takes precedence" (rcbj) has to be able to
+DROP an attribute the realm ticks. Absent is the realm's; `[]` is none.
+**Since #395 (3cj) that is the UNSET choice**: an application may choose
+`application`, `union`, `intersection` or `realm` per set instead, for the
+rows and the selection alike.
+
+* **Which application:** `admin_stats.claimApplicationOf()`, lifted out of
+  `effectiveClaimSet()` so the rows and the selection of one set can never
+  answer for two different applications. The resolver passes it to
+  `claimsFor()`; the issuer asks it with the access token's `client_id`.
+* **The metadata stays the realm's.** OpenID4VCI's issuer metadata is one
+  document for every client; a client's selection decides what its
+  credentials carry, and a wallet's requested paths are filtered against it
+  (`rowsForPaths(paths, format, base)`).
+* **Checked at the write and at issuance:** `applications.claimSelectionProblem()`
+  (`STS-REG-0215`, the catalogue asked lazily through each module's
+  `checkNames()`); a stored value that fails is ignored at issuance with
+  `STS-REG-0214` and the realm's selection is used.
+* **Not done**, as for the rows: no CAEP `token-claims-change` on an
+  application's change.
+* **The OAuth sub-tab draws the three OAuth sets as ONE table** (#1144, rcbj
+  2026-10-29): a checkbox column each for the access token, the ID Token and
+  UserInfo (`web_applications.ts`'s `applicationClaimSelectionTable()`), under
+  ONE Save, `set-claim-selections`. **It writes only the columns that
+  changed**: a column posted with exactly the selection in force is left as
+  it is, so a Save that did not touch an INHERITING column does not freeze
+  the realm's ticks into an own copy that a later realm change would no
+  longer reach. Every column is checked before any is written. Each column
+  posts an empty value first, so a column with nothing ticked is an empty
+  list and not an absent one. `set-claim-attributes` and
+  `inherit-claim-attributes` still write one set each (the column's "Use the
+  realm's selection" is the latter, by a `formaction` query); the SAML and
+  credential sub-tabs keep one table each.
+
+`tests/application_claim_selections.js` holds it (F, for #1144).
 
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 
@@ -9747,7 +12103,9 @@ each argued there:
   statement that does not verify is refused in both modes; one that verifies
   and chains to nothing this realm trusts is `self-asserted`; only an
   anchored one is `attested`.** Every codec is `crypto.js`'s (the CSR
-  attestation codec is new there) and every chain `pki.js`'s.
+  attestation codec is new there) and every chain `pki.js`'s. Since #257 a TPM
+  statement's `extraData` goes back to the caller, which decides freshness
+  (3ag's *Freshness*), and this file calls no `node:crypto` of its own.
 * **The Google and Apple roots SHIP** in `pki_device_anchors.json`,
   generated from the vendors' URLs and PINNED by SHA-256, re-checked by
   `pki.deviceAttestationAnchors()` at load (a mismatch is dropped,
@@ -9829,8 +12187,38 @@ each argued there:
   * `holdsAny()` reads `owner`. Several entries share one owner, so the
     index keeps one entry per value, and a stale hit now REBUILDS rather
     than answering "none" (`ldap/ldap_server.js`).
-  * `listForOwner()` still walks. It wants every device an owner has, and
-    its callers are pages and a Native SSO grant.
+  * **`listForOwner()` stopped walking in #636 (2026-10-14).** It read
+    every device (`all()`) to keep an owner's, and its callers are the
+    console's person page, the portal's devices, a Native SSO grant on a
+    token request and the per-owner cap. It asks the directory's
+    `deviceEntriesOwnedBy()` (`ownedEntries()`), and `list()` with an
+    `owner` does too; `all()` is left only where the directory offers no
+    such hook. **In a windowed process none of the lookups builds the
+    index**: each is one indexed question to the store
+    (`ldap/CLAUDE.md`, *`ou=devices`*), because the index was rebuilt from
+    a walk of `ou=devices` after every write there in any process — a
+    recognition is one — and that walk cost the whole directory.
+    STS-DEVICE-0029 on a token request, and `/admin-api/users?user=` 503
+    at 6.4M people. `tests/device_lookups_windowed.js`.
+  * **Still every device, on a console page**: `list()` with no owner, for
+    `/admin-api/devices`, and `/admin-api/ldap/devices` —
+    `tests/no_full_directory_walk_in_requests.js` does not see the first
+    (the name is too common to follow), and it costs the realm, not the
+    register, in a windowed process.
+  * **Monitoring → Devices no longer counts every device (2026-10-22,
+    #820).** `countsAsync(isLive, { prepare })` asks the directory's
+    `deviceCountAsync()` for the total and `deviceEntriesPageAsync()` for ONE
+    page (the first 500 by key), runs `prepare(page)` — the console warms the
+    page's Native SSO sessions into the session window
+    (`authn.warmSessionAsync()`, in parallel) so the synchronous liveness
+    check reads the window and not the store — and tallies that page. It
+    answers `windowed`, `counted` and `complete` beside the tables, and the
+    page says when they cover only part of the register. Where the hooks are
+    not offered or answer null (the whole directory in memory) it is
+    `counts()`, `complete`. `devices_admin.ts`'s `monitorViewAsync()` and the
+    asynchronous `GET /admin-api/devices/monitor` are its callers;
+    `monitorView()` is kept, unchanged, for a caller that cannot wait.
+    `tests/console_devices_scale.js`.
 
 ### Remembered browsers (#265, 2026-09-26): `browser_devices.ts`
 
@@ -10106,6 +12494,14 @@ Network Load Balancer with TLS passthrough and
 `proxy_protocol_v2.enabled`. The file's header argues every point; the ones a
 maintainer of a listener has to know:
 
+* **A CDN'S EDGES ARE A SECOND LIST, BECAUSE THEY ARE A SECOND QUESTION (#1336).**
+  `global.edgeProxies` does not ask who may say what the client's address is. It
+  asks who must prove they are this deployment's own CDN, since its edges serve
+  all its customers. A request from those ranges without `global.edgeSecret` in
+  `X-Origin-Verify` is refused (`STS-CORE-0165`) in the front process, before
+  dispatch, and the header comes off the request either way, so Monitoring -> TLS
+  connection cannot show it to the caller. Empty asks nothing. Ranges with no
+  secret refuse every edge. `tests/edge_secret.js`, `deploy/aws/CLAUDE.md`.
 * **One list, `global.trustedProxies`**, not a second: the same question one
   layer down. `client_address.isTrustedProxy()` answers it and, unlike
   `peerIsTrustedProxy()`, an EMPTY list trusts nobody — so v2 with no usable
@@ -10133,13 +12529,26 @@ maintainer of a listener has to know:
   `tls.Server` drains them into the TLS engine, every other server needs the
   socket RESUMED after the real emit — without that `http.Server` answered 408
   (measured).
+* **A `tls.Server` is handed a WHOLE ClientHello, never part of one
+  (2026-10-06).** HAProxy sends the header in the segment that carries the
+  client's first bytes. When those were only part of a large ClientHello,
+  the TLS server sometimes never read the rest, so the connection hung with
+  nothing answered. In the `cluster` mode that was `sts_tlsfuzzer`'s large
+  hellos to LDAPS: 16 timeouts in 4 runs through the balancer, and 0 direct
+  or without the header. `firstFlightComplete()` reads the TLS records and
+  handshake length, and the gate keeps reading until the hello is whole
+  before it hands over, up to `FIRST_FLIGHT_CAP` (256 KiB) or the header
+  timer. After the fix the same runs had 0 timeouts in 4. Bytes that are not
+  a handshake record are handed over at once, as before. `report().heldHello`
+  counts the connections the gate held.
 * **A refusal is one audit row per (code, address) per minute**, the rest
   counted in `report()`: the connections refused here are the ones a stranger
   can open as fast as they like, and the audit ring is capped.
 * **Not covered**: the KDC's UDP socket (no stream), and the SPIFFE gRPC
   listeners (grpc-js owns its server). `tests/proxy_protocol.js` holds the
   parser, the three peers and the round trips through http, https with a
-  client certificate, net and ldapjs.
+  client certificate, net and ldapjs. It also covers a header followed by the
+  first 40 bytes of a ClientHello (2c, 3n).
 
 ### Database connections per container
 
@@ -10181,13 +12590,12 @@ Five decisions:
 
 - **A LEAF, AND JAVASCRIPT.**
   - `helpers.js`, `keystore.js`, `realms.js`-backed stores,
-    `revocation_status.js` and `krb5_principals.js` are in the parent
-    project's Kerberos COPY closure and are loaded there by plain node, so the
-    registry cannot be TypeScript.
+    `revocation_status.js` and `krb5_principals.js` were in the parent
+    project's Kerberos COPY closure and loaded there by plain node, which is
+    why the registry was written in JavaScript; that obligation ended with
+    #1280, and it may now be converted.
   - It requires only `config` (for its logger) and `error_codes`, so it can
     close no cycle.
-  - **It is OWED as one COPY line** in the parent's `tests/Dockerfile`
-    (`kerberos/CLAUDE.md`).
 - **A ROW IS FIVE MEMBERS AND NOTHING ELSE.**
   - `rowsOf()` copies `realm`, `key`, `validUntil`, `valid` and `basis` out of
     whatever `entries()` returns. A descriptor that handed back a decrypted key
@@ -10203,8 +12611,9 @@ Five decisions:
     and on no other path.
   - `realms.keyed(factory, onLookup)` grew its optional second argument for
     the one cache whose lookup is a property read (`helpers.js`'s STS proxy).
-  - **A lookup in a locked file is not counted** (`counted: false`). That is
-    the Kerberos authenticator store in `krb5_service.js`. The page says "not
+  - **A lookup the owner does not count is shown as not counted**
+    (`counted: false`). That is the Kerberos authenticator store in
+    `krb5_service.js`, which has no count yet. The page says "not
     counted" rather than showing a ratio of nothing.
 - **VALID IS THE OWNER'S CALL.**
   - A row with a deadline is valid until it passes.
@@ -10264,8 +12673,22 @@ cluster, each process has its own caches, and nothing here is coordinated,
 because a cache is exactly what a store is not. **What crosses to another node
 is a SNAPSHOT** (`snapshot()`, 2026-09-18): each front process puts its stores'
 sizes and counters — never a row — on its cluster membership row, refreshed
-every thirty seconds on a timer of its own, and `/admin/caches` draws every
+every thirty seconds by `cluster.cache-report`, and `/admin/caches` draws every
 snapshot that is not its own process's. `cluster/CLAUDE.md` has the channel.
+
+**A SNAPSHOT COUNTS, IT DOES NOT LIST (#704).** It was `report()` cut down,
+which built a row object for every entry of every store — a SHA-256 for each
+key `digestKey()` shows — only to count them, every thirty seconds on the
+front process. `tallyOf()` counts instead: a store's own `tally(now)` when it
+declares one (`{ size, largestRealm, valid }`), otherwise the PLAN its
+ejector carries when `mapEjector()` or `realmMapEjector()` built it (the Maps
+and the owner's expiry test) — sizes are the Maps' own `size`, kept by the
+Map and read, and `valid` is the size less what the expiry test marks, in one
+walk that allocates nothing. Any other store is still listed. So a tallied
+store's `valid` is "not past the owner's ejection test", which for every
+store the helpers serve is the reader's own test. `snapshotAsync()`, what the
+job runs, yields between stores and every `TALLY_SLICE` (500) entries. The
+local page (`report()`, `detail()`) still lists rows: it shows them.
 
 ### Ejecting expired entries (#49 P5, 2026-09-22)
 
@@ -10283,6 +12706,14 @@ latter asks it inside each realm (`realms.run()`), because a lifetime is
 usually a realm's setting. Where a store has a companion (an OpenID4VP
 transaction's request, a SCIM digest nonce's counts, a HOBA triple's
 challenge), the ejector removes both, as the reader does.
+
+**IN SLICES (#704).** The job runs `ejectExpiredAsync()`: a turn of the
+event loop between stores, and for a store whose ejector the two helpers
+built, every `TALLY_SLICE` entries inside it, deleting through the store's
+own Map as it goes (`slicedWalk()`; a Map's iterator survives the writes
+other code makes between slices). An ejector written by hand is still called
+whole, one store a turn. `ejectExpired()` stays for a caller that wants the
+answer at once.
 
 Twenty-four stores eject; `tests/cache_eject.js` holds the list. **Two that
 expire deliberately do not**: `oauth2.backchannelDeliveries`, whose sweep job
@@ -10326,14 +12757,39 @@ event loop for one round trip**, which is why only a miss pays it, and it is
 bounded by `ldap.workerDirectoryTimeoutMs` (also the thread's statement
 timeout): past it `STS-LDAP-0130`, a database error `STS-LDAP-0131`, and the
 request is refused rather than answered out of a window that cannot say what
-it is missing. A thread that dies is seen as a timeout, because its `exit`
-event is delivered by the loop the question holds; the next question starts a
-new one (`STS-LDAP-0132` is logged when the event arrives). The thread has no
-logger and so no Entering/Leaving pairs — the style's child-process exemption,
+it is missing. **A console request also has a budget on the sum (#359).**
+`app.js` enters `SyncQuery.runWithBudget()` for `/admin` and `/admin-api`
+only (`ldap.workerDirectoryBudgetMs`, 5,000). Each `query()` waits only for
+the room that is left and, once the budget is spent, throws `STS-LDAP-0175`
+without posting another question. No slot means no budget — SCIM, an LDAP
+operation, startup and the scheduler keep the per-question bound alone.
+**The budget ends with its request** (the review of #692): an
+`AsyncLocalStorage` store follows every timer and job a request starts, and
+a lazily armed job once carried a spent budget for the life of the process.
+So the slot closes on the response's `finish` or `close`, and the
+scheduler's `setTimer` and `persistence.js`'s flush and retry arm their
+timers through `SyncQuery.outsideBudget()`. The
+API stays synchronous. A thread that dies is seen as a timeout, because its
+`exit` event is delivered by the loop the question holds; the next question
+starts a new one (`STS-LDAP-0132` is logged when the event arrives). The
+thread has no logger and so no Entering/Leaving pairs — the style's
+child-process exemption,
 stated in its header. `tests/sync_query.js`.
 
 
 ## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
+
+**A GROUP AS A RECIPIENT (#989, 2026-10-26).** `SendRequest.groupDn` names a
+group of this realm, and the address is the group's own `mail` attribute,
+read through the directory slot's `groupEntry(dn)` (filled by
+`ldap/ldap_server.js` beside `personEntry`). It is queued under the DN as
+the recipient key, so the dedup window, the ceilings and the outbox rows
+name the group; a group with no entry or no address is refused with the
+codes a person's would be (`STS-MAIL-0012`, `0011`). The rule the channel
+was built on holds: the address comes from the directory and never from
+the request. The one caller is the reports application's result notice
+(`report/CLAUDE.md`), which checks the address first and records its own
+code for a group without one.
 
 Until #63 this service had no way to tell a person anything. A reset link and
 an activation link were shown to an administrator to pass on by hand, and a
@@ -10377,6 +12833,14 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   what `tests/no_periodic_timers.js` holds.
 - **A SENT message loses its body.** A dead letter keeps its body for the
   retry, and a captured one keeps it because the body is all it is for.
+  **#614 asked whether a dead letter should, and the answer is yes**: the
+  body holds the reset and verification links and codes, which is why a
+  sent row drops it, but `retry()` re-sends exactly that body and a row
+  without one is refused (`STS-MAIL-0018`, "kept no body"). So a dead
+  letter keeps it until it is retried — after which the retry's own `sent`
+  drops it — or until retention removes the row (`mail.retentionS`,
+  `mail.maxRows`), which is the only way a dead letter is dropped. The
+  links it carries expire on their own lifetimes either way.
 
 **Three rules keep it from being an open relay or a phishing kit:**
 
@@ -10445,7 +12909,7 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   message.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
-`smtp-server` with STARTTLS and DKIM. `tests/vendored/sts_mail.js` drives it
+`smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it
 over HTTP into the Mailpit the compose stack runs. docs/mail.md is the
 operator's guide.
 
@@ -10480,8 +12944,9 @@ decisions are rcbj's, on the ticket:
   reaches, refuses a session whose mechanism the policy does not accept in
   the role it answered in (STS-AUTHN-0268 first, -0269 second); held second
   factors are not refused there, by the contract above. The sign-in screen
-  draws only what it accepts, `webauthnPolicy.roleAllowed()` asks the two
-  security-key rows, `totp.settings().enabled` and
+  draws only what it accepts, `webauthnPolicy.useAllowed()` asks the two
+  security-key rows (`roleAllowed()` until #1135, when they stopped gating
+  enrolment and started gating USE), `totp.settings().enabled` and
   `backupCodes.settings().enabled` read theirs, and
   `credentials.mfaRequirementFor()` reads `requireSecondFactor`.
 - **EMAIL IS OFF BY DEFAULT, AND GUARDED (D1)**: NIST SP 800-63B-4 section
@@ -10513,13 +12978,166 @@ administrator cannot decide who is one. The default realm's
 is the account a service is recovered through. `tests/admin_second_factor.js`
 holds it.
 
-`tests/authn_policy.js` holds the module, the inheritance, the mail guard,
-the retired settings and a kind registered later.
+**NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29)** replaced an
+application's own `appAuthnMechanism` and `appMfaMechanism`: the application
+holds ONE reference, `appAuthnPolicy` (`common/applications.js`), and the
+lists live on a policy. rcbj's decisions:
+
+- **THE APPLICATION NAMES ITS POLICY**, one value; since #1237 a GROUP
+  names one too (`stsAuthnPolicy`, rule 3cx), and the named passkey policy
+  went the same way in #1235.
+- **A NAMED POLICY HOLDS TWO LISTS AND A PRECEDENCE**: the first-factor
+  mechanisms allowed (`stsAuthnPolicyMechanism`, `federation.MECHANISM_IDS`)
+  and the second factors allowed (`stsAuthnPolicySecondFactor`), each "none
+  is every one" exactly as the two attributes were. Everything else about
+  authentication — the rows above, `requireSecondFactor` — stays the
+  realm's, on `cn=default`.
+- **STORED BESIDE `cn=default`** as `cn=<name>,ou=authnPolicies`, in THIS
+  realm only: nothing is inherited from the default realm, because a realm's
+  applications name its own policies. `default` is not a name a policy can
+  take (`STS-AUTHN-0532`); an application naming it, or nothing, is narrowed
+  by nothing beyond the realm's policy.
+- **`mechanismsFor(fields, person)` IS THE ONE QUESTION** every reader of
+  the two old attributes asks now — the routing in `authn.ts`,
+  `authn_mechanisms.ts`'s and `mfa_mechanisms.ts`'s `allowedOf()` (and so
+  the issuance gate), the `authMechanisms` report source. **A name no policy
+  holds allows NO mechanism** (`missing`, `STS-AUTHN-0536`): a reference
+  fails closed, as a misspelt list did — a group's as an application's. The console's and the API's writes are checked against
+  `default` and the realm's policies (`CHOICES_CHECKED_HERE`,
+  `STS-REG-0203`), so that state is reached only past them — an
+  `ldapmodify`; a delete of a name the realm does not hold is
+  `STS-AUTHN-0535`.
+- **TWO ACTS BESIDE SAVE AND RESET**, `policy_kinds.ts`'s `extraActions`:
+  `save-named-authn-policy` {name, description, mechanisms, secondFactors}
+  (an unknown value is `STS-AUTHN-0533`) and `delete-named-authn-policy`
+  {name}, REFUSED while an application or a group of the realm names it
+  (`STS-AUTHN-0534`; `namedBy()`, which reaches `applications.js`'s
+  `applicationsNamingPolicy()` lazily because this file is a leaf, and the
+  directory's `groupsNamingPolicy()`). The console draws the
+  Authentication policy tab as the passkey policy's three sub-tabs (rcbj):
+  Default, Named policies and New policy, the last two from
+  `admin-ui/web_policies.ts`'s `namedAuthnPoliciesSection()`.
+- **NO MIGRATION IS OWED** (`applications.js`): the two old attributes are
+  no longer read.
+
+**GROUPS NAME ONE TOO, AND THE POLICIES COMPETE (#1237, rule 3cx).** A
+group's `stsAuthnPolicy` (declared with `PolicySelection.declareReference()`,
+so the group page draws its picker and `setGroupPolicy()` checks it) names a
+policy as `appAuthnPolicy` does, and a named policy carries
+`stsAuthnPolicyPrecedence` (1 to 1000, 100 when absent; a bad one on a save
+is `STS-AUTHN-0541`). `mechanismsFor(fields, person)` hands the
+application's reference and the person's groups' (`personGroupReferences()`,
+the group index) to `PolicySelection.rank()`; the lowest precedence wins,
+ties by name, `default` where nothing is named, and ANY missing name fails
+the sign-in closed. A person names none of their own.
+
+- **BEFORE THE PERSON IS KNOWN ONLY THE APPLICATION'S REFERENCE APPLIES**:
+  `authn.ts`'s routing (`mechanismFor()`, the screen's first draw) asks with
+  no person. The choice is made again with the person at the second factor
+  (`mfaAllowedFor()`), at the session's start (the gated doors' mechanism
+  question) and in the issuance gate's facts (`mechanismFactsOf()`,
+  `mfaFactsOf()`, from `asked.subject`).
+- **A SIGN-IN NAMING NO APPLICATION IS NOT ASKED**, as before #1237: the
+  gate answers "no application to decide about", so a group's policy is held
+  to when an application's issuance is asked for on that session, which every
+  browser issuance names.
+- **THE CONSOLE** draws the Named policies sub-tab with the generic section's
+  precedence row, "named by" sentences and `references` (rule 3cx), the two
+  checkbox lists staying this kind's own; the kind row is `tabbed`. The kind
+  exports no `SELECTORS`: its save and reset take `default` alone and its
+  named policies have acts of their own, so `authnPolicyExtras()` sets
+  `selectors` and `references` on the view itself.
+- **THE REPORT** (`authMechanisms`) gains a row per mechanism of the policy
+  each group names (`group`, `policy` columns); an application's rows are
+  its own reference's, as the screen's first draw reads it.
+
+`tests/named_authn_policies.js` holds the named policies,
+`tests/authn_policy_by_group.js` the group reference and the ranking (both
+ways round, at the issuance gate), and `tests/authn_policy.js` the module,
+the inheritance, the mail guard, the retired settings and a kind registered
+later.
+
+## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
+
+**rcbj's decisions on #221 are the design**, and the issue's comments of
+2026-10-05 hold them: a service account is a PERSON entry carrying
+`stsServiceAccount` (an auxiliary class), not an application; it is governed
+by a THIRD policy kind on Directory → Policies, per realm and inherited from
+the default realm; browser sign-in is refused unless the realm allows it; and
+its password may ROTATE, pushed to a secrets manager first and committed only
+after, with the previous password kept for an overlap. `docs/service-accounts.md`
+is the operator's page; each file's header argues its part.
+
+* **ONE PREDICATE.** `ServiceAccounts.isServiceAccount(entry)` is asked by
+  every door; `isServiceAccountName()` for a door holding a name. No door
+  reads the attribute. The directory's only writer of the attributes is
+  `ldap_server.js`'s `writeServiceAccount()`, narrowed to the module's list,
+  and it keeps the auxiliary class beside the flag; an LDAP modify meets the
+  same rules (`serviceAccountWriteRefusal()`), and the attributes are never
+  self-writable whatever `ldap.selfWritableAttributes` says.
+* **THE DOORS ARE ASKED BEFORE THE PASSWORD IS, IN BOTH MODES**
+  (`credentials.serviceAccountDoorRefusal()`, beside the disabled account and
+  for its reason). The door is what the caller DECLARED — `door`, or a
+  browser by its `secondFactor` exemption — and a caller that declares
+  nothing is REFUSED for a service account (`secondFactorRefusal()`'s refuse
+  by default). The password grant declares `door: 'ropc'`, which is no app
+  password's door. The KDC asks the same question through
+  `krb5_person_keys.personDisabled()`, which is the question `krb5_kdc.js`
+  asks. A browser session from ANY first factor is refused in
+  `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
+  is not.
+* **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
+  `secondFactorDemand()` answering nothing needed. A factor the account holds
+  is still asked at the sign-in screen — the authentication policy's "there
+  is no never" — which only matters where the realm lets it sign in there.
+* **THE PREVIOUS PASSWORD** is compared only where the current one did not
+  match, and only while its expiry, checked AT THE READ, is in the future. A
+  match on it is NEVER handed to the password observer: the KDC derives keys
+  from what it is handed against the CURRENT hash, and would store the old
+  password's keys as the new one's. The KDC keeps the retired key version
+  for at least the overlap (`holdUntil`), for tickets; the old password never
+  pre-authenticates.
+* **THE ROTATION'S ORDER IS THE GUARANTEE**: claim, generate, PUSH, and only
+  then `credentials.setPassword(..., { rotation })`, which keeps the replaced
+  hash. A failed push changes nothing. A commit that fails after a push that
+  succeeded is the one state that is not "nothing" and is an alarm at once
+  (STS-SVCACCT-0045). While rotation is on and the account names a
+  destination, `preparePassword()` refuses a password set by hand at every
+  door (STS-SVCACCT-0013).
+* **ITS STATE IS ON THE ENTRY** — rotated-at, the previous hash and its
+  expiry, failures — because any node may run the job next (#49).
+* **NAMED PROFILES, NAMED BY THE ACCOUNT (#1240, rule 3cx).** Beside
+  `default` (still inherited from the default realm) a realm holds named
+  profiles of its own, each the whole field set and
+  `stsServiceAccountPrecedence`. A service account names one in
+  `stsServiceAccountPolicy`, the kind's only reference: no application or
+  group is governed by this policy. The attribute is in
+  `service_accounts.ts`'s `ATTRIBUTES`, so it is read with the account (one
+  entry), never self-writable, and cleared with the flag; only a service
+  account holds it (STS-SVCACCT-0048) — the person editor asks the
+  `holderRefusal` the declaration carries (the one addition #1240 made to
+  `policy_selection.ts`), an LDAP add or modify and a create ask
+  `writeRefusal()`. **A reference the realm does not hold gets `default`
+  and is logged (STS-SVCACCT-0047), not refused**: every built-in default
+  here is the more secure one, refusing every door would stop a program and
+  stopping its rotation is weaker, and the reference cannot dangle through
+  this service (checked at every write; a named profile is not deleted
+  while named, STS-SVCACCT-0049). **Every reader resolves the account's
+  own profile** — `credentials.serviceAccountRefusesDoor()` (every door and
+  the browser), `mfaRequirementFor()`, `rotatesThroughDestination()`,
+  `service_accounts.check()` and the LDAP door's `requireOwner`, the
+  console's sign-out on becoming one, and the rotation job, which resolves
+  each reference once per run and is off only where no profile of the
+  realm rotates. **Who names a profile is the service-account index**
+  (`service_accounts.names()`), not a walk: only a service account can.
 
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
-The emailed six-digit code and the emailed sign-in link are drawn and checked
-by `authn/email_factor.ts` (`authn/CLAUDE.md`); what the screens, the
+The emailed six-digit code and the emailed sign-in link are answered and
+checked by `authn/email_factor.ts` (`authn/CLAUDE.md`) — their three pages
+are the sign-in surface's since #573, drawn in the browser from
+`/authn-api/mfa/{id}`, the mailed link still landing on
+`/authn/email-link/open`, whose GET spends nothing; what the screens, the
 credential store, the portal and the console must agree on is here:
 
 - **A PERSON OPTS IN (D8)** — `stsMailFactor` (`code` | `link`), from
@@ -10538,7 +13156,7 @@ credential store, the portal and the console must agree on is here:
 An emailed factor is `amr ["otp"]` (RFC 8176 has no value for email, D2) and
 meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
 `tests/email_factor.js` drives it end to end in process;
-`tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
+`tests/protocol/sts_email_factor.js` over HTTP into Mailpit.
 
 
 ## `closed_sets.ts`: THE CLOSED SETS AN ADMINISTRATOR'S INPUT IS HELD TO (#86, 2026-09-26)
@@ -10599,6 +13217,16 @@ never a host, port or pid. The Cluster page's row has a `prepare` step
 every peer before the synchronous status block draws; a cell that does not
 answer is drawn unreachable (`STS-CELL-0194`), never dropped.
 
+**THE OUTBOUND SCIM CLIENT'S OPERATIONS (#553)**, registered by
+`scim/scim_client.ts`'s `registerCellOps()` (`scim/CLAUDE.md`, *The outbound
+SCIM client across cells*):
+
+| Operation | Asked by | Answers |
+|---|---|---|
+| `scim-client-group-share` | a group's OWNER cell before it deletes the group, or PUTs the merged membership to a provider without PATCH; and, with `recheck`, another cell telling the owner its share changed | this cell's share of the group at that client — the SERVICE PROVIDER'S opaque ids of its pushed, linked members, never an attribute; with `recheck` the owner queues the group |
+| `scim-client-summary` | the cell drawing Protocols → SCIM → Clients, `GET /admin-api/scim/clients` or `GET /admin-api/scim` (`acrossCells()`), each call bounded by the channel's timeout | every client's counts, pause and last reconciliation in this cell; for the one client named, its queued, retrying and dead deliveries ONLY where `releaseDecision()` (purpose `directory-list`) releases this cell's residents to the asking cell — they name residents. Unanswered: drawn unreachable (`STS-SCIMC-0034`) |
+| `scim-client-act` | `act()`, for `retry-delivery`, `retry-dead`, `purge-dead`, `reconcile` and `deliver-now` with a `cell` naming another cell, or without one (every cell) | the act done HERE (`local`, so it never fans out again), its error code spelt out as `code`, since a Symbol does not cross JSON |
+
 | Module | What it is |
 |---|---|
 | `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |
@@ -10643,7 +13271,7 @@ edge of every request a cell relays.
 |---|---|---|---|
 | `holdDecision()` | the handoff of #98 D9: may a session, and the credential-free projection of the entry it stands on, be HELD by the serving cell? | `hold-session` | not a refusal: the session stays at home and every request is relayed there (D4's "strict, with relay") |
 | `serveDecision()` | the edge: may a request about the person be served here at all, even by relaying? | `serve-request` | a REFUSAL, marked `STS-CELL-0183` on the answer for the caller's response — the realm's hard geofence |
-| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer |
+| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) — and, purpose `scim-provision` (#553), a person's home cell before it pushes them to an outbound SCIM client's service provider | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer; for `scim-provision` the person is OUT OF SCOPE (`STS-SCIMC-0031`) |
 
 **NOTHING HERE DECIDES.** rcbj's rule — every authorization decision is a
 rule of the issuance policy, and a subsystem sends facts — is followed the
@@ -10682,6 +13310,19 @@ resident where they are and there is no transfer. A home cell the service
 does NOT HAVE has jurisdiction `''`, and no rule reads `''` as anybody's home
 or as listed — `*>us` loosens the default for every KNOWN home only.
 
+**A SERVICE PROVIDER IS IN NO CELL (#553).** The outbound SCIM client
+(`scim/scim_client.ts`) sends a person's data to a third party, which is in a
+JURISDICTION its client declares (`scimClientJurisdiction` on the
+application entry) and in no cell. So `releaseDecision()` takes
+`servingJurisdiction` in place of `servingCell` — the serving side of the
+question outright — and a `subject`, the one person (`urn:uuid:<entryUUID>`),
+so a realm's own policy may decide per person; the purpose is
+`scim-provision`. Nothing else changed: the built-in rule reads the purpose
+as it reads any other (it releases on the same jurisdiction or a listed
+transfer), an empty jurisdiction is unknown and never listed, and the
+`cells.permittedTransfers` list a realm writes for its cells — `ca>eu` — is
+the list that lets a person go to an `eu` service provider.
+
 **Single-cell mode asks nothing**: with `cells.id` empty all three answer
 allowed (and nothing relayed) without reaching the gate, so the service is
 exactly what it was before cells.
@@ -10718,6 +13359,19 @@ sighting moved the clock, which every authentication does. The mode is not in
 the key: the one mode-dependent member of a view is computed when it is built.
 `applications.listing` on `/admin/caches`.
 
+**`load()` is kept by the same clock (#758, 2026-10-20)**: one identifier's
+entry and parsed record, per realm, so the few dozen times a sign-in asks
+about its client (`clientConfigOf()` at the authorize, resume and token steps,
+`settingFor()`, the role and issuance checks) read the directory once per
+clock. Absence (`known: false`) is kept too. Every caller still gets a record
+of its own (`copyRecord()`, the credential snapshot `save()` compares with
+included), because writers change it and save it. At most `MAX_LOAD_MEMO`
+(256) identifiers per realm. **A sighting moves the clock on every
+authentication** (`seen()` writes the counters), so this saves the reads
+between two sightings — about 5% of a request worker under a sign-in load on
+8081. `applications.load` on `/admin/caches`;
+`tests/sign_in_registry_reads.js` section A.
+
 **A sealed field opens when it is READ.** `view()` makes each sealed member of
 `fields` an accessor that calls `keystore.open` on access and keeps nothing
 (key-material residency): a caller that wants the PEM gets it as before, and a
@@ -10726,3 +13380,2168 @@ the population. `requiredRolesFrom()` and `consent.globalConsentsFrom()` read a
 view already in hand, which is what `/admin/roles` and `/admin/consent` do now
 instead of reading each entry back out of the directory by identifier.
 
+## 3cf. `attestation_revocation.ts`: GOOGLE'S ANDROID ATTESTATION STATUS LIST, CONSULTED (#256, 2026-10-06)
+
+An Android Key Attestation chain that verifies to Google's roots can still be
+one Google has REVOKED (a leaked batch key, a compromised intermediate), and
+Google says which by serial at its status list. Both Android verifiers now
+ask it about every certificate of the chain: `device_attestation.ts`'s
+`android()` and `authn/webauthn_attestation.ts`'s `trustOf()` for an
+`android-key` statement. rcbj's four decisions are in the module's header.
+
+* **THE LIST IS A RISK DATASET**, `android.attestation-status` beside
+  `fido.mds3` in `risk/risk_datasets.ts`, for the versions, the
+  verify-before-active, the staleness (`devices.androidStatusStaleHours`),
+  the upload door and the console's table it already has. Its rows are keyed
+  rows in the table the MDS3 entries use (`rowKind: 'fido'`, key kind
+  `android-serial`), so it needed no schema change; serials are normalised on
+  both sides (`pki.certificateSerialHex()`, `RiskDatasets.androidSerialKey()`).
+  The provider needs no terms acceptance (`noAcceptance` in `risk_terms.ts`):
+  the job is on by default and must not wait for one nobody is asked for.
+* **UNCHECKED IS NOT REVOKED.** No list, or a stale one, leaves the chain
+  attested with the reason; `mode.refusesUncheckedAttestationRevocation()` —
+  product with `devices.androidRevocationRequired` — is the one place that
+  makes it unattested.
+* **WHAT IS KEPT** on each key's attestation record: the chain's serials and
+  the verdict. A key registered before #256 kept no serials and cannot be
+  rechecked; the pages say so rather than guess.
+* **THE RECHECK** (`devices.android-status-recheck`) runs when a list is
+  activated and daily, over every realm: a device key the list now revokes is
+  downgraded through `devices.downgradeKeyAttestation()` (self-asserted, the
+  device's level recomputed, audited, CAEP credential-change `update`); a
+  WebAuthn credential's statement becomes untrusted through
+  `credentials.untrustKeyAttestation()` with the same signals. The device's
+  STATUS is never touched: a leaked batch key says the attestation proves
+  nothing, not that this device was compromised.
+
+### The recheck reads its holders, without blocking, when something moved (#615, 2026-10-13)
+
+**On 8081 (about 191,000 people, a windowed directory) the 17:00 recheck
+stopped every listener for minutes**: `credentials.androidAttestedCredentials()`
+was `persons()` and a `keysOf()` per person — a synchronous store read each,
+on the serving front process — to find one person holding a security key.
+rcbj's decision was all five of #615's points; the module's header has them,
+and what a maintainer must not undo is this:
+
+* **THE MARKERS ARE DERIVED, NEVER WRITTEN BY HAND.**
+  `stsAndroidAttestedCredential` (a person: the credential ids) is written by
+  `ldap_server.js`'s `deriveAndroidMarker()` on every write of
+  `stsWebauthnCredential`, from `credentials.androidMarkerOf()` — so the rule
+  of what is recheckable stays in `credentials.ts`, a removal or an untrusting
+  takes it off, and a socket write of either is refused
+  (`CREDENTIAL_ATTRIBUTE_DOORS`). `stsDeviceAndroidKey` (a device: the key
+  ids) is derived in `devices.ts`'s `write()`, beside the thumbprints. Both
+  merge by value (`directory_merge.js`'s `MULTI`), as the keys do.
+* **THE MARKER DECIDES WHO IS READ, NEVER WHAT IS RECHECKED.** The holders
+  come back raw from the directory's `holdersAsync()` and their keys are
+  interpreted by `keysFromValues()`/`fromEntry()` and
+  `isAndroidRecheckable()`, the census's division of labour.
+* **ASYNCHRONOUS, ON THE READ POOL.** `holdersAsync()` is
+  `DirectoryWindow.holdersAsync()` in a windowed process — `withAttribute()`
+  (the GIN index on `attr_names`) a page at a time through the bridge's
+  `queryAsync()`, which `persistence.js` attaches as the driver's
+  `directoryQuery()`, each row taken as answered rather than re-read by key —
+  and a sliced walk of the in-memory Map otherwise. The chains are asked about
+  in batches of 50 with a `setImmediate` and `stillOwner()` between them.
+* **SKIPPED WHEN NOTHING MOVED.** `devices.androidRecheck` (persisted, per
+  realm, cell tier) holds `covered` — the list version, the registration mark
+  and the backfill version of the last COMPLETE recheck — and `registered`,
+  the mark `credentials.addKey()` and the device register's `create()` /
+  `addKey()` move when an Android-attested key is registered
+  (`noteRegistration()`). A scheduled run skips a realm where neither moved;
+  Run now and a list's activation (`requestRecheck()`, a manual trigger)
+  always run; no list or a stale one rechecks nothing and forgets the
+  version, so the first current list rechecks everything.
+* **THE BACKFILL** runs once per realm (`MARKER_BACKFILL`) before the first
+  recheck, over the holders of the keys themselves, re-reading each person
+  or device whose marker is wrong in the same tick as the rewrite, so a
+  signature counter moved by a sign-in in between is not written back.
+* **A DIRECTORY WITHOUT `holdersAsync()`** (a test's stub) gets the old walks;
+  the run's summary says `WALKED`.
+
+`tests/devices_android_recheck.js` counts it — 3,000 people, 6 holders: the
+walk asks `persons()` once and reads 3,006 keys; the holder path asks
+`persons()` never and reads one holder query of 6 rows — and holds the same
+downgrades, the skip and the backfill. `tests/no_full_directory_walk_in_jobs.js`
+holds the audit of every other job (`cluster/CLAUDE.md`).
+
+## 3ce. `secret_destinations.ts` and `secrets.js`'s `pushSecret()`: WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06)
+
+rcbj's design on #221: a service account is a person entry with a flag (P1),
+its password is rotated automatically (P4), and **each new password is
+PUSHED to a secrets manager first, its hash committed only after the push
+succeeded** — a failed push changes nothing. This is the push and where it
+goes.
+
+**A DESTINATION IS AN APPLICATION ENTRY, NOT A ROW OF A STORE.** rcbj's answer
+to the design's open question 3: "Each push destination is an application
+entry in the realm, and the destination's write credential is held on that
+entry", so the rule that every credential sits on a user or an application
+entry keeps no exception. `applications.js` has a `secret-destination` row in
+`PROTOCOLS` and ten `secretDest*` attributes (`families:
+['secret-destination']`, so `familyRefusal()` refuses them on any other
+entry); the register is `applications.list()` filtered by
+`declaredFamiliesOf()`, and its `id` is the entry's DN — what P1's
+`stsSecretDestination` names. An entry declared for this family alone is
+refused every issuance in product mode by the declaration rule, which is
+right: a destination is something this service CALLS. Because it is an
+ordinary entry, its page under `/admin/applications` shows the location
+attributes in the field grid; Directory → Secret destinations is the page
+that MEANS them.
+
+**THE WRITE CREDENTIAL IS WRITE-ONLY, AND EVERY DOOR WAS CLOSED BY NAME.**
+`secretDestCredential` is in `SEALED_FIELDS` (sealed under the
+key-encryption key where keys persist; in development it is stored as the
+other sealed fields are, for `sealFieldValue()`'s reason) AND in
+`WITHHELD_FIELDS` (a sentence in `fields` and `attributes`, with no length,
+unlike Kerberos keys'), in `ldap_server.js`'s `SECRET_ATTRIBUTES`, out of the
+field grid (`gridExcludedAttributes()`), refused by `reveal-secret` (a
+withheld field is never revealed), `secret: true` so an update's audit
+sentence does not quote it, and a seal label of its own
+(`secret-destination-credential`, `/admin/encryption`'s table and
+`keystore.js`'s `DIRECTORY_CLASSES`). The one reader is
+`applications.secretDestinationCredentialOf()`, called by `push()` for the
+call that uses it.
+
+**`pushSecret()` LIVES IN `secrets.js`, BESIDE THE READ PATH**, because it is
+the same stores through the same SDKs, loaded through `loadSdk()` so
+`tests/secret_destinations.js` drives fakes. The credential always arrives
+with the target — no SDK is handed its ambient chain, which is the service's
+own read-only identity:
+
+| Provider | Write | A secret that does not exist |
+|---|---|---|
+| `aws` | `PutSecretValue`, region and keys from the entry | `ResourceNotFoundException` — the call never creates |
+| `gcp` | `AddSecretVersion` under `projects/<p>/secrets/<name>` | gRPC NOT_FOUND — the call never creates |
+| `azure` | `setSecret`, after `listPropertiesOfSecretVersions` | **checked first**: `setSecret` WOULD create one; the window between the two calls is the operator's own delete |
+| `vault` | KV v2 `POST <mount>/data/<name>` with `options.cas` = the `current_version` its metadata read | 404 on the metadata; a version written in between is `STS-SECDEST-0004` and nothing is overwritten |
+| `file` | written in place, `O_NOFOLLOW` and no `O_CREAT`, under the destination's directory | refused; a name that leaves the directory or a link is `STS-SECDEST-0007` |
+
+**NEVER CREATE, ONLY WRITE (least privilege, rcbj's design).** The secret must
+exist; the credential needs write on named secrets — plus, for Azure, `list`
+(metadata) to see it exists, and for Vault `read` on the metadata path. A
+missing secret is `STS-SECDEST-0003`.
+
+**`file` IS DEVELOPMENT ONLY** (rcbj's answer 5), behind
+`mode.acceptsFileSecretDestinations()` and its `REQUIREMENTS` row
+`secret-destinations`: in product a file destination is not offered, not
+added, reported not usable, and a push to it is `STS-SECDEST-0006`.
+
+**THE PAYLOAD** is `password` (the bare password; in Vault, whose versions are
+maps, the field `secretDestField` names, `value` by default — the field this
+service's own Vault reads default to) or `json` — `{username, password,
+realm, rotatedAt}`, the object a reader takes the password out of by its
+field, as `pick()` does here.
+
+**`push()` NEVER THROWS** and answers `{ ok, version }` or `{ ok: false,
+error, code }`, every outcome an audit row (`secret-destination.push`) that
+names the destination and the secret and never the value. `testPush()` writes
+a canary — `sts-test-push` and a random password from `crypto.js` — and
+refuses a secret a service account's rotation writes (`STS-SECDEST-0010`)
+where the service accounts' module can say so: it asks
+`require('./service_accounts').secretNameInUse(destinationId, secretName)`
+lazily, and until that function exists (#221 P1/P4) a test push trusts the
+name it is given — the page says a test push is for a test secret.
+
+**EVERY ADDRESS IS THE OPERATOR'S** — the root `CLAUDE.md`'s seventeenth
+outbound row. An Azure vault URL or a Vault address is https only
+(`STS-SECDEST-0008` at the push, `STS-SECDEST-0011` at the add); Vault's
+request is verified through `OutboundTls.verifiedOptions()` with the
+destination's own CA certificates beside the public roots, and the SDKs'
+through the process-wide host check. Internal addresses are NOT refused in
+product, unlike a caller-named fetch's, because a Vault is usually internal
+and only an administrator (Admin Write) can name one.
+
+**What has no test yet**: a real AWS, Google Cloud, Azure or Vault (the
+in-process test fakes all four; `tests/protocol/sts_secret_destinations.js`
+drives the register over HTTP and the `file` destination only); the sealing
+in product mode, which needs a persistent key-encryption key in process.
+
+
+## `registered_targets.ts`: WHAT A TOKEN MAY BE ADDRESSED TO, IN PRODUCT (#505, 2026-10-06)
+
+#496 made product refuse an application nobody registered at every door that
+names one by a client identifier. Two doors name the party a token is FOR by
+an ADDRESS instead — an RFC 8707 `resource` outside a token exchange, and a
+GNAP access right's `locations` — and rcbj's follow-up (#505) holds both, in
+product, to one definition, this file's:
+
+* **one of this service's own resource servers**, found by asking the code
+  that checks an `aud` rather than from a list: the default resource
+  indicator of a hosted authorization server
+  (`jwt_access_token.isOwnResourceAudience()`), the management API
+  (`mgmt-api/admin_api`'s `namesThisApi()`), the account API (#568), and
+  the reports API (`/report-api`, #956) — the GNAP demonstration resource
+  server was the fourth until #593;
+* **or a registered application** (`appRegisteredBy`) by `oauthAudience`,
+  client_id, identifier or permission base URI — the embedded debugger's api
+  is one, seeded registered.
+
+`unregistered()` answers the targets that are neither — IN EVERY MODE since
+#1140 (it answered none in development until then, behind #496's
+`mode.issuesToUnregisteredApplications()` and an
+`unregistered-resource-targets` REQUIREMENTS row, both now gone from it), and
+`oauth2.ts`'s `accessTokenPlan()` asks it of every audience a token would
+carry (`oauth-oidc/CLAUDE.md`). An own resource server counts only while its
+#1139 application object exists (`seeded()`), and is matched by path under the
+request's base or the authorization server's. A STATIC UTILITY CLASS like
+`issuer_names.ts`: the registry, the access-token profile and the management
+API are reached lazily, at request time only, and a converted module is
+ASKED, NEVER BUILT (an uninstalled instance answers nothing), so neither a
+require of this file nor a load-time call can build a default instance ahead
+of the composition root. RFC 8693's `resolveTarget()` is deliberately NOT
+this definition: it must answer an application to read relationships from.
+The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
+`tests/registered_targets.js` holds it in both modes.
+
+## 3cg. Hosted applications and the listeners they are on: `hosted_applications.js`, `listener_map.js` (#472, 2026-10-07)
+
+rcbj: "I want to be able to define custom listeners and map the hosted
+applications to specific listeners ... I want to be able to advertise services
+on multiple listeners potentially. it's up to the administrator and their use
+case." rcbj's answers on the ticket, D1–D6, are what this section holds to.
+
+* **`hosted_applications.js` IS THE CATALOGUE, CLOSED.** An application is an
+  id, a label and the paths it answers (prefixes on a segment boundary, and
+  exact paths); `classify(path)` answers which, for a path without its realm
+  prefix. `/healthcheck` is `EVERYWHERE`, and so is everything under `/web`
+  since #570 (the public surfaces' card and catalogs, 3cl), a path nobody
+  claims is null and
+  admitted everywhere (so Express's `Cannot GET` body is unchanged). Named
+  authorization servers (`/<as>/oauth2`, `/<as>/gnap`) are matched on their
+  second segment. **`tests/hosted_applications.js` holds it to the router**:
+  a route no application claims fails it, because it would answer on every
+  listener — the console moved off the main port and a new page of it still
+  there. A new route family owes an entry here, the way it owes one in
+  `sts_metadata.ts`.
+* **`listener_map.js` DECIDES THREE THINGS AND ONLY HERE**: what the
+  listeners are (`main`; the service's `listeners.custom`; each realm's
+  `listeners.realm`, which is what #99's realm listener became — D1), which
+  application is on which (`listeners.applications`, per realm, the realm's
+  entry and then its `*` read before the service's — D2), and where an
+  application's URLs are built (its ADVERTISED listener — D4). Both are JSON
+  in a string row, as `spiffe.brokers` keeps its list, because a set of
+  listeners an administrator names is not a table of generated rows.
+* **FOUR RULES OVER THE WHOLE STATE, AT EVERY WRITE.** A write is judged by
+  building the state as it is, patching in the value, and asking
+  `stateProblem()` — so no order of writes reaches what a single write could
+  not: well formed and unique (ids, ports — none of the process's sockets —
+  STS-CORE-0153, 0146, 0147, and none in a multi-cell service, 0148); scoped
+  (a mapping names applications and listeners of its own scope, a mapped
+  listener cannot be removed, and oidfed is on the listener oauth-oidc is
+  advertised on, because the Entity Identifier is the issuer — 0154); the
+  sign-on cookie reaching every application that reads it (one host name, or
+  all under `authn.cookieDomain` — D3, 0155); and no write taking
+  `management-api` off the listener the request arrived on unless it says
+  `confirm` (D6, 0156; the ambient request is `jose_certificate_header.js`'s).
+  The process's writes reach it through `config.addWriteRule()`, which since
+  #472 is told whether the write lands in a realm (and since #1114 hands a
+  rule `beside(key)`, a companion setting's value as the same `set-many`
+  posts it while `config.withWriteBatch()` holds the post, so a pair that
+  is legal only together is not refused for being checked one at a time —
+  `authn/CLAUDE.md`, *Enterprise attestation, by RP ID*); a realm's through
+  `realms.js`'s `listenerOverrideProblem()`. **A reset is not a write and
+  asks no rule**, so the Listeners page and the API write an empty value
+  instead of clearing one. What the process STARTED with is judged by
+  `startupProblem()` in `server.js`'s `bind()`, and is fatal (0157).
+* **`listeners.adminOnMain` IS THE OTHER HALF OF D6**: restart-only and
+  `perProcess`, so the one setting that puts the console and the API back on
+  `main` is one no write can turn off.
+* **WHERE A URL IS BUILT (`helpers.js`).** `pinnedBaseUrl(app)` is the
+  advertised listener's `publicBaseUrl`, or `global.publicBaseUrl` where that
+  is `main`; with no application it is `*`'s, which is #99's realm base for a
+  realm that maps `*` to its listener. `baseUrlOf(req, app)` defaults `app`
+  to the REQUEST's application — so the hundreds of call sites that build a
+  URL of their own application were not edited — and `urlOf(req, path)` and
+  `rebaseTo(base, app)` are for a URL one application builds of another's
+  (the issuer from the portal, the console listing protocol endpoints, a
+  mailed portal link). The audit that found those 79 sites is the pattern for
+  the next: a `base + '/<path>'` whose path is another application's.
+* **WHAT CROSSES BY ITSELF.** `common/app.js`'s `enterListener()` makes a
+  root-relative `Location` and HTML link absolute when its application is not
+  on the listener the browser is on, so the six protocol modules that redirect
+  to `/authn/login`, and the sign-in's root-relative return, needed no edit.
+  The console is told where its authorization server, API and sign-out are
+  (`data-sts-*` on the shell, `connect-src`), CORS counts every listener's
+  origin as this service's own, the portal's back channel dials the listener
+  `oauth-oidc` is on (`dialTarget()`), and RFC 9068's resource-server issuer
+  check accepts the issuer at oauth-oidc's base as well as its own.
+* **THE ADVERTISED ONE IS CANONICAL; THE OTHERS ARE PUBLISHED WHERE A
+  SPECIFICATION HAS A PLACE (D4)**: RFC 8705 `mtls_endpoint_aliases` on a
+  second `oauth-oidc` listener asking for a client certificate
+  (`oauth2.ts`'s `mtlsAliasOf()`), and a second `SingleSignOnService` and
+  `SingleLogoutService` Location per `saml2` listener in SAML metadata.
+
+## 3ch. `passkey_policy.ts`: THE PASSKEY POLICY, THE FOURTH KIND ON DIRECTORY → POLICIES (#527, 2026-10-08)
+
+rcbj: "a new policy (which can be overridden per realm) that governs the
+behavior of passkeys including whether usernameless logins are allowed
+(usernameless logins should be disabled by default). When usernameless
+logins are disabled, the 'use a security key' button should request
+discoverables." What prompted it was a tester finding that one physical
+security key got a discoverable credential through *Create a passkey* and,
+usually, a non-discoverable one through *Use a security key*, because the
+second followed `webauthn.residentKey`, which defaulted to `discouraged`.
+
+* **A fourth kind, built as the other three are.**
+  - It is `cn=default,ou=passkeyPolicies`, a realm inheriting the default
+    realm's and then the built-in defaults (3bd's arrangement).
+  - It is registered in `admin-core/policy_kinds.ts`, so the page, its JSON
+    and `/admin-api/policies/{save,reset}-passkey-policy` come with no route
+    of their own.
+  - The directory's three store functions are `ldap_server.js`'s, filled
+    through `setDirectory()`.
+* **Two rows, and rcbj's three answers on the issue:**
+  - `allowUsernameless` is ON by default since 2026-10-10 (rcbj: "Enable webauthn usernameless logins by default"); it was off on #527's answer.
+  - `securityKeyResidentKey` defaults to `required`.
+  - `securityKeyResidentKey()` answers `required` while `allowUsernameless`
+    is off, whatever the row says (answer 1), and the row while it is on.
+    The row's default is the same (answer 2), so both buttons make a
+    discoverable credential unless a realm lowers it.
+  - Per realm only (answer 3); named policies are #535.
+  - `requireUsernameless` (#608, rcbj 2026-10-13), off: the screen asks for
+    no username and refuses one (`STS-AUTHN-0333`). `requiresUsernameless()`
+    answers the ROWS (it needs `allowUsernameless`, and `validate()` refuses
+    the one without the other); whether a sign-in is held to it is
+    `authn.ts`'s `usernamelessRequired()`, because the application's
+    mechanisms and the hosted surfaces are not this leaf's to know — see
+    `authn/CLAUDE.md`.
+* **What it replaced.** `webauthn.usernameless` and `webauthn.residentKey`
+  are retired with no shim. `REPLACED_SETTINGS` refuses a start that names
+  either, and its message now names a policy row where a replacement is not
+  a setting. `authn/webauthn_policy.ts`'s `settings()` reads both values from
+  this module in one read, so `creationOptions()`, `usernamelessOffered()`
+  and the console's report are unchanged in shape.
+* **The other `webauthn.*` settings stay settings, each for a reason**, which
+  the module's header gives: request shape, already realm-overridable; #105's
+  verifier, which moves with #528 and #530; and process-wide rows.
+* Error codes `STS-AUTHN-0308` to `0311`, for its save, as the
+  service-account policy's are for its own.
+
+**#528 ADDED `backupEligibility` (2026-10-08)**: `allow` by default, or
+`disallow`, which accepts only device-bound passkeys. A passkey whose
+authenticator data sets BE (backup eligible, WebAuthn Level 3 section 6.1) is
+refused in two places, both funnels:
+
+* **Registration** in `credentials.addKey()`, the one writer, right after the
+  role check (`STS-AUTHN-0312`, reason `backup-eligible`). Every door that
+  enrols a key reaches it, and each already draws or audits `addKey()`'s
+  refusal: the sign-in screen, `/portal/keys` and the activation link. A key
+  written with no BE flag at all (one typed by value) is not refused.
+* **Sign-in** in `authn.ts`'s `startSessionHere()`, beside the
+  authentication policy's check (`STS-AUTHN-0313`, a `session.refuse` row,
+  and the sentence on the screen through `refusedSession()`). BE never
+  changes for a credential, so this catches a synced key enrolled before the
+  realm said no. Every passkey door names its credential's BE flag on the
+  session detail.
+
+`backupEligibleRefusal()` is the one sentence for both, and `/portal/keys`
+asks it to mark a held key that will no longer sign its owner in.
+
+**#529 ADDED A MINIMUM SECURITY-KEY PIN LENGTH (2026-10-08)**:
+`enforcePinLength` (off), `minPinLength` (4 to 63, the policy's first `int`
+row) and `pinLengthOnlyIfSupported` (off). While enforcing,
+`creationOptions()` carries `minPinLength: true`, the browser script turns it
+into CTAP 2.1's `minPinLength` extension input, `webauthn.js` returns the
+authenticator data's extension outputs (`extensions`), and
+`Credentials.reportedMinPinLength()` puts the reported value on the key row
+(`minPinLength`, null where none). The same two funnels as #528 refuse it:
+`addKey()` (`STS-AUTHN-0314`) and `startSessionHere()` (`STS-AUTHN-0315`,
+which reads the RECORDED value off the key row — decided on the ticket, so a
+raised minimum stops a key enrolled under a lower one). `pinLengthRefusal()`
+is the one sentence; `/portal/keys` shows it on such a key.
+
+**#530 ADDED `enforceAttestationAtSignIn` (2026-10-08)**, off: on, every
+passkey sign-in is held to the `webauthn.attestation*` rules in force by
+`webauthn_attestation.ts`'s `signInVerdict()`. It reads the key's RECORDED
+attestation (`trusted`, `aaguid`, and `attestationKeyId`, which registration
+now records for a statement with no AAGUID) and today's FIDO metadata, and
+reuses the registration's own `levelProblem()` and `demandedBy()`. The
+verdict is asynchronous (a metadata lookup), so it is asked in the two
+assertion doors after the assertion is spent and before the session —
+`authn.ts`'s `attestationAtSignIn()` — not at `startSessionHere()`, which is
+synchronous. A refusal writes a `session.refuse` row and, the first time per
+key and reason, marks the row (`credentials.noteKeyAttestationRefused()`) and
+sends CAEP `credential-change` by `policy`. Decided on the ticket: an
+untrusted statement fails every trust rule, an AAGUID list included, and a
+lookup that throws refuses (`STS-AUTHN-0317`).
+
+**#531 MADE THE WEBAUTHN HINTS ROWS (2026-10-08)**: `passkeyHints`,
+`securityKeyHints` and `signInHints`, the policy's first `list` rows (an
+ordered list of the row's `values`, or `none`, which is how an empty list is
+written so a stored empty list is not read as "no value"). `hintsFor(kind)`
+is what `creationOptions()`, `requestOptions()` and
+`discoverableRequestOptions()` send; the browser script passes a request's
+hints to both `get()` calls. The defaults are the old fixed hints. `validate()`
+refuses a hint that contradicts the attachment its request sends (it reads
+`webauthn.authenticatorAttachment`, so the module now requires `config`), and
+`hintsFor()` drops one a later change of that setting made contradictory
+(`STS-AUTHN-0319`). The console draws a `list` row as a text field and the
+API takes it as a string.
+
+**#532 ADDED `enterpriseSerialAttribute` (2026-10-08)**, the policy's first
+`attribute` row (an RFC 4512 descr, or empty). `pki.js`'s
+`attestationDeviceSerial()` reads the serial — the subject's serialNumber,
+then Yubico's extension `1.3.6.1.4.1.41482.13.1` (a DER INTEGER, in decimal)
+— and `webauthn_attestation.ts` records it on a VERIFIED statement as
+`deviceSerial` and `deviceSerialSource`. Set, the row makes
+`attestationSettings().demandsTrust` true, so an untrusted statement never
+reaches the binding, and `addKey()` refuses a serial that is not one of the
+person's values (`STS-AUTHN-0320`) or a key with none (`STS-AUTHN-0321`). The
+values come through a fourth directory hook on the policy's slot,
+`personAttributeValues()`, filled by `ldap_server.js` and never answering a
+secret attribute. The serial is on the console's and the portal's key rows.
+
+**#533 ADDED THE NAMES A PROMPT SHOWS (2026-10-08)**: `userDisplayName` (an
+`attributes` row: up to six comma-separated groups of up to three attribute
+names), `rpNameExtras` (an enum) and `credentialLabel` (a `text` row).
+`displayNameFor()` reads values through the #532 hook and answers the first
+group fully present. Every door that draws a ceremony asks it: the sign-in
+screen, `/portal/keys`, activation and the Signal API block.
+`webauthn_policy.ts`'s `settings().rpName` comes from `rpNameFor()`, with the
+ambient realm's name and `saml.organizationName`. `addKey()` labels a new
+key with `credentialLabelFor()` before the default. `displaySafe()` turns
+whitespace into spaces, removes Cc and bidirectional-formatting characters,
+and caps the length; a `text` row that would change under it is refused at
+save. The per-language message key the ticket mentions is not built (no
+portal translations).
+
+**#534 ADDED `aggregateDevices` (2026-10-08)**, on by default, which is what
+the passkey step did before: one ceremony with every key of the step's role
+in `allowCredentials`. Off, the passkey step's page draws a list of
+links for a person holding more than one key (`webauthnFacts()`'s `choices`
+since #572, when `webauthnPage()` became facts). Each link is
+`/authn/webauthn?mfa=<step>&key=<credential id>`, and the ceremony armed for a
+chosen key (`POST /authn-api/mfa/{id}/webauthn/options`, `key`) names only
+that key in `allow`. A chosen id that is not one
+of the step's keys draws the list again. The GET now draws a passwordless
+step for a person holding a key (a PRIMARY key until #1135), and still
+never the enrolment ceremony. `keyForAssertion()` still decides which key an assertion is
+checked against, so nothing about acceptance changed.
+
+**#535 MADE THE POLICY NAMED (2026-10-08)**: `cn=<name>` beside
+`cn=default`, each with the rows and three SELECTORS
+(`stsPasskeySelectApplication`, `stsPasskeySelectGroup`,
+`stsPasskeyPrecedence`), not inherited across realms. `selectionFor()` picks
+the lowest precedence among the profiles matching the application or one of
+the person's groups (a fifth directory hook, `personGroups()`, over
+`groupsOfUser()`), else `default`. **The selection is AMBIENT**:
+`select(username, application)` keeps it on the request object that
+`audit.js` holds for the request (`currentRequest()`), in a WeakMap, so it
+dies with the request. An AsyncLocalStorage `enterWith()` would carry it
+into the next request on a kept-alive connection. `withSelection()` runs a
+function with one, and `select()` outside any request uses a loose
+AsyncLocalStorage. `read()` with no name reads the selected profile, so every
+answer, `webauthn_policy.ts`'s options and `credentials.addKey()` (which
+selects for the person where no door did) follow it.
+
+These doors select:
+- `startSessionHere()` (the person and the application);
+- `webauthnFacts()` and the passkey step's act (the step's person and
+  application; `webauthnPage()` and `POST /authn/webauthn` until #572);
+- `loginPage()` (the application, where nothing selected yet);
+- `passkeySignIn()` (the application, then the owner);
+- `/portal/keys` and activation (the person).
+
+Selection is code, not the issuance policy, by the decision on the ticket.
+It chooses which rows apply, and the rows' refusals decide. The Policies page
+draws a form per named profile and an add form (`namedProfilesSection()`).
+The API's `profile` became a pattern for this kind, and it takes the
+selectors.
+
+**#1235 TURNED THE SELECTION ROUND (2026-10-30)**: `stsPasskeySelectApplication`
+and `stsPasskeySelectGroup` are gone. An application names its profile in
+`appPasskeyPolicy` and a group in `stsPasskeyPolicy`; a profile keeps its
+precedence; `selectionFor()` hands the references to
+`PolicySelection.rank()` (3cx). A dangling reference selects nothing and is
+logged (STS-AUTHN-0537); a profile anything names is not deleted
+(STS-AUTHN-0538).
+
+**#536 (2026-10-09) MOVED THE REFUSALS INTO THE ISSUANCE POLICY.** rcbj first
+accepted them as code, then reversed: "move them into XACML policy, but
+continue to have all functionality available in the Passkey policy be
+available and configurable there." So the rows above still CONFIGURE, and the
+issuance policy DECIDES:
+
+* **`question(at, facts)` gathers, `refusalFor()` asks.** A door hands over
+  what it holds — `backupEligible`, `minPinLength`, `serial`, or an
+  `attestation` with its settings and sentences — and each becomes a FACT
+  GROUP (`urn:sts:xacml:passkey:facts`). The selected profile's rows go in as
+  `urn:sts:xacml:passkey-policy:<row>`. `issuance_gate.checkPasskey()` asks,
+  as action `register-passkey` (`credentials.addKey()`, one question) or
+  `use-passkey` (`authn.ts`'s `passkeySignInRefusal()` at the session's start,
+  and `webauthn_attestation.ts`'s `signInVerdict()` at the two assertion
+  doors).
+* **The built-in rules are `xacml_templates.ts`'s passkey rules** (template
+  parameter `decidePasskeys`), in the order the code asked. Each Deny carries
+  the same code as before (0312-0317, 0320, 0321) and a REASON. The door words
+  its sentence by the reason, so every page and audit row reads as it did.
+  A realm's own refusal with no code records `STS-AUTHN-0322`.
+* **Where no document answers**, `common/passkey_rules.js` reads the same
+  rules from the facts (`STS-AUTHN-0323`, `0324`). `tests/passkey_xacml.js`
+  holds it and the document to one truth table.
+* **The old functions are still exported** (`backupEligibleRefusal()`,
+  `pinLengthRefusal()`, `enterpriseSerialRefusal()`). Each asks the policy
+  about its one fact group, which is how the portal's warnings stay true to
+  the decision.
+* **The FIDO metadata is looked up only while `enforceAttestationAtSignIn` is
+  on.** That lookup per sign-in is the cost. The recorded facts (trusted,
+  AAGUID) are sent either way, so a realm's own policy can rule on them.
+* **#535's selection of which profile applies stays code.** It chooses the
+  settings and decides nothing.
+
+**#718 ADDED `postQuantumRequired` (2026-10-19)**: `off`, `sign-in` or
+`registration-and-sign-in`, on the default and named profiles
+(`stsPasskeyPostQuantumRequired`), the policy's first row decided from its
+first day by the issuance policy. rcbj's decisions on the ticket: three
+values, both roles, and the passkey step's `allowCredentials` narrowed to
+post-quantum keys while required.
+
+* **The fact is the key's ALGORITHM.** A door hands over the algorithm it
+  holds and never its own reading; `question()` computes `postQuantum` from
+  it in ONE place (`isPostQuantum()`, `POST_QUANTUM_ALGORITHMS` — RFC
+  9964's ML-DSA-44, -65, -87, and the one copy: `webauthn_policy.ts`'s
+  `PQC_ALGS` is this list, since that module requires this one) and carries
+  the algorithm and the lane beside it as the `algorithm` fact group. The
+  lane is not the fact because a key made with #643's switch off has none.
+* **`requiresPostQuantum(at)`** says whether the selected profile requires
+  it at a stage; **`postQuantumRefusal(keyAlgorithm, at)`** asks the policy
+  about the one fact group, `backupEligibleRefusal()`'s pattern, and is what
+  the passkey step's filter, the portal's and the console's key rows and
+  the device link ask.
+* **A save requiring it while the realm offers no ML-DSA is refused**
+  (`STS-AUTHN-0357`): `webauthn_policy.ts`'s `offersPostQuantum()`, reached
+  through a lazy dependency, answers whether `webauthn.algorithms` names one,
+  `webauthn.pqcOnly` is on, or the post-quantum lane is offered — read
+  before the requirement's own narrowing, which would answer yes always.
+* `STS-AUTHN-0355` (registration) and `0356` (sign-in); the
+  `credentials.ts` half is `noteKeyPolicyRefused()`, #530's mark
+  generalised to a map by reason. `authn/CLAUDE.md` (*A post-quantum
+  passkey required*) argues the doors.
+
+**#941 ADDED `attestationAlgorithms` (2026-10-23)**: `none`, or a list of
+`post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa` and
+`composite-ml-dsa` (`stsPasskeyAttestationAlgorithms`), the algorithms a
+passkey's ATTESTATION — statement and chain, leaf to anchor — must be
+signed with. Not `postQuantumRequired`, which is the passkey's own.
+
+* **Optional on a save**, `recoveryAssurance`'s arrangement, so a caller
+  sending the whole profile as it was is not refused (and no other test's
+  full-profile save had to change).
+* **It demands a trusted statement** (`webauthn_policy.ts`'s
+  `demandsTrust`): anybody can mint an ML-DSA chain.
+* **The fact group is `attestation-algorithm`**, carried by `addKey()`
+  always (a key written by value with no attestation satisfies no list)
+  and by `signInVerdict()` only while sign-ins are held to the rules. The
+  verdict `attestationAlgorithmAllowed` is computed in ONE place,
+  `question()`, by `attestationAlgorithmAllowed()` — verified, trusted,
+  at least one certificate, and every signature allowed by an entry —
+  as `postQuantum` is for #718. `STS-AUTHN-0411` (registration), `0412`
+  (sign-in). The record and its reader are `authn/CLAUDE.md`'s
+  (*What an attestation is signed with*).
+
+**#946 ADDED `postQuantumAllowCredentials` (2026-10-23)**: `realm` (the
+default, OPTIONAL on a save, `recoveryAssurance`'s arrangement), `narrow`
+or `list-and-refuse`, on the default and named profiles
+(`stsPasskeyPostQuantumAllowCredentials`); `realm` follows the realm's
+`webauthn.postQuantumAllowCredentials` (`narrow` by default) — the
+ticket's "per realm, or per policy". `postQuantumAllowCredentials()`
+resolves it and `question()` sends it resolved as a policy fact no built-in
+rule reads. It decides nothing: `authn/CLAUDE.md` (*List and refuse*) says
+what the passkey step does with it.
+
+**#1112 ADDED `clientRules` AND THE LEARNED CLIENTS (2026-10-28)**: a
+registration from a client known not to make an ML-DSA passkey is offered
+the list less ML-DSA — #944's classical retry, armed from the start. rcbj's
+decision: both halves, configured and learned.
+
+* **Configured**: `clientRules` (`stsPasskeyClientRules`, a new row type,
+  empty, optional on a save), on the default and named profiles: up to 20
+  rules `<browser> on <system>`, each side a family or `*` with an optional
+  major-version range. `parseClientRules()` writes one canonical text and
+  `clientRuleFor()` answers the first rule naming a client.
+* **ONE READING OF THE USER-AGENT.** A rule is matched against the CLIENT
+  NAME the ceremony row records (`webauthn_ceremonies.clientOf()`, `Chrome
+  141 on macOS 15`), read back into its four parts by `clientParts()` —
+  never a second parse of the header. The learned entries are keyed by the
+  same name, so the row, the rule and the register cannot disagree about a
+  client. This leaf cannot require the ceremonies module, so the caller
+  hands the name in.
+* **Learned**: `common/passkey_clients.ts`, per realm, behind
+  `webauthn.clientLearning` (off), `webauthn.clientLearningFailures` (3)
+  and `webauthn.clientLearningWindowHours` (168). Its store,
+  `passkey_clients.learned`, is cell-tier: an observation of the cell's own
+  traffic, keyed with a digest of each person who failed.
+* **COUNTED WHERE THE ROW IS WRITTEN, NOT BY READING ROWS.**
+  `webauthn_ceremonies.record()` hands `observe()` the ceremony, outcome,
+  error name, offer and client as it writes the row: one get and one set of
+  a bounded entry, only while the switch is on and only for a registration
+  that asked for ML-DSA. A scan of audit rows per request was ruled out (the
+  log is per process and capped), and so was a scheduler job over the rows:
+  it would see one process's rows, learn late by its period, and still be a
+  scan. The module header argues it.
+* **PEOPLE, NOT ATTEMPTS.** One person counts once in the window, so one
+  account cannot teach a realm to stop offering ML-DSA to everybody on that
+  browser. A success that asked for ML-DSA removes the entry, which is how
+  "none succeeded" holds and the way back. The entry is a new object at
+  every write (#999).
+* **The periodic half is a scheduler job**, `passkeys.client-learning-sweep`
+  (cluster, per realm, hourly), removing entries never learned whose
+  failures aged out; the window is applied at every count as well, which is
+  the correctness half. The store is bounded (500 a realm): a full one
+  displaces the oldest entry not yet learned, and with every entry learned a
+  new client is not counted (`STS-AUTHN-0478`, once per realm per process).
+* **NEVER WHERE A CLASSICAL KEY IS NOT ALLOWED.** `offerFor()` asks
+  `webauthn_policy.classicalRetryRefusal(at)`, the one statement of that,
+  whose refusals now carry a short `reason`; and not in the post-quantum lane
+  with both lanes on. The decision's `record` is what the ceremony row
+  carries, applied or `not applied (<reason>)`.
+* **The register's console and API.** The passkey kind gained two acts of
+  its own (`policy_kinds.ts`'s `extraActions`, #396's arrangement):
+  `clear-passkey-client` (`STS-AUTHN-0477` for one not listed) and
+  `clear-passkey-clients`, answered by `act()` here, which reaches the
+  register lazily. `policiesView()` carries `passkey.clients`, paged by
+  `clientsPage`/`clientsPer` apart from the profiles. The doors that arm a
+  registration are `authn/CLAUDE.md`'s (*Clients that cannot make an ML-DSA
+  passkey*).
+
+**`web_webauthn.ts` (#944)** holds what both static surfaces do when a
+registration that asked for ML-DSA fails on the device: `failureKind()`,
+`capabilities()` (`getClientCapabilities()`, feature-detected),
+`offerFallback()` and the #943 hook `reportCeremonyFailure()`, a no-op
+until that ticket wires it. Still a `web_` module requiring nothing.
+
+### `credentials.ts`'s half of the passkey lanes (#643, 2026-10-19)
+
+The lanes are argued in `authn/CLAUDE.md` (*Two lanes*); what this file
+keeps is the person's half. **`userHandleOf(name, { mint, lane })`** answers
+the post-quantum lane's handle (`stsWebauthnPqcUserHandle`) for `lane:
+'pqc'`, minting the classical one first, because the directory writes the
+second only beside the first. **`beginKeyEnrolment()` takes `lane`** and
+carries it on the pending record with the lane's handle and an exclude list
+of the lane's keys only; `checkKeyEnrolment()` holds the credential to the
+lane's algorithms; **`addKey()` asks `webauthnPolicy.laneRefusal()` again**
+(the enforcement at the one writer, as for the role), writes `lane: 'pqc'`
+on a post-quantum row and nothing on a classical one — so a row written
+with the switch off is the row it always was, and `keyLane()` reads no lane
+as classical — and adopts a lane's handle the entry lacks.
+`keyAlgorithm()` answers the `lane` beside the algorithm, which is how the
+console's and the API's key rows carry it. `laneUser()` and
+`laneSignalUser()` are the names a credential manager shows
+(`<username>+ml-dsa`, then `<username>+ml-dsa-65`), `isLaneName()` the
+shape the sign-in screen refuses, and `userHandleHolder()` the owner AND
+lane of either handle. `maxKeysPerPerson` stays one total.
+
+## 3ci. `i18n.ts`, `page_locale.ts`, `locale_policy.ts`: THE LANGUAGE A PAGE IS DRAWN IN (#539, 2026-10-09)
+
+rcbj: "multi-lingual support to the admin portal, authentication service,
+logout service, and user portal. It should be able to handle any locale +
+language." The issue body is the spec of record. Its decisions, and the
+reasons for the shape:
+
+* **Three modules, split by what each knows.**
+  - `i18n.ts` knows the catalogs and nothing about a request. It does BCP 47
+    lookup, with the script made explicit by `Intl.Locale.maximize()`, and
+    formats ICU-subset messages on `Intl`. It is a leaf.
+  - `page_locale.ts` knows a request: `ui_locales`, then the person's
+    `preferredLanguage`, then the `sts_lang` cookie, then `Accept-Language`,
+    then the locale policy. It also draws the chooser and holds its return to
+    a local path.
+  - `locale_policy.ts` is the fifth kind on Directory → Policies.
+  - `i18n.ts` requires neither of the others. `page_locale.ts` reaches
+    `audit.js`'s ambient request lazily, as `passkey_policy.ts` does.
+* **The catalogs are data:** `common/locales/<namespace>/<tag>.json`.
+  - A namespace is a surface, so parallel work never collides on a key.
+  - A regional catalog is an OVERLAY holding only what differs.
+  - English is complete, and every chain ends in it.
+  - `tests/i18n_catalogs.js` holds every catalog to English: the same keys,
+    parameters and markup, and every base catalog complete.
+  - **A page's translator is always called `t`, and keys are literals**, so
+    the test can scan the source for every key used.
+* ~~**Errors stay English (rcbj).** A refusal is simply never looked up.~~
+  **REVERSED FOR ERROR PAGES BY #1326 (rcbj, 2026-11-05): a server-drawn
+  error page a person lands on is translated, every word of it** —
+  `error_page.ts` below. What stays English is what a PROGRAM reads: an API's
+  error answer, an `error_description`, a log line. A page shows those as
+  data, in its diagnostics, never as its prose.
+* **`error_page.ts` IS THE ONE ERROR PAGE (#1326).** The error in the yellow
+  box (the protocol's `error` as a value, a sentence in the page's language),
+  an action where the page has one, the background in a `<details>`, a note to
+  close the tab and start again, a link to the realm's `/portal`, and a
+  Diagnostics box: the time, the INCIDENT ID, and the caller's rows (shown as
+  data, escaped, untranslated). The frame's words are the `errorPages`
+  namespace; each caller's sentences are its own. **The incident ID is the
+  `seq` of the request's audit row**: `audit.reserveIncident(res)` takes the
+  number while the page is drawn, and `recordHttp()` writes the row with it
+  in the same synchronous run (the audit export's cursor needs `seq` to rise
+  in write order; `audit.js` argues it). `ErrorPage.footer()` is the ending
+  alone, for a page that draws its own body (the sign-out whose return was
+  refused). The OAuth 2.0 and OpenID Connect pages use it; #1327 moves the
+  other families' error pages onto it. **Its message keys are looked up by
+  code** (`oauthPages.refusal.<error code>`), which test E cannot scan, so the
+  caller asks `t.has()` and falls back to the protocol error's sentence and
+  then to a general one: a missing key never draws its name.
+* **A page builder asks `PageLocale.forPage()`** instead of being handed the
+  request. Most builders are called from dozens of places, many inside a
+  POST, and threading a translator through every caller was the alternative.
+  The builder passes what it already holds: the application, `ui_locales` and
+  the person.
+* **The chooser is a real form with a button, on every page** (rcbj: "from
+  any user-facing page"). It posts to `POST /authn/language`, which lives in
+  `authn/` because a signed-in person's choice is also written to their
+  entry (through `ldap/person_editor.ts`). The entry outranks the cookie, so
+  a choice that did not reach the entry would change nothing for them.
+  - A page drawn by a POST returns the chooser to the GET that redraws it.
+  - `safeReturn()` turns anything that is not a local path into `/`.
+* **The locale policy is `passkey_policy.ts`'s pattern** with two rows,
+  `defaultLocale` (`en`) and `populatePreferredLanguage` (on).
+  - **Named profiles are NAMED BY WHAT THEY COVER since #1238** (rule
+    3cx): an application in `appLocalePolicy`, a group in
+    `stsLocalePolicy`; a profile carries `stsLocalePrecedence` and lists
+    nothing. #539's `stsLocaleSelectApplication` and its
+    one-profile-per-application refusal went, `STS-I18N-0007` is a retired
+    row, and no migration is owed. Nobody names one from their own entry:
+    a person's own language is `preferredLanguage`, which outranks every
+    profile.
+  - Selection is an argument (`forApplication(application, person)`,
+    `defaultLocaleFor()`, `populationFor()`), not #535's ambient
+    `select()`, because every caller already holds its application — and
+    passes the PERSON where it holds one: `PageLocale.translatorFor()`
+    (so every `forPage()` given a `username`, the portal's and the
+    console's locale answers), `PageLocale.shellAttributes(req,
+    application, person)` for a static surface's shell (the sign-in steps,
+    a locked sign-in, consent, sign-out, GNAP, federation, SPNEGO), mail
+    to a person, and a person's creation (`fillPreferredLanguage()`, the
+    new DN). A page drawn before anybody is known is chosen by its
+    application alone.
+  - **A reference to a profile the realm does not hold selects nothing**
+    and is logged (`STS-I18N-0013`); `default` applies where nothing else
+    names one. **It does not fail closed**, where the authentication
+    policy does: this policy decides only a fallback language, and
+    refusing a page over it would guard nothing. A named profile anything
+    names is not deleted (`STS-I18N-0014`).
+  - It replaced `mail.defaultLanguage` (`REPLACED_SETTINGS`), so pages and
+    mail share one default.
+* **Population happens in `putEntry()`** (`fillPreferredLanguage()`), the one
+  place every door that creates a person ends.
+  - It applies only on a create, only to a person, and only where the entry
+    names no language, so an update never re-adds a removed one.
+  - **A populated value ranks BELOW the browser on a page** (rcbj, after the
+    first render showed everybody's browser ignored).
+    `stsPreferredLanguagePopulated` records what was written. While
+    `preferredLanguage` still equals it, `page_locale.ts` puts it after
+    `Accept-Language`. A different value is the person's, so no write path
+    has to clear the marker.
+    - Choosing the same value explicitly still wins on that browser, because
+      the chooser's cookie outranks `Accept-Language`.
+  - The application arrives as `opts.application`:
+    - SCIM passes its OAuth client, and its create keeps the populated value
+      through its merge.
+    - A sign-in passes its client through `admin_stats`'s user observer.
+    - The console and `/admin-api` pass none, because the administrator is
+      not the person's application.
+* **`ui_locales`** is carried on the pending sign-in record, and discovery's
+  `ui_locales_supported` lists the offered locales.
+* **The admin console (phases 5 and 6) runs the SAME formatter.**
+  - `common/web_messages.ts` holds the parser, renderer and translator as
+    a `web_` module (`admin-ui/web_messages.ts` until #570). `common/i18n.ts` keeps the catalogs and the
+    negotiation, and builds `WebTranslator`s, so there is one parser.
+  - `GET /admin-api/console` answers a `locale` member: the negotiation for
+    the administrator and `sts-admin-console`, and every `console*`
+    namespace along the chain.
+  - The runtime builds its translator from it, marks `<html lang dir>`, and
+    hands `ctx.t` to every renderer.
+  - The chooser is a `<select>` with **no `<form>`**, so it cannot move the
+    console job's `document.forms[N]`. A change posts
+    `POST /admin-api/console/language`.
+  - A helper given no translator falls back to `WebTranslator.fallback()`:
+    English in node (`common/i18n.ts` sets it), and the page's own in a
+    browser (`applyLocale()` sets it). `tests/console_web_bundle.js` gives
+    the sandboxed bundle node's default, as the runtime would.
+  - English output was held byte-identical when the strings moved. Text the
+    server writes into a view is #543's (3ck).
+* **`PageLocale.herePath()` never copies the request's URL** (the
+  integrator's finding on phase 3). It answers the caller's own path plus
+  the parameters named in `keep`, so nothing a request merely adds is drawn
+  back. `sts_language_chooser` holds it.
+* **Mail is translated too (phase 4).**
+  - The built-in templates are DATA in `common/mail_locales/<catalog
+    tag>.json`, not under `common/locales/`, because a template's
+    `{{placeholder}}` is not ICU. `MailTemplates.builtInFor()` walks the
+    catalog chain, and a realm's own wording in a language still wins.
+    `tests/mail_template_catalogs.js` holds every translation to
+    `problem()` and to the English placeholders.
+  - A VALUE a caller passes may be `{ i18n: 'mailValues.<key>', params }`
+    or `{ date }`. `Mail.resolveValues()` resolves it in the recipient's
+    language once the template is chosen, so a translated message carries
+    no English fragment. A plain string is data and is sent as it is.
+    CAEP's `reason_user` and an administrator's free text stay as written.
+* Error codes `STS-I18N-0001` to `0009`. Their own subsystem, because every
+  surface asks it.
+
+## 3cj. `scope_claims.ts`: WHICH CLAIMS A SCOPE COVERS, WHERE THEY GO, AND HOW TWO SETS COMBINE (#395, 2026-10-09)
+
+OIDC Core section 5.4's `profile`, `email`, `address` and `phone` request
+ACCESS to a fixed set of claims, answered at UserInfo, and in the ID Token
+only for `response_type=id_token` — which `oauth2.ts` held since #118. #395
+added what the ticket asked beyond that, with rcbj's answers to four
+questions and two follow-ups ("maximum flexibility, but still only allowing
+information that has been granted"):
+
+* **The gate (`gate()`).** A section 5.4 claim whose scope the grant did not
+  include is removed from EVERY configured layer — the realm's set, an
+  application's own, a resource server's declaration — of an access token,
+  an ID Token and a UserInfo response, in every mode. It is the GRANTED
+  scope (`opts.granted_scope`, set by `tokenSet()` and the implicit mint),
+  not the token's scope claim: RFC 9068's plan takes the OIDC scopes off a
+  token for an API while they stay granted. Two things pass: a claim the
+  client NAMED in a section 5.5 `claims` request (layered after the gate —
+  the request is its own grant), and a claim no scope covers (`groups`,
+  `roles`, a typed `tenant`). GNAP's ID Token assertion is minted on no scope,
+  so it carries none of these from configuration.
+* **A resource server's declaration.** `oauthAccessTokenClaim` (multi, the
+  section 5.4 claims only) on the application an access token's `aud`
+  resolves to (`forAudience()`, then `forClientId()`, then `get()`) —
+  `oauth2.ts`'s `resourceServerClaims()`. Only what EVERY audience declared
+  (an audience that declares nothing, this service's own resource server
+  among them, leaves nothing), only what was granted, resolved as UserInfo
+  resolves (`claimsNamed()`, lifted out of `scopeClaimsOf()`). No audience
+  declaring anything is NO layer, not an empty one. **`preferred_username`
+  went into every person's access token until #395**; it is now one of these
+  claims. `username` stays.
+* **Two pairs of sets, each combined as an application chooses.** The realm's
+  set against an application's own, per token type
+  (`COMBINE_ATTRIBUTES`: `oauthClaimsCombine{AccessToken,IdToken,Userinfo}`,
+  `saml2ClaimsCombine`, `saml11ClaimsCombine`) — `application`, `union`,
+  `intersection`, `realm`, applied to the rows in
+  `admin_stats.effectiveClaimSet()` and to the selection in
+  `claim_attributes.effectiveRows()`. **Unset keeps #495's two rules** (rows
+  added and winning by name; a selection replacing), because those were two
+  answers to two questions and one default could not keep both. The client's
+  access-token claims against a resource server's declaration
+  (`oauthAccessTokenClaimsCombine` on the resource server): `union` (unset),
+  `intersection`, `client`, `resource`, the client's value kept on a shared
+  name; resource servers that disagree are combined by `intersection`.
+  Holding nothing of its own is the realm's (or the client's) whatever the
+  mode says. Not the Kerberos PAC set: its merge is inside the vendored KDC.
+* **Where it lives.** A leaf requiring only `helpers.js`. `admin_stats.js`
+  requires it LAZILY, inside `effectiveClaimSet()`, because the KDC never
+  reaches the line (which kept it out of the parent project's Kerberos COPY
+  closure, an obligation until #1280). The seven attributes are ordinary
+  editable fields with closed choices (`ATTRIBUTE_CHOICES`,
+  `CHOICES_CHECKED_HERE`, `STS-REG-0203`), drawn in the field grid's *Claims
+  in tokens* and *Attributes in assertions* sections; no new action or
+  error code. `tests/scope_claims.js` holds it.
+* **A resource server's own scopes map claims too (2026-10-09, rcbj's three
+  answers: its exposed permissions only, catalogue attributes only, the
+  scope is the grant).** `oauthPermissionClaims`, one JSON object on the
+  entry, `{"<oauthPermission name>": ["<catalogue ldap name>", ...]}`,
+  written by the application's own **Scope claims** tab through
+  `set-permission-claims` / `clear-permission-claims` (`admin_actions.ts`,
+  `/admin-api`), held at the write (`claim_attributes.permissionClaimsProblem()`,
+  `STS-REG-0344`) and read leniently at issuance (`permissionClaimsOf()`,
+  `STS-REG-0343`). `resourceServerClaims()` finds the audience's
+  application by `oauthAudience`, then by **permission base**
+  (`forPermissionBase()` — a scope naming a permission makes the base the
+  `aud`), then client_id or identifier; a permission counts as granted when
+  the GRANTED scope holds its whole identifier, or its bare name on a token
+  for one audience. Its mapped claims join the declared ones in the
+  every-audience intersection, and are returned as `grantedByPermission`,
+  which `gate()` passes: granting the permission granted them.
+
+## 3ck. `server_prose.ts`: THE PROSE THE SERVER WRITES INTO A CONSOLE VIEW (#543, 2026-10-12)
+
+#539 left the sentences a VIEW carries in English: a setting's label,
+description and restart reason, and later a policy's rule sentences and a
+module's notes. The console draws them as they arrive. rcbj's four answers
+on #543:
+
+* **The server translates, and only on request.** `/admin-api`'s
+  `sendJson()` passes every 2xx answer through `translateView()` when the
+  request carries `Accept-Language`.
+  - The console sends the locale it negotiated (`web_runtime.ts`'s
+    `sendOnce()`). It does not send it on the two calls that negotiate it,
+    the shell and `console/language`, so that "follow the browser" still
+    follows the browser.
+  - Only that header is negotiated, with English as the last resort. The
+    locale policy's default is never applied, so a script that names no
+    language reads exactly what it read before. Every answer says
+    `Vary: Accept-Language`.
+* **Console prose only.** `translatesAnswer()` refuses the two OpenAPI
+  documents, which stay English.
+* **English stays in the source.**
+  - `common/prose_locales/<ns>/en.json` is generated by `extract()` through
+    `tests/tools/prose-catalogs.js`, in the tests image, because the module
+    is TypeScript.
+  - Each translation is `{ en: <hash>, text }`, the first 16 hex digits of
+    the SHA-256 of the English it was made from. One whose hash is not the
+    current English's is never served: the reader gets the new English.
+  - The tool's `--merge` computes the hash from the source, never from the
+    translator's file.
+* **Phased and machine-translated.** The catalogs share #539's catalog list
+  and status (`machine-unreviewed`), and its negotiation.
+
+Why it is shaped this way:
+
+* **Not `common/locales/`.** Those catalogs are ICU messages, and their test
+  refuses a literal brace, while a setting description says
+  `/pki/chain/{scope}/{sha256}.pem`. This is plain text with a hash beside
+  it, so it is a second kind of catalog, in its own directory, as
+  `common/mail_locales/` is.
+* **Exact match after the view is built.** A namespace's RECOGNISER is asked
+  of every plain object in the answer.
+  - The settings recogniser knows a described setting by its `key`, and
+    replaces a prose member only where it EXACTLY equals that row's English.
+  - So a stored value is never touched, and every view carrying described
+    settings is translated without a translator threaded through the dozens
+    of builders. That includes `/admin-api/config`, every page's settings
+    block and the token-lifetime and claim pages.
+  - The alternative was an argument on `config.describe()`, which the
+    OpenAPI example also calls.
+  - A later phase adds a namespace by adding a source (`extract()` plus
+    `recognise()`) to `defaultDeps()`.
+* **Keys** are `<setting>|label`, `|description`, `|restartReason` and
+  `|csvValueNotes|<value>`. The separator is `|` because a setting key has
+  dots.
+* **Every catalog must be current (rcbj, 2026-10-12)**, and
+  `tests/server_prose_catalogs.js` C enforces it in the suite and in the
+  coverage run. A new setting or a changed sentence fails there until it is
+  translated.
+  - A base catalog must translate every English message from the English the
+    source says now.
+  - An overlay may hold only current translations.
+  - No catalog may keep a key the English has lost.
+  - The reader would get the English meanwhile, but rcbj asked for the pages
+    in these languages, not partly in them.
+  - What IS enforced besides: `en.json` is current, and every entry has a
+    hash and a text.
+  - A current translation keeps every `code span` of its English verbatim,
+    because a translated setting key or path names something that does not
+    exist.
+* **Paying what is owed.**
+  - `--untranslated` lists it, and `--merge` takes the translations back.
+  - Both, and `--report`, read the catalog files and run on the host, because
+    `en.json` is held to the source.
+  - Only `--print` and `--write` read the source, and so need the tests image.
+* **No regional overlays yet.** `fr-CA`, `es-ES` and `zh-Hant-HK` read their
+  base catalogs' prose.
+* `STS-I18N-0011`: a prose catalog could not be read.
+
+### Phrase sources and templates (phase 2, from the policies on)
+
+A setting row has a `key` to be recognised by. Most other prose does not: a
+`describe()` sentence is a bare string in an array, and many sentences are
+COMPUTED. So the second kind of source is a PHRASE source
+(`phraseSource()`).
+
+* **Scoped by route.** It translates any string of an answer to one of its
+  routes that is EXACTLY one of its messages.
+  - Only on those routes, so a value elsewhere that reads like one of its
+    sentences is never touched.
+  - The route is `res.locals.proseRoute`, which `admin_api.ts`'s
+    registration loop sets on every request.
+  - A console twin (`/admin-api/console/...`) and a moved form helper carry
+    the route they mirror (`proseRoute` on the copied entry), so a source
+    names an operation once.
+* **A computed sentence is a TEMPLATE**, with `{{name}}` placeholders,
+  declared once beside the code that makes it. The policy modules' and
+  `policy_kinds.ts`'s tables are `SENTENCES` and `MESSAGES`.
+  - The code fills it with `ServerProse.fill()`. A template and the sentence
+    it is matched against therefore cannot drift: the English output is
+    byte-identical to the concatenation it replaced.
+  - The server matches the answer's sentence against the template and
+    refills the TRANSLATED template.
+  - Each parameter is translated in turn when it is itself a message of the
+    namespace, a filled template, or a list of those joined with `, `. The
+    list is segmented so that a phrase holding a comma stays whole.
+  - Anything else is carried over: a number, a profile name, a DN.
+* **A key holding `.param.`** names a phrase used only inside a template
+  ("none" in "first factors: none"). It is never matched as a whole string,
+  where it could be a value a form sends back.
+* **`harvest()`** collects a table's prose members, keyed
+  `<prefix>.<id>.<member>` by each element's own id.
+  - It skips identifiers: camelCase names (a `governs` of `userPassword`),
+    bare paths, and strings with no letter. Harvesting one would translate
+    that name wherever the route's answer carries it.
+* **The marks a translation must keep**, which test B checks:
+  - code spans and `{{placeholders}}`;
+  - HTML elements by name (`<code>`, `<strong>`; never `<this value>`,
+    which is prose) and entities;
+  - `**`, which a renderer strips in pairs.
+  It caught a Traditional Chinese setting description that had invented a
+  `**` pair.
+
+The **policies** namespace is `admin-core/policy_kinds.ts`'s `prose()`:
+- every kind's label, its `governs`, `appliesTo` and `fallsBackTo`, and the
+  noun a message names it by;
+- each kind module's `FIELDS`, `SCHEMA`, `MECHANISMS`, `DOORS` and
+  `SELECTORS`, and its `describe()` templates;
+- the save and reset messages;
+- `VIEW_PROSE`: the page's enforcement, generator, doors and mail notes,
+  moved out of `admin_views.ts` so the namespace extracts without loading the
+  views.
+It is registered lazily in `defaultDeps()`, because the policy modules
+require this one to fill their templates.
+
+### The module namespaces (phase 2b)
+
+* **`PHRASE_MODULES` in `server_prose.ts`** maps a namespace to the modules
+  whose prose it is.
+  - Each module exports `PROSE_ROUTES` and `prose()`, its keys prefixed with
+    its own name.
+  - Each is required LAZILY, because many of them require `server_prose` to
+    fill their templates.
+* **Seventeen namespaces, 1,741 messages:** audit, database, delegation,
+  devices, encryption, federation, gnap, kerberos, ldap, listeners, mode,
+  pki, realms, roles, scim, secrets and spiffe.
+* **Two things are drawn as raw HTML** and held to their tags by test B: the
+  delegation map key (a filled template whose rows are `.param.` messages and
+  whose SVG swatches are carried over), and the secrets and encryption notes.
+* **Extraction loads the whole stack.** `tests/tools/prose-catalogs.js`
+  requires `common/protocol_stack`, as a request worker does, before it
+  extracts, because a namespace's English may sit in a module that registers
+  routes when it loads.
+  - `tests/server_prose_catalogs.js` A runs the tool as a CHILD
+    (`--print-all`) and compares, so the test runner never loads them.
+  - B and C read `en.json`, which A has just held to the source.
+* **`harvest()` keys a colliding element by its index too.** An audit
+  action's shared `category` would otherwise have dropped labels.
+* **Known residuals at the end of 2b**, most swept in 2c:
+  - the SCIM field-mapping notes (`scim/scim_map.ts`);
+  - the persistence notes on the LDAP service page;
+  - the secret-source labels on the encryption page;
+  - the endpoint names every Protocols page carries, which are
+    `sts_metadata.ts`'s (phase 3).
+  2c ends with a page-by-page sweep for these.
+
+### The registry namespaces and the metadata page (phase 2c and phase 3)
+
+* **2c** added the crypto report, the scheduler, caches, node health and
+  worker pools, and the 2b residuals: SCIM's mapping notes, the persistence
+  notes and the secret store's providers.
+  - **The scheduler and cache namespaces read a REGISTRY.** Their `prose()`
+    is called after the whole stack has loaded, so every job and cache
+    registered at build or wire time is there.
+  - **Lazy registrations stay English.** A job registered only once the
+    process starts or on first use is absent at extraction: the change-log
+    pull and trim, the SAML metadata refresher, the LDAP mirror's
+    maintenance and the CRL directory refresh.
+  - **Caches.** A cache's computed `lifetime` is a template declared beside
+    its registration, under the descriptor's new `sentences` member.
+    `cache_registry.js`'s `literalOnly()` calls a lifetime or bound function
+    only when its source returns nothing but literals.
+* **Phase 3** is `sts_metadata.ts` (`stsmetadata`, about 61k words) and the
+  endpoint names every Protocols page lists (`endpoints`).
+  - **`endpoints` is the one namespace on the `*` route (every route).** So
+    it holds only names that are phrases. A bare product or protocol name,
+    and any name that is a card name, an endpoint group or a spec name (a
+    join key), is left out.
+  - **The cost:** an operator-written value anywhere that exactly equals an
+    endpoint name such as "Token endpoint" is translated too.
+* **A coverage note's first word stays English** (test B, and the
+  translators' validator). That word is `full`, `partial` or `minimal`, and
+  `tests/protocol/sts_metadata.js` reads it from the answer, as any consumer
+  may.
+* **Twenty-eight namespaces in all**, every base catalog current.
+
+Phase 1 is the infrastructure and the settings namespace. Phase 2a is phrase
+sources and the policies, 2b the module namespaces above, 2c the registry
+namespaces, and phase 3 the metadata page. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
+Kerberos, federation, PKI, encryption, secrets, database, mode, realms,
+audit, roles, delegation, devices, GNAP, listeners, the crypto report,
+scheduler jobs, caches, node health), then `sts_metadata.ts`.
+
+## 3cl. WHAT EVERY STATIC SURFACE STANDS ON: `web_page.ts`, `web_spa_client.ts`, `web_messages.ts`, `web_locale.ts`, `web_i18n.ts`, `web_surface.ts`, `web_card_css.ts`, `shell_document.ts`, `public_assets.ts` (#570, 2026-10-12)
+
+#569 converts every human-facing page outside `/admin` and `/portal` into a
+static application on the console's pattern; #570 is the foundation, and
+**nothing a person sees changed in it**: the console and the portal moved onto
+it byte for byte, and no public page is converted until its own ticket (#579,
+the front door, is the first). rcbj's three decisions on #570:
+
+1. **The shared runtime lives in `common/web_*.ts`**, held to the console's
+   rule — a `web_` module requires nothing but other `web_` modules, logs
+   nothing (browser code is exempt from Entering/Leaving), and is bundled by
+   esbuild for a browser, where reaching a server module fails the build.
+   `tests/console_web_bundle.js` A2 reads every `web_*.ts` in the tree for it.
+2. **One bundle per surface**, each over the shared runtime.
+3. **The browser translates**: the catalogs served as static JSON, the
+   runtime choosing the locale in #539's order, the APIs language-free and
+   errors English.
+
+And from #569: **script is required** (the shell's `<noscript>` says so, and
+there is no server-drawn fallback), **the cutover is per surface**, and **a
+specification's endpoint is never converted**.
+
+### The modules, and what each answers
+
+| Module | What it is |
+|---|---|
+| `web_page.ts` (`WebPage`) | The base of every runtime, client or not: `basesOf()`/`attribute()` read the shell's `data-sts-*`; `prefixAt(pathname, base)` the realm prefix; `queryOf()`; `url(path)` — this origin and prefix, or the base of the listener that answers the path (#472); `publicJson(method, path, body)` → `{ status, json, res }` with `json` null for a body that is not JSON; `realmLinks(html, prefix)`, `app.js`'s `withRealmLinks()` in the browser; `formFields(form, submitter)` — a form as an operation's JSON, the pressed button included and `csrf_token` left out; `targetFragment()`; `saveBase64()`. The console's and the portal's copies of each were deleted and both inherit these. |
+| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. **Since #561** it also holds what one account per tab needs in both runtimes: the tab's `{ sub, username }` in sessionStorage under the runtime's `accountKey` (`storedAccount()`, `keepAccount()`, `readAccounts()`, which removes it when the list is off) and the `login_hint` a sign-in sends from it (`hintFor()`); the IDENTITY requests are sent for — `identitySignal()`, one AbortController per identity, passed to `tokenRequest()`'s fetch, and `endIdentity()`, which aborts it and moves `identity` on so an answer under the old one is not kept; `discardClient()` (tokens, subject, DPoP key, nonce, metadata); `answerIsFor()`, the one subject check the console's popup made and every switch makes; and the change signal (`listenForAccounts()`, `announceAccounts()`; a read on a message that answers off keeps the list in hand, since off is also what a dropped request reads as — #731). All inert with `authn.multipleAccounts` off: nothing is kept, so nothing is hinted. `admin-ui/CLAUDE.md` 8c-iv argues it. |
+| `web_messages.ts` | The formatter and translator (#539 phase 5), moved from `admin-ui/`. |
+| `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
+| `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `include(ns)` (#561) adds a namespace for the next `load()`, so the words of a control the service turns on are fetched only then. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
+| `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. **Since #561** `start()` reads the browser's account list first (`loadAccounts()`) and, with it on, `put()` draws the account control beside the chooser (`accountControl()`, in `#sts-accounts-slot`) — below. |
+| `web_accounts.ts` (`WebAccounts`) | **A browser's accounts as every static page reads them (#561, delivery steps 5 and 6).** `fetchList(env, prefix)`: `GET /authn-api/accounts` of THIS page's own origin with the cookie, **asked only where the shell carries `data-sts-accounts="on"`** (`announced()`) — `ShellDocument.document()` draws that attribute itself, for every static surface, where `authn.multipleAccounts` is on in the ambient realm (`accountsOn()`) and draws nothing where it is off, so with the setting off a shell is to the byte what it was and no page makes the extra request on each load it made before review (`tests/multi_account_protocols.js` 3b–3c, `tests/multi_account_tabs.js` 6 and 8) — never another listener's, since `common/cors.js` sends no `Access-Control-Allow-Credentials` to anybody — and anything but a 200 with `enabled: true` is OFF (`off()`). `live()`, `bySubject()`, `byKey()`, `fingerprint()` and `changed()`; `openChannel(env, onChange)` over `BroadcastChannel('sts-accounts')`, whose message is `{ type: 'accounts-changed', change }` and nothing about whose; `anotherHref()` (the list's `anotherAccount`, the portal's advertised address, else `/portal?accounts=another`); `controlHtml(list, t)`, the public surfaces' control; `actionOf()`, the console's and the portal's menu buttons (`data-account-action`, `data-account-key`). |
+| `web_nav_sections.ts` (`WebNavSections`) | **The collapsible navigation column the console and the portal share (#750, #1229).** `section()` draws one section as a `<details class="navsec" name="<group>" data-section="<key>">` with a `<summary class="navhead">` heading and the caller's `<li>`s, `current` marking the section that holds the page whether open or not; `initial(chosen, holding)` is the first drawing's choice (the section holding the page) and leaves any later one alone; `toggled(doc, selector, target, chosen)` answers a `toggle` (caught in the capture phase, since it does not bubble) with the reader's choice after it, closing the other open sections for a browser that predates the shared `name`; `css(accent, muted, inset)` and `narrowCss(accent, minWidth)` are the heading's rules in the caller's colours, read by `admin-ui/admin.ts` and `portal/web_portal_kit.ts`. Each runtime holds the choice (`openSection`), never storage. What each column lists, and its labels, stay its own. |
+| `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). A new screen owes its row here in the same change; `tests/doc_links.js` fails without it. Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
+| `web_footer.ts` (`WebFooter`), `page_footer.ts` (`PageFooter`, server) | **The footer on every human-facing page (rcbj, 2026-11-14)**, modelled on the parent project's: Documentation, Contact and About (this service's site, issues and repository), the LinkedIn and GitHub icons as inline `<svg>` with `fill="currentColor"`, the copyright and the version with its build line in the `title`. `WebFooter.html(t, facts)` is the ONE markup builder and `WebFooter.CSS` the one rule set, served as `/web/footer.css` (`public_assets.ts`) and inlined in the error page's `<style>`; words from the `footer` namespace, which `WebI18n` loads for every surface and `i18n.catalogData()` gives the console and the portal. `PageFooter.html(t?)` is the server's half: `version.load()` and `version.buildInfo()` (`tests/version.js`), the UTC year, the ambient page's translator. **Two writers draw it**: `ShellDocument.document()`, at the end of every shell's body with the stylesheet linked last (`footer: false` turns it off, which only the RFC 4559 exchange's shell says), and `ErrorPage.document()`, below the diagnostics. **Each runtime draws it again** from the facts the shell's `<footer>` carries (`data-sts-footer-*`, `drawnIn()`), so a shell with none gets none: `WebSurface.put()`, `PortalRuntime.put()`, the console's three body renders, and the reports application's `redraw()` (it draws only `<main>`). A specification's document — the auto-POST forms, the OP iframe, the fragment page — is drawn by neither writer and has none (`page_footer.ts`'s header lists them); `tests/page_footer.js` holds both directions. |
+| `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
+| `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |
+| `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
+| `web_description.ts` (`WebDescription`), `web_description_pages.ts`, `web_description_surface.ts`, `description_pages.ts` (server) | The protocol families' description pages (#584): `/saml2`, `/saml11`, `/xacml`, `/ssf`, `/scim`, `/spiffe`, each a path no specification defines. The kit draws what the six share — a table, a list, a note, a link, and `rich()`/`linked()`, a catalog message whose sentence holds a link or a run of `<code>` (a raw slot between `\uE010`/`\uE011`, which no catalog may carry) — and each family's renderer is beside its server module (`saml/web_saml_description.ts`, `xacml/`, `ssf/`, `scim/`, `spiffe/`), words from a namespace of its own (`describeSaml2` … `describeSpiffe`), the description document's values English. `DescriptionPages` answers the JSON form (`asksForJson()`: the family's `?format=` where the query names one, else an `Accept` preferring JSON — the four documents to the byte as before, SAML's view new), the shell carrying the view, and the script. **ONE bundle, SIX paths**: the renderers are the small part of a runtime the six share, so one surface and one bundle (#570's decision 2), served at `<family>/description.js` because each family is a hosted application a realm may put on its own listener (#472); `/xacml`'s copy is behind the XACML gate, as the page is. |
+| `web_embedded_surface.ts` (`WebEmbeddedSurface extends WebSurface`) | The runtime of a surface whose every page is the SHELL'S (#583): the view read off `data-sts-state` and never fetched, a link left to the browser, the page drawn again from the view in hand when a language is chosen, `drawInPlace(view)` for what an act answered, and every form refused unless the subclass's `submit()` says how. `match(pages, path)` reads a row's `/:id`. It is `federation/web_federation_surface.ts`'s runtime (#580) with the federation taken out; the TLS diagnostic pages and the SPNEGO demonstration pages stood on it until #597 and #595 took them out of the runtime, and the three older embedded runtimes (the sign-in screen's embedded pages, GNAP's refusals, the federation pages) may move onto it. |
+| `web_qr.ts` (`WebQr`) | A QR code drawn in the browser as inline SVG, ISO/IEC 18004 byte mode (#589) — the portal's Credential Offer, and since #572 the set-up step's authenticator app (`otpauth:`); moved here from `portal/` by #572. |
+| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. `STEP_CSS` (#572, #573), appended to it, is what the sign-in surface's steps drew in their own stylesheets: a notice, a warning, a code's wide field, the ways round a factor, the technical fold, the QR code.`VC_DEMO_CSS` (#582), the OpenID4VC demonstration's, left with it on #594. `DIAG_CSS` (#583), last, is what the TLS diagnostic pages (and, until #595 moved them to the companion, the SPNEGO ones) drew in their own server-drawn shells: a verdict's band, the PEM box, a list's indent, scoped to `.diag`, and the TLS page's wider card to `.tls`. |
+| `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). |
+| `public_assets.ts` (`PublicAssets`, server) | `/web/card.css`, `/web/locales/catalogs.json` and `/web/locales/<ns>/<catalog>.json`, from what `i18n.ts` loaded — **nothing read from disk by a requested name**, an unknown name a 404 (`STS-I18N-0012`), a known pair with no file `{}`. `?v=<build>` equal to this build's version is `immutable` for a year, anything else `no-cache`. `/web` is `EVERYWHERE` in `hosted_applications.js` and `local` in `cell_placement.ts`. Registered at 6a-web. |
+
+`PageLocale.shellAttributes(req, application)` answers the three language
+attributes a translated surface's shell carries — `data-sts-version`,
+`data-sts-lang` (canonical, never as the request sent it) and
+`data-sts-locale-default`.
+
+### How a public surface is added — the recipe #579 follows
+
+1. **The API** its pages are drawn from, language-free, answering each page's
+   view to a GET and listing its POST operations with what each `mirrors` at
+   its index (the `/account-api` conventions: `view`, `go`, `location`,
+   `message`, `errors`; `preferredLanguage: { value, populated }` where it
+   knows the person). Errors English, each with its code.
+2. **The renderers**: `web_<surface>_*.ts` beside the surface's server module,
+   a page table module exporting `PAGES` and `render(path, view, ctx)` (the
+   bundle's global), and an entry `web_<surface>.ts` that builds
+   `new WebSurface(env, { base, api, pages, namespaces, frame?, brand? })`
+   from the browser's objects and calls `start()`. Words from a catalog
+   namespace of its own in `common/locales/<ns>/`.
+3. **The build**: one `bundle_surface` line in `build-typescript.sh`, with the
+   runtime's output named explicitly and never the name of a compiled server
+   module (the portal's is `portal-spa.js` because `portal.js` is
+   `portal.ts`), and one row in `tests/tools/web_surfaces.js` — with `cases`
+   for `tests/web_surfaces.js`'s round trip (view → JSON → bundle, byte-equal
+   to the compiled module), or `heldBy` naming the test that draws every page
+   from its API's answers.
+4. **The server**: the shell through `ShellDocument.document()` with
+   `stylesheets: ['/web/card.css']`, `attributes`
+   `PageLocale.shellAttributes(req, app)` plus `data-sts-prefix` (and the
+   `data-sts-authn`/`data-sts-oauth` bases where those are elsewhere),
+   `ShellDocument.serve()` with `csp: { 'style-src': "'self'" }`, and the
+   bundle with `readFile()` and `sendFile()`; every path in `sts_metadata.ts`,
+   in `hosted_applications.js`'s application, in `cell_placement.ts`.
+5. **The docs**: its row in the root `CLAUDE.md`'s static-surface table, and
+   the server-drawn rows it replaces taken out.
+
+
+## 3cm. THE MOCK RELYING PARTIES — DELETED (#592, 2026-10-12)
+
+`/wsfed/rp`, `/saml2/sp` and `/saml11/rp` were development-only
+demonstrations (#585) that #581 had converted into one static surface
+(`mock_rp_surface.ts`, `web_mock_rp_pages.ts`, `web_mock_rp.ts`, the
+`mockRp` catalogs and `MOCK_RP_CSS`). rcbj decided on #591 that the runtime
+ships no demonstration code, and #592 deleted all of it — the routes, their
+start views and scripts, the verifiers that existed only to show a verdict
+(`verifySignInResponse()` and both `verifyResponse()`s), the two persisted
+stores (`wsfed.rpContexts`, `saml2_sso.spContexts`) and their two lifetimes,
+and `/saml2/sp`'s IMPLICIT TRUST: `saml2_sso.ts` trusted this service's own
+certificate for that one entityID, and `request_signature.ts` took an
+`implicitCertificates` list for it. Both are gone; every service provider's
+certificate is a registered one. The number is kept because the prose cites
+it.
+
+**What they were also for, and what replaced it.** Each was its profile's
+default return address: a request naming no `wreply`, `shire` or
+`AssertionConsumerServiceURL`, with none registered, went to the mock in
+development. It is REFUSED now, in both modes (`saml/return_address.ts`;
+SAML 1.1 refuses on its own page with `STS-SAML-0028`). The relying parties a
+test needs are the test peer's (`tests/peer/peer_saml.js`, #586). The error
+codes only they raised (`STS-SAML-0021`, `0022`, `0042`, `0043`,
+`STS-WSFED-0016`) are retired. The Provider Commands mock
+(`oauth-oidc/command_mock_rp.ts`) went in #591's fifth phase (#596), to the
+test peer's `peer_commands.js`.
+
+
+## 3cn. `ownership.ts`: WHO OWNS WHAT, AND WHAT AN OWNER MAY NOT TOUCH (#607, 2026-10-13)
+
+rcbj: a person may update the roles, groups, service accounts and
+applications they own from the user portal; the portal reaches the
+management API with `owner:read` / `owner:write`; and the check that the
+person is an owner of the object is XACML policy, in ONE place. The policy
+side is `xacml/CLAUDE.md` (the access-control document's second rule), the
+gate's side `mgmt-api/CLAUDE.md` (*OWNERS*), the portal's `portal/CLAUDE.md`.
+What lives here is the FACTS that rule decides on, and the two roles.
+
+**AN OWNER IS NAMED, BY DN.** A role's and a group's `owner` (#604, #603), a
+service account's `stsServiceAccountOwner` (#600), an application's
+`appOwner` (#604) — each value the DN of a person or a group of the realm,
+every door resolving a username or a cn first. A person owns an object when a
+value names them or a group they are in (direct or through `memberOf`,
+`groupsOfUser()`); DNs are compared through `dnKey()` (case, and the spaces
+around a comma, do not matter). **Because the DN is the name, a value naming
+a deleted person or group is taken off when it is deleted, and moved when it
+is renamed (2026-11-13, #1612's rule)**: a person made again at the same DN
+would otherwise own everything the first one did, owner:write included. The
+directory does it (`forgetOwnerReferences()`, `moveOwnerReferences()`,
+`ldap/CLAUDE.md`); a value written by hand that names nobody is still reported
+here with `kind: ''`.
+
+**`ownership.ts` ANSWERS, AND NEVER DECIDES.** `identityOf()` (the person's
+DN and their groups' — the policy's `owner-identity`), `objectOf()` (an
+object's DN, its owner values, `protected` with `reasons`, `marked` — the
+policy's `object-owner` and `object-protected`), `ownsAnything()` (the owner
+roles), `protectionOf()`, and the administrator's mark (`setProtected()`). A
+"may" here would be the `if` rcbj's directive removes; `xacml/xacml_pip.ts`
+asks these for the PDP, and an override of `access-control` may read them
+differently. A library (rule 3): every register is reached lazily.
+
+**`ownsAnything()` ASKS NOTHING OF THE STORE FOR AN ORDINARY PERSON (#759,
+2026-10-20)**, and it is still computed at the decision: the service accounts
+are the directory's kept names (`ldap/CLAUDE.md`, the service accounts'
+clock), the applications' owners come off the kept listing
+(`applications.ownerValues()`, no view of every application built), and both
+are current at the very next decision after a write. It asked the store for
+every service account and built a view of every application on every scope
+decision of every sign-in — about 7% of a request worker under a sign-in
+load. `tests/sign_in_owner_reads.js`.
+
+**OWNER_READ AND OWNER_WRITE ARE COMPUTED** (rcbj's decision 2), from the four
+owner attributes when a decision is made: `roles.js`'s ninth and tenth
+built-ins, and the first that AUTHORIZE a permission (`owner:read`,
+`owner:write` — `OWNER_ROLES`). `holds()` reads `owns` off the context, which
+the leaf cannot work out, so the roles claim, the issuance PEP and the access
+PEP's own `rolesOf()` never carry them; `role_permissions.ts`'s `heldRoles()`
+asks `ownsAnything()` for a named, authenticated person and lists them with
+the configured roles, because what can authorize is what that list is. So the
+narrowing at issuance and held ∩ carried at `/admin-api` work for them as for
+the admin pair, and an owner taken off the last thing they owned is refused
+on their next call. An owner is a person or a group, so an application
+subject never holds them. `owner:read` and `owner:write` are protected
+scopes (#110, `scope_policy.ts`'s `OWNER_SCOPES`); `sts-user-portal` is
+seeded declaring both, with global consent.
+
+**PROTECTED — WHAT OWNING SOMETHING MUST NEVER BECOME** (#607's section 4,
+and rcbj's decision 4). Ownership is delegated administration, so the paths from
+owning to holding this service's permissions are closed as a FACT:
+
+* a role that is built in or native, or that authorizes a permission no owner
+  may come to hold — this service's protected scopes, the native roles' and
+  the owner roles' — since its owner could otherwise add themselves;
+* a group this service grants through by its NAME (the console rosters,
+  `roles.remotePepGroup`, `roles.xacmlUserGroup`), or a member of such a role;
+* one of this service's own applications (`applications.isInternalIdentifier()`
+  — the console's, the portal's, the management API's, the debugger's), one
+  that is a member of such a role, or one DECLARING a protected scope — its
+  owner regenerating the secret would hold what it holds;
+* a service account holding such a role (or REMOTE_PEPS, XACML_USER) — its
+  owner pushing the rotated password to a destination they read would be the
+  same;
+* and anything an administrator MARKED: `stsOwnerProtected` TRUE on the entry
+  (the role's, the group's, the person's, the application's), through each
+  register's own write so every other rule of the object stays its own —
+  `roles.setOwnerProtected()`, `ldap_server.setGroupOwnerProtected()`,
+  `service_accounts.setOwnerProtected()`, `applications.setOwnerProtected()`
+  — at `POST /admin-api/ownership/set-protected` (the *Closed to its
+  owners* checkbox on each object's Owners tab in the console), or an
+  `ldapmodify` by a holder of Admin Write.
+
+**A REGISTER THAT CANNOT BE READ LEAVES THE OBJECT CLOSED**, and owns nobody
+anything: not knowing is not permission, in both directions.
+
+`tests/owner_administration.js` holds the rule, the protections and the roles.
+
+## 3co. `attribute_policy.ts`: WHAT EVERY PERSON MUST HOLD, AND A REALM'S CUSTOM ATTRIBUTES (#396, 2026-10-19)
+
+rcbj's ticket: "Minimum user attributes that must be populated for a new user
+object. Default: first name, sn, email. Add a policy that defines what the
+required fields must be for a realm." On the ticket, the same day: the page
+"should display a list of all attributes, custom attributes, ability to add a
+new attribute, and require each individual attribute as needed." The design
+comment on #396 is the decision of record; rcbj chose cn and sn LOCKED and the
+suite SWEPT rather than the policy weakened for it.
+
+* **The sixth kind on Directory → Policies** (`admin-core/policy_kinds.ts`),
+  `locale_policy.ts`'s pattern: `cn=default,ou=attributePolicies`, inherited
+  from the default realm while a realm has none, else the built-in default.
+  One field, `requiredAttributes` (`stsAttributeRequired`, multi-valued),
+  default `givenName, sn, mail`.
+* **NAMED PROFILES, NAMED BY THE PERSON AND THEIR GROUPS (#1241, rule 3cx).**
+  `cn=<name>` beside `default`, the realm's own (never inherited), each a
+  required list and `stsAttributePolicyPrecedence`. `stsAttributePolicy` on
+  the person's entry and on a group names one (`REFERENCES`, declared for
+  both holders); `selectionFor(subject)` ranks the person's reference and
+  each group's, lowest precedence first, else `default`. **The subject** is
+  `{ uid, attributes, groups }`: the entry as written (the own reference is
+  read from it) and any group the write adds. **At a create** that is the
+  reference the write sets plus the groups already listing the DN the
+  person will have (a dangling member becomes a member when the entry
+  exists); no door adds a group in the same write today, so `groups` is for
+  the door that will. **At an edit** it is the person as the edit leaves
+  them, so changing one's own reference is asked of the profile it names.
+  Every refusal (`createRefusal()`, `editRefusal()`, `missingFrom()`,
+  `removedBy()`, `required()`) takes the subject as an optional last
+  argument and defaults it from the attributes handed in, which is why most
+  doors needed no change; the person editor and SCIM pass theirs. **A
+  dangling reference selects nothing and is logged (STS-LDAP-0196)**; it
+  does not fail closed, because this policy is a floor and `default` is the
+  floor everyone else is held to. `bulk_import.js` reads `default`: a record
+  carries neither the reference nor a group.
+* **The delete of a named profile answers a PROMISE.** It is refused while a
+  person or group names it (STS-LDAP-0197): the groups from the group index,
+  the people from `peopleNamingPolicyAsync()`, a holder question that may
+  not be asked synchronously on a request (rcbj's rule). `policiesAction()`
+  takes a thenable from `reset()` for that reason, `POST
+  /admin-api/policies/:action` awaits it, and `GET /admin-api/policies` is
+  `policiesViewAsync()`, which fills each named profile's people through the
+  kind's `namedByAsync()`; the synchronous `policiesView()` (and `namedBy()`)
+  name no people. `stsattributepolicy` is NOT among the store's asked
+  attribute names (`persistence/directory_queries.js`), so in a windowed
+  process that holder question is answered by the unindexed path.
+* **`uid`, `cn` and `sn` are always required** and are not in the field: the
+  username, and `person`'s MUST list (RFC 4519 3.12). A create that names no
+  `cn` is given `givenName sn` (`deriveCommonName()`), at the console, the
+  API, SCIM and a federated first sign-in — never at an LDAP add, which writes
+  what the client sent.
+* **What may be required is the person editor's universe** plus `uid` and
+  `mail` (`catalogue()`): never `userPassword`, a binary attribute, `memberOf`
+  or an `sts` attribute. `ldap/person_editor.ts` is required LAZILY here,
+  because it requires this module at load for its custom rows. Where it cannot
+  be asked (the bulk import's process), a read keeps every stored name rather
+  than dropping what it cannot check — `offeredNames()` answers null, never an
+  empty table.
+* **Enforced in product mode only** (`mode.createsIncompletePeople()`,
+  requirement `required-attributes`), the password policy's arrangement:
+  development creates a subject from a username and the page says the policy
+  is not enforced. `createRefusal()` and `editRefusal()` are the two questions
+  every door asks; the doors are the directory's and SCIM's (`ldap/CLAUDE.md`,
+  `scim/CLAUDE.md`, `federation/CLAUDE.md`, `persistence/CLAUDE.md`). An edit
+  is refused only for a value TAKEN AWAY, so a person created before the
+  policy said so keeps every other door, and nobody's sign-in is refused for
+  it.
+* **Custom attributes** are a register of the realm's own,
+  `cn=<name>,ou=attributeDefinitions` (`stsAttributeDefinition`: a label, a
+  syntax of seven — string, integer, boolean, date, email, uri, dn — and
+  whether it holds one value or several), defined and removed by this kind's
+  two acts (`define-person-attribute`, `remove-person-attribute`, the first
+  kind with acts beside save and reset: `PolicyKind.extraActions` and the
+  module's `act()`). NOT inherited. The name is an RFC 4512 descr of at most
+  64, and may not be one the directory's name table knows (`learnName()`'s),
+  `memberOf`, or begin `sts`; a custom name is never learnt into that table,
+  because the table is the process's and the name one realm's. Never secret
+  and never binary: `inetorgperson.ts` keeps a fixed list so nothing appears
+  on a page by accident, and a custom attribute is an administrator's act only
+  while a credential cannot be stored as one. Removal is refused while anybody
+  holds a value (0172) or any of the realm's own profiles requires it (0173).
+  `catalogue()` never offers an `sts` name: the person editor's universe
+  holds the declared policy references, which are not facts a profile could
+  require.
+* **On the user portal by the definition's two flags (#700)**,
+  `stsAttributePortalVisible` and `stsAttributePortalEditable`, both FALSE by
+  default; `definitions()` answers them as `portalVisible` and
+  `portalEditable`. **Editable implies visible, NORMALISED, not refused**:
+  `define()` and `redefine()` store an editable one visible and a hidden one
+  not editable, and the read ORs them, so an entry an LDAP client wrote with
+  only the second flag is answered alike. **`update-person-attribute`**
+  (`redefine()`, the kind's third act) changes the label, the description
+  and the flags in place; the syntax and the cardinality are FIXED
+  (STS-LDAP-0208) because held values were checked against them, and sent
+  as they are they are accepted. 0206 (not defined), 0207 (a field), 0209
+  (not stored). The portal's side — the Overview's `customAttributes` and
+  `POST /account-api/attributes` — is `portal/CLAUDE.md`'s.
+* **The count of people who lack one is a walk**, so it is asked only on
+  request (`GET /admin-api/policies?missing=count`), and not at all where the
+  directory is in the store; the view always gives the LDAP filter that finds
+  them (`missingFilter`, the `default` profile's). **Each person is judged
+  against their own profile (#1241) in that same walk**: the directory hands
+  `missingJudge()`'s function each person's username and own reference, the
+  groups' references come off the group index, each distinct set of
+  references is ranked once and each profile's list read once. With no named
+  profile the directory is handed `default`'s list as before, and where no
+  group names one no group is read.
+* **SCIM publishes both (#699)**: `/Schemas` marks `required` from the
+  `default` profile in product mode, and the custom attributes are the
+  `CustomAttributes` extension, read and written (`scim/CLAUDE.md`, *THE
+  REALM'S SCHEMAS*).
+* **A federated newcomer is ASKED rather than refused (#701)**: the
+  federation door holds the entry it would write to `createRefusal()` before
+  the session and sends the person to `/federation/profile/{handle}` for the
+  missing values (`federation/CLAUDE.md`, *A NEWCOMER THE ATTRIBUTE POLICY
+  WOULD REFUSE*); `autoCreateUser()`'s STS-FED-0158 is the backstop. The
+  policy is not relaxed: the person supplies what it requires.
+
+`tests/attribute_policy.js` holds it in process, and
+`tests/attribute_policy_named.js` the named profiles (#1241).
+
+## 3cp. `phishing_resistance.ts`: WHAT EARNS OPENID CONNECT EAP's `phr` AND `phrh` (#723, 2026-10-19)
+
+**OpenID Connect EAP ACR Values 1.0 (Final, 2025) defines two `acr` values**
+for exactly the property a passkey has and a password lacks: `phr`,
+phishing-resistant, and `phrh`, the same with the key hardware-protected. This
+leaf is the ONE place that says what this service's evidence earns of them.
+It answers from an authentication EVENT, and it claims nothing the event does
+not record. That is the same rule that keeps a passwordless key at `acr "1"`.
+The header quotes section 2 and argues each row:
+
+| The event | Earns |
+|---|---|
+| a WebAuthn ASSERTION (`context.credential.kind` `webauthn`, `ceremony` `assertion`), first factor or the step after a password | `phr` |
+| the same, the key's stored attestation TRUSTED and BE clear | `phr`, `phrh` |
+| a key REGISTERED in the same act (`ceremony` `registration`) | nothing: EAP section 4, provisioned on a phishable secret |
+| a TLS client certificate | `phr`, never `phrh` |
+| a federation partner's `acr` `phr` / `phrh` | what the partner said |
+| a password, any one-time code, an emailed link, a recovery code, a wallet, a Kerberos ticket, an anonymous session | nothing; `amr` `hwk` is not read |
+
+* **A SESSION IS ITS LATEST AUTHENTICATED EVENT**, as its `acr`, `amr` and
+  `auth_time` already are (`authn/CLAUDE.md`). A `prompt=login` answered with
+  a password after a passkey leaves nothing.
+* **The evidence is on the event**: `authn.ts` records `ceremony` and
+  `attestationTrusted` beside `backupEligible` (`authn/CLAUDE.md`, the event's
+  credential).
+* **A stored key is the same two facts** (#739): `storedKeyEarnsHardware()`
+  reads `attestation.trusted === true` and `backupEligible === false` off the
+  key row, which is what the passkey step's `allowCredentials` is narrowed
+  by when the sign-in must earn `phrh` (`authn/CLAUDE.md`).
+* **The class URIs are this leaf's too** (#736): `URI_PHR` and `URI_PHRH`,
+  the URIs EAP ACR Values 1.0 section 5 registers. `signInFor()`,
+  `eapDemandMet()` and `assertionUri()` are what SAML reads, so a protocol
+  module does not keep a second table (`saml/CLAUDE.md`).
+* **`factOf()` is never empty**: `none` when nothing was earned. That is the
+  issuance policy's `urn:sts:xacml:phishing-resistance`, so a rule can tell
+  "not phishing-resistant" from "not asked" (`xacml/CLAUDE.md`).
+* **It decides nothing.** `oauth-oidc/step_up.ts` decides whether a request
+  for either is met (`oauth-oidc/CLAUDE.md` 3cp), and the issuance policy
+  decides whether an application may be issued to.
+* A LEAF: bunyan only. `issuance_gate.js` requires it LAZILY and only on a
+  browser issuance (which kept it out of the parent's Kerberos COPY closure,
+  an obligation until #1280).
+
+`tests/eap_acr_values.js` holds it, in process and over HTTP.
+
+## 3cq. `recoveryAssurance`: ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724, 2026-10-19)
+
+A follow-up of #544. The passkey policy's rows (3ch) hold only a PASSKEY
+sign-in: `passkeySignInRefusal()` answers early for any other credential.
+Step 1 of the ticket (its comment of 2026-10-19) established that every way
+back into an account that asks for no passkey led past them:
+
+* a reset link (the forgot-password form's or an administrator's), an
+  administrator's generated password, or an activation link sent to somebody
+  who already had an account — none signs anybody in, but the password it
+  leaves signs a passkey-only person in on ONE factor at the next sign-in;
+* a recovery code, in place of an `mfa` passkey at the second-factor step;
+* an emailed code or link (#64), as a first or a second factor.
+
+**The row**: `recoveryAssurance` — `any`, `not-weaker` or `operator-only`.
+**`any` in development, `not-weaker` in product: rcbj's decision on #724,
+2026-10-19** ("not-weaker in product is fine for now. We will change that if
+it starts creating problems."). The default is `mode.recoversWeakerThanPasskeys()`,
+read through a GETTER on `DEFAULTS`, because the mode is a setting. It is the
+ONLY row a save may leave out (`optional`): callers that sent the whole
+profile before it existed — the console's older form, a vendored job — are
+not refused, and the default stays.
+
+* **"Covered" is a person who holds a passkey of either role**
+  (`credentials.holdsPasskey()`). Nobody else is affected by any value.
+* **A pending recovery is on the ENTRY** (`stsRecoveryPending`, `<door>
+  <instant>`), so every node and a restart agree. `credentials.noteRecovery()`
+  writes it, only for a covered person and only while the selected profile is
+  not `any` — so switching the row later does not reach back to recoveries
+  made while it allowed them. Where a hold is required and that write fails,
+  the reset link's spend and an administrator's `reset-password` do not
+  finish: the password is removed, the link stays spendable, nobody is
+  signed out, and the answer is not success (#962, `STS-AUTHN-0382`).
+  `recoveryHoldRequired()` is that test, so a false `noteRecovery()` is a
+  failed reset only then. The doors that write it: the reset link's
+  spend (`portal/account_reset.ts`, `password-reset` or `admin-reset` by the
+  link's `stsPasswordResetSource`), the administrator's `reset-password`
+  (`admin-password`), and the activation link's finish (`activation`, only
+  where a passkey enrolled BEFORE the link was issued is held:
+  `noteActivationRecovery()`). The first passkey sign-in clears it
+  (`authn.ts`'s `recoveryCompleted()`, audit `authn.recovery.completed`).
+* **The question is the issuance policy's** (`recover-account`, xacml/
+  CLAUDE.md), asked through `passkeyPolicy.recoveryRefusal()` with the facts
+  the caller holds, because this leaf reads no credential. It is asked
+  BEFORE a door writes (`at: 'door'`) and at every session's start (`at:
+  'session'`), the latter only where there is a recovery to ask about.
+* **`not-weaker` limits, it does not lock out.** `startSessionHere()` refuses
+  (`STS-AUTHN-0381`) a session a passkey did not answer; at the sign-in
+  screen `refusedSession()` turns that into the set-up step instead
+  (`recoveryEnrolment()`): only a passkey offered, `proved` and `recovery`,
+  the ceremony a REGISTRATION whatever keys the person holds, the key added
+  through `credentials.addKey()` (in the `mfa` role until #1135, with no
+  role since; so the profile's registration
+  rules hold it), and NO session at the end — the browser goes back to the
+  caller and signs in with the new passkey. Where no passkey can be
+  registered here (`STS-AUTHN-0383`) the refusal is drawn. Every other door
+  (federation, a certificate, SPNEGO) simply gets the refusal.
+* **`operator-only` adds refusals of the self-service doors**
+  (`STS-AUTHN-0380`): the forgot-password request mails nothing
+  (`mail_uses.ts`, before a recovery code is spent; the form's one sentence
+  either way), a self-issued link is refused at its spend (403, its own
+  sentence — the holder has proved the mailbox already), the second-factor
+  step offers no recovery code or emailed factor (`narrowStep()`), and one
+  used anyway is refused at the session. **The session an operator's door
+  leads to is limited as under `not-weaker`** — a choice made in building
+  it, put to rcbj on the ticket.
+* **CAEP**: the reset already sends `credential-change` (password); the
+  passkey registered at the step sends `credential-change` (create) where it
+  is written, so the portal's Security activity shows both.
+* Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.
+
+## 3cs. `passkey_report.ts`: WHO HOLDS WHICH PASSKEY ALGORITHM, KEPT RATHER THAN COUNTED (#942, 2026-10-23)
+
+Monitoring → Passkeys and `/admin-api/passkey-report`: passkeys by algorithm
+(JOSE name, COSE id) and lane, people by kind (post-quantum only, classical
+only, both, none), AAGUID by algorithm, each passkey profile's
+`postQuantumRequired`. **The kind is the ALGORITHM, never the lane** — #718's
+rule, for #718's reason. The file's header carries the argument at length;
+what a maintainer must not undo:
+
+* **THE REALM'S COUNTS ARE AN AGGREGATE, NEVER A SCAN PER REQUEST** (rcbj on
+  #942, the directory at #820's scale). A baseline in
+  `passkey_report.baseline` (whole-valued, per realm), counted by the cluster
+  job `passkeys.report-recount` (daily, per realm, manual) from the HOLDERS of
+  `stsWebauthnCredential` after a key cursor (`ldap_server.js`'s
+  `passkeyScanAsync()`, the asked names' index); plus the DIFFERENCES the
+  directory's writers hand `noteKeysChanged()`, summed into
+  `passkey_report.changes` — `merge: 'own'` (an increment, so each process's
+  row and the fan-in adds them), `contributionsOnRead` (only the page reads
+  the other processes' rows), `observation` (a tally riding the key write).
+  A change row counts only under the baseline's EPOCH; a recount writes a new
+  epoch, and every older row is ignored.
+* **THE WRITERS ARE THREE, AND A FOURTH OWES A CALL.** `writeWebauthnValue()`,
+  `replaceWebauthnValues()` and `removePersonEntry()` in `ldap_server.js`
+  (`notePasskeysChanged()`). Every enrolment, removal, rename, counter update
+  and attestation rewrite reaches one of the first two, and a socket write of
+  the attribute is refused (#237). **A new door that writes or drops a
+  person's `stsWebauthnCredential` calls `notePasskeysChanged()`**, or the
+  page is short of it until the next recount, with nothing failing. What no
+  door sees — `persistence/bulk_import.js`, an LDIF restore, a cell's
+  incoming `putEntry()`, a change to a person the running recount had already
+  read — the next recount puts right; the page says when it counted and how
+  many changes it has noted since, and has Recount now.
+* **A counter update notes nothing.** Each passkey sign-in rewrites the
+  values; the facets before and after are compared and an empty difference
+  writes no row. Keep that comparison if the note is ever made cheaper.
+* **THE FILTERS ARE BOUNDED, NOT AGGREGATED.** A group (cn or DN) or a named
+  passkey profile (#535: the members of its `stsPasskeySelectGroup` groups)
+  is counted from the members, read together (`passkeyPopulationAsync()`,
+  `entriesAtAsync()`), at most `POPULATION_LIMIT`, and says so past it. The
+  default profile is refused as a filter (it selects nobody by group). An
+  APPLICATION's population is the realm — anybody may sign in to it — and the
+  answer adds which profile governs its sign-ins (`forApplication()`).
+* **THE LISTS PAGE BY A KEY CURSOR** (`from`, handed back as
+  `paging.nextFrom`), at most `LIST_SCAN` entries a request, `complete:
+  false` when that stopped a page short; `page` without `from` reads from the
+  start. The export reads on to `EXPORT_LIMIT` rows and quotes a CSV cell a
+  spreadsheet would read as a formula.
+* **#941's attestation certificate is counted** by `attestationFacetOf()`:
+  the leaf of `attestation.algorithms` (a compound statement's members, and
+  the anchor only when the statement carried no certificate), as
+  `t|<algorithm>|<coseAlg>|<1|0>`. A key with no such record, or no
+  certificate, is not a row. ML-DSA-44/65/87 keep their COSE identifiers;
+  other certificate algorithms have none. The Attestation tab is empty
+  when nothing counted recorded one.
+* **A library and a slot (rule 3e).** `setDirectory()` is filled by
+  `ldap_server.js` and validated whole (`STS-AUTHN-0417`): that module
+  requires this one, and the composition root builds this one at 18j-iv,
+  before the directory at 21. Which values are keys is `credentials.ts`'s
+  (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
+* **THE HISTORY IS WRITTEN BY THE RECOUNT ITSELF** (#1109): one row of
+  `passkey_report.history` (cell tier, per realm, keyed by the UTC day)
+  right after the baseline, from the count just made — people by kind,
+  passkeys by algorithm, lane and attestation algorithm, and each named
+  profile's population through `populationAsync()` (bounded as the filter
+  is, at most `HISTORY_PROFILES` profiles; the default profile and a
+  profile with no group select nobody and are not rows). Not a sibling job:
+  the scheduler orders no job after another, so a sibling would have to
+  discover whether a recount had run, and would snapshot the baseline plus
+  whatever changes had been noted since rather than the count itself. A
+  later recount the same day replaces the day's row. The same run prunes
+  past `webauthn.passkeyHistoryDays` — a walk of a few hundred keys, so no
+  job of its own and nothing periodic outside the scheduler. A run fenced
+  while counting the profiles writes no row (a row missing some profiles
+  would look whole). Writing and pruning NEVER fail the recount
+  (`STS-AUTHN-0520`, `0521`); an unreadable population is recorded as
+  `counted: false` (`0522`). The model table is not kept: up to
+  `MAX_MODELS` rows a day for a question #1109 did not ask. Read in
+  `/report` as `passkeyHistory` (`report/CLAUDE.md`).
+* Codes `STS-AUTHN-0413` to `0418`, and `0520` to `0522` for the history.
+  `tests/passkey_report.js`, `tests/passkey_history.js` and
+  `tests/protocol/sts_passkey_report.js` hold it.
+
+## `passkey_evidence.ts`: RFC 4998 EVIDENCE FOR A VERIFIED CLASSICAL PASSKEY (#947)
+
+An optional RFC 3161 TSA signs the initial SHA-256 archive timestamp for a
+verified, trusted classical attestation. The TSA token, its CMS signature,
+critical time-stamping EKU, imprint and chain are checked against the operator's
+PEM anchors. The EvidenceRecord and its exact archived object live on the key.
+The daily `passkeys.report-recount` walk renews expiring TSA tokens in the same
+ArchiveTimeStampChain; raising `webauthn.attestationEvidenceHashAlgorithm` to
+SHA-384 or SHA-512 creates a hash-tree renewal in a new chain, retaining every
+prior chain. The admin export is served by `mgmt-api/passkey_report_api.ts` and
+linked from the person page. `tests/passkey_evidence.js` uses a local OpenSSL
+TSA fixture. This module uses the shared `crypto.js` digest boundary and
+PKIjs; it sends no data to a TSA unless the feature is enabled.
+
+## 3ct. `post_login_policy.ts`, `post_login.ts`: POST-LOGIN ACTIVITIES (#1096, 2026-10-28)
+
+rcbj: a "post login activity", targeted by group and enabled per realm;
+the first is the post-quantum passkey migration. rcbj's answers on #1096: the administrator chooses what a
+person holding no passkey is asked (`noPasskey`, and `noPasskeyRole` until
+#1135 retired it — its attribute stays in the schema, unread); Skip
+snoozes for `snoozeDays`, and an optional `graceDays` from the FIRST
+invitation ends Skip; a required activity BLOCKS the sign-in; off by
+default, and done inside the sign-in flow.
+
+* **`post_login_policy.ts` is the seventh kind on Directory → Policies**,
+  `locale_policy.ts`'s pattern. **Since #1239 (3cx) what a named profile
+  covers NAMES it**: a group in `stsPostLoginPolicy`, an application in
+  `appPostLoginPolicy`; the profile keeps its rows and `precedence`, and
+  `stsPostLoginSelectGroup` is gone (schema too; no migration). Exclusion is
+  a disabled named profile at a lower precedence — no second list — named
+  from a group or, now, an application. A dangling reference selects
+  nothing (STS-AUTHN-0542: the policy asks, it guards no door, so it does
+  not fail closed); a named profile something names is not deleted
+  (STS-AUTHN-0543). The kind is tabbed.
+* **AN APPLICATION IS KNOWN ONLY AT A SIGN-IN (#1239).** `dueFor(username,
+  application)` hands `authn.ts`'s application to `forPerson(username,
+  groupsOf, application)`, which ranks it with the groups'. The questions
+  asked of a PERSON outside a sign-in — `post_login_activities.ts`'s
+  `decide()` (the reminder walk) and `report/sources.ts`'s
+  `postLoginProgress` (a row with no stamped profile) — pass none and rank
+  the groups alone. So a profile off that a group names keeps its members
+  out of the mail as well as the sign-in; one an application names keeps a
+  sign-in to that application out and does not stop a mail, which only asks
+  the person to sign in. `personGroups()` answers each group WITH the
+  profile it names (`personGroupReferences()`, one read shared with the
+  started activities' group test, as #1126 asked).
+* **`post_login.ts` answers the per-person question** (`dueFor()`) and keeps
+  `post_login.progress` (cell-tier, on demand): first invitation, snooze,
+  done. "Post-quantum" is the key's ALGORITHM, never its lane — a realm with
+  one lane makes ML-DSA keys in the classical lane. Nothing is due where the
+  realm cannot enrol an ML-DSA passkey (`canRegister(method?)`; "in that
+  role" until #1135), so a sign-in is never held for something that cannot
+  be done. **No role since #1135**: `Due.role`, `ROLES` and `roleFor()` went
+  (`reasonFor()` stays), the PQC migration asks of every key at once
+  (`keyToUpgrade(username, prefer?)`), and a progress row written since
+  carries no `role` — one written before keeps it.
+* **The hold is in `authn.startSessionHere()`, last of the refusals** —
+  `authn/CLAUDE.md` argues it.
+### 3ct, continued: started post-login activities (#1111, 2026-10-28; #1123)
+
+rcbj: an administrator STARTS a post-login activity (optionally narrowed to
+groups) from the console and `/admin-api`; a cluster scheduler job mails
+each person still due, reminders every N days up to a maximum per person;
+pause, resume, end; the mail sends the person to sign in and the post-login
+activity does the registration — no credential in any link.
+`post_login_activities.ts`'s header argues the rest; what reaches outside
+it:
+
+* **ONE CONCEPT (#1123, rcbj).** #1111 gave what the page starts a name of
+  its own; rcbj's word is that it IS a post-login activity, and the old name
+  went from the page, the API paths, the identifiers, the file names, the
+  stores, the job, the audit actions, the error-code text, the report
+  column, the mail prose, every catalog and the docs. The post-login
+  activity POLICY KIND (Directory → Policies, `post_login_policy.ts`)
+  stays: it is the rules a started activity follows. In prose the record
+  is a *started* activity where the two must be told apart; in code it is
+  a `StartedActivity` (`id` `pla-…`), and on a person's progress row the
+  one that last mailed them is `mailedBy`. **No migration**: no released
+  data held a row; a row under the old store names on a development
+  instance is orphaned, not read.
+* **Two stores, one writer each.** `post_login.activities` (the decision:
+  activity, groups, numbers, state) is written by the console and the API
+  only; `post_login.activityRuns` (cursor, passes, counts) by the job only.
+  The job runs on a request worker (#408) and a Pause is answered by any
+  process, so one row would have each writing back the other's stale half.
+  Both cell-tier: the cursor is a person's DN.
+* **The walk is the directory's key cursor**, never a scan per request:
+  `passkeyScanAsync({ attribute: '' })` for the realm and
+  `groupMembersAfterAsync()` for groups (`ldap/CLAUDE.md`), `perRun` at a
+  time. Whether a person is mailed is `dueFor()` — which already says
+  nobody who has done it and nobody the realm cannot ask — then the
+  interval (the person's last mail from ANY started activity) and the
+  maximum (THIS one's count: `noteMailed()` resets `mails` when another
+  started activity writes the row).
+* **SEVERAL GROUPS, THEIR UNION (#1123, rcbj).** `groups` is a list (at
+  most `MAX_GROUPS`, fifty); `groupMembersAfterAsync()` takes the list and
+  puts every group's member keys in ONE sorted set walked by ONE cursor, so
+  a person in two groups is read once and mailed once, and a pass is one
+  pass over the union. The alternative — a cursor per group, a person
+  de-duplicated by asking whether an earlier group held them — costs a
+  membership question per person and a cursor shape per started activity.
+  A start resolves each name through the group index (`groupsNamed()`) and
+  refuses one the realm does not have by name (STS-AUTHN-0530) rather than
+  dropping it; the duplicate check (0492) compares the SET of DNs. A group
+  deleted later is logged under 0493 and its members are simply not read.
+* **The console chooses the groups by search** (`chooserPane()`, a slice
+  of twenty cut by `view()` from the page's `groupq`/`groupfrom`/`groups`
+  — `admin-ui/CLAUDE.md` argues the list in the query). The search reads
+  `ldap_server.js`'s `groupChoices()`: the group INDEX, a row per group
+  rebuilt only when a group may have been written, never the directory's
+  entries or anybody's membership.
+* **The `groups` query is at most 4096 characters** (`GROUPS_QUERY_MAX`,
+  #1434). The console's links carry the chosen DNs in that one parameter,
+  and fifty ordinary names fit. A longer value is refused before it is
+  split (STS-AUTHN-0496, HTTP 400): a stock Node parser resets the
+  connection once the incoming bytes pass about 64KiB, and
+  percent-encoding turns one character into twelve, so 4096 stays inside
+  the line the parser accepts. The split walks the characters into a list
+  and joins at each `;`, so a legal value is not copied once per character.
+* **A mail is not an invitation**: `invitedAt`, from which the allotted
+  time counts, is still only written at a sign-in.
+* **The message is `post-login-reminder`, a NOTIFICATION** (a person may
+  decline it on `/portal/email`; the activity is asked at their next
+  sign-in whatever they chose), sent by `mail_uses.ts`'s
+  `postLoginReminder()` to the address on the entry, its one link `/portal`
+  on the pinned origin (3ba's rules unchanged).
+* **The console page is the CONTROLS** (`admin-ui/web_post_login_activities.ts`,
+  Directory, beside Policies); the per-person progress is the
+  `postLoginProgress` report source (#1110).
+
+* **Progress is REPORTED in `/report`, never on a console page** (#1110,
+  rcbj): the `postLoginProgress` source reads the store through
+  `eachProgressAsync()`. Each write stamps the profile and
+  `graceDays` that applied (`stamp()`; the role too, until #1135), and `graceOf()` is the one
+  computation of the deadline the report shows. `report/CLAUDE.md` argues
+  the source.
+
+### 3ct, continued: a started activity asks its groups at sign-in (#1126, 2026-10-28)
+
+rcbj chose option (a) on #1126: starting an activity for a group and signing
+in as a member asked nothing, because the default realm had no saved policy
+and the built-in `default` is off; the page read as if starting it asked the
+group. **A RUNNING started activity now turns the sign-in invitation on for
+its population** (the union of its groups by DN, or the realm where it names
+none) for its activity. What reaches outside `post_login.ts`'s header:
+
+* **The rules are still the policy's.** `dueFor()` reads the profile
+  `forPerson()` selects; a started activity overrides only `enabled`. So
+  method, snoozeDays, graceDays, noPasskey, attestation and
+  noPasskeyFallback (and noPasskeyRole until #1135) come from the same profile whoever asks, and there is
+  still one place to set them.
+* **Exclusion is unchanged, and `default` off is not one.** The selected
+  profile is the matching named profile of lowest precedence; a NAMED one
+  with `enabled` off excludes its people from every started activity too.
+  `default` off excludes nobody — it is the built-in state of every realm,
+  and letting it veto would make a started activity ask nobody anywhere a
+  policy was never saved, which is the bug.
+* **The cheap question stays cheap.** `dueFor()` asks
+  `post_login_activities.runningOf()` first and `anyEnabled()` second; with
+  neither, it reads no keys, no group and no row. `runningOf()` is a walk of
+  the started store already held in the process — a persisted, NOT
+  on-demand `realms.map()` bounded at `KEEP` (fifty) rows, its writes from
+  another process arriving by the change log as the job's own pause check
+  already relies on — so it keeps no cache: a second copy would have to be
+  kept in step for nothing. The person's groups are the directory's
+  `personGroups()` hook (#535's, the passkey policy's), asked AT MOST ONCE
+  a question (`forPerson(username, groupsOf)` shares the answer with the
+  started activities) and only where a named profile exists or a running
+  activity names groups; never a member walk.
+* **Several running activities reaching one person: the OLDEST asks**, so
+  `askedBy` does not move when another is started.
+* **`askedBy` on the progress row** (`policy`, or the started activity's
+  id) is written at the ask, Skip and done — the pending step carries it
+  (`authn/CLAUDE.md`) — and NEVER by a mail (`noteMailed()` leaves it);
+  `mailedBy` stays the mail's. The `postLoginProgress` source reports it
+  (`report/CLAUDE.md`).
+* **The mail follows for free.** The job's `decide()` was already
+  `dueFor()`, which with the policy off answered null for everybody, so a
+  started activity mailed nobody unless the policy was also on (the page's
+  `noActivity` warning said so). It now mails its people; the warning and
+  its key are gone from the page and the seven catalogs, and the API's
+  `activityEnabled` is described as the POLICY's own answer.
+* **No new code.** Nothing new refuses or fails: a started store that
+  cannot be read asks nobody through it (`runningActivities()` answers
+  none), and the policy still asks whom it enables.
+
+### 3ct, continued: the migration's method, and what replaced the portal's Upgrade button (#1100–#1105, 2026-10-28)
+
+**rcbj: the post-login activity's PQC migration REPLACES the "Upgrade to
+post-quantum" button on `/portal/keys` (#939), and the configuration that
+went with it is deleted.** So `POST /account-api/keys/upgrade`, its page
+block and `webauthn.pqcUpgrade` are gone; #939's ceremony
+(`credentials.beginKeyUpgrade()` / `proveKeyUpgrade()` /
+`confirmKeyUpgrade()`) stays, run by the sign-in step and by the console on a
+person's behalf. Whether a realm's people are asked is the post-login
+policy's to say; there is no second switch.
+
+* **`method`** (#1100): `upgrade` runs that ceremony with
+  `beginKeyUpgrade(..., { mode: 'replace' })` — proof by the classical
+  passkey, then an ML-DSA registration under ITS handle with it left out of
+  the exclude list, then one write in its place. A plain registration in a
+  one-lane realm was the lockout trap the method exists to avoid: the
+  authenticator holding the classical credential is excluded, so the person
+  is refused there, and if it were not excluded the new credential would
+  overwrite it on the device while both rows stayed here. `alongside` adds
+  an ML-DSA passkey beside it (the post-quantum lane; with one lane, another
+  authenticator, and the page says so). `automatic` asks the lanes.
+* **`attestation`** (#1102) and **`noPasskeyFallback`** (#1103) are read by
+  `post_login.ts`'s `roleFor()` and by `authn.ts`'s `webauthnFacts()`.
+* **The `possiblyReplacedBy` marker** (#1101) lives in `credentials.ts`
+  (`markPossiblyReplaced()`), its audit row in `webauthn_ceremonies.ts`
+  because `credentials.ts` may not reach the audit log.
+* **`lanes`** on the passkey policy (#1104) feeds
+  `webauthnPolicy.alongsideClassical()` through `registrationRows()`.
+
+## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
+
+rcbj's decisions on #1234 (2026-10-30, twice that day): every kind on
+Directory → Policies gets named policies, and
+
+* **WHAT A POLICY COVERS NAMES IT; THE POLICY LISTS NOTHING.** One
+  single-valued attribute per kind on each kind of holder the kind maps to:
+  `app<Kind>Policy` on the application (as `appAuthnPolicy` since #1148),
+  `sts<Kind>Policy` on the group and the person (one spelling for both).
+  A named policy keeps its rows and its precedence (`sts<Kind>Precedence`,
+  1 to 1000). The names: applications `appPasswordPolicy`,
+  `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`,
+  `appPostLoginPolicy`; groups `stsPasswordPolicy`, `stsAuthnPolicy`,
+  `stsPasskeyPolicy`, `stsLocalePolicy`, `stsAttributePolicy`,
+  `stsPostLoginPolicy`; people `stsServiceAccountPolicy`,
+  `stsAttributePolicy`.
+* **THE RANKING**: the candidates are the policy the application names, the
+  policy the person names and the policy each of the person's groups names.
+  The lowest precedence wins, ties by name, else `default`. An empty
+  reference and `default` are no candidate. A name the realm does not hold
+  is no candidate either and comes back in `missing`: what it MEANS is the
+  kind's (the authentication policy fails closed, #1148; the passkey policy
+  logs it and reads on, its default being the realm's baseline; so does the
+  password policy, #1236, 3ac, after a first cut that answered `default`
+  whatever else ranked was found to weaken a valid stricter reference).
+* **CHECKED AT THE WRITE, AND NOT DELETED WHILE NAMED.** Each holder has one
+  door: an application's field through `applications.js`'
+  CHOICES_CHECKED_HERE (STS-REG-0203), a group's through the directory's
+  `setGroupPolicy()` (STS-LDAP-0194, 0195), a person's through the person
+  editor (STS-LDAP-0106). A named policy any holder names is not deleted:
+  `PolicySelection.deleteProblem()` words the refusal, under the kind's own
+  code.
+* **SELECTION, NOT AUTHORIZATION** (#535's decision): it chooses which rows
+  apply; the rows' refusals decide, in the issuance policy where they are
+  decisions.
+
+What the module is: **a leaf of static methods** (rule 3) over values the
+caller hands in — `rank()`, `named()`, `precedenceOf()`, `groupReferences()`
+(a person's groups as references), `forReference()` (what one holder's
+reference comes to, the application page's card), `nameProblem()`,
+`checkPrecedence()`, `referenceProblem()`, `deleteProblem()`, and
+`MIN_PRECEDENCE`, `MAX_PRECEDENCE`, `DEFAULT_PRECEDENCE`. **Its one state is
+the register of person and group references** (`declareReference()`,
+`referenceOf()`, `referencesOn()`): a kind declares at load, and the person
+editor and the group writer read it, so neither requires any kind's module
+and the console draws one picker per declared kind.
+
+**Who names a policy is each register's own question**, reached lazily so
+the leaves stay leaves, and none of it a walk:
+`applications.applicationsNamingPolicy(attribute, name)` (the application
+listing indexes every attribute in `POLICY_REFERENCES`;
+`applicationsNamingAuthnPolicy()` is it for `appAuthnPolicy`), the
+directory's `groupsNamingPolicy()` (the group index, which holds all six
+group references already) and `peopleNamingPolicyAsync()` (the holders of
+the attribute, async: a kind whose delete must ask it awaits it).
+
+**The post-login policy converted in #1239** (3ct): `stsPostLoginPolicy`
+on the group, `appPostLoginPolicy` on the application, and the list it kept
+until then is gone.
+
+### The recipe a kind follows (#1236–#1241)
+
+1. **The module** (`common/<kind>_policy.ts`): a `SELECTION` spec
+   (`{ precedenceAttribute: 'sts<Kind>Precedence', defaultPrecedence:
+   PolicySelection.DEFAULT_PRECEDENCE }`), `REFERENCES` (`{ application?,
+   group?, person? }`, exported), `SELECTORS` holding the `precedence` row
+   only (the console and the API draw a field per row and nothing else),
+   a precedence on `read()` of a named profile
+   (`PolicySelection.precedenceOf()`), `checkPrecedence()` and
+   `nameProblem()` in `save()`, and `namedBy(name)` answering `{
+   applications, groups, people }`. The selection: gather the references —
+   the application's (lazily through `applications.js`), the person's (their
+   entry), the groups' (`directory.personGroupReferences(key,
+   REFERENCES.group)` and `PolicySelection.groupReferences()`) — and
+   `PolicySelection.rank(entries, SELECTION, references)`; decide what
+   `missing` means and log it under the kind's code. `reset()` of a named
+   profile refuses with `deleteProblem(noun, name, this.namedBy(name))`.
+   At load, after the slot: `PolicySelection.declareReference('group' |
+   'person', attribute, noun, choices)` for each group or person reference.
+2. **The kind's row** in `admin-core/policy_kinds.ts`: `tabbed: true` for
+   the Default / Named policies / New policy sub-tabs.
+3. **An application reference**: a declaration row in `applications.js`
+   (`appPasskeyPolicy`'s, beside `appAuthnPolicy`), and the attribute in
+   `EDITABLE` (`'set'`), `ATTRIBUTE_CHOICES` (`default` and the kind's
+   named policies, read lazily), `CHOICES_CHECKED_HERE`, `POLICY_REFERENCES`
+   and not `SIMPLE_FIELD_ATTRIBUTES`, whose set is what two working
+   applications hold (`tests/subtab_views.js` holds it to that): a
+   reference is an advanced field.
+4. **A group reference**: nothing in `ldap_server.js` beyond handing
+   `personGroupReferences` and `groupsNamingPolicy` to the module's
+   `setDirectory()`; the index and `setGroupPolicy()` are generic.
+5. **A person reference**: the declaration, `peopleNamingPolicyAsync` in the
+   module's hooks; the Policies tab is the person editor's.
+6. **The rest of what #1234 lists**: the kind's error codes, the prose
+   catalogs (the `SELECTORS` and `SCHEMA` sentences are the policies
+   namespace's), `docs/`, and tests on `tests/policy_selection.js`'s
+   pattern.
+
+## 3da. `audit_export.ts`: THIS PROCESS DELIVERS ITS OWN AUDIT RING (#641, 2026-11-01)
+
+Monitoring → Audit export and `GET` / `POST /admin-api/audit-export`. The
+file's header is the argument; what a maintainer must not undo:
+
+* **THE RING IS THE RECORD.** Delivery reads `audit.localEvents()`, this
+  process's own ring, oldest first. Nothing is copied into an outbox at
+  record time. In product mode on postgres the ring is the minted state the
+  store already keeps; in development and on memory it dies with the
+  process, and so does delivery. A spill file that outlived `audit.maxEvents`
+  is a later decision.
+* **DESTINATIONS ARE SHARED. CURSORS ARE THIS PROCESS'S.** `audit.export.destinations`
+  is a per-realm map, replace, every process reads the same rows.
+  `audit.export.cursors` is `merge: 'own'`, keyed by destination id. A second
+  `persist` handle logs `STS-CORE-0022` and is not the status. The page's
+  figures are this process. `contributionsOnRead` stays off.
+* **A NEW ENABLED DESTINATION BACKFILLS ONCE.** The first tick, while
+  `primed` is false, sets `cursor.seq` to one before the oldest event this
+  ring still holds, or `0` when the ring is empty, and sets `primed`. That
+  prime is the retained window, bounded by `audit.maxEvents`. A destination
+  that was enabled, then disabled, keeps its cursor and continues when it is
+  enabled again. A destination that has never been enabled is primed on the
+  first tick that visits it.
+* **A GAP IS A MISSING BOOKMARK, AND `seq` ARITHMETIC IS THE WRONG TEST.**
+  `seq` is leased in blocks. A numeric gap is unused space in another
+  worker's block (`docs/admin-console.md`). The cursor keeps `nextSeq`, the
+  event this process meant to send next. On a later tick, already primed,
+  when that event is gone and `cursor.seq` is still below it, the bookmark
+  was trimmed. One episode increments `droppedGap` and writes one
+  `STS-AUDIT-0009` row, then `cursor.seq` moves to one before the oldest
+  event still held. An empty ring leaves the cursor. After the tick,
+  `nextSeq` is the first remaining event that was not skipped, or
+  `inFlightSeq` while a Splunk acknowledgement is in flight.
+* **THE CURSOR MOVES ON SUCCESS AND ON A PERMANENT REJECTION.** A transient
+  failure calls `hold()` and leaves `cursor.seq`. `hold()` audits once, when
+  `failingSince` is first set (`service.failure`, summarised,
+  `detail.exportSkip`), then grows `retryMs` from `auditExport.retryInitialMs`
+  up to `auditExport.retryMaxMs`. `recover()` audits once, outcome success,
+  the same skip, and clears the episode. The cursor object is replaced
+  (`putCursor` assigns a new object) and saved once at the end of the tick.
+  `stillOwner()` false stops the destination without counting a failure, and
+  the events already accepted are still saved.
+* **GIVE-UP DROPS ONE BATCH, THEN WAITS.** Once `failingSince` is older than
+  `auditExport.retryMaxPeriodMs`, the head event is still sent. Success
+  recovers and the rest of the budget continues. A pause or a transient
+  failure of that probe counts the probed event permanently failed, advances
+  past it, and drops further events in that run up to `auditExport.batch`
+  without another send. One `STS-AUDIT-0011` row names the count and the
+  first and last ids. `pausedUntil` becomes now plus the first retry delay.
+  `failingSince` stays until a success. An HTTP 400 (`STS-AUDIT-0015`)
+  advances that one event and does not start the drop. `401` and `403` pause
+  and leave the cursor. A `3xx` is `STS-AUDIT-0014`: the response is
+  destroyed, the `Location` is absent from every string, and the cursor
+  stays. `429`, `408`, `5xx` and a timeout honour `Retry-After` (integer
+  seconds or an HTTP-date, capped at an hour) and pause. A non-zero Splunk
+  collector code on HTTP 2xx pauses (`STS-AUDIT-0007`).
+* **AT LEAST ONCE.** A crash after the send and before the cursor save
+  delivers the event again. The event id is `(origin || 'local') + ':' + seq`.
+  The guarantee stops there.
+* **ROWS THIS SUBSYSTEM WRITES CARRY `detail.exportSkip`.** The job advances
+  the cursor past them and sends nothing. The administrative test row does
+  not: `admin.audit-export.test` is exported. The synthetic event the test
+  sends (`id` `test:<destinationId>:<timestamp>`, `attributes.test`) is
+  absent from the ring. A test does not move the delivery cursor and does
+  not clear `failingSince`.
+* **REDACTION WALKS THE DETAIL.** `ALWAYS_REDACT` (password, secret, token,
+  authorization, client_secret, assertion, access_token, refresh_token,
+  id_token), union `auditExport.redactKeys`, union the destination's
+  `excludeAttributes`, case-insensitive, objects and arrays. A matching
+  value becomes `[redacted]`. `canonical()` receives the set from the
+  caller. `exportSkip` is read on the raw row before that.
+* **CREDENTIALS ARE SEALED, AND AN ANSWER CARRIES NONE.** A Splunk token and
+  secret headers are sealed under the realm's data key (`STS-AUDIT-0003`
+  when that fails, and the destination is not stored). The view returns
+  `tokenSet` and `secretHeaderSet`. A header whose name matches
+  authorization, token, api-key or secret is moved into the sealed set. An
+  empty token on update keeps the box. Plain headers, including an empty
+  text, replace. Deleting one secret header is absent from this version.
+  `lastFailure` strips `https?://` URLs. A duplicate id is `STS-AUDIT-0001`;
+  an unknown id is `STS-AUDIT-0002`. `refusal()` marks the object, so a test
+  reads `errorCodes.codeOf(result)`.
+* **SYSLOG IS RFC 5424, TCP BY DEFAULT.** PRI is facility times 8 plus
+  severity (facility defaults to local0, 16; success is notice 5, so
+  `<133>1`). The structured-data id is `iyaAudit`, a local name, not an
+  IANA enterprise number. The message has no trailing newline; TCP and TLS
+  use an RFC 6587 octet-counted frame. UDP is `transmitted` when `dgram.send`
+  calls back. One socket per destination per tick. LogRhythm is this adapter
+  with `type: 'logrhythm'`. Plain TCP is its own transport.
+  `auditExport.allowHttp` does not govern it.
+* **A FILE IS ONE APPEND.** `fs.promises` `write` of the NDJSON line on an
+  fd opened `a` (`O_APPEND`). Mode `640` unless the destination names three
+  octal digits (`"640"` and `640` are both `0o640`). Rotation renames when
+  the size is at least `rotateBytes` (`0` leaves rotation to the operator).
+  A path is absolute, has no `..` segment, and when `auditExport.fileRoots`
+  is set lies under one root. The path is checked again at send
+  (`STS-AUDIT-0004` pauses). `ENOSPC` and a permission error pause
+  (`STS-AUDIT-0008`). Two processes appending one path can interleave a line
+  longer than `PIPE_BUF` (4096). The handle map is this process, closed on
+  remove, on a path change, and in `resetForTests`.
+* **A WEBHOOK BODY IS ONE PASS.** Placeholders `{timestamp}` `{severity}`
+  `{event_type}` `{subject}` `{message}` `{id}` `{realm}` `{outcome}`
+  `{category}` `{target}` `{address}` `{origin}` `{protocol}` `{channel}`,
+  or the canonical JSON when the template is empty. A value that itself
+  contains `{message}` is left as text. An empty template is
+  `application/json`; a template is `text/plain; charset=utf-8` unless
+  `contentType` is set.
+* **SPLUNK ACKNOWLEDGEMENT IS ONE EVENT IN FLIGHT.** With `ack` on, the
+  cursor stores `ackId` and a stable `ackChannel`. The next event waits
+  until `POST` of the ack URL says that id is true, and the disposition
+  becomes `acknowledged`. Absent means resend. Pending waits for the job
+  interval and counts no failure. A failed poll keeps `ackId` and backs off.
+  The ack URL replaces a trailing `/event` or appends `/ack` to a trailing
+  `/collector`, and drops the query and the fragment.
+* **THE TWENTY-FIRST OUTBOUND EXCEPTION IS ARGUED HERE** (`federation/CLAUDE.md`).
+  Webhook, Splunk HEC and syslog TLS go through `outbound_tls.ts`: https,
+  product refuses plain http (`STS-AUDIT-0005`), skip-TLS is development
+  only and ignored in product (`STS-AUDIT-0012`, said once per process;
+  `STS-CORE-0104` passes through when the policy says so). No userinfo. The
+  name is resolved before connect and the pinned address is what the socket
+  uses; SNI and Host stay the name. A lookup failure or an empty answer at
+  send pauses and the cursor stays. The save checks the literal and, when
+  DNS answers, every address; a lookup failure at save still stores the
+  destination. Private ranges include RFC 6598 `100.64.0.0/10`. Cloud
+  metadata (`169.254.169.254` and its IPv6-mapped form, `metadata.google.internal`,
+  `metadata.azure.com` and their subdomains, `instance-data`,
+  `instance-data.ec2.internal`) is refused in every mode, including while
+  `auditExport.allowPrivateDestinations` is on. Development
+  (`mode.dialsPlainHttpOutbound()`) may dial a loopback host when every
+  resolved address is loopback. A public name that resolves to `127.0.0.1`
+  is refused at send. Redirects are not followed. The body read stops at
+  64 KiB. A TOCTOU between the lookup and the connect remains.
+* **THE JOB IS PER-PROCESS AND QUIET.** `audit.export`, scope realm,
+  `everySetting` `auditExport.intervalS` (0 is off; read the value, never
+  `|| n`). `requestRun` refuses every per-process job (`STS-SCHED-0005`),
+  so a test calls `runAsync`. One destination's throw is caught and the
+  others still run. Recording in `audit.js` stays a near-leaf: this module
+  is required lazily from the job, and `audit.js` grows no new top-level
+  require. `resetForTests` clears the installed maps and closes file
+  handles. A test that needs a private walk builds `new AuditExport(deps)`
+  and does not require the module from the parent of `tests/run.js`: the
+  slot builds the default once `deferToRoot` has not run, and a later
+  `installInstance` throws. `tests/audit_export.js` therefore requires it
+  only inside a child.
+
+## 3db. `profile_photo.ts`: A PERSON'S PHOTO, KEPT OFF THE ENTRY (#719, 2026-11-05)
+
+**`pictureUrl` and the `picture` claim were already there (#1292), and a
+partner's `picture` already landed on them.** #719 added the image. While a
+person has one, `pictureUrl` holds its address, and every reader of the
+attribute (the claim, a SAML set's row, `/admin/users`) follows without being
+changed. The module's header carries the design; what is here is what a change
+to it could undo.
+
+* **THE IMAGE IS NOT AN ATTRIBUTE, AND `jpegPhoto` IS NOT ITS HOME.** Every token
+  reads the entry and every read opens its sealed body, so an image on it taxes
+  everything else. The row is in `profilePhoto.images`, on demand and cell-tier.
+  **Its cache is bounded by COUNT (200 rows), so its worst case is rows times
+  `profilePhoto.maxStoredBytes`.** Raise either with that sum in mind; that is
+  why what is kept is smaller than the file a person may choose.
+* **THE SERVER STRIPS, EVEN THOUGH THE BROWSER ALREADY DID.** The browser's canvas
+  drops metadata from what the portal sends. A partner's copy and a direct call
+  to `/account-api/photo` have no browser in the way, and the address is public.
+  There is no image library here: `strippedJpeg()` and `strippedPng()` walk
+  segments and keep what is listed. WebP is refused rather than kept uncleaned.
+  **So nothing here decodes pixels**, and an image that decodes badly is the
+  viewer's to fail on. The `sandbox` policy and `nosniff` are what stand between
+  that and anything else.
+* **`applyFederatedAttributes()` SKIPS `pictureurl` WHILE THE RECORD EXISTS**,
+  declined included. Without it `fedUpdateUserAttributes` would put the partner's
+  address back on every sign-in, and the claim would flip between the two.
+* **THE MENUS TAKE `pathFor()`, NEVER `pictureUrl`.** That attribute can name
+  anywhere, and no surface's `img-src` admits anywhere. A person with only a
+  partner's address (the copy failed) has no picture in a menu and still has the
+  claim.
+* **Moving between cells mints a new address** (`movingIn()`), because the id's tag
+  names the cell. A token issued before the move names an address that stops
+  answering once the old entry goes.
+* **Not built, and nobody asked:** an administrator removing a person's photo.
+  Disabling the account hides it. SCIM's `photos` is not mapped.
+
+## 3dc. `response_models.ts`, `response_model_kit.ts` (#1353): every answer is held to its model
+
+**A VALUE WRITTEN OUTSIDE THIS SERVICE IS HELD WHERE IT ARRIVES AND WHERE IT IS
+READ (2026-11-06).** A closed model means a value somebody else wrote, kept and
+shown later can break a page, and one row can break a whole list. An audit
+reproduced that for a forged presentation's verdict, an unverified token's `sub`,
+a device key's JWK, a partner's `cacheDuration` and Trust Mark `exp`, and four
+attributes an LDAP client can write; `tests/protocol/sts_outside_values.js` is
+that reproduction, kept. The model does not loosen for such a value: the value is
+narrowed to what the member is, at the write and again at the read, because a row
+already stored is still there. A time is the case to watch: `toISOString()`
+throws on a finite number no Date can hold, which `Number.isFinite` passes.
+**An exception no handler caught on a published API answers JSON**,
+`answerExceptions()`, `STS-API-0140`, registered after every route by
+`protocol_stack.ts`, because Express reaches an error handler only after the route
+that threw.
+
+**rcbj's decision, 2026-11-05: every operation of the four published APIs
+(`/admin-api`, `/account-api`, `/authn-api`, `/report-api`) has a response model
+for every status, no model admits a member it does not declare, and every
+response is validated against it, always.** There is no setting, in either mode.
+
+* **ONE DOOR.** Each API calls `install()` first under its prefix (the management
+  API before its gate), which wraps `res.send`, so a gate's refusal meets the same
+  check as a handler's answer, and no sender can forget.
+* **A VIOLATION IS NOT SENT.** The caller gets a 500 `server_error` saying nothing
+  of the shape; the operator gets `STS-API-0139` once per distinct failure, naming
+  the operation, the status and where, with key names and never a value.
+* **THE MODELS ARE IN ONE FILE PER DOCUMENT**, keyed by operationId, in
+  TypeSpec since #1390: `models/api/management.tsp`, `console.tsp`, `account.tsp`,
+  `authn.tsp` and `report.tsp`, with the shapes they share in `common.tsp`
+  (`models/CLAUDE.md`). A new
+  operation owes a model; `tests/openapi_response_models.js` fails otherwise, at
+  any depth. **A new member of an answer owes a line in its model in the same
+  commit**, or that answer becomes a 500.
+* **THREE SHAPES AND ONLY THREE**: closed, a map where keys are data, and
+  free-form with its reason (`x-free-form` in the model, `freeForm('why')` in
+  `response_model_kit.ts` for a row still built in code), the argued exception,
+  printed by that test.
+* **NO MEMBER IS `required` UNLESS EVERY BRANCH SENDS IT**: the management API
+  removes members after a view built them (an owner's projection, the console's
+  own members).
+* **A COMPILE THAT FAILS IS CONTAINED, AND A POLLUTED PROTOTYPE IS NAMED**
+  (2026-11-12). The ajv instance that threw is replaced, and the failed model
+  alone is refused from memory for a minute before one request tries again.
+  Every refusal asks whether plain objects inherit an enumerable member, and
+  says which, once (`STS-API-0146`): on that day an XACML editor path walked
+  to `Object.prototype` (`xacml/xacml_editor.ts`, `nodeAt()`), every object
+  inherited `rules`, and every answer of every operation was refused. Every
+  walk of a caller's path takes own members only.
+
+`tests/tools/openapi_inventory.js` prints the state of every operation and status.
+
+## ASVS 5.0.0 Level 1 (#1438-#1460)
+
+Three modules exist for it. `docs/product-security.md` is the user's account.
+
+**`cookie_wire.ts` runs in the main thread only**, right after `enterRealm` and
+before the request pool routes on a cookie's name: a worker is behind a unix
+socket and cannot see TLS. Inside the service a cookie keeps its plain name; on
+the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
+needs nothing, and a cookie whose NAME a document must state asks
+`CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
+
+**`bootstrap_name.ts` derives a generated name and stores nothing**: an HMAC under
+the cluster's `csrf` key, so nodes and restarts agree. Read the name through
+`BootstrapName.current()`, never `admin.bootstrapUsername`.
+
+**`web_safe_dom.ts` is the one `.innerHTML =` in a browser runtime**
+(`tests/web_safe_dom.js`). It is a second layer behind escaping and the CSP.
+
+**`step_address.ts` keeps a sign-in step's id out of what a server is sent**, in
+product: a redirect's `?authn=`, `?mfa=`, `?change=` or `?consent=` moves to the
+fragment, the shell tells the page (`data-sts-step-fragment`), and the page sends
+`-` in the API path with the id in `X-Step-Id`. A server-read hop stays in the
+query: SPNEGO (RFC 4559) and the start of a federated sign-in. The API still
+accepts an id in the path, for a program.
+
+**Five settings exist so product test stacks can run**, and
+`docker-compose-run-tests.yml` turns all of them on: `krb5.allowSha1Enctypes`,
+`scep.allowInProduct`, `oauth2.allowUndeclaredGrants`,
+`admin.allowDefaultUsername`, `crypto.allowLegacyHashes`. So those defaults are held by in-process tests
+(`tests/asvs_product_limits.js`), not by a product run of the protocol half.

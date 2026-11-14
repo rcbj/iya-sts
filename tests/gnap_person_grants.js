@@ -34,7 +34,7 @@
 //
 // Why in process (tests/CLAUDE.md's first question): B, C and E move the
 // clock and drive the engine's own steps directly. The HTTP half is
-// `tests/vendored/sts_gnap_core.js`: section 7 (a user reference refused from
+// `tests/protocol/sts_gnap_core.js`: section 7 (a user reference refused from
 // another client; the subject not released again on continuation,
 // modification or rotation) and section 15 (`/portal/gnap` listing and
 // revoking, `/admin-api` listing and revoking per person, the audit actor).

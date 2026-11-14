@@ -81,9 +81,9 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
-import replication = require('../persistence/persistence_replication');
 import subjects = require('./ssf_subjects');
 import events = require('./ssf_events');
+import SsfModel = require('./ssf_model');
 
 // stream_id -> stream record, one partition per trust realm.
 const streams = realms.map({ persist: 'ssf_streams.streams' });
@@ -124,7 +124,32 @@ const streams = realms.map({ persist: 'ssf_streams.streams' });
 // write can lose an increment or a line; that is a number on a console page,
 // and `touch()` below at least makes it reach the store at all.
 // ---------------------------------------------------------------------------
-const queued = realms.map({ persist: 'ssf_streams.queued' });
+//
+// **ON DEMAND, FILED BY STREAM (2026-10-21, #820, rcbj's decision).** Every
+// row of this store was applied in every process — and internal delivery
+// queues, delivers and deletes a row per SET per stream: about 15,000 rows a
+// minute on 8081 under a password load, each read, opened and applied by
+// all nine processes, which is what made eight workers cost twice four. A
+// process now holds what it queued or read, and a stream's queue is read
+// through the store's index (`queuedOn()`); a row lives at most
+// QUEUED_KEEP_MS, so one nobody ever collects is swept.
+const QUEUED_KEEP_MS = 7 * 24 * 3600 * 1000;
+// How long a stream's record waits to be written after the first of a burst
+// of events (`touchSoon()`), and the writes due, per realm and stream.
+const STREAM_TOUCH_MS = 2000;
+const touchesDue = new Map<string, any>();
+const queued = realms.map({
+  persist: 'ssf_streams.queued',
+  onDemand: { maxEntries: 20000 },
+  indexBy: function (entry) {
+    return entry && entry.stream_id ? [String(entry.stream_id)] : [];
+  },
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (entry) {
+    const at = Date.parse(String((entry && entry.queuedAt) || ''));
+    return isFinite(at) ? at + QUEUED_KEEP_MS : null;
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE DEAD-LETTER QUEUE (2026-09-14): SETs this transmitter could not deliver,
@@ -165,10 +190,6 @@ const deadLetters = realms.map({
   }
 });
 
-// What this service has RECEIVED, when the debugger is the transmitter and
-// this service is the receiver. Also per realm, and capped the same way.
-const received = realms.arr({ persist: 'ssf_streams.received', merge: 'own' });
-
 // The two delivery method URNs of SSF 1.0 section 7.1.1. They are the RFC
 // numbers as URNs rather than names, which catches everybody once: a stream
 // asking for "push" is asking for nothing this specification defines.
@@ -182,20 +203,12 @@ const DELIVERY_PUSH = 'urn:ietf:rfc:8935';
 const DELIVERY_POLL = 'urn:ietf:rfc:8936';
 
 /**
- * The two delivery methods, each with its URN, a name and a description.
+ * The two delivery methods, each with its URN, a name and a description —
+ * the model's rows (`models/ssf/ssf.tsp`, #1579).
  */
-const DELIVERY_METHODS = [
-  { method: DELIVERY_PUSH, name: 'Push (RFC 8935)',
-    what: 'The transmitter POSTs each SET to a URL the receiver gave it. ' +
-          'The receiver has to be reachable, which is what makes this the ' +
-          'hard one for a browser: a page cannot be an HTTP server, so the ' +
-          'debugger hosts its receiver endpoint in its api layer.' },
-  { method: DELIVERY_POLL, name: 'Poll (RFC 8936)',
-    what: 'The receiver POSTs to the transmitter and is handed whatever has ' +
-          'queued up, acknowledging what it read. Nothing has to be ' +
-          'reachable but the transmitter, which is why a browser can be a ' +
-          'receiver over this method and not over the other one.' }
-];
+const DELIVERY_METHODS = SsfModel.deliveries().map(function (row: any) {
+  return { method: row.method, name: row.name, what: row.what };
+});
 
 // Whether an event about this subject belongs on this stream. `defaultSubjects`
 // is what decides it when the list is empty; see the header above.
@@ -355,8 +368,7 @@ interface SsfStreamsDeps {
 
 /**
  * The Shared Signals streams of each trust realm: their configuration, owners,
- * subjects, event queues and dead letters, and what this service has received
- * as a receiver.
+ * subjects, event queues and dead letters.
  *
  * Stores are per realm and replicated; a record edited in place is written back
  * through `touch()`.
@@ -1051,8 +1063,12 @@ class SsfStreams {
       return norm(a) === norm(b);
     };
     const expected = this.streamConfiguration(record, {});
-    const members = ['iss', 'aud', 'events_supported', 'events_delivered',
-                     'min_verification_interval', 'inactivity_timeout'];
+    // THE MODEL SAYS WHICH (#1579): every Transmitter-Supplied member of
+    // a stream configuration but `stream_id`, which is how an update names
+    // the stream, in the model's order.
+    const members = SsfModel.supplied('transmitter').filter((name) => {
+      return name !== 'stream_id';
+    });
     for (let i = 0; i < members.length; i++) {
       const name = members[i];
       if (!Object.prototype.hasOwnProperty.call(body, name)) {
@@ -1125,8 +1141,9 @@ class SsfStreams {
   // stream configurations available to this Receiver". Until this date every
   // management call looked a stream up by id alone and a list returned every
   // stream in the realm — `authorization_header` included — so any caller
-  // holding `ssf:read` could read this service's own receiver tokens and any
-  // holding `ssf:write` could point another receiver's stream at itself.
+  // holding the read scope could read this service's own receiver tokens
+  // and any holding the write scope could point another receiver's stream
+  // at itself. The scopes are `ssf.read` and `ssf.manage` since #334.
   //
   // **THE OWNER IS THE IDENTIFIER THE CREATOR AUTHENTICATED AS** — a client's
   // client_id, a person's `sub`, a GNAP client instance, a Basic username —
@@ -1237,12 +1254,65 @@ class SsfStreams {
    * @returns the timeout, in seconds; 0 for none
    */
   inactivityTimeout(record?) {
-    const { log } = this.deps;
+    const { log, config } = this.deps;
     log.debug("Entering SsfStreams.inactivityTimeout().");
-    const value = Number(this.ownerSetting(record || null,
-                                           'ssf.inactivityTimeoutS').value);
+    const owned = this.ownerSetting(record || null, 'ssf.inactivityTimeoutS');
+    let value = Number(owned.value);
+    // A PERSON'S BROWSER STREAM (#1094): with no timeout from its owning
+    // application or the realm, a poll stream a person owns takes
+    // `ssf.personStreamInactivityTimeoutS`. A browser receiver polls, so a
+    // stream with a tab open is never idle; one whose tab was closed for
+    // good is. A push stream is left out for the global setting's reason.
+    if (!(value > 0) && owned.source !== 'application' &&
+        this.isPersonPollStream(record)) {
+      value = Number(config.value('ssf.personStreamInactivityTimeoutS'));
+    }
     log.debug("Leaving SsfStreams.inactivityTimeout().");
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  }
+
+  // What an idle stream becomes (#1094): `ssf.inactivityAction` (or its
+  // owning application's), except where the timeout itself is the person
+  // stream default above, which brings its own action.
+  /**
+   * Returns what a stream idle past its timeout becomes: `pause`, `disable`
+   * or `delete`.
+   *
+   * @param record - the stream
+   * @returns the action
+   */
+  inactivityAction(record?) {
+    const { log, config } = this.deps;
+    log.debug("Entering SsfStreams.inactivityAction().");
+    const owned = this.ownerSetting(record || null, 'ssf.inactivityAction');
+    const timeout = this.ownerSetting(record || null,
+                                      'ssf.inactivityTimeoutS');
+    const personDefault = !(Number(timeout.value) > 0) &&
+      timeout.source !== 'application' && owned.source !== 'application' &&
+      this.isPersonPollStream(record);
+    const out = String((personDefault
+      ? config.value('ssf.personStreamInactivityAction') : owned.value) ||
+      'pause');
+    log.debug("Leaving SsfStreams.inactivityAction(). " + out);
+    return out;
+  }
+
+  // A stream a PERSON owns and collects by poll (#1094): what a browser
+  // receiver such as rcbj/oidc-caep-client makes with the person's own token.
+  /**
+   * Says whether a stream is owned by a person and delivered by poll.
+   *
+   * @param record - the stream
+   * @returns true for a person's poll stream
+   */
+  isPersonPollStream(record?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.isPersonPollStream().");
+    const out = !!record && !this.isInternal(record) &&
+      (record.delivery || {}).method === DELIVERY_POLL &&
+      !!this.ownerPersonOfRecord(record);
+    log.debug("Leaving SsfStreams.isPersonPollStream(). " + out);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -1290,6 +1360,57 @@ class SsfStreams {
     streams.set(record.stream_id, record);
     log.debug("Leaving SsfStreams.touch(). " + record.stream_id);
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RECORD WRITTEN ONCE FOR A BURST OF EVENTS (2026-10-21, #820). Every
+  // SET queued rewrote its stream's record — a counter, a total per type, a
+  // log line — and the record is replicated to every process: about 5,000
+  // writes a minute on 8081 under a password load. Where the queue is on
+  // demand those per-event writes are DEBOUNCED: the record held for the
+  // stream is written once, STREAM_TOUCH_MS after the first of them. A
+  // debounce inside one operation, not periodic work (root CLAUDE.md). What
+  // a concurrent write loses is a number on a console page, as `touch()`'s
+  // callers already accept; `touch()` writes only the record held, so a
+  // newer one from another process is never overwritten by an older copy.
+  // ---------------------------------------------------------------------------
+  /**
+   * Writes a stream's record soon, once for a burst of events, where the queue
+   * is on demand; at once otherwise.
+   *
+   * @param record - the stream
+   */
+  touchSoon(record?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.touchSoon().");
+    if (!record || !record.stream_id || !queued.onDemandLive()) {
+      log.debug("Leaving SsfStreams.touchSoon(). At once.");
+      this.touch(record);
+      return;
+    }
+    const id = String(record.stream_id);
+    const realm = this.deps.realms.current();
+    const key = String(realm && realm.id) + '|' + id;
+    if (touchesDue.has(key)) {
+      log.debug("Leaving SsfStreams.touchSoon(). Already due.");
+      return;
+    }
+    const self = this;
+    const timer = setTimeout(function () {
+      touchesDue.delete(key);
+      self.deps.realms.run(realm, function () {
+        const held = streams.get(id);
+        if (held) {
+          self.touch(held);
+        }
+      });
+    }, STREAM_TOUCH_MS);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+    touchesDue.set(key, timer);
+    log.debug("Leaving SsfStreams.touchSoon(). Due in " + STREAM_TOUCH_MS +
+              " ms.");
   }
 
   // The record held NOW for the stream `record` was read as, or `record` itself
@@ -1640,7 +1761,8 @@ class SsfStreams {
   // under `default_subjects: ALL`, with no subject named, it was sent every
   // event about everybody in the realm — every sign-in, credential change and
   // risk change of every other person — to anybody whose client may hold
-  // `ssf:read`. SSF 1.0 section 10.1 requires access controls so that "only
+  // `ssf.read` (or `ssf.manage`, which includes read).
+  // SSF 1.0 section 10.1 requires access controls so that "only
   // authorized parties can access the shared signals", and a person is an
   // authorized party for their own signals and nobody else's.
   //
@@ -2063,12 +2185,8 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.queueOf(). No record.");
       return [];
     }
-    const prefix = this.queueKey(record.stream_id, '');
-    const out = [];
-    queued.forEach((entry, key) => {
-      if (String(key).indexOf(prefix) === 0 && entry) {
-        out.push(entry);
-      }
+    const out = this.queuedOn(record.stream_id).map(function (pair) {
+      return pair.entry;
     });
     out.sort((a, b) => {
       const left = Number(a.order) || 0;
@@ -2127,16 +2245,39 @@ class SsfStreams {
     return types.indexOf(events.SSF_PREFIX + 'stream-updated') >= 0;
   }
 
+  // Every SET queued on a stream, with its key: through the store's index
+  // where the queue is on demand (#820), a walk of what is held otherwise.
+  private queuedOn(streamId?): Array<{ key: string; entry: any }> {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.queuedOn(). " + streamId);
+    const prefix = this.queueKey(streamId, '');
+    const out: Array<{ key: string; entry: any }> = [];
+    if (queued.onDemandLive()) {
+      queued.lookup(String(streamId)).forEach(function (key) {
+        const entry = queued.get(key);
+        if (entry && String(key).indexOf(prefix) === 0) {
+          out.push({ key: String(key), entry: entry });
+        }
+      });
+    } else {
+      queued.forEach(function (entry, key) {
+        if (entry && String(key).indexOf(prefix) === 0) {
+          out.push({ key: String(key), entry: entry });
+        }
+      });
+    }
+    log.debug("Leaving SsfStreams.queuedOn(). " + out.length);
+    return out;
+  }
+
   // `keepStreamUpdated`: leave the stream-updated SETs, for a disable.
   private clearQueueFor(streamId?, keepStreamUpdated?) {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.clearQueueFor(). " + streamId);
-    const prefix = this.queueKey(streamId, '');
     const keys = [];
-    queued.forEach((entry, key) => {
-      if (String(key).indexOf(prefix) === 0 &&
-          !(keepStreamUpdated && this.isStreamUpdated(entry))) {
-        keys.push(key);
+    this.queuedOn(streamId).forEach((pair) => {
+      if (!(keepStreamUpdated && this.isStreamUpdated(pair.entry))) {
+        keys.push(pair.key);
       }
     });
     keys.forEach((key) => {
@@ -2164,7 +2305,10 @@ class SsfStreams {
       return { ok: false, reason: 'the stream is disabled' };
     }
     const max = this.limit('ssf.maxQueuedEvents', 200, record);
-    const waiting = this.queueOf(record);
+    // ON DEMAND (#820) THE CAP IS KEPT WHERE THE QUEUE IS READ, `poll()`:
+    // asking the store for the whole queue at every emit would be a read per
+    // signal on the request that caused it. Held whole, here as it was.
+    const waiting = queued.onDemandLive() ? [] : this.queueOf(record);
     let over = waiting.length - max + 1;
     while (over > 0 && waiting.length) {
       // The OLDEST goes, not the newest. A receiver that has stopped reading is
@@ -2183,7 +2327,7 @@ class SsfStreams {
     }
     queued.set(this.queueKey(record.stream_id, entry.jti), entry);
     record.counters.queued += 1;
-    this.touch(record);
+    this.touchSoon(record);
     log.debug("Leaving SsfStreams.enqueue(). " + (waiting.length + 1) +
               ' waiting.');
     return { ok: true, reason: '' };
@@ -2663,7 +2807,7 @@ class SsfStreams {
       record.eventCounts = {};
     }
     record.eventCounts[uri] = (record.eventCounts[uri] || 0) + 1;
-    this.touch(record);
+    this.touchSoon(record);
     log.debug("Leaving SsfStreams.countEvent(). " + record.eventCounts[uri] +
         ' of that ' + 'type.');
   }
@@ -2723,7 +2867,7 @@ class SsfStreams {
            'the queue: a receiver that could not process an event will not ' +
            'process it next time either, and redelivering would poll-loop.');
     });
-    this.touch(record);
+    // Written once, below, and only when this poll changed something (#820).
 
     // A PAUSED OR DISABLED STREAM TRANSMITS NOTHING (SSF 1.0 section
     // 8.1.2.1) — except the stream-updated event that told the receiver so,
@@ -2735,7 +2879,21 @@ class SsfStreams {
     const take = (Number.isFinite(wanted) && wanted >= 0)
       ? Math.min(wanted, cap) : cap;
     const sets = {};
-    const waiting = this.queueOf(record).filter((one) => {
+    const all = this.queueOf(record);
+    // THE CAP, ON DEMAND (#820): see enqueue(). The oldest go.
+    let changed = acks.length > 0 || Object.keys(errs).length > 0;
+    if (queued.onDemandLive()) {
+      const max = this.limit('ssf.maxQueuedEvents', 200, record);
+      while (all.length > max) {
+        const dropped = all.shift();
+        this.dequeue(record, dropped.jti);
+        this.note(record, 'queue', 'The queue was full (ssf.maxQueuedEvents=' +
+             max + '), so the oldest event (' + dropped.jti + ') was ' +
+             'dropped.');
+        changed = true;
+      }
+    }
+    const waiting = all.filter((one) => {
       return !stopped || this.isStreamUpdated(one);
     });
     const shared = this.sharesAcrossNodes();
@@ -2758,17 +2916,25 @@ class SsfStreams {
       // this node saw, and `counters.delivered` may count one SET once per node
       // that first handed it out, which is a number on a page. What is never
       // done is resurrect an acknowledged SET.
+      //
+      // **NOR, ON DEMAND, ON ONE NODE (2026-10-21, #820)**: a write per SET
+      // replicated to every process to record a time on a console page.
       if (!one.counted) {
         one.counted = true;
         one.deliveredAt = iso();
         record.counters.delivered += 1;
-        if (!shared) {
+        changed = true;
+        if (!shared && !queued.onDemandLive()) {
           queued.set(this.queueKey(record.stream_id, one.jti), one);
         }
       }
     });
     const more = waiting.length > take;
-    this.touch(record);
+    // A POLL THAT CHANGED NOTHING WRITES NOTHING (#820): the record is
+    // replicated to every process, and an internal receiver polls often.
+    if (changed) {
+      this.touch(record);
+    }
     log.debug("Leaving SsfStreams.poll(). " + Object.keys(sets).length +
               ' set(s), more=' + more);
     return { sets: sets, moreAvailable: more, status: record.status };
@@ -2792,87 +2958,13 @@ class SsfStreams {
     if (record.log.length > max) {
       record.log.splice(0, record.log.length - max);
     }
-    this.touch(record);
-    log.debug("Leaving SsfStreams.note().");
-  }
-
-  // ---------------------------------------------------------------------------
-  // WHAT THIS SERVICE HAS RECEIVED, when the roles are the other way round.
-  //
-  // The debugger can be a TRANSMITTER, and something has to be at the far end
-  // of its push. `POST /ssf/receive` is that, and this is where what arrives is
-  // kept — so a person can see, on `/admin/ssf`, that the thing they sent
-  // actually landed. It is deliberately NOT a stream: nothing was configured,
-  // nothing is delivered onwards, and treating it as one would invite the
-  // question of which stream a bare SET belongs to, which has no answer.
-  // ---------------------------------------------------------------------------
-  /**
-   * Keeps a SET that arrived at `POST /ssf/receive`, capped at
-   * `ssf.maxReceivedEvents`.
-   *
-   * @param entry - what arrived
-   * @returns the entry
-   */
-  recordReceived(entry?) {
-    const { log } = this.deps;
-    log.debug("Entering SsfStreams.recordReceived().");
-    const list = received;
-    list.push(entry);
-    const max = this.limit('ssf.maxReceivedEvents', 200);
-    if (list.length > max) {
-      list.splice(0, list.length - max);
+    // A line per SET queued is a burst (#820): written with the burst.
+    if (kind === 'queued') {
+      this.touchSoon(record);
+    } else {
+      this.touch(record);
     }
-    log.debug("Leaving SsfStreams.recordReceived(). " + list.length + ' held.');
-    return entry;
-  }
-
-  // EVERY PROCESS'S, NOT ONLY THIS ONE'S (2026-09-18). `received` is
-  // `merge: 'own'`, so what another node or request worker received — or this
-  // node before a restart that could not take its old origin back — reaches
-  // this process as a contribution, and a list of this process's alone showed
-  // a push that landed on the other node as never having arrived. Oldest
-  // first, as the list always was, and bounded by the same setting.
-  /**
-   * Lists what every process has received at `POST /ssf/receive`, oldest first,
-   * bounded by `ssf.maxReceivedEvents`.
-   *
-   * @returns the entries
-   */
-  listReceived() {
-    const { log } = this.deps;
-    log.debug("Entering SsfStreams.listReceived().");
-    let all: any[] = received.slice();
-    replication.remoteRows('ssf_streams.received', undefined, '')
-      .forEach(function (theirs: unknown): void {
-        if (Array.isArray(theirs)) {
-          all = all.concat(theirs);
-        }
-      });
-    all.sort(function (a: any, b: any): number {
-      return String((a && a.at) || '').localeCompare(String((b && b.at) || ''));
-    });
-    const max = this.limit('ssf.maxReceivedEvents', 200);
-    const out = all.length > max ? all.slice(all.length - max) : all;
-    log.debug("Leaving SsfStreams.listReceived(). " + out.length + '.');
-    return out;
-  }
-
-  // THIS PROCESS'S list only: another process's contribution is its row in
-  // the store, and it clears its own when asked there. A clear answered by one
-  // node of several therefore leaves what the others received on the page.
-  /**
-   * Clears this process's list of received SETs; another process's stays.
-   *
-   * @returns the number cleared
-   */
-  clearReceived() {
-    const { log } = this.deps;
-    log.debug("Entering SsfStreams.clearReceived().");
-    const list = received;
-    const gone = list.length;
-    list.length = 0;
-    log.debug("Leaving SsfStreams.clearReceived(). " + gone + ' dropped.');
-    return gone;
+    log.debug("Leaving SsfStreams.note().");
   }
 
   // The wire form of a stream configuration — what a receiver gets back from
@@ -3039,6 +3131,8 @@ export = {
   streamsOwnedBy: slot.forward('streamsOwnedBy'),
   noteActivity: slot.forward('noteActivity'),
   inactivityTimeout: slot.forward('inactivityTimeout'),
+  inactivityAction: slot.forward('inactivityAction'),
+  isPersonPollStream: slot.forward('isPersonPollStream'),
   ownerSetting: slot.forward('ownerSetting'),
   isStreamUpdated: slot.forward('isStreamUpdated'),
   allowedEventsFor: slot.forward('allowedEventsFor'),
@@ -3064,8 +3158,5 @@ export = {
   countEvent: slot.forward('countEvent'),
   poll: slot.forward('poll'),
   note: slot.forward('note'),
-  recordReceived: slot.forward('recordReceived'),
-  listReceived: slot.forward('listReceived'),
-  clearReceived: slot.forward('clearReceived'),
   streamConfiguration: slot.forward('streamConfiguration')
 };

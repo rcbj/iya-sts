@@ -46,8 +46,9 @@ function nowSec() {
 }
 
 // Create a realm, hand it to `fn` inside it, and remove it however that
-// goes — `realm_isolation.js`'s `withRealm()`.
-function inRealm(t, id, fn) {
+// goes — `realm_isolation.js`'s `withRealm()`. Awaited, because the purge
+// answers a promise since #704 and the realm must outlive it.
+async function inRealm(t, id, fn) {
   log.debug("Entering inRealm().");
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename });
@@ -59,7 +60,7 @@ function inRealm(t, id, fn) {
   }
   try {
     log.debug("Leaving inRealm().");
-    return realms.run(made.realm, fn);
+    return await realms.run(made.realm, fn);
   } finally {
     realms.remove(id);
   }
@@ -76,10 +77,10 @@ function withSetting(key, value, fn) {
   }
 }
 
-function sectionAB(t) {
+async function sectionAB(t) {
   log.debug("Entering sectionAB().");
   t.log.info('A/B. refused while unexpired, dropped once expired');
-  inRealm(t, 'rj-expiry', function () {
+  await inRealm(t, 'rj-expiry', async function () {
     const skewS = Number(config.value('oauth2.clockSkewS'));
     const now = nowSec();
     t.equal(stats.revoke('rj-live', 'this test', {}, now + 3600), true,
@@ -90,13 +91,13 @@ function sectionAB(t) {
     t.check(stats.isRevoked('rj-live') && stats.isRevoked('rj-short'),
             'a revoked, unexpired token is refused');
     // A purge now drops nothing: neither token has expired.
-    const early = stats.purgeExpiredTokens(Date.now());
+    const early = await stats.purgeExpiredTokens(Date.now());
     t.check(stats.isRevoked('rj-live') && stats.isRevoked('rj-short') &&
             stats.isRevoked('rj-undated'),
             'and a purge before either expires keeps all three',
             JSON.stringify(early));
     // Two minutes on, plus the skew: rj-short's token is past exp + skew.
-    const later = stats.purgeExpiredTokens((now + 120 + skewS) * 1000);
+    const later = await stats.purgeExpiredTokens((now + 120 + skewS) * 1000);
     t.check(!stats.isRevoked('rj-short'),
             'once its exp and the clock skew have passed, the purge drops ' +
             'the revocation — with no record of the token in the register, ' +
@@ -108,12 +109,12 @@ function sectionAB(t) {
             'and keeps a revocation nobody dated — only the cap drops it');
     // A later door that knows the exp dates an undated revocation.
     stats.revoke('rj-undated', 'this test, again', {}, now + 30);
-    stats.purgeExpiredTokens((now + 120 + skewS) * 1000);
+    await stats.purgeExpiredTokens((now + 120 + skewS) * 1000);
     t.check(!stats.isRevoked('rj-undated'),
             'a revocation re-stated WITH an exp is dated by it and dropped');
     // An exp of 0 or garbage is "not stated", never "expired in 1970".
     stats.revoke('rj-garbage', 'this test', {}, 'not a number');
-    stats.purgeExpiredTokens((now + 120 + skewS) * 1000);
+    await stats.purgeExpiredTokens((now + 120 + skewS) * 1000);
     t.check(stats.isRevoked('rj-garbage'),
             'an exp that is not a number is read as not stated, and kept');
   });
@@ -178,10 +179,10 @@ function sectionC(t) {
   log.debug("Leaving sectionC().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
-  sectionAB(t);
-  sectionC(t);
+  await sectionAB(t);
+  await sectionC(t);
   log.debug("Leaving run().");
 }
 

@@ -81,6 +81,8 @@ surface without touching the rest:
 | **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
 | **TLS listeners** | **process** | The certificate served on the main port, LDAPS 636 and the embedded debugger's listener. |
 | **SPIFFE authority** | realm | **Every X509-SVID minted in this realm**. The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
+| **Message signing** | realm | The certificates a person or an application signs a WS-Trust request with (#521): `digitalSignature` only, no extended key usage, the holder's `urn:sts:person:` or `urn:sts:application:` name. Issued by an administrator; see [below](#a-message-signing-certificate-for-a-ws-trust-requester). |
+| **Policy export signing** | realm | The certificate a policy export from Directory → Policies is signed under (#1713): a fresh key per export, `digitalSignature` only, with this whole chain in the export's `x5c`. Another realm that imports the export trusts this Issuing CA, not the Root it shares with every realm. See [Export and import](policies.md#export-and-import). |
 | **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
 **A realm branch built before a use case existed gets that Issuing CA added**,
@@ -206,6 +208,32 @@ carries the whole chain in `x5c` grows by the same amount, base64-encoded,
 which can exceed an HTTP server's header limit when the token is sent as a
 bearer. `x5u`, the default, does not carry the chain.
 
+A process branch is held to one more limit. That handshake also carries the
+Root, and a stock TLS client accepts a certificate list of 102400 bytes. A
+build whose signatures do not fit is refused (`STS-PKI-0270`), and the branch
+and the listener's certificate are left as they were. That is SLH-DSA-256f,
+whether it is the alternative key or the branch's own signing key: its
+signature is 49856 bytes, and the leaf and the TLS Issuing CA each carry one.
+ML-DSA-87, alone or in a composite, fits, and so does SLH-DSA-128f. A realm
+branch is not the listener's chain and is not refused for this reason.
+
+**No certificate authority here can have a composite ML-DSA key.** The TLS
+library this service's listeners use cannot read one, so a chain holding a
+composite-keyed authority cannot be loaded. The Root and the process branch
+are on the main port's and LDAPS's chain. A realm branch's Intermediate is on
+the chain of the realm's SPIFFE listeners, its remote PEPs' listeners and its
+custom listeners. A build that names a composite key is refused and nothing
+is stored (`STS-PKI-0272` for the Root and the process branch, `STS-PKI-0274`
+for a realm). When only `pki.keyAlgorithm` names one, the build uses the
+classical default instead and logs `STS-PKI-0273` or `STS-PKI-0275`. Pure
+ML-DSA and SLH-DSA authorities, and a hybrid branch with an alternative
+ML-DSA key, are the post-quantum choices. The console's build forms do not
+offer a composite key. The menus that issue a key pair to an application or
+a person, and the Certificate Workbench, still offer one and mark it *not
+usable by TLS clients*: such a key signs what this service verifies itself,
+such as a client assertion, and no TLS peer can be shown it.
+`GET /admin-api/pki` marks each key algorithm with `tlsUsable`.
+
 **CRLs and OCSP responses are signed classically only, on purpose.** No
 published profile defines an alternative signature on either, so no client
 could check one, and a second signature nothing verifies would add size and
@@ -303,7 +331,7 @@ Three things follow:
   SPIFFE's four shared sockets — those answer in the default realm, and what a
   realm's own Issuing CA adds is a line in the chain saying who issued the SVID.
 * **A realm with no certificate authority still works.** It falls back to the
-  self-signed authority this service always had, and `/admin/spiffe` and `GET
+  self-signed authority this service always had, and `/admin/cert-issuance#cert-spiffe-overview` and `GET
   /spiffe` both say which one is in use. `pki.autoBuild: false` reaches that
   state deliberately.
 
@@ -355,6 +383,10 @@ and its keys come out uncertified.
 | **Root CA** | unconstrained | 20 years | The trust anchor. Self-signed, and the only certificate a relying party has to be given out of band — everything below it travels in the chain. |
 | **Intermediate CA** | 1 | 10 years | So the Root's key can be used once and left alone: a compromise here is repaired by reissuing this tier, and a compromise of the Root is not repaired at all. |
 | **Issuing CA** | **0** | 5 years | The only tier that signs anything handed out. `pathLen: 0` means it signs LEAVES and no further CA — so "an application certificate cannot mint another" is a property of the encoding rather than of this service's manners. |
+
+A tier's lifetime is a number of years above zero. One past the last date a
+certificate can carry is refused before any key is generated, and nothing is
+stored (`STS-PKI-0268`).
 
 **Building again REPLACES.** Everything issued from the old hierarchy chains to
 nothing the moment it does, and the page says so before the button is pressed —
@@ -421,7 +453,7 @@ is ephemeral — it exists so the request-worker pool can share minted rows — 
 sealing an entry that survives a restart under a key that does not would leave
 the certificate readable and the private half permanent garbage. That is the
 same rule an authenticator's shared secret follows, and in that mode the
-decision `oauthClientSecret` and `GET /krb5/principals` make still applies:
+decision `oauthClientSecret` and the development Kerberos password settings make still applies:
 a debugger whose credentials are unusable without reading the source is worse
 than one that says what they are.
 
@@ -513,7 +545,7 @@ base64url, as a registration mints one — and replaces the old one at once.
 Wherever the token endpoint checks a secret (RFC 9700 mode, product mode) the old
 one stops working on the next request. The new value is shown on the page and in
 the API reply; the audit log names the attribute and never the value.
-`sts-management-api`'s secret is refused while `adminApi.clientSecret` pins it,
+`sts-api-client`'s secret is refused while `adminApi.clientSecret` pins it,
 because every token for `/admin-api` is minted with that setting.
 
 ```bash
@@ -538,34 +570,40 @@ curl -sk -X POST https://localhost:8081/admin-api/applications/regenerate-secret
 ## A person's credentials, on their own page
 
 `/admin/users?user=<name>` has a **Credentials** section too:
-the person's own assertion key pairs, one per profile — RFC 7523 (JWT, on
+the person's own assertion key pairs per profile — RFC 7523 (JWT, on
 `stsAssertion*`) and RFC 7522 (SAML 2.0, on `stsSamlAssertion*`). **A person may
-hold an RFC 7522 key pair**, and the SAML 2.0 bearer grant reads it.
+hold several of each** (#1290), up to `pki.personSigningKeyMax` (5) valid ones
+per profile, and the two bearer grants accept any valid one.
 
-It shows what the application's section shows — the certificate, its issuer, the
-chain, the key handle (`kid` for JWT, the certificate thumbprint for SAML),
-where the key pair came from (`stsAssertionKeySource` /
-`stsSamlAssertionKeySource`, with the same three values) and the issuer the
-person asserts as — with one difference: **it says whether this service holds
+It lists every key pair with its state (valid, expired, revoked, superseded)
+and shows what the application's section shows — the certificate, its issuer,
+the chain, the key handle (`kid` for JWT, the certificate thumbprint for SAML),
+where the key pair came from (`issued`, `uploaded-realm-ca`,
+`uploaded-external-ca`), its label, and the issuer the person asserts as — with one difference: **it says whether this service holds
 the private key and never shows it.** A person's private key is shown once, on
 the page the Issue button opens, and nothing opens it again.
 
-The controls are the same three, needing Admin Write:
+The controls need Admin Write. The first two ADD a key pair — the ones held go
+on working — and are replaced by a note at the cap:
 
 * **Issue from this realm's CA** — generates a key pair for that profile,
   signs it with the realm's Issuing CA, seals the private key on the entry and
   shows it once, with a link back to the person.
 * **Upload a certificate** the person already holds, under exactly the chain
   rules above — this realm's alone, or another CA's with its full chain to a
-  self-signed root. No private key is taken, and the one an earlier issue left
-  is cleared. **A certificate this realm issued must have been issued to this
+  self-signed root. No private key is taken. **A certificate this realm issued must have been issued to this
   person**: an application's leaf, or another person's, is refused, because a
   person's key pair is that one person's credential and registering somebody
   else's would let its holder assert as them. (For the same reason a person's
   leaf is refused for an application.) A self-signed certificate is refused —
   a person has no by-value registration.
-* **Take this key pair off** — that profile's key pair and its declared issuer;
-  the other profile's is untouched. Not revocation.
+* **Revoke**, on each valid row, with a reason (`cessationOfOperation` or
+  `keyCompromise`) — the certificate goes on its authority's CRL and the OCSP
+  responder answers `revoked` (an external authority's certificate is marked
+  revoked here only), the private half is dropped, and this service refuses
+  what the key signs. The person's other key pairs are untouched; revoking the
+  last valid one of a profile clears that profile's declared issuer. This
+  replaced *Take this key pair off*, which put nothing on any list (#1290).
 
 **Whichever way the key pair got there, a person's assertion may only be about
 themselves**: the JWT grant refuses a `sub`, and the SAML grant a `<Subject>`,
@@ -579,7 +617,7 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/issue \
   -H "$H" -H 'Content-Type: application/json' \
   -d '{"identifier":"alice","target":"person","purpose":"saml"}' > saml.json
 
-# Or replace it with a certificate alice already holds from another CA.
+# Or add a certificate alice already holds from another CA.
 curl -sk -X POST https://localhost:8081/admin-api/pki/upload-certificate \
   -H "$H" -H 'Content-Type: application/json' \
   -d "$(jq -n --rawfile c leaf.pem --rawfile ch chain.pem \
@@ -590,37 +628,41 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/upload-certificate \
 curl -sk "https://localhost:8081/admin-api/users?user=alice" \
   -H "$H" | jq .credentials
 
-# Take the SAML key pair off, leaving the JWT one.
+# Revoke one SAML key pair by its thumbprint, leaving every other key pair.
 curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
   -H "$H" -H 'Content-Type: application/json' \
-  -d '{"identifier":"alice","target":"person","purpose":"saml"}'
+  -d '{"identifier":"alice","target":"person","purpose":"saml",
+       "handle":"<thumbprint>","reason":"cessationOfOperation"}'
 ```
 
-`/portal/signing-key`, where a person issues themselves a key pair, offers both
-profiles: a card each, with its own Generate and its own Take
-off, and the one-time page describing the grant the new key is for.
+`/portal/signing-key`, where a person issues themselves key pairs, offers both
+profiles the TLS card's way: a card each, listing every key pair with a
+*Revoke* on each valid row, a *Generate* that adds one under an optional name
+(a note in its place at the cap), and the one-time block describing the grant
+the new key is for.
 
-## A TLS client certificate for your browser
+## A TLS client certificate from the portal
 
 A third card on `/portal/signing-key` issues a **TLS client certificate** to the
 signed-in person, from the realm's own **TLS Client Issuing CA**:
 
 * it carries `clientAuth`, `CN=<username>`, a `urn:sts:person:<username>`
   subjectAltName and, where the directory holds one, your email address;
-* you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384) and a
-  **file password**, typed twice;
-* the page that comes back offers three downloads, **once**: a `.p12` (the key,
-  the certificate and the two CAs above it, AES-256 protected by that password), an
-  encrypted `-key.pem` and a `-chain.pem`, with install steps for Windows, macOS,
-  Firefox, Chrome on Linux and curl. Nothing keeps the private key.
+* you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384);
+  there is no file password;
+* the new certificate's row in the card's list then offers two downloads,
+  **once**, scrolled into view: the private key as an unencrypted PKCS#8
+  `-key.pem`, and a `-chain.pem` holding the certificate and the two CAs above
+  it — the same two files the RFC 7523 and RFC 7522 cards offer in their
+  *Certificate* row. Nothing keeps the private key. There is no `.p12`, so a
+  browser cannot import the result; an administrator's issue still answers
+  one.
 
 **This service trusts its own Root for client certificates**
 (`tls.trustIssuedClientCertificates`, on by default), and **the main port asks
-every connection for a client certificate and requires none** — so after
-importing the `.p12`, opening `https://<host>:8081/tls/sign-in` and choosing the
-certificate when the browser asks signs you in, **in the realm whose portal
-issued it**. Your other applications on this service then sign you in without
-asking.
+every connection for a client certificate and requires none** — so
+presenting the certificate at `https://<host>:8081/tls/sign-in` signs you in,
+**in the realm whose portal issued it**.
 
 Presenting a certificate is the client's own decision rather than the port's demand: the browser sends it because you
 chose it, and `GET /tls/sign-in` answers what arrived, whether it verified, its
@@ -639,9 +681,74 @@ responder, and every door that reads a certificate refuse it.
 
 ```bash
 curl --cert alice-laptop-tls-client-chain.pem \
-     --key alice-laptop-tls-client-key.pem --pass '<file password>' \
+     --key alice-laptop-tls-client-key.pem \
      https://localhost:8081/tls/sign-in
 ```
+
+## A message-signing certificate for a WS-Trust requester
+
+A **message-signing certificate** is what a person or an application signs a
+[WS-Trust](ws-trust.md) request with: a WS-Security 1.1 signature over the SOAP
+Body and the Timestamp, with the certificate in a `BinarySecurityToken`. It
+comes from the realm's own **Message Signing Issuing CA** and is one thing
+only:
+
+* it carries `digitalSignature` and no extended key usage, `CN=<holder>` and a
+  `urn:sts:person:<username>` or `urn:sts:application:<identifier>`
+  subjectAltName — the name a signed request is mapped back to, with nothing
+  else registered;
+* **an administrator issues it** — to a person from their `/admin/users` page
+  (**Message-signing certificates**, beside Stored certificates), to an
+  application from the **Credentials** section of its `/admin/applications`
+  page (drawn for a WS-Trust relying party, and for any application already
+  holding one) — never the person on the user portal;
+* the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384), a label and a
+  **file password** typed twice are chosen there, and the page that comes back
+  offers a `.p12`, an encrypted `-key.pem` and a `-chain.pem`, **once**.
+  Nothing keeps the private key; lost, it is revoked and another issued.
+
+**It is not a TLS client certificate, and a TLS client certificate is not
+one.** Every authority here chains to the one Root, so what a certificate may
+do is said by WHICH authority issued it: a message-signing certificate signs
+nobody in over TLS, and a TLS client certificate from this service signs no
+request.
+
+A holder may hold up to `pki.messageSigningCertificateMax` (5) valid ones —
+several for a rotation in progress, or one per signing host; past it the issue
+is refused (`STS-PKI-0220`) rather than revoking one still in use. Each has a
+**Revoke**; revocation is published on the Issuing CA's CRL and OCSP responder,
+and a request signed with a revoked certificate is refused.
+
+```bash
+H="Authorization: Bearer $ADMIN_TOKEN"
+
+# To a person. `files` holds the PKCS#12 (base64), the key and the chain:
+# this reply is the only copy of the private key.
+curl -sk -X POST https://localhost:8081/admin-api/users/issue-signing-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"user":"alice","password":"correct horse battery","keyAlg":"ec-p256",
+       "label":"signer 1"}'
+
+# To an application.
+curl -sk -X POST \
+  https://localhost:8081/admin-api/applications/issue-signing-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"application":"my-wstrust-client","password":"correct horse battery"}'
+
+# Revoke one, by its serial (from the reply above, `mfa.signing` of
+# GET /admin-api/users?user=alice, or `credentials.signing` of
+# GET /admin-api/applications?application=my-wstrust-client).
+curl -sk -X POST https://localhost:8081/admin-api/users/revoke-signing-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"user":"alice","serialHex":"1a2b3c","reason":"keyCompromise"}'
+```
+
+A serial the holder does not hold — another holder's, or one of their TLS
+client certificates — matches nothing (`STS-PKI-0221`). The other refusals:
+the file password (`STS-ADMIN-0902`), an application the registry does not
+hold (`STS-ADMIN-0904`), a person with no entry (`STS-ADMIN-0905`, and none is
+created), and anything else about the issue (`STS-ADMIN-0901`) or the revoke
+(`STS-ADMIN-0903`).
 
 ## Revocation is published, and consulted
 
@@ -651,7 +758,7 @@ curl --cert alice-laptop-tls-client-chain.pem \
 | **An OCSP responder per authority** | RFC 6960, both transports of appendix A.1, at `GET|POST /pki/ocsp/{scope}/{ca}`. Signed with the CA ITSELF rather than a delegated responder certificate, so a client verifies with the anchor it already has; the responder ID is by key hash and every time is whole seconds (RFC 5019). The nonce is echoed, and one of 0 or more than 32 octets is `malformedRequest` (RFC 8954). A request about no certificate this authority issued is `unauthorized`. An authoritative answer carries RFC 5019 section 6.2's cache headers. A GET of the address with nothing appended is a 400 naming both transports. |
 | **The issuing certificate** | `GET /pki/ca/{scope}/{ca}.cer`, which is the `caIssuers` address in every certificate that authority signed. |
 | **An index** | `GET /pki/revocation` — every authority with its addresses, so a person pointing a client at this does not have to read them out of a certificate first. |
-| **The addresses inside a certificate** | `http://` for the CRL, the OCSP responder and the issuer's certificate, and `ldap://` for the CRL — **never `https://` or `ldaps://`**, which RFC 5280 section 8 says a CA SHOULD NOT write into an extension: a client that checks revocation before it trusts a connection cannot fetch the answer over that connection. The `http://` addresses name **`pki.httpPort` (8082)**, a plain listener that answers `/pki/` and nothing else; RFC 5019 section 5 requires an OCSP responder to answer plain HTTP. The main port answers the same paths. |
+| **The addresses inside a certificate** | `http://` for the CRL, the OCSP responder and the issuer's certificate, and `ldap://` for the CRL — **never `https://` or `ldaps://`**, which RFC 5280 section 8 says a CA SHOULD NOT write into an extension: a client that checks revocation before it trusts a connection cannot fetch the answer over that connection. The `http://` addresses name **`pki.httpPort` (8082)**, a plain listener that answers `/pki/`, [SCEP](scep.md) under `/enroll/scep` and `/healthcheck`, and nothing else; RFC 5019 section 5 requires an OCSP responder to answer plain HTTP. The main port answers the same paths. |
 | **Behind a port mapping** | The addresses are built from inside the process, so a container must be TOLD where it is reachable: `pki.distributionPort` / `PKI_DISTRIBUTION_PORT` and `pki.distributionLdapPort` / `PKI_DISTRIBUTION_LDAP_PORT` for the published ports, or `pki.distributionBaseUrl` and `pki.distributionLdapHost` for a different name. `docker-compose.yml` publishes 8082 on `STS_PKI_HOST_PORT` and passes it through. A change reaches certificates issued afterwards, never one that exists. |
 | **Per authority and NOT per realm** | A CRL is signed by an ISSUER and lists serials that issuer minted, so a list per realm would be a document with no valid issuer and nothing could sign it. |
 | **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. Each authority's list of issued certificates, and its list of revoked serials with no certificate left, is **paged** — five rows a page at most — each on a parameter of its own (`ca-<scope>-<ca>-issuedPage`, `…-orphansPage`), and **each has a search box** (`…-issuedq`, `…-orphansq`) matching part of a serial, a subject, a name or a reason before the list is paged. A Revoke or Release brings you back to the page and search you were on. `GET /admin-api/pki` answers the same pages, with `issuedPaging`, `orphansPaging`, `issuedSearch`, `orphansSearch` and the totals on each authority. |
@@ -674,7 +781,7 @@ USED** — the same sources and the same policy, refused as `STS-PKI-0129`:
 
 | Where a registered certificate verifies something | What is checked |
 |---|---|
-| **An RFC 7523 grant or `private_key_jwt` client authentication** | the `x5c` of the key in `jwks` / `oauthAssertionJwks` / a person's `stsAssertionJwks` that verified the assertion. A key with **no** `x5c` is a bare key: nothing to look up, and the result says `bare` rather than good |
+| **An RFC 7523 grant or `private_key_jwt` client authentication** | the `x5c` of the key in `jwks` / `oauthAssertionJwks` / a person's valid `stsAssertionKeyPair` records that verified the assertion. A key with **no** `x5c` is a bare key: nothing to look up, and the result says `bare` rather than good |
 | **An RFC 7522 grant or client authentication** | the registered or issued certificate that verified the assertion |
 | **A federated sign-in** (SAML 2.0, SAML 1.1, WS-Federation, OpenID Connect, OAuth 2.0 with a JWT access token) | `fedSigningCertificate`, or the `x5c` of the partner key that verified the token — before the session starts |
 | **The OID4VP response endpoint** | the certificate in `oid4vp.trustedIssuerCertificates` that verified the credential, as a check row |
@@ -709,8 +816,9 @@ anything.
 (#174).** A plain `ldap:` list under the default `pki.revocationLdap=ldaps`,
 any LDAP address with it `off`, a relative name without
 `pki.revocationLdapDirectory` (or with a multi-valued RDN), a scheme that is
-never dialled, an OCSP responder that is not http(s), and any responder with
-`pki.revocationOcsp=off` are **not dialled** — and when that is all a
+never dialled, an OCSP responder that is not http(s), any responder with
+`pki.revocationOcsp=off`, and an http(s) address whose host is not in
+`security.outboundAllowedHosts`, when that list is set, are **not dialled** — and when that is all a
 certificate names, the issuer published a list that this service's own policy
 kept it from reading. Its status could not be established: hard-fail refuses it
 as `STS-PKI-0188`, with the reason naming the setting that would dial it, and
@@ -765,8 +873,8 @@ dialled only when allowed, and a relative distribution point needs
 `pki.revocationLdapDirectory` and single-valued RDNs — refused under hard-fail
 when nothing else answers; a certificate naming nothing is accepted in
 development; LDAPS 636 asks for no client certificate. The verdict for a
-certificate you present is in `GET /tls/sign-in`'s answer; the policy is on `GET /tls` and
-`/admin/crypto-metadata`.
+certificate you present is in `GET /tls/sign-in`'s answer and on Monitoring →
+TLS connection; the policy is on `/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is **not** revocation:
@@ -823,6 +931,105 @@ holds all of this to [C2SP x509-limbo](https://github.com/C2SP/x509-limbo),
 `tests/nist_pkits.js`. An https CRL distribution point or OCSP responder is
 verified too, against node's store and `pki.revocationHttpsCaFile`.
 
+## Certificate validation: what is checked, and where
+
+Every certificate this service relies on is validated for one
+[use case](pki-use-cases.md), through one door. While
+[paranoid PKI mode](#paranoid-pki-mode) applies to that use case, these are the
+checks. A check its specification exempts is listed on that use case's row and
+nowhere else.
+
+| Check | What it asks | Code when it refuses |
+|---|---|---|
+| **A path to an anchor** | Links to an anchor the use case may reach: the [signer truststore](signer-truststore.md), the [client-certificate truststore](tls.md#the-client-truststore), this service's own Root, a family's own setting, or the root registered with the certificate. The rules of [How a certificate path is checked](#how-a-certificate-path-is-checked) apply | the use case's own, `STS-PKI-0240` to `0262` |
+| **Validity** | Inside `notBefore` and `notAfter` at the moment of use | `STS-KEYS-0168`, `STS-KEYS-0169` |
+| **Revocation** | Revoked, or unknown under hard-fail, by this service's own register, or the OCSP responder and CRL the certificate names. The issuer comes from the path, so an address in the certificate does not decide who answers. `pki.revocationCheck` is the policy, and `off` under paranoid is a check nobody made, so it refuses | `STS-PKI-0118`, `STS-PKI-0119` and narrower |
+| **basicConstraints** | A CA is not used as an end entity, and an end entity not as a CA | `STS-KEYS-0170` |
+| **keyUsage** | The bit the use case needs, where the extension is present. Absent permits everything (RFC 5280 section 4.2.1.3) | `STS-KEYS-0171` |
+| **extendedKeyUsage** | Where present, it names what the use case asks. Absent is refused only where the specification requires it | `STS-KEYS-0172` |
+| **Name constraints** | Every name in the certificate against every constraint above it | `STS-PKI-0194` |
+| **Signature and key** | No MD2, MD5 or SHA-1 signature; RSA of 2048 bits or more with no ROCA fingerprint; a curve this service relies on | `STS-KEYS-0173`, `STS-KEYS-0174` |
+| **Critical extensions** | None that nothing here reads | `STS-KEYS-0175` |
+| **A name**, where the caller expects one | The subjectAltName (never the common name, RFC 9525), or the subject DN | the use case's own |
+
+**A pinned certificate is still a certificate.** One registered on an application
+entry, a relationship, a setting or a JWK is held to validity, its use case's
+fields, and revocation, and, when it is not self-signed, a path. A self-signed one
+is accepted only where the use case's specification defines the method that way,
+such as RFC 8705's `self_signed_tls_client_auth`, and only as the one registered.
+Validity is exempt nowhere except the Sigstore client specification's rule that a
+certificate is evaluated at its own `notBefore`.
+
+## Paranoid PKI mode
+
+`pki.paranoid` is the master, and each [use case](pki-use-cases.md) has a row of
+its own beneath it.
+
+| `pki.paranoid` | In product mode | In development mode |
+|---|---|---|
+| `auto`, the default | **on** | **off** |
+| `on` | on | on |
+| `off` | off | off |
+
+While the master is in force, each `pki.paranoid<UseCase>` row, on by default,
+decides its own use case. **A row off, or every row while the master is not in
+force, restores exactly the behaviour that use case had before this mode existed,
+and nothing else changes.** There is no third state, and development mode with
+`auto` is that earlier behaviour, whole.
+
+**No source named, no check to perform.** Under this mode a certificate that names no
+CRL distribution point and no OCSP responder has no revocation check, under
+soft-fail or hard-fail. Where a source is named, in the certificate or a CA above
+it, it is enforced: revoked is refused, and under hard-fail so is a source that
+cannot be reached. A CA's source says only whether that CA is revoked; nothing is
+looked up for a leaf that names nothing itself, even under a CA that names a source.
+A certificate this service issued is always asked of its own register, whatever it
+names. `pki.revocationRequireDistributionPoint` set to `on` is an operator asking for
+more, and still refuses a certificate naming nothing.
+
+**An administrator's act names a certificate.** Registering a certificate on the entry it is used for makes it that entry's trust anchor, so it needs no chain to anything. That covers an application's signing and encryption certificates, a partner's on a federation relationship, and one stored on exactly one person's entry for WS-Security. A JWK's `x5c` needs no chain either, since the same key with none needs none. In every case the certificate's validity, usage and revocation still count, and a certificate that arrives without an administrator's act is never named this way. [SAML 2.0 Web Browser SSO](saml2-sso.md) says what that means for metadata.
+
+The rows are per realm and change at runtime, through
+[`/admin/pki/trust`](signer-truststore.md), `POST /admin-api/pki/trust/set-row`
+(`{"setting": "pki.paranoidSamlSigner", "value": false}`, the master or any
+row) or `POST /admin-api/config/set`. **The
+exception is a client certificate at a TLS handshake**, which has no realm in it: on
+the main port, custom listeners, LDAPS and the debugger, the default realm's rows
+decide, and another realm's page shows a row that has no effect there. See
+[TLS](tls.md). There
+is no switch for one application, relationship or key: a partner that cannot meet a
+check is a reason to switch that row off for the realm and see it red on the page.
+
+Nothing refuses a row switched off in product. It is logged once per process with
+`STS-PKI-0239` and drawn red on the page, because you may have a reason and that is
+where the reason is visible.
+
+**Every row is wired.** The mode was rolled out in six phases, and since the
+last of them every row governs its use case. The last column of the
+[use cases](pki-use-cases.md) says which phase that was.
+
+### What the page shows
+
+Protocols → PKI trust has four tabs:
+
+* **Paranoid PKI**: the master, and for each use case whether it is on, what it
+  covers, what it adds, what its specification exempts, and how many this process
+  has assessed and refused.
+* **Signer truststore**: [this realm's anchors and intermediates](signer-truststore.md).
+* **Pinned certificates**: every certificate the realm relies on because somebody
+  registered it, with where it is pinned, what it chains to, and a status of
+  `valid`, `expiring`, `expired`, `not-yet-valid`, `revoked`, `chain-missing`,
+  `self-signed`, `thumbprint-only` (only a thumbprint is held) or `unreadable`.
+  It reads the certificates on applications and federation relationships, the
+  `x5c` of their JWK sets, the settings that hold certificates or trust anchors,
+  the realm's federated SPIFFE bundles and GNAP clients' keys. The default
+  realm's tab also lists the cloud providers' certificates the image ships and
+  the client-certificate truststore, which are the same for every realm. The daily `pki.pins.audit` job writes it, and
+  **Recheck now** (`POST /admin-api/pki/trust/recheck`) does so on demand. The job logs what changed (`STS-PKI-0263`,
+  `STS-PKI-0264`) and mails the realm's Admin Write holders on a change, never per
+  run. `pki.pinnedCertificateWarningDays` is the horizon of `expiring`.
+* **Client-certificate truststore**: a link to the page that one has.
+
 ## A signed token names its certificate chain
 
 Every JWT this service signs with a certified key can carry the chain of that
@@ -867,10 +1074,49 @@ is configured:
   certificate.
 
 The chain address is named by the leaf's SHA-256, so it names one certificate
-for ever: after a key is rotated, an old token's `x5u` answers 404 rather than a
-chain over a different key. RFC 7515 requires the `x5u` fetch to use TLS; with
+for ever, never a chain over a different key. A certificate the realm no longer
+publishes for its key — because the key was certified again over a re-issued
+Issuing CA, or because the key was rotated — is still served at that address,
+with the chain it was issued with, until it expires, so a token signed before
+can still be followed to its CRL and OCSP responder (which says whether it was
+revoked). The newest eight certificates displaced from one slot are kept this
+way; an older one, or an expired one, answers 404. RFC 7515 requires the `x5u` fetch to use TLS; with
 `global.https` off the address is `http://` and a strict verifier will not follow
 it.
+
+### Every chain this service reports ends with the Root
+
+The Root is sent, last, after the certificate and the CAs between it and the
+Root, wherever this service hands out one of its own certificates:
+
+| Where | What carries the chain |
+|---|---|
+| Every TLS handshake | the listener's certificate list ([Configure TLS → What the handshake sends](configure-tls.md#what-the-handshake-sends)) |
+| A JWT's header | `x5c`, and the document `x5u` names |
+| Every published JWK | `x5c`: the realm JWKS (current, next and retired keys), pinned and grouped signers, an issued key pair's `oauthAssertionJwks`, and the crypto metadata document |
+| Every XML signature | `ds:KeyInfo` → `ds:X509Data`: SAML 2.0 and SAML 1.1 assertions and messages, WS-Federation and WS-Trust tokens, a federation relationship's requests and logout messages |
+| Every metadata document | each `md:KeyDescriptor`, signing and encryption: SAML 2.0, WS-Federation, a federation relationship's own metadata |
+
+The signer's own certificate is always **first**. Many verifiers take the
+first `X509Certificate` in `X509Data` as the signer's; XML Signature 1.1
+section 4.5.4 allows several certificates there, in any order. In an XML
+`X509Data` that same certificate is repeated after the Root, because a
+reader that keeps a single certificate per `X509Data` keeps the last one
+(pysaml2 does). A JOSE `x5c` and a TLS handshake still end at the Root.
+
+Sending the Root does not make anybody trust it: a relying party trusts only
+the Roots it already holds (RFC 5280 section 6.1). It is there so that a
+reader can see *which* Root the chain ends at. Every install's Root has the
+same name, `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts` for a
+hierarchy built before #1294), so the name alone does not tell two installs
+apart. The thumbprint does.
+
+**Four signed objects leave the Root out of `x5c`.** HAIP 1.0 forbids it in
+three (sections 5, 6.1 and 6.1.1): an OpenID4VCI credential, a Token Status
+List token, and a signed OpenID4VP Request Object. The OpenID4VCI trusted list
+follows the same rule, because its reader takes the list only from a signer
+whose chain ends under a list-operator CA it already holds. Their `x5c` ends at
+the Intermediate. The `x5u` chain document still ends with the Root.
 
 ### The `kid` can be the key's thumbprint instead
 
@@ -898,8 +1144,7 @@ It does not apply to:
 * **an HMAC signature**, which carries no `kid` at all;
 * **the SPIFFE JWT-SVID**, whose authority is a separate key published in
   the SPIFFE bundle;
-* **the DIF Domain Linkage Credential and the credential `/did/generate`
-  returns**, whose `kid` names a DID verification method (`did:…#sts-…`), and
+* **the DIF Domain Linkage Credential**, whose `kid` names a DID verification method (`did:…#sts-…`), and
   the DID document's verification methods themselves.
 
 **While it is on, `/oauth2/jwks` lists every signing key twice**: once under its
@@ -1088,7 +1333,7 @@ rather than describing the mode they wish they were in.
 
 | Mode | What happens |
 |---|---|
-| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a mock is disposable and its credentials are meant to die with it. |
+| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a development service is disposable and its credentials are meant to die with it. |
 | **product** | Written to `sts_keys`, sealed AES-256-GCM under the same key-encryption key as the signing keys, in the same row family. |
 
 A store of the PKI module's own would have been a **second answer to "where does
@@ -1099,7 +1344,7 @@ other worker issues from.
 
 ## The encoder is the debugger's own, vendored byte-identical
 
-`common/vendored/x509.js` — the same module behind the
+`common/crypto_impl/x509.js` — the same module behind the
 [OAuth2/OIDC Debugger](https://idptools.com)'s *PKI / X.509* workflow page, and
 what `spiffe/spiffe_ca.ts` already issues X509-SVIDs with. So a certificate
 issued here and one issued there are built by **one** encoder, and a difference
@@ -1115,14 +1360,23 @@ encoder cannot produce would be a third entry that is a 500.
 
 | | |
 |---|---|
-| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519` |
-| Key algorithms, on the **pane below** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
+| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519`, and the post-quantum ones that sign — ML-DSA and SLH-DSA (composite ML-DSA is refused for an authority) |
+| Key algorithms, on the **[Certificate Workbench](#the-certificate-workbench)** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
 | Signature algorithms | RSASSA-PKCS1-v1_5 and RSASSA-PSS with SHA-256/384/512, ECDSA with SHA-256/384/512, Ed25519 — **and the two SHA-1 ones, marked weak**, because *does my stack refuse a SHA-1 certificate?* is a question a debugger should be able to ask. Nothing defaults to them. Plus the post-quantum ones, where the key is one. |
 
-**The hierarchy is deliberately the shorter list.** What the Issuing CA signs is
-a client assertion somebody else's OAuth library has to verify, and an ML-DSA
-signature is one almost nothing can read yet. The pane below is where a
-certificate nothing can read is the point.
+**Choose a post-quantum hierarchy knowingly.** What the Issuing CA signs is a
+client assertion somebody else's OAuth library has to verify, and an ML-DSA
+signature is one almost nothing can read yet; the default is `rsa-2048`, and a
+[hybrid authority](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default)
+adds post-quantum protection without that cost. The build form lists every key
+algorithm, ML-KEM included, but an ML-KEM key cannot sign, so a hierarchy built
+with one is refused (`STS-PKI-0004`), and so is a process branch whose
+signatures would not fit the listener's handshake (see
+[hybrid authorities](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default)). A leaf issued with a
+pure ML-DSA or SLH-DSA key is published as an AKP JWK (RFC 9964). A composite
+ML-DSA key has no JWK, because its X.509 bytes are not a JOSE key, so issuing a
+signing key pair with one is refused (`STS-PKI-0269`) and nothing is recorded.
+The Certificate Workbench is where a certificate nothing can read is the point.
 
 **Leave the signature algorithm empty unless you mean it.** Empty means "the
 right one for the key algorithm", which is what almost every deployment wants:
@@ -1130,18 +1384,14 @@ an EC key's digest is decided by its CURVE, so a fixed value can hand a P-521
 key SHA-256 — legal, verifying, and nobody's intention. A pair whose families
 disagree is refused with the list of what that key *can* sign with beside it.
 
-## The page has no script on it
+## Keys are made on the server, not in your browser
 
-Every page of this console but the API explorer is `script-src 'none'`, and this
-one keeps that. The argument is made from scratch rather than inherited from the
-page next door, because the rule here is that it has to be: the test is whether
-the page **cannot** work without a script.
-
-It plainly can. Generating a key pair and issuing a certificate are things this
-process does far better than a browser — it holds the CA private keys, and a
-browser must never — so the button is a POST and the result is a re-rendered
-page. The debugger's PKI page needs a script because its whole point is that the
-key never leaves the browser; this page's whole point is the opposite.
+Generating a key pair and issuing a certificate are things this service does,
+never your browser — it holds the CA private keys, and a browser must never —
+so every button on this page is a request to `/admin-api` and the result is the
+page drawn again from its answer. The debugger's PKI page works the other way
+because its whole point is that the key never leaves the browser; this page's
+whole point is the opposite.
 
 
 ## Which key pairs are post-quantum
@@ -1192,14 +1442,14 @@ The dialog shows:
   identifiers, **every X.509 v3 extension decoded** with its OID and criticality,
   the outer signature algorithm and value, both fingerprints, and the PEM.
 
-The page still runs no script: opening a dialog adds `?certificate=<SHA-256>` to
+Opening a dialog adds `?certificate=<SHA-256>` to
 the address, so a dialog can be bookmarked or sent to someone, and **Back**
 closes it. Only certificates this service holds in the trust realm you are in
 can be opened — a certificate from another realm opens under that realm's
 prefix. The same answer is `GET /admin-api/certificates?certificate=<SHA-256>`,
 and `GET /admin-api/certificates` lists every certificate with its fingerprint.
 
-## The Certificate & Key Configuration pane
+## The Certificate Workbench
 
 **Everything above is the hierarchy this service maintains for itself. This is
 the other half of the page: the debugger's *PKI / X.509* workflow, on the
@@ -1216,8 +1466,8 @@ happens, and that difference decides the shape of everything in it.
 |---|---|
 | the profile rewrites the extension boxes as you pick it | **Apply the profile** is a submit, and the form comes back rewritten |
 | the cryptographic approach filters the algorithm menus live | the same submit |
-| the Copy buttons | gone — this console has no script, and a textarea selects |
-| **Download** builds a Blob in the browser | `POST /admin/pki/export` answers with the **file** |
+| the Copy buttons | a textarea, which selects |
+| **Download** builds a Blob in the browser | **Download** asks `/admin-api` for the files, which this service builds, and your browser saves them |
 | the key is generated in your browser and never leaves it | the key is generated **here**, because this process holds the CA private keys and a browser must never |
 
 **The form is the state and there is no draft anywhere.** Every field is
@@ -1258,14 +1508,10 @@ validator that has never heard of ML-DSA*, plus the two that do not ask.
 | **Hybrid** | A second key and signature in three **non-critical** extensions — `subjectAltPublicKeyInfo` (2.5.29.72), `altSignatureAlgorithm` (2.5.29.73), `altSignatureValue` (2.5.29.74), ITU-T X.509 (2019) clause 9.8 — so a validator that has never heard of them sees an ordinary certificate and accepts it. That is the entire point. |
 | **Any** | Every algorithm this build has, listed together. |
 
-**SLH-DSA key generation takes seconds and it runs on this thread.** This
-process owns six listener families on one thread, so while one is being made
-this service answers nobody. It is deliberately not moved to the worker pool:
-that pool runs this service's own reading of the post-quantum constructions,
-which is independent of the vendored one **on purpose**, and crossing the two to
-save a button a few seconds is exactly the defect that independence exists to
-expose. Generate one pair and issue several certificates from it with *reuse the
-key pair below*.
+**SLH-DSA key generation takes seconds.** It and every SLH-DSA signature run
+on libuv's thread pool, so the service keeps answering while one is made, but
+the button still waits for it. Generate one pair and issue several certificates
+from it with *reuse the key pair below*.
 
 ### The twenty-two extensions
 
@@ -1318,15 +1564,21 @@ and `subjectAltName` go in, and nothing else.
 
 ### Keys & Certificates
 
-Everything the pane issues is kept **in the same place as the hierarchy** — this
+Everything the workbench issues is kept **in the same place as the hierarchy** — this
 realm's keystore row, sealed under the same key-encryption key — so there is one
 answer to *where does this service keep a private key*. It inherits the mode:
 product keeps it, development loses it with the process.
 
+**A private key this service keeps does not come back when a certificate is
+issued**: the private key box is empty afterwards, and the answer's `object` says
+`hasPrivateKey`. *Use this key pair* puts it back in the box, and export writes it
+out. A key you told the service not to keep stays in the box, which is the only
+copy there is.
+
 Select a row to export it or to load its key pair back into the form.
 *Use this key pair* ticks **reuse the key pair below** itself, because a pair
 loaded into the boxes and then silently replaced by a fresh one at the next
-issue is the most confusing thing this pane could do.
+issue is the most confusing thing this workbench could do.
 
 **Building the hierarchy does not empty this store, and clearing this store does
 not remove the hierarchy.** They are two things in one row, and one button
@@ -1378,7 +1630,7 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/clear -H "$H" \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
-**The pane has eight of its own, and every one of them takes and returns the
+**The workbench has eight of its own, and every one of them takes and returns the
 whole form.** That is not an API shaped by a page: `apply-profile` rewrites
 twenty-two of its hundred and fifteen fields, and a caller reconstructing that
 itself would be a second implementation of what a profile *means*. So the reply
@@ -1417,8 +1669,8 @@ touch the store**, which is the same rule the two buttons follow.
 
 ## Configuration
 
-Forty-two `pki.*` settings, in four groups. Two are restart-only
-(`pki.autoBuild` and `pki.httpPort`); the rest take effect at runtime.
+The `pki.*` settings, in five groups. Three are restart-only (`pki.autoBuild`,
+`pki.httpPort` and `pki.signerTrustAnchorsFile`); the rest take effect at runtime.
 
 ### The hierarchy
 
@@ -1426,18 +1678,24 @@ They are **defaults for a form** rather than policy: what a hierarchy was built
 with is stored on the hierarchy, so a change here reaches the next build and
 never a certificate that exists.
 
+**A hierarchy already persisted keeps the subject it was built with.** The
+default organisation became `iya-sts` (it was `sts`) in #1294; that changes
+what a NEW hierarchy, and a leaf issued under a tier with no organisation of
+its own, carries. To change an existing one, set `pki.organisation` and
+rebuild the hierarchy.
+
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off leaves every generated key uncertified. |
-| `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
+| `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` (`rsa-3072` in product) | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
-| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `ml-dsa-87` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Every authority is hybrid](#every-authority-is-hybrid-a-second-post-quantum-key-and-signature). One of `ml-dsa-87`, `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. **Warning:** `none` builds classical-only authorities; SLH-DSA costs seconds per certificate issued. |
-| `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
+| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `none` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Hybrid authorities](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default). One of `ml-dsa-87` (the recommended value when it is turned on), `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. `none`, the default, builds classical-only authorities, because many relying parties refuse a hybrid certificate's size. **Warning:** SLH-DSA costs seconds per certificate issued. |
+| `pki.organisation` | `STS_PKI_ORGANISATION` | `iya-sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | A new Intermediate CA's lifetime; `0` is the profile's ten years, clamped to the Root's expiry. |
 | `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | Each new Issuing CA's lifetime; `0` is the profile's five years, clamped to its Intermediate's expiry. |
-| `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
+| `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate Workbench may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
 | `pki.pinnedSigners` | `STS_PKI_PINNED_SIGNERS` | `false` | yes | **Off by default.** On, a key pinned into a `jose` or `xml` slot is the key this realm signs with for that algorithm. **Warning:** you take over its lifecycle — it is never rotated and ends with its certificate. It cannot be turned off while a pinned key is live or pending (`STS-PKI-0215`): unpin first. See [above](#a-pinned-key-pair-as-the-realms-signer-off-by-default). |
 | `pki.pinnedSignerLeadMinutes` | `STS_PKI_PINNED_SIGNER_LEAD_MINUTES` | `1440` | yes | How long a pinned signing key is published before it signs. `0` signs at once, which a relying party holding a cached JWKS refuses until it fetches again. |
 | `pki.pinnedSignerExpiryWarningDays` | `STS_PKI_PINNED_SIGNER_EXPIRY_WARNING_DAYS` | `30` | yes | How far ahead of a pinned key's certificate expiry `/admin/pki` and the log (`STS-PKI-0212`, `STS-PKI-0213` once expired) warn. |
@@ -1447,7 +1705,7 @@ never a certificate that exists.
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.crlLifetimeMinutes` | `PKI_CRL_LIFETIME_MINUTES` | `60` | yes | The gap between `thisUpdate` and `nextUpdate` on every CRL, and the `nextUpdate` of every OCSP answer — short on purpose, so a revocation is seen while testing. |
-| `pki.httpPort` | `PKI_HTTP_PORT` | `8082` | no (restart) | The plain-HTTP listener every certificate names for its CRL, OCSP responder and issuer's certificate. `/pki/` only; `0` binds nothing and the addresses then name the main port. |
+| `pki.httpPort` | `PKI_HTTP_PORT` | `8082` | no (restart) | The plain-HTTP listener every certificate names for its CRL, OCSP responder and issuer's certificate. `/pki/`, SCEP under `/enroll/scep` and `/healthcheck` only; `0` binds nothing and the addresses then name the main port. |
 | `pki.distributionBaseUrl` | `PKI_DISTRIBUTION_BASE_URL` | *(empty)* | yes | The whole base of the http addresses written into certificates, when the service is reached by a name or port it cannot derive. |
 | `pki.distributionPort` | `PKI_DISTRIBUTION_PORT` | `0` | yes | The published port of those addresses; `0` means the listener's own. |
 | `pki.distributionLdapHost` | `PKI_DISTRIBUTION_LDAP_HOST` | *(empty)* | yes | The host of the `ldap://` CRL address; empty means the first of `tls.hostnames`. |
@@ -1482,6 +1740,17 @@ is checked — see
 | `pki.revocationHttpsCaFile` | `STS_PKI_REVOCATION_HTTPS_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates an https CRL distribution point's or OCSP responder's certificate may chain to, beside node's own CA store (#201). |
 | `pki.revocationLdapDirectory` | `STS_PKI_REVOCATION_LDAP_DIRECTORY` | *(empty)* | yes | The directory (scheme, host, port) a distribution point named relative to its CRL issuer is looked up in; without it such a name is not dialled. |
 
+### Paranoid PKI mode
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.paranoid` | `STS_PKI_PARANOID` | `auto` | yes | [Paranoid PKI mode](#paranoid-pki-mode): `auto` is on in product and off in development; `on` and `off` force it. |
+| `pki.paranoid<UseCase>` | `STS_PKI_PARANOID_<USE_CASE>` | `true` | yes | One per [use case](pki-use-cases.md). Off, that use case behaves as it did before this mode existed. |
+| `pki.paranoidPolicySigner` | `STS_PKI_PARANOID_POLICY_SIGNER` | `true` | yes | The one row a site forces: while it is on, a policy export's signer chain gets the full checks in every mode, including development. Off, `pki.paranoid` decides, as for every other row. |
+| `pki.policyExportAlgorithm` | `STS_PKI_POLICY_EXPORT_ALGORITHM` | `RS256` | yes | The JWS algorithm a [policy export](policies.md#export-and-import) is signed with: RS256, PS256, ES256, ES384, ES512, EdDSA, ML-DSA-44, ML-DSA-65 or ML-DSA-87. |
+| `pki.signerTrustAnchorsFile` | `STS_PKI_SIGNER_TRUST_ANCHORS_FILE` | *(empty)* | restart | A PEM bundle read into the default realm's [signer truststore](signer-truststore.md) at start; fatal when named and unusable. |
+| `pki.pinnedCertificateWarningDays` | `STS_PKI_PINNED_CERTIFICATE_WARNING_DAYS` | `30` | yes | How far ahead of `notAfter` a pinned certificate is marked `expiring`. |
+
 ### Self-service and limits
 
 | Setting | Environment variable | Default | Runtime? | What it does |
@@ -1490,7 +1759,9 @@ is checked — see
 | `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How often one person may press Generate on `/portal/signing-key` in a `security.rateLimitWindowS` window. |
 | `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address, for everybody behind one NAT or proxy. |
 | `pki.personTlsClientCertificateMax` | `STS_PKI_PERSON_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates one person may issue themselves on the portal; past it the portal refuses (`STS-PKI-0170`) rather than revoking an older one. |
+| `pki.personSigningKeyMax` | `STS_PKI_PERSON_SIGNING_KEY_MAX` | `5` | yes | Valid RFC 7523 / RFC 7522 signing key pairs one person may hold, per profile; past it every door refuses (`STS-PKI-0223`) rather than revoking an older one. |
 | `pki.applicationTlsClientCertificateMax` | `STS_PKI_APPLICATION_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates an administrator may issue one application; past it the issue is refused (`STS-PKI-0180`). |
+| `pki.messageSigningCertificateMax` | `STS_PKI_MESSAGE_SIGNING_CERTIFICATE_MAX` | `5` | yes | Valid message-signing certificates (what a WS-Trust requester signs its request with) an administrator may issue one person or one application; past it the issue is refused (`STS-PKI-0220`). |
 | `pki.enrollmentMaxCertificatesPerEntry` | `STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY` | `20` | yes | Certificates issued over [ACME](acme.md), [EST](est.md) or [SCEP](scep.md) one entry may carry at once; past it a request is refused (`STS-ENROLL-0040`) rather than an older certificate being forgotten. |
 
 Settings this page discusses that are not `pki.*`: the twelve
@@ -1544,9 +1815,9 @@ changed — `/admin/pki`, or `POST /admin-api/config/set`.
 * **One encoder, the debugger's own, vendored byte-identical.** A certificate
   issued here and one issued there are built by one implementation — see
   [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical).
-* **The page has no script.** Generating keys and issuing certificates are
+* **Keys are made on the server.** Generating keys and issuing certificates are
   things the process holding the CA keys should do, not a browser — see
-  [above](#the-page-has-no-script-on-it).
+  [above](#keys-are-made-on-the-server-not-in-your-browser).
 * **A limit refuses rather than forgets.** A full object store, a person's or
   an application's certificate cap, and the per-entry enrollment cap each
   refuse the next request instead of discarding something somebody may still

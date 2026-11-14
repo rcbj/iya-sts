@@ -74,13 +74,13 @@
 // signed document — still could not put it on the page.
 // `tests/cache_registry.js` holds that.
 //
-// **A LEAF (rule 3), AND JAVASCRIPT ON PURPOSE.** Several owners —
-// `helpers.js`, `keystore.js`, `revocation_status.js`, `krb5_principals.js` —
-// are in the parent project's Kerberos COPY closure and are loaded there by
-// plain node, so this file cannot be TypeScript, and it requires nothing of
-// this service but `config` (for the logger, as `client_address.js` does), so
-// it can close no cycle. Requiring it from those modules OWES the parent one
-// COPY line; `kerberos/CLAUDE.md` records it.
+// **A LEAF (rule 3), AND JAVASCRIPT.** Several owners — `helpers.js`,
+// `keystore.js`, `revocation_status.js`, `krb5_principals.js` — were in the
+// parent project's Kerberos COPY closure and loaded there by plain node,
+// which is why this file was written in JavaScript (an obligation until
+// #1280; nothing is owed now, and it may be converted). It requires nothing
+// of this service but `config` (for the logger, as `client_address.js`
+// does), so it can close no cycle.
 //
 // **THE FIGURES ARE THE ANSWERING PROCESS'S.** A request worker and a cluster
 // node each hold caches of their own; nothing here is coordinated, because a
@@ -90,9 +90,11 @@
 // on the node's membership row (2026-09-18).
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes (#453). A leaf over `config`, so this
+// require cannot close a cycle.
+const stsCrypto = require('./crypto');
 const errorCodes = require('./error_codes');
 // This thread's identity (#364); see common/worker_channel.ts.
 const WorkerChannel = require('./worker_channel');
@@ -109,6 +111,16 @@ const SCOPES = ['process', 'realm'];
  * one-time-value history).
  */
 const KINDS = ['cache', 'replay'];
+
+/**
+ * What a descriptor that leaves `hitMeaning` or `notCountedWhy` out is said
+ * to mean (#543: one copy, which `summaryOf()` reads and `prose()` hands to
+ * the translators).
+ */
+const DEFAULTS = Object.freeze({
+  hitMeaning: 'a lookup answered from the cache',
+  notCountedWhy: 'the lookup is in a file this repository does not edit'
+});
 
 /** @type {Map<string, any>} */
 const descriptors = new Map();
@@ -137,7 +149,9 @@ function countsFor(name) {
  *
  * @param descriptor - the store's `name`, `title`, `description`, `owner`,
  *   `scope`, `kind`, `maxEntries()`, `lifetime()`, `entries()`, and optionally
- *   `eject()`, `bound`, `settings`, `hitMeaning`, `persisted` and `counted`
+ *   `eject()`, `bound`, `settings`, `hitMeaning`, `persisted`, `counted`
+ *   and `sentences` (the templates a computed member is filled from, for
+ *   the translators — see `prose()`)
  * @returns the store's counter, as `counter()` answers
  * @throws an Error tagged STS-CORE-0094 when a required member is missing
  */
@@ -433,10 +447,8 @@ function summaryOf(d, held) {
     settings: Array.isArray(d.settings) ? d.settings.slice() : [],
     counted: d.counted !== false,
     notCountedWhy: d.counted === false
-      ? String(d.notCountedWhy || 'the lookup is in a file this ' +
-               'repository does not edit') : '',
-    hitMeaning: String(d.hitMeaning ||
-                       'a lookup answered from the cache'),
+      ? String(d.notCountedWhy || DEFAULTS.notCountedWhy) : '',
+    hitMeaning: String(d.hitMeaning || DEFAULTS.hitMeaning),
     hits: d.counted === false ? null : c.hits,
     misses: d.counted === false ? null : c.misses,
     hitRatio: d.counted === false || !lookups ? null : c.hits / lookups,
@@ -475,6 +487,25 @@ function report(now) {
 // counters — about sixty bytes a store and nothing that grows with the store.
 // Titles, descriptions and rows stay here; the page takes those from its own
 // registry, which lists the same stores on every node of one build.
+//
+// **IT COUNTS, IT DOES NOT LIST (#704).** It was `report()` cut down: every
+// row of every store built as an object — a SHA-256 for every key that is a
+// credential (`digestKey()`) — only for the rows to be counted and dropped,
+// every 30 s in every front process (`cluster.cache-report`). A store whose
+// ejector the two helpers below built is now TALLIED instead (`tallyOf()`):
+// its size and its fullest realm are the Maps' own `size`, kept by the Map
+// and read, never recomputed; its valid count is one walk with the owner's
+// own expiry test and no allocation. A store that declares `tally(now)`
+// answers for itself; any other is still listed, as before. The valid count
+// of a tallied store is therefore "not yet past the owner's ejection test",
+// where a listed store's is its rows' `valid` — the same thing for every
+// store the helpers serve, since the ejector is the reader's own test.
+//
+// `snapshotAsync()` is what the job calls: the same answer, with a turn of
+// the event loop between stores and every TALLY_SLICE entries inside one,
+// so a request on the process that reports waits for one slice, never for
+// every store at once. `snapshot()` stays synchronous for the join, which
+// takes the first one before the first heartbeat, when the stores are empty.
 /**
  * Returns the compact form of `report()` another cluster node reads: per store
  * the name, sizes, bound and counters, never a row.
@@ -485,12 +516,237 @@ function report(now) {
 function snapshot(now) {
   log.debug("Entering snapshot().");
   const at = typeof now === 'number' ? now : Date.now();
-  const out = report(at).map(function (c) {
-    return [c.name, c.size, c.largestRealm, c.valid, c.maxEntries,
-            c.hits, c.misses, c.evictions, c.refusals];
+  const out = names().map(function (n) {
+    return snapshotRowOf(descriptors.get(n), tallyOf(descriptors.get(n), at),
+                         at);
   });
   log.debug("Leaving snapshot().");
   return { at: at, pid: WorkerChannel.processTag(), caches: out };
+}
+
+/**
+ * `snapshot()`, yielding to the event loop between stores and every
+ * TALLY_SLICE entries within one (#704); what `cluster.cache-report` runs.
+ *
+ * @param now - the time in milliseconds; now when omitted
+ * @returns a promise of what `snapshot()` answers
+ */
+async function snapshotAsync(now) {
+  log.debug("Entering snapshotAsync().");
+  const at = typeof now === 'number' ? now : Date.now();
+  const out = [];
+  for (const n of names()) {
+    const d = descriptors.get(n);
+    if (!d) {
+      continue;
+    }
+    const counted = await tallyOfAsync(d, at);
+    out.push(snapshotRowOf(d, counted, at));
+    await nextTurn();
+  }
+  log.debug("Leaving snapshotAsync(). " + out.length + " store(s).");
+  return { at: at, pid: WorkerChannel.processTag(), caches: out };
+}
+
+// One store's snapshot array, from a tally when there is one and from its
+// listed rows otherwise.
+function snapshotRowOf(d, counted, at) {
+  log.debug("Entering snapshotRowOf().");
+  const c = countsFor(d.name);
+  let size;
+  let largest;
+  let valid;
+  if (counted) {
+    size = counted.size;
+    largest = d.scope === 'realm' ? counted.largestRealm : counted.size;
+    valid = counted.valid;
+  } else {
+    const held = rowsOf(d, at);
+    size = held.rows.length;
+    largest = d.scope === 'realm' ? largestRealmOf(held.rows) : size;
+    valid = held.rows.filter(function (r) {
+      return r.valid;
+    }).length;
+  }
+  const uncounted = d.counted === false;
+  log.debug("Leaving snapshotRowOf().");
+  return [d.name, size, largest, valid, numberOrNull(d.maxEntries),
+          uncounted ? null : c.hits, uncounted ? null : c.misses,
+          c.evictions, c.refusals];
+}
+
+// ---------------------------------------------------------------------------
+// TALLIES (#704): what a store holds, COUNTED rather than listed. A store's
+// own `tally(now)` when it declares one — `{ size, largestRealm, valid }` —
+// and otherwise the plan its ejector carries when `mapEjector()` or
+// `realmMapEjector()` built it: the Maps it walks and the owner's expiry
+// test. Null when neither, and the caller lists the rows instead.
+// ---------------------------------------------------------------------------
+/** Entries walked between two turns of the event loop (#704). */
+const TALLY_SLICE = 500;
+
+function nextTurn() {
+  log.debug("Entering nextTurn().");
+  log.debug("Leaving nextTurn().");
+  return new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+}
+
+// A declared tally, checked; null when it is absent or answers nonsense.
+function declaredTallyOf(d, at) {
+  log.debug("Entering declaredTallyOf().");
+  if (typeof d.tally !== 'function') {
+    log.debug("Leaving declaredTallyOf(). None declared.");
+    return null;
+  }
+  let t = null;
+  try {
+    t = d.tally(at);
+  } catch (e) {
+    log.debug("Caught in declaredTallyOf(): " + ((e && e.message) || e));
+    t = null;
+  }
+  const ok = t && [t.size, t.largestRealm, t.valid].every(function (v) {
+    return typeof v === 'number' && isFinite(v) && v >= 0;
+  });
+  log.debug("Leaving declaredTallyOf(). " + (ok ? 'Counted.' : 'Unusable.'));
+  return ok ? { size: t.size, largestRealm: t.largestRealm, valid: t.valid }
+            : null;
+}
+
+// The plan a helper-built ejector carries, or null.
+function planOf(d) {
+  log.debug("Entering planOf().");
+  const plan = typeof d.eject === 'function' ? d.eject.plan : null;
+  log.debug("Leaving planOf().");
+  return plan && typeof plan.parts === 'function' &&
+    typeof plan.expired === 'function' ? plan : null;
+}
+
+// Sizes from the Maps' own `size`: the store's total and its fullest
+// partition.
+function sizesOf(parts) {
+  log.debug("Entering sizesOf().");
+  let size = 0;
+  let largest = 0;
+  parts.forEach(function (p) {
+    size += p.map.size;
+    largest = Math.max(largest, p.map.size);
+  });
+  log.debug("Leaving sizesOf().");
+  return { size: size, largestRealm: largest };
+}
+
+/**
+ * Counts a store without listing it, synchronously: its declared tally, or
+ * its helper-built ejector's plan; null when it has neither.
+ *
+ * @param d - the descriptor
+ * @param at - the time in milliseconds
+ * @returns `{ size, largestRealm, valid }`, or null
+ */
+function tallyOf(d, at) {
+  log.debug("Entering tallyOf().");
+  const declared = declaredTallyOf(d, at);
+  const plan = declared ? null : planOf(d);
+  if (declared || !plan) {
+    log.debug("Leaving tallyOf().");
+    return declared;
+  }
+  let expired = 0;
+  let parts = [];
+  try {
+    parts = plan.parts();
+    parts.forEach(function (p) {
+      plan.within(p, function () {
+        p.map.forEach(function (value, key) {
+          if (plan.expired(value, key, at)) {
+            expired += 1;
+          }
+        });
+      });
+    });
+  } catch (e) {
+    log.debug("Caught in tallyOf(): " + ((e && e.message) || e));
+    log.debug("Leaving tallyOf(). The plan threw; listed instead.");
+    return null;
+  }
+  const sizes = sizesOf(parts);
+  log.debug("Leaving tallyOf().");
+  return { size: sizes.size, largestRealm: sizes.largestRealm,
+           valid: Math.max(0, sizes.size - expired) };
+}
+
+/**
+ * `tallyOf()`, yielding every TALLY_SLICE entries.
+ *
+ * @param d - the descriptor
+ * @param at - the time in milliseconds
+ * @returns a promise of `{ size, largestRealm, valid }`, or of null
+ */
+async function tallyOfAsync(d, at) {
+  log.debug("Entering tallyOfAsync().");
+  const declared = declaredTallyOf(d, at);
+  const plan = declared ? null : planOf(d);
+  if (declared || !plan) {
+    log.debug("Leaving tallyOfAsync().");
+    return declared;
+  }
+  let expired = 0;
+  let parts = [];
+  try {
+    parts = plan.parts();
+    for (const p of parts) {
+      await slicedWalk(plan, p, function (value, key) {
+        if (plan.expired(value, key, at)) {
+          expired += 1;
+        }
+      });
+    }
+  } catch (e) {
+    log.debug("Caught in tallyOfAsync(): " + ((e && e.message) || e));
+    log.debug("Leaving tallyOfAsync(). The plan threw; listed instead.");
+    return null;
+  }
+  const sizes = sizesOf(parts);
+  log.debug("Leaving tallyOfAsync().");
+  return { size: sizes.size, largestRealm: sizes.largestRealm,
+           valid: Math.max(0, sizes.size - expired) };
+}
+
+// Walks one part of a plan TALLY_SLICE entries at a time, each slice inside
+// the part's realm, a turn of the event loop between slices. A Map's
+// iterator survives the writes other code makes during those turns: an entry
+// deleted before it is reached is not visited, one added is visited at the
+// end, and deleting the entry just visited — what the ejector does — is
+// safe. `visit` answering true deletes that entry through the part's own Map,
+// so a persisted store journals the deletion.
+async function slicedWalk(plan, part, visit) {
+  log.debug("Entering slicedWalk().");
+  const it = part.map.entries();
+  let deleted = 0;
+  let done = false;
+  while (!done) {
+    plan.within(part, function () {
+      for (let i = 0; i < TALLY_SLICE; i++) {
+        const step = it.next();
+        if (step.done) {
+          done = true;
+          return;
+        }
+        if (visit(step.value[1], step.value[0]) === true) {
+          part.map.delete(step.value[0]);
+          deleted += 1;
+        }
+      }
+    });
+    if (!done) {
+      await nextTurn();
+    }
+  }
+  log.debug("Leaving slicedWalk(). " + deleted + " deleted.");
+  return deleted;
 }
 
 // The reverse of `snapshot()`'s rows, for the page.
@@ -641,8 +897,8 @@ function digestKey(text) {
   const colon = s.indexOf(':');
   const kind = colon > 0 && colon <= 16 ? s.slice(0, colon + 1) : '';
   log.debug("Leaving digestKey().");
-  return kind + 'sha256:' + nodeCrypto.createHash('sha256').update(s)
-    .digest('hex').slice(0, 12) + '…';
+  return kind + 'sha256:' + stsCrypto.digest('sha256', s, 'hex')
+    .slice(0, 12) + '…';
 }
 
 // The same for a `realms.map()` store, walked over every realm the owner's
@@ -719,6 +975,62 @@ function ejectExpired(now) {
   return { ejected: total, byCache: byCache, failed: failed };
 }
 
+// **AND IN SLICES (#704).** `ejectExpired()` walked every store in one turn
+// of the event loop, every minute in every process — a request on that
+// process waited for the whole walk. `ejectExpiredAsync()`, which the job
+// runs, gives the loop a turn between stores and, for a store whose ejector
+// `mapEjector()` or `realmMapEjector()` built, every TALLY_SLICE entries
+// inside it, deleting as it goes (`slicedWalk()`). An ejector written by hand
+// is still called whole, one store per turn. `ejectExpired()` stays, for a
+// caller that wants the answer now.
+/**
+ * `ejectExpired()`, yielding to the event loop between stores and every
+ * TALLY_SLICE entries within a helper-built ejector's store; run by the
+ * `caches.eject-expired` scheduler job.
+ *
+ * @param now - the time in milliseconds; now when omitted
+ * @returns a promise of what `ejectExpired()` answers
+ */
+async function ejectExpiredAsync(now) {
+  log.debug("Entering ejectExpiredAsync().");
+  const at = Number(now) || Date.now();
+  const byCache = {};
+  const failed = [];
+  let total = 0;
+  for (const name of Array.from(descriptors.keys())) {
+    const d = descriptors.get(name);
+    if (!d || typeof d.eject !== 'function') {
+      continue;
+    }
+    const plan = planOf(d);
+    let n = 0;
+    try {
+      if (plan) {
+        for (const part of plan.parts()) {
+          n += await slicedWalk(plan, part, function (value, key) {
+            return plan.expired(value, key, at) === true;
+          });
+        }
+      } else {
+        n = Number(d.eject(at)) || 0;
+      }
+    } catch (e) {
+      log.debug("Caught in ejectExpiredAsync(): " + ((e && e.message) || e));
+      failed.push(name + ': ' + ((e && e.message) || e));
+      await nextTurn();
+      continue;
+    }
+    if (n > 0) {
+      byCache[name] = n;
+      total += n;
+      countsFor(name).evictions += n;
+    }
+    await nextTurn();
+  }
+  log.debug("Leaving ejectExpiredAsync(). " + total + " ejected.");
+  return { ejected: total, byCache: byCache, failed: failed };
+}
+
 // The names of the stores that eject, for the page and the test.
 /**
  * Lists the stores that carry an ejector, sorted.
@@ -751,7 +1063,8 @@ function ejecting() {
 function mapEjector(map, expired) {
   log.debug("Entering mapEjector().");
   log.debug("Leaving mapEjector().");
-  return function (now) {
+  const eject = function (now) {
+    log.debug("Entering eject().");
     const gone = [];
     map.forEach(function (value, key) {
       if (expired(value, key, now)) {
@@ -761,8 +1074,25 @@ function mapEjector(map, expired) {
     gone.forEach(function (key) {
       map.delete(key);
     });
+    log.debug("Leaving eject(). " + gone.length + ".");
     return gone.length;
   };
+  // THE PLAN (#704): the Map and the test, so the registry can count the
+  // store and eject from it in slices (`tallyOf()`, `slicedWalk()`).
+  eject.plan = {
+    parts: function () {
+      log.debug("Entering parts().");
+      log.debug("Leaving parts().");
+      return [{ realm: null, map: map }];
+    },
+    expired: expired,
+    within: function (part, fn) {
+      log.debug("Entering within().");
+      log.debug("Leaving within().");
+      return fn();
+    }
+  };
+  return eject;
 }
 
 // The same for a `realms.map()` store: every realm's partition, each deleted
@@ -781,7 +1111,8 @@ function mapEjector(map, expired) {
 function realmMapEjector(realmsModule, store, expired) {
   log.debug("Entering realmMapEjector().");
   log.debug("Leaving realmMapEjector().");
-  return function (now) {
+  const eject = function (now) {
+    log.debug("Entering eject().");
     let total = 0;
     realmsModule.list().forEach(function (r) {
       const map = store.realmMap(r.id);
@@ -791,8 +1122,189 @@ function realmMapEjector(realmsModule, store, expired) {
         });
       }
     });
+    log.debug("Leaving eject(). " + total + ".");
     return total;
   };
+  // THE PLAN (#704), as `mapEjector()`'s: a part per realm, each walked
+  // inside its realm and deleted from through the store's own view.
+  eject.plan = {
+    parts: function () {
+      log.debug("Entering parts().");
+      const out = [];
+      realmsModule.list().forEach(function (r) {
+        const map = store.realmMap(r.id);
+        if (map) {
+          out.push({ realm: r, map: map });
+        }
+      });
+      log.debug("Leaving parts(). " + out.length + ".");
+      return out;
+    },
+    expired: expired,
+    within: function (part, fn) {
+      log.debug("Entering within().");
+      log.debug("Leaving within().");
+      return realmsModule.run(part.realm, fn);
+    }
+  };
+  return eject;
+}
+
+// ---------------------------------------------------------------------------
+// THE PAGE'S PROSE, FOR THE TRANSLATORS (#543 phase 2c). `GET
+// /admin-api/caches` answers each store's descriptor members as they were
+// registered, so the `caches` namespace's English is READ FROM THIS
+// REGISTRY rather than kept in a table: the catalog extractor loads the
+// whole protocol stack first, by which time every store has registered.
+//
+// What is harvested, per store: `title`, `description`, `hitMeaning`,
+// `notCountedWhy`, a `bound` given as a string, and a `bound` or `lifetime`
+// FUNCTION only when it returns nothing but string literals — which
+// `literalOnly()` decides from the function's own source. A function that
+// puts a setting's value, a count or a constant into its sentence answers a
+// different string from one configuration to the next, so it is either
+// filled from a template its owner declares in the descriptor's optional
+// `sentences` member (harvested here as well), or left English.
+//
+// NOT harvested: a store's `name`, `owner` and `settings` (identifiers), a
+// member that is the same text as some store's name (a `BoundedLru` with no
+// title is titled by its name, and translating that string would translate
+// the `name` beside it too), and `problem` — the text a descriptor threw,
+// and the STS-CORE-0096 sentence appended to it, are failures, and errors
+// stay English (#539).
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry the caches namespace's prose
+ * (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/caches'];
+
+// The source text of a function as a stream of tokens, each string literal
+// replaced by `S` and each comment dropped, or null when it holds a template
+// literal with a substitution (which is computed by definition).
+function tokensOf(src) {
+  log.debug("Entering tokensOf().");
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      const end = src.indexOf('\n', i);
+      i = end < 0 ? src.length : end;
+    } else if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end < 0 ? src.length : end + 2;
+      out += ' ';
+    } else if (c === '\'' || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) {
+        if (c === '`' && src[j] === '$' && src[j + 1] === '{') {
+          log.debug("Leaving tokensOf(). A substitution.");
+          return null;
+        }
+        j += src[j] === '\\' ? 2 : 1;
+      }
+      out += ' S ';
+      i = j + 1;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  log.debug("Leaving tokensOf().");
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+// Whether a descriptor's function returns nothing but string literals (its
+// sentence is the same in every configuration), judged from its source: a
+// body of `return 'a' + 'b';`, after the Entering/Leaving lines a named
+// function carries, or an arrow function answering such a sum.
+function literalOnly(f) {
+  log.debug("Entering literalOnly().");
+  if (typeof f !== 'function') {
+    log.debug("Leaving literalOnly(). Not a function.");
+    return false;
+  }
+  let src = '';
+  try {
+    src = Function.prototype.toString.call(f);
+  } catch (e) {
+    log.debug("Caught in literalOnly(): " + ((e && e.message) || e));
+    log.debug("Leaving literalOnly(). No source.");
+    return false;
+  }
+  const arrowAt = src.indexOf('=>');
+  const braceAt = src.indexOf('{');
+  let body;
+  if (arrowAt >= 0 && (braceAt < 0 || arrowAt < braceAt) &&
+      src.slice(arrowAt + 2).trim()[0] !== '{') {
+    body = 'return ' + src.slice(arrowAt + 2) + ';';
+  } else {
+    body = braceAt < 0 ? '' : src.slice(braceAt + 1, src.lastIndexOf('}'));
+  }
+  const tokens = tokensOf(body);
+  const rest = tokens === null ? null : tokens
+    .replace(/(?:[\w$]+\.)*debug ?\( ?S(?: ?\+ ?S)* ?\) ?;?/g, '')
+    .trim();
+  const yes = rest !== null && /^return S(?: ?\+ ?S)* ?;?$/.test(rest);
+  log.debug("Leaving literalOnly(). " + yes);
+  return yes;
+}
+
+/**
+ * Extracts the caches namespace (#543 phase 2c) from the registry itself:
+ * every registered store's prose members, the defaults, and the templates a
+ * store declares in `sentences` for a member it computes. See the comment
+ * above `PROSE_ROUTES` for what is left out and why.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // Lazily: this file is loaded by `helpers.js`, long before what
+  // `server_prose.ts` requires, and by the parent project's Kerberos copy,
+  // which has neither module and never calls this.
+  const serverProse = require('./server_prose');
+  const BoundedLru = require('./bounded_lru');
+  const harvest = serverProse.harvest;
+  const out = harvest('caches.registry.default', DEFAULTS,
+                      Object.keys(DEFAULTS));
+  // A store that kept a default says it in the default's words: held once,
+  // under the default's own key, not again under each store's.
+  const lru = BoundedLru.prose();
+  const held = new Set(Object.keys(out).map(function (k) {
+    return out[k];
+  }).concat(Object.keys(lru).map(function (k) {
+    return lru[k];
+  })));
+  const ids = new Set(names());
+  names().forEach(function (name) {
+    const d = descriptors.get(name);
+    const one = {
+      title: d.title,
+      description: d.description,
+      bound: typeof d.bound === 'function'
+        ? (literalOnly(d.bound) ? textOf(d.bound) : null)
+        : d.bound,
+      lifetime: literalOnly(d.lifetime) ? textOf(d.lifetime) : null,
+      hitMeaning: d.hitMeaning,
+      notCountedWhy: d.counted === false ? d.notCountedWhy : null
+    };
+    Object.keys(one).forEach(function (member) {
+      const v = one[member];
+      if (typeof v !== 'string' || held.has(v) || ids.has(v)) {
+        delete one[member];
+      }
+    });
+    Object.assign(out, harvest('caches.store.' + name, one,
+                               Object.keys(one)));
+    if (d.sentences && typeof d.sentences === 'object') {
+      Object.assign(out, harvest('caches.store.' + name + '.sentences',
+                                 d.sentences, Object.keys(d.sentences)));
+    }
+  });
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
 }
 
 /**
@@ -813,6 +1325,10 @@ module.exports = {
   realmMapRows: realmMapRows,
   realmRows: realmRows,
   ejectExpired: ejectExpired,
+  ejectExpiredAsync: ejectExpiredAsync,
+  snapshotAsync: snapshotAsync,
+  tallyOf: tallyOf,
+  TALLY_SLICE: TALLY_SLICE,
   ejecting: ejecting,
   mapEjector: mapEjector,
   realmMapEjector: realmMapEjector,
@@ -825,5 +1341,8 @@ module.exports = {
   forget: forget,
   clipKey: clipKey,
   SCOPES: SCOPES,
-  KINDS: KINDS
+  KINDS: KINDS,
+  DEFAULTS: DEFAULTS,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

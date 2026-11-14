@@ -24,6 +24,8 @@
 #   iya-sts     waits for schema-init to exit 0 (`dependsOn: SUCCESS`); a
 #                schema that fails to apply is a node that never starts,
 #                with the reason in the log.
+# (and `volume-init`, `cert-init` and `global-schema-init` beside them where
+# they apply — each is described where it is defined.)
 # ---------------------------------------------------------------------------
 resource "aws_ecs_cluster" "main" {
   name = local.prefix
@@ -40,15 +42,21 @@ locals {
   # whose must-agree settings (global.mode, publicBaseUrl, keys.source, …)
   # differ from the others', so they are spelt once.
   node_environment = merge({
-    STS_MODE                    = var.sts_mode
-    STS_PERSISTENCE_MODE        = "postgres"
-    STS_PERSISTENCE_COORDINATE  = "true"
-    STS_KEYS_SOURCE             = "persisted"
-    STS_CLUSTER_MODE            = "active-active"
-    STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = join(",", distinct([local.public_host, aws_lb.main.dns_name, "localhost"]))
-    STS_PROXY_PROTOCOL          = "v2"
-    STS_TRUSTED_PROXIES         = join(",", local.public_cidrs)
+    STS_MODE                   = var.sts_mode
+    STS_PERSISTENCE_MODE       = "postgres"
+    STS_PERSISTENCE_COORDINATE = "true"
+    STS_KEYS_SOURCE            = "persisted"
+    STS_CLUSTER_MODE           = "active-active"
+    STS_PUBLIC_BASE_URL        = local.public_base_url
+    STS_TLS_HOSTNAMES          = join(",", distinct([local.public_host, local.direct_host, aws_lb.main.dns_name, "localhost"]))
+    STS_PROXY_PROTOCOL         = "v2"
+    # BEHIND CLOUDFRONT the PROXY header's peer is an edge and the client is in
+    # X-Forwarded-For. With these ranges set the right-most entry that is not
+    # one of them is believed, so a caller cannot forge its address; a caller
+    # at the direct name is not in them, and the socket's peer is the answer.
+    STS_TRUST_PROXY             = tostring(local.cloudfront)
+    STS_TRUSTED_PROXIES         = join(",", concat(local.public_cidrs, local.cloudfront ? data.aws_ip_ranges.cloudfront[0].cidr_blocks : []))
+    STS_EDGE_PROXIES            = local.cloudfront ? join(",", data.aws_ip_ranges.cloudfront[0].cidr_blocks) : ""
     STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
     STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
     STS_WORKERS_DISPATCH        = var.workers_dispatch
@@ -83,8 +91,11 @@ locals {
     # the load balancer, and `locals.tf` leaves a default port out of the URL
     # altogether (`pki_public_url`).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
-    PKI_DISTRIBUTION_LDAP_HOST = local.public_host
-    PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
+    PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
+    # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8
+    # rules out ldaps://), and the load balancer no longer publishes it
+    # (locals.tf), so from outside the VPC that address does not resolve.
+    PKI_DISTRIBUTION_LDAP_PORT = "389"
 
     # REVOCATION IS NOT CONSULTED ON THESE CLUSTERS (rcbj, #371). A
     # certificate presented to a node, or registered and used, is not checked
@@ -97,11 +108,26 @@ locals {
     STS_PKI_REVOCATION_CHECK                      = "off"
     STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT = "off"
 
+    # AND SO PARANOID PKI MODE IS FORCED OFF (rcbj, 2026-11-10). Its `auto`
+    # is on in product (#1360), where it counts a revocation check that never
+    # ran as a refusal — so with the two rows above a product node refused
+    # Secrets Manager's own certificate (STS-KEYS-0044) and did not start
+    # (STS-CORE-0036). Off, every use case behaves as it did before #1360;
+    # the node logs STS-PKI-0239 once and /admin/pki/trust draws it red. An
+    # environment's `extra_environment` can set it back, together with a
+    # revocation check.
+    STS_PKI_PARANOID = "off"
+
     # The directory's ceiling, as the ENVIRONMENT's value rather than an
     # override, so resetting the override the bulk loads leave lands here
     # (variables.tf, reset-environment.js).
     LDAP_MAX_ENTRIES     = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX = tostring(var.applications_max)
+
+    # The realm cap (#368), raised for the suite as an ENVIRONMENT value, so
+    # resetting the default realm's override (sts_realm_count_limit.js puts
+    # its own back) lands here rather than on the service default of 10.
+    STS_REALMS_MAX_COUNT = tostring(var.realms_max_count)
 
     # WHERE A RISK DATASET UPLOAD IS WRITTEN (#214): the task's own EBS volume,
     # below. Set explicitly, although it is the setting's default resolved,
@@ -225,6 +251,9 @@ locals {
   # environment every value is present and the list is the one it was.
   node_secrets = [for s in concat(
     [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = local.shared_secret_arns["admin-api-client-secret"] }],
+    # What CloudFront proves itself with (cloudfront.tf, #1336).
+    # In a cell it is the global/ stack's replica (#1341), dropped in `base`.
+    [{ name = "STS_EDGE_SECRET", valueFrom = local.edge_secret_arn }],
     # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
     # ECS from Secrets Manager rather than written into the task
     # definition, like the three secrets beside it: a task definition is
@@ -238,6 +267,9 @@ locals {
     # this region, because every cell must hold the same values.
     local.product ? [
       { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = local.shared_secret_arns["bootstrap-admin-password"] },
+      # And its NAME (secrets.tf, 2026-11-10): product mode replaces a default
+      # name with one nobody outside the database can read.
+      { name = "STS_ADMIN_BOOTSTRAP_USERNAME", valueFrom = local.shared_secret_arns["bootstrap-admin-username"] },
       # And the KDC's two (secrets.tf, 2026-09-18): without them a product
       # KDC builds no krbtgt and no service account, and issues nothing.
       { name = "KRB5_KRBTGT_PASSWORD", valueFrom = local.shared_secret_arns["krb5-krbtgt-password"] },
@@ -310,6 +342,9 @@ resource "aws_ecs_task_definition" "node" {
         { name = "STS_ACM_CERTIFICATE_ARN", value = local.public_certificate_arn },
         { name = "STS_TLS_DIR", value = local.tls_dir },
         { name = "AWS_REGION", value = local.region },
+        # Who the key is handed to: the user the service image runs as since
+        # #254, which must be able to read it (export.sh).
+        { name = "STS_TLS_OWNER", value = "10001:10001" },
       ]
       mountPoints = [
         { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = false },
@@ -320,6 +355,26 @@ resource "aws_ecs_task_definition" "node" {
     local.global_schema_init ? [local.global_schema_init_container[each.key]] : [],
     [
       local.schema_init_container[each.key],
+      # THE UPLOAD VOLUME, GIVEN TO THE USER THE SERVICE RUNS AS (#254,
+      # 2026-10-06). The image runs as `sts`, uid and gid 10001, since that
+      # change, and a managed EBS volume arrives as a freshly made xfs file
+      # system whose root is root's, 0755 — ECS copies nothing of the image's
+      # own `data/risk-uploads` (which the Dockerfile does chown) onto it, and
+      # has no setting for the owner of a volume's root. So without this the
+      # first upload fails with EACCES, on every node, and only when somebody
+      # uploads. The SERVICE IMAGE, so nothing else has to be built or
+      # pulled, and AS ROOT, which is the whole of its job and why it is the
+      # one container here with a `user`: it runs one `chown` of one empty
+      # directory and exits, before the node starts, and holds no secret.
+      {
+        name             = "volume-init"
+        image            = "${local.ecr_repository_url}:${var.image_tag}"
+        essential        = false
+        user             = "0"
+        command          = ["chown", "10001:10001", local.risk_upload_dir]
+        mountPoints      = [{ sourceVolume = local.risk_upload_volume, containerPath = local.risk_upload_dir, readOnly = false }]
+        logConfiguration = local.container_log[each.key]
+      },
       {
         name      = "iya-sts"
         image     = "${local.ecr_repository_url}:${var.image_tag}"
@@ -328,11 +383,30 @@ resource "aws_ecs_task_definition" "node" {
         # the public certificate must not start: it would serve a self-signed
         # one under a public name, which is the single error this deployment
         # exists to avoid, and it would do it looking healthy.
+        # And the upload volume must be the service user's before the node
+        # can write to it (`volume-init`, above).
         dependsOn = concat(
           [{ containerName = "schema-init", condition = "SUCCESS" }],
+          [{ containerName = "volume-init", condition = "SUCCESS" }],
           local.public_name ? [{ containerName = "cert-init", condition = "SUCCESS" }] : [],
           local.global_schema_init ? [{ containerName = "global-schema-init", condition = "SUCCESS" }] : [],
         )
+        # THE LOW PORTS, BOUND BY A USER THAT IS NOT ROOT (#254, 2026-10-06).
+        # 88, 389 and 636 are below 1024, and the image runs as uid 10001
+        # since that change. Docker sets this sysctl to 0 in every container's
+        # network namespace on its own; Fargate is not promised to, so it is
+        # said here, and Fargate (platform 1.4.0 and later) accepts any
+        # namespaced `net.*` sysctl. IN awsvpc MODE THE NAMESPACE IS THE
+        # TASK'S, so this applies to every container in it — harmless, since
+        # nothing else here listens — and it is set on this one container
+        # only, because ECS takes the value of whichever container that sets
+        # it starts last, and one setter cannot disagree with itself.
+        # NOT `setcap cap_net_bind_service` on node: a file capability makes
+        # node a secure exec, which ignores NODE_PATH and NODE_EXTRA_CA_CERTS,
+        # and the image depends on both (the root Dockerfile says so).
+        systemControls = [
+          { namespace = "net.ipv4.ip_unprivileged_port_start", value = "0" },
+        ]
         # And in a cell, the inter-cell listener (intercell.tf), which no load
         # balancer carries.
         portMappings = concat([
@@ -355,12 +429,18 @@ resource "aws_ecs_task_definition" "node" {
         # The main port is HTTPS on a certificate the cluster issues itself, so
         # the probe does not verify it; it asks whether the service answers.
         # Loopback connections are served without the PROXY header.
+        #
+        # startPeriod is 300 because that is as long as ECS allows one to be
+        # (#330). Failures inside it do not count toward `retries`. A success
+        # ends it early, so this is not the window that protects a slow
+        # start — the service grace below is, and it keeps ignoring this
+        # probe after the start period has closed.
         healthCheck = {
           command     = ["CMD", "node", "-e", "require('https').get({host:'127.0.0.1',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
           interval    = 15
           timeout     = 5
           retries     = 4
-          startPeriod = 180
+          startPeriod = 300
         }
         ulimits = [{ name = "nofile", softLimit = 65536, hardLimit = 65536 }]
         # THE UPLOAD VOLUME, READ-WRITE: the node writes, hashes, reads back
@@ -380,9 +460,38 @@ resource "aws_ecs_task_definition" "node" {
 }
 
 locals {
+  # How long, after a task reaches RUNNING, the scheduler ignores unhealthy
+  # load-balancer and container checks (#330). The listener binds only once
+  # the front has restored its state and — where a pool is configured — the
+  # first worker of each pool has settled (`server.js` calls `bind()` from
+  # `requestPool.start()`). `workers.startTimeoutMs` is 300000 on globalidp
+  # and testidpna, and the front's restore sits in front of that fork. The
+  # target groups go unhealthy in about 30 seconds while nothing is
+  # listening (`nlb.tf`: interval 10, threshold 3); two successes at that
+  # interval are what marks one healthy again. 600 covers the configured
+  # start, the restore in front of it, and those successes, with room. It
+  # does not cover `workers.startTimeoutMs` at its setting maximum
+  # (900000): a deployment that raises the timeout past what this window
+  # holds has to raise this too.
+  #
+  # THE STARTUP PROPERTY STAYS. Every published port's target group is still
+  # on the service. A task whose 636, or any other published port, is still
+  # down when this window ends does not reach steady state. A task that has
+  # already been up is not in this window: three consecutive failures of
+  # any target group replace it (nlb.tf: interval 10, threshold 3).
   service_common = {
-    health_check_grace_period_seconds = 300
+    health_check_grace_period_seconds = 600
   }
+
+  # THE TIMEOUT THE GRACE HAS TO HOLD (rcbj on #695): the worker start an
+  # environment configures, in seconds, plus 60 for the front's restore in
+  # front of it and the two healthy checks after it. Only a timeout set in
+  # `extra_environment` is seen here; one set at runtime through the console
+  # is outside Terraform. Absent, the service default is inside the grace.
+  grace_needed_seconds = (
+    try(tonumber(var.extra_environment["STS_WORKERS_START_TIMEOUT_MS"]), 0) /
+    1000 + 60
+  )
 }
 
 resource "aws_ecs_service" "first" {
@@ -472,6 +581,16 @@ resource "aws_ecs_service" "first" {
   timeouts {
     create = "30m"
     update = "30m"
+  }
+
+  # Refused at plan rather than found as a task replaced mid-start (#695):
+  # a grace shorter than the start it waits for kills every start.
+  lifecycle {
+    precondition {
+      condition = (local.service_common.health_check_grace_period_seconds >=
+      local.grace_needed_seconds)
+      error_message = "health_check_grace_period_seconds (${local.service_common.health_check_grace_period_seconds}) is shorter than STS_WORKERS_START_TIMEOUT_MS / 1000 + 60 (${local.grace_needed_seconds}): a starting task would be replaced before its workers could finish starting. Raise the grace in ecs.tf's service_common, or lower the timeout."
+    }
   }
 }
 

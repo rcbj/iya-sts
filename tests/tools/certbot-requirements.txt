@@ -7,7 +7,7 @@
 # Generated on 2026-09-26 in ubuntu:latest (Python 3.14) with
 #   pip-compile --generate-hashes --strip-extras --no-header
 # from the one line `certbot==5.8.0`. BUMPING certbot is: change that line,
-# regenerate this file the same way, and run tests/vendored/sts_acme_certbot.js.
+# regenerate this file the same way, and run tests/protocol/sts_acme_certbot.js.
 acme==5.8.0 \
     --hash=sha256:44c4edb53acdd3fa8402cb29c78a6d1bd2005d777a4d2fcd12663bbc3c147b34 \
     --hash=sha256:637501767248156545d85c23b806381ac346c5eac759f8e35052af85b7bb3933
@@ -16,9 +16,9 @@ certbot==5.8.0 \
     --hash=sha256:a4a2c7b0459bb626b3791ef07b6df26bbb222d2324783ba3e60f76c0933eec87 \
     --hash=sha256:c06793e6a0169b07ee09e11e6a017c7d5a77310055d693fffd66c53363ab87ff
     # via -r r.in
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
+certifi==2026.10.18 \
+    --hash=sha256:73191c47aaa79da394e8fee2dbc2ec827432cab56311122c9e47abf79e390f62 \
+    --hash=sha256:b9995d97b64d0431a5af837d8ca8cd6238104d1f319f04bd93ea43124d6c861e
     # via requests
 cffi==2.1.1 \
     --hash=sha256:046bfc24911b37851ee1b51aab8bffe713d89c68c6a057b09484ce9fd5f69b4e \

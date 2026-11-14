@@ -1,0 +1,5 @@
+{
+  "lede": "Every operation this service's management API offers, read from the same OpenAPI document the API publishes, with a form that calls it. Calls are made with this console's own access token, issued to <strong>{who}</strong> and bound to this browser's key, carrying <code>{scope}</code> — the scopes your console roles grant and no others, so an operation you may not perform is refused here exactly as it would be anywhere else.",
+  "you": "you",
+  "reading": "Reading <code>{spec}</code>&hellip;"
+}

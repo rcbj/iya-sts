@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "Local"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "L’appel est arrivé sur le socket de domaine Unix. Un véritable serveur SPIRE fait entièrement confiance à son socket privé — c’est ainsi que fonctionne la CLI spire-server —, et le contrôle d’accès repose sur les permissions du système de fichiers du socket. Le mode développement suppose cette frontière ; le mode PRODUIT la vérifie à chaque connexion : le socket créé en 0600 dans un répertoire que les autres utilisateurs ne peuvent pas atteindre, et l’uid noyau de l’appelant identique à celui de ce service. `spiffe.trustLocalSocket` la désactive, ce qui fait exiger au socket un SVID comme le port TCP, et c’est la seule façon d’éprouver le chemin « j’ai été refusé sur le socket » d’un client."
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "Agent"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "L’appelant a présenté un X509-SVID dont le SPIFFE ID est un identifiant d’agent (/spire/agent/...) et qui nomme un agent que ce serveur a attesté et n’a pas banni. Un agent banni est refusé ici et pas seulement lors d’AttestAgent, ce qui donne un sens au bannissement sur /admin/spiffe/agents pour un appelant qui détient déjà un SVID."
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "Administrateur"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "Le SPIFFE ID de l’appelant est nommé dans `spiffe.adminIds`, ou une entrée d’enregistrement pour cette identité est marquée `admin`. Les deux, parce que SPIRE a les deux : admin_ids n’a besoin d’aucune entrée, et l’indicateur sur une entrée est ce qu’un opérateur définit depuis la console. C’est ce qui permet à un appelant distant de gérer les entrées d’enregistrement."
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "Aval"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "Une entrée d’enregistrement pour l’identité de l’appelant est marquée `downstream` — un serveur SPIRE imbriqué, qui peut demander une AC intermédiaire et publier une autorité, et ne peut rien faire d’autre."
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "Anonyme"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "Aucun identifiant n’a été présenté, ou un identifiant l’a été et n’a pas été vérifié. Deux méthodes lui restent ouvertes, et elles doivent l’être toutes les deux : AttestAgent, car un agent n’a pas de SVID tant que cet appel ne lui en a pas donné un, et GetBundle, car le bundle de confiance est public par conception."
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "L’API SPIRE Server uniquement. Son port TCP est en TLS mutuel : un appelant présente un X509-SVID de ce domaine de confiance, ce service le vérifie par rapport au bundle de confiance et à la fenêtre de validité propre du certificat, extrait le SPIFFE ID du subjectAltName URI (jamais du sujet), le classe comme local, agent, admin ou downstream, et autorise la méthode selon le policy_data.json propre à SPIRE, ligne par ligne. Son socket Unix est l’entité `local` et n’a besoin d’aucun identifiant, ce qui est la façon dont la CLI spire-server atteint un véritable serveur. La Workload API n’est délibérément concernée par rien de tout cela : sa spécification indique qu’un client MUST NOT être tenu de s’authentifier."
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "Le port TCP demande un certificat client et N’en exige PAS, car AttestAgent est ouvert à un appelant sans SVID — un agent n’en a pas tant que cet appel ne lui en a pas donné un. Récupérez le bundle depuis le point de terminaison de bundle, vérifiez ce serveur par rapport à celui-ci, puis effectuez l’attestation."
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "Un identifiant accepté est ici une IDENTITÉ comme une autre : il rejoint le même entonnoir qu’utilise chacune des seize familles de protocoles, si bien que son détenteur apparaît sur /admin/users et reçoit une entrée d’annuaire sous ou=users — nommée par une empreinte, avec l’identifiant porté sous `spiffeSubject`, et RÉUTILISÉE lorsque la même identité arrive à nouveau par une autre voie. Trois acceptations le font : un X509-SVID via TLS mutuel (une fois par connexion), un agent qui s’atteste, et un JWT-SVID vérifié par ValidateJWTSVID. UNE ÉMISSION EST UNE QUATRIÈME VOIE D’ENTRÉE et ne fait pas partie de ces trois : chaque identité pour laquelle ce domaine de confiance produit un X509-SVID reçoit la même entrée, portant le certificat sous la forme des six mêmes attributs `x509*` qu’écrit un certificat client TLS vérifié — ATTRIBUÉS plutôt qu’ajoutés, car un SVID est produit à nouveau à chaque demi-durée de vie, avec `x509svidsIssued` et deux horodatages à côté. Ce n’est pas compté comme une authentification, car se voir émettre un identifiant n’est pas en présenter un."
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "L’entrée consigne aussi si l’identité peut encore se voir émettre un identifiant ICI — `spiffeCredentialStatus`, avec un motif à côté. CE N’EST PAS UN STATUT DE CERTIFICAT ET RIEN NE LE RELIT : SPIFFE n’a pas de révocation, et un SVID déjà émis vérifie par rapport au bundle jusqu’à son expiration, quoi qu’indique l’annuaire. Ce qu’il consigne, ce sont les trois choses qui mettent fin à la capacité d’une identité à en obtenir un NOUVEAU — la suppression de sa dernière entrée d’enregistrement, le bannissement de son agent, la suppression de son agent —, chacune étant réversible et consignée de la même façon lorsqu’elle est annulée. L’entrée n’est jamais supprimée."
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "désactivé (spiffe.workloadPort vaut 0)"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "servi (développement, non attesté)"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "non servi (produit, source non déclarée authentifiée)"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "non servi (produit, adresse de liaison générique)"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "servi (produit, source déclarée authentifiée)"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "Ce que SPIRE émet par défaut et ce que recommande la spécification X509-SVID. La valeur par défaut ici pour la même raison."
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "Une courbe plus grande, pour un client qui en épingle une."
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "Plus grande encore. Bon à savoir : environ une signature P-521 sur 256 est plus courte d’un octet que les 255 autres, ce qui constitue un vrai cas limite d’interopérabilité et explique pourquoi x509.js a une fonction pour cela."
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "Le minimum que permet la spécification X509-SVID pour RSA. Plus lente à générer — c’est perceptible au démarrage — et produit des SVID beaucoup plus volumineux."
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "Plusieurs secondes de génération au démarrage, ce qu’il vaut mieux savoir avant de se demander pourquoi le point de terminaison de bundle ne répond pas encore."
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "Autorisée pour X.509 par la spécification. NON disponible pour l’autorité JWT : jsonwebtoken, l’implémentation JWS de ce service, ne signe pas en EdDSA."
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "La classe abstraite que porte chaque entrée."
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "La seule classe ENREGISTRÉE qui convienne : elle apporte cn et description, si bien que le NOM d’une entrée d’enregistrement est un attribut standard alors que rien d’autre la concernant ne peut l’être. La même classe qu’utilise ou=applications, pour la même raison."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "INVENTÉE. Aucun schéma LDAP enregistré n’a de SPIFFE ID, de parent ID ou de sélecteur — SPIRE conserve ses entrées en SQL et rien d’autre ne les conserve nulle part —, il n’y avait donc rien à emprunter."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "INVENTÉE, pour la même raison, sur les entrées sous ou=agents."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "LA CLÉ : l’identifiant de l’entrée, que l’API SPIRE Server appelle `id` et que nomment BatchUpdateEntry et BatchDeleteEntry. Généré ici sous forme de 32 caractères hexadécimaux et jamais réutilisé. Le cn propre de l’entrée en est une forme abrégée ; c’est donc sur cet attribut qu’il faut effectuer les recherches — la même disposition qu’appIdentifier a déjà un conteneur plus loin."
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "La valeur du RDN : l’identifiant de l’entrée."
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "L’IDENTITÉ QU’ACCORDE CETTE ENTRÉE — le SPIFFE ID émis pour une charge de travail correspondante. Refusé s’il n’est pas un SPIFFE ID valide, s’il appartient à un autre domaine de confiance ou s’il se trouve sous le chemin réservé /spire."
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "QUI PEUT L’ÉMETTRE : le SPIFFE ID de l’agent (ou de ce serveur) sous lequel cette entrée est rattachée. Il détermine les entrées dont GetAuthorizedEntries et SyncAuthorizedEntries informent un agent : celles qui se trouvent sous son propre SPIFFE ID ou sous un alias de nœud auquel correspondent ses sélecteurs, et BatchNewX509SVID et NewJWTSVID refusent à un agent toute autre entrée."
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "Une valeur par sélecteur, écrite `type:value` — `unix:uid:1000`, `k8s:ns:default`, `docker:label:app:web`. Le type est tout ce qui précède le PREMIER deux-points et la valeur est tout le reste, deux-points compris, c’est pourquoi ils sont stockés sous forme d’une seule chaîne plutôt que d’une paire : découper à chaque deux-points, c’est ainsi que `docker:label:app:web` devient un sélecteur que personne n’a écrit."
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "La durée de vie en secondes des X509-SVID que produit cette entrée. Absent ou 0 signifie spiffe.svidTtl."
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "La même chose pour les JWT-SVID. Absent ou 0 signifie spiffe.jwtSvidTtl."
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "Des subjectAltNames DNS ajoutés au SVID à côté du SPIFFE ID. Ce qui rend un SVID utilisable par un logiciel TLS qui vérifie un nom d’hôte et ne sait pas lire un SPIFFE ID."
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "Les noms de domaines de confiance dont les bundles sont remis à une charge de travail détenant cette identité — X509SVIDResponse.federated_bundles. Un nom sans bundle ici est consigné et n’apporte simplement rien, car une relation de fédération configurée avant l’arrivée du bundle est l’ordre normal des choses."
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "L’indication de l’opérateur lorsqu’une charge de travail reçoit plus d’un SVID — `internal`, `external`. Transmise telle quelle à la Workload API ; rien ici ne la lit."
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "fefc555630e7c657",
+    "text": "TRUE lorsque le détenteur peut appeler les méthodes d’administration de l’API SPIRE Server — entrées, agents, bundles, relations de fédération, frappe d’un SVID — via TLS mutuel. APPLIQUÉ dans les deux modes : l’API du serveur fait d’un appelant un `admin` lorsqu’une entrée non expirée pour son identité porte cet indicateur ou que spiffe.adminIds le nomme, et refuse ces méthodes à un appelant distant qui n’est ni l’un ni l’autre (l’appelant `local` du socket Unix privé est l’autre voie d’accès). Lu à chaque appel, de sorte qu’une modification s’applique dès l’appel suivant."
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "16aab8ec2a97d549",
+    "text": "TRUE lorsque le détenteur est un serveur SPIRE en aval qui peut demander une AC intermédiaire (NewDownstreamX509CA) et publier une autorité JWT ou WIT. APPLIQUÉ dans les deux modes : ces méthodes sont refusées à un appelant qu’aucune entrée non expirée ne marque comme en aval, et l’indicateur n’accorde rien d’autre."
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "TRUE lorsque le SVID doit être écrit dans un plugin de stockage de SVID plutôt que remis à la charge de travail. Consigné et sans effet — ce service n’a pas de plugins de stockage."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "Le moment où l’ENTRÉE elle-même cesse de s’appliquer, en secondes depuis l’epoch. À distinguer d’une durée de vie de SVID : ceci retire l’enregistrement. Une entrée expirée est conservée et signalée comme expirée plutôt que supprimée, car une entrée disparue ne peut pas être distinguée d’une entrée que personne n’a créée."
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "Incrémenté à chaque modification. L’API SPIRE Server le publie et un agent l’utilise pour distinguer « l’entrée que je détiens est à jour » de « je détiens une entrée »."
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "Comment cette entrée est arrivée ici : `seed`, `console`, `api`, `grpc`, `auto` (inventée pour une charge de travail qui ne correspondait à rien) ou `ldap`. Ce qui distingue une entrée inventée d’une entrée voulue par quelqu’un."
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "Combien de SVID ont été émis au titre de cette entrée. ATTRIBUÉ à chaque modification — un compteur qui accumulerait des valeurs n’aurait aucun sens — et un nombre vivant dans une entrée d’annuaire, ce qu’un véritable annuaire ne contiendrait pas."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime, l’émission la plus récente à son titre."
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime. À côté du createTimestamp propre de l’entrée, car l’API SPIRE Server publie `created_at` sous forme de nombre et un lecteur doit pouvoir constater que les deux désignent le même instant."
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "Une ligne indiquant d’où vient cette entrée."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "LA CLÉ d’une entrée d’agent : le SPIFFE ID propre de l’agent, toujours sous le chemin réservé /spire/agent."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "L’attesteur de nœud qui a vérifié l’agent — `join_token`, et les autres types qu’un domaine nomme dans spiffe.nodeAttestors. Un type qu’aucun attesteur ici ne vérifie est refusé lors d’AttestAgent, jamais consigné."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "Les sélecteurs qu’a produits l’attestation. Inventés à partir de ce que l’agent a envoyé, pour la même raison."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "TRUE lorsque BanAgent a été appelé. Un agent banni est REFUSÉ lors d’AttestAgent et de RenewAgent — l’un des rares refus de ce service —, car un agent qu’on ne pourrait pas bannir ferait du bouton de bannissement un mensonge."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "Indique si l’attesteur peut être exécuté à nouveau sans opérateur. Signalé à l’agent, qui décide de la suite à donner."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "SHA-256 sur le DER du SVID actuel de l’agent, ce que porte spire.api.types.Agent et ce qui permet à un opérateur de distinguer deux agents ayant une même identité."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "Le moment où ce SVID expire, en secondes depuis l’epoch."
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime, la première attestation de cet agent."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime, la fois la plus récente."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "Combien de fois il s’est attesté ou a été renouvelé. ATTRIBUÉ, non accumulé."
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "ce service"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "ce registre"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "l’appelant"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "l’agent"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "Aucun identifiant. Ce socket est l’entité `local` et bénéficie d’une confiance totale, ce qui est la façon dont fonctionne la CLI spire-server."
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "Aucun identifiant, depuis un processus s’exécutant sous l’uid propre de ce service : le mode produit vérifie à chaque connexion que le socket est privé et lit l’uid de l’appelant auprès du noyau avant qu’il ne soit l’entité `local`."
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "Personne n’est ici l’entité `local` : le mode produit vérifie la frontière du socket et ne le peut pas ({{reason}}). Présentez le X509-SVID d’un administrateur sur le port TCP."
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "l’uid du pair ne peut pas être lu — {{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "Un X509-SVID est exigé même ici (spiffe.trustLocalSocket est désactivé)."
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "Aucun, et il ne doit y en avoir aucun : la spécification Workload Endpoint interdit d’en exiger un."
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "TLS mutuel. Vérifiez ce serveur par rapport au bundle de confiance, présentez votre propre X509-SVID et attendez-vous à être autorisé méthode par méthode."
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "Aucun — l’authentification est désactivée ; ce port est donc en gRPC simple et chaque méthode est ouverte à tous."
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "Aucun, et il ne doit y en avoir aucun : la spécification Workload Endpoint interdit d’en exiger un. Le réseau est DÉCLARÉ comme authentifiant les adresses sources (spiffe.workloadTcpSourceAuthenticated) ; un appelant reçoit donc les entrées que sélectionne son adresse peer:."
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "Aucun, et il ne doit y en avoir aucun : la spécification Workload Endpoint interdit d’en exiger un. Rien n’atteste un appelant ici (développement) : le déploiement sécurise ce port par d’autres moyens ou ne l’expose pas."
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "Rien n’écoute ici."
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "TLS mutuel. Vérifiez ce serveur en tant que spiffe://<trust domain>/spire/server par rapport au bundle de confiance, présentez le X509-SVID d’un broker nommé dans spiffe.brokers, et envoyez broker.spiffe.io: true à chaque appel."
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "l’attestation des charges de travail n’est pas disponible ici : {{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "le socket n’est pas privé"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "L’uid, le gid et les groupes supplémentaires que le noyau indique pour le processus de l’appelant, ainsi que le chemin et le SHA-256 de son exécutable."
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "Le conteneur Docker dans lequel s’exécute le processus de l’appelant, tel que Docker Engine en indique les labels, l’environnement et l’image."
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "Le pod et le conteneur Kubernetes dans lesquels s’exécute le processus de l’appelant, tels que les indique le kubelet du nœud."
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "L’unité systemd qui contient le processus de l’appelant, telle que systemd l’indique via D-Bus : son identifiant et son fichier d’unité."
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "le processus du pair n’a pas pu être lu ; seuls son uid et son gid sont donc attestés"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "le pair se trouve dans un autre espace de noms pid (pid 0) ; seuls son uid et son gid sont donc attestés — partagez l’espace de noms pid pour le reste"
+  }
+}

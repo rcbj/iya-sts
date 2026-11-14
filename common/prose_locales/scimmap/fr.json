@@ -1,0 +1,42 @@
+{
+  "scimmap.user.userName.note": {
+    "en": "e802eafbefe0f779",
+    "text": "La contrainte d’unicité SCIM. C’est le RDN d’une entrée créée automatiquement, donc pour toute personne que ce service a authentifiée, c’est aussi son nom de connexion — mais ce n’est PAS l’id SCIM, qui est l’entryUUID de l’entrée."
+  },
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "L’identifiant propre du client de provisionnement pour cette personne. Stocké tel quel et lu par rien ici."
+  },
+  "scimmap.user.active.note": {
+    "en": "eef190d9fd08aa38",
+    "text": "DÉSACTIVE LE COMPTE. false écrit le verrou administratif 000001010000Z et met fin à tout ce que détient la personne ; toutes les portes la refusent ensuite. true le supprime. Non envoyé : inchangé."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": {
+    "en": "c77936e2f9b505c6",
+    "text": "Un DN dans l’annuaire et un id dans SCIM, traduits dans les deux sens par les gestionnaires SCIM depuis que l’id est devenu l’entryUUID (2026-09-14). Une valeur ne désignant aucune entrée est conservée telle qu’elle a été envoyée."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "Les partenaires de fédération dont les sujets connectent cette personne, chacun { relationship, issuer, subject } — issuer facultatif en entrée, le fedPeer de la relation. NON ENVOYÉ : inchangé, de sorte qu’un client de provisionnement qui ignore tout de cette extension ne peut délier personne en l’omettant. Envoyé, même vide : remplacé, et chaque lien supprimé met fin aux sessions auxquelles ce partenaire a connecté la personne. Un lien que porte une autre personne est refusé avec 409."
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "LECTURE SEULE, comme l’exige RFC 7643 section 4.1.2. L’appartenance est un fait concernant l’entrée du GROUPE ; elle est donc modifiée via une ressource Group et jamais via une ressource User. Résolue par groupsOfUser() de ldap_server.js, qui est la même fonction que lit la revendication groups — ainsi un jeton et une ressource SCIM ne peuvent pas être en désaccord sur qui appartient à quoi."
+  },
+  "scimmap.group.members.note": {
+    "en": "e791c95075db5178",
+    "text": "La LECTURE résout member, uniqueMember et memberUid de la même façon ; l’ÉCRITURE place une nouvelle valeur dans `member`, puisqu’un id de membre SCIM est un DN. Un membre orphelin — un DN auquel rien n’est stocké — est renvoyé comme membre, car c’est ce que dit le groupe qui fait foi, et cet annuaire n’applique délibérément aucune intégrité référentielle."
+  },
+  "scimmap.schema.plain": {
+    "en": "9eb4e31a2b06f959",
+    "text": "propre à ce service (aucun type standard)"
+  },
+  "scimmap.schema.claims": {
+    "en": "1af3e6d95ddf4877",
+    "text": "propre à ce service (#128 ; aucun type standard)"
+  },
+  "scimmap.schema.federation": {
+    "en": "e45ae284f8f1439e",
+    "text": "propre à ce service (#109 ; aucun type standard)"
+  }
+}

@@ -14,9 +14,12 @@
 // route: `mgmt-api/admin_api.ts` spreads ROUTES into its table.
 // ===========================================================================
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
+import ResponseModelKit = require('../common/response_model_kit');
 
 type Req = any;
 type Res = any;
@@ -28,6 +31,7 @@ interface ProviderCommandsApiDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   errorCodes: typeof errorCodes;
   loadCommands(): Json;
+  loadViews(): Json;
   loadOutbound(): Json;
 }
 
@@ -76,6 +80,10 @@ class ProviderCommandsApi {
       },
       loadOutbound: function (): Json {
         return require('./outbound_delivery');
+      },
+      // The console's paging, required lazily for the modules' reason.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -98,15 +106,114 @@ class ProviderCommandsApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommandsApi.sendJson(). status=" + status);
-    const reply = Object.assign({}, body);
+    // Not only at the top: a delivery's row carries one too (#1355).
+    const reply = Object.assign({}, ResponseModelKit.actAnswer(res, body));
     delete reply.errorCode;
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify(reply, null, 2));
     log.debug("Leaving ProviderCommandsApi.sendJson().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // BOTH PAGES' LISTS, PAGED (#313's sweep, 2026-10-12).
+  //
+  // `/admin/commands` drew its accounts and deliveries cut at 500 and its
+  // runs at 100, silently, and `/admin/deliveries` each kind at 200: a row
+  // past the cut could not be reached from the page or from this API. The
+  // two reports now answer whole and these two views page them — one
+  // parameter per list, one shared `per` — so the page, which is drawn from
+  // this answer, and a caller read the same slice. Counts are over the
+  // whole lists.
+  // ---------------------------------------------------------------------------
+  /**
+   * The page parameter of one delivery kind's table: its id in camel case,
+   * `backchannel-logout` moving on `backchannelLogoutPage`.
+   *
+   * @param id - the kind's id
+   * @returns the parameter's name
+   */
+  static kindParam(id: string): string {
+    helpers.log.debug("Entering ProviderCommandsApi.kindParam().");
+    helpers.log.debug("Leaving ProviderCommandsApi.kindParam().");
+    return ProviderCommandsApi.kindName(id) + 'Page';
+  }
+
+  /**
+   * One delivery kind's list name, its id in camel case.
+   *
+   * @param id - the kind's id
+   * @returns the name `pagingOf()` takes
+   */
+  static kindName(id: string): string {
+    helpers.log.debug("Entering ProviderCommandsApi.kindName().");
+    helpers.log.debug("Leaving ProviderCommandsApi.kindName().");
+    return String(id || '').replace(/-([a-z])/g, function (all: string,
+                                                         c: string): string {
+      return c.toUpperCase();
+    });
+  }
+
+  /**
+   * Builds `/admin/commands`' answer, each of its four lists one page.
+   *
+   * @param query - the request's query
+   * @returns the report, paged
+   */
+  commandsView(query: Json): Json {
+    const { log, loadCommands, loadViews } = this.deps;
+    log.debug("Entering ProviderCommandsApi.commandsView().");
+    const views = loadViews();
+    const report = loadCommands().report({ q: query.q, state: query.state });
+    const out = Object.assign({}, report, {
+      // Every client's id, for the two send forms' menus: a menu built from
+      // the page would offer only the clients on it.
+      clientIds: report.clients.map(function (c: Json): string {
+        return c.clientId;
+      }),
+      listCounts: {}, paging: {}
+    });
+    ['clients', 'accounts', 'runs', 'deliveries'].forEach(function (name) {
+      const page = views.pagedRows(query, report[name] || [],
+                                   { name: name, noun: name });
+      out[name] = page.shown;
+      out.listCounts[name] = (report[name] || []).length;
+      out.paging[name] = views.pagingJson(page.paging);
+    });
+    log.debug("Leaving ProviderCommandsApi.commandsView().");
+    return out;
+  }
+
+  /**
+   * Builds `/admin/deliveries`' answer, each kind's rows one page.
+   *
+   * @param query - the request's query
+   * @returns the kinds, each paged, and the states
+   */
+  deliveriesView(query: Json): Json {
+    const { log, loadOutbound, loadViews } = this.deps;
+    log.debug("Entering ProviderCommandsApi.deliveriesView().");
+    const views = loadViews();
+    const report = loadOutbound().kindReport({ state: query.state,
+                                               q: query.q, kind: query.kind });
+    const kinds = report.kinds.map(function (k: Json): Json {
+      const page = views.pagedRows(query, k.rows || [],
+        { name: ProviderCommandsApi.kindName(k.id), noun: 'deliveries' });
+      return Object.assign({}, k, { rows: page.shown,
+        matched: (k.rows || []).length,
+        paging: views.pagingJson(page.paging) });
+    });
+    log.debug("Leaving ProviderCommandsApi.deliveriesView(). " +
+              kinds.length + " kind(s).");
+    return Object.assign({}, report, { kinds: kinds });
   }
 
   /**
@@ -128,34 +235,36 @@ class ProviderCommandsApi {
       // error-code: none — marked above: the act's own code, or `code`.
       self.sendJson(res, result.ok ? 200 : 400, result);
     };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/commands',
         tag: 'OAuth 2.0 / OIDC', operationId: 'getProviderCommands',
-        summary: 'OpenID Provider Commands: the clients, the account ' +
-                 'register, the tenant runs and the deliveries',
-        description: 'Everything /admin/commands draws: whether commands ' +
-          'and automatic commands are on, the issuer Command Tokens name, ' +
-          'each client with a command_endpoint and what its metadata ' +
-          'answer said it supports, the account-state register (what each ' +
-          'relying party said about each person), the tenant runs, and the ' +
-          'command deliveries. `state` and `q` narrow the deliveries. Never ' +
-          'a token.',
         mirrors: 'GET /admin/commands',
-        responseDescription: 'The report.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`enabled`, `automatic`, `issuer`, ' +
-                            '`clients`, `accounts`, `runs`, `deliveries`, ' +
-                            '`counts`.' },
-        handler: function (req: Req, res: Res): void {
+        parameters: ['clients', 'accounts', 'runs', 'deliveries']
+          .map(function (name: string): Json {
+            return { name: name + 'Page', in: 'query', required: false,
+                     schema: { type: 'integer', minimum: 1, examples: [1] },
+                     description: 'Which page of `' + name + '`. Each list ' +
+                       'moves on its own parameter and they share `per`.' };
+          }).concat([
+            { name: 'state', in: 'query', required: false,
+              schema: { type: 'string', maxLength: 16, examples: ['pending'] },
+              description: 'Only deliveries in this state: pending, ' +
+                           'sent or dead.' },
+            { name: 'q', in: 'query', required: false,
+              schema: { type: 'string', maxLength: 256, examples: ['alice'] },
+              description: 'Narrows the deliveries.' },
+            { name: 'per', in: 'query', required: false,
+              schema: { type: 'integer', minimum: 1, examples: [10] },
+              description: 'Rows per page of each list, capped.' }]),
+        handler: function (req, res): void {
           log.debug("Entering the management API commands endpoint.");
-          self.sendJson(res, 200, loadCommands().report({
-            q: req.query.q, state: req.query.state }));
+          self.sendJson(res, 200, self.commandsView(req.query || {}));
           log.debug("Leaving the management API commands endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/commands/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/commands/:action',
         tag: 'OAuth 2.0 / OIDC', mirrors: 'POST /admin/commands',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API commands action.");
           let result: Json;
           try {
@@ -175,81 +284,45 @@ class ProviderCommandsApi {
                     result.ok);
         },
         actions: [
-          { action: 'send-account', operationId: 'sendAccountCommand',
-            summary: 'Send an account command about one person',
-            description: 'One of activate, maintain, suspend, reactivate, ' +
-              'archive, restore, delete, audit, invalidate or migrate — or ' +
-              'its _async variant — to the client\'s command_endpoint, ' +
-              'queued on the shared outbound queue. The answer is recorded ' +
-              'in the account register. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                clientId: { type: 'string', maxLength: 512 },
-                username: { type: 'string', maxLength: 256 },
-                command: { type: 'string', enum: ACCOUNT_ENUM }
-              },
-              required: ['clientId', 'username', 'command'],
-              examples: [{ clientId: 'app', username: 'alice',
-                           command: 'audit' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery queued.' },
-          { action: 'send-tenant', operationId: 'sendTenantCommand',
-            summary: 'Send a tenant command',
-            description: 'metadata (a JSON answer, recorded as what the ' +
-              'client supports), or one of audit_tenant, suspend_tenant, ' +
-              'archive_tenant, delete_tenant and invalidate_tenant (a ' +
-              'Server-Sent Events stream, read in the background as a run). ' +
-              'Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                clientId: { type: 'string', maxLength: 512 },
-                command: { type: 'string', enum: TENANT_ENUM }
-              },
-              required: ['clientId', 'command'],
-              examples: [{ clientId: 'app', command: 'metadata' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery or run started.' },
-          { action: 'retry-delivery', operationId: 'retryCommandDelivery',
-            summary: 'Retry a dead command delivery',
-            description: 'A new generation: a fresh attempt budget and the ' +
-              'client\'s current command_endpoint. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { delivery: { type: 'string', maxLength: 64 } },
-              required: ['delivery'], examples: [{ delivery: 'abc123' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery queued again.' }
-        ] },
+          { action: 'send-account', operationId: 'sendAccountCommand' },
+          { action: 'send-tenant', operationId: 'sendTenantCommand' },
+          { action: 'retry-delivery', operationId: 'retryCommandDelivery' }
+        ] }),
 
       { method: 'GET', path: BASE + '/deliveries',
         tag: 'Monitoring', operationId: 'getOutboundDeliveries',
-        summary: 'Every outbound delivery on the shared queue, by kind',
-        description: 'What /admin/deliveries draws: for each kind — ' +
-          'backchannel-logout, ciba and provider-commands — its counts by ' +
-          'state and its rows, newest first. `state` (pending, sent, dead), ' +
-          '`kind` and `q` narrow. Never a token or a body.',
         mirrors: 'GET /admin/deliveries',
-        responseDescription: 'The kinds.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`kinds`, `states`.' },
-        handler: function (req: Req, res: Res): void {
+        parameters: [
+          { name: 'state', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 16, examples: ['pending'] },
+            description: 'Only deliveries in this state: pending, sent or ' +
+                         'dead; empty for every state.' },
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'Only this kind.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
+            description: 'Narrows the deliveries.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [10] },
+            description: 'Rows per page of each kind, capped.' }
+        ].concat(loadOutbound().KINDS
+          .map(ProviderCommandsApi.kindParam)
+          .map(function (name: string): Json {
+            return { name: name, in: 'query', required: false,
+                     schema: { type: 'integer', minimum: 1, examples: [1] },
+                     description: 'Which page of one kind\'s rows; each ' +
+                       'kind moves on its own parameter, its `paging.param`.' };
+          })),
+        handler: function (req, res): void {
           log.debug("Entering the management API deliveries endpoint.");
-          self.sendJson(res, 200, loadOutbound().kindReport({
-            state: req.query.state, q: req.query.q, kind: req.query.kind }));
+          self.sendJson(res, 200, self.deliveriesView(req.query || {}));
           log.debug("Leaving the management API deliveries endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/deliveries/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/deliveries/:action',
         tag: 'Monitoring', mirrors: 'POST /admin/deliveries',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API deliveries action.");
           const body = parseBody(req) || {};
           const result = String(req.params.action || '') === 'retry'
@@ -263,25 +336,8 @@ class ProviderCommandsApi {
                     result.ok);
         },
         actions: [
-          { action: 'retry', operationId: 'retryOutboundDelivery',
-            summary: 'Retry a dead letter of any kind',
-            description: 'A new generation of the delivery: a fresh attempt ' +
-              'budget and the client\'s current address. Audited by its ' +
-              'kind.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                kind: { type: 'string', enum: ['backchannel-logout', 'ciba',
-                                               'provider-commands'] },
-                delivery: { type: 'string', maxLength: 64 }
-              },
-              required: ['kind', 'delivery'],
-              examples: [{ kind: 'provider-commands', delivery: 'abc123' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery queued again.' }
-        ] }
+          { action: 'retry', operationId: 'retryOutboundDelivery' }
+        ] })
     ];
     log.debug("Leaving ProviderCommandsApi.buildRoutes().");
     return ROUTES;

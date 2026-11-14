@@ -12,8 +12,8 @@
 // receivers rather than pages that read this service's own notes: a stream
 // each, a receive endpoint each, and an inbox each. Most of that belongs over
 // HTTP and is not here — that a sign-in really does put a Security Event Token
-// through the loopback push and out the other side is asserted by driving the
-// running service, and it was.
+// through the loopback poll (#771) and out the other side is asserted by
+// driving the running service, and it was.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS HERE IS THE FOUR THINGS THAT CANNOT BE DRIVEN FROM OUTSIDE.
@@ -102,9 +102,14 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('A. the two surfaces, and what tells them apart');
   // -----------------------------------------------------------------------
-  t.equal(receivers.SURFACES.length, 2,
-          'there are exactly two internal receivers: the admin console and ' +
-          'the user portal');
+  t.equal(receivers.SURFACES.length, 3,
+          'there are exactly three internal receivers: the admin console, ' +
+          'the user portal and, since #1042, the reports application');
+  t.equal(receivers.surfaceOf(receivers.REPORT).sees, 'own',
+          'the reports application shows a report user only the signals ' +
+          'about them; its API widens it for a report administrator');
+  t.equal(receivers.surfaceOf(receivers.REPORT).audience, 'sts-report',
+          'its stream is addressed to the reports application\'s client');
   t.equal(receivers.surfaceOf(receivers.ADMIN).sees, 'all',
           'the console sees every signal delivered in the realm it is reading');
   t.equal(receivers.surfaceOf(receivers.PORTAL).sees, 'own',
@@ -151,19 +156,15 @@ function run(t) {
           'receiver that could not be verified could not be shown to work at ' +
           'all');
 
-  t.check(/^Bearer \S+$/.test(consoleStream.delivery.authorization_header),
-          'the stream carries an authorization_header this service minted ' +
-          'for itself — the one member of a stream configuration that IS a ' +
-          'credential, and until these streams existed nothing here ever set ' +
-          'one');
-  t.check(consoleStream.delivery.authorization_header !==
-          portalStream.delivery.authorization_header,
-          'and the two are different, so a token that reaches one receiver ' +
-          'does not open the other');
-  t.equal(consoleStream.delivery.endpoint_url,
-          transport.loopbackOrigin() + '/admin/signals/receive',
-          'the endpoint is this process\'s own loopback address and the ' +
-          'surface\'s receive path');
+  // POLL SINCE #771: the surface collects from /ssf/poll, presenting the
+  // credential this service derives for it, where a push carried that
+  // credential to the surface.
+  t.equal(consoleStream.delivery.method, streams.DELIVERY_POLL,
+          'the stream is delivered by RFC 8936 poll (#771)');
+  t.check(!consoleStream.delivery.endpoint_url &&
+          !consoleStream.delivery.authorization_header,
+          'and carries no push member: the poll endpoint is the ' +
+          'transmitter\'s and the credential is the receiver\'s to present');
 
   const madeAgain = receivers.seedStreams();
   t.equal(madeAgain, 0,
@@ -190,17 +191,29 @@ function run(t) {
   // processes agree WITHOUT talking — so a test that made them talk would be
   // testing the wrong thing.
   // -----------------------------------------------------------------------
+  // The first credential asked for draws the secret (the front process's
+  // `clusterSecrets.start()` does it before forking, in the service).
+  receivers.authorizesPoll(consoleStream, '');
   const secret = process.env.STS_SSF_RECEIVER_SECRET;
   t.check(!!secret,
-          'seeding put a per-run secret in the environment, which is how a ' +
-          'forked request worker gets it — request_pool.js forks with a copy ' +
-          'of process.env');
+          'the credential put a per-run secret in the environment, which is ' +
+          'how a forked request worker gets it — request_pool.js forks with ' +
+          'a copy of process.env');
   const asASibling = 'Bearer ' + stsCrypto.deriveSharedCredential(
     secret, 'ssf-internal-receiver', realms.currentId(), receivers.ADMIN);
-  t.equal(consoleStream.delivery.authorization_header, asASibling,
+  t.check(receivers.authorizesPoll(consoleStream, asASibling),
           'AND ANOTHER PROCESS OF THIS SERVICE DERIVES THE SAME TOKEN for ' +
-          'the same realm and the same surface, so a push transmitted in one ' +
-          'and received in another is not refused');
+          'the same realm and the same surface, so a poll made in one and ' +
+          'answered in another is not refused');
+  const portalToken = 'Bearer ' + stsCrypto.deriveSharedCredential(
+    secret, 'ssf-internal-receiver', realms.currentId(), receivers.PORTAL);
+  t.check(!receivers.authorizesPoll(consoleStream, portalToken) &&
+          receivers.authorizesPoll(portalStream, portalToken),
+          'the portal\'s token does not open the console\'s stream, and ' +
+          'opens its own');
+  t.check(!receivers.authorizesPoll(consoleStream, '') &&
+          !receivers.authorizesPoll(consoleStream, asASibling + 'x'),
+          'no header, or the wrong one, opens nothing');
   t.check(asASibling !== 'Bearer ' + stsCrypto.deriveSharedCredential(
             'a different run\'s secret', 'ssf-internal-receiver',
             realms.currentId(), receivers.ADMIN),
@@ -493,8 +506,22 @@ function run(t) {
   receivers.clearFor(receivers.PORTAL);
   config.setOverride('ssf.maxReceivedEvents', '5');
 
-  const bearer = { admin: consoleStream.delivery.authorization_header,
-                   portal: portalStream.delivery.authorization_header };
+  // THE RECEIVE ENDPOINTS STILL TAKE A PUSH, for a stream an operator set
+  // back to push (#771): sections F to I push, so both streams are set so
+  // here, as /admin/ssf would, and put back to poll at the end.
+  const bearer = {
+    admin: 'Bearer ' + stsCrypto.deriveSharedCredential(secret,
+      'ssf-internal-receiver', realms.currentId(), receivers.ADMIN),
+    portal: 'Bearer ' + stsCrypto.deriveSharedCredential(secret,
+      'ssf-internal-receiver', realms.currentId(), receivers.PORTAL) };
+  [[consoleStream, consoleSurface, bearer.admin],
+   [portalStream, receivers.surfaceOf(receivers.PORTAL), bearer.portal]]
+    .forEach(function (row) {
+    row[0].delivery = { method: streams.DELIVERY_PUSH,
+      endpoint_url: receivers.endpointFor(row[1]),
+      authorization_header: row[2] };
+    streams.touch(row[0]);
+  });
 
   // One SET each for the portal, then twenty for the console. What is being
   // asserted is that the portal still has its one.
@@ -546,7 +573,7 @@ function run(t) {
           'the transmitter\'s log as the only evidence it ever came');
 
   // -----------------------------------------------------------------------
-  t.log.info('H. the audience, which is the check /ssf/receive does not make');
+  t.log.info('H. the audience, which a receiver of ours always checks');
   // -----------------------------------------------------------------------
   const misaddressed = events.signSetSync(events.buildSet({
     issuer: consoleStream.iss, audience: 'somebody-else',
@@ -666,6 +693,10 @@ function run(t) {
           'acts, and only the first one is on that page');
   t.equal(receivers.listFor(receivers.PORTAL, {}).length, 1,
           'and the portal\'s inbox is untouched by the console\'s Clear');
+  [consoleStream, portalStream].forEach(function (record) {
+    record.delivery = { method: streams.DELIVERY_POLL };
+    streams.touch(record);
+  });
   log.debug("Leaving run().");
 }
 

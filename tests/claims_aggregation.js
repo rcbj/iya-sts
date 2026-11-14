@@ -7,7 +7,7 @@
 //
 // ---------------------------------------------------------------------------
 // OPENID CONNECT CLAIMS AGGREGATION (#147), IN PROCESS: what
-// `tests/vendored/sts_claims_aggregation.js` cannot reach over HTTP — the
+// `tests/protocol/sts_claims_aggregation.js` cannot reach over HTTP — the
 // CONSUMING side (`resolve()`, which a federation sign-in calls), a source
 // from a provider this realm never registered, a JWT about somebody else, a
 // refresh, sealing, and a setup flow started by another person — against a
@@ -206,6 +206,14 @@ async function body(t) {
                                                     code: 'c1' });
   const begun2 = lib.beginLink('alice', 'cp', 'https://op.example/realm/x');
   const state2 = new URL(begun2.location).searchParams.get('state');
+  // #614: the flow is held under the state's digest, never the state.
+  const flowRows = JSON.stringify(realms.handleFor('oauth2.claimSourceFlows')
+    .dump(realms.currentId()));
+  t.check(flowRows.indexOf(state2) < 0 &&
+          flowRows.indexOf(require('../common/crypto')
+            .credentialDigest(state2)) >= 0,
+          '2-i. a link request is held under its state\'s digest (#614)',
+          flowRows.slice(0, 200));
   const linked = await lib.finishLink('alice', { state: state2, code: 'c2' });
   const replay = await lib.finishLink('alice', { state: state2, code: 'c2' });
   t.check(!stolen.ok && stolen.code === 'STS-OAUTH-0679' && linked.ok &&

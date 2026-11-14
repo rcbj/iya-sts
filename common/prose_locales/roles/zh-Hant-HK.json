@@ -1,0 +1,42 @@
+{
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "持有此角色的用戶名稱。多值。該人不必已經存在——本服務會在首次見到任何名稱時為其建立目錄項目，因此可以在持有者從未登入之前就授予角色。"
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "此角色的持有者可被「簽發」的權限（#303）。多值。依客戶端請求時的方式命名：一般應用程式權限以其完整範圍值命名——資源應用程式的 `oauthPermissionBaseUri` 後接名稱——本服務的原生權限則以其自己的名稱命名（`admin:read`、`admin:write`）。它只對其資源應用程式「設閘」（`oauthRoleGatedPermission`）的權限有意義；設閘的權限只簽發給持有指名它之角色的主體，未設閘的則照舊簽發。"
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "「授予」此角色的客戶端（#454）：每個透過該客戶端登入的人，都在簽發給該客戶端的存取權杖上持有此角色，而不在其他任何權杖上。多值，為此領域中應用程式的 client_id。以此方式持有的角色是關於「權杖」而非關於人的事實，因此在每次呼叫時都會與該人自己持有的角色合併，而從中移除某個客戶端會立即將該角色從該客戶端的權杖上移除。絕不套用於客戶端自己的 client_credentials 權杖，其角色是其成員資格。ADMIN_CONSOLE 植入時由 `sts-admin-console` 授予。"
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "「誰可以持有」此角色（#93）：`user`（人，直接或透過群組）與 `application`（以其自身的應用程式）。多值；未設定時兩者皆可——在它之前寫入的每個角色都是如此。角色不允許之類型的成員會在寫入角色時被拒絕。兩個主控台角色無法限制：名冊授予其人員，植入數據授予其應用程式。"
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "任何客戶端，無論其以何種方式出現。"
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "「證明」了自己身分的客戶端——密碼、private_key_jwt 斷言或已驗證的客戶端證書。只傳送 client_id 的公開客戶端不屬於此。"
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "未證明任何東西的公開客戶端。"
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "遠端 XACML 原則執行點：`roles.remotePepGroup`（預設為 \"remote-peps\"）所指名之群組的任何成員。這是 `/xacml/pep/register`、`/xacml/pep/policies` 與 `/xacml/pep/heartbeat` 所要求的，而持有它的一方通常是客戶端證書 DN 而不是人——證書說明「是誰」，而此群組說明他們是否可以。"
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "管理主控台：/admin-api/console 之下僅為繪製主控台而存在的操作——其框架、其圖表與其表單輔助功能。授權 admin:console 權限。由主控台自己的客戶端 sts-admin-console 授予每個登入主控台的人，沒有任何人以成員身分持有。它不授予其他任何東西：顯示領域數據的頁面還會要求 ADMIN_READ。"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "用戶名稱。該人不必已經存在：本服務會在首次見到任何名稱時為其建立目錄項目，因此可以在持有者從未登入之前就授予角色。"
+  }
+}

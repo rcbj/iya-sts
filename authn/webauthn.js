@@ -31,48 +31,24 @@
 // decoded and handed back (`attStmt`, with the raw authenticator data and the
 // client data hash its verification procedure takes) and NOT verified here:
 // that is `authn/webauthn_attestation.ts` (#105, 2026-09-23), which needs
-// trust anchors, the FIDO Metadata Service and the realm's policy — none of
-// which this file may reach, because it is loaded on its own by the
-// debugger's cross-implementation test.
+// trust anchors, the FIDO Metadata Service and the realm's policy. (This file
+// was kept loadable ON ITS OWN, without `helpers` or `crypto.js`, for the
+// debugger's cross-implementation test, which copied it beside its own
+// scripts; #1280 ended that, so it requires them plainly. The independence
+// above is about the CODE, not the staging, and stands.)
 // ---------------------------------------------------------------------------
 
 'use strict';
 
-const crypto = require('crypto');
-// The service's shared logger when this module is loaded inside the service,
-// and a silent fallback when it is loaded ON ITS OWN — which the debugger's
-// cross-implementation test does, copying this one file next to its own
-// scripts. `./helpers` is not there, and it could not usefully be: it reads
-// process.env.CONFIG_FILE relative to its own directory and pulls in the
-// service's dependencies. A verifier written to be checked by somebody else's
-// test has no business dragging the whole service in behind it.
-//
-// THE FALLBACK IS SET BEFORE THE REQUIRE IS TRIED (fixed 2026-09-16). The catch
-// used to call `log.debug` while `log` was still undefined, so a standalone
-// load threw a TypeError from inside its own fallback. The caught reason is
-// kept in `loadProblem` and reported by the silent logger's owner, if any.
-const noop = function () {};
-/** @type {any} */
-let log = { debug: noop, info: noop, warn: noop, error: noop };
-let loadProblem = '';
-try {
-  log = require('../common/helpers').log;
-} catch (e) {
-  loadProblem = 'the service logger is not reachable: ' +
-                ((e && e.message) || e);
-}
-// `common/crypto.js` for base64url, and the same standalone case: without it,
-// Node's own `base64url` encoding, which is what that function wraps.
-let stsCrypto = null;
-try {
-  stsCrypto = require('../common/crypto');
-} catch (e) {
-  loadProblem = (loadProblem ? loadProblem + '; ' : '') +
-                'common/crypto.js is not reachable: ' +
-                ((e && e.message) || e);
-}
-log.debug('authn/webauthn.js loaded' +
-          (loadProblem ? ' standalone (' + loadProblem + ').' : '.'));
+// The service's shared logger, and `common/crypto.js` for base64url, the
+// SHA-256 of the client data and every signature check (#453: every
+// cryptographic operation of the service is that file's). Both were inside a
+// try/catch with a node-crypto fallback until #1280, for a standalone copy
+// that is no longer kept.
+const log = require('../common/helpers').log;
+const stsCrypto = require('../common/crypto');
+// Every signature algorithm, once (#1368): the table below is a view of it.
+const algorithmRegistry = require('../common/crypto_impl/algorithm_registry');
 
 // --- CBOR, enough of it, decode only -----------------------------------------
 //
@@ -87,9 +63,11 @@ const MAX_DEPTH = 24;
 function cborRead(buf, offset, depth) {
   log.debug('Entering cborRead().');
   if (depth > MAX_DEPTH) {
+    log.debug('Leaving cborRead(). Threw.');
     throw new Error('CBOR nested deeper than ' + MAX_DEPTH + ' levels');
   }
   if (offset >= buf.length) {
+    log.debug('Leaving cborRead(). Threw.');
     throw new Error('CBOR ran off the end of the buffer at ' + offset);
   }
   const initial = buf[offset];
@@ -110,9 +88,11 @@ function cborRead(buf, offset, depth) {
     const hi = buf.readUInt32BE(cursor), lo = buf.readUInt32BE(cursor + 4);
     value = hi * 4294967296 + lo; cursor += 8;
     if (!Number.isSafeInteger(value)) {
+      log.debug('Leaving cborRead(). Threw.');
       throw new Error('CBOR argument exceeds the exactly-representable range');
     }
   } else {
+    log.debug('Leaving cborRead(). Threw.');
     throw new Error('CBOR additional information ' + info + ' is reserved or ' +
                     'indefinite; CTAP2 canonical CBOR uses neither');
   }
@@ -126,6 +106,7 @@ function cborRead(buf, offset, depth) {
       return [-1 - value, cursor];
     case 2: {
       if (cursor + value > buf.length) {
+        log.debug('Leaving cborRead(). Threw.');
         throw new Error('a CBOR byte string claims ' + value + ' bytes, past ' +
             'the end of the input');
       }
@@ -134,6 +115,7 @@ function cborRead(buf, offset, depth) {
     }
     case 3: {
       if (cursor + value > buf.length) {
+        log.debug('Leaving cborRead(). Threw.');
         throw new Error('a CBOR text string claims ' + value + ' bytes, past ' +
             'the end of the input');
       }
@@ -155,6 +137,7 @@ function cborRead(buf, offset, depth) {
         const [k, afterKey] = cborRead(buf, cursor, depth + 1);
         const [v, afterValue] = cborRead(buf, afterKey, depth + 1);
         if (map.has(k)) {
+          log.debug('Leaving cborRead(). Threw.');
           throw new Error('a CBOR map repeats the key ' + JSON.stringify(k));
         }
         map.set(k, v); cursor = afterValue;
@@ -175,11 +158,12 @@ function cborRead(buf, offset, depth) {
         log.debug('Leaving cborRead().');
         return [null, cursor];
       }
+      log.debug('Leaving cborRead(). Threw.');
       throw new Error('CBOR simple value ' + info + ' is not decoded here');
     default:
+      log.debug('Leaving cborRead(). Threw.');
       throw new Error('CBOR major type ' + major + ' is not decoded here');
   }
-  log.debug('Leaving cborRead().');
 }
 
 /**
@@ -221,33 +205,17 @@ const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519',
  * The COSE algorithm identifiers this relying party accepts, mapped to their
  * JOSE names (ECDSA, EdDSA, RSASSA-PKCS1-v1_5, RSASSA-PSS and ML-DSA).
  */
-const COSE_ALGS = {
-  '-7': 'ES256', '-35': 'ES384', '-36': 'ES512', '-8': 'EdDSA',
-  '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
-  '-37': 'PS256', '-38': 'PS384', '-39': 'PS512',
-  '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
-  '-9': 'ESP256', '-51': 'ESP384', '-52': 'ESP512', '-47': 'ES256K',
-  '-19': 'Ed25519', '-53': 'Ed448',
-  // SHA-1. INSECURE (2026-10-01): verified only where the caller passes
-  // `allowInsecure`, which `webauthn.insecureAlgorithms` (development only,
-  // off by default) decides — see `INSECURE_COSE_ALGS` below.
-  '-65535': 'RS1',
-};
+const COSE_ALGS = algorithmRegistry.coseNames();
 /**
  * The COSE algorithms that are broken, accepted only where the caller says
  * so (`allowInsecure`): SHA-1's RS1.
  */
-const INSECURE_COSE_ALGS = [-65535];
+const INSECURE_COSE_ALGS = algorithmRegistry.insecureCoseIds();
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
 /**
  * The COSE key type AKP (RFC 9964), which an ML-DSA key has.
  */
 const COSE_KTY_AKP = 7;
-// The hash each classical algorithm signs with, for the standalone path.
-const STANDALONE_HASHES = {
-  ES256: 'sha256', ES384: 'sha384', ES512: 'sha512', RS256: 'sha256',
-  RS384: 'sha384', RS512: 'sha512',
-};
 // WebAuthn Level 3 section 7.1: a credential id longer than this SHOULD fail
 // the registration, and here it does.
 /**
@@ -258,13 +226,7 @@ const MAX_CREDENTIAL_ID_BYTES = 1023;
 
 // base64url, from common/crypto.js — see the note beside helpers.js's. This
 // was the third copy of the same three lines in this service.
-function b64uStandalone(buf) {
-  log.debug("Entering b64uStandalone().");
-  log.debug("Leaving b64uStandalone().");
-  return Buffer.from(buf).toString('base64url');
-}
-
-const b64u = stsCrypto ? stsCrypto.b64u : b64uStandalone;
+const b64u = stsCrypto.b64u;
 
 /**
  * Converts a COSE_Key map to a JWK, carrying the key's algorithm on it.
@@ -277,6 +239,7 @@ const b64u = stsCrypto ? stsCrypto.b64u : b64uStandalone;
 function coseKeyToJwk(coseKey) {
   log.debug('Entering coseKeyToJwk().');
   if (!(coseKey instanceof Map)) {
+    log.debug('Leaving coseKeyToJwk(). Threw.');
     throw new Error('the credential public key is not a COSE_Key map');
   }
   const kty = coseKey.get(1);
@@ -285,6 +248,7 @@ function coseKeyToJwk(coseKey) {
   if (kty === 2) {
     const crv = COSE_CURVES[coseKey.get(-1)];
     if (!crv) {
+      log.debug('Leaving coseKeyToJwk(). Threw.');
       throw new Error('unsupported COSE curve ' + coseKey.get(-1));
     }
     jwk = { kty: 'EC', crv: crv, x: b64u(coseKey.get(-2)),
@@ -294,6 +258,7 @@ function coseKeyToJwk(coseKey) {
   } else if (kty === 1) {
     const crv = COSE_CURVES[coseKey.get(-1)];
     if (!crv) {
+      log.debug('Leaving coseKeyToJwk(). Threw.');
       throw new Error('unsupported COSE OKP curve ' + coseKey.get(-1));
     }
     jwk = { kty: 'OKP', crv: crv, x: b64u(coseKey.get(-2)) };
@@ -302,11 +267,13 @@ function coseKeyToJwk(coseKey) {
     // whose `alg` is not an ML-DSA identifier is not one this reads.
     if (!/^ML-DSA-/.test(String(COSE_ALGS[String(alg)] || '')) ||
         !Buffer.isBuffer(coseKey.get(-1))) {
+      log.debug('Leaving coseKeyToJwk(). Threw.');
       throw new Error('an AKP COSE key needs an ML-DSA alg and a pub; this ' +
                       'one has alg ' + alg);
     }
     jwk = { kty: 'AKP', pub: b64u(coseKey.get(-1)) };
   } else {
+    log.debug('Leaving coseKeyToJwk(). Threw.');
     throw new Error('unsupported COSE key type ' + kty);
   }
   // THE ALGORITHM TRAVELS ON THE JWK (#105), because an assertion is checked
@@ -336,6 +303,7 @@ function coseKeyToJwk(coseKey) {
 function parseAuthenticatorData(buf) {
   log.debug('Entering parseAuthenticatorData(). bytes=' + buf.length);
   if (buf.length < 37) {
+    log.debug('Leaving parseAuthenticatorData(). Threw.');
     throw new Error('authenticator data is ' + buf.length + ' bytes; the ' +
         'fixed part alone is 37');
   }
@@ -352,12 +320,14 @@ function parseAuthenticatorData(buf) {
   let cursor = 37;
   if (out.flags.at) {
     if (buf.length < cursor + 18) {
+      log.debug('Leaving parseAuthenticatorData(). Threw.');
       throw new Error('the AT flag is set but the attested credential data ' +
                       'does not fit');
     }
     out.aaguid = buf.subarray(cursor, cursor + 16); cursor += 16;
     const idLength = buf.readUInt16BE(cursor); cursor += 2;
     if (buf.length < cursor + idLength) {
+      log.debug('Leaving parseAuthenticatorData(). Threw.');
       throw new Error('the credential ID claims ' + idLength + ' bytes, past ' +
           'the end');
     }
@@ -386,6 +356,7 @@ function parseClientData(buf, expectedType) {
   try {
     json = JSON.parse(text);
   } catch (e) {
+    log.debug('Leaving parseClientData(). Threw.');
     throw new Error('clientDataJSON is not JSON: ' + e.message);
   }
   log.debug("Leaving parseClientData().");
@@ -395,7 +366,7 @@ function parseClientData(buf, expectedType) {
 function sha256(buf) {
   log.debug("Entering sha256().");
   log.debug("Leaving sha256().");
-  return crypto.createHash('sha256').update(buf).digest();
+  return stsCrypto.digest('sha256', buf);
 }
 
 // Every check by name, in order, so a caller can report WHICH one failed. A
@@ -463,33 +434,14 @@ function coseAlgOfJwk(jwk) {
 }
 
 // Does `signature` verify over `data` under the stored `jwk`? Through
-// `common/crypto.js` in the service; a copy of this file loaded on its own
-// checks the classical algorithms with node and refuses the rest.
+// `common/crypto.js`, for every algorithm the verifier accepts.
 function verifyWithJwk(jwk, data, signature, allowInsecure) {
   log.debug("Entering verifyWithJwk().");
   const coseAlg = coseAlgOfJwk(jwk);
-  if (stsCrypto && typeof stsCrypto.verifyCoseSignature === 'function') {
-    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature,
-      { allowInsecure: !!allowInsecure });
-    log.debug("Leaving verifyWithJwk(). " + ok);
-    return ok;
-  }
-  const name = COSE_ALGS[String(coseAlg)];
-  const bare = Object.assign({}, jwk);
-  delete bare.alg;
-  const keyObject = crypto.createPublicKey({ key: bare, format: 'jwk' });
-  if (name === 'EdDSA') {
-    log.debug("Leaving verifyWithJwk(). Standalone EdDSA.");
-    return crypto.verify(null, data, keyObject, signature);
-  }
-  if (!STANDALONE_HASHES[name]) {
-    log.debug("Leaving verifyWithJwk(). Standalone, unsupported.");
-    return false;
-  }
-  // node takes an ECDSA signature in its native DER form, which is how it
-  // arrives from the authenticator — no conversion, unlike Web Crypto.
-  log.debug("Leaving verifyWithJwk(). Standalone " + name + ".");
-  return crypto.verify(STANDALONE_HASHES[name], data, keyObject, signature);
+  const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature,
+    { allowInsecure: !!allowInsecure });
+  log.debug("Leaving verifyWithJwk(). " + ok);
+  return ok;
 }
 
 // A CBOR value as plain data: a map with text keys becomes an object, an
@@ -546,6 +498,7 @@ function verifyRegistration(input) {
 
   const [decoded] = cborDecodeFirst(attestationObject, 0);
   if (!(decoded instanceof Map)) {
+    log.debug('Leaving verifyRegistration(). Threw.');
     throw new Error('the attestation object is not a CBOR map');
   }
   const fmt = decoded.get('fmt');
@@ -621,12 +574,20 @@ function verifyRegistration(input) {
     // could have verified the statement even had it tried. This file verifies
     // nothing more for returning them.
     attStmt: plainOf(decoded.get('attStmt')),
+    // PRESERVED VERBATIM FOR LONG-TERM ATTESTATION EVIDENCE (#947): the
+    // verifier has already decoded this CBOR object, but RFC 4998 archives
+    // the exact bytes the authenticator sent, not a reconstructed map.
+    attestationObjectRaw: attestationObject,
     authDataRaw: authDataBuf,
     clientDataHash: sha256(clientDataJSON),
     credentialPublicKeyCose: authData.credentialPublicKey,
     credentialIdRaw: authData.credentialId,
     rpIdHash: authData.rpIdHash,
     coseAlg: key ? key.coseAlg : null,
+    // THE AUTHENTICATOR'S EXTENSION OUTPUTS (#529), the ED flag's CBOR map as
+    // plain data: CTAP 2.1's `minPinLength` comes back here. Null where the
+    // flag is clear. Parsed above and dropped until then.
+    extensions: authData.extensions ? plainOf(authData.extensions) : null,
   };
   log.debug('Leaving verifyRegistration(). ok=' + result.ok);
   return result;

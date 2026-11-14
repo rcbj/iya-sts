@@ -48,8 +48,8 @@ const log = require('bunyan').createLogger({ name: 'no_periodic_timers',
 
 // What is not the service's own source.
 const SKIP = new RegExp('(^|/)(node_modules|tests|coverage|debugger/embedded|' +
-                        'common/vendored|node-ldapjs|deploy|xacml-pep|docs|' +
-                        '\\.claude|types)(/|$)');
+                        'node-ldapjs|deploy|xacml-pep|docs|' +
+                        '\\.claude|types|companion)(/|$)');
 
 // The scheduler itself is the one place a repeating timer belongs.
 const THE_SCHEDULER = 'cluster/scheduler.ts';
@@ -70,6 +70,18 @@ const ALLOWED = {
     'heartbeat' },
   'persistence/persistence_postgres.js|connect|timeout': { permanent:
     'a reconnect retry within one attempt to reach the database' },
+  'persistence/cluster_portable.js|attempt|timeout': { permanent:
+    'not periodic: a jittered pause before a transaction the engine refused ' +
+    'with a deadlock or a lock timeout is run again, a few times at most ' +
+    '(#677, inTransaction())' },
+  'persistence/store_portable.js|go|timeout': { permanent:
+    'not periodic: a jittered pause before a transaction MariaDB refused ' +
+    'with a deadlock or a lock timeout is run again, a few times at most ' +
+    '(#677, retrying())' },
+  'persistence/risk_portable.js|go|timeout': { permanent:
+    'not periodic: a jittered pause before a statement or transaction ' +
+    'MariaDB refused with a deadlock or a lock timeout is run again, a few ' +
+    'times at most (#677, retrying())' },
   'ldap/ldap_cluster_connections.ts|noteLocalChange|timeout': { permanent:
     'a debounce: one publish for a burst of connection changes' },
   'attribute-sources/attribute_sources.ts|lookup|timeout': { permanent:
@@ -87,9 +99,36 @@ const ALLOWED = {
     'not periodic: a session-end claim that rejected is asked again, at ' +
     'most three times inside one sign-out (#242) — a retry within one ' +
     'operation' },
+  'authn/web_authn.ts|put|timeout': { permanent:
+    'not the service: the sign-in surface\'s runtime, in a BROWSER — the ' +
+    'mailed link\'s waiting page asking again whether it was opened (#573), ' +
+    'which its <meta> refresh did; cleared whenever a page is drawn' },
+  'authn/web_authn.ts|poll|timeout': { permanent:
+    'not the service: the same browser poll, asking again while the step ' +
+    'still waits (#573)' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
-    'retry with back-off within supervising one child' }
+    'retry with back-off within supervising one child' },
+  // THE WALLET'S QR PAGE POLLS IN THE BROWSER (#574): the `<meta>` refresh
+  // the server-drawn page polled with became one timer in the sign-in
+  // surface's runtime, re-armed by each answer and stopped when the page
+  // changes. It runs in a person's browser, not in this service, so there
+  // is no scheduler for it to be a job on. Its source, and the renderers'
+  // bundle the image build writes from it.
+  'oid4vc/web_vc_signin.ts|schedule|timeout': { permanent:
+    'not this service\'s work: the wallet QR page\'s poll, in the browser ' +
+    '(#574), where a <meta> refresh was' },
+  'authn/authn.bundle.js|schedule|timeout': { permanent:
+    'the same poll in the sign-in surface\'s bundle, which the image ' +
+    'build writes from oid4vc/web_vc_signin.ts' },
+  // AN ANNOUNCEMENT, COLLECTED BY EVERY OPEN TAB (#1086): the console's,
+  // the portal's and reports' runtimes each ask their own API for what
+  // their Shared Signals receiver kept. In a person's browser, stopped at
+  // sign-out; the service's half (the receiver's poll of /ssf/poll) is
+  // already the ssf.internal-poll scheduler job.
+  'common/web_announcements.ts|tick|timeout': { permanent:
+    'not this service\'s work: each open console, portal and reports tab ' +
+    'asking for a broadcast announcement, in the browser (#1086)' }
 };
 
 function walk(dir, out) {
@@ -373,5 +412,12 @@ module.exports = {
   describe: 'the directive enforced: every repeating timer outside ' +
             'cluster/scheduler.ts is a recorded exception, and the list only ' +
             'shrinks',
-  run: run
+  run: run,
+  // The source reader, shared with `tests/no_full_directory_walk_in_jobs.js`
+  // (#615), which reads the same files for another directive.
+  walk: walk,
+  blank: blank,
+  matching: matching,
+  functionsOf: functionsOf,
+  SKIP: SKIP
 };

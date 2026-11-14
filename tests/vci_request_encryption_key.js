@@ -376,6 +376,7 @@ async function checkStore(t) {
   // restart-only and setOverride() would refuse them.
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   const store = fakeStore();
 
@@ -503,6 +504,7 @@ async function checkStore(t) {
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     keystore.setStore(nullStore());
@@ -683,7 +685,7 @@ function childMain() {
     const lastDefault = issuer.lastCredentialRequest();
     note(lastA.seen === true && lastA.encrypted === true &&
          lastA.kid === pubA.kid,
-         '/oid4vci/last_request in realm A reports the encrypted request it ' +
+         'GET /admin-api/oid4vci/last-request in realm A reports the encrypted request it ' +
          'received',
          JSON.stringify(lastA));
     note(lastB.seen === false && lastDefault.seen === false,

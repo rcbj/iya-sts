@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# SECURITY.md's windows, checked every day (#1485, ASVS 5.0.0 15.2.1): an
+# advisory can pass its window between two merges, so a check that runs only on
+# a push would miss it. The published image is scanned as well, because `npm
+# audit` cannot see the operating system's packages, the Node runtime or the
+# debugger's tree. The scanner is pinned by digest and reads a saved copy of
+# the image, so it is given no Docker socket.
+name: Dependency windows
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Scan the published image
+        run: |
+          docker pull ghcr.io/rcbj/iya-sts:latest
+          docker save ghcr.io/rcbj/iya-sts:latest -o image.tar
+          docker run --rm -v "$PWD:/out" \
+            aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --quiet --scanners vuln --format json \
+            --output /out/image-report.json --input /out/image.tar
+      - name: Fail on anything past its window
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tests/tools/dependency-windows.js --updates --image-report=image-report.json

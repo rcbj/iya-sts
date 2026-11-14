@@ -16,7 +16,7 @@ the running Express router and cannot go stale, `GET /oauth2/rfc9700` publishes
 every requirement with what is and is not enforced, `GET /spiffe` publishes the
 forty-two SPIRE methods with a reason for each of the six that are unimplemented,
 `GET /admin/ldap/service` says the directory is schemaless, and `GET /admin-api/openapi.json`
-is generated from the operation table. A page that copies any of those lists is a
+is generated from the model in `models/api/` (#1390). A page that copies any of those lists is a
 second copy that will be wrong within a month — LINK to them and say what a
 reader should look for.
 
@@ -35,14 +35,47 @@ they come from is the second copy that is wrong within a week. The page is
 committed, so it still reads in the repository and on the site with no build
 step here; what the generator replaces is the typing, not the file.
 
+**AND `openapi/` IS THE SECOND (rcbj, 2026-11-06).** Each published API's OpenAPI
+document as pages to read, written by `tests/tools/regenerate-openapi-pages.sh`
+and held by `tests/openapi_pages.js`. It is a copy of what the service publishes,
+which the rule above refuses; rcbj asked for it because a reader of this site
+has no running service to ask, and generating it removes the reason for the rule.
+A changed operation or model owes a regeneration in the same commit.
+
+**AND THE MODEL READING PAGES ARE THE THIRD (#1390).**
+`data-model-directory.md` and `data-model-persistence.md` are written by
+`node common/model_emit.js --docs` from the directory catalogue and the
+PostgreSQL model, the same model the TypeSpec emitter writes. A host
+runs that as `tests/tools/regenerate-model-docs.sh`, because the emitter
+is compiled only in an image. They must not be edited by hand.
+`tests/model_directory.js` and `tests/model_postgres.js` fail when they
+differ. The API models are not another copy of this kind: their reading
+form is `openapi/`, above. `postgres-schema.md` stays the explanation of
+the tables and is not regenerated. `ldap-schema.md` stays the explanation
+of the names.
+
 Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
-`index.md`. There is no index to regenerate.
+`index.md`. A console or portal screen that page explains gets its row in
+`common/web_doc_links.ts` in the same change (`admin-ui/CLAUDE.md`, *A link
+to the documentation*). There is no index to regenerate.
+
+**A sidebar item may link to a SECTION of another page** (rcbj, 2026-10-30,
+#564): the *Authorization* section gathers the pages about a decision
+(`authorization.md`, the overview, then XACML, FGA, AuthZEN, the remote PEP,
+delegation) and LINKS to the authorization sections that belong on the
+OAuth, configuration, GNAP, devices and console pages, rather than moving
+them and splitting those pages. Such an item's `url` carries a `#` fragment,
+which is a kramdown id of the target page; the sidebar never marks it
+current, because `page.url` has no fragment. `tests/doc_links.js` holds
+every sidebar fragment, and every link in `authorization.md`, to a heading
+of its page, so renaming a heading fails there rather than quietly landing a
+reader at the top of a long page.
 
 **The sidebar is four small overrides of minima 2.5.1, the version GitHub
 Pages ships**: `_layouts/default.html` (minima's, with the sidebar
-beside the content), `_includes/header.html` (the title only, and the menu
-button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
+beside the content), `_includes/header.html` (the logo, `docs/logo.png`, as the title, and the
+menu button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
 (minima's stylesheet imported, then the layout). No script — the narrow-screen
 menu is a checkbox, as minima's own header was. `header_pages` is gone: it put
 every page across the top, and at twenty-six pages that was not navigation.
@@ -54,6 +87,34 @@ decisions, In the running service, Related. The configuration table is a copy
 of rows in `common/config.js` and will drift when a row changes — the live
 source is the protocol's console page and `GET /admin-api/config`, and the
 table says so; update it when you change a row for that family.
+
+## `debugger/`, a chapter that is mostly a COPY (#1717, 2026-11-13)
+
+**rcbj asked for the embedded debugger's documentation to be a chapter here.**
+Two of its pages are this service's own and are written like any other page
+here: `debugger/index.md`, the chapter and its table of guides, and
+`debugger/access.md`, which covers reaching the debugger, who may use it, turning it on, and
+`DEBUGGER_IMAGE=debugger-none`. **Everything else under `debugger/` is a
+COPY of the id-proto-debugger user guides at the release the image embeds
+(0.9.3)** — its `docs/oauth2-oidc/` with the screenshots, `saml.md`,
+`saml-assertion.md`, `saml-decoders.md`, `wstrust.md`, `jwt-tools.md`,
+`digital-signature.md` and `what-is-a-protocol-debugger.md` — under that
+project's MIT licence (`REUSE.toml`).
+
+The copies were changed in exactly these ways, and a refresh repeats them:
+`nav_order` added; a note under the title saying where the page came from;
+`https://localhost:3000` → `https://localhost:8444` and `:4000` → `:8444/api`
+(the embedded build's own addresses); "the mock STS" → iya-sts; links to this
+site made relative; links to debugger pages that were NOT copied pointed at
+`github.com/rcbj/id-proto-debugger/blob/<release>/docs/`; and the "start it
+from a checkout" and "regenerating the screenshots" passages replaced by
+pointers to `access.md` and to that project. Its developer notes (`kerberos.md`,
+`scim.md`, `ssf.md` and the rest, which begin by listing the source files they
+cover) were not copied: this directory is for somebody using the service.
+
+**A bump of `DEBUGGER_IMAGE` owes a refresh of the copies**, or the guides
+describe a debugger the image no longer carries; the release named in
+`index.md`, in each page's note and in the GitHub links is the one to move.
 
 ## `sessions.md` and `caep-events.md`, and the line between them
 
@@ -76,6 +137,46 @@ can report, because a trigger is a fact about the code. The same test decided
 `sessions.md`: the session RECORD's fields are published nowhere, so they are
 written out; the row shape of `/admin-api/sessions` is in the OpenAPI document,
 so it is not.
+
+## `directory.md`, and the pages that own one object
+
+`directory.md` is the Directory chapter. A user and an application are
+protocol-independent, and that pair is what the service is about. The
+chapter says how they relate to a policy, and which page configures
+each. It does not restate the object. The objects' own pages stay where
+they are:
+
+* **`people.md` defines the person.** The subject, the filing name, and
+  sign-in names (`stsPseudonym`, #644). The attribute rows stay in
+  `ldap-schema.md`, the console's Users page stays in `admin-console.md`,
+  how an identity is placed stays in `ldap.md`, and the session record
+  stays in `sessions.md`.
+* **`applications.md` defines the application.** The identifier, the
+  filing name, the name each protocol calls it, and a registration
+  beside a sighting, then its fields, the console page and the
+  per-application settings.
+* **`policies.md` is which profile applies**, and the attribute policy's
+  fields. The split with the kind's own page is the section below. An
+  XACML policy in `ou=policies` is `authorization.md` and `xacml.md`, not
+  a profile.
+
+A new fact about how the three objects relate goes in `directory.md`. A
+new fact about one object goes on that object's page. The sidebar's
+*Configuring a person*, *Configuring an application* and *Configuring a
+policy* items are sections of `directory.md`, so renaming those headings
+fails `tests/doc_links.js`.
+
+## `policies.md`, and the pages that own one kind
+
+`policies.md` is the account of **Directory → Policies** after #1234: the
+seven kinds, and the one rule they share — the holder names the profile, the
+lowest precedence applies, and a dangling name means what that kind says.
+The fields of a kind stay on the page that already owned them
+(`authentication.md`, `passkeys.md`, `languages.md`, `service-accounts.md`,
+`post-login-activities.md`, `configure-scim.md`). A new fact about *which
+profile applies* goes in `policies.md`. A new fact about *what a profile's
+rows do* goes on the kind's page. The console's documentation link for
+`/admin/policies` points here (`common/web_doc_links.ts`).
 
 ## The API reference under /api/ is generated, not written here (2026-09-27)
 

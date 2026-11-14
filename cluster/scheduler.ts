@@ -20,7 +20,7 @@
 // short form.
 //
 // ---------------------------------------------------------------------------
-// SIX THINGS ARE WORTH KNOWING BEFORE READING FURTHER.
+// SEVEN THINGS ARE WORTH KNOWING BEFORE READING FURTHER.
 //
 // **1. TWO KINDS OF JOB.** A *cluster* job (the default) runs once for the
 // whole service, on the scheduler's leader: a CRL refresh, the session-expiry
@@ -53,28 +53,55 @@
 // (croner computes it, D1, and nothing else). A job may say it runs only on
 // demand.
 //
-// **4. NEVER AT REQUIRE TIME, NEVER IN A STANDBY, NEVER A CLUSTER JOB IN A
-// WORKER.** Registering a job starts nothing. `start()` is called by
-// `server.js` once the service's state is restored and before it binds — so
-// an active-passive standby, which never gets that far, runs nothing — and by
-// `common/request_worker.ts` in PER-PROCESS mode, which runs per-process jobs
-// and nothing else.
+// **4. NEVER AT REQUIRE TIME, NEVER IN A STANDBY, AND A WORKER NEVER
+// SCHEDULES A CLUSTER JOB — BUT SINCE #408 IT RUNS ONE'S BODY.** Registering
+// a job starts nothing. `start()` is called by `server.js` once the service's
+// state is restored and before it binds — so an active-passive standby, which
+// never gets that far, runs nothing — and by `common/request_worker.ts` in
+// PER-PROCESS mode, which schedules per-process jobs and nothing else. The
+// leader is still a front process and keeps the lease, the claims, the fences,
+// the time limits and every run row; only the call to a cluster job's `run()`
+// is handed to a ready request worker (`runClaimed()`, *WHERE A CLUSTER RUN
+// RUNS*), because a job's synchronous work on the front's thread stops every
+// listener the front holds (#408). A job that must run on the front says so
+// with `onFront` and its reason.
 //
 // **5. EVERYTHING THE PAGE SAYS IS IN THE STORE.** Runs are rows of
 // `scheduler.runs`, a persisted per-realm `realms.map` (a service-wide job's
-// runs are the default realm's), so /admin/scheduler drawn by ANY process on
-// ANY node shows what the leader did. So are the leader's own row (who leads,
-// since when, when it last ticked), the per-process jobs' latest run in each
-// process, and the queued commands — a manual run (#48's button) and a
-// step-down — which are written by whichever process served the request and
-// picked up by the leader at its next tick. Nothing here is answered out of
-// this process's memory that another process would answer differently.
+// runs are the default realm's), so /admin/scheduler drawn by the front
+// process of ANY node shows what the leader did. (By the front process since
+// #617: a request worker no longer reads the history back at its start, and
+// the page and its API are pinned to the front — see `runStore` below. Since
+// #883 the front itself does not hold a finished interval run: it restores
+// the rows with no expiry, recalls the current slot from the store, and the
+// page asks for a bounded newest window.) So are the leader's own row (who
+// leads, since when, when it last ticked), the per-process jobs' latest run
+// in each process, and the queued commands — a manual run (#48's button) and
+// a step-down — which are written by whichever process served the request
+// and picked up by the leader at its next tick. Nothing here is answered out
+// of one front process's memory that another would answer differently.
 //
 // **6. IT NEVER HOLDS THE THREAD.** A job's `run()` is asynchronous and is
 // expected to yield: the cluster heartbeat is a JavaScript timer, and a job
 // that blocks for a node's lifetime costs the node its membership
 // (`STS-CLUSTER-0004`). A run past its time limit is recorded as failed and
-// fenced out; the scheduler does not wait on it.
+// fenced out; the scheduler does not wait on it. **#408 found that sixteen
+// of fifty-nine did not yield** (a key generation, a walk of every session,
+// a CRL encoded per authority), and a time limit is a `Promise.race`, which
+// cannot interrupt synchronous work on the thread it shares. That is why the
+// work now runs on a request worker's thread: there a run past its limit is
+// fenced out and the front's timer fires on time, because the front's thread
+// was never the one held.
+//
+// **7. A JOB'S BODY LOGS ONLY WHEN SOMETHING IS WRONG.** Routine info from
+// `run()` and from everything it calls is written at debug. A warning, an
+// error, and an info line that carries an `STS-` code — a recorded failure,
+// including an audit refusal — are written as asked. `common/job_log.ts`
+// does it, around the three calls to `run()`. The run row on
+// /admin/scheduler still records the summary. A run that succeeded writes
+// no audit row, so the audit export does not send one; a failure and an
+// abandonment do. Lines outside a body stay: who leads, a run held for
+// load, an outcome that cannot be written.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `cluster.js`,
 // `cluster_claims.js` and `common/` leaves, and every job's owner requires it
@@ -83,9 +110,11 @@
 // answers it as JSON.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('../common/helpers');
+import JobLog = require('../common/job_log');
+// The one place this service hashes and draws random values (#453).
+import stsCrypto = require('../common/crypto');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -101,6 +130,7 @@ import usedAssertions = require('../common/used_assertions');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
+import WebKit = require('../admin-ui/web_kit');
 
 type Json = any;
 
@@ -131,6 +161,12 @@ const FINAL = ['succeeded', 'failed', 'abandoned'];
 // store read, so fifty is a few milliseconds.
 const TICK_YIELD_EVERY = 50;
 
+// A job's patience with a busy worker when its registration names none
+// (#408): the middle of 0 to 19, the scale `nice(1)` uses. See
+// `holdForLoad()`.
+const DEFAULT_NICE = 10;
+const MAX_NICE = 19;
+
 // A job id: lower-case words joined by dots and hyphens, as the ones in the
 // plan are (`authn.session-expiry`, `signing.rotate`).
 const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
@@ -138,6 +174,86 @@ const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 // How long past its slot a due job may wait before the page calls it overdue:
 // never less than this, and never less than three ticks.
 const OVERDUE_FLOOR_MS = 60 * 1000;
+
+// A BODY'S GRANT (#1305): how often the leader looks at a run in flight —
+// a switch-off, and for a body on a request worker whether it still owns
+// the run, renewing its grant if so — and how long one grant lasts there.
+// Four renewals missed is a front thread that has not run a timer for
+// twenty seconds, where the leader cannot stand behind anything it handed
+// out; the body stops at its next step instead. `watchRun()` argues it.
+const RUN_CHECK_MS = 5 * 1000;
+const DELEGATED_GRANT_MS = 20 * 1000;
+
+// ---------------------------------------------------------------------------
+// THE SENTENCES THE REPORT MAKES (#543 phase 2c), as templates, so that
+// `common/server_prose.ts` can match one in an answer to `GET
+// /admin-api/scheduler` and refill it in the reader's language. Each is
+// filled where it is made, and the English that comes out is the English
+// that was concatenated there before — byte for byte, since tests and the
+// run rows compare it. A `{{span}}` is `WebKit.span()`'s figure, a
+// `{{setting}}` a setting's name and a `{{cron}}` an expression: data, so
+// carried over as they are. `since` is an ISO time, or `PARAMS.sinceStart`.
+//
+// **A TEMPLATE MATCHES ANY WHOLE STRING OF ITS SHAPE** on these routes,
+// a run's result, a job's own off reason and an error among them, so each
+// carries enough literal text to be nobody else's (#543 follow-up): it was
+// 'every {{span}}' and '{{setting}} is 0', which refilled any string that
+// began "every " or ended " is 0". The schedule's two interval sentences
+// carry a parenthesis, as the cron one does, and the off reason says what
+// a 0 does.
+//
+// NOT HERE, ON PURPOSE: a run's `why` (an abandoned attempt, a time limit, a
+// job's own error) is failure text beside an STS-SCHED code, and errors stay
+// English (#539); `requestRun()`'s and `requestStepDown()`'s refusals for
+// the same reason; and a job's own `off()` reason, which each owner writes.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  // `scheduleText()`.
+  onDemand: 'on demand only',
+  cron: 'cron {{cron}} (UTC)',
+  every: 'every {{span}} (a fixed interval)',
+  everyFrom: 'every {{span}} (from {{setting}})',
+  noInterval: 'no interval (0)',
+  noIntervalFrom: 'no interval (0), from {{setting}}',
+  // `nextRunOf()`'s `overdueWhy`.
+  overdueTicking: 'the leader is ticking; a previous run may still be ' +
+    'going, or its claim has not lapsed',
+  overdueSilent: 'no leader has ticked since {{since}}',
+  // `serviceOffReason()`: the scheduler's own three reasons a job is off.
+  offScheduler: 'scheduler.enabled is off',
+  offListed: 'named in scheduler.disabledJobs',
+  offZero: '{{setting}} is 0, so the job is off',
+  offZeroFixed: 'its interval is 0, so the job is off',
+  // `clockSource()`: whose clock the report's figures are on.
+  clockProcess: 'this process',
+  clockDatabase: 'the database'
+});
+
+// The phrases that only ever appear INSIDE one of the sentences above.
+const PARAMS = Object.freeze({
+  sinceStart: 'this service started'
+});
+
+// The routes whose answers carry the scheduler namespace's prose (#543):
+// the report, and a queued run's view in an action's answer.
+const PROSE_ROUTES = ['/admin-api/scheduler', '/admin-api/scheduler/:action'];
+
+/**
+ * Fills one of the report's templates (#543).
+ *
+ * @param template - one of `SENTENCES`
+ * @param params - name → value
+ * @returns the sentence, in English
+ */
+function sentence(template: string, params?: Record<string, unknown>): string {
+  helpers.log.debug("Entering sentence().");
+  // Lazily: `server_prose` requires `config`, `crypto` and `i18n`, and this
+  // module is reached from modules those load early.
+  const serverProse = require('../common/server_prose');
+  const out = serverProse.fill(template, params || {});
+  helpers.log.debug("Leaving sentence().");
+  return out;
+}
 
 // The shape of a registered job. `cluster/CLAUDE.md` describes each member.
 interface JobSpec {
@@ -163,8 +279,51 @@ interface JobSpec {
   // Whether an administrator may run it now.
   manual?: boolean;
   timeoutS?: number | (() => number);
+  // WHY A CLUSTER JOB MUST RUN ON THE FRONT PROCESS'S THREAD (#408), or
+  // absent: every other cluster job's `run()` is handed to a request worker.
+  // A reason, never a flag — an empty one is refused (STS-SCHED-0009), so
+  // the next reader can check the argument rather than trust it.
+  onFront?: string;
+  // HOW PATIENT A SCHEDULED RUN IS WITH A BUSY WORKER (#408): 0 is never
+  // held, 19 the most patient, 10 by default. See `holdForLoad()`. An
+  // on-demand job is an operator's act and is 0 whatever it says.
+  nice?: number;
   // Runs the job. Resolves a small JSON summary, which the run row keeps.
   run: (ctx: RunContext) => Promise<Json> | Json;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE LEADER NEEDS OF THE PROCESS THAT RUNS A CLUSTER JOB'S BODY (#408).
+// The front process's request pool fills it (`common/request_pool.js`'s
+// `schedulerRunner()`); a test gives stubs. Absent — a request worker's own
+// scheduler, a process with no pool — every run is inline, as before #408.
+// ---------------------------------------------------------------------------
+interface WorkerLoad {
+  // The worker's id in the pool (its threadId).
+  id: number;
+  // Requests and operations in flight there now.
+  inFlight: number;
+  // Its event loop's recent delay in milliseconds, or null when it has not
+  // reported one lately.
+  lagMs: number | null;
+}
+
+interface RunRunner {
+  // The ready protocol-pool workers, with their load. Empty when there are
+  // none (no pool, a pool that gave up, a store that does not coordinate).
+  workers(): WorkerLoad[];
+  // Runs one job's body in the named worker. Resolves `{ ok, result }` or
+  // `{ ok: false, error, code }`, `{ unknownJob: true }` where that worker
+  // has no such job registered, or `{ unknownRealm: true }` where it does
+  // not know the run's realm yet; never rejects.
+  run(workerId: number, request: Json): Promise<Json>;
+  // Tells the worker running `runId` that it no longer owns the run, and
+  // stops waiting for its answer.
+  fence(runId: string): void;
+  // Renews the grant of the body running `runId` until `untilMs` on this
+  // process's clock, carrying the reason its job was switched off ('' while
+  // it is on) (#1305). Keeps waiting for its answer.
+  renew(runId: string, untilMs: number, off: string): void;
 }
 
 interface RunContext {
@@ -202,8 +361,20 @@ interface SchedulerDeps {
     claim(opts: Json): Promise<Json>;
     release(handle: Json): Promise<Json>;
   };
-  // The runs: a `realms.map`, or a test's stand-in with the same two members.
-  store: { realmMap(realmId: string): Map<string, Json> };
+  // The runs: a `realms.map`, or a test's stand-in with the same members.
+  // `watch(fn)` (#623), where the store offers it, calls `fn(realmId, row)`
+  // for every row it admits from another process — the change log's, and
+  // a start's restore — so the scheduler's index of the rows a tick must
+  // see learns of them. A store without it is one this process alone
+  // writes (a test's), whose rows all pass through `writeRow()`.
+  store: { realmMap(realmId: string): Map<string, Json>;
+           watch?: (fn: (realmId: string, row: Json) => void) => void;
+           // Drops a held key without journalling a delete (#883). False
+           // when the key is still journalled: that absence would be written
+           // as a delete of the durable row.
+           dropHeld?: (realmId: string, key: string) => boolean;
+           // Admits a row the tick read back, without journalling it.
+           restoreRow?: (realmId: string, key: string, row: Json) => void };
   // The database's clock, where there is one; this process's otherwise.
   dbNow: () => Promise<number>;
   now: () => number;
@@ -215,13 +386,33 @@ interface SchedulerDeps {
   // How many connections the store's pool holds, or 0 where there is no
   // pool (the memory store); the runs are kept to fewer than this.
   storeConnections?: () => number;
+  // How many protocol request worker threads this process runs (the
+  // threads a cluster run's body is handed to, #408), or 0. With
+  // `scheduler.maxConcurrentRuns` at 0 the cap is one fewer than this,
+  // and never under one.
+  requestWorkers?: () => number;
   // Resolves once what this process has journalled is written down: the
   // history purge waits on it between batches, so one flush never carries
   // more than one batch of deletes (#338). Optional; a test has no store.
   settle?: () => Promise<Json>;
+  // True when a finished interval run has a durable copy to drop from
+  // memory against (#883). Absent, or false, keeps every row: a test's
+  // store, and development, where the map is the only copy.
+  persisted?: () => boolean;
+  // The current and previous slot's rows, by the run id, from the durable
+  // store (#883). Null means there is no store and the tick must not treat
+  // a missing row as finished or as absent. A rejection fails the tick.
+  readRuns?: (realmId: string, runIds: string[]) =>
+    Promise<Map<string, Json> | null>;
+  // The newest run rows of the named realms, for the page (#883). Null
+  // means the list is whatever the map holds. The rows are not cached.
+  newestRuns?: (realmIds: string[], limit: number) => Promise<Json[] | null>;
   host: string;
   pid: number;
   isRequestWorker: () => boolean;
+  // Where a cluster job's body runs when it does not run here (#408); see
+  // `RunRunner`. A function, so the pool is reached only when a run starts.
+  runner?: () => RunRunner | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +449,25 @@ function compareRows(a: Json, b: Json): number {
   return 0;
 }
 
+// WHO IS TOLD OF A RUN ROW ADMITTED FROM OUTSIDE THIS PROCESS (#623): each
+// scheduler built over `runStore` (the process's one, in practice). See
+// `Scheduler.notePending()`.
+const runWatchers = new Set<(realmId: string, row: Json) => void>();
+
+// A FINISHED INTERVAL RUN (#883): the front does not keep its body. Null
+// until the scheduler exists, and null for a row the purge keeps in memory
+// — the leader, a queued or running run, a manual or cron run, a process
+// row. A hot path (every admitted row): no Entering/Leaving pair.
+function expiringRun(row: Json): boolean {
+  if (!scheduler || !row || row.kind !== 'run') {
+    return false;
+  }
+  if (FINAL.indexOf(row.state) < 0) {
+    return false;
+  }
+  return scheduler.expiryOf(row) !== null;
+}
+
 // PER TRUST REALM, AT ITS DECLARATION (root CLAUDE.md, trust realms rule 2),
 // PERSISTED where this service persists what it mints, TOMBSTONED — a
 // removed run must not be brought back by a node holding an old copy — and
@@ -269,6 +479,56 @@ function compareRows(a: Json, b: Json): number {
 const runStore = realms.map({
   persist: 'scheduler.runs',
   tombstone: true,
+  // EVERY ROW THE STORE ADMITS FROM OUTSIDE THIS PROCESS — read back at a
+  // start, or brought by the change log from another process — is shown to
+  // the watchers (#623): the leader's index of the rows a tick has to see
+  // (`Scheduler.notePending()`). A finished interval run is NOT held
+  // (#883): the watchers learn it, any copy already held is dropped, and
+  // `undefined` means the held value stays only when nothing was deleted.
+  // Deleting and then returning `undefined` is what forgets a running row
+  // this process was holding; returning `undefined` alone would keep it.
+  // A hot path (every run row restored or replicated): no Entering/Leaving
+  // pair.
+  reconcile: {
+    restore: function (key: string, incoming: Json, held: Json,
+                       realmId: string, target?: Map<string, Json>):
+        Json | undefined {
+      runWatchers.forEach(function (fn): void {
+        fn(realmId, incoming);
+      });
+      if (expiringRun(incoming)) {
+        if (target && typeof target.delete === 'function') {
+          target.delete(key);
+        }
+        return undefined;
+      }
+      return incoming;
+    }
+  },
+  // NOT READ BACK BY A REQUEST WORKER (#617): the run history was 42,740 of
+  // the 52,234 rows each of 8081's processes restored at every start, and in
+  // a worker nothing reads it whole — /admin/scheduler and its API are
+  // answered by the front process (`common/request_pool.js`,
+  // NEVER_DISPATCHED). A worker still writes its per-process rows and a
+  // queued manual run, and still applies every run row the change log
+  // brings after its start. Point 5 above holds for the processes that draw
+  // the page: every FRONT process, on any node.
+  restoreInWorkers: false,
+  // THE FRONT DOES NOT RESTORE A ROW THAT CARRIES AN EXPIRY (#883). The
+  // 239,000 run rows were finished interval history with a future
+  // expires_at. The leader, a queued or running run, a manual or cron run
+  // and a process row have none (`expiryOf`) and are what a start reads.
+  // The page's newest window is the sort index, not this map.
+  restoreExpiring: false,
+  // A hot path (every run row a flush writes): no Entering/Leaving pair.
+  sortBy: function (row: Json): number | null {
+    if (!row || row.kind !== 'run') {
+      return null;
+    }
+    const at = Number(row.startedAt) || Number(row.queuedAt) ||
+      Number(row.endedAt) || 0;
+    return at > 0 ? at : null;
+  },
   mergeRow: function (mine: Json, theirs: Json): Json {
     helpers.log.debug("Entering mergeRow().");
     helpers.log.debug("Leaving mergeRow().");
@@ -314,6 +574,10 @@ const EXPIRY_SLACK_MS = 2 * 60 * 60 * 1000;
 // raised after the row was written.
 const PIN_AHEAD_MS = 60 * 60 * 1000;
 const PIN_FOR_MS = 24 * 60 * 60 * 1000;
+// The page's newest window (#883): a few rows per realm, and the list the
+// page actually draws. Filters apply to that window.
+const NEWEST_PER_REALM = 20;
+const NEWEST_WINDOW = 200;
 
 /**
  * The one scheduler for every periodic job (#49): a cluster job runs once for
@@ -321,6 +585,12 @@ const PIN_FOR_MS = 24 * 60 * 60 * 1000;
  * runs in every process that holds the state it cleans. Every run is a row in
  * the store, so any process reports the same figures.
  */
+// How far a node's clock may drift from the database's before it is said.
+const MAX_CLOCK_SKEW_MS = 5000;
+
+// The fewest runs the default cap allows at once (maxConcurrentRuns()).
+const MIN_DEFAULT_RUNS = 2;
+
 class Scheduler {
   /**
    * The leader's lease name.
@@ -338,6 +608,52 @@ class Scheduler {
    * Orders two copies of a run row by rank; the higher one wins a merge.
    */
   static readonly compareRows = compareRows;
+  /**
+   * The report's sentences, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the scheduler namespace (#543 phase 2c): every registered
+   * job's `title` and `describe`, read from the REGISTRY of the process's
+   * scheduler, and the report's templates.
+   *
+   * - The extractor loads the whole protocol stack first, whose build and
+   *   wire steps register every job they own; a job registered only once
+   *   the process STARTS (a change-log pull, the event-loop report, the SAML
+   *   metadata refresher, the LDAP mirror's maintenance, the CRL directory
+   *   refresh) is not in the registry then, so it is not in the catalog and
+   *   is drawn in English.
+   * - Each job's members are the literals its owner registered — a few of
+   *   them concatenated with a module constant (a batch size, a lifetime),
+   *   which is the same in every process. The change-log jobs' titles carry
+   *   the tier the process was configured with, fixed for its life.
+   * - A job's `owner` is a path and its `id` an identifier: neither is
+   *   prose.
+   *
+   * @param registry - the scheduler to read; the process's when omitted
+   * @returns key → English
+   */
+  static prose(registry?: Scheduler): Record<string, string> {
+    helpers.log.debug("Entering Scheduler.prose().");
+    const harvest = require('../common/server_prose').harvest;
+    const from = registry || scheduler;
+    const jobs = from.jobIds().map(function (id: string): Json {
+      const job = from.job(id);
+      return { id: id, title: job.title, describe: job.describe };
+    });
+    const out: Record<string, string> = Object.assign({},
+      harvest('sched.jobs', jobs, ['title', 'describe']),
+      harvest('sched.sentence', SENTENCES, Object.keys(SENTENCES)),
+      harvest('sched.param', PARAMS, Object.keys(PARAMS)));
+    helpers.log.debug("Leaving Scheduler.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   private readonly jobs = new Map<string, JobSpec>();
   private started = '';            // '' | 'front' | 'per-process'
@@ -361,6 +677,75 @@ class Scheduler {
   // The database clock's offset from this process's, at the last reading.
   private clockOffset = 0;
   private lastClockAt = 0;
+  // -------------------------------------------------------------------------
+  // THE ROWS A TICK HAS TO SEE, INDEXED (#623): every queued or running
+  // MANUAL run and every queued COMMAND, `realm\nrunId` -> `{ realm, runId }`.
+  // A tick read every row of `scheduler.runs` in every realm to find the
+  // few a person had queued — 13–19 s of the front process's thread at some
+  // ticks on 8081, whose history was some 42,000 rows — and the step-down
+  // commands by reading the default realm's whole partition. Now a tick
+  // reads the index and one row per entry: O(queued), not O(history).
+  //
+  // KEPT ON WRITE, CHECKED ON READ. An entry is ADDED wherever a row enters
+  // the store — `writeRow()`, this process's only writer of run rows, and
+  // the store's `watch()`, for a row read back at a start or brought by the
+  // change log from another process (a manual run queued by a request
+  // worker or by another node). It is never removed on write: `pending()`
+  // reads each entry's row from the store and drops the entry whose row has
+  // gone (the history purge, a tombstone, a removed realm) or has left the
+  // pending states (it ran, it was obeyed). So no path that ENDS a row —
+  // and there are several, some in other processes — needs to know the
+  // index exists, and a stale entry costs one Map read.
+  // -------------------------------------------------------------------------
+  private readonly pendingRows = new Map<string, Json>();
+  // -------------------------------------------------------------------------
+  // THE RUNS SOMEBODY LEFT RUNNING (2026-11-03): `{ realm, runId }` of every
+  // run row seen in the `running` state, kept exactly as `pendingRows` is —
+  // added wherever a row enters the store, dropped on read once the row has
+  // left that state — so `abandonOrphans()` reads O(running), never the
+  // history. `orphanClaims` holds the runIds an orphan claim is out for.
+  // -------------------------------------------------------------------------
+  private readonly runningRows = new Map<string, Json>();
+  private readonly orphanClaims = new Set<string>();
+  // -------------------------------------------------------------------------
+  // FINISHED INTERVAL SLOTS THE TICK ALREADY KNOWS (#883). The body is not
+  // kept: a start does not restore it, and this process drops its own once
+  // the flush has written it. The set is the current slot and the one before
+  // it, pruned every tick, so it is one id per job and realm and not the
+  // history. `slotAsked` is an id looked up and found absent, so the next
+  // tick of the same slot does not ask again. `latestRun` is one row per
+  // job and realm, for the page's last-run figure. `heldFinished` is a body
+  // this process wrote and has not yet dropped.
+  // -------------------------------------------------------------------------
+  private readonly finishedSlots = new Set<string>();
+  private readonly slotAsked = new Set<string>();
+  // The current slots this tick's read could not answer (#883's review):
+  // held back for this tick only, neither run nor taken as finished.
+  private readonly unknownSlots = new Set<string>();
+  private readonly heldFinished = new Set<string>();
+  private readonly latestRun = new Map<string, Json>();
+  // -------------------------------------------------------------------------
+  // #408's BOOKKEEPING, all of it in memory and none of it a row: a run's
+  // history is the store's, and these only say what this process is doing.
+  //
+  // `notInWorkers`: jobs a worker answered it has not registered (a job its
+  // owner registers only in the front process, at `listen()` or at a first
+  // use there). Run here from then on, for this process's life.
+  // `heldSince`: on the LEADER, runId -> `{ since, logged }`, when a due
+  // scheduled run was first held for load. The runId names the slot, so a
+  // new slot is a new entry; an entry no tick saw again is dropped.
+  // `deferredMs`: runId -> how long it was held, written on its running row.
+  // `delegated`: in a WORKER, runId -> `{ realm, fenced, off, deadline,
+  // grantUntil, lapsed }` for each body it is running for the leader, which
+  // `stillOwner()` reads (#1305: `delegatedOwns()`).
+  // -------------------------------------------------------------------------
+  private readonly notInWorkers = new Set<string>();
+  private readonly heldSince = new Map<string, Json>();
+  private readonly deferredMs = new Map<string, number>();
+  // A global job's run another cell holds the claim of: its runId, and the
+  // instant that claim cannot outlast. See `attempt()`.
+  private readonly claimedByAnotherCell = new Map<string, number>();
+  private readonly delegated = new Map<string, Json>();
 
   /**
    * Builds a scheduler from its dependencies.
@@ -370,6 +755,12 @@ class Scheduler {
    */
   constructor(private readonly deps: SchedulerDeps) {
     deps.log.debug("Entering Scheduler.constructor().");
+    const self = this;
+    if (deps.store && typeof deps.store.watch === 'function') {
+      deps.store.watch(function (realmId: string, row: Json): void {
+        self.notePending(realmId, row);
+      });
+    }
     deps.log.debug("Leaving Scheduler.constructor().");
   }
 
@@ -389,7 +780,64 @@ class Scheduler {
       audit: audit,
       cluster: cluster,
       claims: clusterClaims,
-      store: runStore,
+      store: {
+        realmMap: function (realmId: string): Map<string, Json> {
+          return runStore.realmMap(realmId);
+        },
+        watch: function (fn: (realmId: string, row: Json) => void): void {
+          runWatchers.add(fn);
+        },
+        dropHeld: function (realmId: string, key: string): boolean {
+          return runStore.dropHeld(realmId, key);
+        },
+        restoreRow: function (realmId: string, key: string,
+                              row: Json): void {
+          const handle = realms.handleFor('scheduler.runs');
+          if (handle && typeof handle.restore === 'function') {
+            handle.restore(realmId, key, row);
+          }
+        }
+      },
+      persisted: function (): boolean {
+        return !!require('../persistence/persistence_minted').enabled();
+      },
+      readRuns: function (realmId: string, runIds: string[]):
+          Promise<Map<string, Json> | null> {
+        const minted = require('../persistence/persistence_minted');
+        if (!minted.enabled()) {
+          return Promise.resolve(null);
+        }
+        return minted.readMany('scheduler.runs', realmId, runIds);
+      },
+      newestRuns: function (realmIds: string[], limit: number):
+          Promise<Json[] | null> {
+        const minted = require('../persistence/persistence_minted');
+        if (!minted.enabled() ||
+            typeof minted.newestAsync !== 'function') {
+          return Promise.resolve(null);
+        }
+        return Promise.all(realmIds.map(function (realmId: string):
+            Promise<Json[]> {
+          return minted.newestAsync('scheduler.runs', realmId, limit)
+            .then(function (rows: Json): Json[] {
+              return rows || [];
+            }, function (e: Json): Json[] {
+              helpers.log.debug('Caught in Scheduler.defaultDeps(): ' +
+                                ((e && e.message) || e));
+              return [];
+            });
+        })).then(function (pages: Json[][]): Json[] {
+          const out: Json[] = [];
+          pages.forEach(function (page: Json[]): void {
+            page.forEach(function (row: Json): void {
+              if (row && row.value && row.value.kind === 'run') {
+                out.push(row.value);
+              }
+            });
+          });
+          return out;
+        });
+      },
       dbNow: Scheduler.databaseNow,
       settle: function (): Promise<Json> {
         // LAZILY, for storeConnections()'s reason. With nothing persisted
@@ -401,7 +849,9 @@ class Scheduler {
         return minted.flushThrough(minted.generation());
       },
       storeConnections: function (): number {
-        if (config.value('persistence.mode') !== 'postgres') {
+        // A database store of either engine (#677).
+        if (!require('../persistence/store_modes').isDatabase(
+              config.value('persistence.mode'))) {
           return 0;
         }
         // LAZILY: the driver is persistence's to load, and a require here
@@ -412,11 +862,23 @@ class Scheduler {
         return Number(require('../persistence/persistence_postgres')
           .poolMax(workers)) || 0;
       },
+      requestWorkers: function (): number {
+        // LAZILY, for storeConnections()'s reason. Only the PROTOCOL pool:
+        // a surface worker never runs a job's body (#408).
+        return Number(require('../common/process_memory')
+          .requestWorkers()) || 0;
+      },
       now: function (): number {
         return Date.now();
       },
       setTimer: function (fn: () => void, ms: number): Json {
-        const handle = setTimeout(fn, Math.max(0, ms));
+        // OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#359): a job armed
+        // lazily from a console request would otherwise carry that
+        // request's AsyncLocalStorage slot into every run.
+        const handle = require('../common/sync_query').outsideBudget(
+          function () {
+            return setTimeout(fn, Math.max(0, ms));
+          });
         // Never the reason a process that is shutting down stays up.
         if (handle && typeof handle.unref === 'function') {
           handle.unref();
@@ -432,6 +894,29 @@ class Scheduler {
       pid: process.pid,
       isRequestWorker: function (): boolean {
         return !!process.env.STS_REQUEST_WORKER;
+      },
+      runner: function (): RunRunner | null {
+        // FOUND IN THE REQUIRE CACHE AND NEVER REQUIRED (#408): `server.js`
+        // loads the pool before it starts anything, so the front process
+        // always finds it; a process that never loaded it (an in-process
+        // test, a request worker, the parent project's Kerberos jobs) has no
+        // workers to hand a run to, and loading the pool there would load
+        // half its startup machinery for nothing.
+        if (process.env.STS_REQUEST_WORKER) {
+          return null;
+        }
+        let file = '';
+        try {
+          file = require.resolve('../common/request_pool');
+        } catch (e) {
+          helpers.log.debug("Caught in Scheduler.defaultDeps().runner(): " +
+                            ((e && e.message) || e));
+          return null;
+        }
+        const cached = require.cache[file];
+        return cached && cached.exports &&
+          typeof cached.exports.schedulerRunner === 'function'
+          ? cached.exports.schedulerRunner() : null;
       }
     };
   }
@@ -445,6 +930,27 @@ class Scheduler {
    *
    * @returns a promise of the time in milliseconds
    */
+  // Is this node's clock near the database's (#1546, ASVS 5.0.0 16.2.2)? Audit
+  // rows take their time from this clock. Said when it departs and when it
+  // returns, as the state it is, not at every reading.
+  private static clockFar = false;
+
+  static noteClockSkew(databaseMs: number): void {
+    helpers.log.debug("Entering Scheduler.noteClockSkew().");
+    if (databaseMs > 0) {
+      const far = Math.abs(Date.now() - databaseMs) > MAX_CLOCK_SKEW_MS;
+      if (far !== Scheduler.clockFar) {
+        Scheduler.clockFar = far;
+        helpers.log.warn(far ? require('../common/error_codes')
+          .tag('STS-SCHED-0022') + 'this node\'s clock differs from the ' +
+          'database\'s by more than ' + (MAX_CLOCK_SKEW_MS / 1000) +
+          ' seconds, so its audit timestamps are out of step. Check NTP.'
+          : 'this node\'s clock agrees with the database\'s again.');
+      }
+    }
+    helpers.log.debug("Leaving Scheduler.noteClockSkew().");
+  }
+
   static databaseNow(): Promise<number> {
     helpers.log.debug("Entering Scheduler.databaseNow().");
     const persistence = require('../persistence/persistence');
@@ -457,6 +963,7 @@ class Scheduler {
     return Promise.resolve().then(function (): Promise<number> {
       return store.clusterClock();
     }).then(function (ms: number): number {
+      Scheduler.noteClockSkew(Number(ms));
       return Number(ms) || Date.now();
     }, function (e: Json): number {
       helpers.log.debug("Caught in Scheduler.databaseNow(): " +
@@ -570,6 +1077,21 @@ class Scheduler {
       problems.push('no quiet flag: only a per-process job is recorded ' +
                     'quietly, because a cluster job\'s run row is its fence');
     }
+    // A REASON TO STAY ON THE FRONT IS A SENTENCE (#408): `onFront: true`, or
+    // an empty string, would be an exemption nobody can check.
+    if (s.onFront !== undefined &&
+        (typeof s.onFront !== 'string' || !s.onFront.trim())) {
+      problems.push('an onFront that says why the job must run on the ' +
+                    'front process, or no onFront');
+    }
+    if (s.onFront !== undefined && s.kind === 'per-process') {
+      problems.push('no onFront: a per-process job always runs in the ' +
+                    'process whose state it cleans');
+    }
+    if (s.nice !== undefined && !(Number.isInteger(s.nice) && s.nice >= 0 &&
+                                  s.nice <= 19)) {
+      problems.push('a nice of a whole number from 0 to 19');
+    }
     if (s.kind === 'per-process' && s.manualOnly) {
       problems.push('a schedule: a per-process job cannot be on demand ' +
                     'only, because nothing queues a run in every process');
@@ -584,7 +1106,13 @@ class Scheduler {
                       'It needs ' + problems.join('; ') + '.');
     }
     const job: JobSpec = Object.assign({ kind: 'cluster', scope: 'service',
-                                         manual: true }, s);
+                                         manual: true, nice: DEFAULT_NICE },
+                                       s);
+    // AN ON-DEMAND JOB IS AN OPERATOR'S ACT (a `*-now`), and an operator who
+    // pressed a button is not made to wait for a busy worker.
+    if (job.manualOnly) {
+      job.nice = 0;
+    }
     this.jobs.set(job.id, job);
     log.debug("Leaving Scheduler.register(). " + this.jobs.size +
               " job(s).");
@@ -667,16 +1195,29 @@ class Scheduler {
     return Number(config.value(key));
   }
 
-  // How many cluster runs this leader may have going at once: the setting
-  // (read directly — the row's `min` of 1 bounds it, the root CLAUDE.md's
-  // `|| n` rule), and NEVER EVERY CONNECTION the store's pool holds. Each run
-  // holds one while it claims and works, and a leader whose runs held them
-  // all would leave every request in this process waiting on the store —
-  // which is what 11:00:07 was. So at least one is always left, whatever
-  // the setting says.
+  // How many cluster runs this leader may have going at once (rcbj,
+  // 2026-11-10): TWO, or one fewer than the node's protocol request worker
+  // threads when that is more. A cluster run's body is handed to the
+  // least-loaded protocol worker (#408), so a cap of N - 1 leaves at least one
+  // worker answering requests with no job body on it. THE FLOOR IS TWO, the
+  // cap before that day: at one, a node with no worker or one worker ran one
+  // job at a time, and in the memory mode the fifteen-second partner refresh
+  // queued behind every other job until the RP conformance plan's refresh
+  // modules timed out (the starvation #1571 fixed, back). `scheduler.maxConcurrentRuns` at
+  // its default of 0 means exactly that; a value of 1 or more is an
+  // operator's own cap and is used instead (read directly — 0 is a legal
+  // value, the root CLAUDE.md's `|| n` rule).
+  //
+  // AND NEVER EVERY CONNECTION the store's pool holds, whichever of the two
+  // decided. Each run holds one while it claims and works, and a leader
+  // whose runs held them all would leave every request in this process
+  // waiting on the store — which is what 11:00:07 was. So at least one is
+  // always left, whatever the setting says.
   /**
    * Returns how many cluster runs the leader may have going at once:
-   * `scheduler.maxConcurrentRuns`, always leaving one store connection free.
+   * `scheduler.maxConcurrentRuns` when it is 1 or more, otherwise the larger
+   * of 2 and one fewer than the protocol request workers; always leaving one
+   * store connection free.
    *
    * @returns the limit, at least 1
    */
@@ -684,7 +1225,14 @@ class Scheduler {
     const { log } = this.deps;
     log.debug("Entering Scheduler.maxConcurrentRuns().");
     const setting = this.setting('scheduler.maxConcurrentRuns');
-    let n = setting >= 1 ? setting : 1;
+    let n: number;
+    if (setting >= 1) {
+      n = Math.floor(setting);
+    } else {
+      const workers = this.deps.requestWorkers ?
+        Number(this.deps.requestWorkers()) || 0 : 0;
+      n = Math.max(MIN_DEFAULT_RUNS, workers - 1);
+    }
     const pool = this.deps.storeConnections ?
       Number(this.deps.storeConnections()) || 0 : 0;
     if (pool > 0) {
@@ -824,21 +1372,27 @@ class Scheduler {
     log.debug("Entering Scheduler.scheduleText().");
     let text: string;
     if (job.manualOnly) {
-      text = 'on demand only';
+      text = sentence(SENTENCES.onDemand);
     } else if (job.cron) {
-      text = 'cron ' + job.cron + ' (UTC)';
+      text = sentence(SENTENCES.cron, { cron: job.cron });
     } else {
+      // Four templates rather than a sentence and a suffix: a translation
+      // may not put the setting at the end.
       const every = this.intervalMs(job);
-      text = every > 0 ? 'every ' + Scheduler.span(every) : 'no interval (0)';
-      if (job.everySetting) {
-        text += ', from ' + job.everySetting;
-      }
+      const from = !!job.everySetting;
+      text = every > 0
+        ? sentence(from ? SENTENCES.everyFrom : SENTENCES.every,
+                   { span: Scheduler.span(every),
+                     setting: job.everySetting })
+        : sentence(from ? SENTENCES.noIntervalFrom : SENTENCES.noInterval,
+                   { setting: job.everySetting });
     }
     log.debug("Leaving Scheduler.scheduleText().");
     return text;
   }
 
-  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most.
+  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most. The kit's since
+  // #446, so the Scheduler page drawn in a browser says it the same way.
   /**
    * Formats a duration in at most two units, such as "4 min 12 s".
    *
@@ -847,21 +1401,8 @@ class Scheduler {
    */
   static span(ms: number): string {
     helpers.log.debug("Entering Scheduler.span().");
-    const s = Math.max(0, Math.round(ms / 1000));
-    const units: Array<[number, string]> = [[86400, 'd'], [3600, 'h'],
-                                             [60, 'min'], [1, 's']];
-    const parts: string[] = [];
-    let left = s;
-    units.forEach(function (unit: [number, string]): void {
-      if (parts.length < 2 && (left >= unit[0] ||
-                               (unit[0] === 1 && !parts.length))) {
-        const n = Math.floor(left / unit[0]);
-        left -= n * unit[0];
-        parts.push(n + ' ' + unit[1]);
-      }
-    });
     helpers.log.debug("Leaving Scheduler.span().");
-    return parts.join(' ');
+    return WebKit.span(ms);
   }
 
   // -------------------------------------------------------------------------
@@ -906,15 +1447,19 @@ class Scheduler {
     log.debug("Entering Scheduler.serviceOffReason(). " + job.id);
     if (!config.value('scheduler.enabled')) {
       log.debug("Leaving Scheduler.serviceOffReason(). The scheduler is off.");
-      return 'scheduler.enabled is off';
+      return sentence(SENTENCES.offScheduler);
     }
     if (this.disabledIds().indexOf(job.id) >= 0) {
       log.debug("Leaving Scheduler.serviceOffReason(). Listed.");
-      return 'named in scheduler.disabledJobs';
+      return sentence(SENTENCES.offListed);
     }
     if (!job.manualOnly && !job.cron && !(this.intervalMs(job) > 0)) {
       log.debug("Leaving Scheduler.serviceOffReason(). No interval.");
-      return (job.everySetting || 'its interval') + ' is 0';
+      // A job with no setting has a sentence of its own, not 'its interval'
+      // put where a setting's name goes.
+      return job.everySetting
+        ? sentence(SENTENCES.offZero, { setting: job.everySetting })
+        : sentence(SENTENCES.offZeroFixed);
     }
     log.debug("Leaving Scheduler.serviceOffReason(). None.");
     return '';
@@ -1007,8 +1552,99 @@ class Scheduler {
       return Object.assign({}, held);
     }
     map.set(row.runId, Object.assign({}, row));
+    this.notePending(realmId, row);
+    // A finished interval body stays until the flush has it, then the tick
+    // drops it (#883). Dropping it while it is still journalled would delete
+    // the durable row.
+    if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
+        this.expiryOf(row) !== null) {
+      this.heldFinished.add(String(realmId || realms.DEFAULT_ID) + '\n' +
+                            String(row.runId));
+    }
     log.debug("Leaving Scheduler.writeRow().");
     return row;
+  }
+
+  // Whether a row is one a tick has to see: a manual run not yet ended, or
+  // a command not yet obeyed (#623).
+  // A hot path (every row written or admitted): no Entering/Leaving pair.
+  private static isPending(row: Json): boolean {
+    if (!row) {
+      return false;
+    }
+    if (row.kind === 'run') {
+      return row.trigger === 'manual' &&
+        (row.state === 'queued' || row.state === 'running');
+    }
+    return row.kind === 'command' && row.state === 'queued';
+  }
+
+  // ADDS a row to the index of the rows a tick has to see, if it is one
+  // (#623; see `pendingRows`). Never removes: `pending()` does that.
+  // A hot path (every row written, and every run row a start reads back or
+  // the change log brings): no Entering/Leaving pair.
+  private notePending(realmId: string, row: Json): void {
+    if (!row || !row.runId) {
+      return;
+    }
+    const realm = String(realmId || realms.DEFAULT_ID);
+    const key = realm + '\n' + String(row.runId);
+    if (row.kind === 'run' && row.state === 'running') {
+      this.runningRows.set(key, { realm: realm, runId: String(row.runId) });
+    }
+    if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0) {
+      this.finishedSlots.add(String(row.runId));
+      this.noteLatest(realm, row);
+    }
+    if (!Scheduler.isPending(row)) {
+      return;
+    }
+    this.pendingRows.set(key, { realm: realm, runId: String(row.runId) });
+  }
+
+  // THE LATEST FINISHED RUN OF ONE JOB IN ONE REALM (#883), kept when the
+  // body is not. A hot path (every finished row): no Entering/Leaving pair.
+  private noteLatest(realmId: string, row: Json): void {
+    if (!row || row.kind !== 'run' || !row.jobId) {
+      return;
+    }
+    const key = String(row.jobId) + '|' + String(row.realm || realmId);
+    const held = this.latestRun.get(key);
+    const ended = Number(row.endedAt) || Number(row.startedAt) ||
+      Number(row.queuedAt) || 0;
+    const heldEnded = held ? (Number(held.endedAt) || Number(held.startedAt) ||
+      Number(held.queuedAt) || 0) : -1;
+    if (!held || ended >= heldEnded) {
+      this.latestRun.set(key, Object.assign({}, row));
+    }
+  }
+
+  // THE ROWS A TICK HAS TO SEE, read through the index (#623): each entry's
+  // row as the store holds it now, copied, as `{ realm, row }`. An entry
+  // whose row has gone or is no longer pending is dropped here; one whose
+  // realm is not defined in this process is kept and skipped — its realm
+  // may be a new one whose row has not arrived yet (a removed realm's are
+  // dropped by `forgetRealm()`). Linear in the entries, never in the
+  // history.
+  private pending(): Json[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.pending().");
+    const out: Json[] = [];
+    Array.from(this.pendingRows.entries()).forEach(function (pair: Json[]) {
+      const entry = pair[1];
+      if (!self.realmDefined(entry.realm)) {
+        return;
+      }
+      const row = self.storeOf(entry.realm).get(entry.runId);
+      if (!Scheduler.isPending(row)) {
+        self.pendingRows.delete(pair[0]);
+        return;
+      }
+      out.push({ realm: entry.realm, row: Object.assign({}, row) });
+    });
+    log.debug("Leaving Scheduler.pending(). " + out.length + ".");
+    return out;
   }
 
   // Whether a realm is defined in this process: the default one always.
@@ -1049,13 +1685,49 @@ class Scheduler {
         fenced += 1;
       }
     });
+    // A BODY RUNNING ELSEWHERE IS TOLD (#408) — the leader's side — and a
+    // body this process runs for a leader is fenced here — the worker's
+    // side, which hears of the removal through its own `realms.onRemove()`.
+    this.fenceDelegatedRuns(function (flight: Json): boolean {
+      return flight.realm === id;
+    });
+    this.delegated.forEach(function (one: Json): void {
+      if (one.realm === id) {
+        one.fenced = true;
+      }
+    });
     const suffix = '|' + id;
+    const prefix = id + '\n';
+    const pendingRows = this.pendingRows;
+    Array.from(pendingRows.keys()).forEach(function (key: string): void {
+      if (key.startsWith(prefix)) {
+        pendingRows.delete(key);
+      }
+    });
+    const runningRows = this.runningRows;
+    Array.from(runningRows.keys()).forEach(function (key: string): void {
+      if (key.startsWith(prefix)) {
+        runningRows.delete(key);
+      }
+    });
     [this.processSlots, this.quietRecorded].forEach(function (m) {
       Array.from(m.keys()).forEach(function (key: string): void {
         if (key.endsWith(suffix)) {
           m.delete(key);
         }
       });
+    });
+    const latestRun = this.latestRun;
+    Array.from(latestRun.keys()).forEach(function (key: string): void {
+      if (key.endsWith(suffix)) {
+        latestRun.delete(key);
+      }
+    });
+    const heldFinished = this.heldFinished;
+    Array.from(heldFinished).forEach(function (key: string): void {
+      if (key.startsWith(prefix)) {
+        heldFinished.delete(key);
+      }
     });
     log.debug("Leaving Scheduler.forgetRealm(). " + fenced + " fenced.");
     return fenced;
@@ -1064,9 +1736,9 @@ class Scheduler {
   private runIdFor(job: JobSpec, realmId: string, slot: number): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runIdFor().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(job.id + '\n' + realmId + '\n' + String(slot))
-      .digest('base64url').slice(0, 22);
+    const digest = stsCrypto.digest('sha256',
+      job.id + '\n' + realmId + '\n' + String(slot), 'base64url')
+      .slice(0, 22);
     log.debug("Leaving Scheduler.runIdFor().");
     return 's-' + digest;
   }
@@ -1089,11 +1761,11 @@ class Scheduler {
   // -------------------------------------------------------------------------
   // STARTING. `server.js` calls `start('front')` once the service's state is
   // restored; `common/request_worker.ts` calls `start('per-process')`. A
-  // front process campaigns for the lease; with clustering off `lead()`
+  // front process contends for the lease; with clustering off `lead()`
   // answers at once. Idempotent.
   // -------------------------------------------------------------------------
   /**
-   * Starts the scheduler: a front process campaigns for the leader's lease and
+   * Starts the scheduler: a front process contends for the leader's lease and
    * runs per-process jobs; a request worker runs per-process jobs only.
    * Idempotent.
    *
@@ -1204,6 +1876,14 @@ class Scheduler {
       clearTimer(this.timer);
       this.timer = null;
     }
+    // A NEW LEADER MEASURES ITS OWN HOLDS (#408), and a run this process
+    // handed to a worker is told it no longer owns it, so its next
+    // `stillOwner()` there answers false as it would have here.
+    this.heldSince.clear();
+    this.deferredMs.clear();
+    this.fenceDelegatedRuns(function (): boolean {
+      return true;
+    });
     log.warn('scheduler: this process (' + process.pid + ') no longer leads ' +
              'the scheduler. ' + this.inFlight.size + ' run(s) still going ' +
              'here are fenced out from now on.');
@@ -1282,6 +1962,307 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
+  // THE CURRENT AND PREVIOUS INTERVAL SLOT, WITHOUT THE HISTORY (#883).
+  // A start does not restore a finished interval run, so the row that says
+  // this slot already ran is not in the map. One read per realm asks for
+  // the current slot and the one before it. The previous slot is for the
+  // page's last run after a restart; the tick still runs only the current
+  // one. A cron row has no expiry and stays restored, so it is not asked.
+  // -------------------------------------------------------------------------
+  // Each realm's ids come as ONE GROUP PER JOB (the current slot, and the
+  // one before it), so a read that fails can be asked again job by job and
+  // hold back only the job whose rows the store cannot answer (#883's
+  // review).
+  private slotIdsAt(at: number): Map<string, string[][]> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.slotIdsAt().");
+    const byRealm = new Map<string, string[][]>();
+    this.clusterJobs().forEach(function (job: JobSpec): void {
+      if (job.cron || job.manualOnly || self.serviceOffReason(job)) {
+        return;
+      }
+      const slot = self.slotAt(job, at);
+      if (!slot || slot.slot === null || !(Number(slot.slot) >= 0)) {
+        return;
+      }
+      const n = Number(slot.slot);
+      self.realmIdsFor(job).forEach(function (realmId: string): void {
+        if (self.ownOffReason(job, realmId)) {
+          return;
+        }
+        let groups = byRealm.get(realmId);
+        if (!groups) {
+          groups = [];
+          byRealm.set(realmId, groups);
+        }
+        const ids = [self.runIdFor(job, realmId, n)];
+        if (n > 0) {
+          ids.push(self.runIdFor(job, realmId, n - 1));
+        }
+        groups.push(ids);
+      });
+    });
+    log.debug("Leaving Scheduler.slotIdsAt(). " + byRealm.size +
+              " realm(s).");
+    return byRealm;
+  }
+
+  // Drop slot ids the clock has moved past. `latestRun` is one row per job
+  // and realm and is not pruned here.
+  private pruneSlotMemory(needed: Map<string, string[][]>): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.pruneSlotMemory().");
+    const keep = new Set<string>();
+    needed.forEach(function (groups: string[][]): void {
+      groups.forEach(function (ids: string[]): void {
+        ids.forEach(function (id: string): void {
+          keep.add(id);
+        });
+      });
+    });
+    const finished = this.finishedSlots;
+    Array.from(finished).forEach(function (id: string): void {
+      if (!keep.has(id)) {
+        finished.delete(id);
+      }
+    });
+    const asked = this.slotAsked;
+    Array.from(asked).forEach(function (id: string): void {
+      if (!keep.has(id)) {
+        asked.delete(id);
+      }
+    });
+    log.debug("Leaving Scheduler.pruneSlotMemory().");
+  }
+
+  // A running or queued row the batch read found. Not journalled: it is
+  // already in the store. A test's store has no restore, so the map is set
+  // directly and the index learns the row the same way a write does.
+  private admitRecalled(realmId: string, runId: string, row: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.admitRecalled(). " + runId);
+    const copy = Object.assign({}, row, { runId: row.runId || runId });
+    const restore = this.deps.store && this.deps.store.restoreRow;
+    if (typeof restore === 'function') {
+      restore(realmId, runId, copy);
+      log.debug("Leaving Scheduler.admitRecalled().");
+      return;
+    }
+    this.storeOf(realmId).set(runId, copy);
+    this.notePending(realmId, copy);
+    log.debug("Leaving Scheduler.admitRecalled().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE STORE SAYS OF THE CURRENT SLOTS, ONE JOB'S FAILURE ITS OWN
+  // (#883's review, 2026-11-13). Two things changed:
+  //
+  //   * AN ABSENCE IS REMEMBERED WHATEVER SAID IT. An id the store answered
+  //     with no row was remembered in `slotAsked`; an id asked of NO store
+  //     (the reader answers null: development, a store with no minted
+  //     persistence) was not, so every tick asked again, in every realm.
+  //     Both are now remembered for the slot and forgotten with it
+  //     (`pruneSlotMemory()`, the invalidation `finishedSlots` has).
+  //     Remembering asks nothing of the due loop, which reads the map and
+  //     `finishedSlots` and never `slotAsked`: with no store the map is the
+  //     only copy, as before.
+  //   * A READ THAT FAILS HOLDS BACK ITS OWN JOBS, NOT THE TICK. The read
+  //     is one batch per realm, and a rejection used to fail the whole tick
+  //     (STS-SCHED-0013): one row the store could not answer stopped every
+  //     job in every realm, manual runs included. Now that realm's ids are
+  //     asked again ONE JOB AT A TIME; a job whose read still fails is held
+  //     back this tick (`unknownSlots`, which the due loop skips, so its
+  //     slot is neither run twice nor taken as finished) and asked about
+  //     again at the next; the rest run. Two job reads failing in a row is
+  //     an outage rather than a row, so the rest of the tick asks nothing
+  //     more and holds back every job it has not heard about. One
+  //     STS-SCHED-0023 line a tick says what was held back.
+  // -------------------------------------------------------------------------
+  private async recallFinishedSlots(at: number): Promise<void> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.recallFinishedSlots().");
+    this.unknownSlots.clear();
+    const needed = this.slotIdsAt(at);
+    this.pruneSlotMemory(needed);
+    const read = this.deps.readRuns;
+    // No reader: the map is the only copy (a test). Do not touch it here.
+    // The due loop reads the current slot by key, as it always did.
+    if (typeof read !== 'function') {
+      log.debug("Leaving Scheduler.recallFinishedSlots(). No reader.");
+      return;
+    }
+    const heldBack: string[] = [];
+    let firstWhy = '';
+    let outage = false;
+    const realmIds = Array.from(needed.keys());
+    for (let i = 0; i < realmIds.length; i++) {
+      const realmId = realmIds[i];
+      const map = this.storeOf(realmId);
+      const groups = (needed.get(realmId) || [])
+        .map(function (ids: string[]): string[] {
+          return ids.filter(function (id: string): boolean {
+            return !(map.has(id) || self.finishedSlots.has(id) ||
+                     self.slotAsked.has(id));
+          });
+        })
+        .filter(function (ids: string[]): boolean {
+          return ids.length > 0;
+        });
+      if (!groups.length) {
+        continue;
+      }
+      if (outage) {
+        groups.forEach(function (ids: string[]): void {
+          self.holdBackSlot(ids, heldBack);
+        });
+        continue;
+      }
+      const ask: string[] = [];
+      groups.forEach(function (ids: string[]): void {
+        ask.push.apply(ask, ids);
+      });
+      try {
+        this.learnSlots(realmId, ask, await read(realmId, ask));
+        continue;
+      } catch (e) {
+        log.debug("Caught in Scheduler.recallFinishedSlots(): " +
+                  (((e as Json) && (e as Json).message) || e));
+        firstWhy = firstWhy || this.sentenceOf(e);
+      }
+      // The realm's batch failed: one job at a time. A batch of one job
+      // was that job's read already.
+      if (groups.length === 1) {
+        this.holdBackSlot(groups[0], heldBack);
+        continue;
+      }
+      let failedInARow = 0;
+      for (let g = 0; g < groups.length; g++) {
+        if (failedInARow >= 2) {
+          this.holdBackSlot(groups[g], heldBack);
+          continue;
+        }
+        try {
+          this.learnSlots(realmId, groups[g],
+                          await read(realmId, groups[g]));
+          failedInARow = 0;
+        } catch (e) {
+          log.debug("Caught in Scheduler.recallFinishedSlots(): " +
+                    (((e as Json) && (e as Json).message) || e));
+          firstWhy = firstWhy || this.sentenceOf(e);
+          failedInARow++;
+          this.holdBackSlot(groups[g], heldBack);
+        }
+      }
+      if (failedInARow >= 2) {
+        outage = true;
+      }
+    }
+    if (heldBack.length) {
+      log.error(errorCodes.tag('STS-SCHED-0023') + 'scheduler: the store ' +
+                'could not say whether ' + heldBack.length + ' run(s) of ' +
+                'the current slot had already run (' + firstWhy + '), so ' +
+                'they were held back this tick and are asked about again ' +
+                'at the next; every other run went on. Held back: ' +
+                heldBack.slice(0, 10).join(', ') +
+                (heldBack.length > 10 ? ', and more' : '') + '.');
+    }
+    log.debug("Leaving Scheduler.recallFinishedSlots().");
+  }
+
+  // What one read answered about some slot ids. Null is no store: an
+  // absence all the same, remembered for the slot (#883's review).
+  private learnSlots(realmId: string, ask: string[],
+                     got: Map<string, Json> | null): void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.learnSlots(). " + realmId);
+    if (got == null) {
+      ask.forEach(function (id: string): void {
+        self.slotAsked.add(id);
+      });
+      log.debug("Leaving Scheduler.learnSlots(). No store.");
+      return;
+    }
+    if (!(got instanceof Map)) {
+      log.debug("Leaving Scheduler.learnSlots(). Not a map.");
+      throw new Error('the slot read for realm ' + realmId +
+                      ' did not answer a map');
+    }
+    ask.forEach(function (id: string): void {
+      const row = got.get(id);
+      if (!row) {
+        self.slotAsked.add(id);
+        return;
+      }
+      if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0) {
+        self.finishedSlots.add(id);
+        self.noteLatest(realmId, row);
+        return;
+      }
+      self.admitRecalled(realmId, id, row);
+    });
+    log.debug("Leaving Scheduler.learnSlots().");
+  }
+
+  // One job's current slot held back for this tick. The previous slot's id
+  // only feeds the page, so it is neither held nor named.
+  private holdBackSlot(ids: string[], heldBack: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdBackSlot().");
+    if (ids.length) {
+      this.unknownSlots.add(ids[0]);
+      heldBack.push(ids[0]);
+    }
+    log.debug("Leaving Scheduler.holdBackSlot().");
+  }
+
+  // An error as the end of a sentence.
+  private sentenceOf(e: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.sentenceOf().");
+    log.debug("Leaving Scheduler.sentenceOf().");
+    return String(((e as Json) && (e as Json).message) || e)
+      .replace(/\.+$/, '');
+  }
+
+  // A finished interval body this process wrote, once the flush has it.
+  // Walks `heldFinished` only. A key still journalled stays: deleting it
+  // would be written as a delete of the durable row. Absent, or false,
+  // `persisted` keeps every row — a test's store, and development, where
+  // the map is the only copy.
+  private releaseFinishedHistory(): void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.releaseFinishedHistory().");
+    const drop = this.deps.store && this.deps.store.dropHeld;
+    const persisted = this.deps.persisted;
+    if (typeof drop !== 'function' || typeof persisted !== 'function' ||
+        !persisted()) {
+      log.debug("Leaving Scheduler.releaseFinishedHistory(). Kept.");
+      return;
+    }
+    Array.from(this.heldFinished).forEach(function (key: string): void {
+      const cut = key.indexOf('\n');
+      if (cut < 0) {
+        self.heldFinished.delete(key);
+        return;
+      }
+      const realmId = key.slice(0, cut);
+      const runId = key.slice(cut + 1);
+      if (!self.storeOf(realmId).has(runId)) {
+        self.heldFinished.delete(key);
+        return;
+      }
+      if (drop(realmId, runId)) {
+        self.heldFinished.delete(key);
+      }
+    });
+    log.debug("Leaving Scheduler.releaseFinishedHistory().");
+  }
+
+  // -------------------------------------------------------------------------
   // ONE TICK OF THE LEADER. Serialised: a tick that is still going when the
   // next is asked for is the one that answers.
   // -------------------------------------------------------------------------
@@ -1331,6 +2312,14 @@ class Scheduler {
       return;
     }
     const at = this.nowMs();
+    // THE CURRENT SLOT, LEARNT WITHOUT HOLDING THE HISTORY (#883). A start
+    // does not restore a finished interval run, so the row that says this
+    // slot already ran is not in the map. One read per realm covers the
+    // current slot and the one before it. A read that fails holds back
+    // only the jobs it could not answer (STS-SCHED-0023): treating them as
+    // finished would skip the work, and as absent would run it twice.
+    await this.recallFinishedSlots(at);
+    this.releaseFinishedHistory();
     const self = this;
     // A QUEUE, AND AT MOST scheduler.maxConcurrentRuns RUNS AT ONCE
     // (2026-09-27). A slot is a multiple of the interval, so every hourly job
@@ -1340,7 +2329,8 @@ class Scheduler {
     // and for ninety seconds nothing else on that node could reach the store
     // — LDAPS timed out, a provider command was never delivered. So a tick
     // lines up everything due — a person's Run now first, then scheduled
-    // runs oldest-due first — and starts only as many as there is room for.
+    // runs whose slot ends first (below) — and starts only as many as there
+    // is room for.
     // The rest are not claimed, so they are still due at the next tick, and
     // a run that ends asks for that tick at once.
     const line: Json[] = [];
@@ -1382,10 +2372,13 @@ class Scheduler {
         }
         const runId = this.runIdFor(job, realmId, slot.slot);
         const row = this.storeOf(realmId).get(runId);
-        if (row && FINAL.indexOf(row.state) >= 0) {
+        if ((row && FINAL.indexOf(row.state) >= 0) ||
+            (!row && this.finishedSlots.has(runId)) ||
+            (!row && this.unknownSlots.has(runId))) {
           continue;
         }
-        scheduled.push({ job: job, realm: realmId, row: row || {
+        scheduled.push({ job: job, realm: realmId,
+                         endsAt: slot.nextAt, row: row || {
           runId: runId, kind: 'run', jobId: job.id, realm: realmId,
           slot: slot.slot, dueAt: slot.startsAt, trigger: 'schedule',
           params: null, requestedBy: '', state: 'queued', attempt: 0,
@@ -1393,37 +2386,197 @@ class Scheduler {
         } });
       }
     }
+    // THE RUN WHOSE SLOT ENDS FIRST GOES FIRST (2026-11-13), then the
+    // lower `nice`, then the older. It was oldest-due first, and that
+    // starved every job with a short interval as soon as the line was
+    // longer than the cap could clear: a realm job every two seconds in
+    // eighty realms (`report.drain`) is forty runs a second, the memory
+    // mode runs them inline under a cap of two, and on a loaded machine
+    // the line never emptied. Each of those runs was due from the start of
+    // ITS slot, at or before the start of `ssf.internal-poll`'s one-second
+    // slot, so the poll was always behind them; its slot ended unrun, the
+    // next began behind the next two seconds' runs, and a run 23 broadcast
+    // went undelivered for thirty seconds (`sts_broadcast_announcement`).
+    // A run not started before its slot ends is never started (only the
+    // current slot is due), so the slot's end is the deadline the order is
+    // for: an hourly job waiting a few seconds loses nothing, a one-second
+    // job waiting one loses its run. Under a line the cap can never clear
+    // something still waits, but it is the run with the most time left.
     scheduled.sort(function (a: Json, b: Json): number {
+      const endA = a.endsAt === null || a.endsAt === undefined ? Infinity
+        : Number(a.endsAt);
+      const endB = b.endsAt === null || b.endsAt === undefined ? Infinity
+        : Number(b.endsAt);
+      if (endA !== endB) {
+        return endA < endB ? -1 : 1;
+      }
+      const niceA = Number(a.job.nice) || 0;
+      const niceB = Number(b.job.nice) || 0;
+      if (niceA !== niceB) {
+        return niceA - niceB;
+      }
       return (Number(a.row.dueAt) || 0) - (Number(b.row.dueAt) || 0);
     });
     const cap = this.maxConcurrentRuns();
     this.waiting = false;
+    const seen = new Set<string>();
     line.concat(scheduled).forEach(function (one: Json): void {
+      seen.add(one.row.runId);
       if (self.inFlight.has(one.row.runId)) {
         return;
       }
+      if (Number(self.claimedByAnotherCell.get(one.row.runId)) > at) {
+        return;
+      }
+      // THE CAP FIRST, THEN THE HOLD (#408). A run waiting for the cap is
+      // not asked about load, so the instant it was first held is kept: were
+      // the hold asked first, a run whose bound had just been reached but
+      // found the cap full would be forgotten as "no longer held" and held
+      // again from zero at the next tick, which under steady load could
+      // postpone it past its bound indefinitely.
       if (self.inFlight.size >= cap) {
         self.waiting = true;
         return;
       }
+      // HELD FOR LOAD (#408), BEFORE THE CLAIM: what waits is not claimed,
+      // so it is still due at the next tick, exactly as a run waiting for
+      // the cap is — and a held run does not take a place under the cap.
+      if (self.holdForLoad(one.job, one.row)) {
+        return;
+      }
       self.attempt(one.job, one.realm, one.row);
     });
+    // A HELD RUN NO TICK SAW AGAIN is forgotten: its slot moved on, its job
+    // was switched off, or its realm went. A run of the next slot is a new
+    // runId, so its bound is measured from its own first due.
+    Array.from(this.heldSince.keys()).forEach(function (runId: string) {
+      if (!seen.has(runId)) {
+        self.heldSince.delete(runId);
+      }
+    });
+    Array.from(this.deferredMs.keys()).forEach(function (runId: string) {
+      if (!seen.has(runId) && !self.inFlight.has(runId)) {
+        self.deferredMs.delete(runId);
+      }
+    });
+    Array.from(this.claimedByAnotherCell.keys()).forEach(function (
+      runId: string): void {
+      if (!seen.has(runId)) {
+        self.claimedByAnotherCell.delete(runId);
+      }
+    });
+    this.abandonOrphans(at);
     log.debug("Leaving Scheduler.tickOnce().");
   }
 
-  // Every queued manual run in every realm, oldest first.
-  private queuedManualRuns(): Json[] {
-    const { log, realms } = this.deps;
+  // -------------------------------------------------------------------------
+  // A RUN A DEAD NODE LEFT RUNNING IN A SLOT THAT HAS PASSED (2026-11-03).
+  //
+  // A takeover (`runClaimed()`) happens only when a tick attempts the row
+  // again, and a tick attempts only the CURRENT slot's run. A run's claim
+  // lasts its timeout and a second (600 s by default) while many jobs fall
+  // due every two minutes, so the slot a crash left `running` had always
+  // moved on before its claim lapsed: no tick looked at the row again, and
+  // it stayed `running` in the history for good, with no `abandoned` beside
+  // it — the crash takeover's step 4 (`tests/tools/scheduler-takeover.js`)
+  // waited its whole bound for one, on 2026-11-03.
+  //
+  // So the leader looks, each tick, at the rows `runningRows` holds: a
+  // scheduled run of a cluster job, attempted by nobody here, whose slot is
+  // not the current one, and past its expected end (started, plus its
+  // timeout, plus the claim's second). Its claim is asked for — which is
+  // the proof: it is granted only once the runner's claim has lapsed, so a
+  // slow run still holding its claim is left alone — and, if the row is
+  // still that attempt, it is recorded ABANDONED (STS-SCHED-0011, as a
+  // takeover records it) and the claim given back. The slot is not run
+  // again: its time has passed, and the job's next slot is already due.
+  // The current slot's row is left to the takeover path, which runs it.
+  // -------------------------------------------------------------------------
+  private abandonOrphans(at: number): void {
+    const { log, claims, audit, errorCodes } = this.deps;
     const self = this;
+    log.debug("Entering Scheduler.abandonOrphans().");
+    Array.from(this.runningRows.entries()).forEach(function (pair: Json[]) {
+      const entry = pair[1];
+      if (!self.realmDefined(entry.realm)) {
+        return;
+      }
+      const row = self.storeOf(entry.realm).get(entry.runId);
+      if (!row || row.kind !== 'run' || row.state !== 'running') {
+        self.runningRows.delete(pair[0]);
+        return;
+      }
+      if (row.trigger !== 'schedule' || self.inFlight.has(row.runId) ||
+          self.orphanClaims.has(row.runId)) {
+        return;
+      }
+      const job = self.job(row.jobId);
+      if (!job || (job.kind && job.kind !== 'cluster')) {
+        return;
+      }
+      if (at < (Number(row.startedAt) || 0) + self.timeoutMsOf(job) + 1000) {
+        return;
+      }
+      const slot = self.slotAt(job, at);
+      if (slot && slot.slot !== null &&
+          self.runIdFor(job, entry.realm, slot.slot) === row.runId) {
+        return;
+      }
+      self.orphanClaims.add(row.runId);
+      claims.claim({ scope: self.runScopeOf(job), value: row.runId,
+                     realm: entry.realm, ttlMs: 30000 })
+        .then(function (answer: Json): void {
+          if (!answer.ok) {
+            return;
+          }
+          const stored = self.storeOf(entry.realm).get(row.runId);
+          if (stored && stored.state === 'running' &&
+              Number(stored.fenceAt) === Number(row.fenceAt)) {
+            self.writeRow(entry.realm, Object.assign({}, stored, {
+              state: 'abandoned', endedAt: self.nowMs(),
+              errorCode: 'STS-SCHED-0011',
+              why: 'The attempt on ' + (stored.nodeName || stored.node ||
+                   '?') + ' (pid ' + stored.pid + ') stopped holding its ' +
+                   'claim before it finished, and its slot passed; the ' +
+                   'job\'s next slot runs instead.',
+              abandonedOf: stored.runId }));
+            audit.record({ action: 'scheduler.run', protocol: 'scheduler',
+                           channel: 'internal', target: job.id,
+                           errorCode: 'STS-SCHED-0011', outcome: 'failure',
+                           summarised: true,
+                           summary: 'Scheduler run ' + stored.runId + ' of ' +
+                                    job.id + ' was abandoned: its node ' +
+                                    'stopped and its slot passed.',
+                           detail: { runId: stored.runId,
+                                     realm: entry.realm, node: stored.node,
+                                     pid: stored.pid } });
+            log.warn(errorCodes.tag('STS-SCHED-0011') + 'scheduler: run ' +
+                     stored.runId + ' of ' + job.id + ' was left running ' +
+                     'on ' + (stored.nodeName || stored.node || '?') +
+                     ' and its slot has passed; it is recorded abandoned.');
+          }
+          claims.release(answer.handle);
+        })
+        .catch(function (e: Json): void {
+          log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
+                    row.runId + ' of ' + job.id + ' could not be checked ' +
+                    'for abandonment: ' +
+                    String((e && e.message) || e).replace(/\.+$/, '') + '.');
+        })
+        .then(function (): void {
+          self.orphanClaims.delete(row.runId);
+        });
+    });
+    log.debug("Leaving Scheduler.abandonOrphans().");
+  }
+
+  // Every queued manual run in every realm, oldest first — from the index
+  // of the rows a tick has to see (#623), never a read of the history.
+  private queuedManualRuns(): Json[] {
+    const { log } = this.deps;
     log.debug("Entering Scheduler.queuedManualRuns().");
-    const out: Json[] = [];
-    realms.list().forEach(function (realm: Json): void {
-      self.storeOf(String(realm.id)).forEach(function (row: Json): void {
-        if (row && row.kind === 'run' && row.trigger === 'manual' &&
-            (row.state === 'queued' || row.state === 'running')) {
-          out.push({ realm: String(realm.id), row: Object.assign({}, row) });
-        }
-      });
+    const out: Json[] = this.pending().filter(function (pair: Json): boolean {
+      return pair.row.kind === 'run';
     });
     out.sort(function (a: Json, b: Json): number {
       return Number(a.row.queuedAt) - Number(b.row.queuedAt);
@@ -1477,11 +2630,25 @@ class Scheduler {
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
                                    timedOut: false, asking: true });
-    claims.claim({ scope: this.runScopeOf(job), value: row.runId,
+    const scope = this.runScopeOf(job);
+    claims.claim({ scope: scope, value: row.runId,
                    realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
         self.inFlight.delete(row.runId);
+        // THE CELL THAT LOSES A GLOBAL JOB'S CLAIM NEVER SEES THE RUN END
+        // (#98, 2026-11-06). The winner writes the run's row in its OWN
+        // database, so here it stays due, the oldest due of everything, and
+        // first in every tick's line: cell B asked 413 times for one job's
+        // claim, each ask holding a place under scheduler.maxConcurrentRuns
+        // (2 by default), and scim-client.deliver never had a turn in 150 s.
+        // The claim cannot be won before its lifetime ends, so it is not
+        // asked for until then. A cluster job's row is shared within the
+        // cell, so its scope is left as it was.
+        if (answer.reason === 'used' && scope !== RUN_SCOPE) {
+          self.claimedByAnotherCell.set(row.runId,
+                                        self.nowMs() + timeoutMs + 1000);
+        }
         if (answer.reason === 'store') {
           log.warn(errorCodes.tag('STS-SCHED-0008') + 'scheduler: the ' +
                    'claim store could not be asked about run ' + row.runId +
@@ -1495,7 +2662,7 @@ class Scheduler {
       self.inFlight.delete(row.runId);
       log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
                 row.runId + ' of ' + job.id + ' could not be started: ' +
-                ((e && e.message) || e) + '.');
+                String((e && e.message) || e).replace(/\.+$/, '') + '.');
     });
     log.debug("Leaving Scheduler.attempt().");
   }
@@ -1545,25 +2712,37 @@ class Scheduler {
                      detail: { runId: stored.runId, realm: realmId,
                                node: stored.node, pid: stored.pid } });
     }
+    // WHERE THE BODY RUNS (#408), decided now rather than at the tick, so
+    // the load it is decided on is the load the run meets.
+    const runner = this.runnerFor(job);
+    const target = runner ? Scheduler.leastLoaded(runner.workers()) : null;
+    const heldMs = Number(this.deferredMs.get(row.runId)) || 0;
+    this.deferredMs.delete(row.runId);
     const running = Object.assign({}, stored, {
       state: 'running', fenceAt: fence,
       attempt: (Number(stored.attempt) || 0) + 1,
       node: me.node, nodeName: me.nodeName, host: me.host, pid: me.pid,
       startedAt: this.nowMs(), endedAt: 0, errorCode: '', why: '',
-      result: null, takenOver: stored.state === 'running'
+      result: null, takenOver: stored.state === 'running',
+      ranIn: target ? 'worker' : 'front', deferredMs: heldMs
     });
     this.writeRow(realmId, running);
+    // `switchedOff` (#1305): the reason the job was switched off while this
+    // ran, or '' — `watchRun()` sets it, and both halves read it.
     const flight: Json = { fence: fence, realm: realmId, timedOut: false,
-                           asking: false };
+                           asking: false, runner: target ? runner : null,
+                           switchedOff: '', ended: false, watch: null };
     this.inFlight.set(row.runId, flight);
     const startedLocal = this.deps.now();
+    // The instant, on this process's clock, the time limit falls at: a body
+    // on a worker stops owning the run there by itself (#1305).
+    flight.deadline = startedLocal + timeoutMs;
     const ctx: RunContext = {
       realm: realmId, runId: row.runId, trigger: running.trigger,
       params: running.params || null,
       stillOwner: function (): boolean {
-        const live = self.storeOf(realmId).get(row.runId);
-        return self.leading && !flight.timedOut && !flight.realmGone &&
-               !!live && Number(live.fenceAt) === fence;
+        return self.flightOwns(row.runId, realmId, flight) &&
+               !flight.switchedOff;
       },
       nowMs: function (): number {
         return self.nowMs();
@@ -1574,22 +2753,44 @@ class Scheduler {
     const timedOut = new Promise(function (resolve: (v: Json) => void) {
       timeoutHandle = setTimer(function (): void {
         flight.timedOut = true;
+        // A BODY IN A WORKER IS TOLD (#408): its `stillOwner()` answers
+        // false from now on, and this process stops waiting for its answer.
+        // The front's thread is free either way — the work is not on it.
+        if (flight.runner) {
+          flight.runner.fence(row.runId);
+        }
         resolve({ timedOut: true });
       }, timeoutMs);
     });
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
-    const work = Promise.resolve().then(function (): Json {
+    const inline = function (): Json {
       return realms.run(realm, function (): Json {
-        return job.run(ctx);
+        // Routine info from the body is debug (common/job_log.ts).
+        return JobLog.during(function (): Json {
+          return job.run(ctx);
+        });
       });
+    };
+    const work = Promise.resolve().then(function (): Json {
+      if (!target) {
+        return inline();
+      }
+      return self.runInWorker(runner as RunRunner, target, job, running,
+                              flight, inline);
     }).then(function (result: Json): Json {
-      return { ok: true, result: result };
+      // A body on a worker sent its `why` beside its summary (#1313).
+      return { ok: true, result: result,
+               why: flight.delegatedWhy || Scheduler.whyOf(result) };
     }, function (e: Json): Json {
       return { ok: false, error: e };
     });
+    this.watchRun(job, row.runId, realmId, flight);
     log.debug("Leaving Scheduler.runClaimed(). Running.");
     return Promise.race([work, timedOut]).then(function (outcome: Json) {
       clearTimer(timeoutHandle);
+      flight.ended = true;
+      clearTimer(flight.watch);
+      flight.watch = null;
       self.inFlight.delete(row.runId);
       // A place is free: start what the last tick left waiting, now rather
       // than at the next tick. Only after a run that RAN, so a store that
@@ -1615,6 +2816,11 @@ class Scheduler {
       }
       const final: Json = Object.assign({}, live, {
         endedAt: endedAt, durationMs: self.deps.now() - startedLocal });
+      // A BODY THE WORKER SENT BACK (#408: a job it has not registered, a
+      // realm it does not know yet) ran here after all, and the row says so.
+      if (target && !flight.runner) {
+        final.ranIn = 'front';
+      }
       let errorCode = '';
       if (outcome.timedOut) {
         errorCode = 'STS-SCHED-0002';
@@ -1623,33 +2829,613 @@ class Scheduler {
                     Scheduler.span(timeoutMs) + '.';
         claims.release(answer.handle);
       } else if (!outcome.ok) {
-        errorCode = 'STS-SCHED-0001';
+        // A worker that ended under the run names its own code (#408); a
+        // job that failed, wherever it ran, is STS-SCHED-0001.
+        errorCode = (outcome.error && outcome.error.schedulerCode) ||
+          'STS-SCHED-0001';
         final.state = 'failed';
         final.why = String((outcome.error && outcome.error.message) ||
                            outcome.error || 'it failed');
       } else {
         final.state = 'succeeded';
         final.result = Scheduler.summaryOf(outcome.result);
+        // A SUCCESS THAT DID LESS THAN A WHOLE RUN SAYS SO (#1313): a body
+        // may answer a `why` beside its counts — the minted expiry purge
+        // skipping its orphan check while the global registry is down —
+        // and the row carries it, as a switch-off's does, with no code.
+        final.why = String(outcome.why || '');
+      }
+      // SWITCHED OFF WHILE IT RAN (#1305): not a failure — the body was
+      // told it no longer owned the run and stopped where it could — but
+      // the row says why it may have done less than a whole run.
+      if (flight.switchedOff && (!final.why || final.state === 'succeeded')) {
+        final.why = 'It was switched off while it ran (' +
+                    String(flight.switchedOff).replace(/\.+$/, '') +
+                    '), and its body was told it no longer owned the run.' +
+                    (final.why ? ' ' + final.why : '');
       }
       final.errorCode = errorCode;
       self.writeRow(realmId, final);
-      audit.record({
-        action: 'scheduler.run', protocol: 'scheduler', channel: 'internal',
-        target: job.id, errorCode: errorCode,
-        outcome: errorCode ? 'failure' : 'success', summarised: !!errorCode,
-        summary: 'Scheduler run ' + row.runId + ' of ' + job.id +
-                 (realmId !== realms.DEFAULT_ID ? ' in "' + realmId + '"'
-                   : '') + ' ' + final.state + ' (' + final.trigger +
-                 ', attempt ' + final.attempt + ').',
-        detail: { runId: row.runId, realm: realmId, trigger: final.trigger,
-                  attempt: final.attempt, durationMs: final.durationMs,
-                  why: final.why || '' }
-      });
+      // A success is the run row. The audit row is what the syslog
+      // destination exports, so a run that succeeded writes none. A
+      // failure does, and an abandonment is recorded above.
       if (errorCode) {
+        audit.record({
+          action: 'scheduler.run', protocol: 'scheduler',
+          channel: 'internal', target: job.id, errorCode: errorCode,
+          outcome: 'failure', summarised: true,
+          summary: 'Scheduler run ' + row.runId + ' of ' + job.id +
+                   (realmId !== realms.DEFAULT_ID ? ' in "' + realmId + '"'
+                     : '') + ' ' + final.state + ' (' + final.trigger +
+                   ', attempt ' + final.attempt + ').',
+          detail: { runId: row.runId, realm: realmId,
+                    trigger: final.trigger, attempt: final.attempt,
+                    durationMs: final.durationMs, why: final.why || '' }
+        });
         log.warn(errorCodes.tag(errorCode) + 'scheduler: ' + job.id + ' ' +
                  'failed: ' + final.why);
       }
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // WHERE A CLUSTER RUN RUNS (#408).
+  //
+  // A cluster job's `run()` was called inline on the leader, which is a front
+  // process — the thread that answers the main port, LDAPS and the KDC — and
+  // sixteen of them did synchronous work for tens of milliseconds to minutes.
+  // So the leader keeps everything that decides a run (the lease, the claim,
+  // the fence, the time limit, the run row) and hands the BODY to a ready
+  // request worker, which loads the same stack and registers the same jobs.
+  // That needs nothing new to be correct, because a cluster job already runs
+  // on whichever node leads and its effects already reach every other process
+  // through the store; a request worker is one more process against it
+  // (`common/CLAUDE.md`, *A WORKER IS ANOTHER PROCESS AGAINST THE STORE*):
+  //
+  //   * its writes are journalled and replicated like any worker's, and the
+  //     worker announces their commit before it answers the run
+  //     (`request_worker.ts`'s `runSchedulerJob()`), so the pool's
+  //     read-your-write generation moves for them before the outcome is
+  //     written and a reader on another worker is synced;
+  //   * a key set or a hierarchy it makes goes up the pool's key and PKI
+  //     channels, as one made by a request does (`receivePublishedKeys()`
+  //     adopts a newer generation and broadcasts it);
+  //   * a directory connection it ends is closed by the front, which holds
+  //     the socket, over the channel (`ldap/ldap_server.js`'s remote dropper
+  //     sends `{ ldapDrop }` when no response is in flight).
+  //
+  // WHICH WORKER: the ready protocol-pool worker with the fewest requests in
+  // flight, then the shortest event-loop delay (`leastLoaded()`). Not a
+  // surface worker: those are kept for a person waiting on a console page.
+  //
+  // NO WORKER — none configured, a pool that gave up, a store that does not
+  // coordinate (where there are no workers at all), or a job a worker has not
+  // registered — means the run is inline, exactly as before #408. A job that
+  // must not move says so with `onFront` and its reason.
+  // -------------------------------------------------------------------------
+  private runnerFor(job: JobSpec): RunRunner | null {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.runnerFor(). " + job.id);
+    if (job.kind === 'per-process' || job.onFront ||
+        this.notInWorkers.has(job.id) ||
+        typeof this.deps.runner !== 'function') {
+      log.debug("Leaving Scheduler.runnerFor(). Here.");
+      return null;
+    }
+    let runner: RunRunner | null = null;
+    try {
+      runner = this.deps.runner();
+    } catch (e) {
+      log.debug("Caught in Scheduler.runnerFor(): " +
+                ((e && e.message) || e));
+      runner = null;
+    }
+    log.debug("Leaving Scheduler.runnerFor().");
+    return runner;
+  }
+
+  /**
+   * Picks the worker with the fewest requests in flight, then the shortest
+   * recent event-loop delay, then the lowest id.
+   *
+   * @param loads - the ready workers and their load
+   * @returns the chosen worker's id, or null when there is none
+   */
+  static leastLoaded(loads: WorkerLoad[]): number | null {
+    helpers.log.debug("Entering Scheduler.leastLoaded().");
+    const list = Array.isArray(loads) ? loads.slice() : [];
+    if (!list.length) {
+      helpers.log.debug("Leaving Scheduler.leastLoaded(). None.");
+      return null;
+    }
+    list.sort(function (a: WorkerLoad, b: WorkerLoad): number {
+      const busy = (Number(a.inFlight) || 0) - (Number(b.inFlight) || 0);
+      if (busy) {
+        return busy;
+      }
+      const lag = (Number(a.lagMs) || 0) - (Number(b.lagMs) || 0);
+      return lag || (Number(a.id) - Number(b.id));
+    });
+    helpers.log.debug("Leaving Scheduler.leastLoaded(). " + list[0].id);
+    return list[0].id;
+  }
+
+  // ONE BODY IN ONE WORKER. Resolves the job's result, or rejects with an
+  // Error the outcome reads (`schedulerCode` naming a worker that ended).
+  private runInWorker(runner: RunRunner, target: number, job: JobSpec,
+                      running: Json, flight: Json,
+                      inline: () => Json): Promise<Json> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.runInWorker(). " + running.runId + " -> " +
+              target);
+    const request = {
+      jobId: job.id, realm: running.realm, runId: running.runId,
+      trigger: running.trigger, params: running.params || null,
+      // The database clock's offset from this process's: a worker is a
+      // thread of this process and reads the same local clock, so the offset
+      // is all it needs for `ctx.nowMs()` to answer what it would here.
+      clockOffsetMs: this.clockOffset,
+      // WHAT THE BODY MAY CLAIM BY ITSELF (#1305), as instants on this
+      // process's clock, which the worker thread shares: the time limit, past
+      // which nothing the leader could send would make it the owner, and the
+      // first grant, which `watchRun()` renews while the leader stands
+      // behind it.
+      deadlineMs: Number(flight.deadline) || 0,
+      grantUntilMs: this.deps.now() + DELEGATED_GRANT_MS
+    };
+    log.debug("Leaving Scheduler.runInWorker().");
+    return runner.run(target, request).then(function (answer: Json): Json {
+      const a = answer || {};
+      if (a.unknownJob) {
+        // REGISTERED ONLY IN THE FRONT PROCESS: its owner registers it at
+        // `listen()` or at a first use there. It runs here, now and for the
+        // rest of this process's life, and says so once.
+        self.notInWorkers.add(job.id);
+        flight.runner = null;
+        log.warn(errorCodes.tag('STS-SCHED-0020') + 'scheduler: ' + job.id +
+                 ' is not registered in request worker ' + target + ', so ' +
+                 'it runs on this front process\'s thread, now and from now ' +
+                 'on. Register it at its owner\'s load, or give it an ' +
+                 'onFront reason.');
+        return inline();
+      }
+      if (a.unknownRealm) {
+        // A REALM CREATED A MOMENT AGO that the worker has not caught up
+        // with: this run only is inline, and the next is handed over again.
+        // Unless it was removed meanwhile, when nothing is run (#338: the
+        // inline call would otherwise fall back to the default realm).
+        flight.runner = null;
+        if (!self.realmDefined(running.realm)) {
+          const gone: Json = new Error('the realm "' + running.realm +
+                                       '" was removed before it ran');
+          gone.schedulerCode = 'STS-SCHED-0018';
+          throw gone;
+        }
+        log.info('scheduler: request worker ' + target + ' does not know ' +
+                 'the realm "' + running.realm + '" yet, so run ' +
+                 running.runId + ' of ' + job.id + ' runs on this front ' +
+                 'process\'s thread.');
+        return inline();
+      }
+      if (a.ok) {
+        // The summary crossed the channel as text, so the body's `why`
+        // crossed beside it (#1313, runDelegated()).
+        flight.delegatedWhy = String(a.why || '');
+        return a.result;
+      }
+      const e: Json = new Error(String(a.error || 'it failed'));
+      if (a.code) {
+        e.schedulerCode = String(a.code);
+      }
+      throw e;
+    });
+  }
+
+  // Tells every worker running a body this process handed it, of the runs
+  // `which` picks, that it no longer owns the run.
+  private fenceDelegatedRuns(which: (flight: Json) => boolean): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.fenceDelegatedRuns().");
+    this.inFlight.forEach(function (flight: Json, runId: string): void {
+      if (flight.runner && which(flight)) {
+        try {
+          flight.runner.fence(runId);
+        } catch (e) {
+          // The pool's own failure to reach a worker is its to report; the
+          // run is fenced out here by its row either way.
+          log.debug("Caught in Scheduler.fenceDelegatedRuns(): " +
+                    ((e && e.message) || e));
+        }
+      }
+    });
+    log.debug("Leaving Scheduler.fenceDelegatedRuns().");
+  }
+
+  // Whether this process still owns a run it is attempting: it leads, the
+  // run has not timed out, its realm is defined, and the row still carries
+  // this attempt's fence. A HOT PATH, so no Entering/Leaving pair: a job
+  // asks `stillOwner()` before each step, thousands of times in one run of
+  // a paged sweep, and the pair would drown the log.
+  private flightOwns(runId: string, realmId: string, flight: Json): boolean {
+    const live = this.storeOf(realmId).get(runId);
+    return this.leading && !flight.timedOut && !flight.realmGone &&
+           !!live && Number(live.fenceAt) === Number(flight.fence);
+  }
+
+  // -------------------------------------------------------------------------
+  // A RUN IN FLIGHT, LOOKED AT EVERY RUN_CHECK_MS (#1305).
+  //
+  // Two things the leader decided only at the tick, and which a body that
+  // runs for minutes outlives:
+  //
+  //   * ON/OFF. A run is started only while its job is on, and nothing asked
+  //     again. Now the leader asks `serviceOffReason()` — the scheduler
+  //     switched off, the job named in `scheduler.disabledJobs`, its
+  //     interval set to 0: an operator's three switches — and once one
+  //     answers, the run's `stillOwner()` answers false wherever its body
+  //     runs, so the body stops at its next step it cannot take back. NOT
+  //     the job's own `off()`: that is usually "nothing to do" (no Claims
+  //     Provider registered, no post-login activity running), which a body's
+  //     own work makes true halfway through; a job whose own switch must
+  //     stop a run reads it itself. The run is still recorded as it ends —
+  //     a switch-off is no failure — with a `why` saying it was switched off.
+  //   * OWNERSHIP, ON A WORKER. A body on a request worker learnt it had lost
+  //     the run only from a `{ schedulerFence }` — sent at the time limit, on
+  //     a lost lease, on a removed realm — and a fence that never came (this
+  //     thread stuck, the message lost, a takeover seen through the change
+  //     log, which sent none) left it owning a run another node had claimed.
+  //     So the body's ownership is now a GRANT the leader renews: here, at
+  //     each check, the leader asks what its own `stillOwner()` asks, and
+  //     renews the grant for DELEGATED_GRANT_MS if it still owns the run —
+  //     or fences it if not, which is the takeover case's fence. A worker
+  //     whose grant runs out stops owning the run by itself
+  //     (`delegatedOwns()`, STS-SCHED-0021), and its time limit is its own
+  //     too. Nothing the worker decides needs a message to arrive: a lost
+  //     one can only make it stop sooner.
+  //
+  // A TIMER OF ONE RUN, NOT A PERIODIC ONE (root CLAUDE.md, *Anything
+  // periodic is a scheduler job*): it is armed when the run starts and
+  // cleared when it ends, like the run's time limit — a timeout inside one
+  // operation. It is re-armed by `checkRun()`'s caller below, so it is a
+  // chain only for one run's life.
+  // -------------------------------------------------------------------------
+  private watchRun(job: JobSpec, runId: string, realmId: string,
+                   flight: Json): void {
+    const { log, setTimer } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.watchRun(). " + runId);
+    if (flight.ended) {
+      log.debug("Leaving Scheduler.watchRun(). It has ended.");
+      return;
+    }
+    flight.watch = setTimer(function (): void {
+      flight.watch = null;
+      if (flight.ended) {
+        return;
+      }
+      if (self.checkRun(job, runId, realmId, flight)) {
+        self.watchRun(job, runId, realmId, flight);
+      }
+    }, RUN_CHECK_MS);
+    log.debug("Leaving Scheduler.watchRun().");
+  }
+
+  // One look at a run in flight. Returns whether to look again.
+  private checkRun(job: JobSpec, runId: string, realmId: string,
+                   flight: Json): boolean {
+    const { log, now } = this.deps;
+    log.debug("Entering Scheduler.checkRun(). " + runId);
+    if (!flight.switchedOff) {
+      const off = this.serviceOffReason(job);
+      if (off) {
+        flight.switchedOff = off;
+        // NOT A FAILURE, so no code: an operator's switch doing its job.
+        log.info('scheduler: ' + job.id + ' was switched off (' +
+                 off.replace(/\.+$/, '') + ') while run ' + runId +
+                 ' ran; it no longer owns the run, and stops at its next ' +
+                 'step.');
+      }
+    }
+    const runner = flight.runner as RunRunner | null;
+    if (!runner) {
+      // INLINE, or sent back by the worker: `stillOwner()` reads the flight
+      // here, so there is nothing to send — only the switch-off to see.
+      log.debug("Leaving Scheduler.checkRun(). Inline.");
+      return true;
+    }
+    if (!this.flightOwns(runId, realmId, flight)) {
+      // Most of these were fenced already (the time limit, a lost lease, a
+      // removed realm) and the fence is idempotent. The one that was not is
+      // the row another attempt has taken over, seen through the change
+      // log: the outcome is not written either way (STS-SCHED-0003).
+      try {
+        runner.fence(runId);
+      } catch (e) {
+        log.debug("Caught in Scheduler.checkRun(): " +
+                  ((e && e.message) || e));
+      }
+      log.debug("Leaving Scheduler.checkRun(). No longer owned: fenced.");
+      return false;
+    }
+    try {
+      runner.renew(runId, now() + DELEGATED_GRANT_MS,
+                   String(flight.switchedOff || ''));
+    } catch (e) {
+      // The pool's own failure to reach a worker is its to report, and a
+      // grant not renewed runs out by itself there.
+      log.debug("Caught in Scheduler.checkRun(): " + ((e && e.message) || e));
+    }
+    log.debug("Leaving Scheduler.checkRun(). Renewed.");
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // A RUN HELD FOR LOAD, AND NEVER FOR LONG — "nice" (#408, rcbj).
+  //
+  // A scheduled run handed to a worker that is already busy competes with
+  // that worker's requests. So a due SCHEDULED run waits while even the
+  // least-loaded worker is heavy — `scheduler.niceBusyThreshold` requests in
+  // flight, or an event-loop delay of `scheduler.niceLagMs` in its last
+  // report — and is held at most min(scheduler.niceMaxDeferS × nice / 19,
+  // half the job's interval), measured from when it was FIRST held, not reset
+  // by each tick. Past that it runs whatever the load: a job that never ran
+  // because its workers were always busy would be a security control
+  // silently off (a key never rotated, a session never expired).
+  //
+  // Never held: a manual run and an on-demand job (an operator's act), a job
+  // of nice 0, a job on the front, and every run where there is no worker.
+  // **INLINE RUNS ARE NOT HELD**, deliberately: the signal is a worker's
+  // queue, which the front has no equivalent of, and the front's own loop
+  // delay is mostly the scheduler's and the requests' I/O it exists to do;
+  // a service with no worker is development, or a degraded pool, where
+  // holding a run would only postpone the same work on the same thread.
+  //
+  // The hold happens BEFORE the claim, so a held run is not claimed and is
+  // still due at the next tick — a tick comes at least every scheduler.tickS.
+  // -------------------------------------------------------------------------
+  private holdForLoad(job: JobSpec, row: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdForLoad(). " + row.runId);
+    const nice = Number(job.nice) || 0;
+    if (row.trigger !== 'schedule' || job.manualOnly || nice <= 0) {
+      log.debug("Leaving Scheduler.holdForLoad(). Never held.");
+      return false;
+    }
+    const runner = this.runnerFor(job);
+    const loads = runner ? runner.workers() : [];
+    if (!loads.length) {
+      log.debug("Leaving Scheduler.holdForLoad(). Inline: not held.");
+      return false;
+    }
+    const bestId = Scheduler.leastLoaded(loads);
+    const best = loads.filter(function (one: WorkerLoad): boolean {
+      return one.id === bestId;
+    })[0];
+    const held = this.heldSince.get(row.runId);
+    const now = this.deps.now();
+    if (!this.isHeavy(best)) {
+      if (held) {
+        this.heldSince.delete(row.runId);
+        this.deferredMs.set(row.runId, Math.max(0, now - held.since));
+        log.info('scheduler: run ' + row.runId + ' of ' + job.id + ' was ' +
+                 'held ' + (now - held.since) + ' ms for load and now runs.');
+      }
+      log.debug("Leaving Scheduler.holdForLoad(). Not heavy.");
+      return false;
+    }
+    const bound = this.holdBoundMs(job, nice);
+    const since = held ? held.since : now;
+    if (!held) {
+      this.heldSince.set(row.runId, { since: since });
+    }
+    const waited = now - since;
+    if (waited >= bound) {
+      this.heldSince.delete(row.runId);
+      this.deferredMs.set(row.runId, Math.max(0, waited));
+      // NOT A FAILURE, so no code: the bound doing its job.
+      log.info('scheduler: run ' + row.runId + ' of ' + job.id + ' runs ' +
+               'although every request worker is busy (the least loaded ' +
+               'has ' + best.inFlight + ' in flight' +
+               (best.lagMs !== null ? ', a ' + best.lagMs + ' ms loop delay'
+                 : '') + '): it was held ' + waited + ' ms, its bound (nice ' +
+               nice + ').');
+      log.debug("Leaving Scheduler.holdForLoad(). Forced through.");
+      return false;
+    }
+    if (!held) {
+      log.info('scheduler: run ' + row.runId + ' of ' + job.id + ' is held ' +
+               'for load: the least loaded request worker has ' +
+               best.inFlight + ' in flight' +
+               (best.lagMs !== null ? ', a ' + best.lagMs + ' ms loop delay'
+                 : '') + '. It runs when one is lighter, or in ' + bound +
+               ' ms at most (nice ' + nice + ').');
+    }
+    log.debug("Leaving Scheduler.holdForLoad(). Held.");
+    return true;
+  }
+
+  // Whether a worker is too busy for a patient run: either signal will do.
+  private isHeavy(load: WorkerLoad): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.isHeavy().");
+    const busy = this.setting('scheduler.niceBusyThreshold');
+    const lag = this.setting('scheduler.niceLagMs');
+    // 0 SWITCHES A SIGNAL OFF (the `|| n` rule: read directly, 0 is legal).
+    const heavy = (busy > 0 && Number(load.inFlight) >= busy) ||
+      (lag > 0 && load.lagMs !== null && Number(load.lagMs) >= lag);
+    log.debug("Leaving Scheduler.isHeavy(). " + heavy);
+    return heavy;
+  }
+
+  // The longest a run of this job is held: its share of
+  // scheduler.niceMaxDeferS, and never more than half its interval — a job
+  // held longer than that could meet its next slot still waiting.
+  private holdBoundMs(job: JobSpec, nice: number): number {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdBoundMs(). " + job.id);
+    const max = Math.max(0, this.setting('scheduler.niceMaxDeferS')) * 1000;
+    let bound = Math.floor(max * Math.min(nice, MAX_NICE) / MAX_NICE);
+    const slot = this.slotAt(job, this.nowMs());
+    const interval = slot && Number(slot.nextAt) > Number(slot.startsAt)
+      ? Number(slot.nextAt) - Number(slot.startsAt) : 0;
+    if (interval > 0) {
+      bound = Math.min(bound, Math.floor(interval / 2));
+    }
+    log.debug("Leaving Scheduler.holdBoundMs(). " + bound);
+    return bound;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE WORKER'S HALF (#408): a body the leader handed this process. The run
+  // row, the claim and the time limit are the leader's; this only runs the
+  // job and answers. `stillOwner()` answers true only while ALL of these hold
+  // (#1305, `delegatedOwns()`): no fence came — the leader sends one on its
+  // time limit, on losing its lease, on the realm's removal, on seeing
+  // another attempt take the row over, and the realm's removal here sets it
+  // too (`forgetRealm()`); the job was not switched off, as the leader's
+  // last renewal said; the time limit has not passed; and the leader's last
+  // grant has not run out. The last two need no message to arrive.
+  // -------------------------------------------------------------------------
+  /**
+   * Runs a cluster job's body for the leader, in this process.
+   *
+   * @param request - `{ jobId, realm, runId, trigger, params, clockOffsetMs,
+   *   deadlineMs, grantUntilMs }`; the two instants on this process's clock
+   * @returns a promise of `{ ok: true, result }`, `{ ok: false, error, code }`
+   *   `{ unknownJob: true }` or `{ unknownRealm: true }`; never rejects
+   */
+  runDelegated(request: Json): Promise<Json> {
+    const { log, realms, now } = this.deps;
+    const self = this;
+    const r = request || {};
+    const runId = String(r.runId || '');
+    log.debug("Entering Scheduler.runDelegated(). " + runId);
+    const job = this.jobs.get(String(r.jobId || ''));
+    if (!job || job.kind === 'per-process') {
+      log.debug("Leaving Scheduler.runDelegated(). Not registered here.");
+      return Promise.resolve({ unknownJob: true });
+    }
+    const realm = realms.get(String(r.realm || ''));
+    if (!realm) {
+      // NOT YET HERE, rather than gone: the leader checked the realm is
+      // defined just before it handed the run over, so a worker without it
+      // is one the realm's creation has not reached yet. The leader runs this
+      // run itself (`unknownRealm`), and hands the next one over again.
+      log.debug("Leaving Scheduler.runDelegated(). No such realm here.");
+      return Promise.resolve({ unknownRealm: true });
+    }
+    // A REQUEST WITHOUT ITS INSTANTS OWNS NOTHING: 0 is in the past, so a
+    // leader that sent none is answered with a body that stops at its first
+    // step, never with one that owns the run for ever.
+    const one: Json = { realm: realm.id || String(r.realm), fenced: false,
+                        off: '', deadline: Number(r.deadlineMs) || 0,
+                        grantUntil: Number(r.grantUntilMs) || 0,
+                        lapsed: false, jobId: job.id };
+    this.delegated.set(runId, one);
+    const offset = Number(r.clockOffsetMs) || 0;
+    const ctx: RunContext = {
+      realm: String(r.realm), runId: runId,
+      trigger: String(r.trigger || 'schedule'), params: r.params || null,
+      stillOwner: function (): boolean {
+        return self.delegatedOwns(runId, one);
+      },
+      nowMs: function (): number {
+        return now() + offset;
+      },
+      log: log
+    };
+    log.debug("Leaving Scheduler.runDelegated(). Running.");
+    return Promise.resolve().then(function (): Json {
+      return realms.run(realm, function (): Json {
+        // Routine info from the body is debug (common/job_log.ts).
+        return JobLog.during(function (): Json {
+          return job.run(ctx);
+        });
+      });
+    }).then(function (result: Json): Json {
+      // The leader keeps a summary of at most 500 characters; the same
+      // reduction made here means what crosses the channel is text, which a
+      // structured clone always carries.
+      return { ok: true, result: Scheduler.summaryOf(result),
+               why: Scheduler.whyOf(result) };
+    }, function (e: Json): Json {
+      return { ok: false, error: String((e && e.message) || e) };
+    }).then(function (answer: Json): Json {
+      self.delegated.delete(runId);
+      return answer;
+    });
+  }
+
+  /**
+   * Marks a body this process runs for the leader as no longer owned.
+   *
+   * @param runId - the run
+   * @returns true when this process was running it
+   */
+  fenceDelegated(runId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.fenceDelegated(). " + runId);
+    const one = this.delegated.get(String(runId || ''));
+    if (one) {
+      one.fenced = true;
+    }
+    log.debug("Leaving Scheduler.fenceDelegated(). " + !!one);
+    return !!one;
+  }
+
+  /**
+   * Renews the grant of a body this process runs for the leader (#1305), and
+   * carries whether its job has been switched off.
+   *
+   * @param runId - the run
+   * @param untilMs - the grant's end, on this process's clock
+   * @param off - why the job was switched off, or '' while it is on
+   * @returns true when this process was running it
+   */
+  renewDelegated(runId: string, untilMs: number, off?: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.renewDelegated(). " + runId);
+    const one = this.delegated.get(String(runId || ''));
+    if (one) {
+      // Never shortened: two renewals that cross keep the later end.
+      one.grantUntil = Math.max(Number(one.grantUntil) || 0,
+                                Number(untilMs) || 0);
+      if (off && !one.off) {
+        one.off = String(off);
+      }
+    }
+    log.debug("Leaving Scheduler.renewDelegated(). " + !!one);
+    return !!one;
+  }
+
+  // Whether a body this process runs for the leader still owns its run
+  // (#1305). Once it does not, it never does again: a fence, a switch-off,
+  // the time limit and a lapsed grant are each final, so a renewal that
+  // arrives late cannot hand back a run the body has already stopped
+  // owning. A HOT PATH, as `flightOwns()` is: no Entering/Leaving pair.
+  private delegatedOwns(runId: string, one: Json): boolean {
+    if (one.fenced || one.off) {
+      return false;
+    }
+    const at = this.deps.now();
+    if (at >= Number(one.deadline)) {
+      // The time limit: the leader records it (STS-SCHED-0002).
+      one.fenced = true;
+      return false;
+    }
+    if (at >= Number(one.grantUntil)) {
+      one.fenced = true;
+      one.lapsed = true;
+      const { log, errorCodes } = this.deps;
+      log.warn(errorCodes.tag('STS-SCHED-0021') + 'scheduler: ' +
+        'run ' + runId + ' of ' + one.jobId + ' no longer owns its run in ' +
+        'this request worker: the leader has not renewed its grant for ' +
+        Scheduler.span(DELEGATED_GRANT_MS) + '. Its body stops at its next ' +
+        'step; the leader, or the next attempt, decides the run.');
+      return false;
+    }
+    return true;
   }
 
   // A job's answer, kept small: the row is replicated and drawn on a page.
@@ -1659,6 +3445,24 @@ class Scheduler {
    * @param result - what the job's run() returned
    * @returns the text, or null for no result
    */
+  /**
+   * The `why` a body that succeeded answered beside its result (#1313), or
+   * '' — a string member `why` of an object result, at most 500 characters.
+   * @param result - what the body resolved to
+   * @returns the text, or ''
+   */
+  static whyOf(result: Json): string {
+    helpers.log.debug("Entering Scheduler.whyOf().");
+    if (!result || typeof result !== 'object' ||
+        typeof result.why !== 'string' || !result.why) {
+      helpers.log.debug("Leaving Scheduler.whyOf(). None.");
+      return '';
+    }
+    const text = result.why;
+    helpers.log.debug("Leaving Scheduler.whyOf().");
+    return text.length > 500 ? text.slice(0, 497) + '...' : text;
+  }
+
   static summaryOf(result: Json): Json {
     helpers.log.debug("Entering Scheduler.summaryOf().");
     if (result === undefined || result === null) {
@@ -1761,23 +3565,27 @@ class Scheduler {
     let outcome: Json;
     try {
       const result = await realms.run(realm, function (): Json {
-        return job.run({
-          realm: realmId, runId: key, trigger: 'schedule', params: null,
-          stillOwner: function (): boolean {
-            return !!self.started;
-          },
-          nowMs: function (): number {
-            return self.nowMs();
-          },
-          log: log
+        // Routine info from the body is debug (common/job_log.ts).
+        return JobLog.during(function (): Json {
+          return job.run({
+            realm: realmId, runId: key, trigger: 'schedule', params: null,
+            stillOwner: function (): boolean {
+              return !!self.started;
+            },
+            nowMs: function (): number {
+              return self.nowMs();
+            },
+            log: log
+          });
         });
       });
-      outcome = { state: 'succeeded', errorCode: '', why: '',
+      outcome = { state: 'succeeded', errorCode: '',
+                  why: Scheduler.whyOf(result),
                   result: Scheduler.summaryOf(result) };
     } catch (e) {
       log.warn(errorCodes.tag('STS-SCHED-0015') + 'scheduler: the ' +
                'per-process job ' + job.id + ' failed in this process: ' +
-               ((e && e.message) || e) + '.');
+               String((e && e.message) || e).replace(/\.+$/, '') + '.');
       outcome = { state: 'failed', errorCode: 'STS-SCHED-0015',
                   why: String((e && e.message) || e), result: null };
     }
@@ -1857,10 +3665,14 @@ class Scheduler {
     }
     const params = o.params && typeof o.params === 'object' ? o.params : null;
     const paramsText = JSON.stringify(params);
+    // The index of the rows a tick has to see (#623) holds every queued
+    // manual run, so this is not a read of the realm's whole history either.
     let existing: Json = null;
-    this.storeOf(realmId).forEach(function (row: Json): void {
-      if (!existing && row && row.kind === 'run' && row.trigger === 'manual' &&
-          row.jobId === job.id && row.state === 'queued' &&
+    this.pending().forEach(function (pair: Json): void {
+      const row = pair.row;
+      if (!existing && pair.realm === String(realmId || realms.DEFAULT_ID) &&
+          row.kind === 'run' && row.jobId === job.id &&
+          row.state === 'queued' &&
           JSON.stringify(row.params || null) === paramsText) {
         existing = row;
       }
@@ -1871,7 +3683,7 @@ class Scheduler {
                run: this.runView(existing) };
     }
     const row = this.writeRow(realmId, {
-      runId: 'm-' + nodeCrypto.randomBytes(12).toString('base64url'),
+      runId: 'm-' + stsCrypto.randomBytes(12).toString('base64url'),
       kind: 'run', jobId: job.id, realm: realmId, slot: null,
       dueAt: this.nowMs(), trigger: 'manual', params: params,
       requestedBy: String(o.requestedBy || ''),
@@ -1914,7 +3726,7 @@ class Scheduler {
     }
     const leader = this.storeOf(realms.DEFAULT_ID).get(LEADER_KEY) || null;
     const row = this.writeRow(realms.DEFAULT_ID, {
-      runId: COMMAND_PREFIX + nodeCrypto.randomBytes(9).toString('base64url'),
+      runId: COMMAND_PREFIX + stsCrypto.randomBytes(9).toString('base64url'),
       kind: 'command', command: 'step-down', state: 'queued',
       requestedBy: String(o.requestedBy || ''),
       requestedVia: String(o.via || ''), queuedAt: this.nowMs(),
@@ -1940,11 +3752,12 @@ class Scheduler {
     const { log, cluster } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.obeyCommands().");
-    const queued: Json[] = [];
-    this.storeOf(realms.DEFAULT_ID).forEach(function (row: Json): void {
-      if (row && row.kind === 'command' && row.state === 'queued') {
-        queued.push(Object.assign({}, row));
-      }
+    // From the index (#623): this read the default realm's whole partition
+    // — every service job's run history — at every tick.
+    const queued: Json[] = this.pending().filter(function (pair: Json) {
+      return pair.realm === realms.DEFAULT_ID && pair.row.kind === 'command';
+    }).map(function (pair: Json): Json {
+      return pair.row;
     });
     if (!queued.length) {
       log.debug("Leaving Scheduler.obeyCommands(). None.");
@@ -2001,14 +3814,16 @@ class Scheduler {
   // next, and at most HISTORY_MAX_BATCHES a run. What a run leaves is the
   // next run's.
   //
-  // THE START READS LESS THAN THE STORE HOLDS: each row carries an expiry
-  // (`expiryOf()`, #333's hook) past the instant this purge could first
-  // drop it, so a start skips a row the purge has not got to yet. The one
-  // thing that could make a start skip a row the purge would KEEP is a job
-  // that stopped running (its rows age by time and no newer run pushes them
-  // out of the count) or a bound raised after the row was written; the
-  // purge PINS such a row — rewrites it with `keepUntil` a day ahead —
-  // before its expiry is within PIN_AHEAD_MS.
+  // THE START DOES NOT RESTORE AN EXPIRING ROW (#883). A finished interval
+  // run carries an expiry (`expiryOf()`), the front's restore leaves it in
+  // the table, and this job only walks the rows the process holds. The
+  // table's bound for that history is the expiry — the slack past the later
+  // of the time bound and (count + 1) intervals — and the minted expiry
+  // purge is what deletes it. A row with no expiry (a manual or cron run,
+  // the leader's, a process row, a run written before #338) is what this
+  // walk trims. The purge still PINS a kept row whose expiry is within
+  // PIN_AHEAD_MS — rewrites it with `keepUntil` a day ahead — when a job
+  // stopped running, or a bound was raised after the row was written.
   // -------------------------------------------------------------------------
   private historyBounds(): Json {
     const { log } = this.deps;
@@ -2044,8 +3859,8 @@ class Scheduler {
    *
    * @param row - the stored row
    * @returns epoch milliseconds, or null for a row that does not expire —
-   *   the leader's, a queued or running one, one of a job not registered
-   *   here, one of a job with no interval
+   *   the leader's, a process row, a queued or running one, one of a job
+   *   not registered here, one of a job with no interval
    */
   expiryOf(row: Json): number | null {
     // A HOT PATH: every row a flush writes. No Entering/Leaving pair.
@@ -2060,10 +3875,10 @@ class Scheduler {
       at = row.state === 'queued' || !ended ? null
         : ended + bounds.keepMs + EXPIRY_SLACK_MS;
     } else if (row.kind === 'process') {
-      const job = this.jobs.get(String(row.jobId));
-      at = job && ended ? ended + Math.max(bounds.keepMs,
-                                           3 * this.processEveryMs(job)) +
-                          EXPIRY_SLACK_MS : null;
+      // #883: one row per process. A non-null expiry would leave it out of
+      // the front's restore, and the page would show no process until the
+      // job ran again. The history walk still deletes a stale one.
+      at = null;
     } else if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
                ended) {
       const job = this.jobs.get(String(row.jobId));
@@ -2271,7 +4086,7 @@ class Scheduler {
         jobs.push(self.jobView(job, realmId, at, leader, onlyRealm));
       });
     });
-    const runs = this.recentRuns(o, at);
+    const runs = await this.recentRuns(o, at);
     const out = {
       generatedAt: new Date(at).toISOString(),
       nowMs: at,
@@ -2294,12 +4109,12 @@ class Scheduler {
   private clockSource(): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.clockSource().");
-    let source = 'this process';
+    let source = sentence(SENTENCES.clockProcess);
     try {
       const persistence = require('../persistence/persistence');
       const store = persistence.clusterStore && persistence.clusterStore();
       if (store && typeof store.clusterClock === 'function') {
-        source = 'the database';
+        source = sentence(SENTENCES.clockDatabase);
       }
     } catch (e) {
       log.debug("Caught in Scheduler.clockSource(): " + ((e && e.message) ||
@@ -2355,17 +4170,26 @@ class Scheduler {
     return view;
   }
 
-  // Every run row of one job in one realm, newest first.
+  // Every run row of one job in one realm, newest first. A finished
+  // interval body is not resident (#883); `latestRun` keeps one of it so
+  // lastRun does not depend on the page's window.
   private runsOf(jobId: string, realmId: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runsOf().");
     const out: Json[] = [];
+    const seen = new Set<string>();
     this.storeOf(realmId).forEach(function (row: Json): void {
       if (row && (row.kind === 'run') && row.jobId === jobId &&
           row.realm === realmId) {
         out.push(row);
+        seen.add(String(row.runId));
       }
     });
+    const latest = this.latestRun.get(String(jobId) + '|' +
+                                       String(realmId));
+    if (latest && !seen.has(String(latest.runId))) {
+      out.push(latest);
+    }
     out.sort(function (a: Json, b: Json): number {
       return (Number(b.startedAt) || Number(b.queuedAt) || 0) -
              (Number(a.startedAt) || Number(a.queuedAt) || 0);
@@ -2393,7 +4217,15 @@ class Scheduler {
       state: off ? 'off' : 'enabled',
       offReason: off || null,
       manual: job.manual !== false && job.kind !== 'per-process',
-      timeoutMs: this.timeoutMsOf(job)
+      timeoutMs: this.timeoutMsOf(job),
+      // Where a cluster run's body goes (#408): a request worker, or the
+      // front process with the reason its owner gave.
+      runsOn: job.kind === 'per-process' ? 'every-process'
+        : (job.onFront || this.notInWorkers.has(job.id) ? 'front'
+          : 'worker'),
+      onFront: job.onFront || (this.notInWorkers.has(job.id)
+        ? 'not registered in the request workers' : null),
+      nice: Number(job.nice) || 0
     };
     if (job.kind === 'per-process') {
       view.processes = this.processViews(job, realmId, at);
@@ -2436,7 +4268,10 @@ class Scheduler {
     log.debug("Entering Scheduler.nextRunOf().");
     view.nextRunAt = null;
     view.nextRunInMs = null;
+    // The pair is set together and cleared together: a reason without the
+    // time it explains would be a stale sentence on a job that is not late.
     view.overdueSince = null;
+    view.overdueWhy = null;
     if (off) {
       view.nextRunState = 'off';
       log.debug("Leaving Scheduler.nextRunOf(). Off.");
@@ -2459,7 +4294,12 @@ class Scheduler {
     const currentId = slot.slot === null ? null
       : this.runIdFor(job, realmId, slot.slot);
     const current = currentId ? this.storeOf(realmId).get(currentId) : null;
-    if (slot.slot === null || (current && current.state !== 'queued')) {
+    // A finished interval body is not in the map (#883). The tick already
+    // learnt this slot, so the next run is the next slot, not an overdue one.
+    const knownFinished = !current && !!currentId &&
+      this.finishedSlots.has(currentId);
+    if (slot.slot === null || knownFinished ||
+        (current && current.state !== 'queued')) {
       view.nextRunState = current && current.state === 'running'
         ? 'running' : 'scheduled';
       view.nextRunAt = slot.nextAt === null ? null
@@ -2477,10 +4317,10 @@ class Scheduler {
       view.nextRunState = 'overdue';
       view.overdueSince = new Date(slot.startsAt).toISOString();
       view.overdueWhy = leader && leader.live
-        ? 'the leader is ticking; a previous run may still be going, or ' +
-          'its claim has not lapsed'
-        : 'no leader has ticked since ' + (leader && leader.lastTickAt ||
-                                           'this service started');
+        ? sentence(SENTENCES.overdueTicking)
+        : sentence(SENTENCES.overdueSilent,
+                   { since: leader && leader.lastTickAt ||
+                            PARAMS.sinceStart });
     } else {
       view.nextRunState = 'due';
     }
@@ -2513,6 +4353,10 @@ class Scheduler {
       requestedBy: row.requestedBy || '', requestedVia: row.requestedVia || '',
       params: row.params || null, takenOver: !!row.takenOver,
       abandonedOf: row.abandonedOf || null,
+      // Where its body ran and how long it was held for load (#408): rows
+      // written before #408 carry neither, and read as the front and none.
+      ranIn: row.ranIn || (row.kind === 'run' ? 'front' : null),
+      deferredMs: Number(row.deferredMs) || 0,
       errorCode: row.errorCode || '', why: row.why || '',
       result: row.result === undefined ? null : row.result
     };
@@ -2573,76 +4417,191 @@ class Scheduler {
     return out.slice(0, 20);
   }
 
+  // Whether a run row passes the page's filters. `partition` is the realm
+  // whose map held it; a window row is filtered as its own realm.
+  private acceptsRun(row: Json, partition: string, o: Json): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Scheduler.acceptsRun().");
+    let ok = true;
+    if (!row || row.kind !== 'run') {
+      ok = false;
+    } else if (o.realm && partition !== String(o.realm) &&
+               partition !== realms.DEFAULT_ID) {
+      ok = false;
+    } else if (o.realm && partition === realms.DEFAULT_ID &&
+               String(o.realm) !== realms.DEFAULT_ID) {
+      const job = this.jobs.get(row.jobId);
+      if (job && job.scope === 'realm') {
+        ok = false;
+      }
+    }
+    if (ok && o.job && row.jobId !== String(o.job)) {
+      ok = false;
+    }
+    if (ok && o.outcome && row.state !== String(o.outcome)) {
+      ok = false;
+    }
+    log.debug("Leaving Scheduler.acceptsRun(). " + ok);
+    return ok;
+  }
+
+  // The realms the newest-window read asks. A filter names that realm and
+  // the default one, which holds the service jobs.
+  private newestRealmIds(o: Json): string[] {
+    const { log, realms } = this.deps;
+    log.debug("Entering Scheduler.newestRealmIds().");
+    const all = realms.list().map(function (realm: Json): string {
+      return String(realm.id);
+    });
+    let ids = all;
+    if (o.realm) {
+      const want = String(o.realm);
+      ids = all.filter(function (id: string): boolean {
+        return id === want || id === realms.DEFAULT_ID;
+      });
+      if (!ids.length) {
+        ids = [want];
+      }
+    }
+    log.debug("Leaving Scheduler.newestRealmIds(). " + ids.length + ".");
+    return ids;
+  }
+
   // Recent runs, newest first, filtered by job, realm and outcome.
+  // With no newest reader — a test, or minted persistence off — the list is
+  // every resident row, uncapped, which is the whole history there. With
+  // one, the resident rows win by id over a bounded window, and the page
+  // draws at most NEWEST_WINDOW. The window is not written into the map.
   /**
    * Returns recent runs, newest first.
    *
    * @param opts - filters: `realm`, `job` and `outcome`
    * @param at - accepted for the caller's convenience and not read
-   * @returns the runs' views
+   * @returns a promise of the runs' views
    */
-  recentRuns(opts: Json, at?: number): Json[] {
+  async recentRuns(opts: Json, at?: number): Promise<Json[]> {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.recentRuns().");
     const o = opts || {};
-    const out: Json[] = [];
+    const byId = new Map<string, Json>();
     realms.list().forEach(function (realm: Json): void {
       const id = String(realm.id);
       if (o.realm && id !== String(o.realm) && id !== realms.DEFAULT_ID) {
         return;
       }
       self.storeOf(id).forEach(function (row: Json): void {
-        if (!row || row.kind !== 'run') {
+        if (!self.acceptsRun(row, id, o)) {
           return;
         }
-        if (o.realm && id === realms.DEFAULT_ID &&
-            String(o.realm) !== realms.DEFAULT_ID) {
-          const job = self.jobs.get(row.jobId);
-          if (job && job.scope === 'realm') {
-            return;
-          }
-        }
-        if (o.job && row.jobId !== String(o.job)) {
-          return;
-        }
-        if (o.outcome && row.state !== String(o.outcome)) {
-          return;
-        }
-        out.push(self.runView(row));
+        byId.set(String(row.runId), self.runView(row));
       });
     });
+    let windowed = false;
+    const newest = this.deps.newestRuns;
+    if (typeof newest === 'function') {
+      try {
+        const extra = await newest(this.newestRealmIds(o), NEWEST_PER_REALM);
+        if (Array.isArray(extra)) {
+          windowed = true;
+          extra.forEach(function (row: Json): void {
+            if (!row || !row.runId || byId.has(String(row.runId))) {
+              return;
+            }
+            const partition = String(row.realm || realms.DEFAULT_ID);
+            if (!self.acceptsRun(row, partition, o)) {
+              return;
+            }
+            byId.set(String(row.runId), self.runView(row));
+          });
+        }
+      } catch (e) {
+        // The list was not read. The resident rows are what the page shows,
+        // uncapped, rather than an empty window that reads as no history.
+        log.debug("Caught in Scheduler.recentRuns(): " +
+                  ((e && e.message) || e));
+        windowed = false;
+      }
+    }
+    const out = Array.from(byId.values());
     out.sort(function (a: Json, b: Json): number {
       return String(b.startedAt || b.queuedAt || '').localeCompare(
         String(a.startedAt || a.queuedAt || ''));
     });
-    log.debug("Leaving Scheduler.recentRuns(). " + out.length + ".");
-    return out;
+    const shown = windowed ? out.slice(0, NEWEST_WINDOW) : out;
+    log.debug("Leaving Scheduler.recentRuns(). " + shown.length + ".");
+    return shown;
   }
 
-  // One run by id, in whichever realm holds it.
+  // One run by id, in whichever realm holds it. The map first, then the one
+  // remembered row per job, then one read per realm. A row found in the
+  // store is not cached: the page asked, and the map stays the operational
+  // rows. Null from the reader is no store. A failed read is logged and the
+  // page says the run was not found.
   /**
    * Finds a run by id, in whichever realm holds it.
    *
    * @param runId - the run's id
-   * @returns the run's view, or null
+   * @returns a promise of the run's view, or null
    */
-  findRun(runId: string): Json | null {
+  async findRun(runId: string): Promise<Json | null> {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.findRun().");
+    const id = String(runId);
     let found: Json = null;
     realms.list().forEach(function (realm: Json): void {
       if (found) {
         return;
       }
-      const row = self.storeOf(String(realm.id)).get(String(runId));
+      const row = self.storeOf(String(realm.id)).get(id);
       if (row && (row.kind === 'run' || row.kind === 'process')) {
         found = self.runView(row);
       }
     });
-    log.debug("Leaving Scheduler.findRun(). " + (found ? 'found' : 'none'));
-    return found;
+    if (!found) {
+      this.latestRun.forEach(function (row: Json): void {
+        if (found || !row || String(row.runId) !== id) {
+          return;
+        }
+        if (row.kind === 'run' || row.kind === 'process') {
+          found = self.runView(row);
+        }
+      });
+    }
+    if (found) {
+      log.debug("Leaving Scheduler.findRun(). Found.");
+      return found;
+    }
+    const read = this.deps.readRuns;
+    if (typeof read !== 'function') {
+      log.debug("Leaving Scheduler.findRun(). None.");
+      return null;
+    }
+    const list = realms.list();
+    for (let i = 0; i < list.length; i++) {
+      const realmId = String(list[i].id);
+      let got: Map<string, Json> | null = null;
+      try {
+        got = await read(realmId, [id]);
+      } catch (e) {
+        log.debug("Caught in Scheduler.findRun(): " +
+                  ((e && e.message) || e));
+        log.debug("Leaving Scheduler.findRun(). Not read.");
+        return null;
+      }
+      if (got == null) {
+        log.debug("Leaving Scheduler.findRun(). No store.");
+        return null;
+      }
+      const row = got.get(id);
+      if (row && (row.kind === 'run' || row.kind === 'process')) {
+        log.debug("Leaving Scheduler.findRun(). Found in the store.");
+        return self.runView(row);
+      }
+    }
+    log.debug("Leaving Scheduler.findRun(). None.");
+    return null;
   }
 
   // For tests: forget what this instance holds in memory.
@@ -2656,6 +4615,11 @@ class Scheduler {
     this.stop();
     this.inFlight.clear();
     this.processSlots.clear();
+    this.finishedSlots.clear();
+    this.slotAsked.clear();
+    this.unknownSlots.clear();
+    this.heldFinished.clear();
+    this.latestRun.clear();
     this.ticking = null;
     log.debug("Leaving Scheduler.resetForTests().");
   }
@@ -2681,6 +4645,16 @@ scheduler.register({
             'realm that was removed — in batches of ' + HISTORY_BATCH +
             ', at most ' + HISTORY_MAX_BATCHES + ' a run.',
   owner: 'cluster/scheduler.ts',
+  // #408, #883: it deletes the null-expiry rows only a front process
+  // restores. A request worker does not read `scheduler.runs` back
+  // (`restoreInWorkers: false`, #617), so in a worker it would find a
+  // fraction of those rows and keep the rest. Finished interval runs are
+  // left to the minted expiry purge. The reason names "restores":
+  // tests/scheduler_workers.js F requires that word.
+  onFront: 'it deletes the null-expiry rows only a front process ' +
+           'restores (scheduler.runs is not read back by a request ' +
+           'worker, #617), and finished interval runs are left to the ' +
+           'minted expiry purge (#883)',
   everyMs: function (): number {
     return HISTORY_PURGE_MS;
   },
@@ -2746,6 +4720,15 @@ export = {
   LEADER_LEASE: LEADER_LEASE,
   RUN_SCOPE: RUN_SCOPE,
   runStore: runStore,
+  /**
+   * The routes whose answers carry the scheduler namespace's prose (#543).
+   */
+  PROSE_ROUTES: PROSE_ROUTES,
+  /**
+   * The scheduler namespace's English, by key (#543): every registered
+   * job's title and description, and the report's templates.
+   */
+  prose: (): Record<string, string> => Scheduler.prose(),
   register: scheduler.register.bind(scheduler) as Scheduler['register'],
   start: scheduler.start.bind(scheduler) as Scheduler['start'],
   stop: scheduler.stop.bind(scheduler) as Scheduler['stop'],
@@ -2756,5 +4739,11 @@ export = {
   findRun: scheduler.findRun.bind(scheduler) as Scheduler['findRun'],
   recentRuns: scheduler.recentRuns.bind(scheduler) as Scheduler['recentRuns'],
   job: scheduler.job.bind(scheduler) as Scheduler['job'],
+  runDelegated: scheduler.runDelegated.bind(scheduler) as
+    Scheduler['runDelegated'],
+  fenceDelegated: scheduler.fenceDelegated.bind(scheduler) as
+    Scheduler['fenceDelegated'],
+  renewDelegated: scheduler.renewDelegated.bind(scheduler) as
+    Scheduler['renewDelegated'],
   jobIds: scheduler.jobIds.bind(scheduler) as Scheduler['jobIds']
 };

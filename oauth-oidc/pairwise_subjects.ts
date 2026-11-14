@@ -49,11 +49,11 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import realms = require('../common/realms');
+import loopSlices = require('../common/loop_slices');
 import applications = require('../common/applications');
 import clusterSecrets = require('../cluster/cluster_secrets');
 import fedHttp = require('../federation/federation_http');
 import config = require('../common/config');
-import nodeCrypto = require('crypto');
 
 type Json = any;
 
@@ -412,7 +412,7 @@ class PairwiseSubjects {
     let sub = index ? String(ephemeral.get(index) || '') : '';
     const held = sub ? ephemeral.get('e|' + sub) : null;
     if (!held || held.local !== local) {
-      sub = nodeCrypto.randomBytes(20).toString('base64url');
+      sub = stsCrypto.randomBytes(20).toString('base64url');
     }
     const until = now() + this.ephemeralLifetimeMs();
     ephemeral.set('e|' + sub, { local: local, client: clientId,
@@ -446,20 +446,24 @@ class PairwiseSubjects {
    * Removes every ephemeral mapping past its life, with its session index. The
    * scheduler job's body.
    *
-   * @returns `{ summary }` for the scheduler
+   * In slices, a turn of the event loop between them (#704,
+   * `common/loop_slices.js`); the deletes follow the walk, as before.
+   *
+   * @returns a promise of `{ summary }` for the scheduler
    */
-  purge(): Json {
+  async purge(): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering PairwiseSubjects.purge().");
     const gone: string[] = [];
-    ephemeral.forEach(function (row: Json, key: string): void {
-      if (key.indexOf('e|') === 0 && Number((row || {}).until) < now()) {
-        gone.push(key);
-        if (row.session) {
-          gone.push('s|' + row.session + '|' + row.client);
+    await loopSlices.walkInSlices(ephemeral.realmMap(),
+      function (row: Json, key: string): void {
+        if (key.indexOf('e|') === 0 && Number((row || {}).until) < now()) {
+          gone.push(key);
+          if (row.session) {
+            gone.push('s|' + row.session + '|' + row.client);
+          }
         }
-      }
-    });
+      });
     gone.forEach(function (key: string): void {
       ephemeral.delete(key);
     });
@@ -490,7 +494,7 @@ class PairwiseSubjects {
         return 3600000;
       },
       manual: true,
-      run: function (): Json {
+      run: function (): Promise<Json> {
         return self.purge();
       }
     });
@@ -565,8 +569,9 @@ class PairwiseSubjects {
       }).catch(function (e: Json) {
         log.debug("Caught in PairwiseSubjects.sectorIdentifierProblem(): " +
                   ((e && e.message) || e));
+        // The cause's own full stop is dropped before ours is added.
         return refusal('"' + uri + '" could not be fetched: ' +
-                       ((e && e.message) || e) + '.');
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
       });
   }
 }

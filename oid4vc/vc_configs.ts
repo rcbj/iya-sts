@@ -34,6 +34,8 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
+// The wallet compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 
 // One credential configuration.
 interface VciConfig {
@@ -50,7 +52,7 @@ interface VcConfigsDeps {
 
 const VCI_CONFIG_ID = 'IdentityCredential';
 
-const VCI_VCT = 'urn:idptools:sd-jwt-vc:identity';
+const VCI_VCT = 'urn:iya:sts:sd-jwt-vc:identity';
 
 const VCI_SCOPE = 'identity_credential';
 
@@ -80,6 +82,24 @@ const VCI_LDP_CONFIG_ID = 'IdentityCredentialLdpVc';
 const VCI_LDP_SCOPE = 'identity_credential_ldp';
 
 const VC_CONTEXT = 'https://www.w3.org/2018/credentials/v1';
+
+// ---------------------------------------------------------------------------
+// HOW A CONFIGURATION'S CREDENTIALS ARE BOUND TO THEIR HOLDER (#693 phase
+// 2b). `key`, the default and what every configuration did until then: to
+// the key the wallet's proof names, by its JWK (or by the did:jwk of it, for
+// ldp_vc). `did`: to a did:jwk or did:key the PERSON proved with their wallet
+// (oid4vc/siop.ts), named by the proof's `kid` — opt-in per configuration
+// through `oid4vci.didHolderBinding`, because one DID in every credential
+// makes them linkable. did:web is not among the methods: oid4vc/CLAUDE.md
+// says why.
+// ---------------------------------------------------------------------------
+const HOLDER_BINDING_KEY = 'key';
+
+const HOLDER_BINDING_DID = 'did';
+
+// `cryptographic_binding_methods_supported` for a `did` configuration:
+// OpenID4VCI 1.0 section 12.2.4's "did:" prefixed method names.
+const DID_BINDING_METHODS = ['did:jwk', 'did:key'];
 
 // Every credential this issuer offers, by credential_configuration_id — the
 // one list the header argues for.
@@ -196,6 +216,20 @@ class VcConfigs {
    * by DID, and the configuration it is based on.
    */
   static readonly VCI_CONFIGS = VCI_CONFIGS;
+  /**
+   * The holder binding every configuration has unless it is named in
+   * `oid4vci.didHolderBinding`: to the key the proof names.
+   */
+  static readonly HOLDER_BINDING_KEY = HOLDER_BINDING_KEY;
+  /**
+   * The holder binding to a DID the person proved (#693).
+   */
+  static readonly HOLDER_BINDING_DID = HOLDER_BINDING_DID;
+  /**
+   * The `cryptographic_binding_methods_supported` of a configuration bound to
+   * the person's DID: `did:jwk` and `did:key`.
+   */
+  static readonly DID_BINDING_METHODS = DID_BINDING_METHODS;
 
   /**
    * Builds the configuration reader from the logger and the settings.
@@ -299,6 +333,93 @@ class VcConfigs {
     return !!(c && c.issuerDid);
   }
 
+  // HOW THIS CONFIGURATION BINDS ITS HOLDER (#693): `did` where
+  // `oid4vci.didHolderBinding` names it, `key` otherwise — and for an id this
+  // issuer does not offer. Read each time, so a change reaches the next
+  // metadata document and the next Credential Request together.
+  /**
+   * Returns how a configuration's credentials are bound to their holder:
+   * `did` (to a DID the person proved) where `oid4vci.didHolderBinding` names
+   * it, `key` otherwise.
+   *
+   * @param configId - the configuration's id
+   * @returns `key` or `did`
+   */
+  vciHolderBindingOf(configId: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcConfigs.vciHolderBindingOf().");
+    const named = [].concat(config.value('oid4vci.didHolderBinding') || [])
+      .map(String);
+    const out = VCI_CONFIGS[configId] && named.indexOf(configId) >= 0
+      ? HOLDER_BINDING_DID : HOLDER_BINDING_KEY;
+    log.debug("Leaving VcConfigs.vciHolderBindingOf(). " + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ALGORITHMS A CREDENTIAL OF THIS CONFIGURATION MAY BE SIGNED WITH
+  // (2026-10-16), the configured `oid4vci.credentialSigningAlgorithm` first:
+  // what a person may choose on `/portal/wallet`, what the credential
+  // endpoint honours, and what the metadata's
+  // `credential_signing_alg_values_supported` says.
+  //
+  //   * dc+sd-jwt and jwt_vc_json: every JWS algorithm that setting allows
+  //     (its `enumValues`, one list) — RFC 7518's RS, PS and ES, RFC 8812's
+  //     ES256K, RFC 8037's EdDSA, and the post-quantum ML-DSA, SLH-DSA and
+  //     composite drafts. SD-JWT VC and the VCDM's JWT form restrict none.
+  //   * A configuration naming its issuer by DID: the configured algorithm
+  //     and RS256 only, because the DID document publishes those two keys
+  //     (`vc_did.ts`) and a credential signed with another would name a key
+  //     its issuer's DID cannot resolve.
+  //   * ldp_vc: bbs-2023, the one cryptosuite its issuance builds — the
+  //     unlinkable derived proof a wallet sign-in rests on.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the algorithms a configuration's credentials may be signed with,
+   * the configured one first.
+   *
+   * @param configId - the configuration's id
+   * @returns the algorithms, or [] for an unknown id
+   */
+  vciSigningAlgsFor(configId: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering VcConfigs.vciSigningAlgsFor().");
+    const c = VCI_CONFIGS[configId];
+    if (!c) {
+      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). Unknown.");
+      return [];
+    }
+    if (c.format === 'ldp_vc') {
+      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). bbs-2023.");
+      return ['bbs-2023'];
+    }
+    const configured = String(this.deps.config.value(
+      'oid4vci.credentialSigningAlgorithm') || 'RS256');
+    const row = (config.SETTINGS as any[]).filter(function (one: any) {
+      return one && one.key === 'oid4vci.credentialSigningAlgorithm';
+    })[0];
+    const allowed: string[] = c.issuerDid ? ['RS256']
+      : [].concat((row && row.enumValues) || []);
+    // NOT ONE THE WALLET COMPATIBILITY MODE TURNS OFF (#657): a post-quantum
+    // or composite algorithm is neither advertised nor offered while
+    // `oid4vc.walletCompatibility` is on — the configured one included, which
+    // then signs nothing (STS-VC-0152) — and none while keys.postQuantumSigning
+    // is off, which the issuer metadata's own narrowing already said.
+    // AND NO EdDSA A PORTAL OFFER MAY CHOOSE while `keys.eddsaSigning` is
+    // off (#1292): the credential's key is found at `/oauth2/jwks`, which
+    // then publishes no OKP key. The CONFIGURED algorithm stays, being the
+    // operator's choice; the setting's row says not to make it EdDSA.
+    const eddsaOn = helpers.eddsaSigningOn();
+    const out = VcAlgorithms.offered([configured].concat(
+      allowed.filter(function (alg) {
+        return alg !== configured;
+      }))).filter(function (alg: string): boolean {
+        return alg === configured || eddsaOn || !helpers.isEddsaJwsAlg(alg);
+      });
+    log.debug("Leaving VcConfigs.vciSigningAlgsFor(). " + out.length + ".");
+    return out;
+  }
+
   // A credential_identifier is minted as "<configId>:<hash>", so the
   // configuration it belongs to is the part before the colon. Used to route a
   // section 8.2 identifier request to the right format.
@@ -375,5 +496,10 @@ export = {
   vciConfigIds: slot.forward('vciConfigIds'),
   vciFormatOf: slot.forward('vciFormatOf'),
   vciUsesIssuerDid: slot.forward('vciUsesIssuerDid'),
+  vciSigningAlgsFor: slot.forward('vciSigningAlgsFor'),
+  vciHolderBindingOf: slot.forward('vciHolderBindingOf'),
+  HOLDER_BINDING_KEY: VcConfigs.HOLDER_BINDING_KEY,
+  HOLDER_BINDING_DID: VcConfigs.HOLDER_BINDING_DID,
+  DID_BINDING_METHODS: VcConfigs.DID_BINDING_METHODS,
   configIdOfIdentifier: slot.forward('configIdOfIdentifier')
 };

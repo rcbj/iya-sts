@@ -21,7 +21,8 @@
 // certificate authorities, the shared cluster secrets, the used-assertion
 // history and the routing index are GLOBAL. The directory is split entry by
 // entry (`tiers.directoryTierOf()`), a group into two halves. A minted row
-// goes where its store's handle says (`tiers.mintedTierOf()`). Everything
+// goes where its store's handle says (`tiers.mintedTierOf()`), and the
+// expiry purge deletes it from that same database. Everything
 // else — the cluster's membership, leases, claims and counters, risk
 // scoring, the change log this process's barrier waits on — is the CELL's,
 // because a cell is the cluster (#46) and the global tier is not.
@@ -63,8 +64,8 @@ const log = bunyan.createLogger({ name: 'sts-persistence-tiered' });
 // The driver methods that belong to the GLOBAL tier outright.
 const GLOBAL_METHODS = [
   'loadRealms', 'saveRealms', 'loadOverrides', 'saveOverrides',
-  'loadKeys', 'saveKeys', 'deleteKeys', 'loadKey', 'mergeKeys',
-  'ensureSharedSecret',
+  'loadKeys', 'loadDekRows', 'saveKeys', 'deleteKeys', 'loadKey',
+  'mergeKeys', 'ensureSharedSecret',
   // THE USED-ASSERTION HISTORY IS GLOBAL (#98): an RFC 7523 or 7522
   // assertion is accepted once EVER (rule 3ae), and every cell answers on
   // the same public name — a history per cell would accept it once per cell.
@@ -78,12 +79,15 @@ const GLOBAL_METHODS = [
 // The methods that go to BOTH databases, whose answers are combined below.
 const BOTH_METHODS = ['open', 'close', 'loadDirectory', 'saveDirectory',
                       'readEntry', 'loadMinted', 'saveMinted', 'readMinted',
-                      'readMintedMany', 'purgeMinted', 'purgeTombstones',
+                      'readMintedMany', 'purgeMinted', 'purgeExpiredMinted',
+                      'purgeTombstones',
                       'changeRowsWritten', 'adoptOrigin', 'renewOrigin',
                       'releaseOrigin', 'setOriginLost',
                       // What is sealed under a data encryption key (#391):
                       // counted and re-sealed in both databases.
-                      'countSealed', 'countAllSealed', 'resealSealed'];
+                      'countSealed', 'countAllSealed', 'resealSealed',
+                      // The directory's data-key index (#623), in both.
+                      'indexSealed'];
 
 // The login name of a person's entry: the `uid` RDN of its DN, which is how
 // this directory names a person, or its `uid` attribute.
@@ -102,6 +106,34 @@ function loginNameOf(dnKey, attrs) {
   }
   log.debug("Leaving loginNameOf().");
   return name.trim().toLowerCase();
+}
+
+// Every live name a person answers to (#644): the filing name, each
+// stsPseudonym, and a username the caller resolved them by. A pending
+// verification address is not a name. One list, so the flush, a re-home
+// and the single-cell conversion cannot drift.
+function liveNamesOf(dnKey, attrs, username) {
+  log.debug("Entering liveNamesOf().");
+  const out = [];
+  const add = function (value) {
+    const key = String(value == null ? '' : value).trim().toLowerCase();
+    if (key && out.indexOf(key) === -1) {
+      out.push(key);
+    }
+  };
+  add(loginNameOf(dnKey, attrs));
+  const bag = attrs || {};
+  Object.keys(bag).forEach(function (name) {
+    if (String(name).toLowerCase() !== 'stspseudonym') {
+      return;
+    }
+    const value = bag[name];
+    const list = Array.isArray(value) ? value : [value];
+    list.forEach(add);
+  });
+  add(username);
+  log.debug("Leaving liveNamesOf().");
+  return out;
 }
 
 // A DN as the directory keys it (`ldap_server.js` normalizeDn()): each RDN
@@ -220,7 +252,7 @@ function create(options) {
                                            { attributes: baseHalves[which] }))
             : row.base;
           // A CELL HALF THAT WAS NEVER STORED HAS NO BASE (2026-09-28,
-          // tests/vendored/sts_cells_console.js). A group whose base held no
+          // tests/protocol/sts_cells_console.js). A group whose base held no
           // person resident here had no cell row at all — an empty half is
           // DELETED, below — so handing the driver the base entry with an
           // empty attribute map told its merge "this row existed and is gone
@@ -260,9 +292,28 @@ function create(options) {
         toCell.deletes.push(row);
       }
     });
+    // THE CREATES' CLAIMS (#628) go with the half of the tier each claim is
+    // kept in, which commits after the global half — so a claim is never
+    // given back before the entry it guarded is in the store.
+    const releasing = splitReleases(change.releaseClaims);
+    toGlobal.releaseClaims = releasing.global;
+    toCell.releaseClaims = releasing.cell;
     log.debug("Leaving splitChange().");
     return { toGlobal: toGlobal, toCell: toCell, groups: groups,
              projected: projected };
+  }
+
+  // Claim rows (`{ scope, realm, key, reservation }`), by the tier their
+  // scope is claimed in (`tiers.claimTierOf()`).
+  function splitReleases(rows) {
+    log.debug("Entering splitReleases().");
+    const out = { global: [], cell: [] };
+    (rows || []).forEach(function (row) {
+      out[tiers.claimTierOf(row.scope) === 'global' ? 'global' : 'cell']
+        .push(row);
+    });
+    log.debug("Leaving splitReleases().");
+    return out;
   }
 
   // The outcomes of the two halves of a group, as one outcome about the
@@ -320,40 +371,53 @@ function create(options) {
   }
 
   // ---------------------------------------------------------------------
-  // THE INDEX, KEPT AT THE FLUSH. A person upserted for the first time here
-  // claims both keys; a person deleted releases both. Every step is
-  // best-effort: a failed claim is retried at the next write of that person
-  // (it is not recorded as indexed), and a failed release leaves a row that
-  // names this cell for a person it no longer holds, which the
-  // reconciliation at start (`cell_routing.ts`) clears.
+  // THE INDEX, KEPT AT THE FLUSH. A person upserted here claims every live
+  // name and the entryUUID; a person deleted releases the set this process
+  // remembered. A pseudonym added or removed is a change of that set, so an
+  // upsert whose only difference is a name is not skipped (#644). Every
+  // step is best-effort: a failed claim is retried at the next write of
+  // that person (it is not recorded as indexed), and a failed release
+  // leaves a row that names this cell for a person it no longer holds.
   // ---------------------------------------------------------------------
   function indexPeople(change) {
     log.debug("Entering indexPeople().");
     /** @type {Promise<any>} */
     let chain = Promise.resolve();
+    // Names an upsert in THIS flush successfully asked to claim, including
+    // one this cell already held (`claimed` false). A rename writes the new
+    // DN and deletes the old in one change; the delete must not release a
+    // name the upsert just kept.
+    const claimedNow = [];
     (change.upserts || []).forEach(function (row) {
       if (!tiers.isPersonDn(row.key)) {
         return;
       }
       const id = idOf(row.realm, row.key);
       const attrs = (row.entry && row.entry.attributes) || {};
-      const name = loginNameOf(row.key, attrs);
+      const names = liveNamesOf(row.key, attrs);
       const uuid = uuidOf(attrs);
       const was = indexed.get(id);
-      if (was && was.name === name && was.uuid === uuid) {
+      const previous = was
+        ? (was.names || (was.name ? [was.name] : [])) : [];
+      if (was && was.uuid === uuid &&
+          previous.join('\n') === names.join('\n')) {
         return;
       }
-      const nameDigest = name ? digest(row.realm, 'name', name) : null;
+      const nameRows = names.map(function (name) {
+        return { name: name, digest: digest(row.realm, 'name', name) };
+      }).filter(function (one) {
+        return !!one.digest;
+      });
       const uuidDigest = uuid ? digest(row.realm, 'uuid', uuid) : null;
-      if (!nameDigest && !uuidDigest) {
+      if (!nameRows.length && !uuidDigest) {
         return;
       }
       chain = chain.then(function () {
         const claims = [];
-        if (nameDigest) {
-          claims.push(globalDriver.routeClaim(row.realm, 'name', nameDigest,
+        nameRows.forEach(function (one) {
+          claims.push(globalDriver.routeClaim(row.realm, 'name', one.digest,
                                               cellId));
-        }
+        });
         if (uuidDigest) {
           claims.push(globalDriver.routeClaim(row.realm, 'uuid', uuidDigest,
                                               cellId));
@@ -362,8 +426,15 @@ function create(options) {
           const elsewhere = answers.filter(function (one) {
             return one && one.cell && one.cell !== cellId;
           });
+          nameRows.forEach(function (one, i) {
+            const answer = answers[i];
+            const ours = !answer || !answer.cell || answer.cell === cellId;
+            if (ours && claimedNow.indexOf(one.name) === -1) {
+              claimedNow.push(one.name);
+            }
+          });
           // A RE-HOMED PERSON IS NOT A CONFLICT (2026-09-28,
-          // tests/vendored/sts_cells_rehome.js): `adopt-person` writes them
+          // tests/protocol/sts_cells_rehome.js): `adopt-person` writes them
           // here BEFORE the sending cell moves their index rows
           // (common/cell_rehome.ts, steps 3 and 5), so a flush that lands in
           // between finds them claimed by the cell they are leaving. That
@@ -389,7 +460,17 @@ function create(options) {
                       'here will not be found by sign-in routing.');
             return;
           }
-          indexed.set(id, { name: name, uuid: uuid });
+          indexed.set(id, { names: names, uuid: uuid });
+          const drop = previous.filter(function (name) {
+            return names.indexOf(name) === -1 &&
+              claimedNow.indexOf(name) === -1;
+          });
+          return Promise.all(drop.map(function (name) {
+            const made = digest(row.realm, 'name', name);
+            return made
+              ? globalDriver.routeRelease(row.realm, 'name', made, cellId)
+              : null;
+          }));
         });
       });
     });
@@ -399,17 +480,24 @@ function create(options) {
       }
       const id = idOf(row.realm, row.key);
       const was = indexed.get(id);
-      const name = loginNameOf(row.key, {});
-      const nameDigest = name ? digest(row.realm, 'name', name) : null;
-      const uuidDigest = was && was.uuid ? digest(row.realm, 'uuid', was.uuid)
-                                         : null;
+      const remembered = was
+        ? (was.names || (was.name ? [was.name] : []))
+        : [loginNameOf(row.key, {})];
+      const uuidDigest = was && was.uuid
+        ? digest(row.realm, 'uuid', was.uuid) : null;
       indexed.delete(id);
       chain = chain.then(function () {
         const releases = [];
-        if (nameDigest) {
-          releases.push(globalDriver.routeRelease(row.realm, 'name',
-                                                  nameDigest, cellId));
-        }
+        remembered.forEach(function (name) {
+          if (!name || claimedNow.indexOf(name) !== -1) {
+            return;
+          }
+          const made = digest(row.realm, 'name', name);
+          if (made) {
+            releases.push(globalDriver.routeRelease(row.realm, 'name',
+                                                    made, cellId));
+          }
+        });
         if (uuidDigest) {
           releases.push(globalDriver.routeRelease(row.realm, 'uuid',
                                                   uuidDigest, cellId));
@@ -475,11 +563,12 @@ function create(options) {
         return;
       }
       const attrs = entry.attributes || {};
-      const name = loginNameOf(key, attrs);
+      const names = liveNamesOf(key, attrs);
       const uuid = uuidOf(attrs);
       // The digests are made when they are needed, not here: a load runs
-      // before the keystore holds the key they are made under.
-      indexed.set(idOf(realmId, key), { name: name, uuid: uuid });
+      // before the keystore holds the key they are made under. Recording
+      // does not claim (#644).
+      indexed.set(idOf(realmId, key), { names: names, uuid: uuid });
     });
     log.debug("Leaving noteLoaded().");
   }
@@ -544,6 +633,28 @@ function create(options) {
       return target[key].apply(target, arguments);
     };
   });
+  // SEVERAL CLAIMS, AND SEVERAL RELEASES, IN ONE STATEMENT (#628): a claim
+  // set goes to the tier of its FIRST row's scope — a caller claims one kind
+  // of thing at a time, and a directory create's DN and username are both
+  // cell scopes — and release rows are split by their own.
+  driver.claimMany = function (rows) {
+    log.debug("Entering tiered claimMany().");
+    const first = (rows || [])[0] || {};
+    const target = tiers.claimTierOf(first.scope) === 'global' ? globalDriver
+                                                                : cellDriver;
+    log.debug("Leaving tiered claimMany().");
+    return target.claimMany.apply(target, arguments);
+  };
+  driver.releaseClaims = function (rows) {
+    log.debug("Entering tiered releaseClaims().");
+    const split = splitReleases(rows);
+    log.debug("Leaving tiered releaseClaims().");
+    return Promise.all([globalDriver.releaseClaims(split.global),
+                        cellDriver.releaseClaims(split.cell)])
+      .then(function (both) {
+        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+      });
+  };
   driver.purgeClaims = function () {
     log.debug("Entering tiered purgeClaims().");
     log.debug("Leaving tiered purgeClaims().");
@@ -623,14 +734,15 @@ function create(options) {
     });
   };
 
-  driver.saveDirectory = function (change) {
+  driver.saveDirectory = function (change, how) {
     log.debug("Entering tiered saveDirectory().");
     const split = splitChange(change);
     log.debug("Leaving tiered saveDirectory().");
     // THE GLOBAL HALF FIRST: a group's definition before its members, and a
-    // failure there leaves the cell untouched for the retry.
-    return globalDriver.saveDirectory(split.toGlobal).then(function (g) {
-      return cellDriver.saveDirectory(split.toCell).then(function (c) {
+    // failure there leaves the cell untouched for the retry. `how` is the
+    // tally flag (#878); both halves use the pool the caller asked for.
+    return globalDriver.saveDirectory(split.toGlobal, how).then(function (g) {
+      return cellDriver.saveDirectory(split.toCell, how).then(function (c) {
         return indexPeople(split.toCell).then(function () {
           tellCellHooks(split);
           return { outcomes: joinOutcomes(split, g && g.outcomes,
@@ -710,10 +822,46 @@ function create(options) {
     });
   };
 
+  // The status row is global and the block claim is on the cell, so the
+  // fence lock lives on the global database: a share lock on the cell
+  // would not hold the flush that writes the row (#884). The cell driver
+  // is not the fence's owner and does not report those locks lost.
+  driver.installClaimFence = function (scope, realm, key, reservation) {
+    log.debug("Entering tiered installClaimFence().");
+    log.debug("Leaving tiered installClaimFence().");
+    return globalDriver.installClaimFence(scope, realm, key, reservation);
+  };
+  driver.releaseClaimFences = function (rows) {
+    log.debug("Entering tiered releaseClaimFences().");
+    log.debug("Leaving tiered releaseClaimFences().");
+    return globalDriver.releaseClaimFences(rows);
+  };
+  driver.mintedLiveKeys = function (handle, realmId, keys) {
+    log.debug("Entering tiered mintedLiveKeys().");
+    const target = tiers.mintedTierOf(handle) === 'global' ? globalDriver
+                                                           : cellDriver;
+    log.debug("Leaving tiered mintedLiveKeys().");
+    return typeof target.mintedLiveKeys === 'function'
+      ? target.mintedLiveKeys(handle, realmId, keys)
+      : Promise.resolve([]);
+  };
+
   driver.readMinted = function (handle, realmId, key) {
     log.debug("Entering tiered readMinted().");
     log.debug("Leaving tiered readMinted().");
     return tierOfHandle(handle).readMinted(handle, realmId, key);
+  };
+
+  // An on-demand store's console questions (#820): the store's own tier,
+  // as a read of one of its rows is. A tier whose driver has no such door
+  // answers as it would have — a refusal the caller reads as unread.
+  driver.mintedQuery = function (name, args) {
+    log.debug("Entering tiered mintedQuery(). " + name);
+    const target = tierOfHandle(Array.isArray(args) ? args[0] : '');
+    log.debug("Leaving tiered mintedQuery().");
+    return typeof target.mintedQuery === 'function'
+      ? target.mintedQuery(name, args)
+      : Promise.reject(new Error('no on-demand query on this tier'));
   };
 
   driver.readMintedMany = function (refs) {
@@ -738,14 +886,171 @@ function create(options) {
       });
   };
 
-  driver.purgeTombstones = function (beforeMs) {
-    log.debug("Entering tiered purgeTombstones().");
-    log.debug("Leaving tiered purgeTombstones().");
-    return Promise.all([globalDriver.purgeTombstones(beforeMs),
-                        cellDriver.purgeTombstones(beforeMs)])
-      .then(function (both) {
-        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+  // THE EXPIRY PURGE RUNS IN BOTH DATABASES (#360). An unlisted method is
+  // the cell driver's, so this one deleted only this cell's rows: a global
+  // store's expired rows (dpop.seenJtis, the status lists) stayed in the
+  // global table, refused wherever they were read and never deleted.
+  // 'expired' names no handle — each database deletes its own rows — and
+  // 'stale' names the short-lived stores, handed to the tier that holds
+  // each one.
+  //
+  // 'ORPHAN' ASKS THE GLOBAL REGISTRY, NOT EACH DATABASE'S OWN. The realms
+  // are a global table (`loadRealms` is a GLOBAL method and the conversion
+  // moves `sts_realms` there), so a cell's `sts_realms` is empty or the
+  // snapshot the conversion left. Judged against it, every cell row of a
+  // realm made since then was an orphan, and a session or token of that
+  // realm was deleted an hour after it was written. The global list is read
+  // first and handed to the tier(s) asked; when it cannot be read nothing is
+  // purged, because deleting on a guess is the failure this guards.
+  //
+  // `options.tier` NAMES ONE DATABASE (#695), and the expiry purge jobs
+  // always name one (`persistence_minted.js`): 'cell' for this cell's job,
+  // 'global' for the one cell that wins the global run claim. Then the
+  // `limit` and the count are that database's alone. Without it both are
+  // asked — each with the WHOLE limit, so the sum may be up to twice it,
+  // which is why a caller that batches must name a tier — and they are
+  // SETTLED SEPARATELY: one database failing does not hide what the other
+  // deleted, which rides on the rejection as `removed`, with `tier` naming
+  // the database (or databases) that failed.
+  //
+  // `purgeTombstones()` TAKES THE SAME SHAPE (#1313): it was the last purge
+  // still sent to both databases through Promise.all, so a down global
+  // database lost the cell's count with it and every cell's tombstone job
+  // swept the one shared global table. `options.tier` names one database
+  // and `options.limit` bounds the one statement, exactly as here, and with
+  // no tier both are asked and settled apart through settleTiers().
+  function purgeTier(which, kind, options) {
+    log.debug("Entering purgeTier(). " + which + " " + kind);
+    const target = which === 'global' ? globalDriver : cellDriver;
+    log.debug("Leaving purgeTier().");
+    return Promise.resolve().then(function () {
+      if (kind === 'tombstones') {
+        return target.purgeTombstones(options.beforeMs, options.limit
+          ? { limit: options.limit } : undefined);
+      }
+      return target.purgeExpiredMinted(kind, options);
+    });
+  }
+
+  function settleTiers(asked) {
+    log.debug("Entering settleTiers(). " + asked.length);
+    const what = asked.length && asked[0].kind === 'tombstones'
+      ? 'tombstone purge' : 'expiry purge';
+    log.debug("Leaving settleTiers().");
+    return Promise.allSettled(asked.map(function (one) {
+      return purgeTier(one.tier, one.kind, one.options);
+    })).then(function (results) {
+      let removed = 0;
+      const failed = [];
+      let first = null;
+      results.forEach(function (r, i) {
+        if (r.status === 'fulfilled') {
+          removed += Number(r.value) || 0;
+          return;
+        }
+        failed.push(asked[i].tier);
+        first = first || r.reason;
       });
+      if (!failed.length) {
+        return removed;
+      }
+      const err = /** @type {any} */ (new Error('the ' +
+        failed.join(' and ') + ' tier\'s ' + what + ' failed: ' +
+        String((first && first.message) || first).replace(/\.+$/, '')));
+      err.removed = removed;
+      err.tier = failed.join(',');
+      // The database's own error, for a caller that writes its own
+      // sentence around it (#1315: the tombstone job's line said the
+      // failure twice, its words around these).
+      err.cause = first;
+      throw err;
+    });
+  }
+
+  driver.purgeExpiredMinted = function (kind, options) {
+    log.debug("Entering tiered purgeExpiredMinted().");
+    const o = Object.assign({}, options || {});
+    const only = o.tier === 'global' || o.tier === 'cell' ? o.tier : '';
+    delete o.tier;
+    const which = only ? [only] : ['global', 'cell'];
+    let forTier = function (tier) {
+      log.debug("Entering forTier(). " + tier);
+      log.debug("Leaving forTier().");
+      return o;
+    };
+    if (kind === 'stale') {
+      const listed = Array.isArray(o.handles) ? o.handles : [];
+      const split = byHandleTier(listed.map(function (handle) {
+        return { handle: handle };
+      }));
+      forTier = function (tier) {
+        log.debug("Entering forTier(), stale. " + tier);
+        log.debug("Leaving forTier().");
+        return Object.assign({}, o, {
+          handles: split[tier].map(function (one) {
+            return one.handle;
+          })
+        });
+      };
+    }
+    const ask = function (realmsSeen) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return settleTiers(which.map(function (tier) {
+        const opts = forTier(tier);
+        return { tier: tier, kind: kind,
+                 options: realmsSeen
+                   ? Object.assign({}, opts, { realms: realmsSeen })
+                   : opts };
+      }));
+    };
+    if (kind === 'orphan') {
+      log.debug("Leaving tiered purgeExpiredMinted(). Orphans, against " +
+                "the global realms.");
+      // AN UNREADABLE REGISTRY IS MARKED (#1313), not just rejected: no
+      // tier is asked — deleting on a guess is what this guards — and
+      // `registryUnreadable` lets the cell's job tell "the orphan check
+      // could not be made" from "this cell's own delete failed", which
+      // fails its run.
+      return globalDriver.loadRealms().then(function (rows) {
+        return ask((rows || []).map(function (row) {
+          return String(row.id);
+        }));
+      }, function (e) {
+        log.debug("Caught in tiered purgeExpiredMinted(): " +
+                  ((e && e.message) || e));
+        const err = /** @type {any} */ (new Error('the global realm ' +
+          'registry could not be read: ' +
+          String((e && e.message) || e).replace(/\.+$/, '')));
+        err.registryUnreadable = true;
+        err.removed = 0;
+        err.tier = 'global';
+        throw err;
+      });
+    }
+    log.debug("Leaving tiered purgeExpiredMinted().");
+    return ask(null);
+  };
+
+  // ONE TIER WHEN ONE IS NAMED (#1313), the expiry purge's rule above:
+  // `options.tier` is 'cell' or 'global' and is consumed here, and
+  // `options.limit` (a positive integer, or none) is that database's bound.
+  // The tombstone jobs always name a tier in a tiered store
+  // (`persistence_minted.js`). Without one both databases are asked, each
+  // with the whole limit, and settled apart: a failure rejects carrying
+  // the other's count as `removed` and the failed tier as `tier`.
+  driver.purgeTombstones = function (beforeMs, options) {
+    log.debug("Entering tiered purgeTombstones().");
+    const o = options || {};
+    const only = o.tier === 'global' || o.tier === 'cell' ? o.tier : '';
+    const which = only ? [only] : ['global', 'cell'];
+    const limit = Math.floor(Number(o.limit) || 0) > 0
+      ? Math.floor(Number(o.limit)) : 0;
+    log.debug("Leaving tiered purgeTombstones().");
+    return settleTiers(which.map(function (tier) {
+      return { tier: tier, kind: 'tombstones',
+               options: { beforeMs: beforeMs, limit: limit } };
+    }));
   };
 
   // WHAT IS SEALED UNDER A DATA ENCRYPTION KEY (#391 P2), in BOTH tiers:
@@ -778,6 +1083,69 @@ function create(options) {
         });
       });
       return out;
+    });
+  };
+  // The data-key index caught up in BOTH databases (#623), each with the
+  // whole budget, one after the other; `remaining` while either has more.
+  driver.indexSealed = function (options) {
+    log.debug("Entering tiered indexSealed().");
+    log.debug("Leaving tiered indexSealed().");
+    return globalDriver.indexSealed(options).then(function (first) {
+      return cellDriver.indexSealed(options).then(function (second) {
+        return { indexed: (Number(first && first.indexed) || 0) +
+                          (Number(second && second.indexed) || 0),
+                 remaining: !!((first && first.remaining) ||
+                               (second && second.remaining)) };
+      });
+    });
+  };
+  // The `grantinggroup` key backfill (#1311) in BOTH databases, each walked
+  // and marked by itself, one after the other, each with the whole budget;
+  // complete only when both are. Every cell's leader walks the global tier
+  // too until its mark is written: the writes are compare-and-set and any
+  // cursor names a finished prefix, so two walkers cost time, never keys.
+  driver.indexGrantingKeys = function (options) {
+    log.debug("Entering tiered indexGrantingKeys().");
+    const backfill = require('./granting_index_backfill');
+    const each = function (one, what) {
+      log.debug("Entering each().");
+      log.debug("Leaving each().");
+      return typeof one.indexGrantingKeys === 'function'
+        ? one.indexGrantingKeys(Object.assign({}, options || {},
+                                              { what: what }))
+        : Promise.resolve({ complete: true, already: true });
+    };
+    log.debug("Leaving tiered indexGrantingKeys().");
+    return each(globalDriver, 'the global tier').then(function (first) {
+      return each(cellDriver, 'this cell\'s database')
+        .then(function (second) {
+          return backfill.combined(first, second);
+        });
+    });
+  };
+  // Whether its walk is done (#1316): true only when BOTH databases' marks
+  // are written, so the job is off in a cell only once the global tier and
+  // the cell's own database are keyed. A tier that cannot be walked answers yes, as
+  // `indexGrantingKeys()` above counts it complete.
+  driver.grantingKeysComplete = function () {
+    log.debug("Entering tiered grantingKeysComplete().");
+    const markOf = function (one) {
+      log.debug("Entering markOf().");
+      if (typeof one.grantingKeysComplete === 'function') {
+        log.debug("Leaving markOf(). Asked.");
+        return Promise.resolve(one.grantingKeysComplete());
+      }
+      log.debug("Leaving markOf(). Not walked.");
+      return Promise.resolve(typeof one.indexGrantingKeys !== 'function');
+    };
+    log.debug("Leaving tiered grantingKeysComplete().");
+    return markOf(globalDriver).then(function (first) {
+      if (first !== true) {
+        return false;
+      }
+      return markOf(cellDriver).then(function (second) {
+        return second === true;
+      });
     });
   };
   driver.resealSealed = function (dekIds, reseal, options) {
@@ -897,6 +1265,7 @@ module.exports = {
   // conversion of a single-cell store (`cell_convert.js`), whose backfill
   // must write exactly the rows `indexPeople()` would have.
   loginNameOf: loginNameOf,
+  liveNamesOf: liveNamesOf,
   uuidOf: uuidOf,
   normDn: normDn
 };

@@ -1,0 +1,10 @@
+{
+  "email.address": "Adresse de courriel",
+  "email.noMail": "Ce service ne peut pas envoyer de courriels pour le moment.",
+  "email.changeUnavailable": "Indisponible : ce service ne peut pas envoyer de courriels pour le moment.",
+  "forgot.subThree": "Indiquez votre nom d’utilisateur, l’adresse de courriel de votre compte et l’un de vos codes de récupération. Si les trois sont exacts, un lien pour choisir un nouveau mot de passe est envoyé à cette adresse, et le code de récupération est consommé. Votre mot de passe actuel fonctionne jusqu’à ce que le lien soit utilisé.",
+  "forgot.address": "Adresse de courriel",
+  "forgot.sub": "Indiquez votre compte — son nom d’utilisateur ou son adresse de courriel — et un lien pour choisir un nouveau mot de passe est envoyé à l’adresse du compte. Votre mot de passe actuel fonctionne jusqu’à ce que le lien soit utilisé.",
+  "forgot.account": "Nom d’utilisateur ou adresse de courriel",
+  "forgot.answer": "Si cela désigne un compte d’ici doté d’une adresse de courriel joignable, un lien pour choisir un nouveau mot de passe y a été envoyé. Il ne fonctionne qu’une fois et pour une durée limitée. Rien ne change tant qu’il n’est pas utilisé."
+}

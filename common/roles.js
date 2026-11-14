@@ -71,8 +71,9 @@
 // argued at their rows in `BUILT_IN` below. ADMIN_READ and ADMIN_WRITE were
 // built-ins read off the scopes until #303 (2026-09-27), and DEVICE_COMPLIANCE
 // until #309 (2026-09-28): all three are CONFIGURED roles now, authorizing
-// their native permission — see THE NATIVE ROLES, below the table. No role is
-// read off a scope any more.
+// their native permission — see THE NATIVE ROLES, below the table. SSF_READ
+// and SSF_MANAGE are configured the same way, each authorizing its Shared
+// Signals scope. No role is read off a scope any more.
 //
 // ---------------------------------------------------------------------------
 // A ROLE AUTHORIZES PERMISSIONS (#303, part B of #88, 2026-09-27).
@@ -115,6 +116,8 @@
 // would drag every `/ldap` route to the front of the router.
 // ---------------------------------------------------------------------------
 
+const ModelTables = require('./model_tables');
+const DomainClasses = require('./domain_classes');
 const { log } = require('./helpers');
 const config = require('./config');
 // The error-code registry. A LEAF that requires nothing here, so this file
@@ -133,71 +136,8 @@ const errorCodes = require('./error_codes');
  * The `ou=roles` schema published on `/admin/ldap/roles`: the `stsRole`
  * object class and what each of its attributes means.
  */
-const SCHEMA = {
-  objectClasses: [
-    { name: 'stsRole',
-      what: 'One ROLE. The entry is named by the role name (`cn=staff`), and ' +
-            'everything on it is MEMBERSHIP — who holds the role. What a ' +
-            'role is REQUIRED for lives on the application entry that ' +
-            'requires it, in `appRequiredRole`, because that is a fact about ' +
-            'the application rather than about the role.' }
-  ],
-  attributes: [
-    { name: 'roleName',
-      what: 'The role name, which is also the `cn`. Carried explicitly as ' +
-            'well so that a reader who has only the attributes has the name.' },
-    { name: 'roleMemberUser',
-      what: 'A username that holds this role. Multi-valued. The person need ' +
-            'not exist yet — this service creates a directory entry for any ' +
-            'name on first sight, so a role may be granted before its holder ' +
-            'has ever signed in.' },
-    { name: 'roleMemberGroup',
-      what: 'A group whose every member holds this role. Multi-valued. ' +
-            'Resolved at DECISION TIME rather than expanded on write, so an ' +
-            '`ldapmodify` adding somebody to the group changes the very next ' +
-            'token.' },
-    { name: 'roleMemberApplication',
-      what: 'An application that holds this role AS ITSELF — what a ' +
-            'client_credentials grant is decided on, where there is no ' +
-            'person. Multi-valued. NOT the same relation as ' +
-            '`appRequiredRole` on the application entry, which is what that ' +
-            'application DEMANDS of others.' },
-    { name: 'rolePermission',
-      what: 'A permission a holder of this role may be ISSUED (#303). ' +
-            'Multi-valued. Named as a client asks for it: a generic ' +
-            'application permission by its full scope value — the resource ' +
-            'application\'s `oauthPermissionBaseUri` followed by the name — ' +
-            'and a native permission of this service by its own name ' +
-            '(`admin:read`, `admin:write`). It matters only for a permission ' +
-            'its resource application GATES (`oauthRoleGatedPermission`); ' +
-            'a gated permission is issued only to a subject holding a role ' +
-            'that names it, and an ungated one as it always was.' },
-    { name: 'roleApplication',
-      what: 'The ONE application this role belongs to (#310), by its ' +
-            'identifier in ou=applications; absent, the role is realm-wide. ' +
-            'An application\'s role is named `<role>@<application>` in the ' +
-            'register, so two applications may each have a `reader`; a token ' +
-            'or assertion for that application carries it as `<role>`, and ' +
-            'no other application\'s token carries it at all. The ' +
-            'application\'s `appRequiredRole` may name it by `<role>`.' },
-    { name: 'roleAllowedMemberType',
-      what: 'WHO MAY HOLD this role (#93): `user` (people, directly or ' +
-            'through a group) and `application` (an application as ' +
-            'itself). Multi-valued; absent, both may — every role written ' +
-            'before it. A member of a kind the role does not allow is ' +
-            'refused when the role is written. The two console roles ' +
-            'cannot be restricted: the roster grants their people and the ' +
-            'seed their application.' },
-    { name: 'displayName',
-      what: 'An optional name for people to read (#93). The role\'s NAME ' +
-            'is still what a token carries, what a requirement names and ' +
-            'what the register is keyed on; this is only its label on the ' +
-            'console and the API. Its stable id is the entry\'s ' +
-            '`entryUUID`, kept across every edit.' },
-    { name: 'description',
-      what: 'What the role is for, for the next person.' }
-  ]
-};
+// The table is written in models/directory/role.tsp (#1390).
+const SCHEMA = ModelTables.schema('role');
 
 // ---------------------------------------------------------------------------
 // THE BUILT-IN ROLES. SIX WHEN THIS TABLE WAS WRITTEN, SEVEN SINCE 2026-09-06,
@@ -326,7 +266,7 @@ const BUILT_IN = [
   // the party holding it is a certificate DN that does not exist until a
   // launcher mints one — there is no name to write into a role definition in
   // advance. That reason does NOT apply here: the parties reaching
-  // `/xacml/pdp`, `/xacml/policies` and `/xacml/protected` are ordinary
+  // `/xacml/pdp` and `/xacml/policies` are ordinary
   // callers and some of them are people who already have directory entries.
   //
   // What decides it is the other half of REMOTE_PEPS's argument, and that one
@@ -348,22 +288,22 @@ const BUILT_IN = [
   //
   // **IT IS NOT THE SAME ROLE AS REMOTE_PEPS AND MUST NOT BECOME ONE.** A
   // remote enforcement point pulls the documents this service enforces its own
-  // access with; a XACML caller asks a question and reads a demonstration
-  // policy. One group granting both would mean admitting somebody to the
+  // access with; a XACML caller asks a question and reads the repository's
+  // policies. One group granting both would mean admitting somebody to the
   // second silently admits them to the first, which is exactly the collapse
   // the two-register split in this file exists to prevent.
   // -------------------------------------------------------------------------
   { name: 'XACML_USER',
     what: 'A caller of the XACML surface proper: whoever is a member of the ' +
           'group named by `roles.xacmlUserGroup` (default "xacml-users"). ' +
-          'It is what `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` ' +
-          'and `GET /xacml/protected` require, and the party that holds it ' +
+          'It is what `GET /xacml`, `POST /xacml/pdp` and ' +
+          '`GET /xacml/policies` require, and the party that holds it ' +
           'is normally a client-certificate DN — the certificate says WHO, ' +
           'and this group says whether they may. It is deliberately NOT ' +
           'REMOTE_PEPS: that role reaches the three /xacml/pep endpoints, ' +
           'which hand out the documents this service enforces its own access ' +
           'with, and one group granting both would make admitting a caller ' +
-          'to the demonstration surface silently admit it to those.',
+          'to the XACML surface proper silently admit it to those.',
     holds: function (who) {
       log.debug("Entering holds().");
       const wanted = xacmlUserGroupName().toLowerCase();
@@ -375,8 +315,111 @@ const BUILT_IN = [
       return (who.groups || []).some(function (one) {
         return String(one).toLowerCase() === wanted;
       });
+    } },
+  // -------------------------------------------------------------------------
+  // AN AUTHZEN CALLER (#563, 2026-10-29), AND THE THIRD COMPUTED FROM A GROUP.
+  //
+  // XACML_USER's argument, made again for a third surface: a configured role
+  // is absent in every realm nobody configured, and a built-in one exists in
+  // all of them. **IT IS NOT XACML_USER AND NOT REMOTE_PEPS** (rcbj on #563,
+  // decision 2). `/access/v1` answers decisions and nothing else, where
+  // XACML_USER also reads the repository and REMOTE_PEPS pulls the documents
+  // this service enforces its own access with and a named person's
+  // attributes; one group granting this and either of those would admit an
+  // AuthZEN PEP to things a decision-only caller has no business reading.
+  //
+  // **A CALLER OF EITHER KIND.** A certificate's caller is a directory entry,
+  // whose groups `groupsFor()` reads; a caller with its own access token is
+  // an APPLICATION, whose groups the directory does not read for a role, so
+  // `authzen/authzen_caller.ts` passes them in the context (`groups`) — the
+  // groups whose `member` names the application's own entry.
+  // -------------------------------------------------------------------------
+  { name: 'AUTHZEN_PEPS',
+    what: 'An AuthZEN Policy Enforcement Point: whoever is a member of the ' +
+          'group named by `roles.authzenPepGroup` (default ' +
+          '"authzen-peps") — a person, a service account, or an ' +
+          'application calling with its own access token. It is what the ' +
+          'AuthZEN Authorization API under `/access/v1` requires, and ' +
+          'nothing else: it reads no policy and no person\'s attributes, ' +
+          'which is why it is neither XACML_USER nor REMOTE_PEPS.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      const wanted = authzenPepGroupName().toLowerCase();
+      if (!wanted) {
+        log.debug("Leaving holds().");
+        return false;
+      }
+      log.debug("Leaving holds().");
+      return (who.groups || []).some(function (one) {
+        return String(one).toLowerCase() === wanted;
+      });
+    } },
+  // -------------------------------------------------------------------------
+  // THE NINTH AND TENTH: AN OWNER'S TWO ROLES (#607, 2026-10-13).
+  //
+  // rcbj: "A user that is an owner of these types of objects would be granted
+  // the owner:read and owner:write roles." An owner is somebody a role, a
+  // group, a service account or an application names in its owner values —
+  // themselves, or a group they are in — and since #607 an owner may
+  // administer what they own through `/admin-api`, with `owner:read` and
+  // `owner:write`, within what the access-control policy's owner rule
+  // allows.
+  //
+  // **COMPUTED, rcbj's decision 2 on #607**, from the four owner attributes
+  // at the moment a decision is made, rather than configured roles whose
+  // membership is written when an owner is added: two stores answering one
+  // question would come to disagree, and an owner taken off the last thing
+  // they owned must stop holding the role on the very next request.
+  //
+  // **AND THE FIRST BUILT-IN ROLES THAT AUTHORIZE A PERMISSION** — each its
+  // own, `permission` on the row, which `common/role_permissions.ts` reads
+  // beside the native roles'. `holds()` reads `owns` off the context, which
+  // this file — a leaf — cannot work out: only `common/ownership.ts` can,
+  // and `role_permissions.ts` asks it. A context that does not say is
+  // somebody who owns nothing, which is the safe reading: the roles claim,
+  // the issuance PEP and the access PEP's own `rolesOf()` never carry them,
+  // and a token reaches them only through held ∩ carried.
+  //
+  // Owning a role is NOT holding it. An owner of `staff` holds OWNER_WRITE,
+  // not `staff`; adding themselves as a member is an act the owner rule
+  // decides, and a role that authorizes a protected permission is closed to
+  // it (`common/ownership.ts`, `object-protected`).
+  // -------------------------------------------------------------------------
+  { name: 'OWNER_READ', permission: 'owner:read',
+    what: 'An OWNER (#607): whoever a role, a group, a service account or ' +
+          'an application in this realm names as an owner, directly or ' +
+          'through a group they are in. Authorizes the owner:read ' +
+          'permission: reading, through /admin-api, the objects they own ' +
+          'and nothing else. Computed when a decision is made.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
+      return who.kind === 'user' && who.authenticated && who.owns === true;
+    } },
+  { name: 'OWNER_WRITE', permission: 'owner:write',
+    what: 'An OWNER (#607), as OWNER_READ. Authorizes the owner:write ' +
+          'permission: changing, through /admin-api, the objects they own, ' +
+          'within the actions the access-control policy\'s owner rule ' +
+          'allows each kind — never creating, deleting or renaming one, and ' +
+          'never an object protected from its owners.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
+      return who.kind === 'user' && who.authenticated && who.owns === true;
     } }
 ];
+
+// THE BUILT-IN ROLES THAT AUTHORIZE A PERMISSION (#607): the two owner roles.
+// Derived from the table, as `BUILT_IN_NAMES` is.
+/**
+ * The built-in roles that authorize a permission of this service (#607):
+ * `{ name, permission }` per row that names one.
+ */
+const OWNER_ROLES = BUILT_IN.filter(function (one) {
+  return !!one.permission;
+}).map(function (one) {
+  return { name: one.name, permission: one.permission };
+});
 
 // The group that grants REMOTE_PEPS. A setting rather than a constant because
 // a deployment that already has a group for its enforcement points should be
@@ -400,6 +443,14 @@ function xacmlUserGroupName() {
   log.debug("Entering xacmlUserGroupName().");
   log.debug("Leaving xacmlUserGroupName().");
   return String(config.value('roles.xacmlUserGroup') || '').trim();
+}
+
+// The group that grants AUTHZEN_PEPS (#563), on the same terms: '' closes
+// /access/v1 to every caller.
+function authzenPepGroupName() {
+  log.debug("Entering authzenPepGroupName().");
+  log.debug("Leaving authzenPepGroupName().");
+  return String(config.value('roles.authzenPepGroup') || '').trim();
 }
 
 /**
@@ -469,51 +520,79 @@ function isBuiltIn(name) {
 // **AN APPLICATION IS AN ORDINARY MEMBER**, and that is what changed for
 // machines (decision 3 on #303): a client on `client_credentials` is issued
 // `admin:*` only while it holds the role, so declaring the scope in
-// `oauthAllowedScope` is no longer enough. `sts-management-api` — the
-// machine door every launcher uses — is seeded as a member of both.
+// `oauthAllowedScope` is no longer enough. `sts-api-client` — the
+// machine door every launcher uses — is seeded as a member of both. It was
+// `sts-management-api` until #1139 made that identifier the management API's
+// resource object.
 //
 // They cannot be deleted, and their permission cannot be changed: a realm
 // without them could never be administered by a machine, and ADMIN_READ
 // authorizing `admin:write` would be the scope-as-authorization mistake
 // written into the register instead.
 // ---------------------------------------------------------------------------
+// **AND A THIRD, SECURITY_ADMIN (#645, 2026-11-02)**, over the console's
+// Security Administrator group (`admin.securityGroup`). It authorizes
+// `admin:security`, which the management API asks — INSTEAD of
+// `admin:write` — for a change to a Directory → Policies policy, for naming
+// one on an application, group or person, for granting the role itself and
+// for acting on the account of a person who holds it
+// (`common/security_operations.ts`). It implies Admin Read on the roster, so
+// its group is one of ADMIN_READ's, and NOT Admin Write: the role exists so
+// that managing security can be somebody's whole job. `sts-api-client` is
+// seeded in it, as in the other two (rcbj's decision on #645), so a machine
+// that writes policy keeps working until an operator takes it out.
 /**
- * The two console roles, ADMIN_READ and ADMIN_WRITE: configured roles seeded
- * in every realm, each authorizing the native permission of the same name.
+ * The three console roles, ADMIN_READ, ADMIN_WRITE and SECURITY_ADMIN:
+ * configured roles seeded in every realm, each authorizing the native
+ * permission of its own.
  *
- * Their groups are read from the `admin.readGroup` / `admin.writeGroup`
- * settings, never stored; people hold them through the console roster.
+ * Their groups are read from the `admin.readGroup` / `admin.writeGroup` /
+ * `admin.securityGroup` settings, never stored; people hold them through the
+ * console roster.
  */
 const CONSOLE_ROLES = [
   { name: 'ADMIN_READ', consoleRole: 'read', permission: 'admin:read',
-    groupSettings: ['admin.readGroup', 'admin.writeGroup'],
-    seedApplications: ['sts-management-api'],
+    groupSettings: ['admin.readGroup', 'admin.writeGroup',
+                    'admin.securityGroup'],
+    seedApplications: ['sts-api-client'],
     what: 'Admin Read: every READ on /admin-api. Held by the console\'s ' +
-          'Admin Read and Admin Write groups (Admin Write implies Admin ' +
-          'Read) and by the applications listed here. Authorizes the ' +
-          'admin:read permission.' },
+          'Admin Read, Admin Write and Security Administrator groups (both ' +
+          'of the others imply Admin Read) and by the applications listed ' +
+          'here. Authorizes the admin:read permission.' },
   { name: 'ADMIN_WRITE', consoleRole: 'write', permission: 'admin:write',
     groupSettings: ['admin.writeGroup'],
-    seedApplications: ['sts-management-api'],
+    seedApplications: ['sts-api-client'],
     what: 'Admin Write: every /admin-api operation that CHANGES anything. ' +
           'Held by the console\'s Admin Write group and by the applications ' +
           'listed here. Authorizes the admin:write permission. It does not ' +
           'imply Admin Read on a token: a token may carry either scope, and ' +
-          'the policy asks for the one the operation needs.' }
+          'the policy asks for the one the operation needs.' },
+  { name: 'SECURITY_ADMIN', consoleRole: 'security',
+    permission: 'admin:security',
+    groupSettings: ['admin.securityGroup'],
+    seedApplications: ['sts-api-client'],
+    what: 'Security Administrator: the /admin-api operations that change ' +
+          'security — a policy on Directory → Policies, a policy named on ' +
+          'an application, group or person, a grant of this role, and the ' +
+          'account of a person who holds it. Admin Write does not reach ' +
+          'them. Held by the console\'s Security Administrator group and ' +
+          'by the applications listed here. Authorizes the admin:security ' +
+          'permission.' }
 ];
 
-// The application the seed puts in both. The management API's own seeded
-// client, `common/applications.js`'s `sts-management-api`.
+// The application the seed puts in both. The bootstrap client,
+// `common/applications.js`'s `sts-api-client` (#1139).
 /**
- * The application seeded as a member of both console roles: the management
- * API's own client.
+ * The application seeded as a member of both console roles: the bootstrap
+ * client this service's own APIs are called as.
  */
-const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
+const CONSOLE_ROLE_APPLICATION = 'sts-api-client';
 
 // ---------------------------------------------------------------------------
 // THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
-// authorizes one of this service's NATIVE permissions — the two console roles
-// above, and DEVICE_COMPLIANCE. Each is seeded in every realm, cannot be
+// authorizes one of this service's NATIVE permissions — the three console roles
+// above, ADMIN_CONSOLE (#454), DEVICE_COMPLIANCE, and the two Shared Signals
+// roles SSF_READ and SSF_MANAGE. Each is seeded in every realm, cannot be
 // deleted, and authorizes exactly its permission.
 //
 // **DEVICE_COMPLIANCE WAS THE LAST ROLE READ OFF A SCOPE.** It was built in:
@@ -525,14 +604,103 @@ const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
 // decision on #309): no client is the MDM feed until an operator adds it,
 // and the management API's own client is not, which is the separation #164
 // decision 2 made on purpose.
+//
+// **SSF_READ AND SSF_MANAGE ARE ORDINARY NATIVE ROLES, NOT CONSOLE ROLES.**
+// The console roles are a roster: their groups come from settings and are
+// not stored, people hold them through /admin/rbac, and write-implies-read
+// is a property of that roster. These two are not. Each stores its group
+// (`ssf-read`, `ssf-manage`) on `roleMemberGroup`, the group is created when
+// it is missing and never overwritten, and the permission is the scope of
+// the same name. Issuance then asks for both halves (`role_permissions.ts`):
+// a person is issued the scope only while they are in the role's group AND
+// the application they are signing in to is a member of the role. An
+// application's own token is issued it only while that application is a
+// member. SSF_MANAGE does not authorize `ssf.read`. A direct user member,
+// and a client that confers the role, do not stand in for the group.
 // ---------------------------------------------------------------------------
 const NATIVE_ROLES = CONSOLE_ROLES.concat([
+  // THE ADMIN CONSOLE'S OWN ROLE (#454). What the console needs to draw
+  // itself — its frame, its drawings, its form helpers — is a set of
+  // operations under `/admin-api/console`, apart from the management
+  // operations an external client relies on, and this role is what reaches
+  // them. Nobody is a member: it is CONFERRED by the console's client
+  // (`roleConferredBy`), so every person who signs in to the console holds it
+  // on that token, beside whatever ADMIN_READ or ADMIN_WRITE they hold
+  // themselves. A console page that shows realm data asks for both
+  // (`mgmt-api/admin_api.ts`, the gate).
+  { name: 'ADMIN_CONSOLE', consoleRole: '', permission: 'admin:console',
+    groupSettings: [], seedApplications: [],
+    seedConferredBy: ['sts-admin-console'],
+    what: 'The admin console: the operations under /admin-api/console that ' +
+          'exist only to draw the console — its frame, its drawings and its ' +
+          'form helpers. Authorizes the admin:console permission. Conferred ' +
+          'by the console\'s own client, sts-admin-console, on every person ' +
+          'who signs in to the console, and held by nobody as a member. It ' +
+          'grants nothing else: a page that shows realm data also asks for ' +
+          'ADMIN_READ.' },
   { name: 'DEVICE_COMPLIANCE', consoleRole: '', permission: 'device:compliance',
     groupSettings: [], seedApplications: [],
     what: 'The device compliance feed: an MDM or posture feed reporting a ' +
           'device\'s compliance through POST /admin-api/device-compliance, ' +
           'and nothing else on /admin-api. Authorizes the device:compliance ' +
-          'permission. Seeded with no member: add the feed\'s application.' }
+          'permission. Seeded with no member: add the feed\'s application.' },
+  { name: 'SSF_READ', consoleRole: '', permission: 'ssf.read',
+    groupSettings: [], seedApplications: [], seedGroups: ['ssf-read'],
+    what: 'Shared Signals read. Authorizes the ssf.read permission. A ' +
+          'person is issued it only while they belong to this role\'s ' +
+          'group, seeded as ssf-read, and the application they are signing ' +
+          'in to is a member of this role. An application is issued it on ' +
+          'its own token only while it is a member. SSF_MANAGE does not ' +
+          'authorize it.' },
+  { name: 'SSF_MANAGE', consoleRole: '', permission: 'ssf.manage',
+    groupSettings: [], seedApplications: [], seedGroups: ['ssf-manage'],
+    what: 'Shared Signals write. Authorizes the ssf.manage permission. A ' +
+          'person is issued it only while they belong to this role\'s ' +
+          'group, seeded as ssf-manage, and the application they are ' +
+          'signing in to is a member of this role. An application is issued ' +
+          'it on its own token only while it is a member. It does not ' +
+          'authorize ssf.read.' },
+  // THE TWO REPORT ROLES (#1030, 2026-10-27). Who may be issued `report:use`
+  // and `report:admin` was a group check written into `report/rights.ts`
+  // (`report.usersGroup`, plus the console administrators) rather than a
+  // role, which is the arrangement every other native permission left
+  // behind with #303. They are ordinary native roles now, in the SSF roles'
+  // shape with one difference: a person holds one through its group (or as
+  // a direct member) and an APPLICATION holds one by being a member, and
+  // nothing asks whether the application a person signs in to is a member
+  // — the two scopes are declared on `sts-report` (#110), as the admin
+  // scopes are on the console, and that declaration is the client's half.
+  // A console administrator IS one since #1038 (rcbj, 2026-10-27, reversing
+  // #1030's "the report groups are the basis"): `role_permissions.ts`'s
+  // `heldRoles()` gives Admin Write REPORT_ADMIN and REPORT_USE and Admin
+  // Read REPORT_USE, in the realm whose roster says so; the default realm's
+  // roster reaches every realm's reports through `report/report_api.ts`.
+  // What a holder may reach is the access-control policy's report rules
+  // (`xacml/xacml_templates.ts`), never these rows.
+  // `sts-api-client` (#1139) is seeded a member: the bootstrap client calls
+  // the reports API as well as the management API.
+  { name: 'REPORT_USE', consoleRole: '', permission: 'report:use',
+    groupSettings: [], seedApplications: ['sts-api-client'],
+    seedGroups: ['report-users'],
+    what: 'Reports, as a user. Authorizes the report:use permission: the ' +
+          'reports application and /report-api for the definitions and ' +
+          'jobs the holder owns or is shared, as the access-control ' +
+          'policy decides. A person holds it through this role\'s group, ' +
+          'seeded as report-users, as a direct member, or on the console ' +
+          'roster (Admin Read or Admin Write); an application ' +
+          'holds it as a member and is issued it on its own token, ' +
+          'reaching only the definitions and jobs it defined. The ' +
+          'bootstrap client, sts-api-client, is seeded a member.' },
+  { name: 'REPORT_ADMIN', consoleRole: '', permission: 'report:admin',
+    groupSettings: [], seedApplications: [], seedGroups: ['report-admins'],
+    what: 'Reports, as an administrator. Authorizes the report:admin ' +
+          'permission: every definition and every job in the realm, as the ' +
+          'access-control policy decides. A person holds it through this ' +
+          'role\'s group, seeded as report-admins, as a direct member, or ' +
+          'as Admin Write on the console roster; ' +
+          'an application holding it still reaches only what it defined. ' +
+          'It does not authorize report:use: a token asks for the scopes ' +
+          'it needs.' }
 ]);
 
 function nativeRoleFor(name) {
@@ -566,10 +734,10 @@ function consoleRoleFor(name) {
 }
 
 /**
- * Tells whether a role name is one of the two console roles.
+ * Tells whether a role name is one of the three console roles.
  *
  * @param name - a role name
- * @returns true for ADMIN_READ or ADMIN_WRITE
+ * @returns true for ADMIN_READ, ADMIN_WRITE or SECURITY_ADMIN
  */
 function isConsoleRole(name) {
   log.debug("Entering isConsoleRole().");
@@ -615,7 +783,8 @@ let warnedAboutNoDirectory = false;
  * `ou=roles`; `ldap/ldap_server.js` fills it.
  *
  * @param hooks - the directory's role hooks (`allRoles`, `writeRole`,
- *   `deleteRole`, `groupsOfUser`), or null
+ *   `deleteRole`, `groupsOfUser`, `ensureGroup`, and since #604
+ *   `resolveOwner`), or null
  */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
@@ -663,26 +832,17 @@ function haveDirectory() {
 // ---------------------------------------------------------------------------
 // READING THE REGISTER.
 // ---------------------------------------------------------------------------
-function firstValue(attributes, name) {
-  log.debug("Entering firstValue().");
-  const found = attributes[name] || attributes[name.toLowerCase()];
-  log.debug("Leaving firstValue().");
-  return Array.isArray(found) ? (found[0] || '') : (found || '');
-}
-
-function allValues(attributes, name) {
-  log.debug("Entering allValues().");
-  const found = attributes[name] || attributes[name.toLowerCase()];
-  if (!found) {
-    log.debug("Leaving allValues().");
-    return [];
-  }
-  log.debug("Leaving allValues().");
-  return (Array.isArray(found) ? found : [found]).map(function (one) {
+// A role's list as this module has always answered it: each value trimmed and
+// the empty ones gone, which a concept's list does not do for it (#1390).
+function trimmedValues(values) {
+  log.debug("Entering trimmedValues().");
+  const out = (values || []).map(function (one) {
     return String(one).trim();
   }).filter(function (one) {
     return one.length > 0;
   });
+  log.debug("Leaving trimmedValues().");
+  return out;
 }
 
 /**
@@ -704,12 +864,15 @@ function all() {
   }
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
+    // What the role says comes from its concept (#1390), and its entryUUID
+    // from DirectoryEntry's, which any entry carries (#1579).
+    const role = DomainClasses.Role.fromEntry(at);
     const consoleRow = consoleRoleFor(entry.name);
     const nativeRow = nativeRoleFor(entry.name);
     // THE APPLICATION A ROLE BELONGS TO (#310), and its name inside it: the
     // part of `<role>@<application>` before the separator, which is what a
     // token for that application carries and its requirement names.
-    const application = firstValue(at, 'roleApplication');
+    const application = role.roleApplication || '';
     return {
       name: entry.name,
       application: application,
@@ -722,19 +885,28 @@ function all() {
       // ITS STABLE ID (#93): the entry's entryUUID, which the directory keeps
       // across every rewrite of the entry and a delete and re-create does
       // not, so a caller holding it can tell the role from a namesake.
-      id: firstValue(at, 'entryUUID').toLowerCase(),
-      displayName: firstValue(at, 'displayName'),
+      id: String(DomainClasses.DirectoryEntry.fromEntry(at).entryUuid || '')
+        .toLowerCase(),
+      displayName: role.displayName || '',
       // WHO MAY HOLD IT (#93); empty is both kinds.
-      memberTypes: allValues(at, 'roleAllowedMemberType'),
-      description: firstValue(at, 'description'),
+      memberTypes: trimmedValues(role.roleAllowedMemberType),
+      description: role.description || '',
       // A console role's people and groups are the roster's, never stored:
       // see THE TWO CONSOLE ROLES.
-      users: consoleRow ? [] : allValues(at, 'roleMemberUser'),
+      users: consoleRow ? [] : trimmedValues(role.memberUsers),
       groups: consoleRow ? consoleRoleGroups(consoleRow)
-                         : allValues(at, 'roleMemberGroup'),
-      applications: allValues(at, 'roleMemberApplication'),
+                         : trimmedValues(role.memberGroups),
+      applications: trimmedValues(role.memberApplications),
+      // THE CLIENTS THAT CONFER IT (#454) on every person signing in
+      // through them.
+      conferredBy: trimmedValues(role.roleConferredBy),
       permissions: nativeRow ? [nativeRow.permission]
-                             : allValues(at, 'rolePermission'),
+                             : trimmedValues(role.permissions),
+      // WHO ANSWERS FOR IT (#604): the `owner` DNs as stored.
+      owners: trimmedValues(role.owner),
+      // CLOSED TO ITS OWNERS (#607, rcbj's decision 4): an administrator's
+      // mark, which the access-control policy's owner rule reads.
+      ownerProtected: role.stsOwnerProtected === true,
       console: !!consoleRow,
       // Seeded in every realm, undeletable, its permission fixed (#309).
       native: !!nativeRow,
@@ -939,6 +1111,53 @@ function write(name, record) {
                   ' only, and ' + excluded.join(' and ') + ' cannot be ' +
                   'its members.' }, 'STS-XACML-0082');
   }
+  // THE CLIENTS THAT CONFER IT (#454). `undefined` keeps what the entry
+  // holds, because every caller of this function writes the WHOLE record and
+  // all but one of them were written before the attribute existed — a
+  // describe-role or an add-member that dropped it would silently stop the
+  // console's client conferring ADMIN_CONSOLE. Two kinds of role may not be
+  // conferred: one only applications may hold (it is conferred on PEOPLE),
+  // and the two console roles, whose people are the roster's — the reason a
+  // person cannot be written onto them is the reason a client cannot hand
+  // them out either.
+  const before = read(name) || {};
+  // THE OWNERS (#604), kept when the caller does not name them, for
+  // `conferredBy`'s reason below: every caller writes the whole record and
+  // all but the owner doors were written before the attribute existed.
+  const owners = (given.owners === undefined ? (before.owners || [])
+    : given.owners).map(function (one) {
+      return String(one).trim();
+    }).filter(function (one, at, list) {
+      return one && list.indexOf(one) === at;
+    });
+  // THE MARK THAT CLOSES IT TO ITS OWNERS (#607), kept the same way: only
+  // `setOwnerProtected()` names it.
+  const ownerProtected = given.ownerProtected === undefined
+    ? before.ownerProtected === true : given.ownerProtected === true;
+  const conferredBy = (given.conferredBy === undefined
+    ? (before.conferredBy || [])
+    : given.conferredBy).map(function (one) {
+      return String(one).trim();
+    }).filter(function (one, at, list) {
+      return one && list.indexOf(one) === at;
+    });
+  if (conferredBy.length && consoleRow) {
+    log.debug('Leaving write(). A console role conferred by a client.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is one of the two console roles, and the ' +
+                  'people who hold it are the console roster\'s: a client ' +
+                  'cannot confer it on everybody signing in through it. ' +
+                  'Grant it on /admin/rbac.' }, 'STS-XACML-0089');
+  }
+  if (conferredBy.length && memberTypes.length &&
+      memberTypes.indexOf('user') < 0) {
+    log.debug('Leaving write(). Conferred on people, held by applications.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" may be held by applications only, and a ' +
+                  'role a client confers is held by the PEOPLE who sign in ' +
+                  'through it. Let people hold it, or take ' +
+                  conferredBy.join(', ') + ' off it.' }, 'STS-XACML-0088');
+  }
   // THE CLASS THE SCHEMA ABOVE DECLARES, written on the entry (2026-09-23).
   // Until then a role was the one registry entry carrying no objectClass at
   // all — `cn` and the role attributes only — so `(objectClass=stsRole)`
@@ -956,8 +1175,11 @@ function write(name, record) {
     roleMemberUser: (given.users || []).map(String),
     roleMemberGroup: (given.groups || []).map(String),
     roleMemberApplication: (given.applications || []).map(String),
+    roleConferredBy: conferredBy,
     roleApplication: application ? [application] : [],
     roleAllowedMemberType: memberTypes,
+    owner: owners,
+    stsOwnerProtected: ownerProtected ? ['TRUE'] : [],
     displayName: String(given.displayName || '').trim()
       ? [String(given.displayName).trim()] : [],
     // A native role's permission is fixed (see THE NATIVE ROLES) and
@@ -970,6 +1192,17 @@ function write(name, record) {
     attributes.roleMemberGroup = [];
   }
   const written = directory.writeRole(String(name), attributes);
+  // `{ ok: false }` is truthy. putEntry() answers it for a description
+  // that carries an operator code and writes nothing (#1416). The role
+  // answer's field is `why`, and it must not be the raw refusal: that
+  // object has no `why`, so the door would report a blank sentence.
+  if (written && written.ok === false) {
+    log.debug('Leaving write(). A description carries an operator code.');
+    return errorCodes.mark({ ok: false,
+             why: (written.errors && written.errors[0]) ||
+                  'A description cannot carry an operator error code.' },
+             written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+  }
   if (!written) {
     log.debug('Leaving write(). The directory refused.');
     return errorCodes.mark({ ok: false,
@@ -1016,19 +1249,275 @@ function remove(name) {
 }
 
 // ---------------------------------------------------------------------------
-// SEEDING THE NATIVE ROLES (the two console roles, and DEVICE_COMPLIANCE
-// since #309), in the AMBIENT realm — `ldap_server.js`
-// calls it where it seeds this process's own applications, for the default
-// realm at startup and inside each realm's builder. An entry already there
-// is left exactly as it is, as `applications.js` leaves its seeded clients:
-// an operator who took the management API's client out of a role meant it.
-// Returns how many were created.
+// A ROLE'S OWNERS (#604, rcbj: "add the concept of an owner to roles ... use
+// the same owners pattern"). The group owners' rules (#603), on a role entry:
+// each owner names a PERSON or a GROUP of this realm, resolved by the
+// directory's own `resolveOwner` (the service account's resolver, #600); an
+// owner must name somebody when it is added; at most MAX_OWNERS. An owner
+// deleted since is kept and reported (`kind: ''`). AN OWNER GRANTS NOTHING.
+// The write goes through write(), so every rule of the role stays its own.
+// ---------------------------------------------------------------------------
+/** The most owners a role may name; for more, name a group. */
+const MAX_OWNERS = 25;
+
+/**
+ * Describes a role's owners, each resolved to a person or a group of this
+ * realm, or `kind: ''` where it names nobody now.
+ *
+ * @param row - the role as `all()` draws it
+ * @returns `[{ dn, kind, name, present }]`, in the order the entry holds them
+ */
+function ownersOf(row) {
+  log.debug('Entering ownersOf().');
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const out = ((row && row.owners) || []).map(function (dn) {
+    const found = resolve ? resolve(dn) : { kind: '', dn: '', name: '' };
+    return { dn: found.kind ? found.dn : dn, kind: found.kind || '',
+             name: found.name || '', present: !!found.kind };
+  });
+  log.debug('Leaving ownersOf(). ' + out.length);
+  return out;
+}
+
+/**
+ * Returns a configured role's directory entry, as the directory draws an
+ * entry (`dn`, `attributes`, `createdAt`, `modifiedAt`).
+ *
+ * @param name - the role name
+ * @returns the entry, or null
+ */
+function entryOf(name) {
+  log.debug('Entering entryOf(). name=' + name);
+  if (!haveDirectory()) {
+    log.debug('Leaving entryOf(). No directory.');
+    return null;
+  }
+  const found = directory.allRoles().filter(function (one) {
+    return one.name === String(name || '');
+  })[0] || null;
+  log.debug('Leaving entryOf(). ' + (found ? 'Found.' : 'Not here.'));
+  return found;
+}
+
+// The whole record a role is written back with, its owners replaced.
+function recordWithOwners(row, owners) {
+  log.debug('Entering recordWithOwners().');
+  log.debug('Leaving recordWithOwners().');
+  return { description: row.description, users: row.users,
+           groups: row.groups, applications: row.applications,
+           permissions: row.permissions, application: row.application,
+           displayName: row.displayName, memberTypes: row.memberTypes,
+           owners: owners };
+}
+
+/**
+ * Adds one owner to a configured role, writing at once (#604). An owner
+ * already listed answers ok with `changed: false`.
+ *
+ * @param name - the role name
+ * @param owner - a person (username, DN or `urn:uuid:` subject) or a group
+ *   (cn or DN) of this realm
+ * @returns `{ ok: true, changed, role, owner, owners, message }`, or
+ *   `{ ok: false, why }` carrying an error code
+ */
+function addOwner(name, owner) {
+  log.debug('Entering addOwner(). name=' + name);
+  const row = read(name);
+  if (!row) {
+    log.debug('Leaving addOwner(). No such role.');
+    return errorCodes.mark({ ok: false,
+             why: 'There is no role called "' + name + '".' },
+             'STS-XACML-0057');
+  }
+  const wanted = String(owner == null ? '' : owner).trim();
+  if (!wanted) {
+    log.debug('Leaving addOwner(). No owner.');
+    return errorCodes.mark({ ok: false, why: 'Who? Send `owner` with a ' +
+             'person (a username or DN) or a group (its cn or DN) of this ' +
+             'realm.' }, 'STS-XACML-0173');
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const resolved = resolve ? resolve(wanted) : { kind: '' };
+  if (!resolved.kind) {
+    log.debug('Leaving addOwner(). Names nobody.');
+    return errorCodes.mark({ ok: false, why: '"' + wanted.slice(0, 128) +
+             '" names no person and no group in this realm. An owner ' +
+             'answers for the role, so it must name somebody.' },
+             'STS-XACML-0174');
+  }
+  const lower = function (dn) {
+    return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
+  };
+  const before = ownersOf(row);
+  const owners = before.map(function (one) {
+    return one.dn;
+  });
+  if (owners.some(function (dn) {
+    return lower(dn) === lower(resolved.dn);
+  })) {
+    log.debug('Leaving addOwner(). Already an owner.');
+    return { ok: true, changed: false, role: row.name, owner: resolved.dn,
+             owners: before, message: (resolved.name || resolved.dn) +
+             ' was already an owner of the role "' + row.name + '".' };
+  }
+  if (owners.length >= MAX_OWNERS) {
+    log.debug('Leaving addOwner(). Too many.');
+    return errorCodes.mark({ ok: false, why: 'The role "' + row.name +
+             '" already names ' + owners.length + ' owners, the most a ' +
+             'role may name (' + MAX_OWNERS + '). Name a group of them ' +
+             'instead.' }, 'STS-XACML-0175');
+  }
+  owners.push(resolved.dn);
+  const written = write(row.name, recordWithOwners(row, owners));
+  if (!written.ok) {
+    log.debug('Leaving addOwner(). The write was refused.');
+    return written;
+  }
+  log.debug('Leaving addOwner(). Added.');
+  return { ok: true, changed: true, role: row.name, owner: resolved.dn,
+           owners: ownersOf(read(row.name) || row),
+           message: (resolved.name || resolved.dn) + ' is now an owner of ' +
+                    'the role "' + row.name + '".' };
+}
+
+/**
+ * Takes one owner off a configured role, writing at once (#604). Refused for
+ * a value the role does not list; the last owner may go.
+ *
+ * @param name - the role name
+ * @param owner - the owner's DN, as the role lists it
+ * @returns `{ ok: true, changed: true, role, owner, owners, message }`, or
+ *   `{ ok: false, why }` carrying an error code
+ */
+function removeOwner(name, owner) {
+  log.debug('Entering removeOwner(). name=' + name);
+  const row = read(name);
+  if (!row) {
+    log.debug('Leaving removeOwner(). No such role.');
+    return errorCodes.mark({ ok: false,
+             why: 'There is no role called "' + name + '".' },
+             'STS-XACML-0057');
+  }
+  const wanted = String(owner == null ? '' : owner).trim();
+  const lower = function (dn) {
+    return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
+  };
+  const kept = (row.owners || []).filter(function (dn) {
+    return lower(dn) !== lower(wanted);
+  });
+  if (!wanted || kept.length === (row.owners || []).length) {
+    log.debug('Leaving removeOwner(). Not an owner.');
+    return errorCodes.mark({ ok: false, why: '"' + wanted.slice(0, 128) +
+             '" is not one of the owners of the role "' + row.name + '".' },
+             'STS-XACML-0176');
+  }
+  const written = write(row.name, recordWithOwners(row, kept));
+  if (!written.ok) {
+    log.debug('Leaving removeOwner(). The write was refused.');
+    return written;
+  }
+  log.debug('Leaving removeOwner(). Removed.');
+  return { ok: true, changed: true, role: row.name, owner: wanted,
+           owners: ownersOf(read(row.name) || row),
+           message: wanted + ' is no longer an owner of the role "' +
+                    row.name + '".' };
+}
+
+/**
+ * Marks a configured role closed to its owners, or opens it again (#607,
+ * rcbj's decision 4), writing at once and keeping everything else.
+ *
+ * @param name - the role name
+ * @param flag - true closes it to its owners
+ * @returns `{ ok: true, changed, role, ownerProtected }`, or
+ *   `{ ok: false, why }` carrying an error code
+ */
+function setOwnerProtected(name, flag) {
+  log.debug('Entering setOwnerProtected(). name=' + name);
+  const row = read(name);
+  if (!row) {
+    log.debug('Leaving setOwnerProtected(). No such role.');
+    return errorCodes.mark({ ok: false,
+             why: 'There is no role called "' + name + '".' },
+             'STS-XACML-0057');
+  }
+  const wanted = flag === true;
+  if (row.ownerProtected === wanted) {
+    log.debug('Leaving setOwnerProtected(). Unchanged.');
+    return { ok: true, changed: false, role: row.name,
+             ownerProtected: wanted };
+  }
+  const written = write(row.name, Object.assign(
+    recordWithOwners(row, row.owners || []),
+    { conferredBy: row.conferredBy, ownerProtected: wanted }));
+  if (!written.ok) {
+    log.debug('Leaving setOwnerProtected(). The write was refused.');
+    return written;
+  }
+  log.debug('Leaving setOwnerProtected(). Written.');
+  return { ok: true, changed: true, role: row.name, ownerProtected: wanted };
+}
+
+// ---------------------------------------------------------------------------
+// SEEDING THE NATIVE ROLES (the two console roles, DEVICE_COMPLIANCE since
+// #309, and SSF_READ and SSF_MANAGE), in the AMBIENT realm —
+// `ldap_server.js` calls it where it seeds this process's own applications,
+// for the default realm at startup and inside each realm's builder, and
+// again after a persistence restore replaces the tree. An entry already
+// there is left exactly as it is, as `applications.js` leaves its seeded
+// clients: an operator who took the management API's client out of a role,
+// or who renamed a Shared Signals role's group, meant it.
+//
+// A role's seed groups are a different matter. They are created only when
+// the DN is absent, and an existing group is never rewritten: `putEntry`
+// would replace the members, and a restore that then re-seeds would wipe
+// the person an operator had added. The group is ensured even when the role
+// entry is already there, so an upgrade that finds the role and not the
+// group still gains the group, empty.
+// Returns how many roles were created.
 // ---------------------------------------------------------------------------
 /**
- * Creates the two console roles in the ambient realm when they are missing,
- * with the management API's client as a member; an existing entry is left as
- * it is.
+ * Creates one native role's seed groups in the ambient realm when their DNs
+ * are absent. An existing group, members included, is left as it is.
  *
+ * A directory slot with no `ensureGroup` — a test stub — skips the groups.
+ * The role is still seeded; the group can be created later.
+ * @param row - a `NATIVE_ROLES` row
+ */
+function ensureSeedGroups(row) {
+  log.debug('Entering ensureSeedGroups().');
+  if (!directory || typeof directory.ensureGroup !== 'function') {
+    log.debug('Leaving ensureSeedGroups(). The directory has no ensureGroup.');
+    return;
+  }
+  (row.seedGroups || []).forEach(function (name) {
+    const made = directory.ensureGroup(name, {
+      note: 'Members of this group hold the native role ' + row.name +
+            ' when that role lists the group. Seeded empty; adding a ' +
+            'member is how a person is granted ' + row.permission + '.',
+      origin: 'seed',
+      actor: 'seed',
+      channel: 'internal'
+    });
+    if (!made || made.ok !== true) {
+      const why = made && made.errors ? made.errors.join(' ') : '';
+      log.warn(errorCodes.tag('STS-XACML-0077') + 'roles: the group "' +
+               name + '" for the native role "' + row.name +
+               '" was not seeded' + (why ? ': ' + why : '') + '.');
+    }
+  });
+  log.debug('Leaving ensureSeedGroups().');
+}
+
+/**
+ * Creates the native roles in the ambient realm when they are missing.
+ *
+ * The console roles and REPORT_USE are seeded with the bootstrap client,
+ * `sts-api-client`, as a member (#1139). SSF_READ and SSF_MANAGE are seeded
+ * with their groups and with no application. An existing role entry is left
+ * as it is.
  * @returns how many were created
  */
 function seedNativeRoles() {
@@ -1039,12 +1528,15 @@ function seedNativeRoles() {
   }
   let made = 0;
   NATIVE_ROLES.forEach(function (row) {
+    ensureSeedGroups(row);
     if (read(row.name)) {
       return;
     }
     const written = write(row.name, {
       description: row.what,
-      applications: (row.seedApplications || []).slice(0) });
+      applications: (row.seedApplications || []).slice(0),
+      conferredBy: (row.seedConferredBy || []).slice(0),
+      groups: (row.seedGroups || []).slice(0) });
     if (written.ok) {
       made += 1;
     } else {
@@ -1079,6 +1571,32 @@ function rolesAuthorizing(permission) {
   return out;
 }
 
+// The configured roles a client confers on the people who sign in through it
+// (#454), in the ambient realm. A client_id is compared exactly, as it is
+// everywhere it is a key.
+/**
+ * Lists the configured roles a client confers on every person who signs in
+ * through it (`roleConferredBy`), in the ambient realm.
+ *
+ * @param clientId - the client_id the token was issued to
+ * @returns the role names
+ */
+function conferredBy(clientId) {
+  log.debug('Entering conferredBy().');
+  const wanted = String(clientId == null ? '' : clientId);
+  if (!wanted) {
+    log.debug('Leaving conferredBy(). No client.');
+    return [];
+  }
+  const out = all().filter(function (row) {
+    return (row.conferredBy || []).indexOf(wanted) >= 0;
+  }).map(function (row) {
+    return row.name;
+  });
+  log.debug('Leaving conferredBy(). ' + out.length + ' role(s).');
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THE RESOLVER: WHICH ROLES DOES THIS PARTY HOLD.
 //
@@ -1089,7 +1607,24 @@ function rolesAuthorizing(permission) {
 //     authenticated: whether this party proved anything,
 //     groups: the group names a person is in (a user only),
 //     scopes: an access token's scopes, where there is one — no role is read
-//             off them since #309; kept for a caller's context }
+//             off them since #309; kept for a caller's context,
+//     crossRealm: true for a principal that ARRIVED THROUGH A KERBEROS TRUST
+//             (#430) — a cross-realm ticket or a referral — named
+//             `name@REALM`,
+//     sids:   with `crossRealm`, the SIDs its PAC still carries after SID
+//             filtering }
+//
+// **A PRINCIPAL THAT ARRIVED THROUGH A TRUST HOLDS ONLY WHAT IS GRANTED TO IT
+// BY NAME** (rcbj, 2026-10-19, #430). The built-in roles — EVERYBODY and
+// ALL_AUTHENTICATED_USERS above all — mean "authenticated in THIS realm", and
+// a person whose authentication another realm vouched for is not that: they
+// hold no built-in role, have no directory entry and so no groups here, and
+// hold a configured role only where its `roleMemberUser` names them whole
+// (`alice@PARTNER.TEST`) or its `roleMemberGroup` names one of their
+// FILTERED SIDs. So an application that requires only EVERYBODY — the
+// default — admits nobody from another realm until somebody narrows it and
+// grants a role: what Active Directory calls selective authentication, made
+// the only kind.
 //
 // THE GROUPS ARE PASSED IN RATHER THAN LOOKED UP HERE where the caller already
 // has them, and looked up through the directory slot where it does not. Both,
@@ -1123,7 +1658,8 @@ function rolesOf(who) {
   // so this is the same directory walk that was already happening, moved
   // earlier and shared, rather than a second one.
   context.groups = groupsFor(context);
-  const held = BUILT_IN.filter(function (one) {
+  // ACROSS A TRUST (#430): no built-in role at all — see the header.
+  const held = context.crossRealm ? [] : BUILT_IN.filter(function (one) {
     return one.holds(context);
   }).map(function (one) {
     return one.name;
@@ -1175,12 +1711,45 @@ function normalizeContext(who) {
     // presented no token is exactly what it was.
     scopes: Array.isArray(given.scopes)
       ? given.scopes.map(String)
-      : String(given.scopes || '').split(/\s+/).filter(Boolean)
+      : String(given.scopes || '').split(/\s+/).filter(Boolean),
+    // WHETHER THE PERSON OWNS ANYTHING (#607), for OWNER_READ and
+    // OWNER_WRITE: only `common/ownership.ts` can answer it, so a caller
+    // that has asked says so here, and one that has not owns nothing.
+    owns: given.owns === true,
+    // ARRIVED THROUGH A KERBEROS TRUST (#430), and the SIDs its PAC carried
+    // after SID filtering: explicit grants only (see THE RESOLVER).
+    crossRealm: given.crossRealm === true,
+    sids: Array.isArray(given.sids) ? given.sids.map(String).filter(Boolean)
+                                    : []
   };
+}
+
+/**
+ * Returns the group common names a person is in, in the ambient realm.
+ *
+ * The directory slot already flattens `groupsOfUser()` to those names. No
+ * directory, or a person with none, is an empty list.
+ * @param username - the person's name
+ * @returns the group names
+ */
+function groupsOf(username) {
+  log.debug('Entering groupsOf().');
+  if (!directory || typeof directory.groupsOfUser !== 'function') {
+    log.debug('Leaving groupsOf(). No directory.');
+    return [];
+  }
+  const found = directory.groupsOfUser(String(username || '')) || [];
+  log.debug('Leaving groupsOf(). ' + found.length + ' group(s).');
+  return found;
 }
 
 function groupsFor(context) {
   log.debug("Entering groupsFor().");
+  if (context.crossRealm) {
+    // No entry here, so no group here (#430): its SIDs are what it carries.
+    log.debug("Leaving groupsFor(). Across a trust.");
+    return [];
+  }
   if (context.groups) {
     log.debug("Leaving groupsFor().");
     return context.groups;
@@ -1203,7 +1772,10 @@ function configuredRolesOf(context) {
     // it is the whole reason that role exists.
     return [];
   }
-  const groups = context.kind === 'user' ? groupsFor(context) : [];
+  // Across a trust (#430) the "groups" a role's roleMemberGroup can name are
+  // the principal's filtered SIDs, and nothing else.
+  const groups = context.kind !== 'user' ? []
+    : (context.crossRealm ? context.sids : groupsFor(context));
   const lowerGroups = groups.map(function (one) {
     return String(one).toLowerCase();
   });
@@ -1345,14 +1917,402 @@ function rolesInClaims(claims) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE ROLES NAMESPACE'S PROSE (#543 phase 2b): what the built-in roles, the
+// native roles and the `ou=roles` schema say about themselves, translated
+// wherever an answer to one of these routes carries the sentence EXACTLY.
+//
+// A NATIVE ROLE'S `what` REACHES AN ANSWER AS A STORED DESCRIPTION:
+// `seedNativeRoles()` writes it onto the entry, and `/admin-api/roles` reads
+// the entry back. So the seeded English is translated, and a description an
+// operator has since rewritten is not — it is no longer the row's English,
+// and a configured role's own words are the operator's. The schema is
+// `/admin-api/ldap/roles`' (`ldap_server.js`'s `ldapRolesView()`).
+// ---------------------------------------------------------------------------
+/** The routes whose answers carry this module's prose. */
+const PROSE_ROUTES = ['/admin-api/roles', '/admin-api/ldap/roles'];
+
 /**
- * The role register: who holds a role, the built-in computed roles, the two
- * console roles, and the roles claim.
+ * Extracts this module's part of the roles namespace (#543): the schema's,
+ * the built-in roles' and the native roles' `what`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY: this module is a leaf that `applications.js` and `admin_stats.js`
+  // require early, and `server_prose` is needed only to extract.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('roles.schema', SCHEMA, ['what']),
+    harvest('roles.builtIn', BUILT_IN, ['what']),
+    harvest('roles.native', NATIVE_ROLES, ['what']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
+/**
+ * The role register: who holds a role, the built-in computed roles, the
+ * native roles, and the roles claim.
  *
  * A library and a leaf (rule 3): it requires only `helpers`, `config` and
  * `error_codes`, and reaches the directory through a slot.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// A MEMBER THAT NO LONGER EXISTS HOLDS NOTHING (2026-11-10).
+//
+// A role names its members — people by username, groups by name,
+// applications by identifier — and nothing took a name out when the thing it
+// named was deleted. So an application forgotten while it held ADMIN_READ (or
+// ADMIN_WRITE) left its identifier on the role, and the next application made
+// under that identifier held the role from its first request: a deleted
+// client's authority passed to a stranger by name. The same was true of a
+// person deleted through SCIM and made again with the same username, and of a
+// group. This is called where each is deleted (`applications.js`
+// deleteApplication(), `ldap/ldap_server.js` removePersonEntry() and
+// deleteGroupEntry()), after the delete, in the realm that deleted it.
+//
+// It is the role REGISTER only, which is this service's authorization record.
+// A deleted person's DN is still left in the groups that list it, on purpose
+// (`ldap/ldap_server.js`, above deletePerson()): that is directory
+// referential integrity, and /admin/groups reports it.
+//
+// Each role is written back whole, as `remove-member` writes it, because
+// write() REPLACES an entry. A console role's people are the roster's, so its
+// `users` never names anybody to take out.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted member's name out of every configured role in the ambient
+ * realm.
+ *
+ * @param field - `users`, `groups` or `applications`
+ * @param name - the deleted member's username, group name or identifier
+ * @returns the names of the roles it was taken out of
+ */
+function forgetMember(field, name) {
+  log.debug('Entering forgetMember(). field=' + field);
+  const wanted = String(name || '').toLowerCase();
+  if (!wanted || MEMBER_FIELDS.indexOf(field) < 0) {
+    log.debug('Leaving forgetMember(). Nothing to forget.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    // A console role's people and groups are the roster's settings, not its
+    // entry, and write() refuses either on it; only its applications are its
+    // own to take out.
+    if (row.console && field !== 'applications') {
+      return;
+    }
+    const list = (row[field] || []).filter(function (one) {
+      return String(one).toLowerCase() !== wanted;
+    });
+    if (list.length === (row[field] || []).length) {
+      return;
+    }
+    const record = {
+      description: row.description, users: row.users, groups: row.groups,
+      applications: row.applications, permissions: row.permissions,
+      application: row.application, displayName: row.displayName,
+      memberTypes: row.memberTypes
+    };
+    record[field] = list;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      // The member stays on the role; nothing else is undone. The log line
+      // names both, so an administrator can take it out by hand.
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'roles: could not take ' +
+                field + ' "' + name + '" out of the role "' + row.name +
+                '" after it was deleted: ' + result.why);
+    }
+  });
+  if (changed.length) {
+    log.info('roles: the deleted ' + field.replace(/s$/, '') + ' "' + name +
+             '" was taken out of ' + changed.join(', ') + '.');
+  }
+  log.debug('Leaving forgetMember(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A MEMBER RENAMED KEEPS ITS ROLES (2026-11-10). forgetMember()'s pair: an
+// LDAP modifyDN that changes a person's username or a group's name moves the
+// name on every role that listed it, so the renamed member holds what it held
+// and nothing is left naming the old name for whatever is made under it next.
+// ---------------------------------------------------------------------------
+/**
+ * Renames a member in every configured role in the ambient realm.
+ *
+ * @param field - `users`, `groups` or `applications`
+ * @param from - the name it had
+ * @param to - the name it has now
+ * @returns the names of the roles changed
+ */
+function renameMember(field, from, to) {
+  log.debug('Entering renameMember(). field=' + field);
+  const was = String(from || '').toLowerCase();
+  const now = String(to || '');
+  if (!was || !now || was === now.toLowerCase() ||
+      MEMBER_FIELDS.indexOf(field) < 0) {
+    log.debug('Leaving renameMember(). Nothing to rename.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    if (row.console && field !== 'applications') {
+      return;
+    }
+    const held = row[field] || [];
+    if (!held.some(function (one) {
+      return String(one).toLowerCase() === was;
+    })) {
+      return;
+    }
+    const list = held.map(function (one) {
+      return String(one).toLowerCase() === was ? now : one;
+    }).filter(function (one, at, every) {
+      return every.map(function (x) {
+        return String(x).toLowerCase();
+      }).indexOf(String(one).toLowerCase()) === at;
+    });
+    const record = {
+      description: row.description, users: row.users, groups: row.groups,
+      applications: row.applications, permissions: row.permissions,
+      application: row.application, displayName: row.displayName,
+      memberTypes: row.memberTypes
+    };
+    record[field] = list;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'roles: could not rename ' +
+                field + ' "' + from + '" to "' + to + '" on the role "' +
+                row.name + '": ' + result.why);
+    }
+  });
+  log.debug('Leaving renameMember(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED CLIENT CONFERS NOTHING (2026-11-13, #1612's review).
+//
+// forgetMember('applications', …) takes a deleted application's identifier
+// out of `applications`, and wrote the role back without naming
+// `conferredBy` — which write() reads as "keep what the entry holds" (the
+// four callers that predate #454 rely on that). So the identifier stayed in
+// `roleConferredBy`, and whatever was next registered under it — in
+// development an unknown client_id registers itself — conferred the role on
+// everybody who signed in through it. This takes it out of every role that
+// names it, as the role page's remove-conferring-client writes it.
+//
+// Compared without case, as forgetMember() compares an application: two
+// clients one letter-case apart cannot both be registered (the entry's DN is
+// built from the identifier, and a DN ignores case), so nothing live is lost.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted application's identifier off every configured role in the
+ * ambient realm that it conferred.
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles it no longer confers
+ */
+function forgetConferrer(identifier) {
+  log.debug('Entering forgetConferrer().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetConferrer(). Nothing to forget.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    const held = row.conferredBy || [];
+    const kept = held.filter(function (one) {
+      return String(one).toLowerCase() !== wanted;
+    });
+    if (kept.length === held.length) {
+      return;
+    }
+    const record = recordWithOwners(row, row.owners || []);
+    record.conferredBy = kept;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      // The client still confers the role; the line names both, so an
+      // administrator can take it off by hand (remove-conferring-client).
+      log.error(errorCodes.tag('STS-ADMIN-0921') + 'roles: the deleted ' +
+                'application "' + identifier + '" could not be taken off ' +
+                'the clients conferring the role "' + row.name + '": ' +
+                result.why);
+    }
+  });
+  if (changed.length) {
+    log.info('roles: the deleted application "' + identifier + '" no ' +
+             'longer confers ' + changed.join(', ') + '.');
+  }
+  log.debug('Leaving forgetConferrer(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of
+// 2026-11-13 on #1612).
+//
+// A role made for one application (#310) is `<role>@<application>` with
+// `roleApplication` naming it. forgetMember() and forgetConferrer() take the
+// identifier off every role that LISTS it, and left the roles it OWNS: an
+// application registered later under the same identifier — made again by an
+// administrator or, in development, by whoever presents the client_id —
+// found `reader@<id>` already there, members and permissions included. rcbj's
+// rule of 2026-11-10 is that a recreated application inherits nothing, so
+// each role it owns is deleted, through remove(), the call the console's
+// delete-role makes: the directory's deleteRole() tells the members' token
+// holders through noteRoleChange(). The caller writes the `roles.delete`
+// audit row the console writes.
+//
+// Compared without case, as forgetConferrer() compares an application. The
+// roles are read off the kept `ou=roles` listing (all()), never a walk of the
+// directory. A role remove() refuses (a native or built-in name, which no
+// application's role can be) is logged and kept.
+// ---------------------------------------------------------------------------
+/**
+ * Deletes every configured role in the ambient realm that a deleted
+ * application owns (its `roleApplication` names the application).
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles deleted
+ */
+function forgetApplicationRoles(identifier) {
+  log.debug('Entering forgetApplicationRoles().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetApplicationRoles(). Nothing to forget.');
+    return [];
+  }
+  const owned = all().filter(function (row) {
+    return String(row.application || '').toLowerCase() === wanted;
+  });
+  const deleted = [];
+  owned.forEach(function (row) {
+    const result = remove(row.name);
+    if (result.ok) {
+      deleted.push(row.name);
+    } else {
+      // The role stays, owned by an application that is gone; the line names
+      // both, so an administrator can delete it by hand (delete-role).
+      log.error(errorCodes.tag('STS-ADMIN-0924') + 'roles: the role "' +
+                row.name + '" of the deleted application "' + identifier +
+                '" could not be deleted: ' + result.why);
+    }
+  });
+  if (deleted.length) {
+    log.info('roles: the deleted application "' + identifier + '" took ' +
+             'its roles with it: ' + deleted.join(', ') + '.');
+  }
+  log.debug('Leaving forgetApplicationRoles(). ' + deleted.length +
+            ' role(s).');
+  return deleted;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). A role's `owner` values are DNs of people and groups
+// (#604), and under #607 an owner is issued owner:write. A person deleted and
+// made again at the same DN — the same username — was an owner again, so
+// every delete of a person or a group takes its DN off every role's owners,
+// and a rename moves it, as forgetMember() and renameMember() do for members.
+// The DNs are compared as removeOwner() compares them.
+// ---------------------------------------------------------------------------
+function ownerKey(dn) {
+  log.debug('Entering ownerKey().');
+  log.debug('Leaving ownerKey().');
+  return String(dn || '').trim().toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Replaces, or takes off, an owner DN on every configured role in the ambient
+ * realm that names it.
+ *
+ * @param from - the DN the owner had (deleted, or renamed from)
+ * @param to - the DN it has now, or '' when it was deleted
+ * @returns the names of the roles changed
+ */
+function replaceOwner(from, to) {
+  log.debug('Entering replaceOwner().');
+  const was = ownerKey(from);
+  const now = String(to || '').trim();
+  if (!was || was === ownerKey(now)) {
+    log.debug('Leaving replaceOwner(). Nothing to change.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    const held = row.owners || [];
+    if (!held.some(function (one) {
+      return ownerKey(one) === was;
+    })) {
+      return;
+    }
+    const owners = [];
+    held.forEach(function (one) {
+      const value = ownerKey(one) === was ? now : String(one);
+      if (value && !owners.some(function (kept) {
+        return ownerKey(kept) === ownerKey(value);
+      })) {
+        owners.push(value);
+      }
+    });
+    const result = write(row.name, recordWithOwners(row, owners));
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0922') + 'roles: could not ' +
+                (now ? 'move the owner ' + from + ' to ' + now + ' on'
+                     : 'take the deleted owner ' + from + ' off') +
+                ' the role "' + row.name + '": ' + result.why);
+    }
+  });
+  log.debug('Leaving replaceOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off every configured role's owners
+ * in the ambient realm.
+ *
+ * @param dn - the deleted entry's DN
+ * @returns the names of the roles it was taken off
+ */
+function forgetOwner(dn) {
+  log.debug('Entering forgetOwner().');
+  const changed = replaceOwner(dn, '');
+  log.debug('Leaving forgetOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on every configured role's owners
+ * in the ambient realm.
+ *
+ * @param from - the DN it had
+ * @param to - the DN it has now
+ * @returns the names of the roles changed
+ */
+function renameOwner(from, to) {
+  log.debug('Entering renameOwner().');
+  const changed = String(to || '').trim() ? replaceOwner(from, to) : [];
+  log.debug('Leaving renameOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// The three member lists a role row carries.
+const MEMBER_FIELDS = ['users', 'groups', 'applications'];
+
 module.exports = {
   SCHEMA: SCHEMA,
   BUILT_IN: BUILT_IN,
@@ -1367,9 +2327,14 @@ module.exports = {
   consoleRoleFor: consoleRoleFor,
   isConsoleRole: isConsoleRole,
   NATIVE_ROLES: NATIVE_ROLES,
+  // The two owner roles (#607): built in, each authorizing its permission.
+  OWNER_ROLES: OWNER_ROLES,
+  setOwnerProtected: setOwnerProtected,
   nativeRoleFor: nativeRoleFor,
   isNativeRole: isNativeRole,
   seedNativeRoles: seedNativeRoles,
+  groupsOf: groupsOf,
+  conferredBy: conferredBy,
   rolesAuthorizing: rolesAuthorizing,
   setDirectory: setDirectory,
   directoryInstalled: directoryInstalled,
@@ -1379,7 +2344,27 @@ module.exports = {
   checkName: checkName,
   write: write,
   remove: remove,
+  // A role's owners (#604).
+  MAX_OWNERS: MAX_OWNERS,
+  ownersOf: ownersOf,
+  entryOf: entryOf,
+  addOwner: addOwner,
+  removeOwner: removeOwner,
+  // A deleted member taken out of every role (2026-11-10).
+  forgetMember: forgetMember,
+  // A renamed member keeps its roles (2026-11-10).
+  renameMember: renameMember,
+  // A deleted client confers nothing; a deleted owner owns nothing, and a
+  // renamed one still does (2026-11-13).
+  forgetConferrer: forgetConferrer,
+  // A deleted application's own roles are deleted (2026-11-13).
+  forgetApplicationRoles: forgetApplicationRoles,
+  forgetOwner: forgetOwner,
+  renameOwner: renameOwner,
   rolesOf: rolesOf,
   claimFor: claimFor,
-  rolesInClaims: rolesInClaims
+  rolesInClaims: rolesInClaims,
+  // #543: the roles namespace's routes and English.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

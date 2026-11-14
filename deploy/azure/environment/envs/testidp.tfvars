@@ -17,6 +17,13 @@
 # ---------------------------------------------------------------------------
 public_hostname = "test-idp.azure.iyasec.io"
 
+# AZURE FRONT DOOR IN FRONT OF THE LOAD BALANCER (rcbj, 2026-11-13, #1341): a
+# browser reaches test-idp.azure.iyasec.io through it; a client certificate,
+# Kerberos, LDAP, SPIFFE and the revocation listener use direct_hostname,
+# the load balancer (environment/frontdoor.tf).
+cdn_enabled     = true
+direct_hostname = "direct.test-idp.azure.iyasec.io"
+
 # The ACME account's contact (expiry notices): an address at iyasec.io, the
 # one mail is delivered to for this project.
 acme_email = "tester1@iyasec.io"
@@ -32,9 +39,14 @@ extra_environment = {
   LDAP_WORKER_DIRECTORY            = "postgres-lru"
 }
 
+# ONE NODE WITH TWO REQUEST WORKERS AND NO SURFACE WORKER, as AWS's
+# testidp runs since 2026-11-03 (#1293) and was rebuilt on 2026-11-10 (rcbj:
+# "a single cluster node configuration").
+node_count = 1
+
 sts_mode                = "product"
 workers_request_count   = 2
-workers_surface_count   = 1
+workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 

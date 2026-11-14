@@ -10,7 +10,6 @@
   "oauth2": {
     "issuer": "",
     "rfc9700": false,
-    "codeReplayIdempotent": true,
     "oauth21": false,
     "frontchannelLogout": true,
     "backchannelLogout": true,
@@ -34,21 +33,11 @@
     "max": 500,
     "seedInternal": true
   },
-  "saml": {
-    "issuer": "urn:wstrust:mock:sts"
-  },
-  "wstrust": {
-    "issuer": "urn:wstrust:mock:sts"
-  },
-  "wsfed": {
-    "entityId": "urn:wstrust:mock:sts"
-  },
   "tls": {
     "hostnames": "localhost,sts,sts-mock,sts.example.com",
     "ips": "127.0.0.1"
   },
   "oid4vci": {
-    "walletUrl": "http://localhost:3000",
     "authorizationServer": "",
     "batchSize": 4,
     "deferredReadyMs": 4000,
@@ -66,7 +55,6 @@
   "krb5": {
     "realm": "EXAMPLE.COM",
     "kdcPort": 88,
-    "servicePort": 8888,
     "servicePrincipal": "HTTP/web.example.com",
     "clockSkew": 300,
     "clockOffset": 0,
@@ -75,17 +63,13 @@
     "autoServicePassword": "auto-service-password",
     "krbtgtPassword": "krbtgt-mock-password",
     "domainSid": "S-1-5-21-1004336348-1177238915-682003330",
-    "trustedRealm": "PARTNER.COM",
-    "trustPassword": "inter-realm-trust-password",
-    "trustedDomainSid": "S-1-5-21-2035427030-2118130302-1178042555",
-    "trustedKrbtgtPassword": "partner-krbtgt-password",
     "s2kparams": "omit"
   },
   "ldap": {
     "port": 389,
     "tlsPort": 636,
     "autocreateUsers": true,
-    "maxEntries": 10000,
+    "maxEntries": 20000,
     "sizeLimit": 500
   },
   "scim": {
@@ -131,6 +115,12 @@
   },
   "acme": {
     "attemptsPerAddress": 5000
+  },
+  "realms": {
+    "maxCount": 100000
+  },
+  "pki": {
+    "paranoid": "off"
   },
   "spiffe": {
     "enabled": true,

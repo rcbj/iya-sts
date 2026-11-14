@@ -1,5 +1,19 @@
 # mgmt-api/
 
+**The Management API and Admin Console API OpenAPI documents are written in
+`models/api/management.tsp` and `console.tsp` since #1390**, and `response_models*.ts`
+and the schemas in `admin_api_spec.ts` are gone. A route row keeps the path, the
+handler, what it mirrors and its parameters; `AdminApiSpec.named()` gives it the
+summary and the request-body schema from the model when the table is built. To change
+an operation or a schema, edit the `.tsp`.
+
+**A row's handler is typed by its operation in the model (#1579).** The table
+and every table it spreads are `IyaApi.AdminRow[]`; a new row of actions goes
+through `ApiRows.actions()` (`common/api_rows.ts`), so its handler is typed by
+its actions' operations, and a handler names no parameter type of its own,
+which would opt it out. `models/CLAUDE.md` (*The API types type the handlers*)
+argues it and `tests/model_api_handlers.js` holds it.
+
 The management API at `/admin-api`, its generated OpenAPI document, and the
 browser-side explorer.
 
@@ -34,7 +48,9 @@ about that line had to change.
    The rule that does matter is **a control added to `/admin` gets an operation
    on `/admin-api` in the same commit** — `/admin/users` grew its first form
    (create a person in the directory) and `POST /admin-api/users/:action` with
-   its one `create` action arrived with it — — a CONTROL, which is why a page with no
+   its one `create` action arrived with it. `set-pseudonyms` (#644) is one of
+   those actions: add or remove one sign-in name, and the console's Contact
+   sub-tab is its form — a CONTROL, which is why a page with no
    form on it needs only its GET. Not eventually, and not when somebody
    asks: an API that covers eight of nine controls is worse than one that covers
    none, because the ninth is found by a caller who has already written the code
@@ -63,12 +79,16 @@ about that line had to change.
      case.** `/admin-api/claims/:action` and `/admin-api/saml-attributes/:action`
      both call `claimsAction`, differing only in the third argument — the set ids
      that door carries, `stats.JWT_CLAIM_SET_IDS` or `stats.SAML_CLAIM_SET_IDS`,
-     which is exactly what the two console pages pass. That is what makes the two
-     resources a mirror of the two PAGES rather than two models of one store. It
-     costs fourteen operations for seven behaviours, so the seven are built once
-     by `claimSetActions(family)` and the family varies the set enum, the noun and
+     which is exactly what the console controls pass.
+     The SAML resource feeds the Custom SAML attributes tab on `/admin/saml2`;
+     the resource paths stay distinct so each control's operations remain clear.
+     It costs fourteen operations for seven behaviours, so the seven are built
+     once by `claimSetActions(family)` and the family varies the set enum, the noun and
      the reserved-names rule: fourteen hand-written descriptions would be seven
-     pairs, and the half of each pair nobody edited is the half a caller believes.
+     pairs, and the half of each pair nobody edited is the half a caller
+     believes. The parity check sees the same seven action names from both
+     resources, which is the property that makes them one behaviour rather than
+     two.
      The parity check that reads the refusal sentence off each resource sees the
      same seven action names from both, which is the property that makes them
      one behaviour rather than two.
@@ -78,7 +98,7 @@ about that line had to change.
      wrong within a month.
    * **What no code here can check is a new console control with no row.**
      Nothing in this service can see a form appear on a page. So the parity is
-     asserted from outside, by this repository's own `tests/vendored/admin_api.js`, and it
+     asserted from outside, by this repository's own `tests/protocol/admin_api.js`, and it
      reads the facts off the SERVICE rather than off a list in the test: the
      console's page list comes back in `GET /admin-api/status`, and each action
      handler, asked for an action that does not exist, replies naming the ones
@@ -148,10 +168,11 @@ one operation, and nothing whatsoever would fail.
 
 On 2026-08-27 every one of `config.js`'s setting groups moved onto the console
 page for the protocol it configures, and eight pages were created for the
-families that had settings and no page: `/admin/oauth2`, `/admin/oid4vci`,
-`/admin/oid4vp`, `/admin/kerberos`, `/admin/ldap`, `/admin/wstrust`,
-`/admin/wsfed` and `/admin/tls`. Rule 7 asks for an operation per page, so each
-gained a GET here — and **no POST**, for exactly the reason the row below gives.
+families that had settings and no page: `/admin/oauth2`, `/admin/vc`
+(OpenID4VCI and OpenID4VP settings), `/admin/kerberos`, `/admin/ldap`,
+`/admin/wstrust`, `/admin/wsfed` and `/admin/tls`. Rule 7 asks for an
+operation per page, so each gained a GET here — and **no POST**, for exactly
+the reason the row below gives.
 
 **Every form on those pages posts `set-many` to `/admin/config`**, which `POST
 /admin-api/config/set-many` already mirrors. A POST per page would be eight more
@@ -172,11 +193,25 @@ difference. They share one response schema, `PageSettings`, which is also what
 the `settings` member of `/admin-api/saml2`, `/admin-api/saml11`,
 `/admin-api/scim` and the rest now carries — one shape a caller learns once.
 
-**Two of the paths are not the obvious ones**, and the collision is worth
-knowing before somebody "fixes" them: `/admin-api/oid4vci-settings` and
-`/admin-api/oid4vp-settings`, because `/admin-api/credential-claims` and
-`/admin-api/verifier-request` already mirror the other two pages of those
-families and the bare names would have read as theirs.
+**THAT SHAPE GAINED `context` AND `sharedWith` (#446, 2026-10-05)**, which
+is everything the console's Settings block said that was not in it: the two
+appconfig file names the `appconfig` and `defaults` sources mean
+(`context.configFile`, null when none was named, and `context.defaultsFile`
+— `GET /admin-api/config`'s members of the same names), whether a value set
+here survives a restart (`context.persistsAppconfig`,
+`context.persistenceMode` — and since 2026-10-07 `context.persistsRealms`,
+`context.inRealm` and `context.realmId`, because a value set inside a
+non-default realm lands on the realm's row and `persistsRealms` decides it
+there, the rule `AdminActions.overrideDurability()` words a reply by), and, by
+group, the other console pages that draw the same group. The block is drawn
+from this member alone now
+(`admin-ui/web_settings.ts`); `admin-ui/CLAUDE.md`, *The settings block*.
+
+**Two operation names preserve distinct settings APIs**:
+`/admin-api/oid4vci-settings` and `/admin-api/oid4vp-settings`, while
+`/admin-api/credential-claims` and `/admin-api/verifier-request` retain the
+content operations' separate meanings. All four now feed tabs of the single
+`/admin/vc` destination.
 
 **`GET /admin-api/config` did not narrow when the page did.** It still answers
 the whole table — a caller asking this API for the configuration should not have
@@ -184,6 +219,22 @@ to fetch twenty-one resources and assemble one — and it gained `homes`, which
 says which console page draws each group, and `homeProblems`, which is empty
 unless a group exists that no page draws. `admin-ui/CLAUDE.md` argues the whole
 move; this file's half of it is the paragraph above.
+
+
+### `GET /admin-api/config-dump`: one masked export of the parameters
+
+Every parameter, global and per realm, for the console page, `utilities/config-dump.js`
+and any other caller. **The masking is in `admin-core/config_dump.ts`, on the
+server, once**, so no door can show what another hides. A name that says it
+holds a secret is masked unless its suffix says it only points at one, which
+errs towards hiding for a parameter added later. Directory objects are not in
+it, by rcbj's scope.
+
+**`GET /config`, `GET /realms`, `GET /mode`, every page's settings block and the
+`/config` acts' answers mask the same values (#1478).** A section's Save posts every field, so a posted
+value equal to the row's mask means "leave it" (`isEchoOfMask()`).
+`config.describe()` stays exact. A job needing a development fixture password
+reads `tests/protocol/service_facts.js`' table.
 
 
 ### `/admin-api/users/new` is the same shape, and the users resource is the first to mirror TWO console paths
@@ -210,10 +261,11 @@ THAT IS NOT DECORATION.** `POST /admin-api/users/{action}` mirrors `POST
 /admin/users` AND `POST /admin/users/new`, because both reach one action switch
 — `/admin/users/new` posts to ITSELF rather than to the list, so that a
 generated password and an activation link can be answered in a page body
-instead of a 303's query string. `tests/vendored/sts_admin_console.js` builds
+instead of a 303's query string. `tests/protocol/sts_admin_console.js` builds
 its list of "console paths that take a POST" by parsing this field, so a page
 left out of it reads as a control that reaches nothing. `/admin-api/xacml/{action}`
-has named three since it was written; this is the second resource to need it.
+names its former page paths and its three tab-specific controls; this is the
+second resource to need more than one console path.
 
 **IT ALSO CLOSED AN OPERATION THIS SERVICE HAD BEEN DOCUMENTING AND NOT
 SERVING.** `common/credentials.ts` names `POST /admin-api/users/set-password`
@@ -280,7 +332,7 @@ single-valued one given several values.
 change with the same lesson as everything else here: making six identifier
 attributes multi-valued moved six names from one sentence to the other, and
 neither sentence noticed. A hand-written list of what an operation accepts is a
-second definition of the `EDITABLE` table, and it goes stale in the document a
+second definition of the `editable` rows, and it goes stale in the document a
 caller trusts most — the same reason the enum above is read off the service
 rather than written here.
 
@@ -297,6 +349,17 @@ land" is the question the operation exists to answer.
 off `body`. `helpers.parseBody()` cannot see a repeated field, so a form-encoded
 body copied from the console's checkbox column would otherwise create the
 application with one family out of five and answer 200.
+
+### SAML SP metadata upload names the family when the application has both
+
+`POST /admin-api/saml2/upload-metadata` accepts a pasted `document` or a
+console-shaped `file` object and an optional `family` (`saml2` or `saml11`).
+The application's SAML family sub-sub-tabs send that value explicitly: without
+it, the shared consumer keeps its legacy selection, which defaults a
+dual-protocol application to SAML 2.0. The consumer refuses a family the
+application did not declare and validates the document before its one save.
+The API and console therefore share the same family-specific import behavior
+without a second metadata parser.
 
 ### `/admin-api/ssf` IS THE FIRST OPERATION HERE WHOSE HANDLER AWAITS, AND THE FIRST WITH A CONTROL DELIBERATELY MISSING
 
@@ -353,8 +416,8 @@ worked out.
 
 **`fedClientSecret` is never returned by this API** — `(set — not returned)` or
 empty. That is deliberately NOT claimed as a security boundary, because an
-`ldapsearch` of `ou=federations` shows it, exactly as `GET /krb5/principals`
-prints every Kerberos password. What it avoids is this API being a SECOND way to
+`ldapsearch` of `ou=federations` shows it, exactly as the settings print every
+development Kerberos password (and `GET /krb5/principals` did, until #595). What it avoids is this API being a SECOND way to
 read a credential that belongs to somebody else's service out of this process.
 
 ### The narrow door: `/admin-api/token-lifetimes`
@@ -450,21 +513,27 @@ roles would grant — and does NOT repeat the document, because
 `GET /admin-api/openapi.json` is the document.
 
 **AND THE LEDGER'S ONLY EXEMPTION WENT WITH IT.**
-`tests/vendored/sts_admin_api_operations.js` kept a `NOT_DRIVEN_HERE` table
+`tests/protocol/sts_admin_api_operations.js` kept a `NOT_DRIVEN_HERE` table
 whose two rows were these two routes, the only operations on this API a JSON
 walk could not drive. Every operation this API documents now answers JSON and
 every one of them is driven; the table is kept, empty, because the next
 operation that cannot be driven needs somewhere to say why.
 
-The section below is the argument for the script itself, which is unchanged by
-the move and is why the page is still the only scripted one in either surface.
+The section below is the argument for the script itself, which was unchanged by
+the move and made the page the only scripted one in either surface — until #446
+(2026-10-05) made the whole console a static application under `script-src
+'self'`, and #568 (2026-10-12) the portal; the console's runtime now loads the
+explorer's script when that page is drawn (the root `CLAUDE.md`, *Pages with a
+script*).
 
 ## The explorer's script relaxes `script-src 'none'`, as each scripted page does
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. The API explorer needs a script, so it is one of the seven
-pages the root `CLAUDE.md` lists that relax that header — on two routes, in
+than merely unlikely. The API explorer needs a script, so it was one of the seven
+pages the root `CLAUDE.md` then listed that relax that header (since #446 it is
+a page of the static console, whose shell carries the relaxation) — on two
+routes, in
 exactly two clauses (`script-src 'self'`
 and an added `connect-src 'self'`), with `default-src 'none'` and everything else
 untouched.
@@ -513,6 +582,8 @@ the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
+### Who may be issued those scopes (#302 and #303, 2026-09-27) — rule 3bq
+
 **WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE AND ON EVERY CALL,
 SINCE 2026-09-27 (#302 and #303, parts A and B of #88).** Until then the only
 question was the CLIENT's — does it declare them (#110) — so a client
@@ -527,8 +598,8 @@ scopes** (`common/roles.js`, seeded in every realm), and
   Write in the realm issuing the token — so the open console is honoured
   (the API is its machine door, rule 7) and the bootstrap administrator
   before its claim is not (#103).
-* **AN APPLICATION holds them by being a member** — `sts-management-api` is
-  seeded in both, in every realm; any other client needs `add-member` on
+* **AN APPLICATION holds them by being a member** — `sts-api-client` is
+  seeded in both, in every realm (`sts-management-api` until #1139, below); any other client needs `add-member` on
   `/admin/roles`. Declaring the scope is still required (the gate re-checks
   it, #110) and is no longer enough.
 
@@ -541,6 +612,8 @@ holds NOW in the realm that issued the token, less any whose permission the
 token does not carry. A role revoked after a token was minted stops working at
 once (403, `STS-API-0125`), and an `admin:read` token is not Admin Write
 because its subject also holds that. The XACML document is unchanged.
+
+### The audience, and why the credential is not the console's
 
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
 ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
@@ -568,12 +641,26 @@ job holds a secret. **Who mints it depends on who started the service**: a
 launcher for a container it brought up, and `tests/tools/run-report.js` itself
 for the throwaway it starts — a distinction this file called "both launchers"
 until the coverage run that had neither. `tests/CLAUDE.md` argues it. It is still the way back in — through
-`adminApi.authRequired`, which restores the open API exactly. What is no longer
+`adminApi.authRequired`, which restores the open API exactly — in development
+mode only since #446 (below). What is no longer
 true by default is the third: anybody who can reach this port can no longer
 grant themselves both roles here.
 
+**THE API IS AN APPLICATION OBJECT, AND ITS CALLER IS ANOTHER ONE (#1139,
+2026-10-29).** `sts-management-api` is this API's own entry now — an
+`oauth2-resource-server` holding the audience (base + `/admin-api`, and in the
+default realm `adminApi.audience` too), never a client: its client_id is
+refused at every endpoint a client presents itself at, in every mode
+(`STS-OAUTH-0985`). Until #1139 that identifier WAS the bootstrap client, and
+everything this file says of "the seeded client" before that date is said of
+`sts-api-client` today. The gate's audience check is unchanged — it reads
+`wantedAudiences()`, not the entry — and refusing a token whose audience no
+object holds is #1140, planned. `common/CLAUDE.md` (`applications.js`, the
+internal applications) carries the four resource objects and the guard.
+
 **AND IT ACQUIRED A BOOTSTRAP HOLE THAT HAS TO BE CLOSED BY CONFIGURATION.**
-The seeded `sts-management-api` client's secret is minted at every start and is
+The seeded `sts-api-client`'s secret (`sts-management-api`'s until #1139) is
+minted at every start and is
 readable only THROUGH the API it unlocks, so a service that has restarted is a
 service nobody can get a token for. `adminApi.clientSecret` pins it, every path
 that starts a service for the suite sets it per run — **before that service
@@ -587,7 +674,7 @@ administrative surface it cannot reach.
 
 They are why the off switch exists.
 
-* **A test drives this API.** The parent project's `tests/vendored/admin_api.js` walks
+* **A test drives this API.** The parent project's `tests/protocol/admin_api.js` walks
   every operation over HTTP with no browser and no cookie jar. A credential here
   would be the only one a test had to hold a secret for, in a service whose
   premise is that it authenticates nobody.
@@ -674,6 +761,35 @@ console is reached in. Making the explorer mint and prove a DPoP key in the
 browser would be a second implementation of RFC 9449 in a page that exists to
 show what an operation returns.
 
+## A CLIENT THAT DECLARES A CERTIFICATE IS ANSWERED ONLY ON A BOUND TOKEN (#1050, 2026-10-27)
+
+rcbj's decision on #520 for this door: **certificate-bound tokens only, no
+bare certificate as a credential.** A certificate presented with no token
+still authenticates nothing here, and that is deliberate: the gate's
+questions — which realm, which scopes, which roles held now, which session —
+are all answered off a token, and a second credential beside it would be a
+second gate that drifted from the first.
+
+What was added is one refusal, after the `x5t#S256` check (`STS-API-0110`),
+which holds a token that IS bound: a token that is NOT bound, issued to a
+client whose entry declares `tls_client_auth` or `self_signed_tls_client_auth`
+among its methods, or `tls_client_certificate_bound_access_tokens`, is 401
+`invalid_token`, `STS-API-0137`, in every mode. The declaration is
+`mtls.certificateDeclaration()`, read NOW in the realm that issued the token
+(as `clientBound` is below it), so a token minted before the rule — or before
+the client declared — stops working at once. Its scopes, roles and owner
+rules still decide what a bound token may do; this decides only whether the
+token is a credential here at all.
+
+The issuing half is `oauth-oidc/CLAUDE.md` 3an (`STS-OAUTH-0489`, `0490`),
+which also lists which paths were already closed and which were open — the
+only real one being a client declaring a certificate method beside a secret,
+since 2026-10-01. Rule 7: the application's Credentials section says it
+(`credentials.mtls.adminApiBound` on `GET /admin-api/applications?application=`,
+a sentence under *Certificate-bound access tokens* on the console page).
+`/admin/api-explorer` is unaffected: it mints for `sts-admin-console`, which
+declares no certificate.
+
 ## `/admin-api/logout` — four operations, and one that differs from its console form
 
 The sign-out resource mirrors `/admin/logout` and calls the same two functions
@@ -726,7 +842,8 @@ SAME `adminActions.realmsAction()` the form posts to.
 
 **AND THAT SHARED FUNCTION IS WHERE `createRealm` LOST ITS `overrides` FOR
 MONTHS.** The operation documents the field, gives it an example
-(`{"saml2.entityId": "urn:acme:idp"}`) and says it wins over the six seeded
+(`{"saml.organizationName": "Acme"}` since #523 retired the entityID setting it
+used to show) and says it wins over the seeded
 names; `realms.create()` validates and merges it properly. In between,
 `realmsAction()` built its argument out of `id`, `name` and `description` and
 dropped the fourth property, so a create carrying overrides answered 200 and
@@ -738,7 +855,7 @@ rule does not hold.** Parity says every console action has an operation and both
 go through one function, which is what stops the two DOORS drifting — and it
 worked: neither door was more permissive than the other. What it cannot catch is
 a field the API accepts and the console's form does not HAVE, because there is
-then no second implementation to disagree with. `tests/vendored/admin_api.js`
+then no second implementation to disagree with. `tests/protocol/admin_api.js`
 checks every documented schema property against a live reply, which is the check
 that would have caught this had it covered request bodies as well: a documented
 request property that changes nothing is the same class of defect as a
@@ -882,7 +999,7 @@ mirror the three added on 2026-09-05 — when `ou=roles`, `ou=policies` and
 `ou=peps` each got the page its own module's schema comment had been claiming
 for weeks. They exist because of rule 7 and for no other reason —
 a page of that console gets an operation here in the same change — and the
-parity check in `tests/vendored/admin_api.js` is what would have noticed if they
+parity check in `tests/protocol/admin_api.js` is what would have noticed if they
 had not.
 
 **They reach their views through `adminViews.directoryPageJson()`, over
@@ -953,7 +1070,7 @@ it, and could create none of them.
 check — every control on that console has an operation here, every operation
 here names a control there — so it reports DRIFT and is silent about ABSENCE.
 That is not a flaw in the rule; it is the boundary of what a parity check can
-be. What found this was `tests/vendored/sts_directory_bulk_load_api.js`: a job
+be. What found this was `tests/protocol/sts_directory_bulk_load_api.js`: a job
 named "through the management API" that could not be written, because two of its
 three sections would have had to reach for SCIM.
 
@@ -1053,6 +1170,15 @@ and is reported rather than dropped, exactly as a dangling grant is.
 `storable: false` means no directory is installed behind the register, so an
 answer is honoured once and forgotten.
 
+**`windowed: true` (2026-10-22, #820)** means the directory is a window onto
+the store and `users` is ONE PAGE OF PEOPLE: `usersPaging` counts people
+(`noun: 'people'`), `matched` is the holders the store counted, and `counts`
+of consents are the page's (`countsOf: 'page'`). `q` is then exact — a whole
+username, client_id or scope — and `search` says how many holders were looked
+at and whether that was all of them. The handler is asynchronous
+(`adminViews.consentPageViewAsync()`), which the console's page reads too;
+`windowed: false` is the whole register, as before.
+
 **THE FOUR ACTION NAMES STUTTER UNDER THIS PATH**
 (`/consent/grant-global-consent`) and that is deliberate exactly as
 `/permissions/define-permission`'s is. They are the names in the console's hidden
@@ -1087,15 +1213,37 @@ Three things a caller has to be told and the description does tell:
 three arithmetics produced the number; and on a Kerberos row the revoke does
 MORE than the row names, because that protocol has no per-ticket revocation.
 
+**`POST /admin-api/sessions/end-all` (#1520, ASVS 5.0.0 7.4.5) WALKS
+NOTHING.** It writes one instant, `authn.sessionsEndedBefore`, as a realm
+override, and `Authn.sessionEnded()` reads a session started before it as
+expired: the cost is one setting whatever the population, which a walk of a
+realm of millions could not promise (the constant-cost rule). Each session then
+ends as an expired one does, and the act itself writes one `session.end` row
+naming every sign-on session. It revokes no token, deliberately, and its answer says to use
+`tokens/revoke-all` as well: the two are different acts and an administrator
+may want one without the other.
+
 **`GET /admin-api/tokens` grew a `session` parameter beside it**, which is the
 join between the two resources: every browser-session row carries the
 `sessionId` a token issued under it records.
+
+**SEVERAL ACCOUNTS IN ONE BROWSER (#561, drawn since #731)**: every row
+carries `accountSet`, the browser's account set a browser session is in
+(`''` on every other row, and on every row with `authn.multipleAccounts`
+off), and `?q=` with it lists that browser's sessions — the page links each
+row's short id there. The set's id is not a secret; the cookie's handle is,
+and no answer carries it. Beside the rows, `accountChoices` is `{ enabled,
+counts }`: `admin_stats.accountChoiceCounts()`, the seven counters every
+process keeps, which the page draws as its *Several accounts in one
+browser* tab. Both are answered by `AdminViews.sessionsView()`, the one
+function behind the page and the operation, so rule 7 holds by
+construction (`tests/multi_account_concurrency.js` 7).
 
 ## `/admin-api/caep/sessions`, AND THE GAP THE PARITY CHECK FOUND
 
 `/admin/caep-sessions` is a page of the console and had no operation naming it:
 the CAEP GET beside it mirrors `/admin/caep`, and **one operation cannot mirror
-two pages**. Nothing noticed until `tests/vendored/admin_api.js` was run against
+two pages**. Nothing noticed until `tests/protocol/admin_api.js` was run against
 a tree where that page had a drill-down worth mirroring — the gap pre-dated the
 change that exposed it, which is the argument for the check rather than against
 it.
@@ -1165,36 +1313,238 @@ no decider and every issuance is allowed whatever the register says.
 `enforced: false` means `roles.enforceIssuance` is off — the same outcome by a
 different route, and the way back if a policy edit locks something out.
 
-## THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS GATED AT ALL (2026-09-06)
+## THE OFF SWITCH IS DEVELOPMENT'S ALONE, AND THE SESSION FALLBACK IS GONE (#446, 2026-10-05)
 
-The product-mode middleware asks the two console roles and then, for a caller
-that holds one, asks `common/access_gate.ts`. Three things about that.
+**This section was *THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS
+GATED AT ALL* (2026-09-06)**, and described what product mode did with
+`adminApi.authRequired` off: `mode.gatesManagementApi()`, then the console's
+session and its two roles through `adminViews.gateStateFor()`, then
+`common/access_gate.ts` above them (#411 gave that branch its test). All of it
+is removed. rcbj's decision on #446:
 
-**IT IS THE LAYER ABOVE AND NOT A REPLACEMENT.** `admin.gateStateFor()` is still
-the one answer to *who may administer this service* — asking it rather than
-re-deriving it is what stops this file becoming a second one — and the subject
-handed to the policy is the SESSION that got the caller through it, never
-anything on the request. A PDP deciding faithfully about a subject the caller
-nominated is broken access control with extra steps.
+* **`adminApi.authRequired=false` is honoured in development mode only.** The
+  row carries the `onlyWhile` marker on `mode.opensManagementApi()`, so product
+  refuses the write (`STS-CORE-0103`) and reads a stored `false` as `true`,
+  logged once (`STS-CORE-0106`). `AdminApi.tokenRequired()` is the one reading,
+  and the gate, the index's `protected`, the OpenAPI document and the startup
+  banner all ask it — a report reading the stored value would say "open" about
+  an API that is refusing.
+* **Why**: the admin console is becoming a static application that calls this
+  API with the signed-in person's own token (#446). This API's gate is then the
+  console's only gate, so a setting that opened it would open the console too,
+  and there is no console session left to fall back on.
+* **A console session is not a credential here, in either mode.** The
+  sentence under *IT IS A DIFFERENT CREDENTIAL FROM THE CONSOLE'S* is now true
+  without an exception.
+* **The recovery path in product is `adminApi.clientSecret`**, pinned before
+  the start, so the seeded `sts-api-client` can always mint a token.
+  The bootstrap paragraph above already says a deployment that does not set it
+  has an administrative surface it cannot reach; with the fallback gone that is
+  the whole of the way back in.
+* **`STS-API-0006`, `0007` and `0008` are retired**, kept in the table.
 
-**IT RUNS ONLY INSIDE THE `mode.gatesManagementApi()` BRANCH, and that is the
-argument this file has always made read one layer up.** In development this API
-is open by design: it is what the tests drive and the way back in when nobody
-holds a role, which a service that checks no password needs because there is no
-other way to bootstrap an administrator. Open means no credential, so no
-session, so no subject — and asking a policy whose built-in document refuses an
-unauthenticated subject would close exactly that door. **A POLICY LAYER MUST NOT
-BE THE THING THAT REMOVES THE RECOVERY PATH.**
+**The policy layer still runs wherever the token is required**, in both modes,
+with the subject taken from the verified token. With the switch off in
+development there is no credential, so no subject, and the policy is not
+asked: a policy whose built-in document refuses an unauthenticated subject
+would close the recovery path, and a policy layer must not be the thing that
+removes it.
 
-**ON AN UNEDITED PRODUCT DEPLOYMENT IT PERMITS**, because the built-in document
-asks for a role only where somebody has required one and the caller has already
-been shown to hold Admin Read or Admin Write. So turning product mode on does
-not acquire a second refusal nobody asked for; what it acquires is somewhere to
-put one.
+`tests/admin_api_auth_required_mode.js` holds it (it was
+`admin_api_session_gate.js`).
 
-The refusal says the caller PASSED the role check and names the roles they hold,
-because "you hold the role and the policy still says no" is the one state a
-reader would otherwise spend an afternoon on.
+## THE AUDIT ACTOR IS THE TOKEN'S SUBJECT (#446, 2026-10-05)
+
+Until #446 every row this API wrote named nobody. The comment at three call
+sites said why: *this API authenticates a CLIENT rather than a person, so an
+empty actor is the honest answer*. That was true while the only tokens it saw
+were `client_credentials` ones. The console is becoming a client of this API
+that presents the signed-in PERSON's token, so the subject the gate verifies
+is who did it.
+
+* **The gate writes `res.locals.apiCaller`** once the policy has allowed the
+  call: `{ kind, name, clientId, realm }`, from the same
+  `rolePermissions.effectiveRoles()` answer the roles were decided on. A
+  person's name, or the client's id on `client_credentials`.
+* **`callerNameOf(res)`** is what a handler passes as `actor`. It never reads
+  the request.
+* **Every action is HANDED the caller, never through its body** (rcbj on
+  #1579, 2026-11-11). Each handler passes `callerNameOf(res)` as `actor` in
+  the action's context argument — `{ via: 'api', actor, … }`, the shape
+  `usersAction`, `applicationsAction`, `rolesAction`, `policiesAction`,
+  `rbacAction` and `mfaAction` already took — and so do `logoutAction`,
+  `permissionsAction`, `groupsAction`, `saml2Action` and `consentAction`
+  since #1579; the spread tables' acts (`scim_clients_api.ts`,
+  `secret_destinations_api.ts`, `passkey_report_api.ts`,
+  `post_login_activities_api.ts`, `branding_api.ts`) read
+  `res.locals.apiCaller` the same way, and `uma_api.ts` and `authzen_api.ts`
+  `req.adminApiCaller`. **Until #1579 the carrier was the body:**
+  `nameActor(req, res)` wrote the subject into a JSON body's `actor` member
+  after the schema had passed (#446), and the actions read `body.actor` — the
+  one member an action read that the model does not declare, typed
+  `IyaApi.NamedActor`. rcbj decided on #1579 that an action reads no body
+  member the model does not declare; `nameActor()`, `NamedActor` and every
+  `body.actor` read were deleted, and `tests/admin_api_action_actor.js` holds
+  one act of each family that took it from the body to a row naming the
+  caller. A caller's own `actor` is still refused by the closed schema (400,
+  `STS-API-0009`), like any member the model does not declare. One thing the
+  move changed: the context is the gate's answer whatever the body's media
+  type, so an act whose body is not JSON names the caller too, where the
+  body's carrier left it nobody; and with no token (development's open API)
+  an open schema's `actor` is no longer read, so nobody is named.
+* **`common/audit.js`'s HTTP row reads `res.locals.apiCaller` first**, before
+  the sign-on cookie's resolver: the credential that let the call in is the
+  token.
+* **With no token there is nobody to name.** That is development's open API
+  only (above), and its rows name nobody, as they always did.
+
+`tests/admin_api_actor.js` holds it.
+
+## EVERY PAGING ANSWER SAYS WHAT MOVES IT (#446, 2026-10-05)
+
+`adminViews.pagingJson()` answered `page`, `pages`, `perPage`, `firstRow`,
+`lastRow` and `total`. It answers `param` and `noun` as well: the query
+parameter that moves that list (`page`, or `jobsPage` for a list named
+`jobs`) and what its rows are counted in. The console's renderer was handed
+its own paging object and read them there; a page drawn from the API's answer
+alone could not draw the paging control. Additive: nothing was renamed, and
+`tests/pki_revocation_paging.js`, which pinned the exact answer, pins the two
+new members too.
+
+## A PAGE WITH NO FORM GETS AN OPERATION TOO, NOW (#446, 2026-10-05)
+
+Rule 7 asks for an operation per CONTROL, so the drill-downs that only draw
+something had none: the delegation pictures, the federation picture, the
+credential lineage. That was the rule read exactly, and it stops being
+enough when the console is a static client of this API: such a page shows
+things only this process knows.
+
+**`GET /admin-api/delegation/map` is the first, and the pattern for the
+rest.** It answers `AdminViews.delegationMapModel()`, in `admin-core/` as
+`tests/admin_actions_layer.js` requires of anything this API asks (it was
+written on the console first, and that test refused it): the page's own JSON
+(the graph, the filter, the counts) plus the three things the browser cannot
+work out —
+
+* `looks`, what each node IS (label, shape, identifier, console link), which
+  `delegationLooks()` asks the directory and the application registry — moved
+  to `admin-core/admin_views.ts` with `delegationNodeLook()`, the console's
+  methods of those names now delegates;
+* `svg`, the drawing, laid out by dagre on the server, with its links;
+* `summary`, the counts the filter's choices show.
+
+`format=svg` answers the document alone with no links, as the page's own
+`?format=svg` does. The five filter parameters are declared once
+(`delegationFilter`) for it and for `GET /admin-api/delegation`.
+
+**THE PAGE'S ROUTE IS NOT YET BUILT ON THE MODEL.** The model makes the same
+four calls the route makes; the route is left alone until its page is
+converted, when both become this one function.
+
+**STILL WITHOUT AN OPERATION**, each needing the same treatment:
+`/admin/delegation/chain`, `/application`, `/user`, `/allowed` and the picture
+on `/cluster`; `/admin/federation/map`; `/admin/tokens/credential`. Two the
+first inventory listed need none: the key-history rows already carry each
+certificate's PEM, and the PKI pane's export is `POST /admin-api/pki/export`.
+
+`tests/admin_api_delegation_map.js` holds it.
+
+## A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05)
+
+The server-rendered console held a relying-party session that named the
+sign-on session it came from and ended with it, so a sign-out or an expiry
+closed the console at once. A console that is a client of this API holds a
+token instead, and a token is good until it expires unless somebody asks. The
+gate asks, straight after the revoked-or-disabled check
+(`AdminApi.endedSessionOf()`, 401 `invalid_token`, `STS-API-0126`).
+
+* **NO TOKEN CARRIES A SESSION IDENTIFIER**, and none was added. The token
+  registry was told which session an issuance ran on (`signJwt()`'s third
+  argument) and is asked by `jti` (`stats.sessionIdOfJti()`); the session is
+  asked of `authn/` through `oauth2.sessionIsLive()`. Both in the realm that
+  issued the token, which is where the code flow ran.
+* **IT IS FOR EVERY CLIENT, NOT THE CONSOLE'S ALONE.** An administrative token
+  a person was issued through a sign-in should not outlive that sign-in,
+  whichever application asked for it.
+* **A TOKEN ISSUED ON NO SESSION IS NOT REFUSED**: `client_credentials`, and
+  the API explorer's until the cutover. There is nothing to end.
+* **NOR IS ONE THE REGISTRY NO LONGER HOLDS.** The registry is capped and
+  drops the oldest, and a token it forgot answers no session and is honoured
+  until it expires. Refusing it would turn a cache's eviction into a
+  sign-out. The access token's own lifetime is the bound on that window.
+* **`oauth2` IS REQUIRED BY THIS MODULE FOR THAT ONE QUESTION.** It is built
+  at 9 and this at 19, so it is a cache hit that moves nothing.
+
+`tests/admin_api_session_bound.js` holds it: the same token before and after
+its session ends, a second session of the same person that goes on working,
+and a token issued on no session.
+
+**THE GATE READS THOSE ROWS OFF THE EVENT LOOP (#880, 2026-11-11).** The
+checks above stay synchronous. Before them, `AdminApi.warmGateRows()` asks
+the token row (`stats.warmTokens()`), then the session id that row holds
+(`authn.warmSessionAsync()`), then the person (`ldap.warmSubjectsAsync()`,
+which puts the window slot and notes the UUID — `entriesByUuidsAsync()`
+does neither). The roster still reads the bootstrap administrator by
+username (`existingUserEntry()`), and the owner check lists service
+accounts (`serviceAccountNames()`). Those are warmed in the token's realm
+too: `warmUserNamesAsync()` puts the `uid=` key, absence included, and
+remembers the `byName` answer until a write under `ou=users`, and
+`serviceAccountNamesAsync()` fills the list the synchronous call keeps.
+An absence at `uid=<name>` is not treated as nobody.
+
+**THE REMEMBERED ANSWER IS READ BY THE GATE'S CHECKS AND NOTHING ELSE
+(#880's review, 2026-11-13).** The first version wrote an answer down on
+every `existingUserEntry()` lookup in a windowed process, so every name
+presented at any sign-in, before authentication, became an entry of an
+unbounded Map, and a remembered "nobody" was trusted by the creates too
+(`ldap/CLAUDE.md`, *THE CONSOLE GATE'S REMEMBERED USERNAMES*). So the
+continuation `admit()` no longer calls `next()`: it marks `admitted`, and
+`runAdmit()` runs it inside `ldap.withRememberedUserNames()` and calls
+`next()` after that returns. A handler the gate admits, which may create a
+person, therefore never reads a remembered answer. The one read after
+`next()` that does is the bootstrap administrator's flags
+(`admin_rbac.ts`'s `bootstrapState()`, asked by `GET /admin-api/me` and the
+roster), which creates nothing. A warm that fails
+holds nothing and the same checks run; the decision is not cached, and a
+failed warm is not a refusal of its own. Applications stay resident, so
+`applications.load()` is not this cost. The group index's `classesUnder`
+read is once per `groupsVersion` and is not part of this change.
+`tests/admin_api_gate_warm.js` holds it, against a window and an on-demand
+reader that count synchronous reads: the first request and the next one
+do none for the token, the person, the bootstrap name or the service
+accounts. The session in that child lives in the memory map, so the test
+records that `warmSessionAsync()` was asked and does not arm the session
+bridge. 8081 was not re-measured.
+
+## `GET /admin-api/me` — WHAT THE GATE DECIDED FOR THE CALLER (#446, 2026-10-05)
+
+The console is becoming a static application whose only knowledge of its
+reader is the access token it presents. What the server-rendered console
+learned from `adminViews.gateStateFor(req)` — who is signed in, which
+authority they are, what they hold, which pages `admin-ui/admin_scope.ts`
+hides from them, whether the roster is still open — this operation tells it.
+
+* **IT REPORTS THE GATE'S DECISION AND MAKES NONE.** The caller, scopes and
+  roles are the ones the gate left on `res.locals.apiCaller` for this very
+  request. `read` is "ADMIN_READ is among the roles the gate handed the access
+  policy" and `write` the same for ADMIN_WRITE, which are held ∩ carried
+  (#303). A second reading of the roster here could disagree with the gate
+  that has just let the request in.
+* **THE ROSTER IS ASKED FOR WHAT ONLY IT KNOWS**: whether the console is open
+  to anybody, and the bootstrap administrator's state (`console`). Asked for a
+  person only, in the token's realm; one that cannot be read reports itself
+  unavailable rather than failing the call.
+* **`authority` IS THE TOKEN'S REALM**: `service` for a default-realm token,
+  `realm` for a realm's own, as the gate's two keys decide (#32). `pages` is
+  the console's page list less what `adminScope.pageVisible()` hides from that
+  authority, so a realm administrator is not shown a service page.
+* **WITH NO TOKEN THERE IS NO CALLER** — development's open API — and both
+  `read` and `write` are true, which is what that state means.
+* **IT MIRRORS NO CONSOLE PAGE**, and its `mirrors` says so in words, as the
+  MDM feed's does: it is the banner and the navigation filter every page
+  draws.
+
+`tests/admin_api_me.js` holds it.
 
 ## `/admin-api/mfa`: A REPORT AND A RESET, AND DELIBERATELY NO ENROL (2026-09-10)
 
@@ -1238,6 +1588,70 @@ clear does not. The caller asked to clear a specific thing and it was not there.
 the refusal that matters: it will not remove the last way in. An operator must
 not be able to do what the owner is stopped from doing.
 
+**IN PRODUCT A CLEAR NEEDS A STATEMENT AND A RECENT SIGN-IN, AND THEY ARE TWO
+DIFFERENT CHECKS.** The statement (`evidence`, #1504, #1558, ASVS 5.0.0 6.4.4)
+is asked in `admin-core/admin_actions.ts`'s `evidenceRefusal()` by every
+factor-clearing act — `clear-totp`, `clear-key`, `clear-backup-codes`,
+`clear-email-factor`, `disable-mfa`, `disable-primary-keys` — because the
+console and this API both reach it there, and it goes on the audit row:
+clearing a lost factor is how an account is taken over, so the row says how
+the person was identified. The recency (#1538, ASVS 5.0.0 7.5.1) is this
+module's: `REAUTHENTICATED_ACTIONS` in `admin_api.ts`, answered 401
+`insufficient_user_authentication` with `max_age` as RFC 9470 says
+(`STS-API-0145`), so the console re-signs in in its popup and resends. It is
+asked only of a token with a person behind it; a `client_credentials` caller
+has nobody to ask. **The same six acts are on that list since #1577**:
+`disable-mfa` and `disable-primary-keys` had the statement and not the
+recency, so the two widest removals were the two a stale sign-in could make.
+The console needs nothing per action — `web_runtime.ts` reads the challenge
+off any 401.
+
+
+## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
+
+Rule 7's twin of `/admin/tls-connection`, which replaced the development
+pages `/tls` and `/tls/forwarded` (rcbj's decision 3 on #591): what this
+service saw of THE REQUEST THAT CALLED IT — its TLS connection, the client
+certificate on it, and its forwarding headers with what was believed. Admin
+Read, in both modes; it changes nothing. The view is `tls/tls_server.js`'s
+`connectionView()`, required LAZILY in the handler (that module is at 20,
+after this one, and its routes are registered at its require). Pinned to the
+front process with the page (`common/request_pool.js`'s `NEVER_DISPATCHED`),
+because a worker's socket is the unix socket from the front process. Not a
+service operation: a realm administrator may call it. `tls/CLAUDE.md` argues
+the rest; `tests/tls_connection_page.js` and
+`tests/protocol/sts_tls_connection.js` hold it.
+
+**AND THIS IS NOW THE TRUSTSTORE'S ONLY RUNTIME DOOR BESIDE THE CONSOLE'S**
+(#597): the open `POST /tls/trust` and `/tls/trust/clear` were deleted, and
+`tests/tools/pep-credential.js` has no fallback.
+
+## `POST /admin-api/node-health/collect-garbage` — NODE HEALTH'S ONE CONTROL (#611, 2026-10-13)
+
+Rule 7's twin of Monitoring → Node Health's Collect buttons, which post to
+it (`mirrors: 'POST /admin/node-health'`): a full V8 garbage collection in
+the answering node's front process (`target: 'front'`), one of its worker
+threads (a `threadId`), or all of them (`all`, the default), answered with
+each isolate's heap before and after and its pause. The handler calls
+`nodeHealthAdmin.collectGarbage()` and nothing else, passes
+`callerNameOf(res)` as the audit row's actor, and turns its `status` and
+`errorCode` into the reply's status and `mark()`. Nothing else it needed was
+new:
+
+* **IT REACHES THE FRONT PROCESS** because its path is under
+  `/admin-api/node-health`, which `request_pool.js`'s `NEVER_DISPATCHED`
+  already names (a segment-boundary prefix).
+* **ADMIN WRITE**, because it is a POST; **A SERVICE OPERATION**, because its
+  `mirrors` is a page in `admin_scope.ts`'s `SERVICE_PAGES`, so a realm's own
+  token is refused (`STS-API-0112`) by `realmTokenRefusal()` as every other
+  service operation is.
+* **ITS EXAMPLE IS RUN** by `sts_admin_api_operations`, which replays every
+  example: `{ target: 'all' }` collects every isolate of the node it reaches,
+  a pause of milliseconds on a test stack.
+
+`admin-ui/CLAUDE.md` (*A full garbage collection, on demand*) argues the
+rest; `tests/node_health_page.js` section 10 and
+`tests/protocol/sts_node_health.js` section 6 hold it.
 
 ## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
 
@@ -1263,7 +1677,7 @@ Four things a caller has to be told, and the descriptions tell them:
   whether it was written down. A removed `file` anchor still comes back.
 * **NO BULK CLEAR, AND `add` IS ALL OR NOTHING** on a block OpenSSL cannot
   read. `remove` takes ONE fingerprint and a bodyless POST removes nothing —
-  which matters because `tests/vendored/sts_metadata.js` posts to every route
+  which matters because `tests/protocol/sts_metadata.js` posts to every route
   with no body.
 * **NO PRIVATE KEY IS IN ANY REPLY** — the truststore holds certificates only.
 
@@ -1274,6 +1688,31 @@ ever a real certificate would be left in every later job's handshakes. Its
 `theTruststoreRoundTrips()` drives them instead, at the root, with a CA it mints,
 and asserts a read-only token is refused the write.
 
+
+## `/admin-api/kerberos/trusts` — THE KERBEROS TRUSTS (#430 Phase 4, 2026-10-20)
+
+`GET /admin-api/kerberos/trusts` (`per`, `trustsPage` answered by
+`trustsPaging`, and `trust` for one record whole) and `POST
+/admin-api/kerberos/trusts/{add,update,enable,disable,rotate-key,remove,pair}`,
+mirroring the Trusts tab of `/admin/kerberos` through
+`adminViews.kerberosTrustsJson()` and `adminActions.kerberosTrustsAction()`,
+which require `kerberos/krb5_trusts.ts` lazily (it is built by the
+composition root at 14c). Rule 7: seven controls, seven actions. Three things
+a caller is told:
+
+* **ONE REPLY CARRIES KEY MATERIAL, ONCE**: a key this service generated, in
+  `shown`, `no-store`. A trust password is never returned, and no read
+  carries a key (`tests/protocol/sts_kerberos_trusts_api.js` searches every
+  one).
+* **`remove` WANTS `confirm` REPEATING THE PARTNER REALM**, the console's typed
+  confirmation as a field, because it takes the keys with it.
+* **`pair`, AND `rotate-key` WITH `mirror`, ARE A SERVICE ADMINISTRATOR'S**:
+  each writes the partner trust realm's record, which a realm token may not
+  (`admin-ui/admin_scope.ts`, `STS-API-0112`).
+
+The application view (`GET /admin-api/applications?application=`) carries
+`page.krb5Across` for a Kerberos service, the console's *Across trusts*
+panel; `kerberos/CLAUDE.md` argues all of it.
 
 ## `/admin-api/kerberos/principals` — THE STORED KERBEROS KEYS (2026-09-12)
 
@@ -1422,7 +1861,7 @@ second set, and what it does is DELETE.
 **AND THERE IS NO OPERATION THAT READS A CODE.** `GET /users` reports the counts
 on each row and never the strings; the person reads their own set on
 `/portal/mfa` and nowhere else. That is asserted rather than trusted —
-`tests/vendored/sts_portal_backup_codes.js` walks this API's own OpenAPI
+`tests/protocol/sts_portal_backup_codes.js` walks this API's own OpenAPI
 document for a path that looks like a reader, and then checks that no code it
 holds appears anywhere in a `GET /users` reply.
 
@@ -1461,6 +1900,41 @@ doors. A caller that means nobody to hold anything sends `credential: "none"`;
 a generated one, meet the realm's password policy in product mode, and
 `set-password` does the same.
 
+### The attribute policy's two acts (#396, 2026-10-19)
+
+`POST /admin-api/policies/{save,reset}-attributes-policy` are the sixth
+kind's save and reset, generated from its FIELDS like every kind's; the field
+is `requiredAttributes`, `oneOf` a list or a comma-separated string (the
+`attributeList` type). Beside them are the first two actions a kind has OF ITS
+OWN, `define-person-attribute` and `remove-person-attribute`, described by the
+kind (`PolicyKind.extraActions`: summary, description and request body) and
+answered through `policiesAction()`'s `act` verb — the same resource, the same
+console form target, so rule 7 needed no new operation. **#700 added a third,
+`update-person-attribute`** (a definition's label, description and portal
+flags; syntax and cardinality fixed), described and answered the same way. `GET
+/admin-api/policies` grew `missing=count`, a walk of the realm's people asked
+only on request. **Since #1241 both policies routes may answer late**: `GET`
+is `adminViews.policiesViewAsync()` (the people naming each named attribute
+profile, a holder question asked asynchronously), and `POST` returns the
+promise of a `policiesAction()` whose kind's `reset()` answered a promise
+(the delete of a named attribute profile, refused while named,
+STS-LDAP-0197). Express does not wait on that promise; the handler's
+`.then` sends. An in-process caller waits on the return
+(`tests/admin_api_nominated_actor.js`).
+
+## A PERSON'S KEY PAIRS: SEVERAL, AND `revoke` REVOKES ONE (#1290, 2026-11-03)
+
+Rule 7 for #1290: the console's person controls changed and so did the
+operations behind them, with no new action. `POST /admin-api/pki/issue` and
+`/pki/upload-certificate` with `target=person` ADD a key pair (an optional
+`label`; `STS-PKI-0223` at `pki.personSigningKeyMax`), and `/pki/revoke` with
+`target=person` REVOKES the one named by `handle` (its `kid` or thumbprint, or
+its serial) with `reason` — on the CRL, the private half dropped, the
+declaration cleared with the last valid one. The person arm no longer takes
+anything off, and there is no per-key clear for administrators: a clear is
+what the ticket retired. The application arm of `revoke` is unchanged.
+`GET /admin-api/users?user=` answers `credentials.keyPairs[].keys` per profile.
+
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 
 Two operations for the Credentials section of an application's console page,
@@ -1475,7 +1949,8 @@ in the same change as the page (rule 7):
   resource, because the secret is an application attribute and the mint is
   `applications.regenerateClientSecret()`. **The reply is the one place this
   act hands the value out**; the audit row names the attribute. It refuses
-  `sts-management-api` while `adminApi.clientSecret` pins that secret, because
+  `sts-api-client` (`sts-management-api` until #1139) while
+  `adminApi.clientSecret` pins that secret, because
   every token for this API is minted with the setting and seeding never
   rewrites an existing entry — regenerating it would be this API locking its
   own bootstrap out wherever a secret is checked.
@@ -1545,7 +2020,7 @@ realm does not hold is refused — `400` for a value that is not a SHA-256 (`STS
 `404` for one not held here (`STS-ADMIN-0641`), `500` for one that could not be
 described. A certificate from another realm is reached under that realm's
 prefix, which is the realm boundary rather than an inconvenience.
-`tests/vendored/sts_admin_api_operations.js`'s `theCertificateDetailsAnswer()`
+`tests/protocol/sts_admin_api_operations.js`'s `theCertificateDetailsAnswer()`
 drives both shapes, the colon spelling, and the refusal at the default realm's
 door of a certificate a throwaway realm holds.
 
@@ -1600,8 +2075,9 @@ the roster. Now:
 
 `POST /admin-api/xacml/issue-pep-certificate` issues a registered remote PEP the
 key pair for its HTTPS listener, from the realm's `pep-tls` Issuing CA, and
-mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
-same `pepAction()` — rule 7 in the ordinary way. Three things about it:
+mirrors the **Issue certificate** control on the Remote PEPs tab of
+`/admin/xacml` through the same `pepAction()` — rule 7 in the ordinary way.
+Three things about it:
 
 * **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
   other XACML actions answer a result, so `admin-core/admin_actions.ts`'s
@@ -1643,6 +2119,18 @@ handler passes `base: baseUrlOf(req)`, so `issue-password-reset`'s `resetUrl`
 names the realm the call was made in. **`reset-password` answers `password` and
 `issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
 retrievable afterwards, and neither is in the audit row.
+
+**Since #1135 a passkey has no role**, and the two removals say so:
+`disable-primary-keys` (its name kept) removes every passkey and
+`disable-mfa` the authenticator app, the recovery codes and every passkey;
+both are refused (STS-AUTHN-0161) where the person has no password and a
+passkey is their way in. `begin-passkey-enrolment` still ACCEPTS a `role`
+and ignores it, and `savePostLoginPolicy` still accepts `noPasskeyRole`
+and ignores it — each declared in its schema as ignored, because
+`additionalProperties: false` would otherwise refuse a body written before,
+and the vendored protocol jobs must never be edited. No answer carries a
+key's `role` any more; `primaryKeys` and `mfaKeys` on the user and MFA
+views are the same keys counted by what the realm lets a key do.
 
 ## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
 
@@ -1703,11 +2191,42 @@ unpaged in `factors.appPasswords` (bounded by `appPasswords.maxPerPerson`,
 at most fifty), the precedent `admin_views.ts` sets for a list that cannot
 grow past fifty.
 
+## STORED CERTIFICATES (#1061, 2026-10-27)
+
+Two more users actions — `add-certificate` (`user`, `certificate`: one PEM
+block or base64 DER, the leaf only) and `remove-certificate` (`user`,
+`sha256`) — through `admin-core/admin_actions.ts`'s
+`storedCertificateAction()`, each audited (`certificate.stored`,
+`certificate.unstored`) and a CAEP `credential-change` of type `x509`; and
+`GET /admin-api/users/certificates?user=` (`storedCertificatesOf()`),
+mirroring the Stored certificates block on the person's `/admin/users` page.
+Refusals: not one certificate `STS-ADMIN-0897`, no such person `0898` (no
+entry is created), already stored on another entry `0899`, not stored here
+`0900`. Why the doors need it is `common/CLAUDE.md` 3ag. The OpenAPI rows are
+in the `POST /users/:action` table; the rule-7 parity job
+(`sts_admin_api_operations`) needs a stack and was not run in #1061's
+session.
+
+**THE APPLICATION'S HALF (#1227, 2026-10-30)**: `add-certificate`
+(`application`, `certificate`) and `remove-certificate` (`application`,
+`sha256`) on `POST /applications/:action`, through the same
+`storedCertificateAction()` with `kind` 'application', and the list as
+`credentials.stored` of `GET /admin-api/applications?application=`
+(`applicationStoredCertificatesOf()`) rather than a GET of its own — the
+application's credentials already arrive on that answer, as the person's
+`mfa.signing` does. The route now passes `via: 'api'` and the caller's name
+in the context, which these two audit with. Refusals as the person's, but an
+identifier the registry does not hold is `STS-ADMIN-0906` (0898 says
+person). The CAEP event goes under the application's own subject
+(`application` on the notice, `ssf/CLAUDE.md`'s #221 P5), which mails
+nobody. `tests/application_stored_certificates.js` holds it.
+
 ## A REALM'S OWN TOKEN (2026-09-14, #32)
 
 A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7
 owes them this API as well as the console. rcbj chose a realm-scoped
-`sts-management-api` token per realm over reusing the service token. The gate
+`sts-management-api` token per realm over reusing the service token — the
+realm's `sts-api-client` since #1139. The gate
 keeps the SERVICE credential exactly as it was and adds a second, narrower one:
 
 * **TRIED SECOND, AND ONLY UNDER A REALM PREFIX.** A token that does not verify
@@ -1733,7 +2252,7 @@ keeps the SERVICE credential exactly as it was and adds a second, narrower one:
   operation needs: 403 `STS-API-0123` if not, and an undeclared scope the
   operation does not need is dropped before the roles are read. Removing a
   declaration therefore cuts off tokens already issued. The seeded
-  `sts-management-api` and `sts-admin-console` (the API explorer mints as the
+  `sts-api-client` and `sts-admin-console` (the API explorer mints as the
   console) declare both in every realm; an administrator may declare them on
   any other client, which is then a door too.
 * **THE CONSOLE'S SCOPE, READ OFF THE OPERATION** (`STS-API-0112`).
@@ -1745,7 +2264,7 @@ keeps the SERVICE credential exactly as it was and adds a second, narrower one:
 The realm's client secret is minted per start and is not pinned by
 `adminApi.clientSecret`, which is the service client's; a realm administrator
 reads or regenerates it on their realm's console
-(`/realm/<id>/admin/applications?application=sts-management-api`). The
+(`/realm/<id>/admin/applications?application=sts-api-client`). The
 pinned-secret refusal on `regenerate-secret` applies in the default realm only.
 With `adminApi.authRequired` off, a console SESSION reaching this API is confined
 the same way when its authority is a realm's.
@@ -1774,8 +2293,11 @@ it under `/realm/{id}/admin-api/mode` for a realm's answer.
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 
 Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
-(rule 7): `GET /admin-api/vc-status` is what `/admin/vc-status?format=json`
-answers — where this realm's status lists are served, their size and
+(rule 7): `GET /admin-api/vc-status` feeds Monitoring → Verifiable
+Credentials, `/admin/vc/monitor` (the Credential status tab of `/admin/vc`
+until #752, which moved the page and changed neither operation; their
+`mirrors` name the new page) — where this realm's status lists are served,
+their size and
 lifetimes, the counts, and a page of every issued credential's index and
 status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
 `{ idx }` is the page's three buttons, through `statusAction()`. The action is
@@ -1897,9 +2419,27 @@ instead, before any pane action, for both doors (`STS-PKI-0203`) — two of
 them fell back silently to a default before.
 
 `tests/closed_sets.js` holds all of this in process, through the route
-wrapper itself; `tests/vendored/sts_admin_closed_sets.js` (ours) holds the
+wrapper itself; `tests/protocol/sts_admin_closed_sets.js` (ours) holds the
 running service at every door, discovering every enum from the published
 document.
+
+## `/admin-api/secret-destinations` (#221 P3, 2026-10-06)
+
+The register of secret push destinations and its four acts —
+`add-destination`, `update-destination`, `remove-destination` and
+`test-push` — declared in `mgmt-api/secret_destinations_api.ts` and spread
+into the table as the attribute source operations are; each handler calls
+`common/secret_destinations.ts`'s `view()` or `act()`, which is also what the
+static console's page sends its forms to (rule 7, `mirrors: POST
+/admin/secret-destinations`). The audit actor is the gate's caller
+(`res.locals.apiCaller`), handed to `act()` beside the body (#1579).
+**`credential` is the one member here that is
+WRITE-ONLY**: taken by add and update (`writeOnly: true` in the schema), and
+in no answer of this resource or of `/applications`; `reveal-secret` refuses
+it. The provider and payload `enum`s are read off `common/secrets.js`'s
+`DESTINATION_PROVIDERS` and `DESTINATION_PAYLOADS`, so the document cannot
+offer what the push refuses — `file` included, which the handler refuses in
+product mode (`STS-SECDEST-0006`). `common/CLAUDE.md` 3ce argues the rest.
 
 ## `/admin-api/devices` (#164, #218, 2026-09-26)
 
@@ -1943,8 +2483,9 @@ deliberate:
 `admin_api_spec.ts`'s `scopeForMethod()` states the same exception, and
 `tests/admin_api_document_security.js` compares the two and reads the
 exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
-is the handler, shared with development's test control at
-`/devices/test/compliance` (`mode.opensTestControls()`).
+is the handler. It was shared with development's test control at
+`/devices/test/compliance` until #597 deleted that route; the feed is the one
+door in both modes.
 
 ## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
 
@@ -1966,6 +2507,27 @@ refuses in, did not change.
 safe", and not by giving an operation a components table of its own. A
 second shared copy costs 170 KB once; a per-validator one costs it 363
 times, in every process (#339).
+
+## THE VALIDATORS ARE COMPILED ON FIRST USE (#617, 2026-10-14)
+
+Compiling all of them was the bulk of what the management API cost every
+process at start: about 3 s between the console modules' banners and this
+API's on 8081, of which **`compileRequestSchemas()` was 1,144 ms** in the tests
+image against 4 ms for `buildRoutes()` and 2 ms for the closed sets — for 363
+validators (427 with the action rows) a given process mostly never reaches.
+`wire()` now only RECORDS each schema under its validator key, and
+`validatorFor()` compiles one the first time a request reaches its operation
+and keeps it (a schema that will not compile is remembered as null, logged
+once). The components copy above is made with the first validator. **What
+did not move:** the gate and every route are registered where they were (rule
+1), the console's closed sets are registered at wiring as before, and what a
+validator accepts and refuses — and the words — are unchanged. **What did:**
+STS-API-0010 for a broken schema is said at that operation's first request
+rather than at start, so `compileAllRequestSchemas()` compiles the lot on
+demand and `tests/admin_api_lazy_validators.js` holds that wiring compiles
+none, a request compiles its own and is held to it, and every schema still
+compiles. The OpenAPI document was already built per request
+(`admin_api_spec.ts`) and is not part of this.
 
 ## `updateApplicationFields` — THE FIELD GRID'S SAVE (2026-09-30)
 
@@ -1991,3 +2553,460 @@ streams the application owns, with the members their receiver set, and each
 override's value in force and its source. That is the same view model the
 console's Shared Signals section draws. Pausing and enabling a stream is
 `POST /admin-api/ssf/status`, as it always was.
+
+## `admin:security`: A SECURITY CHANGE TAKES THE SECURITY ADMINISTRATOR (#645, 2026-11-02)
+
+The gate asks `securityChangeOf()` — `common/security_operations.ts` over the
+console operation the request mirrors — before it picks the scope. A
+security change wants `admin:security` and `requiredRoles: [SECURITY_ADMIN]`
+in place of `admin:write` / ADMIN_WRITE, never takes the owner path, and is
+**refused in the gate** (`STS-API-0138`, in words) when the kept scopes lack
+`admin:security` or the effective roles lack SECURITY_ADMIN — the policy
+below is asked too, but with `xacml.enforceAccess` off it allows everything,
+and this must not be one setting away from gone. A security change depends
+on the BODY, so the OpenAPI document says `admin:security` only for
+`/admin-api/policies/{action}`, where every action is one, and the scheme's
+description names the rest. `/me` answers `security`. `sts-api-client` and
+`sts-admin-console` declare it; **an entry seeded before #645 is not
+migrated** (no migrations), and needs a delegated permission grant of
+`urn:sts:admin-api:admin:security` — `docs/security-administrator.md` says
+so. The harness's token asks for it (`tests/tools/admin-api-token.js`).
+`admin-ui/CLAUDE.md` 8a-ii has the role.
+
+## 3cc. THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
+
+**Since #446 the console is a static application whose one data source is
+this API, and to draw itself it added operations that exist only for it** —
+its frame, its drawings, its form helpers. They answer in the shape a
+renderer wants (an SVG laid out on the server, a select's options, the
+sidebar), which changes whenever a page does, so they are not a contract an
+external client should build on. rcbj's decision on #454: they are a
+separate KIND, at `/admin-api/console`, behind a separate scope. **It is a
+boundary for cleanliness and not for security** — nothing there shows an
+administrator anything they could not already reach.
+
+**Every row of `ROUTES` is `management` or `console`, and everything follows
+from that field** (`withConsoleRoutes()`):
+
+* **The path IS the kind.** A console row is under `/admin-api/console`, a
+  management row is not, and the gate decides on the path of a request it
+  has not routed (`isConsoleOperation()`), so a console row outside the
+  prefix would be gated as a management one.
+* **Two documents, two lists.** `/admin-api/openapi.json` and the index
+  describe the management rows; `/admin-api/console/openapi.json` and
+  `GET /admin-api/console/operations` (the table the console resolves a form
+  through) the console's. The API explorer — Server configuration → API
+  explorer — is built from the management rows alone.
+* **The scope is `admin:console`.** It is the permission of the native role
+  ADMIN_CONSOLE, which nobody holds as a member: it is CONFERRED by the
+  console's client on everybody who signs in through it
+  (`roleConferredBy`, `common/CLAUDE.md` 3cc). A console operation asks
+  `requiredRoles: [ADMIN_CONSOLE]` and, unless it is the frame or the
+  operation list, `requiredAllRoles: [ADMIN_READ]` (a form helper
+  ADMIN_WRITE) — the access-control document's every-one-of conjunct
+  (`xacml/CLAUDE.md`). So one decision mixes a role the client confers with
+  one the person holds. A token without `admin:console` gets 403
+  `STS-API-0127`, said in words because the policy's refusal would only say
+  a role was missing.
+* **`/me` is either kind's**: who-am-I is the console's first question and an
+  integrator's, so it asks ADMIN_READ or ADMIN_CONSOLE.
+
+**RULE 7 IS UNTOUCHED, AND THAT IS WHAT THE SPLIT IS CHECKED AGAINST.** A
+console operation is a read, or a form helper that writes nothing
+(`writesNothing` on each of its actions); every console CONTROL keeps its
+management operation. `tests/admin_api_kinds.js` holds that, the prefix
+rule, the two documents, and the console's set by operationId — a row
+moving across is a decision, made where the list is.
+
+**THREE SHAPES OF MOVE**, and which one a new console-only answer takes is
+the question to ask:
+
+1. **Moved outright** — the frame, the explorer's own facts,
+   `delegation-settings`, the four delegation drawings and the federation
+   map. Written as console rows where they are declared; the data each draws
+   is already a management operation (`/delegation`, `/permissions`,
+   `/permissions/groups`, `/federation`).
+2. **A twin** — `/status`, `/applications/new`, `/delegation/user` and
+   `/delegation/application` carry data found nowhere else, so they stay;
+   their console twin answers the whole thing and the management row names
+   the members it leaves out (`consoleMembers`, taken off in `sendJson()`)
+   and refuses `format=svg` (`STS-API-0129`).
+3. **A form helper** — `pki/apply-profile`, `generate-keys`,
+   `generate-alt-keys`, `use-key` and `applications/generate-secret` moved to
+   a console action route over the SAME handler; the management route
+   refuses them by name (`STS-API-0128`, 404) rather than letting the one
+   handler behind both carry them out.
+
+**AN ENTRY PERSISTED BEFORE #454 IS NOT MIGRATED** (no migrations): a
+`sts-admin-console` seeded earlier declares no `admin:console`, and the
+console's frame answers 403 `STS-API-0127`, whose text names the fix.
+
+## `GET /admin-api/account-api` — THE OTHER API'S DOCUMENT (#568, 2026-10-12)
+
+The user portal became a static application over `/account-api`
+(`account-api/CLAUDE.md`), whose OpenAPI document that API publishes itself,
+to anybody, at `/account-api/openapi.json`. This operation answers the same
+document — for the realm the call is in, since the account API is per realm —
+with where it is published and how many operations it holds, so the console's
+*Account API* page (`/admin/account-api`) is drawn from an operation here like
+every other page, and rule 7's parity check finds its management GET. It
+requires `admin:read` and changes nothing.
+
+## `/admin-api/verifications` — WHERE A VERIFICATION STARTS AND IS READ (#587, 2026-10-12; the only doors since #594)
+
+`POST /admin-api/verifications/start` (Admin Write) and `GET
+/admin-api/verifications` (Admin Read) start an OpenID4VP verification and
+read what was decided, as JSON and in every mode. They were the twins of the
+demonstration Verifier's `/oid4vp/start` and `/oid4vp/result/:state`, which
+left for the development companion on #594 (`companion/`, whose bar door is
+an application calling these); an operator, every job
+(`sts_oid4vp_wallet.js`, `sts_siop.js`, `sts_oid4vp_x509.js`,
+`sts_oid4vp_status_reference.js`, `sts_oid4vp_conformance.js`) and the
+companion start one here.
+
+* **`redirect_uri`: THE STARTER'S OWN COMPLETION PAGE (#594).** OpenID4VP 1.0
+  section 8.2 lets the Response Endpoint answer a `redirect_uri` the wallet
+  sends the browser to. It named the demonstration's `/oid4vp/done` for every
+  verification — a 404 in product — so whose page it is now belongs to the
+  start: `vcVerifier.completionUriFor(asked, res.locals.apiClientId)` holds it,
+  where only registered addresses are accepted, to the CALLING CLIENT's
+  registered redirect URIs (matched whole), and to an absolute http(s) URL
+  with no fragment anywhere; 400 `STS-VC-0123` otherwise, never replaced. It
+  rides on the transaction (`record.completionUri`), the answer says it back
+  as `redirectUri`, and a start that names none is answered by the Response
+  Endpoint with no `redirect_uri` — `{}`, the section's MAY.
+
+* **`start` IS AN ACTION OF `/verifications/:action`**, not a literal path
+  (2026-10-12), for `/cells/:action`'s reason: the suite probes every POST
+  resource with an action nobody has heard of and wants a 400 naming the
+  ones there are, and the literal answered Express's 404.
+* **ONE FUNCTION PER QUESTION, AND THE VERIFIER OWNS BOTH.**
+  `vcVerifier.startVerification(req, asked, where)` validates what was asked
+  against the page's own schema, issues the x509 certificate first where one
+  is needed, calls `buildVpRequest()`, builds the query and applies the
+  wallet rule, and RETURNS what it built; this operation answers it.
+  `verificationOutcome(state)` is what `GET ?state=` answers with `found:
+  true`. The refusals, status and code: 400 `STS-VC-0032`, 400
+  `STS-VC-0033`, 500 with the builder's code (`STS-VC-0092`,
+  `STS-VC-0110`–`0113`), and 404 `STS-VC-0042` for an unknown state.
+* **THE START IS THE ONE WRITE THAT CALLS A PROTOCOL MODULE RATHER THAN AN
+  `admin-core` ACTION**, and it is argued, not drifted into: building a
+  request reads the REQUEST's origin a dozen times below it (the Response URI,
+  the did:web, the OpenID Federation entity identifier, the x509 name), and
+  an action never sees a request (`tests/admin_actions_layer.js`). Rule 7
+  loses nothing — the static console's form posts to this operation, so there
+  is no second admin door. The READ is an ordinary view,
+  `adminViews.presentationVerificationsJson(req)` (named apart from #127's
+  `verificationsJson()`, a person's identity verifications).
+* **WITHOUT `state` IT LISTS, AND THAT IS WHAT MAKES IT A RESOURCE.** The
+  realm's open verifications, newest first, at most 25 of `total`, each what
+  it asked and what it decided — the claim NAMES, never a value, and no
+  wallet sign-in (a person signing in, with their name on the transaction).
+  `sts_admin_api_operations.js` reads every GET bare and reads a written
+  resource back, so a bare GET that answered 404 would have failed both.
+  `GET /admin-api/verifier-request` carries the same list as
+  `recentVerifications` (and the start's menus as `startChoices`) because
+  the Verifier request tab is drawn from that view alone; one function
+  answers both.
+* **THE CLOSED SETS ARE THE VERIFIER'S** (`START_VOCABULARY`), and `format`
+  is deliberately not one, for `/verifier-request/format`'s reason: a
+  form-encoded `+` arrives as a space and is put back.
+* **THE CONSOLE'S TWIN** is the *Start a verification* form and the *Open
+  verifications* list on the Verifier request tab
+  (`oid4vc/web_vc_verifier_config.ts`). The form posts to
+  `/admin/vc-verifier-config` with `action=start`, which `vcTabLinks()`
+  moves to the tab and `WebForms.resolve()` sends here through this row's
+  `mirrors`; the answer's `message` is what the strip shows.
+* **CELLS (#98) ARE NOT FOLLOWED.** This read answers from the cell it
+  arrives at (the demonstration's `/oid4vp/result/:state` was placed on the
+  cell that minted the state).
+  A start and its read through the same address meet in the same cell, which
+  is every caller here; a cross-cell read is not built.
+
+## `/admin-api/oid4vci/last-request` and `/admin-api/oid4vci/notifications` — WHAT THE ISSUER SAW (#594)
+
+Admin Read, every mode. They were the non-spec, development-only `GET
+/oid4vci/last_request` and `GET /oid4vci/notification/:id`, answered to
+anybody; what a wallet sent and what it said it did with a credential are an
+operator's facts, and a wallet under test (and the job driving it) asks them
+here with a token. `vcIssuer.lastCredentialRequest()` and
+`notificationRecord(id)` answer them, the second as a query parameter
+(`?id=`) because no GET in this table takes a path parameter; an unknown id is
+404 `STS-VC-0024`. No console page draws them (`mirrors` says so).
+
+`GET /admin-api/kerberos/principals` gained `accountPolicy` in the same change
+(`anyUsernameAuthenticates`, `neverCreated`, `serviceHosts` — the facts
+`/krb5/principals` published, from the same places, without either shared
+password), so `random_username.js`'s `requireKnownOrCreatable()` has an
+administrator's door to ask. **Since #595 it is the only door**: that
+demonstration document was deleted, and its principal rows are this
+operation's `database` (`?databasePage=`), which `sts_kerberos_samba.js` reads
+for the salts and kvnos it hands Samba.
+
+## OWNERS: `owner:read` AND `owner:write` (#607, 2026-10-13)
+
+rcbj: a person may update the roles, groups, service accounts and
+applications they own, from the user portal, through THIS API — and the check
+that they own the object is XACML policy, in one place, never repeated in
+`/account-api`. So this API takes a fourth pair of scopes, and its gate asks
+the access-control policy a second kind of question.
+
+**WHAT AN OWNER'S TOKEN IS.** One carrying `owner:read` or `owner:write` and
+NOT the admin scope the operation needs (`ownerPath` in the gate). The scopes
+are protected (#110) — declared on the client, held to it on every call
+(`declaredAdminScopes()` holds them too) — and authorized by the computed
+OWNER_READ and OWNER_WRITE (`common/CLAUDE.md` 3cn), so held ∩ carried
+applies: an owner:read token is OWNER_READ only, and a person taken off the
+last thing they owned is refused at once (`STS-API-0125`, said in an owner's
+words).
+
+**WHICH OPERATIONS AN OWNER MAY ASK — `OWNER_OPERATIONS`.** One object of the
+four kinds, named by the request: `GET /roles?role=`, `/groups?group=`,
+`/applications?application=`, `/service-accounts?account=` (a one-account
+read added for it), and `POST /roles/{action}`, `/groups/{action}`,
+`/applications/{action}`, `/users/{action}` naming the object in the body.
+`ownedOperationOf()` reads the request against the table (the body through
+`parseBody()`, which is pure), and for an application act every attribute it
+would write — the one of `set`, `add`, `remove`; `update-fields`' through
+`admin_actions.fieldsCoveredBy()`, the handler's own reading, and
+`appAllowedProtocol` where it carries families. Anything else on an owner's
+token — a LIST among them (rcbj's decision 6: the portal lists through
+`/account-api/owned/*`), and an object in a realm other than the token's — is
+refused in words (`STS-API-0132`), since the policy would only say a role was
+missing. The table names the object; it decides nothing.
+
+**THE QUESTION.** The administrator's requirement stays as it was
+(`requiredRoles` ADMIN_READ / ADMIN_WRITE, the first rule's), and
+`ownedObject` is added: `{ kind, id, action, attributes, requiredRole:
+OWNER_READ | OWNER_WRITE, person }`. The person goes by username in its own
+attribute because `subject-id` here is the token's client
+(`claims.client_id`), and putting the person there would add their
+configured roles to the decision outside held ∩ carried. Who owns the object,
+whether it is closed to its owners and who the person is as an owner are the
+PIP's (`xacml/CLAUDE.md`). A refusal by the owner rule is `STS-API-0133`.
+
+**WHAT AN OWNER IS ANSWERED.** A read whose answer is more than the one object
+is narrowed in `sendJson()` (`res.locals.ownerProjection`, the row's
+`project`): a role's read is `{ role }` (the register around it is the whole
+realm's); a group's the group, its members and owners (the drill-down also
+carries every group); an application's its identity, the attributes an owner
+may write (`OWNER_APPLICATION_FIELDS`, the template's defaults) and its
+owners (the drill-down carries what the console draws its tabs from, other
+applications' permissions among them). An administrator's read is untouched.
+
+**THE AUDIT ROW SAYS SO**: `res.locals.apiCaller.owner`, read by
+`common/audit.js`'s HTTP row — `as an owner` on the summary, `via: owner` in
+the detail.
+
+**`/admin-api/ownership`** answers one object's facts (`GET`, `kind` and
+`name`: owners, `protected` with `reasons`, `marked`) and writes the
+administrator's mark (`POST /ownership/set-protected`, `kind`, `name`,
+`protected`) — rcbj's decision 4, `stsOwnerProtected` on the object's own
+entry. Its console control (rcbj, 2026-10-13) is a checkbox on each object's
+Owners tab, posting `set-protected` to that tab's route — which is why the
+operation `mirrors` the four routes, `/admin/roles/owners`,
+`/admin/groups/owners`, `/admin/applications/owners` and
+`/admin/users/service-account` — and an `ldapmodify` reaches the attribute
+too. Admin Read and Admin Write, as everything here.
+
+## `/admin-api/passkey-report` — MONITORING → PASSKEYS (#942, 2026-10-23)
+
+`mgmt-api/passkey_report_api.ts`, spread into the table like the secret
+destinations' operations: `GET /admin-api/passkey-report` (the page's view,
+with a page of one list when `list` names one), `GET
+/admin-api/passkey-report/export` (CSV or JSON, an attachment, at most
+`EXPORT_LIMIT` rows and `X-Passkey-Report-Truncated`) and `POST
+/admin-api/passkey-report/recount` (the page's one control, mirroring `POST
+/admin/passkey-report`). **All three are `common/passkey_report.ts`'s and
+nothing else**, so the page and the operation cannot report different
+numbers; **no count is a directory scan** (`common/CLAUDE.md` 3cs). The
+recount QUEUES the scheduler job, never runs on the request. A filter refused
+is 400 with the report's own code (`STS-AUTHN-0416`); a store that could not
+be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
+`STS-AUTHN-0415`. `list` and `lane` are closed sets, held at the gate (#86).
+`tests/protocol/sts_passkey_report.js` drives it.
+
+## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
+
+`mgmt-api/post_login_activities_api.ts`, spread into the table as the
+passkey report's: `GET /admin-api/post-login-activities` (the page's view)
+and `POST /admin-api/post-login-activities/{start,pause,resume,end}`
+(mirroring `POST /admin/post-login-activities`). **Both are
+`common/post_login_activities.ts`'s and nothing else.** Nothing here mails
+— a start writes a row and the scheduler job mails — and nothing here
+reports who was mailed: that is the `postLoginProgress` source in
+`/report` (rcbj on #1110). A refusal is 400 with the act's own code
+(`STS-AUTHN-0490`..`0492`, and `0530` for a group the realm does not have);
+a failure to read or write the store is 500, `STS-AUTHN-0493`. `activity` is
+a closed set held at the gate. **Since #1123 the start takes `groups`, a
+list** (the union of their members, each person once; none for the realm),
+and the GET takes the console's chooser parameters — `groupq`, `groupfrom`,
+and `groups` as ONE string, its names separated by `;` (a query value may
+hold no control character, so a line break is refused at the gate) — and answers `groupChooser`, so
+the page's search is this operation's and nothing console-only (rule 7).
+`tests/post_login_activities.js` B and
+`tests/protocol/sts_post_login_activities.js` drive it. **Since #1126 a
+running started activity also asks its people at sign-in**, so the start,
+pause, resume and end descriptions say both, and `activityEnabled` is the
+POLICY's own answer, no longer whether a start does anything.
+
+## An application's fine-grained authorization: seven acts and two reads (#564 P5, 2026-10-30)
+
+**Seven new actions on `POST /admin-api/applications/{action}`, and no new
+route**, because each mirrors a form on the application's page, which this
+route's `mirrors` already names (`POST /admin/applications`) — so the
+console resolves them, `closed_sets` registers them and the scope is the
+route's, `admin:write`, with Admin Write on the console:
+
+| Action | operationId | What it calls |
+|---|---|---|
+| `fga-enable` | `enableApplicationFga` | `fga_policies.enable()` |
+| `fga-disable` | `disableApplicationFga` | `fga_policies.disable()` |
+| `fga-create-policy` | `createApplicationFgaPolicy` | `fga_policies.ensure()` |
+| `fga-reset-policy` | `resetApplicationFgaPolicy` | `fga_policies.reset()`, with `confirm` |
+| `set-access-type-row` | `setApplicationAccessTypeRow` | the type's value, one `xacml` row added or replaced |
+| `remove-access-type-row` | `removeApplicationAccessTypeRow` | one row taken off |
+| `set-not-for-policy` | `setApplicationAccessTypeNotForPolicy` | the `notForPolicy` list replaced |
+
+**`fga-enable` answers `peps` (#1210)**: the realm's REMOTE_PEPS holders it
+granted AUTHZEN_PEPS and the application's scope (`granted`, each with
+`member` and `scope`), those that `held` both, and those that `failed`
+(`why`, `code` STS-FGA-0025), which never fail the act; its `message` says
+the same in English. Every enable re-runs it, so on an enforcing
+application it is the re-grant. `via` is `api` for the audit rows, the one
+door both the console and a script arrive through. `fga-create-policy`
+refuses at `xacml.maxApplicationPolicies` with STS-FGA-0024.
+
+`set-access-type` also takes `xacml` and `notForPolicy`, for a type written
+whole. The reads are `page.fga` on `GET /admin-api/applications?application=`
+and `applicationPolicies` on `GET /admin-api/xacml/policies`;
+`POST /admin-api/xacml/delete` refuses the policy an application still names
+(STS-FGA-0022).
+
+* **The handler's refusal is the better one, twice, so neither is an
+  `enum` or `required`.** `fga-reset-policy`'s `confirm` is published as the
+  listeners mapping's (`true`, `'true'`, `'on'`) and NOT required: an
+  unticked box posts nothing, and STS-FGA-0020 says what the reset would do
+  where the validator could only say a member is missing. The row's
+  `category`, `dataType` and `multiplicity` are plain strings: the grammar
+  takes a short name OR its XACML URI, and its refusal (STS-FGA-0023) names
+  the `field`, which the console draws under the box.
+* **The three mapping acts rewrite the type's ONE value through
+  `updateApplication()`**, the door `set-access-type` takes, after the
+  grammar's own `FgaMap.parseRow()` has read the row — so the reserved
+  identifiers are held at both, and an enforcing application's coverage
+  (STS-FGA-0019) keeps its own code through `refusedBy()`.
+* **The four FGA acts reach `xacml/fga_policies.ts` lazily** from
+  `admin-core/admin_actions.ts` (built at 23c, this file's actions at 18),
+  and keep its codes: `errorCodes.codeOf()` on its refusal, `errors: [why]`
+  for the console's strip, `failure` for a caller.
+* **The examples name `payments-api`**, `set-access-type`'s, so the replay
+  in `sts_admin_api_operations.js` meets the same application it declares a
+  type on.
+
+`tests/fga_console.js` holds the operations' presence and the acts.
+
+## Audit export (#641, 2026-11-01)
+
+`mgmt-api/audit_export_api.ts` spreads two operations onto the management
+API, tag Monitoring. `GET /admin-api/audit-export` (`getAuditExport`) is the
+general gate's GET, so `admin:read`. `POST /admin-api/audit-export/:action`
+(`add`, `update`, `remove`, `enable`, `disable`, `test`) is `admin:write`.
+There is no separate monitor scope: Admin Read and Admin Write are the two
+console roles. The handler calls `common/audit_export`'s `view` and `act`.
+An answer carries `tokenSet` and `secretHeaderSet` and never the sealed
+values. The OpenAPI example is a syslog destination
+(`{ id, type, host, transport }`) and names no token. `common/CLAUDE.md`
+(3da) is the delivery. The console page is `admin-ui/CLAUDE.md`.
+
+## A person's published DIDs: one read and one act (#1291, 2026-11-03)
+
+`GET /admin-api/users/published-dids?user=` (`mirrors: 'GET /admin/users'`,
+`admin_views.publishedDidsJson()`) lists the did:web this realm publishes for
+the person — id, DID, document address, custody, state, provenance, versions
+with their keys and authorizations, never a private key — and
+`POST /admin-api/users/deactivate-published-did` (`did`: the DID or its
+`rid`) is the console's Deactivate, one act (rule 7) in `admin_actions.ts`
+that `oid4vc/person_did.ts` decides and audits (`admin.did.deactivated`, the
+administrator as the actor). **An administrator never creates or changes
+one** — rcbj's design on #1291: that is the person's act — so there is no
+publish, add or rotate here, and `remove-self-issued-subject` on a published
+DID DEACTIVATES it rather than leaving a document published for a subject
+that is gone. The operations walk drives the act's example
+(`sts_admin_api_operations.js`): the example names a DID nobody holds, which
+is refused about the referent (`STS-VC-0172`).
+
+## Sign-in appearance (#717, 2026-11-04)
+
+`mgmt-api/branding_api.ts` spreads three rows onto the management API, tag
+Configuration, mirroring Server configuration → Sign-in appearance, each
+calling `common/branding.ts` in the AMBIENT realm:
+
+* `GET /admin-api/branding` (`getBranding`): `Branding.describe()`, plus
+  `realm`, `previewUrl` and `logo.src` under the realm's own prefix (the
+  core's addresses are unprefixed, which in a realm would name the default
+  realm's), and the page's `settings`.
+* `POST /admin-api/branding/logo` (`uploadBrandingLogo`): THE BODY IS THE
+  IMAGE, `handlerOwnsBody`, `requestBodyTypes` image/png, image/jpeg,
+  image/webp and application/octet-stream, `alt` a query parameter. ABOVE
+  `/branding/:action`, as `/risk/upload` is above `/risk/:action`. The body
+  parsers have already read it, bounded at 5 MB: octet-stream is the raw
+  parser's Buffer, an `image/*` type the text parser's string with the
+  BYTES kept in `req.rawBody` — the string is not the image. The
+  `branding.logoMaxBytes` cap (2 MiB at most) is then the core's.
+* `POST /admin-api/branding/:action`, `save` (`saveBranding`, the eight
+  realm-carried `branding.*` keys, `additionalProperties: false`, no colour
+  `pattern` so the core's `color` type is the one judge and its code is the
+  one recorded) and `remove-logo` (`removeBrandingLogo`). `action` and the
+  gate's `actor` are taken out of the body before `saveSettings()`, which
+  refuses any key that is not an appearance setting.
+
+**POST, NOT PUT AND DELETE.** #717's design named `PUT` and `DELETE` on
+`/branding/logo`. The route table registers GET and POST only, and so do the
+document builder, both walking jobs and the static console's form
+resolution (`web_forms.ts`); a third verb for one resource would have been
+the only one. The logo is an action of `/branding`, and the unknown-action
+sentence names all three (`save, logo, remove-logo`), risk's `upload`
+precedent, so `tests/protocol/admin_api.js` and
+`sts_admin_api_operations.js` see `logo`.
+
+`GET` is `admin:read`, every POST `admin:write`; nothing here is a security
+change and nothing is refused to a realm administrator in their own realm.
+A save is recorded as `/config/set` records one — no audit row of its own;
+the upload and the removal are audited by the core with the caller's name
+(`res.locals.apiCaller`). An unknown action and an unexpected failure are
+marked `STS-API-0038` (the configuration action code); the save and the
+logo carry the core's codes (`STS-AUTHN-0544`–`0548`, `0551`,
+`STS-CORE-0004`, `STS-CORE-0006`). The walk drives `logo` with a real PNG in
+its throwaway realm (`theSignInLogoRoundTrips()`), since a bytes body has no
+JSON example to replay. `tests/branding_api.js` holds the rows in process.
+
+## WHAT A REQUEST MAY NAME (#1476, rcbj 2026-11-09)
+
+**The table's `parameters` are the whole of what an operation takes.** The
+wrapper in `registerRoutes()` refuses, before the handler and after the
+enums, a query name the operation does not declare (`STS-API-0142`), a value
+its type does not hold (`STS-API-0143`, `ClosedSets.checkQueryDeclared()`) and
+a custom header (`STS-API-0144`, `common/request_headers.ts`, which carries the
+rule and the provider families). **Parsing is the handlers': `parseInt`-shaped
+integers, an empty value as absent, a repeat as each of its values, no range
+check, because the document clamps a page rather than refusing it.**
+
+**A handler reading a query name it does not declare is a bug now**, and
+#1476's audit was the reason this was safe to turn on: a static taint of every
+handler, a live read of `req.query` through a Proxy with a filled query, and
+every name the console and `tests/` send. Reads it found no meaning for were
+deliberately left undeclared: `ldap/directory`'s `format` (a debug line),
+`mfa`'s `protocol` and `kind` (`AdminViews.unfiltered()`, a shared reader
+that decides a cache), `passkey-report/export`'s `page`, `per` and `from`
+(`listOf()` parses them for the list and the export ignores them), and
+`format` on the management halves of the delegation drawings, which
+`consoleOnly()` refuses first.
+
+`declareImplicitParameters()` adds `DPoP` and `cell` to every row once, in
+`wire()`, reading them from the model's `x-iya-every-operation`
+(`openapi.every.json`; `models/CLAUDE.md`), where they are stated once. **`consoleOnly()` now runs before the query check**, so `format=svg`
+at a management address is still told where the drawing is rather than called
+an unknown name. `tests/admin_api_request_names.js` holds the rules, the
+wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
+`probeStrictRequests()` holds the running service.

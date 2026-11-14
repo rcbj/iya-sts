@@ -44,6 +44,10 @@ const { log, headersOf, bodyOf } = helpers;
 // realm. It requires config.js and the error-code table and nothing else here,
 // so it cannot join a cycle; helpers.js above has already pulled it in anyway.
 const realms = require('./realms');
+// WHICH HOSTED APPLICATION A PATH IS, AND WHICH LISTENERS ANSWER IT (#472):
+// `enterListener()`, below the realm. Two LEAVES.
+const hostedApplications = require('./hosted_applications');
+const listenerMap = require('./listener_map');
 // The service's own record of what it has done. Required HERE, and the position
 // is load-bearing twice over: the call log below is where the per-endpoint
 // statistics are collected, so this is a real dependency — and because every
@@ -59,6 +63,7 @@ const stats = require('./admin_stats');
 // requires this file — so the require closes no cycle and moves no route.
 // Below the realm module because the registry it reads is the ambient realm's.
 const corsPolicy = require('./cors');
+const cookieWire = require('./cookie_wire');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
 // call log below is the single place every answered request passes through, so
@@ -93,7 +98,18 @@ const requestPool = require('./request_pool');
 // request. Installed directly below the pool's middleware — see there.
 const clusterBarrier = require('../cluster/cluster_barrier');
 // --- express app -----------------------------------------------------------
-const app = express();
+// ADAPTED FOR HTTP/2 (#407), so that the same application answers a request
+// that arrived over HTTP/2 on the main port: plain express throws on the
+// first HTTP/2 body it reads. `common/http2_express.ts` gives THIS app its
+// own router `init`, which picks the request's and response's prototypes by
+// protocol (an HTTP/1.1 request gets exactly express's own), builds `host`
+// from `:authority`, and refuses a request whose two disagree. Nothing on the
+// express module is changed, so no other app in the process is touched.
+const app = require('./http2_express').adapt(express());
+// AND NO `X-Powered-By` (#407). Nothing here or in the suite reads it, the
+// debugger's own app has never sent one, and it tells every caller which
+// framework parses its requests.
+app.disable('x-powered-by');
 
 // ---------------------------------------------------------------------------
 // THE TRUST REALM. FIRST OF ALL, AND NOTHING MAY BE REGISTERED ABOVE IT.
@@ -141,6 +157,10 @@ const app = express();
 // function and applies it once more after catching up, to a request it had not
 // placed in a realm. It wraps `res.location` and `res.send` only on a match, so
 // asking twice cannot wrap them twice.
+// What a response carries before anything has decided what it is.
+const EARLY_POLICY = "default-src 'none'; frame-ancestors 'none'; " +
+                     "base-uri 'none'; object-src 'none'";
+
 /**
  * Enters the realm a request's path names: strips the `/realm/<id>` prefix,
  * runs the rest of the request in that realm, and puts the prefix back on
@@ -155,14 +175,23 @@ const app = express();
  */
 function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
+  // THE FIRST THING THAT HAPPENS TO A RESPONSE (ASVS 5.0.0 3.4.3, 3.4.4, 3.4.6).
+  // This is the first middleware, so a refusal written before the
+  // security-headers middleware below still carries them, and that middleware
+  // replaces them for everything else.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', EARLY_POLICY);
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
   // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
-  // 2026-10-02). `tls/realm_listeners.js` marks every socket it accepts with
-  // its realm; a path that is not under that realm's prefix — another
-  // realm's, or the default realm's unprefixed one — is not served there,
-  // so a realm's host and load balancer front that realm alone. The main port
-  // carries no mark and serves every realm as it always has.
+  // 2026-10-02; a realm's `listeners.realm` since #472). `tls/listeners.js`
+  // marks every socket a realm's listener accepts with its realm; a path that
+  // is not under that realm's prefix — another realm's, or the default
+  // realm's unprefixed one — is not served there, so a realm's host and load
+  // balancer front that realm alone. The main port and the service's own
+  // custom listeners carry no realm mark and serve every realm; WHICH
+  // APPLICATIONS each serves is `enterListener()`, below.
   const own = req.socket && req.socket.stsRealmListener;
   if (own && !(match && match.realm && match.realm.id === own)) {
     require('./error_codes').mark(res, 'STS-TLS-0041');
@@ -176,7 +205,7 @@ function enterRealm(req, res, next) {
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own
   // 404 rather than being refused here: `Cannot GET /realm/nope/oauth2/token`
-  // is how this repository's own tests/vendored/sts_metadata.js tells an
+  // is how this repository's own tests/protocol/sts_metadata.js tells an
   // unrouted path from an endpoint legitimately answering 404, and a friendlier
   // refusal for unknown realms would break that distinction for every path
   // under the segment. `GET /realms` is where somebody finds out what the
@@ -300,6 +329,138 @@ function enterMatchedRealm(req, res, next, match) {
 
 app.use(enterRealm);
 
+// HSTS AND COOKIE NAMES, in the process holding the socket, before anything
+// routes on a cookie's name (#1438, #1441): `common/cookie_wire.ts`.
+app.use(cookieWire.middleware());
+
+// ---------------------------------------------------------------------------
+// WHICH HOSTED APPLICATION A LISTENER ANSWERS (#472, 2026-10-07).
+//
+// An administrator maps each hosted application — the console, the
+// management API, the portal, the sign-in service, each protocol — to the
+// listeners that answer it (`common/listener_map.js`). A path of an
+// application that is not mapped to the listener the request arrived on is
+// refused here, with a 404 that names where the application is (STS-TLS-0047)
+// — in the front process, before anything is dispatched, and again in a
+// request worker, which is told the listener (`request_pool.js`). Placed
+// BELOW the realm, because the mapping is per realm and the path is matched
+// without its prefix; nothing else is above it.
+//
+// AND A LINK THAT CROSSES TO ANOTHER LISTENER IS MADE ABSOLUTE. Six modules
+// send a browser to `/authn/login` with a root-relative redirect, the console
+// to `/oauth2/authorize`, and pages link `/portal/...` and `/logout`: on one
+// listener those stay where they are, and once the application they name is
+// not on the listener the browser is on, they would land on this very
+// refusal. So, on the way out, a root-relative `Location`, and a root-relative
+// `href`, `action`, `formaction` or `src` in an HTML page, whose application
+// is not on THIS listener, is rewritten to that application's advertised
+// base (`helpers.urlOf()`); one whose application is here is left alone, for
+// the realm middleware above to prefix as it always did. JSON, JWTs and XML
+// are never rewritten: a URL inside a signed document is built on the right
+// base where it is built. A service with no custom listener skips all of it.
+// ---------------------------------------------------------------------------
+function enterListener(req, res, next) {
+  log.debug("Entering enterListener().");
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving enterListener(). No custom listener.");
+    next();
+    return;
+  }
+  const at = listenerMap.listenerOf(req);
+  const path = String(req.url || '').split('?')[0];
+  const application = hostedApplications.classify(path);
+  if (!listenerMap.admits(at, application)) {
+    let where = '';
+    try {
+      where = helpers.urlOf(req, path);
+    } catch (e) {
+      log.debug("Caught in enterListener(): " + ((e && e.message) || e));
+    }
+    require('./error_codes').mark(res, 'STS-TLS-0047');
+    res.status(404).type('text/plain')
+      .send('Not found: ' + hostedApplications.labelOf(application) +
+            ' is not served on this listener ("' + at + '").' +
+            (where ? ' It is at ' + where + '.' : ''));
+    log.debug("Leaving enterListener(). Not on this listener.");
+    return;
+  }
+  // Whether this listener answers an application, asked once per application
+  // per response: a console page carries hundreds of links to a handful.
+  // `answers()` and `away()` are a HOT PATH — called for every link of every
+  // page — so neither has an Entering/Leaving pair, which would drown the
+  // log around a table lookup; `enterListener()` brackets them.
+  const here = {};
+  const answers = function (target) {
+    if (!Object.prototype.hasOwnProperty.call(here, target)) {
+      here[target] = listenerMap.admits(at, target);
+    }
+    return here[target];
+  };
+  // The absolute address of a root-relative URL whose application is not on
+  // this listener; the URL unchanged otherwise.
+  const away = function (url) {
+    if (typeof url !== 'string' || url.charAt(0) !== '/' ||
+        url.charAt(1) === '/') {
+      return url;
+    }
+    const cut = url.search(/[?#]/);
+    const own = cut < 0 ? url : url.slice(0, cut);
+    const rest = cut < 0 ? '' : url.slice(cut);
+    const matched = realms.matchPath(own);
+    const bare = matched ? matched.rest : own;
+    const target = hostedApplications.classify(bare);
+    if (!target || target === hostedApplications.EVERYWHERE ||
+        answers(target)) {
+      return url;
+    }
+    return helpers.urlOf(req, bare) + rest;
+  };
+  const location = res.location;
+  res.location = function (url) {
+    log.debug("Entering location(). (listener)");
+    log.debug("Leaving location(). (listener)");
+    return location.call(res, away(url));
+  };
+  const send = res.send;
+  res.send = function (body) {
+    log.debug("Entering send(). (listener)");
+    const type = String(res.get('Content-Type') || '');
+    if (typeof body === 'string' && /html/i.test(type)) {
+      arguments[0] = body.replace(
+        /\b(href|action|formaction|src)="(\/(?!\/)[^"]*)"/g,
+        function (whole, attribute, url) {
+          return attribute + '="' + away(url) + '"';
+        });
+    }
+    log.debug("Leaving send(). (listener)");
+    return send.apply(res, arguments);
+  };
+  log.debug("Leaving enterListener().");
+  next();
+}
+
+app.use(enterListener);
+
+// A CDN EDGE WITHOUT THIS DEPLOYMENT'S SECRET (#1336, common/client_address.js)
+// is answered here, in the front process and before dispatch, so it costs no
+// worker and reaches nothing. Below the realm middleware, which nothing may be
+// registered above. Above the security headers, so it sets its own policy.
+app.use(function refuseForeignEdge(req, res, next) {
+  log.debug("Entering refuseForeignEdge().");
+  if (!require('./client_address').edgeRefused(req)) {
+    log.debug("Leaving refuseForeignEdge().");
+    return next();
+  }
+  require('./error_codes').mark(res, 'STS-CORE-0165');
+  res.status(403).type('text/plain').set({
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy':
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+  });
+  log.debug("Leaving refuseForeignEdge().");
+  return res.send('Forbidden\n');
+});
+
 // ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
 // cannot be handed one: the ORIGIN of the `x5u` address a signed token carries
@@ -314,12 +475,60 @@ app.use(enterRealm);
 // refused sign-in, a consent, a sign-out — carries the client's address,
 // though almost none of the code that writes one was handed the request.
 // `common/audit.js` resolves the address from it only when a row is written.
+//
+// AND A CONSOLE REQUEST'S DIRECTORY BUDGET (#359). The synchronous bridge
+// holds this process's event loop for every question, and a page of many
+// questions held a surface worker for their sum. The budget is the most
+// one `/admin` or `/admin-api` request may wait in all. It is entered
+// here, below the realm middleware, and only for those paths: SCIM and an
+// LDAP operation keep the per-question bound and no page budget. The
+// settings and the bridge are required inside the helpers, so this
+// middleware does not move a load.
+/**
+ * Whether `req` is a console or management-API request, after the realm
+ * prefix has been stripped.
+ *
+ * @param req - the request
+ * @returns true for `/admin` and `/admin-api`
+ */
+function consoleRequest(req) {
+  log.debug("Entering consoleRequest().");
+  const path = String((req && req.url) || '').split('?')[0];
+  const onConsole = path === '/admin' || path.indexOf('/admin/') === 0 ||
+    path === '/admin-api' || path.indexOf('/admin-api/') === 0;
+  log.debug("Leaving consoleRequest().");
+  return onConsole;
+}
+
+/**
+ * The per-request directory budget, clamped to its setting's range.
+ *
+ * @returns the budget, in milliseconds
+ */
+function directoryBudgetMs() {
+  log.debug("Entering directoryBudgetMs().");
+  const config = require('./config');
+  const n = Number(config.value('ldap.workerDirectoryBudgetMs'));
+  const ms = isFinite(n) && n >= 10 ? Math.min(n, 20000) : 5000;
+  log.debug("Leaving directoryBudgetMs().");
+  return ms;
+}
+
 app.use(function (req, res, next) {
   log.debug("Entering the ambient-request middleware.");
   log.debug("Leaving the ambient-request middleware.");
-  return certificateHeader.enterRequest(req, function () {
-    return audit.withSource({ req: req }, next);
-  });
+  const proceed = function () {
+    return certificateHeader.enterRequest(req, function () {
+      return audit.withSource({ req: req }, next);
+    });
+  };
+  if (!consoleRequest(req)) {
+    return proceed();
+  }
+  // The response ends the budget: a timer or job this request starts and
+  // that outlives it asks with none (`common/sync_query.ts`).
+  return require('./sync_query').runWithBudget(directoryBudgetMs(),
+                                                proceed, res);
 });
 
 // The rewrite itself. A function rather than an inline regex so that the ONE
@@ -447,6 +656,8 @@ app.use(function awaitResumedChainLazily(req, res, next) {
   resumedChainWait(req, res, next);
 });
 
+app.use(require('./request_budget').middleware());
+app.use(require('./protocol_repeats').middleware());
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -577,7 +788,8 @@ const CSP_DIRECTIVES = {
   'style-src': "'unsafe-inline'",
   'img-src': "'self' data:",
   'base-uri': "'none'",
-  'frame-ancestors': "'none'"
+  'frame-ancestors': "'none'",
+  'object-src': "'none'"
 };
 
 // ---------------------------------------------------------------------------
@@ -637,6 +849,42 @@ function contentSecurityPolicy(overrides) {
 const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 
 // ---------------------------------------------------------------------------
+// A RESPONSE THAT IS NOT A PAGE NEEDS NO STYLE AND NO IMAGE (Qualys QID
+// 150207, 2026-11-10). The base policy keeps `style-src 'unsafe-inline'` and
+// `img-src data:` for the server-drawn pages that carry an inline <style> or
+// a QR code, and until now a JSON answer, a metadata document or a plain-text
+// refusal carried them too, where they permit nothing anybody wanted. So at
+// the flush (`writeHead()` below) a response still holding the base policy
+// whose type is JSON, XML or plain text gets this one instead. An SVG keeps
+// the base policy: it is XML, and it may style itself. A route that set its
+// own policy is left alone.
+// ---------------------------------------------------------------------------
+const NOT_A_PAGE_POLICY = contentSecurityPolicy({
+  'style-src': null,
+  'img-src': null
+});
+const NOT_A_PAGE_TYPES =
+  /^\s*(?:application\/(?:[^\s;]+\+)?(?:json|xml)|text\/(?:plain|xml))\s*(?:;|$)/i;
+
+// ---------------------------------------------------------------------------
+// THE BROWSER FEATURES A PAGE OF THIS SERVICE MAY USE (Qualys QID 150248,
+// 2026-11-10): WebAuthn (the sign-in, the portal's passkeys, the console's
+// re-authentication), the Digital Credentials API (the wallet sign-in), the
+// clipboard (the console's copy buttons) and full screen, each for this
+// origin only, and nothing else for anybody. A page this service frames
+// (the OP iframe) inherits the same list. The geolocation page is a map drawn
+// on the server and never asks the browser where it is.
+// ---------------------------------------------------------------------------
+const PERMISSIONS_POLICY = [
+  'publickey-credentials-get=(self)', 'publickey-credentials-create=(self)',
+  'digital-credentials-get=(self)', 'clipboard-write=(self)',
+  'fullscreen=(self)', 'camera=()', 'microphone=()', 'geolocation=()',
+  'payment=()', 'usb=()', 'serial=()', 'hid=()', 'bluetooth=()', 'midi=()',
+  'display-capture=()', 'accelerometer=()', 'gyroscope=()',
+  'magnetometer=()', 'browsing-topics=()'
+].join(', ');
+
+// ---------------------------------------------------------------------------
 // THE ONE PAGE THAT MAY BE FRAMED, AND ONLY BY NAMED ORIGINS (#121).
 //
 // OpenID Connect Session Management 1.0's OP iframe exists to be loaded in a
@@ -649,14 +897,51 @@ const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 // `contentSecurityPolicy()` above keeps its rule unchanged: this is a second,
 // named door, so that a relaxation cannot grow into a framing permission by
 // accident.
+//
+// **ITS `script-src` NAMES SCRIPTS EXACTLY, OR NOT AT ALL** (#1297). The OP
+// iframe carries its script inline under the SHA-256 of that text (rcbj's
+// option A, `oauth-oidc/CLAUDE.md` 3ax), so this door must take a hash
+// source — and a framed page is exactly where `'unsafe-inline'` would hurt
+// most. So the only tokens it passes in `script-src` are `'none'`, `'self'`
+// and `'sha256-…'` / `'sha384-…'` / `'sha512-…'`; anything else
+// (`'unsafe-inline'`, `'unsafe-eval'`, `*`, a host, a scheme, a nonce) is
+// dropped, and nothing left is `'none'`. Nothing calls it with one today;
+// the rule is here so nothing can.
 // ---------------------------------------------------------------------------
+const FRAMED_SCRIPT_SOURCE =
+  /^'(?:none|self|sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2})'$/;
+
+/**
+ * Narrows a `script-src` value to the sources that name a script exactly.
+ *
+ * @param value - the value asked for, or null/undefined for the base's
+ * @returns the value with every other token dropped, `'none'` when empty
+ */
+function exactScriptSources(value) {
+  log.debug("Entering exactScriptSources().");
+  const kept = String(value === null || value === undefined
+    ? CSP_DIRECTIVES['script-src'] : value)
+    .split(/\s+/)
+    .filter(function (one) {
+      return FRAMED_SCRIPT_SOURCE.test(one);
+    });
+  // `'none'` beside a source is meaningless (CSP3 section 2.3.1), so it
+  // goes when anything else is kept.
+  const sources = kept.filter(function (one) {
+    return one !== "'none'";
+  });
+  log.debug("Leaving exactScriptSources(). " + sources.length + " kept.");
+  return sources.length ? sources.join(' ') : "'none'";
+}
+
 /**
  * Builds the policy for the one page that may be framed (the OpenID Connect
  * Session Management OP iframe), with `frame-ancestors` narrowed to named
  * origins.
  *
  * Anything that is not an http or https origin is dropped, and an empty list is
- * `'none'`.
+ * `'none'`. `script-src` keeps only `'self'` and hash sources (#1297): never
+ * `'unsafe-inline'`.
  *
  * @param origins - the origins that may frame the page
  * @param overrides - directive names to values, as for
@@ -672,6 +957,7 @@ function framedContentSecurityPolicy(origins, overrides) {
     });
   const merged = Object.assign({}, CSP_DIRECTIVES, overrides || {});
   merged['base-uri'] = CSP_DIRECTIVES['base-uri'];
+  merged['script-src'] = exactScriptSources(merged['script-src']);
   merged['frame-ancestors'] = allowed.length ? allowed.join(' ')
                                              : CSP_DIRECTIVES['frame-ancestors'];
   log.debug("Leaving framedContentSecurityPolicy(). " + allowed.length +
@@ -683,12 +969,19 @@ function framedContentSecurityPolicy(origins, overrides) {
   }).join('; ');
 }
 
+// THE TYPES ASVS 5.0.0 4.1.1 NAMES (#1439): `text/*`, `application/xml` and
+// `*/*+xml`. JSON is left out on purpose: RFC 8259 section 11 registers no
+// charset parameter for it, and `application/jrd+json` is a JSON type.
+const CHARSET_TYPES =
+  /^\s*(?:text\/[^\s;]+|application\/xml|[^\s;/]+\/[^\s;]+\+xml)\s*(?:;|$)/i;
+
 app.use(function (req, res, next) {
   log.debug("Entering the security-headers middleware.");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
   // ---------------------------------------------------------------------
   // NO RESPONSE LEAVES THIS SERVICE WITHOUT `frame-ancestors`, INCLUDING THE
   // ONES THIS SERVICE DID NOT WRITE.
@@ -713,7 +1006,7 @@ app.use(function (req, res, next) {
   // Wrapping writeHead rather than adding a final 404 handler is deliberate
   // too. A handler would have to reproduce Express's body byte for byte:
   // `Cannot GET /path` is how this repository's own
-  // tests/vendored/sts_metadata.js tells an unrouted path from an endpoint
+  // tests/protocol/sts_metadata.js tells an unrouted path from an endpoint
   // legitimately answering 404, and a prettier 404 here would silently break
   // that distinction.
   // ---------------------------------------------------------------------
@@ -724,6 +1017,33 @@ app.use(function (req, res, next) {
     if (current.indexOf('frame-ancestors') < 0) {
       res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
       res.setHeader('X-Frame-Options', 'DENY');
+    }
+    // NOT A PAGE (`NOT_A_PAGE_POLICY` above): read after the line above, so
+    // a policy just put back is narrowed too.
+    const shown = String(res.getHeader('Content-Type') || '');
+    if (String(res.getHeader('Content-Security-Policy') || '') ===
+        CONTENT_SECURITY_POLICY && NOT_A_PAGE_TYPES.test(shown)) {
+      res.setHeader('Content-Security-Policy', NOT_A_PAGE_POLICY);
+    }
+    // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
+    const location = res.getHeader('Location');
+    if (typeof location === 'string' && location.indexOf('?') > 0) {
+      const authn = require('../authn/authn');
+      const stepAddress = require('./step_address');
+      // SPNEGO's has no script to read a fragment (#1487).
+      const spnego = stepAddress.spnegoStep(location);
+      if (spnego) {
+        res.append('Set-Cookie', stepAddress.stepCookie(spnego.id));
+        res.setHeader('Location', spnego.location);
+      } else {
+        res.setHeader('Location', stepAddress.hide(location,
+          authn.stepApplication));
+      }
+    }
+    const type = res.getHeader('Content-Type');
+    if (typeof type === 'string' && CHARSET_TYPES.test(type) &&
+        !/;\s*charset=/i.test(type)) {
+      res.setHeader('Content-Type', type + '; charset=utf-8');
     }
     log.debug("Leaving writeHead().");
     return writeHead.apply(res, arguments);
@@ -944,7 +1264,8 @@ app.use(function (err, req, res, next) {
   }
   audit.failure(code, {
     protocol: 'HTTP', channel: 'http',
-    target: String(req.originalUrl || req.url || '').split('?')[0],
+    target: audit.redactedPath(String(req.originalUrl || req.url || '')
+      .split('?')[0]),
     summary: 'The request body of ' + req.method + ' was refused before any ' +
              'endpoint saw it (' + (type || 'unclassified') + ', HTTP ' +
              ((err && (err.status || err.statusCode)) || 500) + ').',
@@ -969,15 +1290,18 @@ app.use(function (err, req, res, next) {
 app.use(function (req, res, next) {
   log.debug("Entering the call-log middleware.");
   const started = Date.now();
+  // A capability in the path (#571's `/authn-api` ids) is not logged.
   const request = {
-    path: req.originalUrl,
+    path: audit.redactedPath(String(req.originalUrl || '')),
     method: req.method,
-    query: req.query,
+    // And the capabilities in its query (#574): the pending sign-in, the
+    // step, the wallet's transaction.
+    query: audit.redactedQuery(req.query),
     headers: headersOf(req.headers),
     body: bodyOf(req.body)
   };
   log.debug({ request: request },
-            'Request: ' + req.method + ' ' + req.originalUrl);
+            'Request: ' + req.method + ' ' + request.path);
 
   let responseBody = '';
   const send = res.send;
@@ -1034,7 +1358,8 @@ app.use(function (req, res, next) {
     const matchedPath = (req.route && req.route.path) || '';
     stats.recordCall({
       method: req.method,
-      path: matchedPath || String(req.originalUrl || '/').split('?')[0],
+      path: matchedPath ||
+            audit.redactedPath(String(req.originalUrl || '/').split('?')[0]),
       matched: !!matchedPath,
       status: res.statusCode,
       durationMs: Date.now() - started
@@ -1097,14 +1422,14 @@ app.use(function (req, res, next) {
   // ---------------------------------------------------------------------
   res.on('finish', realms.bind(req.realm, function () {
     recordTheCall();
-    log.debug({ response: { path: req.originalUrl,
+    log.debug({ response: { path: request.path,
                             method: req.method,
                             status: res.statusCode,
                             durationMs: Date.now() - started,
                             headers: headersOf(res.getHeaders()),
                             body: responseBody } },
               'Response: ' + res.statusCode + ' ' + req.method + ' ' +
-              req.originalUrl +
+              request.path +
               ' in ' + (Date.now() - started) + 'ms');
   }));
   log.debug("Leaving the call-log middleware. The call will be recorded " +

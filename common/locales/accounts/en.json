@@ -1,0 +1,7 @@
+{
+  "summary": "Accounts",
+  "title": "The accounts signed in in this browser",
+  "listLabel": "Signed in in this browser",
+  "another": "Sign in with another account",
+  "anotherTitle": "Opens the user portal and asks you to sign in, adding an account to this browser. The accounts already signed in stay signed in."
+}

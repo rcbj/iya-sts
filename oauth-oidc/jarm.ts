@@ -208,7 +208,7 @@ class Jarm {
                'not be used under FAPI 1.0 Advanced (Part 2 section 8.6.1).' };
     }
     const enc = alg ? (String(doc.authorization_encrypted_response_enc || '')
-      .trim() || DEFAULT_ENC) : '';
+      .trim() || applications.defaultJweEnc()) : '';
     log.debug("Leaving Jarm.protectionFor(). " + signAlg +
               (alg ? ', ' + alg + ' ' + enc : ''));
     return { ok: true, signAlg: signAlg, alg: alg, enc: enc };

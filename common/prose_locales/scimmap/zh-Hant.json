@@ -1,0 +1,42 @@
+{
+  "scimmap.user.userName.note": {
+    "en": "e802eafbefe0f779",
+    "text": "SCIM 唯一性約束。它是自動建立之項目的 RDN，因此對於本服務驗證過的任何人，它也是其登入名稱——但它「不是」SCIM id，SCIM id 是項目的 entryUUID。"
+  },
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "佈建用戶端自己對此人的識別碼。原樣儲存，此處沒有任何元件讀取它。"
+  },
+  "scimmap.user.active.note": {
+    "en": "eef190d9fd08aa38",
+    "text": "「停用帳戶」。false 會寫入管理鎖定 000001010000Z，並結束此人持有的一切；此後每個入口都會拒絕此人。true 會移除鎖定。未傳送：不變。"
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": {
+    "en": "c77936e2f9b505c6",
+    "text": "在目錄中是 DN，在 SCIM 中是 id，自 id 成為 entryUUID 以來（2026-09-14）由 SCIM 處理常式雙向轉換。不指向任何項目的值會依原樣保存。"
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "哪些聯盟夥伴的主體可讓此人登入，每項為 { relationship, issuer, subject }——傳入時 issuer 可省略，即該關係的 fedPeer。「未傳送」：不變，因此對此擴充一無所知的佈建用戶端不會因省略它而解除任何人的連結。已傳送，即使為空：取代，而移除的每個連結都會結束該夥伴讓此人登入的工作階段。另一人已帶有的連結會以 409 拒絕。"
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "「唯讀」，依 RFC 7643 section 4.1.2 的要求。成員資格是「群組」項目上的事實，因此透過 Group 資源變更，絕不透過 User 資源。由 ldap_server.js 的 groupsOfUser() 解析，它與 groups 宣告所讀取的是同一個函式——因此權杖與 SCIM 資源對誰屬於哪個群組不可能有不同說法。"
+  },
+  "scimmap.group.members.note": {
+    "en": "e791c95075db5178",
+    "text": "讀取時 member、uniqueMember 與 memberUid 一視同仁地解析；寫入時將新值放入 `member`，因為 SCIM 成員 id 是 DN。懸空的成員——指向未儲存任何內容之 DN 者——仍會以成員傳回，因為群組這麼說就是事實，而此目錄刻意不做參照完整性檢查。"
+  },
+  "scimmap.schema.plain": {
+    "en": "9eb4e31a2b06f959",
+    "text": "本服務自有（無標準類型）"
+  },
+  "scimmap.schema.claims": {
+    "en": "1af3e6d95ddf4877",
+    "text": "本服務自有（#128；無標準類型）"
+  },
+  "scimmap.schema.federation": {
+    "en": "e45ae284f8f1439e",
+    "text": "本服務自有（#109；無標準類型）"
+  }
+}

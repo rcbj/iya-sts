@@ -88,10 +88,16 @@ class K8sWorkloadAttestor {
   readonly type = 'k8s';
   /**
    * One sentence for `GET /spiffe` and the console: what this attestor
-   * verifies.
+   * verifies. STATIC as well (#543), so that `spiffe_server.ts`'s
+   * `prose()` reads it without building an attestor.
    */
-  readonly verifies = 'The Kubernetes pod and container the caller\'s ' +
+  static readonly VERIFIES =
+    'The Kubernetes pod and container the caller\'s ' +
     'process runs in, as the node\'s kubelet reports them.';
+  /**
+   * The same sentence, on the instance the attestation table holds.
+   */
+  readonly verifies = K8sWorkloadAttestor.VERIFIES;
 
   /**
    * Builds the attestor over its dependencies.
@@ -135,6 +141,7 @@ class K8sWorkloadAttestor {
     const { log, fs } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.readOptional(). " + path);
     try {
+      require('../common/outbound_tls').assertNamedFile(path);
       const text = fs.readFileSync(path, 'utf8');
       log.debug("Leaving K8sWorkloadAttestor.readOptional().");
       return text;

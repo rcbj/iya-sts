@@ -117,7 +117,21 @@ const CATALOGUE: Record<string, Json> = {
     latestOnly: true,
     what: 'Every FIDO-certified authenticator model and its status reports. ' +
           'A security key whose model the metadata reports REVOKED or ' +
-          'compromised is a risk signal; the rest is shown, not scored.' }
+          'compromised is a risk signal; the rest is shown, not scored.' },
+  // GOOGLE'S ANDROID KEY ATTESTATION STATUS LIST (#256): which attestation
+  // certificates Google has REVOKED or SUSPENDED, by serial number. An
+  // Android chain is looked up certificate by certificate
+  // (`lookupAttestationSerials()`, asked by `common/attestation_revocation.ts`)
+  // at a device's registration and at a WebAuthn `android-key` statement.
+  // Kept as keyed rows in the table the MDS3 entries use (`rowKind`), the
+  // latest list only; stale after `devices.androidStatusStaleHours`.
+  'android.attestation-status': { kind: 'android-status', rowKind: 'fido',
+    title: 'Android key attestation status (Google)', stale: 'android',
+    formats: ['android-attestation-status-json'],
+    provider: 'google-android-attestation', latestOnly: true,
+    what: 'The Android attestation certificates Google has revoked or ' +
+          'suspended — a leaked batch key, a compromised intermediate. An ' +
+          'Android chain naming one is not attested.' }
 };
 
 // WHO A DATASET COMES FROM, AND ON WHAT TERMS, is `risk_terms.ts`'s: the
@@ -134,6 +148,18 @@ const PROVIDERS = riskTerms.PROVIDERS;
 // otherwise.
 // ---------------------------------------------------------------------------
 /** The formats a dataset file may be in, and whose data each carries. */
+// The datasets this service downloads itself, and how (#1157's Reload): the
+// setting holding the address, the setting capping the body, what is asked
+// for, and whether the text is trimmed — as the scheduled job does, so a
+// reload's digest is comparable with the one the job recorded.
+const DOWNLOADS: Record<string, Json> = {
+  'android.attestation-status': { setting: 'devices.androidStatusUrl',
+    cap: 'devices.androidStatusMaxBytes', accept: 'application/json',
+    trim: false },
+  'fido.mds3': { setting: 'risk.mdsUrl', cap: 'risk.mdsMaxBytes',
+    accept: 'application/jwt, application/octet-stream, */*', trim: true }
+};
+
 const FORMATS: Record<string, Json> = {
   'dbip-city-csv': { provider: 'dbip-lite',
     what: 'DB-IP Lite "IP to City": start, end, continent, country, region, ' +
@@ -148,6 +174,11 @@ const FORMATS: Record<string, Json> = {
   'fido-mds3-jwt': { provider: 'fido-mds3',
     what: 'The MDS3 BLOB exactly as FIDO publishes it: one signed JWT, whose ' +
           'x5c chain must end at the FIDO root.' },
+  'android-attestation-status-json': { provider: 'google-android-attestation',
+    what: 'Google\'s attestation status list as it publishes it: a JSON ' +
+          'object whose `entries` are keyed by a certificate\'s serial ' +
+          'number in lower-case hexadecimal, each with a `status` ' +
+          '(REVOKED or SUSPENDED) and a `reason`.' },
   'ip-list': { provider: '',
     what: 'One address, CIDR block or "first - last" range per line; text ' +
           'after # or ; is a comment. The Tor Project\'s exit list and ' +
@@ -171,6 +202,8 @@ const RETENTION_JOB = 'risk.retention';
 // its own nextUpdate.
 /** The id of the FIDO MDS3 download job. */
 const MDS_JOB = 'risk.mds-refresh';
+// BLOB entries made rows between two turns of the loop (#704; importMds()).
+const MDS_ENTRY_SLICE = 100;
 const MDS_OVERDUE_EVERY_MS = 60 * 60 * 1000;
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
 // A VERSION LEFT `loading` BY A PROCESS THAT STOPPED (#215): marked refused
@@ -598,6 +631,24 @@ class RiskDatasets {
   // The question above, asked ahead of an upload (#215): null when the
   // import may begin, the refusal otherwise. Records nothing but the
   // refusal's audit row.
+  // A VERSION REMOVED IS UPLOADED AGAIN ONLY BY AN ADMINISTRATOR (#1155,
+  // rcbj): the console's upload and paste and `/admin-api/risk/import` and
+  // `/upload` pass `reloadDeleted`. The scheduled downloads, the dataset
+  // directory and the install-time loader do not, so a version an
+  // administrator removed is not brought back behind their back.
+  /**
+   * The `beginVersion()` options an import asks for.
+   *
+   * @param o - the import's fields
+   * @returns `{ reloadDeleted }`
+   */
+  private reloadOf(o: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.reloadOf().");
+    log.debug("Leaving RiskDatasets.reloadOf().");
+    return { reloadDeleted: o.reloadDeleted === true };
+  }
+
   /**
    * Asks, ahead of an upload, whether an import may begin: the dataset,
    * format, realm, provider and accepted terms.
@@ -687,7 +738,11 @@ class RiskDatasets {
       log.debug("Leaving RiskDatasets.importVersion(). An MDS3 BLOB.");
       return this.importMds(o, meta);
     }
-    const began = await store.beginVersion(meta);
+    if (entry.kind === 'android-status') {
+      log.debug("Leaving RiskDatasets.importVersion(). Android status.");
+      return this.importAndroidStatus(o, meta);
+    }
+    const began = await store.beginVersion(meta, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importVersion(). Already recorded.");
       return { ok: true, duplicate: true, dataset: o.dataset, version: version,
@@ -769,6 +824,19 @@ class RiskDatasets {
       return this.refused('STS-RISK-0004', 'No line of the file was a row of ' +
                           o.format + ' (' + skipped + ' line(s) were not).',
                           o, version);
+    }
+    // A FILE OF THE WRONG KIND (#1480, ASVS 5.0.0 5.2.2): one line that
+    // happens to parse is not a file of this format.
+    const tolerated = Number(config.value('risk.maxSkippedLinesPercent'));
+    if (skipped * 100 > tolerated * (rows + skipped)) {
+      const why = skipped + ' of ' + (rows + skipped) + ' lines are not rows ' +
+        'of ' + o.format + ', more than risk.maxSkippedLinesPercent allows';
+      await this.dropRows(entry.kind, realm, o.dataset, version);
+      await store.finishVersion(realm, o.dataset, version, {
+        state: 'refused', rowCount: rows, loadedAt: now(), refusal: why,
+        errorCode: 'STS-RISK-0056', parameters: counted });
+      log.debug("Leaving RiskDatasets.importVersion(). Not this format.");
+      return this.refused('STS-RISK-0056', why + '.', o, version);
     }
     const shrink = await this.shrinkRefusal(realm, o.dataset, rows);
     if (shrink) {
@@ -887,7 +955,8 @@ class RiskDatasets {
     for (const v of gone) {
       const entry = CATALOGUE[v.dataset];
       if (entry) {
-        rows += await this.dropRows(entry.kind, String(v.realm || ''),
+        rows += await this.dropRows(RiskDatasets.rowKindOf(entry),
+                                    String(v.realm || ''),
                                     v.dataset, v.version);
       }
       log.warn(errorCodes.tag('STS-RISK-0035') + 'risk: ' + v.dataset +
@@ -1019,7 +1088,7 @@ class RiskDatasets {
         legalHeader: String(payload.legalHeader || '').slice(0, 500) },
         overridden ? { signatureOverride: overridden.slice(0, 500),
                        signatureOverrideBy: String(o.actor || '') } : {}) });
-    const began = await store.beginVersion(staged);
+    const began = await store.beginVersion(staged, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importMds(). Already recorded.");
       return { ok: true, duplicate: true, dataset: staged.dataset,
@@ -1028,12 +1097,20 @@ class RiskDatasets {
     }
     this.begun(o, { dataset: staged.dataset, realm: '',
                     version: staged.version, sha256: meta.sha256 });
+    // A turn of the loop every MDS_ENTRY_SLICE entries (#704): each entry's
+    // rows are built from its whole metadata statement.
     const rows: Json[] = [];
-    payload.entries.forEach(function (entry: Json): void {
-      RiskDatasets.mdsRowsOf(entry).forEach(function (row: Json): void {
+    const listed: Json[] = payload.entries;
+    for (let i = 0; i < listed.length; i++) {
+      if (i > 0 && i % MDS_ENTRY_SLICE === 0) {
+        await new Promise(function (resolve: (v?: unknown) => void): void {
+          setImmediate(resolve);
+        });
+      }
+      RiskDatasets.mdsRowsOf(listed[i]).forEach(function (row: Json): void {
         rows.push(row);
       });
-    });
+    }
     let written = 0;
     for (let i = 0; i < rows.length; i += BATCH_ROWS) {
       written += await store.insertRows('fido', '', staged.dataset,
@@ -1103,6 +1180,343 @@ class RiskDatasets {
                       (activated ? ', now active' : '') + '.' };
   }
 
+  // The kind of row a dataset is stored as: its own kind, or `rowKind`
+  // where it is kept in another kind's table (#256's status list, in the
+  // keyed table the MDS3 entries use).
+  /**
+   * Returns the kind of row a dataset is stored as.
+   *
+   * @param entry - the catalogue entry
+   * @returns `rowKind` where set, else the entry's kind
+   */
+  static rowKindOf(entry: Json): string {
+    log.debug("Entering RiskDatasets.rowKindOf().");
+    log.debug("Leaving RiskDatasets.rowKindOf().");
+    return String((entry && (entry.rowKind || entry.kind)) || '');
+  }
+
+  // A certificate serial as the list keys it (#256): lower-case hexadecimal
+  // with no leading zeros, whichever way it was written. `pki.js` reads a
+  // certificate's serial in the same form (`certificateSerialHex()`).
+  /**
+   * Normalises a certificate serial number as Google's list keys it:
+   * lower-case hexadecimal, no leading zeros, no separators.
+   *
+   * @param serial - the serial, hex, with or without colons or `0x`
+   * @returns the normalised serial, or '' for one that is not hex
+   */
+  static androidSerialKey(serial: unknown): string {
+    log.debug("Entering RiskDatasets.androidSerialKey().");
+    const hex = String(serial == null ? '' : serial).trim().toLowerCase()
+      .replace(/^0x/, '').replace(/[:\s]/g, '');
+    if (!/^[0-9a-f]+$/.test(hex)) {
+      log.debug("Leaving RiskDatasets.androidSerialKey(). Not hex.");
+      return '';
+    }
+    const out = hex.replace(/^0+(?=.)/, '');
+    log.debug("Leaving RiskDatasets.androidSerialKey().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // GOOGLE'S STATUS LIST AS ROWS (#256): one per entry, keyed by the
+  // normalised serial, its status the list's (`REVOKED` or `SUSPENDED`), and
+  // `compromised` where the reason says a key or a CA was compromised. The
+  // whole entry is kept as its one status report.
+  // -------------------------------------------------------------------------
+  /**
+   * Turns Google's attestation status list into rows, one per listed
+   * certificate.
+   *
+   * @param list - the parsed list: `{ entries: { serial: entry } }`
+   * @returns the rows, or null for a document that is not such a list
+   */
+  static androidStatusRowsOf(list: Json): Json[] | null {
+    log.debug("Entering RiskDatasets.androidStatusRowsOf().");
+    const entries = list && typeof list === 'object' && !Array.isArray(list)
+      ? list.entries : null;
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) {
+      log.debug("Leaving RiskDatasets.androidStatusRowsOf(). Not a list.");
+      return null;
+    }
+    const rows: Json[] = [];
+    Object.keys(entries).forEach(function (serial: string): void {
+      const key = RiskDatasets.androidSerialKey(serial);
+      const e = entries[serial] || {};
+      const status = String(e.status || '').toUpperCase();
+      if (!key || ['REVOKED', 'SUSPENDED'].indexOf(status) < 0) {
+        return;
+      }
+      const reason = String(e.reason || 'UNSPECIFIED').toUpperCase();
+      rows.push({
+        keyKind: 'android-serial', key: key,
+        description: String(e.comment || '').slice(0, 500),
+        latestStatus: status,
+        latestStatusAt: Date.parse(String(e.expires || '')) || 0,
+        compromised: ['KEY_COMPROMISE', 'CA_COMPROMISE'].indexOf(reason) >= 0,
+        statusReports: [{ status: status, reason: reason,
+                          expires: String(e.expires || ''),
+                          comment: String(e.comment || '').slice(0, 500) }],
+        metadataStatement: {}
+      });
+    });
+    log.debug("Leaving RiskDatasets.androidStatusRowsOf(). " + rows.length +
+              ".");
+    return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE VERSION OF GOOGLE'S STATUS LIST (#256), as `importMds()` imports a
+  // BLOB: refused whole when it is not a list, the latest only (every older
+  // version's rows dropped at activation), and a duplicate of the active
+  // list not loaded again. NOT signed — Google serves it over TLS from its
+  // own host, and the download's TLS is verified (`fetchPublished()`) — so
+  // there is no signature to verify; an upload is believed as the operator
+  // who uploaded it. An empty list is a real answer (nothing revoked), so it
+  // is loaded rather than refused. Activating one asks
+  // `attestation_revocation.ts` to recheck the stored chains.
+  // -------------------------------------------------------------------------
+  private async importAndroidStatus(o: Json, meta: Json): Promise<Json> {
+    const { log, store, now, config } = this.deps;
+    log.debug("Entering RiskDatasets.importAndroidStatus().");
+    const text = o.path
+      ? await RiskExpand.readText(o.path,
+          Number(config.value('devices.androidStatusMaxBytes')), o.limits)
+      : String(o.content);
+    const refuse = async (code: string, why: string): Promise<Json> => {
+      log.debug("Entering refuse(). " + code);
+      await store.beginVersion(meta);
+      await store.finishVersion('', meta.dataset, meta.version, {
+        state: 'refused', rowCount: 0, loadedAt: now(), refusal: why,
+        errorCode: code });
+      log.debug("Leaving refuse().");
+      return this.refused(code, why, o, meta.version);
+    };
+    if (o.sha256 && String(o.sha256).toLowerCase() !== meta.sha256) {
+      log.debug("Leaving RiskDatasets.importAndroidStatus(). Checksum.");
+      return refuse('STS-RISK-0002', 'The file\'s SHA-256 is ' + meta.sha256 +
+                    ', not the ' + o.sha256 + ' that was named.');
+    }
+    let parsed: Json = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.importAndroidStatus(): " +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    const rows = parsed ? RiskDatasets.androidStatusRowsOf(parsed) : null;
+    if (!rows) {
+      log.debug("Leaving RiskDatasets.importAndroidStatus(). Not a list.");
+      return refuse('STS-RISK-0045', 'This is not Google\'s attestation ' +
+                    'status list: a JSON object whose `entries` are keyed ' +
+                    'by certificate serial. Nothing was loaded.');
+    }
+    const staged = Object.assign({}, meta, {
+      version: String(o.version || 'sha-' + meta.sha256.slice(0, 16)),
+      verification: o.source === 'url' ? 'tls' : meta.verification });
+    const began = await store.beginVersion(staged, this.reloadOf(o));
+    if (!began) {
+      log.debug("Leaving RiskDatasets.importAndroidStatus(). Already " +
+                "recorded.");
+      return { ok: true, duplicate: true, dataset: staged.dataset,
+               version: staged.version,
+               message: 'This list (' + staged.version + ') is already ' +
+                        'recorded; nothing was loaded again.' };
+    }
+    this.begun(o, { dataset: staged.dataset, realm: '',
+                    version: staged.version, sha256: meta.sha256 });
+    let written = 0;
+    for (let i = 0; i < rows.length; i += BATCH_ROWS) {
+      written += await store.insertRows('fido', '', staged.dataset,
+                                        staged.version,
+                                        rows.slice(i, i + BATCH_ROWS));
+    }
+    await store.finishVersion('', staged.dataset, staged.version, {
+      state: 'ready', rowCount: written, loadedAt: now() });
+    let activated = false;
+    if (o.activate !== false) {
+      const answer = await store.activate('', staged.dataset, 'fido',
+                                          staged.version, now());
+      activated = !!(answer && answer.activated);
+    }
+    let dropped = 0;
+    if (activated) {
+      for (const v of await store.listVersions('', staged.dataset)) {
+        if (v.version !== staged.version && v.state !== 'refused' &&
+            v.rowCount) {
+          dropped += await this.dropRows('fido', '', staged.dataset,
+                                         v.version);
+          await store.markRowsDeleted('', staged.dataset, v.version, now());
+        }
+      }
+      this.androidListActivated(staged.version);
+    }
+    this.auditRow('risk.dataset.import', o, staged.version, 'success', '',
+                  'Android attestation status list ' + staged.version + ': ' +
+                  written + ' revoked or suspended certificate(s)' +
+                  (activated ? ', now active' : '') +
+                  (dropped ? '; ' + dropped + ' older row(s) deleted' : ''));
+    log.info('risk: Android attestation status list ' + staged.version +
+             ': ' + written + ' revoked or suspended certificate(s)' +
+             (activated ? ', now active' : '') + '.');
+    log.debug("Leaving RiskDatasets.importAndroidStatus(). Loaded.");
+    return { ok: true, dataset: staged.dataset, realm: '',
+             version: staged.version, state: activated ? 'active' : 'ready',
+             rows: written, skipped: 0, activated: activated,
+             sha256: meta.sha256,
+             message: 'Android attestation status list loaded: ' + written +
+                      ' revoked or suspended certificate(s)' +
+                      (activated ? ', now active' : '') + '.' };
+  }
+
+  // A NEW LIST IS ACTIVE (#256): the chains already stored are rechecked
+  // against it, once for the cluster, by `attestation_revocation.ts`'s job.
+  // Reached lazily — that module is built after this one — and never into
+  // the import, which has already succeeded.
+  private androidListActivated(version: string): void {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.androidListActivated().");
+    try {
+      const revocation = require('../common/attestation_revocation');
+      if (typeof revocation.requestRecheck === 'function') {
+        revocation.requestRecheck('the list ' + version + ' was activated');
+      }
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.androidListActivated(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-DEVICE-0049') + 'risk: the stored ' +
+               'Android chains could not be queued for a recheck against ' +
+               'list ' + version + ': ' + ((e && e.message) || e) + '. The ' +
+               'daily recheck job will reach them.');
+    }
+    log.debug("Leaving RiskDatasets.androidListActivated().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE ACTIVE LIST SAYS ABOUT A CHAIN (#256): `checked` false — no
+  // active list, or a stale one, with `why` — decides nothing and says so;
+  // otherwise `hits`, each listed serial with its status and reason. One
+  // lookup per certificate; a chain is a handful.
+  // -------------------------------------------------------------------------
+  /**
+   * Looks the serials of an Android attestation chain up in the active status
+   * list.
+   *
+   * @param serials - the chain's certificate serials, in any hex form
+   * @returns `{ checked, version, why, hits: [{ serial, status, reason,
+   *   compromised }] }`
+   */
+  async lookupAttestationSerials(serials: unknown[]): Promise<Json> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.lookupAttestationSerials().");
+    const id = 'android.attestation-status';
+    const active = (await this.activeVersions()).get('\u0000' + id);
+    if (!active) {
+      log.debug("Leaving RiskDatasets.lookupAttestationSerials(). No list.");
+      return { checked: false, version: '', hits: [],
+               why: 'no Android attestation status list is loaded' };
+    }
+    if (this.isStale(CATALOGUE[id], active, now())) {
+      log.debug("Leaving RiskDatasets.lookupAttestationSerials(). Stale.");
+      return { checked: false, version: active.version, hits: [],
+               why: 'the Android attestation status list ' + active.version +
+                    ' is stale (devices.androidStatusStaleHours)' };
+    }
+    const hits: Json[] = [];
+    for (const one of serials || []) {
+      const key = RiskDatasets.androidSerialKey(one);
+      if (!key) {
+        continue;
+      }
+      const row = await store.lookupFido(id, active.version, 'android-serial',
+                                         key);
+      if (row) {
+        const report = (row.statusReports || [])[0] || {};
+        hits.push({ serial: key, status: String(row.latestStatus || ''),
+                    reason: String(report.reason || ''),
+                    compromised: !!row.compromised });
+      }
+    }
+    log.debug("Leaving RiskDatasets.lookupAttestationSerials(). " +
+              hits.length + " listed.");
+    return { checked: true, version: active.version, hits: hits, why: '' };
+  }
+
+  /**
+   * Describes the active Android attestation status list for the console and
+   * the API: its version, when it was loaded, its size, whether it is stale,
+   * the address and the job.
+   *
+   * @returns the snapshot
+   */
+  async androidStatusSnapshot(): Promise<Json> {
+    const { log, store, now, config } = this.deps;
+    log.debug("Entering RiskDatasets.androidStatusSnapshot().");
+    const id = 'android.attestation-status';
+    const active = (await this.activeVersions()).get('\u0000' + id);
+    const out = {
+      active: active ? String(active.version) : '',
+      loadedAt: active ? Number(active.loadedAt || 0) : 0,
+      rows: active ? Number(active.rowCount || 0) : 0,
+      stale: active ? this.isStale(CATALOGUE[id], active, now()) : false,
+      staleAfterHours: Number(config.value('devices.androidStatusStaleHours')),
+      url: String(config.value('devices.androidStatusUrl') || ''),
+      required: config.value('devices.androidRevocationRequired') === true,
+      job: 'devices.android-status-refresh'
+    };
+    void store;
+    log.debug("Leaving RiskDatasets.androidStatusSnapshot(). active=" +
+              out.active);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE LIST, DOWNLOADED (#256), as `refreshMds()` downloads a BLOB: the
+  // operator's address (`devices.androidStatusUrl`), which no request can
+  // name, through `federation_http.fetchPublished()` — the outbound kill
+  // switch, https only, internal addresses refused in product, no redirect,
+  // a timeout — with a cap of its own. A list identical to the active one is
+  // a duplicate version (the version is its digest) and loads nothing.
+  // -------------------------------------------------------------------------
+  /**
+   * Downloads Google's Android attestation status list and imports it.
+   *
+   * @returns what was done
+   */
+  async refreshAndroidStatus(): Promise<Json> {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskDatasets.refreshAndroidStatus().");
+    const url = String(config.value('devices.androidStatusUrl') || '');
+    if (!url) {
+      log.debug("Leaving RiskDatasets.refreshAndroidStatus(). No address.");
+      return { fetched: false, why: 'devices.androidStatusUrl is empty' };
+    }
+    const fetched = await this.deps.federationHttp().fetchPublished(url, {
+      accept: 'application/json',
+      maxBytes: Number(config.value('devices.androidStatusMaxBytes')) });
+    if (!fetched.ok) {
+      log.warn(errorCodes.tag('STS-RISK-0046') + 'risk: the Android ' +
+               'attestation status list could not be downloaded from ' + url +
+               ': ' + String(fetched.why || fetched.status) + '.');
+      log.debug("Leaving RiskDatasets.refreshAndroidStatus(). Not fetched.");
+      throw errorCodes.mark(new Error('the list could not be downloaded: ' +
+                                      String(fetched.why || fetched.status)),
+                            'STS-RISK-0046');
+    }
+    const result = await this.importVersion({
+      dataset: 'android.attestation-status',
+      format: 'android-attestation-status-json',
+      content: Buffer.from(fetched.body).toString('utf8'),
+      source: 'url', sourceUri: url,
+      actor: 'the devices.android-status-refresh job' });
+    log.debug("Leaving RiskDatasets.refreshAndroidStatus(). ok=" +
+              !!result.ok);
+    return { fetched: true, imported: !!result.ok && !result.duplicate,
+             duplicate: !!result.duplicate, version: result.version,
+             rows: result.rows, errors: result.errors || [] };
+  }
+
   // The statuses MDS3 section 3.1.4 uses to say an authenticator model can
   // no longer be trusted to protect a key.
   /**
@@ -1112,6 +1526,194 @@ class RiskDatasets {
   static readonly MDS_COMPROMISED = ['REVOKED', 'USER_VERIFICATION_BYPASS',
     'ATTESTATION_KEY_COMPROMISE', 'USER_KEY_REMOTE_COMPROMISE',
     'USER_KEY_PHYSICAL_COMPROMISE'];
+
+  // -------------------------------------------------------------------------
+  // A BLOB'S SERIAL NUMBER WITHOUT PARSING THE BLOB (#704). `refreshMds()`
+  // asks only whether the published BLOB is newer than the active one, and
+  // it answered by base64url-decoding and `JSON.parse()`-ing the whole
+  // payload — every authenticator's metadata statement, megabytes — on the
+  // loop of the process running `risk.mds-refresh`, to read one number.
+  // This decodes the payload a growing PREFIX at a time and reads the
+  // top-level members in order, skipping each value by its brackets, until
+  // `no` is found: FIDO's BLOB carries `legalHeader`, `no` and `nextUpdate`
+  // ahead of `entries`, so the first few kilobytes answer. A payload that
+  // puts `no` after `entries` is still answered, from a longer prefix, and
+  // what is not a JSON object answers NaN, which the import refuses by
+  // name, as before. The import itself still parses the BLOB it verifies.
+  // -------------------------------------------------------------------------
+  /**
+   * Reads the serial number `no` of an MDS3 BLOB (a JWT) from as short a
+   * prefix of its payload as answers it.
+   *
+   * @param jwt - the BLOB
+   * @returns the serial, or NaN when there is none
+   */
+  static mdsSerialOf(jwt: string): number {
+    log.debug("Entering RiskDatasets.mdsSerialOf().");
+    const part = String(jwt || '').split('.')[1] || '';
+    // Whole base64 quanta, so every prefix decodes to whole bytes; a UTF-8
+    // character cut at the end of one is only ever inside a value not yet
+    // reached, and the next prefix is longer.
+    let size = 4096;
+    for (;;) {
+      const end = Math.min(part.length, size);
+      const cut = end >= part.length ? end : end - (end % 4);
+      const text = Buffer.from(part.slice(0, cut), 'base64url')
+                         .toString('utf8');
+      const found = RiskDatasets.topLevelNumber(text, 'no');
+      if (found !== undefined || end >= part.length) {
+        log.debug("Leaving RiskDatasets.mdsSerialOf().");
+        return found === undefined || found === null ? NaN : found;
+      }
+      size *= 4;
+    }
+  }
+
+  /**
+   * Reads one top-level member of a JSON object as a number, skipping every
+   * other member's value unparsed.
+   *
+   * @param text - the object's text, or a prefix of it
+   * @param name - the member
+   * @returns the number; null when the object has no such number member or
+   *   the text is no object; undefined when the prefix ends first
+   */
+  static topLevelNumber(text: string, name: string): number | null |
+    undefined {
+    log.debug("Entering RiskDatasets.topLevelNumber().");
+    const t = text;
+    let i = 0;
+    // `ws()` and `pastString()` are hot paths — called per member and per
+    // character run of a payload of megabytes — so they carry no
+    // Entering/Leaving pair, which would add two log lines a call.
+    const ws = function (): void {
+      while (i < t.length && ' \t\r\n'.indexOf(t[i]) >= 0) {
+        i++;
+      }
+    };
+    // The index just past the string starting at `at`, or -1 when the
+    // prefix ends inside it.
+    const pastString = function (at: number): number {
+      let k = at + 1;
+      while (k < t.length) {
+        if (t[k] === '\\') {
+          k += 2;
+          continue;
+        }
+        if (t[k] === '"') {
+          return k + 1;
+        }
+        k++;
+      }
+      return -1;
+    };
+    ws();
+    if (i >= t.length) {
+      log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+      return undefined;
+    }
+    if (t[i] !== '{') {
+      log.debug("Leaving RiskDatasets.topLevelNumber(). Not an object.");
+      return null;
+    }
+    i++;
+    for (;;) {
+      ws();
+      if (i >= t.length) {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+        return undefined;
+      }
+      if (t[i] === '}') {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Absent.");
+        return null;
+      }
+      if (t[i] === ',') {
+        i++;
+        continue;
+      }
+      if (t[i] !== '"') {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Malformed.");
+        return null;
+      }
+      const keyEnd = pastString(i);
+      if (keyEnd < 0) {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+        return undefined;
+      }
+      let key = '';
+      try {
+        key = JSON.parse(t.slice(i, keyEnd));
+      } catch (e) {
+        log.debug("Caught in RiskDatasets.topLevelNumber(): " +
+                  ((e && e.message) || e));
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Malformed key.");
+        return null;
+      }
+      i = keyEnd;
+      ws();
+      if (i >= t.length) {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+        return undefined;
+      }
+      if (t[i] !== ':') {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Malformed.");
+        return null;
+      }
+      i++;
+      ws();
+      // The value: a string, a bracketed structure skipped by depth, or a
+      // literal running to the next comma or brace.
+      const start = i;
+      if (t[i] === '"') {
+        i = pastString(i);
+        if (i < 0) {
+          log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+          return undefined;
+        }
+      } else if (t[i] === '{' || t[i] === '[') {
+        let depth = 0;
+        while (i < t.length) {
+          const c = t[i];
+          if (c === '"') {
+            i = pastString(i);
+            if (i < 0) {
+              break;
+            }
+            continue;
+          }
+          if (c === '{' || c === '[') {
+            depth++;
+          } else if (c === '}' || c === ']') {
+            depth--;
+            if (depth === 0) {
+              i++;
+              break;
+            }
+          }
+          i++;
+        }
+        if (i < 0 || depth !== 0) {
+          log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+          return undefined;
+        }
+      } else {
+        while (i < t.length && ',}'.indexOf(t[i]) < 0) {
+          i++;
+        }
+        if (i >= t.length) {
+          log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+          return undefined;
+        }
+      }
+      if (key === name) {
+        const raw = t.slice(start, i).trim();
+        const n = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(raw) ? Number(raw)
+                                                              : NaN;
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Found.");
+        return isFinite(n) ? n : null;
+      }
+    }
+  }
 
   // -------------------------------------------------------------------------
   // ONE MDS3 ENTRY AS ROWS: one per key the model is listed under. The
@@ -1254,6 +1856,110 @@ class RiskDatasets {
     return model ? { model: model, version: active.version } : null;
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THE METADATA SAYS ABOUT ONE KEY, FOR AN ADMINISTRATOR (#1080):
+  // Monitoring → Risk's *Look up an authenticator* and `GET /admin-api/risk
+  // ?authenticator=`. The two lookups above answer null for four different
+  // reasons, which is right for something that decides — unknown never
+  // denies — and useless to a person asking, so this one says which, as a
+  // token the page translates (the API stays language-free). **It
+  // decides nothing and nothing that decides reads it.**
+  //
+  // The kind is told by the key's SHAPE, so the form is one box: a UUID is
+  // an AAGUID (dashes optional, as some tools print it), `XXXX#XXXX` an AAID,
+  // forty hex digits an attestation certificate key identifier (a SHA-1).
+  // A STALE BLOB IS STILL ASKED, and the answer says `stale`: the
+  // administrator is asking what the loaded metadata says, and the
+  // attestation and the score — which ignore a stale BLOB — are unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * Says what the active FIDO metadata says about one authenticator key, and
+   * why it says nothing when it does. Never rejects; decides nothing.
+   *
+   * @param input - an AAGUID, an AAID or an attestation certificate key
+   *   identifier, as typed
+   * @returns `{ input, keyKind, key, listed, why, version, stale, model,
+   *   attributions }` — `why`, when not listed, one of `not-a-key`,
+   *   `all-zero`, `no-blob`, `not-listed`, `unreadable` (with `detail`)
+   */
+  async describeAuthenticator(input: string): Promise<Json> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.describeAuthenticator().");
+    const typed = String(input || '').trim();
+    const out: Json = { input: typed, keyKind: '', key: '', listed: false,
+                        why: '', version: '', stale: false, model: null,
+                        attributions: [] };
+    const bare = typed.toLowerCase().replace(/^\{|\}$/g, '');
+    const hex = bare.replace(/-/g, '');
+    if (/^[0-9a-f]{32}$/.test(hex) &&
+        (bare === hex || /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
+          .test(bare))) {
+      out.keyKind = 'aaguid';
+      out.key = hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' +
+        hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+    } else if (/^[0-9a-f]{4}#[0-9a-f]{4}$/.test(bare)) {
+      out.keyKind = 'aaid';
+      out.key = bare;
+    } else if (/^[0-9a-f]{40}$/.test(bare)) {
+      out.keyKind = 'acki';
+      out.key = bare;
+    } else {
+      out.why = 'not-a-key';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Not a key.");
+      return out;
+    }
+    if (out.keyKind === 'aaguid' && /^[0-]+$/.test(out.key)) {
+      out.why = 'all-zero';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Zero.");
+      return out;
+    }
+    let active: Json = null;
+    try {
+      active = (await this.activeVersions()).get('\u0000fido.mds3');
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.describeAuthenticator(): " +
+                ((e && e.message) || e));
+      // Said, not thrown: the page must still draw.
+      out.why = 'unreadable';
+      out.detail = String((e && e.message) || e);
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Unread.");
+      return out;
+    }
+    if (!active) {
+      out.why = 'no-blob';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). No BLOB.");
+      return out;
+    }
+    out.version = String(active.version || '');
+    out.stale = this.isStale(CATALOGUE['fido.mds3'], active, now());
+    const credit = riskTerms.attributionOf(active.provider);
+    if (credit) {
+      out.attributions.push(credit);
+    }
+    let model: Json = null;
+    try {
+      model = await store.lookupFido('fido.mds3', active.version, out.keyKind,
+                                     out.key);
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.describeAuthenticator(): " +
+                ((e && e.message) || e));
+      // As above: a store that cannot answer is said on the page.
+      out.why = 'unreadable';
+      out.detail = String((e && e.message) || e);
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Failed.");
+      return out;
+    }
+    if (!model) {
+      out.why = 'not-listed';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Unlisted.");
+      return out;
+    }
+    out.listed = true;
+    out.model = model;
+    log.debug("Leaving RiskDatasets.describeAuthenticator(). Listed.");
+    return out;
+  }
+
   // What the FIDO metadata is, for `/admin/webauthn` and its API (#105): the
   // active BLOB's serial, version, nextUpdate and whether it is stale, and
   // where the next one comes from.
@@ -1365,15 +2071,10 @@ class RiskDatasets {
                             'STS-RISK-0027');
     }
     const text = Buffer.from(fetched.body).toString('utf8').trim();
-    let offered = NaN;
-    try {
-      offered = Number(JSON.parse(Buffer.from(text.split('.')[1] || '',
-        'base64url').toString('utf8')).no);
-    } catch (e) {
-      log.debug("Caught in RiskDatasets.refreshMds(): " +
-                ((e && e.message) || e));
-      // Left NaN: the import below refuses what is not a BLOB, by name.
-    }
+    // The serial only, from a prefix of the payload (#704,
+    // `mdsSerialOf()`); NaN when there is none, and the import below
+    // refuses what is not a BLOB, by name.
+    const offered = RiskDatasets.mdsSerialOf(text);
     if (isFinite(offered) && offered <= serial) {
       this.mdsDueAt = active ? Number(active.nextUpdateAt || 0) : 0;
       log.debug("Leaving RiskDatasets.refreshMds(). Not newer.");
@@ -1490,7 +2191,8 @@ class RiskDatasets {
                              'STS-RISK-0001');
     }
     const answer = await store.activate(String(realm || ''), dataset,
-                                        entry.kind, version, now());
+                                        RiskDatasets.rowKindOf(entry),
+                                        version, now());
     if (!answer || !answer.activated) {
       log.debug("Leaving RiskDatasets.activateVersion(). Refused.");
       const why = 'Version "' + version + '" of ' + dataset + ' cannot be ' +
@@ -1540,7 +2242,10 @@ class RiskDatasets {
   }
 
   /**
-   * Deletes a version's rows; never the active or a loading one.
+   * Deletes a version's rows; never a loading one. THE ACTIVE ONE IS
+   * UNLOADED FIRST (#1152, rcbj): the dataset is left with no active version
+   * before a row goes, so no lookup reads a half-deleted version, and nothing
+   * else is activated in its place — Roll back is offered for that.
    *
    * @param realm - the realm
    * @param dataset - the dataset
@@ -1548,6 +2253,93 @@ class RiskDatasets {
    * @param actor - who did it
    * @returns `{ ok: true, dataset, version, rows, … }`, or a refusal
    */
+  // ---------------------------------------------------------------------------
+  // RELOAD A REMOVED VERSION BY DOWNLOADING IT AGAIN (#1157, rcbj): only a
+  // dataset this service itself downloads, from the address it is configured
+  // with (the two rows of DOWNLOADS), and only when the version's record
+  // names that same address — so an administrator's Reload dials nothing the
+  // scheduled job does not (federation/CLAUDE.md's tenth and eighteenth
+  // dialled URLs). The file must be the version's: a different SHA-256 is a
+  // different version, which the job will load, and is refused here. Every
+  // other removed version is uploaded again (#1155). The content is built as
+  // the job builds it (the BLOB trimmed, the list as it came), so the digest
+  // compared is the one the job's import recorded.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a version may be reloaded by downloading it again: removed,
+   * of a dataset this service downloads, from the address configured now.
+   *
+   * @param dataset - the dataset
+   * @param v - the version's record
+   * @returns true when Reload applies
+   */
+  reloadable(dataset: string, v: Json): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskDatasets.reloadable().");
+    const how = DOWNLOADS[dataset];
+    const url = how ? String(config.value(how.setting) || '') : '';
+    log.debug("Leaving RiskDatasets.reloadable().");
+    return !!how && !!url && v.state === 'deleted' && v.source === 'url' &&
+           String(v.sourceUri || '') === url;
+  }
+
+  /**
+   * Downloads a removed version again and loads it as that version.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param actor - who did it
+   * @returns what `importVersion()` answers, or a refusal with its code
+   */
+  async reloadVersion(realm: string, dataset: string, version: string,
+                      actor: string): Promise<Json> {
+    const { log, store, config } = this.deps;
+    log.debug("Entering RiskDatasets.reloadVersion(). " + dataset + " " +
+              version);
+    const how = DOWNLOADS[dataset];
+    const versions = CATALOGUE[dataset]
+      ? await store.listVersions(String(realm || ''), dataset) : [];
+    const row = versions.filter(function (v: Json): boolean {
+      return v.version === version;
+    })[0];
+    if (!row || !this.reloadable(dataset, row)) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Not reloadable.");
+      return errorCodes.mark({ ok: false, errors: [
+        'Version "' + version + '" of ' + dataset + ' cannot be downloaded ' +
+        'again: ' + (!row ? 'it is not recorded.'
+          : row.state !== 'deleted' ? 'it is ' + row.state + ', not removed.'
+            : 'this service downloads it from no configured address, or ' +
+              'not from the one it came from. Upload the file again.')] },
+        'STS-RISK-0051');
+    }
+    const url = String(config.value(how.setting) || '');
+    const fetched = await this.deps.federationHttp().fetchPublished(url, {
+      accept: how.accept, maxBytes: Number(config.value(how.cap)) });
+    if (!fetched.ok) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Not fetched.");
+      return errorCodes.mark({ ok: false, errors: [
+        dataset + ' could not be downloaded from ' + url + ': ' +
+        String(fetched.why || fetched.status) + '.'] }, 'STS-RISK-0052');
+    }
+    const text = Buffer.from(fetched.body).toString('utf8');
+    const content = how.trim ? text.trim() : text;
+    const sha256 = stsCrypto.truncatedSha256Hex(content, 64);
+    if (sha256 !== String(row.sha256 || '')) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Changed.");
+      return errorCodes.mark({ ok: false, errors: [
+        url + ' now serves a different file (SHA-256 ' + sha256 + ', not ' +
+        'the removed version\'s ' + row.sha256 + '), which is a new ' +
+        'version rather than "' + version + '"; the scheduled download ' +
+        'loads it. Nothing was loaded.'] }, 'STS-RISK-0053');
+    }
+    log.debug("Leaving RiskDatasets.reloadVersion(). Importing.");
+    return this.importVersion({
+      dataset: dataset, format: row.format, realm: String(realm || ''),
+      content: content, version: version, source: 'url', sourceUri: url,
+      reloadDeleted: true, actor: actor });
+  }
+
   async deleteVersion(realm: string, dataset: string, version: string,
                       actor: string): Promise<Json> {
     const { log, store, now } = this.deps;
@@ -1559,24 +2351,45 @@ class RiskDatasets {
     const row = versions.filter(function (v: Json): boolean {
       return v.version === version;
     })[0];
-    if (!row || row.state === 'active' || row.state === 'loading') {
+    if (!row || row.state === 'loading') {
       log.debug("Leaving RiskDatasets.deleteVersion(). Refused.");
       return errorCodes.mark({ ok: false, errors: [
         'Version "' + version + '" of ' + dataset + ' cannot be deleted: ' +
         (row ? 'it is ' + row.state + '.' : 'it is not recorded.')] },
         'STS-RISK-0007');
     }
-    const gone = await this.dropRows(entry.kind, String(realm || ''), dataset,
-                                     version);
+    const wasActive = row.state === 'active';
+    if (wasActive) {
+      const off = await store.deactivate(String(realm || ''), dataset, version,
+                                         now());
+      if (!off || !off.deactivated) {
+        // Another request activated something else between the read and
+        // here; the version asked about is no longer the active one, and
+        // what it now is was not what the caller saw.
+        log.debug("Leaving RiskDatasets.deleteVersion(). Moved under us.");
+        return errorCodes.mark({ ok: false, errors: [
+          'Version "' + version + '" of ' + dataset + ' stopped being the ' +
+          'active version while it was being removed; look again.'] },
+          'STS-RISK-0007');
+      }
+    }
+    const gone = await this.dropRows(RiskDatasets.rowKindOf(entry),
+                                     String(realm || ''), dataset, version);
     await store.markRowsDeleted(String(realm || ''), dataset, version, now());
     this.auditRow('risk.dataset.delete', { dataset: dataset, realm: realm,
                                            actor: actor, source: 'admin' },
                   version, 'success', '', gone + ' row(s) of ' + dataset +
-                  ' ' + version + ' deleted');
+                  ' ' + version + ' deleted' +
+                  (wasActive ? '; it was the active version, and ' +
+                               dataset + ' has none now' : ''));
     log.debug("Leaving RiskDatasets.deleteVersion().");
     return { ok: true, dataset: dataset, version: version, rows: gone,
+             unloaded: wasActive,
              message: gone + ' row(s) of ' + dataset + ' version ' + version +
-                      ' deleted; its record stays.' };
+                      ' deleted; its record stays.' +
+                      (wasActive ? ' It was the active version, so ' +
+                                   dataset + ' has no active version now ' +
+                                   'and risk scores stop reading it.' : '') };
   }
 
   // ===== WHAT IS ACTIVE, AND WHETHER IT IS FRESH ============================
@@ -1590,6 +2403,12 @@ class RiskDatasets {
     }
     if (entry.stale === 'iplist') {
       return Number(config.value('risk.ipListStaleAfterHours')) * 3600000;
+    }
+    if (entry.stale === 'android') {
+      // Counted from when THIS DEPLOYMENT loaded it: Google's list carries no
+      // date of its own.
+      return Number(config.value('devices.androidStatusStaleHours')) *
+             3600000;
     }
     return 0;
   }
@@ -1779,8 +2598,17 @@ class RiskDatasets {
   async registry(realmId: string): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.registry().");
+    const self = this;
     const realm = String(realmId || '');
     const actives = await this.activeVersions();
+    // A dataset whose active version was removed (#1152) has no entry in
+    // `actives` and still remembers the version it replaced, which is what
+    // Roll back offers; so `previousVersion` is read off the dataset rows.
+    const previousOf = new Map<string, string>();
+    (await store.listDatasets()).forEach(function (d: Json): void {
+      previousOf.set(d.realm + '\u0000' + d.dataset,
+                     String(d.previousVersion || ''));
+    });
     const at = now();
     const rows = [];
     const terms = await riskTerms.status();
@@ -1805,13 +2633,21 @@ class RiskDatasets {
         state: !active ? 'empty'
           : (this.isStale(entry, active, at) ? 'stale' : 'active'),
         activeVersion: active ? active.version : '',
-        previousVersion: active ? active.previousVersion : '',
+        previousVersion: active ? active.previousVersion
+          : previousOf.get(inRealm + '\u0000' + id) || '',
         publishedAt: active ? active.publishedAt : 0,
         rows: active ? active.rowCount : 0,
         provider: active ? active.provider : entry.provider || '',
         attribution: active ? active.attribution : '',
         attributionUrl: active ? active.attributionUrl : '',
-        versions: versions
+        // `refusal` is what the page draws. The code stays on the stored
+        // version and its audit row, and leaves the answer here (#1355).
+        versions: versions.map(function (v: Json): Json {
+          const shown = Object.assign({}, v,
+                                      { reloadable: self.reloadable(id, v) });
+          delete shown.errorCode;
+          return shown;
+        })
       });
     }
     log.debug("Leaving RiskDatasets.registry().");
@@ -1939,8 +2775,8 @@ class RiskDatasets {
         if (!entry || !due) {
           continue;
         }
-        out.rows += await this.dropRows(entry.kind, realm, v.dataset,
-                                        v.version);
+        out.rows += await this.dropRows(RiskDatasets.rowKindOf(entry), realm,
+                                        v.dataset, v.version);
         if (v.state === 'superseded') {
           await store.markRowsDeleted(realm, v.dataset, v.version, at);
           out.versions += 1;
@@ -2116,9 +2952,17 @@ export = {
   activateVersion: slot.forward('activateVersion'),
   rollback: slot.forward('rollback'),
   deleteVersion: slot.forward('deleteVersion'),
+  reloadVersion: slot.forward('reloadVersion'),
+  reloadable: slot.forward('reloadable'),
   lookup: slot.forward('lookup'),
   lookupAuthenticator: slot.forward('lookupAuthenticator'),
+  lookupAttestationSerials: slot.forward('lookupAttestationSerials'),
+  androidStatusSnapshot: slot.forward('androidStatusSnapshot'),
+  refreshAndroidStatus: slot.forward('refreshAndroidStatus'),
+  androidSerialKey: RiskDatasets.androidSerialKey,
+  androidStatusRowsOf: RiskDatasets.androidStatusRowsOf,
   lookupAuthenticatorBy: slot.forward('lookupAuthenticatorBy'),
+  describeAuthenticator: slot.forward('describeAuthenticator'),
   mdsState: slot.forward('mdsState'),
   mdsSnapshot: slot.forward('mdsSnapshot'),
   refreshMds: slot.forward('refreshMds'),

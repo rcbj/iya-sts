@@ -49,6 +49,7 @@ const { log } = helpers;
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
@@ -348,8 +349,8 @@ class AzureImdsAttestor {
     }
     const roots = pki.azureImdsRoots().concat(pki.certificateBundle(String(
       config.value('spiffe.azureImdsTrustBundle') || '')).certificates);
-    const path = await pki.verifyPathToAnchors(signer.der,
-                                               [intermediate.der], roots);
+    const path = await CertificateTrust.path('spiffe-attestation', signer.der,
+                                             [intermediate.der], roots);
     if (!path.ok) {
       log.debug("Leaving AzureImdsAttestor.validatedContent(). Chain.");
       // error-code: none — turned into STS-SPIFFE-0107 by the caller
@@ -379,6 +380,7 @@ class AzureImdsAttestor {
       log.debug("Leaving AzureImdsAttestor.credential(). Token file.");
       return new sdk.ClientAssertionCredential(tenantId,
         String(tenant.tokenAuth.appId), function () {
+          require('../common/outbound_tls').assertNamedFile(path);
           return Promise.resolve(fs.readFileSync(path, 'utf8').trim());
         });
     }
@@ -574,7 +576,8 @@ class AzureImdsAttestor {
                 ((e && e.message) || e));
       throw this.refuse(call, 'STS-SPIFFE-0085', status.FAILED_PRECONDITION,
                         'azure_imds is not configured in this realm: ' +
-                        e.message + '.');
+                        String((e && e.message) || e).replace(/\.+$/, '') +
+                        '.');
     }
     const modules: Record<string, any> = {};
     for (let i = 0; i < PACKAGES.length; i++) {

@@ -116,16 +116,19 @@
 // WHERE IT IS REQUIRED FROM.
 //
 // A LIBRARY (rule 3): it registers no route. It requires only `config`,
-// `realms`, `error_codes` and npm leaves, and uses its own logger rather than
-// `helpers.js`'s, because `persistence/persistence.js` requires it to install
-// the store and that module is at 4a, beside `helpers.js` rather than below it.
+// `realms`, `error_codes`, `crypto` (a leaf over `config`) and npm leaves,
+// and uses its own logger rather than `helpers.js`'s, because
+// `persistence/persistence.js` requires it to install the store and that
+// module is at 4a, beside `helpers.js` rather than below it.
 // `persistence.js` fills `setStore()` the moment a driver is open — the
 // arrangement `keystore.setStore()` already has, for its reason.
 // ===========================================================================
 
-const crypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('./crypto');
 const realms = require('./realms');
 // A LEAF that requires nothing here. The store failures below are tagged in the
 // log; the refusals are the three verifiers' to code, because each answers in
@@ -148,6 +151,9 @@ config.registerLogger(log);
  */
 const FORMATS = {
   jwt: 'RFC 7523 JWT',
+  // #746: Steam's assertion, keyed by its `openid.response_nonce` (OpenID
+  // Authentication 2.0 section 11.3), which is no kind of document above.
+  openid2: 'OpenID 2.0 assertion',
   saml: 'RFC 7522 SAML 2.0 assertion',
   // #114: a SAML 1.1 assertion exchanged under RFC 8693, keyed by its
   // AssertionID — a namespace of its own beside SAML 2.0's ID, for the
@@ -164,15 +170,25 @@ const FORMATS = {
   // request, so spent here like a document. Its own format because it is
   // not a document anybody signed, and its value is this service's random
   // string rather than somebody's `jti`.
-  'attestation-challenge': 'OAuth client attestation challenge'
+  'attestation-challenge': 'OAuth client attestation challenge',
+  // A SIGNED WS-SECURITY MESSAGE (#521): a WS-Trust RST its requester signed
+  // over the Body and the Timestamp, keyed by its SignatureValue under the
+  // signing certificate's SHA-256. A message has no identifier of its own a
+  // signer is obliged to make unique, and the signature value is one: two
+  // messages differing in a Timestamp's Created already sign differently.
+  'wss-message': 'WS-Security signed message'
 };
 /**
  * The closed list of uses a document may be accepted for, each with the
  * label the console draws for it.
  */
 const USES = {
+  // #746: OpenID Authentication 2.0 section 11.3, Steam's assertion.
+  'steam-assertion': 'a sign-in through Steam',
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
   'authorization-grant': 'authorization grant (RFC 7521 section 4.1)',
+  // An unsolicited assertion at a federation endpoint (#1499).
+  'federated-sign-in': 'an unsolicited assertion at a federation endpoint',
   // RFC 9101 (#35, 2026-09-17). A request object is a JWT its CLIENT signs,
   // so it is keyed exactly as a client assertion is — format `jwt`, the
   // client as issuer, and its `jti` — and the two share one namespace, which
@@ -190,6 +206,12 @@ const USES = {
   // spends it the moment it is accepted, whatever it then matched.
   'federated-logout': 'a federation partner\'s sign-out (Back-Channel ' +
                       'Logout 1.0 Logout Token, SAML 2.0 LogoutRequest)',
+  // A PROVIDER'S SERVER-TO-SERVER NOTIFICATION (#565: Sign in with Apple's),
+  // keyed by its `jti` under the provider's issuer. A captured
+  // `consent-revoked` replayed later would remove a link the person made
+  // again since; `federation/federation_sp.ts` spends it when it is accepted.
+  'provider-notification': 'a consumer provider\'s server-to-server ' +
+                           'notification (Sign in with Apple)',
   // A CLIENT ATTESTATION PoP (#229, draft-ietf-oauth-attestation-based-
   // client-auth section 12.1), keyed by its `jti` under the client
   // instance key's JWK Thumbprint URI — the instance signs it, so the
@@ -200,7 +222,11 @@ const USES = {
   // #114: an RFC 7523 / RFC 7522 / SAML 1.1 assertion presented as an RFC
   // 8693 subject_token or actor_token. The SAME history as the grant (rcbj,
   // #114): an assertion is spent once, whichever door spends it.
-  'token-exchange': 'token exchange subject or actor (RFC 8693)'
+  'token-exchange': 'token exchange subject or actor (RFC 8693)',
+  // #521: a WS-Trust RST authenticated by its requester's WS-Security
+  // signature. A captured one sent again inside its Timestamp would be the
+  // requester asking again, so it is spent once, like an assertion.
+  'wstrust-requester': 'WS-Trust requester signature (WS-Security 1.1)'
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.
@@ -327,9 +353,9 @@ function capOf() {
  */
 function keyOf(format, issuer, identifier) {
   log.debug("Entering keyOf().");
-  const digest = crypto.createHash('sha256')
-    .update(String(format) + '\n' + String(issuer) + '\n' + String(identifier))
-    .digest('base64url');
+  const digest = stsCrypto.digest('sha256',
+    String(format) + '\n' + String(issuer) + '\n' + String(identifier),
+    'base64url');
   log.debug("Leaving keyOf().");
   return digest;
 }
@@ -607,7 +633,7 @@ function claim(opts) {
     clientId: clip(o.clientId || ''),
     subject: clip(o.subject || ''),
     state: o.request ? 'reserved' : 'spent',
-    reservation: crypto.randomBytes(12).toString('base64url'),
+    reservation: stsCrypto.randomBytes(12).toString('base64url'),
     origin: store.driver && typeof store.driver.origin === 'function'
       ? String(store.driver.origin()) : 'local',
     usedAt: now,
@@ -825,10 +851,11 @@ function claimInDatabase(row, cap, now) {
 // THE DATABASE SWEEP IS A SCHEDULER JOB (#49 P5):
 // `oauth2.used-assertion-purge`, a CLUSTER job every PURGE_INTERVAL_MS — one
 // table every process shares. It was piggy-backed on the next claim in every
-// process. Registered at the first claim against a database, lazily: this
-// file is in the parent project's Kerberos COPY closure and must not load the
-// scheduler there. An expired row is ignored by every read whenever the
-// sweep last ran.
+// process. Registered at the first claim against a database, lazily, so a
+// process that never claims against a database never loads the scheduler
+// (this file was in the parent project's Kerberos COPY closure, an
+// obligation until #1280). An expired row is ignored by every read whenever
+// the sweep last ran.
 /**
  * Registers the `oauth2.used-assertion-purge` cluster job that deletes
  * expired rows from a database store, once per process.

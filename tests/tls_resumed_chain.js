@@ -77,6 +77,10 @@ function connectThrice(server, clientOptions) {
         }, 30);
       });
     }
+    // The handler below ends the socket. Left in place, the next call adds
+    // a second one: both run, both end the socket, and node 24 resets that
+    // handshake before the client finishes it (ECONNRESET, onConnectEnd).
+    server.removeAllListeners('secureConnection');
     server.on('secureConnection', function (socket) {
       const peer = socket.getPeerCertificate(true);
       seen.push({

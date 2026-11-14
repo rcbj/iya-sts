@@ -98,12 +98,15 @@
 // the root builds a default instance at load, as loading it always did.
 // ===========================================================================
 
-import crypto = require('crypto');
+// `common/crypto.js`, the one place this service computes a digest (#453);
+// the deps still call it `crypto`.
+import stsCrypto = require('../common/crypto');
 import applications = require('../common/applications');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ownMembers = require('../common/own_members');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
 // The limits vocabulary (#432 phase 5): a static utility class, a leaf.
@@ -116,18 +119,26 @@ import AccessLimits = require('../common/access_limits');
 // and stays here: it is not an authorization decision.
 import gate = require('../common/issuance_gate');
 import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
+// FINE-GRAINED AUTHORIZATION AT ISSUANCE (#564, P3): a LEAF whose decider
+// the XACML family fills at 23c (rule 3e; `common/fga_gate.ts` argues the
+// slot both ways round). It is asked only about a detail whose type's
+// application enforces FGA — the switch is `applications.fgaStateOf()`'s,
+// read here — and with no decider it REFUSES.
+import fgaGate = require('../common/fga_gate');
 
 // A loose JSON-shaped object: a detail, a definition, a refusal.
 type Json = any;
 
 interface AuthorizationDetailsDeps {
-  crypto: typeof crypto;
+  crypto: typeof stsCrypto;
   applications: typeof applications;
   config: typeof config;
   errorCodes: typeof errorCodes;
   log: typeof helpers.log;
   gate: typeof gate;
   scopeVerdicts: typeof scopeVerdicts;
+  fgaGate: { decide(question: Json): Json };
+  realms: { currentId(): string };
 }
 
 // A refusal of `conformance()`, by kind, as RFC 9396's codes: the schema's
@@ -190,6 +201,67 @@ const definitionCount = cacheRegistry.register({
 // ALLOW, ONCE: `username client digest` → expiry. Persisted, because the
 // consent POST and the authorization endpoint's second pass may be answered by
 // two different request workers.
+// THE DECLARED TYPES, per realm, kept by the application registry's clock
+// (#758): `declaredTypes()` built a view of every application per call, and
+// a sign-in asked it several times (`asMetadata()` on every authorization,
+// `audienceFor()`, `bearerRefusedBy()`, `requiredAcrsOf()` at issuance) — 6%
+// of a request worker under a sign-in load. What it builds depends on the
+// registry and nothing else (no setting, no clock), so it is kept until
+// `applications.listingVersion()` moves: every write under ou=applications,
+// a write naming no DN, and a row another process wrote that this one
+// applied. With no clock (a test's stub) nothing is kept.
+const declaredHeld = realms.keyed(function (): { version: unknown;
+                                                 types: Record<string, Json> |
+                                                        null } {
+  return { version: null, types: null };
+});
+
+// Described to `/admin/caches` (rule 3ap). One answer per realm.
+const declaredCount = cacheRegistry.register({
+  name: 'oauth2.declared-authorization-details-types',
+  title: 'Declared authorization_details types',
+  description: 'The RFC 9396 types a realm\'s applications declare, each ' +
+    'with the resource that answers for it, so an authorization does not ' +
+    'build a view of every application to find them.',
+  owner: 'oauth-oidc/authorization_details.ts',
+  scope: 'realm',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one answer per realm, the size of the types its ' +
+    'applications declare.',
+  lifetime: function (): string {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next read then builds it again.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    declaredHeld.existing().forEach(function (held: Json, id: string): void {
+      if (!held.types) {
+        return;
+      }
+      out.push({ realm: id,
+                 key: Object.keys(held.types).length + ' type(s)',
+                 validUntil: null,
+                 basis: 'ou=applications version' });
+    });
+    return out;
+  }
+});
+
+// Frozen, because every caller of `declaredTypes()` now shares one answer:
+// a caller that changed it would change it for the next request. None does
+// today; a new one that tries throws rather than corrupting it.
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    Object.keys(value as Record<string, unknown>).forEach(function (key) {
+      deepFreeze((value as Record<string, unknown>)[key]);
+    });
+  }
+  return value;
+}
+
 const consented = realms.map({ persist: 'authorization_details.consented',
                                // #333: `expires`, in ms. Beside it (#432
                                // phase 5) the details as the person LOWERED
@@ -229,13 +301,15 @@ class AuthorizationDetails {
     helpers.log.debug("Entering AuthorizationDetails.defaultDeps().");
     helpers.log.debug("Leaving AuthorizationDetails.defaultDeps().");
     return {
-      crypto: crypto,
+      crypto: stsCrypto,
       applications: applications,
       config: config,
       errorCodes: errorCodes,
       log: helpers.log,
       gate: gate,
-      scopeVerdicts: scopeVerdicts
+      scopeVerdicts: scopeVerdicts,
+      fgaGate: fgaGate,
+      realms: realms
     };
   }
 
@@ -306,9 +380,33 @@ class AuthorizationDetails {
    * @returns type to definition
    */
   declaredTypes(): Record<string, Json> {
+    const { log, applications } = this.deps;
+    log.debug("Entering AuthorizationDetails.declaredTypes().");
+    const version = typeof applications.listingVersion === 'function'
+      ? applications.listingVersion() : null;
+    if (version === null || version === undefined) {
+      log.debug("Leaving AuthorizationDetails.declaredTypes(). No clock.");
+      return this.buildDeclaredTypes();
+    }
+    const held = declaredHeld();
+    if (held.types && held.version === version) {
+      declaredCount.hit();
+      log.debug("Leaving AuthorizationDetails.declaredTypes(). Kept.");
+      return held.types;
+    }
+    declaredCount.miss();
+    held.types = deepFreeze(this.buildDeclaredTypes());
+    held.version = version;
+    log.debug("Leaving AuthorizationDetails.declaredTypes(). Built.");
+    return held.types;
+  }
+
+  // What `declaredTypes()` keeps: every application's declarations, read
+  // from the registry. Its warnings are said once per registry version.
+  private buildDeclaredTypes(): Record<string, Json> {
     const { log, applications, errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering AuthorizationDetails.declaredTypes().");
+    log.debug("Entering AuthorizationDetails.buildDeclaredTypes().");
     const out: Record<string, Json> = {};
     const rows = applications.list().slice(0).sort(function (a, b) {
       return String(a.identifier) < String(b.identifier) ? -1 :
@@ -327,7 +425,11 @@ class AuthorizationDetails {
                    definition.problem + '.');
           return;
         }
-        if (out[definition.type]) {
+        // Own members only (2026-11-12): a type a request names is read with
+        // `ownMembers.read()`, so it is written as an own member too — a type
+        // called `__proto__` stays a type, and `constructor` is not "declared
+        // by both" before anybody declared it.
+        if (ownMembers.has(out, definition.type)) {
           log.warn(errorCodes.tag('STS-OAUTH-0462') +
                    'authorization_details: ' +
                    'the type "' + definition.type + '" is declared by both "' +
@@ -336,10 +438,11 @@ class AuthorizationDetails {
                    '" answers for it. A type names one resource server.');
           return;
         }
-        out[definition.type] = self.resourceDefinition(definition, row);
+        ownMembers.put(out, definition.type,
+                       self.resourceDefinition(definition, row));
       });
     });
-    log.debug("Leaving AuthorizationDetails.declaredTypes(). " +
+    log.debug("Leaving AuthorizationDetails.buildDeclaredTypes(). " +
               Object.keys(out).length + " type(s).");
     return out;
   }
@@ -386,7 +489,13 @@ class AuthorizationDetails {
       maxLifetimeS: definition.maxLifetimeS, acr: definition.acr,
       derivableFrom: definition.derivableFrom,
       introspectionClaims: definition.introspectionClaims,
-      limits: definition.limits, validateLimits: definition.validateLimits
+      limits: definition.limits, validateLimits: definition.validateLimits,
+      // FINE-GRAINED AUTHORIZATION'S MAPPING (#564): the type's rows, the
+      // members it leaves out, and the definition object `xacml/fga_map.ts`
+      // digests — carried so the issuance PEP can hand this entry to
+      // `fga_map.request()` as it stands.
+      xacml: definition.xacml, notForPolicy: definition.notForPolicy,
+      source: definition.source
     };
   }
 
@@ -527,7 +636,8 @@ class AuthorizationDetails {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.typeOf().");
     const name = typeof type === 'string' ? type : '';
-    const found = name ? this.declaredTypes()[name] || null : null;
+    const found = name
+      ? ownMembers.read(this.declaredTypes(), name) || null : null;
     log.debug("Leaving AuthorizationDetails.typeOf(). " + !!found);
     return found;
   }
@@ -549,7 +659,7 @@ class AuthorizationDetails {
     const declared = this.declaredTypes();
     let out: number | null = null;
     (details || []).forEach(function (one: Json): void {
-      const definition = one && declared[one.type];
+      const definition = one && ownMembers.read(declared, one.type);
       if (definition && typeof definition.maxLifetimeS === 'number' &&
           (out === null || definition.maxLifetimeS < out)) {
         out = definition.maxLifetimeS;
@@ -654,7 +764,7 @@ class AuthorizationDetails {
     log.debug("Entering AuthorizationDetails.bearerRefusedBy().");
     const declared = this.declaredTypes();
     const hit = (details || []).filter(function (one: Json): boolean {
-      const definition = one && declared[one.type];
+      const definition = one && ownMembers.read(declared, one.type);
       return !!definition && definition.bearer === false;
     })[0];
     log.debug("Leaving AuthorizationDetails.bearerRefusedBy().");
@@ -681,7 +791,7 @@ class AuthorizationDetails {
     const declared = this.declaredTypes();
     const out: string[] = [];
     (details || []).forEach(function (one: Json): void {
-      const definition = one && declared[one.type];
+      const definition = one && ownMembers.read(declared, one.type);
       const acr = definition && definition.acr ? String(definition.acr) : '';
       if (acr && out.indexOf(acr) < 0) {
         out.push(acr);
@@ -780,7 +890,7 @@ class AuthorizationDetails {
     let owned = false;
     const kept = (rights || []).filter(function (one: Json): boolean {
       const definition = one && typeof one === 'object'
-        ? declared[one.type] : null;
+        ? ownMembers.read(declared, one.type) : null;
       if (!definition) {
         return true;
       }
@@ -996,7 +1106,10 @@ class AuthorizationDetails {
       // never have held it.
       const builtInType =
         applications.AUTHORIZATION_DETAILS_BUILT_IN.indexOf(detail.type) >= 0;
-      const definition = builtInType ? null : declared[detail.type];
+      // An own member only (2026-11-12): `type: "constructor"` is a type
+      // nobody declares, refused as one (STS-OAUTH-0453), never Object.
+      const definition = builtInType
+        ? null : ownMembers.read(declared, detail.type);
       if (!builtInType && !definition) {
         log.debug("Leaving AuthorizationDetails.parse(). An unknown type.");
         return self.refusal('STS-OAUTH-0453', where + ' is of type "' +
@@ -1079,6 +1192,166 @@ class AuthorizationDetails {
     log.debug("Leaving AuthorizationDetails.parse(). " + details.length +
               " detail(s).");
     return { ok: true, details: details, resolved: resolved };
+  }
+
+  // -------------------------------------------------------------------------
+  // FINE-GRAINED AUTHORIZATION AT ISSUANCE (#564, P3) — AN EXTRA CONJUNCT.
+  //
+  // A detail whose TYPE belongs to an application that enforces
+  // fine-grained authorization (`appFgaEnforced`) is granted only when that
+  // application's own policy permits it (rcbj's decisions 1 and 5). Asked
+  // AFTER `parse()` — the issuance policy's two type questions (rule 3bt)
+  // and RFC 9396's well-formedness have already passed — and never instead
+  // of either. A detail of any other type, the built-in `openid_credential`
+  // included, asks nothing, so an application without FGA enforced sees
+  // behaviour byte for byte as before.
+  //
+  // One question per detail, in order, and the FIRST refusal answers: a
+  // grant is all of its details or nothing (RFC 9396 has no partial grant
+  // of a detail), so deciding the rest would audit decisions that change
+  // nothing. The definition is `declaredTypes()`'s entry NOW — so a refresh
+  // carrying details from an earlier grant is decided against the current
+  // policy AND the current definition.
+  //
+  // The answer is null when every detail is granted, or a refusal marked
+  // with its code: `outcome` `deny` (a decision: the caller answers
+  // `access_denied` or `invalid_authorization_details`) or `failure` (a
+  // fault: `server_error`), and `description`.
+  // -------------------------------------------------------------------------
+  /**
+   * Asks each detail of an application that enforces fine-grained
+   * authorization of that application's policy (#564).
+   *
+   * @param details - the validated details (null or empty asks nothing)
+   * @param facts - `stage` (one of `xacml_request.js`'s FGA_STAGES),
+   *   `clientId`, `subject` ({ id, kind }), `grantType`
+   * @returns null when nothing is refused, or `{ outcome, description,
+   *   type, application }` marked with its STS-FGA code
+   */
+  fineGrainedRefusal(details: Json[] | null, facts: Json): Json {
+    const { log, applications, errorCodes, fgaGate, realms } = this.deps;
+    log.debug("Entering AuthorizationDetails.fineGrainedRefusal().");
+    if (!Array.isArray(details) || !details.length) {
+      log.debug("Leaving AuthorizationDetails.fineGrainedRefusal(). None.");
+      return null;
+    }
+    const asked = facts || {};
+    const declared = this.declaredTypes();
+    for (let i = 0; i < details.length; i++) {
+      const detail = details[i];
+      const definition = detail && typeof detail === 'object'
+        ? ownMembers.read(declared, detail.type) : null;
+      if (!definition) {
+        continue;
+      }
+      const state = applications.fgaStateOf(String(definition.identifier));
+      if (!state.enforced) {
+        continue;
+      }
+      const answer = fgaGate.decide({
+        application: String(definition.identifier),
+        detail: detail,
+        definition: definition,
+        stage: String(asked.stage || ''),
+        realm: String(realms.currentId() || ''),
+        clientId: String(asked.clientId || ''),
+        subject: asked.subject || {},
+        grantType: String(asked.grantType || '')
+      }) || { outcome: 'failure', code: 'STS-FGA-0015', why: '' };
+      if (answer.outcome === 'permit') {
+        continue;
+      }
+      const deny = answer.outcome === 'deny';
+      const where = 'authorization_details[' + i + '] (type "' +
+        String(detail.type).slice(0, 200) + '")';
+      log.debug("Leaving AuthorizationDetails.fineGrainedRefusal(). " +
+                answer.outcome + " " + answer.code);
+      return errorCodes.mark({
+        outcome: deny ? 'deny' : 'failure',
+        type: String(detail.type),
+        application: String(definition.identifier),
+        description: deny
+          ? where + ' is not granted: the fine-grained authorization ' +
+            'policy of the application that declares the type does not ' +
+            'permit it.'
+          : where + ' could not be decided: the fine-grained ' +
+            'authorization policy of the application that declares the ' +
+            'type cannot be evaluated, so it is refused rather than issued ' +
+            'undecided.'
+      }, String(answer.code || (deny ? 'STS-FGA-0014' : 'STS-FGA-0015')));
+    }
+    log.debug("Leaving AuthorizationDetails.fineGrainedRefusal(). Granted.");
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE TOKEN EXCHANGE'S BOUND (#564, decision 6). RFC 8693 leaves what an
+  // exchanged token carries to the server's policy, and an exchange is
+  // "granted what is asked" for a detail today (3am). For a type whose
+  // application ENFORCES fine-grained authorization that would let a client
+  // holding any token of a person mint details the person never
+  // authorized: so the requested detail must be COVERED (section 6's
+  // subset rule, `covers()`) by one of the subject_token's own
+  // `authorization_details` — which only a token this service issued with
+  // details can carry. A subject_token from elsewhere, or one of ours with
+  // none of that type, refuses. Types of applications that do not enforce
+  // are unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * The exchange bound: each requested detail of an enforcing application's
+   * type must be covered by the subject_token's details.
+   *
+   * @param requested - the details the exchange asks for
+   * @param subjectDetails - the subject_token's `authorization_details`
+   * @param issuedHere - whether the subject_token is one this service issued
+   *   and verified
+   * @returns null, or `{ description, type }` marked STS-FGA-0017
+   */
+  exchangeBoundProblem(requested: Json[] | null, subjectDetails: Json,
+                       issuedHere: boolean): Json {
+    const { log, applications, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering AuthorizationDetails.exchangeBoundProblem().");
+    if (!Array.isArray(requested) || !requested.length) {
+      log.debug("Leaving AuthorizationDetails.exchangeBoundProblem(). None.");
+      return null;
+    }
+    const declared = this.declaredTypes();
+    const granted = issuedHere && Array.isArray(subjectDetails)
+      ? subjectDetails : [];
+    for (let i = 0; i < requested.length; i++) {
+      const detail = requested[i];
+      const definition = detail && typeof detail === 'object'
+        ? ownMembers.read(declared, detail.type) : null;
+      if (!definition ||
+          !applications.fgaStateOf(String(definition.identifier)).enforced) {
+        continue;
+      }
+      const covered = granted.some(function (one: Json): boolean {
+        return self.covers(one, detail);
+      });
+      if (covered) {
+        continue;
+      }
+      log.debug("Leaving AuthorizationDetails.exchangeBoundProblem(). " +
+                "Not covered.");
+      return errorCodes.mark({
+        type: String(detail.type),
+        description: 'authorization_details[' + i + '] (type "' +
+          String(detail.type).slice(0, 200) + '") belongs to an ' +
+          'application that enforces fine-grained authorization, so a ' +
+          'token exchange may carry it only where the subject_token ' +
+          'already does: ' + (issuedHere
+            ? 'none of the subject_token\'s authorization_details covers ' +
+              'it (RFC 9396 section 6).'
+            : 'the subject_token is not one this authorization server ' +
+              'issued and verified, so it carries no authorization_details ' +
+              'to cover it.')
+      }, 'STS-FGA-0017');
+    }
+    log.debug("Leaving AuthorizationDetails.exchangeBoundProblem(). " +
+              "Bounded.");
+    return null;
   }
 
   private deepEqual(a: unknown, b: unknown): boolean {
@@ -1256,7 +1529,7 @@ class AuthorizationDetails {
     const audiences = [];
     const identifiers = [];
     (details || []).forEach(function (detail) {
-      const definition = detail && declared[detail.type];
+      const definition = detail && ownMembers.read(declared, detail.type);
       if (!definition) {
         return;
       }
@@ -1317,7 +1590,7 @@ class AuthorizationDetails {
     log.debug("Entering AuthorizationDetails.describe().");
     const declared = this.declaredTypes();
     const rows = (details || []).map(function (detail) {
-      const definition = declared[detail.type] || null;
+      const definition = ownMembers.read(declared, detail.type) || null;
       const members = Object.keys(detail).filter(function (key) {
         return key !== 'type';
       }).map(function (key) {
@@ -1356,9 +1629,35 @@ class AuthorizationDetails {
     const { log, crypto } = this.deps;
     log.debug("Entering AuthorizationDetails.digestOf().");
     log.debug("Leaving AuthorizationDetails.digestOf().");
-    return crypto.createHash('sha256')
-      .update(JSON.stringify(this.canonical(details || [])))
-      .digest('base64url');
+    return crypto.digest('sha256',
+      JSON.stringify(this.canonical(details || [])), 'base64url');
+  }
+
+  // THE SAME ONE-TIME ANSWER FOR A PUBLIC CLIENT'S SCOPES (ASVS 5.0.0
+  // 10.7.1, `common/consent.ts`'s `alwaysAsks()`). A public client is asked
+  // every time, and the Allow the person gives is spent by the second pass
+  // exactly as an Allow on details is: recorded under this digest by the
+  // consent screen, consumed by the authorization endpoint. The scopes are
+  // sorted and deduplicated, and the `scope:` prefix keeps the digest apart
+  // from a details digest (base64url has no colon). No store of its own.
+  /**
+   * Returns the digest a person's one-time Allow on a public client's scopes
+   * is recorded and spent under.
+   *
+   * @param scope - the space-delimited scope, or the scopes as a list
+   * @returns the digest
+   */
+  scopeAnswerDigestOf(scope: unknown): string {
+    const { log, crypto } = this.deps;
+    log.debug("Entering AuthorizationDetails.scopeAnswerDigestOf().");
+    const list = (Array.isArray(scope) ? scope.map(String)
+      : String(scope == null ? '' : scope).split(/\s+/))
+      .filter(function (one: string, at: number, all: string[]) {
+        return !!one && all.indexOf(one) === at;
+      }).sort();
+    log.debug("Leaving AuthorizationDetails.scopeAnswerDigestOf().");
+    return 'scope:' + crypto.digest('sha256', JSON.stringify(list),
+                                    'base64url');
   }
 
   private consentKey(username: unknown, clientId: unknown,
@@ -1512,10 +1811,13 @@ export = {
   introspectionView: slot.forward('introspectionView'),
   coveredProblem: slot.forward('coveredProblem'),
   narrow: slot.forward('narrow'),
+  fineGrainedRefusal: slot.forward('fineGrainedRefusal'),
+  exchangeBoundProblem: slot.forward('exchangeBoundProblem'),
   audienceFor: slot.forward('audienceFor'),
   needsConsent: slot.forward('needsConsent'),
   describe: slot.forward('describe'),
   digestOf: slot.forward('digestOf'),
+  scopeAnswerDigestOf: slot.forward('scopeAnswerDigestOf'),
   noteConsented: slot.forward('noteConsented'),
   consumeConsent: slot.forward('consumeConsent'),
   consumeConsented: slot.forward('consumeConsented')

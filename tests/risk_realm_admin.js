@@ -125,41 +125,18 @@ function childMain() {
             'administrator, and has them for a service one');
 
     // --- C. the page --------------------------------------------------------
-    // The page asks `gateStateFor()` who is looking, and `mayWrite()`; both
-    // are answered here as for a realm administrator holding Admin Write.
-    const adminViews = require(ROOT + '/admin-core/admin_views');
+    // DRAWN AS THE STATIC CONSOLE DRAWS IT (#446): the page's view, for a
+    // realm administrator (`realmOnly`, which the API decides from their
+    // token), drawn by its renderer — there is no console route to call.
+    const WebPages = require(ROOT + '/admin-ui/web_pages');
+    const WebKit = require(ROOT + '/admin-ui/web_kit');
     const draw = async function (pagePath) {
-      let html = '';
-      const saved = { respond: admin.respond, mayWrite: admin.mayWrite,
-                      gate: adminViews.gateStateFor };
-      try {
-        admin.respond = function (req, r, json, title, active, inner) {
-          html = inner;
-        };
-        admin.mayWrite = function () {
-          return true;
-        };
-        adminViews.gateStateFor = function () {
-          return state;
-        };
-        let handler = null;
-        riskAdmin.registerRoutes({ get: function (p2, h) {
-          if (p2 === pagePath) {
-            handler = h;
-          }
-        }, post: function () {} });
-        realms.run(realms.get(REALM), function () {
-          handler({ query: {}, headers: {} }, {});
-        });
-        for (let i = 0; i < 100 && !html; i++) {
-          await new Promise(function (r) { setTimeout(r, 20); });
-        }
-      } finally {
-        admin.respond = saved.respond;
-        admin.mayWrite = saved.mayWrite;
-        adminViews.gateStateFor = saved.gate;
-      }
-      return html;
+      const view = await realms.run(realms.get(REALM), function () {
+        return pagePath === riskAdmin.PAGE
+          ? riskAdmin.riskView({}, true) : riskAdmin.metricsView({}, true);
+      });
+      return WebPages.render(pagePath, JSON.parse(JSON.stringify(view)),
+                             WebKit.context({}, true));
     };
     const page = await draw(riskAdmin.PAGE);
     t.check(page.length > 0 && page.indexOf('Whose data, on what terms') < 0 &&
@@ -171,6 +148,19 @@ function childMain() {
             'C1. their page has no terms, no settings and no service ' +
             'dataset, and its import form is pinned to their realm',
             page.slice(0, 300));
+    // #1084: both lookups are GET forms whose answer must open on the
+    // Lookups tab — their action carries that tab's fragment, and the tab
+    // with that id is the one holding both forms.
+    const panelAt = page.indexOf('id="risk-tab-lookup"');
+    const panelEnd = page.indexOf('</section>', panelAt);
+    const panel = panelAt >= 0 ? page.slice(panelAt, panelEnd) : '';
+    const toLookups = 'action="/admin/risk#risk-tab-lookup"';
+    t.check(panel.indexOf('name="address"') >= 0 &&
+            panel.indexOf('name="authenticator"') >= 0 &&
+            panel.split(toLookups).length - 1 === 2 &&
+            page.split(toLookups).length - 1 === 2,
+            'C3. both lookup forms are in the Lookups tab and come back to ' +
+            'it (#1084)', panel.slice(0, 400));
     const scoring = await draw(riskAdmin.METRICS_PAGE);
     t.check(scoring.length > 0 && scoring.indexOf('id="risk-process"') < 0 &&
             scoring.indexOf('id="risk-timeline"') >= 0,

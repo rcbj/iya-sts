@@ -25,8 +25,8 @@
 //   C. IDENTITY-PROVIDER-INITIATED LOGOUT (#192): the LogoutRequest a link
 //      carries is signed on the Redirect binding's QUERY STRING, carries no
 //      enveloped signature, and names the NameID the session was given there.
-//   D. IDENTITY-PROVIDER-INITIATED SSO (#189): /saml2/unsolicited, its
-//      refusals (0091–0093, 0082) and an unsolicited Response with no
+//   D. IDENTITY-PROVIDER-INITIATED SSO (#189, #711): /saml2/unsolicited,
+//      its refusals (0091–0093, 0082) and an unsolicited Response with no
 //      InResponseTo, at the registered ACS, carrying the X.500/LDAP names.
 //   E. THE ATTRIBUTE AUTHORITY (#189): /saml2/aa answers about a subject a
 //      live session gave the asking SP, echoes the NameID's qualifiers, narrows
@@ -203,8 +203,7 @@ async function run(t) {
     log.debug("Leaving withCookie().");
     return { headers: { host: 'idp.test', cookie: cookie } };
   };
-  const product = { 'global.mode': 'product',
-                    'saml2.entityId': 'https://idp.test/saml2/idp' };
+  const product = { 'global.mode': 'product' };
 
   try {
     // -----------------------------------------------------------------------
@@ -332,7 +331,12 @@ async function run(t) {
     t.log.info('D. identity-provider-initiated SSO');
     // -----------------------------------------------------------------------
     const acsD = 'https://unsolicited.test/acs';
+    // Opted in (#711): identity-provider-initiated sign-in is off until a
+    // service provider's entry turns it on. tests/saml_initiation.js holds
+    // the switches themselves.
     const spD = newParty('unsolicited', 'saml2-service-provider', {
+      samlAssertionConsumerService: acsD, saml2IdpInitiatedSso: 'TRUE' });
+    const spOff = newParty('unsolicited-off', 'saml2-service-provider', {
       samlAssertionConsumerService: acsD });
     const ask = function (query, extra) {
       log.debug("Entering ask().");
@@ -343,12 +347,11 @@ async function run(t) {
       log.debug("Leaving ask().");
       return res;
     };
-    const off = kit.withSettings(config, { 'saml2.unsolicitedSso': false },
-      function () {
-        return ask({ providerId: spD });
-      });
-    t.equal(codeOf(off), 'STS-SAML-0091',
-            'turned off for the realm: refused, STS-SAML-0091');
+    const off = ask({ providerId: spOff });
+    t.check(off.statusCode === 403 && codeOf(off) === 'STS-SAML-0091',
+            'a service provider that did not opt in (saml2.idpInitiatedSso ' +
+            'is off by default): refused, 403, STS-SAML-0091',
+            off.statusCode + ' ' + codeOf(off));
     t.equal(codeOf(ask({})), 'STS-SAML-0092',
             'no service provider named: refused, STS-SAML-0092');
     t.equal(codeOf(ask({ providerId: spD, binding: 'redirect' })),
@@ -467,7 +470,9 @@ async function run(t) {
     const mdReq = kit.fakeReq('GET', '/saml2/metadata/x', {}, '');
     mdReq.params = { sp: spE };
     metadata(mdReq, md);
-    t.check(/<md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol">/
+    // #523: one entity, one document — the attribute authority names both
+    // SAML versions.
+    t.check(/<md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol urn:oasis:names:tc:SAML:1\.1:protocol">/
               .test(md.body) &&
             /<md:AttributeService Binding="urn:oasis:names:tc:SAML:2\.0:bindings:SOAP" Location="[^"]*\/saml2\/aa\//
               .test(md.body),
@@ -481,11 +486,22 @@ async function run(t) {
     const md11Req = kit.fakeReq('GET', '/saml11/metadata/x', {}, '');
     md11Req.params = { rp: spE };
     metadata11(md11Req, md11);
-    t.check(/<md:IDPSSODescriptor[^>]*protocolSupportEnumeration="urn:oasis:names:tc:SAML:1\.1:protocol urn:mace:shibboleth:1\.0"/
+    t.check(/<md:IDPSSODescriptor[^>]*protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol urn:oasis:names:tc:SAML:1\.1:protocol urn:mace:shibboleth:1\.0"/
               .test(md11.body),
-            'the SAML 1.1 IDPSSODescriptor names urn:mace:shibboleth:1.0 ' +
-            'beside SAML 1.1, as a Shib1 initiator requires (#189)',
+            'the IDPSSODescriptor names urn:mace:shibboleth:1.0 beside SAML ' +
+            '1.1, as a Shib1 initiator requires (#189) — and SAML 2.0, in ' +
+            'the one document both paths serve (#523)',
             md11.body.slice(0, 300));
+    const entityOf = function (xml) {
+      return (/entityID="([^"]*)"/.exec(xml) || [])[1] || '';
+    };
+    t.check(entityOf(md11.body) === entityOf(md.body) &&
+            /index="1"[^>]*\/saml11\/responder\/|\/saml11\/responder\/[^"]*" index="1"/
+              .test(md11.body) &&
+            /\/saml2\/ars\/[^"]*" index="0" isDefault="true"/.test(md11.body),
+            '/saml11/metadata and /saml2/metadata are one entity: the same ' +
+            'entityID, SAML 2.0\'s resolver at index 0 and SAML 1.1\'s at ' +
+            'index 1 (#523)', entityOf(md11.body) + ' / ' + entityOf(md.body));
 
     // -----------------------------------------------------------------------
     t.log.info('G. SAML 1.1');
@@ -543,7 +559,7 @@ async function run(t) {
             /SAMLart=/.test(artifact.location) &&
             artifact.location.indexOf(rpArt) === 0,
             'a shire registered on artifact-01 is answered on the ARTIFACT ' +
-            'profile with no `profile` parameter (#189)',
+            'profile (#189)',
             artifact.statusCode + ' ' + artifact.location.slice(0, 120));
 
     const rpCert = kit.keyFor(kit.FAMILIES.filter(function (row) {

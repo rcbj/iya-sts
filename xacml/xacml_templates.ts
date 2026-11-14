@@ -59,6 +59,9 @@
 // fourth position in it: `role-issuance` and `access-control` are the two
 // documents this service asks about ITSELF, and `blank` is an empty page.
 // This comment said "TWO TEMPLATES" until 2026-09-06, when there were five.
+// `fga-default` (#564) is outside the argument too: it is the policy every
+// application is created with, and the console lists it for the reason it
+// lists the service's own — so that somebody can build the same document.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -195,6 +198,13 @@ const ISSUANCE_ATTRIBUTE = {
   CLIENT_NATIVE_SSO: 'urn:sts:xacml:client-native-sso',
   SCOPE_DELEGATED: 'urn:sts:xacml:scope-delegated',
   SCOPE_GRANTED: 'urn:sts:xacml:scope-granted',
+  // #551: an application permission (a resource's base URI plus a name)
+  // asked for by an APPLICATION subject — client_credentials, or an
+  // exchange of a client's own token. Sent only by the role-permission
+  // narrowing, beside AUTHORIZING_ROLE: an application's permission comes
+  // from a role, never from `oauthDelegatedPermission`, which needs a person.
+  SCOPE_APPLICATION_PERMISSION:
+    'urn:sts:xacml:scope-application-permission',
   SCOPE_CONSENTED: 'urn:sts:xacml:scope-consented',
   CONSENT_REQUIRED: 'urn:sts:xacml:consent-required',
   // A TOKEN EXCHANGE (#108, in policy since #186), stage `exchange`: whether
@@ -230,7 +240,97 @@ const ISSUANCE_ATTRIBUTE = {
   OWNER: 'urn:sts:xacml:resource-owner',
   // On the RESOURCE: the roles the application demands. `appRequiredRole` on
   // its entry, or EVERYBODY where it names none.
-  REQUIRED_ROLE: 'urn:sts:xacml:required-role'
+  REQUIRED_ROLE: 'urn:sts:xacml:required-role',
+  // On the RESOURCE: roles the subject must hold EVERY one of (#454), beside
+  // REQUIRED_ROLE's any-one. The access-control document's conjunct reads
+  // it; an empty bag asks nothing. The management API's console operations
+  // name ADMIN_CONSOLE in REQUIRED_ROLE and, where a page shows realm data,
+  // ADMIN_READ here — the two kinds of role mixed in one decision.
+  REQUIRED_ALL_ROLE: 'urn:sts:xacml:required-all-role',
+  // -------------------------------------------------------------------------
+  // THE OWNER RULE'S VOCABULARY (#607, 2026-10-13): delegated
+  // administration of the four kinds of object a person may own, through
+  // `/admin-api`. The PEP — the management API's gate — states WHAT is
+  // reached; `xacml_pip.ts` answers WHO owns it, WHETHER it is closed to its
+  // owners and WHO the person is as an owner, out of the directory
+  // (`common/ownership.ts`), so `/admin/xacml/decide` and a remote PEP asking
+  // the same question get the same answer.
+  //
+  // On the RESOURCE: the owner role the operation would need — OWNER_READ
+  // for a read, OWNER_WRITE for anything else. Absent, the request is not an
+  // owner's question at all and the owner rule cannot permit it.
+  OWNER_REQUIRED_ROLE: 'urn:sts:xacml:owner-required-role',
+  // On the RESOURCE: the kind of object — `role`, `group`,
+  // `service-account` or `application`.
+  OBJECT_KIND: 'urn:sts:xacml:object-kind',
+  // On the RESOURCE: the object, as the request names it — a role's name, a
+  // group's cn or DN, a service account's username, an application's
+  // identifier. What the PIP looks the next two up by.
+  OBJECT_ID: 'urn:sts:xacml:object-id',
+  // On the RESOURCE, FROM THE PIP: the object's owner DNs as stored,
+  // compared (lower case, no space around a comma).
+  OBJECT_OWNER: 'urn:sts:xacml:object-owner',
+  // On the RESOURCE, FROM THE PIP: whether the object is closed to its
+  // owners — a native or protected role, a group or application this
+  // service grants through, an administrator's mark. Boolean; the rule
+  // demands `false`, so an object the PIP cannot answer for stays closed.
+  OBJECT_PROTECTED: 'urn:sts:xacml:object-protected',
+  // On the RESOURCE: the attributes an application action would write
+  // (`set`, `add`, `remove`, `update-fields`), by name. Empty for every
+  // other action.
+  OBJECT_ATTRIBUTE: 'urn:sts:xacml:object-attribute',
+  // On the ACTION: what is done to the object — `read`, or the management
+  // API action's own name (`add-member`, `remove-owner`, ...).
+  ADMIN_ACTION: 'urn:sts:xacml:admin-action',
+  // On the SUBJECT: the PERSON the token is for, by username. Not
+  // `subject-id`, which the gate sets to the client a person's token was
+  // issued to; the PIP resolves the next one from this.
+  OWNER_SUBJECT: 'urn:sts:xacml:owner-subject',
+  // On the SUBJECT, FROM THE PIP: the person's own DN and every group they
+  // are in, compared as OBJECT_OWNER is.
+  OWNER_IDENTITY: 'urn:sts:xacml:owner-identity',
+  // -------------------------------------------------------------------------
+  // THE REPORT RULE'S VOCABULARY (#1030, 2026-10-27): a definition or a job
+  // of `/report-api`, decided one row at a time. The row's OWNER travels as
+  // `resource-owner` (OWNER above) and is compared with `subject-id`, which
+  // `report/rights.ts` sets to the token's `sub` — a `urn:uuid:` person or
+  // a client — so the first rule permits the owner exactly as it permits a
+  // person their own portal account. These two are what the third rule
+  // reads beside it; the subject's groups come from the PIP as
+  // OWNER_IDENTITY, looked up by OWNER_SUBJECT (the person by username).
+  // -------------------------------------------------------------------------
+  // On the RESOURCE: `definition` or `job`.
+  REPORT_OBJECT_KIND: 'urn:sts:xacml:report-object-kind',
+  // On the RESOURCE: the group DNs the definition is shared with (a job's,
+  // its definition's), compared as OBJECT_OWNER is. Empty for a row shared
+  // with nobody, and for a question about the API rather than a row.
+  REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group',
+  // -------------------------------------------------------------------------
+  // THE ACCESS REQUEST RULE'S VOCABULARY (#1180): an AuthZEN access request
+  // a person would approve, deny or revoke (resource
+  // `authzen-access-request`, action `approve-access-request`). On the
+  // RESOURCE, the request: its id, the PEP that asked (requester), the
+  // subject it is about and its type, the action, the resource and its
+  // type, and the application — the requester and the subject lowercased.
+  // -------------------------------------------------------------------------
+  ACCESS_REQUEST_ID: 'urn:sts:xacml:authzen:access-request-id',
+  ACCESS_REQUEST_REQUESTER: 'urn:sts:xacml:authzen:request-requester',
+  ACCESS_REQUEST_SUBJECT: 'urn:sts:xacml:authzen:request-subject',
+  ACCESS_REQUEST_SUBJECT_TYPE: 'urn:sts:xacml:authzen:request-subject-type',
+  ACCESS_REQUEST_ACTION: 'urn:sts:xacml:authzen:request-action',
+  ACCESS_REQUEST_RESOURCE: 'urn:sts:xacml:authzen:request-resource',
+  ACCESS_REQUEST_RESOURCE_TYPE:
+    'urn:sts:xacml:authzen:request-resource-type',
+  ACCESS_REQUEST_APPLICATION: 'urn:sts:xacml:authzen:request-application',
+  // On the SUBJECT: whether the policy's advice named the approver (a role
+  // they hold, a group they are in, an owner of the application), a
+  // boolean, and every name they go by, lowercased — for the
+  // self-approval comparison.
+  APPROVER_ELIGIBLE: 'urn:sts:xacml:authzen:approver-eligible',
+  APPROVER_IDENTITY: 'urn:sts:xacml:authzen:approver-identity',
+  // On the ENVIRONMENT: the door the approver acts through — `portal` or
+  // `admin-api`.
+  APPROVER_DOOR: 'urn:sts:xacml:authzen:approver-door'
 };
 
 // ---------------------------------------------------------------------------
@@ -335,6 +435,50 @@ const GNAP_RIGHT_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE USER-MANAGED ACCESS QUESTIONS (#1168). One RPT permission — one
+// registered resource, one scope — is issued only when every layer answers
+// Permit: the realm's `uma-authorization` policy (built in, CALLED like
+// `role-issuance`, overridden by the `ou=policies` entry
+// `uma.authorizationPolicy` names), the resource OWNER's own document (the
+// `uma-owner-default` template's shape, written by the portal's share form,
+// decided alone through `decidePolicy()` as an application's fine-grained
+// policy is), and — where the resource server enforces it — that
+// application's fine-grained policy (#564). `xacml_request.js`'s `uma()`
+// spells the facts and FORCES the action-id by layer: `ACTION` for the
+// realm's layer, the scope itself for the owner's, `FGA_ACTION` for the
+// resource server's.
+//
+// `APPROVAL_OBLIGATION` is what a share saved with *Ask me each time*
+// carries on its Permit: the PEP answers `request_submitted`, queues the
+// request for the owner, and an approval APPENDS a time-bound Rule to the
+// owner's document (phase 5) — so the record of what was approved IS the
+// policy. The PEP discharges this one obligation and no other; a Permit
+// carrying an obligation it does not know refuses, as every embedded PEP's
+// does (`xacml.ts`'s `enforce()`).
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids and the one obligation of the User-Managed Access
+ * questions (#1168).
+ */
+const UMA_ATTRIBUTE = {
+  ACTION: 'issue-uma-permission',
+  FGA_ACTION: 'grant-uma-permission',
+  APPROVAL_OBLIGATION: 'urn:sts:xacml:obligation:uma-approval',
+  // The assignment an approval obligation may carry: how long, in seconds,
+  // an approval the owner gives is to hold. Absent, the PEP's own default.
+  APPROVAL_SECONDS: 'urn:sts:xacml:uma-approval-seconds',
+  // The template ids, and the built-in realm policy's name where no
+  // `uma.authorizationPolicy` entry overrides it.
+  REALM_TEMPLATE: 'uma-authorization',
+  OWNER_TEMPLATE: 'uma-owner-default',
+  // The owner document's own rule, and the id every share rule carries
+  // after this prefix (phase 3's form writes them; `uma_owner_policy.ts`
+  // reads them back).
+  OWNER_SELF_RULE: 'owner-self',
+  SHARE_RULE_PREFIX: 'share:'
+};
+
+// ---------------------------------------------------------------------------
 // THE TRANSFER QUESTIONS (#98 D4, the design's section 6: "geofencing is
 // policy, not code"). When the service is deployed as CELLS — each in one
 // legal jurisdiction, each person homed in one — three questions go to the
@@ -392,6 +536,133 @@ const TRANSFER_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE PASSKEY QUESTIONS (#536). The passkey policy (#527-#535, Directory ->
+// Policies) is where a realm CONFIGURES how its passkeys behave; whether a
+// given passkey may be registered or may sign somebody in is DECIDED here,
+// by rcbj's rule that every authorization decision is a rule of the issuance
+// policy. `common/passkey_policy.ts` gathers the facts — the key's BE flag,
+// the minimum PIN length it reported, the device serial its attestation
+// named and whether the person holds it, what its recorded attestation and
+// the FIDO Metadata Service say — and the selected profile's rows, and asks:
+//
+//   * REGISTER_ACTION when `credentials.addKey()` is about to write a key;
+//   * USE_ACTION when a passkey has answered a sign-in (at the session's
+//     start, and at the two assertion doors for the attestation rules);
+//   * RECOVER_ACTION (#724) when a way back into an account that does not
+//     ask for a passkey — a password reset link, an activation link, a
+//     recovery code, an emailed code or link — is about to be used, or a
+//     session is starting for somebody who used one: whether the person's
+//     passkey policy (`recoveryAssurance`) lets that recovery restore
+//     access, and whether the session may reach an application before a
+//     passkey has signed them in.
+//
+// The answer's passkey obligation carries VERDICT (`allow` / `refuse`), CODE
+// (the error code the door records — STS-AUTHN-0312 to 0317, 0320, 0321, the
+// codes those refusals had as code, and 0355 and 0356 for #718's
+// post-quantum requirement, which was a rule from its first day) and REASON
+// (which rule, so the door
+// says the sentence it always said). A question carries only the facts one
+// door has, named in `urn:sts:xacml:passkey:facts`, and each rule fires only
+// on a question carrying its group. A document that answers without the
+// obligation — an override built before these rules — has not decided, and
+// the BUILT-IN rules are asked instead, so a rebuilt policy never silently
+// stops refusing.
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids, attribute identifiers and obligation of the two passkey
+ * questions (#536).
+ */
+const PASSKEY_ATTRIBUTE = {
+  REGISTER_ACTION: 'register-passkey',
+  USE_ACTION: 'use-passkey',
+  RECOVER_ACTION: 'recover-account',
+  RECOVERY_DOOR: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_DOOR,
+  RECOVERY_AT: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_AT,
+  RECOVERY_CREDENTIAL: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_CREDENTIAL,
+  RECOVERY_SELF_SERVICE: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_SELF_SERVICE,
+  RECOVERY_COVERED: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_COVERED,
+  RECOVERY_PENDING: xacmlRequest.VOCABULARY.PASSKEY_RECOVERY_PENDING,
+  FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
+  BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
+  MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
+  SERIAL: xacmlRequest.VOCABULARY.PASSKEY_SERIAL,
+  SERIAL_HELD: xacmlRequest.VOCABULARY.PASSKEY_SERIAL_HELD,
+  ATTESTATION_TRUSTED: xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_TRUSTED,
+  AAGUID: xacmlRequest.VOCABULARY.PASSKEY_AAGUID,
+  MODEL_LISTED: xacmlRequest.VOCABULARY.PASSKEY_MODEL_LISTED,
+  MODEL_COMPROMISED: xacmlRequest.VOCABULARY.PASSKEY_MODEL_COMPROMISED,
+  CERTIFICATION_RANK: xacmlRequest.VOCABULARY.PASSKEY_CERTIFICATION_RANK,
+  FIPS: xacmlRequest.VOCABULARY.PASSKEY_FIPS,
+  METADATA_UNCHECKED: xacmlRequest.VOCABULARY.PASSKEY_METADATA_UNCHECKED,
+  REQUIRED_RANK: xacmlRequest.VOCABULARY.PASSKEY_REQUIRED_RANK,
+  POLICY_PREFIX: xacmlRequest.VOCABULARY.PASSKEY_POLICY_PREFIX,
+  // The key's signature algorithm, whether it is post-quantum, and its lane
+  // (#718). The built-in rule reads POST_QUANTUM alone.
+  ALGORITHM: xacmlRequest.VOCABULARY.PASSKEY_ALGORITHM,
+  POST_QUANTUM: xacmlRequest.VOCABULARY.PASSKEY_POST_QUANTUM,
+  LANE: xacmlRequest.VOCABULARY.PASSKEY_LANE,
+  // What the key's attestation was signed with (#941). The built-in rule
+  // reads ATTESTATION_ALGORITHM_ALLOWED alone.
+  ATTESTATION_STATEMENT_ALGORITHM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_STATEMENT_ALGORITHM,
+  ATTESTATION_CERTIFICATE_ALGORITHM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM,
+  ATTESTATION_POST_QUANTUM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_POST_QUANTUM,
+  ATTESTATION_ALGORITHM_ALLOWED:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
+  // Whether the selected profile offers the key's algorithm at
+  // registration (#940).
+  PROFILE_ALGORITHM_OFFERED:
+    xacmlRequest.VOCABULARY.PASSKEY_PROFILE_ALGORITHM_OFFERED,
+  // Who enrolled the key (#945): an administrator, on the person's behalf.
+  // No built-in rule reads them; a realm's own rule may.
+  ENROLLED_BY_ADMIN: xacmlRequest.VOCABULARY.PASSKEY_ENROLLED_BY_ADMIN,
+  ENROLLED_BY: xacmlRequest.VOCABULARY.PASSKEY_ENROLLED_BY,
+  ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                      'webauthn.attestationPolicy',
+  ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                   'webauthn.attestationAllowedAaguids',
+  REQUIRE_FIPS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                'webauthn.attestationRequireFips',
+  OBLIGATION: 'urn:sts:xacml:obligation:passkey',
+  VERDICT: 'urn:sts:xacml:passkey-verdict',
+  CODE: 'urn:sts:xacml:passkey-code',
+  REASON: 'urn:sts:xacml:passkey-reason',
+  VERDICTS: ['allow', 'refuse'],
+  // The fact groups a question may carry.
+  GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
+           'algorithm', 'attestation-algorithm', 'profile-algorithm',
+           'enrolment', 'recovery', 'upgrade'],
+  // The reasons the built-in rules give, and the code each records, per
+  // action. A door words its refusal by the reason.
+  REASONS: {
+    'backup-eligible': { register: 'STS-AUTHN-0312', use: 'STS-AUTHN-0313' },
+    'pin-length': { register: 'STS-AUTHN-0314', use: 'STS-AUTHN-0315' },
+    'serial-missing': { register: 'STS-AUTHN-0321', use: '' },
+    'serial-not-held': { register: 'STS-AUTHN-0320', use: '' },
+    'attestation-unchecked': { register: '', use: 'STS-AUTHN-0317' },
+    'attestation-compromised': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-untrusted': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-aaguid': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
+    'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' },
+    // #941: the algorithms the attestation was signed with.
+    'attestation-algorithm': { register: 'STS-AUTHN-0411',
+                               use: 'STS-AUTHN-0412' },
+    // #940: an algorithm the selected profile does not offer.
+    'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
+    // #724: a RECOVER_ACTION question records the `use` column.
+    'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
+    'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
+  } as Record<string, { register: string; use: string }>,
+  // The certification levels in rank order, `none` first.
+  LEVELS: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus']
+};
+
+// ---------------------------------------------------------------------------
 // WHO MAY ACT FOR WHOM, AND AS WHAT (#186). Two questions, asked by
 // `common/delegation_policy.ts` through `issuance_gate.checkExchange()` for
 // an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs and a Kerberos
@@ -446,6 +717,26 @@ const EXCHANGE_ATTRIBUTE = {
   MAY_ACT_PRESENT: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_PRESENT,
   MAY_ACT_NAMES_ACTOR: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_NAMES_ACTOR,
   PROTECTED_GROUP: xacmlRequest.VOCABULARY.EXCHANGE_PROTECTED_GROUP,
+  // ACROSS A KERBEROS TRUST (#430 Phase 3): the facts the cross-realm rules
+  // read, each sent only for a question that crossed a trust.
+  SUBJECT_REALM: xacmlRequest.VOCABULARY.EXCHANGE_SUBJECT_REALM,
+  ACTOR_REALM: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_REALM,
+  TARGET_REALM: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_REALM,
+  LOCAL_REALM: xacmlRequest.VOCABULARY.EXCHANGE_LOCAL_REALM,
+  MECHANISM: xacmlRequest.VOCABULARY.EXCHANGE_MECHANISM,
+  TRUST_PARTNER: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_PARTNER,
+  TRUST_DIRECTION: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_DIRECTION,
+  TRUST_ATTRIBUTE: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_ATTRIBUTE,
+  TRUST_ENABLED: xacmlRequest.VOCABULARY.EXCHANGE_TRUST_ENABLED,
+  ACTOR_SELF_REALM: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_SELF_REALM,
+  TARGET_FOREIGN_TGT_DELEGATION:
+    xacmlRequest.VOCABULARY.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
+  CLASSIC_ACROSS_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                          'krb5.crossRealmClassicDelegation',
+  // The refusal kinds the cross-realm rules give, which the KDC turns into
+  // its own codes (`kerberos/krb5_kdc.js`).
+  TRUST_REFUSALS: ['trust-disabled', 'trust-direction', 'self-realm',
+                   'classic-across-realms', 'tgt-delegation'],
   // The realm's settings, as setting facts.
   DEFAULT_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                    'delegation.defaultSemantics',
@@ -479,7 +770,64 @@ const AUTHN_ATTRIBUTE = {
   // The obligation a Deny about the AUTHENTICATION carries, so the PEP can
   // tell it from a Deny about roles — which is set aside when the role
   // question is waived — and refuse on it anyway.
-  OBLIGATION: 'urn:sts:xacml:obligation:authentication'
+  OBLIGATION: 'urn:sts:xacml:obligation:authentication',
+  // A BAG (#457): the sign-in mechanisms the person's authentication
+  // satisfies — `federation.MECHANISM_IDS`: password, password-mfa,
+  // webauthn, federation, spnego, wallet — worked out from the session's
+  // events by `common/authn_mechanisms.ts`. Sent on a browser issuance to an
+  // application that allows only some.
+  MECHANISM: 'urn:sts:xacml:authn-mechanism',
+  // A BAG (#457): the mechanisms the application allows — its own
+  // `appAuthnMechanism` until #1148, the first-factor list of the named
+  // authentication policy it names (`appAuthnPolicy`) since. Absent where
+  // it allows every one.
+  ALLOWED_MECHANISM: 'urn:sts:xacml:allowed-authn-mechanism',
+  // The obligation the `authn-mechanism` rule's Deny carries (#457): the PEP
+  // reads it as "sign in again with one of the allowed mechanisms", never as
+  // a refusal about roles.
+  MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:authn-mechanism',
+  // A BAG (#475): the second factors the person's authentication gave —
+  // `common/mfa_mechanisms.ts`'s ids: password, securityKey, totp,
+  // recoveryCode, emailCode, emailLink, wallet. Sent on a browser issuance
+  // to an application that allows only some, and only when the
+  // authentication gave one.
+  MFA_MECHANISM: 'urn:sts:xacml:mfa-mechanism',
+  // A BAG (#475): the second factors the application allows — its own
+  // `appMfaMechanism` until #1148, the second-factor list of the named
+  // authentication policy it names (`appAuthnPolicy`) since. Absent where
+  // it leaves the realm's.
+  ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
+  // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
+  // reads it as "sign in again with one of the allowed second factors".
+  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism',
+  // A FEDERATED AUTHENTICATION (#565), sent only when a federation partner
+  // vouched for it: `consumer` for a consumer or social provider (a
+  // relationship naming `fedProvider`) and `enterprise` otherwise …
+  CATEGORY: 'urn:sts:xacml:authn-category',
+  // … the provider — `google`, `discord`, `github`… — empty for an
+  // enterprise partner …
+  PROVIDER: 'urn:sts:xacml:authn-provider',
+  // … and whether the address the partner sent counts as verified, `true` or
+  // `false`: a consumer provider's is unverified unless the provider said so.
+  EMAIL_VERIFIED: 'urn:sts:xacml:email-verified',
+  // A BAG (#723): OpenID Connect EAP ACR Values 1.0's `phr` and `phrh` as
+  // the authentication earned them (`common/phishing_resistance.ts`), or
+  // `none` — never empty when sent, so a rule on `none` speaks only to an
+  // issuance the gate described: the four browser kinds.
+  PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance',
+  // An assignment on the authentication obligation (#723) naming WHAT the
+  // authentication lacked — `phishing-resistant`, `hardware-protected` or
+  // `device-bound-session` (#740) — so the refusal the PEP writes says
+  // that, and not the role sentence.
+  REFUSAL: 'urn:sts:xacml:authentication-refusal',
+  // THE DEVICE-BOUND SESSION (#740). The fact token (`bound`, `skipped`,
+  // `pending`, `timedout`, `none`) and whether the application's passkey
+  // profile requires a bound session (`true` only when it does). The PEP
+  // sends both only while `authn.deviceBoundSessions` is on. A missing
+  // attribute is an empty bag, and string-is-in on one is False, so a
+  // rule about them does not fire when the feature is off.
+  DEVICE_BOUND_SESSION: 'urn:sts:xacml:device-bound-session',
+  DEVICE_BOUND_REQUIRED: 'urn:sts:xacml:device-bound-required'
 };
 
 // ---------------------------------------------------------------------------
@@ -650,8 +998,9 @@ const SIGNAL_ATTRIBUTE = {
   EVENT: 'urn:sts:xacml:signal-event',
   // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
   FAMILY: 'urn:sts:xacml:signal-family',
-  // Which of this service's surfaces received it: `admin-console` or
-  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #373,
+  // Which of this service's surfaces received it: `admin-console`,
+  // `user-portal` or `report` (`ssf/ssf_receivers.ts`'s SURFACES) — or,
+  // since #373,
   // `federation:<id>`, a federation relationship whose partner transmits
   // (`ssf/ssf_transmitters.ts`).
   SURFACE: 'urn:sts:xacml:signal-surface',
@@ -671,10 +1020,12 @@ const SIGNAL_ATTRIBUTE = {
  * per reaction to a received signal.
  */
 const SIGNAL_RESPONSE = {
-  // End the receiving surface's OWN sessions for the person the event names:
-  // the console's or the portal's relying-party sessions. Never the
-  // provider's — a receiver acts on what it holds, and what the provider
-  // holds is the transmitter's to end.
+  // End what the receiving surface ITSELF holds for the person the event
+  // names: its relying-party sessions, and since #1042 the tokens its own
+  // client was issued — the console, the portal and the reports application
+  // are static applications holding tokens. Never the provider's — a
+  // receiver acts on what it holds, and what the provider holds is the
+  // transmitter's to end.
   END_SESSIONS: 'signal-end-sessions',
   // FROM A FEDERATION PARTNER (#373): end the sessions THIS RELATIONSHIP
   // started for the person — the one a `complex` subject's session names,
@@ -856,6 +1207,97 @@ class PolicyBuilders {
     return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'x';
   }
+
+  // ---------------------------------------------------------------------------
+  // THE POLICYID OF AN APPLICATION'S FINE-GRAINED POLICY (#564).
+  //
+  // Derived from the application's realm-local identifier, deterministically
+  // and UNAMBIGUOUSLY — which `slug()` is not: `a.b` and `a-b` slug alike, so
+  // two applications would share a PolicyId and an audit row naming one
+  // could not say which. Every octet of the identifier's UTF-8 outside RFC
+  // 3986's unreserved set (letters, digits, `-`, `.`, `_`, `~`) is
+  // percent-encoded, so the encoding is injective and the result is a valid
+  // URI whatever the identifier holds — a client_id that is itself a URL, an
+  // SPN with a `/` and an `@`, a SAML entityID with a `#`. `encodeURIComponent`
+  // alone leaves `!'()*` bare; they are legal in a URN but are encoded here
+  // too, so the one rule is "unreserved stays, everything else is %XX".
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the PolicyId of an application's fine-grained policy:
+   * `urn:sts:xacml:fga:` and the identifier with every octet outside RFC
+   * 3986's unreserved characters percent-encoded.
+   *
+   * @param identifier - the application's identifier
+   * @returns the PolicyId
+   */
+  static fgaPolicyId(identifier: unknown): string {
+    log.debug("Entering PolicyBuilders.fgaPolicyId().");
+    const encoded = encodeURIComponent(String(identifier || ''))
+      .replace(/[!'()*]/g, function (one) {
+        return '%' + one.charCodeAt(0).toString(16).toUpperCase();
+      });
+    log.debug("Leaving PolicyBuilders.fgaPolicyId().");
+    return 'urn:sts:xacml:fga:' + encoded;
+  }
+
+  /**
+   * The PolicyId of a resource owner's User-Managed Access document
+   * (#1168): the owner's key — a person's subject, or an application's
+   * identifier — percent-encoded as `fgaPolicyId()` encodes, under
+   * `urn:sts:xacml:uma-owner:`, so the document says whose it is wherever
+   * it is read.
+   *
+   * @param owner - the owner's key
+   * @returns the PolicyId
+   */
+  static umaOwnerPolicyId(owner: unknown): string {
+    log.debug("Entering PolicyBuilders.umaOwnerPolicyId().");
+    const encoded = encodeURIComponent(String(owner || ''))
+      .replace(/[!'()*]/g, function (one) {
+        return '%' + one.charCodeAt(0).toString(16).toUpperCase();
+      });
+    log.debug("Leaving PolicyBuilders.umaOwnerPolicyId().");
+    return 'urn:sts:xacml:uma-owner:' + encoded;
+  }
+
+  /**
+   * A designator that MUST be present: the one way a policy makes an absent
+   * attribute an Indeterminate over a missing attribute rather than an
+   * empty bag, which is how the UMA realm policy says "nobody is known yet"
+   * (#1168).
+   *
+   * @param category - the category URI
+   * @param attributeId - the attribute identifier
+   * @param type - the datatype URI
+   * @returns the designator node, MustBePresent
+   */
+  static requiredDesignator(category: string, attributeId: string,
+                            type: string): any {
+    log.debug("Entering PolicyBuilders.requiredDesignator().");
+    log.debug("Leaving PolicyBuilders.requiredDesignator().");
+    return { kind: 'designator', category: category,
+             attributeId: attributeId, dataType: type, issuer: null,
+             mustBePresent: true };
+  }
+
+  /**
+   * "The boolean attribute holds true": `any-of(boolean-equal, true, bag)`,
+   * which is false for an absent attribute as for a false one — so a fact a
+   * PEP forgot to send never reads as permission (#1168).
+   *
+   * @param category - the category URI
+   * @param attributeId - the boolean attribute's identifier
+   * @returns the apply node
+   */
+  static holdsTrue(category: string, attributeId: string): any {
+    log.debug("Entering PolicyBuilders.holdsTrue().");
+    log.debug("Leaving PolicyBuilders.holdsTrue().");
+    return PolicyBuilders.apply(F3 + 'any-of', [
+      { kind: 'function', functionId: F1 + 'boolean-equal' },
+      PolicyBuilders.value(TYPE.BOOLEAN, 'true'),
+      PolicyBuilders.designator(category, attributeId, TYPE.BOOLEAN)
+    ]);
+  }
 }
 
 // The table's short name for the builders.
@@ -889,7 +1331,7 @@ const TEMPLATES: TemplateRow[] = [
     // questions, two documents: the root answers what a caller asks at
     // /xacml/pdp and what every remote PEP pulls, and this answers who may be
     // issued something here. Making them one document would mean editing the
-    // demo policy changed who could sign in, and narrowing one application's
+    // root policy changed who could sign in, and narrowing one application's
     // roles changed what /xacml/pdp told a remote PEP.
     //
     // WHY IT IS ONE POLICY FOR EVERY APPLICATION RATHER THAN ONE PER
@@ -971,6 +1413,34 @@ const TEMPLATES: TemplateRow[] = [
               'the cell then asks the BUILT-IN policy instead, so the ' +
               'strict default is never switched off by rebuilding this ' +
               'document.' },
+      { name: 'decidePasskeys',
+        label: 'Decide which passkeys may be registered and used (#536)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the two questions ' +
+              'a passkey is asked under the selected passkey policy: ' +
+              'register-passkey (refused when the realm takes only ' +
+              'device-bound passkeys and the key is backup eligible, when ' +
+              'it reports a minimum PIN shorter than the policy\'s or none ' +
+              'where one is required, or when the policy binds security ' +
+              'keys to the serials on the person\'s entry and the ' +
+              'attestation names none of theirs) and use-passkey (the same ' +
+              'backup-eligible and PIN rules at sign-in, and — while the ' +
+              'policy holds sign-ins to attestation — a model the FIDO ' +
+              'Metadata Service reports compromised, an untrusted ' +
+              'statement where trust is demanded, an AAGUID off the list, ' +
+              'a certification level or FIPS certification not met, or ' +
+              'metadata that could not be read); and, at both, a passkey ' +
+              'whose signature algorithm is not post-quantum (ML-DSA) where ' +
+              'the policy\'s postQuantumRequired requires one at that stage ' +
+              '(#718); and recover-account ' +
+              '(#724: under the passkey policy\'s recoveryAssurance, a ' +
+              'self-service recovery refused for a person holding a ' +
+              'passkey under operator-only, and a session after any ' +
+              'recovery limited to registering a passkey under not-weaker ' +
+              'and operator-only). No leaves the rules out — ' +
+              'and the passkey doors then ask the BUILT-IN policy instead, ' +
+              'so the rules are never switched off by rebuilding this ' +
+              'document.' },
       { name: 'decideExchanges',
         label: 'Decide who may act for whom (#186)',
         dflt: 'yes', type: 'string',
@@ -1035,6 +1505,28 @@ const TEMPLATES: TemplateRow[] = [
               '3.1.3.1 does not count email as an authenticator; this is ' +
               'the policy an operator writes when an application must not ' +
               'rest on one.' },
+      { name: 'requirePhishingResistant',
+        label: 'Applications that require a phishing-resistant sign-in ' +
+               '(phr, #723)',
+        dflt: '', type: 'string',
+        help: 'Application handles, comma separated. A browser issuance to ' +
+              'one of these is refused unless the authentication behind it ' +
+              'was phishing-resistant in the sense of OpenID Connect EAP ' +
+              'ACR Values 1.0 — a passkey or security key already ' +
+              'registered, or a TLS client certificate — whatever the ' +
+              'client asked for. Empty adds no rule. Set the application\'s ' +
+              'default acr values (oauthDefaultAcrValues) to phr as well, so ' +
+              'the sign-in screen asks for the key rather than refusing a ' +
+              'password afterwards.' },
+      { name: 'requireHardwareProtected',
+        label: 'Applications that require a hardware-protected key (phrh, ' +
+               '#723)',
+        dflt: '', type: 'string',
+        help: 'Application handles, comma separated. As the row above, and ' +
+              'the key must also be hardware-protected: a passkey whose ' +
+              'attestation this realm trusts and whose backup-eligible flag ' +
+              'is clear. A synced passkey, an unattested key and a client ' +
+              'certificate are refused. Empty adds no rule.' },
       { name: 'decideDevices',
         label: 'Decide on the registered device (#164)',
         dflt: 'yes', type: 'string',
@@ -1057,6 +1549,29 @@ const TEMPLATES: TemplateRow[] = [
               'to one declared for OpenID Connect. An application declared ' +
               'for nothing is never refused by it. Development mode is not ' +
               'refused. No builds the policy without the rule.' },
+      { name: 'decideMfaMechanisms',
+        label: 'Require a second factor the application allows',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
+              'application that lists the second factors it allows (the ' +
+              'second factors of the authentication policy it names, ' +
+              'appAuthnPolicy) is denied when the person\'s session gave a ' +
+              'second factor and none of them is listed, with an ' +
+              'obligation the sign-in door reads as "sign in again with one ' +
+              'of these". A session on one factor is not denied by it, and ' +
+              'a policy that lists none leaves the realm\'s second ' +
+              'factors. No builds the policy without the rule.' },
+      { name: 'decideAuthnMechanisms',
+        label: 'Require a sign-in mechanism the application allows',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
+              'application that lists the mechanisms it allows (the first ' +
+              'factors of the authentication policy it names, ' +
+              'appAuthnPolicy) is denied unless the person\'s session ' +
+              'satisfies one of them, with an obligation the sign-in door ' +
+              'reads as "sign in again with one of these". A policy that ' +
+              'lists none allows every one. No builds the policy without ' +
+              'the rule.' },
       { name: 'deviceExempt',
         label: 'Applications the compliant-device rule never refuses',
         dflt: 'sts-admin-console, sts-user-portal', type: 'string',
@@ -1076,7 +1591,32 @@ const TEMPLATES: TemplateRow[] = [
               'one of them, a second factor is not enough: an attacker ' +
               'relaying a person\'s one-time code from another machine ' +
               'passes a code, and cannot pass a WebAuthn ceremony bound to ' +
-              'this origin. Empty makes every MEDIUM a second-factor step-up.' }
+              'this origin. Empty makes every MEDIUM a second-factor ' +
+              'step-up.' },
+      { name: 'stepUpSignals',
+        label: 'Signals that demand a SECOND FACTOR below MEDIUM',
+        dflt: 'tor-exit, reputation, operator-deny', type: 'string',
+        help: 'The risk signals, comma separated, that ask for a second ' +
+              'factor at LOW, where the level alone asks for nothing ' +
+              '(#503). The score is a likelihood ratio and the MEDIUM line ' +
+              'is set for the whole population (risk.mediumScorePercent, ' +
+              '300 by default), so one signal lifts a familiar sign-in ' +
+              'over it less often than it did when the line was 1: a Tor ' +
+              'exit (×5) needs a model score of 0.6. A list the operator ' +
+              'loaded is a statement about the ADDRESS, not about this ' +
+              'person\'s habits, so what to do about it is decided here, ' +
+              'as policy, rather than by rescaling the factors. At MEDIUM ' +
+              'and HIGH the level\'s own rules decide. `none` builds no ' +
+              'such rule.' },
+      { name: 'refuseSignals',
+        label: 'Signals that REFUSE whatever the level',
+        dflt: '', type: 'string',
+        help: 'The risk signals, comma separated, that refuse the issuance ' +
+              'outright at any level, as HIGH does (#503). Empty by ' +
+              'default: a refusal on an address signal is what locked ' +
+              'every administrator out on #226, which is why a known ' +
+              'context caps such evidence at MEDIUM. The applications ' +
+              'neverLockOut names are stepped up instead, as at HIGH.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildRoleIssuance().');
@@ -1085,11 +1625,16 @@ const TEMPLATES: TemplateRow[] = [
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
+      const phrApps = B.listOf(given.requirePhishingResistant || '');
+      const phrhApps = B.listOf(given.requireHardwareProtected || '');
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
+      const decideMechanisms = B.yes(given.decideAuthnMechanisms, true);
+      const decideMfa = B.yes(given.decideMfaMechanisms, true);
       const decideScopes = B.yes(given.decideScopes, true);
       const decideGnapRights = B.yes(given.decideGnapRights, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
+      const decidePasskeys = B.yes(given.decidePasskeys, true);
       const decideExchanges = B.yes(given.decideExchanges, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
         ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
@@ -1097,6 +1642,14 @@ const TEMPLATES: TemplateRow[] = [
           return one.toLowerCase() !== 'none';
         });
       const keySignals = B.listOf(given.keySignals);
+      // #503: the two signal-keyed lists. The step-up list has a default
+      // and `none` empties it; the refuse list is empty unless given.
+      const stepUpSignals = B.listOf(given.stepUpSignals === undefined
+        ? 'tor-exit, reputation, operator-deny' : given.stepUpSignals)
+        .filter(function (one: string): boolean {
+          return one.toLowerCase() !== 'none';
+        });
+      const refuseSignals = B.listOf(given.refuseSignals);
       const neverLockOut = B.listOf(given.neverLockOut === undefined
         ? 'sts-admin-console' : given.neverLockOut)
         .filter(function (one: string): boolean {
@@ -1179,14 +1732,24 @@ const TEMPLATES: TemplateRow[] = [
         return [{ id: RISK_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
                   assignments: assignments }];
       };
-      const keySignal = keySignals.length
-        ? B.apply(F3 + 'any-of-any', [
-          { kind: 'function', functionId: F1 + 'string-equal' },
-          B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
-          B.apply(F1 + 'string-bag', keySignals.map(function (one) {
-            return B.value(TYPE.STRING, one);
-          }))])
-        : null;
+      // "ONE OF THESE SIGNALS FIRED": the intersection of the SIGNAL bag
+      // and a list, for the key signals and (#503) the two lists below.
+      // `null` for an empty list, so a rule built on it is left out.
+      const signalIn = function (names: string[]): any {
+        log.debug("Entering signalIn().");
+        log.debug("Leaving signalIn().");
+        return names.length
+          ? B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+            B.apply(F1 + 'string-bag', names.map(function (one) {
+              return B.value(TYPE.STRING, one);
+            }))])
+          : null;
+      };
+      const keySignal = signalIn(keySignals);
+      const stepUpSignal = signalIn(stepUpSignals);
+      const refuseSignal = signalIn(refuseSignals);
       const held = function (factor: string): any {
         log.debug("Entering held().");
         log.debug("Leaving held().");
@@ -1218,8 +1781,18 @@ const TEMPLATES: TemplateRow[] = [
         return protectedApp
           ? B.apply(F1 + 'and', [condition, not(protectedApp)]) : condition;
       };
+      // "THE RISK ASKS FOR SOMETHING": HIGH, MEDIUM, and (#503) a signal
+      // on either list — what the protected applications are stepped up on
+      // instead of refused, and what their alarm is raised on.
       const elevated = B.apply(F1 + 'or', [levelIs('HIGH'),
-                                           levelIs('MEDIUM')]);
+                                           levelIs('MEDIUM')]
+        .concat(refuseSignal ? [refuseSignal] : [])
+        .concat(stepUpSignal ? [stepUpSignal] : []));
+      const elevatedWords = 'at HIGH or MEDIUM' +
+        (refuseSignal || stepUpSignal
+           ? ' (or with a signal of ' +
+             refuseSignals.concat(stepUpSignals).join(', ') + ')'
+           : '');
       const riskRules: any[] = [];
       if (decideRisk) {
         riskRules.push({
@@ -1234,7 +1807,28 @@ const TEMPLATES: TemplateRow[] = [
           target: null, condition: unprotected(levelIs('HIGH')),
           obligations: obligation('refuse', ''), advice: []
         });
+        // A SIGNAL THAT REFUSES WHATEVER THE LEVEL (#503). Empty by
+        // default. HIGH is the rule above, so this one takes the rest and
+        // the two stay exclusive; the MEDIUM rules below leave it out.
+        if (refuseSignal) {
+          riskRules.push({
+            id: options.idBase + ':rule:risk-signal-refuse',
+            effect: model.EFFECT.DENY,
+            description: 'Refuse an authentication carrying one of these ' +
+                         'signals, whatever its level: ' +
+                         refuseSignals.join(', ') + '.',
+            target: null,
+            condition: unprotected(B.apply(F1 + 'and', [refuseSignal,
+              not(levelIs('HIGH'))])),
+            obligations: obligation('refuse', ''), advice: []
+          });
+        }
         if (keySignal) {
+          const mediumKey = [levelIs('MEDIUM'), keySignal,
+            not(satisfied('security-key'))];
+          if (refuseSignal) {
+            mediumKey.push(not(refuseSignal));
+          }
           riskRules.push({
             id: options.idBase + ':rule:risk-medium-key',
             effect: model.EFFECT.DENY,
@@ -1242,8 +1836,7 @@ const TEMPLATES: TemplateRow[] = [
                          'TLS client, refuse until the authentication used ' +
                          'a SECURITY KEY — the obligation asks for one.',
             target: null,
-            condition: unprotected(B.apply(F1 + 'and', [levelIs('MEDIUM'),
-              keySignal, not(satisfied('security-key'))])),
+            condition: unprotected(B.apply(F1 + 'and', mediumKey)),
             obligations: obligation('step-up', 'security-key'), advice: []
           });
         }
@@ -1251,6 +1844,9 @@ const TEMPLATES: TemplateRow[] = [
           not(satisfied('second-factor'))];
         if (keySignal) {
           secondFactor.push(not(keySignal));
+        }
+        if (refuseSignal) {
+          secondFactor.push(not(refuseSignal));
         }
         riskRules.push({
           id: options.idBase + ':rule:risk-medium-second-factor',
@@ -1261,6 +1857,33 @@ const TEMPLATES: TemplateRow[] = [
           condition: unprotected(B.apply(F1 + 'and', secondFactor)),
           obligations: obligation('step-up', 'second-factor'), advice: []
         });
+        // A SIGNAL THAT DEMANDS A SECOND FACTOR BELOW MEDIUM (#503): at
+        // LOW, where the level alone asks for nothing (UNSCORED never
+        // carries a signal). MEDIUM and HIGH are the rules above, so the
+        // risk rules stay exclusive and a Deny still carries exactly one
+        // instruction. The ticket's arithmetic: with the MEDIUM line at 3
+        // (#499) a Tor exit (×5) lifts the model's score over it only from
+        // 0.6, where a line at 1 needed 0.2; the factors are evidence and
+        // the line is the population's prior, so rescaling one by the
+        // other would count the prior twice — the decision is policy.
+        if (stepUpSignal) {
+          const lowStepUp = [stepUpSignal, not(levelIs('HIGH')),
+            not(levelIs('MEDIUM')), not(satisfied('second-factor'))];
+          if (refuseSignal) {
+            lowStepUp.push(not(refuseSignal));
+          }
+          riskRules.push({
+            id: options.idBase + ':rule:risk-signal-step-up',
+            effect: model.EFFECT.DENY,
+            description: 'Below MEDIUM, with one of these signals (' +
+                         stepUpSignals.join(', ') + '), refuse until the ' +
+                         'authentication carried a SECOND FACTOR — the ' +
+                         'obligation asks for one.',
+            target: null,
+            condition: unprotected(B.apply(F1 + 'and', lowStepUp)),
+            obligations: obligation('step-up', 'second-factor'), advice: []
+          });
+        }
         // THE APPLICATIONS RISK MAY NEVER LOCK OUT (#226): a step-up to the
         // strongest factor the person HOLDS, at HIGH as at MEDIUM, and never
         // a refusal. Two rules, exclusive by what is held.
@@ -1268,9 +1891,9 @@ const TEMPLATES: TemplateRow[] = [
           riskRules.push({
             id: options.idBase + ':rule:risk-protected-key',
             effect: model.EFFECT.DENY,
-            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                         'MEDIUM, ask a person who holds a security key ' +
-                         'for it — never a refusal.',
+            description: 'For ' + neverLockOut.join(', ') + ', ' +
+                         elevatedWords + ', ask a person who holds a ' +
+                         'security key for it — never a refusal.',
             target: null,
             condition: B.apply(F1 + 'and', [protectedApp, elevated,
               held('security-key'), not(satisfied('security-key'))]),
@@ -1279,9 +1902,10 @@ const TEMPLATES: TemplateRow[] = [
           riskRules.push({
             id: options.idBase + ':rule:risk-protected-second-factor',
             effect: model.EFFECT.DENY,
-            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                         'MEDIUM, ask a person who holds a second factor ' +
-                         'and no security key for it — never a refusal.',
+            description: 'For ' + neverLockOut.join(', ') + ', ' +
+                         elevatedWords + ', ask a person who holds a ' +
+                         'second factor and no security key for it — ' +
+                         'never a refusal.',
             target: null,
             condition: B.apply(F1 + 'and', [protectedApp, elevated,
               not(held('security-key')), held('second-factor'),
@@ -1312,6 +1936,118 @@ const TEMPLATES: TemplateRow[] = [
           advice: []
         });
       }
+
+      // -------------------------------------------------------------------
+      // A PHISHING-RESISTANT AUTHENTICATION, REQUIRED BY AN APPLICATION
+      // (#723). Two Deny rules, each only for the applications listed (the
+      // resource-id the PEP sends is the application handle), each reading
+      // `PHISHING_RESISTANCE`, which the gate sends on a browser issuance
+      // and which always holds a value there — `none` when neither class
+      // was earned — so neither rule speaks to an issuance the gate did not
+      // describe. The authentication obligation, `refuseEmail`'s: a refusal
+      // about the authentication, which the PEP enforces where the role
+      // question was waived too. A step-up is the client's to ask for —
+      // `acr_values=phr`, or the application's default acr values — and
+      // this is the operator's floor under it.
+      // -------------------------------------------------------------------
+      const appIn = function appIn(handles: string[]): any {
+        log.debug("Entering appIn().");
+        log.debug("Leaving appIn().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                       TYPE.STRING),
+          B.apply(F1 + 'string-bag', handles.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))]);
+      };
+      const earned = function earned(value: string): any {
+        log.debug("Entering earned().");
+        log.debug("Leaving earned().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, value),
+          B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
+                       TYPE.STRING)]);
+      };
+      const lacked = function lacked(what: string): any[] {
+        log.debug("Entering lacked().");
+        log.debug("Leaving lacked().");
+        return [{ id: AUTHN_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
+                  assignments: [{ attributeId: AUTHN_ATTRIBUTE.REFUSAL,
+                    category: null, issuer: null,
+                    expression: B.value(TYPE.STRING, what) }] }];
+      };
+      if (phrApps.length) {
+        riskRules.push({
+          id: options.idBase + ':rule:phishing-resistant',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse ' + phrApps.join(', ') + ' an issuance on ' +
+                       'an authentication that was not phishing-resistant ' +
+                       '(OpenID Connect EAP ACR Values 1.0, phr).',
+          target: null,
+          condition: B.apply(F1 + 'and', [appIn(phrApps), earned('none')]),
+          obligations: lacked('phishing-resistant'),
+          advice: []
+        });
+      }
+      if (phrhApps.length) {
+        riskRules.push({
+          id: options.idBase + ':rule:hardware-protected',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse ' + phrhApps.join(', ') + ' an issuance on ' +
+                       'an authentication whose key was not shown to be ' +
+                       'hardware-protected (OpenID Connect EAP ACR Values ' +
+                       '1.0, phrh).',
+          target: null,
+          condition: B.apply(F1 + 'and', [
+            appIn(phrhApps),
+            B.apply(F1 + 'integer-greater-than', [
+              B.apply(F1 + 'string-bag-size', [
+                B.designator(env, AUTHN_ATTRIBUTE.PHISHING_RESISTANCE,
+                             TYPE.STRING)]),
+              B.value(TYPE.INTEGER, '0')]),
+            B.apply(F1 + 'not', [earned('phrh')])]),
+          obligations: lacked('hardware-protected'),
+          advice: []
+        });
+      }
+
+      // -------------------------------------------------------------------
+      // A DEVICE-BOUND SESSION THE APPLICATION REQUIRES (#740). The
+      // requirement attribute is sent only while the feature is on and the
+      // passkey profile requires a binding, and the fact is the session's.
+      // This rule refuses `skipped` and `timedout`. `pending` is held by
+      // the PEP before the policy is asked, and `none` and `bound` are not
+      // refusals. A missing attribute is an empty bag, so the rule is
+      // inapplicable when the feature is off or the profile does not
+      // require one. The authentication obligation, so a refusal is not
+      // waived with the role question.
+      // -------------------------------------------------------------------
+      riskRules.push({
+        id: options.idBase + ':rule:device-bound-session',
+        effect: model.EFFECT.DENY,
+        description: 'Refuse an issuance an application requires to be ' +
+                     'device-bound when registration was skipped or the ' +
+                     'wait elapsed without a binding.',
+        target: null,
+        condition: B.apply(F1 + 'and', [
+          B.apply(F1 + 'string-is-in', [
+            B.value(TYPE.STRING, 'true'),
+            B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_REQUIRED,
+                         TYPE.STRING)]),
+          B.apply(F1 + 'or', [
+            B.apply(F1 + 'string-is-in', [
+              B.value(TYPE.STRING, 'skipped'),
+              B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_SESSION,
+                           TYPE.STRING)]),
+            B.apply(F1 + 'string-is-in', [
+              B.value(TYPE.STRING, 'timedout'),
+              B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_SESSION,
+                           TYPE.STRING)])])
+        ]),
+        obligations: lacked('device-bound-session'),
+        advice: []
+      });
 
       // -------------------------------------------------------------------
       // THE REGISTERED DEVICE (#164 decision 3, phase 6). Two Deny rules,
@@ -1481,6 +2217,13 @@ const TEMPLATES: TemplateRow[] = [
         return stringIs(model.CATEGORY.ENVIRONMENT,
                         xacmlRequest.VOCABULARY.SCOPE_STAGE, stage);
       };
+      // The grant the question is for (#549), told apart where a rule
+      // differs for an RFC 8693 token exchange.
+      const isTokenExchange = stringIs(model.CATEGORY.ENVIRONMENT,
+        xacmlRequest.VOCABULARY.GRANT_TYPE,
+        'urn:ietf:params:oauth:grant-type:token-exchange');
+      const isClientCredentials = stringIs(model.CATEGORY.ENVIRONMENT,
+        xacmlRequest.VOCABULARY.GRANT_TYPE, 'client_credentials');
       const settingOn = function (key: string): any {
         log.debug("Entering settingOn().");
         log.debug("Leaving settingOn().");
@@ -1526,6 +2269,73 @@ const TEMPLATES: TemplateRow[] = [
                          PROTOCOL_ATTRIBUTE.FAMILY, TYPE.STRING),
             B.designator(R, PROTOCOL_ATTRIBUTE.DECLARED, TYPE.STRING)]))]),
         obligations: [{ id: PROTOCOL_ATTRIBUTE.OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
+      // -------------------------------------------------------------------
+      // THE SIGN-IN MECHANISM RULE (#457). Deny a browser issuance to an
+      // application that lists the mechanisms it allows when the person's
+      // authentication satisfies none of them — in both modes, and only
+      // when the allowed bag holds something, which the PEP sends only for
+      // such an application. Its obligation is a RE-PROMPT, not a refusal:
+      // the door sends the person to sign in again with one of the allowed
+      // mechanisms. After the protocol rule, whose refusal is final, and
+      // before risk, so a session on the wrong mechanism is re-prompted for
+      // the right one before it is assessed for a factor.
+      // -------------------------------------------------------------------
+      const mechanismRules: any[] = decideMechanisms ? [{
+        id: options.idBase + ':rule:authn-mechanism',
+        effect: model.EFFECT.DENY,
+        description: 'Ask a person to sign in again when their ' +
+                     'authentication used none of the mechanisms the ' +
+                     'application allows (the first factors of the ' +
+                     'authentication policy it names, appAuthnPolicy). A ' +
+                     'policy that lists none allows every one.',
+        target: null,
+        condition: and([
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.ALLOWED_MECHANISM),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.MECHANISM, TYPE.STRING),
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.ALLOWED_MECHANISM, TYPE.STRING)]))]),
+        obligations: [{ id: AUTHN_ATTRIBUTE.MECHANISM_OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
+      // -------------------------------------------------------------------
+      // THE SECOND-FACTOR RULE (#475), the sign-in mechanism rule's
+      // companion and in the same place for the same reasons. Deny a browser
+      // issuance to an application that lists the second factors it allows
+      // when the person's authentication gave a second factor and none of
+      // them is listed. The PEP sends the given bag only when it holds
+      // something — the list says which second factors, never whether one
+      // is needed (rcbj) — and the rule asks for both bags anyway, so a
+      // request built some other way cannot turn "no second factor" into a
+      // deny. Its obligation is a RE-PROMPT.
+      // -------------------------------------------------------------------
+      const mfaRules: any[] = decideMfa ? [{
+        id: options.idBase + ':rule:mfa-mechanism',
+        effect: model.EFFECT.DENY,
+        description: 'Ask a person to sign in again when their ' +
+                     'authentication gave a second factor and none of the ' +
+                     'ones the application allows (the second factors of ' +
+                     'the authentication policy it names, appAuthnPolicy). ' +
+                     'A policy that lists none leaves the realm\'s.',
+        target: null,
+        condition: and([
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM),
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.MFA_MECHANISM),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.MFA_MECHANISM, TYPE.STRING),
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM,
+                         TYPE.STRING)]))]),
+        obligations: [{ id: AUTHN_ATTRIBUTE.MFA_MECHANISM_OBLIGATION,
                         on: model.EFFECT.DENY, assignments: [] }],
         advice: []
       }] : [];
@@ -1592,15 +2402,22 @@ const TEMPLATES: TemplateRow[] = [
                'STS-OAUTH-0578'),
         // A delegated permission the client was not granted: refused where
         // enforced — product always, development with the setting (#110).
+        // NOT for a token exchange (#549): there the exchange stage decides
+        // a delegated permission, and drops rather than refuses (below).
         [{ id: options.idBase + ':rule:permission-not-granted',
            effect: model.EFFECT.DENY,
            description: 'A delegated permission the client has not been ' +
                         'granted (oauthDelegatedPermission), in product ' +
-                        'mode or with oauth2.delegatedPermissionsEnforced.',
+                        'mode or with oauth2.delegatedPermissionsEnforced. ' +
+                        'A token exchange is decided at its own stage.',
            target: scopeTarget,
            condition: and([atStage('request'),
              fact(R, IA.SCOPE_DELEGATED, true),
              fact(R, IA.SCOPE_GRANTED, false),
+             B.apply(F1 + 'not', [isTokenExchange]),
+             // #551: a delegated grant needs a person; client_credentials
+             // has none, and its permissions are decided by role below.
+             B.apply(F1 + 'not', [isClientCredentials]),
              B.apply(F1 + 'or', [inProduct,
                settingOn('oauth2.delegatedPermissionsEnforced')])]),
            obligations: verdict(model.EFFECT.DENY, 'refuse',
@@ -1608,19 +2425,44 @@ const TEMPLATES: TemplateRow[] = [
            advice: [] }],
         // #108, in policy since #186: an exchange may narrow what the
         // subject token granted, never widen it — in product; development
-        // issues and the endpoint logs it.
+        // issues and the endpoint logs it. A DELEGATED PERMISSION IS NOT
+        // JUDGED HERE (#549): its one test is whether the caller holds it
+        // (the next rule), so a permission the subject token did not carry
+        // may be added by a caller it was delegated to. A question that
+        // does not say whether a scope is a permission is judged here as
+        // before.
         [{ id: options.idBase + ':rule:exchange-widens-scope',
            effect: model.EFFECT.DENY,
            description: 'A token exchange asking for a scope the verified ' +
                         'subject token does not carry, in product mode ' +
                         '(RFC 8693 leaves the scope to the server; this ' +
-                        'one narrows and never widens).',
+                        'one narrows and never widens). A delegated ' +
+                        'permission is judged by the next rule instead.',
            target: scopeTarget,
            condition: and([atStage('exchange'), inProduct,
              fact(R, IA.SUBJECT_TOKEN_HAS_SCOPE, true),
-             fact(R, IA.SCOPE_IN_SUBJECT_TOKEN, false)]),
+             fact(R, IA.SCOPE_IN_SUBJECT_TOKEN, false),
+             B.apply(F1 + 'not', [fact(R, IA.SCOPE_DELEGATED, true)])]),
            obligations: verdict(model.EFFECT.DENY, 'refuse',
                                 'STS-OAUTH-0621'),
+           advice: [] }],
+        // #549: a delegated permission asked for in a token exchange is
+        // issued only to a caller that holds it (oauthDelegatedPermission),
+        // whether or not the subject token carried it — and one the caller
+        // does not hold is DROPPED, in EVERY mode (rcbj, 2026-10-10). The
+        // rest of the request is honoured: RFC 6749 section 3.3 lets the
+        // server issue a narrower scope than was asked.
+        [{ id: options.idBase + ':rule:exchange-permission-not-delegated',
+           effect: model.EFFECT.DENY,
+           description: 'Drop, in a token exchange, a delegated permission ' +
+                        'the calling client has not been granted ' +
+                        '(oauthDelegatedPermission), in every mode (#549).',
+           target: scopeTarget,
+           condition: and([atStage('exchange'),
+             fact(R, IA.SCOPE_DELEGATED, true),
+             fact(R, IA.SCOPE_GRANTED, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'drop',
+                                'STS-OAUTH-0954'),
            advice: [] }],
         // #303/#304: a scope its resource gates by role.
         [{
@@ -1638,6 +2480,29 @@ const TEMPLATES: TemplateRow[] = [
                            TYPE.STRING),
               B.designator(R, IA.AUTHORIZING_ROLE, TYPE.STRING)])])]),
           obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-ADMIN-0821'),
+          advice: []
+        }],
+        // #551: an APPLICATION's permission comes from a role. A permission
+        // asked for by an application subject is dropped unless a role it
+        // holds authorizes it (rolePermission), whether or not the resource
+        // gates it — `oauthDelegatedPermission` authorizes a permission only
+        // on a person's behalf. In every mode.
+        [{
+          id: options.idBase + ':rule:application-permission-not-authorized',
+          effect: model.EFFECT.DENY,
+          description: 'Drop an application permission asked for by an ' +
+                       'application subject (client_credentials) when no ' +
+                       'role it holds authorizes it — a delegated ' +
+                       'permission needs a person (#551).',
+          target: scopeTarget,
+          condition: and([
+            fact(R, IA.SCOPE_APPLICATION_PERMISSION, true),
+            B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+              { kind: 'function', functionId: F1 + 'string-equal' },
+              B.designator(model.CATEGORY.ACCESS_SUBJECT, IA.ROLE,
+                           TYPE.STRING),
+              B.designator(R, IA.AUTHORIZING_ROLE, TYPE.STRING)])])]),
+          obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-OAUTH-0957'),
           advice: []
         }],
         // Consent (#305): a scope the person has not agreed to, where the
@@ -1990,6 +2855,339 @@ const TEMPLATES: TemplateRow[] = [
           advice: [] }] : [];
 
       // -------------------------------------------------------------------
+      // THE PASSKEY QUESTIONS (#536): `register-passkey` and `use-passkey`,
+      // each rule targeted at its action-id and firing only on a question
+      // that carries its fact group. See PASSKEY_ATTRIBUTE. In the order the
+      // passkey policy's refusals were asked as code — backup eligibility,
+      // the PIN length, the serial; and at sign-in the attestation rules in
+      // signInVerdict()'s order — so the first Deny is the refusal a person
+      // was always shown. THE POST-QUANTUM RULE (#718) comes after all of
+      // them at each action, so a key refused today for its BE flag or its
+      // PIN is refused for that still. Every Deny carries the code and the
+      // reason; one Permit per action carries `allow`.
+      // -------------------------------------------------------------------
+      const PK = PASSKEY_ATTRIBUTE;
+      const pkVerdict = function (on: string, value: string, code: string,
+                                  reason: string): any[] {
+        log.debug("Entering pkVerdict().");
+        const text = function (id: string, v: string): any {
+          log.debug("Entering text().");
+          log.debug("Leaving text().");
+          return { attributeId: id, category: null, issuer: null,
+                   expression: B.value(TYPE.STRING, v) };
+        };
+        const assignments = [text(PK.VERDICT, value)];
+        if (code) {
+          assignments.push(text(PK.CODE, code));
+        }
+        if (reason) {
+          assignments.push(text(PK.REASON, reason));
+        }
+        log.debug("Leaving pkVerdict().");
+        return [{ id: PK.OBLIGATION, on: on, assignments: assignments }];
+      };
+      const carries = function (group: string): any {
+        log.debug("Entering carries().");
+        log.debug("Leaving carries().");
+        return stringIs(env, PK.FACTS, group);
+      };
+      const pkSetting = function (row: string): string {
+        log.debug("Entering pkSetting().");
+        log.debug("Leaving pkSetting().");
+        return PK.POLICY_PREFIX + row;
+      };
+      const sizeIs = function (bagFn: string, bag: any, op: string): any {
+        log.debug("Entering sizeIs().");
+        log.debug("Leaving sizeIs().");
+        return B.apply(F1 + op, [B.apply(F1 + bagFn, [bag]),
+                                 B.value(TYPE.INTEGER, '0')]);
+      };
+      const intBag = function (category: string, id: string): any {
+        log.debug("Entering intBag().");
+        log.debug("Leaving intBag().");
+        return B.designator(category, id, TYPE.INTEGER);
+      };
+      const strBag = function (category: string, id: string): any {
+        log.debug("Entering strBag().");
+        log.debug("Leaving strBag().");
+        return B.designator(category, id, TYPE.STRING);
+      };
+      // An integer fact below another: false over an empty bag on either
+      // side, so an absent fact never compares.
+      const below = function (left: any, right: any): any {
+        log.debug("Entering below().");
+        log.debug("Leaving below().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'integer-less-than' },
+          left, right]);
+      };
+      const anyOf = function (args: any[]): any {
+        log.debug("Entering anyOf().");
+        log.debug("Leaving anyOf().");
+        return B.apply(F1 + 'or', args);
+      };
+      const R2 = model.CATEGORY.RESOURCE;
+      const reportedPin = intBag(R2, PK.MIN_PIN_LENGTH);
+      const aaguidList = strBag(env, PK.ALLOWED_AAGUIDS);
+      const requiredRank = intBag(env, PK.REQUIRED_RANK);
+      const serialBound = sizeIs('string-bag-size',
+                                 strBag(env,
+                                        pkSetting('enterpriseSerialAttribute')),
+                                 'integer-greater-than');
+      // Every setting that demands a TRUSTED statement (webauthn_policy.ts's
+      // `demandsTrust`, as a rule): require-trusted, an AAGUID list, a
+      // certification level, FIPS, or serials bound to the person.
+      const demandsTrust = anyOf([
+        stringIs(env, PK.ATTESTATION_POLICY, 'require-trusted'),
+        sizeIs('string-bag-size', aaguidList, 'integer-greater-than'),
+        sizeIs('integer-bag-size', requiredRank, 'integer-greater-than'),
+        fact(env, PK.REQUIRE_FIPS, true),
+        serialBound]);
+      // The attestation rules apply only while the passkey policy holds
+      // sign-ins to them, and only while the attestation policy is not off or
+      // something still demands trust — signInVerdict()'s early answer.
+      const attestationHeld = and([
+        carries('attestation'),
+        fact(env, pkSetting('enforceAttestationAtSignIn'), true),
+        anyOf([not(stringIs(env, PK.ATTESTATION_POLICY, 'off')),
+               demandsTrust])]);
+      const levelDemanded = anyOf([
+        sizeIs('integer-bag-size', requiredRank, 'integer-greater-than'),
+        fact(env, PK.REQUIRE_FIPS, true)]);
+      const pkRule = function (action: string, reason: string,
+                               description: string, condition: any): any {
+        log.debug("Entering pkRule().");
+        const stage = action === PK.REGISTER_ACTION ? 'register' : 'use';
+        const code = (PK.REASONS[reason] || { register: '', use: '' })[stage];
+        log.debug("Leaving pkRule().");
+        return { id: options.idBase + ':rule:passkey-' + stage + '-' + reason,
+                 effect: model.EFFECT.DENY, description: description,
+                 target: actionIs(action), condition: condition,
+                 obligations: pkVerdict(model.EFFECT.DENY, 'refuse', code,
+                                        reason),
+                 advice: [] };
+      };
+      const backupRule = function (action: string): any {
+        log.debug("Entering backupRule().");
+        log.debug("Leaving backupRule().");
+        return pkRule(action, 'backup-eligible',
+          'Refuse a passkey whose authenticator set the backup-eligible ' +
+          'flag where the passkey policy takes only device-bound ones ' +
+          '(backupEligibility disallow, #528).',
+          and([carries('backup-eligible'),
+               fact(R2, PK.BACKUP_ELIGIBLE, true),
+               stringIs(env, pkSetting('backupEligibility'), 'disallow')]));
+      };
+      const pinRule = function (action: string): any {
+        log.debug("Entering pinRule().");
+        log.debug("Leaving pinRule().");
+        return pkRule(action, 'pin-length',
+          'Refuse a passkey whose reported minimum PIN length is below the ' +
+          'passkey policy\'s, or that reported none unless the policy ' +
+          'accepts that (enforcePinLength, minPinLength, ' +
+          'pinLengthOnlyIfSupported, #529).',
+          and([carries('pin-length'),
+               fact(env, pkSetting('enforcePinLength'), true),
+               anyOf([
+                 and([sizeIs('integer-bag-size', reportedPin,
+                             'integer-equal'),
+                      not(fact(env, pkSetting('pinLengthOnlyIfSupported'),
+                               true))]),
+                 below(reportedPin,
+                       intBag(env, pkSetting('minPinLength')))])]));
+      };
+      // A PASSKEY WHOSE ALGORITHM IS NOT POST-QUANTUM (#718), where the
+      // selected profile's postQuantumRequired names this stage: `sign-in`
+      // and `registration-and-sign-in` at use-passkey, the second alone at
+      // register-passkey. On the ALGORITHM's fact, never the lane's: an
+      // ML-DSA key made with #643's switch off carries no lane and is
+      // post-quantum. The fact is always sent with its group, so its
+      // absence is not read as "classical"; a question without the group
+      // never trips the rule.
+      const postQuantumRule = function (action: string): any {
+        log.debug("Entering postQuantumRule().");
+        const stages = action === PK.REGISTER_ACTION
+          ? [stringIs(env, pkSetting('postQuantumRequired'),
+                      'registration-and-sign-in')]
+          : [stringIs(env, pkSetting('postQuantumRequired'), 'sign-in'),
+             stringIs(env, pkSetting('postQuantumRequired'),
+                      'registration-and-sign-in')];
+        log.debug("Leaving postQuantumRule().");
+        return pkRule(action, 'post-quantum',
+          'Refuse a passkey whose signature algorithm is not post-quantum ' +
+          '(RFC 9964\'s ML-DSA) where the passkey policy requires one ' +
+          (action === PK.REGISTER_ACTION ? 'at registration'
+                                         : 'at sign-in') +
+          ' (postQuantumRequired, #718).',
+          and([carries('algorithm'),
+               not(fact(R2, PK.POST_QUANTUM, true)),
+               stages.length > 1 ? anyOf(stages) : stages[0]]));
+      };
+      // AN ATTESTATION NOT SIGNED WITH WHAT THE PROFILE'S
+      // attestationAlgorithms LISTS (#941), after the post-quantum rule at
+      // each action: at register-passkey whenever the list is set, and at
+      // use-passkey only while enforceAttestationAtSignIn holds sign-ins to
+      // the attestation rules, by what registration recorded. On the one
+      // computed fact, ALLOWED, which question() decided and which is
+      // always sent with its group; a question without the group never
+      // trips it.
+      const attestationAlgorithmRule = function (action: string): any {
+        log.debug("Entering attestationAlgorithmRule().");
+        const listed = sizeIs('string-bag-size',
+                              strBag(env, pkSetting('attestationAlgorithms')),
+                              'integer-greater-than');
+        const held = action === PK.REGISTER_ACTION ? [listed]
+          : [listed, fact(env, pkSetting('enforceAttestationAtSignIn'),
+                          true)];
+        log.debug("Leaving attestationAlgorithmRule().");
+        return pkRule(action, 'attestation-algorithm',
+          'Refuse a passkey whose attestation is not a trusted one signed, ' +
+          'statement and every certificate of its chain, with an ' +
+          'algorithm the passkey policy\'s attestationAlgorithms allows ' +
+          (action === PK.REGISTER_ACTION
+            ? '(#941).'
+            : ', while sign-ins are held to the attestation rules (#941).'),
+          and([carries('attestation-algorithm')].concat(held).concat([
+            not(fact(R2, PK.ATTESTATION_ALGORITHM_ALLOWED, true))])));
+      };
+      // A PASSKEY WHOSE ALGORITHM THE SELECTED PROFILE DOES NOT OFFER
+      // (#940), at register-passkey only, after the attestation-algorithm
+      // rule: on the one computed fact, OFFERED, which question() decided
+      // from the profile's resolved list. Only where the profile gives its
+      // population registration rows of its own (`registrationAlgorithmsFrom`
+      // `profile`): under the realm's settings the ceremony's own
+      // offered-algorithm check is the rule, as it always was, and a key
+      // written by value is not newly refused.
+      const profileAlgorithmRule = function (): any {
+        log.debug("Entering profileAlgorithmRule().");
+        log.debug("Leaving profileAlgorithmRule().");
+        return pkRule(PK.REGISTER_ACTION, 'profile-algorithm',
+          'Refuse a passkey whose signature algorithm is not one the ' +
+          'selected passkey policy profile offers at registration ' +
+          '(registrationAlgorithms and registrationMode, #940).',
+          and([carries('profile-algorithm'),
+               stringIs(env, pkSetting('registrationAlgorithmsFrom'),
+                        'profile'),
+               not(fact(R2, PK.PROFILE_ALGORITHM_OFFERED, true))]));
+      };
+      const passkeyRules: any[] = decidePasskeys ? [
+        backupRule(PK.REGISTER_ACTION),
+        pinRule(PK.REGISTER_ACTION),
+        pkRule(PK.REGISTER_ACTION, 'serial-missing',
+          'Where the passkey policy binds security keys to the serials on ' +
+          'the person\'s entry (enterpriseSerialAttribute, #532), refuse a ' +
+          'key whose attestation names no serial.',
+          and([carries('serial'), serialBound,
+               sizeIs('string-bag-size', strBag(R2, PK.SERIAL),
+                      'integer-equal')])),
+        pkRule(PK.REGISTER_ACTION, 'serial-not-held',
+          'And refuse one whose serial is not one of the person\'s.',
+          and([carries('serial'), serialBound,
+               sizeIs('string-bag-size', strBag(R2, PK.SERIAL),
+                      'integer-greater-than'),
+               not(fact(R2, PK.SERIAL_HELD, true))])),
+        postQuantumRule(PK.REGISTER_ACTION),
+        attestationAlgorithmRule(PK.REGISTER_ACTION),
+        profileAlgorithmRule(),
+        { id: options.idBase + ':rule:passkey-register-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Register every other passkey.',
+          target: actionIs(PK.REGISTER_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] },
+        backupRule(PK.USE_ACTION),
+        pinRule(PK.USE_ACTION),
+        pkRule(PK.USE_ACTION, 'attestation-unchecked',
+          'While the passkey policy holds sign-ins to the attestation rules ' +
+          '(enforceAttestationAtSignIn, #530), refuse a passkey whose model ' +
+          'the FIDO Metadata Service could not be asked about: an unchecked ' +
+          'key is not a checked one.',
+          and([attestationHeld, fact(R2, PK.METADATA_UNCHECKED, true)])),
+        pkRule(PK.USE_ACTION, 'attestation-compromised',
+          'And one whose model the FIDO Metadata Service now reports ' +
+          'compromised.',
+          and([attestationHeld, fact(R2, PK.MODEL_COMPROMISED, true)])),
+        pkRule(PK.USE_ACTION, 'attestation-untrusted',
+          'And one registered without a trusted attestation where a ' +
+          'setting demands trust.',
+          and([attestationHeld, demandsTrust,
+               not(fact(R2, PK.ATTESTATION_TRUSTED, true))])),
+        pkRule(PK.USE_ACTION, 'attestation-aaguid',
+          'And one whose model is not on webauthn.attestationAllowedAaguids.',
+          and([attestationHeld,
+               sizeIs('string-bag-size', aaguidList, 'integer-greater-than'),
+               not(B.apply(F3 + 'any-of-any', [
+                 { kind: 'function', functionId: F1 + 'string-equal' },
+                 strBag(R2, PK.AAGUID), aaguidList]))])),
+        pkRule(PK.USE_ACTION, 'attestation-unlisted',
+          'And one whose model the metadata service does not list, where a ' +
+          'certification level or FIPS is required.',
+          and([attestationHeld, levelDemanded,
+               not(fact(R2, PK.MODEL_LISTED, true))])),
+        pkRule(PK.USE_ACTION, 'attestation-level',
+          'And one whose model is certified below ' +
+          'webauthn.attestationMinCertificationLevel.',
+          and([attestationHeld,
+               below(intBag(R2, PK.CERTIFICATION_RANK), requiredRank)])),
+        pkRule(PK.USE_ACTION, 'attestation-fips',
+          'And one whose model holds no FIPS 140 certification where ' +
+          'webauthn.attestationRequireFips is on.',
+          and([attestationHeld, fact(env, PK.REQUIRE_FIPS, true),
+               fact(R2, PK.MODEL_LISTED, true),
+               not(fact(R2, PK.FIPS, true))])),
+        postQuantumRule(PK.USE_ACTION),
+        attestationAlgorithmRule(PK.USE_ACTION),
+        { id: options.idBase + ':rule:passkey-use-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Let every other passkey sign somebody in.',
+          target: actionIs(PK.USE_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] },
+        // -----------------------------------------------------------------
+        // ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724).
+        // Both rules need a person who HOLDS a passkey (`covered`): with
+        // none there is nothing for a recovery to be weaker than. The
+        // self-service rule is first, so under operator-only a recovery
+        // code at sign-in is refused rather than limited.
+        // -----------------------------------------------------------------
+        pkRule(PK.RECOVER_ACTION, 'recovery-self-service',
+          'Under recoveryAssurance operator-only, refuse a SELF-SERVICE ' +
+          'recovery — the forgot-password request and its link, a ' +
+          'recovery code or an emailed code or link at sign-in — for a ' +
+          'person who holds a passkey. An operator\'s reset or ' +
+          'activation link remains.',
+          and([carries('recovery'),
+               fact(R2, PK.RECOVERY_COVERED, true),
+               fact(R2, PK.RECOVERY_SELF_SERVICE, true),
+               stringIs(env, pkSetting('recoveryAssurance'),
+                        'operator-only')])),
+        pkRule(PK.RECOVER_ACTION, 'recovery-enrol-first',
+          'Under recoveryAssurance not-weaker or operator-only, a session ' +
+          'for a person who holds a passkey, started after a recovery ' +
+          '(one is pending on their entry, or this sign-in is itself a ' +
+          'recovery code or an emailed code or link) by anything but a ' +
+          'passkey, reaches no application: it is limited to registering ' +
+          'a passkey that satisfies the policy.',
+          and([carries('recovery'),
+               stringIs(R2, PK.RECOVERY_AT, 'session'),
+               fact(R2, PK.RECOVERY_COVERED, true),
+               anyOf([fact(R2, PK.RECOVERY_PENDING, true),
+                      sizeIs('string-bag-size',
+                             strBag(R2, PK.RECOVERY_DOOR),
+                             'integer-greater-than')]),
+               not(stringIs(R2, PK.RECOVERY_CREDENTIAL, 'webauthn')),
+               anyOf([stringIs(env, pkSetting('recoveryAssurance'),
+                               'not-weaker'),
+                      stringIs(env, pkSetting('recoveryAssurance'),
+                               'operator-only')])])),
+        { id: options.idBase + ':rule:passkey-recover-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Let every other recovery restore access.',
+          target: actionIs(PK.RECOVER_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] }] : [];
+
+      // -------------------------------------------------------------------
       // WHO MAY ACT FOR WHOM (#186): the two exchange questions, each
       // targeted at its action-id. See EXCHANGE_ATTRIBUTE. Every fact test
       // is false over an empty bag, so an absent party never compares equal
@@ -2139,6 +3337,60 @@ const TEMPLATES: TemplateRow[] = [
                                  assignments: [assignment(EX.CHOSEN, from)] }],
                  advice: [] };
       };
+      // ACROSS A KERBEROS TRUST (#430 Phase 3). Every one of these is false
+      // on a question that crossed no trust — the trust facts are sent only
+      // with one — so the rules below are the rules they were for every
+      // other question.
+      const acrossTrust = present(bagOf(env, EX.TRUST_PARTNER));
+      const mechanismIs = function (value: string): any {
+        log.debug("Entering mechanismIs().");
+        log.debug("Leaving mechanismIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+                                             bagOf(A, EX.MECHANISM)]);
+      };
+      const localRealm = bagOf(env, EX.LOCAL_REALM);
+      const foreign = function (category: string, id: string): any {
+        log.debug("Entering foreign().");
+        log.debug("Leaving foreign().");
+        return and([present(bagOf(category, id)), present(localRealm),
+                    not(shares(bagOf(category, id), localRealm))]);
+      };
+      const trustHas = function (name: string): any {
+        log.debug("Entering trustHas().");
+        log.debug("Leaving trustHas().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, name),
+                                             bagOf(env, EX.TRUST_ATTRIBUTE)]);
+      };
+      const forwardedAcross = and([acrossTrust, mechanismIs('forwarded')]);
+      const notForwarded = not(forwardedAcross);
+      // CLASSIC DELEGATION ACROSS REALMS, VOUCHED FOR (decision 5): with the
+      // realm's krb5.crossRealmClassicDelegation on, a classic S4U2Proxy
+      // whose evidence arrived as the front end's realm's cross-realm TGT —
+      // which that realm issues only after its own check of the front end's
+      // appAllowedToDelegateTo — is taken as that realm checked it.
+      const classicVouched = and([acrossTrust,
+        mechanismIs('S4U2Proxy-classic'), foreign(I, EX.ACTOR_REALM),
+        settingOn('krb5.crossRealmClassicDelegation')]);
+      // RESOURCE-BASED DELEGATION TO A FOREIGN TARGET is the target realm's
+      // to decide ([MS-SFU] 3.2.5.2.3): the front end's realm refers it.
+      const rbcdDeferred = and([acrossTrust, mechanismIs('S4U2Proxy-rbcd'),
+                                foreign(R, EX.TARGET_REALM)]);
+      // A FOREIGN ACTOR the target accepts by name has no entry here, and
+      // needs none: R's appAllowedToActOnBehalfOf names it `SPN@REALM`.
+      const foreignActorAccepted = and([acrossTrust,
+        foreign(I, EX.ACTOR_REALM),
+        shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]);
+      // [MS-KILE] 3.3.5.7.5's two conditions on the trust's attributes.
+      const tgtDelegationEnabled = and([
+        or([trustHas('within-forest'), trustHas('enable-tgt-delegation')]),
+        not(or([trustHas('no-tgt-delegation'), trustHas('quarantined')]))]);
+      const trustDeny = function (name: string, kind: string,
+                                  description: string, condition: any): any {
+        log.debug("Entering trustDeny().");
+        log.debug("Leaving trustDeny().");
+        return exchangeDeny(name, kind, description,
+                            and([acrossTrust, condition]));
+      };
       const requested = bagOf(A, EX.REQUESTED_SEMANTICS);
       const actorDefault = bagOf(I, EX.DEFAULT_SEMANTICS);
       const subjectDefault = bagOf(S, EX.DEFAULT_SEMANTICS);
@@ -2168,9 +3420,11 @@ const TEMPLATES: TemplateRow[] = [
           countIs('integer-less-than', '1')),
         exchangeDeny('unregistered-target', 'unregistered-target', 'Refuse a ' +
           'target no application registers: there is no entry to read ' +
-          'roles or relationships from.',
+          'roles or relationships from — unless it is in another Kerberos ' +
+          'realm across a trust (#430), whose own KDC holds its entry.',
           and([countIs('integer-equal', '1'),
-               not(fact(R, EX.TARGET_REGISTERED, true))])),
+               not(fact(R, EX.TARGET_REGISTERED, true)),
+               not(foreign(R, EX.TARGET_REALM)), notForwarded])),
         exchangeDeny('no-target', 'no-target', 'Refuse a delegation or ' +
           'impersonation that names no target; only a self exchange ' +
           'defaults to the subject token\'s own audience.',
@@ -2182,13 +3436,54 @@ const TEMPLATES: TemplateRow[] = [
           and([notSelf, or([fact(S, EX.SUBJECT_NOT_DELEGATED, true),
                             shares(bagOf(S, EX.SUBJECT_GROUP),
                                    bagOf(env, EX.PROTECTED_GROUP))])])),
+        // ACROSS A KERBEROS TRUST (#430 Phase 3), before the rest.
+        trustDeny('trust-disabled', 'trust-disabled', 'Refuse anything ' +
+          'across a trust that is disabled.',
+          not(fact(env, EX.TRUST_ENABLED, true))),
+        trustDeny('trust-direction', 'trust-direction', 'Refuse S4U2Self ' +
+          'for a user of another realm unless this realm\'s trust ACCEPTS ' +
+          'that realm\'s tickets (an incoming key: inbound or ' +
+          'bidirectional).',
+          and([mechanismIs('S4U2Self'), foreign(S, EX.SUBJECT_REALM),
+               not(or([B.apply(F1 + 'string-is-in', [
+                         B.value(TYPE.STRING, 'inbound'),
+                         bagOf(env, EX.TRUST_DIRECTION)]),
+                       B.apply(F1 + 'string-is-in', [
+                         B.value(TYPE.STRING, 'bidirectional'),
+                         bagOf(env, EX.TRUST_DIRECTION)])]))])),
+        trustDeny('self-realm', 'self-realm', 'Refuse S4U2Self for a user ' +
+          'of another realm unless the service lists that realm ' +
+          '(krb5S4uSelfRealm): empty means its own realm only.',
+          and([mechanismIs('S4U2Self'), foreign(S, EX.SUBJECT_REALM),
+               not(shares(bagOf(S, EX.SUBJECT_REALM),
+                          bagOf(I, EX.ACTOR_SELF_REALM)))])),
+        trustDeny('classic-across-realms', 'classic-across-realms',
+          'Refuse CLASSIC constrained delegation across a trust unless the ' +
+          'realm allows it (krb5.crossRealmClassicDelegation): ' +
+          'msDS-AllowedToDelegateTo is defined within one realm, and ' +
+          'resource-based delegation is the one that crosses.',
+          and([mechanismIs('S4U2Proxy-classic'),
+               not(settingOn('krb5.crossRealmClassicDelegation'))])),
+        trustDeny('tgt-delegation', 'tgt-delegation', 'Refuse a TGT ' +
+          'delegated across a trust (ok-as-delegate, a forwarded TGT) ' +
+          'unless [MS-KILE] 3.3.5.7.5\'s conditions hold — the trust is ' +
+          'within the forest or enables TGT delegation, and neither forbids ' +
+          'it nor is quarantined — and the service does not refuse it ' +
+          '(krb5ForeignTgtDelegation deny narrows; it never widens).',
+          and([mechanismIs('forwarded'), or([not(tgtDelegationEnabled),
+            B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, 'deny'),
+              bagOf(R, EX.TARGET_FOREIGN_TGT_DELEGATION)])])])),
         exchangeDeny('unknown-actor', 'intermediary', 'Refuse an actor with ' +
           'no entry in this realm: its entry is where the permission to act ' +
-          'lives.',
-          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true))])),
+          'lives — unless it is in another Kerberos realm and the target ' +
+          'accepts it by name, or its realm vouched for a classic ' +
+          'delegation the realm allows across trusts (#430).',
+          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true)),
+               not(foreignActorAccepted), not(classicVouched),
+               notForwarded])),
         exchangeDeny('user-actor-role', 'intermediary', 'Refuse a PERSON as ' +
           'the actor unless they hold the role delegation.actorRole names.',
-          and([notSelf, B.apply(F1 + 'string-is-in', [
+          and([notSelf, notForwarded, B.apply(F1 + 'string-is-in', [
             B.value(TYPE.STRING, 'user'), bagOf(I, EX.ACTOR_KIND)]),
                not(shares(bagOf(I, ISSUANCE_ATTRIBUTE.ROLE),
                           bagOf(env, EX.ACTOR_ROLE_SETTING)))])),
@@ -2196,7 +3491,7 @@ const TEMPLATES: TemplateRow[] = [
           'or the subject does not allow: an actor allows delegation only ' +
           'unless its entry says otherwise; a subject allows both unless ' +
           'its entry says otherwise.',
-          and([notSelf, or([
+          and([notSelf, notForwarded, or([
             not(or([semanticsIs('delegation'), semanticsIs('impersonation')])),
             and([semanticsIs('delegation'),
                  not(and([actorAllows('delegation'),
@@ -2207,7 +3502,8 @@ const TEMPLATES: TemplateRow[] = [
         exchangeDeny('subject-group', 'subject', 'Refuse a subject outside ' +
           'the groups the actor may act for (appDelegationSubjectGroup), ' +
           'unless the subject named this actor in may_act.',
-          and([notSelf, present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
+          and([notSelf, notForwarded,
+               present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
                not(fact(env, EX.MAY_ACT_NAMES_ACTOR, true)),
                not(shares(bagOf(S, EX.SUBJECT_GROUP),
                           bagOf(I, EX.ACTOR_SUBJECT_GROUP)))])),
@@ -2224,8 +3520,13 @@ const TEMPLATES: TemplateRow[] = [
           'delegates to R (appAllowedToDelegateTo on S, or ' +
           'appAllowedToActOnBehalfOf on R) and the actor is S, is R, or is ' +
           'one R accepts by name (appAllowedToActOnBehalfOf) — the last is ' +
-          'how a person or a third application acts.',
-          and([notSelf, semanticsIs('delegation'),
+          'how a person or a third application acts. Across a Kerberos ' +
+          'trust (#430), resource-based delegation to a foreign target is ' +
+          'the target realm\'s to decide, a classic one its realm vouched ' +
+          'for is allowed where the realm allows it, and a forwarded TGT ' +
+          'has no S to delegate from.',
+          and([notSelf, semanticsIs('delegation'), notForwarded,
+               not(rbcdDeferred), not(classicVouched),
                not(and([or([shares(actorId, sourceId),
                             shares(actorId, targetId),
                             shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]),
@@ -2234,7 +3535,7 @@ const TEMPLATES: TemplateRow[] = [
           'unless the actor may reach R: R is the actor itself, or on the ' +
           'actor\'s appAllowedToDelegateTo, or R accepts the actor ' +
           '(appAllowedToActOnBehalfOf).',
-          and([notSelf, semanticsIs('impersonation'),
+          and([notSelf, notForwarded, semanticsIs('impersonation'),
                not(or([shares(actorId, targetId),
                        shares(targetId, bagOf(I, EX.ACTOR_DELEGATES_TO)),
                        shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]))])),
@@ -2278,7 +3579,9 @@ const TEMPLATES: TemplateRow[] = [
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s), ' + protocolRules.length +
-                ' protocol rule(s).');
+                ' protocol rule(s), ' + mechanismRules.length +
+                ' mechanism rule(s), ' + mfaRules.length +
+                ' mechanism rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -2306,7 +3609,16 @@ const TEMPLATES: TemplateRow[] = [
                             ? ' — a security key where a signal is about the ' +
                               'device or TLS client (' + keySignals.join(', ') +
                               '), a second factor otherwise'
-                            : ' — a second factor') + '. The risk rules deny ' +
+                            : ' — a second factor') +
+                          (stepUpSignals.length
+                            ? '; below MEDIUM, one carrying ' +
+                              stepUpSignals.join(', ') + ' is refused until ' +
+                              'it carries a second factor (#503)'
+                            : '') +
+                          (refuseSignals.length
+                            ? '; one carrying ' + refuseSignals.join(', ') +
+                              ' is refused at any level (#503)'
+                            : '') + '. The risk rules deny ' +
                           'and override the role rule; an authentication ' +
                           'with no assessment is decided on roles alone.' +
                           (protectedApp
@@ -2331,6 +3643,18 @@ const TEMPLATES: TemplateRow[] = [
                           'issuance through a protocol family the ' +
                           'application is not declared for is refused, ' +
                           'unless it is declared for none.'
+                        : '') +
+                     (decideMechanisms
+                        ? ' AND ON THE SIGN-IN MECHANISM (#457): a browser ' +
+                          'sign-in to an application that lists the ' +
+                          'mechanisms it allows is sent to sign in again ' +
+                          'unless it used one of them.'
+                        : '') +
+                     (decideMfa
+                        ? ' AND ON THE SECOND FACTOR (#475): a browser ' +
+                          'sign-in to an application that lists the second ' +
+                          'factors it allows is sent to sign in again when ' +
+                          'it gave a second factor and none of them.'
                         : '') +
                      (decideScopes
                         ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
@@ -2360,6 +3684,15 @@ const TEMPLATES: TemplateRow[] = [
                           'and another cell\'s residents are released to a ' +
                           'reader here only on the same terms.'
                         : '') +
+                     (decidePasskeys
+                        ? ' AND WHICH PASSKEYS MAY BE REGISTERED AND SIGN ' +
+                          'SOMEBODY IN (#536), under the selected passkey ' +
+                          'policy: backup eligibility, the minimum PIN ' +
+                          'length, a security key\'s serial bound to the ' +
+                          'person, and — where the policy holds sign-ins to ' +
+                          'them — the attestation rules against the FIDO ' +
+                          'Metadata Service as it is now.'
+                        : '') +
                      (decideExchanges
                         ? ' AND WHO MAY ACT FOR WHOM (#186), at an RFC 8693 ' +
                           'token exchange, a WS-Trust OnBehalfOf / ActAs and ' +
@@ -2371,7 +3704,9 @@ const TEMPLATES: TemplateRow[] = [
                           'for the one audience asked for.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideProtocols || decideScopes || decideTransfers ||
+                        decideProtocols || decideMechanisms || decideMfa ||
+                        decideScopes || decideTransfers ||
+                        decidePasskeys ||
                         decideExchanges || decideGnapRights
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
@@ -2383,10 +3718,13 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: deviceRules.concat(protocolRules).concat(riskRules)
+        rules: deviceRules.concat(protocolRules).concat(mechanismRules)
+          .concat(mfaRules)
+          .concat(riskRules)
           .concat(scopeRules)
           .concat(gnapRightRules)
           .concat(transferRules)
+          .concat(passkeyRules)
           .concat(exchangeRules)
           .concat(decideRisk &&
                                                      protectedApp ? [{
@@ -2396,9 +3734,9 @@ const TEMPLATES: TemplateRow[] = [
           // makes the PEP say so loudly.
           id: options.idBase + ':rule:risk-protected-alarm',
           effect: model.EFFECT.PERMIT,
-          description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                       'MEDIUM, with no second factor to ask for: permit ' +
-                       'on the roles, and raise the alarm.',
+          description: 'For ' + neverLockOut.join(', ') + ', ' +
+                       elevatedWords + ', with no second factor to ask ' +
+                       'for: permit on the roles, and raise the alarm.',
           target: null,
           condition: B.apply(F1 + 'and', [protectedApp, elevated,
             not(held('second-factor')), condition]),
@@ -2901,9 +4239,11 @@ const TEMPLATES: TemplateRow[] = [
     blurb: 'The policy the embedded PEP asks before a subject reaches the ' +
            'admin console, the management API, the User Portal, SCIM or the ' +
            'SPIRE Server API.',
-    what: 'Produces ONE Permit rule whose condition conjoins two questions: ' +
-          'does the subject satisfy the resource\'s ROLE requirement ' +
-          '(holding one it names, or it naming none), AND does it satisfy ' +
+    what: 'Produces ONE Permit rule whose condition conjoins three ' +
+          'questions: does the subject satisfy the resource\'s ROLE ' +
+          'requirement (holding one it names, or it naming none), does it ' +
+          'hold EVERY role the resource names as required-all (#454; none ' +
+          'named asks nothing), AND does it satisfy ' +
           'the resource\'s OWNERSHIP requirement (the resource naming no ' +
           'owner, or the subject being that owner). Both must hold, so ' +
           'ownership is a constraint rather than a way round the roles. The ' +
@@ -2912,7 +4252,16 @@ const TEMPLATES: TemplateRow[] = [
           'the requirement and the owner both travel in the REQUEST, one ' +
           'document decides for every surface — and adding a helpdesk role ' +
           'that may manage somebody else\'s account is a SECOND RULE in this ' +
-          'policy rather than a change to this one or to any handler.',
+          'policy rather than a change to this one or to any handler. Since ' +
+          '#607 there is such a second rule: an OWNER holding OWNER_READ or ' +
+          'OWNER_WRITE may administer, through the management API, a role, ' +
+          'group, service account or application they own, within the ' +
+          'actions listed for its kind, never one closed to its owners and ' +
+          'never removing its last owner. Since #1030 a third rule decides ' +
+          'the report API\'s rows: a report administrator reaches any ' +
+          'definition or job, a report user one shared with a group they ' +
+          'are in, for the listed actions; an owner reaches their own ' +
+          'through the first rule, and an application only those.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -2938,7 +4287,128 @@ const TEMPLATES: TemplateRow[] = [
         help: 'yes or no. An unauthenticated session — the sign-in screen\'s ' +
               '"continue without signing in" — is a real subject here, and ' +
               'this conjunct keeps it out of every gated surface without ' +
-              'anybody having to name it in a role.' }
+              'anybody having to name it in a role.' },
+      // THE OWNER RULE (#607): delegated administration of what a person
+      // owns, through the management API. Each kind's actions are a
+      // parameter, so a realm's override widens or narrows them without a
+      // rebuild; the protections and the last-owner rule are not, because
+      // they are what keeps owning something from becoming Admin.
+      { name: 'permitOwnerAdministration',
+        label: 'Permit an owner to administer what they own',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The SECOND rule (#607): a person holding ' +
+              'OWNER_READ or OWNER_WRITE may read or change, through ' +
+              '/admin-api, a role, group, service account or application ' +
+              'whose owner values name them or a group they are in — only ' +
+              'with the actions listed below for its kind, never one closed ' +
+              'to its owners, and never removing its last owner. No builds ' +
+              'only the first rule, and an owner\'s token then reaches ' +
+              'nothing.' },
+      { name: 'ownerRoleActions', label: 'What an owner may do to a role',
+        dflt: 'read, describe-role, add-member, remove-member, add-owner, ' +
+              'remove-owner',
+        type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
+              '/admin-api/roles/{action}. Never create-role or delete-role, ' +
+              'and add-permission would let an owner make the role ' +
+              'authorize more.' },
+      { name: 'ownerGroupActions', label: 'What an owner may do to a group',
+        dflt: 'read, add-member, add-owner, remove-owner', type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
+              '/admin-api/groups/{action}. Never create.' },
+      { name: 'ownerServiceAccountActions',
+        label: 'What an owner may do to a service account',
+        dflt: 'read, add-service-account-owner, ' +
+              'remove-service-account-owner, set-service-account-destination, ' +
+              'rotate-password',
+        type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the service-account ' +
+              'actions of POST /admin-api/users/{action}. Never ' +
+              'set-service-account, which could make the account a person ' +
+              'again or replace its owners whole.' },
+      { name: 'ownerApplicationActions',
+        label: 'What an owner may do to an application',
+        dflt: 'read, set, add, remove, update-fields, add-owner, ' +
+              'remove-owner, regenerate-secret, rotate-secret, add-secret, ' +
+              'remove-secret, owner-share, owner-unshare, owner-approve, ' +
+              'owner-refuse',
+        type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
+              '/admin-api/applications/{action}, and the four owner-* ' +
+              'actions of POST /admin-api/uma/{action} on the ' +
+              'application\'s UMA document (#1195). The four that write ' +
+              'attributes are held to the next list. Never create or ' +
+              'forget, and never reveal-secret.' },
+      { name: 'ownerApplicationAttributes',
+        label: 'The application attributes an owner may write',
+        dflt: 'appName, description, appHomePageUrl, appCorsOrigin, ' +
+              'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
+              'oauthFrontchannelLogoutUri, oauthBackchannelLogoutUri, ' +
+              'samlAssertionConsumerService, samlSingleLogoutService, ' +
+              'oauthAllowedTokenResponseTypes',
+        type: 'list',
+        help: 'Comma- or newline-separated attribute names. set, add, remove ' +
+              'and update-fields are permitted only when EVERY attribute ' +
+              'they write is listed. Leave out what turns an application ' +
+              'into a bigger credential: its scopes, roles, grant types, ' +
+              'keys and delegation. oauthAllowedTokenResponseTypes is in ' +
+              'the default by rcbj\'s decision on #1296: an owner may ' +
+              'enable a token response type their realm allows, and the ' +
+              'registry refuses one it does not.' },
+      // THE REPORT RULE (#1030): a report administrator on any row, and a
+      // shared group's member on the listed actions. An owner needs none of
+      // it — the first rule permits them — and an application is never a
+      // report administrator nor a group's member here, so it reaches only
+      // what it owns whatever role it holds (rcbj's decision 4 on #1030).
+      { name: 'permitReportSharing',
+        label: 'Permit report administrators and shared groups on the ' +
+               'report API',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The THIRD rule (#1030): a PERSON holding ' +
+              'REPORT_ADMIN reaches every report definition and job in the ' +
+              'realm, and a person holding REPORT_USE reaches one shared ' +
+              'with a group they are in, for the actions listed below. An ' +
+              'owner reaches their own rows through the first rule whatever ' +
+              'this says, and an application holding either role reaches ' +
+              'only what it defined. No leaves every row to its owner.' },
+      { name: 'reportSharedActions',
+        label: 'What a shared group\'s member may do with a definition',
+        dflt: 'read, run', type: 'list',
+        help: 'Comma- or newline-separated: `read` (see the definition and ' +
+              'its jobs, download a result), `run` (run it), `write` ' +
+              '(change, share or delete it, which the default leaves to ' +
+              'the owner and a report administrator).' },
+      // THE ACCESS REQUEST RULE (#1180): who may approve, deny or revoke an
+      // AuthZEN access request — rcbj's decision 2, that self-approval and
+      // separation of duties are policy rather than an `if`.
+      { name: 'permitAccessRequestApproval',
+        label: 'Permit the approvers an AuthZEN access request names',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The FOURTH rule (#1180): a person the denying ' +
+              'policy\'s advice named — holding its approver role, in its ' +
+              'approver group, or an owner of the application — may ' +
+              'approve, deny or revoke that access request (action ' +
+              'approve-access-request on resource authzen-access-request). ' +
+              'No refuses every approver, so no request is ever approved. ' +
+              'The first rule never permits this resource.' },
+      { name: 'permitAdministratorApproval',
+        label: 'Permit an Admin Write administrator to decide any access ' +
+               'request',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. With yes, a person holding ADMIN_WRITE who acts ' +
+              'through the management API (the console) may decide an ' +
+              'access request the advice did not name them for. The ' +
+              'self-approval rule below still holds for them.' },
+      { name: 'forbidSelfApproval',
+        label: 'Refuse an approver who is the request\'s subject or ' +
+               'requester',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. With yes, a person any of whose names — ' +
+              'username, DN, mail, urn:uuid: subject — is the access ' +
+              'request\'s subject or the PEP that asked is refused the ' +
+              'decision, whatever role they hold. A separation-of-duties ' +
+              'rule of your own is a further Deny rule over the same ' +
+              'facts.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildAccessControl().');
@@ -3062,14 +4532,334 @@ const TEMPLATES: TemplateRow[] = [
         ]));
       }
       conjuncts.push(satisfiesRole);
+      // EVERY ROLE THE RESOURCE NAMES AS REQUIRED-ALL (#454), a third
+      // question beside the two above: `all-of-any` holds when each required
+      // role is among the subject's, and vacuously for an empty bag, so a
+      // surface that names none is decided exactly as before. A conjunct
+      // rather than an arm of `satisfiesRole` for the reason ownership is
+      // one — it narrows, and must never be a way round the any-one.
+      conjuncts.push(B.apply(F1 + 'all-of-any', [
+        { kind: 'function', functionId: F1 + 'string-equal' },
+        B.designator(model.CATEGORY.RESOURCE,
+                     ISSUANCE_ATTRIBUTE.REQUIRED_ALL_ROLE, TYPE.STRING),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)
+      ]));
       conjuncts.push(satisfiesOwnership);
+      // NEVER AN ACCESS REQUEST (#1180): a role the request's resource
+      // required would otherwise let its holder approve their own request,
+      // round the fourth rule's self-approval refusal. A conjunct, so every
+      // other resource is decided exactly as before.
+      conjuncts.push(B.apply(F1 + 'not', [B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'authzen-access-request'),
+        B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                     TYPE.STRING)])]));
 
       const condition = conjuncts.length === 1
         ? conjuncts[0]
         : B.apply(F1 + 'and', conjuncts);
 
+      // ---------------------------------------------------------------------
+      // THE SECOND RULE: AN OWNER ADMINISTERS WHAT THEY OWN (#607).
+      //
+      // **A RULE OF ITS OWN, NOT AN ARM OF THE FIRST** — the template's own
+      // argument for a helpdesk role: under deny-unless-permit a new kind of
+      // access is a new Permit rule, and the first rule is untouched, so an
+      // administrator reaches everything they did and an owner reaches only
+      // what this rule says. The management API asks one question carrying
+      // both: ADMIN_READ or ADMIN_WRITE as the required role (the first
+      // rule's), and OWNER_READ or OWNER_WRITE as the owner-required role
+      // (this one's).
+      //
+      // EVERY CONJUNCT NARROWS, and each fails closed on an empty bag:
+      //   * the subject authenticated, and holds the owner role the
+      //     operation names (held ∩ carried, so a token without owner:write
+      //     is not OWNER_WRITE);
+      //   * the object is NOT protected — `false` asked for, not the absence
+      //     of `true`, so an object the PIP could not answer for is closed;
+      //   * one of the object's owners is the person or a group of theirs;
+      //   * the action is one this kind's list names;
+      //   * every attribute it writes is one an owner may write (vacuous for
+      //     an action that writes none);
+      //   * and it does not take the LAST owner off (rcbj's decision 3: only
+      //     an administrator may leave an object with no owner).
+      // ---------------------------------------------------------------------
+      const permitOwnerAdministration =
+        B.yes(given.permitOwnerAdministration, true);
+      const listedOr = function (name: string, dflt: string): string[] {
+        log.debug("Entering listedOr(). " + name);
+        log.debug("Leaving listedOr().");
+        return B.listOf(given[name] === undefined ? dflt : given[name]);
+      };
+      const stringBag = function (values: string[]): any {
+        log.debug("Entering stringBag().");
+        log.debug("Leaving stringBag().");
+        return B.apply(F1 + 'string-bag', values.map(function (one) {
+          return B.value(TYPE.STRING, one);
+        }));
+      };
+      const R = model.CATEGORY.RESOURCE;
+      const ownerActions: Record<string, string[]> = {
+        'role': listedOr('ownerRoleActions',
+          'read, describe-role, add-member, remove-member, add-owner, ' +
+          'remove-owner'),
+        'group': listedOr('ownerGroupActions',
+          'read, add-member, add-owner, remove-owner'),
+        'service-account': listedOr('ownerServiceAccountActions',
+          'read, add-service-account-owner, remove-service-account-owner, ' +
+          'set-service-account-destination, rotate-password'),
+        'application': listedOr('ownerApplicationActions',
+          'read, set, add, remove, update-fields, add-owner, remove-owner, ' +
+          'regenerate-secret, rotate-secret, add-secret, remove-secret, ' +
+          'owner-share, owner-unshare, owner-approve, owner-refuse')
+      };
+      // #1296: the token response types an application may use are an
+      // owner's to enable (rcbj's decision), within what the realm allows —
+      // applications.js refuses a value the realm does not (STS-REG-0364).
+      const ownerAttributes = listedOr('ownerApplicationAttributes',
+        'appName, description, appHomePageUrl, appCorsOrigin, ' +
+        'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
+        'oauthFrontchannelLogoutUri, oauthBackchannelLogoutUri, ' +
+        'samlAssertionConsumerService, samlSingleLogoutService, ' +
+        'oauthAllowedTokenResponseTypes');
+      // One arm per kind with an action list: the object is of that kind
+      // AND the action is on its list.
+      const actionArms = Object.keys(ownerActions).filter(function (kind) {
+        return ownerActions[kind].length > 0;
+      }).map(function (kind) {
+        return B.apply(F1 + 'and', [
+          B.apply(F1 + 'string-is-in', [
+            B.value(TYPE.STRING, kind),
+            B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_KIND, TYPE.STRING)]),
+          B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION,
+                         ISSUANCE_ATTRIBUTE.ADMIN_ACTION, TYPE.STRING),
+            stringBag(ownerActions[kind])])]);
+      });
+      const ownerConjuncts = [
+        B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'true'),
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.ROLE, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.OWNER_REQUIRED_ROLE,
+                       TYPE.STRING)]),
+        B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'false'),
+          B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_PROTECTED,
+                       TYPE.BOOLEAN)]),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.OWNER_IDENTITY, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_OWNER, TYPE.STRING)]),
+        actionArms.length === 1 ? actionArms[0]
+          : (actionArms.length ? B.apply(F1 + 'or', actionArms)
+                               : B.value(TYPE.BOOLEAN, 'false')),
+        ownerAttributes.length
+          ? B.apply(F1 + 'all-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_ATTRIBUTE, TYPE.STRING),
+            stringBag(ownerAttributes)])
+          : B.apply(F1 + 'integer-equal', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_ATTRIBUTE,
+                           TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '0')]),
+        // NEVER THE LAST OWNER (rcbj's decision 3 on #607).
+        B.apply(F1 + 'or', [
+          B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION,
+                         ISSUANCE_ATTRIBUTE.ADMIN_ACTION, TYPE.STRING),
+            stringBag(['remove-owner', 'remove-service-account-owner'])])]),
+          B.apply(F1 + 'integer-greater-than', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_OWNER,
+                           TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '1')])])
+      ];
+      // ---------------------------------------------------------------------
+      // THE THIRD RULE: REPORT ADMINISTRATORS AND SHARED GROUPS (#1030).
+      //
+      // Until #1030 `report/rights.ts` decided this with an `if`: an
+      // administrator sees everything, an owner their own, a shared group's
+      // member what was shared. The owner is the first rule's business — the
+      // report gate puts the row's owner in `resource-owner` and the token's
+      // subject in `subject-id` — and this rule is the other two sentences,
+      // TARGETED at the report API so that no other surface's question can
+      // trip it, and conjoined so that each narrows:
+      //   * the subject authenticated, and holding a role the resource
+      //     requires (REPORT_USE or REPORT_ADMIN, the gate's any-one);
+      //   * the subject a PERSON (`subject-kind` is `user`) — an application
+      //     holding a report role is an owner and nothing else, which is
+      //     rcbj's decision 4: it reaches, runs, edits and deletes only what
+      //     it defined;
+      //   * and then EITHER REPORT_ADMIN among its roles, OR the action one
+      //     of `reportSharedActions` AND a group among the row's shared
+      //     groups that the PIP says the person is in (`owner-identity`
+      //     against `report-shared-group`, the owner rule's comparison).
+      // A question about the API rather than a row carries no shared group,
+      // so the second arm is false for it, and the first rule decides it.
+      // ---------------------------------------------------------------------
+      const permitReportSharing = B.yes(given.permitReportSharing, true);
+      const sharedActions = listedOr('reportSharedActions', 'read, run');
+      const isAPerson = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'user'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                     ISSUANCE_ATTRIBUTE.SUBJECT_KIND, TYPE.STRING)]);
+      const isReportAdmin = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'REPORT_ADMIN'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)]);
+      const sharedWithTheirGroup = B.apply(F1 + 'and', [
+        sharedActions.length
+          ? B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                         TYPE.STRING),
+            stringBag(sharedActions)])
+          : B.value(TYPE.BOOLEAN, 'false'),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.OWNER_IDENTITY, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.REPORT_SHARED_GROUP,
+                       TYPE.STRING)])]);
+      const reportRule = {
+        id: options.idBase + ':rule:report-administrators-and-shares',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit a PERSON holding REPORT_ADMIN any report ' +
+                     'definition or job of the realm, and a person holding ' +
+                     'a report role the actions ' +
+                     (sharedActions.join(', ') || '(none)') + ' on one ' +
+                     'shared with a group they are in (#1030). An owner ' +
+                     'reaches their own through the first rule; an ' +
+                     'application reaches only what it defined.',
+        // `report-api` is `common/access_gate.ts`'s RESOURCE.REPORT_API,
+        // which the report gate sends as the resource-id; written out
+        // because this file may not require that module's dependents.
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, 'report-api'),
+                  B.designator(R, model.ATTRIBUTE.RESOURCE_ID,
+                               TYPE.STRING))]]),
+        condition: B.apply(F1 + 'and', [
+          B.apply(F3 + 'any-of', [
+            { kind: 'function', functionId: F1 + 'boolean-equal' },
+            B.value(TYPE.BOOLEAN, 'true'),
+            B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                         ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+          holdsRequiredRole,
+          isAPerson,
+          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup])]),
+        obligations: [], advice: []
+      };
+
+      // ---------------------------------------------------------------------
+      // THE FOURTH RULE: WHO MAY DECIDE AN AUTHZEN ACCESS REQUEST (#1180).
+      //
+      // Asked by `authzen/authzen_access_request.ts` before a person
+      // approves, denies or revokes one, from the portal or the console,
+      // TARGETED at that question alone. Every conjunct narrows:
+      //   * the subject authenticated;
+      //   * EITHER the advice named them (`approver-eligible`, computed from
+      //     the role, the group and the owners it names), OR — with
+      //     `permitAdministratorApproval` — they hold ADMIN_WRITE and act
+      //     through the management API;
+      //   * and — with `forbidSelfApproval` — none of their names is the
+      //     request's subject or its requester: the comparison is over
+      //     lowercased bags, so `Alice` and `alice` are one person.
+      // ---------------------------------------------------------------------
+      const permitApproval = B.yes(given.permitAccessRequestApproval, true);
+      const permitAdminApproval =
+        B.yes(given.permitAdministratorApproval, true);
+      const forbidSelf = B.yes(given.forbidSelfApproval, true);
+      const S = model.CATEGORY.ACCESS_SUBJECT;
+      const named = B.apply(F3 + 'any-of', [
+        { kind: 'function', functionId: F1 + 'boolean-equal' },
+        B.value(TYPE.BOOLEAN, 'true'),
+        B.designator(S, ISSUANCE_ATTRIBUTE.APPROVER_ELIGIBLE, TYPE.BOOLEAN)]);
+      const administrator = B.apply(F1 + 'and', [
+        B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, 'admin-api'),
+          B.designator(model.CATEGORY.ENVIRONMENT,
+                       ISSUANCE_ATTRIBUTE.APPROVER_DOOR, TYPE.STRING)]),
+        B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, 'ADMIN_WRITE'),
+          B.designator(S, ISSUANCE_ATTRIBUTE.ROLE, TYPE.STRING)])]);
+      const notThem = function (attribute: string): any {
+        log.debug("Entering notThem().");
+        log.debug("Leaving notThem().");
+        return B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(S, ISSUANCE_ATTRIBUTE.APPROVER_IDENTITY, TYPE.STRING),
+          B.designator(R, attribute, TYPE.STRING)])]);
+      };
+      const approvalConjuncts = [
+        B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'true'),
+          B.designator(S, ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+        permitAdminApproval ? B.apply(F1 + 'or', [named, administrator])
+                            : named
+      ].concat(forbidSelf
+        ? [notThem(ISSUANCE_ATTRIBUTE.ACCESS_REQUEST_SUBJECT),
+           notThem(ISSUANCE_ATTRIBUTE.ACCESS_REQUEST_REQUESTER)]
+        : []);
+      const approvalRule = {
+        id: options.idBase + ':rule:access-request-approvers',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit a person to approve, deny or revoke an AuthZEN ' +
+                     'access request (#1180) when the denying policy\'s ' +
+                     'advice named them — its approver role, its approver ' +
+                     'group, or the application\'s owners' +
+                     (permitAdminApproval ? ' — or they hold ADMIN_WRITE ' +
+                       'and act through the management API' : '') +
+                     (forbidSelf ? ', and none of their names is the ' +
+                       'request\'s subject or the PEP that asked it' : '') +
+                     '.',
+        // `authzen-access-request` and `approve-access-request` are
+        // `common/access_gate.ts`'s RESOURCE.AUTHZEN_ACCESS_REQUEST and
+        // ACTION.APPROVE_ACCESS_REQUEST, written out for the report rule's
+        // reason.
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal',
+                  B.value(TYPE.STRING, 'authzen-access-request'),
+                  B.designator(R, model.ATTRIBUTE.RESOURCE_ID,
+                               TYPE.STRING))], [
+          B.match(F1 + 'string-equal',
+                  B.value(TYPE.STRING, 'approve-access-request'),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]),
+        condition: B.apply(F1 + 'and', approvalConjuncts),
+        obligations: [], advice: []
+      };
+
+      const ownerRule = {
+        id: options.idBase + ':rule:owner-administers-what-they-own',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit an OWNER (#607) to read or change, through ' +
+                     'the management API, a role, group, service account ' +
+                     'or application whose owners name them or a group ' +
+                     'they are in: holding the owner role the operation ' +
+                     'names, the object not closed to its owners, the ' +
+                     'action one this kind allows, every attribute written ' +
+                     'one an owner may write, and never the last owner ' +
+                     'taken off.',
+        target: null,
+        condition: B.apply(F1 + 'and', ownerConjuncts),
+        obligations: [], advice: []
+      };
+
       log.debug('Leaving buildAccessControl(). ' + conjuncts.length +
-                ' conjunct(s), ' + roleArms.length + ' role arm(s).');
+                ' conjunct(s), ' + roleArms.length + ' role arm(s)' +
+                (permitOwnerAdministration ? ', and the owner rule.' : '.'));
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -3081,13 +4871,31 @@ const TEMPLATES: TemplateRow[] = [
                      'resource\'s ROLE requirement — holding a role it ' +
                      'requires' +
                      (permitEmpty ? ', or the resource requiring none' : '') +
-                     ' — AND satisfies its OWNERSHIP requirement: the ' +
+                     ' — AND holds EVERY role it names as required-all, ' +
+                     'where it names any, AND satisfies its OWNERSHIP ' +
+                     'requirement: the ' +
                      'resource names no owner' +
                      (permitOwner ? ', or the subject IS that owner, which ' +
                                     'is how a person reaches their own ' +
                                     'account and nobody else\'s' : '') +
                      (requireAuth ? '. A subject that did not authenticate ' +
                                     'is refused whatever else is true' : '') +
+                     (permitOwnerAdministration
+                       ? '. A second rule (#607) permits an OWNER to ' +
+                         'administer what they own through the management ' +
+                         'API, within the actions its kind allows'
+                       : '') +
+                     (permitReportSharing
+                       ? '. A third rule (#1030) permits a report ' +
+                         'administrator any report definition or job, and ' +
+                         'a shared group\'s member the listed actions on ' +
+                         'one shared with them'
+                       : '') +
+                     (permitApproval
+                       ? '. A fourth rule (#1180) permits the approvers an ' +
+                         'AuthZEN access request names to decide it, and ' +
+                         'the first rule never permits that resource'
+                       : '') +
                      '. Everything else is denied: the combining algorithm ' +
                      'is deny-unless-permit, so an access decision does not ' +
                      'depend on a PEP\'s bias.',
@@ -3110,7 +4918,9 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: condition,
           obligations: [], advice: []
-        }],
+        }].concat(permitOwnerAdministration ? [ownerRule] : [])
+          .concat(permitReportSharing ? [reportRule] : [])
+          .concat(permitApproval ? [approvalRule] : []),
         obligations: [], advice: []
       };
     }
@@ -3321,6 +5131,315 @@ const TEMPLATES: TemplateRow[] = [
   },
   {
     // -----------------------------------------------------------------------
+    // AN APPLICATION'S DEFAULT FINE-GRAINED POLICY (#564).
+    //
+    // Every application created gets one (rcbj's decision 2), written by
+    // `xacml/fga_policies.ts` into `ou=policies` carrying the application's
+    // identifier in `xacmlApplication`; it decides the details of the
+    // `authorization_details` types that application declares, once FGA is
+    // enforced on it.
+    //
+    // **ONE PERMIT RULE, AND THAT IS A DECISION RATHER THAN AN ABSENCE.**
+    // An empty deny-unless-permit document (`blank`) would refuse every
+    // detail the moment an administrator switched enforcement on; an empty
+    // permit-unless-deny one would answer Permit by FALLING THROUGH, which
+    // reads in an audit row exactly like a policy that decided. A rule whose
+    // Effect is Permit and whose Target is empty says, in the document,
+    // "this application allows every detail of its types", which is what a
+    // new application should do, and gives the editor the obvious place to
+    // narrow it: the rule's Target or Condition. deny-unless-permit around
+    // it, so that the day somebody deletes the rule the policy refuses
+    // rather than turning NotApplicable — and later phases refuse anything
+    // that is not a Permit anyway.
+    //
+    // The PolicyId is derived from the identifier (`fgaPolicyId()`), not from
+    // the entry name, so the document says whose it is wherever it is read.
+    // -----------------------------------------------------------------------
+    id: 'fga-default',
+    label: 'Application fine-grained authorization (default)',
+    blurb: 'The default policy an application owns for the details of its ' +
+           'own authorization_details types: one rule permitting every ' +
+           'detail. Every application gets one when it is created; edit ' +
+           'its rule to narrow what the application allows.',
+    what: 'Produces a Policy whose PolicyId is derived from the ' +
+          'application\'s identifier, with one Permit rule and no Target, ' +
+          'under deny-unless-permit. It is a real decision rather than a ' +
+          'fallback: removing the rule makes the policy deny. A policy ' +
+          'created from this template here is an ordinary policy; the one ' +
+          'an application owns is created with the application.',
+    parameters: [
+      { name: 'application', label: 'The application\'s identifier',
+        dflt: 'example-application', type: 'string',
+        help: 'Its client_id, entityID, wtrealm, AppliesTo or service ' +
+              'principal name. The PolicyId is derived from it, with every ' +
+              'character outside letters, digits and -._~ percent-encoded.' }
+    ],
+    build: function (answers) {
+      log.debug('Entering buildFgaDefault().');
+      const application = String(answers.application || '');
+      const policyId = PolicyBuilders.fgaPolicyId(application);
+      log.debug('Leaving buildFgaDefault(). ' + policyId);
+      return {
+        kind: 'Policy',
+        id: policyId,
+        version: '1.0',
+        description: 'The fine-grained authorization policy of the ' +
+                     'application "' + application + '". It decides each ' +
+                     'authorization detail of that application\'s types, ' +
+                     'and permits every one until its rule is narrowed.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: [{
+          id: policyId + ':rule:permit-every-detail',
+          effect: model.EFFECT.PERMIT,
+          description: 'Every authorization detail of this application\'s ' +
+                       'types is permitted. Narrow this rule\'s Target or ' +
+                       'add a Condition to decide otherwise.',
+          target: null,
+          condition: null, obligations: [], advice: []
+        }],
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // THE REALM'S USER-MANAGED ACCESS POLICY (#1168 phase 1): the first of
+    // the three layers an RPT permission is decided by. BUILT IN AND CALLED
+    // rather than seeded, for `role-issuance`'s reason — every realm has it
+    // out of the box, with nothing to delete, and an `ou=policies` entry
+    // named in `uma.authorizationPolicy` overrides it (`uma/uma_pep.ts`
+    // reads it as `xacml_role_pep.ts` reads the issuance policy; a DISABLED
+    // entry does not fall back).
+    //
+    // IT IS THE ADMINISTRATOR'S LAYER: which resource servers, clients and
+    // claim sources may take part at all, and whether anybody is known yet.
+    // The rules are DENIES, one per gate, plus the two Permits below, under
+    // deny-overrides so that a Deny wins over a Permit and — the point of
+    // the algorithm — an Indeterminate reaches the PEP:
+    //
+    //   uma-resource-server-declared   Deny: the resource server is not
+    //                                  declared for the protocol `uma`
+    //   uma-client-grant-type          Deny: the client did not register
+    //                                  the UMA grant type
+    //   uma-claim-issuer-declared      Deny: a pushed claim_token's issuer
+    //                                  is not one the realm declared
+    //   uma-requesting-party-required  a MustBePresent subject-id, so with
+    //                                  nobody known the answer is
+    //                                  Indeterminate over a missing
+    //                                  attribute of the access-subject
+    //                                  category — which the PEP answers as
+    //                                  `need_info` (decision 6). It never
+    //                                  Denies: with somebody known its
+    //                                  condition is false.
+    //   uma-owner-self                 Permit: the requesting party is the
+    //                                  owner
+    //   uma-participants-permitted     Permit: a requesting party is known
+    //
+    // The last rule is what makes the OWNER's layer reachable: #1168's
+    // design named `uma-owner-self` as the only built-in Permit, and read
+    // literally that would refuse every share at this layer before the
+    // owner's document was asked, which is the opposite of what a share is
+    // for. The design's sentence that holds is "a realm tightens by adding
+    // a rule": a Deny added here wins over both Permits.
+    //
+    // The TARGET is `protocol == uma`, so an operator's override named in
+    // `uma.authorizationPolicy` that was built from another template still
+    // speaks only to UMA questions.
+    // -----------------------------------------------------------------------
+    id: 'uma-authorization',
+    label: 'User-Managed Access authorization (this service\'s own)',
+    blurb: 'The realm\'s layer of every UMA 2.0 permission: which resource ' +
+           'servers, clients and claim issuers may take part, that a ' +
+           'requesting party must be known (or claims are asked for), and ' +
+           'that an owner may always reach their own resources. The ' +
+           'resource owner\'s own document and the resource server\'s ' +
+           'fine-grained policy are asked after it.',
+    what: 'Produces a Policy under deny-overrides: three Deny rules, one ' +
+          'per gate (an undeclared resource server, a client without the ' +
+          'UMA grant type, an undeclared claim issuer); a rule whose ' +
+          'MustBePresent subject-id turns "nobody is known" into an ' +
+          'Indeterminate over a missing attribute, which the UMA endpoint ' +
+          'answers as need_info; and two Permits, one for the owner ' +
+          'asking about their own resource and one for any known ' +
+          'requesting party. A Deny a realm adds wins over both. The ' +
+          'Target is protocol == uma.',
+    parameters: [],
+    build: function (answers, options) {
+      log.debug('Entering buildUmaAuthorization().');
+      const S = model.CATEGORY.ACCESS_SUBJECT;
+      const R = model.CATEGORY.RESOURCE;
+      const E = model.CATEGORY.ENVIRONMENT;
+      const V = xacmlRequest.VOCABULARY;
+      const base = options.idBase;
+      const deny = function (id: string, description: string,
+                             category: string, attributeId: string): any {
+        log.debug('Entering deny().');
+        log.debug('Leaving deny().');
+        return {
+          id: base + ':rule:' + id,
+          effect: model.EFFECT.DENY,
+          description: description,
+          target: null,
+          condition: B.apply(F1 + 'not',
+                             [B.holdsTrue(category, attributeId)]),
+          obligations: [], advice: []
+        };
+      };
+      const policy = {
+        kind: 'Policy',
+        id: base,
+        version: '1.0',
+        description: 'The realm\'s User-Managed Access policy: the first ' +
+                     'layer of every UMA 2.0 permission (#1168). The ' +
+                     'resource owner\'s own document and, where the ' +
+                     'resource server enforces one, its fine-grained ' +
+                     'policy decide after it; every layer must Permit.',
+        combiningAlgId: model.RULE_ALG.DENY_OVERRIDES,
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, 'uma'),
+                  B.designator(E, V.PROTOCOL, TYPE.STRING))
+        ]]),
+        variables: {},
+        rules: [
+          deny('uma-resource-server-declared',
+               'The resource server that registered the resource is not ' +
+               'an application declared for the protocol uma.',
+               R, V.UMA_RESOURCE_SERVER_DECLARED),
+          deny('uma-client-grant-type',
+               'The client presenting the permission ticket did not ' +
+               'register the UMA grant type ' +
+               '(urn:ietf:params:oauth:grant-type:uma-ticket).',
+               S, V.UMA_CLIENT_GRANT_DECLARED),
+          deny('uma-claim-issuer-declared',
+               'A pushed claim_token names an issuer this realm has not ' +
+               'declared (its own, or a declared assertion issuer).',
+               S, V.UMA_CLAIM_ISSUER_DECLARED),
+          {
+            id: base + ':rule:uma-requesting-party-required',
+            effect: model.EFFECT.DENY,
+            description: 'Nobody is known yet: the requesting party has ' +
+                         'to be identified before anything is decided. ' +
+                         'Its subject-id MUST be present, so with no ' +
+                         'requesting party the answer is Indeterminate ' +
+                         'over the missing attribute, which the UMA ' +
+                         'endpoint answers as need_info; with one it ' +
+                         'denies nothing.',
+            target: null,
+            condition: B.apply(F1 + 'integer-equal', [
+              B.apply(F1 + 'string-bag-size', [
+                B.requiredDesignator(S, model.ATTRIBUTE.SUBJECT_ID,
+                                     TYPE.STRING)
+              ]),
+              B.value(TYPE.INTEGER, '0')
+            ]),
+            obligations: [], advice: []
+          },
+          {
+            id: base + ':rule:uma-owner-self',
+            effect: model.EFFECT.PERMIT,
+            description: 'The requesting party is the resource owner: an ' +
+                         'owner may always reach their own resources.',
+            target: null,
+            condition: B.holdsTrue(S, V.UMA_REQUESTING_PARTY_IS_OWNER),
+            obligations: [], advice: []
+          },
+          {
+            id: base + ':rule:uma-participants-permitted',
+            effect: model.EFFECT.PERMIT,
+            description: 'A requesting party is known, and no gate above ' +
+                         'denied: the realm has nothing against this ' +
+                         'question, and the owner\'s document decides ' +
+                         'next. A realm tightens by adding a Deny rule.',
+            target: null,
+            condition: B.holdsTrue(S, V.UMA_REQUESTING_PARTY_KNOWN),
+            obligations: [], advice: []
+          }
+        ],
+        obligations: [], advice: []
+      };
+      log.debug('Leaving buildUmaAuthorization(). ' + policy.rules.length +
+                ' rule(s).');
+      return policy;
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // A RESOURCE OWNER'S OWN DOCUMENT, AS IT STARTS (#1168 phase 1): the
+    // second layer, created from this row at the owner's first share and
+    // kept in `uma.ownerPolicies` — never in ou=policies, never the root,
+    // never in `repository()`'s map, never sent to a remote PEP (rcbj's
+    // decision 1 on #1168). Decided ALONE through `decidePolicy()` with no
+    // repository, as an application's fine-grained policy is.
+    //
+    // deny-unless-permit, for `fga-default`'s reason the other way round: a
+    // person's document starts by sharing NOTHING, and an owner with no
+    // document at all is NotApplicable, which the PEP refuses — absence is
+    // never consent. The one rule, `owner-self`, lets the owner reach their
+    // own resource; every share the portal's form writes is a further
+    // Permit rule of a fixed shape (phase 3), and a rule the form did not
+    // write is drawn as a custom rule.
+    //
+    // A Policy rather than a PolicySet, though #1168's design says the
+    // latter in passing: the form writes RULES, and a PolicySet would hold
+    // them one Policy deeper for no reader's benefit. The PolicyId is
+    // derived from the owner's key (`umaOwnerPolicyId()`), so the document
+    // says whose it is wherever it is read.
+    // -----------------------------------------------------------------------
+    id: 'uma-owner-default',
+    label: 'User-Managed Access, a resource owner\'s document (default)',
+    blurb: 'What a resource owner\'s own UMA document is before they have ' +
+           'shared anything: one rule letting the owner reach their own ' +
+           'resources, under deny-unless-permit. Every share the portal ' +
+           'form saves is a further rule in it.',
+    what: 'Produces a Policy whose PolicyId is derived from the owner\'s ' +
+          'key, with one Permit rule, owner-self (the requesting party is ' +
+          'the owner), under deny-unless-permit. It shares nothing by ' +
+          'itself. A policy created from this template here is an ' +
+          'ordinary policy; the one an owner holds lives in the UMA ' +
+          'store and is written by /portal/shared.',
+    parameters: [
+      { name: 'owner', label: 'The owner\'s key',
+        dflt: 'urn:uuid:00000000-0000-4000-8000-000000000000',
+        type: 'string',
+        help: 'A person\'s subject (urn:uuid:<entryUUID>), or an ' +
+              'application\'s identifier where the application owns ' +
+              'resources (umaOwnsResources). The PolicyId is derived ' +
+              'from it.' }
+    ],
+    build: function (answers) {
+      log.debug('Entering buildUmaOwnerDefault().');
+      const owner = String(answers.owner || '');
+      const policyId = PolicyBuilders.umaOwnerPolicyId(owner);
+      const V = xacmlRequest.VOCABULARY;
+      log.debug('Leaving buildUmaOwnerDefault(). ' + policyId);
+      return {
+        kind: 'Policy',
+        id: policyId,
+        version: '1.0',
+        description: 'The User-Managed Access document of the resource ' +
+                     'owner "' + owner + '": who may reach which of their ' +
+                     'registered resources, with which scopes. It shares ' +
+                     'nothing until a share rule is added.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: [{
+          id: UMA_ATTRIBUTE.OWNER_SELF_RULE,
+          effect: model.EFFECT.PERMIT,
+          description: 'The owner may always reach their own resources.',
+          target: null,
+          condition: B.holdsTrue(model.CATEGORY.ACCESS_SUBJECT,
+                                 V.UMA_REQUESTING_PARTY_IS_OWNER),
+          obligations: [], advice: []
+        }],
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
     // THE BLANK ONE, AND IT IS THE ODD ROW IN THIS TABLE.
     //
     // Every other template here is an argument — RBAC against ABAC, and the
@@ -3458,6 +5577,9 @@ class XacmlTemplates {
    * The transfer questions' action-ids and attribute identifiers (#98).
    */
   static readonly TRANSFER_ATTRIBUTE = TRANSFER_ATTRIBUTE;
+  static readonly PASSKEY_ATTRIBUTE = PASSKEY_ATTRIBUTE;
+  /** The User-Managed Access questions' action-ids and obligation (#1168). */
+  static readonly UMA_ATTRIBUTE = UMA_ATTRIBUTE;
   static readonly EXCHANGE_ATTRIBUTE = EXCHANGE_ATTRIBUTE;
   /**
    * The risk-response action-ids.
@@ -3634,6 +5756,8 @@ export = {
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
+  PASSKEY_ATTRIBUTE: XacmlTemplates.PASSKEY_ATTRIBUTE,
+  UMA_ATTRIBUTE: XacmlTemplates.UMA_ATTRIBUTE,
   EXCHANGE_ATTRIBUTE: XacmlTemplates.EXCHANGE_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
@@ -3643,5 +5767,7 @@ export = {
   build: slot.forward('build'),
   catalogue: slot.forward('catalogue'),
   listOf: PolicyBuilders.listOf,
-  slug: PolicyBuilders.slug
+  slug: PolicyBuilders.slug,
+  fgaPolicyId: PolicyBuilders.fgaPolicyId,
+  umaOwnerPolicyId: PolicyBuilders.umaOwnerPolicyId
 };

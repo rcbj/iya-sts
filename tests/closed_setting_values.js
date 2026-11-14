@@ -68,7 +68,7 @@ const ENUM_ROWS = ['oauth2.eddsaCurve', 'pki.keyAlgorithm',
                    'pki.signatureAlgorithm', 'ssf.signingAlgorithm',
                    'caep.defaultRiskLevel', 'risc.subjectFormat'];
 
-// The twenty-one `csv` rows it gave `csvValues`.
+// The twenty-one `csv` rows it gave `csvValues`, and the ones added since.
 const CSV_ROWS = ['gnap.tokenFormats', 'gnap.interactionStartModes',
                   'gnap.finishMethods', 'gnap.keyProofs',
                   'gnap.subIdFormats', 'gnap.assertionFormats',
@@ -80,7 +80,12 @@ const CSV_ROWS = ['gnap.tokenFormats', 'gnap.interactionStartModes',
                   'oid4vci.responseEncryptionEncValues',
                   'oidfed.clientRegistrationTypes', 'oid4vp.signInFormats',
                   'krb5.enctypes', 'ssf.deliveryMethods',
-                  'caep.autoEmitTypes', 'risc.autoEmitTypes'];
+                  'caep.autoEmitTypes', 'risc.autoEmitTypes',
+                  // #693: the configurations bound to the person's DID.
+                  'oid4vci.didHolderBinding',
+                  // #1296: the token response types a self-registering
+                  // client may enable.
+                  'oauth2.dynamicRegistrationTokenResponseTypes'];
 
 // A value no set here holds. Upper and lower case and a digit, so that no
 // case-folding reader could mistake it for one of its own.
@@ -142,10 +147,10 @@ function childMain() {
       });
     });
     probe('pki.keyAlgorithm', function () {
-      return rq('common/vendored/key_material').keyAlgIds();
+      return rq('common/crypto_impl/key_material').keyAlgIds();
     });
     probe('pki.signatureAlgorithm', function () {
-      const x509 = rq('common/vendored/x509');
+      const x509 = rq('common/crypto_impl/x509');
       return [''].concat(Object.keys(x509.SIG_ALGS).filter(function (id) {
         return !!x509.sigAlg(id);
       }));
@@ -164,6 +169,9 @@ function childMain() {
     });
     probe('risc.subjectFormat', function () {
       return rq('ssf/ssf_subjects').PERSON_FORMATS.slice();
+    });
+    probe('oauth2.dynamicRegistrationTokenResponseTypes', function () {
+      return rq('common/applications').TOKEN_RESPONSE_TYPES.slice();
     });
     probe('gnap.tokenFormats', function () {
       return rq('gnap/gnap_tokens').FORMATS.slice();
@@ -217,6 +225,9 @@ function childMain() {
       probe(key, function () {
         return rq('oid4vc/vc_issuer').VcIssuer.IMPLEMENTED_ENC_VALUES.slice();
       });
+    });
+    probe('oid4vci.didHolderBinding', function () {
+      return Object.keys(rq('oid4vc/vc_configs').VCI_CONFIGS);
     });
     probe('oidfed.clientRegistrationTypes', function () {
       const oidfed = rq('oidfed/oidfed');

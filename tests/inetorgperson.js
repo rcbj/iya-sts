@@ -26,7 +26,7 @@
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
 // Claims 2 and 3 are **not reachable over HTTP**, and finding that out is what
-// this file is for. `tests/vendored/sts_portal_directory_attributes.js` drives
+// this file is for. `tests/protocol/sts_portal_directory_attributes.js` drives
 // the page and asserts that a password hash is never printed — and that job
 // PASSES with the refusal in this module deleted, because the page has a
 // branch of its own that words the cell (*set — a scrypt hash rather than the

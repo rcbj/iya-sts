@@ -3,7 +3,7 @@
 
 """Run Samba's raw Kerberos KDC tests against one KDC, print JSON (#204).
 
-The driver tests/vendored/sts_kerberos_samba.js runs. It is this
+The driver tests/protocol/sts_kerberos_samba.js runs. It is this
 repository's, not Samba's: Samba runs these tests through its selftest
 (waf, subunit, a provisioned AD DC per environment), and the job wants every
 test's outcome as data. What it runs is Samba's own test classes, loaded by

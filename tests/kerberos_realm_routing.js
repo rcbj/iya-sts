@@ -218,12 +218,13 @@ async function theSettingRules(t) {
                                                    principals.REALM } });
     t.check(!asDefault.ok && errorCodes.codeOf(asDefault) === 'STS-KRB-0124',
             'nor the DEFAULT realm\'s own Kerberos realm');
-    const trusted = principals.TRUSTED_REALM;
+    const trusted = principals.DEV_PARTNER_REALM;
     const asTrusted = realms.create({ id: 'krr-e', name: 'krr-e',
                                       overrides: { 'krb5.realm': trusted } });
     t.check(!asTrusted.ok && errorCodes.codeOf(asTrusted) === 'STS-KRB-0124',
-            'nor krb5.trustedRealm, which the default realm answers for in ' +
-            'development mode');
+            'nor the development partner realm (PARTNER.COM), which the ' +
+            'default realm answers as in development mode (#430: it was ' +
+            'krb5.trustedRealm)');
 
     // 4. A RENAME WHILE IT IS ON IS REFUSED (STS-KRB-0125) — every key in the
     //    realm's database is salted with the name.
@@ -276,9 +277,10 @@ async function theDatabase(t) {
               'and it is a different record from the default realm\'s alice');
       t.check(!!principals.find(['krbtgt', ACME]),
               'it has a krbtgt of its own, whose key seals its TGTs');
-      t.equal(principals.find(['krbtgt', principals.TRUSTED_REALM]), null,
-              'and NO trust with the development second realm: trust realms ' +
-              'do not trust each other\'s Kerberos');
+      t.equal(principals.find(['krbtgt', principals.DEV_PARTNER_REALM]), null,
+              'and NO trust with the development second realm: a trust is a ' +
+              'record of the realm that holds it (#430), and this realm ' +
+              'holds none');
       t.equal(JSON.stringify(principals.realmsServed()), '["' + ACME + '"]',
               'so it serves exactly one Kerberos realm');
       t.check(principals.SERVICE_DOMAINS.indexOf('acme.example.com') >= 0,

@@ -10,6 +10,7 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `admin_views.ts` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
 | `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 | `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
+| `policy_transfer.ts` | **a realm's policies, out and back in, signed** (#1713) | `exportPolicies()`, `inspect()`, `importPolicies()`, answered by `admin_actions.ts`'s `policyTransferAction()` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -116,7 +117,7 @@ at 18 or later.
 
 The in-process suite passed unchanged — it does not drive either surface over
 HTTP, so it could not have caught what was wrong. The first run of
-`tests/vendored/sts_admin_api_operations.js` failed with
+`tests/protocol/sts_admin_api_operations.js` failed with
 
 ```
 POST /applications/__no_such_action__ should be refused 400; it answered 500
@@ -188,7 +189,12 @@ for the page and `/admin-api/scim` to assemble that block separately, which is
 the drift rule 7 exists to prevent.
 
 **THE REQUEST RULE IS NOT THE SAME FOR THE TWO HALVES.** An action is handed a
-parsed body and an actor and never sees the request. A view is parameterised by
+parsed body and an actor and never sees the request. The actor is an
+ARGUMENT — the `context` (`{ via, actor, … }`) beside the body — and never a
+member of the body: until rcbj's decision on #1579 (2026-11-11) the
+management API wrote it into the body as `actor` and nine actions read
+`body.actor`; now no action reads a body member the Management API model
+does not declare (`mgmt-api/CLAUDE.md`). A view is parameterised by
 the QUERY STRING — which page, which filter, which user — and reads
 `req.query`, exactly as it did on the console. Nothing else off the request:
 a header, a cookie or a body would not mean the same thing arriving at the API.
@@ -268,7 +274,7 @@ that meant one thing in the page's scope and another in the layer's:
   which reaches a caller as a string.
 
 **None of these was found by reading and none by `npm test`.**
-`tests/vendored/sts_admin_api_operations.js` and `sts_admin_console.js` found
+`tests/protocol/sts_admin_api_operations.js` and `sts_admin_console.js` found
 every one. That is the whole argument for running the owned jobs against a
 change of this shape — see `tests/CLAUDE.md`.
 
@@ -301,12 +307,56 @@ what it needs:**
   `credentials.factorCensus()` over every spelling, from ONE call into the
   directory (`credentialCensus()`), united per row by the same
   `mergeFactors()`. The census carries seven facts and never the recovery
-  codes or the authenticator's detail, which no count reads.
+  codes or the authenticator's detail, which no count reads. **The API's
+  two doors ask it asynchronously (#621)**: `usersJsonAsync()` and
+  `mfaRosterJsonAsync()` build the population and its census first
+  (`peopleAndCensusAsync()`: the first names, then
+  `credentials.factorCensusAsync()` through the directory's
+  `credentialCensusAsync()`) and hand both to `usersListJson()`
+  (`opts.population`, `opts.census`), which then asks nothing for them. In
+  a windowed process the synchronous census was one blocking round trip
+  per person; `ldap/CLAUDE.md` (*the window*) has the counts.
+  `tests/users_page_before_decoration.js` section 8 holds that both doors
+  answer what the synchronous views answer.
 * **Page, then decorate.** `pagedRows()` takes `options.decorate(row)` and
   applies it to the shown slice only. `decoratePerson()` builds each shown
   row's full factors from `credentials.factorHolderRow()` — which is
   `mechanismsFor()` — per spelling, exactly as the old fold did for
-  everybody.
+  everybody. **The API's two doors decorate the shown rows together and
+  asynchronously (#820, 2026-10-22)**: they pass `deferDecoration` and hand
+  the view to `usersListRowsAsync()`, which asks
+  `credentials.factorHolderRowsAsync()` (the directory's
+  `credentialRowsAsync()`, read as the census reads), `personDnsAsync()`
+  and, while the token register is on demand, `stats.userRowsOfAsync()` for
+  every shown row at once — the shown rows' own subjects one
+  `subjectsForNamesAsync()` of their identity keys, not `subjectForName()`
+  per row, and the name warm not on this path (#881) — then decorates as
+  `decoratePerson()` does. On
+  8081 fifty rows of about nine synchronous reads each spent the request's
+  store budget (STS-LDAP-0175) and the page could not be drawn. A store
+  that refuses leaves each row's factors null (unknown) and its DN empty
+  (STS-AUTHN-0410). The console's page and `?user=` still decorate a row at
+  a time. `tests/users_page_rows_async.js` holds it.
+
+**The service-account roster and the people count are asked before the
+view (#798).** `usersListJson()` reads `serviceAccounts.names()`, which on
+a cold cache walks `stsServiceAccount` through `holders()` — a synchronous
+`withAttribute` per windowed container, and a synchronous `byKeys` per row
+the window does not hold. `usersJsonAsync()` and `mfaRosterJsonAsync()` ask
+`namesAsync()` beside the population (`serviceAccountNamesAsync()`,
+`holdersAsync()`) and hand the names in as `opts.serviceNames`, so the view
+does not ask again; an empty list is a list. The people count
+`secondFactorPopulation()` asks (`personCount()`, `recentCountUnder()`,
+held ten seconds) is asked the same way (`personCountAsync()`,
+`directoryPeopleCount()`) inside `buildPeopleAndCensusAsync()` and handed
+in as `directoryPeople`. A count of 0 is a count. A failure is recorded as
+`STS-AUTHN-0334` and the page draws no count. **`newUserContainer()` calls
+`usersDn()`.** It used to call `directoryReader('')`, which is
+`objectFor('')` and counts the realm — one synchronous `count` per
+windowed container — to learn a DN. The group index is not asked: the
+shown rows no longer call `mechanismsFor()`, which is what built it.
+`?user=` still decorates one row synchronously.
+`tests/users_population_async.js` P3 and P4 hold the questions.
 
 **The census interprets nothing in the directory.** `ldap_server.js` hands
 back raw attribute values; which values are keys, what a sealed TOTP record
@@ -328,8 +378,112 @@ secret every time.
 asks `stats.userRow(key)`, which runs the same builder for that key only, and
 `knownUserKeys()` — nine pages' "can this member's name be a link" — asks
 `stats.userKeys()` instead of building every row to read their keys.
+
+**AND SINCE 2026-10-22 (#820) IT ASKS ONLY THE NAMES READ.** `userKeys()`
+still built every key: about 940,000 user records and token holders on 8081,
+walked synchronously for each page view. That covers a token's lineage on
+Monitoring → Tokens, the audit log, and the delegation pictures. While the
+register is on demand, `knownUserKeys()` now answers each name it is asked,
+once per request, through `stats.userKeyTest()`. That test checks the user
+records (this process's and the replicated ones), the token holders, and the
+bounded artifacts. It does so with no walk of the store.
+- The roles page lists its candidates from the keys, so it asked
+  `allUserKeys()`, the whole set — and then compared every candidate with
+  every key (`markSeen()`, rows times keys). **Since the same day it does
+  neither while the register is on demand**: the candidates are the
+  directory's people (a windowed directory's page, as #359 made them; the
+  in-memory directory's whole list otherwise), and "seen" is
+  `seenKeyOf()` — the name, its lower case and its normalised key, each asked
+  of `knownUserKeys()`. Held whole, the union of the directory and the people
+  seen is built as before, and the keys are folded to lower case ONCE
+  (`foldedKeysOf()`) rather than once per row. The picked person's fallback
+  asks the same one name. So, on demand, somebody who signed in and has no
+  directory entry is no longer offered — the windowed answer's rule; a typed
+  name can still be granted.
+- The delegation pages (`/admin/delegation`, its map and its user page) draw
+  their person chooser from `userGraph.userCatalogue()` (`common/CLAUDE.md`,
+  3p): on demand, the delegation's identities and an exact-name search, and
+  `delegationChooser()` answers `search` (`contains` or `exact`) and
+  `complete`; `/admin/delegation/user`'s answer carries `usersComplete`.
+- A snapshot that reads no user counts (token lifetimes, SAML assertions)
+  passes `withoutUsers` and builds no user rows.
+- Monitoring → Metrics builds its user rows with `userRowsAsync()`, as the
+  dashboard does.
+
+`tests/console_known_keys.js` covers this, and
+`tests/console_delegation_roles_scale.js` the roles and delegation pages.
+
+**THE TILES COUNT THE DIRECTORY AND THE LIST IS CAPPED, AND THEY ARE
+DIFFERENT NUMBERS (#610, 2026-10-13).** With a bulk load running into 8081,
+`/admin/users` said 7,014 people while the directory held 25,000: every tile
+counted the LIST — at most `credentials.factorScanLimit` directory names
+united with the register's — and `scanned`, the only count of the
+directory, was the length of `persons()`, every name listed to be counted.
+rcbj wanted the numbers defined without a full scan, and refused both a
+larger cap and listing everybody. So:
+
+* **The list** asks `personNamesUpTo(limit)` for the first `scanLimit`
+  names and whether there were more (`capped`); `scanned` is how many it
+  read. In a windowed process that is the first names in the STORE's key
+  order, which under a non-C collation is not `persons()`'s prefix. The
+  `?factor=` filter, `factors` and `authenticatedHere` stay the list's.
+* **The tiles** are `directoryCounts` on `/admin-api/users` and
+  `/admin-api/mfa`, over every person under `ou=users`: `people`, and
+  `signedInHere`/`neverSignedInHere` — the register's authenticated NAMES
+  asked of the directory (`countPeopleNamed()`: the username index in
+  memory, `byKeys` and one `withNames` statement in a window), so it costs
+  O(register), and a sign-in the register (`stats.MAX_USERS`) has forgotten
+  counts as never — and the credential tiles from
+  `credentials.directoryFactorCounts()`: the directory COUNTS its people and
+  those holding a password (`countHolding`, one `count(*) FILTER` over
+  `attr_names` in a window) and hands over, raw, only the holders of the
+  attributes `credentials.ts` names (WebAuthn, TOTP, the mail factor's
+  opt-in), which that file interprets as for one person — key roles, the
+  sealed TOTP verdict, the emailed factor under the realm's policy — so
+  nothing is approximated by presence but the password (an empty first
+  value counts as one there and not in the census). The "listed below" tile
+  is gone: the capped warning and the paging say how many rows there are.
+* **Cost**: in a window, two counts that are linear in the realm's rows
+  (13–15 ms for 29,303 on 8081) and O(holders + register) entries read; in
+  memory, one pass over `ou=users` reading those attributes — a walk. Kept
+  until `ou=users` is written, and in a window ten seconds at most besides
+  (`ldap.credential-tallies` on `/admin/caches`).
+  `tests/users_page_before_decoration.js` section 7 compares every tile
+  with a count of every person.
+* **Which number is which, said on the page (#684, 2026-11-03).** `known`
+  stays the LIST's length — giving it the directory's meaning would undo
+  the cap — and past the cap it stood still while people outside the
+  slice were deleted, thousands away from SCIM's `totalResults`. The
+  footer now says so (`body.knownCapped`, `body.knownUncapped`) and draws
+  `directoryPeople` beside it, the figure a client compares with SCIM.
+* **The tiles' count has an AGE, and the page says it (#684).** The ten
+  seconds above mean two workers can answer two figures, and during a
+  fast delete a tile rose on the next load by the deletes another process
+  committed meanwhile. The tally carries `countedAt` and `keptForSeconds`
+  (null in memory, where nothing can lag); `directoryTilesOf()` lifts them
+  out of `directoryCounts`, which stays the tiles alone, into
+  `directoryCountedAt` and `directoryCountsKeptFor`, and the page draws
+  the time, the age and the bound (`body.tilesAge`) wherever the bound is
+  not null. `tests/users_page_count_age.js` covers both.
+
+Every other Directory page counts its container with `ldap_server.js`'s
+`countUnderContainer()` (`ldap/CLAUDE.md`, *the window*).
+
+The other Directory pages were audited for the same fault on that day and
+had none: none caps its list, so its count is its list's length, and only
+devices and groups grow with the directory. Devices' `total` was already a
+count and is now `countUnderContainer()`'s; their ROWS are still the whole
+of `ou=devices` paged per request in a windowed process, which is a listing
+to bound, not a count to fix. Groups are walked because a group may sit
+anywhere (`groupRuleFor()`), and the walk is the list.
 `/admin/sessions` asks `stats.issuedArtifactsOfKind('Kerberos TGT')` for the
 tickets rather than building `issuedList()`.
+
+**A sign-on session's row names its browser's account set (#561)** —
+`accountSet`, from `session.accountSetId` — only where it is in one, which
+is where several signed-in accounts in one browser are on
+(`authn/CLAUDE.md`); with the setting off the row is unchanged. Drawing the
+column is the console's step of #561.
 
 **What was measured, and what holds it.** `tests/users_page_before_decoration.js`
 seeds three thousand people and asserts that page one, a far page, `?q=` and
@@ -347,7 +501,10 @@ have to be keyed on every input a fact depends on — the people subtree's
 version, the realm's authentication policy and mail settings for the emailed
 factor, and the key epoch — and a request that already reads no secret and
 makes one call into the directory does not need it. Under #349's windowed
-directory, `credentialCensus()` is one batched `byKeys()` query.
+directory the requests ask `credentialCensusAsync()` (#621): `byKeys` five
+hundred names at a time and a `byName` per name not at `uid=<name>`, all
+asynchronous; `credentialCensus()` there is still a round trip per person,
+for a synchronous caller.
 
 ## `certificate_views.ts`: THE CERTIFICATE DETAILS DIALOG'S CATALOGUE (2026-09-13)
 
@@ -431,3 +588,94 @@ test is about a require, and there is none.
 It is here rather than in `common/` for this directory's reason: both admin
 surfaces read it, and what it reads is route-registering, lazily or not.
 `tests/protocol_endpoints.js` holds it.
+
+## `policy_kinds.ts`: WHAT A KIND DECLARES, SO THE CONSOLE AND THE API NEED NOTHING PER KIND (#1235, 2026-10-30)
+
+A kind on Directory → Policies is a module and a row here (#64,
+`common/CLAUDE.md` 3bd). Since #1235 the named-policy machinery reads only
+what the kind declares, so the six kinds of #1234 (#1236–#1241) each adopt
+named policies without touching the console, the API or each other:
+
+* **On the module**: `SELECTORS` (the save's selector fields — the
+  `precedence` row for a kind whose holders name its policies; the locale
+  and post-login policies list nothing since #1238 and #1239),
+  `REFERENCES` (`{ application?, group?, person? }`, the attribute by
+  which each holder names a profile) and `namedBy(name)` (`{ applications,
+  groups, people }`). `admin_views.policyKindMember()` publishes them as
+  `selectors`, `references` and each named row's `namedBy`; `admin_api.ts`
+  describes a field per `SELECTORS` key; `web_policies.ts`'
+  `namedProfileParts()` draws what is declared.
+* **On the row**: `tabbed: true` draws the Default / Named policies / New
+  policy sub-tabs (carried to the console as `kind.tabbed`).
+* **The ranking and the recipe** are `common/policy_selection.ts`'s,
+  `common/CLAUDE.md` 3cx; the group and person halves are
+  `ldap/CLAUDE.md`'s.
+
+## `policy_transfer.ts`: A REALM'S POLICIES, OUT AND BACK IN, SIGNED (#1713, 2026-11-13)
+
+rcbj's issue, in his words: export and import "within a realm or between
+realms", JSON, digitally signed, the signer's whole trust chain in the
+document, a realm's own signer trusted automatically, another realm's
+(**even on the same instance**) only after a person is asked, the accepted
+chain added to the signer truststore, **full paranoid validation**, a new
+Issuing CA per realm for it, and a configurable algorithm defaulting to the
+realm's JOSE default. The file's header is the argument; what a maintainer
+must not undo:
+
+* **WHAT IS EXPORTED IS WHAT THE REALM STORES.** Every kind in
+  `policy_kinds.ts`, filtered on `stored`, as the BODY its save takes — so
+  an import goes through each kind's own `save()` (and the authentication
+  policy's `saveNamed()`), with every refusal those make. Nothing here writes
+  the directory. A kind added to `policy_kinds.ts` is exported the same day.
+* **THE DOCUMENT IS A FLATTENED JWS** (RFC 7515 section 7.2.2), `typ`
+  `policy-export+json`, the whole chain — leaf, `policy-signing` Issuing CA,
+  Intermediate, service Root — in the protected `x5c`. Verified with
+  `crypto.verifyCompactJwsWithCertificate()`, which reads the SPKI with
+  asn1js so an ML-DSA leaf verifies too.
+* **A FRESH KEY PER EXPORT, CERTIFIED INTO ONE SLOT AND NEVER SUPERSEDED.**
+  Superseding revokes, and yesterday's export must still import: `certify()`
+  keeps a displaced serial in the register, which answers `good` until it
+  expires. The private key is dropped after the one signature.
+* **THE BOUNDARY IS THE ISSUING CA, NOT THE ROOT.** Every realm of a service
+  shares the Root, so `own` is "this realm's own Policy Export Signing CA
+  issued it", and an administrator's yes is pinned to the Issuing CA they
+  were shown (`issuerFingerprint`): trusted means the signer truststore
+  holds that Issuing CA AND its Root for `policy-signer`. Reading the store
+  with `list()` for that pin is deliberate and is the only read outside the
+  door; the PATH is always the door's.
+* **PARANOID IS FORCED WHILE ITS ROW IS ON.** The site passes `force` from
+  `CertificateTrust.rowOn('policy-signer')`, so development validates what
+  product does; off, the row is an ordinary one the master decides. Forced
+  verdicts are not counted by the door, so the acts are audited here
+  (`admin.policies.export`, `.trust-signer`, `.import`).
+* **THE READ BESIDE THE THREE ACTS IS `view()`** (`GET
+  /admin-api/policies/transfer`, through `admin_views.ts`'s
+  `policyTransferJson()`; the Export and import tab composes it as
+  `transfer`). It was missing when #1713 merged, and
+  `sts_admin_api_operations`' read-back found it: every write's resource
+  owes a read. It READS: `pki.describeIssuer()`, never `ensureScope()`, so
+  a realm with no Policy Export Signing CA answers `issuingCa: null` rather
+  than having one built by a GET. Certificates only, and its model is
+  closed, so a member added here owes `models/api/management.tsp`.
+
+* **A SELECTION IS FEWER PROFILES, NOT ANOTHER FORMAT** (rcbj,
+  2026-11-14: "import / export individual policies"). `policies`, a list
+  of `{ kind, name }`, narrows an export or an import; absent is
+  everything, exactly as before. The export checks it FIRST, before a key
+  is made (a name the realm does not store is STS-ADMIN-0937), carries
+  only the kinds with something selected, and records the list as the
+  payload's `selection`; a whole export carries no such member, so its
+  document is unchanged. The import checks its selection against the
+  inspection's `profiles` BEFORE the trust question (STS-ADMIN-0938), so a
+  mistyped name trusts nobody; the trust is still about the whole
+  document's signer. `inspect()` answers `profiles` with `replaces` (this
+  realm stores one of that kind by that name), and `view()` answers
+  `policies` (what may be selected). The console's boxes post each policy
+  as JSON under `policies`, which `web_runtime.ts`'s `shapeFields()` parses
+  per item for a list of objects.
+
+`tests/policy_transfer.js` holds it in process (the export's shape, own and
+foreign realms, the pin across a third and a fourth realm, refusals,
+revocation, every algorithm, the action layer, the console's question and
+the view);
+`tests/protocol/sts_policy_transfer.js` over HTTP.

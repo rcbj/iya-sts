@@ -18,7 +18,7 @@
 //   3. a projection carries no credential attribute, by name or by pattern.
 //
 // The channel, the placement edge and the export are exercised end to end by
-// the `cells` mode's jobs (tests/vendored/, `./run-tests.sh --modes=cells`).
+// the `cells` mode's jobs (tests/protocol/, `./run-tests.sh --modes=cells`).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;

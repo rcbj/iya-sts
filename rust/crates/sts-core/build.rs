@@ -116,6 +116,7 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
             "bool" => "SettingType::Bool",
             "csv" => "SettingType::Csv",
             "enum" => "SettingType::Enum",
+            "color" => "SettingType::Color",
             other => {
                 return Err(format!("{}: unknown type {}", key, other).into())
             }
@@ -176,6 +177,42 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
         } else {
             "None".to_string()
         };
+        let unless = match row.get("onlyWhileValuesUnless") {
+            Some(u) => format!(
+                "Some(ValuesUnless {{ setting: {:?}, values: &[{}] }})",
+                text(u, "setting"),
+                strings(u.get("values")).join(", ")
+            ),
+            None => "None".to_string(),
+        };
+        let select_all = |kind: &str| -> String {
+            row.get("selectAll")
+                .and_then(|s| s.get(kind))
+                .and_then(|m| m.as_object())
+                .map(|map| {
+                    map.iter()
+                        .map(|(k, v)| {
+                            format!(
+                                "({:?}, &[{}])",
+                                k,
+                                strings(Some(v)).join(", ")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default()
+        };
+        let select_all = if row.get("selectAll").is_some() {
+            format!(
+                "Some(SelectAll {{ only_while_on: &[{}], \
+                 alone_while_on: &[{}] }})",
+                select_all("onlyWhileOn"),
+                select_all("aloneWhileOn")
+            )
+        } else {
+            "None".to_string()
+        };
         writeln!(
             out,
             "    SettingRow {{ key: {:?}, group: {:?}, label: {:?}, \
@@ -185,7 +222,8 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
              realm_only: {}, enum_values: &[{}], csv_values: {}, \
              csv_value_notes: &[{}], ordered: {}, derived: {}, \
              per_process: {}, path: {}, secret: {}, only_while: {}, \
-             only_while_values: {} }},",
+             only_while_values: {}, only_while_values_unless: {}, \
+             max_length: {}, absolute_uri: {}, select_all: {} }},",
             key,
             text(row, "group"),
             text(row, "label"),
@@ -210,7 +248,11 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
             option_text(row.get("path")),
             flag(row, "secret"),
             option_text(row.get("onlyWhile")),
-            only_while_values
+            only_while_values,
+            unless,
+            option_int(key, "maxLength", row.get("maxLength"))?,
+            flag(row, "absoluteUri"),
+            select_all
         )?;
     }
     writeln!(out, "];")?;
@@ -222,9 +264,11 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
     for one in replaced {
         writeln!(
             out,
-            "    Replaced {{ key: {:?}, env: {}, now: &[{}], why: {} }},",
+            "    Replaced {{ key: {:?}, env: {}, legacy_env: {}, now: &[{}], \
+             why: {} }},",
             text(one, "key"),
             option_text(one.get("env")),
+            option_text(one.get("legacyEnv")),
             strings(one.get("now")).join(", "),
             option_text(one.get("why"))
         )?;

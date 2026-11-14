@@ -70,7 +70,15 @@ function modesFromTheShell() {
     // failed saying modes.sh defined three modes when it defined four.
     // `cells` since 2026-09-28 (#98): a fourth block, asked for by name
     // (`--modes=cells`) and not in STS_ALL_MODES.
-    const arm = /^\s{4}(memory|single-node|cluster|cells)\)\s*$/.exec(line);
+    // `cluster-portable` since 2026-11-03 (#677): a fifth, by name only.
+    // `mariadb` since 2026-11-03 (#677): a sixth, by name only.
+    // `fuzz` since 2026-11-14, when it joined a bare run: it had been a
+    // seventh block since #1299 that this list did not know, so its lines
+    // were read by nothing — and it was one variable short
+    // (STS_MARIADB_BUFFER_POOL), which nothing could see.
+    const arm =
+      /^\s{4}(memory|single-node|mariadb|cluster|cluster-portable|cells|fuzz)\)\s*$/
+      .exec(line);
     if (arm) {
       current = arm[1];
       byMode[current] = [];
@@ -94,11 +102,60 @@ function run(t) {
   const byMode = modesFromTheShell();
   const modes = Object.keys(byMode);
   // Three since 2026-09-21 (memory, single-node, cluster); four before, and
-  // four again since 2026-09-28 (#98's `cells`, which a bare run does not
-  // run but which names every variable all the same).
-  t.check(modes.length === 4,
-          'modes.sh defines four modes, each as a block of NAME=value lines',
+  // seven since 2026-11-14 — the six a bare run runs and `cluster-portable`,
+  // which is asked for by name — every one naming every variable.
+  t.check(modes.length === 7,
+          'modes.sh defines seven modes, each as a block of NAME=value lines',
           modes.join(', '));
+
+  // ---------------------------------------------------------------------
+  // A BARE RUN IS THE SIX (rcbj, 2026-11-14), in the order modes.sh argues
+  // — cheapest first, fuzz last — and each is a block above, so none of
+  // them can be in the list and undefined.
+  // ---------------------------------------------------------------------
+  const text = fs.readFileSync(MODES_SH, 'utf8');
+  const declared = (/^STS_ALL_MODES=\(([^)]*)\)/m.exec(text) || ['', ''])[1]
+    .split(/\s+/).filter(function (w) { return w; });
+  t.equal(declared.join(' '),
+          'memory single-node mariadb cluster cells fuzz',
+          'STS_ALL_MODES is the six, in order, fuzz last');
+  t.check(declared.every(function (m) { return modes.indexOf(m) >= 0; }),
+          'and every one of them has a block of its own',
+          declared.join(', '));
+  t.check(declared.indexOf('cluster-portable') < 0,
+          'and cluster-portable is still asked for by name only');
+
+  // THE FUZZ MODE'S OWN JOB FILTER, and only fuzz's: the launcher hands it
+  // to the runner for that mode alone, so the other five keep every job.
+  const filters = /stsModeJobFilter\(\)\s*\{([\s\S]*?)\n\}/.exec(text);
+  t.check(!!filters && /fuzz\) echo "schemathesis" ;;/.test(filters[1]) &&
+          /\*\)\s+echo "" ;;/.test(filters[1]) &&
+          (filters[1].match(/\) echo "[^"]+"/g) || []).length === 1,
+          'stsModeJobFilter() names schemathesis for fuzz and nothing for ' +
+          'any other mode', filters ? filters[1].trim() : 'no function');
+  const launcher = fs.readFileSync(path.join(ROOT, 'run-tests.sh'), 'utf8');
+  t.check(/MODE_FILTER="\$\(stsModeJobFilter "\$\{MODE\}"\)"/
+            .test(launcher) &&
+          /STS_TEST_ARGS=[^\n]*--mode-only=\$\{MODE_FILTER\}/.test(launcher),
+          'and run-tests.sh hands it to the runner as --mode-only, in the ' +
+          'mode\'s own environment');
+  t.check(/if modeFilterLeavesNothing "\$\{MODE\}";[\s\S]{0,400}continue/
+            .test(launcher),
+          'and skips a mode whose filter and --only keep nothing, before ' +
+          'its stack starts');
+  // The runner keeps --mode-only apart from --only, which is what makes
+  // the two an intersection rather than a longer --only.
+  const parsed = runner.parseArgs(['--only=crypto,saml',
+                                   '--mode-only=schemathesis']);
+  t.equal(parsed.only.join(','), 'crypto,saml',
+          'run-report.js reads --only as it did');
+  t.equal(parsed.modeOnly.join(','), 'schemathesis',
+          'and --mode-only into a list of its own');
+  const reportSource = fs.readFileSync(RUN_REPORT, 'utf8');
+  t.check(/testFiles\(opts\.only\)\.filter\(keptByMode\)/
+            .test(reportSource) &&
+          /return keptByMode\(j\.file\);/.test(reportSource),
+          'and applies it to the in-process files and the protocol jobs both');
 
   // ---------------------------------------------------------------------
   // EVERY MODE NAMES EVERY VARIABLE, which is modes.sh's own stated rule and

@@ -48,15 +48,20 @@
 // keystore is open, because the fingerprint is keyed by the key-encryption key.
 //
 // A LIBRARY (rule 3): no route. It requires config, mode, the capability table,
-// the error-code table and node builtins, and is handed its driver.
+// the error-code table, `common/crypto` and node builtins, and is handed its
+// driver.
 // ===========================================================================
 
 const bunyan = require('bunyan');
 const os = require('os');
-const nodeCrypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const config = require('../common/config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
+// Which persistence modes are a database (#677). A LEAF.
+const storeModes = require('../persistence/store_modes');
 const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
 // nothing to what loads before the store's gate.
@@ -93,13 +98,17 @@ const AGREEMENT_SETTINGS = [
   'oauth2.rfc9700', 'oauth2.oauth21', 'spiffe.trustDomain',
   'krb5.realm', 'krb5.krbtgtPassword', 'krb5.servicePassword',
   'krb5.servicePrincipal', 'krb5.serviceSalt', 'krb5.kvno', 'krb5.enctypes',
-  'krb5.trustPassword', 'krb5.trustedRealm', 'krb5.trustedKrbtgtPassword',
-  'krb5.domainSid', 'krb5.userPassword', 'krb5.personKeys'
+  'krb5.domainSid', 'krb5.userPassword', 'krb5.personKeys',
+  // How many realms the cluster may hold (#368). Two nodes that disagree
+  // would accept creates the other refuses. common/CLAUDE.md argues it.
+  'realms.maxCount'
 ];
 
 let driver = null;
 let resolved = null;          // { mode, why }
 let nodeId = '';
+// The id `gate()` will join under, chosen early by `plannedNodeId()` (#617).
+let plannedId = '';
 let role = 'none';            // 'front' | 'worker' | 'none'
 let joinedAt = 0;
 let heartbeatTimer = null;
@@ -112,6 +121,21 @@ let lastStall = null;
 // When the pending heartbeat timer is due (monotonic ms). A timer still
 // pending well past this is a loop that could not run it.
 let heartbeatDueMono = 0;
+// A beat whose statement has not come back (#770). The next timer is armed
+// whether or not it has, and it does not start a second statement on the
+// one liveness connection.
+let heartbeatInFlight = false;
+// The contention a beat started after its renewal, while it runs, or null
+// (#770's review). It is NOT part of the beat: a lease asked for can wait
+// on another node's writes, and a beat that waited with it was a renewal
+// that never settled. One at a time, so beats do not stack asks.
+let contending = null;
+// Bumped by reset(), so a beat that settles after a test's reset cannot
+// clear the next test's in-flight flag.
+let heartbeatEpoch = 0;
+// The leases whose takeover is waiting for the previous holder's writes,
+// so STS-CLUSTER-0165 is said once per wait and not once per beat.
+const pendingTakeovers = new Set();
 let stopping = false;
 let fingerprint = '';
 // name -> token, for the leases this node holds.
@@ -183,24 +207,25 @@ function resolve() {
     return { mode: 'off', why: 'cluster.mode is off' };
   }
   if (configured === 'auto') {
-    if (product && store === 'postgres') {
+    if (product && storeModes.isDatabase(store)) {
       log.debug("Leaving resolve(). Auto: active-passive.");
       return { mode: 'active-passive',
                why: 'cluster.mode is auto, and this is product mode on a ' +
-                    'postgres store' };
+                    'database store' };
     }
     log.debug("Leaving resolve(). Auto: off.");
     return { mode: 'off',
              why: 'cluster.mode is auto, which is off outside product mode ' +
                   'on a postgres store' };
   }
-  if (store !== 'postgres') {
-    log.debug("Leaving resolve(). Refused: no postgres store.");
+  if (!storeModes.isDatabase(store)) {
+    log.debug("Leaving resolve(). Refused: no database store.");
     return { mode: configured, refused: errorCodes.tag('STS-CLUSTER-0007') +
              'cluster.mode is "' + configured + '" and persistence.mode is "' +
-             store + '". Only a postgres store can hold a membership table, ' +
-             'leases and atomic claims that several containers agree on. Set ' +
-             'persistence.mode=postgres, or cluster.mode=off for one node.' };
+             store + '". Only a database store (postgres, or mariadb) can ' +
+             'hold a membership table, leases and atomic claims that several ' +
+             'containers agree on. Set persistence.mode=postgres, or ' +
+             'cluster.mode=off for one node.' };
   }
   if (configured === 'active-active' &&
       String(config.value('keys.source')) !== 'persisted' &&
@@ -456,7 +481,9 @@ function gate(theDriver) {
   }
   install(theDriver);
   role = 'front';
-  nodeId = nodeCrypto.randomUUID();
+  // The id the origin claim was taken under, when one was planned (#617).
+  nodeId = plannedId || stsCrypto.randomUuid();
+  plannedId = '';
   log.debug("Leaving gate(). Joining.");
   return join().then(function () {
     if (resolved.mode === 'active-passive') {
@@ -652,11 +679,13 @@ function listenerCertificatesOfLiveNodes() {
 // which is why it needed no new plumbing.
 //
 // IT IS COMPUTED BY A JOB OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
-// walks every registered store's rows, and the heartbeat is what a node's
-// life depends on (the paragraph above `nodeInfo()`): so the heartbeat only
-// attaches the last one taken, and the walk happens every CACHE_REPORT_MS
-// (the scheduler job below), first at the join. What another node shows is
-// therefore up to that old plus a heartbeat, and the page says how old.
+// counts every registered store (and lists the few it cannot count, #704's
+// `tallyOf()` in `common/cache_registry.js`), and the heartbeat is what a
+// node's life depends on (the paragraph above `nodeInfo()`): so the
+// heartbeat only attaches the last one taken, and the count happens every
+// CACHE_REPORT_MS (the scheduler job below), first at the join. What another
+// node shows is therefore up to that old plus a heartbeat, and the page says
+// how old.
 // ---------------------------------------------------------------------------
 const CACHE_REPORT_MS = 30000;
 const CACHE_REPORT_JOB = 'cluster.cache-report';
@@ -672,6 +701,19 @@ function refreshCacheReport() {
     log.debug("Caught in refreshCacheReport(): " + ((e && e.message) || e));
   }
   log.debug("Leaving refreshCacheReport().");
+}
+
+// The job's form (#704): the same report, taken without holding the loop.
+function refreshCacheReportAsync() {
+  log.debug("Entering refreshCacheReportAsync().");
+  log.debug("Leaving refreshCacheReportAsync().");
+  return cacheRegistry.snapshotAsync().then(function (taken) {
+    cacheReport = taken;
+  }, function (e) {
+    // refreshCacheReport()'s reason: the last report taken stays.
+    log.debug("Caught in refreshCacheReportAsync(): " +
+              ((e && e.message) || e));
+  });
 }
 
 // THE WALK IS A SCHEDULER JOB (#49 P5): `cluster.cache-report`, a QUIET
@@ -706,9 +748,13 @@ function scheduleCacheReport() {
       return stopping || role !== 'front' || !nodeId
         ? 'this process is not a joined front process' : '';
     },
+    // COUNTED IN SLICES (#704): `snapshotAsync()` tallies rather than lists
+    // and yields between stores, so the front process's listeners wait for
+    // one slice of the report, never the whole of it.
     run: function () {
-      refreshCacheReport();
-      return { taken: !!cacheReport };
+      return refreshCacheReportAsync().then(function () {
+        return { taken: !!cacheReport };
+      });
     }
   });
   log.debug("Leaving scheduleCacheReport(). On the scheduler.");
@@ -766,18 +812,70 @@ function scheduleHeartbeat() {
   heartbeatDueMono = monotonicMs() + heartbeatMs();
   heartbeatTimer = setTimeout(function () {
     heartbeatTimer = null;
+    // A fail-stop between the arming and the fire must not arm another.
+    if (stopping) {
+      return;
+    }
     noteLateness(monotonicMs() - heartbeatDueMono);
-    beat().then(function () {
-      scheduleHeartbeat();
+    // THE NEXT BEAT IS ARMED HERE, before this one settles (#770). A
+    // renewal that waits on a lock used to be the whole lifetime: the
+    // promise never settled, so this timer was never armed again, and
+    // STS-CLUSTER-0003 — which lives in the rejection — was never logged.
+    // The lifetime is now spent on beats that are seen.
+    scheduleHeartbeat();
+    if (heartbeatInFlight) {
+      noteUnsettledRenewal();
+      return;
+    }
+    const epoch = heartbeatEpoch;
+    heartbeatInFlight = true;
+    // The renewal is the beat; the contention it asks for runs beside the
+    // next one (#770's review). A takeover may wait on the old holder's
+    // writes, and a beat that waited with it was in flight for as long,
+    // so the next beats were skipped and the node that was taking over
+    // exited (STS-CLUSTER-0004).
+    renew().then(function (member) {
+      if (epoch === heartbeatEpoch) {
+        heartbeatInFlight = false;
+        if (member) {
+          contendOnce();
+        }
+      }
     }, function (e) {
+      if (epoch === heartbeatEpoch) {
+        heartbeatInFlight = false;
+      }
       log.debug("Caught in scheduleHeartbeat(): " + ((e && e.message) || e));
-      scheduleHeartbeat();
     });
   }, heartbeatMs());
   if (heartbeatTimer.unref) {
     heartbeatTimer.unref();
   }
   log.debug("Leaving scheduleHeartbeat().");
+}
+
+// A beat was still running when the next was due. Logged as a heartbeat
+// that did not land (STS-CLUSTER-0003); the failure count stays with the
+// statement that actually fails, so one hung query is not counted twice
+// and does not exit early. Past the lifetime, the node exits as a renewal
+// that never landed (STS-CLUSTER-0004), hung query or not.
+function noteUnsettledRenewal() {
+  log.debug("Entering noteUnsettledRenewal().");
+  const since = monotonicMs() - lastRenewOk;
+  if (since >= ttlMs() - heartbeatMs()) {
+    failStop('STS-CLUSTER-0004', 'It has not renewed its membership for ' +
+             since + 'ms against a lifetime of ' + ttlMs() +
+             'ms (the previous renewal has not finished). The other nodes ' +
+             'may already treat it as dead and take over its leases.');
+    log.debug("Leaving noteUnsettledRenewal(). Past the lifetime.");
+    return;
+  }
+  lastHeartbeatError = 'the previous renewal has not finished';
+  log.warn(errorCodes.tag('STS-CLUSTER-0003') + 'cluster: a heartbeat has ' +
+           'not landed (the previous renewal is still running); ' + since +
+           'ms since the last renewal, ' + (ttlMs() - since) +
+           'ms of lifetime left.');
+  log.debug("Leaving noteUnsettledRenewal().");
 }
 
 // ---------------------------------------------------------------------------
@@ -834,25 +932,40 @@ function stallClause() {
 /**
  * Renews this node's membership and leases once; exits the process when the
  * membership has lapsed or the service lease is lost in active-passive mode,
- * then campaigns for any role it does not hold.
+ * then contends for any role it does not hold.
  *
- * @returns a promise that settles when the beat is done
+ * @returns a promise that settles when the beat and its contention are done
  */
 function beat() {
   log.debug("Entering beat().");
+  log.debug("Leaving beat().");
+  return renew().then(function (member) {
+    return member ? contendOnce() : null;
+  });
+}
+
+/**
+ * The renewal half of a beat: the heartbeat statement and what its answer
+ * means. Settles when the heartbeat has; the contention is the caller's.
+ *
+ * @returns a promise of true when the node is still a member and should
+ *   contend for the roles it does not hold
+ */
+function renew() {
+  log.debug("Entering renew().");
   if (stopping || role !== 'front') {
-    log.debug("Leaving beat(). Not beating.");
-    return Promise.resolve();
+    log.debug("Leaving renew(). Not beating.");
+    return Promise.resolve(false);
   }
   const startedAt = monotonicMs();
-  log.debug("Leaving beat().");
+  log.debug("Leaving renew().");
   return driver.heartbeat(nodeId, ttlMs(), nodeInfo()).then(function (answer) {
     if (!answer.alive) {
       failStop('STS-CLUSTER-0005', 'Its membership row had already expired ' +
                'when it was renewed, so another node may have taken over ' +
                'what it held. A node does not come back from that; it is ' +
                'restarted.' + stallClause());
-      return;
+      return false;
     }
     lastRenewOk = startedAt;
     heartbeatFailures = 0;
@@ -876,12 +989,12 @@ function beat() {
         try {
           wanted.onLose();
         } catch (e) {
-          log.debug("Caught in beat(): " + ((e && e.message) || e));
+          log.debug("Caught in renew(): " + ((e && e.message) || e));
         }
       }
     });
     refreshState();
-    return campaign();
+    return !stopping;
   }, function (err) {
     heartbeatFailures += 1;
     lastHeartbeatError = err.message;
@@ -894,19 +1007,45 @@ function beat() {
                since + 'ms against a lifetime of ' + ttlMs() + 'ms (' +
                err.message + '). The other nodes may already treat it as ' +
                'dead and take over its leases.');
-      return;
+      return false;
     }
     log.warn(errorCodes.tag('STS-CLUSTER-0003') + 'cluster: a heartbeat ' +
              'failed (' + err.message + '); ' + since + 'ms since the last ' +
              'renewal, ' + (ttlMs() - since) + 'ms of lifetime left.');
+    return false;
   });
+}
+
+// One contention at a time (#770's review). A beat whose contention is
+// still asking — a takeover waiting, attempt by attempt, for the old
+// holder's writes — starts none; the next beat after it settles does.
+function contendOnce() {
+  log.debug("Entering contendOnce().");
+  if (contending) {
+    log.debug("Leaving contendOnce(). Still contending.");
+    return contending;
+  }
+  const epoch = heartbeatEpoch;
+  const run = contend().then(function () {
+    if (epoch === heartbeatEpoch && contending === run) {
+      contending = null;
+    }
+  }, function (e) {
+    log.debug("Caught in contendOnce(): " + ((e && e.message) || e));
+    if (epoch === heartbeatEpoch && contending === run) {
+      contending = null;
+    }
+  });
+  contending = run;
+  log.debug("Leaving contendOnce().");
+  return run;
 }
 
 // Asks for every role some module wants led and this node does not hold —
 // except one this node STOOD DOWN from a moment ago (`stepDown()`), which it
 // does not ask for again until its hold-off has passed.
-function campaign() {
-  log.debug("Entering campaign().");
+function contend() {
+  log.debug("Entering contend().");
   let chain = Promise.resolve();
   const nowMono = monotonicMs();
   roles.forEach(function (handlers, name) {
@@ -922,13 +1061,13 @@ function campaign() {
           try {
             handlers.onGain(answer.token);
           } catch (e) {
-            log.debug("Caught in campaign(): " + ((e && e.message) || e));
+            log.debug("Caught in contend(): " + ((e && e.message) || e));
           }
         }
       });
     });
   });
-  log.debug("Leaving campaign().");
+  log.debug("Leaving contend().");
   return chain;
 }
 
@@ -950,6 +1089,25 @@ function acquire(name) {
   }
   log.debug("Leaving acquire().");
   return driver.acquireLease(name, nodeId, ttlMs()).then(function (answer) {
+    // A TAKEOVER STILL WAITING (#770's review). The driver bounds the ask,
+    // so a takeover that has to wait for the previous holder's in-flight
+    // writes answers "not yet" instead of holding the liveness connection
+    // the heartbeat needs; it is asked again on the next beat. Said once
+    // per wait, at info: it is the fence working, not a failure, and an
+    // operator who sees it repeat for a lifetime is looking at a write
+    // that does not finish.
+    if (answer && answer.pending) {
+      if (!pendingTakeovers.has(name)) {
+        pendingTakeovers.add(name);
+        log.info(errorCodes.tag('STS-CLUSTER-0165') + 'cluster: taking ' +
+                 'over the "' + name + '" lease is waiting for writes the ' +
+                 'previous holder (' + (answer.holder || 'unknown') + ') ' +
+                 'still has in flight; asking again every ' + heartbeatMs() +
+                 'ms.');
+      }
+    } else {
+      pendingTakeovers.delete(name);
+    }
     if (answer.held) {
       const was = held.get(name);
       held.set(name, answer.token);
@@ -1003,11 +1161,11 @@ function waitForServiceLease() {
   });
 }
 
-// A module that wants a role led by exactly one node. The role is campaigned
+// A module that wants a role led by exactly one node. The role is contended
 // for on every heartbeat; `onGain(token)` and `onLose()` say when this node
 // starts and stops holding it.
 /**
- * Registers a role to be led by exactly one node, campaigned for on every
+ * Registers a role to be led by exactly one node, contended for on every
  * heartbeat. Unclustered, `onGain(0)` is called at once.
  *
  * @param name - the role's lease name
@@ -1023,7 +1181,9 @@ function lead(name, handlers) {
     }
     return;
   }
-  campaign();
+  // Through the one-at-a-time door: a contention already asking is not
+  // joined by a second, and this role is asked at the next beat.
+  contendOnce();
 }
 
 /**
@@ -1045,10 +1205,10 @@ function holds(name) {
 // The lease is EXPIRED in the store at the token this node holds it at (the
 // driver's `releaseLease()`, which a lease that already changed hands does
 // not touch), `onLose()` is called as a lost lease's is, and this node does
-// not campaign for the role again for `holdOffMs` — without that it would
+// not contend for the role again for `holdOffMs` — without that it would
 // take the lease straight back on its next heartbeat, before any other node
 // had asked. The hold-off defaults to three heartbeats: every other node
-// campaigns once a heartbeat, so one of them has asked at least twice.
+// contends once a heartbeat, so one of them has asked at least twice.
 //
 // Resolves `{ ok: true, token }` or `{ ok: false, reason }`, never rejects.
 // A service that is not clustered has no other node to hand to, and says so.
@@ -1057,7 +1217,7 @@ const standingDownUntil = new Map();
 
 /**
  * Hands a held role over: expires its lease at this node's token, calls
- * `onLose()`, and does not campaign for it again for the hold-off.
+ * `onLose()`, and does not contend for it again for the hold-off.
  *
  * @param name - the lease's name
  * @param holdOffMs - how long not to ask again; three heartbeats by default
@@ -1162,8 +1322,8 @@ function agree(keystore) {
   const canonical = JSON.stringify(values, Object.keys(values).sort());
   const keyed = keystore && typeof keystore.keyedDigest === 'function'
     ? keystore.keyedDigest('cluster-agreement', canonical) : null;
-  fingerprint = keyed || ('unkeyed:' + nodeCrypto.createHash('sha256')
-    .update(canonical).digest('base64url'));
+  fingerprint = keyed || ('unkeyed:' +
+    stsCrypto.digest('sha256', canonical, 'base64url'));
   log.debug("Leaving agree().");
   return driver.agreeFingerprint(nodeId, fingerprint).then(function (answer) {
     if (answer.differing.length) {
@@ -1429,6 +1589,39 @@ function currentNodeId() {
   return nodeId;
 }
 
+// ---------------------------------------------------------------------------
+// THE MEMBERSHIP THIS PROCESS IS PART OF, BEFORE IT JOINS (#617). The store
+// adopts this process's origin before `gate()` joins, and the origin claim
+// records the membership that took it so a successor can take over a claim
+// whose membership has gone (`persistence_postgres.js`, `adoptOrigin()`). So
+// a front process's id is chosen here, on first asking, and `gate()` joins
+// under the same one; a worker answers the id its front joined under, which
+// it inherited. Still random per start: a membership that lapsed must never
+// come back as itself.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the node id this process's membership has or will have: the joined
+ * id, a worker's inherited one, or one chosen now that `gate()` will use.
+ *
+ * @returns the node id
+ */
+function plannedNodeId() {
+  log.debug("Entering plannedNodeId().");
+  if (nodeId) {
+    log.debug("Leaving plannedNodeId(). Joined.");
+    return nodeId;
+  }
+  if (process.env.STS_REQUEST_WORKER && process.env[ENV_NODE]) {
+    log.debug("Leaving plannedNodeId(). Inherited.");
+    return String(process.env[ENV_NODE]);
+  }
+  if (!plannedId) {
+    plannedId = stsCrypto.randomUuid();
+  }
+  log.debug("Leaving plannedNodeId(). Planned.");
+  return plannedId;
+}
+
 // For tests.
 /**
  * Resets every piece of state. For tests.
@@ -1447,11 +1640,16 @@ function reset(options) {
   driver = null;
   resolved = null;
   nodeId = '';
+  plannedId = '';
   role = 'none';
   joinedAt = 0;
   lastRenewOk = 0;
   heartbeatFailures = 0;
   lastHeartbeatError = '';
+  heartbeatInFlight = false;
+  contending = null;
+  pendingTakeovers.clear();
+  heartbeatEpoch += 1;
   stopping = false;
   fingerprint = '';
   lastState = null;
@@ -1490,6 +1688,7 @@ module.exports = {
   resolve: resolve,
   mode: mode,
   enabled: enabled,
+  plannedNodeId: plannedNodeId,
   isActiveActive: isActiveActive,
   gate: gate,
   agree: agree,

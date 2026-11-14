@@ -68,7 +68,7 @@ function childScript() {
     "const spiffeId = require(" +
     JSON.stringify(path.join(ROOT, 'spiffe/spiffe_id')) + ");",
     "const x509 = require(" +
-    JSON.stringify(path.join(ROOT, 'common/vendored/x509')) + ");",
+    JSON.stringify(path.join(ROOT, 'common/crypto_impl/x509')) + ");",
     "const instance = new api.SpiffeApi(api.SpiffeApi.defaultDeps());",
     "const agent = instance.buildAgentHandlers();",
     "const table = instance.nodeAttestation();",

@@ -199,11 +199,11 @@ function checkRegister(t) {
 // ---------------------------------------------------------------------------
 // 2. ONE NAME, TWO REALMS, TWO PEOPLE.
 //
-// The register is keyed on the local name and this service checks no password,
-// so `alice` in two realms is two entries in two directory subtrees. The
-// counts have to be separate as well as the rows: a shared record found by key
-// would pass the row assertions above and still show one realm the other's
-// authentication count.
+// The register is keyed on the local name and this service, in development
+// mode, checks no password, so `alice` in two realms is two entries in two
+// directory subtrees. The counts have to be separate as well as the rows: a
+// shared record found by key would pass the row assertions above and still
+// show one realm the other's authentication count.
 // ---------------------------------------------------------------------------
 function checkSameName(t) {
   log.debug("Entering checkSameName().");
@@ -255,6 +255,12 @@ function checkRevocation(t) {
 
   withRealm(t, 'iso-revoke', function (realm) {
     const jti = 'iso-jti-' + Date.now();
+    // Counted from here: other tests in this process have revoked things in
+    // the default realm.
+    const outsideBefore = stats.revokedCount();
+    const insideBefore = realms.run(realm, function () {
+      return stats.revokedCount();
+    });
     realms.run(realm, function () { stats.revoke(jti, 'this test'); });
 
     t.check(!stats.isRevoked(jti),
@@ -269,9 +275,10 @@ function checkRevocation(t) {
     const insideCount = realms.run(realm, function () {
       return stats.revokedCount();
     });
-    t.check(insideCount > outsideCount,
+    t.check(insideCount === insideBefore + 1 && outsideCount === outsideBefore,
             'the realm\'s revocation count is its own',
-            'realm=' + insideCount + ', default=' + outsideCount);
+            'realm=' + insideCount + ', default=' + outsideBefore + ' then ' +
+            outsideCount);
 
     // Restoring is per realm too, and it is worth its own line: `restore()`
     // deletes from the set and clears a flag on the token record, and a
@@ -729,7 +736,7 @@ function checkKerberosStores(t) {
 // 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
 // index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
-// `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
+// `tests/protocol/sts_gnap_core.js` asserts the over-HTTP half — a token from
 // one realm refused by another realm's resource server, a continuation token
 // that finds nothing in the default realm. What is here is the half that
 // cannot be asked over HTTP: that a realm removed and created again under the
@@ -770,6 +777,25 @@ function checkGnapStores(t) {
             'GNAP application\'s scoped stream is decided by');
     t.check(!monitor.snapshot().rows['iso-gnap-client'],
             'nor the monitor\'s counters');
+    // The validation door's counts, in the same shape (#1360).
+    const door = require('../common/certificate_trust');
+    // The door takes a realm's id; a record would be looked up as no realm.
+    const doorRealm = typeof realm === 'string' ? realm : realm.id;
+    const doorConfig = require('../common/config');
+    const inDefault = door.counters('default')['jose-signer'].assessed;
+    const inRealm = door.counters(doorRealm)['jose-signer'].assessed;
+    doorConfig.setOverride('pki.paranoid', 'on');
+    try {
+      door.assessSync('jose-signer', { leaf: 'not a certificate' },
+                      { realmId: doorRealm });
+    } finally {
+      doorConfig.clearOverride('pki.paranoid');
+    }
+    t.check(door.counters(doorRealm)['jose-signer'].assessed === inRealm + 1 &&
+            door.counters('default')['jose-signer'].assessed === inDefault,
+            'nor what the validation door answered inside the realm',
+            JSON.stringify([inRealm, inDefault, door.counters(doorRealm)['jose-signer'],
+                            door.counters('default')['jose-signer']]));
     t.check(realms.run(realm, function () {
       return !!store.getGrant(ids.grant) &&
              !!store.tokenByValue('iso-gnap-token-value') &&

@@ -129,3 +129,13 @@ output "network" {
   description = "The network the cell's nodes are on (the environment's shared one, in a cell)."
   value       = local.network_name
 }
+
+output "direct_hostname" {
+  description = "The name that reaches the passthrough load balancer itself: the public name (or address) unless a CDN is in front (cdn.tf, #1341)."
+  value       = local.direct_host
+}
+
+output "cdn_address" {
+  description = "The global load balancer's address in front of Cloud CDN; empty without one."
+  value       = local.cdn_here ? google_compute_global_address.cdn[0].address : ""
+}

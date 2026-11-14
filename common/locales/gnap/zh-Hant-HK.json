@@ -1,0 +1,4 @@
+{
+  "approve.untick": "取消剔選任何您不想允許的項目；應用程式只會收到仍保持剔選的內容（RFC 9635 第 4 節）。",
+  "approve.client": "客戶端實例：<code>{id}</code> · 證明方式：<code>{proof}</code>"
+}

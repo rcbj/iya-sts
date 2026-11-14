@@ -1,0 +1,3 @@
+{
+  "unclassifiedWhy": "Es un punto de llamada que alguien añadió sin añadir una fila a <code>DATA_CLASSES</code> en <code>admin-ui/encryption_admin.ts</code>. Se muestra en lugar de descartarse a propósito: si no, la tabla seguiría pareciendo completa mientras los totales de arriba no cuadran con las filas de abajo."
+}

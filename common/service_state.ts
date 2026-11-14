@@ -177,13 +177,67 @@ class ServiceState {
    * coordination and the certificate authority report and carry on.
    * @returns a promise of `{ started, keys, minted, coordinating, pki }`
    */
-  start(): Promise<any> {
+  // THE BUILT-IN APPLICATIONS AND NATIVE ROLES, SEEDED AGAIN ONCE THE STORE
+  // HAS RESTORED THE DIRECTORY (2026-10-10). `ldap_server.js` seeds them when
+  // it is required, which is before `persistence.start()`; the restore then
+  // REPLACES each realm's directory with what the store holds, so an entry
+  // the store never held — the embedded debugger's two applications, on a
+  // deployment whose store predates them — was seeded, thrown away and never
+  // written down, on every start. Both seeds create only what is missing, so
+  // running them again here changes nothing that exists; it comes after the
+  // keystore because a seeded registration's access token is sealed, and
+  // after coordination so the writes go through the change log like any
+  // other. Never fatal: a seed that fails says so and the service starts.
+  /**
+   * Seeds the built-in applications and native roles again in every realm,
+   * after the store has restored the directory.
+   */
+  reseedAfterRestore(): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering ServiceState.reseedAfterRestore().");
+    try {
+      const applications = require('./applications');
+      const roles = require('./roles');
+      realms.list().forEach(function (realm: any) {
+        realms.run(realm, function () {
+          applications.seedInternalApplications({
+            scope: realm.id === realms.DEFAULT_ID ? 'default' : 'every' });
+          roles.seedNativeRoles();
+        });
+      });
+    } catch (e) {
+      log.debug("Caught in ServiceState.reseedAfterRestore(): " +
+                ((e && e.message) || e));
+      helpers.log.warn(require('./error_codes').tag('STS-REG-0002') +
+               'applications: the built-in ' +
+               'applications could not be seeded again after the store was ' +
+               'restored: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving ServiceState.reseedAfterRestore().");
+  }
+
+  // `opts.beforeMinted(keys)` (2026-10-21): called once the store, the
+  // signing keys and the shared secrets are in place and before this
+  // process restores what it minted — the point at which the front process
+  // may start its request workers, whose own restores then run beside this
+  // one (`server.js`). Its return is ignored; a throw is the caller's.
+  start(opts?: { beforeMinted?: (keys: any) => void }): Promise<any> {
     const { log, persistence, keystore, cluster, clusterSecrets, pki, realms,
             helpers } = this.deps;
     const self = this;
     log.debug("Entering ServiceState.start().");
     log.debug("Leaving ServiceState.start().");
     return persistence.start().then(function (started) {
+      // THE SEQUENCE NUMBERS' FIRST BLOCKS (#465), leased the moment the
+      // store is open and before anything is recorded on it, so the audit
+      // log and the delegation register number their rows uniquely across
+      // every process from the first one. NEVER FATAL: without a shared
+      // store, or when the lease fails, each keeps its own counter and the
+      // allocator says so (common/seq_allocator.ts).
+      return require('./seq_allocator').start().then(function () {
+        return started;
+      });
+    }).then(function (started) {
     // THE SIGNING KEYS, AFTER THE STORE AND BEFORE ANYTHING SIGNS.
     //
     // It is a second asynchronous step in the same chain for the same reason
@@ -241,16 +295,22 @@ class ServiceState {
       // does nothing at all in development mode, in memory mode and on an ldif
       // store — see persistence_minted.js, which says which and why.
       // -----------------------------------------------------------------------
+      if (opts && typeof opts.beforeMinted === 'function') {
+        opts.beforeMinted(keys);
+      }
       return persistence.restoreMinted().then(function (mintedResult) {
         // ---------------------------------------------------------------------
         // AND THEN COORDINATION, WHICH IS LAST AND HAS TO BE.
         //
-        // It takes the change log's high-water mark and treats everything below
-        // it as already applied — which is only true once this process really
-        // HAS restored everything: the settings, the realms, the directory, the
-        // keys and the minted rows. Starting it any earlier would mark changes
-        // as seen that this process had not seen, and they would never be
-        // applied by anything.
+        // The follower is armed here, after every restore. The high-water
+        // mark it starts from was taken when the store opened, before any
+        // of those reads (#619, #804): a change committed during the
+        // restore is above that mark and is applied, and applying one the
+        // restore already read is the applier reading the current row.
+        // Arming the follower any earlier would apply into a store this
+        // process had not restored yet. Taking the mark HERE, after the
+        // reads, is the gap: a change committed after a table was read and
+        // before this call is in neither.
         //
         // **A FAILURE HERE IS NOT FATAL, WHICH IS THE OPPOSITE OF THE TWO STEPS
         // ABOVE**, and the asymmetry is the argument: a process that cannot
@@ -260,6 +320,7 @@ class ServiceState {
         // with it. It starts, says so loudly, and keeps trying on its timer.
         // ---------------------------------------------------------------------
         return persistence.coordinate().then(function (coordinating) {
+          self.reseedAfterRestore();
           return self.settleSigningKeys().then(function () {
             return coordinating;
           });
@@ -317,12 +378,75 @@ class ServiceState {
           }
         })
             .then(function (pkiResult) {
-          return { started: started, keys: keys, minted: mintedResult,
-                   coordinating: coordinating, pki: pkiResult };
+          // -------------------------------------------------------------------
+          // **AND THE LISTENER'S CERTIFICATE IS IN THE STORE BEFORE IT IS
+          // SERVED (#162, 2026-10-05).** `pki.start()` certifies this
+          // process's listener under the ONE process branch every node
+          // shares, and queues the row's write. The certificate names the
+          // SERVICE's OCSP address, so the moment this node serves it a
+          // relying party may ask ANY node about it — and the answering node
+          // can only find the serial in the store once this write has landed
+          // (`pki_revocation.js`'s `catchUpWithTheStore()` is the reader's
+          // half). Where the row is not merged there is nobody else to tell,
+          // and this resolves at once.
+          // -------------------------------------------------------------------
+          const merges = typeof keystore.mergesPkiRows === 'function' &&
+                         keystore.mergesPkiRows();
+          const landed = merges && typeof keystore.pkiSettled === 'function'
+            ? Promise.resolve(keystore.pkiSettled(pki.PROCESS_SCOPE))
+              .catch(function (e: any) {
+                // The write's own failure is the keystore's to report and
+                // retry; the start carries on, as it does for a PKI failure.
+                log.debug("Caught in ServiceState.start(): " +
+                          ((e && e.message) || e));
+                return null;
+              })
+            : Promise.resolve(null);
+          return landed.then(function () {
+            // Block leases a previous life of this origin still holds
+            // (#884). The origin is adopted and the node has joined by
+            // here, and the sockets bind only after this promise resolves.
+            // A failure is logged and does not stop the start.
+            return self.reclaimStatusBlocks().then(function () {
+              return { started: started, keys: keys, minted: mintedResult,
+                       coordinating: coordinating, pki: pkiResult };
+            });
+          });
         });
         });
       });
     });
+    });
+  }
+
+  // Releases access-token status-list blocks a previous life of this origin
+  // still holds (#884), and registers the reap job. Never rejects: a failure
+  // is logged under STS-OAUTH-1008 and the start continues.
+  private reclaimStatusBlocks(): Promise<void> {
+    const { log, helpers } = this.deps;
+    log.debug("Entering ServiceState.reclaimStatusBlocks().");
+    log.debug("Leaving ServiceState.reclaimStatusBlocks().");
+    return Promise.resolve().then(function () {
+      const status = require('../oauth-oidc/access_token_status');
+      if (typeof status.ensureReapJob === 'function') {
+        status.ensureReapJob();
+      }
+      if (typeof status.reclaimAbandoned === 'function') {
+        return status.reclaimAbandoned({ bareOwn: true });
+      }
+      return 0;
+    }).then(function () {
+      return undefined;
+    }, function (e: any) {
+      // The status list logs its own failure and resolves. This is the
+      // start's backstop when the require or the registration throws: the
+      // process still serves, and the blocks stay until they expire.
+      log.debug("Caught in ServiceState.reclaimStatusBlocks(): " +
+                ((e && e.message) || e));
+      helpers.log.warn(require('./error_codes').tag('STS-OAUTH-1008') +
+               'access-token status: releasing block leases held by a ' +
+               'stopped process failed at start: ' +
+               ((e && e.message) || e) + '. They stay until they expire.');
     });
   }
 }
@@ -347,5 +471,7 @@ const serviceState = new ServiceState({
  */
 export = {
   ServiceState: ServiceState,
-  start: serviceState.start.bind(serviceState) as ServiceState['start']
+  start: serviceState.start.bind(serviceState) as ServiceState['start'],
+  reseedAfterRestore: serviceState.reseedAfterRestore.bind(serviceState) as
+    ServiceState['reseedAfterRestore']
 };

@@ -13,7 +13,7 @@
   it could contain, or the part of the document inside the first wildcard
   is not checked at all. This file is that set; the job adds the other half
   of the guarantee by refusing a document that uses a namespace no import
-  below covers (tests/vendored/sts_xml_schema_validation.js, `covered()`).
+  below covers (tests/protocol/sts_xml_schema_validation.js, `covered()`).
 
   Each import names the local file tests/tools/fetch-xml-schemas.sh put
   beside this one; the imports INSIDE the published files are resolved by
@@ -42,6 +42,8 @@
              schemaLocation="saml-schema-metadata-2.0.xsd"/>
   <xs:import namespace="urn:oasis:names:tc:SAML:2.0:conditions:delegation"
              schemaLocation="sstc-saml-delegation.xsd"/>
+  <xs:import namespace="urn:oasis:names:tc:SAML:metadata:algsupport"
+             schemaLocation="sstc-saml-metadata-algsupport-v1.0.xsd"/>
   <xs:import namespace="urn:oasis:names:tc:SAML:1.0:assertion"
              schemaLocation="oasis-sstc-saml-schema-assertion-1.1.xsd"/>
   <xs:import namespace="urn:oasis:names:tc:SAML:1.0:protocol"
@@ -89,4 +91,12 @@
              schemaLocation="ws-federation.xsd"/>
   <xs:import namespace="http://docs.oasis-open.org/wsfed/authorization/200706"
              schemaLocation="ws-authorization.xsd"/>
+  <!-- WSDL 1.1 and its SOAP 1.1 and 1.2 bindings: what GET /sts/metadata is
+       written in (tests/wstrust_metadata.js W). -->
+  <xs:import namespace="http://schemas.xmlsoap.org/wsdl/"
+             schemaLocation="wsdl.xsd"/>
+  <xs:import namespace="http://schemas.xmlsoap.org/wsdl/soap/"
+             schemaLocation="wsdl-soap.xsd"/>
+  <xs:import namespace="http://schemas.xmlsoap.org/wsdl/soap12/"
+             schemaLocation="wsdl11soap12.xsd"/>
 </xs:schema>

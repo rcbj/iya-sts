@@ -80,22 +80,35 @@ for GCP's reason.
 
 | AWS | GCP | Azure | Why this and not the obvious alternative |
 |---|---|---|---|
-| ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and a failing node is replaced after `PT30M`. |
+| ECS on Fargate, a service per AZ | a zonal MIG per zone, COS | **A Flexible scale set per zone with one instance, Ubuntu 24.04 LTS, Docker from Ubuntu's archive**. `node-a`'s is made first. | Container Apps proxies what it publishes. Container Instances has no zonal load-balanced service that follows its instances. Neither gives 389/636/88/gRPC plus a client certificate at the node. AKS is a cluster to keep. Ubuntu's unattended-upgrades is the nearest thing to COS. A scale set rather than a bare VM because it **repairs**: the Application Health extension asks `/healthcheck`, and three consecutive failures replace the node once the `PT30M` repair grace has passed. |
 | task definition | systemd units | **The same units**, in order: `sts-disk` → `sts-registry` → `sts-secrets` → `sts-cert` → `sts-schema` (→ `sts-global-schema` in the primary cell) → `sts-node`. `sts-node` is enabled, so a reboot starts it again. | `Requires=`/`After=` is `dependsOn: SUCCESS` |
 | ECS `secrets` | `sts-secrets` from Secret Manager | `sts-secrets` from **Key Vault** over REST with the VM's managed identity, into env files on `/run` | Nothing secret is in the VM's model. The database passwords are read by the SERVICE through `common/secrets.js`'s `azure` provider (`AZURE_CLIENT_ID` names the identity), and the KEK is a Key Vault KEY it wraps with (`azure-keys`, *The key-encryption key*, below) |
 | ECR pull | `docker-credential-gcr` | `/etc/sts/registry-login.sh`: an Entra ID token from the metadata endpoint, exchanged at the registry. It runs before every start of the node. | The registry's token lasts about three hours, and systemd restarts the node long after boot |
-| NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets |
+| NLB, PROXY v2 | passthrough NLB, no PROXY | **Standard Load Balancer**: one zone-redundant public address, one rule per port translating 443 → 8081 and 80 → 8082, one HTTPS probe of `/healthcheck` | A pass-through: the client's certificate and address reach the node, so `STS_PROXY_PROTOCOL=off`. **No register-by-address workaround for SPIFFE**: the pool follows the scale sets. **8092 is still published.** #324 was applied on AWS only. Pass-through is a different fact from the declaration #166 requires |
 | NAT-free public subnets | an ephemeral external IP per VM | **The load balancer's outbound rule**, on a second address; the nodes have NO public address, and the subnet's default outbound access is off | New VNets have no default outbound access (since 2025-09-30), and a NAT gateway is zonal. The fixed outbound address is also what the service calling its own public name arrives from |
 | security groups | firewall rules by service account | **Two security groups** (nodes, private). Every rule is a resource of its own, and everything is denied at 4096 in both directions | A group's inline rules are its WHOLE list, so the global stack's rule would be deleted by the next cell apply. The deny rules sit ahead of Azure's defaults, which admit every peered VNet |
 | #311's private zone for self-calls | nothing | **An inbound rule for the outbound address** (`self`, and `cells-self` from the global stack for every cell's) | The node's packet leaves by the outbound rule and comes back through the public frontend |
 | RDS primary + replica | Cloud SQL + PSC endpoint | **Flexible Server 18, primary + a read replica in another zone**, CMK, `require_secure_transport`, 14 days of backups (not geo-redundant). A **private endpoint at a fixed address** (`.10` of the private subnet), which the node dials by the server's own name with `--add-host` | No VNet integration: a delegated subnet refuses to delete when a teardown runs out of order. No private DNS zone. **The certificate chains to a public root**, so node's own trust store verifies it and schema-init runs `verify-full`, unlike GCP |
-| Secrets Manager `iya-sts/<env>/<key>` | Secret Manager `iya-sts-<env>-<key>` | **The environment's Key Vault** (the foundation's `ms<env><cell>-<hash>`), a secret per key: `kek`, `db-app-password`, … | *The vault*, below |
+| Secrets Manager `iya-sts/<env>/<key>` | Secret Manager `iya-sts-<env>-<key>` | **The environment's Key Vault** (the foundation's `ms<env><cell>-<hash>`), a secret per key: `kek`, `db-app-password`, …, and since 2026-11-10 `bootstrap-admin-username` beside `bootstrap-admin-password` (AWS's, `STS_ADMIN_BOOTSTRAP_USERNAME`, read once and kept; the `global/` stack's in a cell) | *The vault*, below |
 | an exportable ACM certificate | ACME in a foundation secret | **ACME** (Let's Encrypt, DNS-01 in `azure.iyasec.io` through lego's `azuredns` provider and the node's identity), in the vault's `tls` secret | *The certificate*, below |
 | EBS for risk uploads | a second persistent disk | a data disk at LUN 0 (CMK), **emptied on every start** | GCP's argument |
 | `awslogs` | `gcplogs` | Docker's `journald` driver → rsyslog → **the Azure Monitor agent → the REGION's workspace** | A log is personal data (#98). The data collection rule must be in its workspace's region |
 | a project key / cell keys per region | a key ring per region | **A key vault per region** with `iya-sts` (single-cell and the global tier) and `iya-sts-cell` (a cell's own data), both purge-protected | A key is regional and never replicated, which is the residency line. The global tier needs no multi-region key here: a cross-region replica uses its own region's key |
 | ECR, replicated | Artifact Registry | **ACR Premium, geo-replicated** into every region an environment uses | Premium is the tier that replicates. Nodes pull from their own region |
 | the deployer role and its boundaries | an impersonated SA | **A custom role granted only on the foundation's resource groups** | *The deployer*, below |
+
+**THREE CONSECUTIVE FAILURES REPLACE THE NODE (#330).** The load balancer's
+`probe_threshold` is 3. Azure applies that count to failures and to
+successes, so a node returns to rotation only after three good answers;
+`number_of_probes` is the older name of the same count and is kept equal.
+The probe stops traffic. The scale set replaces the VM from the Application
+Health extension's own three probes (`numberOfProbes`) once the repair
+grace (`PT30M`) has passed. That grace is the first boot: Docker, the image
+pulls and the init units. The extension's `gracePeriod` of 600 seconds is
+the ten minutes a restarted service gets before those probes count. Both
+checks are an HTTPS GET of `/healthcheck`, so a node whose LDAPS never
+binds is not replaced for that. The inter-cell probe uses the same count
+and only removes the node from that pool.
 
 ## The vault, and why it belongs to the foundation
 
@@ -204,6 +217,68 @@ certificate**, for the shared name and the cell's own (`<cell>.<name>`,
 #361). The sets of names differ, so each cell has its own five a week. The
 cells are applied one after another, not at once, because they share one
 `_acme-challenge` TXT record set.
+
+## Azure Front Door in front of the load balancer (#1341)
+
+**rcbj's decision (2026-11-13): a CDN on every pattern.** `cdn_enabled`, with
+`direct_hostname` in `envs/testidp.tfvars` or in a cells file, adds
+`environment/frontdoor.tf` (Front Door Standard), whose header argues it:
+
+* `public_hostname` → a CNAME to the Front Door endpoint (validated by
+  `_dnsauth.<name>`); `direct_hostname` → the load balancer's A record
+  (single region) or Traffic Manager's CNAME (`global/routing.tf`), and it is
+  Front Door's origin, with the public name as the origin Host.
+* **One profile per environment**: the single region's, or the PRIMARY cell's
+  in `full`. The origin secret is the global stack's `edge-secret`, written
+  into every cell's vault; a single region makes its own.
+* The route caches nothing; two rules turn on caching (HonorOrigin) and
+  compression for `*.js`, `*.css` and `/web/`. `link_to_default_domain =
+  false`, so only the public name is served — Front Door reserves
+  `X-Forwarded-Host`/`-Proto` and sets them itself, so no rule can.
+* The WAF matches `SocketAddr`, never `RemoteAddr` (which reads
+  X-Forwarded-For). No Front Door health probe: it would come from the edge
+  ranges without the secret, and there is one origin.
+* Nodes: `STS_TRUST_PROXY`, `STS_TRUSTED_PROXIES` and `STS_EDGE_PROXIES` from
+  the `AzureFrontDoor.Backend` service tag, `STS_EDGE_SECRET` from the vault;
+  the NSG admits that tag on 8081 (`front-door`, 145); the public name is
+  `--add-host`ed to the load balancer, so self-calls stay off the edge.
+* **The foundation must be re-applied first**: the deployer's role gains
+  `Microsoft.Cdn/*`.
+
+**PROVEN OFFLINE ONLY**: `fmt -check`, `init -backend=false`, `validate` in
+`environment/`, `global/` and `foundation/`, and `terraform test`
+(`environment/tests/frontdoor.tftest.hcl`, five runs; `global/tests` gains
+one). No `plan` ran: Azure was never applied. Two stale assertions the run
+exposed were fixed: six published ports, not seven (389 unpublished
+2026-11-10), and eight shared secrets per vault. **First apply, look at**:
+the service-tag data source's `service = "AzureFrontDoor.Backend"`; whether
+Front Door overwrites a caller's `X-Forwarded-Host` on the custom domain;
+whether an error on a static path without Cache-Control is cached; the
+managed certificate's validation.
+
+## The service image runs as uid 10001 (#254, 2026-10-06)
+
+**The image's `USER` is `sts`, 10001:10001, and no longer root** (the root
+`Dockerfile` argues it), so what the VM mounts into `iya-sts` is handed to
+that user — `local.service_user`, spelt once in `environment/locals.tf`:
+
+* **The upload disk**: `sts-disk.sh` chowns its mount point to it, still
+  0700, after emptying it.
+* **The TLS key**: `node-init/cert.sh` chowns `key.pem` (still 0400) and
+  `certificate.pem` to `STS_TLS_OWNER`, which the `sts-cert` unit passes.
+  The node-init image itself still runs as root.
+* **The low ports**: `sts-node` passes
+  `--sysctl net.ipv4.ip_unprivileged_port_start=0`, which Docker already
+  sets in a bridged container; said so a daemon that did not fails loudly.
+  Not `setcap` on node (a secure exec ignores `NODE_PATH` and
+  `NODE_EXTRA_CA_CERTS`).
+
+The database CA is a public one the image already trusts, so nothing is
+mounted for it; the env files under `/etc/sts` and `/run/sts` stay root's
+0600, because the Docker daemon reads them, not the container. **They put
+every secret in the container's environment**, readable by anything that can
+inspect the container or read its `/proc/1/environ`; that is unchanged here
+and outside #254.
 
 ## The deployer, and what is weaker than AWS
 
@@ -377,6 +452,12 @@ AWS's latency records do.
   identity.
 * **`spiffe-realm/` for additional realms.** A realm's ports would be more
   rules on the same load balancer.
+* **Unpublishing the Workload API (#324).** `spiffe_default_ports` still
+  names `workload` (8092) beside `server` (8181). AWS stopped publishing
+  8092 (`deploy/aws/CLAUDE.md`); this stack was not rewritten, because only
+  AWS has been applied. The load balancer is a pass-through, so the client's
+  certificate and address reach the node. That is a different fact from
+  the declaration #166 requires.
 * **A GitHub workflow.** It should be a service principal with a federated
   credential (OIDC), in the deployer group.
 * **Azure cells in a MULTI-CLOUD environment.** The cells here are all

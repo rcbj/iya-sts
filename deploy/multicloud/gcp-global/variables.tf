@@ -70,3 +70,9 @@ variable "jurisdictions" {
   }))
   default = {}
 }
+
+variable "direct_hostname" {
+  description = "Unread here: the CDN is the cells' (deploy/aws/environment/cloudfront.tf). Declared because the cells file carries it."
+  type        = string
+  default     = ""
+}

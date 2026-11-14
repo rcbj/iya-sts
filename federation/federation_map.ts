@@ -554,6 +554,15 @@ class FederationMap {
   //      other family here is filed by;
   //   3. PREFIX, if `federation.usernamePrefix` says so.
   //
+  // SINCE #358 THIS RESULT IS NOT THE UID AN ENTRY IS CREATED UNDER.
+  // `subjectDecision()` creates `<relationship>~<subject>`
+  // (`FederationLinks.provisionedName()`), and the prefix is not applied.
+  // This function is the name a link-at-first-sign-in confirm looks up, and
+  // the name `any-existing` matches. `identityKeyOf()` still folds those, so
+  // `alice@a.example` and `alice@b.example` both look up `alice` unless the
+  // prefix separates them. A created namespaced uid that still contains `@`
+  // is kept whole by `recordAuthentication()` and `subjectForName()`.
+  //
   // **STEP 2 WAS MISSING AND IT WAS A REAL DEFECT**, found the first time this
   // was pointed at another instance of this service. A foreign `sub` is an
   // opaque string, and that partner's happened to be `urn:sts:user:alice` —
@@ -580,13 +589,15 @@ class FederationMap {
   // was picked, only what it is called here.
   // -------------------------------------------------------------------------
   /**
-   * Chooses the username a federated person is filed under: from
-   * `fedUsernameSource` or the subject, normalised through `identityKeyOf()`,
-   * then prefixed by `federation.usernamePrefix`.
+   * Chooses the confirm-lookup name, and the name `any-existing` matches:
+   * from `fedUsernameSource` or the subject, a `urn:uuid:` subject as
+   * `sub-<uuid>`, every other value through `identityKeyOf()`, then
+   * `federation.usernamePrefix` when one is set.
    *
-   * A `urn:uuid:` subject becomes `sub-<uuid>` rather than being resolved in
-   * this realm's directory. A configured source the assertion did not carry
-   * falls back to the subject, with a warning.
+   * An entry a sign-in creates is not this name. That uid is
+   * `<relationship>~<subject>` (`FederationLinks.provisionedName()`), and
+   * the prefix is not applied to it. A configured source the assertion did
+   * not carry falls back to the subject, with a warning.
    *
    * @param record - the federation relationship
    * @param flat - the flattened incoming values
@@ -665,7 +676,7 @@ class FederationMap {
   // the directory write and the relationship page read this one result and a
   // second pass over the bag would be a second answer:
   //
-  //   username     what to file them under
+  //   username     the confirm-lookup name, not a created uid
   //   attributes   { ldapName: [values] }, ready for the directory
   //   mapped       [{ incoming, ldap, where, values }] — what happened, in
   //                order

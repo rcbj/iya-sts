@@ -58,7 +58,8 @@ const REGISTRY = '${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/';
 const COMPOSE_DOCKERFILES = ['Dockerfile', 'tests/Dockerfile',
   'xacml-pep/Dockerfile', 'tests/saml-peers/shibboleth/Dockerfile',
   'tests/saml-peers/simplesamlphp/Dockerfile',
-  'tests/saml-peers/pysaml2/Dockerfile', 'tests/saml-peers/keycloak/Dockerfile'];
+  'tests/saml-peers/pysaml2/Dockerfile', 'tests/saml-peers/keycloak/Dockerfile',
+  'tests/peer/Dockerfile'];
 
 function read(rel) {
   log.debug("Entering read(). " + rel);
@@ -284,7 +285,13 @@ function run(t) {
   }
   const rootFroms = externalRefs(read('Dockerfile'))
     .concat(externalRefs(read('xacml-pep/Dockerfile')));
+  // This project's OWN published images are not third-party and are not
+  // mirrored — check 4's rule. Since #1717 the root Dockerfile's default
+  // debugger image is one (ghcr.io/rcbj/id-proto-debugger-embedded).
   const uncovered = rootFroms.filter(function (ref) {
+    if (ref.indexOf('ghcr.io/rcbj/') === 0) {
+      return false;
+    }
     const target = wf[contextKey(ref)];
     return !target || target.indexOf(MIRROR) !== 0 ||
            !paths.has(target.slice(MIRROR.length));

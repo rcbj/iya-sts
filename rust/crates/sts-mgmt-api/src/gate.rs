@@ -17,7 +17,7 @@
 //!   token, so it has to ask for itself.
 //! * **#446's two rules**: a token whose sign-on session has ended is
 //!   refused (STS-API-0126), and a token issued to the admin console as a
-//!   PUBLIC client is honoured only DPoP-bound (STS-OAUTH-0939).
+//!   PUBLIC client is honoured only DPoP-bound (STS-OAUTH-0944).
 //! * **What it answers**: the claims and the scope the request needs
 //!   (`admin:read` for a GET, `admin:write` otherwise, `device:compliance`
 //!   for the MDM feed). The caller then makes the declared-scope, role and

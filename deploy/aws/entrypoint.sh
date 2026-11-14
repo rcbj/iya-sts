@@ -51,8 +51,9 @@
 #
 #   TF_VAR_image_tag      the service image tag (the commit), for plan/apply
 #   TF_VAR_allowed_cidrs  JSON list, e.g. ["203.0.113.4/32"], for plan/apply
-#   TF_VAR_workload_port, TF_VAR_server_port   spiffe-realm plan/apply: the
-#                         realm's two SPIFFE ports (deploy/aws/CLAUDE.md)
+#   TF_VAR_server_port    spiffe-realm plan/apply: the realm's SPIRE Server
+#                         API port. TF_VAR_workload_port is accepted and no
+#                         longer published (#324); empty is the default.
 #   TF_VAR_image_tag      suite-callbacks plan/apply: the run's image tag
 #                         (run-suite.sh pushes runner-<tag> and pep-<tag>)
 #
@@ -297,8 +298,11 @@ then
   esac
 fi
 
-# The realm's two ports, the same way: real ones for plan and apply, and a
-# placeholder where the action only reads or destroys what state records.
+# The realm's Server API port, the same way: a real one for plan and apply,
+# and a placeholder where the action only reads or destroys what state
+# records. The Workload API port is no longer published (#324). It is still
+# accepted, and still given a placeholder on destroy, so state that
+# published it can be planned and removed.
 if [ "${TF_STACK}" = "suite-callbacks" ];
 then
   case "${TF_ACTION}" in
@@ -316,8 +320,13 @@ if [ "${TF_STACK}" = "spiffe-realm" ];
 then
   case "${TF_ACTION}" in
     plan|apply)
-      [ -n "${TF_VAR_workload_port:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_workload_port (the realm's spiffe.workloadPort)."
+      # Empty is the variable's own default. A caller that still passes the
+      # port is planning the same configuration: nothing publishes it.
       [ -n "${TF_VAR_server_port:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_server_port (the realm's spiffe.serverPort)."
+      if [ -n "${TF_VAR_workload_port:-}" ];
+      then
+        export TF_VAR_workload_port
+      fi
       ;;
     *)
       : "${TF_VAR_workload_port:=65001}"
@@ -328,9 +337,10 @@ then
 fi
 
 # EVERY STACK BUILT ON TOP OF AN ENVIRONMENT COMES DOWN BEFORE IT
-# (2026-09-21). `spiffe-realm/` puts two listeners, two target groups and
-# FOUR SECURITY-GROUP RULES on the environment's own `nlb` and `nodes`
-# groups, which it finds with `data` rather than owning; `suite-callbacks/`
+# (2026-09-21). `spiffe-realm/` puts a listener, a target group and the
+# security-group rules for that port on the environment's own `nlb` and
+# `nodes` groups (two of each until #324 stopped publishing the Workload
+# API), which it finds with `data` rather than owning; `suite-callbacks/`
 # puts a subnet and a NAT gateway behind an address the load balancer
 # admits. Terraform removes the rules ITS OWN state records — a rule another
 # state owns is invisible to it, and keeps the group alive, so

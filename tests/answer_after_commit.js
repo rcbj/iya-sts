@@ -47,6 +47,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const storeDouble = require('./tools/store_double');
 const http = require('http');
 const childProcess = require('child_process');
 
@@ -234,6 +235,7 @@ async function keyRows(t, dir) {
                    'utf8');
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   const store = { rows: new Map(), fail: true,
     loadKeys: function () {
@@ -284,6 +286,7 @@ async function keyRows(t, dir) {
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     helpers.resetStsKeys();
@@ -604,7 +607,8 @@ async function theDirectory(t, state) {
 }
 
 // ---------------------------------------------------------------------------
-// D. The liveness connection, against a `pg` whose pool is exhausted.
+// D. The liveness connection, against a store whose pool is exhausted (a
+// `pg`-shaped double in the layer's place, `tests/tools/store_double.js`).
 // ---------------------------------------------------------------------------
 function exhaustiblePg(db) {
   log.debug("Entering exhaustiblePg().");
@@ -615,7 +619,8 @@ function exhaustiblePg(db) {
       return Promise.resolve({ rowCount: 1, rows: [
         { claimed_at: 1, expires_at: 30001 }] });
     }
-    if (/^UPDATE sts_cluster_claims SET expires_at/.test(text)) {
+    if (/^UPDATE sts_cluster_claims SET expires_at/.test(text) ||
+        /sts:renewOrigin /.test(text)) {
       return Promise.resolve({ rowCount: 1, rows: [] });
     }
     if (/^WITH n AS \(UPDATE sts_cluster_nodes/.test(text)) {
@@ -683,10 +688,7 @@ async function theLivenessConnection(t) {
   t.log.info('=== D. the renewal does not queue behind the writes ===');
   const postgres = require('../persistence/persistence_postgres');
   const db = { statements: [], exhausted: false, clientRefuses: false };
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                            exports: exhaustiblePg(db) };
+  const restore = storeDouble.install(exhaustiblePg(db));
   let driver = null;
   try {
     driver = postgres.create({
@@ -694,11 +696,7 @@ async function theLivenessConnection(t) {
       log: { debug: function () {}, info: function () {},
              warn: function () {}, error: function () {} } });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
   const adopted = await driver.adoptOrigin({ name: 'node-b:protocol-0',
                                              ttlMs: 30000 });
@@ -712,18 +710,31 @@ async function theLivenessConnection(t) {
           'D: THE ORIGIN RENEWAL SUCCEEDS WHILE EVERY POOLED CONNECTION IS ' +
           'TAKEN (on testidp it waited on the pool, the claim lapsed, and ' +
           'the worker exited)', String(renewed));
-  t.check(db.statements.length === 1 && db.statements[0].via === 'client',
-          'D: on the liveness connection, not the pool',
+  const renewalVia = db.statements.map(function (one) {
+    return one.via;
+  });
+  t.check(renewalVia.length > 0 &&
+          renewalVia.every(function (via) { return via === 'client'; }) &&
+          db.statements.some(function (one) {
+            return /^UPDATE sts_cluster_claims SET expires_at/.test(one.sql) ||
+              /sts:renewOrigin /.test(one.sql);
+          }),
+          'D: on the liveness connection, not the pool — the bound adds ' +
+          'BEGIN, the timeouts and COMMIT around the renewal',
           JSON.stringify(db.statements.map(function (one) {
-            return one.via;
+            return one.via + ' ' + one.sql.slice(0, 40);
           })));
   db.statements.length = 0;
   const beat = await bounded(driver.heartbeat('node-b', 30000, null), 2000);
-  t.check(beat && beat.alive === true && db.statements.length === 1 &&
-          db.statements[0].via === 'client',
+  t.check(beat && beat.alive === true && db.statements.length > 0 &&
+          db.statements.every(function (one) {
+            return one.via === 'client';
+          }) && db.statements.some(function (one) {
+            return /^WITH n AS \(UPDATE sts_cluster_nodes/.test(one.sql);
+          }),
           'D: and so does the cluster heartbeat',
           JSON.stringify({ beat: beat, via: db.statements.map(function (o) {
-            return o.via;
+            return o.via + ' ' + o.sql.slice(0, 32);
           }) }));
   const leased = await bounded(driver.releaseLease('scheduler', 'node-b', 3),
                                2000);
@@ -734,31 +745,30 @@ async function theLivenessConnection(t) {
   db.exhausted = false;
   db.clientRefuses = true;
   const second = (function () {
-    require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-                              exports: exhaustiblePg(db) };
+    const restoreAgain = storeDouble.install(exhaustiblePg(db));
     try {
       return postgres.create({
         url: 'postgres://sts_app@localhost:5432/sts',
         log: { debug: function () {}, info: function () {},
                warn: function () {}, error: function () {} } });
     } finally {
-      if (previous) {
-        require.cache[pgPath] = previous;
-      } else {
-        delete require.cache[pgPath];
-      }
+      restoreAgain();
     }
   })();
   db.statements.length = 0;
   const viaPool = await bounded(second.heartbeat('node-c', 30000, null), 2000);
   t.check(viaPool && viaPool.alive === true &&
           db.statements.some(function (one) {
-            return one.via === 'pool';
+            return one.via === 'pool' &&
+              /^WITH n AS \(UPDATE sts_cluster_nodes/.test(one.sql);
+          }) && !db.statements.some(function (one) {
+            return one.via === 'pool' && one.sql === 'BEGIN';
           }) && second.livenessStatus().viaPool === 1,
           'D: a liveness connection that cannot be opened sends the ' +
-          'statement through the pool rather than failing it',
+          'statement through the pool rather than failing it, and does ' +
+          'not open a transaction there',
           JSON.stringify({ via: db.statements.map(function (o) {
-            return o.via;
+            return o.via + ' ' + o.sql.slice(0, 24);
           }), status: second.livenessStatus() }));
 
   // THE PURGE KEEPS A LAPSED ORIGIN CLAIM.
@@ -766,9 +776,11 @@ async function theLivenessConnection(t) {
   db.statements.length = 0;
   await bounded(second.purgeClaims(), 2000);
   const purge = db.statements.filter(function (one) {
-    return /^DELETE FROM sts_cluster_claims/.test(one.sql);
+    return /sts:purgeClaims /.test(one.sql);
   })[0];
-  t.check(!!purge && /scope <> \$1/.test(purge.sql) &&
+  // Built with the Knex builder since #677: `NOT scope = $1` is the
+  // compiler's spelling of `scope <> $1`.
+  t.check(!!purge && /not "scope" = \$1/.test(purge.sql) &&
           purge.params[0] === 'persistence.origin' &&
           Number(purge.params[1]) >= 60 * 60 * 1000,
           'D: A LAPSED ORIGIN CLAIM IS NOT PURGED WITH THE OTHERS — a purged ' +

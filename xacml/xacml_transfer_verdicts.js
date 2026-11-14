@@ -56,7 +56,8 @@ const TRANSFER = templates.TRANSFER_ATTRIBUTE;
 //   hardGeofence    `cells.hardGeofence`, a boolean
 //   category        `session`, `request` or `attributes`
 //   realm           the realm id
-//   purpose         a release's purpose (`directory-list`, `api`)
+//   purpose         a release's purpose (`directory-list`, `api`,
+//                   `attributes`, `scim-provision` — #553)
 // ---------------------------------------------------------------------------
 function requestFor(question) {
   log.debug("Entering requestFor().");

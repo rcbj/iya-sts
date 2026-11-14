@@ -47,7 +47,8 @@ locals {
 
   # A DEFAULT PORT IS LEFT OUT of the URL that goes inside a certificate:
   # deploy/aws/environment/locals.tf, `pki_public_url`, argues it.
-  pki_public_url = var.pki_listener_port == 80 ? "http://${local.public_host}" : "http://${local.public_host}:${var.pki_listener_port}"
+  # Behind a CDN, the direct name (cdn.tf): an edge speaks HTTPS only.
+  pki_public_url = var.pki_listener_port == 80 ? "http://${local.direct_host}" : "http://${local.direct_host}:${var.pki_listener_port}"
 
   # EVERY PORT THE LOAD BALANCER PUBLISHES and the node port behind it —
   # AWS's map, row for row (deploy/aws/environment/locals.tf argues each).
@@ -57,9 +58,13 @@ locals {
   # arrives at the VM for 443. So each row is published by Docker on the
   # VM (`-p <listener>:<container>`, units/sts-node.service.tftpl), and the
   # container listens where it always has — 8081 behind 443, 8082 behind 80.
+  # NO PLAIN LDAP ON 389 (rcbj, 2026-11-10, AWS's locals.tf): the ASVS L2
+  # hardening (#1490) turns `ldap.plainListener` off in product, so a product
+  # node binds nothing there, and a published 389 was a port nobody answers
+  # (on AWS its health check replaced a healthy node). LDAPS on 636 is the
+  # directory's only published port.
   published_ports = merge({
     https = { listener = 443, container = 8081 }
-    ldap  = { listener = 389, container = 389 }
     ldaps = { listener = 636, container = 636 }
     pki   = { listener = var.pki_listener_port, container = 8082 }
     }, var.publish_kerberos ? {
@@ -91,6 +96,13 @@ locals {
   host_upload_dir  = "/mnt/disks/risk-uploads"
   risk_upload_dir  = "/usr/src/sts/data/risk-uploads"
   risk_upload_disk = "risk-uploads"
+
+  # THE USER THE SERVICE IMAGE RUNS AS (#254, 2026-10-06): `sts`, uid and gid
+  # 10001, fixed in the root Dockerfile rather than looked up, so that what
+  # the VM mounts into the node can be handed to it here. Two things are:
+  # the upload disk (sts-disk.sh) and the TLS key (sts-cert, node-init's
+  # cert.sh). Spelt once, like the paths above.
+  service_user = "10001:10001"
 }
 
 data "google_compute_zones" "available" {

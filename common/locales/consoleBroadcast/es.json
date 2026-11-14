@@ -1,0 +1,16 @@
+{
+  "about": "Muestra un mensaje breve a todas las personas que han iniciado sesión en la consola de administración, el portal de usuario o la aplicación de informes, en un aviso en la parte superior de cada una de sus pestañas abiertas. Se envía como evento Shared Signals propio de este servicio en el flujo receptor de cada aplicación, y una pestaña lo muestra en unos {seconds, plural, one {# segundo} other {# segundos}}. El aviso se cierra solo a los diez segundos. Una pestaña abierta después no lo muestra.",
+  "notReady": "Por ahora no se puede entregar nada:",
+  "readOnly": "Enviar un anuncio requiere Admin Write.",
+  "message": "Mensaje",
+  "maxChars": "Texto sin formato, como máximo {max} caracteres.",
+  "surfaces": "Mostrarlo en",
+  "scope.legend": "Enviarlo a",
+  "scope.realm": "Este dominio (<code>{realm}</code>)",
+  "scope.every": "Todos los dominios ({count, plural, one {# dominio} other {# dominios}})",
+  "scope.only": "Se envía a las personas que han iniciado sesión en este dominio, <code>{realm}</code>.",
+  "send": "Difundir",
+  "streamsLink": "Los flujos receptores por los que viaja (Shared Signals)",
+  "banner.heading": "Anuncio",
+  "banner.close": "Cerrar"
+}

@@ -45,10 +45,13 @@ const log = require('bunyan').createLogger({ name: 'pqc_support',
 
 async function inProcess(t) {
   log.debug("Entering inProcess().");
+  // A renderer given no translator draws node's default, which
+  // common/i18n.ts installs (#539) — English.
+  require('../common/i18n');
   const support = require('../common/pqc_support');
   const pqJose = require('../common/pq_jose');
-  const pqcX509 = require('../common/vendored/pqc_x509');
-  const x509 = require('../common/vendored/x509');
+  const pqcX509 = require('../common/crypto_impl/pqc_x509');
+  const x509 = require('../common/crypto_impl/x509');
   const keystore = require('../common/keystore');
   const pki = require('../common/pki');
   const realms = require('../common/realms');
@@ -208,7 +211,10 @@ async function childBody() {
                           standard: 'X.509 (2019) clause 9.8' }),
     hostile: badge.badge({ kind: 'pq', label: '"><script>alert(1)</script>',
                            standard: '' }),
-    legend: badge.legend()
+    legend: badge.legend(),
+    // The console allows no inline style (#1621), so how a kind is drawn is
+    // its class's rule in the stylesheet the shell serves, not an attribute.
+    css: require('../admin-ui/web_pqc_badge').CSS
   }) + '\n');
   log.debug("Leaving childBody().");
 }
@@ -261,9 +267,17 @@ function theMark(t, got) {
           one(got.hybrid, 'PQC alt', 'Hybrid: a classical key'),
           'each of the four kinds is one labelled image — an icon, its ' +
           'word, and the sentence as both tooltip and accessible name');
-  t.check(/dashed/.test(got.hybrid) && !/dashed/.test(got.pq),
+  const rule = function (kind) {
+    const found = new RegExp('\\.pqc-' + kind + '\\{([^}]*)\\}')
+      .exec(String(got.css || ''));
+    return found ? found[1] : '';
+  };
+  t.check(/class="[^"]*\bpqc-hybrid\b/.test(got.hybrid) &&
+          /class="[^"]*\bpqc-pq\b/.test(got.pq) &&
+          /dashed/.test(rule('hybrid')) && !/dashed/.test(rule('pq')),
           'the hybrid is drawn visibly weaker, because its key is not ' +
-          'post-quantum');
+          'post-quantum', JSON.stringify({ hybrid: rule('hybrid'),
+                                           pq: rule('pq') }));
   const all = [got.pq, got.composite, got.kem, got.hybrid, got.legend]
     .join('');
   t.check(!/<script/i.test(all) && !/\son[a-z]+=/i.test(all) &&

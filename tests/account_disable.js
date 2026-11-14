@@ -154,18 +154,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
-
   (async function () {
     if (PRODUCT) {
       // A PRODUCT PROCESS FROM THE START (`STS_MODE=product`), and not a
@@ -184,6 +172,7 @@ function childMain() {
       await keystore.start();
     }
     require(ROOT + '/common/protocol_stack');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -222,6 +211,14 @@ function childMain() {
     config.setOverride('oauth2.consentRequired', false);
     config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
+    // A PASSKEY THAT IS NOT A SECOND FACTOR HERE (#1135). ALICE holds a
+    // password and a key; until then the key was `primary` and her password
+    // sign-in asked for nothing more. A key has no role now, and where the
+    // realm lets a passkey be a second factor her password sign-in would go
+    // on to it — which this file, about the disable, does not drive. With
+    // `webauthn.mfaAllowed` off the key signs her in on its own only, as the
+    // `primary` key did.
+    config.setOverride('webauthn.mfaAllowed', false);
 
     const SECRET = 'account-disable-secret-0123456789abcdef';
     const REDIRECT = 'https://rp.disable.example/cb';
@@ -237,7 +234,9 @@ function childMain() {
                                  'password'],
                 // G. asks for an /admin-api token, and admin:read is issued
                 // only to a client that declares it (#110).
-                oauthAllowedScope: ['openid', 'admin:read'],
+                oauthAllowedScope: ['openid'],
+                // admin:read is a delegated permission grant since #1141.
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic',
                 // Development only: product sends a Logout Token over https
                 // alone and refuses to register an http address (see the
@@ -248,13 +247,19 @@ function childMain() {
          JSON.stringify(madeClient && (madeClient.errors || madeClient.ok)));
     const ALICE = 'ad-alice';
     const OTHER = 'ad-somebody-else';
-    ldap.createUser(ALICE, { invent: false });
+    // The realm's attribute policy (#396) requires givenName, sn and mail of
+    // every person in product mode, and product invents none of them.
+    const personAttributes = function (name) {
+      return { givenName: ['Ad'], sn: [name], mail: [name + '@example.test'] };
+    };
+    ldap.createUser(ALICE, { invent: false,
+                             attributes: personAttributes(ALICE) });
     // A REAL PASSWORD, which development ignores and product verifies — so in
     // product every refusal below is the disable and not a wrong password.
     const PASSWORD = 'Ad-' + crypto.randomBytes(6).toString('hex') +
                      '-Correct.Horse.Battery.Staple.42';
     const passwordSet = credentials.setPassword(ALICE, PASSWORD);
-    // A PRIMARY SECURITY KEY, so the passwordless path reaches the account:
+    // A PASSKEY, so the passwordless path reaches the account:
     // product refuses a passwordless sign-in for somebody who holds none
     // before it asks anything else (STS-AUTHN-0206), which would read as
     // the disable at C5.
@@ -262,9 +267,9 @@ function childMain() {
       credentialId: 'ad-key-' + crypto.randomBytes(6).toString('hex'),
       label: 'ad key', publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA',
                                        y: 'AA' },
-      signCount: 0 }, 'primary');
+      signCount: 0 });
     note(keyAdded && keyAdded.ok !== false,
-         'precondition: ' + ALICE + ' holds a primary security key',
+         'precondition: ' + ALICE + ' holds a passkey',
          JSON.stringify(keyAdded));
     note(passwordSet && passwordSet.ok !== false,
          'precondition: ' + ALICE + ' has a password',
@@ -272,7 +277,8 @@ function childMain() {
     // The other person D2 and F2 ask about, made the same way: in product a
     // principal nobody provisioned does not exist, so a control about them
     // needs them to.
-    ldap.createUser(OTHER, { invent: false });
+    ldap.createUser(OTHER, { invent: false,
+                             attributes: personAttributes(OTHER) });
     credentials.setPassword(OTHER, PASSWORD);
     if (PRODUCT) {
       // A product KDC derives a person's keys from the password when it is
@@ -291,18 +297,15 @@ function childMain() {
         nonce: 'n' + crypto.randomBytes(3).toString('hex') }).toString());
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
-        const page = await b.go('GET', r.headers.location);
-        const form = hiddenFields(page.text);
-        form.username = username;
-        form.password = PASSWORD;
-        form.action = 'login';
-        const screen = String(r.headers.location).split('?')[0]
-          .replace(/^https?:\/\/[^/]+/, '');
-        const sent = await b.go('POST', screen, { form: form });
-        if (sent.status === 200) {
+        // THE SCREEN OVER `/authn-api` (#571), in this browser's jar.
+        const sent = await authnScreen.submit({ port: port, jar: b.jar,
+          at: String(r.headers.location),
+          fields: { action: 'login', username: username,
+                    password: PASSWORD } });
+        if (sent.next !== 'redirect') {
           return { screen: sent, token: null };
         }
-        r = await b.go('GET', String(sent.headers.location || ''));
+        r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
       const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
@@ -388,13 +391,12 @@ function childMain() {
                                 .update(crypto.randomBytes(32))
                                 .digest('base64url'),
                               code_challenge_method: 'S256' }).toString());
-      const page = await b.go('GET', String(start.headers.location || ''));
-      const form = hiddenFields(page.text);
-      form.username = ALICE;
-      form.password = '';
-      form.webauthn_only = '1';
-      form.action = 'login';
-      return b.go('POST', '/authn/login', { form: form });
+      // OVER `/authn-api` (#571): the act, and the ceremony's page it
+      // names opened as the sign-in surface opens it (#572): its view.
+      return authnScreen.follow({ port: port, jar: b.jar,
+        at: String(start.headers.location || ''),
+        fields: { action: 'login', username: ALICE, password: '',
+                  webauthn_only: '1' } });
     };
     // A page's text for a finding, without its stylesheet.
     const pageText = function (r) {
@@ -449,8 +451,8 @@ function childMain() {
          'A4. (a control: the issuance gate allows an assertion for them)',
          JSON.stringify(gateAnswer(ALICE)));
     const passwordlessBefore = await passwordlessAttempt();
-    note(passwordlessBefore.status === 200 &&
-         /wa-credential/.test(passwordlessBefore.text),
+    note(passwordlessBefore.status === 200 && passwordlessBefore.view &&
+         passwordlessBefore.view.page === 'webauthn',
          'A5. (a control: a passwordless sign-in draws the security-key ' +
          'ceremony for them)', passwordlessBefore.status + ' ' +
          pageText(passwordlessBefore));
@@ -506,11 +508,11 @@ function childMain() {
     // --- C. the doors --------------------------------------------------------
     const stranger = browser(port);
     r = await signIn(stranger, ALICE);
-    note(r.screen.status === 200 &&
+    note(r.screen.next === 'refused' &&
          /Authentication failed/.test(r.screen.text) && !r.token,
          'C1. the SIGN-IN SCREEN refuses their password — with the same ' +
          'sentence a wrong one gets, which is the enumeration answer',
-         r.screen.status + ' ' + r.screen.text.slice(0, 120));
+         r.screen.status + ' ' + String(r.screen.text).slice(0, 120));
     const loginPage = await stranger.go('GET', '/authn/login?authn=' +
       encodeURIComponent('x'));
     note(loginPage.status === 200 || loginPage.status === 400,
@@ -532,9 +534,9 @@ function childMain() {
     note(codeOfLastRow('session.refuse') === 'STS-AUTHN-0201',
          'C4. with STS-AUTHN-0201 on the audit row');
     const passwordless = await passwordlessAttempt();
-    note(passwordless.status === 200 &&
+    note(passwordless.next === 'refused' &&
          /Authentication failed/.test(passwordless.text) &&
-         !/wa-credential/.test(passwordless.text),
+         !(passwordless.view && passwordless.view.page === 'webauthn'),
          'C5. a PASSWORDLESS security-key sign-in is refused BEFORE the ' +
          'ceremony — no key is enrolled for a disabled account',
          passwordless.status + ' ' + pageText(passwordless));
@@ -751,10 +753,11 @@ function productEnvironment(mode, dir) {
                    require('crypto').randomBytes(32).toString('base64'),
                    { encoding: 'utf8', mode: 0o600 });
   log.debug("Leaving productEnvironment().");
-  return { STS_MODE: 'product',
+  return { STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
            KRB5_KRBTGT_PASSWORD: 'ad-' +
              require('crypto').randomBytes(12).toString('hex'),
            STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+           STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
            STS_KEYS_KEK_FILE: kekFile };
 }
 

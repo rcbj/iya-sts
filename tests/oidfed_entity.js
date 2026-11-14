@@ -72,6 +72,18 @@ function inRealm(id, fn) {
 
 async function run(t) {
   log.debug("Entering run().");
+  // A TIME NO DATE CAN HOLD (#1353): finite, so it passes `Number.isFinite`,
+  // and `toISOString()` throws on it. A partner signs these.
+  [10000000000000, -1e300].forEach(function (exp) {
+    t.equal(EntityStatement.timeProblem({ iat: 1, exp: exp }, 100, 0),
+            'exp is outside the range of a time',
+            'an exp of ' + exp + ' is said, not thrown');
+  });
+  t.equal(EntityStatement.isoOf(8.64e15 + 1), null,
+          'and no view of one throws');
+  t.equal(EntityStatement.timeProblem({ iat: 1, exp: 50 }, 100, 0).indexOf(
+    'it expired at '), 0, 'an ordinary expired statement reads as it did');
+  log.debug("Entering run().");
   realms.create({ id: REALM, name: 'OpenID Federation test' });
   try {
     await body(t);
@@ -148,6 +160,19 @@ async function body(t) {
           '3a. the statement pins the realm\'s own keys; itself is ' +
           'invalid_request and a stranger not_found',
           JSON.stringify([selfSs.why, stranger.why]));
+  // OpenID Federation 1.1 section 3.1.2: authority_hints and the Trust
+  // Anchor's trust_mark_* claims are Entity Configuration claims only. The
+  // conformance suite's ValidateAbsenceOfAuthorityHints asks it of the
+  // fetch endpoint's answer (#933); the Leaf's own configuration carries
+  // the hint (2a), so a statement copying claims from it would fail here.
+  t.check(ss.ok && !('authority_hints' in ss.claims) &&
+          !('trust_mark_issuers' in ss.claims) &&
+          !('trust_mark_owners' in ss.claims) &&
+          !('trust_marks' in ss.claims) &&
+          !(ss.claims.metadata && ss.claims.metadata.federation_entity),
+          '3b. the Subordinate Statement carries no authority_hints, no ' +
+          'Trust Mark claims and no federation_entity metadata (3.1.2, 8.1)',
+          JSON.stringify(Object.keys(ss.claims || {})));
 
   t.log.info('=== 4. resolution ===');
   const resolved = await oidfed.resolve(req, leafId, [], false);

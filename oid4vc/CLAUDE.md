@@ -6,23 +6,25 @@ DID Core with DIF domain linkage.
 | File | What it is |
 |---|---|
 | `vc_configs.ts` | The credential configurations. Exists to break a require cycle. |
-| `vc_offers.ts` | The Credential Offer pages and the pre-authorized codes. Same reason. |
+| `vc_offers.ts` | The Credential Offer's state and the pre-authorized codes, `makeOffer()` (the portal's offer, #589) and `/oid4vci/credential-offer/{id}`. Exists to break a require cycle. The demonstration issuer's pages left for `companion/` on #594. |
 | `vc_claims.ts` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
 | `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
 | `vc_issuer.ts` | The three credential endpoints. |
-| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
+| `vc_verifier.ts` | The OpenID4VP Verifier: the request object, the response endpoint, every check — what `POST /admin-api/verifications/start` starts (`startVerification()`, `completionUriFor()`) and every sign-in's request goes through. The bar door's pages left for `companion/` on #594. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
-| `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
+| `vc_signin.ts` | Signing in with a wallet: the shells `/authn/wallet` and `/authn/wallet/wait`, and the `/authn-api/wallet` operations `authn/authn_api.ts` hands it — the start, the wait view, the collection and the Digital Credentials API answer (#574). |
+| `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`common/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
 | `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
-| `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/vendored/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
+| `vc_algorithms.ts` | Which JWS algorithms OpenID4VCI and OpenID4VP offer, sign with and accept, and the wallet compatibility mode `oid4vc.walletCompatibility` (#657). A static utility class; *POST-QUANTUM REQUEST OBJECTS, TRUSTED ISSUERS AND THE WALLET COMPATIBILITY MODE* below. |
+| `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/crypto_impl/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
 | `vc_data_model.ts` | The VC Data Model 2.0 and 1.1 MUSTs a credential or presentation is refused for (#194). A library. |
 | `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
 | `vc_jose_cose.ts` | VC-JOSE-COSE's envelopes: `vc+jwt`, `vc+sd-jwt`, `vc+cose` and the `vp` forms, secured and verified (#198). A library. |
 | `vc_did_resolver.ts` | DID Core section 7: resolve, resolveRepresentation and dereference for `did:key`, `did:jwk` and this realm's `did:web` (#199). A library. |
-| `vc_api.ts` | The W3C VC-API test endpoints (`/vc-api/*`) over everything above — a TEST CONTROL (#194-#199). *The W3C VC-API adapter* below. |
+| `vc_api.ts` | The W3C VC API (VCALM, `/vc-api/*`) over everything above (#194-#199) — a product surface since #598, OFF by default (`vcApi.enabled`). *The W3C VC API* below. |
 | `contexts/` | The JSON-LD contexts `vc_jsonld.ts` answers from, fetched once from their URLs; `vc_jsonld.ts`'s header is their provenance. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
@@ -89,8 +91,7 @@ consumers of that definition, not co-owners of it.
 
 3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
    OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
-   CARRIES; this says what the mock Verifier — the bar door at `/oid4vp/verifier` —
-   ASKS FOR, and which of the three credential formats it asks in. Both ends read
+   CARRIES; this says what the Verifier ASKS FOR, and which of the three credential formats it asks in. Both ends read
    it (`vc_verifier.ts` early, `admin.js` and `admin-core/` late), so it
    registers no route and requires only `helpers.js`, `realms.js`, `config.js`,
    `vc_claims.ts` and `vc_configs.ts`, none of which registers anything
@@ -137,8 +138,8 @@ consumers of that definition, not co-owners of it.
   OID4VP Verifier checks properly — issuer signature, every Disclosure digest
   against `_sd`, the Key Binding JWT including `sd_hash`, the nonce, the
   audience, the validity window and whether the claims asked for arrived — and
-  a presentation made at `/oid4vp/verifier` then says yes on a web page and
-  stops: nobody there asked to be signed in, and a session started because a
+  a presentation made to a verification an administrator started (the bar
+  door at `/oid4vp/verifier` until #594) is decided and stops: nobody there asked to be signed in, and a session started because a
   bar door was shown a credential would be one nobody requested. **It IS
   recorded, which is a different claim and the two must not be merged** — the
   holder goes through `recordAuthentication()` like every other accepted
@@ -261,12 +262,15 @@ signs nobody in is recorded at the response endpoint exactly as before.
 ### The browser it belongs to
 
 The wallet's `direct_post` is the wallet's request, so the session is minted on
-the browser's next request to `/authn/wallet/wait`, and only in the browser that
-started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
+the browser's next collection — `POST /authn-api/wallet/{state}/status`, the
+wait page's poll since #574 — and only in the browser that started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
 browser, reused) is hashed onto the transaction and compared in constant time
 (`STS-VC-0055`). A same-device wallet is answered with a `redirect_uri`
-carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept),
-and a wait request carrying one must carry the right one (`STS-VC-0065`). The
+carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept)
+— the wait page, whose runtime collects with it at once — and a collection
+carrying one must carry the right one (`STS-VC-0065`). The `redirect_uri`
+names a second-factor step's `mfa` too since #574, which the wait page must
+name to be admitted. The
 transaction lives `oid4vp.signInTtlS` — enforced at the response endpoint too,
 for a sign-in only (`STS-VC-0056`; the bar door's late answers are still
 verified as before) — and is answered once and finished once (above).
@@ -280,32 +284,66 @@ by cannot be relayed. *The Digital Credentials API* below is the argument.
 `startSession()`'s `sameIdentity()` decides, as for every door
 (`tests/oid4vp_sign_in.js` 5b).
 
-### The page has a script now, and it is the root `CLAUDE.md`'s exception
+### The pages are routes of the sign-in surface (#574, 2026-10-12)
 
-The wait page had none and argued that it needed none: a `<meta>` refresh was
-the poll, and the answer was a page this server drew. **What changed is the
-Digital Credentials API**, which is a browser API call
-(`navigator.credentials.get({ digital: … })`) and cannot be made by markup, a
-form or a link: nothing but a script can ask a wallet that way, and the answer
-arrives in the page and nowhere else. So the page CANNOT offer the one path
-that resists the relay without one, which is the test the root file sets, and
-the exception takes the same shape as every other:
+The wait page had no script, and argued that it needed none: a `<meta>`
+refresh was the poll, and the answer was a page this server drew. **The
+Digital Credentials API changed that** — a browser API call
+(`navigator.credentials.get({ digital: … })`) that no markup, form or link
+can make — and it got one script, `/authn/wallet.js`, as the root
+`CLAUDE.md`'s exception, with a real submit button for a browser without it
+and the `<meta>` refresh moved to a QR page of its own (`?qr=1`), because a
+reload throws the browser's credential dialog away.
 
-* `script-src 'self'` through `app.contentSecurityPolicy()`, so
-  `frame-ancestors` and `base-uri` cannot be lost; never `'unsafe-inline'`;
-* ONE static resource, `/authn/wallet.js`, which carries no transaction and is
-  the same bytes for everybody — everything it needs is a `data-request`
-  attribute on the form;
-* a REAL SUBMIT BUTTON. The form posts to `/authn/wallet/dc-api` whether the
-  script ran or not; with it blocked, that endpoint answers a page saying the
-  API did not run (`STS-VC-0081`) and offers the same-device link, which is a
-  plain `<a>`.
+**Since #574 both pages are routes of the static sign-in surface** (#569:
+script is required, and no server-drawn fallback is kept), and the argument
+above is the surface's rule rather than an exception:
 
-**THE `<meta>` REFRESH MOVED TO THE QR PAGE** (`?qr=1`, drawn only where the QR
-code is on): a reload while the browser's credential dialog is open throws the
-dialog away. That page has no script, polls exactly as the wait page used to,
-and is the second half of the refused-script table's row — a polling page still
-does not need a script, which is why it did not get one.
+* **`/authn/wallet` and `/authn/wallet/wait` answer the surface's shell**
+  (`authn.signInShell()`, for the pending sign-in's application), and both are
+  `ARRIVAL_PATHS`, so a browser arriving there — a second factor's *Use your
+  wallet instead*, the portal's *Enrol a wallet*, a same-device wallet's
+  return — holds the `sts_session` cookie every act is bound to.
+* **The acts are `/authn-api/wallet`'s** (`authn/authn_api.ts` binds them —
+  JSON, an Origin of this service, the X-CSRF-Token — and hands each to
+  `vc_signin.ts`): `GET /authn-api/wallet` (the start page's view, which
+  creates NOTHING: a GET is followed by prefetchers), `POST /authn-api/wallet`
+  (the start: the transaction, the binding cookie, `go` to the wait page),
+  `GET /authn-api/wallet/{state}` (the wait view, for the browser that started
+  it; the record, step and enrolment are the transaction's), `POST
+  …/{state}/status` (the collection) and `POST …/{state}/dc-api`.
+* **The drawing is `web_vc_signin.ts`'s**: the start page (which starts at
+  once and REPLACES itself in the history, so Back does not start a second),
+  the wait page, the QR code — drawn in the browser by `common/web_qr.ts`,
+  the portal's encoder, from the request's text — and a refusal, whose `view`
+  of kind `refused` carries the heading, the presentation's checks and the
+  ways on, under its English sentence.
+* **The poll is the runtime's**: on the QR page every `pollSeconds`, where
+  the `<meta>` refresh was (a browser timer, `tests/no_periodic_timers.js`'s
+  recorded exception); once at once on a same-device return with its
+  `response_code`; and on *Check now*. **The plain wait page does not poll by
+  itself**, as it never did: a same-device wallet that comes back opens the
+  wait page in its own tab, and a poll in the tab left behind would collect
+  the sign-in first and leave the returning tab to say it was already used.
+  The poll pauses while the browser's credential dialog is open, so it never
+  races the API's answer to finish one sign-in.
+* **The client callback is the waiting tab's.** The return tab collects the
+  `response_code` and, where a second factor follows, finishes that factor.
+  The authorization response then lands in the return tab. That tab does not
+  hold the portal's or the console's PKCE record (`sts-portal-signin`,
+  `sts-console-signin`, sessionStorage, the tab that called `beginSignIn`).
+  It offers the callback on `sts-spa-callback`
+  (`SpaClient.handCallbackToStarter()`); the waiting tab loads it and
+  redeems the code. A QR poll and the Digital Credentials API finish in the
+  tab that started them, which already holds the record, so they do not
+  offer it. No ack within a second, and the return tab starts the sign-in
+  again. The session the wallet just established accepts that request,
+  which is what the Sign in link under the old refusal did.
+  `tests/spa_callback_handoff.js`.
+* **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
+  English, no code), and the codes are the ones the pages were marked with.
+  `STS-VC-0081` is now an answer sent with nothing in it — the form posted
+  without the script is gone.
 
 ### The Digital Credentials API (rcbj's decision for the relay)
 
@@ -341,9 +379,13 @@ transaction — one nonce, one DCQL query, answered once:
   Client Identifier. A presentation made for the `direct_post` path therefore
   signs nobody in here, which `tests/oid4vp_dc_api.js` holds.
 
-`/authn/wallet/dc-api` takes what the page posts. It is admitted exactly as the
-wait page is — the binding cookie, the transaction, the pending record — and
-then: the `Origin` header must be this service's own (`STS-VC-0074`); the
+`POST /authn-api/wallet/{state}/dc-api` takes what the page sends (it was the
+form POST `/authn/wallet/dc-api` until #574). It is bound as every act on
+`/authn-api` is — JSON, an Origin this service answers on, the X-CSRF-Token —
+and admitted exactly as the collection is — the binding cookie, the
+transaction, the pending record — and then: the `Origin` header must be THE
+origin the request named, this service's own (`STS-VC-0074`; another site's
+is refused at the door first, `STS-AUTHN-0326`); the
 answer must be a `DigitalCredential` in the protocol the request named
 (`STS-VC-0073`); an encrypted one is opened with that transaction's key; and
 the sign-in is finished IN THAT REQUEST, because it is the browser's own — no
@@ -352,6 +394,57 @@ poll, no `response_code`, nothing to collect.
 **What is not implemented**: the unsigned and multi-signed request forms
 (A.3.1, A.3.2.2) — this door always signs, and an unsigned request carries no
 `expected_origins` at all — and `transaction_data`.
+
+### A wallet APP, and a request it can act on (2026-10-12, rcbj: "the goal is to actually have this button be usable")
+
+Until that day **Open your wallet on this device** sent the browser to
+`oid4vp.walletUrl` + `oid4vp.walletPresentationPath`, whose defaults were the
+embedded debugger's web wallet (`http://localhost:3000/vc-presentation-1.html`)
+— an address no person's wallet is — and the request was signed under the
+`pre-registered` Client Identifier (`sts-verifier`) and answered by plain
+`direct_post`. A wallet that had never heard of this service could open
+neither the link nor the request. Four changes, each a default a real wallet
+needs, each a setting an operator can move back:
+
+* **THE LINK IS THE SCHEME** (`oid4vp.walletInvocation`): the request by
+  reference (`client_id`, `request_uri`, `request_uri_method=get`) under
+  `openid4vp://` — OpenID4VP 1.0's scheme for a Verifier that does not know the
+  wallet — or `haip-vp://` (OpenID4VC HAIP 1.0 section 5.1, a MAY). SIOPv2's ID
+  Token alone stays `siopv2://`. `vc_verifier.ts`'s `walletScheme()` is the one
+  place it is decided, and the QR code and a verification start's `requestUri`
+  read it too. **No `web` value**: a web wallet is not a scheme. It is offered
+  BESIDE the app link (`webWallet` in the wait view) where `oid4vp.walletUrl`
+  configures one, and replaces it only where a start NAMED one (`wallet`,
+  `tx.signIn.walletNamed`) — the caller's explicit choice. The three wallet
+  URL settings are EMPTY by default; `vpWalletFor()` answers `''` with nothing
+  configured or named.
+* **THE CLIENT IDENTIFIER IS `x509_hash`** (`oid4vp.signInClientIdPrefix`,
+  HAIP 1.0 section 5: "the Verifier MUST use" it). It is a sign-in setting and
+  not `oid4vp.clientIdPrefix`, which stays `pre-registered` for an
+  administrator's verification: changing that default would have moved every
+  start and the conformance plans for no reader's benefit. `x509_hash` needs
+  no DNS name, so product mode can use it unconfigured (the nameless
+  certificate, *The x509 prefixes* below). The certificate is issued before
+  the build (`prepareSignedClientId()`), and a certificate or request that
+  cannot be made is now a REFUSAL with the builder's code (`unbuildable()`,
+  500) — `start()` used to await it unguarded.
+* **THE ANSWER IS ENCRYPTED** (`oid4vp.signInResponseMode`, `direct_post.jwt`,
+  HAIP section 5.1: "Response encryption MUST be used"), to the keys
+  `oid4vp.responseEncryptionKeyAlgs` offers, ECDH-ES P-256 among them. The
+  Response URI's response-mode check, which skipped sign-ins, now holds them
+  too: a plaintext answer to a sign-in that asked for `direct_post.jwt` is
+  `STS-VC-0096`. Never `form_post` (the binding cookie, above).
+* **THE PAGE SAYS WHAT TO DO WHEN NOTHING OPENS** (`wallet-no-app`): a link
+  under a scheme nothing registered for does nothing at all.
+
+What a real wallet still needs from its operator, and what nothing here can
+check without one (`tests/oid4vp_sign_in.js` 2h-iv to 2k-v hold the request):
+**the wallet must trust this service's Root** for the `x5c` chain
+(`/oid4vp/verifier-certificate`); its DCQL matcher must accept a query whose
+`dc+sd-jwt` claims path is the non-disclosable `sub`, beside `jwt_vc_json`
+and `ldp_vc` queries it may not understand (`oid4vp.signInFormats=dc+sd-jwt`
+narrows the request); and it must hold a credential THIS realm issued, which
+the portal's offer is for (`portal/CLAUDE.md`, `/portal/wallet`).
 
 ### Every format signs in
 
@@ -402,10 +495,37 @@ to an ML-DSA-44 key and prove a Key Binding JWT, a VP JWT or — through
 `mldsa44-jcs-2024` — a Data Integrity proof with it; and since 2026-09-22 an
 SLH-DSA-SHA2-128s key through `slhdsa128-jcs-2024`, the draft's other JCS suite
 for an algorithm this service holds (its FALCON-512 and SQIsign-I suites have
-multicodec codes the draft itself calls preliminary and unregistered). What is
-NOT possible: a trusted issuer CERTIFICATE with a post-quantum key (node reads
-no ML-DSA certificate into a `KeyObject` here), and an ldp_vc holder key of any
-other post-quantum kind, because no cryptosuite defines one.
+multicodec codes the draft itself calls preliminary and unregistered). A
+trusted issuer CERTIFICATE with a post-quantum key verifies too since #657
+(*POST-QUANTUM REQUEST OBJECTS, TRUSTED ISSUERS AND THE WALLET COMPATIBILITY
+MODE*, below); this sentence said node could not read one. What is NOT
+possible: an ldp_vc holder key of any other post-quantum kind, because no
+cryptosuite defines one.
+
+### What the reports read off this family (#1021, 2026-10-27)
+
+rcbj asked how many people hold credentials from a web wallet, from a
+native wallet, and self-issued subjects from either, by algorithm; the
+reports application's `credentialHolders` source answers it
+(`report/CLAUDE.md`), and this family records three things for it,
+each where the fact is known:
+
+* **`Issued.holderAlg`** — the holder key's algorithm as
+  `Credentials.keyAlgorithm()` names a passkey's (ES256, EdDSA,
+  ML-DSA-65), read off the holder JWK at `rememberIssued()`.
+* **`Issued.channel`** — `VcIssuer.channelOf(req)`: `web` when the
+  credential (or deferred) request carried a browser `Origin` header, `app`
+  otherwise. A browser must send one on a cross-origin POST and a native
+  wallet sends none; nothing the wallet says about itself is read, and
+  the value is a note for the reports, never a gate.
+* **A self-issued value's `keyAlg`** — `verifyIdToken()` answers the
+  proof's header `alg`; the sign-in's enrolment hands it to `enrol()` as
+  `options.keyAlg`, kept on the value beside `location`. A did:jwk and a
+  did:key spell their key; this is for the did:web and the thumbprint,
+  which do not.
+
+A row or value written before carries none of the three, and the report
+says nothing for it rather than something wrong.
 
 ### A wallet is a factor
 
@@ -437,16 +557,45 @@ is accepted as well as the `jwt` proof's `key_attestation` header.
 
 ### Disowned: what stops a credential signing in
 
-Three acts, all of them read through `vc_issued.disownedReason()`:
+Three acts, all of them read through `vc_issued.disownedFact()` (and
+`disownedReason()`, its sentence):
 
-* a GLOBAL sign-out — `/logout`, `/admin/logout`, `/admin-api/logout` — ending
-  the `wallet-credential` family (`logout/CLAUDE.md`). It stamps the row, and
-  every credential issued up to that instant stops signing in; one issued
-  AFTER, on a fresh token, signs in again;
+* an administrator's GLOBAL sign-out — `/admin/logout`, `/admin-api/logout` —
+  or the `wallet-credential` row ticked on `/logout` (`logout/CLAUDE.md`). It
+  stamps the row, and every credential issued up to that instant stops
+  signing in; one issued AFTER, on a fresh token, signs in again. The
+  person's own Global logout on `/logout` leaves the credential, and the DID
+  it is bound to, valid;
 * an administrator's revocation of the credential on `/admin/tokens` (the
   issued register's own mark, read by handle, so a restore undoes it);
 * a status-list entry that is not VALID — set by either of those, or by
-  `/admin/vc-status`.
+  `/admin/vc/monitor` (Monitoring → Verifiable Credentials);
+* its holder's Remove on `/portal/wallet` (#661), of one copy or of every
+  copy of one issuance (#670): `removeForSubject()` stamps each copy
+  removed, sets its entry INVALID and revokes its register row.
+
+**A refusal says WHICH act, WHEN, and what to do (#653).** It once said only
+"Token Status List index 48658 is INVALID", and a person could not tell that
+their own earlier global sign-out had done it. `disownedFact()` answers
+`{ kind, reason, at, via, reissue }`, with `at` read from the act's own
+record: the row's `disownedAt`, the copy's `removedAt`, the issued
+register's mark, or the status list's last change (`vc_status.changeOf()`,
+counted only when it set the status that is read now). Two places use it:
+
+* `vc_verifier.ts`'s `statusCheck()` asks it of a JOSE credential this realm
+  signed whose status refused it, one lookup by digest, and appends
+  `— why: <reason>` to the *Credential status* check. An `ldp_vc`'s row is
+  found by its holder key, which only a sign-in does (`signInOutcome()`), so
+  its reason reaches the wallet from the sign-in outcome's `disowned`;
+* `signInOutcome()`'s STS-VC-0071 carries the fact as `disowned`. The
+  `/oid4vp/response` refusal ends with `Get a new credential issued at
+  <base>/portal/wallet`, and the browser's refused view carries `reissue:
+  '/portal/wallet'`, which `web_vc_signin.ts` draws as a link.
+
+`reissue` is false for a SUSPENSION alone, because an administrator may lift
+it and a new credential would not explain it. A batch's copies are rows of
+their own, and a global sign-out stamps each, so every copy gives the same
+answer. Refusals stay English (#539).
 
 **An ordinary session sign-out disowns nothing.** `/oauth2/logout`, SAML Single
 Logout, `wsignout1.0` and the console's and portal's Sign out end one session
@@ -481,8 +630,9 @@ sign-out cannot be undone by the token it was meant to cut off.
 draft's linkability guidance) through a cluster claim, and free again when the
 credential expires. **A bit is COMPUTED**, never stored twice: the entry's own
 status, or INVALID because the issued register's mark says an administrator
-revoked it — so `/admin/tokens`, `/admin/vc-status`, a global sign-out and the
-sign-in door cannot disagree.
+revoked it — so `/admin/tokens`, `/admin/vc/monitor`, an administrator's
+global sign-out and the sign-in door cannot disagree. The person's own
+Global logout on `/logout` sets no bit.
 
 **The Verifier CONSULTS it** for every presentation that otherwise verified
 (section 8.3's order): a credential this realm signed is read from this realm's
@@ -526,12 +676,30 @@ Now:
 The response endpoint marks the refusal with `verified.statusErrorCode`
 (0088, 0089, or 0072 for a status that is not VALID or cannot be read).
 
+**THE CONSOLE'S COUNTS AND PAGE COME FROM AN INDEX (2026-10-22, #820).**
+`entries` is indexed: a status that is not VALID (`s:<value>`), the
+issued-register row an entry is for (`a:<key>`), and the UTC day it was
+allocated (`d:<day>`) and expires (`x:<day>`). `counts()` reads the live
+count from the store's size less the held entries past their expiry (the
+`x:` days of the last week; `caches.eject-expired` removes older ones),
+SUSPENDED and explicit INVALID from `s:`, and the register's revocations
+(`stats.revokedArtifactKeys()`) joined through `a:`. `newestRows(offset,
+limit)` walks the allocation days back from today until the page is full.
+So `summary(req, page)` and Monitoring → Verifiable Credentials build only
+the page's rows, where they built and sorted every live entry. **A change
+writes a COPY** (`setStatus()`, `attach()`): the partition re-files a row on
+`set`, and a row mutated in place stays filed under its old values.
+`tests/console_tokens_metrics_scale.js` section V.
+
 ### Settings
 
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
 `oid4vp.signInCrossDevice` (**OFF**, in both modes: the relayable path),
 `oid4vp.signInFormats` (all three), `oid4vp.signInDcApiResponseMode`
-(`dc_api.jwt`), `oid4vp.statusListMaxCacheS` (3600),
+(`dc_api.jwt`), `oid4vp.signInClientIdPrefix` (`x509_hash`),
+`oid4vp.signInResponseMode` (`direct_post.jwt`), `oid4vp.walletInvocation`
+(`openid4vp`), `oid4vp.walletUrl` and `oid4vp.walletPresentationPath`
+(empty), `oid4vp.statusListMaxCacheS` (3600),
 `oid4vp.requireStatusReference` (`all`; `off` development only) and
 `oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
@@ -542,7 +710,7 @@ since #201 — issued directly by a trusted attester AND the two-certificate pat
 holding RFC 5280, where it was `checkIssued()` and a signature: an expired leaf,
 a CA as the leaf or an unimplemented critical extension vouched for the key.) So
 `/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
-`/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
+`/admin/vc/monitor` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
 entry this realm issued a credential for on a token it verified — in product
 mode, a token from a person who signed in with a verified credential of their
@@ -557,12 +725,23 @@ list.
 
 ### What has no test
 
+**A native wallet IS run since #694 (2026-11-04)**:
+`tests/protocol/sts_oid4vc_wallet.js` drives rcbj/oid4vc-wallet from its
+command line — a portal offer accepted, an OpenID4VP sign-in approved and
+refused, the JWK thumbprint, `did:jwk`, `did:key` and a wallet-custody
+did:web (#1291) enrolled and signing in, a removed subject and a revoked
+credential refused (`tests/CLAUDE.md` has the row). **What it cannot
+reach**, because the wallet does not do it: an offer by reference (the QR
+code), deferred issuance, the Digital Credentials API, a `jwt_vc_json` or
+`ldp_vc` presentation, and DID holder binding (its key proofs carry a
+`jwk`).
+
 **The parent project's wallet has not been RUN against this door**, and cannot
 be from here: its presentation code (`client/src/sd_jwt_vp.js`,
-`vc_presentation_*.js`) is not among the files vendored into `tests/vendored/`,
+`vc_presentation_*.js`) is not among the files vendored into `tests/protocol/`,
 so nothing in this repository can load it. What IS held
 (`tests/oid4vp_sign_in_formats.js` section 5) is its SHAPES, built with the
-vendored `tests/vendored/jws.js` that wallet signs with: its Key Binding JWT
+vendored `tests/protocol/jws.js` that wallet signs with: its Key Binding JWT
 and its VP JWT sign in, and its `ldp_vc` envelope — a bare derived proof — is
 refused by name. Three things that wallet would need before it could drive
 this door are recorded here rather than guessed at: it reads only the FIRST
@@ -590,6 +769,24 @@ signed request may use **all four Client Identifier prefixes** — six since
   held by somebody else) and goes back to the portal — no session is started.
   A pasted DID could be somebody else's; a proved one cannot. The admin door
   enrols by value (Admin Write), as it creates any other credential.
+* **An enrolment records WHERE THE KEY CAME FROM** (2026-10-20, rcbj on
+  `/portal/self-issued`): `location: { kind, value }` on the value.
+  `vc_signin.ts`'s `locationOf(tx)` reads it off the transaction the proof
+  answered — `dc_api` (the origin asked for) where the answer came that
+  way; `web` (the CONFIGURED `walletUrl`, never what a wallet said) where
+  the first fetch of the Request Object came by the web wallet's link;
+  otherwise `app`, named by the product tokens of that fetch's User-Agent
+  (`siop.reportedName()`: printable ASCII, no comments, at most 80
+  characters; `''` where nothing usable came). An administrator's value is
+  `admin`. **How the web link is told apart**: `waitView()`'s web-wallet
+  links carry `?via=web` on the `request_uri`, and the `GET
+  /oid4vp/request/:id` handler records `tx.signIn.fetchedBy` from it
+  (`noteFetch()`, first fetch wins, nothing written on a re-fetch) and
+  answers exactly what it answers without it — the id is the path's, the
+  Request Object carries no `request_uri`, and nothing compares one. The
+  scheme link and the QR code carry no marker. Proving a subject again
+  writes the location afresh; `enrol()` checks it (`siop.locationOf()`)
+  whoever passes it.
 * **`answerSelfIssued()` is one handler for `direct_post` and `form_post`**:
   the body is the same form either way; only the reply differs. A sign-in is
   always `direct_post`, because its binding cookie is SameSite=Lax and a form
@@ -598,8 +795,9 @@ signed request may use **all four Client Identifier prefixes** — six since
   (`siop.sameHolder()`), and the person is the credential's.
 * **A did:web is fetched only when it is enrolled** (`didKey()` asks
   `ownerOf()` first): it is the presenter's kind of URL, and the enrolment is
-  what makes it the person's or the administrator's — the root `CLAUDE.md`'s
-  row of URLs this service dials carries it.
+  what makes it the person's or the administrator's — `federation/CLAUDE.md`'s
+  list of URLs this service dials carries it (the twelfth row; the
+  nineteenth since #693, below).
 * **The prefixes live in `signedClientId()`**: the DID URL `kid`
   (`helpers.signJwt()`'s `kidDid`), the Verifier Attestation in the `jwt`
   header (a configured one is checked against this realm's key and refused
@@ -613,10 +811,275 @@ signed request may use **all four Client Identifier prefixes** — six since
 * **Not built, by argument**: the `fragment` response mode (a Verifier
   chooses its mode, and a fragment needs a script on a page here) and dynamic
   discovery of a Self-Issued OP (the static `siopv2:` configuration).
+* **A did:web this realm publishes for the person (#1291)** is enrolled
+  here too, with provenance `wallet`, `realm` or `issued`, and resolved from
+  the realm's own history rather than fetched — *A PERSON'S PUBLISHED
+  did:web*, below.
 
-`tests/siop.js` holds the library and the request builder in process;
-`tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
-refusals and the bar door's `form_post` over HTTP.
+### #693's four prerequisites (2026-10-20, rcbj: "Do all that")
+
+The review on #693 found four things to fix before a DID is released in a
+claim or bound to a credential (phase 2). All four are built:
+
+1. **A did:web's key is PINNED.** `siop.ts` fetched `did.json` on every
+   sign-in with no memory of what it said, so whoever controlled the host
+   later — a new owner, a hijacked domain — held the sign-in key, and nothing
+   noticed. Each did:web value now carries `pinnedKeys`, RFC 7638 SHA-256
+   thumbprints: by proof, the key that signed the enrolment's ID Token; by
+   value, every `authentication` method with a `publicKeyJwk` the document
+   named WHEN the administrator enrolled it. **By value fetches then, and a
+   document that cannot be fetched or names no such key is REFUSED
+   (`STS-ADMIN-0871`)** rather than enrolled unpinned — the choice the review
+   left open; an unpinned did:web is exactly what this removed, and an
+   administrator who can name a DID can name one whose host answers. A later
+   token whose key the pin does not name is refused in BOTH modes
+   (`STS-VC-0126`, audited `siop.key.refused`), and the person re-enrols by
+   a fresh proof. `did:jwk`, `did:key` and thumbprints are their key and pin
+   nothing. **A value from before #693 has no pin**:
+   `mode.pinsSelfIssuedKeysOnFirstUse()` (REQUIREMENTS `siop-did-web-pin`) —
+   development pins the key it signs in with (trust on first use, a log line
+   and `siop.key.pinned`; `STS-VC-0129` if the write fails, the sign-in
+   standing), product refuses (`STS-VC-0127`, audited). Since the admin path
+   is now `async` (`siop.enrolByValue()`), `usersAction()` returns a promise
+   for that one act and `/admin-api`'s users handler waits for a thenable
+   (`STS-API-0136` if it rejects, which it is written not to).
+2. **PROVENANCE.** Each value says `proof: 'wallet'` (the person proved it,
+   with `provedAt`) or `'admin'` (by value, unproven). A value from before
+   #693 is read as `wallet` when its `by` is the self path's `self (SIOPv2)`
+   and `admin` otherwise — conservative, so nothing unproven is ever read as
+   proved. `list()` fills it in, `/admin/users`, `/admin-api` and
+   `/portal/self-issued` show it, and **`siop.provenSubjectsOf(username):
+   Json[]`** — the proved rows only — is what phase 2's claim and binding
+   read. A sign-in reads neither: an administrator's entry signs in as it
+   always did.
+3. **A did:web can be enrolled BY PROOF.** `didKey()` refused an unenrolled
+   did:web, so only an administrator could add one. Now
+   `verifyIdToken(token, { clientId, nonce, enrolment })` resolves one inside
+   a person's own enrolment transaction (`vc_verifier.ts`'s
+   `answerSelfIssued()` passes `enrolment` only for `tx.signIn.enrol`, never
+   with a `vp_token`), and **only after every check that needs no key has
+   passed** — `iss === sub`, the DID's syntax, then `aud`, `nonce`, `exp` and
+   `iat`, which are now judged BEFORE the key and still reported after it —
+   so a token for another transaction, a replay or a stale one dials
+   nothing. **One fetch per transaction** (`mayDial()`, its mark written
+   through the store before the fetch); a second, or a failed fetch, is
+   `STS-VC-0128`. That rule applies to every did:web fetch, not just an
+   enrolment's: an enrolled did:web is no longer fetched for a token whose
+   other checks failed. The enrolment is not held to a pin — it is where the
+   pin is made — and **proving a subject already yours proves it again**
+   (`again`, CAEP `update`): the re-pin flow, and how an administrator's
+   entry becomes a proved one. `federation/CLAUDE.md`'s nineteenth row is the
+   argument for the new dial.
+4. **The wallet enrolment is AUDITED**: `portal.siop.enrol` from
+   `vc_signin.ts`'s enrol branch, the removal's shape — success, or failure
+   with the code (`STS-VC-0094` refused by `siop.enrol()`, or the
+   transaction's own code when the proof did not verify).
+
+`tests/siop.js` holds the library and the request builder in process —
+since #693 also the pin, provenance, the per-mode legacy rule, the
+enrolment-only fetch, the internal-address refusal in product and the
+by-value refusals (sections 5, 8-11); `tests/protocol/sts_siop.js` (local)
+drives the sign-in, both enrolments, the refusals and the bar door's
+`form_post` over HTTP, and the provenance and the enrolment's audit row.
+**A did:web enrolled by proof end to end over HTTP is
+`tests/protocol/sts_siop_did_web.js`** (local, `testPeer: true`, 2026-11-03):
+it had no https document host on the service's network, and a did:web must
+be https (`didWebUrl()`), until the test peer grew a `did` role
+(`tests/peer/peer_did.js`) that publishes the document the job hands it and
+records every fetch. It holds the one fetch per enrolment, the pin, a token
+failing its other checks dialling nothing, the sign-in, a rotated key
+refused under the pin, the re-proof, a withdrawn document, and product
+never dialling the peer's private address. With no peer (an AWS target) it
+is skipped; `tests/siop.js` keeps the stubbed and internal-address halves.
+
+### #693's phase 2: the preferred DID and the `did` claim (2026-10-20)
+
+* **ONE PREFERRED DID, AND ONLY A PROVED ONE.** `siop.setPreferred(username,
+  subject)` marks one value `preferred: true` and clears it from every
+  other ('' clears all); `siop.preferredSubjectOf(username)` is the one
+  reader. It refuses a subject enrolled by value (`not-proved`), a JWK
+  thumbprint (`not-a-did` — it names a key, and a claim called `did`
+  carrying one would say something false) and one not enrolled. **`list()`
+  reads `preferred` as false on any row that is not `proof: 'wallet'`**,
+  whoever wrote it, so a hand-edited entry cannot make an administrator's
+  value releasable. The mark lives ON the existing JSON value rather than in
+  a second attribute, so removing the subject removes it and the one-writer
+  rule (`enrol()`, `remove()`, now `setPreferred()`) holds. **Proving the
+  subject again keeps the mark** (`enrol()` carries it across a re-proof):
+  re-pinning a did:web is not a change of mind. Setting the mark sends no
+  CAEP event — it changes nothing that signs anybody in.
+* **Two doors, the portal's rule and rule 7**: `/portal/self-issued`'s POST
+  takes `action: prefer | unprefer` beside `remove` (the identity is the
+  token's; `STS-PORTAL-0615`, audited `portal.siop.prefer`), and the
+  console's users page and `POST /admin-api/users/set-preferred-self-issued-subject`
+  are one act (`STS-ADMIN-0872`, audited `admin.siop.preferred`; an absent
+  `subject` clears).
+* **What releases it is `oauth-oidc/did_claim.ts`** — the scope, the
+  consent, the pairwise rule and the rest are argued in
+  `oauth-oidc/CLAUDE.md` (*The `did` claim*). It reaches this library
+  LAZILY, at the decision.
+* **Holder binding** (the other half of phase 2) reads
+  `provenSubjectsOf()` too; it is built separately.
+
+`tests/did_claim.js` holds both doors, the refusals, the by-value row's own
+`preferred` ignored, the re-proof and the removal in process.
+
+### #693 phase 2b: the person's proven DID as the holder (2026-10-20)
+
+The review's second row: a credential bound to a DID the person PROVED,
+for `did:jwk` and `did:key` only. Four pieces:
+
+1. **A KEY PROOF BY DID** (`vc_issuer.ts`, `verifyProofJwt()` and
+   `proofKeyOfKid()`). OpenID4VCI 1.0 Appendix F.1 lets a `jwt` proof name its
+   key with `kid`: "If the Credential shall be bound to a DID, the kid refers
+   to a DID URL which identifies a particular key in the DID Document". It also
+   says that each of `kid`, `jwk` and `x5c` "MUST NOT be present if" another
+   is, so `jwk` with `kid` is refused (`STS-VC-0140`). The `kid` has to be a
+   DID URL with a fragment naming a did:jwk or did:key method (`STS-VC-0141`).
+   It is resolved by `vc_did_resolver.ts`, from the identifier and with no
+   fetch, and only once the typ, alg, aud, iat and c_nonce checks have passed.
+   The method has to be in the document's `authentication` (`STS-VC-0144`).
+   **The specification names no relationship**, and `authentication` is DID
+   Core section 5.3.1's for proving control, which is what a proof of
+   possession does. That choice also refuses a did:jwk whose key says
+   `use: "enc"`. A did:web `kid` is refused outright (`STS-VC-0142`). A
+   configuration bound to a KEY binds to the key a `kid` names in the same
+   way as to a `jwk`, so nothing about it changed.
+2. **THE BINDING IS OPT-IN PER CONFIGURATION**: `oid4vci.didHolderBinding`, a
+   `csv` row whose closed set is `vc_configs.ts`'s ids (`OID4VCI_CONFIG_IDS`,
+   held equal by `tests/closed_setting_values.js`), empty by default.
+   `vciHolderBindingOf(id)` answers `key` or `did`. It is a setting rather
+   than a field of `VCI_CONFIGS` because the configurations are constants and
+   the realm's choice is configuration, which gives the console and
+   `/admin-api` parity for free (rule 7). For a `did` configuration,
+   `didBindingRefusal()` runs at the request, before the c_nonce is spent, and
+   again when a deferred one is collected. Every proof must name a DID
+   (`STS-VC-0145`, which also covers the `attestation` proof type). The person
+   is `signInSubjectOf()`'s VERIFIED subject (`STS-VC-0146`): a development
+   token this realm did not verify could name anybody, and `holderNameFrom()`
+   reads one unverified. Their account must not be disabled (`STS-VC-0147`).
+   Each DID must be in `siop.provenSubjectsOf()`: one enrolled for nobody,
+   never or since removed, is `STS-VC-0148`; one an administrator enrolled by
+   value is `STS-VC-0149`; and somebody else's is `STS-VC-0150`. **`siop.ts`
+   is unchanged**: the issuer reads it, lazily, through its deps. The codes
+   start at 0140 so that the DID claim (phase 2a), built beside this one,
+   could take the numbers after 0129.
+3. **WHAT THE CREDENTIAL CARRIES.**
+   * `dc+sd-jwt`: `cnf: { kid: <DID URL> }`, which is RFC 7800 section 3.4's
+     `kid` confirmation method. SD-JWT VC's `cnf` is "as defined in
+     [RFC7800]", with a JWK only RECOMMENDED. `sub` is unchanged because
+     SD-JWT VC says "There is no requirement for a binding to exist between
+     sub and cnf claims".
+   * `jwt_vc_json`: `credentialSubject.id` and `sub` are the DID, since
+     VCDM 1.1's JWT encoding has `sub` represent `credentialSubject.id`, and
+     `cnf.kid` is the DID URL.
+   * `ldp_vc`: `credentialSubject.id` is the DID. For a did:jwk that is what
+     it always was.
+   The metadata's `cryptographic_binding_methods_supported` is
+   `["did:jwk","did:key"]`, set after the DID variants clone their sibling,
+   because the binding is each configuration's own. `proof_types_supported`
+   is unchanged. The issued register keeps the DID as `holderDid` in every
+   format. **The Verifier reads `cnf.kid` and a did:key subject**
+   (`cnfKeyOf()`, `ldpFacts()`), only for did:jwk and did:key and never by a
+   fetch, so a DID-bound credential signs in like any other. The sign-in
+   compares a JOSE credential's `sub` with the register row, and accepts the
+   `holderDid` recorded for that credential as well as the person's subject,
+   because a DID-bound jwt_vc_json's `sub` is the DID.
+4. **THE TRADE IS LINKABILITY.** Every copy of a batch, and every later
+   credential from that configuration, carries the same DID, which is what
+   per-copy keys and the rounded validity times exist to prevent. That is why
+   the binding is a configuration's opt-in and never a default. The nonces and
+   `unlinkableTimes()` are unchanged.
+
+**did:web is excluded, and why — except the did:web this realm publishes
+(#1291).** Phase 1 pins a did:web's key at enrolment, which protects a
+SIGN-IN. A credential is checked later, by a relying party who resolves the
+DID itself. The host can change its document between the proof here and that
+check, so a credential bound to a did:web says nothing durable about the key.
+Building it needed the relying party's half of the pin, and #1291 built it for
+the one case where it can exist: a did:web THIS REALM publishes for the
+person keeps every version of its keys and never rewrites one, so a
+credential bound to it names the VERSION (`<did>?versionId=<n>#<key>`) and
+stays checkable from that history. A did:web hosted anywhere else is still
+`STS-VC-0142`. *A PERSON'S PUBLISHED did:web*, below, has the rules.
+
+`tests/oid4vci_did_binding.js` holds all of it in process: the kid proofs and
+their five refusals, the metadata, each format's output, the batch, every
+refusal above including a DID removed after the token and during a deferral,
+and the sign-in in every format. **Over HTTP, `tests/protocol/sts_did_claim.js`**
+(local, 2026-11-03) section 5: the metadata, a `kid` proof's dc+sd-jwt and
+jwt_vc_json, the four `invalid_proof` refusals, the key-bound configuration
+and a removed DID. **What has no test**: a real wallet sending a `kid`
+proof, and a DID-bound credential PRESENTED at the sign-in over HTTP (in
+process only).
+
+## AN ISO mdoc AT THE VERIFIER, AND THE HAIP VERIFIER PLAN (#935, 2026-11-02)
+
+**`mso_mdoc` is the Verifier's fourth format** (OpenID4VP 1.0 Appendix B.2,
+ISO/IEC 18013-5:2021 section 9.3.1), because OpenID4VC HAIP 1.0 names it
+beside the SD-JWT VC and the conformance suite's HAIP verifier plan
+(`oid4vp-1final-verifier-haip-test-plan`) has an `iso_mdl` variant. rcbj's
+standing rule (spec compliance including the optional parts) made building it
+the answer rather than recording it as a gap. **This realm issues no mdoc**:
+the format is a row of `vc_verifier_config.ts`'s `FORMATS` with `configs: []`,
+the start's format list is the issuer's formats plus the Verifier's
+(`START_FORMATS`), and the issuer is untouched.
+
+* **`vc_mdoc.ts` is the whole check**, a library the composition root builds
+  after the codec. Its header lists the steps; the ones a reader would get
+  wrong: the document signer is CHAINED (`pki.verifyPathToAnchors()`) to
+  `oid4vp.mdocTrustAnchors`, not used as a key — ISO's trust model is the
+  IACA, and the document signer rotates (the suite mints a new one at run
+  time) — which is why it is a setting of its own rather than more rows of
+  `oid4vp.trustedIssuerCertificates`, whose certificates ARE the keys. Empty
+  trusts nobody.
+* **Digests and the device signature are over the bytes RECEIVED.** The
+  codec's decoder keeps every tag's encoding on `Tagged.raw`, and its encoder
+  writes it back unchanged; re-encoding an IssuerSignedItemBytes or the
+  DeviceNameSpacesBytes in shortest form would refuse an issuer whose CBOR is
+  valid and not canonical.
+* **The session transcript is built from the TRANSACTION** — `clientId`,
+  `nonce`, the Response URI frozen on `record.mdoc`, and for
+  `direct_post.jwt` the RFC 7638 thumbprint of the key the JWE's `kid` named
+  (`openEncryptedResponse()` now answers the kid, the response endpoint passes
+  it as `ctx.kid`). That is B.2.6.1's binding, and it is what stops a
+  presentation made for another Verifier or another request.
+* **COSE ECDSA is r||s**, so `common/crypto.js`'s `verifyCoseSignature()`
+  grew `ecdsaEncoding: 'ieee-p1363'`; WebAuthn's DER stays its default.
+  ML-DSA (-48..-50) is offered and accepted only while
+  `keys.postQuantumSigning` is on (`vc_mdoc.coseAlgs()`), as the JOSE lists
+  are by `helpers.offeredJwsAlgs()`.
+* **Refused**: `deviceMac` (`STS-VC-0159`; its key is agreed with a reader's
+  ephemeral key that no OpenID4VP request carries), a device-signed element
+  the MSO's `keyAuthorizations` do not name, more than one Document. Codes
+  `STS-VC-0156`..`0160`, logged where each is found; the Response URI answers
+  `STS-VC-0041` as for any refused presentation.
+* **Status**: an MSO's `status.status_list` is a COSE reference
+  (`codec.referenceOfCose()`), resolved by `vc_status.ts`'s `foreignCwt()`;
+  the CWT's key is the leaf of ITS `x5chain` once that chains to the same
+  anchors (`vc_mdoc.statusListKey()`, passed as `cwtKeyFor`, which is why
+  `fetchList()` awaits its parser now). No reference is decided by
+  `oid4vp.requireStatusReference` as for any foreign credential; the issuer
+  is exempted by its ANCHOR's thumbprint in `oid4vp.statusOptionalIssuers`,
+  the document signer's being useless for a key that rotates.
+* **Not for a sign-in or the Digital Credentials API**: a foreign mdoc names
+  no entry of this realm to sign in, and the DC API's transcript is a
+  different handover (B.2.6.2). A SIOPv2 `vp_token id_token` answer that
+  carries an mdoc over `direct_post.jwt` is refused (`answerSelfIssued()`
+  passes no `kid`); nothing asks for that combination.
+* **An accepted mdoc records nobody** on `/admin/users`: it carries no
+  subject (`verified.sub` is empty), which the funnel already treats as
+  nothing to record.
+
+**The HAIP verifier plan** runs in `tests/protocol/sts_oid4vp_conformance.js`
+(`vp-haip`, `vp-haip-mdoc`, and their classical twins): the plan fixes
+`haip`, `x509_hash` and `request_uri_signed` and offers only
+`direct_post.jwt`. The realm sets `oid4vp.walletInvocation` `haip-vp`, the
+mdoc realm trusts the suite's IACA root (`/mdoc-iaca-root.pem`, fetched at
+run time), and each start names a `redirect_uri`, because HAIP section 5.1
+requires the Response Endpoint to answer one (#594 made that the starter's
+choice). `tests/vc_mdoc.js` is the in-process half, with an issuer and wallet
+of its own.
 
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
@@ -638,7 +1101,9 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   slot per DNS name, sixteen at most per realm (`STS-PKI-0205`).
 * **ISSUED BEFORE THE BUILD, READ DURING IT.** Issuing a certificate is
   asynchronous and `buildVpRequest()` is not. So `prepareSignedClientId()`
-  is awaited first by `/oid4vp/start`, by `/authn/wallet` and by the
+  is awaited first by `startVerification()` (`POST
+  /admin-api/verifications/start`, #587), by `/authn/wallet` and
+  by the
   verifier-certificate document. It issues the certificate, or answers the
   one in place when it is over the same key and more than a day from
   expiry. `x509Material()` then reads it synchronously and refuses
@@ -665,7 +1130,7 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   host. `x509_hash` needs no name, and signs under a nameless certificate
   where none can be had, so it works unconfigured in product.
 * **PER REALM OR PER REQUEST.** `oid4vp.clientIdPrefix` is the realm's
-  choice, and `/oid4vp/start?client_id_prefix=` is one request's choice
+  choice, and a start's `client_id_prefix` is one request's choice
   (section 5.9 has the Verifier choose per request). Naming a prefix makes
   the request signed. The sign-in's Digital Credentials API request is
   signed under the same certificate.
@@ -679,12 +1144,14 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   `recertifyUseCase()` and `recertifyOrphanedSlots()` pass it back. Before
   this, renewing the JOSE or `pep-tls` Issuing CA's certificates re-minted
   a named leaf WITHOUT its subjectAltName.
-* **NOT BUILT: a post-quantum signing algorithm.** The Request Object is
-  signed on the request path, and the post-quantum keys sign in the worker
-  pool. The setting's description says so.
+* **POST-QUANTUM SINCE #657.** It read *NOT BUILT* here: the Request Object
+  is signed on the request path, and the post-quantum keys sign on libuv's
+  thread pool. The answer is a deferred signature
+  (`buildVpRequestAsync()`), and `x509Signer()` certifies the realm's
+  post-quantum key for the algorithm — *POST-QUANTUM REQUEST OBJECTS*, below.
 
 `tests/oid4vp_x509_client_id.js` holds this in process.
-`tests/vendored/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
+`tests/protocol/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
 wallet does, using only node's `crypto`, and refuses the mismatches.
 
 **What the conformance driver (#187) sets.** The realm is set as for the
@@ -692,9 +1159,87 @@ wallet does, using only node's `crypto`, and refuses the mismatches.
 `client.client_id` = the bare DNS name for `x509_san_dns` (the suite adds the
 prefix itself) and `client.request_object_trust_anchor_pem` = the
 `trust_anchor_pem` from `/oid4vp/verifier-certificate`. The variant is
-`request_method: request_uri_signed`. The End-User starts at
-`/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
+`request_method: request_uri_signed`. A verification is started at `POST
+/admin-api/verifications/start` with `client_id_prefix: <prefix>`. In product mode, also set
 `oid4vp.x509DnsName` to the realm's host.
+
+## POST-QUANTUM REQUEST OBJECTS, TRUSTED ISSUERS AND THE WALLET COMPATIBILITY MODE (#657, 2026-11-02)
+
+The ticket said the post-quantum algorithms were missing from OpenID4VP's
+drop-down, which was `oid4vp.x509SigningAlgorithm`. rcbj's scope: every
+credential format that can carry a post-quantum JWS — `dc+sd-jwt` and
+`jwt_vc_json`, and the Request Object — and NOT `ldp_vc`, which stays
+bbs-2023 with its holder cryptosuites unchanged. And a switch that turns off
+everything a wallet would refuse today or that no published specification
+defines, as a backwards compatibility mode. `tests/oid4vc_pq_algorithms.js`
+holds all of it, for each of the eleven algorithms.
+
+* **THE REQUEST OBJECT IS SIGNED AFTER THE BUILD.** `buildVpRequest()` stays
+  synchronous: everything it does but the signature is fast, and its callers
+  and the tests read its record. `signRequestObject()` is the one door every
+  Request Object goes through (the request, and a sign-in's Digital
+  Credentials API request). A classical algorithm is signed there, exactly as
+  before. A post-quantum one is pushed onto `opts.deferred` with `''`
+  standing in. `buildVpRequestAsync()` signs each with
+  `helpers.signJwtAsync()`, which signs post-quantum since #657, writes the
+  JWS back and stores the transaction again. A failure DELETES the stored
+  transaction, so a wallet never fetches an unsigned request. A synchronous
+  caller of a post-quantum configuration is refused (`STS-VC-0113` or
+  `-0155`), never answered unsigned. The two production callers,
+  `startVerification()` and `vc_signin.ts`, call the async one.
+* **ONE KEY, NAMED IN EVERY PLACE.** `helpers.ownPublicJwkFor(alg, useCase)`
+  answers the key `signJwt()` (classical) or `signingKeyFor()`
+  (post-quantum) picks, in the same order (pinned, signer group, own), so
+  the published key and the signature cannot differ. It never MAKES a
+  post-quantum key (keyListFor()'s reason). `ownPublicJwkForAsync()` does,
+  and `prepareSignedClientId()` awaits it before the build. That is already
+  awaited by every caller for the x509 prefixes, and now runs
+  `prepareRequestSigner()` for the others. The Entity Configuration awaits
+  `prepareRequestSigner()` too, because `federationVerifierMetadata()` is
+  synchronous.
+* **x509.** `x509Signer()` certifies the realm's post-quantum key through
+  `pki.pqSubjectPublicKeyPem()`, with the X.509 `keyAlg` `certifyPqKeys()`
+  gives it, under the same classical Issuing CA.
+* **THE OTHER SIGNED PREFIXES got a setting**,
+  `oid4vp.requestObjectSigningAlgorithm`, RS256 by default. That is what they
+  were all signed with, `requestSigningJwk()` having been the RSA key. The
+  key is in `/oauth2/jwks`. `vc_did.ts` adds it to the DID document where it
+  is not already there (decentralized_identifier's `kid` is a DID URL). It is
+  the self-issued attestation's `cnf` and the Entity Configuration's
+  `jwks`. The self-attestation itself is still signed RS256: it is not the
+  request. **A configured `oid4vp.verifierAttestation` must name the new
+  key** when the setting changes.
+* **TRUSTED ISSUERS WITH A POST-QUANTUM KEY.** `pki.pqJwkFromCertificate()`
+  is `pqSubjectPublicKeyPem()` backwards: an ECDSA composite's X.509 point
+  loses its `0x04`. `trustedIssuerPqKeys()` adds them to
+  `verifyIssuerSignatureAsync()`'s candidates after this realm's own.
+  `trustedIssuerKeys()` (the synchronous, classical list) skips them, where
+  node failed to read a composite one and logged `STS-VC-0031` for a good
+  certificate. A post-quantum key with no JOSE name (another SLH-DSA
+  parameter set) is `STS-VC-0154`. `statusCheck()` hands `vc_status.ts` the
+  AKP JWK and that one algorithm. `fetchList()`'s parse is awaited, so a
+  foreign list verifies on libuv's thread pool.
+* **THE WALLET COMPATIBILITY MODE** (`oid4vc.walletCompatibility`, off,
+  per realm) is `vc_algorithms.ts`'s, and turns off the whole `pq` family.
+  ML-DSA is RFC 9964's, but no wallet accepts it, so it fails one test. SLH-DSA
+  and the composites are drafts, so they fail both. The classical algorithms
+  stay, ES256K included (RFC 8812). Off, in the metadata:
+  `vciSigningAlgsFor()`, the JOSE configurations' proof types and
+  `vpFormatsSupported()`. Refused when SIGNING (`signingRefusal()`,
+  `STS-VC-0152`), never replaced: `buildCredentialFor()` answers
+  `credential_request_denied` (section 8.3.1.2), and `x509Signer()` and
+  `requestObjectAlgorithm()` refuse the build. Refused when ACCEPTED
+  (`acceptanceRefusal()`, `STS-VC-0153`): the issuer signature, the KB-JWT,
+  the VP JWT, the proof of possession and a foreign status list. It narrows
+  inside these two protocols only. `keys.postQuantumSigning` is still the
+  realm-wide switch, and `offered()` applies both.
+* **`vciSigningAlgsFor()` is narrowed now** (by both switches). So a
+  `/portal/wallet` offer's default is the first algorithm left when the
+  configured one is turned off. A credential the person chooses that way is
+  their choice. The wallet-initiated path, which names none, is refused.
+
+**What has no test:** an HTTP job (`tests/protocol/`, `local: true`), and a
+real wallet reading a post-quantum Request Object (none exists).
 
 ## AN APPLICATION'S DID (rcbj, 2026-10-01)
 
@@ -755,12 +1300,151 @@ application declared for the `did` family (its own checkbox, `applications.js`
 
 `tests/application_did.js` holds it.
 
+## A PERSON'S PUBLISHED did:web (#1291, 2026-11-03)
+
+#693 let a person NAME a DID they control; #1291 has the realm CREATE and
+PUBLISH one for them. rcbj's four decisions are the specification: custody
+in all three modes, chosen per realm (`did.personCustody`: `wallet`, the
+default, `realm`, `download`); a random identifier minted per DID
+(`did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 bits in base64url,
+and in a service deployed as cells the minting cell's `cell_locator.stamp()`
+tag appended — the index is cell-tier and a random id names no cell, so
+`common/cell_placement.ts`'s `/users` row relays a fetch by the tag, as it
+does an offer's or a link handle's);
+deactivate and keep the URL; and "treat it as a proved DID". `person_did.ts`
+is the library and its header the design; what follows is what a change to
+it has to keep.
+
+* **THE DID IS FIXED AT CREATION AND STORED**, unlike the realm's and an
+  application's DIDs, which are derived from each request's base. A person's
+  DID is an identifier other parties keep, so it cannot follow a `Host`
+  header: it is minted on `baseUrlOf(req, 'oid4vc')` and written into the
+  record. **Product refuses an unpinned base** — `global.publicBaseUrl` or
+  the oid4vc application's advertised listener —
+  `mode.mintsPersonDidsOnRequestAddress()` (REQUIREMENTS `person-did-base`,
+  `STS-VC-0168`). `/users` is the oid4vc application's
+  (`common/hosted_applications.js`).
+* **STORAGE**: one JSON value per DID in `stsPublishedDid` on the person's
+  entry (`ldap/CLAUDE.md` argues the attribute), and the per-realm persisted
+  index `did.personDids` (`<rid> -> { did, sub }`, cell-tier in
+  `persistence/tiers.js`) — the person's `urn:uuid:` subject, so a rename
+  does not lose it, and a row is never removed: the address answers 410 for
+  good and an id is never drawn twice. **A lookup, never a walk** (rcbj's
+  rule): the index is one `get()`, and the entry one `locateEntry()`.
+* **VERSIONS ARE APPENDED AND NEVER REWRITTEN** (`append()` is the one
+  writer after creation): `versionId`, `created`, `change`, `keys` (each
+  keyed by its RFC 7638 thumbprint, which is also its fragment, so one key
+  keeps one id across versions) and `authorizedBy`. `versionOf()` answers
+  `versionId` and `versionTime` for the document's address, the resolver
+  (`vc_did_resolver.ts`, whose `didDocumentMetadata` has created, updated,
+  versionId, nextVersionId, deactivated), and a versioned DID URL. At most
+  `MAX_VERSIONS` (50) per DID (`STS-VC-0176`); at most `MAX_RECORDS` (25)
+  records per person, deactivated ones included, besides the active cap
+  `did.personMaxPerPerson`.
+* **THE DOCUMENT** is `GET /users/:rid/did.json`, the JSON representation
+  (`application/did+json`, no `@context`, the resolver's reading of DID Core
+  6.2/6.3.1), `no-store`. **Deactivated** — by the person (`deactivate`, or
+  removing the subject from the self-issued list, which routes to it), by an
+  administrator (`deactivate-published-did`), or while the account is
+  disabled (decided at SERVE time by `stateOf()`, never written, so
+  re-enabling restores it) — it is 410 `{ id, deactivated: true }`
+  (`STS-VC-0162`), and the resolver answers `deactivated: true` with no
+  document. A deactivation also drops a realm-custody key and removes the
+  self-issued subject (CAEP `delete`).
+* **IT IS ALSO A SELF-ISSUED SUBJECT**, enrolled through `siop.enrol()` with
+  the provenance its custody gives — `wallet`, or the two #1291 added to
+  `siop.ts`, `realm` and `issued` — and the CURRENT version's keys pinned;
+  `append()` re-pins it on every version (`again`, CAEP `update`). Who reads
+  which provenance:
+
+  | Reader | `wallet` | `realm` | `issued` | `admin` |
+  |---|---|---|---|---|
+  | `setPreferred()`, `preferredSubjectOf()`, the `did` claim | yes | yes | yes | never |
+  | `signInOutcome()` (a self-issued sign-in) | yes | `STS-VC-0164` | `STS-VC-0164` | yes, as before |
+  | `provenSubjectsOf()`, holder binding | yes | `STS-VC-0165` | `STS-VC-0165` | `STS-VC-0149` |
+
+  An `issued` DID becomes `wallet` by the ordinary enrolment round trip,
+  signing AS the did:web with the downloaded key: `enrol()`'s re-proof.
+* **A HOSTED did:web IS RESOLVED FROM THE HISTORY, NEVER FETCHED**: `siop.ts`
+  `didKey()` asks `deps.hostedKey()` (the CURRENT version — a sign-in or a
+  change's authorization), the issuer's `proofKeyOfKid()` (current, and the
+  credential then names the version), the Verifier's `cnfKeyOf()` (the
+  version the `cnf.kid` names; a versionless hosted `kid` is no key), and
+  the resolver. Dialling yourself would be a fetch the product internal-
+  address rule refuses, and the history is what makes the answer durable.
+* **`wallet` CUSTODY RIDES THE ENROLMENT ROUND TRIP**, with a marker:
+  `/authn/wallet?siop=1&enrol=1&did_act=<act>` — `publish`,
+  `authorize-add.<rid>`, `authorize-rotate.<rid>`, `key.<rid>` — carried by
+  `authn/web_authn_pages.ts`, `web_vc_signin.ts` and `authn_api.ts`'s start
+  body to `vc_signin.ts`, which checks it at the START (`actProblem()`, so a
+  wallet is never asked to prove what will be refused) and hands `finish()`'s
+  verified outcome (now carrying the proved `jwk`) to `finishWalletAct()`
+  instead of enrolling. **A change takes TWO proofs**: the authorization,
+  signed AS the DID by a key its current version names, kept as `pending`
+  for `PENDING_TTL_S` (600 s); then the new key, proved by the wallet's own
+  did:jwk, did:key or thumbprint subject (never a did:web, never another
+  person's, never a key already in the version — `STS-VC-0170`, and never
+  a key already enrolled for this person as a sign-in key — `STS-VC-0178`,
+  #775: the published DID is its own subject and can sign in, and the
+  document does not publish a key the person already signs in with). **And
+  the other way round** (the review of #775, 2026-11-13): `siop.ts`'s
+  enrolment refuses, as a did:jwk, did:key or thumbprint subject, a key
+  ANY version of the person's published DIDs named (`STS-VC-0179`,
+  `person_did.publishedThumbprints()`, the person's own entry, reached
+  lazily through the `publishedKeys` dep) — every version, since none is
+  rewritten. A subject they already hold is not asked; a person who held
+  both before 9bf3187ce keeps both, and nothing reports it yet (a realm-wide
+  report would walk every holder: a follow-up). A new key
+  without a live authorization is `STS-VC-0171`, at the start and at the
+  finish. Both proofs are the new version's `authorizedBy`.
+* **`realm` CUSTODY** generates with `crypto.js`'s
+  `generateSigningJwkPair(did.personKeyAlgorithm)` and seals the private JWK
+  with `keystore.seal(…, 'person-private-key')` where the key-encryption key
+  persists — `applications.js`'s `didPrivateKeys` rule, kept as written in
+  development (`STS-VC-0175` when sealing fails). Nothing reads it back yet:
+  it is kept so the realm can sign as the DID later, never answered. Add and
+  rotate are one portal act each, authorized by the signed-in person; a
+  rotated-out key is dropped. **`download` CUSTODY** answers the private JWK
+  ONCE as `view.fresh.file` (#671's one-time pane) and keeps only the public
+  half; its key changes wait until the person proves it (`STS-VC-0173`).
+* **HOLDER BINDING** to a hosted did:web needs `did.personPublishing` on (else
+  `STS-VC-0142`), a JOSE format (an `ldp_vc` names the bare DID with no
+  version, `STS-VC-0166`), and `wallet` provenance. The metadata adds
+  `did:web` to a DID-bound dc+sd-jwt or jwt_vc_json configuration's
+  `cryptographic_binding_methods_supported` while publishing is on.
+  `holderDid` everywhere strips `?versionId=` as well as the fragment.
+* **WHAT IS NOT BUILT**: signing anything with a realm-custody key; a
+  `service` or `alsoKnownAs` in a person's document; reactivating a
+  deactivated DID (a new one is published instead).
+* **A PERSON RE-HOMED TO ANOTHER CELL** (`common/cell_rehome.ts`; rcbj
+  asked for it on 2026-11-03): the address never changes, so the cell the
+  id's tag names still receives every fetch. Its index row stays; when the
+  person it names is not homed there, `servedAnywhere()` asks the ROUTING
+  INDEX for the subject's home (one indexed read) and fetches the document
+  from that cell over the channel (`person-did-document`), since a relayed
+  request is never placed again; unreachable is 503 `STS-VC-0177`, nobody's
+  is 410. No forwarding row is written, so a second move or a move back is
+  found the same way and a half-failed move cannot leave a wrong forward.
+  `lookup()` answers null for such a row unless `{ away: true }` asks, so
+  `resolve()`, `isHosted()` and `keyOfDidUrl()` treat it as not hosted
+  there. The move carries the records on the entry like every attribute;
+  a realm-custody private key is sealed under the CELL's key INSIDE the
+  JSON, where `cell_rehome.ts`'s attribute walk cannot see it, so
+  `movingOut()` opens it (`STS-CELL-0046` if it will not) and `movingIn()`
+  seals it again at the target, which then writes its own index rows
+  (`indexMovedIn()`). `tests/person_did.js` 10a–10e hold it with two
+  instances; `tests/protocol/sts_cells_rehome.js` section 6 over two cells.
+
+`tests/person_did.js` holds it in process (every custody end to end, the
+two-proof change, versions, binding, deactivation, every code);
+`tests/protocol/sts_person_did.js` (local) drives it over HTTP.
+
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 
 The literals became `config.js` rows whose `dflt` is the old value, read per
 use: credential lifetimes, the proof `iat` window, the c_nonce and offer
 lifetimes, the issuer display name, the wallet pages, the encryption `enc`
-lists, the Domain Linkage and `/did/generate` lifetimes, the Verifier's request
+lists, the Domain Linkage lifetime (and `/did/generate`'s, until #594), the Verifier's request
 lifetime, expected `vct` and claim cap. The credential CATALOGUE — configuration
 display names and colours, the `VCI_*` identifiers — stays code on purpose: it
 is what `vc_configs.ts` exists to hold, and a setting per string would be a
@@ -774,21 +1458,58 @@ second catalogue. What is more than a number, and what
   product mode** a wrong code is counted — in cluster claims since 2026-09-14,
   see the section below — and the one that reaches `oid4vci.txCodeMaxAttempts`
   SPENDS it.
-* **`GET /issuer/offer` MINTS FOR THE SIGNED-IN PERSON WHERE TEST CONTROLS ARE
-  CLOSED.** A cross-device or deferred offer carries a pre-authorized code, which
-  IS an authorization: minting one for `oid4vci.offerUsername` for anybody who
-  loads the page is H.2's demo, and a test control. In product the page sends an
-  unsigned-in browser through the sign-in screen and refuses a "continue without
-  signing in" session. `authn.js` is required inside the handler, because this
-  file is a store module `oauth2.js` requires. A same-device offer grants
-  nothing and is not gated. **An offer minted this way is CAEP's
-  `session-presented`** (#240, 2026-09-26): it is made on the session's
-  authority, since the pre-authorized code authorizes a credential about the
-  person and nobody authenticated for it. The page calls
-  `authn.notePresented(session, 'OpenID4VCI', req)`. Development's offer for
-  the fixed test person reads no session and sends nothing, and neither does a
-  same-device offer. `docs/caep-events.md` no longer says that OpenID4VCI is
-  never a session event.
+* **A PERSON'S OWN PRE-AUTHORIZED OFFER IS THE PORTAL'S (#589, 2026-10-12)**,
+  and since #594 the demo issuer that minted one for anybody is not this
+  service's at all. A
+  cross-device or deferred offer carries a pre-authorized code, which IS an
+  authorization: minting one for `oid4vci.offerUsername` for anybody who loads
+  the page is H.2's demo, and a test control, which development keeps. From
+  2026-09-12 product made the page mint for the person SIGNED IN instead;
+  rcbj decided on 2026-10-12 that this is a real self-service feature — a
+  person putting a credential about themselves into their own wallet — and it
+  moved to the user portal: `/portal/wallet`, over
+  `GET /account-api/credentials/offerable` and
+  `POST /account-api/credentials/offers` (`portal/portal_wallet.ts`, drawn by
+  `portal/web_wallet.ts`, the QR code by `common/web_qr.ts`), and
+  `STS-VC-0027` (a "continue without signing in" session refused there) is
+  retired. **The `/issuer` pages were development-only from #585 and left
+  for the development companion on #594** (`companion/`), which links a
+  person to `/portal/wallet` for a pre-authorized offer and makes the
+  same-device one — which grants nothing — itself.
+  **ONE FUNCTION MAKES EVERY OFFER**: `VcOffers.makeOffer()` — the
+  CAEP presentation, `buildCredentialOffer()`, the sweep of expired state, the
+  reference stored and cell-stamped, the `openid-credential-offer://` URI and
+  the wallet link — called by the portal's operation (and by `/issuer/offer`
+  until #594). **The portal's offer is CAEP's
+  `session-presented`** (#240, 2026-09-26): it is made on the authority of the
+  sign-on session the portal's token was issued on (`caller.signOn`, #568),
+  since the pre-authorized code authorizes a credential about the person and
+  nobody authenticated for it; `makeOffer()` calls
+  `authn.notePresented(session, 'OpenID4VCI', req)`, requiring `authn.js`
+  inside the call because this file is a store module `oauth2.js` requires. A
+  token whose sign-on session is no longer known, or a session that continued
+  without signing in, is refused (`STS-PORTAL-0590`) rather than offered on
+  nothing.
+  `tests/portal_wallet.js` holds the operations and the page;
+  `sts_caep_oauth_grants.js`, `sts_oid4vci_preauth_subject.js` and
+  `sts_oid4vci_conformance.js` (the pre-authorized plan) make their offers
+  there.
+* **THE PERSON IS RESOLVED WHEN THE CODE IS REDEEMED, NOT TAKEN FROM THE OFFER
+  (#158, 2026-10-05).** The offer records `userFor()` when it is MINTED. In
+  development that person is `oid4vci.offerUsername`, who may have no entry
+  yet, so the record held `sub: ''`, and that empty value went into the access
+  token. `oauth2.ts`'s pre-authorized grant now records the authentication
+  first, which creates the entry, and then asks `provisionedPerson()`, the way
+  the password and assertion grants do. A directory that still holds nobody
+  refuses the grant with `invalid_grant` (`STS-OAUTH-0938`). An offer made on a
+  session keeps the session's subject, so a rename after the offer cannot move
+  it. **An anonymous wallet is named `urn:sts:oid4vci:anonymous-wallet` in the
+  TOKEN only** (`ANONYMOUS_WALLET_CLIENT_ID`, passed as `token_client_id`):
+  RFC 9068 section 2.2 requires `client_id`, and section 6.1 lets the wallet
+  omit it. The scope policy, the lifetime and the token registry still read the
+  unnamed client, because giving them a defined value would judge an
+  unregistered client as if it were one. `tests/protocol/sts_oid4vci_preauth_subject.js`
+  holds both.
 * **THE `wallet` PARAMETER IS AN OPEN REDIRECT IN PRODUCT** and is refused unless
   it is the configured wallet or listed in `oid4vci.allowedWalletUrls` /
   `oid4vp.allowedWalletUrls` (`mode.acceptsUnregisteredAddresses()`).
@@ -796,9 +1517,81 @@ second catalogue. What is more than a number, and what
   default and exactly the old path; any other synchronous algorithm this realm
   holds a key for through `helpers.signingKeyFor()`. The metadata names it, the
   DID document publishes that key beside the RSA one, the Domain Linkage
-  Credential and `/did/generate` use it, and the Verifier's
+  Credential uses it (and `/did/generate` did, until #594), and the Verifier's
   `verifyIssuerSignature()` finds the realm's key by `alg` and `kid` — plus
   anything in `oid4vp.trustedIssuerCertificates`, used as keys and nothing more.
+  **A PORTAL OFFER MAY CHOOSE ANOTHER** (rcbj, 2026-10-16): `/portal/wallet`'s
+  `signingAlg`, one of `vc_configs.ts`'s `vciSigningAlgsFor(configId)` — every
+  value the setting allows for a JOSE configuration, the configured one and
+  RS256 for a DID-named one (its DID document publishes only those two keys),
+  bbs-2023 alone for ldp_vc. It rides the pre-authorized code record
+  (`signingAlg`) to the token endpoint, which notes it against the access
+  token's DIGEST (`vc_offers.signingAlgTokens`, `deferredAccessTokens`'
+  arrangement — never a claim in the token, which development mode would
+  take unverified), and the credential endpoint and the deferred record pass
+  it to `buildCredentialFor()`, which checks it against the list again. The
+  metadata's `credential_signing_alg_values_supported` is that list, the
+  default first. **The Status List Token keeps the configured algorithm**,
+  so a credential signed with another names a key its list is not signed
+  with. And `signing_rotation.ts`'s `credentialUnit()` stretches a retired
+  key's grace to the credential lifetime for the CONFIGURED algorithm's key
+  only: a credential signed with another may outlive its key's grace after a
+  rotation.
+* **THE TRUSTED LIST** (rcbj, 2026-10-17, `vc_trusted_list.ts`): ETSI TS
+  119 602's List of Trusted Entities at `/oid4vci/trusted-list`, in the
+  standard's JSON binding and nothing wallet-specific ("reusable across
+  wallets"), naming the service Root as the anchor of both kinds of service.
+  KEPT, not rebuilt per request: the realm's row is answered while its
+  content digest matches and `NextUpdate` is not near. Its signer's `x5c` is
+  the `vci-trusted-list` certificate-header use case.
+* **NO SCANS FOR ONE PERSON** (rcbj, 2026-10-17: "lists are maintained as
+  you go"): `vc_issued.ts` indexes rows by subject and credentials by
+  `notification_id` as they are recorded and drops them where it deletes a
+  row — the size bound's evictions included, read before `makeRoom()` takes
+  them. **A READER NEVER PRUNES A KEY FOR A ROW IT CANNOT SEE** (2026-10-20):
+  a `realms.map()` store is this process's copy, and `get()` answers
+  `undefined` alike for a row that is gone and for one that has not arrived
+  (another process's write still in the change log, a row the restore could
+  not open) — there is no "absent" to tell from "not here", so until then a
+  transient miss pruned the person's entry for good and their history read
+  as empty. Now a key is dropped only where this module deleted the row
+  itself, or where the row IS here and names another subject (or no longer
+  carries the notification); a read that throws keeps the entry and logs
+  `STS-VC-0151` once per read. A key left behind costs a dead lookup and
+  ends with the entry's own `expiresAt`. The backfill mark moved to
+  `#indexed-v2` the same day, so each realm is indexed once more and gets
+  back what an older reader pruned (`indexRow()` adds a key once).
+  `tests/vc_issued_index.js` holds all of it. Still scanning, and
+  older than the indexes: `sweep()` on every `record()`, `lookupHolder()`
+  (an `ldp_vc` sign-in) and `rowsForSubject(null)` (everyone's, for a global
+  sign-out).
+* **A BATCH IS ONE ISSUANCE, ON SEVERAL ROWS** (#670, rcbj 2026-10-17).
+  With `oid4vci.batchSize` over one, a Credential Response carries one
+  credential per proof, each bound to a different holder key (OpenID4VCI
+  1.0 section 8.2) with its own status-list entry and issued-register row.
+  `rememberIssued()` records each as before, so the register holds them as
+  SEPARATE rows — a JOSE row is keyed by its credential, an `ldp_vc` row by
+  its holder key — and nothing groups them but the response's
+  `notification_id`, minted once per response (and once per deferred
+  response) and kept on every copy since #661. That is the specification's
+  own name for the credentials of one response, so it is the issuance:
+  `issuancesForSubject()` groups a person's copies by it, oldest copy
+  first; a credential recorded before #661 has none and is an issuance of
+  its own. No new field was added for the grouping. Three things followed:
+  * **the notification index names EVERY row** a response reached
+    (`keys`), because it named the first only and a wallet's report reached
+    one copy in four; an entry from before is read as a list of one;
+  * **a DID-bound copy keeps its holder's `did:jwk`** (`holderDid`); the
+    key every copy is bound to was already the row's `jkt`, the RFC 7638
+    thumbprint of the proof's key, since #38 — so every copy's key is known,
+    including those issued before #670 (`keyNotRecorded` is for a row
+    without one, which this issuer does not write);
+  * **CAEP is told once per issuance and once per removal**: `record()`
+    announces only the first copy (`announce: false` for the rest), and
+    `removeForSubject()` sends one signal however many copies it removes.
+  `removeForSubject()` takes a copy's id or an issuance's — digests of
+  different strings — and removes that copy or every copy still good.
+  `portal/CLAUDE.md` has the page.
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
   non-post-quantum algorithm. It accepted four while the issuer bound credentials
   to keys of eleven, so a wallet with an EdDSA key was issued a credential and
@@ -835,7 +1628,8 @@ second catalogue. What is more than a number, and what
   shared blob first, so a process adopting a sibling's backfill does not make a
   second key — written down, and offered on as an enrichment
   (`keystore.enriches()`). `tests/vci_request_encryption_key.js` pins all of it.
-* **`/oid4vci/last_request` IS PER REALM TOO (2026-09-12).** It was one `let`, so
+* **THE LAST-REQUEST RECORD IS PER REALM TOO (2026-09-12)** — `/oid4vci/last_request`
+  until #594, `GET /admin-api/oid4vci/last-request` since. It was one `let`, so
   a realm's debugging endpoint reported however another realm's last Credential
   Request had arrived, kid included. **Persisted since 2026-09-14 (#46)**
   (`vc_issuer.lastCredentialRequest`, one key): behind a balancer the wallet's
@@ -894,6 +1688,77 @@ starts a session, so two polls on two nodes cannot both sign somebody in
 (`STS-VC-0062`; a store that cannot be asked, `STS-VC-0063`). The bar door's
 behaviour is unchanged.
 
+## WHAT THE STORES KEEP: DIGESTS, NOT CREDENTIALS (#614, 2026-10-13)
+
+Every store in this family is a declared `realms.map({ persist })`:
+journalled, replicated into every request worker and node, and sealed into
+`sts_minted` in product mode. #614 (rcbj: a SHA-256 digest instead of a
+credential **wherever it is feasible**) has each one keep
+`crypto.credentialDigest()` — base64url SHA-256, the one helper — of a
+bearer value it only looks up, spends or compares, and drop a whole token
+nothing read back. **No migration**: a row persisted before is under the raw
+value, is never found under its digest, and expires on its own `expires`.
+
+| Store | Keeps | Why it is safe to |
+|---|---|---|
+| `vc_offers.preAuthorizedCodes` | keyed by the code's digest; `txCodeDigest`, never `txCode` | the token endpoint looks the code up and spends it; the Transaction Code is compared, digest to digest, with `bytesEqualConstantTime()` |
+| `vc_offers.issuerStates` | keyed by the `issuer_state`'s digest | the authorization endpoint only asks whether it knows the value |
+| `vc_offers.credentialOffers` | keyed by the offer id's digest; the offer itself WHOLE | the id is looked up; the offer is the exception below |
+| `vc_offers.deferredTransactions` | keyed by the `transaction_id`'s digest; no `accessToken` | the deferred endpoint looks the id up; the token was read only to be copied onto the notification row |
+| `vc_offers.deferredAccessTokens` | keyed by the token's digest (since 2026-09-12) | membership is the only question |
+| `vc_offers.signingAlgTokens` | keyed by the token's digest (2026-10-16) | the algorithm a portal offer chose, looked up by the token |
+| `vc_issued.bySubject`, `vc_issued.byNotification` | keyed by the subject's digest, and by the `notification_id` (2026-10-17) | the issued register's two indexes, so a person's history and Remove and a wallet's notification are lookups, never scans |
+| `vc_trusted_list.state` | one row per realm (2026-10-17) | the signed trusted list, its content digest and sequence number |
+| `vc_issuer.vciNonces` | keyed by `vc_issuer.nonceKey()`, the nonce's digest | a proof's nonce is looked up and spent |
+| `vc_issuer.notificationIds` | the id WHOLE; no `accessToken` | the token was never read; the id is an identifier, like a `jti` |
+| `vc_verifier.vpTransactions` | a verdict's `presentationDigest` and verified claims; never the presentation | the presentation was read only by `?state=` and the log |
+
+**The four `vc_offers` stores are a facade, `DigestKeyedStore`**, that hashes
+whatever `get`/`set`/`has`/`delete` are given, because two of their readers
+are not this family's — `oauth-oidc/oauth2.ts` reads the codes and the
+issuer states — and a caller that SET a raw key would put the credential
+back. That is `deferredAccessTokens`' argument again. Iteration is
+`forEachDigest()` and removal by what it hands out is `deleteDigest()`,
+named so nobody passes a digest to `delete()` and hashes it twice;
+`logout/logout.ts`'s pre-authorized-code row is the one outside walker.
+`vciNonces` is hashed at its call sites instead, because the cache
+registry's ejector and rows walk the plain store. The cluster claims a code,
+a nonce and a Transaction Code failure are spent through hash their own
+value (`cluster/cluster_claims.js`), so they are handed what arrived.
+
+**THE TRANSACTION CODE'S DIGEST IS NOT A SECRET, AND THE COMMENT SAYS SO.**
+Five digits by default: ninety thousand hashes recover it from the row,
+offline, in well under a second. What `txCodeDigest` buys is that the row no
+longer carries the code beside the pre-authorized code it unlocks; the
+protection against guessing is the online attempt limit
+(`oid4vci.txCodeMaxAttempts`) and the offer's short life.
+
+**What stays whole, and why:**
+
+* **The offer served by reference** (`credentialOffers`' value), pre-authorized
+  code and all: OpenID4VCI section 4.1.3 has the wallet fetch it, so the
+  exact document is served from here for `oid4vci.offerTtlS`.
+* **The Request Object** (`vpTransactions`' `requestObject`): served to the
+  wallet by reference.
+* **`notification_id`**: it authorizes nothing but reporting what the wallet
+  did with one credential, behind a token this issuer signed.
+* **OpenID4VP `state` and the request id** (`vpRequests`): public
+  identifiers rather than bearer values. `state` travels in the Authorization
+  Request — by value in the wallet URL or QR code, by reference to anybody
+  holding the `request_uri` — and back in the wallet's answer; it is the
+  console's handle for a verification (`GET /admin-api/verifications?state=`,
+  the open list). Holding it lets nobody do more than answer with a
+  presentation, which must still carry this request's nonce and audience and
+  a holder proof. A sign-in's credentials on the same record are already
+  digests (`bindingHash`, `responseCodeHash`).
+
+**The log follows the store**: the presentation's `logArtifact()` lines name
+it by `presentationDigest` (and an SD-JWT's part count), never the
+`vp_token`. `tests/vc_store_digests.js` drives each flow and then reads each
+store for the raw value, as a key and anywhere in a row's JSON.
+
+---
+
 ## THE BBS KEY IS THE REALM'S, AND ROTATES (2026-09-22, #49 P5, rcbj's D6 answer)
 
 The key bbs-2023 proofs are signed with was one pair for the whole service (a
@@ -918,7 +1783,7 @@ needed to tell them apart.
 
 ---
 
-## THE W3C VC-API ADAPTER AND THE W3C SUITES (#194-#199, 2026-09-26)
+## 3bn. THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
 
 The Verifiable Credentials and DID Working Groups' own test suites — VC Data
 Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,
@@ -930,18 +1795,58 @@ ADAPTER — and what it adapts to is this directory's machinery, not a copy:
 the cryptosuites are `vc_data_integrity.ts`'s, the keys are the realm key
 set's Ed25519, P-256 and P-384 members (`realmKeyFor()`, named by their
 did:key), a credential's status is an index `vc_status.ts` allocates, and a
-status change is `vc_status.setStatus()` — the act `/admin/vc-status`
+status change is `vc_status.setStatus()` — the act `/admin/vc/monitor`
 performs, one of the three that DISOWN a credential (*Disowned*, above).
 
-**A TEST CONTROL** (`mode.opensTestControls()`): in a product realm every
-route is a 404 (`STS-VC-0100`). An endpoint that signs whatever it is handed
-with a realm's key is what a conformance suite needs and no deployment
-should expose. **AND AUTHENTICATED ANYWAY**, the way
-`vc-test-suite-implementations` lets a suite authenticate: an OAuth 2.0
-client-credentials token this realm issued, verified and not revoked,
-carrying `vc-api:issue` or `vc-api:verify` — two new PROTECTED scopes
-(`common/scope_policy.ts`), issued only to a client an administrator
-declared them on, re-checked on every call (`STS-VC-0101`).
+**A PRODUCT SURFACE SINCE #598 (rcbj's decision 2 on #591), AND OFF BY
+DEFAULT.** It was a test control — development-only under #585's
+demonstration mark (removed by #599), because an endpoint that signs whatever it is handed with a
+realm's key is what a conformance suite needs. Making it a surface a
+deployment may expose changed six things, each argued in `vc_api.ts`'s
+header:
+
+* **`vcApi.enabled`, per realm, off.** Off, every route answers **501**
+  (`STS-VC-0120`) with the VC API's error shape before a token is read —
+  `scim.enabled`'s, `ssf.enabled`'s and `xacml.enabled`'s answer, not
+  Express's 404: the feature is off, the URL is not wrong, and
+  `/admin/sts-metadata`'s list stays true in every realm (each row's
+  `effect` says so). The setting is drawn on `/admin/vc`'s OpenID4VCI tab
+  (the `W3C VC API` group, `SETTING_HOMES`).
+* **KEYS OF ITS OWN** — the realm key set's `vcApiKeys` member
+  (`common/helpers.js` makeVcApiKeys(), `vc_data_integrity.ts`
+  `vcApiKeyFor()`): Ed25519, P-256 and P-384, made with the set, sealed in
+  product, shared across processes like the browser device keys, carried
+  over a rotation unchanged (a did:key IS its key), and never published or a
+  candidate of `ownCandidatesFor()`. It signed with the realm's token keys
+  (`extraKeys`) until then, and a `jose-p256` issue was a compact JWS over a
+  document the caller wrote: any `iss`/`sub`/`aud` it liked, signed by a key
+  `verifyOwnJws()` tries for any kid it does not know (RFC 8725 section
+  3.12). `realmKeyFor()` still signs the status lists' JSON-LD form.
+* **AUTHENTICATED IN EVERY MODE**, as before: an OAuth 2.0 access token this
+  realm issued, verified, not revoked, carrying `vc-api:issue` or
+  `vc-api:verify` — PROTECTED scopes (`common/scope_policy.ts`), issued only
+  to a client an administrator declared them on, re-checked on every call
+  (`STS-VC-0101`). The file reads no mode predicate at all.
+* **RATE LIMITED** after the token, per client and per address, per realm
+  (`vcApi.maxPerWindow`, `STS-VC-0121`) — `xacml.pipMaxPerWindow`'s
+  arrangement, because signing and canonicalizing cost CPU.
+* **AN OPTION IT DOES NOT UNDERSTAND IS REFUSED** (`STS-VC-0122`), as
+  VCALM says it MUST be, each known option's shape checked. That closed a
+  hole the test control had: `securedByEnvelope`, the verifier's own
+  "an envelope already verified this", was read from the CALLER's options,
+  and a verify carrying it was `verified: true` with no proof checked. It is
+  an argument now. A private member under `verificationMethod` is refused
+  rather than ignored. The DID queries go through `validation.check()`.
+* **THE STATUS-LIST PUBLISH LEFT** for `POST /admin-api/vc-status/publish`
+  (Admin Write) and a *Publish now* button on Monitoring → Verifiable
+  Credentials (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
+  a list here is computed on every read, and an act that only says so is an
+  operator's.
+
+`vc_api.issued` (credential id → status index) moved to the GLOBAL tier
+(`persistence/tiers.js`) beside `vc_status.entries`, so a status change
+reaches its index from any cell; `/vc-api` stays `local` in
+`common/cell_placement.ts`, since nothing it reads is a person's.
 
 **NOTHING IS FETCHED, WHICH IS WHY THE RDFC SUITES COULD BE ADDED AT ALL.**
 `vc_data_integrity.ts`'s header argued JCS for the holder proof because an
@@ -990,13 +1895,94 @@ resolveRepresentation for a contentType and a parseable stream (#199, one).
 
 ### Not built
 
-zcap authorization (OAuth only); a Key Binding JWT on an SD-JWT presentation
-is reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
+zcap authorization (OAuth only); VCALM's workflows and exchanges,
+challenges, credential and presentation storage, its `operation:path`
+scopes, and issuer instances configured per realm (they are fixed, one per
+mechanism and curve); a Key Binding JWT on an SD-JWT presentation is
+reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
 parameters (`service`, `versionId`, …) and any did:web but the realm's own;
 Bitstring Status Lists of the `message` purpose (`statusSize` > 1); the
 bbs-2023 suite at the adapter (no ticket asks for its suite).
 
 `tests/vc_jsonld.js`, `tests/vc_rdfc_suites.js`, `tests/vc_data_model.js`,
 `tests/vc_jose_cose.js` and `tests/vc_api.js` hold the libraries in process;
-the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
+the six `tests/protocol/sts_*_suite.js` jobs run the W3C suites
 (`tests/CLAUDE.md`, *The W3C VC and DID suites*).
+
+## THE DEMONSTRATION LEFT THE SERVICE (#594, 2026-10-12)
+
+**The OpenID4VC demonstration is the development companion's** (`companion/`,
+rcbj's decision 1 on #591): the issuer's page `/issuer`, the offer
+`/issuer/offer`, the bar door `/oid4vp/verifier`, its start `/oid4vp/start`,
+its closing page `/oid4vp/done`, their script `/issuer/demo.js` and API
+`/vc-demo-api` (the static surface #582 made them), and the non-spec
+`/oid4vp/result/:state` are no longer routes of this service in any mode.
+`companion/CLAUDE.md` argues the companion; what changed HERE:
+
+* **A VERIFICATION STARTS ONLY AT `POST /admin-api/verifications/start`**
+  (#587) and is read at `GET /admin-api/verifications?state=`.
+  `startVerification(req, asked, where, options)` is everything the start
+  page did before it sent anything — the `OID4VC_QUERY` check
+  (`checkParsed()`), `prepareSignedClientId()`, `buildVpRequest()`,
+  `vpRequestQuery()` and `vpWalletFor()` — and returns `{ ok, record,
+  query, wallet, walletUrl, requestUri, mode }` or `{ ok: false, status,
+  code, error }`; `verificationOutcome(state)` reads the store directly (not
+  `transactionFor()`, which removes an expired transaction: "what did it
+  decide" outlives "may it still be answered"); `recentVerifications()`
+  lists the open ones for the console and the bare `GET`, never a sign-in's;
+  `START_VOCABULARY` is the operation's closed sets (#86). The companion's
+  bar door is an application calling these.
+* **THE RESPONSE ENDPOINT'S `redirect_uri` IS THE STARTER'S** (OpenID4VP 1.0
+  section 8.2). It named `/oid4vp/done?state=…` for every verification that
+  was not a sign-in — a demonstration page, so a product verification sent
+  the person to a 404. The start now names it (`redirect_uri`, checked by
+  `completionUriFor()`: the calling client's registered redirect URIs where
+  only registered addresses are accepted, any absolute http(s) URL without a
+  fragment elsewhere, `STS-VC-0123` otherwise), it rides on the transaction
+  as `completionUri`, and `afterResponseUri()` answers it. A start that
+  named none is answered `{}` — no `redirect_uri` — and a SIOPv2
+  `form_post` answer with no page is told in plain text that it arrived. A
+  SIGN-IN's transaction is unchanged: its wallet goes back to the sign-in's
+  own page with the `response_code`.
+* **NOBODY HERE MAKES A SAME-DEVICE OFFER ANY MORE.** `makeOffer()` and
+  `buildCredentialOffer()` keep the H.1 branch (an `issuer_state` the
+  authorization endpoint honours), and the portal makes the two
+  pre-authorized ones (#589); the companion makes its same-device offer
+  itself with no `issuer_state`, which section 4.1.1 allows. `walletFor()`
+  and `oid4vci.allowedWalletUrls` went with the offer page — the portal's
+  link goes to the configured wallet only (`configuredWalletUrl()`).
+* **THE ISSUER'S READBACKS ARE ADMIN READ OPERATIONS**: `GET
+  /admin-api/oid4vci/last-request` (`lastCredentialRequest()`, the record
+  per realm and persisted as before) and `GET
+  /admin-api/oid4vci/notifications?id=` (`notificationRecord()`, 404
+  `STS-VC-0024`). They were `/oid4vci/last_request` and
+  `/oid4vci/notification/:id`, answered to anybody in a development realm.
+* **`/did/generate` IS GONE**, with `oid4vci.generatedDidCredentialLifetimeS`:
+  it minted a did:jwk and a credential signed by it for tests, and test
+  tooling makes its own keys (`sts_did_test_suite.js` makes its did:jwk from
+  a P-256 key of its own).
+* **RETIRED CODES**: `STS-VC-0025`, `0026` (the offer page's query and
+  wallet), `0046` (`/did/generate`'s method), `0116`–`0119` (`/vc-demo-api`'s
+  binding). Never reused.
+
+The protocol endpoints are unchanged: the issuer metadata, the credential,
+nonce, deferred and notification endpoints, the token endpoint's
+pre-authorized grant, `/oid4vci/credential-offer/{id}`, the request object,
+the response endpoint (but for the `redirect_uri` above), the DC API and the
+status lists.
+
+`tests/admin_api_verifications.js` holds the start and the outcome,
+`tests/oid4vp_sign_in.js` section 7 the starter's page and its absence,
+`tests/oauth_oid4vc_hardcoded.js` 6a that none of the demonstration's
+routes exists, and `tests/companion.js` the companion.
+
+## This family's demonstrations (#585, #591)
+
+Nothing of this family is a demonstration any more: the OpenID4VC
+demonstration left for the development companion on #594 (above), and the W3C
+VC API, the last one here, became a product surface on #598. **Not ever**
+`/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`,
+which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`)
+uses and #569's rule keeps unchanged. The development-only mark #585 put on
+the rest was removed by #599 with nothing left to carry it (`common/CLAUDE.md`,
+`mode.js`); `tests/demo_endpoints.js` guards that none comes back.

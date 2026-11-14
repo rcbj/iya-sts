@@ -10,7 +10,7 @@
 //
 // The realm a PEP registered to certifies its HTTPS listener from a per-realm
 // Issuing CA (`pep-tls`), hands the private key over once, and the container
-// picks the pair up from two files. `tests/vendored/sts_xacml_remote_pep.js`
+// picks the pair up from two files. `tests/protocol/sts_xacml_remote_pep.js`
 // drives that end to end against a real container; what is here is what no
 // request can choose:
 //

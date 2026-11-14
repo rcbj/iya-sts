@@ -105,6 +105,22 @@ const GNAP_ACTIONS = ['revoke-grant', 'delete-resource-set'];
 
 const STATES = ['processing', 'pending', 'approved', 'finalized'];
 
+// THE GNAP NAMESPACE (#543 phase 2b): what a multi-cell service's list of a
+// person's grants says it leaves out (`cellsNote()`). It reaches
+// `/admin-api/users` as `gnapGrants.cells.note` on a person's view; the
+// person's own `/portal/gnap` is not `/admin-api`, and draws it as it is.
+/**
+ * What a person's grant list says in a multi-cell service.
+ */
+const CELLS_NOTE = 'The grants this cell holds. A grant is made where its ' +
+  'client arrives and moves to its resource owner\'s home cell before it ' +
+  'is approved, so this is normally all of them; a grant whose client ' +
+  'instance is registered in another cell stays there and is listed and ' +
+  'revoked there.';
+
+/** The routes whose answers carry this module's prose. */
+const PROSE_ROUTES = ['/admin-api/users'];
+
 /**
  * What the two GNAP console pages and their `/admin-api` operations read and
  * do: one view model and one action, rendered by both doors (rule 7).
@@ -123,6 +139,22 @@ class GnapConsole {
    * `finalized`.
    */
   static readonly STATES = STATES;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the gnap namespace (#543): the multi-cell note on a person's
+   * grant list.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering GnapConsole.prose().");
+    helpers.log.debug("Leaving GnapConsole.prose().");
+    return { 'gnap.cells.note': CELLS_NOTE };
+  }
 
   /**
    * Builds the view model from the modules it reads.
@@ -141,14 +173,14 @@ class GnapConsole {
     return errorCodes.mark(result, code);
   }
 
-  private settingsJson(): any[] {
-    const { log, config } = this.deps;
+  private settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering GnapConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'GNAP';
-    })[0];
     log.debug("Leaving GnapConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the GNAP
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/gnap');
   }
 
   private grantRow(grant: any) {
@@ -320,11 +352,7 @@ class GnapConsole {
     log.debug("Leaving GnapConsole.cellsNote(). multi=" + multi);
     return multi
       ? { multiCell: true, cell: id, complete: false,
-          note: 'The grants this cell holds. A grant is made where its ' +
-                'client arrives and moves to its resource owner\'s home ' +
-                'cell before it is approved, so this is normally all of ' +
-                'them; a grant whose client instance is registered in ' +
-                'another cell stays there and is listed and revoked there.' }
+          note: CELLS_NOTE }
       : { multiCell: false, cell: '', complete: true, note: '' };
   }
 
@@ -404,10 +432,18 @@ class GnapConsole {
                                                { name: 'resources',
                                                  noun: 'resource ' +
                                                    'sets' });
-    const profiles = authorizationServers.list().map(function (profile) {
-      return { id: profile.id, label: profile.label || '',
-               capabilities: grants.capabilities(req, profile.id) };
-    });
+    // THE NAMED AUTHORIZATION SERVERS, PAGED (#313) on `serversPage`, as
+    // they are on /admin/authorization-servers: an operator can name them
+    // without a bound. Each one's capabilities are worked out only for the
+    // rows shown — pagedRows()'s page-then-decorate order.
+    const serverPage = adminViews.pagedRows(query,
+      authorizationServers.list(),
+      { name: 'servers', noun: 'authorization servers',
+        decorate: function (profile) {
+          return { id: profile.id, label: profile.label || '',
+                   capabilities: grants.capabilities(req, profile.id) };
+        } });
+    const profiles = serverPage.shown;
     let material: any = {};
     try {
       material = tokens.publicMaterial(base);
@@ -425,28 +461,29 @@ class GnapConsole {
       specifications: ['RFC 9635', 'RFC 9767', 'RFC 9421', 'RFC 9530',
                        'RFC 9493'],
       endpoints: {
-        grant: base + '/gnap',
-        discovery: 'OPTIONS ' + base + '/gnap',
-        rsDiscovery: base + '/.well-known/gnap-as-rs',
-        continuation: base + '/gnap/continue/{grant}',
-        tokenManagement: base + '/gnap/token/{handle}',
-        introspection: base + '/gnap/introspect',
-        resourceRegistration: base + '/gnap/resource',
-        userCode: base + '/gnap/code',
-        keys: base + '/gnap/keys',
-        zcapController: base + '/gnap/zcap/controller',
+        grant: helpers.rebaseTo(base, 'gnap') + '/gnap',
+        discovery: 'OPTIONS ' + helpers.rebaseTo(base, 'gnap') + '/gnap',
+        rsDiscovery: helpers.rebaseTo(base, 'gnap') + '/.well-known/gnap-as-rs',
+        continuation: helpers.rebaseTo(base, 'gnap') + '/gnap/continue/{grant}',
+        tokenManagement: helpers.rebaseTo(base, 'gnap') +
+                         '/gnap/token/{handle}',
+        introspection: helpers.rebaseTo(base, 'gnap') + '/gnap/introspect',
+        resourceRegistration: helpers.rebaseTo(base, 'gnap') + '/gnap/resource',
+        userCode: helpers.rebaseTo(base, 'gnap') + '/gnap/code',
+        keys: helpers.rebaseTo(base, 'gnap') + '/gnap/keys',
+        zcapController: helpers.rebaseTo(base, 'gnap') +
+                        '/gnap/zcap/controller',
         // #432: where a resource server that checks tokens on its own sees a
         // revocation — the realm's access-token status list (the JWT
         // formats) and the revoked biscuits' identifiers.
-        accessTokenStatusList: base + '/status-lists/access-tokens',
-        biscuitRevocations: base + '/gnap/biscuit/revocations',
-        demonstrationResourceServer: base + '/gnap/rs/resource',
-        // #432 phase 5: the demonstration operation that spends a right's
-        // limits, the reference for a resource server keeping the totals.
-        demonstrationSpend: base + '/gnap/rs/spend'
-      },
+        accessTokenStatusList: helpers.rebaseTo(base, 'oauth-oidc') +
+                               '/status-lists/access-tokens',
+        biscuitRevocations: helpers.rebaseTo(base, 'gnap') +
+                            '/gnap/biscuit/revocations'
+      } as Record<string, string>,
       capabilities: grants.capabilities(req, null),
       authorizationServers: profiles,
+      authorizationServersPaging: adminViews.pagingJson(serverPage.paging),
       tokenFormats: tokens.FORMATS,
       verificationMaterial: material,
       grants: {
@@ -548,8 +585,8 @@ class GnapConsole {
               'server')
           : 'client',
         registered: !!app.registered,
-        finishUris: grants.fieldValues(app, 'gnapFinishUri'),
-        webApplication: grants.fieldValues(app, 'gnapFinishUri').length > 0,
+        finishUris: grants.fieldValues(app, 'finishUri'),
+        webApplication: grants.fieldValues(app, 'finishUri').length > 0,
         grantsHeld: { total: mine.length,
                       pending: mine.filter(function (g) {
                         return g.state === 'pending';
@@ -771,6 +808,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   GNAP_ACTIONS: GnapConsole.GNAP_ACTIONS,
   STATES: GnapConsole.STATES,
+  // #543: the gnap namespace's routes and English.
+  PROSE_ROUTES: GnapConsole.PROSE_ROUTES,
+  prose: GnapConsole.prose,
   gnapView: slot.forward('gnapView'),
   gnapMonitorView: slot.forward('gnapMonitorView'),
   gnapAction: slot.forward('gnapAction'),

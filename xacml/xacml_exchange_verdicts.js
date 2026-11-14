@@ -58,6 +58,12 @@ function requestFor(question) {
     .setting('delegation.defaultSemantics',
              String(settings.defaultSemantics || ''))
     .setting('delegation.actorRole', String(settings.actorRole || ''));
+  // #430: the one Kerberos setting a cross-realm rule reads, sent only for a
+  // question that carries it, so every other question is the request it was.
+  if (settings.crossRealmClassicDelegation !== undefined) {
+    req.setting('krb5.crossRealmClassicDelegation',
+                !!settings.crossRealmClassicDelegation);
+  }
   if (q.realm) {
     req.environment(xacmlRequest.VOCABULARY.REALM, [String(q.realm)]);
   }

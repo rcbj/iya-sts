@@ -1,0 +1,15 @@
+{
+  "heading": "Cuentas conectadas",
+  "sub": "Conecte una cuenta que tenga en uno de estos proveedores e inicie sesión aquí con ella. Una conexión es suya: nadie más puede crearla por usted, y desconectarla termina las sesiones que inició.",
+  "none": "Este dominio no ofrece ningún proveedor para conectar.",
+  "connected": "Conectada: puede iniciar sesión aquí con ella.",
+  "connect": "Conectar",
+  "disconnect": "Desconectar",
+  "notConnected": "No tiene ninguna conexión con ese proveedor.",
+  "doneDisconnected": "Desconectada.",
+  "doneConnected": "{provider} está conectado a su cuenta.",
+  "noSession": "Este servicio ya no sabe de qué inicio de sesión forma parte esta página, así que una conexión iniciada desde ella no podría completarse. Inicie sesión de nuevo y conecte desde allí.",
+  "riskRefused": "No se puede conectar una cuenta desde este inicio de sesión. Inicie sesión de nuevo y conecte desde allí.",
+  "notConnectable": "Ese proveedor no se puede conectar ahora.",
+  "onlyWayIn": "Esta conexión es la única forma de iniciar sesión en esta cuenta, así que no se puede desconectar. Añada primero otra forma de iniciar sesión —una contraseña, una llave de acceso u otra cuenta conectada— y después desconéctela."
+}

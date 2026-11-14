@@ -40,6 +40,7 @@
 
 delete process.env.CONFIG_FILE;
 
+const storeDouble = require('./tools/store_double');
 const convertTool = require('../persistence/cell_convert');
 const tiers = require('../persistence/tiers');
 const tiered = require('../persistence/persistence_tiered');
@@ -577,14 +578,49 @@ async function statements(t) {
   const postgres = require('../persistence/persistence_postgres');
   const dial = postgres.dialOptions(
     'postgres://sts_app:pw@db:5432/sts?sslmode=require', false);
-  t.check(dial.wantsTls && !/sslmode/.test(dial.connectionString) &&
+  t.check(!dial.refused && !/sslmode/.test(dial.connectionString) &&
           dial.ssl && dial.ssl.rejectUnauthorized === false,
           'dialOptions() strips sslmode and configures TLS itself');
-  t.check(!postgres.dialOptions('postgres://db/sts', true).ssl,
-          'and a string asking for no TLS gets none');
+  const bare = postgres.dialOptions('postgres://db/sts', true);
+  t.check(!bare.refused && bare.ssl && bare.ssl.rejectUnauthorized === true,
+          'a string with no sslmode is TLS too (#273)');
+  t.check(!!postgres.dialOptions('postgres://db/sts?sslmode=disable', false)
+            .refused &&
+          !!postgres.dialOptions('postgres://db/sts?sslmode=allow', false)
+            .refused &&
+          !!postgres.dialOptions('host=db dbname=sts', false).refused,
+          'and sslmode=disable, sslmode=allow and a keyword/value string ' +
+          'are refused, never dialled in the clear (STS-STORE-0078)');
+  // #543 round 2 (rcbj): the verify modes verify whatever the setting says,
+  // as libpq reads them — verify-full the chain and the host name, verify-ca
+  // the chain only, through a checkServerIdentity that checks nothing.
+  const full = postgres.dialOptions('postgres://db/sts?sslmode=verify-full',
+                                    false);
+  t.check(!full.refused && !/sslmode/.test(full.connectionString) &&
+          full.ssl.rejectUnauthorized === true &&
+          typeof full.ssl.checkServerIdentity === 'function' &&
+          full.ssl.checkHost === 'db' &&
+          full.verifyChain === true && full.verifyHostname === true,
+          'sslmode=verify-full verifies the chain and the host name in ' +
+          'the string, with the setting off (#951)');
+  const ca = postgres.dialOptions('postgres://db/sts?sslmode=VERIFY-CA',
+                                  false);
+  t.check(!ca.refused && ca.ssl.rejectUnauthorized === true &&
+          typeof ca.ssl.checkServerIdentity === 'function' &&
+          ca.ssl.checkServerIdentity('db', {}) === undefined &&
+          ca.verifyChain === true && ca.verifyHostname === false,
+          'sslmode=verify-ca verifies the chain and not the host name with ' +
+          'the setting off');
+  const required = postgres.dialOptions(
+    'postgres://db/sts?sslmode=require', true);
+  t.check(required.ssl.rejectUnauthorized === true &&
+          typeof required.ssl.checkServerIdentity === 'function' &&
+          required.ssl.checkHost === 'db' &&
+          required.verifyHostname === true &&
+          dial.verifyChain === false && dial.verifyHostname === false &&
+          dial.ssl.checkServerIdentity === undefined,
+          'for require the setting still decides, both halves together');
   const seen = [];
-  const pgPath = require.resolve('pg');
-  const previous = require.cache[pgPath];
   function FakePool() {}
   FakePool.prototype.on = function () {};
   FakePool.prototype.query = function (sql, params) {
@@ -598,18 +634,14 @@ async function statements(t) {
   FakePool.prototype.end = function () {
     return Promise.resolve();
   };
-  require.cache[pgPath] = { id: pgPath, filename: pgPath, loaded: true,
-    exports: { Pool: FakePool, Client: function () {} } };
+  const restore = storeDouble.install({ Pool: FakePool,
+                                        Client: function () {} });
   let store;
   try {
     store = convertTool.sqlStore({ url: 'postgres://sts_app@db/sts',
                                    verifyTls: false, name: 'global' });
   } finally {
-    if (previous) {
-      require.cache[pgPath] = previous;
-    } else {
-      delete require.cache[pgPath];
-    }
+    restore();
   }
   await store.rows('sts_keys');
   await store.rows('sts_minted', { handle: ['dpop.seenJtis'] });
@@ -689,8 +721,9 @@ async function asTheConvertTask(t) {
   fs.writeFileSync(kek, require('crypto').randomBytes(32).toString('hex'));
   const riskDir = path.join(dir, 'risk-uploads-not-mounted');
   const env = Object.assign({}, process.env, {
-    STS_MODE: 'product', STS_PERSISTENCE_MODE: 'postgres',
+    STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'postgres',
     STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+    STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
     STS_KEYS_KEK_REF: kek, STS_CELL_ID: 'usw2', STS_CELL_JURISDICTION: 'us',
     STS_PUBLIC_BASE_URL: 'https://sts.example.test',
     STS_DATABASE_URL: 'postgres://sts_app:x@127.0.0.1:1/sts',

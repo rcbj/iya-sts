@@ -27,7 +27,7 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}"
 IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG must be set}"
 EXTRA_TAG="${1:-}"
 NAMES="sts xacml-pep iya-sts-tests sts-saml-shibboleth sts-saml-simplesamlphp
-       sts-saml-pysaml2 sts-saml-keycloak"
+       sts-saml-pysaml2 sts-saml-keycloak sts-test-peer"
 
 pushImage()
 {

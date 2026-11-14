@@ -58,6 +58,8 @@ pub enum SettingType {
     Bool,
     Csv,
     Enum,
+    /// A colour (#717): `#rgb` or `#rrggbb`, read as lower-case `#rrggbb`.
+    Color,
 }
 
 impl SettingType {
@@ -69,6 +71,7 @@ impl SettingType {
             SettingType::Bool => "bool",
             SettingType::Csv => "csv",
             SettingType::Enum => "enum",
+            SettingType::Color => "color",
         }
     }
 }
@@ -135,6 +138,34 @@ pub struct SettingRow {
     pub secret: bool,
     pub only_while: Option<&'static str>,
     pub only_while_values: Option<&'static [&'static str]>,
+    /// `onlyWhileValuesUnless` (#1456): more values the mode marks, unless
+    /// the named boolean setting is on.
+    pub only_while_values_unless: Option<ValuesUnless>,
+    /// `maxLength` (#717): a string row's bound, in UTF-16 code units as
+    /// JavaScript counts a string's length.
+    pub max_length: Option<i64>,
+    /// `absoluteUri` (2026-11-12): a caller's write must be RFC 3986's
+    /// scheme, a colon and at least one more character, with no space or
+    /// control character.
+    pub absolute_uri: bool,
+    /// `selectAll` (#1130): what an ordered row's Select all ticks.
+    pub select_all: Option<SelectAll>,
+}
+
+/// `onlyWhileValuesUnless`: `values` are marked too while `setting` is not
+/// `true`.
+#[derive(Debug)]
+pub struct ValuesUnless {
+    pub setting: &'static str,
+    pub values: &'static [&'static str],
+}
+
+/// `selectAll`: `only_while_on` ticks its values only while that switch is
+/// on; while an `alone_while_on` switch is on, only its values are ticked.
+#[derive(Debug)]
+pub struct SelectAll {
+    pub only_while_on: &'static [(&'static str, &'static [&'static str])],
+    pub alone_while_on: &'static [(&'static str, &'static [&'static str])],
 }
 
 /// A key that was REMOVED and is refused by name, saying what replaced it.
@@ -142,6 +173,8 @@ pub struct SettingRow {
 pub struct Replaced {
     pub key: &'static str,
     pub env: Option<&'static str>,
+    /// A legacy variable that went with the key (#523), refused by name too.
+    pub legacy_env: Option<&'static str>,
     pub now: &'static [&'static str],
     pub why: Option<&'static str>,
 }
@@ -149,7 +182,10 @@ pub struct Replaced {
 /// The constants, one per key, and the rows.
 #[allow(dead_code)]
 mod generated {
-    use super::{DefaultValue, Key, Replaced, SettingRow, SettingType};
+    use super::{
+        DefaultValue, Key, Replaced, SelectAll, SettingRow, SettingType,
+        ValuesUnless,
+    };
     include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 }
 
@@ -309,6 +345,70 @@ fn is_false_word(text: &str) -> bool {
         .any(|word| text.eq_ignore_ascii_case(word))
 }
 
+/// `#rgb` or `#rrggbb`, either case.
+fn is_color(text: &str) -> bool {
+    let Some(hex) = text.strip_prefix('#') else {
+        return false;
+    };
+    (hex.len() == 3 || hex.len() == 6)
+        && hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// The colour type's parse: trimmed, lower-cased, `#rgb` widened to
+/// `#rrggbb`; anything else is kept as written (the check refuses it).
+fn color_value(raw: &str) -> String {
+    let s = raw.trim().to_lowercase();
+    match s.strip_prefix('#') {
+        Some(hex)
+            if hex.len() == 3 && hex.chars().all(|c| c.is_ascii_hexdigit()) =>
+        {
+            hex.chars().fold(String::from("#"), |mut out, c| {
+                out.push(c);
+                out.push(c);
+                out
+            })
+        }
+        _ => s,
+    }
+}
+
+/// JavaScript's `\s`, which is not Rust's `char::is_whitespace` (U+0085 is
+/// one there and not here; U+FEFF is one here and not there).
+fn is_js_space(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n'
+            | '\u{b}'
+            | '\u{c}'
+            | '\r'
+            | ' '
+            | '\u{a0}'
+            | '\u{1680}'
+            | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+    )
+}
+
+/// `/^[A-Za-z][A-Za-z0-9+.-]*:[^\s\u0000-\u001f\u007f]+$/`.
+fn is_absolute_uri(text: &str) -> bool {
+    let Some((scheme, rest)) = text.split_once(':') else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+        && !rest.is_empty()
+        && rest
+            .chars()
+            .all(|c| !(is_js_space(c) || c <= '\u{1f}' || c == '\u{7f}'))
+}
+
 /// The csv type's split: an array as itself, anything else on commas.
 fn csv_parts(raw: &Json) -> Vec<String> {
     match raw {
@@ -329,6 +429,10 @@ impl SettingRow {
             SettingType::Enum => SettingValue::Text(match raw {
                 None => String::new(),
                 Some(raw) => js_string(raw).trim().to_string(),
+            }),
+            SettingType::Color => SettingValue::Text(match raw {
+                None | Some(Json::Null) => String::new(),
+                Some(raw) => color_value(&js_string(raw)),
             }),
             SettingType::Int | SettingType::Port => SettingValue::Int(
                 raw.map(js_string)
@@ -390,7 +494,20 @@ impl SettingRow {
     /// supplied, in the words the console prints after the key, or `None`.
     pub fn check(&self, raw: &Json) -> Option<String> {
         match self.kind {
-            SettingType::String => None,
+            SettingType::String => self.check_string(raw),
+            SettingType::Color => {
+                let text = match raw {
+                    Json::Null => String::new(),
+                    other => js_string(other),
+                };
+                if is_color(text.trim()) {
+                    return None;
+                }
+                Some(format!(
+                    "must be a colour written #rgb or #rrggbb, got \"{}\"",
+                    js_string(raw)
+                ))
+            }
             SettingType::Int => self.check_int(raw),
             SettingType::Port => {
                 let text = js_string(raw);
@@ -446,6 +563,33 @@ impl SettingRow {
                 ))
             }
         }
+    }
+
+    /// A string row's `maxLength` and `absoluteUri`; a row with neither is
+    /// any text, as every string row was before them.
+    fn check_string(&self, raw: &Json) -> Option<String> {
+        let text = match raw {
+            Json::Null => String::new(),
+            other => js_string(other),
+        };
+        if let Some(max) = self.max_length {
+            let length = text.encode_utf16().count() as i64;
+            if length > max {
+                return Some(format!(
+                    "must be at most {} characters, got {}",
+                    max, length
+                ));
+            }
+        }
+        if self.absolute_uri && !is_absolute_uri(&text) {
+            return Some(
+                "must be an absolute URI (a scheme, a colon and the rest, \
+                 with no spaces), such as \
+                 urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+                    .into(),
+            );
+        }
+        None
     }
 
     /// An integer, which a row may narrow with `min`, `max` and `step`; the
@@ -889,6 +1033,10 @@ static EMPTY_ROW: SettingRow = SettingRow {
     secret: false,
     only_while: None,
     only_while_values: None,
+    only_while_values_unless: None,
+    max_length: None,
+    absolute_uri: false,
+    select_all: None,
 };
 
 #[cfg(test)]

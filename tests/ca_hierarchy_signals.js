@@ -14,14 +14,15 @@
 // notice is seen:
 //
 //   A. WHAT IS HELD. A person's TLS client certificate (a register slot) and
-//      an ACME enrolment (the issued register) are held; an application's
-//      enrolment is not a person's.
+//      an ACME enrolment (the issued register) are held — and, since #221 P5,
+//      an application's enrolment too, told under the application.
 //   B. A REISSUE RE-MINTS A SLOT. `reissue-use-case` on tls-client sends the
 //      holder `update`, naming the NEW certificate.
 //   C. AND ORPHANS AN ENROLMENT. On acme it sends `revoke`, naming the OLD
 //      one — this service keeps no key to re-certify an enrolment from, which
 //      settles #244's unverified question: ACME, EST and SCEP certificates are
-//      never re-minted.
+//      never re-minted. The application's enrolment is orphaned the same way
+//      and its `revoke` names the APPLICATION (#221 P5).
 //   D. ONCE. A second reissue says nothing more about a certificate an
 //      earlier act already orphaned.
 //   E. AN ISSUING CA REVOKED walks down to every holder beneath it:
@@ -63,9 +64,14 @@ function standIn() {
   const real = { changed: accountSignals.credentialChanged,
                  compromised: accountSignals.credentialCompromised };
   accountSignals.credentialChanged = function (n) {
-    seen.push({ kind: 'change', username: n.username,
-                changeType: n.changeType, type: n.credentialType,
-                serial: n.x509Serial, issuer: n.x509Issuer });
+    // Certificates only: since #221 P5 an application seeded into the realm
+    // says its client secret was created, which is not this test's subject.
+    if (n.credentialType === 'x509') {
+      seen.push({ kind: 'change', username: n.username || '',
+                  application: n.application || '',
+                  changeType: n.changeType, type: n.credentialType,
+                  serial: n.x509Serial, issuer: n.x509Issuer });
+    }
     return Promise.resolve({ sent: 0, streams: 0 });
   };
   accountSignals.credentialCompromised = function (n) {
@@ -147,10 +153,13 @@ async function sections(t) {
   const heldBy = held.map(function (h) {
     return h.username + ':' + h.useCase + ':' + h.kind;
   }).sort().join(', ');
-  t.equal(heldBy, [ALICE + ':acme:pair', ALICE + ':tls-client:slot'].sort()
-                    .join(', '),
-          'A. the person\'s TLS client certificate and enrolment are held; ' +
-          'the application\'s enrolment is not a person\'s');
+  t.equal(heldBy, [ALICE + ':acme:pair', ALICE + ':tls-client:slot',
+                   APP + ':acme:pair'].sort().join(', '),
+          'A. the person\'s TLS client certificate and enrolment are held, ' +
+          'and the application\'s enrolment (#221 P5)');
+  t.check(held.filter(function (h) {
+    return h.application === APP;
+  }).length === 1, 'A. the application\'s holding is marked as one');
 
   // --- B. a reissue re-mints a slot ------------------------------------------
   const tlsBefore = pki.rawRowFor(REALM).certs['tls-client:' + slot];
@@ -181,14 +190,22 @@ async function sections(t) {
   counts = serviceSignals.hierarchyChanged(before, { via: 'the test (C)' });
   await settle(1);
   got = take();
-  t.check(counts.revoked === 1 && counts.updated === 0 &&
-          got.length === 1 && got[0].username === ALICE &&
-          got[0].changeType === 'revoke' &&
-          got[0].serial === serialOf(enrolled.serialHex),
+  const orphanedAlice = got.filter(function (one) {
+    return one.username === ALICE;
+  });
+  const toApp = got.filter(function (one) {
+    return one.application === APP;
+  });
+  t.check(counts.revoked === 2 && counts.updated === 0 &&
+          got.length === 2 && orphanedAlice.length === 1 &&
+          orphanedAlice[0].changeType === 'revoke' &&
+          orphanedAlice[0].serial === serialOf(enrolled.serialHex) &&
+          toApp.length === 1 && toApp[0].changeType === 'revoke' &&
+          toApp[0].serial === serialOf(appEnrolled.serialHex),
           'C. REISSUING acme ORPHANS alice\'s enrolment — never re-minted, ' +
           'since this service holds no key for it: credential-change ' +
-          '(x509, revoke) naming the OLD serial; the application is told ' +
-          'nothing', JSON.stringify([counts, got]));
+          '(x509, revoke) naming the OLD serial; and the application\'s, ' +
+          'under the application (#221 P5)', JSON.stringify([counts, got]));
 
   // --- D. once ------------------------------------------------------------------
   before = serviceSignals.snapshot([REALM], 'acme');

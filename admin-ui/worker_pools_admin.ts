@@ -88,6 +88,12 @@ import InstanceSlot = require('../common/instance_slot');
 import nodeSnapshots = require('../cluster/node_snapshots');
 import workerThreads = require('worker_threads');
 import config = require('../common/config');
+// At the top rather than lazily (#543 phase 2c): `server_prose.ts` requires
+// only what config.js's neighbours already loaded, and this module is built
+// at 18s, long after them — `encryption_admin.ts`'s arrangement.
+import serverProse = require('../common/server_prose');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import WorkerPoolsPage = require('./web_worker_pools');
 
 type Req = any;
 type Res = any;
@@ -97,6 +103,90 @@ type Json = any;
  * The console path of Monitoring → Worker Pools.
  */
 const PAGE = '/admin/worker-pools';
+
+// ---------------------------------------------------------------------------
+// EVERY SENTENCE THIS PAGE'S VIEW CARRIES, as a table (#543 phase 2c), so
+// that the workerpools namespace can carry them and `common/server_prose.ts`
+// refill an answer to `GET /admin-api/worker-pools` in a console reader's
+// language. Each is what the code below wrote inline until #543, byte for
+// byte; a `{{name}}` is a value filled in with `serverProse.fill()` — a
+// setting's name, a count, a node's name, a pid, the surface pool's problem
+// in its own words (carried over as data).
+//
+// **ANOTHER NODE'S SECTION IS ITS STORED SNAPSHOT** (`node_snapshots.ts`),
+// written in English by that node's front process, so it is translated by
+// matching too, and only while that node runs a build whose templates are
+// these: a node on an older build whose sentence differs is drawn in the
+// English it wrote.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  surfaceOff: 'Off: {{setting}} is 0, so /admin and /portal go wherever the ' +
+    'rest of workers.dispatch goes — to the request pool, or answered ' +
+    'here by the front process.',
+  requestOffByDefault: 'Off: {{setting}} is at its default of {{value}}, ' +
+    'which means none where the store cannot coordinate ' +
+    '(persistence.mode is not postgres, or persistence.coordinate ' +
+    'is off), so every request is answered by the front process ' +
+    'itself, on one thread.',
+  requestOff: 'Off: {{setting}} is 0, so every request is answered by the ' +
+    'front process itself, on one thread.',
+  givenUpSurface: 'Given up: {{failed}} worker thread(s) failed to start ' +
+    'and the pool stopped starting them. The hosted surfaces go to the ' +
+    'request pool.',
+  givenUpRequest: 'Given up: {{failed}} worker thread(s) failed to start ' +
+    'and the pool stopped starting them. Every request is answered by ' +
+    'the front process.',
+  // The same two, while a cool-down is waiting or its one worker is being
+  // tried (#333). The sentences above stay for a pool whose
+  // workers.giveUpRetryMs is 0, and for a snapshot from a build that does
+  // not say.
+  givenUpSurfaceRetry: 'Given up: {{failed}} worker thread(s) failed to ' +
+    'start and the pool stopped starting them. The hosted surfaces go ' +
+    'to the request pool. Another worker is tried in {{retryS}} seconds.',
+  givenUpRequestRetry: 'Given up: {{failed}} worker thread(s) failed to ' +
+    'start and the pool stopped starting them. Every request is ' +
+    'answered by the front process. Another worker is tried in ' +
+    '{{retryS}} seconds.',
+  givenUpSurfaceProbing: 'Given up: {{failed}} worker thread(s) failed ' +
+    'to start and the pool stopped starting them. The hosted surfaces ' +
+    'go to the request pool. Another worker is being tried now.',
+  givenUpRequestProbing: 'Given up: {{failed}} worker thread(s) failed ' +
+    'to start and the pool stopped starting them. Every request is ' +
+    'answered by the front process. Another worker is being tried now.',
+  notStarted: 'Not started: {{setting}} is {{configured}}, and this ' +
+    'process started no worker thread — it was not started as the front ' +
+    'process of a service, or the pool was idled at start.',
+  // The surface pool's problem, in its own words, after the sentence.
+  notStartedWhy: 'Not started: {{setting}} is {{configured}}, and this ' +
+    'process started no worker thread — it was not started as the front ' +
+    'process of a service, or the pool was idled at start. {{why}}',
+  notDispatching: 'Running, and idle by configuration: workers.dispatch ' +
+    'names nothing, so no request is sent to these worker threads.',
+  running: '{{ready}} of {{configured}} worker thread(s) serving.',
+  surfaceTitle: 'Hosted-surface pool (/admin and /portal)',
+  requestTitle: 'Request pool',
+  scope: 'These are the pools of the node {{node}}, held by its front ' +
+    'process, pid {{pid}}. Each worker is a thread of that process ' +
+    '(#364), named by its thread id, with a V8 heap of its own and the ' +
+    'process\'s memory and CPU. Every node of a cluster has pools of its ' +
+    'own. Post-quantum signing and scrypt have had no pool of processes ' +
+    'since #363: they run on libuv\'s thread pool, inside whichever ' +
+    'process asked.',
+  clusterTotals: 'Over the {{count}} node(s) that are not gone and have a ' +
+    'snapshot, stale ones included and marked.'
+});
+
+// The routes whose answers carry the workerpools namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/worker-pools'];
+
+// A sentence of the table, filled.
+const say = function say(key: keyof typeof SENTENCES,
+                         params?: Record<string, unknown>): string {
+  helpers.log.debug("Entering say(). " + key);
+  const out = serverProse.fill(SENTENCES[key], params || {});
+  helpers.log.debug("Leaving say().");
+  return out;
+};
 
 interface WorkerPoolsAdminDeps {
   log: typeof helpers.log;
@@ -131,6 +221,27 @@ class WorkerPoolsAdmin {
    * See the module's `PAGE`.
    */
   static readonly PAGE = PAGE;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the workerpools namespace (#543 phase 2c): every sentence of
+   * the view, the computed ones as templates. A pool's `id`, `module`,
+   * `setting` and `state` are identifiers and are not harvested.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering WorkerPoolsAdmin.prose().");
+    const out = serverProse.harvest('workerpools.s', SENTENCES,
+                                    Object.keys(SENTENCES));
+    helpers.log.debug("Leaving WorkerPoolsAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds an instance over the modules it depends on.
@@ -236,48 +347,57 @@ class WorkerPoolsAdmin {
       const byDefault = /^defaults?$/.test(count.source) &&
         Number(count.value) > 0;
       stateText = surface
-        ? 'Off: ' + setting + ' is 0, so /admin and /portal go wherever the ' +
-          'rest of workers.dispatch goes — to the request pool, or answered ' +
-          'here by the front process.'
+        ? say('surfaceOff', { setting: setting })
         : byDefault
-          ? 'Off: ' + setting + ' is at its default of ' + count.value +
-            ', which means none where the store cannot coordinate ' +
-            '(persistence.mode is not postgres, or persistence.coordinate ' +
-            'is off), so every request is answered by the front process ' +
-            'itself, on one thread.'
-          : 'Off: ' + setting + ' is 0, so every request is answered by the ' +
-            'front process itself, on one thread.';
+          ? say('requestOffByDefault', { setting: setting,
+                                         value: count.value })
+          : say('requestOff', { setting: setting });
     } else if (pool.gaveUp) {
       state = 'given-up';
-      stateText = 'Given up: ' + (h.failedStarts || 0) + ' worker ' +
-        'thread(s) failed to start and the pool stopped starting them ' +
-        '(STS-WORKER-0023). ' +
-        (surface ? 'The hosted surfaces go to the request pool.'
-                 : 'Every request is answered by the front process.');
+      // STILL GIVEN UP WHILE THE COOL-DOWN RUNS (#333). A snapshot from a
+      // build that does not report the wait falls through to the old
+      // sentence: the wait's fields and `giveUpProbing` are absent there.
+      // `giveUpRetryLeftMs` since #695; a node on an older build still
+      // reports the time left as `giveUpRetryMs`.
+      const probing = !!pool.giveUpProbing;
+      const retryMs = Number(pool.giveUpRetryLeftMs !== undefined
+        ? pool.giveUpRetryLeftMs : pool.giveUpRetryMs) || 0;
+      const failed = h.failedStarts || 0;
+      if (probing) {
+        stateText = say(surface ? 'givenUpSurfaceProbing'
+                                : 'givenUpRequestProbing',
+                        { failed: failed });
+      } else if (retryMs > 0) {
+        stateText = say(surface ? 'givenUpSurfaceRetry'
+                                : 'givenUpRequestRetry',
+                        { failed: failed,
+                          retryS: String(Math.ceil(retryMs / 1000)) });
+      } else {
+        stateText = say(surface ? 'givenUpSurface' : 'givenUpRequest',
+                        { failed: failed });
+      }
     } else if (!h.initial && !running) {
-      let why = '';
+      let why: string | null = null;
       if (surface) {
         try {
           const problem = requestPool().surfacePoolProblem();
-          why = problem ? ' ' + String(problem.message) : '';
+          why = problem ? String(problem.message) : null;
         } catch (e) {
           log.debug("Caught in WorkerPoolsAdmin.requestPoolView(): " +
                     ((e && e.message) || e));
           // The reason is a courtesy; the state is said without it.
-          why = '';
+          why = null;
         }
       }
       state = 'not-started';
-      stateText = 'Not started: ' + setting + ' is ' + configured + ', and ' +
-        'this process started no worker thread — it was not started as the ' +
-        'front process of a service, or the pool was idled at start.' + why;
+      stateText = say(why !== null ? 'notStartedWhy' : 'notStarted',
+                      { setting: setting, configured: configured, why: why });
     } else if (!dispatching) {
       state = 'not-dispatching';
-      stateText = 'Running, and idle by configuration: workers.dispatch ' +
-        'names nothing, so no request is sent to these worker threads.';
+      stateText = say('notDispatching');
     } else {
       state = 'running';
-      stateText = ready + ' of ' + configured + ' worker thread(s) serving.';
+      stateText = say('running', { ready: ready, configured: configured });
     }
     const workers = (stats.workers || []).filter(function (one: Json):
       boolean {
@@ -293,8 +413,7 @@ class WorkerPoolsAdmin {
     });
     const view = {
       id: surface ? 'surface' : 'request',
-      title: surface ? 'Hosted-surface pool (/admin and /portal)'
-                     : 'Request pool',
+      title: say(surface ? 'surfaceTitle' : 'requestTitle'),
       module: 'common/request_pool.js',
       setting: setting,
       state: state,
@@ -349,13 +468,7 @@ class WorkerPoolsAdmin {
       pid: pid,
       mainThread: mainThread,
       scope: 'node',
-      scopeText: 'These are the pools of the node ' + node + ', held ' +
-        'by its front process, pid ' + pid + '. Each worker is a thread of ' +
-        'that process (#364), named by its thread id, with a V8 heap of its ' +
-        'own and the process\'s memory and CPU. Every node of a cluster ' +
-        'has pools of its own. Post-quantum signing and scrypt have had no ' +
-        'pool of processes since #363: they run on libuv\'s thread pool, ' +
-        'inside whichever process asked.',
+      scopeText: say('scope', { node: node, pid: pid }),
       pools: [
         this.requestPoolView(stats, 'protocol', at),
         this.requestPoolView(stats, 'surfaces', at)
@@ -404,8 +517,7 @@ class WorkerPoolsAdmin {
       pools: Object.keys(pools).map(function (id: string): Json {
         return pools[id];
       }),
-      text: 'Over the ' + counted.length + ' node(s) that are not gone ' +
-        'and have a snapshot, stale ones included and marked.'
+      text: say('clusterTotals', { count: counted.length })
     };
   }
 
@@ -454,173 +566,16 @@ class WorkerPoolsAdmin {
     return snapshots().scrub(answer);
   }
 
-  // The page for every node: the cluster's totals and a section per node.
+  // DRAWN BY `web_worker_pools.ts` (#446): this page is converted for the
+  // static console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   private clusterHtml(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering WorkerPoolsAdmin.clusterHtml().");
-    const c = json.cluster || {};
-    const nodes: Json[] = json.nodes || [];
-    const own = nodes.filter(function (n: Json): boolean {
-      return n.self;
-    })[0];
-    if (!c.clustered || nodes.length < 2) {
-      const first = own || nodes[0];
-      const html = admin.note(admin.esc(c.text || ''), 'Cluster') +
-        (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-        (first && first.view && first.view.pools ? this.html(first.view)
-                                                 : '');
-      log.debug("Leaving WorkerPoolsAdmin.clusterHtml(). One node.");
-      return html;
-    }
-    const t = json.totals;
-    const html = '<h2 id="cluster">Cluster</h2><p>' + admin.esc(c.text) +
-      '</p>' + (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-      '<table class="grid"><thead><tr><th>Pool</th><th>Worker threads</th>' +
-      '<th>Busy</th><th>Free</th><th>Started</th><th>Crashed</th>' +
-      '<th>Nodes on</th></tr></thead><tbody>' +
-      t.pools.map(function (p: Json): string {
-        return '<tr><td>' + admin.esc(p.title) + '</td><td>' +
-          admin.esc(p.currentWorkers) + '</td><td>' +
-          admin.esc(p.busyWorkers) + '</td><td>' +
-          admin.esc(p.freeWorkers) + '</td><td>' + admin.esc(p.forked) +
-          '</td><td>' + admin.esc(p.crashed) +
-          (p.failedStarts ? ' (' + admin.esc(p.failedStarts) + ' never ' +
-                            'started)' : '') + '</td><td>' +
-          admin.esc(p.nodesOn) + '</td></tr>';
-      }).join('') + '</tbody></table><p><small>' + admin.esc(t.text) +
-      '</small></p>' +
-      '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +
-      '<th>Age</th></tr></thead><tbody>' +
-      nodes.map(function (n: Json): string {
-        return '<tr><td><a href="#node-' + admin.esc(n.name) + '">' +
-          admin.esc(n.name) + '</a>' + (n.self ? ' (this node)' : '') +
-          '</td><td>' + admin.esc(n.state) + '</td><td>' +
-          (n.ageSeconds === null ? '—' : admin.esc(n.ageSeconds) + ' s') +
-          '</td></tr>';
-      }).join('') + '</tbody></table>' +
-      nodes.map(function (n: Json): string {
-        const head = '<h2 id="node-' + admin.esc(n.name) + '">Node ' +
-          admin.esc(n.name) + (n.self ? ' (this node)' : '') + '</h2><p>' +
-          '<strong>' + admin.esc(n.state) + '</strong>: ' +
-          admin.esc(n.stateText) + '</p>';
-        if (!n.view || !Array.isArray(n.view.pools)) {
-          return head;
-        }
-        let body = '';
-        try {
-          body = self.html(n.view);
-        } catch (e) {
-          log.debug("Caught in WorkerPoolsAdmin.clusterHtml(): " +
-                    ((e && e.message) || e));
-          // A snapshot from another version of this page may lack a figure
-          // this one draws; the node is still listed, and says so.
-          return head + admin.warn('This node\'s snapshot could not be ' +
-                                   'drawn: ' + admin.esc((e && e.message) ||
-                                                         e) + '.');
-        }
-        // Another node's sections carry its name in their anchors, so the
-        // page's own `id="pool-request"` and the rest stay this node's.
-        return head + (n.self ? body
-          : body.replace(/ id="/g, ' id="' + admin.esc(n.name) + '-'));
-      }).join('');
-    log.debug("Leaving WorkerPoolsAdmin.clusterHtml().");
-    return html;
-  }
-
-  // A figure, or a dash for one that does not exist yet.
-  private ms(value: unknown): string {
     const { log } = this.deps;
-    log.debug("Entering WorkerPoolsAdmin.ms().");
-    log.debug("Leaving WorkerPoolsAdmin.ms().");
-    return value === null || value === undefined ? '—' : value + ' ms';
-  }
-
-  // The seven figures of one pool, as a table of two columns.
-  private figures(p: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering WorkerPoolsAdmin.figures().");
-    const r = p.restarts;
-    const t = p.responseTime;
-    const row = function (label: string, value: string, why: string):
-      string {
-      log.debug("Entering row().");
-      log.debug("Leaving row().");
-      return '<tr><th>' + admin.esc(label) + '</th><td>' + value +
-        '</td><td><small>' + why + '</small></td></tr>';
-    };
-    const html = '<table class="grid"><tbody>' +
-      row('Current workers', admin.esc(p.currentWorkers),
-          'worker threads started now, ' + admin.esc(p.readyWorkers) +
-          ' of them ready') +
-      row('Busy', admin.esc(p.busyWorkers), 'with a request in flight') +
-      row('Free', admin.esc(p.freeWorkers), 'ready and idle') +
-      row('Maximum workers', admin.esc(p.maxWorkers),
-          '<code>' + admin.esc(p.setting) + '</code>') +
-      row('Initial workers', admin.esc(p.initialWorkers),
-          'what the pool was started with') +
-      row('Restarts and crashes',
-          admin.esc(r.crashed) + ' crashed' +
-          (r.failedStarts ? ' (' + admin.esc(r.failedStarts) + ' never ' +
-                            'started)' : '') + ', ' +
-          admin.esc(r.replaced) + ' replaced, ' +
-          admin.esc(r.stopped) + ' stopped',
-          admin.esc(r.forked) + ' started in all; a crash is an exit ' +
-          'nobody asked for') +
-      row('Average response time',
-          this.ms(t.averageMs) + ' (recent ' +
-            this.ms(t.recentAverageMs) + ')',
-          admin.esc(t.answered) + ' answered, dispatch to answer; ' +
-          'worst ' + this.ms(t.maxMs)) +
-      '</tbody></table>';
-    log.debug("Leaving WorkerPoolsAdmin.figures().");
-    return html;
-  }
-
-  private html(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering WorkerPoolsAdmin.html().");
-    const tiles = '<div class="tiles">' +
-      json.pools.map(function (p: Json): string {
-        return admin.tile(p.state === 'off' ? 'off'
-                                            : String(p.currentWorkers),
-                          p.title);
-      }).join('') + '</div>';
-    const about = admin.note(
-      '<p>' + admin.esc(json.scopeText) + '</p><p>Every figure is read from ' +
-      'the pool\'s own module when the page is drawn, and counts from when ' +
-      'this process started. The sizes are Global settings on ' +
-      '<a href="/admin/config">Configuration</a>; this page changes ' +
-      'nothing.</p>', 'What this page is');
-    const sections = json.pools.map(function (p: Json): string {
-      const head = '<h2 id="pool-' + admin.esc(p.id) + '">' +
-        admin.esc(p.title) + '</h2><p><code>' + admin.esc(p.module) +
-        '</code> · <code>' + admin.esc(p.setting) + '</code> · <strong>' +
-        admin.esc(p.state) + '</strong>: ' + admin.esc(p.stateText) + '</p>';
-      if (p.state === 'off') {
-        return head;
-      }
-      let detail = '';
-      if (p.workers.length) {
-        detail = '<h3>Worker threads</h3><table class="grid"><thead><tr>' +
-          '<th>Thread</th><th>Slot</th><th>State</th><th>In flight</th>' +
-          '<th>Served</th><th>Up</th></tr></thead><tbody>' +
-          p.workers.map(function (w: Json): string {
-            return '<tr><td>' + admin.esc(w.threadId) + '</td><td>' +
-              admin.esc(w.slot === null ? '—' : w.slot) + '</td><td>' +
-              (w.retiring ? 'stopping' : !w.ready ? 'starting'
-                                       : w.busy ? 'busy' : 'free') +
-              '</td><td>' + admin.esc(w.inFlight) + '</td><td>' +
-              admin.esc(w.served) + '</td><td>' +
-              (w.upSeconds === null ? '—' : admin.esc(w.upSeconds) + ' s') +
-              '</td></tr>';
-          }).join('') + '</tbody></table>';
-      }
-      return head + self.figures(p) + detail;
-    }).join('');
-    log.debug("Leaving WorkerPoolsAdmin.html().");
-    return tiles + about + sections;
+    log.debug("Entering WorkerPoolsAdmin.clusterHtml().");
+    const drawn = WorkerPoolsPage.render(JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving WorkerPoolsAdmin.clusterHtml().");
+    return drawn;
   }
 
   /**
@@ -636,29 +591,6 @@ class WorkerPoolsAdmin {
     // is registered by the hand-over, in every process that loads the page.
     this.deps.snapshots().provide('workerPools', function (): Promise<Json> {
       return self.localView();
-    });
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.workerPoolsView({ node: req.query && req.query.node
-                                     ? String(req.query.node) : '' })
-        .then(function (json: Json): void {
-          if (json.notFound) {
-            errorCodes.mark(res, 'STS-CORE-0126');
-            res.status(404).type('text/plain')
-              .send('There is no node named ' + json.notFound + '.');
-            return;
-          }
-          admin.respond(req, res, json, 'Worker pools', PAGE,
-                        admin.messagesOf(req) + self.clusterHtml(json));
-        }).catch(function (e: any): void {
-        log.debug("Caught in GET " + PAGE + ": " + ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker pools ' +
-                  'report could not be built: ' + ((e && e.message) || e));
-        errorCodes.mark(res, 'STS-WORKER-0044');
-        res.status(500).type('text/plain')
-          .send('The worker pools report could not be built.');
-      });
-      log.debug('Leaving GET ' + PAGE + '.');
     });
     log.debug("Leaving WorkerPoolsAdmin.registerRoutes().");
   }
@@ -693,6 +625,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
+  // The workerpools namespace's routes and English (#543 phase 2c).
+  PROSE_ROUTES: WorkerPoolsAdmin.PROSE_ROUTES,
+  prose: WorkerPoolsAdmin.prose,
   // For `mgmt-api/admin_api.ts` (rule 7).
   workerPoolsView: slot.forward('workerPoolsView')
 };

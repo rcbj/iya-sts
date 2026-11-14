@@ -30,13 +30,12 @@
 // it came from, and `GET /admin-api/config` answers the same thing over JSON.
 //
 // An ENVIRONMENT VARIABLE STILL BEATS THE FILE, which is what keeps every
-// container and test that set one working unchanged: STS_PORT, STS_ISSUER,
-// KRB5_REALM and the rest all still do exactly what they did. STS_ISSUER is the
-// one that grew: it was a single value serving as the SAML assertion issuer,
-// the WS-Trust token issuer and the WS-Federation entityID, which are three
-// different things that shared a default. They are now saml.issuer,
-// wstrust.issuer and wsfed.entityId, all three still fed by STS_ISSUER when it
-// is set.
+// container and test that set one working unchanged: STS_PORT,
+// KRB5_REALM and the rest all still do exactly what they did. STS_ISSUER was
+// the one that went: it served as the SAML assertion issuer, the WS-Trust
+// token issuer and the WS-Federation entityID, and since #523 all three are
+// the realm's OAuth issuer, which is not a setting. A start that still names
+// it is refused, saying so.
 //
 // Logging: everything this mock does is written to the log at DEBUG level —
 // every endpoint call (path, request headers and body, response headers and
@@ -91,8 +90,18 @@ require('./common/config_file').resolveConfigFile();
 // against NODE_OPTIONS and a launcher.
 // ---------------------------------------------------------------------------
 require('./common/process_memory').reexecWithHeapLimit();
+// ---------------------------------------------------------------------------
+// AND THE SECRETS DELIVERED AS FILES (#254): every `<ENV>_FILE` naming one of
+// `common/delivered_secrets.ts`'s settings is read and deleted HERE — after
+// the re-exec above, which would otherwise start a process the file was
+// already gone for, and before the protocol stack loads, because the
+// management API client is seeded with its secret as `ldap_server.js` is
+// required. A file that cannot be read stops the service (STS-CORE-0150).
+// ---------------------------------------------------------------------------
+require('./common/delivered_secrets').load();
 
 const http = require('http');
+const http2 = require('http2');
 const https = require('https');
 const app = require('./common/app');
 // `warmPqKeys` joins the three destructured names for one call in announce()
@@ -133,8 +142,9 @@ const APP_VERSION = version.load();
 //     `async` handler reaches `next()` as a 500 instead of becoming an
 //     unhandled rejection. It patches the one prototype every express app in
 //     this process shares, the debugger's own included. Here and not in
-//     `common/app.js`, because that file is in the parent project's Kerberos
-//     COPY closure and a require there would owe a COPY line over there;
+//     `common/app.js` because that file was in the parent project's Kerberos
+//     COPY closure when this was written; nothing is owed there since #1280,
+//     and the install stays where it works;
 //   * the PROCESS HANDLERS in announce(), once the service has STARTED — a
 //     failure while starting is still fatal, as it always was.
 // ---------------------------------------------------------------------------
@@ -188,7 +198,6 @@ const persistence = require('./persistence/persistence');
 // ---------------------------------------------------------------------------
 const stack = require('./common/protocol_stack');
 const krb5 = stack.krb5;
-const krb5Service = stack.krb5Service;
 const tlsServer = stack.tlsServer;
 const ldapServer = stack.ldapServer;
 const spiffeServer = stack.spiffeServer;
@@ -213,9 +222,9 @@ const spMetadata = require('./saml/sp_metadata');
 //
 // Two things follow and neither is hidden.
 //
-// **There is then no plain listener in this process at all.** `POST /tls/trust`
-// and `GET /tls/server-certificate` are on this port on purpose — they are what
-// a caller reaches BEFORE it trusts anything — so with HTTPS on, the first
+// **There is then no plain listener in this process at all.** `GET
+// /tls/server-certificate` is on this port on purpose — it is what a caller
+// reaches BEFORE it trusts anything — so with HTTPS on, the first
 // fetch of the certificate has to be made without verifying it (`curl -k`).
 // That is the ordinary bootstrap for a service whose certificate is regenerated
 // every start, and it is said here, on /tls, and in the startup line below
@@ -234,6 +243,15 @@ const spMetadata = require('./saml/sp_metadata');
 // derivation exists to prevent.
 // ---------------------------------------------------------------------------
 const useHttps = config.value('global.https');
+// NOT IN PRODUCT (#1457, ASVS 5.0.0 12.2.1): a process that would serve its
+// main port in cleartext does not start.
+const cleartextProblem = require('./common/mode')
+  .cleartextStartupProblem(useHttps);
+if (cleartextProblem) {
+  log.fatal(errorCodes.tag('STS-CORE-0167') + 'sts: NOT STARTING. ' +
+            cleartextProblem);
+  process.exit(1);
+}
 
 function announce() {
   log.debug('Entering announce().');
@@ -255,7 +273,7 @@ function announce() {
   // `/oauth2/jwks` fetch made all eleven keys inside the request, two of them
   // SLH-DSA — 297ms and 2.3s here uninstrumented, 1.9s and 14.7s under
   // NODE_V8_COVERAGE, a 6.4x factor — so under coverage on a two-core CI
-  // runner the first caller waited for the lot. `tests/vendored/
+  // runner the first caller waited for the lot. `tests/protocol/
   // sts_userinfo_protected.js` gives up on a request after 90s and did,
   // intermittently, in about half of the coverage runs on `main`. The
   // service was never wrong; the work was simply in the wrong place.
@@ -279,6 +297,12 @@ function announce() {
   realms.list().forEach(function (realm) {
     warmSignerGroups(realm.id);
   });
+  // EVERY AUTHORITY'S CRL INTO THE DIRECTORY (#617, 2026-10-14), here and
+  // not inside `pki.start()`, where it was 4 s of 8081's front process on
+  // the way to this socket (279 lists) — `common/pki.js` says why nothing
+  // before the listener needs it. Not awaited, for warmPqKeys()'s reason; it
+  // yields between lists and logs its own failure, and runs once.
+  require('./common/pki').publishStartupCrls();
   // THE VERSION FIRST, before the endpoint tour below, because it is the one
   // line in this banner that answers a question about the PROCESS rather than
   // about a URL — and it is the line somebody scrolls a container's log back
@@ -288,9 +312,10 @@ function announce() {
   // number.
   log.info('iya-sts version ' + APP_VERSION.version + ' (' +
            version.buildInfo(APP_VERSION) + ').');
-  log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
+  log.info('WS-Trust STS listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
-           ' (WS-Trust issuer ' + config.value('wstrust.issuer') +
+           ' (issuer ' +
+           require('./common/issuer_names').issuer() +
            '); POST SOAP RST to /sts');
   if (useHttps) {
     log.info('This port is HTTPS (global.https' +
@@ -319,26 +344,21 @@ function announce() {
   log.info('OID4VCI issuer metadata at ' +
            '/.well-known/openid-credential-issuer; credential endpoint at ' +
            '/oid4vci/credential');
-  log.info('Issuer-initiated (OID4VCI H.1): the issuer web page is at ' +
-           '/issuer; it builds a Credential Offer and sends the browser to ' +
-           'the wallet.');
+  // THE DEMONSTRATIONS ARE NOT NAMED HERE ANY MORE: the OpenID4VC issuer
+  // page (#594) and the SPNEGO-protected page (#595) are the development
+  // companion's, and this banner names what this process serves.
   log.info('Authentication service at /authn/login (the sign-in screen every ' +
            'protocol here sends a person to) and /authn/webauthn (its second ' +
            'factor).');
-  log.info('Mock authorization server endpoints: /oauth2/authorize ' +
+  log.info('Authorization server endpoints: /oauth2/authorize ' +
            '(redirects to /authn/login when there is no session), ' +
            '/oauth2/token, /oauth2/userinfo, /oauth2/introspect, ' +
            '/oauth2/revoke, /oauth2/register, /oauth2/logout');
   log.info('WS-Federation passive requestor at /wsfed (wsignin1.0 / ' +
            'wsignout1.0); metadata at ' +
-           '/FederationMetadata/2007-06/FederationMetadata.xml; a mock ' +
-           'relying party that verifies the sign-in response is at /wsfed/rp.');
+           '/FederationMetadata/2007-06/FederationMetadata.xml.');
   log.info('Every endpoint call, and every token or assertion before and ' +
            'after it was signed, is written to this log at debug level.');
-  log.info('A SPNEGO-protected page (RFC 4559 over RFC 4178) is advertised ' +
-           'at /spnego and lives at /spnego/protected; ?mic=require, ' +
-           '?mech=none and ?mutual=off make the negotiation fail in one ' +
-           'specific way each.');
   log.info('Every protocol, every endpoint and every specification this ' +
            'service implements is listed at /admin/sts-metadata (add ' +
            '?format=json for the machine-readable form, or use the Download ' +
@@ -363,23 +383,23 @@ function announce() {
            'port on a public address.');
   // The KDC's sockets are started here rather than at require time so that a
   // failure to bind (port 88 is privileged) is reported by a running service
-  // instead of preventing it from starting at all. GET /krb5/principals says
-  // what this KDC knows; GET /admin/sts-metadata cannot see a raw socket, so
-  // the listener has its own entry there.
+  // instead of preventing it from starting at all. GET
+  // /admin-api/kerberos/principals says what this KDC holds (#595: the
+  // demonstration document /krb5/principals is gone); GET /admin/sts-metadata
+  // cannot see a raw socket, so the listener has its own entry there.
   const kdcListeners = krb5.listen();
   // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
-  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.ts` into
-  // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
-  // after `listen()` returned is not a race — `listen()` is synchronous up to
-  // the bind, and a `connection` event is delivered from the event loop,
-  // after this line. UDP is not covered: a datagram has no stream to put a
-  // header at the front of.
+  // `krb5_kdc.js`, which kept `common/proxy_protocol.ts` out of the parent
+  // project's Kerberos COPY set while this repository owed it one (until
+  // #1280). Installing after `listen()` returned is not a race — `listen()`
+  // is synchronous up to the bind, and a `connection` event is delivered from
+  // the event loop, after this line. UDP is not covered: a datagram has no
+  // stream to put a header at the front of.
   proxyProtocol.install(kdcListeners.tcp, {
     label: 'the KDC (TCP ' + kdcListeners.port + ')', channel: 'kerberos' });
   kdcListeners.whenReady.then(function (ready) {
     log.info('krb5: the KDC is reachable on TCP and UDP ' + ready.port + '; ' +
-             'MS-KKDCP at /KdcProxy; GET /krb5/principals lists what it ' +
-             'knows.');
+             'MS-KKDCP at /KdcProxy.');
   }).catch(function (err) {
     // Reported rather than thrown: the rest of this service is still useful,
     // and a silent failure to bind would surface later as a KDC that never
@@ -387,7 +407,12 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0029') + 'krb5: the KDC could not ' +
                                                 'start: ' + err.message);
   });
-  krb5Service.listen();
+  // THE PROTECTED KERBEROS SERVICE IS NOT HERE (#595). It was a
+  // demonstration with a socket of its own (`krb5.servicePort`), started
+  // here in a development process only (#585); it is the development
+  // companion's now (`companion/demo_kerberos.js`), with its own principal
+  // and keytab. SPNEGO sign-in keeps the acceptor MODULE (`/authn/spnego`),
+  // which needs no socket.
   // The LDAP directory's socket, started here for the same reason the KDC's is.
   // GET /admin/ldap/service says what it is and GET /admin/ldap/directory shows
   // every entry in it;
@@ -488,6 +513,12 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0031') +
               'spiffe: the SPIFFE listeners could not start: ' + err.message);
   });
+  // THE SPIFFE TARGET GROUPS (#323). ECS allows five target groups on a
+  // service and the node services use them, so these groups are registered
+  // by address. This process's own address is registered now; the
+  // scheduler's leader keeps the groups equal to the running tasks. A
+  // failure is recorded and these listeners are unaffected.
+  require('./cluster/spiffe_targets').onStart();
   // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
   // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
   // addresses on http:// — see pki/pki_service.ts. Recorded rather than
@@ -543,16 +574,19 @@ function announce() {
   // same day the sockets went; it binds nothing, and still restores the stored
   // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
-  // A scheduler job and not a socket (#49 P5), registered here where its
-  // timer used to start: the job saml2.sp-metadata-refresh, once for the
-  // cluster, on the leader (see sp_metadata.ts).
+  // A scheduler job and not a socket (#49 P5): saml2.sp-metadata-refresh,
+  // once for the cluster, on the leader. The module's wire step registers it
+  // in every process since #704 (see sp_metadata.ts), so this call finds it
+  // registered and is kept for a process that loaded the module alone.
   spMetadata.startRefresher();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
            'GET /tls/sign-in signs the holder of a verified one in; the token ' +
-           'endpoint binds a token to it (RFC 8705); /tls shows the ' +
-           'certificate this service presents. The client truststore starts ' +
-           'EMPTY — POST the issuing CA to /tls/trust — because the CA it has ' +
+           'endpoint binds a token to it (RFC 8705); ' +
+           '/tls/server-certificate is the certificate this service ' +
+           'presents. The client truststore starts EMPTY — add the issuing ' +
+           'CA through /admin/tls/trust or POST /admin-api/tls/trust/add — ' +
+           'because the CA it has ' +
            'to verify is usually generated in a browser minutes before the ' +
            'connection.');
   log.debug('Leaving announce().');
@@ -625,6 +659,11 @@ function shutdown(signal) {
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
+  // The SPIFFE target groups (#323), before the scheduler stops: an
+  // in-flight reconcile sees the flag before its next register, and this
+  // task's own address is deregistered below, before the store closes. A
+  // load balancer that does not answer does not hold the process.
+  require('./cluster/spiffe_targets').beginStop();
   // The scheduler first of all: no job may start while the process drains.
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
@@ -634,8 +673,12 @@ function shutdown(signal) {
   require('./common/cell_channel').close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   });
-  debuggerServer.close().catch(function (e) {
-    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  require('./cluster/spiffe_targets').onStop().catch(function (e) {
+    log.debug("Caught in shutdown(): " + ((e && e.message) || e));
+  }).then(function () {
+    return debuggerServer.close();
+  }).catch(function (e) {
+    log.debug("Caught in shutdown(): " + ((e && e.message) || e));
   }).then(function () {
     return requestPool.stop();
   }).then(function (drained) {
@@ -738,7 +781,29 @@ const clientHello = require('./tls/client_hello');
 // exactly the same steps in exactly the same order. Each step's argument is
 // in that file, where it has always been.
 // ---------------------------------------------------------------------------
-serviceState.start().then(function (both) {
+// THE REQUEST WORKERS START BESIDE THIS PROCESS'S RESTORE (2026-10-21),
+// when the store already holds the realms' keys and a certificate authority
+// — a restart. Each worker restores what it minted itself, as this process
+// does, and on 8081 the two restores were 34 s and then 32 s, one after the
+// other; side by side the start costs the longer one. On a FRESH store the
+// order is unchanged: this process makes the keys and the hierarchy first,
+// and a worker started beside it could make a second set. The pool's
+// coordination check, which needs this process coordinating, is asked by
+// `requestPool.confirmCoordination()` before anything binds.
+let earlyPool = null;
+serviceState.start({
+  beforeMinted: function (keys) {
+    if (keys && keys.persisting && keys.loaded > 0 && keys.pki > 0) {
+      earlyPool = requestPool.start({ early: true });
+      // Awaited below; held here so a refusal is not an unhandled rejection
+      // in the seconds before.
+      earlyPool.catch(function (e) {
+        log.debug("Caught in the early request pool: " +
+                  ((e && e.message) || e));
+      });
+    }
+  }
+}).then(function (both) {
   const started = both.started;
   // THE PROXY PROTOCOL WITH NOBODY TRUSTED (2026-09-14, #46): refused here,
   // after the store restored any runtime `global.trustedProxies` and before
@@ -804,7 +869,7 @@ serviceState.start().then(function (both) {
   // wins does them after catching up with the store, and every other node
   // does neither and says which node is. It is awaited below, before the
   // request workers start, so the listener still binds only after it ran.
-  const bootstrapUsername = config.value('admin.bootstrapUsername');
+  const bootstrapUsername = require('./common/bootstrap_name').current();
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
@@ -923,7 +988,24 @@ serviceState.start().then(function (both) {
     });
     return made;
   });
-  return krbtgtReady.then(function () {
+  // THE ACCEPTOR'S RANDOM KEY (2026-10-12), after the krbtgt keys and for
+  // the same reason: in product, a realm whose krb5.servicePassword is empty
+  // or the published default gets a random key for krb5.servicePrincipal,
+  // made once for the cluster, so a base installation's SPNEGO sign-in works
+  // with no password configured. Never rejects.
+  const acceptorReady = krbtgtReady.then(function () {
+    return require('./kerberos/krb5_person_keys').ensureAcceptorKeys();
+  }).then(function (made) {
+    (made || []).forEach(function (one) {
+      if (one && one.ok === false) {
+        log.warn('sts: trust realm "' + (one.realm || 'default') + '" has ' +
+                 'no key for its Kerberos acceptor (' + (one.why ||
+                 'see above') + '); the acceptor refuses until one is made.');
+      }
+    });
+    return made;
+  });
+  return acceptorReady.then(function () {
     // THE MAIL CHANNEL (#63): in PRODUCT, a realm whose configured transport
     // cannot be built — a missing SDK, an unreadable secret, `capture` — is
     // a service that would promise reset links it cannot send, and it does
@@ -937,7 +1019,12 @@ serviceState.start().then(function (both) {
       log.fatal(mailProblem + ' The service is NOT STARTING.');
       process.exit(1);
     }
-    return requestPool.start().then(function (pool) {
+    const pooled = earlyPool
+      ? requestPool.confirmCoordination().then(function () {
+        return earlyPool;
+      })
+      : requestPool.start();
+    return pooled.then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
                  'worker(s) are serving' +
@@ -970,7 +1057,7 @@ serviceState.start().then(function (both) {
       // keys, the minted rows, coordination and the certificate authority are
       // restored, which is the whole of an active-passive standby's reason to
       // wait, and never in a request worker, which starts it in per-process
-      // mode for itself. A front process campaigns for `ops.scheduler`; with
+      // mode for itself. A front process contends for `ops.scheduler`; with
       // clustering off it leads at once. See cluster/scheduler.ts.
       // -------------------------------------------------------------------
       require('./cluster/scheduler').start('front');
@@ -992,8 +1079,9 @@ serviceState.start().then(function (both) {
   // A CLUSTER REFUSAL (2026-09-14, #46) carries its whole explanation — which
   // mode, which setting, which node differs — and neither paragraph below is
   // about it: the store opened and the keys are fine. See cluster/cluster.js.
-  if (/STS-CLUSTER-\d{4}/.test(err.message || '')) {
-    // error-code: none — the refusal's own STS-CLUSTER code leads err.message
+  if (/STS-CLUSTER-\d{4}|STS-AUTHN-0339/.test(err.message || '')) {
+    // error-code: none — the refusal's own STS-CLUSTER or STS-AUTHN-0339
+    // code leads err.message
     log.fatal(err.message + ' The service is NOT STARTING.');
     process.exit(1);
   }
@@ -1028,50 +1116,87 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
-// A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
-// wired exactly as the main port below is — the client-certificate request
-// and the truststore, the TLS policy, the connection observer, the JA4
-// fingerprint and the PROXY protocol — but presenting the realm's own
-// certificate (`certificateOf` hands it to the truststore's re-application, so
-// a truststore change never swaps it for the main port's). Bound, rebound and
-// closed by `tls/realm_listeners.js` as the realm registry changes.
-// `common/app.js`'s `enterRealm` answers only that realm's paths on it.
-function realmListener(label, certificate, certificateOf, realmId) {
-  log.debug("Entering realmListener(). " + label);
-  // The realm's own policy (#423): its listener.* rows, inheriting the
-  // process's TLS settings unless set, and its own client authentication.
-  const policy = tlsServer.policyFor('realm', realmId);
-  const server = https.createServer(Object.assign({
+// A CUSTOM LISTENER (#472, 2026-10-07; a realm's own, #99, is one): an
+// unbound HTTPS server wired exactly as the main port below is — the
+// client-certificate request and the truststore, the TLS policy, the
+// connection observer, the JA4 fingerprint and the PROXY protocol — but
+// presenting the listener's own certificate (`certificateOf` hands it to the
+// truststore's re-application, so a truststore change never swaps it for the
+// main port's). Bound, rebound and closed by `tls/listeners.js` as the
+// definitions change; `common/app.js` answers on it only the applications
+// `listeners.applications` maps to it.
+function customListener(label, certificate, certificateOf, listenerId) {
+  log.debug("Entering customListener(). " + label);
+  // The listener's own policy (#423, #472): its definition's `tls` block,
+  // inheriting the process's TLS settings where it is silent, and its own
+  // client authentication (`clientAuth`).
+  const policy = tlsServer.policyFor('custom', listenerId);
+  // HTTP/2 beside HTTP/1.1, as on the main port (#407): offered unless its
+  // `tls.http2` or http.http2 says not (tls_server.js applies the offer).
+  const server = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
     cert: certificate.cert,
     key: certificate.key,
-    // Its own truststore (#429): the realm's listener.trustAnchorsFile and
-    // listener.trustIssuedClientCertificates, else the service's.
+    // Its own truststore (#429): its tls.trustAnchorsFile and
+    // tls.trustIssuedClientCertificates, else the service's.
     ca: tlsServer.clientTruststoreOptions(policy).ca
   // Its TLS session lifetime is in the policy (#429), its session cache
   // attached when it registers below.
   }, tlsServer.clientAuthOptions(policy.clientAuth),
   tlsServer.protocolOptions(policy)), app);
-  // ITS OWN CONNECTION POOLING (#429): the realm's listener.keepAliveTimeoutS
-  // and the rest, inheriting the service's http.* rows; re-applied when
-  // they change.
-  tlsServer.registerHttpListener(server, 'realm', realmId);
+  // ITS OWN CONNECTION POOLING (#429): its tls.keepAliveTimeoutS and the
+  // rest, inheriting the service's http.* rows; re-applied when they change.
+  tlsServer.registerHttpListener(server, 'custom', listenerId);
+  server.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
+  // A CONNECT is answered 501 here, as on the main port (#1304).
+  require('./common/connect_refusal').install(server, label);
+  // A request the parser refuses keeps its answer (#1500).
+  require('./common/parser_refusal').install(server, label);
+  // A connection that fails at the TLS layer keeps its alert, as on the
+  // main port (2026-11-13).
+  require('./tls/alert_close').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
-                                      { kind: 'realm', realm: realmId });
+                                      { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
   clientHello.install(server, { label: label });
   proxyProtocol.install(server, { label: label, channel: 'http' });
-  log.debug("Leaving realmListener().");
+  log.debug("Leaving customListener().");
   return server;
 }
 
 function bind() {
 log.debug("Entering bind().");
+// THE LISTENERS AND THE MAPPING THIS PROCESS STARTS WITH (#472), judged as a
+// write of them would be: a value from the environment or the appconfig file
+// was never asked about, and a mapping that names a listener nobody defined,
+// or splits the sign-on session's applications across host names its cookie
+// cannot reach, would answer wrongly rather than slowly. Fatal, here, before
+// a socket is bound — the store is open, so a realm's own values are read.
+const listenerProblem = require('./common/listener_map').startupProblem();
+if (listenerProblem) {
+  log.fatal(errorCodes.tag('STS-CORE-0157') + 'sts: NOT STARTING. The ' +
+            'custom listeners and their applications this process was ' +
+            'given are refused: ' + listenerProblem.message + ' (' +
+            listenerProblem.code + ').');
+  process.exit(1);
+}
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  const mainServer = https.createServer(Object.assign({
-    cert: serverCert.certPem,
+  // HTTP/2 AND HTTP/1.1 ON ONE PORT (#407), chosen per connection by ALPN:
+  // node's `http2` secure server is a `tls.Server` like `https.Server`, so
+  // every option and registration below applies to it unchanged, and
+  // `allowHTTP1` hands a client that offers only `http/1.1` to node's own
+  // HTTP/1.1 parser with the server's timeouts. One TLS connection then
+  // carries every request a browser makes in parallel. The application is
+  // adapted for it (`common/http2_express.ts`, from `common/app.js`).
+  const mainServer = http2.createSecureServer(Object.assign({
+    allowHTTP1: true,
+    // The leaf, its chain and the Root (#1064), as every listener presents
+    // them; the registration below re-applies the same bundle.
+    cert: tlsServer.presentedBundlePem(serverCert),
     key: serverCert.privateKeyPem,
-    // THE CLIENT TRUSTSTORE, THE ONE /tls/trust FILLS (2026-09-06; it
+    // THE CLIENT TRUSTSTORE, THE ONE /admin-api/tls/trust FILLS (2026-09-06; it
     // covered 8443 and 9443 too until they were deleted on 2026-09-16).
     // Passed at creation AND kept current by the registration below, because
     // anchors arrive at runtime — the CA a caller presents a
@@ -1100,7 +1225,7 @@ if (useHttps) {
     // explicitly permits a self-signed one — the proof is that the same key
     // completed this handshake, not that a CA vouched for it. Requiring
     // verification would also make the feature unreachable, since the
-    // truststore at /tls/trust starts empty by design.
+    // client truststore starts empty by design.
     //
     // THE OPERATOR'S TO CHANGE SINCE #423, the default unchanged:
     // tls.mainPortDisableOptionalClientCertificate asks for none, and
@@ -1128,7 +1253,26 @@ if (useHttps) {
   // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
   // rest, inheriting http.*, re-applied by tls_server.js when they change.
   tlsServer.registerHttpListener(mainServer, 'main');
-  // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
+  // AN HTTP/2 BODY WITH NO LENGTH IS STILL A BODY (#407): marked before the
+  // application's own `request` listener reads it, since nothing may sit
+  // above the realm middleware — common/http2_framing.ts.
+  mainServer.prependListener('request',
+    require('./common/http2_framing').markFramedBody);
+  // A CONNECT IS ANSWERED 501 (#1304): this is an origin server, not a proxy
+  // (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the
+  // application — common/connect_refusal.ts.
+  require('./common/connect_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
+  // A CONNECTION THAT FAILS AT THE TLS LAYER KEEPS ITS ALERT (2026-11-13):
+  // node closed it in the tick of the failure, with the peer's record unread,
+  // and the TCP reset that sent could discard the alert — tlsfuzzer's
+  // record-layer probe, one in seventy under load. Held for two seconds,
+  // bounded — tls/alert_close.ts.
+  require('./tls/alert_close').install(mainServer,
+    'the main port (' + PORT + ')');
+  // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
   // is a registration rather than a require in the other direction because
@@ -1184,18 +1328,26 @@ if (useHttps) {
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
-  // AND EVERY REALM THAT ASKS FOR A LISTENER OF ITS OWN (#99), bound beside
-  // the main port and kept in step with the realm registry from here on. A
-  // realm port that cannot bind is recorded, never fatal.
-  require('./tls/realm_listeners').start({ build: realmListener });
+  // AND EVERY CUSTOM LISTENER (#472; a realm's own, #99, among them), bound
+  // beside the main port and kept in step with the definitions from here on.
+  // A listener that cannot bind is recorded, never fatal.
+  require('./tls/listeners').start({ build: customListener });
 } else {
   // `http.createServer(app)` rather than `app.listen()`, which is the same
   // thing with the server object hidden — and the PROXY protocol has to be
   // installed on that object before it listens.
   const plainServer = http.createServer(app);
+  // A CONNECT is answered 501 here too (#1304).
+  require('./common/connect_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });
   plainServer.listen(PORT, HOST, announce);
+  // A custom listener is HTTPS whatever the main port is: it presents its
+  // own certificate, so `global.https` off does not take it away (#472).
+  require('./tls/listeners').start({ build: customListener });
 }
 log.debug("Leaving bind().");
 }

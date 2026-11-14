@@ -248,7 +248,6 @@ function childMain() {
       // --- F. The panel's model, and where its forms come back to -------
       const pki = require(ROOT + '/common/pki');
       const adminViews = require(ROOT + '/admin-core/admin_views');
-      const consoleUi = require(ROOT + '/admin-ui/admin');
       const estConsole = require(ROOT + '/est/est_console');
       if (!pki.hasRoot()) {
         await pki.start({});
@@ -304,16 +303,9 @@ function childMain() {
            'of its own, so its pager\'s id differs',
            JSON.stringify([state.paged.paging.param,
                            second.paged.paging.param]));
-      note(consoleUi.enrollmentReturnTo({ from: 'application',
-             application: 'ae-panel', where: 'config' }, '/admin/est') ===
-           '/admin/applications?application=ae-panel#cfg-enroll' &&
-           consoleUi.enrollmentReturnTo({ from: 'application',
-             application: 'ae-panel' }, '/admin/est') ===
-           '/admin/applications?application=ae-panel#credentials-enroll' &&
-           consoleUi.enrollmentReturnTo({ application: 'ae-panel' },
-                                    '/admin/est') === '/admin/est',
-           'F6. a form from the application\'s page comes back to its tab, ' +
-           'and any other to the protocol page');
+      // F6, where a form from the application's page came back to, went
+      // with the server-rendered console (#446): the static console stays
+      // on the page the form was on.
     });
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

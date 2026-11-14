@@ -59,7 +59,7 @@
 // loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
@@ -72,6 +72,18 @@ import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import config = require('../common/config');
 import cellLocator = require('../common/cell_locator');
+// The secret an instance identifier is derived under (#1221). Its top-level
+// requires are ones this file already loads, so it closes no cycle.
+import clusterSecrets = require('../cluster/cluster_secrets');
+
+// What an instance identifier is derived as (#1221): this purpose's label
+// under the shared secret, cut to the length `handle(18)` mints (18 bytes,
+// 24 base64url characters), so a derived one has the shape of a random one.
+const INSTANCE_ID_LABEL = 'gnap-instance-id';
+const INSTANCE_ID_LENGTH = 24;
+// A record used by reference is refreshed at most this often, so a client
+// polling with its instance identifier does not write the store each time.
+const INSTANCE_TOUCH_S = 60;
 
 // The parts of a `realms.map()` store this module uses. Rows are JSON
 // (header), so `any`.
@@ -115,6 +127,11 @@ interface GnapStoreDeps {
   stores: GnapStores;
   // The replay history's bound, `gnap.replayCacheSize` (2026-09-18).
   replayBound: () => number;
+  // How long an instance record lives unused, `gnap.grantLifetimeS` (#1221).
+  instanceLifetime: () => number;
+  // The instance identifier a key at an application is given (#1221): the
+  // same for the same key and application, unguessable without the secret.
+  instanceIdOf: (identifier: string, keyIdentity: string) => string;
 }
 
 // `expiresAt` (#333): prune()'s rule, in epoch SECONDS — a FINALIZED grant
@@ -306,9 +323,7 @@ class GnapStore {
     const { log } = this.deps;
     log.debug("Entering GnapStore.digest().");
     log.debug("Leaving GnapStore.digest().");
-    return nodeCrypto.createHash('sha256')
-                     .update(String(value), 'utf8')
-                     .digest('base64url');
+    return stsCrypto.digest('sha256', String(value), 'base64url');
   }
 
   // A value of the given length made of unreserved characters (RFC 3986
@@ -649,7 +664,38 @@ class GnapStore {
   // URI, and a user code. Both are ONE-TIME-USE and short-lived (section 4);
   // the grant holds the expiry and the "which mode was used" state, and these
   // rows are only the lookup.
+  //
+  // KEYED BY DIGEST (#614, `crypto.credentialDigest()`), hashed inside these
+  // methods so every caller passes what it minted or was presented with: a
+  // handle or a user code is only ever looked up and spent. The interaction
+  // id keeps its mode prefix outside the digest, `redirect:<digest>`, so a
+  // row still says what kind it is. The grant record itself still carries
+  // each handle and code (`interaction.modes`), because a continuation
+  // response repeats them to the client (section 3.3), so these rows are one
+  // copy fewer rather than none. A short user code's digest can be reversed
+  // by trying every code, as the device flow's can; it is hashed anyway.
   // -------------------------------------------------------------------------
+  // `mode:handle` -> `mode:<digest of handle>`; a value with no prefix is
+  // hashed whole. Public for `gnap_cells.ts`, whose record of a moved grant
+  // is keyed by the rows' own keys.
+  /**
+   * Returns the key an interaction start handle is held under: its mode
+   * prefix and the digest of the handle (#614).
+   *
+   * @param id - `mode:handle`
+   * @returns `mode:` and the handle's digest
+   */
+  static handleKey(id: string): string {
+    helpers.log.debug("Entering GnapStore.handleKey().");
+    const text = String(id || '');
+    const colon = text.indexOf(':');
+    helpers.log.debug("Leaving GnapStore.handleKey().");
+    return colon > 0
+      ? text.slice(0, colon + 1) +
+        stsCrypto.credentialDigest(text.slice(colon + 1))
+      : stsCrypto.credentialDigest(text);
+  }
+
   /**
    * Records an interaction start handle — the unique path segment of a redirect
    * or app URI — for a grant.
@@ -661,7 +707,8 @@ class GnapStore {
     const { log, nowSec } = this.deps;
     const { interactions } = this.deps.stores;
     log.debug("Entering GnapStore.putInteraction().");
-    interactions.set(id, { grantId: grantId, at: nowSec() });
+    interactions.set(GnapStore.handleKey(id),
+                     { grantId: grantId, at: nowSec() });
     log.debug("Leaving GnapStore.putInteraction().");
   }
 
@@ -675,7 +722,7 @@ class GnapStore {
     const { log } = this.deps;
     const { interactions } = this.deps.stores;
     log.debug("Entering GnapStore.grantByInteraction().");
-    const row = id ? interactions.get(id) : null;
+    const row = id ? interactions.get(GnapStore.handleKey(id)) : null;
     log.debug("Leaving GnapStore.grantByInteraction().");
     return row ? this.getGrant(row.grantId) : null;
   }
@@ -689,7 +736,7 @@ class GnapStore {
     const { log } = this.deps;
     const { interactions } = this.deps.stores;
     log.debug("Entering GnapStore.dropInteraction().");
-    interactions.delete(id);
+    interactions.delete(GnapStore.handleKey(id));
     log.debug("Leaving GnapStore.dropInteraction().");
   }
 
@@ -703,7 +750,8 @@ class GnapStore {
     const { log, nowSec } = this.deps;
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.putUserCode().");
-    userCodes.set(code, { grantId: grantId, at: nowSec() });
+    userCodes.set(stsCrypto.credentialDigest(code),
+                  { grantId: grantId, at: nowSec() });
     log.debug("Leaving GnapStore.putUserCode().");
   }
 
@@ -717,7 +765,8 @@ class GnapStore {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.grantByUserCode().");
-    const row = code ? userCodes.get(code) : null;
+    const row = code ? userCodes.get(stsCrypto.credentialDigest(code))
+      : null;
     log.debug("Leaving GnapStore.grantByUserCode().");
     return row ? this.getGrant(row.grantId) : null;
   }
@@ -731,7 +780,7 @@ class GnapStore {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.dropUserCode().");
-    userCodes.delete(code);
+    userCodes.delete(stsCrypto.credentialDigest(code));
     log.debug("Leaving GnapStore.dropUserCode().");
   }
 
@@ -746,7 +795,7 @@ class GnapStore {
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.userCodeTaken().");
     log.debug("Leaving GnapStore.userCodeTaken().");
-    return userCodes.has(code);
+    return userCodes.has(stsCrypto.credentialDigest(code));
   }
 
   // -------------------------------------------------------------------------
@@ -1001,8 +1050,27 @@ class GnapStore {
   // DYNAMIC INSTANCE IDENTIFIERS (section 3.5) and USER REFERENCES (section
   // 2.4.1). Both are secrets the client holds, so both are indexed by digest.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // REUSED AND EXPIRING (#1221, rcbj 2026-10-30). The store only grew: every
+  // grant request that sent its key by value was handed a NEW random
+  // identifier, the same key coming back included, and nothing deleted a
+  // record — which #1216, letting every browser of a web application sign in
+  // with its own key, turned into one record per sign-in for ever.
+  //
+  //   * THE SAME KEY AT THE SAME APPLICATION GETS THE SAME IDENTIFIER: it is
+  //     derived (`instanceIdFor()`), an HMAC over the realm, the application
+  //     and the key's identity, so a repeat sign-in rewrites one record, and
+  //     no readable identifier is kept to find it by — records stay indexed
+  //     by digest, as the secrets the client holds they are.
+  //   * A RECORD NOT USED FOR `gnap.grantLifetimeS` IS GONE: `instanceById()`
+  //     answers it as unknown, and `purgeInstances()` (the
+  //     `gnap.grant-expiry` job) deletes it. A reissue and a use by reference
+  //     refresh `seenAt`. A record from before #1221 has none and expires from
+  //     `createdAt`, which clears the growth already there.
+  // -------------------------------------------------------------------------
   /**
    * Records a dynamic instance identifier (section 3.5), indexed by digest.
+   * A record already there keeps its `createdAt`; `seenAt` is now.
    *
    * @param instanceId - the instance identifier
    * @param fields - what is recorded against it
@@ -1011,24 +1079,101 @@ class GnapStore {
     const { log, nowSec } = this.deps;
     const { instances } = this.deps.stores;
     log.debug("Entering GnapStore.putInstance().");
-    instances.set(this.digest(instanceId),
-                  Object.assign({ createdAt: nowSec() }, fields));
+    const key = this.digest(instanceId);
+    const held = instances.get(key);
+    const now = nowSec();
+    instances.set(key, Object.assign({ createdAt: (held && held.createdAt) ||
+                                                  now },
+                                     fields, { seenAt: now }));
     log.debug("Leaving GnapStore.putInstance().");
   }
 
   /**
-   * Returns what is recorded against a dynamic instance identifier.
+   * The instance identifier a key at an application is given (#1221): the
+   * same each time the same key comes to the same application in this realm
+   * and cell, derived rather than stored.
+   *
+   * @param identifier - the application's identifier
+   * @param keyIdentity - the key's identity (`gnap_keys` describe())
+   * @returns the instance identifier, cell-stamped as `handle()` stamps
+   */
+  instanceIdFor(identifier: string, keyIdentity: string): string {
+    const { log, instanceIdOf } = this.deps;
+    log.debug("Entering GnapStore.instanceIdFor().");
+    log.debug("Leaving GnapStore.instanceIdFor().");
+    return cellLocator.stamp(instanceIdOf(identifier, keyIdentity));
+  }
+
+  // Whether a record has gone unused for longer than an instance lives.
+  private instanceExpired(record: any, now: number): boolean {
+    const { instanceLifetime } = this.deps;
+    const last = Number(record && (record.seenAt || record.createdAt)) || 0;
+    return last + instanceLifetime() <= now;
+  }
+
+  /**
+   * Returns what is recorded against a dynamic instance identifier, or null
+   * when there is none or it has gone unused for `gnap.grantLifetimeS`.
    *
    * @param instanceId - the instance identifier
    * @returns the record, or null
    */
   instanceById(instanceId: unknown): any {
-    const { log } = this.deps;
+    const { log, nowSec } = this.deps;
     const { instances } = this.deps.stores;
     log.debug("Entering GnapStore.instanceById().");
-    log.debug("Leaving GnapStore.instanceById().");
-    return instanceId ?
+    const record = instanceId ?
       (instances.get(this.digest(instanceId)) || null) : null;
+    if (record && this.instanceExpired(record, nowSec())) {
+      log.debug("Leaving GnapStore.instanceById(). Expired.");
+      return null;
+    }
+    log.debug("Leaving GnapStore.instanceById().");
+    return record;
+  }
+
+  /**
+   * Marks an instance record as used now, at most once a minute, so a client
+   * that keeps using its instance identifier keeps it.
+   *
+   * @param instanceId - the instance identifier
+   */
+  touchInstance(instanceId: unknown): void {
+    const { log, nowSec } = this.deps;
+    const { instances } = this.deps.stores;
+    log.debug("Entering GnapStore.touchInstance().");
+    const key = this.digest(instanceId);
+    const record = instanceId ? instances.get(key) : null;
+    const now = nowSec();
+    if (record && !this.instanceExpired(record, now) &&
+        now - (Number(record.seenAt || record.createdAt) || 0) >=
+          INSTANCE_TOUCH_S) {
+      instances.set(key, Object.assign({}, record, { seenAt: now }));
+    }
+    log.debug("Leaving GnapStore.touchInstance().");
+  }
+
+  /**
+   * Deletes every instance record unused for `gnap.grantLifetimeS`.
+   *
+   * @returns how many were deleted
+   */
+  purgeInstances(): number {
+    const { log, nowSec } = this.deps;
+    const { instances } = this.deps.stores;
+    log.debug("Entering GnapStore.purgeInstances().");
+    const now = nowSec();
+    const stale: string[] = [];
+    instances.forEach((record, key) => {
+      if (this.instanceExpired(record, now)) {
+        stale.push(key);
+      }
+    });
+    stale.forEach(function (key) {
+      instances.delete(key);
+    });
+    log.debug("Leaving GnapStore.purgeInstances(). " + stale.length + ".");
+    return stale.length;
   }
 
   /**
@@ -1374,6 +1519,18 @@ class GnapStore {
       replayBound: function (): number {
         return Number(config.value('gnap.replayCacheSize'));
       },
+      instanceLifetime: function (): number {
+        return Number(config.value('gnap.grantLifetimeS')) || 86400;
+      },
+      // The cluster secret the per-client opaque subject identifiers are
+      // derived under (`oauth-oidc/pairwise_subjects.ts`), with a label of
+      // this purpose's own, so the two derivations never meet (#1221).
+      instanceIdOf: function (identifier: string, keyIdentity: string): string {
+        return stsCrypto.deriveSharedCredential(
+          clusterSecrets.text('oidc-pairwise'), INSTANCE_ID_LABEL,
+          realms.currentId(), String(identifier || ''),
+          String(keyIdentity || '')).slice(0, INSTANCE_ID_LENGTH);
+      },
       stores: {
         grants: grants,
         continuations: continuations,
@@ -1461,6 +1618,7 @@ export = {
   grantByUserCode: slot.forward('grantByUserCode'),
   dropUserCode: slot.forward('dropUserCode'),
   userCodeTaken: slot.forward('userCodeTaken'),
+  handleKey: GnapStore.handleKey,
   putToken: slot.forward('putToken'),
   saveToken: slot.forward('saveToken'),
   biscuitRevocationIds: slot.forward('biscuitRevocationIds'),
@@ -1473,6 +1631,9 @@ export = {
   dropManagement: slot.forward('dropManagement'),
   putInstance: slot.forward('putInstance'),
   instanceById: slot.forward('instanceById'),
+  instanceIdFor: slot.forward('instanceIdFor'),
+  touchInstance: slot.forward('touchInstance'),
+  purgeInstances: slot.forward('purgeInstances'),
   putUserRef: slot.forward('putUserRef'),
   userByRef: slot.forward('userByRef'),
   putResource: slot.forward('putResource'),

@@ -100,7 +100,6 @@
 // load.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
 import errorCodes = require('../common/error_codes');
@@ -119,7 +118,6 @@ import jwtAccessToken = require('./jwt_access_token');
 type Json = any;
 
 interface SoftwareStatementDeps {
-  nodeCrypto: typeof nodeCrypto;
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
   errorCodes: typeof errorCodes;
@@ -202,7 +200,6 @@ class SoftwareStatement {
     helpers.log.debug("Entering SoftwareStatement.defaultDeps().");
     helpers.log.debug("Leaving SoftwareStatement.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       stsCrypto: stsCrypto,
       pki: pki,
       errorCodes: errorCodes,
@@ -665,7 +662,8 @@ class SoftwareStatement {
     const usedX5c = usedKey && usedKey.jwk && Array.isArray(usedKey.jwk.x5c)
       ? usedKey.jwk.x5c : [];
     if (usedX5c.length) {
-      const keyChain = await pki.verifySignerChain(undefined, {
+      const keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
         certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
         source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
                 usedKey.source + ' for "' + iss + '"'
@@ -976,6 +974,17 @@ class SoftwareStatement {
                      options.lifetimeSeconds === ''
       ? self.issuedLifetimeSeconds()
       : Math.max(0, Math.floor(Number(options.lifetimeSeconds) || 0));
+    // An `exp` no Date can hold was signed, and the line that writes it down
+    // then threw a 500 (#1470). The field also takes text, so the management
+    // API's integer bound does not cover it.
+    if (lifetime > 0 &&
+        Number.isNaN(new Date((issuedAt + lifetime) * 1000).getTime())) {
+      log.debug("Leaving SoftwareStatement.issue(). Lifetime out of range.");
+      return errorCodes.mark({ ok: false,
+        errors: ['lifetimeSeconds is too large: the statement would expire ' +
+                 'after the last date this service can write.'] },
+        'STS-ADMIN-0915');
+    }
     const claims = Object.assign({ software_id: identifier }, metadata, {
       iss: iss,
       sub: identifier,
@@ -1040,7 +1049,7 @@ class SoftwareStatement {
    * @returns the description
    */
   describe(statement: Json): Json {
-    const { nodeCrypto, stsCrypto, log, STS } = this.deps;
+    const { stsCrypto, log, STS } = this.deps;
     const self = this;
     log.debug("Entering SoftwareStatement.describe().");
     if (!statement) {
@@ -1071,8 +1080,8 @@ class SoftwareStatement {
              issuedAt: claims.iat ? Number(claims.iat) * 1000 : 0,
              expiresAt: claims.exp ? Number(claims.exp) * 1000 : 0,
              metadata: self.metadataFrom(claims),
-             thumbprint: nodeCrypto.createHash('sha256')
-               .update(String(statement)).digest('base64url').slice(0, 16) };
+             thumbprint: stsCrypto.digest('sha256', String(statement),
+                                          'base64url').slice(0, 16) };
   }
 }
 

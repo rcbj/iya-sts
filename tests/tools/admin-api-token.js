@@ -15,9 +15,12 @@
 // deliberately out of that path.
 //
 // THE CLIENT IS SEEDED, WHICH IS WHY THIS IS SHORT. `common/applications.js`
-// puts `sts-management-api` in the registry at startup —
+// puts `sts-api-client` in the registry at startup —
 // `client_credentials`, `client_secret_basic`,
-// `scope: 'admin:read admin:write'` — so a run does not register anything.
+// `scope: 'admin:read admin:write admin:security report:use'` (admin:security
+// since #645) — so a run does not register
+// anything. It was `sts-management-api` until #1139 made that identifier the
+// management API's resource object, which is never a client.
 // The SECRET is pinned by `adminApi.clientSecret` (`ADMIN_API_CLIENT_SECRET`):
 // every launcher chooses one per run, starts the service with it, and hands
 // it to this file as `STS_ADMIN_API_CLIENT_SECRET`. Only without that is it
@@ -74,8 +77,8 @@ async function secretFor(base) {
     log.debug("Leaving secretFor().");
     return process.env.STS_ADMIN_API_CLIENT_SECRET;
   }
-  const reply = await request(base + '/admin-api/applications?identifier=' +
-                              encodeURIComponent('sts-management-api'));
+  // The list and a filter below: the operation takes no `identifier` (#1476).
+  const reply = await request(base + '/admin-api/applications');
   if (reply.status !== 200) {
     log.debug("Leaving secretFor().");
     return '';
@@ -85,7 +88,7 @@ async function secretFor(base) {
     const rows = body.applications ||
                  (body.application ? [body.application] : []);
     const row = rows.filter(function (one) {
-      return one && one.identifier === 'sts-management-api';
+      return one && one.identifier === 'sts-api-client';
     })[0];
     log.debug("Leaving secretFor().");
     return (row && row.registration && row.registration.client_secret) || '';
@@ -106,7 +109,7 @@ function audienceFor(base) {
 }
 
 // `options` is for the ONE caller that wants a token this run's jobs would not
-// otherwise be given: `tests/vendored/sts_admin_api_auth.js`, which asserts the
+// otherwise be given: `tests/protocol/sts_admin_api_auth.js`, which asserts the
 // gate's refusals and therefore needs a token with ONE scope, or with an
 // audience naming somebody else. Both default to what every other caller wants,
 // so nothing that was written before this parameter existed changed.
@@ -120,8 +123,11 @@ async function mint(base, secret, options) {
   log.debug("Entering mint().");
   const wanted = options || {};
   const audience = wanted.audience || audienceFor(base);
-  const scope = wanted.scope === undefined ? 'admin:read admin:write'
-                                           : wanted.scope;
+  // admin:security (#645) beside the two: a job that saves a policy or
+  // grants the Security Administrator's role needs it, and sts-api-client
+  // holds SECURITY_ADMIN as seeded.
+  const scope = wanted.scope === undefined
+    ? 'admin:read admin:write admin:security' : wanted.scope;
   const form = 'grant_type=client_credentials' +
     '&scope=' + encodeURIComponent(scope) +
     '&resource=' + encodeURIComponent(audience);
@@ -131,7 +137,7 @@ async function mint(base, secret, options) {
       'content-type': 'application/x-www-form-urlencoded',
       'content-length': Buffer.byteLength(form),
       authorization: 'Basic ' +
-        Buffer.from('sts-management-api:' + secret).toString('base64')
+        Buffer.from('sts-api-client:' + secret).toString('base64')
     }
   }, form);
   if (reply.status !== 200) {
@@ -151,7 +157,7 @@ async function tokenFor(base, options) {
   log.debug("Entering tokenFor().");
   const secret = await secretFor(base);
   if (!secret) {
-    throw new Error('could not read the sts-management-api client secret from ' +
+    throw new Error('could not read the sts-api-client client secret from ' +
                     base + '. Set STS_ADMIN_API_CLIENT_SECRET, or start the ' +
                     'service with adminApi.authRequired=false to read it.');
   }

@@ -1,17 +1,128 @@
 # CLAUDE.md — `postgres/`
 
-**Four files the database container runs, and nothing else. None of them is
-run by this service**, and nothing in this repository requires them —
-`docker-compose.yml` mounts them into the PostgreSQL image. It was two until
-2026-09-06, when the schema stopped being something this service builds for
-itself.
+**`schema.sql` is generated since #1390.** Its tables and indexes come from
+`models/persistence/persistence.tsp` and the rest from
+`models/persistence/schema.template.sql`. Edit those and run
+`tests/tools/regenerate-model-docs.sh`; `tests/model_typespec.js` fails otherwise.
+
+**Four files the database container runs, and one upgrade script it does
+not.** None of them is run by this service, and nothing in this repository
+requires them — `docker-compose.yml` mounts the four into the PostgreSQL
+image. It was two until 2026-09-06, when the schema stopped being something
+this service builds for itself.
 
 | File | What it does |
 |---|---|
-| `generate-tls.sh` | makes the server key pair on first start |
+| `generate-tls.sh` | makes the server key pair on first start, and with `POSTGRES_TLS_PUBLIC_DIR` copies the certificate (never the key) there as `<CN>.crt` on every start |
 | `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl` |
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
+| `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32 without running `schema.sql`. The container does not run it |
+
+## How `docker-compose.yml` runs them
+
+Moved here from the compose file's comments on 2026-10-07, when that file lost
+them all.
+
+* **`postgres:18`, not `-alpine`**: the alpine image has busybox and no bash,
+  and the scripts here are bash. The Debian image already has openssl.
+* **One mount, at `/var/lib/postgresql`, not `.../data`.** From 18 the image
+  keeps the cluster in a version-specific directory (`/var/lib/postgresql/18/docker`)
+  so `pg_upgrade --link` works within one mount, and it REFUSES TO START with
+  a volume at the old `.../data` path ("unused mount/volume", which reads as a
+  warning and is fatal; docker-library/postgres#1259). The TLS pair lives
+  inside that volume (`/var/lib/postgresql/tls`) because a second mount
+  under it is the shape the image refuses.
+* **`generate-tls.sh` runs from a `command` wrapper, not as an initdb
+  script**: `ssl_cert_file` is read when the server boots, and initdb scripts
+  run after a first boot. The wrapper `exec`s `docker-entrypoint.sh` so
+  postgres keeps pid 1 and gets the stop signal.
+* **The certificate leaves the container through a SECOND volume, and the
+  key never does (2026-10-12).** The service verifies the database's
+  certificate by default, and a self-signed one verifies only against
+  itself, so `POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca` (the `sts-db-ca`
+  volume) receives `postgres.crt`, which `sts` mounts read-only and names in
+  `STS_DATABASE_TLS_CA_FILE`. The key stays in `/var/lib/postgresql/tls`,
+  inside `sts-db`, which only this container mounts — sharing the TLS
+  directory itself would have handed `sts` the key. It is a mount at
+  `/run`, NOT under `/var/lib/postgresql`, for the reason the bullet above
+  gives. Copied on every start, after a generation or not, and written to a
+  hidden temporary name and renamed, so a restored data volume and a fresh
+  share agree and a reader never sees half a file. **It exists by the time
+  `sts` starts**: the copy runs before `exec docker-entrypoint.sh`, and `sts`
+  waits for `service_healthy`. One file per CN, so the cells test layer's
+  `postgres-global` and `postgres-cellb` (which `extends` this service and
+  inherits the volume and the variable) write beside it without a race.
+* **`require-tls.sh` is `00-` and `apply-schema.sh` is `10-`** in
+  `/docker-entrypoint-initdb.d`, so TLS hardening runs first. `schema.sql`
+  is mounted OUTSIDE that directory on purpose: the entrypoint runs every
+  `*.sql` there itself, with no way to pass the role name and password, so
+  it would run a second time with the defaults and undo `STS_DB_APP_PASSWORD`.
+* **The service waits on `pg_isready` (`service_healthy`), and the wait is
+  not optional**: without it the service starts first about half the time,
+  and since 2026-08-28 a configured store that cannot be opened is fatal
+  (`persistence/CLAUDE.md`), so the stack restart-loops.
+* **5432 is not published**, for the reason 389 and 636 are not: a host
+  already running postgres fails to start the stack on a port nobody was
+  thinking about.
+* **`sts_app` is spelt twice in the compose file** — `STS_DB_APP_USER` and
+  inside `STS_DATABASE_URL` — because a connection string is one string and
+  building it from the parts would make an override of the whole string
+  ambiguous. `tests/postgres_schema.js` notices when they disagree.
+
+## The server's settings, on the command line (#630, 2026-10-14)
+
+**From measuring 8081 under the LDAP bulk load** (`load-users/dbperf/` on
+the host). `docker-compose.yml` passes them after `max_connections`; it
+carries no comments, so the reasons are here. `docs/docker-compose.md`
+lists them for a user.
+
+**THE SAME LIST IS IN `docker-compose-quick.yml` AND
+`docker-compose-run-tests.yml` (#633)**, and in the copy of the quick file
+that `docs/getting-started.md` prints. #630 changed only the first file, so
+the quick start and the suite ran the defaults it had measured against, the
+quick start with 100 connections. `tests/postgres_schema.js` now holds all
+four to one list, name and value, so a setting changes in every file or the
+test fails. The cells layer's two extra databases `extends` the suite's, so
+they carry it too.
+
+* **`shared_buffers=2GB`** (`STS_POSTGRES_SHARED_BUFFERS`): the default 128 MB
+  against a 9.4 GB database read at a 96.9% hit ratio. A variable because
+  the test stacks run up to three of these on one machine (the cells layer
+  `extends` this service); it is a ceiling, not memory taken at start.
+  Launchers set nothing, so no `COMPOSE_ENV` row is owed.
+* **`max_wal_size=8GB`, `checkpoint_timeout=15min`**: every checkpoint was
+  a REQUESTED one (the WAL filled), each followed by a burst of full-page
+  images.
+* **`wal_compression=lz4`**: 4.4 full-page images an add.
+* **`max_parallel_workers_per_gather=0`**: the batched directory lookups
+  went parallel and tripled the server's CPU for nothing; the service's
+  statements are small and many.
+* **`track_io_timing=on`, `log_lock_waits=on`**: what the analysis had to
+  infer from wait sampling, recorded.
+* **`pg_stat_statements` and `auto_explain` preloaded**, with the analysis's
+  exact settings (`track=all`, `max=10000`; plans over 200 ms logged with
+  `analyze`, `buffers` and nested statements, without per-node timing,
+  which is the expensive part of `analyze`). `schema.sql` creates the
+  extension, in `public`, only where the running role may — a superuser
+  here, RDS's master user there — and warns and goes on otherwise. **The
+  application role gets no `pg_read_all_stats`**, as it gets no
+  `pg_monitor` (`persistence/CLAUDE.md`, the metrics page): the view is for
+  the owner, and the service reads none of it.
+
+**THEY TAKE EFFECT AT THE CONTAINER'S NEXT START** (every one is a server
+start parameter, and `shared_preload_libraries` cannot change any other way);
+nothing in the `sts-db` volume changes, and a stack started before this keeps
+the old values until it is restarted.
+
+**RDS IS NOT DONE**: `deploy/aws/environment/rds.tf` and
+`deploy/aws/global/database.tf` still set only the TLS parameters. RDS's own
+defaults already size `shared_buffers` from the instance's memory and load
+`pg_stat_statements`, but `auto_explain`, `wal_compression`,
+`max_parallel_workers_per_gather`, `checkpoint_timeout`, `max_wal_size` and
+`log_lock_waits` would be parameters of those groups (`pending-reboot` for
+the preload), and want a reboot window and an instance-sized
+`max_wal_size` — a decision for the next AWS apply, not a change made blind.
 
 ## The schema is built by an OWNER and used by somebody who cannot change it
 
@@ -36,7 +147,10 @@ merged on 2026-09-29 and both tables are created by name — and version
 them, for a request worker that holds the people and devices as a window
 (`persistence/directory_queries.js`) — and version 15 (#432 phase 5)
 `sts_cluster_budgets`, a GNAP right's limits spent with one conditional
-upsert (`cluster/cluster_counters.js`); `sts_app` holds
+upsert (`cluster/cluster_counters.js`) — and version 18 (#618 phase 2) two
+partial indexes in place of two whole ones, and no table
+(`persistence/CLAUDE.md`, *Only the asked names and the group classes are
+indexed*); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
@@ -62,6 +176,138 @@ that `ALTER`, and the driver's own `open()` does the same: an object marked
 an index on a column an older table does not have yet cannot be built before
 it.
 
+**AN INDEX A LATER VERSION REPLACED IS DROPPED BY THE SAME RUN (#618,
+version 18).** `schema.sql` builds `sts_ldap_entries_asked_names` and
+`sts_ldap_entries_group_classes` and only then drops
+`sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, the driver's
+`SCHEMA_RETIRED`, so no question is ever without an index; leaving one
+behind would keep its write cost, which is what the version removes. Both
+builds read the whole table once under the `SHARE` lock `CREATE INDEX` takes
+(seconds at 1.2M entries), inside the script's transaction. **Run it before
+the version-18 image starts**, which cannot build the indexes as `sts_app`
+and is refused; a version-17 process still running meanwhile answers its
+holder and group questions without an index until it is replaced.
+`tests/postgres_schema.js` holds the drops to `SCHEMA_RETIRED` and their
+order. **The same run switches the directory's six GIN indexes to
+`fastupdate = off` and flushes each one's pending list once**
+(`gin_clean_pending_list()`, which only the owner may call):
+`persistence/CLAUDE.md`, *The directory's GIN indexes have no pending list*.
+On 8081 the four lists held ~205,000 tuples each, so the flush is a few
+seconds of index writes inside the script's transaction.
+
+**VERSION 23 (2026-10-20) ADDS `pg_trgm` AND A TRIGRAM INDEX, AND A LARGE
+STORE SHOULD BUILD IT CONCURRENTLY FIRST.** `sts_ldap_entries_uid_trgm` is a
+GIN over `rdn_value` with `gin_trgm_ops`, partial on the children of each
+realm's `ou=users`. It is what `/portal/delegate`'s search asks, and since
+#1310 the role chooser's needle count and page too (`ldap/CLAUDE.md`) —
+with no new schema version and nothing to run: an image with #1310 against
+a version-23-or-later store finds the index there. `pg_trgm` ships in the official image's contrib and is a
+TRUSTED extension (PostgreSQL 13+), so the database owner may create it with
+no superuser. Measured on `postgres:18`: a non-superuser owner created it,
+and it landed in the `sts` schema.
+
+The script runs in one transaction, which `CREATE INDEX CONCURRENTLY`
+cannot, so the script builds the index with a plain CREATE, under the
+`SHARE` lock that holds every write to the directory for the build. That
+build took 6.3 s at 2M people (concurrently), and the index was 43 MB
+beside a 365 MB table. So at 8081's 50M, expect minutes and about 1 GB.
+**On such a store, run this as the owner BEFORE the version-23 image starts
+and before the script**, outside any transaction (psql's default, one
+statement at a time). The script's and the driver's `IF NOT EXISTS` then
+find it built:
+
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries USING gin (rdn_value gin_trgm_ops) WITH (fastupdate = off) WHERE parent_key LIKE 'ou=users,%';
+
+Use the search path the script sets (`sts, public`). A version-23 image
+started as `sts_app` against a store without the index is refused at open,
+as with every version's new index. The driver, as a role that may create,
+makes the extension first (`SCHEMA_OBJECTS`' `extension`).
+
+**VERSION 32 (#882) ADDS `sts_sessions_started`, AND A STORE THAT ALREADY
+HOLDS SESSIONS SHOULD BUILD IT CONCURRENTLY FIRST.** It is a partial btree
+on `(realm, started_at DESC, key) WHERE chosen`. The console's live session
+pages order `started_at DESC, key`, and nothing else in the catalog is
+ordered that way. `WHERE chosen` is the page's predicate, so an arrival
+stays out. `started_at` is set once, when the row is created.
+
+The script is one transaction (`BEGIN` through `COMMIT` in
+`postgres/schema.sql`; `apply-schema.sh` is `psql -f` and does not open a
+second one). `CREATE INDEX CONCURRENTLY` cannot run inside it, so the
+script's own `CREATE INDEX` takes `SHARE` and holds writers off
+`sts_sessions` for the build. An empty volume is fine. A soak store is
+not. **On such a store, run this as the owner BEFORE the version-32 image
+starts and before the script**, outside any transaction, search path
+`sts, public`:
+
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_sessions_started
+      ON sts_sessions (realm, started_at DESC, key) WHERE chosen;
+    ANALYZE sts_sessions;
+
+The script's `IF NOT EXISTS` then finds it. `ANALYZE` is so the first
+plans see the index; it is not a start-blocking upgrade.
+
+**A VERSION-32 IMAGE STARTED BEFORE THE SCRIPT STILL STARTS (#876, #882
+follow-up, 2026-11-13).** Until then it was refused at open with
+`STS-STORE-0029` as `sts_app`, and as the owner it built the index with a
+plain `CREATE INDEX` inside `open()`'s transaction — a `SHARE` lock on
+`sts_sessions` for the build, on a table every sign-in writes. Both
+indexes are now marked `online` in the model, and `open()` leaves them
+out of its transaction (`persistence/online_indexes.js`):
+`sts_app`, which does not own the table, starts and logs `STS-STORE-0172`
+once, naming this script; the questions the indexes serve answer by a
+slower plan meanwhile. A role that owns the table builds them in the
+background, after the open commits, with `CREATE INDEX CONCURRENTLY` on a
+connection of its own, under a session advisory lock so two starting
+processes do not both build (`STS-STORE-0173` when it fails; the next
+start tries again). Running the script is still the right step: it is
+the owner's, it can run while the old image serves, and it ANALYZEs.
+
+`CONCURRENTLY` can leave an invalid index if the session dies. `open()`
+reads `pg_index.indisvalid` for these two indexes (and only these): an
+invalid one is told to `sts_app` like a missing one, and an owning role
+drops it concurrently and builds it again under the advisory lock — an
+index another starting process is still building reads as invalid too,
+which is why only the lock holder ever drops one. The script does the
+same check by hand. Before relying on the index, `indisvalid` must be
+true:
+
+    SELECT i.indisvalid
+      FROM pg_index i
+      JOIN pg_class c ON c.oid = i.indexrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'sts'
+       AND c.relname = 'sts_sessions_started';
+
+An invalid row is `DROP INDEX sts.sts_sessions_started` and then the
+`CONCURRENTLY` statement again. An image rolled back to version 31
+ignores the extra index; leave it in place.
+
+**A RELEASE 1.0.0 STORE USES `upgrade-1.0.0.sql`, NOT A SECOND RUN OF
+`schema.sql`.** Tag `v1.0.0` is schema version 31. The statements added
+since that tag are `sts_sessions_subject_band` (#876, no version of its
+own), `sts_sessions_started` (this section), and the version-32 row.
+`upgrade-1.0.0.sql` builds each index with `CREATE INDEX CONCURRENTLY`
+outside a transaction, drops and rebuilds one that is present and not
+valid, refuses one that is present and valid with a different definition,
+records version 32, and refuses a store with no `sts_schema` version of
+31 or later. (A version-32 image already running against the store has
+recorded 32 itself and is answering without the indexes; the script
+finds the row and builds them.) **Do not run it while a version-32 image
+running as the table's OWNER is building the same index in the
+background** — the script reads that build as invalid, waits for it, and
+then drops and builds it again: no harm, twice the work. `sts_app`, the
+normal case, never builds. It does not run `schema.sql`. That file's version-31 block
+drops and recreates `sts_ldap_entries_asked_names` inside its transaction
+even when the expression on disk is already that one, which holds
+directory writes for the rebuild, and it sets the application role's
+password again. `sts_app` cannot run the upgrade. Do not pass
+`--single-transaction`, and do not wipe the volume. The 1.0.0 image can
+keep serving while the indexes build; start the version-32 image after
+the script exits 0. A rollback to a version-31 image leaves both indexes
+in place. MariaDB's twin is `mariadb/upgrade-1.0.0.sql`, and it adds only
+`sts_sessions_started`.
+
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that
 is not there, so against a database this script has built it issues none. That
@@ -80,6 +326,35 @@ tables and no `sts_app`, and the service container then restart-loops on
 what it throws away is the directory, the realm registry and the appconfig
 overrides — and, in product mode (the compose stack's default), the sealed
 signing keys and what this service minted under them.
+
+**VERSION 19 (#630) IS THE SAME UPGRADE, AND MORE THAN COLUMNS.** It shards
+the two counter tables (a `shard` column, then a primary key that holds it —
+a `DO` block, because the swap must happen once), replaces the two fold
+routines under new names and drops the old ones, swaps `sts_minted`'s
+`written_at` btree for a BRIN, and sets storage parameters on three tables.
+Every statement is idempotent; checked against a real version-17 database
+with rows and counters in it, and re-run on it and on a fresh one. The
+driver's `SCHEMA_UPGRADES` holds the same statements under the same
+conditions (`persistence/CLAUDE.md`).
+
+**VERSION 20 (#639) IS ONE STATISTIC.** `parent_key`'s `n_distinct` set to
+100,000 and the one column analyzed: at 50.2M entries ANALYZE's sample saw
+one parent, and a parent the planner cannot see was estimated as the whole
+realm. The owner's to run (an `ALTER TABLE` and an `ANALYZE`); the driver's
+`SCHEMA_UPGRADES` carries it as an ADVISORY step, so a role that does not
+own the table is told (`STS-STORE-0083`) and starts — the statements a start
+runs no longer depend on it (`persistence/CLAUDE.md`, *`parent_key`'s
+`n_distinct`*). Checked on a private stack: a version 19 store with 23
+realms, re-scripted as the owner, then the service started on it.
+
+**VERSION 21 (#350) ADDS `sts_sessions`.** Not columns on `sts_minted`:
+a session's expiry is `sts_sessions.expires_at`, and `sts_minted.expires_at`
+stays NULL so the generic purge cannot end a session. The index row is
+written and deleted in the same transaction as the sealed body. A start
+walks until a completion row in that table commits with the last page; a
+non-empty table is not that mark. That page deletes index rows whose body
+is missing or a tombstone, and does not delete the completion row. The full
+in-memory session map stays resident.
 
 **`tests/postgres_schema.js` is what keeps `schema.sql` and the driver from
 drifting**, since the DDL is now written down twice: it fails on a `CREATE`
@@ -100,10 +375,11 @@ rules means the database refuses, so both ends say it and neither can be quietly
 relaxed.
 
 **The argument for both is in `persistence/CLAUDE.md`** — *TLS TO THE DATABASE,
-REQUIRED AT BOTH ENDS* — along with the thing this arrangement deliberately does
-NOT do: the certificate is signed by nobody, so the connection is encrypted and
-the server is not authenticated, and `/admin/persistence` reports those as two
-facts rather than one tick. Do not argue it again here.
+REQUIRED AT BOTH ENDS* — along with how the server is AUTHENTICATED since
+2026-10-12 (verification on by default, the certificate shared as above and
+trusted for the database alone through `persistence.databaseTlsCaFile`,
+`sslmode=verify-full`), and `/admin/persistence` reporting encryption and
+authentication as two facts rather than one tick. Do not argue it again here.
 
 ## On a managed database the owner is not a superuser (2026-09-15)
 
@@ -116,3 +392,13 @@ non-superuser may and **checks** the other three, failing the run if the
 application role holds any of them. `deploy/aws/schema-init/` is how that file
 reaches RDS: an init container that runs it with psql before each node starts.
 
+## The passwords are generated at first start
+
+`db-secrets.sh` is sourced first in the container's command in
+`docker-compose.yml`. It makes the owner's and `sts_app`'s passwords once on the
+`sts-db-secrets` volume, and `openbao/seed-start.sh` reads the second for the
+secret store, because that file defaults to product mode and product mode refuses
+a well-known database password. `docker-compose-run-tests.yml` keeps its fixed
+values and opts out with `STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD`, which
+is why no test stack could show the refusal. `tests/compose_db_passwords.js` holds
+both halves.

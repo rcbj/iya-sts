@@ -884,9 +884,11 @@ function create(options) {
  */
 module.exports = {
   create: create,
-  // Exported for tests/ and for nothing else in this service: the codec is the
-  // half of this file that can be wrong in a way that is invisible until a
-  // restart, so it is the half that has to be assertable without a filesystem.
+  // Exported for tests/ — the codec is the half of this file that can be
+  // wrong in a way that is invisible until a restart, so it is the half that
+  // has to be assertable without a filesystem — and, since #546, for
+  // `common/applications.js`'s application export and import, so that this
+  // service reads and writes LDIF one way.
   toLdif: toLdif,
   fromLdif: fromLdif,
   needsBase64: needsBase64,

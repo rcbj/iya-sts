@@ -23,21 +23,32 @@
 // **THREE KINDS OF SCOPE, READ THREE WAYS.**
 //
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
-//     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
-//     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`), the
-//     embedded debugger's permission, Grant Management's two (#142), the
+//     (/admin-api), `report:use` and `report:admin` (/report-api), the
+//     SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
+//     Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and
+//     the fixed names `ssf.read` and `ssf.manage` —
+//     `common/ssf_scopes.ts`, #334; renaming a setting adds a name and
+//     unprotects neither, which is the opposite of SCIM), Grant
+//     Management's two (#142), the
 //     VC-API test endpoints' two (#194) and the device compliance feed's
 //     `device:compliance` (#164). Issued ONLY to a client whose
-//     `oauthAllowedScope` lists them, IN BOTH MODES: the resource servers
-//     behind them are this service's own, development already gates them, and
+//     `oauthAllowedScope` lists them — except the management, account and
+//     reports APIs' words, which since #1141 a client holds by a delegated
+//     permission grant on the API's object instead (*The scopes a delegated
+//     permission grant declares*, below) — for a Shared Signals name, names
+//     granting every permission it grants, write including read — IN BOTH
+//     MODES: the resource servers behind them are this service's own,
+//     development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
 //     servers asks `declares()` again on every call, so removing a value cuts
-//     off a token already issued.
+//     off a token already issued. Shared Signals asks the permission the
+//     operation needs (`common/ssf_scopes.ts`: write includes read).
 //   * A SCOPE NAMING AN APPLICATION OR A DELEGATED PERMISSION — the audience
 //     rule and `oauthDelegatedPermission` (`oauth2.ts`'s `audienceScopes()`,
 //     `permissionRefusal()`). They keep their own rules and are never judged
-//     here: a grant IS the declaration for a permission, and a scope that is
-//     another application's client_id is an audience, not a privilege.
+//     here: a delegated permission grant IS the declaration for a
+//     permission, and a scope that is another application's client_id is an
+//     audience, not a privilege.
 //   * EVERY OTHER SCOPE — held to the declaration in PRODUCT only
 //     (`mode.grantsUndeclaredScopes()`). A client whose list names it gets it;
 //     a client with no list at all gets the documented DEFAULT: OpenID Connect
@@ -64,10 +75,12 @@
 // declared vocabulary per application, whatever protocol it asks in.
 //
 // A LIBRARY (rule 3): it registers nothing, and everything it requires is a
-// library `oauth2.ts` already requires. The debugger's permission identifier
-// is written out rather than required from `debugger/debugger_access.ts`, for
+// library `oauth2.ts` already requires. A feature's scope names are written
+// out here rather than required from the feature's directory, for
 // `applications.js`'s reason — a feature directory is not a dependency of
-// `common/` — and `tests/scope_policy.js` compares the two.
+// `common/` — and `tests/scope_policy.js` compares them. (The embedded
+// debugger's permission, `urn:sts:debugger-api:debugger`, was the first; it
+// was retired with the separate debugger api application by #1717.)
 // ===========================================================================
 
 import helpers = require('./helpers');
@@ -76,6 +89,10 @@ import config = require('./config');
 import mode = require('./mode');
 import applications = require('./applications');
 import audit = require('./audit');
+// THE SHARED SIGNALS NAMES (#334). A library built before this one. It
+// requires only `config` and `helpers`, so this require closes no cycle.
+// Facades are called from methods, never while this module loads.
+import ssfScopes = require('./ssf_scopes');
 // THE ISSUANCE POLICY DECIDES (#305, part D of #88): this file gathers the
 // FACTS about each scope and asks the per-scope question through the gate;
 // the rules — protected scopes in both modes, every other scope in product,
@@ -93,27 +110,80 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
   'phone', 'offline_access', 'bound_key']);
 
-// `/admin-api`'s two, as `common/roles.js` maps them to ADMIN_READ and
-// ADMIN_WRITE. Not settings: the management API's vocabulary is fixed.
+// `/admin-api`'s four, as `common/roles.js` maps them to ADMIN_READ,
+// ADMIN_WRITE, SECURITY_ADMIN (#645) and ADMIN_CONSOLE — the last the
+// console's own operations under `/admin-api/console` (#454). Not settings:
+// the management API's vocabulary is fixed.
 /**
- * The management API's two scopes, `admin:read` and `admin:write`.
+ * The management API's scopes: `admin:read`, `admin:write`, the Security
+ * Administrator's `admin:security` (#645) and the console's `admin:console`.
  */
-const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
+const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
+                                    'admin:security', 'admin:console']);
+
+// `/report-api`'s two (#956). Protected like the admin scopes: issued only
+// to a client that declares them, in both modes, and the API asks again on
+// every call. `sts-report` is seeded declaring both. Written out rather
+// than required from `report/`, for the reason the header gives.
+/**
+ * The report API's scopes: `report:use` and `report:admin`.
+ */
+const REPORT_SCOPES = Object.freeze(['report:use', 'report:admin']);
+
+// THE AUTHZEN API'S ONE (#563): `/access/v1` is this service's own resource
+// server, so its scope is protected like the rest — a client must hold a
+// delegated permission grant of it on `sts-authzen-api`, in both modes, and
+// the API asks again on every call. AuthZEN defines no scope; this is ours.
+/**
+ * The AuthZEN Authorization API's one scope, protected like the rest.
+ */
+const AUTHZEN_SCOPE = 'authzen:evaluate';
+
+// THE UMA 2.0 PROTECTION API'S ONE (#1168): `uma_protection`, Federated
+// Authorization section 2's own word. `/uma` is this service's own resource
+// server, so it is protected like the rest — a client must hold a delegated
+// permission grant of it on `sts-uma-protection-api`, in both modes, and the
+// protection API asks again on every call.
+/**
+ * The UMA 2.0 protection API's one scope, protected like the rest.
+ */
+const UMA_PROTECTION_SCOPE = 'uma_protection';
+
+// AN OWNER'S TWO (#607): `/admin-api` for the objects a person owns, read
+// and changed within the access-control policy's owner rule. Protected like
+// the admin scopes — a client must declare them, in both modes, and the API
+// asks again on every call — and `common/roles.js` maps them to the computed
+// OWNER_READ and OWNER_WRITE. `sts-user-portal` is seeded declaring both.
+/**
+ * The owner scopes on the management API (#607).
+ */
+const OWNER_SCOPES = Object.freeze(['owner:read', 'owner:write']);
 
 // Grant Management for OAuth 2.0's two (#142): the grant management API is
 // this service's own resource server, so its scopes are protected like the
 // rest — a client must declare them, and the API asks again on every call.
 // Written out rather than required from `oauth-oidc/grant_management.ts`,
-// for the debugger permission's reason below.
+// for the reason the header gives.
 const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
                                                'grant_management_revoke']);
 
 // The VC-API test endpoints' two (#194, `oid4vc/vc_api.ts`): an endpoint
 // that signs any document its caller writes with a realm's key is this
 // service's own resource server, and a development-only one is still no
-// reason to let any client mint the key to it. Written out for the
-// debugger permission's reason below; `tests/scope_policy.js` compares.
+// reason to let any client mint the key to it. Written out for the reason
+// the header gives; `tests/scope_policy.js` compares.
 const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
+
+// THE ACCOUNT API'S (#568): `/account-api`, the user portal's only door, is
+// this service's own resource server, and its one scope is protected like
+// the rest — a client must declare it, in both modes, and the API asks again
+// on every call. Only the seeded `sts-user-portal` declares it. Written out
+// rather than required from `account-api/account_api.ts`, for the reason
+// the header gives.
+/**
+ * The account API's one scope, protected like the rest.
+ */
+const ACCOUNT_SCOPE = 'account:manage';
 
 // THE MDM FEED'S (#164 phase 3): the one scope `/admin-api`'s device
 // compliance operation takes instead of `admin:write`, so a posture feed
@@ -124,12 +194,6 @@ const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
  * The device compliance feed's one scope, protected like the rest.
  */
 const DEVICE_COMPLIANCE_SCOPE = 'device:compliance';
-
-// `debugger/debugger_access.ts`'s PERMISSION_ID. See the header.
-/**
- * The embedded debugger's permission, a protected scope.
- */
-const DEBUGGER_PERMISSION = 'urn:sts:debugger-api:debugger';
 
 // OPENID CONNECT NATIVE SSO's scope (#130): granted, in every mode, only to
 // a client `applications.nativeSsoOf()` enables — the flag and a group —
@@ -190,10 +254,6 @@ class ScopePolicy {
    * The module's `ADMIN_SCOPES`.
    */
   static readonly ADMIN_SCOPES = ADMIN_SCOPES;
-  /**
-   * The module's `DEBUGGER_PERMISSION`.
-   */
-  static readonly DEBUGGER_PERMISSION = DEBUGGER_PERMISSION;
   /**
    * The module's `DEVICE_COMPLIANCE_SCOPE`.
    */
@@ -263,24 +323,28 @@ class ScopePolicy {
   // them are settings: a list written here would go stale the first time
   // `scim.scopeWrite` was set from /admin/config, and the symptom would be the
   // renamed scope issued to anybody. Each resource server names its own; this
-  // reads the same settings they read.
+  // reads the same settings they read. Shared Signals is the exception to
+  // "the setting's name, and only that": `ssf_scopes.published()` is the two
+  // settings PLUS `ssf.read` and `ssf.manage`, so
+  // renaming a setting does not unprotect the names receivers already use
+  // and does not let development issue the profile names to anybody (#334).
   // ---------------------------------------------------------------------------
   /**
-   * Lists this service's own protected scopes, reading the SCIM and Shared
-   * Signals scope names from their settings each time.
+   * Lists this service's own protected scopes, reading the SCIM scope names
+   * from their settings and the Shared Signals names from `ssf_scopes`.
    *
    * @returns the protected scope names
    */
   protectedScopes(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering ScopePolicy.protectedScopes().");
-    const names = ADMIN_SCOPES.slice(0);
+    const names = ADMIN_SCOPES.slice(0).concat(REPORT_SCOPES);
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
-     String(config.value('ssf.authScopeRead') || 'ssf:read'),
-     String(config.value('ssf.authScopeWrite') || 'ssf:write'),
-     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE]
-      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES)
+     DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE,
+     AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
+      .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
+              OWNER_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);
@@ -305,20 +369,97 @@ class ScopePolicy {
     return answer;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SCOPES A DELEGATED PERMISSION GRANT DECLARES (#1141, 2026-10-29).
+  // "Grant" here is always that and never RFC 6749's authorization grant,
+  // Grant Management's or GNAP's (rcbj, 2026-10-29). For this service's own
+  // three APIs — `/admin-api`, `/account-api`, `/report-api` — the client's
+  // half of "may it ask for this scope" is a DELEGATED PERMISSION GRANT on the
+  // API's resource object (rcbj's decision on #1141), and not the
+  // registration's `oauthAllowedScope`: `applications.js`'s `API_PERMISSIONS`
+  // is the vocabulary, `oauthDelegatedPermission` on the client the
+  // delegated permission grant. Listing one of these words in
+  // `oauthAllowedScope` no longer declares it — `declaredScopes()` takes them
+  // off — so the delegated permission grant is the one way. The
+  // permission must still be DEFINED by that API's own object (an operator
+  // entry defining `urn:sts:admin-api:admin:read` does not stand in for it),
+  // and roles still decide whether the subject holds the right.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the API whose object defines a scope as a delegated permission,
+   * or '' for a scope no delegated permission grant governs.
+   *
+   * @param scope - a scope word
+   * @returns the resource object's identifier, or ''
+   */
+  delegatedPermissionApiOf(scope: string): string {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScopePolicy.delegatedPermissionApiOf().");
+    const name = String(scope == null ? '' : scope);
+    const table = applications.API_PERMISSIONS;
+    const api = Object.keys(table).filter(function (one: string) {
+      return table[one].permissions.some(function (row: string[]) {
+        return row[0] === name;
+      });
+    })[0] || '';
+    log.debug("Leaving ScopePolicy.delegatedPermissionApiOf(). " +
+              (api || 'None.'));
+    return api;
+  }
+
+  /**
+   * Returns the scopes a client holds a delegated permission grant of
+   * (#1141): each permission its `oauthDelegatedPermission` names that the
+   * API's own object defines.
+   *
+   * @param clientId - the client_id
+   * @returns the scope words
+   */
+  delegatedPermissionScopes(clientId: unknown): string[] {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScopePolicy.delegatedPermissionScopes().");
+    const who = String(clientId == null ? '' : clientId).trim();
+    const out: string[] = [];
+    if (!who) {
+      log.debug("Leaving ScopePolicy.delegatedPermissionScopes(). No client.");
+      return out;
+    }
+    const table = applications.API_PERMISSIONS;
+    Object.keys(table).forEach(function (api: string) {
+      table[api].permissions.forEach(function (row: string[]) {
+        const id = table[api].base + row[0];
+        const defined = applications.forPermission(id);
+        if (defined && defined.identifier === api &&
+            applications.holdsPermission(who, id) &&
+            out.indexOf(row[0]) < 0) {
+          out.push(row[0]);
+        }
+      });
+    });
+    log.debug("Leaving ScopePolicy.delegatedPermissionScopes(). " +
+              out.length + ".");
+    return out;
+  }
+
   // The client's declared list, or null when it declares none.
   /**
    * Returns a client's declared scopes (`oauthAllowedScope`) in the ambient
-   * realm.
+   * realm, less the words a delegated permission grant declares instead
+   * (#1141).
    *
    * @param clientId - the client_id
    * @returns the declared list, or null when the client declares none
    */
   declaredScopes(clientId: unknown): string[] | null {
     const { log, applications } = this.deps;
+    const self = this;
     log.debug("Entering ScopePolicy.declaredScopes().");
     const held = applications.allowedScopesOf(clientId);
+    const out = held ? held.filter(function (one: string) {
+      return !self.delegatedPermissionApiOf(one);
+    }) : held;
     log.debug("Leaving ScopePolicy.declaredScopes().");
-    return held;
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -340,8 +481,21 @@ class ScopePolicy {
   declares(clientId: unknown, scope: string): boolean {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.declares().");
+    const name = String(scope);
+    // A word a delegated permission grant governs (#1141): that grant, and
+    // nothing else.
+    if (this.delegatedPermissionApiOf(name)) {
+      const held = this.delegatedPermissionScopes(clientId).indexOf(name) >= 0;
+      log.debug("Leaving ScopePolicy.declares(). " + held + " (a " +
+                "delegated permission grant).");
+      return held;
+    }
     const held = this.declaredScopes(clientId);
-    const answer = !!held && held.indexOf(String(scope)) >= 0;
+    // An exact listing, or — for a Shared Signals name — declared names
+    // granting every permission it grants, write including read (#334).
+    // Other scopes stay an exact match.
+    const answer = !!held && (held.indexOf(name) >= 0 ||
+      ssfScopes.declarationCovers(held, name));
     log.debug("Leaving ScopePolicy.declares(). " + answer);
     return answer;
   }
@@ -359,7 +513,12 @@ class ScopePolicy {
   defaultScopes(opts?: JudgeOptions): string[] {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.defaultScopes().");
-    const out = OIDC_SCOPES.slice(0);
+    // `bound_key` only while OpenID Connect Key Binding is performed (#315):
+    // off, a client that declares nothing is not granted it by default.
+    const keyBinding = this.deps.config.value('oauth2.keyBinding') !== false;
+    const out = OIDC_SCOPES.filter(function (one) {
+      return keyBinding || one !== 'bound_key';
+    });
     ((opts && opts.defaults) || []).forEach(function (one) {
       if (one && out.indexOf(String(one)) < 0) {
         out.push(String(one));
@@ -426,7 +585,9 @@ class ScopePolicy {
           scopeVerdicts.resourceFact(A.SCOPE_PROTECTED,
                                      protectedNames.indexOf(one) >= 0),
           scopeVerdicts.resourceFact(A.SCOPE_DECLARED,
-                                     !!declared && declared.indexOf(one) >= 0),
+            self.delegatedPermissionApiOf(one) ? self.declares(clientId, one)
+              : (!!declared && (declared.indexOf(one) >= 0 ||
+                 ssfScopes.declarationCovers(declared, one)))),
           scopeVerdicts.resourceFact(A.SCOPE_NAMES_PARTY,
                                      self.namesAnotherParty(one)),
           scopeVerdicts.resourceFact(A.SCOPE_IN_DEFAULTS,
@@ -515,8 +676,12 @@ class ScopePolicy {
           (judged.protectedRefused.length === 1 ? 'scope' : 'scopes') +
           ', issued in every mode only to a client that declares ' +
           (judged.protectedRefused.length === 1 ? 'it' : 'them') + ', and ' +
-          client + ' does not.' + where + ' A dynamic registration cannot ' +
-          'declare one; an administrator does.' };
+          client + ' does not.' + where + ' An admin, owner, account or ' +
+          'report scope is declared instead by a delegated permission ' +
+          'grant on that API\'s object — urn:sts:admin-api:, ' +
+          'urn:sts:account-api: or urn:sts:report-api: followed by the ' +
+          'scope (POST /admin-api/permissions/grant-permission, #1141). A ' +
+          'dynamic registration cannot declare one; an administrator does.' };
     }
     if (judged.nativeSsoRefused.length) {
       log.debug("Leaving ScopePolicy.refusal(). Native SSO.");
@@ -599,6 +764,97 @@ class ScopePolicy {
               " taken off.");
     return kept;
   }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A WS-TRUST JWT'S CONFIGURED SCOPES WILL LOSE, SAID AT CONFIGURATION
+  // TIME (#488). #485 accepts any value on `wstrustJwtScope` and drops at
+  // issuance what this policy would drop, through `narrow()`; that is the
+  // token endpoint's backstop and stays the decision (rcbj). What this adds
+  // is the WARNING where the value is set: the console's cell, the Save
+  // reply, the /admin-api write replies and the application's GET view all
+  // carry this one list (rule 7), so they cannot say different things.
+  //
+  // Each value is read as `judge()` reads it, with the application as the
+  // client, and for the reason a mode question would hide: development
+  // GRANTS an undeclared scope, so its warning says what PRODUCT would do.
+  //
+  //   * a protected scope the application does not declare: dropped in
+  //     every mode;
+  //   * any other value it does not declare (or, declaring nothing, outside
+  //     the default set): dropped in product;
+  //   * a declared value the issuance policy still drops (an operator's
+  //     rule): dropped, with the policy's code.
+  //
+  // The way out is the same for each: declare it on `oauthAllowedScope`, or
+  // remove it from `wstrustJwtScope`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the warnings an application's `wstrustJwtScope` values earn: each
+   * value the scope policy would drop at issuance, why, and how to resolve
+   * it (#488).
+   *
+   * @param identifier - the application's identifier
+   * @returns `[{ attribute, value, reason, dropped, text }]`, empty when none
+   */
+  configuredScopeWarnings(identifier: unknown): Json[] {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering ScopePolicy.configuredScopeWarnings().");
+    const app: any = applications.get(String(identifier || ''));
+    const values = app && app.fields
+      ? [].concat(app.fields.wstrustJwtScope || []).map(String)
+        .map(function (one: string) { return one.trim(); })
+        .filter(function (one: string) { return !!one; })
+      : [];
+    if (!values.length) {
+      log.debug("Leaving ScopePolicy.configuredScopeWarnings(). None set.");
+      return [];
+    }
+    const registered = [].concat((app.fields || {}).oauthClientId || [])[0];
+    const clientId = String(registered || app.identifier);
+    const declared = self.declaredScopes(clientId);
+    const defaults = declared ? [] : self.defaultScopes();
+    const product = mode.isProduct();
+    const judged = self.judge(values.join(' '), clientId, { stage: 'mint' });
+    const resolve = 'Declare it on this application\'s oauthAllowedScope ' +
+      '(Configuration → OAuth 2.0 / OpenID Connect), or remove it from ' +
+      'wstrustJwtScope.';
+    const out: Json[] = [];
+    values.forEach(function (value: string) {
+      const isDeclared = declared ? declared.indexOf(value) >= 0
+                                  : defaults.indexOf(value) >= 0;
+      let reason = '';
+      let why = '';
+      if (self.isProtected(value) && !self.declares(clientId, value)) {
+        reason = 'protected';
+        why = 'is one of this service\'s protected scopes, which a token ' +
+          'carries only for a client that declares it, so it is dropped ' +
+          'from the JWT in every mode';
+      } else if (!isDeclared) {
+        reason = 'undeclared';
+        why = product
+          ? 'is not declared on this application\'s oauthAllowedScope, ' +
+            'so it is dropped from the JWT at issuance'
+          : 'is not declared on this application\'s oauthAllowedScope: ' +
+            'development mode issues it, and PRODUCT mode would drop it ' +
+            'from the JWT at issuance';
+      } else if (judged.kept.indexOf(value) < 0) {
+        reason = 'policy';
+        why = 'is dropped from the JWT at issuance by the issuance ' +
+          'policy\'s per-scope question';
+      }
+      if (reason) {
+        out.push({ attribute: 'wstrustJwtScope', value: value,
+                   reason: reason,
+                   dropped: reason === 'undeclared' ? product : true,
+                   text: 'wstrustJwtScope "' + value + '" ' + why + '. ' +
+                         resolve });
+      }
+    });
+    log.debug("Leaving ScopePolicy.configuredScopeWarnings(). " +
+              out.length + ".");
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -634,7 +890,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   OIDC_SCOPES: OIDC_SCOPES,
   ADMIN_SCOPES: ADMIN_SCOPES,
-  DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
+  REPORT_SCOPES: REPORT_SCOPES,
+  UMA_PROTECTION_SCOPE: UMA_PROTECTION_SCOPE,
+  OWNER_SCOPES: OWNER_SCOPES,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,
   UNDECLARED_CODE: UNDECLARED_CODE,
@@ -644,8 +902,11 @@ export = {
   isProtected: slot.forward('isProtected'),
   declaredScopes: slot.forward('declaredScopes'),
   declares: slot.forward('declares'),
+  delegatedPermissionApiOf: slot.forward('delegatedPermissionApiOf'),
+  delegatedPermissionScopes: slot.forward('delegatedPermissionScopes'),
   defaultScopes: slot.forward('defaultScopes'),
   judge: slot.forward('judge'),
   refusal: slot.forward('refusal'),
-  narrow: slot.forward('narrow')
+  narrow: slot.forward('narrow'),
+  configuredScopeWarnings: slot.forward('configuredScopeWarnings')
 };

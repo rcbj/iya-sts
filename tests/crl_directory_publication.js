@@ -10,7 +10,7 @@
 // UNDER WHICH NAME (2026-09-13).
 //
 // **WHY THIS IS IN PROCESS**, which is `tests/CLAUDE.md`'s question.
-// `tests/vendored/sts_pki_distribution_points.js` follows every `ldap://`
+// `tests/protocol/sts_pki_distribution_points.js` follows every `ldap://`
 // distribution point over the socket, and two mutants of what this file
 // guards SURVIVED it. Both for a reason no socket-side job can get around:
 //
@@ -181,6 +181,185 @@ function restoreAuthority(pki, keystore, before) {
   log.debug("Leaving restoreAuthority().");
 }
 
+// G. A LIST THE DIRECTORY ALREADY HOLDS AS IT WOULD BE SIGNED NOW IS LEFT
+// ALONE AT THE START (#639), and every other is published as before: a
+// lifetime changed, another authority's list in the entry, a revocation the
+// entry does not list.
+async function stillTheList(t, all, installed) {
+  log.debug("Entering stillTheList().");
+  t.log.info('=== G. the start leaves alone a list that is still the list ' +
+             '(#639) ===');
+  const startPass = async function () {
+    const counts = { kept: 0 };
+    const published = await revocation.publishAll(pki.knownScopes(),
+      { unlessCurrent: true, counts: counts });
+    return { published: published, kept: counts.kept };
+  };
+  t.check(typeof installed.publishedCrl === 'function',
+          'G0. the directory offers the CRL an entry holds');
+  let pass = await startPass();
+  t.check(pass.published === 0 && pass.kept === all.length,
+          'G1. every list the directory holds, fresh, is kept: no signature, ' +
+          'no CRL number, no write', JSON.stringify(pass));
+  const lifetime = Number(config.value('pki.crlLifetimeMinutes'));
+  config.setOverride('pki.crlLifetimeMinutes', String(lifetime + 5));
+  try {
+    pass = await startPass();
+  } finally {
+    config.clearOverride('pki.crlLifetimeMinutes');
+  }
+  t.check(pass.published === all.length && pass.kept === 0,
+          'G2. with another lifetime in force, every list is signed again',
+          JSON.stringify(pass));
+  // Back to lists of the lifetime in force, as the refresh job writes them.
+  await revocation.publishAll(pki.knownScopes());
+  const rootList = await revocation.buildCrl(pki.SERVICE_SCOPE, 'root');
+  installed.publishCrl(REALM, 'intermediate', rootList.der);
+  pass = await startPass();
+  t.check(pass.published === 1 && pass.kept === all.length - 1,
+          'G3. an entry holding another authority\'s list is published ' +
+          'again, and only that one', JSON.stringify(pass));
+  // A revocation made while the directory was not written: the register
+  // lists it, the entry does not.
+  revocation.setDirectory({
+    publishCrl: function () {
+      log.debug("Entering publishCrl(). Not written.");
+      log.debug("Leaving publishCrl().");
+      return true;
+    },
+    baseDnFor: installed.baseDnFor,
+    publishedCrl: installed.publishedCrl
+  });
+  let revoked = null;
+  try {
+    revoked = revocation.revoke(REALM, 'intermediate',
+                                { serialHex: '0a0b0c0d639',
+                                  reason: 'keyCompromise' });
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 200);
+    });
+  } finally {
+    revocation.restoreDirectory(installed);
+  }
+  pass = await startPass();
+  t.check(revoked && revoked.ok && pass.published === 1 &&
+          pass.kept === all.length - 1,
+          'G4. a list without a revocation the register holds is published ' +
+          'again, and only that one', JSON.stringify(pass));
+  revocation.release(REALM, 'intermediate', '0a0b0c0d639');
+  // AND ONLY WHILE IT IS FRESH FOR LONGER THAN THE REFRESH JOB'S INTERVAL:
+  // the same list, asked about from just past half its lifetime, is not
+  // kept, so it cannot expire before the job's next run replaces it.
+  await revocation.publishAll(pki.knownScopes());
+  const root = all.filter(function (one) {
+    return one.ca === 'root';
+  })[0];
+  const halfLife = Number(config.value('pki.crlLifetimeMinutes')) * 30000;
+  const nowKept = await revocation.stillCurrent(root, Date.now());
+  const laterKept = await revocation.stillCurrent(root,
+                                                  Date.now() + halfLife);
+  t.check(nowKept === true && laterKept === false,
+          'G5. a list is kept only while more than half its lifetime and a ' +
+          'minute are left', JSON.stringify({ now: nowKept,
+                                              later: laterKept }));
+  log.debug("Leaving stillTheList().");
+}
+
+// H. A SAVE OF ONE BRANCH DOES NOT RE-SIGN THE ROOT'S LIST (2026-11-10).
+// `publishScopeSoon()` published every authority `authorities()` named,
+// the Root's among them, for every save of every branch in every process;
+// under the fuzz gate's `pki/build` calls that was hundreds of Root
+// signings a minute racing one CRL-number counter (STS-PKI-0185), and the
+// store round trips held the change-log pull past the read barrier
+// (STS-STORE-0039, STS-WORKER-0027). And concurrent signings of one
+// authority in a process share one, unless the list changed between them.
+async function onlyWhatChanged(t, installed) {
+  log.debug("Entering onlyWhatChanged().");
+  t.log.info('=== H. a branch saved re-signs only what changed, and one ' +
+             'authority is signed once at a time ===');
+  await revocation.publishAll(pki.knownScopes());
+  const written = [];
+  revocation.setDirectory({
+    publishCrl: function (scope, ca, der) {
+      log.debug("Entering publishCrl(). Counted.");
+      written.push(revocation.scopeSegment(scope) + '/' + ca);
+      log.debug("Leaving publishCrl().");
+      return installed.publishCrl(scope, ca, der);
+    },
+    baseDnFor: installed.baseDnFor,
+    publishedCrl: installed.publishedCrl
+  });
+  const settle = function () {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, 300);
+    });
+  };
+  let revoked = null;
+  try {
+    revocation.publishScopeSoon(REALM);
+    revocation.publishScopeSoon(pki.SERVICE_SCOPE);
+    await settle();
+    t.equal(written.join(' '), '',
+            'H1. a save of a branch, and of the service scope, with nothing ' +
+            'changed signs and writes no list — not the Root\'s');
+    revoked = revocation.revoke(REALM, 'intermediate',
+                                { serialHex: '0a0b0c0d1110',
+                                  reason: 'keyCompromise' });
+    await settle();
+    t.check(revoked && revoked.ok &&
+            written.some(function (one) {
+              return /\/intermediate$/.test(one);
+            }) && !written.some(function (one) {
+              return /\/root$/.test(one);
+            }),
+            'H2. a revocation in the branch writes that authority\'s list ' +
+            'at once, and still not the Root\'s', written.join(' '));
+    const intermediateWrites = function () {
+      return written.filter(function (one) {
+        return /\/intermediate$/.test(one);
+      }).length;
+    };
+    t.equal(intermediateWrites(), 1,
+            'H2a. and writes it ONCE: the revocation\'s own publication and ' +
+            'the save\'s are one');
+    written.length = 0;
+    ['0a0b0c0d1112', '0a0b0c0d1113', '0a0b0c0d1114'].forEach(function (s) {
+      revocation.revoke(REALM, 'intermediate',
+                        { serialHex: s, reason: 'keyCompromise' });
+    });
+    await settle();
+    t.equal(intermediateWrites(), 1,
+            'H2b. three revocations in a burst are one list written',
+            written.join(' '));
+  } finally {
+    revocation.restoreDirectory(installed);
+  }
+  const both = await Promise.all([
+    revocation.buildCrl(REALM, 'intermediate'),
+    revocation.buildCrl(REALM, 'intermediate')]);
+  t.check(both[0].ok && both[1].ok &&
+          both[0].crlNumber === both[1].crlNumber &&
+          Buffer.compare(Buffer.from(both[0].der),
+                         Buffer.from(both[1].der)) === 0,
+          'H3. two signings of one list asked at once are one signing',
+          JSON.stringify([both[0].crlNumber, both[1].crlNumber]));
+  const first = revocation.buildCrl(REALM, 'intermediate');
+  const again = revocation.revoke(REALM, 'intermediate',
+                                  { serialHex: '0a0b0c0d1111',
+                                    reason: 'keyCompromise' });
+  const second = revocation.buildCrl(REALM, 'intermediate');
+  const pair = await Promise.all([first, second]);
+  t.check(again && again.ok && pair[0].ok && pair[1].ok &&
+          pair[0].crlNumber !== pair[1].crlNumber &&
+          pair[1].count === pair[0].count + 1,
+          'H4. but a list asked for after a change is signed anew, never ' +
+          'handed the one started before it',
+          JSON.stringify(pair.map(function (one) {
+            return { n: one.crlNumber, count: one.count };
+          })));
+  log.debug("Leaving onlyWhatChanged().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const before = heldAuthority(pki, keystore);
@@ -343,6 +522,92 @@ async function run(t) {
             'pki.start() armed the refresh timer, and arming it again does ' +
             'nothing — without it every ldap:// list was past its nextUpdate ' +
             'an hour after start');
+
+    t.log.info('=== F. nothing is published on the way to the listener; ' +
+               'the front publishes after it binds (#613, #617) ===');
+
+    // A worker re-signing and re-writing every list cost ~2 s of each
+    // worker's start on 8081 (279 lists, #613), and the front process doing
+    // it inside `pki.start()` 4 s of its way to the socket (#617). Now
+    // `pki.start()` publishes nothing in either; the front's lists are
+    // written by `publishStartupCrls()`, which `server.js` calls once the
+    // listener is bound — one at a time, yielding between them.
+    // The first `pki.start()` above, in this (front) process, left its lists
+    // for publishStartupCrls(); published here, before anything is counted.
+    await pki.publishStartupCrls();
+    const installed = revocation.currentDirectory();
+    let writes = 0;
+    let turns = 0;
+    let interleaved = false;
+    revocation.setDirectory({
+      publishCrl: function (scope, ca, der) {
+        log.debug("Entering publishCrl().");
+        writes += 1;
+        if (turns > 0 && writes > 1) {
+          interleaved = true;
+        }
+        log.debug("Leaving publishCrl().");
+        return installed.publishCrl(scope, ca, der);
+      },
+      baseDnFor: function (scope) {
+        log.debug("Entering baseDnFor().");
+        log.debug("Leaving baseDnFor().");
+        return installed.baseDnFor(scope);
+      }
+    });
+    const wasWorker = process.env.STS_REQUEST_WORKER;
+    try {
+      process.env.STS_REQUEST_WORKER = '1';
+      const asWorker = await pki.start({ realmIds: ['', REALM] });
+      t.check(asWorker.ok && writes === 0,
+              'pki.start() in a request worker builds nothing new and writes ' +
+              'no CRL into the directory', JSON.stringify({
+                ok: asWorker.ok, writes: writes }));
+      t.equal(await pki.publishStartupCrls(), 0,
+              'and leaves nothing for publishStartupCrls() to publish');
+      delete process.env.STS_REQUEST_WORKER;
+      const asFront = await pki.start({ realmIds: ['', REALM] });
+      t.check(asFront.ok && writes === 0,
+              'pki.start() in the front process writes no CRL either — the ' +
+              'start no longer waits on 279 signatures before the listener ' +
+              'binds', JSON.stringify({ ok: asFront.ok, writes: writes }));
+      // A turn of the event loop counted while the publication runs: it
+      // must hand the loop back between lists, so a `setImmediate()`
+      // callback runs before the last one is written. (The signature is
+      // WebCrypto and yields by itself; `publishAll()` also yields after
+      // each synchronous directory write, so this holds whatever a
+      // signature does — it is the property, not that one line, held here.)
+      let ticking = true;
+      const tick = function () {
+        if (!ticking) {
+          return;
+        }
+        turns += 1;
+        setImmediate(tick);
+      };
+      setImmediate(tick);
+      const published = await pki.publishStartupCrls();
+      ticking = false;
+      t.check(published >= all.length && writes >= all.length,
+              'publishStartupCrls() then writes every authority\'s list, so ' +
+              'the checks above are not ones that cannot fail',
+              published + ' published, ' + writes + ' of ' + all.length);
+      t.check(interleaved,
+              'and other work runs between two lists — the publication ' +
+              'yields to the event loop rather than holding it for all of ' +
+              'them', JSON.stringify({ turns: turns, writes: writes }));
+      t.equal(await pki.publishStartupCrls(), 0,
+              'and it runs once: a second call publishes nothing');
+    } finally {
+      if (wasWorker === undefined) {
+        delete process.env.STS_REQUEST_WORKER;
+      } else {
+        process.env.STS_REQUEST_WORKER = wasWorker;
+      }
+      revocation.restoreDirectory(installed);
+    }
+    await stillTheList(t, all, installed);
+    await onlyWhatChanged(t, installed);
   } finally {
     realms.remove(REALM);
     restoreAuthority(pki, keystore, before);

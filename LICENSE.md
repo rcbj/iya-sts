@@ -120,13 +120,13 @@ own licences. `REUSE.toml` declares each of them in machine-readable form and
 |---|---|---|
 | `xacml/conformance/` | The OASIS XACML 3.0 conformance test suite, taken from [`authzforce/core`](https://github.com/authzforce/core). `xacml/conformance/PROVENANCE.md` records the full chain — OASIS XACML TC, then AT&T (April 2014, MIT), then AuthzForce — together with the one link in that chain that public sources do not establish. Its own `LICENSE` file sits beside it. | Apache-2.0 |
 | `spiffe/protos/` | The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the SPIFFE Broker API, copied verbatim. | Apache-2.0 |
-| `common/vendored/contexts/credentials_v1.json`, `credentials_v2.json` | The W3C Verifiable Credentials JSON-LD contexts. | W3C Software and Document License |
+| `common/crypto_impl/contexts/credentials_v1.json`, `credentials_v2.json` | The W3C Verifiable Credentials JSON-LD contexts. | W3C Software and Document License |
 | `admin-ui/natural_earth/` | Country outlines derived from Natural Earth's 1:50m Admin 0 – Countries by `tests/tools/natural-earth.js`. | Public domain |
 
 The Business Source License above covers every other file, with one
-exception. The rest of `common/vendored/` (all but `pqc.js`, `pqc_x509.js` and
+exception. The rest of `common/crypto_impl/` (all but `pqc.js`, `pqc_x509.js` and
 `xmldsig.js`, this repository's own since #363), the eight Kerberos codec files
-in `kerberos/` and the non-`local` jobs in `tests/vendored/` are byte-identical
+in `kerberos/` and the non-`local` jobs in `tests/protocol/` are byte-identical
 copies of the parent project's files. They have the same owner and keep the
 parent project's MIT licence (`LICENSES/MIT.txt`), and carry no header because
 they may not be edited here.
@@ -159,7 +159,7 @@ directory:
 
 | Licence | Packages |
 |---|---|
-| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, cors, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
+| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
 | MIT-0 | nodemailer |
 | BSD-3-Clause | @digitalbazaar/bbs-signatures, @digitalbazaar/ed25519-signature-2020, @digitalbazaar/ed25519-verification-key-2020, @digitalbazaar/security-context, @digitalbazaar/zcap, asn1js, jsonld, jsonld-signatures, macaroon, pkijs |
 | Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |

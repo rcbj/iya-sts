@@ -46,7 +46,7 @@ resource "aws_lb" "main" {
   load_balancer_type               = "network"
   internal                         = false
   subnets                          = aws_subnet.public[*].id
-  security_groups                  = [aws_security_group.nlb.id]
+  security_groups                  = concat([aws_security_group.nlb.id], aws_security_group.nlb_cloudfront[*].id)
   enable_cross_zone_load_balancing = true
   enable_deletion_protection       = false
 
@@ -81,6 +81,15 @@ resource "aws_lb_target_group" "nodes" {
   # answer, where a bare TCP connect only asked whether the socket accepted —
   # and on 8081 read as a failed handshake, logged once a second per node.
   # LDAP, LDAPS and Kerberos stay a TCP connect; there is nothing to GET.
+  #
+  # A starting task is not replaced because these fail (#330). The service
+  # ignores unhealthy checks for health_check_grace_period_seconds (ecs.tf)
+  # after the task starts. Every group still has to pass before the task is
+  # steady: a port that is down when that window ends fails the deploy.
+  # Once the task has been up, three consecutive failures of any group
+  # replace it: the interval is 10 seconds and `unhealthy_threshold` is 3,
+  # about 30 seconds. Two successes mark a group healthy again. GCP and
+  # Azure use the same failure count.
   health_check {
     protocol            = each.value.health
     port                = "traffic-port"

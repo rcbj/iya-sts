@@ -14,9 +14,11 @@
 // the last one went every request was served on the front process's one
 // thread. rcbj met it more than once. reap() now forks a replacement into the
 // dead worker's pool and slot — not while the pool is stopping, not once it
-// has given up, never past the configured size — and a worker that reports it
-// could not start is ended so that it goes through the same path, bounded by
-// QUICK_EXIT_LIMIT failed starts in a row.
+// has given up, except during that give-up's cool-down try, and never past
+// the configured size — and a worker that reports it could not start is ended
+// so that it goes through the same path, bounded by QUICK_EXIT_LIMIT failed
+// starts in a row. The give-up then waits workers.giveUpRetryMs and tries one
+// worker; one that comes up refills the pool, and 0 stays given up (#333).
 //
 // The decision is asserted directly (section 1). The rest drives the REAL
 // fork() and reap() with real worker THREADS (#364: a worker is a
@@ -33,6 +35,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const pool = require('../common/request_pool');
+const config = require('../common/config');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for.
@@ -48,7 +51,8 @@ const SURFACES = pool.SURFACE_POOL;
 // thread has the process's pid. STUB_MODE=fail answers `ready: false`, as a
 // worker whose state could not be brought up does; anything else listens and
 // says ready, after STUB_DELAY_MS when that is set (a slow start, for the
-// start gate). GET /die makes it exit on its own, as a crash does:
+// start gate). STUB_MODE=slow first says it is slow to start, as a worker
+// past workers.startTimeoutMs does (#820), and then comes up. GET /die makes it exit on its own, as a crash does:
 // `process.exit()` in a thread ends the thread and nothing else. `stop` is
 // what a drain sends.
 const STUB = [
@@ -62,6 +66,10 @@ const STUB = [
   "    wt.parentPort.postMessage({ ready: false,",
   "                                error: 'the stub cannot start' });",
   "    return;",
+  "  }",
+  "  if (process.env.STUB_MODE === 'slow') {",
+  "    wt.parentPort.postMessage({ ready: false, slow: true,",
+  "                                error: 'the stub is slow' });",
   "  }",
   "  const server = http.createServer(function (req, res) {",
   "    if (req.url === '/die') { process.exit(3); }",
@@ -210,6 +218,12 @@ function checkTheDecision(t) {
           JSON.stringify(plan));
 
   plan = pool.replacementFor(dead, [a, dead, b],
+    { stopped: false, givenUp: true, probing: true, wanted: 3 });
+  t.check(plan.replace && plan.pool === PROTO && plan.slot === 1,
+          'a cool-down try may replace a worker while the pool is still ' +
+          'given up', JSON.stringify(plan));
+
+  plan = pool.replacementFor(dead, [a, dead, b],
     { stopped: false, givenUp: false, wanted: 2 });
   t.check(!plan.replace,
           'nor past the configured size, counting only the living',
@@ -227,6 +241,27 @@ function checkTheDecision(t) {
           'the surface pool is sized on its own, and a slot another living ' +
           'worker holds is not handed out twice', JSON.stringify(plan));
   log.debug("Leaving checkTheDecision().");
+}
+
+// The cool-down's wait, as a decision: the setting, doubled, capped at an
+// hour, and 0 meaning it does not try again.
+function checkGiveUpRetryDelay(t) {
+  log.debug("Entering checkGiveUpRetryDelay().");
+  t.log.info('=== the give-up cool-down doubles, and 0 does not retry ===');
+  t.equal(pool.giveUpRetryDelay(0, 300000), 300000,
+          'the first wait is workers.giveUpRetryMs itself');
+  t.equal(pool.giveUpRetryDelay(1, 300000), 600000,
+          'the next wait is twice that');
+  t.equal(pool.giveUpRetryDelay(2, 300000), 1200000, 'and twice again');
+  t.equal(pool.giveUpRetryDelay(3, 300000), 2400000, 'and once more');
+  t.equal(pool.giveUpRetryDelay(4, 300000), 3600000,
+          'then an hour, which 16 times five minutes would pass');
+  t.equal(pool.giveUpRetryDelay(6, 300000), 3600000,
+          'and the hour is the ceiling after that too');
+  t.equal(pool.giveUpRetryDelay(0, 0), 0,
+          '0 does not retry, on the first wait');
+  t.equal(pool.giveUpRetryDelay(3, 0), 0, 'nor on a later one');
+  log.debug("Leaving checkGiveUpRetryDelay().");
 }
 
 // ---------------------------------------------------------------------------
@@ -326,12 +361,82 @@ async function checkAFailedStartIsBounded(t, stubPath) {
             'starts in a row');
     t.equal(pool.workerTable().length, 0,
             'and nothing is left running or being forked');
+    t.equal(statsOf(PROTO).giveUpRetryArmedMs, 0,
+            'workers.giveUpRetryMs 0 arms no cool-down');
+    t.equal(statsOf(PROTO).giveUpAttempt, 0,
+            'and no attempt is counted');
+    // THE SETTING IS RUNTIME (#695): raised after the give-up, it arms the
+    // wait the give-up did not; put back to 0, it cancels it.
+    config.setOverride('workers.giveUpRetryMs', '60000');
+    t.equal(statsOf(PROTO).giveUpRetryArmedMs, 60000,
+            'raising workers.giveUpRetryMs after the give-up arms the wait');
+    config.setOverride('workers.giveUpRetryMs', '0');
+    t.equal(statsOf(PROTO).giveUpRetryArmedMs, 0,
+            'and setting it back to 0 cancels the wait');
+    config.clearOverride('workers.giveUpRetryMs');
     t.check(pids[0] && pool.workerTable().every(function (one) {
       return one.pid !== pids[0];
     }), 'the worker that said it could not start was ended rather than ' +
         'left holding its place', '');
-  });
+  }, { STS_WORKERS_GIVE_UP_RETRY_MS: '0' });
   log.debug("Leaving checkAFailedStartIsBounded().");
+}
+
+// ---------------------------------------------------------------------------
+// A GIVE-UP IS NOT FOR THE LIFE OF THE PROCESS (#333). One worker is tried
+// after the cool-down, and routing stays given up until it is ready. A try
+// that also fails waits twice as long.
+// ---------------------------------------------------------------------------
+async function checkAPoolRetriesAfterGivingUp(t, stubPath) {
+  log.debug("Entering checkAPoolRetriesAfterGivingUp().");
+  t.log.info('=== a pool that gave up tries one worker after the ' +
+             'cool-down and refills ===');
+  await withStubPool(stubPath, 2, 'fail', async function () {
+    pool.fork(PROTO, 0);
+    t.check(await waitFor(function () {
+      return statsOf(PROTO).gaveUp;
+    }, 15000), 'the pool gives up', '');
+    // THE NEXT FORK COPIES THE ENVIRONMENT. The workers that failed already
+    // hold `fail`; the one the cool-down forks reads this.
+    process.env.STUB_MODE = 'ok';
+    const waiting = statsOf(PROTO);
+    t.equal(pool.workerTable().length, 0, 'nothing is left running');
+    // THE ARMED LENGTH, NOT THE TIME LEFT (#695): the time left depends on
+    // when this line runs, which a loaded machine moves.
+    t.equal(waiting.giveUpRetryArmedMs, 400,
+            'the cool-down is the setting, and short enough to wait for');
+    t.check(waiting.giveUpRetryLeftMs >= 0 &&
+            waiting.giveUpRetryLeftMs <= 400,
+            'and the time left is within it',
+            String(waiting.giveUpRetryLeftMs));
+    t.equal(waiting.giveUpProbing, false,
+            'routing stays given up while the cool-down runs');
+    t.check(await waitFor(function () {
+      return ready(PROTO).length === 2 && !statsOf(PROTO).gaveUp;
+    }, 10000), 'one worker coming up clears the give-up and the pool ' +
+               'refills',
+               JSON.stringify({ ready: ready(PROTO).length,
+                                gaveUp: statsOf(PROTO).gaveUp }));
+    t.equal(statsOf(PROTO).giveUpAttempt, 0,
+            'a worker that comes up clears the backoff');
+  }, { STS_WORKERS_GIVE_UP_RETRY_MS: '400' });
+
+  t.log.info('=== a cool-down whose try also fails waits longer ===');
+  await withStubPool(stubPath, 1, 'fail', async function () {
+    pool.fork(PROTO, 0);
+    t.check(await waitFor(function () {
+      const now = statsOf(PROTO);
+      return now.giveUpAttempt === 1 && now.giveUpRetryArmedMs > 0;
+    }, 10000), 'a try that fails arms the doubled wait',
+               JSON.stringify(statsOf(PROTO)));
+    const again = statsOf(PROTO);
+    t.check(again.gaveUp && again.giveUpRetryArmedMs === 600,
+            'the second wait is twice the 300ms setting',
+            String(again.giveUpRetryArmedMs));
+    t.equal(pool.workerTable().length, 0,
+            'and the pool is not forking while it waits');
+  }, { STS_WORKERS_GIVE_UP_RETRY_MS: '300' });
+  log.debug("Leaving checkAPoolRetriesAfterGivingUp().");
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +489,7 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
 
   await withStubPool(stubPath, 3, 'ok', async function () {
     t.equal(pool.stats().starts.concurrency, 1,
-            'workers.startConcurrency defaults to 1');
+            'workers.startConcurrency 1 is a gate one wide');
     const got = await forkThroughTheGate(3);
     t.equal(got.queuedNow, 2,
             'queued three: one is forked at once and two wait behind it');
@@ -430,7 +535,7 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
     t.equal(peak, 1, 'and they started one at a time too');
     t.equal(pool.workerTable().length, 3,
             'the table holds exactly the configured three');
-  }, { STUB_DELAY_MS: '300' });
+  }, { STUB_DELAY_MS: '300', STS_WORKERS_START_CONCURRENCY: '1' });
 
   await withStubPool(stubPath, 4, 'ok', async function () {
     const got = await forkThroughTheGate(4);
@@ -452,9 +557,87 @@ async function checkWorkersStartOneAtATime(t, stubPath) {
   log.debug("Leaving checkWorkersStartOneAtATime().");
 }
 
+// ---------------------------------------------------------------------------
+// AS MANY AT ONCE AS THE NODE'S MEMORY HOLDS (#639): the default,
+// `workers.startConcurrency` 0. The width as a decision over its inputs,
+// then the gate with stubs: the first alone and measured, the rest together
+// (a stub's start costs next to nothing, so the floor prices it, and the
+// machine running this has room for more than three of those).
+// ---------------------------------------------------------------------------
+async function checkWorkersStartAsMemoryAllows(t, stubPath) {
+  log.debug("Entering checkWorkersStartAsMemoryAllows().");
+  t.log.info('=== workers start as many at once as memory holds (#639) ===');
+  const MiB = 1024 * 1024;
+  const width = pool.startWidthFor;
+  t.equal(width({ perStartBytes: 400 * MiB, limitBytes: 0, rssBytes: 0,
+                  availableBytes: 40 * 1024 * MiB }), 58,
+          'with no limit: the available memory less 15%, at one and a half ' +
+          'measured starts each (40 GiB, 400 MiB a start: 58)');
+  t.equal(width({ perStartBytes: 400 * MiB, limitBytes: 4096 * MiB,
+                  rssBytes: 1400 * MiB, availableBytes: 40 * 1024 * MiB }),
+          3, 'with a 4 GiB limit and 1.4 GiB held: (4096 - 1400 - 614) / ' +
+          '600 = 3, whatever the host has');
+  t.equal(width({ perStartBytes: 400 * MiB, limitBytes: 2048 * MiB,
+                  rssBytes: 1900 * MiB, availableBytes: 0 }), 1,
+          'never fewer than one, when the room is gone');
+  t.equal(width({ perStartBytes: 1, limitBytes: 0, rssBytes: 0,
+                  availableBytes: 1024 * 1024 * MiB }), 64,
+          'never more than 64, and a start is priced at 128 MiB at least');
+
+  await withStubPool(stubPath, 4, 'ok', async function () {
+    t.check(pool.stats().starts.automatic === true &&
+            pool.stats().starts.concurrency === 1,
+            'the default is the automatic width, one until a start is ' +
+            'measured', JSON.stringify(pool.stats().starts));
+    const got = await forkThroughTheGate(4);
+    t.check(got.entries.every(Boolean), 'all four came up', '');
+    t.check(got.entries[1].startedAt - got.entries[0].startedAt >= 290,
+            'the first started alone, and was measured',
+            JSON.stringify(got.entries.map(function (one) {
+              return one.startedAt;
+            })));
+    const starts = pool.stats().starts;
+    t.check(starts.measuredStartMb >= 128 && starts.concurrency >= 3,
+            'its start priced (at least the floor) and the gate widened to ' +
+            'what the memory holds', JSON.stringify(starts));
+    t.check(got.peak >= 2 && got.peak <= 3,
+            'and the other three started together', String(got.peak));
+    t.check(got.entries[3].startedAt - got.entries[1].startedAt < 200,
+            'forked within one stub\'s start of each other',
+            JSON.stringify(got.entries.map(function (one) {
+              return one.startedAt;
+            })));
+  }, { STUB_DELAY_MS: '300' });
+  log.debug("Leaving checkWorkersStartAsMemoryAllows().");
+}
+
+// ---------------------------------------------------------------------------
+// A SLOW START IS LEFT TO FINISH (#820). Past workers.startTimeoutMs a worker
+// says it is still starting: it is not ended — a terminate() mid-restore,
+// and a second restore beside it, ran 8081 out of heap — and it joins the
+// pool when it reports ready.
+// ---------------------------------------------------------------------------
+async function checkASlowStartIsKept(t, stubPath) {
+  log.debug("Entering checkASlowStartIsKept().");
+  t.log.info('=== a worker slow to start is kept, not replaced ===');
+  await withStubPool(stubPath, 1, 'slow', async function () {
+    const entry = pool.fork(PROTO, 0);
+    const settled = await entry.settled;
+    t.equal(settled, null, 'the pool stops waiting for a slow worker');
+    t.check(await waitFor(function () {
+      return ready(PROTO).length === 1;
+    }, 10000), 'and it joins the pool when it reports ready', '');
+    t.equal(ready(PROTO)[0].pid, entry.pid,
+            'as the same worker: it was not ended');
+    t.equal(statsOf(PROTO).replaced, 0, 'and nothing was replaced');
+  }, { STUB_DELAY_MS: '500' });
+  log.debug("Leaving checkASlowStartIsKept().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   checkTheDecision(t);
+  checkGiveUpRetryDelay(t);
   const stubPath = path.join(os.tmpdir(), 'sts-stub-worker-' + process.pid +
                              '.js');
   fs.writeFileSync(stubPath, STUB);
@@ -462,7 +645,10 @@ async function run(t) {
     await checkADeadWorkerIsReplaced(t, stubPath);
     await checkStoppingReplacesNothing(t, stubPath);
     await checkAFailedStartIsBounded(t, stubPath);
+    await checkASlowStartIsKept(t, stubPath);
+    await checkAPoolRetriesAfterGivingUp(t, stubPath);
     await checkWorkersStartOneAtATime(t, stubPath);
+    await checkWorkersStartAsMemoryAllows(t, stubPath);
   } finally {
     try {
       fs.unlinkSync(stubPath);
@@ -479,7 +665,7 @@ module.exports = {
   describe: 'that a request worker thread which dies is replaced in its ' +
             'pool and slot, not while stopping, not past the configured ' +
             'size, and a worker that cannot start is ended and retried a ' +
-            'bounded number of times, and that workers are started one at ' +
-            'a time (#342)',
+            'bounded number of times before a cool-down tries one again ' +
+            '(#333), and that workers are started one at a time (#342)',
   run: run
 };

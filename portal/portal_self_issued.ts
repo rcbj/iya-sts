@@ -14,219 +14,106 @@
 // Token, and the subject it verified is enrolled for that session's person —
 // never a DID or thumbprint typed into a box, which a person could be talked
 // into pasting on somebody else's behalf. An administrator may enrol by value
-// from /admin/users and POST /admin-api/users/enrol-self-issued-subject.
+// from /admin/users and POST /admin-api/users/enrol-self-issued-subject. The
+// wallet sign-in comes back to `/portal/self-issued?enrolled=1`, which the
+// view's operation turns into the page's notice. Since #693 each row says
+// how it was enrolled (`proof`), proving a subject that is already yours
+// proves it again (and re-pins a did:web whose document changed), and the
+// enrolment is audited (`portal.siop.enrol`, in `oid4vc/vc_signin.ts`).
 //
-// **THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT** — the
-// portal's rule (portal/CLAUDE.md): the removal form names the SUBJECT, never
-// whose it is. **A REAL SUBMIT BUTTON AND NO SCRIPT**, under the
-// service-wide `script-src 'none'`.
+// **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
+// drawn in the browser by `web_self_issued.ts`. **THE IDENTITY IS THE
+// TOKEN'S AND THERE IS NO PARAMETER FOR IT** — the portal's rule
+// (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is, and
+// so does marking a proved DID as the preferred one (#693, `prefer` and
+// `unprefer` on the same POST), which the `did` claim releases.
 //
-// **IT IS A FILE BESIDE `portal.ts`**, registered through `register(context)`
-// exactly as `portal_delegate.ts` is, and for its reason.
+// **NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20). `siop.list()`
+// answers null where the directory holds no entry for the token's person,
+// and the view read that as `[]` — so a token naming somebody the directory
+// does not hold drew "none enrolled", indistinguishable from a person who
+// enrolled nothing. The GET refuses it (STS-PORTAL-0616, 404) and the page
+// says why; an entry with nothing enrolled is still the empty list.
+//
+// **AND A did:web THIS REALM PUBLISHES FOR THE PERSON (#1291)**, from the
+// same page: *Publish a DID* — in `wallet` custody a link that proves the
+// wallet's key at `/authn/wallet?…&did_act=publish` (a sign-in, not a
+// form), in `realm` and `download` custody a POST that generates the key —
+// and, for each one published, its document, custody, versions and state,
+// *Add key*, *Rotate key* (in `wallet` custody two round trips: one signed
+// as the DID by a key it names now, then the new key; in `realm` custody one
+// act) and *Deactivate*. Those acts are `POST /account-api/self-issued/dids`;
+// a downloaded key is answered ONCE, in the answer's `fresh`, as
+// `/portal/keys`' one-time answers are (#671). `oid4vc/person_did.ts`
+// decides and audits every one; the identity is the token's here too.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import config = require('../common/config');
+import validation = require('../common/validation');
 import siop = require('../oid4vc/siop');
+import ModelZod = require('../common/model_zod');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-// What the portal hands over — `portal_delegate.ts`'s context.
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — the portal helper's type, not a call to it.
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
-  config: { value(key: string): any };
-}
+const vz = validation.z;
+const vt = validation.types;
 
 interface PortalSelfIssuedDeps {
-  // For the constructor only: a page logs through the portal's context.
   log: { debug(message: string): void };
   siop: Json;
+  config: { value(key: string): any };
+  // A did:jwk's or did:key's DID document, resolved from the identifier
+  // (`oid4vc/vc_did_resolver.ts`, `resolve()`); never a fetch.
+  resolveDid?: (did: string, req: Json) => Promise<Json>;
+  // Whether the person may change the realm's settings (#655): the console
+  // roster of the realm the request is in, `admin-ui/admin_rbac.ts`'s
+  // `rolesOf()`. Left out, nobody is told they may.
+  mayConfigure?: (username: string) => boolean;
+  // The DIDs this realm publishes for people (#1291), `oid4vc/person_did.ts`.
+  personDid?: () => Json;
 }
 
-class PortalSelfIssuedPage {
-  readonly PATH: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
+const REMOVE_FORM = ModelZod.body('account', 'removeSelfIssued');
 
-  constructor(private readonly deps: PortalSelfIssuedDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalSelfIssuedPage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/self-issued';
-    this.FORM = vz.object({
-      action: vt.opt(vt.oneOf(['remove'])),
-      subject: vz.string().max(2048),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      enrolled: vt.opt(vt.oneOf(['1'])),
-      done: vz.string().max(200).optional()
-    });
-    ctx.log.debug("Leaving PortalSelfIssuedPage.constructor().");
-  }
+const DID_QUERY = ModelZod.query('account', 'getSelfIssuedDidDocument');
 
-  private page(session: Json, message: unknown, error: unknown): string {
-    const { log, shell, esc, websecurity, config } = this.ctx;
-    const { siop } = this.deps;
-    log.debug("Entering PortalSelfIssuedPage.page().");
-    const who = String(session.user.username);
-    const held = siop.list(who) || [];
-    const csrf = websecurity.field(session.id);
-    const on = !!config.value('oid4vp.signInSelfIssued');
-    const PATH = this.PATH;
-    const rows = held.map(function (one: Json) {
-      return '<tr><td><code>' + esc(one.subject) + '</code></td><td>' +
-        esc(one.label || '') + '</td><td>' + esc(one.enrolledAt || '') +
-        (one.by ? ' (' + esc(one.by) + ')' : '') + '</td><td>' +
-        '<form method="post" action="' + esc(PATH) + '">' + csrf +
-        '<input type="hidden" name="action" value="remove">' +
-        '<input type="hidden" name="subject" value="' + esc(one.subject) +
-        '"><button class="danger" type="submit">Remove</button></form>' +
-        '</td></tr>';
-    });
-    const body = '<div class="card"><h2>Your self-issued IDs</h2>' +
-      '<p class="sub">A wallet can sign you in with an ID Token it signs ' +
-      'with its own key (Self-Issued OpenID Provider v2). Nobody vouches for ' +
-      'that key, so it signs in only the person who enrolled it here.</p>' +
-      (held.length
-        ? '<table><tr><th>Subject</th><th>Label</th><th>Enrolled</th>' +
-          '<th></th></tr>' + rows.join('') + '</table>'
-        : '<p id="siop-none">You have enrolled none.</p>') +
-      (on
-        ? '<p><a class="button" id="siop-enrol" href="/authn/wallet?siop=1' +
-          '&amp;enrol=1">Enrol a wallet</a></p><p class="sub">Your wallet ' +
-          'is asked for a self-issued ID Token, and the key that signed it ' +
-          'is enrolled for you — you prove you hold it; nothing is typed.' +
-          '</p>'
-        : '<p class="sub" id="siop-off">Signing in with a self-issued ID is ' +
-          'turned off here, so no wallet can be enrolled from this page. ' +
-          'The keys above stay enrolled.</p>') + '</div>';
-    log.debug("Leaving PortalSelfIssuedPage.page().");
-    return shell(this.PATH, session, message, error, body);
-  }
+// The methods whose DID document is the identifier itself, and so can be
+// shown with nothing fetched.
+const RESOLVED_METHODS = /^did:(jwk|key):/;
 
-  private getPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    const message = asked.value.enrolled === '1'
-      ? 'Your wallet\'s key is enrolled. It signs you in from now on.'
-      : (asked.value.done || null);
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, message, null));
-  }
+// THE SETTING THAT TURNS THE PAGE ON, AND WHERE IT IS CHANGED (#655). The
+// page said the sign-in was off and not how to change that. The view names
+// the row and its environment variable — `tests/self_issued_off_note.js`
+// holds both to `config.js`'s row — and the console tab that draws its
+// group (`admin-ui/admin.ts`'s `SETTING_HOMES`: OID4VP is on `/admin/vc`,
+// the OpenID4VP settings tab), not `/admin/config`, which is the index of
+// where the groups are and has no form for this one.
+const SETTING_KEY = 'oid4vp.signInSelfIssued';
+const SETTING_ENV = 'OID4VP_SIGN_IN_SELF_ISSUED';
+const SETTING_PAGE = '/admin/vc#vc-tab-oid4vp';
 
-  private postPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { siop } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(csrf) || 'STS-PORTAL-0017');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, null, csrf.detail));
-    }
-    const result = siop.remove(who, body.subject, who);
-    ctx.audit.record({
-      category: 'authentication', action: 'portal.siop.remove',
-      errorCode: result.ok ? undefined : 'STS-PORTAL-0087',
-      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
-      summary: (result.ok ? '' : 'could not ') + 'removed the self-issued ' +
-               'subject ' + body.subject + ' on /portal/self-issued',
-      detail: { subject: body.subject,
-                errors: result.ok ? undefined : [result.error] }
-    });
-    if (!result.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0087');
-      log.debug('Leaving POST ' + PATH + '. Refused.');
-      return ctx.send(res, 400, this.page(session, null, result.error));
-    }
-    log.debug('Leaving POST ' + PATH + '. Removed.');
-    res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      'That key no longer signs you in.')).end();
-    return undefined;
-  }
+const SELF_ISSUED_QUERY = ModelZod.query('account', 'getSelfIssued');
 
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalSelfIssuedPage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res);
-    });
-    log.debug("Leaving PortalSelfIssuedPage.registerRoutes().");
-  }
-}
+// A published DID's acts (#1291), on its own POST.
+const DID_FORM = ModelZod.body('account', 'actOnPublishedDid');
+
+// The one-time pane's file name for a downloaded key.
+const KEY_FILE = 'did-private-key.jwk.json';
 
 /**
- * The portal page at /portal/self-issued: where a person enrols the wallet keys
- * that sign them in with SIOPv2 (#129).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * `/portal/self-issued`'s account API operations: the wallet keys that sign
+ * the person in with SIOPv2 (#129).
  */
 class PortalSelfIssued {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -243,27 +130,495 @@ class PortalSelfIssued {
   static defaultDeps(): PortalSelfIssuedDeps {
     helpers.log.debug("Entering PortalSelfIssued.defaultDeps().");
     helpers.log.debug("Leaving PortalSelfIssued.defaultDeps().");
-    return { log: helpers.log, siop: siop };
+    return { log: helpers.log, siop: siop, config: config,
+             // LAZILY: the resolver is the VC API's library, and the
+             // portal is loaded at 8a, long before it (rule 3e's reason —
+             // a require here would run its load-time slot early).
+             resolveDid: function resolveDid(did: string,
+                                             req: Json): Promise<Json> {
+               helpers.log.debug("Entering resolveDid().");
+               const resolver = require('../oid4vc/vc_did_resolver');
+               helpers.log.debug("Leaving resolveDid().");
+               return resolver.resolve(did, {}, req);
+             },
+             // LAZILY, for `resolveDid`'s reason: the roster is the
+             // console's library, loaded at 18, after the portal (8a).
+             // Admin WRITE, because changing a setting is a write; asked of
+             // the realm the request is in, which is the realm whose
+             // setting is off — a realm administrator may write it
+             // (`admin_scope.ts` keeps only per-process rows from them).
+             mayConfigure: function mayConfigure(username: string): boolean {
+               helpers.log.debug("Entering mayConfigure().");
+               const rbac = require('../admin-ui/admin_rbac');
+               const realms = require('../common/realms');
+               const held = rbac.rolesOf(username, realms.currentId());
+               helpers.log.debug("Leaving mayConfigure().");
+               return !!(held && held.write);
+             },
+             // LAZILY, for `resolveDid`'s reason: built at 11-14, after the
+             // portal (8a).
+             personDid: function personDid(): Json {
+               helpers.log.debug("Entering personDid().");
+               helpers.log.debug("Leaving personDid().");
+               return require('../oid4vc/person_did');
+             } };
+  }
+
+  // HOW TO TURN THE SIGN-IN ON, for a page that says it is off (#655):
+  // the setting, its environment variable and the console tab, and whether
+  // this person may change it there. A roster that cannot be read says
+  // "ask an administrator", the answer that sends nobody to a page that
+  // will refuse them.
+  private turnOn(username: string): Json {
+    const { log, mayConfigure } = this.deps;
+    log.debug("Entering PortalSelfIssued.turnOn().");
+    let administrator = false;
+    if (mayConfigure && username) {
+      try {
+        administrator = mayConfigure(username) === true;
+      } catch (e) {
+        log.debug("Caught in PortalSelfIssued.turnOn(): " +
+                  ((e && e.message) || e));
+        administrator = false;
+      }
+    }
+    log.debug("Leaving PortalSelfIssued.turnOn(). " + administrator);
+    return { setting: SETTING_KEY, env: SETTING_ENV,
+             administrator: administrator,
+             page: administrator ? SETTING_PAGE : null };
+  }
+
+  // WHERE A ROW'S DID DOCUMENT IS (2026-10-20, rcbj: "the link to the
+  // published DID"): a did:web's published address, computed here so the
+  // browser does not carry the method's mapping; a did:jwk or did:key is
+  // its own document, shown by `/portal/self-issued/did`; a thumbprint is
+  // no DID and has neither. A did:web that cannot be mapped gets no link.
+  private documentOf(subject: string): Json {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.documentOf().");
+    let url = '';
+    if (/^did:web:/.test(subject)) {
+      try {
+        url = siop.didWebUrl(subject);
+      } catch (e) {
+        log.debug("Caught in PortalSelfIssued.documentOf(): " +
+                  ((e && e.message) || e));
+        url = '';
+      }
+    }
+    log.debug("Leaving PortalSelfIssued.documentOf().");
+    return { didDocumentUrl: url,
+             didResolved: RESOLVED_METHODS.test(subject) };
+  }
+
+  // THE DIDs THIS REALM PUBLISHES FOR THE PERSON (#1291): whether it
+  // publishes, who holds the key, how many they may hold, and each one with
+  // its document's address, custody, state, versions and any change
+  // waiting for its new key. Never a private key.
+  private published(username: string): Json {
+    const { log, personDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.published().");
+    if (!personDid) {
+      log.debug("Leaving PortalSelfIssued.published(). No library.");
+      return null;
+    }
+    const lib = personDid();
+    const settings = lib.settings();
+    const dids = lib.list(username) || [];
+    const active = dids.filter(function (one: Json): boolean {
+      return one.state !== 'deactivated';
+    }).length;
+    log.debug("Leaving PortalSelfIssued.published(). " + dids.length);
+    return { enabled: settings.publishing, custody: settings.custody,
+             maxPerPerson: settings.maxPerPerson,
+             keyAlgorithm: settings.keyAlgorithm,
+             active: active,
+             // Whether one more may be published now.
+             canPublish: settings.publishing &&
+                         active < settings.maxPerPerson,
+             dids: dids };
   }
 
   /**
-   * Registers the page's routes on the portal's app.
+   * The page's view: the subjects enrolled for the person, and whether the
+   * self-issued sign-in is on.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param username - the signed-in person
+   * @param listed - what `siop.list()` already answered for them, if it was
+   *   asked; read here otherwise
+   * @returns `{ enabled, loginHint, didClaim, subjects }`
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalSelfIssued.register().");
-    const page = new PortalSelfIssuedPage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalSelfIssued.register().");
-    return { path: page.PATH };
+  view(username: string, listed?: Json[] | null): Json {
+    const { log, siop, config } = this.deps;
+    const self = this;
+    log.debug("Entering PortalSelfIssued.view().");
+    const held: Json[] = (listed === undefined ? siop.list(username)
+                                               : listed) || [];
+    const enabled = !!config.value(SETTING_KEY);
+    log.debug("Leaving PortalSelfIssued.view(). " + held.length);
+    return { enabled: enabled,
+             // Where it is off, how it is turned on (#655); asked only then,
+             // so a page with the sign-in on reads no roster.
+             turnOn: enabled ? null : self.turnOn(username),
+             // The account the Enrol link names (2026-10-20): which of the
+             // browser's sessions the enrolment is for, when Switch user has
+             // left several live (`oid4vc/vc_signin.ts`, startable()).
+             loginHint: String(username || ''),
+             // Whether the preferred DID is released as the `did` claim in
+             // this realm (#693): the page says so beside the mark.
+             didClaim: config.value('oauth2.didClaim') === true,
+             // The DIDs this realm publishes for them (#1291).
+             published: self.published(username),
+             subjects: held.map(function (one: Json): Json {
+               return Object.assign({ subject: String(one.subject),
+                        label: String(one.label || ''),
+                        enrolledAt: one.enrolledAt || null,
+                        by: String(one.by || ''),
+                        // How it was enrolled (#693): `wallet`, proved by
+                        // the person, or `admin`, by an administrator's
+                        // value.
+                        proof: String(one.proof || siop.PROOF_ADMIN),
+                        // The one proved DID marked as preferred (#693).
+                        preferred: one.preferred === true,
+                        // Where the key came from (2026-10-20), checked
+                        // again as it leaves; null for an enrolment from
+                        // before it was recorded.
+                        location: siop.locationOf(one.location) },
+                 // Its DID document's address, or that it is resolved from
+                 // the identifier (2026-10-20).
+                 self.documentOf(String(one.subject)));
+             }) };
+  }
+
+  /**
+   * The GET: the page's view, or a refusal where the directory holds no
+   * entry for the token's person (STS-PORTAL-0616) — never an empty list
+   * standing in for "nobody here".
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param enrolled - whether the wallet sign-in has just enrolled a subject
+   * @returns nothing
+   */
+  answer(ctx: AccountContext, res: AccountAnswering<'getSelfIssued'>,
+         caller: AccountCaller,
+         enrolled: boolean, didDone?: string): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.answer().");
+    const who = caller.username;
+    const held = siop.list(who);
+    if (!Array.isArray(held)) {
+      const why = 'The directory holds no entry for ' + JSON.stringify(who) +
+        ', the person your sign-in names, so there is no list of ' +
+        'self-issued IDs to show. Sign out and sign in again; if this ' +
+        'persists, ask an administrator to look at your account.';
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.siop.view',
+        errorCode: 'STS-PORTAL-0616', actor: who, target: who,
+        outcome: 'failure',
+        summary: 'could not be shown their self-issued IDs on ' +
+                 '/portal/self-issued: the directory holds no entry for them',
+        detail: { sub: caller.sub || undefined, errors: [why] }
+      });
+      log.debug("Leaving PortalSelfIssued.answer(). No entry.");
+      return ctx.refuse(res, 404, 'STS-PORTAL-0616', why);
+    }
+    const view = this.view(who, held);
+    if (enrolled) {
+      view.notice = ctx.translatorFor(who)
+        .text('portalSelfIssued.doneEnrolled');
+    }
+    // A published DID's wallet act that just finished (#1291).
+    if (didDone) {
+      view.notice = ctx.translatorFor(who).text(
+        didDone === 'published' ? 'portalSelfIssued.pubPublishedDone'
+          : didDone === 'authorized' ? 'portalSelfIssued.pubAuthorizedDone'
+            : 'portalSelfIssued.pubChangedDone');
+    }
+    log.debug("Leaving PortalSelfIssued.answer().");
+    return ctx.json(res, 200, view);
+  }
+
+  /**
+   * `GET /account-api/self-issued/did` (2026-10-20): the DID document of
+   * one of the CALLER's enrolled did:jwk or did:key subjects, resolved from
+   * the identifier. Not a resolver for anybody's input: a subject that is
+   * not enrolled for the token's person — somebody else's, or nobody's —
+   * is refused (STS-PORTAL-0618) before anything about it is said, and an
+   * enrolled one whose document is not the identifier itself — a did:web,
+   * published elsewhere, or a thumbprint, no DID — is refused
+   * (STS-PORTAL-0619). With no subject, the page's pointer back to the
+   * list.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param asked - the subject named, or ''
+   * @returns nothing
+   */
+  async didDocument(ctx: AccountContext, req: Json,
+                    res: AccountAnswering<'getSelfIssuedDidDocument'>,
+                    caller: AccountCaller, asked: string): Promise<unknown> {
+    const { log, siop, resolveDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.didDocument().");
+    const who = caller.username;
+    if (!asked) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). None named.");
+      return ctx.json(res, 200, { ok: true, subject: '', document: null });
+    }
+    const wanted = siop.normalise(asked);
+    const held = siop.list(who);
+    const mine = Array.isArray(held) && !!wanted &&
+      held.some(function (one: Json): boolean {
+        return one.subject === wanted;
+      });
+    const audited = function (code: string, why: string): string {
+      log.debug("Entering audited(). " + code);
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.siop.did',
+        errorCode: code, actor: who, target: who, outcome: 'failure',
+        summary: 'could not be shown a DID document on ' +
+                 '/portal/self-issued/did',
+        detail: { subject: asked.slice(0, 256), errors: [why] } });
+      log.debug("Leaving audited().");
+      return why;
+    };
+    if (!mine) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). Not theirs.");
+      return ctx.refuse(res, 404, 'STS-PORTAL-0618',
+        audited('STS-PORTAL-0618', 'That is not one of your enrolled ' +
+          'self-issued IDs, so there is no document of it to show here. ' +
+          'Open one from /portal/self-issued.'));
+    }
+    if (!RESOLVED_METHODS.test(wanted)) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). Not resolved " +
+                "from the identifier.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0619',
+        audited('STS-PORTAL-0619', /^did:web:/.test(wanted)
+          ? 'A did:web\'s document is the one its owner publishes; its ' +
+            'link on /portal/self-issued opens it where it is published.'
+          : 'A JWK thumbprint is a key\'s digest, not a DID, and has no ' +
+            'DID document.'));
+    }
+    const resolved: Json = resolveDid ? await resolveDid(wanted, req) : null;
+    const meta = (resolved && resolved.didResolutionMetadata) || {};
+    if (!resolved || meta.error || !resolved.didDocument) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). Unresolved.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0619',
+        audited('STS-PORTAL-0619', 'This DID could not be resolved from ' +
+          'the identifier: ' +
+          String(meta.errorMessage || meta.error || 'no document') + '.'));
+    }
+    log.debug("Leaving PortalSelfIssued.didDocument().");
+    return ctx.json(res, 200, { ok: true, subject: wanted,
+                                document: resolved.didDocument });
+  }
+
+  /**
+   * Marks one of the caller's proved DIDs as preferred, or clears the mark
+   * (#693).
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  prefer(ctx: AccountContext, res: AccountAnswering<'removeSelfIssued'>,
+         caller: AccountCaller,
+         body: Json): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.prefer(). " + body.action);
+    const who = caller.username;
+    const clearing = body.action === 'unprefer';
+    const result = siop.setPreferred(who, clearing ? '' : body.subject);
+    ctx.audit.record({
+      category: 'authentication', action: 'portal.siop.prefer',
+      errorCode: result.ok ? undefined : 'STS-PORTAL-0615',
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? '' : 'could not ') +
+               (clearing ? 'cleared the preferred DID'
+                         : 'marked ' + body.subject + ' as the preferred ' +
+                           'DID') + ' on /portal/self-issued',
+      detail: { subject: clearing ? undefined : body.subject,
+                was: result.ok ? (result.was || undefined) : undefined,
+                errors: result.ok ? undefined : [result.error] }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.prefer(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0615', result.error,
+                        { view: this.view(who) });
+    }
+    log.debug("Leaving PortalSelfIssued.prefer(). Done.");
+    return ctx.json(res, 200, { ok: true,
+      message: ctx.translatorFor(who).text(clearing
+        ? 'portalSelfIssued.doneUnpreferred'
+        : 'portalSelfIssued.donePreferred') });
+  }
+
+  /**
+   * Removes one of the caller's enrolled subjects.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  remove(ctx: AccountContext, res: AccountAnswering<'removeSelfIssued'>,
+         caller: AccountCaller,
+         body: Json): unknown {
+    const { log, siop, personDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.remove().");
+    const who = caller.username;
+    // A DID THIS REALM PUBLISHED FOR THEM (#1291) is DEACTIVATED rather
+    // than removed: its address is kept and answers 410, and the subject
+    // goes with it — the same act as its own Deactivate.
+    if (personDid && personDid().isHosted(siop.normalise(body.subject))) {
+      log.debug("Leaving PortalSelfIssued.remove(). A published DID.");
+      return this.didAct(ctx, null, res, caller,
+                         { action: 'deactivate',
+                           rid: personDid().ridOf(siop.normalise(
+                             body.subject)) });
+    }
+    const result = siop.remove(who, body.subject, who);
+    ctx.audit.record({
+      category: 'authentication', action: 'portal.siop.remove',
+      errorCode: result.ok ? undefined : 'STS-PORTAL-0087',
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? '' : 'could not ') + 'removed the self-issued ' +
+               'subject ' + body.subject + ' on /portal/self-issued',
+      detail: { subject: body.subject,
+                errors: result.ok ? undefined : [result.error] }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.remove(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0087', result.error,
+                        { view: this.view(who) });
+    }
+    log.debug("Leaving PortalSelfIssued.remove(). Removed.");
+    return ctx.json(res, 200, { ok: true,
+      message: ctx.translatorFor(who).text('portalSelfIssued.doneRemoved') });
+  }
+
+  /**
+   * A published DID's act (#1291): publish one whose key this realm
+   * generates, add or rotate a `realm`-custody DID's key, or deactivate
+   * one. `oid4vc/person_did.ts` decides and audits each; a downloaded
+   * private key is answered once, in `view.fresh`, and never again.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request, whose realm's base a new DID is minted on
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  didAct(ctx: AccountContext, req: Json,
+         res: AccountAnswering<'actOnPublishedDid' | 'removeSelfIssued'>,
+         caller: AccountCaller,
+         body: Json): unknown {
+    const { log, personDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.didAct().");
+    const who = caller.username;
+    const lib = personDid ? personDid() : null;
+    const action = String(body.action || '');
+    if (!lib) {
+      log.debug("Leaving PortalSelfIssued.didAct(). No library.");
+      return ctx.refuse(res, 400, 'STS-VC-0167', 'This realm does not ' +
+                        'publish DIDs for people.');
+    }
+    if (action !== 'publish' && !body.rid) {
+      log.debug("Leaving PortalSelfIssued.didAct(). No DID named.");
+      return ctx.refuse(res, 400, 'STS-VC-0172', 'Name the published DID ' +
+                        '(rid) this act is about.', { view: this.view(who) });
+    }
+    let result: Json = null;
+    if (action === 'publish') {
+      result = lib.publishGenerated(who, req);
+    } else if (action === 'deactivate') {
+      result = lib.deactivate(who, body.rid, who, 'person');
+    } else {
+      result = lib.changeRealmKey(who, body.rid,
+                                  action === 'add-key' ? 'add' : 'rotate');
+    }
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.didAct(). " + result.code);
+      // error-code: none — the library decided the code, on result.code
+      return ctx.refuse(res, 400, result.code, result.error,
+                        { view: this.view(who) });
+    }
+    const t = ctx.translatorFor(who);
+    const view = this.view(who);
+    if (result.privateJwk) {
+      // THE ONE TIME THE PRIVATE KEY LEAVES (#671's pattern): in this
+      // answer, as a file the page offers, and nowhere afterwards — the
+      // realm kept only the public half.
+      view.fresh = {
+        kind: 'did-key', rid: String(result.record.rid),
+        did: String(result.record.did),
+        file: { name: KEY_FILE, mime: 'application/json',
+                base64: Buffer.from(JSON.stringify(result.privateJwk,
+                                                   null, 2), 'utf8')
+                  .toString('base64') }
+      };
+    }
+    log.debug("Leaving PortalSelfIssued.didAct(). " + action);
+    return ctx.json(res, 200, { ok: true, view: view,
+      message: t.text(action === 'publish' ? 'portalSelfIssued.pubPublishedDone'
+        : action === 'deactivate' ? 'portalSelfIssued.pubDeactivatedDone'
+          : 'portalSelfIssued.pubChangedDone') });
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalSelfIssued.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/self-issued',
+        operationId: 'getSelfIssued', access: 'person', query: SELF_ISSUED_QUERY,
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
+          return self.answer(ctx, res, caller, input.query.enrolled === '1',
+                             String(input.query.did || ''));
+        } },
+      { method: 'GET', path: ctx.BASE + '/self-issued/did',
+        operationId: 'getSelfIssuedDidDocument', access: 'person', query: DID_QUERY,
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
+          return self.didDocument(ctx, req, res, caller,
+                                  String(input.query.subject || ''));
+        } },
+      { method: 'POST', path: ctx.BASE + '/self-issued',
+        operationId: 'removeSelfIssued', access: 'person', recentAuth: true, body: REMOVE_FORM,
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
+          if (input.body.action === 'prefer' ||
+              input.body.action === 'unprefer') {
+            return self.prefer(ctx, res, caller, input.body);
+          }
+          return self.remove(ctx, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/self-issued/dids',
+        operationId: 'actOnPublishedDid', access: 'person', recentAuth: true, body: DID_FORM,
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
+          return self.didAct(ctx, req, res, caller, input.body);
+        } }
+    ];
+    log.debug("Leaving PortalSelfIssued.accountOperations().");
+    return rows;
   }
 }
 
-// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2) — see
-// `portal_certificates.ts`.
 const slot = new InstanceSlot<PortalSelfIssued>(
   'portal/portal_self_issued',
   () => new PortalSelfIssued(PortalSelfIssued.defaultDeps()),
@@ -273,7 +628,7 @@ const slot = new InstanceSlot<PortalSelfIssued>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/self-issued, registered by `portal.ts`.
+ * `/portal/self-issued`'s account API operations (#129, #568).
  * @namespace
  */
 export = {
@@ -281,5 +636,5 @@ export = {
   installInstance: (instance: PortalSelfIssued): void =>
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations')
 };

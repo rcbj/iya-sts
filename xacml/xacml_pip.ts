@@ -111,7 +111,24 @@ interface XacmlPipDeps {
   model: typeof model;
   datatypes: { parseValue(type: string, lexical: string): any };
   rolePermissions: { configuredRolesOf(subject: any): string[] };
+  // The owner rule's facts (#607), asked lazily: who owns an object,
+  // whether it is closed to its owners, and who a person is as an owner.
+  ownership: () => {
+    objectOf(kind: unknown, name: unknown): any;
+    identityOf(username: unknown): { keys: string[] };
+  };
 }
+
+// THE OWNER RULE'S ATTRIBUTES (#607): the three this PIP answers, and the
+// three it reads them by.
+const OWNER_ATTRIBUTE = {
+  OBJECT_KIND: templates.ISSUANCE_ATTRIBUTE.OBJECT_KIND,
+  OBJECT_ID: templates.ISSUANCE_ATTRIBUTE.OBJECT_ID,
+  OBJECT_OWNER: templates.ISSUANCE_ATTRIBUTE.OBJECT_OWNER,
+  OBJECT_PROTECTED: templates.ISSUANCE_ATTRIBUTE.OBJECT_PROTECTED,
+  OWNER_SUBJECT: templates.ISSUANCE_ATTRIBUTE.OWNER_SUBJECT,
+  OWNER_IDENTITY: templates.ISSUANCE_ATTRIBUTE.OWNER_IDENTITY
+};
 
 // Installed by `ldap/ldap_server.js` at require time, the way every other
 // consumer of the directory receives it. See `xacml_store.ts`'s header for why
@@ -183,8 +200,105 @@ class XacmlPip {
       errorCodes: errorCodes,
       model: model,
       datatypes: datatypes,
-      rolePermissions: rolePermissions
+      rolePermissions: rolePermissions,
+      ownership: function ownership() {
+        helpers.log.debug("Entering ownership().");
+        helpers.log.debug("Leaving ownership().");
+        return require('../common/ownership');
+      }
     };
+  }
+
+  // The first value of one attribute in one category of the request, or ''.
+  private valueOf(request: any, categoryId: string,
+                  attributeId: string): string {
+    const { log } = this.deps;
+    log.debug('Entering XacmlPip.valueOf().');
+    let found = '';
+    request.categories.forEach(function (category) {
+      if (found || category.category !== categoryId) {
+        return;
+      }
+      category.attributes.forEach(function (attribute) {
+        if (!found && attribute.attributeId === attributeId &&
+            attribute.values.length) {
+          found = String(attribute.values[0].lexical);
+        }
+      });
+    });
+    log.debug('Leaving XacmlPip.valueOf().');
+    return found;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE OWNER RULE'S FACTS (#607). The PEP names the object — its kind and
+  // how the request named it — and the person; who owns the object, whether
+  // it is closed to its owners and who the person is as an owner come from
+  // the directory, through `common/ownership.ts`, so a decision asked here,
+  // at `/admin/xacml/decide` or by a remote PEP is the same decision.
+  //
+  // `null` for a designator this is not about. An object that is not there,
+  // or a register that cannot be read, answers an EMPTY bag — never
+  // `protected: false` — and the rule asks for `false`, so the object stays
+  // closed: not knowing is not permission.
+  // -------------------------------------------------------------------------
+  private ownerFact(request: any, designator: any,
+                    objectFacts: () => any): any[] | null {
+    const { log, model, datatypes } = this.deps;
+    log.debug('Entering XacmlPip.ownerFact().');
+    const parse = function (values: string[]): any[] {
+      log.debug('Entering parse().');
+      const out = [];
+      values.forEach(function (one) {
+        try {
+          out.push(datatypes.parseValue(designator.dataType, one));
+        } catch (e) {
+          // A policy asking for these at another datatype gets nothing for
+          // the value, as for a directory value.
+          log.debug('Caught in parse(): ' + ((e && e.message) || e));
+        }
+      });
+      log.debug('Leaving parse().');
+      return out;
+    };
+    const id = designator.attributeId;
+    if (designator.category === model.CATEGORY.RESOURCE &&
+        (id === OWNER_ATTRIBUTE.OBJECT_OWNER ||
+         id === OWNER_ATTRIBUTE.OBJECT_PROTECTED)) {
+      const facts = objectFacts();
+      if (!facts || !facts.found) {
+        log.debug('Leaving XacmlPip.ownerFact(). No such object.');
+        return [];
+      }
+      log.debug('Leaving XacmlPip.ownerFact(). The object\'s.');
+      return id === OWNER_ATTRIBUTE.OBJECT_OWNER
+        ? parse(facts.owners.map(function (dn: string) {
+          return String(dn).toLowerCase().replace(/\s*,\s*/g, ',').trim();
+        }))
+        : parse([facts.protected ? 'true' : 'false']);
+    }
+    if (designator.category === model.CATEGORY.ACCESS_SUBJECT &&
+        id === OWNER_ATTRIBUTE.OWNER_IDENTITY) {
+      const person = this.valueOf(request, model.CATEGORY.ACCESS_SUBJECT,
+                                  OWNER_ATTRIBUTE.OWNER_SUBJECT) ||
+                     this.subjectOf(request);
+      if (!person) {
+        log.debug('Leaving XacmlPip.ownerFact(). Nobody named.');
+        return [];
+      }
+      let keys: string[] = [];
+      try {
+        keys = this.deps.ownership().identityOf(person).keys;
+      } catch (e) {
+        log.debug('Caught in XacmlPip.ownerFact(): ' +
+                  ((e && e.message) || e));
+        keys = [];
+      }
+      log.debug('Leaving XacmlPip.ownerFact(). The person\'s.');
+      return parse(keys);
+    }
+    log.debug('Leaving XacmlPip.ownerFact(). Not an owner fact.');
+    return null;
   }
 
   // STATIC, BECAUSE THE SLOT IS FILLED BEFORE THE ROOT BUILDS THE INSTANCE
@@ -488,9 +602,45 @@ class XacmlPip {
     };
 
     log.debug("Leaving XacmlPip.resolverFor().");
+    // The object the owner rule asks about, looked up once per decision for
+    // `subjectEntry()`'s reason.
+    let object;
+    let objectLooked = false;
+    const objectFacts = function objectFacts(): any {
+      log.debug('Entering objectFacts().');
+      if (objectLooked) {
+        log.debug('Leaving objectFacts(). Already looked.');
+        return object;
+      }
+      objectLooked = true;
+      object = null;
+      const kind = self.valueOf(request, model.CATEGORY.RESOURCE,
+                                OWNER_ATTRIBUTE.OBJECT_KIND);
+      const id = self.valueOf(request, model.CATEGORY.RESOURCE,
+                              OWNER_ATTRIBUTE.OBJECT_ID);
+      if (kind && id) {
+        try {
+          object = self.deps.ownership().objectOf(kind, id);
+        } catch (e) {
+          log.debug('Caught in objectFacts(): ' + ((e && e.message) || e));
+          object = null;
+        }
+      }
+      log.debug('Leaving objectFacts().');
+      return object;
+    };
+
     return function resolve(designator) {
       log.debug('Entering XacmlPip.resolverFor().resolve(). id=' +
                 designator.attributeId);
+      // THE OWNER RULE'S THREE (#607) — the one place this PIP answers a
+      // RESOURCE designator, because the object is in the directory too.
+      const owned = self.ownerFact(request, designator, objectFacts);
+      if (owned) {
+        log.debug('Leaving XacmlPip.resolverFor().resolve(). An owner ' +
+                  'fact.');
+        return owned;
+      }
       if (designator.category !== model.CATEGORY.ACCESS_SUBJECT) {
         // ONLY the subject category, in this phase. A resource or environment
         // attribute has no entry to be looked up on, and answering them out of

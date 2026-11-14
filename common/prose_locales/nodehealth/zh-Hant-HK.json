@@ -1,0 +1,50 @@
+{
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "線程的常駐大小與 CPU 時間屬於整個程序，因此列在前端程序那一列（pid {{pid}}），此處不再重複"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "其常駐大小與 CPU 時間屬於整個程序，包含每個背景工作線程；其堆積數字則屬於其主線程"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "託管介面背景工作線程 {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "協定背景工作線程 {{thread}}"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}；線程沒有自己的 /proc 項目，因此無法從外部讀取其堆積"
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "請求與託管介面背景工作是前端程序的「線程」（#364），因此其常駐大小與 CPU 時間就是前端程序自身的數字，只在其所在列計算一次。常駐總量是能讀取大小的 {{rss}} 個程序——前端程序與偵錯工具的 api 子程序——的總和，因此兩者共用的分頁（包括 node 本身的程式碼）會各計算一次，總量可能超過容器的 memory.current。堆積數字來自自行回報 process.memoryUsage() 的 {{heap}} 個 V8 isolate：前端程序的主線程、每個背景工作線程，以及子程序；未及時回應的子程序會顯示取自 /proc 的常駐大小而沒有堆積，未及時回應的背景工作線程則列為未回應，因為線程沒有自己的 /proc 項目。自 #363 起，後量子簽署與 scrypt 不再有自己的程序：它們在 libuv 的線程池上執行，其記憶體計入提出要求的程序。"
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "未設定 ECS_CONTAINER_METADATA_URI_V4：此節點不是 Amazon ECS 任務（不在 Fargate 或 ECS 容器實例上），因此沒有任務元數據端點可與 cgroup 交叉檢核。"
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "已設定 ECS_CONTAINER_METADATA_URI_V4，但任務元數據端點未在 {{ms}}ms 內回應：{{why}}。"
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "端點有部分未回應：{{whys}}。/task/stats 中沒有此容器的統計數據。"
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "端點有部分未回應：{{whys}}。/task/stats 中沒有此容器的統計數據（{{dockerId}}）。"
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "/task/stats 中沒有此容器的統計數據。"
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "/task/stats 中沒有此容器的統計數據（{{dockerId}}）。"
+  }
+}

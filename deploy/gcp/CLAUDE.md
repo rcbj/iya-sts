@@ -51,19 +51,66 @@ and the parent's signing is AWS's.
 | ECS `secrets` injection | `sts-secrets` reads Secret Manager into env files on `/run` (a tmpfs); the containers take them as `--env-file` | Nothing secret is ever in instance metadata, which anybody who can describe the VM reads. The database password is still read by the SERVICE through `common/secrets.js`'s `gcp` provider — the path #51 exists to exercise — and so is the KEK with `kek_provider = "secret"`; by default the KEK is a Cloud KMS key the service never reads (*The key-encryption key*, below) |
 | NLB, TCP passthrough, PROXY v2, client-IP preservation off | **Regional external passthrough NLB** (backend-service based), one static address, two forwarding rules | A passthrough NLB is not a connection endpoint at all — the node's TLS is the client's, so `GET /tls/sign-in` and RFC 8705 work. It **preserves the client's address and sends no PROXY header**, so the nodes run `STS_PROXY_PROTOCOL=off` and trust no proxy |
 | 443 → 8081, 80 → 8082 on the NLB | **Docker publishes them** (`-p 443:8081`, `-p 80:8082`, the rest 1:1) | A passthrough load balancer does not translate ports |
-| Five target groups, and the SPIFFE ports registered BY ADDRESS by hand | One backend service (the three instance groups); SPIFFE's 8092/8181 are a second forwarding rule on the same address | A forwarding rule takes five ports. **The register-by-address workaround and its "re-apply after every restart" are gone**: the backend follows its instances |
+| Five target groups; the Server API (8181) registered BY ADDRESS by hand. The Workload API is not published (#324) | One backend service (the three instance groups); SPIFFE's 8092/8181 are a second forwarding rule on the same address | A forwarding rule takes five ports. **The register-by-address workaround and its "re-apply after every restart" are gone**: the backend follows its instances. **8092 is still published here.** #324 was applied on AWS only, and this stack was not rewritten. Preserving the client address is a different fact from the declaration #166 requires |
 | A health check per target group | One HTTPS GET of `/healthcheck` on 443 | A backend service takes one. **A node whose LDAPS failed to bind stays in service**, where on AWS it failed to reach steady state; the failure is still on `GET /admin/ldap/service` |
 | Three security groups | Firewall rules targeted by the nodes' SERVICE ACCOUNT: `allowed_cidrs` → the LB address on the published ports; Google's health-check ranges on 443; egress 443, 53 (only with a public name, for the ACME client's propagation check) and 5432 to the endpoint, everything else denied | The client's packets reach the node directly, so the rule AWS put on the NLB is on the nodes, with the LB's address as its DESTINATION — an allowed client can reach the published ports and not a node's own address. A service account rather than a tag, because a tag is set by anybody who can edit an instance |
 | RDS PG18 primary + replica, `rds.force_ssl`, project key | **Cloud SQL PG18 primary + replica** in two zones, CMEK, `ssl_mode = ENCRYPTED_ONLY`, `GOOGLE_MANAGED_CAS_CA`, 14 daily backups with PITR | — |
 | Private subnets | A **Private Service Connect endpoint** (the private subnet's `.10`) | Private services access peers the VPC with Google's through a `servicenetworking` connection that does not tear down cleanly, and an environment is destroyed often |
 | The RDS CA bundle baked into the image | The instance's CA, written by cloud-init and read as `NODE_EXTRA_CA_CERTS`; the node dials the instance's `dns_name`, mapped to the endpoint with `--add-host` | The CA arrives with the instance, so ONE image serves every environment; `--add-host` needs no private DNS zone, which the deployer could not make without the right to delete zones |
-| Secrets Manager `iya-sts/<env>/<key>`, recovery window 0 | Secret Manager `iya-sts-<env>-<key>`, CMEK, one region | A secret id may not hold `/`. Read the bootstrap password with `gcloud secrets versions access latest --secret=iya-sts-testidp-bootstrap-admin-password` |
+| Secrets Manager `iya-sts/<env>/<key>`, recovery window 0 | Secret Manager `iya-sts-<env>-<key>`, CMEK, one region | A secret id may not hold `/`. Read the bootstrap password with `gcloud secrets versions access latest --secret=iya-sts-testidp-bootstrap-admin-password`, and the bootstrap administrator's NAME (2026-11-10; AWS's `bootstrap-admin-username`, `STS_ADMIN_BOOTSTRAP_USERNAME`, read once and kept) from `iya-sts-testidp-bootstrap-admin-username` |
 | An **exportable** ACM certificate, exported by `cert-init` on every start | An **ACME certificate** (Let's Encrypt, DNS-01 in `gcp.iyasec.io`) kept in the **foundation's** secret `iya-sts-<env>-tls`; `node-a` issues or renews it, the others wait | *The certificate*, below |
 | The private zone for the service calling its own name (#311) | **Nothing** | A passthrough LB's address is configured locally on every backend by the guest agent, so a node dialling its public name is answered by itself |
 | EBS volume for risk uploads (#214) | A second persistent disk per VM (10 GiB, CMEK), mounted at the same container path, **emptied on every start** | A persistent disk survives a reboot where the EBS volume did not; emptying it keeps it temporary space |
 | `awslogs`, a log group in foundation | Docker's `gcplogs` driver, a sink into a 14-day CMEK log bucket in foundation | Logs are project-wide, so they outlive the environment by construction |
 | Deployer ROLE with two permissions boundaries, fenced by name, tag and region | Deployer SERVICE ACCOUNT, **impersonated** (no key), fenced by the PROJECT and by creating NO identity | *The deployer*, below |
 | `host-credentials.js` | Nothing | The provider refreshes impersonated tokens itself; the expired-session lock cannot happen |
+
+**THREE CONSECUTIVE FAILURES REPLACE THE NODE (#330).** The one health
+check's `unhealthy_threshold` is 3, at a 10-second interval, and each
+managed instance group autoheals on that check. A new node is left alone
+for `mig_initial_delay_sec` (600). After that, three failures in a row
+recreate it. Two successes mark it healthy again. The check is still the
+one HTTPS GET of `/healthcheck`: a node whose LDAPS never binds is not
+replaced for that. The inter-cell check uses the same failure count and
+only removes the backend from that pool.
+
+## A CDN: Cloud CDN behind a global Application Load Balancer (#1341)
+
+**rcbj's decision (2026-11-13): a CDN on every pattern.** `cdn_enabled` and
+`direct_hostname` (`envs/testidp.tfvars` sets both) add `environment/cdn.tf`,
+whose header argues each decision; AWS's CloudFront (`deploy/aws/CLAUDE.md`,
+*CloudFront*) is the pattern:
+
+* `public_hostname` → a global external Application Load Balancer
+  (EXTERNAL_MANAGED) with a Google-managed certificate; `direct_hostname` → the
+  passthrough NLB, for mutual TLS, Kerberos, LDAP, SPIFFE and revocation
+  (`PKI_DISTRIBUTION_*` name it). The node's ACME certificate carries both.
+* Two backend services over the same instance groups (named port `https`):
+  `api`, no CDN and no compression (BREACH); `static`, Cloud CDN
+  `USE_ORIGIN_HEADERS`, negative caching off, chosen by a URL-map regex.
+* The URL map REPLACES `X-Forwarded-Host` and `-Proto`; another Host is
+  redirected to the public name. Cloud Armor holds `allowed_cidrs` at the
+  backend and, for cache hits, at the edge.
+* **No origin secret, on purpose**: the front ends (35.191.0.0/16,
+  130.211.0.0/22) reach instance-group backends only for this project's load
+  balancers, and every Google health check comes from them without a header,
+  so `global.edgeProxies` would refuse every health check. They and the ALB's
+  address are `STS_TRUSTED_PROXIES` instead.
+* A node's own public name is `--add-host`ed to the passthrough address, so a
+  self-call stays local, as before.
+* **A GCP cell of a multi-cloud environment** gets CloudFront instead (the
+  AWS primary's distribution): its nodes trust CloudFront's ranges and require
+  `edge-secret` once `deploy/multicloud/gcp-global` hands them both, and its
+  certificate carries the direct name.
+
+**PROVEN OFFLINE ONLY**: `fmt -check`, `init -backend=false`, `validate`, and
+`environment/tests/cdn.tftest.hcl` (four runs; 11 pass with `kek`). No `plan`
+ran: GCP was never applied, so the foundation's data sources have nothing to
+read. **First apply, look at**: an instance group shared by the passthrough
+backend (CONNECTION) and the ALB's (UTILIZATION) — Google restricts mixed
+balancing modes on one group; the managed certificate provisioning once the
+public name resolves to the new address; and the deployer's roles
+(`loadBalancerAdmin`, `securityAdmin`) covering Cloud Armor's edge policy.
 
 ## The certificate
 
@@ -92,6 +139,29 @@ certificate is an ACME one and the node obtains it:
 * `acme_server` can point at Let's Encrypt's STAGING directory to try a new
   environment without spending the limit (untrusted certificates). Google's
   own public CA speaks ACME too but needs External Account Binding; not wired.
+
+## The service image runs as uid 10001 (#254, 2026-10-06)
+
+**The image's `USER` is `sts`, 10001:10001, and no longer root** (the root
+`Dockerfile` argues it), so what the VM mounts into `iya-sts` is handed to
+that user — `local.service_user`, spelt once in `environment/locals.tf`:
+
+* **The upload disk**: `sts-disk.sh` chowns its mount point to it, still
+  0700, after emptying it.
+* **The TLS key**: `node-init/cert.sh` chowns `key.pem` (still 0400) and
+  `certificate.pem` to `STS_TLS_OWNER`, which the `sts-cert` unit passes.
+  The node-init image itself still runs as root.
+* **The low ports**: `sts-node` passes
+  `--sysctl net.ipv4.ip_unprivileged_port_start=0`, which Docker already
+  sets in a bridged container; said so a daemon that did not fails loudly.
+  Not `setcap` on node (a secure exec ignores `NODE_PATH` and
+  `NODE_EXTRA_CA_CERTS`).
+
+The database CA (`/run/sts/database-ca.pem`, 0644, read-only) needed nothing;
+the env files under `/etc/sts` and `/run/sts` stay root's 0600, because the
+Docker daemon reads them, not the container. **They put every secret in the
+container's environment**, readable by anything that can inspect the container
+or read its `/proc/1/environ`; that is unchanged here and outside #254.
 
 ## The deployer, and what is weaker than AWS
 
@@ -233,6 +303,12 @@ verify-ca; AWS sets nothing and is unchanged).
   transports can be configured through `extra_environment`.
 * **`spiffe-realm/` for additional realms.** A realm's ports would be one more
   forwarding rule on the same backend service — no address registration.
+* **Unpublishing the Workload API (#324).** `spiffe_default_ports` still
+  names `workload` (8092) beside `server` (8181). AWS stopped publishing
+  8092 (`deploy/aws/CLAUDE.md`); this stack was not rewritten, because only
+  AWS has been applied. A passthrough NLB here preserves the client address
+  and sends no PROXY header. That is a different fact from the declaration
+  #166 requires.
 * **A GitHub workflow.** It should authenticate with Workload Identity
   Federation and impersonate the deployer, not hold a key.
 

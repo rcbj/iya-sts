@@ -82,6 +82,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import DomainMap = require('../common/domain_map');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
@@ -89,6 +90,10 @@ import audit = require('../common/audit');
 import applications = require('../common/applications');
 import gate = require('../common/issuance_gate');
 import scopePolicy = require('../common/scope_policy');
+// The operator's Shared Signals names (#334). `declares()` is alias-aware,
+// so a string right is judged by permission class once `isProtected` says
+// the name is one of ours.
+import ssfScopes = require('../common/ssf_scopes');
 import InstanceSlot = require('../common/instance_slot');
 import catalogue = require('../oauth-oidc/authorization_details');
 // RFC 9470's ordered acr levels (#432 phase 6): whether a session meets a
@@ -115,39 +120,6 @@ interface GnapRightsDeps {
   ownership: Json;
   stepUp: Json;
 }
-
-// THE DEMONSTRATION RESOURCE SERVER'S TYPE (`gnap.ts`'s `/gnap/rs/resource`),
-// defined here so the route module and the catalogue read one spelling. It is
-// THIS SERVICE'S OWN API, so it is catalogued by this service — the way RFC
-// 9396's `openid_credential` is built in — while `gnap.demoResourceServer` is
-// on: product mode's uncatalogued rule would otherwise refuse the one API
-// every GNAP client here can be pointed at. It declares nothing beyond its
-// existence and owns no audience (a token for it is audienced as before).
-const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
-
-// THE DEMONSTRATION TYPE'S LIMITS (#432 phase 5): the six members
-// `common/access_limits.ts` gives a meaning to and nothing else, so the
-// demonstration resource server — the reference for what a resource server
-// does with a limit (rcbj's decision 2) — can be asked for every one of
-// them. Read through the catalogue's own grammar
-// (`applications.authorizationDetailsTypeOf()`), so it is compiled and held
-// to the limits subset exactly as an operator's would be.
-const DEMO_DEFINITION = JSON.stringify({
-  type: DEMO_TYPE,
-  limits: {
-    type: 'object',
-    properties: {
-      amount: { type: ['string', 'number'] },
-      currency: { type: 'string' },
-      count: { type: 'integer', minimum: 0 },
-      receiver: { type: ['string', 'array'] },
-      interval: { type: 'string' },
-      window: { type: 'object' }
-    },
-    additionalProperties: false
-  }
-});
-let demoDefinition: Json = null;
 
 // The array dimensions of a right (RFC 9635 section 8) a narrowing may take
 // values off, by the obligation's name for them.
@@ -211,11 +183,14 @@ class GnapRights {
              stepUp: stepUp };
   }
 
-  // The values of one attribute of an application entry, as strings.
-  private fieldValues(app: Json, name: string): string[] {
+  // The values of one of an application's GNAP settings, as strings, named
+  // by its GnapClient field rather than its attribute (#1579).
+  private fieldValues(app: Json,
+      name: keyof IyaDomain.GnapClient & string): string[] {
     const { log } = this.deps;
     log.debug("Entering GnapRights.fieldValues(). " + name);
-    const value = app && app.fields ? app.fields[name] : undefined;
+    const value: unknown = app && app.fields ?
+      DomainMap.fieldOf('GnapClient', name, app.fields) : undefined;
     log.debug("Leaving GnapRights.fieldValues().");
     if (value === undefined || value === null || value === '') {
       return [];
@@ -233,24 +208,6 @@ class GnapRights {
   entryOf(right: Json): Json {
     const { log, catalogue } = this.deps;
     log.debug("Entering GnapRights.entryOf().");
-    if (right && typeof right === 'object' && right.type === DEMO_TYPE &&
-        this.deps.config.value('gnap.demoResourceServer') !== false) {
-      log.debug("Leaving GnapRights.entryOf(). The demonstration type.");
-      if (!demoDefinition) {
-        demoDefinition = this.deps.applications
-          .authorizationDetailsTypeOf(DEMO_DEFINITION);
-      }
-      // `builtIn` keeps the owner rules out (no resource server declares
-      // it); the limits are checked like any catalogued type's.
-      return { type: DEMO_TYPE, builtIn: true, identifier: '', clientId: '',
-               identifiers: [], actions: null, datatypes: null,
-               privileges: null, required: [], interaction: 'default',
-               consentActions: [], bearer: null, maxLifetimeS: null, acr: '',
-               derivableFrom: [], introspectionClaims: [],
-               limits: demoDefinition.limits,
-               validateLimits: demoDefinition.validateLimits,
-               validate: null };
-    }
     const found = right && typeof right === 'object'
       ? catalogue.typeOf(right.type) : null;
     log.debug("Leaving GnapRights.entryOf(). " + !!found);
@@ -312,19 +269,21 @@ class GnapRights {
   }
 
   // -------------------------------------------------------------------------
-  // THIS SERVICE'S PROTECTED SCOPES IN A RIGHT (#110): `ssf:read`/`ssf:write`
-  // as reference strings, or an object of type `ssf` with those actions (no
-  // actions means both) — the Shared Signals scopes by another spelling — and
-  // whether the client's entry declares every one it asks for. The facts the
-  // `gnap-protected-undeclared` rule reads; the scope policy's own test of
-  // what is protected and what is declared.
+  // THIS SERVICE'S PROTECTED SCOPES IN A RIGHT (#110, #334): a published
+  // Shared Signals name (`ssf.read`, `ssf.manage`, or a name a setting
+  // adds) as a reference string, or an object of type `ssf` with those
+  // actions (no actions means both). `declares()` asks
+  // `common/ssf_scopes.ts`'s one rule, write includes read, so a client
+  // that declares only the write scope is granted an unrestricted `ssf`
+  // right and one that declares only the read scope is refused it. The
+  // facts the `gnap-protected-undeclared` rule reads.
   // -------------------------------------------------------------------------
   private protectedFacts(app: Json, right: Json): Json {
-    const { log, config, scopePolicy } = this.deps;
+    const { log, scopePolicy } = this.deps;
     log.debug("Entering GnapRights.protectedFacts().");
     const identifier = String((app && app.identifier) || '');
-    const read = String(config.value('ssf.authScopeRead') || 'ssf:read');
-    const write = String(config.value('ssf.authScopeWrite') || 'ssf:write');
+    const read = ssfScopes.configuredRead();
+    const write = ssfScopes.configuredWrite();
     const name = typeof right === 'string' ? right :
       String((right && right.type) || '');
     const wanted: string[] = [];
@@ -357,7 +316,7 @@ class GnapRights {
     const { log, store } = this.deps;
     log.debug("Entering GnapRights.factsOf().");
     const app = ctx.app;
-    const allowed = this.fieldValues(app, 'gnapAllowedAccess');
+    const allowed = this.fieldValues(app, 'allowedAccess');
     const isRef = typeof right === 'string';
     const name = isRef ? right : String(right.type || '');
     const entry = this.entryOf(right);
@@ -397,10 +356,10 @@ class GnapRights {
       client: { id: String((app && app.identifier) || ''),
                 // The REGISTERED class only: a declared class_id never
                 // raises trust (#432 phase 7).
-                class: this.fieldValues(app, 'gnapClassId')[0] || '',
+                class: this.fieldValues(app, 'classId')[0] || '',
                 hasAllowedAccess: allowed.length > 0,
                 bearerRefused:
-                  this.fieldValues(app, 'gnapBearerTokens')[0] === 'FALSE' },
+                  this.fieldValues(app, 'bearerTokens')[0] === 'FALSE' },
       approver: ctx.approver || '',
       approval: ctx.approval || 'pending',
       session: session ? { acr: session.acr || '',
@@ -607,8 +566,8 @@ class GnapRights {
         break;
       case 'STS-GNAP-0112':
         out = typeof right === 'string' &&
-              this.fieldValues(app, 'gnapAllowedAccess').indexOf(right) < 0 &&
-              !this.fieldValues(app, 'gnapAllowedAccess').length
+              this.fieldValues(app, 'allowedAccess').indexOf(right) < 0 &&
+              !this.fieldValues(app, 'allowedAccess').length
           ? 'the access reference "' + right + '" names nothing ' +
             'registered with this authorization server.'
           : 'the right "' + name + '" is not one this client instance may ' +
@@ -987,7 +946,6 @@ export = {
   installInstance: (instance: GnapRights): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   STAGES: GnapRights.STAGES,
-  DEMO_TYPE: DEMO_TYPE,
   entryOf: slot.forward('entryOf'),
   conformanceRefusal: slot.forward('conformanceRefusal'),
   narrowed: slot.forward('narrowed'),

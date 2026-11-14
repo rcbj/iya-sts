@@ -19,9 +19,11 @@
 //      reaches R; refused with no relationship to R (0770); a protected
 //      subject (0771); a may_act naming somebody else, in EVERY mode (0774);
 //      appDelegationSubjectGroup, and a may_act naming the client standing
-//      in for it; the client acting as ITSELF asking nothing and releasing no
-//      subject; `appAllowedProtocol` without GNAP refused at issuance in
-//      product;
+//      in for it; rights naming no resource server refused before the
+//      policy is asked, in every mode (#593, STS-GNAP-0904 — R was "the
+//      client itself" until then); the client acting as ITSELF asking
+//      nothing and releasing no subject; `appAllowedProtocol` without GNAP
+//      refused at issuance in product;
 //  II. DERIVATION (RFC 9767 section 4) — refused in product with no
 //      relationship (0776) and recorded in development; allowed by
 //      appAllowedToDelegateTo, with the `act` chain on the token; a wider
@@ -35,8 +37,8 @@
 //
 // The token formats' own round trip of `act` is `tests/gnap_token_formats.js`;
 // the wire, verified by code that is not the service's, is
-// `tests/vendored/sts_gnap_rs.js`, and impersonation over HTTP is
-// `tests/vendored/sts_gnap_delegation.js`.
+// `tests/protocol/sts_gnap_rs.js`, and impersonation over HTTP is
+// `tests/protocol/sts_gnap_delegation.js`.
 //
 // IN A CHILD PROCESS, `cluster_single_use_protocols.js`'s arrangement: it
 // loads the whole stack and serves the shared app on a port of its own, and
@@ -79,7 +81,7 @@ function childMain() {
     const oauth2 = require(ROOT + '/oauth-oidc/oauth2');
     const tokens = require(ROOT + '/gnap/gnap_tokens');
     const gnapDelegation = require(ROOT + '/gnap/gnap_delegation');
-    const gnap = require(ROOT + '/tests/vendored/gnap_client.js');
+    const gnap = require(ROOT + '/tests/protocol/gnap_client.js');
 
     // The code each response was marked with, by request path — read off
     // the response object, which is where `errorCodes.mark()` puts it and
@@ -173,12 +175,16 @@ function childMain() {
       return { type: 'gd-photos', actions: actions || ['read'],
                locations: uris };
     };
+    // The ID Token is ISSUED TO the presenting client unless `extra` says
+    // otherwise (#497): RFC 9635 section 11.13 refuses an assertion a
+    // client presents that was issued to somebody else (I0).
     const impersonate = function (id, who, access, extra) {
       return keys[id].send('POST', GRANT, { json: {
         client: { key: keys[id].keyObject() },
         access_token: { access: access },
         user: { assertions: [{ format: 'id_token',
-                               value: idToken(who, extra) }] } } });
+                               value: idToken(who, Object.assign(
+                                 { aud: id }, extra || {})) }] } } });
     };
     const newestAct = function () {
       return delegation.list()[0] || {};
@@ -189,7 +195,21 @@ function childMain() {
     };
 
     // ===================================================== I. IMPERSONATION
-    let r = await impersonate('gd-plain', 'gd-alice', [right([RS.a])]);
+    // I0 (#497): an ID Token issued to ANOTHER client is a captured
+    // assertion (RFC 9635 section 11.13), refused in every mode before the
+    // delegation policy is asked — even for a client whose semantics allow
+    // impersonation.
+    let r = await impersonate('gd-imp', 'gd-alice', [right([RS.a])],
+                              { aud: 'gd-rp' });
+    note(r.status === 403 && lastCode() === 'STS-GNAP-0073',
+         'I0. development: an ID Token issued to another client is refused ' +
+         '— STS-GNAP-0073', r.status + ' ' + lastCode() + ' ' + r.text);
+    r = await impersonate('gd-imp', 'gd-alice', [right([RS.a])],
+                          { aud: ['gd-rp', 'gd-imp'] });
+    note(r.status === 200,
+         'I0b. …and one whose audience includes the presenting client is not',
+         r.status + ' ' + r.text);
+    r = await impersonate('gd-plain', 'gd-alice', [right([RS.a])]);
     let act = newestAct();
     note(r.status === 200 && r.json && r.json.access_token,
          'I1. development: a client whose semantics do not include ' +
@@ -232,13 +252,16 @@ function childMain() {
     note(r.status === 403 && lastCode() === 'STS-GNAP-0770',
          'I7. product: impersonation allowed but R not reachable by the ' +
          'client — STS-GNAP-0770', r.status + ' ' + lastCode());
+    // #593 (rcbj's decision 4 on #591): a token whose rights name no
+    // resource server is refused before anybody is asked. It was R = "the
+    // client itself" (S4U2Self's ticket to yourself) until then.
     r = await impersonate('gd-imp-self', 'gd-alice', ['gd-unregistered']);
-    act = newestAct();
-    note(r.status === 200 && r.json && r.json.access_token &&
-         act.target.application === 'gd-imp-self',
-         'I8. product: rights naming no resource server — R is the client ' +
-         'itself (S4U2Self\'s ticket to yourself), allowed with impersonation',
-         r.status + ' ' + r.text + ' ' + JSON.stringify(act.target));
+    note(r.status === 400 && r.json && r.json.error &&
+         r.json.error.code === 'invalid_request' &&
+         lastCode() === 'STS-GNAP-0904',
+         'I8. product: rights naming no resource server are refused ' +
+         'invalid_request before the delegation policy — STS-GNAP-0904',
+         r.status + ' ' + lastCode() + ' ' + r.text);
     r = await impersonate('gd-imp', 'gd-bob', [right([RS.a])]);
     note(r.status === 403 && lastCode() === 'STS-GNAP-0771',
          'I9. product: a subject carrying stsNotDelegated — STS-GNAP-0771',
@@ -264,7 +287,7 @@ function childMain() {
     product(true);
     r = await keys['gd-plain'].send('POST', GRANT, { json: {
       client: { key: keys['gd-plain'].keyObject() },
-      access_token: { access: ['gd-read'] } } });
+      access_token: { access: [right([RS.a])] } } });
     note(r.status === 200 && r.json && r.json.access_token &&
          !r.json.subject && !claimsOf(r.json.access_token.value).sub,
          'I14. the client acting as itself asks nothing (product, delegation ' +
@@ -279,6 +302,20 @@ function childMain() {
     r = await impersonate('gd-imp', 'gd-alice', [right([RS.a, RS.b, RS.c])]);
     const original = r.json && r.json.access_token
       ? r.json.access_token.value : '';
+    // #526: an act chain as this authorization server writes it — each
+    // actor `urn:sts:client:<id>` with the GNAP issuer (the grant endpoint),
+    // the most recent first, and gd-imp, the original client, at its foot.
+    const chainOf = function () {
+      let out = null;
+      for (let i = arguments.length - 1; i >= 0; i--) {
+        const one = { sub: 'urn:sts:client:' + arguments[i], iss: GRANT };
+        if (out) {
+          one.act = out;
+        }
+        out = one;
+      }
+      return out;
+    };
     note(!!original, 'II0. product: a token about gd-alice for A, B and C',
          r.status + ' ' + r.text);
     const derive = function (id, existing, access) {
@@ -314,11 +351,14 @@ function childMain() {
          r.status + ' ' + r.text);
     if (derived) {
       const claims = claimsOf(derived);
-      note(claims.act && claims.act.sub === 'gd-rs-a' && !claims.act.act &&
+      note(JSON.stringify(claims.act) ===
+           JSON.stringify(chainOf('gd-rs-a', 'gd-imp')) &&
            claims.sub === helpers.userFor('gd-alice').sub &&
            claims.aud === 'gd-rs-b',
            'II4. the derived token is about gd-alice, for B, and its act ' +
-           'names A (RFC 8693 section 4.1)', JSON.stringify(claims));
+           'names A over gd-imp, the original client, each entry ' +
+           'urn:sts:client:<id> with the GNAP issuer (RFC 8693 section 4.1, ' +
+           '#443/#471 rules, #526)', JSON.stringify(claims));
     }
     r = await derive('gd-rs-a', original, [right([RS.b], ['read', 'write'])]);
     note(r.status === 403 && lastCode() === 'STS-GNAP-0513',
@@ -347,9 +387,10 @@ function childMain() {
          r.status + ' ' + r.text + ' ' + JSON.stringify(act));
     if (second) {
       const claims = claimsOf(second);
-      note(claims.act && claims.act.sub === 'gd-rs-b' && claims.act.act &&
-           claims.act.act.sub === 'gd-rs-a' && !claims.act.act.act,
-           'II9. the chain NESTS: B outermost, A under it',
+      note(JSON.stringify(claims.act) ===
+           JSON.stringify(chainOf('gd-rs-b', 'gd-rs-a', 'gd-imp')),
+           'II9. the chain NESTS: B outermost, A under it, the original ' +
+           'client at its foot (copied, not added again)',
            JSON.stringify(claims.act));
       r = await derive('gd-rs-b', second, [right([RS.b])]);
       note(r.status === 403 && lastCode() === 'STS-GNAP-0782',
@@ -360,7 +401,7 @@ function childMain() {
                   resource_server: { key: keys['gd-rs-b'].keyObject() } } });
       note(r.status === 200 && r.json && r.json.active &&
            JSON.stringify(r.json.act) ===
-           JSON.stringify({ sub: 'gd-rs-b', act: { sub: 'gd-rs-a' } }),
+           JSON.stringify(chainOf('gd-rs-b', 'gd-rs-a', 'gd-imp')),
            'II11. introspection returns the chain', r.text);
     }
 
@@ -382,9 +423,10 @@ function childMain() {
       }
       note(!!verified && verified.ok && verified.model &&
            JSON.stringify(verified.model.act) ===
-           JSON.stringify({ sub: 'gd-rs-a' }),
+           JSON.stringify(chainOf('gd-rs-a', 'gd-imp')),
            'III. ' + format + ': the derived token, verified back by its ' +
-           'format, carries act naming the deriving resource server',
+           'format, carries act naming the deriving resource server over ' +
+           'the original client, iss and all (#526)',
            r.status + ' ' + JSON.stringify(verified && (verified.model ?
              verified.model.act : verified)));
     }

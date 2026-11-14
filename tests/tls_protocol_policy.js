@@ -8,7 +8,7 @@
 // ===========================================================================
 // WHAT tlsfuzzer FOUND IN THE TLS POLICY, HELD IN PROCESS (#212, 2026-09-26).
 //
-// tests/vendored/sts_tlsfuzzer.js runs tlsfuzzer against the listeners of a
+// tests/protocol/sts_tlsfuzzer.js runs tlsfuzzer against the listeners of a
 // running stack and would see each of these again; this file holds them
 // where a failure names the function that regressed:
 //

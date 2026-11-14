@@ -12,10 +12,14 @@ half. What it does when the token it holds stops being valid, or when the token
 it reads grows a claim it was not expecting, is the other half, and the console
 is how you cause either without editing this service and restarting it.
 
-**Every page also answers `?format=json`, and every form also accepts a JSON
-body**, because a console reachable only by clicking is one no test can assert
-against. The [management API](management-api.md) at `/admin-api` is the same
-console for a machine: every control has an operation there.
+**The console is a static application over the [management
+API](management-api.md).** `/admin` and every page under it answer the same
+document, and its script draws each page from that page's `/admin-api`
+operation and sends each form to the operation that is that control. So
+everything the console shows, a script can read from `/admin-api`, and
+everything it does, a script can do there: a console reachable only by
+clicking would be one no test could assert against. The page needs its
+script; with scripts blocked it says so and draws nothing else.
 
 This page covers who may use the console, how it is laid out, and the pages
 whose behaviour needs explaining. Pages that belong to one protocol are
@@ -25,33 +29,56 @@ registry has a page of its own, [Applications](applications.md).
 
 ## Who may use the console
 
-**Every page and every form under `/admin` needs a sign-in and one of two
+**Every page and every form under `/admin` needs a sign-in and one of three
 roles**:
 
 * **Admin Read** may look at every page and change nothing.
-* **Admin Write** may post every form. **Write implies read**, because a role
-  that could change a page it was not allowed to see would be a trap rather
-  than a permission.
+* **Admin Write** may post every form except the ones that change security.
+  **Write implies read**, because a role that could change a page it was not
+  allowed to see would be a trap rather than a permission.
+* **Security Administrator** may change security: save or reset a policy on
+  **Directory → Policies**, name a policy on an application, group or person,
+  grant or revoke this role, and act on the account of a person who holds it.
+  Admin Write cannot do any of these. It implies read and **not** write, so it
+  can be given to somebody who is not otherwise an administrator. See
+  [the Security Administrator](security-administrator.md).
 
-The console is an **OpenID Connect relying party** of this service's own
-authorization server, as the user portal is: an unauthenticated request is sent
-to `/oauth2/authorize` as the seeded client `sts-admin-console`, the person signs
-in at the sign-in screen, and the code comes back to `/admin/callback`. The
-console session is tied to the sign-on session it came from and ends with it;
-**Sign out** ends both. See [Sessions](sessions.md) and
-[Signing out](signing-out.md).
+The console signs in **in your browser, as a client of this service's own
+authorization server**: the page sends you to `/oauth2/authorize` as the
+seeded public client `sts-admin-console`, with PKCE, you sign in at the
+sign-in screen, and the code comes back to `/admin/callback`, where the page
+redeems it for an access token audienced to the realm's `/admin-api`. The
+token is **DPoP-bound** to a key the browser will not export, held in memory
+only, and renewed with the refresh grant; a reload signs in again, silently
+while your sign-on session lasts. The console keeps no session of its own:
+**Sign out** ends the sign-on session at `/logout`, and with it the console's
+tokens. See [Sessions](sessions.md) and [Signing out](signing-out.md).
+
+On a service with trust realms, the plain `/admin` first asks which realm;
+`/admin?realm=default` skips the question, and a realm's own console is at
+`/realm/<id>/admin`.
 
 **Your own account is one click away, with no second sign-in.** The account
-menu links to the user portal of the realm you signed in through. When the
-portal has no session of its own in your browser but finds a live console
-session, it makes its own from it: the same person, the same realm, and the
-same record of how you signed in. It does this even after the sign-on session
-behind the console has run out, which the console outlives by renewing its
-tokens. You are not asked to choose a realm or to sign in. A realm's own
+menu links to the user portal of the realm you signed in through, which signs
+you in from the same sign-on session the console used. A realm's own
 administrator who opens the plain `/portal` is sent to their realm's portal.
-That portal session ends when the console session does, and **Sign out** in
-the portal ends the console session too. It works one way only: a portal
-session never signs anybody in to the console.
+
+**Switch user** is in the same menu, with
+[several accounts in one browser](multiple-accounts.md) turned on in the
+realm (`authn.multipleAccounts`, on by default): the other accounts signed
+in to this browser, each a press away, and **Sign in with another account**.
+The account the tab leaves stays signed in, and other tabs keep theirs.
+The account switched to gets exactly what its own roles give it — a person
+holding no console role gets the console's usual answer for them, and an
+account the console refuses outright gets a page that says so with the same
+Switch user list and Sign out, so the way back is on the page. Switching is
+not the *Sign in again* window that appears when a session ends: that one
+signs the tab's own account in again and refuses anybody else.
+
+**A sign-in that leaves the page keeps a form's choices and nothing typed.**
+When the console sends the browser away to sign in and back, the form on the
+page comes back with its ticks, radio buttons and menus as they were. Text typed into it is
+not kept in the browser's storage, so type it again.
 
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
@@ -59,16 +86,17 @@ whether the password typed at the sign-in screen is *checked*:
 * **In development mode** no password is checked, so the gate is a turnstile
   and not a lock: it proves that somebody *typed* a name that holds a role.
   What it buys is what a test service is for — a client, or a person, can be
-  driven through a 302 to a sign-in screen, a 401 with no session, a 403 with
-  the wrong role, and a role model that can be granted and revoked.
+  driven through the sign-in, a 401 with no token, a 403 with the wrong role,
+  and a role model that can be granted and revoked.
 * **In product mode** the password is verified, and the console is the
   administrative surface of a deployed identity service.
 
-### The roles are two directory groups
+### The roles are three directory groups
 
-The two roles are **two ordinary groups in the embedded directory** —
-`admin.readGroup` and `admin.writeGroup`, `cn=admin-read` and `cn=admin-write`
-by default — not a store of the console's own. So there are **four doors onto
+The three roles are **three ordinary groups in the embedded directory** —
+`admin.readGroup`, `admin.writeGroup` and `admin.securityGroup`,
+`cn=admin-read`, `cn=admin-write` and `cn=security-admin` by default — not a
+store of the console's own. So there are **four doors onto
 one membership**, and a grant made through any of them is visible through all
 of them:
 
@@ -81,6 +109,23 @@ of them:
 
 A role no test can grant is a role no test can exercise.
 
+**A role is granted only to a person who exists.** On `/admin/rbac` and at
+`POST /admin-api/rbac/grant` a name with no entry in the realm's directory is
+refused (400, `reason: "noSuchPerson"`, recorded as `STS-ADMIN-0920`) and
+nothing is written. Create the person first, on Directory → People or with
+`POST /admin-api/users/create`, and grant the role then — so that somebody
+created later under an old name inherits no role.
+
+**On `/admin/rbac` you find the person by typing part of a username.** Where
+the directory is kept in the database, a search's count stops at 100,000:
+past that the page says *more than 100,000 matches* and pages only through
+the first 100,000, so type more of the name to narrow it.
+`GET /admin-api/rbac` says the same with `candidateSearch.countCapped`.
+On PostgreSQL a search of three letters or digits or more is answered from
+the login-name index, so a rare name is found at once however many people
+the realm holds; one or two characters, or any search on MariaDB, reads
+through the realm's people instead.
+
 **Each trust realm has administrators of its own, confined to it.** The
 console asks the roster of the realm a person signed in through; the default
 realm's roster is the service roster over every realm. A realm's own
@@ -89,12 +134,23 @@ administrators cannot reach anything about the process as a whole.
 
 ### The bootstrap administrator
 
-At startup the service makes **`admin`** (`admin.bootstrapUsername`) in the
+In product mode a default name (`admin`, `root`, `sa`, `administrator`, or none)
+is replaced by an unpredictable generated name. Set `admin.bootstrapUsername` to
+choose your own (`admin.allowDefaultUsername` keeps a default name, for a test
+stack).
+
+At startup the service makes the bootstrap administrator (`admin.bootstrapUsername`,
+**`admin`** in development) in the
 default realm if it is absent, puts it in both role groups, and marks a newly
 created account `pwdReset: TRUE`, so its first sign-in asks for a new password
 before anything else. In development any password gets it to that screen; in
-product mode its password is `admin.bootstrapPassword`, or one generated and
-written to the log once. It cannot be deleted or renamed through the console,
+product mode its password is `admin.bootstrapPassword`, or one generated at the
+first start. A generated one is written, with the name, to the file
+`bootstrap-admin-password` in `persistence.dataDir` as `name:password`, readable
+only by the service, and the log names the account and says where. `admin.logBootstrapPassword` writes
+it to the log instead, which only a test stack should do. In product mode it
+must also set up a second factor at that first sign-in (see
+[Authentication](authentication.md#requiring-a-second-factor-of-everybody)). It cannot be deleted or renamed through the console,
 `/admin-api`, SCIM or LDAP. Taking `admin` out of the role groups is still
 possible, and is on you.
 
@@ -150,26 +206,50 @@ every future token and assertion, and create people in the directory.
 
 ### The navigation
 
-The navigation is a grouped list down the left. Its five sections:
+The navigation is a grouped list down the left, and every section of it is
+**collapsed until you open it**. Click (or press Enter or Space on) a section's
+heading to open it; opening one closes whichever was open, so only one is open
+at a time. Loading a page (a reload or a new tab) opens the section that holds
+it; after that the section you opened stays open as you move between console
+pages in that tab, until you close it or open another. The section holding the
+page you are on is marked by a rule down its left even while it is collapsed.
+The [user portal](user-facing-pages.md#the-user-portal)'s column works the same
+way. Its five sections:
 
 * **Overview** — `/admin`, the one page whose job is to point at the others.
   It is a section of one on purpose: it cannot sit under a heading naming a
   kind of content.
 * **Protocols** — a page, or a group of pages, per protocol family: OAuth2 /
   OIDC (settings, authorization servers, token lifetimes, custom claims,
-  UserInfo claims), SAML, Verifiable Credentials, XACML, SCIM, Shared Signals,
-  CAEP and RISC, Federation, OpenID Federation, GNAP, the second factors,
-  Kerberos, LDAP, WS-Trust, WS-Federation, PKI, certificate issuance (ACME,
-  EST, SCEP and SPIFFE) and TLS. [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
+  UserInfo claims), SAML (Metadata, Global settings, Shared profile
+  settings, SAML 2.0 IdP, SAML 1.1 IdP, IdP-Initiated SSO, Assertions and
+  Attributes tabs), Verifiable Credentials, XACML (Metadata, Settings,
+  Policies, Policy editor, Remote PEPs and Try a decision tabs), SCIM, SSF
+  (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
+  PAC claims and Principals tabs), Federation, OpenID
+  Federation, GNAP, the second factors, Kerberos, LDAP, WS-Trust,
+  WS-Federation, PKI, Cert issuance (Metadata, ACME, EST, SCEP and SPIFFE
+  tabs, the SPIFFE tab's sub-tabs the trust domain, registration entries,
+  agents and brokers) and TLS.
+  [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
   maps each to its documentation.
+  Every page under Protocols is drawn as tabs, and the first tab is
+  **Metadata**: the realm's endpoints for that protocol and what explains it
+  or reports its state. The other tabs are the registers, forms and settings.
 * **Directory** — users, groups, roles, applications, policies, and *As the
   directory holds it*: the raw entries under each container and the directory
   service itself.
+  A page with more than one section is drawn as tabs, Metadata first (its
+  tiles, notes and the container's schema), then the list, its forms and its
+  settings. Monitoring and Server configuration follow the same rule: the
+  lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
-  enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
+  enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
+  SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
-  scheduler, the mail outbox, risk, the audit log and the error codes.
+  scheduler, the mail outbox, risk, the audit log, the audit export and the
+  error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
   cluster, mail, admin roles, the protocol debugger, the service metadata, the
   API explorer, key pairs and cryptography.
@@ -215,7 +295,7 @@ spends exactly that, so *back* lands on page 3 of that filter.
 * Four views take a trail leaf — the four that drill in: `?user=`, `?group=`,
   `?application=` and `?profile=`. A parameter that only *filters* a list does
   not; the filter has its own **clear** link.
-* `?format=json` ignores all of it: a caller has the URL it asked for.
+* The page's operation ignores all of it: a caller has the URL it asked for.
 
 ### Paging
 
@@ -232,7 +312,7 @@ exists to prevent.
 * **Every button acts on an identifier, never a row number**, so a row issued
   or revoked between the render and the click cannot make the wrong one the
   target.
-* A `?format=json` reply carries `page`, `pages` and `matched`, so a test can
+* The page's operation answers `page`, `pages` and `matched`, so a test can
   walk the whole list.
 
 **A drill-down with several lists pages each separately.** `?user=` answers
@@ -255,16 +335,20 @@ in the JSON reply.
 **The management API pages the same way.** `GET /admin-api/users` and
 `GET /admin-api/groups` take the same parameters and reply with a
 `<name>Paging` object beside each array — `sessionsPaging`, `membersPaging`, and
-so on — carrying `page`, `pages`, `perPage`, `firstRow`, `lastRow` and `total`.
+so on — carrying `page`, `pages`, `perPage`, `firstRow`, `lastRow` and `total`,
+with `param` (the query parameter that moves that list) and `noun` (what its
+rows are counted in).
 Each session carries its own `tokensPaging`. The counts around them stay counts
 of the whole list: a group's `memberCount`, `presentCount` and `danglingCount`.
 The `session-<id>Page` parameter is described in the operation's prose rather
 than listed, because OpenAPI has no way to spell a query parameter whose name
 is built at runtime.
 
-**Nothing in the console runs a script** (`script-src 'none'`). Paging is
-links and query parameters; the diagrams are drawn on the server. The one
-exception is the [API explorer](management-api.md#the-explorer).
+**The console needs JavaScript**: it is one page whose script
+(`/admin/console.js`, under `script-src 'self'`) draws every page from
+`/admin-api`. Paging is still links and query parameters, and the diagrams are
+still laid out on the server. The [API explorer](management-api.md#the-explorer)
+loads a script of its own as well.
 
 ## Directory
 
@@ -284,13 +368,25 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
+**The tiles count the realm's whole directory; the list is capped.** The
+list reads at most the first 5,000 directory people (`credentials.factorScanLimit`)
+and adds everybody this service has seen, so the footer's *known in total* is
+the list's length. The footer says when the list is capped and shows the
+directory's own count beside it, which is `directoryPeople` on
+`GET /admin-api/users`. Compare that figure, not `known`, with `totalResults`
+from `GET /scim/v2/Users`. With a database, the directory may keep its counts
+for up to ten seconds against changes another process committed. A note under
+the tiles shows when they were counted and how old they are, and the API
+carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
+
 `?user=<name>` drills into one person's page, **drawn as tabs**:
 
 | Tab | What it holds |
 |---|---|
 | **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
+| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
-| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
+| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
 | **Federation links** | the partners' subjects that sign them in |
 | **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
@@ -315,7 +411,8 @@ the entry's current name (so a rename does not split one person into two rows),
 the older `urn:sts:user:` prefix is still read and stripped, and the realm is
 split off at the last `@`. The cost is shown rather than hidden: two different
 people called `alice` in two Kerberos realms are one row, which the Realms
-column makes visible. Case is never collapsed.
+column makes visible. Case is never collapsed. A live sign-in name reaches
+that same row. [People](people.md#sign-in-names).
 
 **The list is built from three sources**: the authentications recorded, every
 token's `sub`/`username`, and every artifact's subject. An identity can be
@@ -345,8 +442,9 @@ anywhere here has an entry at `uid=<name>,ou=users,<base>` ([LDAP](ldap.md)),
 and the two are the same authentication seen from two sides. What is shown is
 the entry itself: its DN, where it came from (`seed` or `authentication`), its
 two generalized-time stamps in the directory's own format, and **every
-attribute with every value, the operational ones included**. `?format=json`
-carries the same object under `ldap`.
+attribute with every value, the operational ones included**. `GET
+/admin-api/users?user=` carries the same object under `ldap`, a credential's
+value masked as no GET carries one.
 
 Where there is no entry, the section says **which** of five reasons it is:
 auto-creation is switched off; the identity is a *client*, not a person; it has
@@ -363,13 +461,20 @@ entry that is not there.
 
 The **Attributes** tab draws every attribute that may be changed as a typed
 field, the way an [application's](applications.md) configuration is drawn:
-one sub-tab per group, each a form with its own **Save**. A single-valued
+one sub-tab per group, each a form with its own **Save**. **Policies** is
+where this person names a policy of a kind a person can name: the attribute
+policy (`stsAttributePolicy`) and, for a service account, the
+service-account policy (`stsServiceAccountPolicy`). See
+[Policies](policies.md#who-names-which-kind). **Custom** is the realm's own
+attributes, defined on Directory → Policies → Attribute policy. A single-valued
 attribute is a text box (empty clears it); a multi-valued one is one box per
 value, with **+** to add a box and the bin to delete one. Every box shows an
 example of a valid value, and every field's name carries a tooltip saying
 what it is and what it takes. **Save** writes what changed on that tab and
-nothing else; what one attribute refuses does not undo another, and a refused
-save comes back with every box as you left it. It needs **Admin Write**.
+nothing else, all or nothing: when one attribute is refused, what the save had
+already changed is put back, and the refusal says so (or names any value that
+could not be put back). A refused save comes back with every box as you left
+it. It needs **Admin Write**.
 `POST /admin-api/users/update-fields` is the same save, with `fields` naming
 each attribute and its value or values.
 
@@ -388,8 +493,8 @@ an attribute that holds several, and **Remove from** takes one value off.
 
 **Creating a person** (`/admin/users/new`) draws the same fields under the
 same group headings, in a simplified view (names and contact details) and an
-advanced view (every field). A value a create writes is held to the same
-rules as an edit.
+advanced view (every field). A value a create writes is held
+to the same rules as an edit.
 
 **What may be changed** is the person schema — `person`,
 `organizationalPerson`, `inetOrgPerson` and the Identity Assurance claims —
@@ -400,7 +505,8 @@ and the credential catalogue, less what has a door of its own or is not text:
 | `userPassword` | the password controls on the same page, or `POST /admin-api/users/set-password`, which hashes it |
 | `mail` | **Set the address**, in the same section (`POST /admin-api/users/set-mail`), which marks the address verified and tells the former one |
 | `uid`, and the attribute the entry's DN is named by | nothing: a rename is not an attribute edit |
-| the certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
+| `userCertificate` | **Stored certificates** on the Credentials tab (Factors) |
+| the other certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
 | group memberships, credentials, what sign-ins record | Groups, the credential controls |
 
 **What a value must look like.** `cn` and `sn` can never be emptied (RFC 4519
@@ -419,13 +525,84 @@ write of the same attribute is. An identity verification covers a value only
 while the entry still holds it, so changing a verified value lets that
 verification lapse for it.
 
+#### Exporting and importing a person as LDIF
+
+A person's page has an **Import / export** tab (Admin Write), the same
+tab an [application's page](applications.md#exporting-and-importing-an-application-as-ldif)
+has. It moves one person between realms, or between two deployments of
+this service, as an [RFC 2849](https://www.rfc-editor.org/rfc/rfc2849)
+LDIF file of one record: the entry's DN (`uid=<name>,ou=users,…`), its
+object classes and its attributes.
+
+**Export** writes the attributes a create takes: the person schema, the
+credential catalogue's attributes and the realm's custom attributes, the
+same fields as the Attributes tab and `/admin/users/new`. It does not
+write what this service *recorded* about the person, such as sign-in
+methods, federation sightings, consents, the account's flags and pending
+links. It also writes no group memberships, because a membership is on
+the group's entry and a group in another realm is a different group, and
+no `entryUUID`.
+
+* **By default no credential material is exported.** The comments at the
+  top of the file name what was left out.
+* **Include credential material** writes them **unencrypted**: the
+  password as its stored hash, the authenticator app's secret (opened
+  where it is sealed at rest), passkeys and their user handles, recovery
+  codes, app passwords, stored client certificates, HOBA keys and the
+  CIBA user code's hash. Treat the file as you would those secrets.
+* **Some credentials are never exported**: Kerberos keys, signing key
+  pairs and enrolled certificates (each certified under this realm's
+  authority), ACME and SCEP enrolment secrets, published DIDs and
+  self-issued subjects. Make them again where the person is imported.
+
+**Import** takes a file (or pasted LDIF) of exactly one person's entry and
+creates that person **in the realm the console is in**, through the same
+create as `/admin/users/new`, so the realm's
+[attribute policy](policies.md) applies.
+
+* **An existing username is refused** (`STS-LDAP-0218`). An import never
+  overwrites, so it cannot change the person whose page it was started
+  from.
+* **A new subject is minted.** A file carrying `entryUUID` is refused, and
+  so is one carrying anything an export does not write (`STS-LDAP-0219`).
+* **A password is taken only as the hash this service stores.** A hash
+  cannot be checked against the password policy, so a clear password in
+  the file is refused (`STS-LDAP-0220`); set one with `set-password`
+  after the import. A passkey user handle or a certificate that somebody
+  in the realm already holds is refused the same way. Nothing is created
+  when a file is refused.
+* **No Kerberos key is derived from a hash.** The imported person has
+  none until their password is set again.
+* A CAEP credential-change is sent for each kind of credential that came
+  in. Both acts are audited (`user.export`, `user.import`) with attribute
+  names, never a value. Both need a recent sign-in.
+
+The API is `POST /admin-api/users/export-ldif`
+(`{"user": "…", "credentials": true}`, answering the LDIF as `ldif` and as
+a file) and `POST /admin-api/users/import-ldif` (`{"ldif": "…"}`).
+
 #### Creating a person — `/admin/users/new`
 
 The list page has one control: a name, and a button to **`/admin/users/new`**,
 where the person is described. It is a box for every attribute a person here
 can carry — the same catalogue *Credential claims* chooses from, so a value typed
-here is the value an issued credential asserts. **Only the username is
-required, and an empty box records no value.**
+here is the value an issued credential asserts. **An empty box records no
+value.**
+
+**The username, at the top of the form, is the entry's `uid`** and is always
+required; it is the only place a `uid` is typed. **Every field in the grid
+that the realm's attribute policy (*Directory → Policies → Attribute policy*,
+below) requires is outlined in red and marked *required*:** `cn` and `sn`
+always, and whatever the realm adds. Those fields are drawn in the simplified
+view as well. The *required* tile counts them, with the username. In product
+mode a create without one is refused; in development mode the policy is shown
+and not enforced. A `cn` left empty is made from the
+given name and surname. **A refused create keeps every box as you typed it**.
+**On every Directory → Users page and tab, a refusal floats in the banner at
+the top of the window**, as on the application pages. That covers a create, a
+Fill, a person's attributes, the Service account owners and destination, and
+*Closed to its owners*. So the reason stays in view however far down the form
+you were.
 
 **Fill with example data** writes what this service would invent into the
 boxes you left empty, touching nothing you filled in and creating nobody. It is
@@ -448,7 +625,9 @@ missing selected attribute on every person.
 
 A generated password or link is shown in the body of the page that comes back,
 never in a redirect, because a secret in a URL is a secret in the browser's
-history and every proxy log. Issuing another activation link invalidates the
+history and every proxy log. It has a **Copy** button under it. That page's
+breadcrumb trail reads *Admin console › Users › (the new username) › User
+created*, so the users list and the new person's page are each one click away. Issuing another activation link invalidates the
 first, which is also how a lost one is replaced.
 
 **The catalogue is not the whole schema.** It is the twenty-seven claim-bearing
@@ -494,11 +673,18 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   the link** ticked (`deliver: "mail"` on the API) it is mailed to the address
   on the person's entry and not shown to the administrator at all. A person may
   also ask for one at `/portal/forgot-password` ([Mail](mail.md)).
-* **Disable passkeys** removes every security key that could sign the person
-  in on its own, leaving their password and second factors. It is offered only
-  while they have a password, so it cannot lock anybody out.
-* **Disable all MFA** removes the authenticator app, every second-factor key and
-  the recovery codes.
+* **Remove every passkey** (until
+  [#1135](https://github.com/rcbj/iya-sts/issues/1135) "disable passwordless
+  sign-in", which removed only the keys enrolled to sign in on their own; a
+  passkey has no role now) removes every passkey the person holds, leaving
+  their password, authenticator app and recovery codes, and ends the sessions
+  each removed passkey signed in. Every other session stays.
+* **Disable all MFA** removes the authenticator app, every passkey and the
+  recovery codes, and ends the sessions each of those signed in. A session a
+  password alone signed in stays.
+* Both are withheld from the page where the person has no password and
+  passkeys may be a first factor in the realm, and `/admin-api` refuses them
+  there (`STS-AUTHN-0161`), so neither can lock anybody out.
 * **Require MFA** / **Stop requiring MFA** marks the person (`stsMfaRequired`),
   so the sign-in screen makes them enrol an authenticator app or a security key
   at `/authn/mfa-setup` before it starts a session. The authentication policy's
@@ -512,6 +698,33 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   ticked and shows it once. `POST /admin-api/users/create-app-password` and
   `revoke-app-password`, and `GET /admin-api/users/app-passwords` (paged), are
   the same acts. See [Authentication](authentication.md#the-password-only-doors-and-app-passwords).
+* **Stored certificates** lists the certificates stored in the person's
+  `userCertificate` — subject, issuer, validity and SHA-256 — with
+  **Remove** per row, and a box to paste one more (PEM) and **Store** it. A
+  certificate from an outside certificate authority in the client
+  truststore signs its holder in only while it is stored on their entry and
+  no other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)).
+  A certificate already stored on another entry is refused
+  (`STS-ADMIN-0899`), as is anything that is not one X.509 certificate
+  (`STS-ADMIN-0897`). `POST /admin-api/users/add-certificate` and
+  `remove-certificate`, and `GET /admin-api/users/certificates`, are the same
+  acts; each sends a CAEP `credential-change` of type `x509`. An
+  application's are the **Stored certificates** block of the **Credentials**
+  section of its page, through `/admin-api/applications/add-certificate` and
+  `remove-certificate` ([Applications](applications.md#the-console-page-and-the-api)).
+* **Message-signing certificates** lists the certificates the realm's
+  Message Signing Issuing CA issued the person — what they sign a WS-Trust
+  request with — with **Revoke** per valid row, and a form (a label, the key
+  algorithm, a file password twice) that issues one and answers with its
+  `.p12`, key and chain as downloads, once. Only an administrator issues one;
+  the person has no door to it on the portal (#521). `POST
+  /admin-api/users/issue-signing-certificate` and
+  `revoke-signing-certificate` are the same acts, and `mfa.signing` of the
+  person's `GET /admin-api/users` answer is the list. An application's are on
+  the **Credentials** section of its page, through
+  `/admin-api/applications/issue-signing-certificate` and
+  `revoke-signing-certificate`. See
+  [PKI](pki.md#a-message-signing-certificate-for-a-ws-trust-requester).
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC
@@ -526,8 +739,16 @@ too, and so does completing a reset link. `caep.autoEmitTypes` and
 ### Policies — `/admin/policies`
 
 **Directory → Policies** holds every kind of policy a realm has.
-`GET /admin-api/policies` answers each as a member, and
-`POST /admin-api/policies/{save,reset}-{password,authn}-policy` writes them.
+[Policies](policies.md) is the account of the seven kinds and of how a named
+policy is chosen: the holder names it, and the lowest precedence applies.
+`GET /admin-api/policies` answers each kind as a member, and
+`POST /admin-api/policies/save-<kind>-policy` and `reset-<kind>-policy`
+write them, where the kind is `password`, `authn`, `serviceAccount`,
+`passkey`, `locale`, `attributes` or `postLogin`. The page is one tab per
+kind, and each of those tabs has the sub-tabs **Default**, **Named
+policies** and **New policy**. A last tab, **All profiles**, lists every
+profile of every kind. The authentication policy's named profiles use
+`save-named-authn-policy` and `delete-named-authn-policy`.
 
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase
@@ -535,12 +756,22 @@ letter and a number are required (both yes). It is the **default profile**,
 stored as `cn=default,ou=passwordPolicies` in the realm's directory in the shape
 of draft-behera-ldap-password-policy (`pwdMinLength`, `pwdInHistory`, with
 `pwdHistory` and `pwdChangedTime` kept on each person), with the composition
-rules as this service's own `stsPwd*` attributes. Until it is saved the built-in
+rules as this service's own `stsPwd*` attributes. It also chooses how a new
+password is hashed: scrypt at N=2^15, r=8, p=3 by default, or argon2id, with
+each algorithm's parameters. A stored hash in another algorithm, or in the
+same algorithm at a strictly lower cost, is hashed again at the person's next
+verified sign-in. A same-algorithm hash already at least that cost is left.
+Until it is saved the built-in
 defaults are in force. **It is enforced in product mode only**, at every door
 that sets a password: the console, `/admin-api`, `/portal/password`,
 `/portal/activate` and an LDAP add or modify of `userPassword`, which is hashed
 on the way in. Development mode applies no rule and records the history anyway.
-[LDAP](ldap.md#the-password-policy-is-a-directory-entry) has more.
+[LDAP](ldap.md#the-password-policy-is-a-directory-entry) has more. The tab is
+three sub-tabs, **Default**, **Named policies** and **New policy**: a named
+password policy has every rule and a precedence, and applies to the members
+of a group naming it (`stsPasswordPolicy`) and to a password chosen while
+signing in to an application naming it (`appPasswordPolicy`) — see
+[Authentication](authentication.md#different-password-rules-for-different-applications-or-groups).
 
 **The authentication policy** (#64) is a separate policy on the same page:
 
@@ -583,6 +814,98 @@ provides is verified by following a link: on `/portal/email` the new address
 stays pending until they do, and the old one is told when it changes. See
 [Authentication](authentication.md) and [Mail](mail.md).
 
+**The attribute policy** (#396) says what every person in the realm must
+hold. `uid`, `cn` and `sn` are always required; by default `givenName` and
+`mail` are too, and the tab lists every attribute a person may be given with a
+**Required** box, so a realm can require more (an employee number, a custom
+attribute) or less (no address). It is `cn=default,ou=attributePolicies`, and a
+realm with none of its own follows the default realm's. **It is enforced in
+product mode only**: a person created without a required attribute is refused
+at every door — this console, `POST /admin-api/users/create`, SCIM, an LDAP add,
+the bulk import — and a federated newcomer whose partner did not send one is
+not created; an edit may not take a required value away. A `cn` left empty is
+made from the given name and surname. A person created before an attribute was
+required is not refused anything for it; `GET /admin-api/policies?missing=count`
+counts them, and the tab gives the LDAP filter that finds them. A service
+account and the bootstrap administrator are exempt.
+
+**Named attribute policies** (#1241) let one realm require different things
+of different people. The tab has four sub-tabs: **Default**, **Named
+policies**, **New policy** and **Custom attributes**. A named policy is a
+required list and a precedence from 1 to 1000. It belongs to the realm and is
+never inherited. Two kinds of entry name one through `stsAttributePolicy`:
+
+* **a person**, on the **Policies** tab of their page, or at a create (the
+  console, `POST /admin-api/users/create` with `attributes`);
+* **a group**, on the group's page or with
+  `POST /admin-api/groups/set-policy`.
+
+When the person and their groups name several policies, the one with the
+lowest precedence applies, with ties broken by name. When they name none,
+`default` applies.
+
+**When a person is created**, the policy is chosen from the reference the
+create writes and any group that already lists the new DN. **When a person is
+edited**, it is chosen from their reference as the edit leaves it and the
+groups they are in.
+
+A reference to a policy the realm does not hold selects nothing: the rest
+decide, and the service logs it as STS-LDAP-0196. A named policy that a person
+or group still names cannot be removed (STS-LDAP-0197). Its entry on **Named
+policies** lists who names it. The count of people who lack a required
+attribute holds each person to their own policy.
+
+**Custom attributes** are defined on the same tab: a name, a label, a syntax
+(`string`, `integer`, `boolean`, `date`, `email`, `uri` or `dn`) and whether it
+holds one value or several. A custom attribute can then be set on a person's
+page and at `/admin/users/new`, is checked against its syntax, and may be
+required. They belong to the realm (`ou=attributeDefinitions`) and are not
+inherited. `POST /admin-api/policies/define-person-attribute` and
+`remove-person-attribute` do the same over the API; a custom attribute cannot be
+removed while anybody holds a value of it or any of the realm's policies
+requires it. The **User portal** column says whether the person sees the
+attribute on the portal, and whether they may change it there; both are off
+by default, and the define form has a box for each. **Change** on a row edits
+the label, the description and those two boxes
+(`update-person-attribute`); letting the person change it also shows it. The
+syntax and whether it holds several values are fixed once it is defined.
+`/admin/users/new` and a person's Attributes tab outline every required field
+in red and mark it *required*.
+
+**The passkey policy** is described row by row under
+[the passkey policy](authentication.md#the-passkey-policy) and, with recipes, in
+[Passkeys](passkeys.md). One row changes what a person sees at sign-in while a
+post-quantum passkey is required: **Passkeys a sign-in names where a
+post-quantum one is required** (`postQuantumAllowCredentials`, #946) —
+`realm` (follow `webauthn.postQuantumAllowCredentials` on Protocols →
+WebAuthn), `narrow` or `list-and-refuse`
+([Narrow, or list and refuse](passkeys.md#narrow-or-list-and-refuse)).
+
+**The post-login activity policy** (#1096) asks the people it reaches to do
+something after they sign in, before they are sent back to the application:
+today, register a post-quantum (ML-DSA) passkey. It is off by default, has a
+`default` profile and named profiles that groups and applications name,
+ranked by precedence, and
+says how long Skip puts it off, when it becomes required, what a person with
+no passkey is asked, and how a classical passkey is moved (upgraded in place
+or added alongside). See
+[Post-login activities](post-login-activities.md) and the walk-through in
+[Passkeys](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys).
+
+### Post-login activities — `/admin/post-login-activities`
+
+[Start a post-login activity](post-login-activities.md#starting-an-activity)
+for the realm or for groups, then pause, resume or end it. On the **Start an
+activity** tab, search for groups (twenty results a page) and pick one or more
+to build the list; the activity reaches the members of every group on it, each
+person once, or everybody when the list is empty. A scheduler job mails each
+person the activity is due for a reminder to sign in, every so many days up to
+a maximum per person. The **Activities** tab lists each started activity with
+its groups and its own counts; who was mailed and where each person stands is
+the `postLoginProgress` report in [Reports](reporting.md#postloginprogress),
+not a console page. `GET /admin-api/post-login-activities` and
+`POST /admin-api/post-login-activities/{start,pause,resume,end}`.
+
 ### Groups — `/admin/groups`
 
 `/admin/groups` reports the *directory* rather than what this service has
@@ -590,18 +913,49 @@ issued. It lists every group with what it is made of, and `?group=<dn>` drills
 into one: every attribute the entry holds, operational ones included, and every
 member resolved to the entry it names.
 
-**Two controls.** **Create a group** is below the list's table: it puts a
+**Three controls.** **Create a group** is below the list's table: it puts a
 `groupOfNames` at `cn=<name>,ou=groups` and takes members one per line or
 comma-separated, each a user name or any DN (a group can hold another group,
-and no user name names one). **Add a member** is on the drill-down; a create
-lands you on the group it just made. `POST /admin-api/groups/create` and
-`POST /admin-api/groups/add-member` are the same acts.
+and no user name names one), and an optional **email address**, the group's
+own `mail` attribute. **Add a member** and **Email address** are on the
+drill-down; a create lands you on the group it just made.
+`POST /admin-api/groups/create`, `POST /admin-api/groups/add-member` and
+`POST /admin-api/groups/set-mail` are the same acts.
+
+**The email address is where a report shared with the group is sent.** A
+report definition shared with the group (the reports application,
+[Reports](reporting.md)) emails its result notices to this address when a
+job of it finishes with Notify on; a shared group with no address is
+written up as `STS-REPORT-0037` when a notice is due. The box takes one
+address, `local-part@domain`; an emptied box removes the attribute. Nothing
+else reads it.
+
+**Policies this group names.** On the drill-down, below the email address,
+one choice per kind of policy a group may name. A group may name six:
+
+| Attribute | Kind |
+|---|---|
+| `stsPasswordPolicy` | [Password](policies.md#password-policy) |
+| `stsAuthnPolicy` | [Authentication](policies.md#authentication-policy) |
+| `stsPasskeyPolicy` | [Passkey](policies.md#passkey-policy) |
+| `stsLocalePolicy` | [Locale](policies.md#locale-policy) |
+| `stsAttributePolicy` | [Attribute](policies.md#the-attribute-policy) |
+| `stsPostLoginPolicy` | [Post-login](policies.md#post-login-activity-policy) |
+
+Each offers `default` and the realm's named policies of that kind. **Save**
+writes the choice onto the group's own entry. `POST
+/admin-api/groups/set-policy` is the same act, with `attribute` naming the
+row. The policy a group names competes, by precedence, with the policy the
+application names and, for the attribute policy, with the policy the person
+names. [Who names which kind](policies.md#who-names-which-kind) is the whole
+rule. A named policy a group still names cannot be removed until the group
+names `default` or another policy.
 
 Three behaviours are the directory being consistent with itself:
 
-* **A member that names nothing is written, not refused.** This directory
-  does no referential integrity, so refusing here would make the *dangling*
-  state this page reports impossible to produce from it.
+* **A member that names nothing is refused.** A group lists only people,
+  groups and applications that exist, deleting one takes it out of every group
+  that listed it, and renaming one moves it in every group.
 * **An empty group is allowed**, although RFC 4519 makes `member` MUST on a
   `groupOfNames`: SCIM already creates one, and the two doors should not
   disagree about what the directory holds.
@@ -611,6 +965,48 @@ Three behaviours are the directory being consistent with itself:
 Removing a member is an `ldapmodify`, a SCIM `PATCH`, or **Admin roles** for
 the two role groups; deleting a group is an `ldapdelete` or a SCIM `DELETE`.
 
+**Owners.** A group's page has two tabs: **Group**, which is everything
+described above, and **Owners**. A group's owners are its `owner` values
+(RFC 4519), and each one names a person or a group in the realm. To add one:
+
+1. Choose **people** or **groups** and type part of a username or a group's
+   name.
+2. Press **Find**. The results show five at a time, with **Previous** and
+   **Next**.
+3. Press **Add** beside the one you want.
+
+**Add** and **Remove** save the change as soon as you press them, and the
+search results stay on the page so you can add several in a row. Unlike a
+member, an owner must name somebody who exists in the realm. A group cannot
+own itself, and it can name at most 25 owners; for more, name a group. An
+owner grants nothing, because nothing in this service reads `owner` to decide
+anything. `POST /admin-api/groups/add-owner` and
+`POST /admin-api/groups/remove-owner` are the same acts, and the group's
+answer from `GET /admin-api/groups?group=` carries its `owners`.
+
+**A role's page.** On **Directory → Roles**, each name under *Roles you have
+made* opens that role's page, `/admin/roles?role=<name>`. It has two tabs:
+
+* **Role** shows everything known about the role: its kind, the application it
+  belongs to (if any), its display name and description, who may hold it, its
+  id and DN, when it was created and last changed, every member by kind, what
+  it authorizes, the clients that confer it, the applications that require it,
+  and its directory entry. Members, permissions and conferring clients are
+  still changed on the Roles page.
+* **Owners** works the way a group's Owners tab does: find a person or a group
+  and press **Add**, or press **Remove**, and each change is saved at once. A
+  role can name at most 25 owners, and an owner grants nothing.
+  `POST /admin-api/roles/add-owner` and `POST /admin-api/roles/remove-owner`
+  are the same acts, and `GET /admin-api/roles?role=` answers the role in full
+  as `role`.
+
+**An application's owners.** An application's page has an **Owners** tab
+too, after **Roles**, which works the same way: find a person or a group and
+press **Add**, or press **Remove**, and each change is saved at once. The
+owners are the application's `appOwner` values; at most 25, and an owner
+grants nothing. `POST /admin-api/applications/add-owner` and
+`POST /admin-api/applications/remove-owner` are the same acts.
+
 **What counts as a group is two rules.** An entry under `ou=groups`, *or* an
 entry carrying a group `objectClass` (`groupOfNames`, `groupOfUniqueNames`,
 `posixGroup`, `groupOfURLs`) wherever it sits. The directory is schemaless, so
@@ -619,21 +1015,17 @@ each row.
 
 **Membership is read from `member`, `uniqueMember` and `memberUid` together.**
 `memberUid` holds a bare user name where the other two hold a DN, so it is
-resolved under `ou=users`. Three disagreements are reported rather than smoothed
-over, and each is a state a client can reach in two operations:
+resolved under `ou=users`. Every member names an entry this directory holds:
+a member that names nothing is refused, and a delete or a rename keeps every
+group in step. Two things are shown rather than smoothed over:
 
-* a **dangling** member — a value naming an entry this directory does not
-  hold. Deleting a user does not remove its DN from the groups that list it,
-  so the count of membership values and the count that resolve are shown
-  separately: a group whose seven members resolve to five is not seven members
-  with nothing wrong.
 * a member that is itself a **group**. Nesting is shown and never expanded: the
   row links to that group's page and nobody inside it is counted, because
   nothing in this service walks a group tree.
 * an entry whose own **`memberOf`** names a group that does not list it back.
   In directories that have `memberOf` the server keeps it in step with
-  `member`; this one keeps nothing in step. Those entries are listed under their
-  own heading.
+  `member`; this one does not keep `memberOf` (#1622). Those entries are listed
+  under their own heading.
 
 **A member links to `/admin/users` only for somebody this service has seen
 authenticate**, and is marked *never here* otherwise. The directory holds an
@@ -679,6 +1071,25 @@ In an assertion the claim is **one `<Attribute>` with several
 `<AttributeValue>` children**; one element per group with the same name would
 leave a relying party reading the first. The settings are on [LDAP](ldap.md).
 
+### Roles — `/admin/roles`
+
+`/admin/roles` is the realm's role register. The page is tabs. **Metadata**
+lists the built-in roles and who holds each. **Roles** lists the roles that
+have been made, who holds each, and what each authorizes; a name opens
+`/admin/roles?role=<name>`. **Create** makes a role, optionally for one
+application, with a display name and who may hold it (people, applications, or
+both). **Members** adds a holder: a person, a group, or an application. A
+person or a group need not exist yet. **Authorizes** names a permission the
+role grants. That is not Admin roles (`/admin/rbac`), which is who may use the
+console. **Requiring** lists the applications that require the role.
+**Preview** asks what would be issued for an application and a subject.
+**Settings** is the role settings.
+
+A role's own page has two tabs, **Role** and **Owners**. Role shows the role,
+its members, what it authorizes, and its directory entry. Owners finds a
+person or a group. A role can name at most 25 owners, and an owner grants
+nothing by being named.
+
 ### Applications — `/admin/applications`
 
 The other side of `/admin/users`: every OAuth client, OpenID Connect relying
@@ -687,7 +1098,15 @@ party, OpenID4VP verifier and Kerberos service, one entry per identifier. It is
 a **registry** that lives in the directory, so an `ldapmodify` there changes
 what the protocol endpoints do. It carries forms to create an application before
 it connects and to change what it is *allowed* to do — never its counters or
-sightings. [Applications](applications.md) documents the page,
+sightings. An application's **Authentication attempts** tab lists the audit
+log's attempts that name it: credentials accepted and refused, sessions
+refused, and a person's existing session presented to it for single sign-on
+(method *existing session*), which asks for no credential and was on neither
+tab before. Its **Fine-grained authorization** tab holds the XACML policy
+the application owns for the details of its access types, with the switch
+that enforces it, and its **Access types** tab maps each type's members to
+XACML attributes; [Fine-grained authorization](fga.md#the-console-and-the-api)
+walks through both. [Applications](applications.md) documents the page,
 `/admin/applications/new`, the schema and CORS.
 
 ## Monitoring
@@ -700,6 +1119,13 @@ would get a row — with the status classes, the average and worst latency, and
 when each was last called. Then every token by `typ`, with how many are valid,
 expired, revoked, not yet valid and DPoP-bound, and every assertion, ticket
 and credential the same way.
+
+**A `GET` or `HEAD` of `/healthcheck` answered 200 is not counted as a call** —
+not in the total, not in the table, on either listener that serves it. Behind a
+load balancer those probes would be nearly every call the page reported. They
+go up a tile of their own, *successful health probes*. A probe answering
+anything else is a call, and shows: that is a node reporting itself unhealthy.
+It is the same rule the audit log follows, read from the same list.
 
 All of it is computed **when the page is drawn**, not kept up to date as things
 happen. "Valid" and "expired" are functions of the clock, so a counter
@@ -841,8 +1267,8 @@ Every act says in its own column whether it was policed.
 **Every table on `/admin/delegation` is paged at ten rows** and they share one
 `?per=`. Each has a page parameter of its own (`?page=`, `?chainsPage=`,
 `?permissionsPage=`, `?grantsPage=`, `?pairsPage=`, `?flagsPage=`,
-`?mechanismsPage=`), so moving one leaves the others. `?format=json` still
-carries every list whole, with `allowed.filter` and `allowed.paging` reporting
+`?mechanismsPage=`), so moving one leaves the others. The page's operation
+still carries every list whole, with `allowed.filter` and `allowed.paging` reporting
 what the browser was shown.
 
 The data is also at `GET /admin-api/delegation`, with the acts, the distinct
@@ -872,9 +1298,9 @@ issued to.
 Under the picture is the same thing in words — every party with its links,
 every relationship as a row, and **every credential that came out** (kind and
 identifier only, never the credential). It takes the table's five filters and is
-drawn from everything that matched, not one page. `?format=json` is the whole
-graph (also the `graph` member of `GET /admin-api/delegation`) and `?format=svg`
-the document on its own.
+drawn from everything that matched, not one page. Its operation answers the
+whole graph (also the `graph` member of `GET /admin-api/delegation`), and the
+page's SVG link saves the drawing on its own.
 
 **`/admin/delegation/chain`** draws one relationship on its own, linked from
 every row. It carries the chain's key rather than a row number, so a link in a
@@ -900,7 +1326,7 @@ and the section that defines it (`authorization_code` beside RFC 6749 §4.1,
 `refresh_token` beside §6, `client_credentials`, the password grant, implicit
 and hybrid responses, OpenID4VCI's pre-authorized code, RFC 8693 token
 exchange). The same person search accepts any spelling — `alice`,
-`alice@STS.MOCK` and `urn:sts:user:alice` find one person.
+`alice@EXAMPLE.COM` and `urn:sts:user:alice` find one person.
 
 * A **dotted** line into the hexagon is them signing in, one per protocol
   family with the method on it.
@@ -926,13 +1352,13 @@ exchange). The same person search accepts any spelling — `alice`,
   names somebody who was never present, which is the row worth opening.
 
 `/admin/users` links to it; that page is the ledger, where a token is revoked,
-and this one is the relationships. All the delegation pages answer
-`?format=json` and `?format=svg`, and link back to the table carrying whatever
-filter you left it with.
+and this one is the relationships. Every delegation page is drawn from an
+operation under `/admin-api/delegation`, saves its drawing as an SVG file, and
+links back to the table carrying whatever filter you left it with.
 
-**None of them runs a script.** The layout is computed on the server with
+**No picture has a script of its own.** The layout is computed on the server with
 [`@dagrejs/dagre`](https://github.com/dagrejs/dagre) and every shape is this
-service's own, so the console stays `script-src 'none'`. The cost is that a
+service's own, arriving as an SVG the page shows as it is. The cost is that a
 picture does not pan, zoom or drag: the filter is how a busy one is made
 readable, and `?format=svg` is how it is opened in something that zooms.
 
@@ -1033,9 +1459,109 @@ every permission it exposes and every grant in it.
 or `?application=` for one application's group with its rows and graph. Neither
 picture has a form on it.
 
+### Verifiable Credentials — `/admin/vc/monitor`
+
+What this realm's credential issuer has issued, and whether each credential is
+still good. The **Metadata** tab counts the credentials that carry a
+status-list index and how many are valid, suspended and revoked, and says where
+the Token Status List, its aggregation and the two Bitstring Status Lists are
+served, each Bitstring list with a **Publish now**. The **Credentials** tab
+lists every live credential, newest first and paged, with its index, format,
+configuration, status and who set it, and **Suspend**, **Reinstate** and
+**Revoke** on each row. A revoked credential is INVALID, which is final; a
+suspended one can be reinstated. Either stops it signing anybody in at
+`/authn/wallet`. A credential revoked on **Tokens** shows INVALID here too: the
+status is computed from both, so the two pages cannot disagree.
+
+It was the **Credential status** tab of Protocols → Verifiable Credentials
+until #752, and moved here beside the other families' Monitoring pages. Its old
+addresses, `/admin/vc#vc-tab-status` and `/admin/vc-status`, open it. The
+settings the lists are built with, `oid4vci.statusListTtlS` and
+`oid4vci.statusListLifetimeS`, stay on the OpenID4VCI tab of `/admin/vc`. The
+page is a realm's own, so a realm administrator sees it for their realm. API:
+`GET /admin-api/vc-status` and
+`POST /admin-api/vc-status/{suspend,reinstate,revoke,publish}`.
+
+### Passkeys — `/admin/passkey-report`
+
+Who in this realm holds which kind of passkey, and so how far a move to
+post-quantum passkeys has come. A person's **kind** is the signature
+algorithm of their passkeys, as recorded when each was registered: ML-DSA-44,
+ML-DSA-65 and ML-DSA-87 are post-quantum, everything else (ES256, RS256,
+EdDSA, …) is classical. The lane a passkey was made in
+([side by side](passkeys.md#a-classical-and-a-post-quantum-passkey-side-by-side))
+is shown, but never decides the kind.
+
+* **Metadata** says where the numbers came from: when the realm was last
+  counted, how many passkey holders that count read, and how many changes have
+  been noted since. It carries the filter and **Recount now**.
+* **People** counts everybody in the realm as **post-quantum only**,
+  **classical only**, **both** or **none**, with each kind's share. *Post-quantum
+  only* and *both* are the people who could still sign in with a passkey if
+  classical ones were refused; *classical only* are the people a
+  `postQuantumRequired` rule would refuse.
+* **Algorithms** counts every passkey by algorithm (its JOSE name and COSE
+  number) and lane.
+* **Models** lists each authenticator model by its AAGUID, with its name where
+  one is known, and the algorithms its passkeys use. *Not reported* is the
+  passkeys whose authenticator named no model.
+* **Profiles** shows what each [passkey policy](authentication.md#the-passkey-policy)
+  profile asks (`postQuantumRequired`), and the groups and applications that
+  name it. A named profile a group names has a link to count its population,
+  the members of those groups.
+* **Attestation** counts passkeys by the signature algorithm of the
+  attestation certificate (the leaf, #941). A passkey registered before that
+  algorithm was stored, or one whose attestation carried no certificate, is
+  not in the table. ML-DSA-44, ML-DSA-65 and ML-DSA-87 are shown with their
+  COSE identifiers. Other certificate algorithms have none. A row is
+  post-quantum when that certificate's signature is.
+* **List** appears when you click *list them* beside any count: the people
+  behind it, a page at a time, with **Export CSV** and **Export JSON**.
+
+**How the numbers are kept.** The realm is recounted once a day (the
+scheduler job `passkeys.report-recount`, which reads only the people who hold
+a passkey), the first time soon after the service starts; between recounts
+every passkey enrolled, removed or deleted with its person is added as it
+happens. Opening
+the page never reads the directory, however many people it holds. A bulk
+import or a restore of the directory is seen at the next recount — press
+**Recount now** after one. The recount is queued on the scheduler, and
+Monitoring → Scheduler shows the run.
+
+**Filters.** One at a time:
+
+* **Group** (a cn or a DN): the group's members are read and counted. At most
+  50,000 members are read; the page says when a group is larger.
+* **Passkey profile**: the members of the groups a named profile selects. The
+  `default` profile cannot be chosen — it is what applies to everybody no named
+  profile selects.
+* **Application**: anybody may sign in to an application, so the counts are
+  the realm's. The page adds which passkey profile governs the application's
+  sign-ins, and how many group-selected profiles could still win for a person.
+
+**The lists** are read in order from where the page before stopped, so use
+**Next page** rather than typing a page number. A list reads at most 20,000
+people per page; when a filter is rare and the page stopped before it was
+full, it says so — go on to the next page, or narrow the filter. An export
+carries at most 100,000 rows and holds no key material. A cell that a
+spreadsheet would read as a formula is written with an apostrophe in front.
+
+**Reading the move to post-quantum passkeys.** Watch *classical only* fall
+and *post-quantum only* plus *both* rise. Before you set `postQuantumRequired`
+to `sign-in` for a profile, count that profile's population and list its
+*classical only* people: they are the ones who would be refused. See
+[Requiring a post-quantum passkey](passkeys.md#requiring-a-post-quantum-passkey).
+
+The page is a realm's own, so a realm's administrator sees their realm. API:
+`GET /admin-api/passkey-report` (the same answer, with `group`, `profile`,
+`application`, `list`, `page`, `per` and `from`),
+`GET /admin-api/passkey-report/export` and
+`POST /admin-api/passkey-report/recount`; the parameters are in
+`GET /admin-api/openapi.json`.
+
 ### Worker pools — `/admin/worker-pools`
 
-`/admin/worker-pools` shows the two pools of child processes this node runs
+`/admin/worker-pools` shows the two pools of worker threads this node runs
 ([the worker pools](architecture.md#the-request-dispatcher-and-the-worker-pools)):
 the request pool (`workers.requestCount`) and the console and portal's own
 pool (`workers.surfaceCount`). For each it gives:
@@ -1043,9 +1569,9 @@ pool (`workers.surfaceCount`). For each it gives:
 * the workers it has now, how many are **busy** and how many **free**;
 * its **maximum** (the setting) and its **initial** size — what it was started
   with;
-* **restarts and crashes**: every fork, the workers that exited when nobody
-  asked (and how many of those never started) apart from the ones the pool
-  stopped or retired, and how many it replaced;
+* **restarts and crashes**: every thread the pool started, the workers that
+  exited when nobody asked (and how many of those never started) apart from
+  the ones the pool stopped or retired, and how many it replaced;
 * the **average response time**, from dispatch to the end of the answer, with
   a recent average beside the one since start.
 
@@ -1087,9 +1613,24 @@ process in it:
 
 A source that is not there — no cgroup v2, not Linux, no ECS endpoint — is
 said in a sentence rather than drawn as zeros. The figures are **this
-node's**, drawn by its front process. It is read-only, and a realm's own
-administrator is refused it. `GET /admin-api/node-health` answers the same
-figures.
+node's**, drawn by its front process. A realm's own administrator is refused
+it. `GET /admin-api/node-health` answers the same figures.
+
+**Garbage collection on demand.** The page has one control: **Collect garbage
+in every process and worker thread**, above the processes table, and a
+**Collect** button on the front process's row and on each worker thread's.
+Each runs a full V8 garbage collection — in every isolate of this node, or in
+that one — and draws, above the table, each isolate's heap before and after,
+what it freed and how long it paused. Only this node's front process and its
+own worker threads are collected, never another node of a cluster nor the
+protocol debugger's api process. **A full collection stops the thread it runs
+in until it finishes, and in the front process that pauses every listener of
+the node**: it is a diagnostic, for telling memory that is garbage from memory
+that is held, not something to run on a schedule. The buttons are drawn for a
+service administrator who may write (Admin Write), in both modes, and every
+press is recorded in the audit log (`node-health.collect-garbage`).
+`POST /admin-api/node-health/collect-garbage` does the same, with `target`
+`all` (the default), `front` or a worker thread's `threadId`.
 
 ### Every cluster node on both pages
 
@@ -1159,15 +1700,25 @@ about.
 `admin.view` event and the list is one row longer than when you asked. That is
 stated rather than suppressed; `?category=` reads past it.
 
+**A management API call names the subject of its token**: the person it was
+issued for, or the client's id for a `client_credentials` token. A caller
+cannot name somebody else.
+
 Filtering is by category, action, outcome, actor and free text, and the filter
 vocabulary is read from the table the log records against. The actor filter is
 a **substring**, because the actor on a directory row is a bind DN and on a
 Kerberos row `alice@REALM`; where an identity has been normalised, the row
-carries both the key and the form presented. Paging is `?page=` and `?per=`, but
-**walk the list by `seq`**: it is monotonic and never reused, so "everything
-after 4,102" is exact while the log is still being written. `?format=json`
-carries `oldestSeq` and `newestSeq`; a gap between the last `seq` a caller saw
-and `oldestSeq` is how many events the cap discarded.
+carries both the key and the form presented. Paging is `?page=` and `?per=`.
+**Resume by `at`, not by `seq`.** `seq` is unique across every process of the
+service and never reused, and it rises within each process. It is not one
+order across processes: a request worker is a thread with a heap of its own
+and numbers from a block of its own, so an event recorded later on another
+worker can carry a smaller number. "Everything after 4,102" misses that event.
+Read what is new by `at`, with `seq` and `origin` as the tie-break. The
+operation carries `oldestSeq` and `newestSeq`, the numbers of the oldest and
+newest events held by time, and `dropped`, how many the cap discarded. A gap
+in the numbers is unused space in another worker's block, not a count of
+discarded events.
 
 Two things it deliberately does not have:
 
@@ -1188,6 +1739,107 @@ categories and `/admin/metrics` untouched.
 The log is held per trust realm, in memory, and in product mode on postgres it
 is kept in the store with the rest of the minted state
 ([Persistence](persistence.md)).
+
+### Audit export — `/admin/audit-export`
+
+Monitoring → Audit export configures where this process delivers its own
+audit events, and shows how far that delivery has got. The same controls are
+`GET /admin-api/audit-export` (Admin Read, `admin:read`) and
+`POST /admin-api/audit-export/{add,update,remove,enable,disable,test}`
+(Admin Write, `admin:write`). The settings on the page are
+[Audit export](configuration.md#audit-export). Worked examples for syslog,
+a file, a webhook, Splunk HEC and LogRhythm are on
+[Audit export destinations](audit-export.md).
+
+A destination is syslog (TCP by default, or UDP, or TLS; product mode accepts
+TLS only unless `audit.allowPlainSyslog` is on), a filesystem path,
+a webhook, Splunk HEC, or LogRhythm, which uses the syslog adapter. Each
+process delivers the events in its own audit ring. The figures on this page
+are this process: queue depth, delivered, awaiting, retrying, permanently
+failed, dropped, latency and availability. Another process has its own.
+
+The event id a destination receives is this process's origin and the event's
+`seq`. A numeric gap in `seq` is unused space in another worker's block, the
+same fact the audit log states above. Delivery keeps a bookmark of the next
+event it meant to send. When that bookmark is gone from this process's ring,
+one dropped episode is recorded and delivery continues from what the ring
+still holds.
+
+Delivery is at least once. A crash after a destination has accepted an event
+and before this process saves the cursor delivers that event again.
+Downstream systems deduplicate on the event id. After
+`auditExport.retryMaxPeriodMs` the destination is probed once more. When
+that probe fails, the probed event and further events in the same run, up to
+the batch, are counted permanently failed, and the destination waits the
+first retry delay. An HTTP 400 rejects that one event and moves the cursor
+past it; the batch drop starts on a later failure that is still a pause.
+
+A token and a secret header are sealed when they are saved and are absent
+from the page and from the API answer. Leaving the token box empty on an
+update keeps the sealed value. A test sends a synthetic event to that
+destination. The synthetic event is absent from the audit ring. The act of
+testing is an audit row, `admin.audit-export.test`.
+
+Webhook and Splunk HEC destinations use `https`. In development mode
+`auditExport.allowHttp` may allow plain `http`, and that delivery is logged.
+Product mode uses `https`. A loopback, link-local or private address,
+including RFC 6598 `100.64.0.0/10`, is refused in product mode unless
+`auditExport.allowPrivateDestinations` is on. Cloud metadata addresses stay
+refused when that setting is on. A filesystem path is absolute, and when
+`auditExport.fileRoots` is set it lies under one of those directories. The
+settings take effect on the next run.
+
+## Server configuration pages worth explaining
+
+### Configuration dump — `/admin/config-dump`
+
+Downloads every configuration parameter, global and per realm, as one JSON
+file with every sensitive value masked. See
+[Configuration dump](configuration-dump.md).
+
+### Sign-in appearance — `/admin/sign-in-appearance`
+
+Server configuration → Sign-in appearance sets how this realm's sign-in
+pages look: the sign-in screen and every step after it, consent, GNAP's
+interaction pages, the federation pages, `/logout`, the front door `/` and
+the user portal. The admin console keeps its own look. Every value belongs
+to the realm the console is in, so `/realm/acme/admin/sign-in-appearance`
+changes acme's sign-in pages and no other realm's. A realm administrator
+may change their own realm's appearance. What each setting does is on
+[Sign-in appearance](sign-in-appearance.md).
+
+The page has four tabs:
+
+* **Colours.** The accent (buttons, links and focus rings), the page, the
+  card and the text, each a colour picker with its hex value beside it. One
+  Save sends all four, and they are judged together. Text or links below
+  WCAG 2.2 AA contrast (4.5:1) against the card are refused, and then
+  nothing is saved. Below the form, the contrast of the text, the links and
+  the button text is shown with its ratio, and the derived tones are shown:
+  the button text (black or white, whichever reads better on the accent),
+  the quieter text, the borders and the rules. Nobody sets those.
+* **Layout and logo.** The layout (*centered*, *split* or *banner*), the
+  display name, the logo's alternative text and the logo's link, saved
+  together. Under them is the stored logo with its type, size in pixels and
+  bytes, digest, and who uploaded it and when. You can upload a PNG, a JPEG
+  or a WebP, up to `branding.logoMaxBytes`. The file's bytes decide its
+  type, not its name. The upload replaces the realm's logo. A logo needs
+  alternative text, which you can type beside the file. *Remove logo*
+  removes it, and the sign-in pages then show none.
+* **Preview.** The four colours and a layout, filled in with the saved
+  values. *Open the preview in a new tab* shows a sample of this realm's
+  sign-in card with the values in the form, before anything is saved.
+  Nothing on the preview signs anybody in. It shows the saved logo and
+  display name.
+* **Settings.** The *Sign-in appearance* settings group, as on every page
+  that owns a group. It also holds `branding.logoMaxBytes`, which applies to
+  the whole service and can be changed only in the default realm, and the
+  Reset that drops a realm's own value.
+
+The same controls are `GET /admin-api/branding` (Admin Read, `admin:read`)
+and `POST /admin-api/branding/save`, `/branding/logo` and
+`/branding/remove-logo` (Admin Write, `admin:write`). See
+[Management API](management-api.md#sign-in-appearance).
 
 ## Protocols pages worth explaining
 
@@ -1258,6 +1910,18 @@ ID Token's), not to the SAML sets, where an attribute called `exp` collides with
 nothing; the additive rule still protects SAML, because a WS-Federation relying
 party keys off the claim URIs this service writes.
 
+**The realm's custom attributes can be ticked too** (#700). The ticked
+catalogue on each of these pages, and on **Kerberos → PAC claims**, lists the
+realm's custom attributes after the standard ones. Each is claimed under its
+own name and typed by its syntax in a token: an `integer` is a number, a
+`boolean` is `true` or `false`, and a `date` is `YYYY-MM-DD`. A multi-valued
+one is an array, or one `<AttributeValue>` per value in an assertion. The
+value always comes from the person's entry and is never invented. A client
+can ask for one by name in an OpenID Connect claims request. A custom
+attribute named like a standard claim (a custom `birthdate`) is not offered
+(`STS-REG-0366`); a directory-attribute claim can carry it under another
+name.
+
 **A claim can carry any directory attribute** (#94). *Add a
 directory-attribute claim* on each of these pages (`add-attribute-claim` on
 the API) names a claim and the attribute of the person's entry it carries, for
@@ -1307,11 +1971,11 @@ attribute becomes a claim whose value is read from the person's own entry under
 `ou=users`, so an `ldapmodify` of `uid=alice,ou=users` changes the next access
 token and the next assertion, and an LDAP client, an OIDC client and a SAML
 relying party see the same person. **Update** installs exactly the ticked
-boxes, and **Select all** and **Delete all** are the extremes — all form posts,
-with no script.
+boxes, and **Select all** and **Delete all** are the extremes — all forms, each
+sent as one request.
 
-The catalogue is the same list of attribute types `/admin/vc` and
-`/admin/vc-verifier-config` choose from, so there is one spelling of each. The
+The catalogue is the same list of attribute types the Credential claims and
+Verifier request tabs at `/admin/vc` choose from, so there is one spelling of each. The
 *selections* are independent: an access token carrying `employee_number` while
 the ID Token carries only `email` is a normal arrangement. **Nothing is
 selected on a fresh start**, so upgrading never adds a claim to every token.
@@ -1334,7 +1998,25 @@ Every change to a claim set writes an audit row naming the set and what was
 added and removed — never a value — in addition to the row the call log writes
 for the same POST.
 
-### Credential claims — `/admin/vc`
+### Verifiable Credentials — `/admin/vc`
+
+The former separate OpenID4VCI, OpenID4VP and Verifier request leaves are tabs
+on this one Protocols page:
+
+* **Metadata** lists the issuer and verifier endpoints. The explanatory
+  OpenID4VCI and OpenID4VP guidance is in disclosures that are collapsed by
+  default.
+* **OpenID4VCI** holds issuance settings.
+* **Credential claims** selects claims on issued credentials.
+* **OpenID4VP** holds verifier and wallet sign-in settings.
+* **Verifier request** configures what this realm's OpenID4VP Verifier asks
+  wallets to present.
+
+What has been issued, and each credential's status, is
+[Monitoring → Verifiable Credentials](#verifiable-credentials--adminvcmonitor),
+which was this page's Credential status tab until #752.
+
+### Credential claims tab — `/admin/vc#vc-tab-claims`
 
 `/admin/vc` decides what every *future* verifiable credential carries, and its
 list is of **LDAP attribute types rather than claim names**, because this
@@ -1390,17 +2072,17 @@ authenticates, and once at startup.
 **A credential claim grants nothing and nothing reads one back.** It reaches a
 credential and stops there.
 
-### Verifier request — `/admin/vc-verifier-config`
+### Verifier request tab — `/admin/vc#vc-tab-verifier-request`
 
-The other end of `/admin/vc`, and deliberately a separate setting. `/admin/vc`
-decides what an issued credential *carries*; this decides what the Verifier at
-`/oid4vp/verifier` — *The Bar Door* — **asks for**, as the `dcql_query` of the
-next OID4VP request, and what the presentation is checked against. Keeping them
+The other end of the Credential claims tab, and deliberately a separate
+setting. `/admin/vc`
+decides what an issued credential *carries*; this decides what the Verifier
+**asks for**, as the `dcql_query` of the next OID4VP request, and what the presentation is checked against. Keeping them
 apart makes the interesting state reachable: a Verifier asking for a claim the
 issuer does not mint exercises a wallet's "I cannot satisfy this request" path.
 The page also chooses which of the three **credential formats** an unqualified
 request asks for, since a presentation cannot convert between them.
-[OpenID4VP](oid4vp.md#what-the-bar-door-asks-for) covers the Verifier.
+[OpenID4VP](oid4vp.md#what-the-verifier-asks-for) covers the Verifier.
 
 **Its table is of claims, grouped by what the credential can disclose.** An
 SD-JWT VC makes one Disclosure per *top-level* claim, so `address` is one unit
@@ -1418,13 +2100,40 @@ is configured to mint.
   for `address`). A claim the context has no term for is dropped from an
   `ldp_vc` query and named on the page.
 * **What a request asks for is frozen onto it**, so the verdict at
-  `/oid4vp/result/:state` records that exchange rather than the console's
+  `GET /admin-api/verifications?state=` records that exchange rather than the console's
   current state.
+* **Start a verification** (#587) builds the next request — a format, by value or by reference, a
+  Client Identifier Prefix, a response type and mode, and same-device or
+  cross-device, each left on the Verifier's default unless chosen — and the
+  notice names its `state`, the wallet URL to send the holder to and the
+  `openid4vp://` URI a QR code would carry. It is
+  `POST /admin-api/verifications/start`, which also takes a `redirect_uri`:
+  the starter's own page the wallet is sent to once it has answered (in
+  product mode, one of the calling client's registered redirect URIs). With
+  none, the wallet is sent nowhere. The development
+  [companion](docker-compose.md#the-companion-development-only) starts its
+  verifications this way.
+* **Open verifications** lists the requests still waiting or decided in this
+  realm, newest first: what each asked for, when it expires, and whether the
+  wallet's answer was accepted or refused, with the disclosed claims' names
+  and any failed checks — never a value. One whole verdict is
+  `GET /admin-api/verifications?state=`: the checks, the claims that
+  verified and the names disclosed, with the presentation named by
+  `presentationDigest` (its SHA-256, base64url). The presentation itself is
+  not kept, so it cannot be read back. A wallet sign-in is not listed.
 
-**This page admits nobody.** A presentation at the bar door starts no session
+**This page admits nobody.** A presentation to the Verifier starts no session
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for
 a credential this realm issued with a request of its own and is not configured
 here ([OpenID4VP](oid4vp.md#signing-in-with-a-wallet)).
+
+### XACML — `/admin/xacml`
+
+Protocols → XACML is one destination with tabs for Metadata (the realm's
+XACML endpoints), Settings, Policies, Policy editor, Remote PEPs and Try a
+decision. The policies, editor, PEP and decision views remain distinct tabs;
+their controls return to the tab they came from. **XACML decisions** remains a
+separate Monitoring page at `/admin/xacml/monitor`.
 
 ### Authorization servers — `/admin/authorization-servers`
 
@@ -1438,28 +2147,47 @@ service actually does. See
 
 ## What the console does not do
 
-* **It does not invalidate a SAML assertion, a Kerberos ticket, an SVID or a
-  verifiable credential.** None has a revocation mechanism a relying party
-  consults, so a button claiming to revoke one would change a number here and
-  nothing out there. (Credentials have status lists — see
-  [OpenID4VCI](oid4vci.md#status-lists).)
-* **It ends sign-on sessions** (`/admin/logout`, and `/admin/sessions` for the
-  service-wide view), through the same function every sign-out uses, with
-  back-channel logout to relying parties. What it cannot do is *deliver*
-  front-channel logout: that is an iframe in the signed-out person's own
-  browser, and the console is not that browser. See
+The console's own index draws a longer list, *What it deliberately does not
+do*, in development mode only: almost all of it is about what development
+mode does not check. A realm in product mode does not show it.
+
+* **It marks a SAML assertion, a Kerberos ticket or an X509-SVID revoked
+  only in this service's own record.** The tokens page's button says that
+  mark is all it changes. Nothing consults the mark when the artifact is
+  presented, so it goes on working until it expires. Signing the principal
+  out is a different act: this KDC then refuses a TGS-REQ whose ticket
+  authenticated before the sign-out, and that refusal does not reach a
+  service ticket already in a cache. A verifiable credential is not on this
+  list: its status list is how one is revoked. See
+  [OpenID4VCI](oid4vci.md#status-lists).
+* **This console does not draw front-channel logout.** It does end sign-on
+  sessions (`/admin/logout`, and `/admin/sessions` for the service-wide
+  view), through the same function every sign-out uses. The iframes load in
+  the signed-out person's own browser, on `/logout`'s signed-out document.
+  Back-channel Logout Tokens need no browser and are sent whichever door
+  ended the session. A person's own global sign-out leaves verifiable
+  credentials, and the DIDs they are bound to, valid unless those rows were
+  ticked; an administrator's global sign-out here still disowns them. See
   [Signing out](signing-out.md).
 * **It adds no claims to refresh tokens.** A refresh token is presented back to
   this server and nothing else, so a claim in one reaches no relying party.
 
 ## What the console keeps
 
-The registries behind these pages are **bounded**: the most recent 5,000
-tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities keeping
-their 50 most recent authentications each (capped per person, because a test
-loop signing one name in a thousand times is normal). What was dropped is
-counted and shown. The revoked-jti set is **not** capped and is kept apart from
-the token records, so a token whose record has aged out stays revoked. The
+The registries behind these pages are **bounded in memory**: the most recent
+5,000 tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities
+keeping their 50 most recent authentications each (capped per person,
+because a test loop signing one name in a thousand times is normal). What was
+dropped is counted and shown. **In product mode on a postgres store the
+identity register is read from the store**: each process writes its share of
+a person's record after every sign-in, and a person's page, their count on
+the user portal and whether they are known are read back from the store —
+every process's share and every restart's, summed — so the 2,000 bounds only
+what a process keeps in memory, and nothing is lost when a record leaves it.
+The whole-register figures on this page (how many identities, how many
+sign-ins in all) are then what the process holds, and the page says so. The
+revoked-jti set is **not** capped and is kept apart from the token records,
+so a token whose record has aged out stays revoked. The
 audit log is capped by `audit.maxEvents` and the delegation acts by
 `delegation.maxRecords`.
 
@@ -1473,7 +2201,10 @@ The [Identity Protocol Debugger](https://idptools.com) — the project this
 service was extracted from — can be served by this process, in this container,
 as a feature of it. **Server configuration → Protocol debugger**
 (`/admin/debugger`) and `GET /admin-api/debugger` report the listener, the api
-process and its allow-list.
+process and its allow-list. **Using it** — signing in, turning it on, leaving
+it out of a production build — is the
+[Protocol debugger](debugger/access.md) chapter, with the debugger's own user
+guides.
 
 **How it is served.** The debugger project builds its browser client and its
 api for embedding (`embedded/build.sh` or `embedded/Dockerfile` in that
@@ -1485,28 +2216,35 @@ project), and this service serves the result:
   assertions from any identity provider, and on the console's origin a flaw in
   either would be a script able to drive the console.
 * **Its api as a child process** on a unix socket, forwarded at `/api` with the
-  prefix stripped, the browser's cookies and credentials removed, and its own
-  Express, dependencies and environment. Nothing of the debugger is loaded into
-  this process.
-* **Behind this service's own authorization server.** The debugger is an OpenID
-  Connect relying party like `/admin` and `/portal` — the seeded client
-  `sts-debugger-ui` — and its api is a resource server, `sts-debugger-api`, that
-  exposes one delegated permission, `urn:sts:debugger-api:debugger`, which the
-  UI's entry is granted ([Applications](applications.md#the-applications-that-are-this-service)).
+  prefix stripped, this service's cookies removed, and its own Express,
+  dependencies and environment. Nothing of the debugger is loaded into this
+  process.
+* **Behind this service's own authorization server.** The debugger and its api
+  are ONE OpenID Connect relying party, like `/admin` and `/portal` — the
+  seeded client `sts-debugger-ui`
+  ([Applications](applications.md#the-applications-that-are-this-service)). It
+  is a confidential client: the sign-in is the authorization code flow
+  redeemed by this service, the tokens stay here, and the browser holds only
+  the debugger's session cookie.
+* **The `Authorization` header is the debugger's, not the gate's.** The gate
+  reads the session cookie and nothing else, and passes `Authorization` and
+  `DPoP` through to the api untouched — the debugger sends them as the very
+  requests it is testing (a UserInfo call's Bearer token, introspection's Basic
+  client credentials, SCIM's and GNAP's own). It accepts no access token.
+  Until #1717 it did, and read those headers as its own credential.
 
-**Only console administrators get the permission.** The authorization server
-issues it to members of the Admin Read or Admin Write group of the default
-realm, and to nobody else: it is taken off the grant for any other person, for
-any application, and in any realm but the default one. The gate checks the
-token on every request, and checks that its subject is *still* an
-administrator.
+**Only console administrators get in.** The gate asks, on every request,
+whether the session's person is a member of the Admin Read or Admin Write group
+of the default realm — so a role revoked from somebody already signed in stops
+working at their next request. Anybody else who signs in is shown a page saying
+the debugger is for administrators, with a way to sign out.
 
 * **In development, a role held only because the console is open to everybody
   does not count** — the debugger stays shut until somebody really is in a role
   group. Grant somebody a role on `/admin/rbac` first.
 * **In product mode**, until the bootstrap administrator has claimed the
-  console with its password, it is refused the permission too
-  (`STS-DBG-0033`); sign in to `/admin` with the password first.
+  console with its password, it is refused too (`STS-DBG-0033`); sign in to
+  `/admin` with the password first.
 
 **There is no setting that opens it.** `debugger.enabled` decides whether it is
 served — `auto` is on in development mode and off in product mode. In product
@@ -1525,15 +2263,16 @@ then build and run this service's image (it runs from an image, see
 [Getting started](getting-started.md)), publish 8444, open
 `https://localhost:8444/` and sign in as a console administrator.
 
-**In a container:** build the debugger project's embedded image and pass it to
-this one:
+**In a container it is there already.** The image is built with a tagged
+release of the debugger, `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3` — publish 8444. To build
+against a debugger of your own instead:
 
 ```bash
 docker build -f embedded/Dockerfile -t rcbj/id-proto-debugger-embedded:dev .   # in the debugger project
 DEBUGGER_IMAGE=rcbj/id-proto-debugger-embedded:dev docker compose build sts   # here
 ```
 
-and publish 8444. Without a debugger image the build succeeds, and
+and `DEBUGGER_IMAGE=debugger-none` builds an image without one, where
 `/admin/debugger` says the debugger is not installed.
 
 **What it does not change:** the debugger's own standalone deployment — its
@@ -1552,6 +2291,7 @@ edited on `/admin/rbac`.
 |---|---|---|---|---|
 | `audit.maxEvents` | `AUDIT_MAX_EVENTS` | `5000` | yes | How many audit events are held; the dropped are counted and shown. |
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether ordinary protocol endpoint calls get an audit row. |
+| `audit.authenticationHistoryDays` | `AUDIT_AUTHENTICATION_HISTORY_DAYS` | `30` | yes | How many days of assessed sign-ins the portal's Recent sign-ins page lists. The console's user Authentication attempts tab lists the whole audit log and does not use this. |
 | `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. Set on `/admin/delegation-settings`. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development mode, refuse a permission the client was not granted. Product mode always refuses. |
 | `debugger.enabled` | `STS_DEBUGGER_ENABLED` | `auto` | no | `auto`, `on` or `off`; `auto` serves the debugger in development mode only. |

@@ -32,6 +32,21 @@ GET /logout?username=alice        somebody else's list (development mode only)
 GET /logout?format=json           the same thing, for a test
 ```
 
+**The page is drawn in your browser** (since 2026-10-12): `/logout` answers a
+small document whose script, `/logout/signout.js`, reads the list from
+`GET /authn-api/logout` and sends what you press to `POST /authn-api/logout`.
+It needs JavaScript; with scripts blocked it says so and shows nothing else.
+The Global logout is at the top, the checkboxes are beside each row, and
+**pressing "End the ticked items" with nothing ticked ends nothing.**
+
+When the sign-out leaves your browser something to do — loading an
+application's Front-Channel Logout page, a WS-Federation cleanup image, a
+SAML `LogoutRequest` link or a partner's sign-out — the page you land on is
+`/logout/signed-out`, drawn by the service with those in it, exactly as the
+sign-out page always drew them. Otherwise the result is drawn in place.
+Either way, the result tells you to close the browser tab when you are done:
+the sign-out ends what this service holds, not the pages the tab has shown.
+
 Signing out may mean signing in first. This service has no other way to know who
 is asking, and the session that creates is listed with everything else. **No
 console role is needed, and that is not an oversight**: signing yourself out
@@ -46,19 +61,40 @@ yourself is fine) and anything else is a 403 pointing at `/admin/logout` and
 
 ## `POST /logout`
 
-Ends what was ticked. **A POST that ticks nothing ends everything** — that is the
-default and the point of the endpoint:
+Ends what was named, and answers JSON. **A POST that names nothing ends
+everything** — that is the default and the point of the endpoint. The body is
+JSON (or the request asks for JSON with `Accept: application/json`); a form
+posted here ends nothing and is sent to the page with a `303`, because the
+page's own sign-out is `POST /authn-api/logout`, bound to your browser's
+session.
+
+A request from a page of another site is refused with `403`. A program that
+sends no `Origin` or `Sec-Fetch-Site` header is not affected.
+
+**Ending your OTHER sessions needs a recent sign-in** in product mode: one within
+`account.recentAuthMinutes` (15 minutes by default in product, not asked in
+development). A request that names another session of yours is otherwise refused
+with `403` and `"error": "reauthentication_required"`; sign in again at
+`/authn/login` and send it again. The sign-out page (`POST /authn-api/logout`)
+asks the same: it says that ending your other sessions needs a recent sign-in,
+with a link that signs you in again and brings you back to the page, where you
+tick them again. Signing yourself out never needs one, and nor does a Global
+logout, which ends everything, this browser's session included.
 
 ```bash
 # global logout for whoever holds this cookie
-curl -k -b cookies.txt -X POST https://localhost:8081/logout
+curl -k -b cookies.txt -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' -d '{}'
 
-# global logout for somebody named, no cookie needed
-curl -k -X POST https://localhost:8081/logout -d 'username=alice&scope=global'
+# global logout for somebody named, no cookie needed (development mode)
+curl -k -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","scope":"global"}'
 
 # just two things
 curl -k -X POST https://localhost:8081/logout \
-     -d 'username=alice&select=session:8Qk3…&select=token:abc…'
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","select":["session:8Qk3…","token:abc…"]}'
 ```
 
 Row ids come from the GET. They look like `session:<id>`, `token:<jti>`,
@@ -79,7 +115,7 @@ history.
 | Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
 | Authorization codes | discarded, so no more tokens come from that sign-on |
 | Credential Offer pre-authorized codes | the same |
-| Wallet credentials that can sign this person in | **disowned**: every credential this realm issued to that wallet key for this person up to now stops signing anybody in at `/authn/wallet`, and its status-list entry is set INVALID so other verifiers learn it too. The credential stays in the wallet and still verifies; one issued afterwards, on a fresh sign-in, works again. **Only a global sign-out does this** — `/logout`, `/admin/logout`, `/admin-api/logout` — and signing out of one application does not |
+| Wallet credentials that can sign this person in | **disowned** when an administrator signs the person out of everything (`/admin/logout`, `/admin-api/logout`), when the account is disabled, or when the row is ticked: every credential this realm issued to that wallet key for this person up to now stops signing anybody in at `/authn/wallet`, and its status-list entry is set INVALID so other verifiers learn it too. The credential stays in the wallet and still verifies; one issued afterwards, on a fresh sign-in, works again. **The person's own Global logout on `/logout` leaves the credential valid, and the DID it is bound to with it.** Signing out of one application does not disown it either |
 | Wallet sign-ins not yet collected | withdrawn: a wallet has presented a credential for this person and the browser that started the sign-in has not come back for the session yet, so that browser is told a sign-out ended it and nobody is signed in |
 | Directory connections | the LDAP socket is closed — the bind is the state of a *connection* (RFC 4511 §4.2), so that is the only sign-out LDAP has |
 | Kerberos | a sign-out instant on the principal; a `TGS-REQ` presenting a ticket authenticated before it is refused `KDC_ERR_TGT_REVOKED` (20) |
@@ -134,7 +170,7 @@ Three more limits, all honest rather than missing:
 * **SPIFFE is not in the list at all.** A SPIFFE identity is a workload, attested
   per call, holding no session. The registry can end an identity's ability to
   obtain *another* SVID, which is a ban rather than a logout; that lives at
-  `/admin/spiffe`.
+  `/admin/cert-issuance#cert-spiffe-overview`.
 
 ## Front-channel logout
 
@@ -247,32 +283,50 @@ What to expect:
   `jwks`, and the Logout Token arrives as a Nested JWT, encrypted to that key
   exactly as your ID Tokens are.
 
+## What the browser is told to clear
+
+When a sign-out leaves no other account signed in to this browser, in this realm
+or any other, the answer carries `Clear-Site-Data: "storage"`. Other accounts and
+other realms share this origin's storage, so while one is signed in the header is
+not sent. The console, the portal and the report
+application also clear their own tab's storage before they leave for `/logout`,
+so a sign-out that never gets an answer still leaves no token behind. The one
+thing a tab keeps is the name of the account it was signed in as, so that its
+next sign-in asks for that account rather than becoming another account still
+signed in to the browser. Cookies
+are expired one by one instead of through `Clear-Site-Data`, which would reach
+every other realm's cookies on the same domain.
+
 ## The Sign out button on the console and the portal
 
-This service's own two web surfaces each have a **Sign out** button of their
-own — at the top of every page of `/admin`, and at the top of every page of
-`/portal`. On the console it is in the **account menu**, the drop-down in the
-head row labelled with the name you are signed in as; the menu's other row is a
-link to your own account in the user portal. (It is a `<details>` element, so it
-opens with no JavaScript — this console ships none — and closes when you click
-its label again rather than when you click elsewhere on the page.)
+This service's own two web surfaces each have a **Sign out** button — at the
+top of every page of `/admin`, and at the top of every page of `/portal`. On
+the console it is in the **account menu**, the drop-down in the head row
+labelled with the name you are signed in as; the menu's other row is a link to
+your own account in the user portal.
 
-| Endpoint | What it ends |
+| Button | What it ends |
 |---|---|
-| `POST /admin/signout` | the console's session **and the sign-on session behind it** |
+| the console's **Sign out** | it goes to `/logout` below: the sign-on session, and with it everything issued on it — the console's own tokens among them |
 | `POST /portal/signout` | the portal's session **and the sign-on session behind it** |
 
-**Each ends two sessions, and it has to.** Both surfaces are ordinary OpenID
-Connect clients of this service (`sts-admin-console` and `sts-user-portal`), so
-they hold a session of their own on top of the sign-on session you have with
-the identity provider. A button that ended only the application's session would
-sign nobody out: the next page runs the authorization code flow, meets the
-sign-on session that is still live, and lets you back in with nothing typed.
+**The portal's ends two sessions, and it has to.** The portal is an ordinary
+OpenID Connect client of this service (`sts-user-portal`), so it holds a
+session of its own on top of the sign-on session you have with the identity
+provider. A button that ended only the application's session would sign nobody
+out: the next page runs the authorization code flow, meets the sign-on session
+that is still live, and lets you back in with nothing typed.
 
-**They are the NARROW sign-out.** What they do not touch is anything already
-issued to other applications — access and refresh tokens, Kerberos tickets,
-credential offers, LDAP binds. `/logout` below is the one that ends those, and
-the portal draws a button for it at the foot of its **Overview** page.
+**The console holds no session of its own** (since 2026-10-05): it is a static
+page holding a DPoP-bound access token in the browser's memory, so its Sign
+out is the global one, and its refresh token is refused once the sign-on
+session it was issued on has ended.
+
+**The portal's is the NARROW sign-out.** What it does not touch is anything
+already issued to other applications — access and refresh tokens, Kerberos
+tickets, credential offers, LDAP binds. `/logout` below is the one that ends
+those, and the portal draws a button for it at the foot of its **Overview**
+page.
 
 ## The other two doors
 
@@ -294,7 +348,10 @@ The three above are keyed on ONE identity. `/admin/sessions` — with
 `GET /admin-api/sessions` and `POST /admin-api/sessions/revoke` beside it — is
 the same model asked across the whole service: every session it is holding right
 now, in the three protocols that have one, with a Revoke on each row that calls
-the same termination.
+the same termination. **End every session in this realm**, below the list
+(`POST /admin-api/sessions/end-all`), ends every sign-on session started before
+that moment, yours included; it revokes no token. See
+[Sessions](sessions.md#how-one-ends).
 
 | Kind | Why it is a session | When it expires |
 |---|---|---|

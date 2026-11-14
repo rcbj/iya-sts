@@ -300,12 +300,28 @@ function kinds(t) {
     const view = adminViews.policiesView({});
     t.check(view.kinds.map(function (k) {
       return k.id;
-    }).join(',') === 'password,authn' && !!view.password && !!view.authn &&
+    }).join(',') ===
+              'password,authn,serviceAccount,passkey,locale,attributes,' +
+              'postLogin' &&
+            !!view.password &&
+            !!view.authn && !!view.serviceAccount &&
             Array.isArray(view.password.doors) && !!view.password.generator,
-            'F1. the page holds both policies, and the password policy says ' +
+            'F1. the page holds every policy (#221 added the third, #527 ' +
+            'the fourth, #539 the fifth, #396 the sixth), and ' +
+            'the password policy says ' +
             'everything it said before', JSON.stringify(view.kinds));
     t.check(view.actions.join(',') === 'save-password-policy,' +
-            'reset-password-policy,save-authn-policy,reset-authn-policy',
+            'reset-password-policy,save-authn-policy,reset-authn-policy,' +
+            'save-named-authn-policy,delete-named-authn-policy,' +
+            'save-serviceAccount-policy,reset-serviceAccount-policy,' +
+            'save-passkey-policy,reset-passkey-policy,' +
+            // #1112: the passkey policy's own two acts, its learned clients.
+            'clear-passkey-client,clear-passkey-clients,' +
+            'save-locale-policy,reset-locale-policy,' +
+            'save-attributes-policy,reset-attributes-policy,' +
+            'define-person-attribute,update-person-attribute,' +
+            'remove-person-attribute,' +
+            'save-postLogin-policy,reset-postLogin-policy',
             'F2. the actions are every kind\'s, the password policy\'s by ' +
             'the names they always had', view.actions.join(','));
     const saved = adminActions.policiesAction(Object.assign(
@@ -366,8 +382,14 @@ function kinds(t) {
               JSON.stringify(done));
       const unknown = adminActions.policiesAction(
         { action: 'no-such-action-exists' }, { via: 'api' });
+      // EVERY ACTION, NOT A COUNT WRITTEN HERE: a kind added later (#396's
+      // attribute policy, with two acts of its own) changes the number, and
+      // what the parity checks read is that each one is named.
       t.check(!unknown.ok && /save-widget-policy, reset-widget-policy/.test(
-                unknown.errors[0]) && /The six are/.test(unknown.errors[0]),
+                unknown.errors[0]) &&
+              policyKinds.actions().every(function (action) {
+                return unknown.errors[0].indexOf(action) >= 0;
+              }),
               'F6. the refusal of an unknown action names every kind\'s — ' +
               'the sentence the parity checks read', unknown.errors[0]);
     } finally {

@@ -9,7 +9,7 @@
 // A BRANCH REBUILT UNDER A REALM'S SIGNING KEYS LEAVES THEM PUBLISHING
 // CERTIFICATES FROM THE NEW BRANCH, NOT THE ONE IT REPLACED (2026-09-15, #46).
 //
-// `tests/vendored/sts_pki_distribution_points.js` found it over HTTP: a realm
+// `tests/protocol/sts_pki_distribution_points.js` found it over HTTP: a realm
 // created and then rebuilt with `POST /admin-api/pki/build` published its
 // signing keys' certificates from the SUPERSEDED Issuing CAs, with the old
 // Intermediate in their chain, so `intermediate.crl` was named by the
@@ -39,6 +39,21 @@
 //      re-mint, which leaves exactly that row. The certificate must come back
 //      over the same key, the same kid and the same key usage.
 //
+//   D. **AN `x5u` NAMING A DISPLACED CERTIFICATE STILL ANSWERS (#318).** A
+//      slot certified again over the same key — twice in a row, then across
+//      a re-issued JOSE Issuing CA, the testidp case — keeps publishing the
+//      first certificate's chain, the one it was ISSUED with, at the address
+//      tokens signed under it name; until it expires, and only for the
+//      newest `pki_merge.PUBLISHED_PER_SLOT` of a slot. A cluster merge keeps
+//      the copy that still carries the certificate.
+//   E. **THE BUILD ACTION WITH NO KEY NAMED READS THE SETTING AS STARTUP
+//      DOES (2026-11-12).** It sent `pki.keyAlgorithm` as though the form had
+//      named it, so a composite setting — which no branch may hold, every
+//      one being on a TLS listener's chain — was refused as STS-PKI-0274
+//      where the startup build and a repair fall back to a classical key
+//      (STS-PKI-0275). Now the unnamed build falls back, and a composite the
+//      form DOES name is still refused, with nothing stored.
+//
 // Mutation-checked by hand on the day: removing the re-mint in A, and the
 // signing-again branch in B, each turns its section red.
 // ===========================================================================
@@ -51,8 +66,11 @@ const keystore = require('../common/keystore');
 const helpers = require('../common/helpers');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
+const x509 = require('../common/crypto_impl/x509');
 const pkiAdmin = require('../admin-ui/pki_admin');
+const config = require('../common/config');
+const pkiMerge = require('../common/pki_merge');
+const certificateHeader = require('../common/jose_certificate_header');
 
 const log = require('bunyan').createLogger({ name: 'pki_rebuild_recertifies',
   level: process.env.LOG_LEVEL || 'info' });
@@ -62,6 +80,10 @@ const REALM_BUILD = 'rebuild-remint-' + nodeCrypto.randomBytes(3)
 const REALM_FLIGHT = 'rebuild-flight-' + nodeCrypto.randomBytes(3)
   .toString('hex');
 const REALM_ORPHAN = 'rebuild-orphan-' + nodeCrypto.randomBytes(3)
+  .toString('hex');
+const REALM_X5U = 'rebuild-x5u-' + nodeCrypto.randomBytes(3)
+  .toString('hex');
+const REALM_SETTING = 'rebuild-setting-' + nodeCrypto.randomBytes(3)
   .toString('hex');
 
 function issuedBy(certificatePem, caPem) {
@@ -250,10 +272,148 @@ async function sectionOrphaned(t) {
   log.debug("Leaving sectionOrphaned().");
 }
 
+async function sectionDisplacedX5u(t) {
+  log.debug("Entering sectionDisplacedX5u().");
+  t.log.info('=== D. an x5u naming a certificate displaced over the same ' +
+             'key still answers until it expires (#318) ===');
+  const built = await pki.ensureScope(REALM_X5U);
+  t.check(built.ok, 'the realm has a branch', JSON.stringify(built.errors));
+  const pair = nodeCrypto.generateKeyPairSync('ec',
+                                              { namedCurve: 'prime256v1' });
+  const spec = { slot: 'x5u-probe', alg: 'ES256', label: 'x5u probe',
+                 commonName: 'x5u probe',
+                 publicKeyPem: pair.publicKey.export({ type: 'spki',
+                                                       format: 'pem' }) };
+  const chainOf = function (record) {
+    log.debug("Entering chainOf().");
+    log.debug("Leaving chainOf().");
+    return certificateHeader.chainPemFor(REALM_X5U, record.thumbprint);
+  };
+  const first = await pki.certify(REALM_X5U, 'jose', spec);
+  const second = await pki.certify(REALM_X5U, 'jose', spec);
+  t.check(first.ok && second.ok &&
+          first.record.thumbprint !== second.record.thumbprint,
+          'the slot is certified twice over ONE key, two certificates',
+          (first.errors || []).concat(second.errors || []).join(' '));
+  const firstChain = chainOf(first.record) || '';
+  t.check(firstChain.indexOf(first.record.certificatePem.trim()) === 0,
+          'THE FIRST CERTIFICATE\'S x5u STILL ANSWERS, leaf first, after the ' +
+          'slot moved on — it answered 404 (STS-PKI-0162) before #318');
+  t.check(!!chainOf(second.record), 'and the current one answers too');
+
+  const oldIssuing = first.record.chainPem[0];
+  const reissued = await pki.reissueUseCase(REALM_X5U, 'jose');
+  const third = await pki.certify(REALM_X5U, 'jose', spec);
+  t.check(reissued.ok && third.ok && third.record.chainPem[0] !== oldIssuing,
+          'the JOSE Issuing CA is re-issued and the slot certified from it',
+          (third.errors || []).join(' '));
+  const afterReissue = chainOf(first.record) || '';
+  t.check(afterReissue.indexOf(first.record.certificatePem.trim()) === 0 &&
+          afterReissue.indexOf(oldIssuing.trim()) > 0 &&
+          afterReissue.indexOf(third.record.chainPem[0].trim()) < 0,
+          'ACROSS A RE-ISSUED ISSUING CA — the testidp case — it is served ' +
+          'with the chain it was ISSUED with, never re-rooted onto the new one');
+
+  const register = keystore.pkiFor(REALM_X5U).issuedKeyPairs || [];
+  const kept = register.filter(function (one) {
+    return one.thumbprint === first.record.thumbprint;
+  })[0];
+  t.check(!!kept && kept.subjectKind === 'displaced' &&
+          pkiMerge.normalSerial(kept.serialHex) ===
+            pkiMerge.normalSerial(first.record.serialHex),
+          'it is the issued register\'s displaced record that serves it, ' +
+          'the one OCSP already answers from');
+
+  // A merge with a copy that lost the PEMs keeps the one that has them.
+  const bare = Object.assign({}, kept);
+  delete bare.certificatePem;
+  delete bare.chainPem;
+  delete bare.thumbprint;
+  const merged = pkiMerge.merge({}, { issuedKeyPairs: [kept] },
+                                { issuedKeyPairs: [bare] }).row;
+  t.check(merged.issuedKeyPairs.length === 1 &&
+          merged.issuedKeyPairs[0].certificatePem === kept.certificatePem,
+          'a cluster merge keeps the copy that still carries the certificate');
+
+  // EXPIRY: the record's notAfter in the past, and the address is gone.
+  const realNotAfter = kept.notAfter;
+  kept.notAfter = new Date(Date.now() - 1000).toISOString();
+  try {
+    t.check(chainOf(first.record) === null,
+            'AFTER ITS notAfter the displaced certificate answers 404 again');
+  } finally {
+    kept.notAfter = realNotAfter;
+  }
+  t.check(!!chainOf(first.record), 'and before it, it answers');
+
+  // THE BOUND: certified PUBLISHED_PER_SLOT more times, the oldest is no
+  // longer published, and its serial is still in the register.
+  for (let i = 0; i < pkiMerge.PUBLISHED_PER_SLOT; i++) {
+    await pki.certify(REALM_X5U, 'jose', spec);
+  }
+  const later = keystore.pkiFor(REALM_X5U).issuedKeyPairs || [];
+  const published = later.filter(function (one) {
+    return one.identifier === 'jose:x5u-probe' && !!one.certificatePem;
+  });
+  t.equal(published.length, pkiMerge.PUBLISHED_PER_SLOT,
+          'a slot keeps PEMs for its newest ' + pkiMerge.PUBLISHED_PER_SLOT +
+          ' displaced certificates and no more');
+  t.check(chainOf(first.record) === null &&
+          later.some(function (one) {
+            return pkiMerge.normalSerial(one.serialHex) ===
+              pkiMerge.normalSerial(first.record.serialHex);
+          }),
+          'the oldest is no longer published, and its serial is still ' +
+          'recorded for OCSP');
+  log.debug("Leaving sectionDisplacedX5u().");
+}
+
+async function sectionBuildReadsTheSetting(t) {
+  log.debug("Entering sectionBuildReadsTheSetting().");
+  t.log.info('=== E. the build action naming no key takes the setting\'s ' +
+             'classical fallback, as the startup build does ===');
+  const realm = realms.get(REALM_SETTING);
+  const composite = 'mldsa65-ecdsa-p256-sha512';
+  const set = config.setOverride('pki.keyAlgorithm', composite);
+  try {
+    t.check(set && set.ok !== false, 'pki.keyAlgorithm is a composite for ' +
+            'this section', JSON.stringify(set));
+    const intermediateOf = function () {
+      return ((keystore.pkiFor(REALM_SETTING) || {}).intermediate || {})
+        .certificatePem || '';
+    };
+    const before = intermediateOf();
+    const named = await realms.run(realm, function () {
+      return pkiAdmin.pkiAction({ action: 'build', keyAlg: composite,
+                                  organisation: 'Rebuild Setting' });
+    });
+    t.equal(errorCodes.codeOf(named), 'STS-PKI-0274',
+            'a composite the form NAMES is still refused as STS-PKI-0274',
+            JSON.stringify(named && named.errors));
+    t.check(intermediateOf() === before,
+            'and nothing was stored for it');
+    const unnamed = await realms.run(realm, function () {
+      return pkiAdmin.pkiAction({ action: 'build',
+                                  organisation: 'Rebuild Setting' });
+    });
+    t.check(unnamed && unnamed.ok, 'the build action naming no key is not ' +
+            'refused for the composite setting',
+            JSON.stringify(unnamed && unnamed.errors) + ' ' +
+            errorCodes.codeOf(unnamed));
+    const row = keystore.pkiFor(REALM_SETTING) || {};
+    t.check(!!row.keyAlg && !pki.listenerUnreadableKeyAlg(row.keyAlg),
+            'and the branch it built has a key OpenSSL reads', row.keyAlg);
+  } finally {
+    config.clearOverride('pki.keyAlgorithm');
+  }
+  log.debug("Leaving sectionBuildReadsTheSetting().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const hadRoot = !!keystore.pkiFor(pki.SERVICE_SCOPE);
-  [REALM_BUILD, REALM_FLIGHT, REALM_ORPHAN].forEach(function (id) {
+  [REALM_BUILD, REALM_FLIGHT, REALM_ORPHAN, REALM_X5U,
+   REALM_SETTING].forEach(function (id) {
     if (!realms.get(id)) {
       realms.create({ id: id, name: id });
     }
@@ -262,10 +422,13 @@ async function run(t) {
     await sectionBuildAction(t);
     await sectionInFlight(t);
     await sectionOrphaned(t);
+    await sectionDisplacedX5u(t);
+    await sectionBuildReadsTheSetting(t);
   } finally {
     // Whatever this file made, it removes: `run.js` runs every file in one
     // process, and a Root left behind is the Root `tests/pki.js` meets.
-    [REALM_BUILD, REALM_FLIGHT, REALM_ORPHAN].forEach(function (id) {
+    [REALM_BUILD, REALM_FLIGHT, REALM_ORPHAN, REALM_X5U,
+   REALM_SETTING].forEach(function (id) {
       keystore.attachPki(id, null);
       if (realms.get(id)) {
         realms.remove(id);
@@ -283,6 +446,9 @@ module.exports = {
   describe: 'A realm branch rebuilt with the build action re-mints its ' +
             'signing keys\' certificates from the new authorities, and a ' +
             'certificate whose Issuing CA was replaced while it was being ' +
-            'signed is signed again — or refused, bounded, with STS-PKI-0186.',
+            'signed is signed again — or refused, bounded, with ' +
+            'STS-PKI-0186 — and a displaced JOSE certificate\'s x5u still ' +
+            'answers until it expires (#318); the build action naming no ' +
+            'key takes pki.keyAlgorithm\'s classical fallback.',
   run: run
 };

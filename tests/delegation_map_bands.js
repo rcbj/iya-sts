@@ -627,12 +627,12 @@ function run(t) {
   // which is why every fixture above missed it — CHAIN and FAN have neither,
   // and TWICE has the parallel pair without the cycle.
   //
-  // WHY IN PROCESS, when `tests/vendored/sts_delegated_permissions_example.js`
+  // WHY IN PROCESS, when `tests/protocol/sts_delegated_permissions_example.js`
   // built this very mesh over HTTP: that job asserted the GRAPH and never
   // asked whether the picture drew, which is exactly the hole this fell
   // through. It has built a RING since the same day, which has neither
   // ingredient, and the over-HTTP half of the closing is
-  // `tests/vendored/sts_admin_console.js`'s "could not be drawn" check. What
+  // `tests/protocol/sts_admin_console.js`'s "could not be drawn" check. What
   // cannot be done over there is asking the question CHEAPLY — this is the
   // renderer's own contract, it is a pure function, and a fixture here costs
   // milliseconds and no container.

@@ -1,0 +1,15 @@
+{
+  "heading": "Connected claim sources",
+  "sub": "Another identity provider can vouch for facts about you that this service does not hold. Once you link one, an application that asks for those facts receives them as that provider signed them (OpenID Connect aggregated and distributed claims). Linking takes you to the provider to sign in and agree.",
+  "none": "This service has no claim sources to offer.",
+  "supplies": "Supplies",
+  "distributed": ", by handing an application your token at this provider, to fetch them itself.",
+  "aggregated": ", fetched by this service and passed on as the provider signed them.",
+  "linked": "Linked {when}.",
+  "linkedStale": "Linked {when} — <strong>no longer usable</strong>; link it again.",
+  "link": "Link",
+  "linkAgain": "Link again",
+  "unlink": "Unlink",
+  "doneUnlinked": "Unlinked.",
+  "doneLinked": "Linked \"{provider}\"."
+}

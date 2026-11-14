@@ -11,7 +11,17 @@
 //! POST /notify        the PDP's nudge: pull now
 //! GET  /healthcheck   liveness, never whether the policy is current
 //! GET  /crl/<name>    this PEP's own credential's CRLs (#174)
+//! POST /access/v1/evaluation, /access/v1/evaluations,
+//! GET  /.well-known/authzen-configuration
+//!                     the AuthZEN edge PDP (#1179), `authzen.rs`
 //! ```
+//!
+//! `GET /protected` IS THE DEMONSTRATION PEP since #596: the service's own
+//! `GET /xacml/protected` and its `xacml.pepBias` were deleted (the runtime
+//! ships no demonstration code), and this is the same thing in the place a
+//! PEP lives — the request built from `subject`, `resource` and `action`
+//! through the one builder, the bias as this PEP's option (`PEP_BIAS`), and
+//! section 7.2's obligation rule (`enforce.rs`).
 
 use std::sync::{Arc, Mutex};
 use sts_core::errors::codes;
@@ -28,8 +38,9 @@ use sts_xacml::model::{attribute, category, types, Decision};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
 use sts_xacml::request::{ResolvedObligation, Status};
 
+use crate::authzen::{self, Reply};
 use crate::enforce::Enforcer;
-use crate::listener::HttpsListener;
+use crate::listener::{HttpsListener, Transport};
 use crate::options::Options;
 use crate::pip::RemotePip;
 use crate::sync::Sync;
@@ -53,9 +64,9 @@ pub struct Pep {
     pub options: Options,
     pub version: VersionInfo,
     pub sync: Arc<Sync>,
-    pip: RemotePip,
+    pub(crate) pip: RemotePip,
     enforcer: Enforcer,
-    pdp: Pdp,
+    pub(crate) pdp: Pdp,
     pub listener: Arc<HttpsListener>,
     last_pip_report: Mutex<Option<Value>>,
     crl_name: Option<Regex>,
@@ -66,6 +77,26 @@ fn json_response(status: StatusCode, body: &Value) -> Response<Body> {
         serde_json::to_string_pretty(body).unwrap_or_else(|_| "{}".to_string());
     let mut response = Response::new(Body::from(text));
     *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// An AuthZEN reply as a response: indented where the service indents.
+fn reply_response(reply: &Reply) -> Response<Body> {
+    let text = if reply.pretty {
+        serde_json::to_string_pretty(&reply.body)
+    } else {
+        serde_json::to_string(&reply.body)
+    }
+    .unwrap_or_else(|_| "{}".to_string());
+    let mut response = Response::new(Body::from(text));
+    *response.status_mut() =
+        StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_TYPE,
@@ -113,6 +144,58 @@ impl Pep {
         let method = request.method().clone();
         let uri = request.uri().clone();
         let path = uri.path().to_string();
+        let transport = request
+            .extensions()
+            .get::<Transport>()
+            .cloned()
+            .unwrap_or_default();
+        if method == Method::POST
+            && (path == authzen::EVALUATION_PATH
+                || path == authzen::EVALUATIONS_PATH)
+        {
+            // `X-Request-ID` ECHOED on every answer, a refusal included,
+            // when it is a token this PDP will reflect (section 10.1).
+            let id = authzen::request_id(
+                request
+                    .headers()
+                    .get("x-request-id")
+                    .and_then(|v| v.to_str().ok()),
+            );
+            let batch = path == authzen::EVALUATIONS_PATH;
+            let limit = if batch {
+                self.options
+                    .max_body_bytes
+                    .max(self.sync.catalogue().settings.max_body_bytes + 1)
+            } else {
+                self.options.max_body_bytes
+            };
+            let body = axum::body::to_bytes(request.into_body(), limit)
+                .await
+                .map(|b| b.to_vec())
+                .map_err(|_| ());
+            let reply = self
+                .authzen_post(
+                    batch,
+                    &transport,
+                    body,
+                    id.as_deref().unwrap_or(""),
+                )
+                .await;
+            let mut response = reply_response(&reply);
+            if let Some(id) = id.and_then(|i| HeaderValue::from_str(&i).ok()) {
+                response.headers_mut().insert("x-request-id", id);
+            }
+            return response;
+        }
+        if method == Method::GET && path == authzen::METADATA_PATH {
+            let host = request
+                .headers()
+                .get(header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let reply = self.authzen_metadata(&transport, host.as_deref());
+            return reply_response(&reply);
+        }
         let mut query: IndexMap<String, String> = IndexMap::new();
         if let Some(raw) = uri.query() {
             let url = format!("http://localhost/?{}", raw);
@@ -199,8 +282,10 @@ impl Pep {
             &json!({
                 "error": "not_found",
                 "error_description": "This PEP answers GET /, GET /protected, \
-                    POST /notify, GET /healthcheck and GET /crl/<name> for its \
-                    own credential's lists."
+                    POST /notify, GET /healthcheck, GET /crl/<name> for its \
+                    own credential's lists, and the AuthZEN edge PDP: POST \
+                    /access/v1/evaluation, POST /access/v1/evaluations and \
+                    GET /.well-known/authzen-configuration."
             }),
         )
     }
@@ -393,6 +478,68 @@ impl Pep {
         (status, body)
     }
 
+    /// `authzen` on `GET /` (#1179): what the edge PDP answers, to whom,
+    /// with which catalogue, and what it cannot do that the service can.
+    fn authzen_overview(&self) -> Value {
+        let o = &self.options;
+        let mut out = self.sync.authzen_json();
+        if let Some(map) = out.as_object_mut() {
+            map.insert("enabled".into(), json!(o.authzen_enabled));
+            map.insert(
+                "endpoints".into(),
+                json!([
+                    authzen::EVALUATION_PATH,
+                    authzen::EVALUATIONS_PATH,
+                    authzen::METADATA_PATH
+                ]),
+            );
+            // THE LOCAL NARROWING, COUNTED (#1189): who may ask is the
+            // service's list, pulled, and `pulledCallers` above counts it
+            // without naming anybody, for the reason given there.
+            map.insert(
+                "localCallers".into(),
+                json!({
+                    "configured": o.authzen_callers_configured,
+                    "certificates": o.authzen_callers.len(),
+                    "role": if o.authzen_callers_configured {
+                        "narrows the pulled list; decides alone until the \
+                         first pull"
+                    } else {
+                        "not set: the pulled list alone decides"
+                    }
+                }),
+            );
+            map.insert(
+                "clientCertificatesAsked".into(),
+                json!(self.listener.asks_for_client_certificates()),
+            );
+            map.insert(
+                "pdpIdentifier".into(),
+                if o.authzen_pdp_identifier.is_empty() {
+                    Value::Null
+                } else {
+                    json!(o.authzen_pdp_identifier)
+                },
+            );
+            map.insert(
+                "what".into(),
+                json!(
+                    "An AuthZEN edge PDP: the service's mapping contract \
+                       — the catalogue and settings pulled beside the \
+                       policies — decided here against the pulled root \
+                       policy. Callers authenticate by mutual TLS only and \
+                       are admitted by the caller list pulled from the \
+                       service (who holds AUTHZEN_PEPS as its policy decides \
+                       it, and each caller's application scope), narrowed by \
+                       PEP_AUTHZEN_CALLERS when that is set; an outside \
+                       authority's revocation is not checked, and each \
+                       decision is a log line rather than an audit row."
+                ),
+            );
+        }
+        out
+    }
+
     /// `GET /`. Staleness is computed HERE and separately from the PDP's
     /// verdict on purpose: this PEP counts missed polls and the PDP counts
     /// missed heartbeats, and the two can disagree.
@@ -452,21 +599,27 @@ impl Pep {
             },
             "version": v.version,
             "build": {
-                "number": v.build,
+                "number": if v.build.is_empty() { Value::Null }
+                          else { Value::from(v.build.clone()) },
+                "release": v.release,
                 "commit": if v.commit.is_empty() { Value::Null }
                           else { Value::from(v.commit.clone()) },
                 "at": v.built_at,
                 "stamped": v.stamped,
-                "what": "M.N comes from the same VERSION file the PDP's \
-                         does, so a difference THERE is a PEP left behind \
-                         across a release. The build number is per IMAGE: \
-                         these are two artifacts and they differ unless the \
-                         same BUILD_NUMBER was passed to both builds."
+                "what": "The version is M.N.O.<build> (#1317): the release, \
+                         read from the same VERSION file the PDP's is, and \
+                         the build number. A difference in the RELEASE is \
+                         a PEP left behind across a release. The build \
+                         number is per IMAGE — the UTC instant it was \
+                         built, unless it is a release build, which names \
+                         its own — so two images of one tree differ there \
+                         unless both were built as the same release."
             },
             "pdp": o.pdp_url,
             "bias": o.bias.as_str(),
             "protectedAt": "/protected",
             "https": self.listener.overview(),
+            "authzen": self.authzen_overview(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,

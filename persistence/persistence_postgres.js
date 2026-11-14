@@ -116,12 +116,37 @@
 // A LEAF with no requires: the failure codes on the log lines and the startup
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
+const ModelTables = require('../common/model_tables');
+const OnlineIndexes = require('./online_indexes');
 const errorCodes = require('../common/error_codes');
-// node's own, for the process origin's UUID.
-const nodeCrypto = require('crypto');
+// The process origin's UUID, a jitter and a reservation are drawn from
+// `common/crypto.js` (#453), required where each is drawn rather than here,
+// as `indexSealedEntries()` does: requiring this driver loads no setting,
+// so an out-of-process tool (`risk/risk_install.ts`) may load it.
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
+// The engines this store's SQL is compiled for (#677). A LEAF; Knex is
+// required lazily inside its create().
+const sqlDialect = require('./sql_dialect');
+// The cluster's statements without PostgreSQL's features (#677). A LIBRARY,
+// built in create() only when they are used.
+const clusterPortable = require('./cluster_portable');
+// The smaller tables' statements and the change log's, the same way (#677).
+// A LIBRARY, built in create() only when they are used.
+const storePortable = require('./store_portable');
+// What this service mints, in statements a second engine runs (#677, 3b).
+// A LIBRARY, built in create() only when it is used.
+const mintedPortable = require('./minted_portable');
+// The embedded directory's store on MariaDB (#677, phase 3b). A LIBRARY, built
+// in create() only when the engine is not PostgreSQL.
+const directoryPortable = require('./directory_portable');
+// The one-time `grantinggroup` key backfill's walk (#1311): a library this
+// driver hands its statements to (`indexGrantingKeys()`). A leaf here.
+const grantingBackfill = require('./granting_index_backfill');
+// The risk engine's statements on MariaDB (#677). A LIBRARY, built in
+// create() only on an engine that is not PostgreSQL.
+const riskPortable = require('./risk_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -154,8 +179,9 @@ const capabilities = require('../cluster/cluster_capabilities');
 // the writes; it has a connection of its own now, with the heartbeat and the
 // leases, so a full pool delays a write and can no longer end the process.
 // The writes themselves do not scale with connections: a process flushes its
-// directory one transaction at a time and its minted rows one at a time
-// (`persistence.js`, `persistence_minted.js`), so a writer holds at most two
+// directory one transaction at a time and its minted rows at most two at a
+// time, and only for keys the other minted flush does not hold (#877,
+// `persistence.js`, `persistence_minted.js`), so a writer holds at most three
 // connections however many requests are waiting, and the rest are the
 // change-log pull, claims and reads. A bigger pool per process would multiply
 // the server's connections by every process on every node — the cost above —
@@ -186,6 +212,13 @@ function poolMax(workers) {
  * The LISTEN/NOTIFY channel a committed change is announced on.
  */
 const CHANNEL = 'sts_ldap_change';
+// THE NUDGE'S WINDOW (#630): at most one `pg_notify` per process this often,
+// sent after the commits it announces. 25 ms is inside the ticket's 20–50:
+// short beside the poll it shortens (`persistence.pollInterval`, 5 s), and
+// long enough that a busy process's notifies — each of which takes the
+// server's notify-queue lock through a WAL flush — fall from one per
+// transaction to forty a second at most.
+const NOTIFY_COALESCE_MS = 25;
 // How many change-log rows go in one INSERT. Four bind parameters a row, and
 // the protocol's limit is 65,535, so 5,000 leaves room and still makes a large
 // flush a handful of statements. See recordChanges().
@@ -221,14 +254,154 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 14 IS #222's: `sts_minted.key_sealed`, the name beside its digest.
 // 15 SINCE 2026-10-03, for `sts_cluster_budgets` (#432 phase 5): a budget
 // spent against a limit, one conditional upsert per spend.
-const SCHEMA_VERSION = 15;
+// 16 SINCE 2026-10-14, for `sts_ldap_counts`, `sts_ldap_count_deltas` and
+// the triggers that keep them (#618): the directory's counts kept rather
+// than counted.
+// 17 SINCE 2026-10-14, for `sts_ldap_entries.dek_keys` and its two indexes,
+// and `sts_ldap_dek_counts`, `sts_ldap_dek_deltas` and the triggers that
+// keep them (#623): which data keys each entry holds values under, so the
+// re-encryption job and the data-key count never open the directory.
+// 18 SINCE 2026-10-14, for the two narrowed directory indexes (#618 phase
+// 2): `sts_ldap_entries_asked_names` (the attribute names a holder question
+// asks, an expression of `attr_names`) and `sts_ldap_entries_group_classes`
+// (`class_keys`, which holds the group classes only), both PARTIAL, in place
+// of `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
+// indexed every name and every class of every entry (SCHEMA_RETIRED).
+// 19 SINCE 2026-10-14 (#630): the counters SHARDED
+// (`shard` in both counter tables' keys, folded by the `_sharded` routines),
+// `sts_minted_written_brin` in place of the btree `sts_minted_written`, and
+// the storage parameters of SCHEMA_UPGRADES.
+// 20 SINCE 2026-10-15 (#639): `sts_ldap_entries.parent_key`'s `n_distinct`
+// set by hand (SCHEMA_UPGRADES' `sts_ldap_entries_parent_ndistinct`), which
+// ANALYZE's sample cannot estimate once one container holds nearly every
+// row.
+// 21 SINCE 2026-10-18 (#350): `sts_sessions`, the index of a live session,
+// written in the same transaction as the sealed body. Not a column of
+// `sts_minted` — `expires_at` there stays NULL for a session.
+// 22 SINCE 2026-10-20 (#754): `sts_sessions_surface`, the partial index
+// `session.surface` reads. It was a scan of the realm's sessions, asked
+// twice per password change (each hosted surface answering the CAEP
+// `credential-change` it receives).
+// 23 SINCE 2026-10-20 (`/portal/delegate`'s search): the `pg_trgm`
+// extension and `sts_ldap_entries_uid_trgm`, a trigram GIN over the
+// `rdn_value` of the children of each realm's `ou=users`.
+// 24 SINCE 2026-10-21 (#820): `sts_minted_index`, an on-demand store's
+// index rows.
+// 25 SINCE 2026-10-22 (#820): `sts_minted_index.sort_at` and the partial
+// index `sts_minted_index_sort`, a store's `sortBy` value on one more index
+// row per stored row, which `minted.newest` walks instead of sorting the
+// store by `written_at` (only a BRIN, #630).
+// 26 SINCE 2026-10-25 (#956): `sts_report_artifacts`, the bytes of a
+// finished report. Definitions and job rows stay in the realm maps.
+// 27 SINCE 2026-10-27 (#1024): `sts_ldap_entries_asked_names` rebuilt with
+// `stsbackupcodes` among the asked names, so the reports application's
+// recovery-codes mechanism reads its holders through the index rather than
+// a scan. The index's expression changed, so an existing one is dropped
+// and built again (an advisory upgrade, the owner's to run on a large
+// store; `postgres/schema.sql` carries it).
+// 28 SINCE 2026-10-27 (#1028, rcbj: "index unencrypted fields that can be
+// used as filters"): two B-trees, `sts_ldap_entries_created` and
+// `sts_ldap_entries_modified`, on (realm, parent_key, created_at |
+// modified_at), so a report's date range reads the span and nothing else;
+// and `pwdaccountlockedtime` among the asked names, so `status equals
+// locked` is a holders read. The asked index is rebuilt again (the same
+// advisory step, now looking for the newest name).
+// 29 SINCE 2026-10-27 (#1045): `sts_report_artifact_pieces`, a finished
+// report's sealed pieces, so a report is never one value in any process's
+// heap. A row of `sts_report_artifacts` written before it still holds its
+// whole body and is still read.
+// 30 SINCE 2026-11-03 (#677): `sts_cluster_locks`, a row per named lock,
+// locked FOR UPDATE by the portable cluster statements in place of
+// `pg_advisory_xact_lock` (`persistence/cluster_portable.js`). Since #770
+// the native fence share-locks rows of it too (`fence:lease:<name>:<token>`,
+// `fence:origin:<key>:<reservation>`); `cluster/CLAUDE.md` argues why the
+// lease and claim rows themselves are no longer the rows that are shared.
+// 31 SINCE 2026-11-03 (#1290): `sts_ldap_entries_asked_names` rebuilt with
+// `stsassertionkeypair` and `stssamlassertionkeypair` among the asked names
+// in place of `stsassertionjwks` and `stssamlassertioncertificate`: a
+// person's RFC 7523 and RFC 7522 key pairs are several records per profile
+// now, and `person_assertions.js` asks for their holders by the new names.
+// The same advisory step as 27 and 28, looking for the newest name.
+// 32 SINCE 2026-11-12 (#882): `sts_sessions_started`, the partial index
+// the console's newest-first live session pages walk (`ORDER BY
+// started_at DESC, key`, `WHERE chosen`). `started_at` is set once, so
+// the index does not newly make an update non-HOT. How a large store
+// builds it is in `postgres/CLAUDE.md`.
+const SCHEMA_VERSION = 32;
+// How many times a directory flush re-reads the data-key rows and tries
+// again when a locked row is sealed under a key this process does not hold
+// yet, and the pause between tries (2026-10-27; saveDirectory()).
+const SEALED_FLUSH_RETRIES = 5;
+const SEALED_FLUSH_RETRY_PAUSE_MS = 200;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
 // `clock_timestamp()` and not `now()`: `now()` is the START of the transaction,
 // and a lease checked late in a long transaction must be checked against when
-// the check ran.
-const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
+// the check ran. ONE copy since #677: the dialect module holds each
+// engine's statement clock, and this is PostgreSQL's, spliced into the
+// hand-written statements as it always was.
+const DB_NOW = sqlDialect.NOW.postgres;
+
+// ---------------------------------------------------------------------------
+// GIVING CLAIMS BACK, SEVERAL AT ONCE (#628, 2026-10-14): each row pinned to
+// its own reservation, as `releaseClaim()` pins one. One statement for a
+// directory create's DN and username, sent on its own by `releaseClaims()`
+// for a create that was refused, and INSIDE the transaction that writes the
+// created entry by `saveDirectory()` for one that succeeded — so the entry
+// and the release commit together, and a create waiting on the name sees the
+// entry exactly when the claim is gone.
+// ---------------------------------------------------------------------------
+const RELEASE_CLAIMS_SQL =
+  'DELETE FROM sts_cluster_claims c USING unnest($1::text[], $2::text[], ' +
+  '$3::text[], $4::text[]) AS r(scope, realm, key, reservation) WHERE ' +
+  'c.scope = r.scope AND c.realm = r.realm AND c.key = r.key AND ' +
+  'c.reservation = r.reservation';
+
+// ---------------------------------------------------------------------------
+// A CLAIM STATEMENT OF ITS OWN COMMITS WITHOUT WAITING FOR THE WAL FLUSH
+// (#628, 2026-10-14) — `synchronous_commit = off` for that statement's own
+// implicit transaction, set by `set_config(…, true)` in a CTE the statement
+// reads (the transaction is the statement, so the setting is LOCAL to it and
+// in force at its commit; `SET LOCAL` would need a BEGIN and a COMMIT round
+// trip of its own). Measured on 8081 the same day: the claim INSERTs and
+// DELETEs were about 60% of the WAL-flush waits under a bulk load, and a
+// replay with them asynchronous went from 120 to 318 adds a second.
+//
+// **WHY IT IS SAFE.** An asynchronous commit is visible to every other
+// session at once — what the claim decides, it decides at commit, flushed or
+// not. What it gives up is durability across a CRASH of the database inside
+// the flush delay, and both directions of that are already survived: the
+// create's own entry commit is synchronous and flushes all the WAL before
+// it, the claim's included, so no created entry stands on a claim that could
+// be lost; a lost DELETE only leaves the claim until its lifetime; a lost
+// INSERT is a claim whose create had not committed either. (A failover to a
+// standby that had not received the record is the same crash.)
+//
+// **NOT THE RELEASE INSIDE THE FLUSH**: `saveDirectory()` sends
+// RELEASE_CLAIMS_SQL in the entry's own transaction, whose commit must stay
+// synchronous, and it costs no flush of its own. `claimMany()` and the
+// standalone `releaseClaims()` are asynchronous. `claimOnce()` is too, only
+// when the caller passes `noFlushWait` (#886): the refresh spend, whose
+// later synchronous minted commit flushes this record before the response
+// is sent. Every other `claimOnce()`, and `releaseClaim()`, stay
+// synchronous. A claim that is the only write of its request must not pass
+// the flag — nothing later would flush it.
+// ---------------------------------------------------------------------------
+const NO_FLUSH_WAIT =
+  'quiet AS (SELECT set_config(\'synchronous_commit\', \'off\', ' +
+  'true) AS was)';
+
+// RELEASE_CLAIMS_SQL as a statement of its own, committed without waiting for
+// the WAL flush (above).
+const RELEASE_CLAIMS_ALONE_SQL =
+  'WITH ' + NO_FLUSH_WAIT + ' DELETE FROM sts_cluster_claims c USING ' +
+  'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS r(scope, ' +
+  'realm, key, reservation), quiet WHERE c.scope = r.scope AND c.realm = ' +
+  'r.realm AND c.key = r.key AND c.reservation = r.reservation';
+
+// The sentence `claimMany()` aborts a partial claim with, and recognises.
+const PARTIAL_CLAIM = 'sts_cluster_claims: a partial claim';
 
 // The advisory lock two joining nodes serialise on, so that "is every live
 // node configured the same as me" and "write my row" are one decision. An
@@ -263,6 +436,141 @@ const JOIN_LOCK = 460046;
 const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
 
 const TOMBSTONE = '$tombstone$1';
+
+// `sts_sessions` (#350), written in the same transaction as the sealed body.
+// One row of a minted flush. Entering/Leaving on sessionIndexParams() would
+// drown the log.
+const SESSION_INDEX_UPSERT =
+  'INSERT INTO sts_sessions (realm, key, expires_at, last_seen_at, ' +
+  'started_at, subject_key, username_key, chosen, authenticated, kind, ' +
+  'rp_surface, parent_key, backs_console, credential_key, ' +
+  'partner_relationship) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ' +
+  '$10, $11, $12, $13, $14, $15) ON CONFLICT (realm, key) DO UPDATE SET ' +
+  'expires_at = EXCLUDED.expires_at, ' +
+  'last_seen_at = EXCLUDED.last_seen_at, ' +
+  'started_at = EXCLUDED.started_at, ' +
+  'subject_key = EXCLUDED.subject_key, ' +
+  'username_key = EXCLUDED.username_key, ' +
+  'chosen = EXCLUDED.chosen, ' +
+  'authenticated = EXCLUDED.authenticated, ' +
+  'kind = EXCLUDED.kind, ' +
+  'rp_surface = EXCLUDED.rp_surface, ' +
+  'parent_key = EXCLUDED.parent_key, ' +
+  'backs_console = EXCLUDED.backs_console, ' +
+  'credential_key = EXCLUDED.credential_key, ' +
+  'partner_relationship = EXCLUDED.partner_relationship';
+
+const SESSION_INDEX_DELETE =
+  'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
+
+// AN ON-DEMAND STORE'S INDEX ROWS (#820): a set of them filed, ordered by the
+// primary key, so two writers take the rows' locks in one order. A minted
+// flush writes and deletes them inside MINTED_FLUSH (2026-10-22).
+// The row that says a store's index is complete (#820): realm '' and a key
+// no digest can be ('$' is not in base64url).
+const MINTED_INDEX_MARK = '$index-complete$';
+// `sort_at` (schema version 25, 2026-10-22) is NULL on every index row
+// but a row's SORT row (`minted_queries.SORT_INDEX_KEY`), which carries the
+// store's `sortBy` value for `minted.newest`.
+const MINTED_INDEX_INSERT =
+  'INSERT INTO sts_minted_index (handle, realm, index_key, key, sort_at) ' +
+  'SELECT u.h, u.r, u.i, u.k, u.s FROM unnest($1::text[], $2::text[], ' +
+  '$3::text[], $4::text[], $5::bigint[]) AS u(h, r, i, k, s) ' +
+  'ORDER BY u.h, u.r, u.i, u.k ON CONFLICT DO NOTHING';
+
+// One index row's `sort_at`: a whole number, or null for every row that is
+// not a sort row. Hot path (every index row a flush writes): no
+// Entering/Leaving pair.
+function sortAtParam(one) {
+  const n = one && one.sortAt;
+  return typeof n === 'number' && Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
+// Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
+// the partial indexes do not see it. It commits with the last backfill page;
+// until that row exists the next start walks again (#350).
+const SESSION_INDEX_MARK_REALM = '';
+const SESSION_INDEX_MARK_KEY = '$session-index-complete$';
+const SESSION_INDEX_MARK = {
+  expiresAt: null, lastSeenAt: 0, startedAt: 0,
+  subjectKey: '', usernameKey: '', chosen: false, authenticated: false,
+  kind: '', rpSurface: '', parentKey: '', backsConsole: false,
+  credentialKey: '', partnerRelationship: ''
+};
+
+// `expiresAt` null stays SQL NULL. `Number(null)` is 0, which would publish
+// a session as already expired.
+function sessionIndexParams(realm, key, index) {
+  const expires = index ? index.expiresAt : null;
+  let expiresAt = null;
+  if (expires !== null && expires !== undefined) {
+    const ms = Number(expires);
+    if (Number.isFinite(ms) && ms > 0) {
+      expiresAt = Math.floor(ms);
+    }
+  }
+  const lastSeen = Number(index && index.lastSeenAt);
+  const started = Number(index && index.startedAt);
+  return [
+    String(realm),
+    String(key),
+    expiresAt,
+    Number.isFinite(lastSeen) ? Math.max(0, Math.floor(lastSeen)) : 0,
+    Number.isFinite(started) ? Math.max(0, Math.floor(started)) : 0,
+    String((index && index.subjectKey) || ''),
+    String((index && index.usernameKey) || ''),
+    !index || index.chosen !== false,
+    !index || index.authenticated !== false,
+    String((index && index.kind) || ''),
+    String((index && index.rpSurface) || ''),
+    String((index && index.parentKey) || ''),
+    !!(index && index.backsConsole === true),
+    String((index && index.credentialKey) || ''),
+    String((index && index.partnerRelationship) || '')
+  ];
+}
+
+// One index row as it is held, for `writeSessionIndex()`'s comparison.
+const SESSION_INDEX_READ =
+  'SELECT expires_at, last_seen_at, started_at, subject_key, username_key, ' +
+  'chosen, authenticated, kind, rp_surface, parent_key, backs_console, ' +
+  'credential_key, partner_relationship FROM sts_sessions ' +
+  'WHERE realm = $1 AND key = $2';
+
+// Whether a held index row says what `sessionIndexParams()` would write: the
+// thirteen columns after realm and key, numbers compared as numbers (a
+// bigint arrives as a string). A repair's hot path: no Entering/Leaving pair.
+function sessionIndexRowMatches(held, wanted) {
+  const number = function (value) {
+    return value === null || value === undefined ? null : Number(value);
+  };
+  return number(held.expires_at) === number(wanted[2]) &&
+    number(held.last_seen_at) === number(wanted[3]) &&
+    number(held.started_at) === number(wanted[4]) &&
+    String(held.subject_key) === wanted[5] &&
+    String(held.username_key) === wanted[6] &&
+    !!held.chosen === wanted[7] &&
+    !!held.authenticated === wanted[8] &&
+    String(held.kind) === wanted[9] &&
+    String(held.rp_surface) === wanted[10] &&
+    String(held.parent_key) === wanted[11] &&
+    !!held.backs_console === wanted[12] &&
+    String(held.credential_key) === wanted[13] &&
+    String(held.partner_relationship) === wanted[14];
+}
+
+// One row of a minted flush. Entering/Leaving on upsertSessionIndex() would
+// drown the log.
+function upsertSessionIndex(client, realm, key, index) {
+  return client.query(SESSION_INDEX_UPSERT,
+                      sessionIndexParams(realm, key, index));
+}
+
+// One row of a minted flush. Entering/Leaving on deleteSessionIndexRow()
+// would drown the log.
+function deleteSessionIndexRow(client, realm, key) {
+  return client.query(SESSION_INDEX_DELETE, [realm, key]);
+}
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
 // node that went away. A join purges older ones.
@@ -306,7 +614,17 @@ const LDAP_GENERATED = {
   uuid_keys: 'uuid_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
   class_keys: 'class_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
   value_keys: 'value_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
-  attr_names: 'attr_names jsonb NOT NULL DEFAULT \'[]\'::jsonb'
+  attr_names: 'attr_names jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  // ---------------------------------------------------------------------
+  // `dek_keys` (#623, schema version 17): the DATA KEYS the entry holds
+  // values under, `{ "<dek id>": <values> }` — the blob's own key, and the
+  // key of every value sealed inside it (a TOTP secret, Kerberos keys, a
+  // client secret), which SQL cannot see. Written by the service beside the
+  // blob, as the lookups above are. NULL, and not '{}', is an entry written
+  // before the column existed: one whose keys are NOT KNOWN, which no count
+  // may read as "none" (see `indexSealed()`).
+  // ---------------------------------------------------------------------
+  dek_keys: 'dek_keys jsonb'
 };
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
@@ -348,6 +666,29 @@ const LDAP_GENERATED = {
 // `postgres/schema.sql` holds the same statements for the owner to run, and
 // `tests/postgres_schema.js` fails if the two lists disagree.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S GIN INDEXES TAKE EVERY INSERT DIRECTLY (#618 phase 2,
+// schema version 18): `fastupdate = off`.
+//
+// With PostgreSQL's default a GIN insert goes to the index's PENDING LIST,
+// which is merged into the tree only when it reaches
+// `gin_pending_list_limit` (4 MB) or a vacuum runs — and EVERY SEARCH READS
+// THE WHOLE PENDING LIST, whatever it asks. On 8081 under the bulk load the
+// lists of the names, uuids, mails and values indexes each held about
+// 205,000 tuples (503 pages), so every `byName()` and `byUuid()` probe —
+// a login, a uniqueness check, a holder's subject — scanned 500 buffers and
+// took 8.9–17.6 ms where the RDN branch beside it took 0.02 ms; when
+// autovacuum flushed them, the add rate went from 45 to 73 a second and the
+// database CPU per add halved. With the list off, an insert pays its GIN
+// entries at once (about 0.04 ms a person on the 1.2M-entry copy for the
+// four, 20,000 inserts alternated) and a probe reads only the tree: 4
+// buffers and 0.008 ms against 152 and 2.1 ms behind a 60,000-tuple list.
+// The two partial indexes of version 18 take it too: a person writes
+// nothing to either, so the list buys nothing there and would only be read.
+// An existing index is switched by SCHEMA_RELOPTIONS and its list flushed.
+// ---------------------------------------------------------------------------
+const GIN_DIRECT = 'WITH (fastupdate = off)';
+
 /**
  * Every table and index of the schema, each `{ name, statement }`.
  *
@@ -355,708 +696,54 @@ const LDAP_GENERATED = {
  * change the schema is not refused on every start; `postgres/schema.sql`
  * holds the same statements for an owner to run.
  */
-const SCHEMA_OBJECTS = [
-  { name: 'sts_ldap_entries', statement:
-  'CREATE TABLE IF NOT EXISTS sts_ldap_entries (' +
-  '  realm       text        NOT NULL,' +
-  '  dn_key      text        NOT NULL,' +
-  '  dn          text        NOT NULL,' +
-  '  attrs       jsonb       NOT NULL,' +
-  '  origin      text,' +
-  '  created_at  text,' +
-  '  modified_at text,' +
-  '  ' + LDAP_GENERATED.parent_key + ',' +
-  '  ' + LDAP_GENERATED.rdn_value + ',' +
-  '  ' + LDAP_GENERATED.name_keys + ',' +
-  '  ' + LDAP_GENERATED.mail_keys + ',' +
-  '  ' + LDAP_GENERATED.uuid_keys + ',' +
-  '  ' + LDAP_GENERATED.class_keys + ',' +
-  '  ' + LDAP_GENERATED.value_keys + ',' +
-  '  ' + LDAP_GENERATED.attr_names + ',' +
-  '  PRIMARY KEY (realm, dn_key))' },
-  // The one index worth having beyond the primary key: every enumerator in
-  // this service walks one realm.
-  { name: 'sts_ldap_entries_realm', statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries ' +
-  '(realm)' },
-  // -------------------------------------------------------------------------
-  // THE DIRECTORY'S LOOKUP INDEXES (#349, schema version 13): what a request
-  // worker holding the people and devices as a bounded window asks instead
-  // of an index in memory — `persistence/directory_queries.js` builds every
-  // statement that reads them. Each is over a GENERATED column (above), so no
-  // writer maintains it and a row that existed before the column gets it when
-  // the column is added. `afterColumns`: on an older table the columns come
-  // from SCHEMA_COLUMNS, so these can only be built after that step.
-  //   * the children of a container, in key order (listings, paging, the
-  //     `ou=users` a login name is looked for under) and the RDN value there;
-  //   * the lower-cased `uid`, `mail` and entryUUID values, GIN over a JSON
-  //     array (`@>`), and every attribute value as written, GIN over `attrs`
-  //     (a DID, a SPIFFE ID, a federation link).
-  // -------------------------------------------------------------------------
-  { name: 'sts_ldap_entries_parent', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries ' +
-  '(realm, parent_key, dn_key)' },
-  { name: 'sts_ldap_entries_rdn', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries ' +
-  '(realm, parent_key, rdn_value)' },
-  { name: 'sts_ldap_entries_names', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
-  'USING gin (name_keys jsonb_path_ops)' },
-  { name: 'sts_ldap_entries_mails', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries ' +
-  'USING gin (mail_keys jsonb_path_ops)' },
-  { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
-  'USING gin (uuid_keys jsonb_path_ops)' },
-  // The attribute values `byAttribute()` asks for, as keyed digests (#391
-  // phase 6) — where the GIN over `attrs` was, which a sealed blob makes
-  // nothing to index.
-  { name: 'sts_ldap_entries_values', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries ' +
-  'USING gin (value_keys jsonb_path_ops)' },
-  // The attribute NAMES, GIN with the default operator class for `?`.
-  { name: 'sts_ldap_entries_attr_names', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON ' +
-  'sts_ldap_entries USING gin (attr_names)' },
-  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
-  // the group classes) is what it is asked, and `jsonb_path_ops` answers
-  // only containment.
-  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
-  'USING gin (class_keys)' },
-  { name: 'sts_realms', statement:
-  'CREATE TABLE IF NOT EXISTS sts_realms (' +
-  '  id          text PRIMARY KEY,' +
-  '  name        text,' +
-  '  description text,' +
-  '  created_at  bigint,' +
-  '  overrides   jsonb NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  domain      text,' +
-  '  retiring_at bigint)' },
-  { name: 'sts_appconfig', statement:
-  'CREATE TABLE IF NOT EXISTS sts_appconfig (' +
-  '  key   text PRIMARY KEY,' +
-  '  value jsonb NOT NULL)' },
-  // THE SIGNING KEYS, ONE ROW PER TRUST REALM, AND THE COLUMN HOLDS
-  // CIPHERTEXT (2026-09-06). `keystore.js` encrypts with AES-256-GCM before
-  // anything reaches this driver, so nothing in this database is ever a
-  // private key — which is what makes it acceptable for them to live beside
-  // the directory in the same store. The key that opens them is read from
-  // outside the service entirely; see common/secrets.js.
-  //
-  // `text` and not `bytea`, because the stored form is the self-describing
-  // ASCII `$aesgcm$2$dek$iv$tag$body` that crypto.js writes — the same
-  // decision `userPassword` follows, and it means a row can be read and
-  // reasoned about with psql without a decode step.
-  { name: 'sts_keys', statement:
-  'CREATE TABLE IF NOT EXISTS sts_keys (' +
-  '  realm      text PRIMARY KEY,' +
-  '  material   text NOT NULL,' +
-  '  written_at timestamptz NOT NULL DEFAULT now())' },
-  // -------------------------------------------------------------------------
-  // WHAT THIS PROCESS MINTED (2026-09-06). ONE TABLE FOR ALL OF IT, and the
-  // shape is the whole design: a HANDLE names the store, a REALM names its
-  // partition, a KEY names the row inside it, and the body is opaque.
-  //
-  // ONE TABLE RATHER THAN A TABLE PER FAMILY, because the handle list lives in
-  // the store declarations (`realms.map({ persist: … })`) and a table per
-  // family would be a SECOND place it is written down — which is the shape of
-  // drift the whole `sts_metadata.js` design exists to prevent. Adding a
-  // persisted store must cost one word at its declaration and nothing here.
-  //
-  // `realm` IS THE EMPTY STRING FOR THE SHARED STORES — the rate limiter's
-  // buckets and the directory's cluster connection lists today; the Kerberos
-  // principal database and replay cache were shared too until they became per
-  // realm (#33, 2026-09-15) — which have no realm because what they belong to
-  // has no path to put one in. It is
-  // a column value rather than a nullable, so the primary key needs no COALESCE
-  // and a query for one realm's rows cannot accidentally match them.
-  //
-  // `body` IS CIPHERTEXT, always, in the same self-describing
-  // `$aesgcm$2$dek$iv$tag$body` form `sts_keys` uses and under the SAME
-  // key-encryption key. A session id is a cookie value and an authorization
-  // code is redeemable, so a dump of this table must not be a set of usable
-  // credentials. What it costs is that nothing here is queryable by SQL, which
-  // is the trade `persistence_minted.js` argues.
-  //
-  // `written_at` IS WHAT RETENTION READS. A row older than
-  // `persistence.mintedRetention` is neither restored nor kept, and its index
-  // is what makes the purge on start a range scan rather than a table scan.
-  // -------------------------------------------------------------------------
-  { name: 'sts_minted', statement:
-  'CREATE TABLE IF NOT EXISTS sts_minted (' +
-  '  handle     text        NOT NULL,' +
-  '  realm      text        NOT NULL,' +
-  '  key        text        NOT NULL,' +
-  '  body       text        NOT NULL,' +
-  '  written_at timestamptz NOT NULL DEFAULT now(),' +
-  '  expires_at bigint,' +
-  '  key_sealed text        NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (handle, realm, key))' },
-  { name: 'sts_minted_handle', statement:
-  'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
-  'realm)' },
-  { name: 'sts_minted_written', statement:
-  'CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at)' },
-  // `expires_at` (#333, schema version 12) IS THE RECORD'S OWN EXPIRY, in
-  // epoch milliseconds, as its store's `expiresAt` hook answered it — NULL
-  // for a record that does not expire, and for a tombstone. A restore reads
-  // no row whose instant has passed, and the `persistence.minted-expiry-purge`
-  // job deletes them in batches through this index. PARTIAL, because the
-  // rows with no expiry are the ones the purge never looks for by it, and an
-  // index is paid for by every INSERT into the busiest table here.
-  // `afterColumns`: an older table gets the column from SCHEMA_COLUMNS, so
-  // the index can only be built after that.
-  { name: 'sts_minted_expires', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted ' +
-  '(expires_at) WHERE expires_at IS NOT NULL' },
-  // -------------------------------------------------------------------------
-  // THE CHANGE LOG (2026-09-06), which is what makes several processes against
-  // one store agree rather than merely coexist.
-  //
-  // `seq` IS A bigserial AND EVERYTHING RESTS ON IT: it is assigned by the
-  // database, it only goes up, and a process that has applied up to N asks for
-  // N+1 onwards. That is the whole synchronisation primitive — no timestamps
-  // (two clocks), no version columns per row (a merge rule per table), no
-  // advisory locks (a process that dies holding one).
-  //
-  // `origin` is who wrote it, so a process can skip its own rows without
-  // applying its own work back over itself.
-  //
-  // `kind` and `realm` and `key` are a POINTER. The row that changed is read
-  // from its own table; nothing here carries data, which is why this table
-  // needs no encryption while `sts_minted` does.
-  //
-  // **IT IS WRITTEN INSIDE THE TRANSACTION THAT MADE THE CHANGE**, which is the
-  // one property that makes it trustworthy: there is no window in which the
-  // data is committed and the log entry is not, so "I have applied up to N"
-  // really does mean "I have seen everything committed before N".
-  // -------------------------------------------------------------------------
-  { name: 'sts_changes', statement:
-  'CREATE TABLE IF NOT EXISTS sts_changes (' +
-  '  seq    bigserial PRIMARY KEY,' +
-  '  origin text        NOT NULL,' +
-  '  kind   text        NOT NULL,' +
-  '  realm  text        NOT NULL DEFAULT \'\',' +
-  '  key    text        NOT NULL DEFAULT \'\',' +
-  '  at     timestamptz NOT NULL DEFAULT now())' },
-  { name: 'sts_changes_at', statement:
-  'CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at)' },
-  // -------------------------------------------------------------------------
-  // THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 JWT and RFC 7522
-  // SAML assertion this service accepted, until it would have expired.
-  // `common/used_assertions.js` argues the design; three things are this
-  // table's.
-  //
-  // **A TABLE OF ITS OWN AND NOT A HANDLE IN `sts_minted`**, because what it is
-  // for is an ATOMIC CLAIM: `(realm, key)` is the primary key, and recording a
-  // use is one `INSERT … ON CONFLICT`, so two processes against this store
-  // cannot both accept one assertion. `sts_minted` is written by a journal
-  // flush after the fact and converges through the change log, which is exactly
-  // the window this table exists to close — and it is sealed, so nothing in it
-  // could be compared by SQL anyway.
-  //
-  // **NOT SEALED, AND NOTHING IN IT IS A CREDENTIAL.** `key` is a SHA-256 of the
-  // format, issuer and identifier; the rest is an issuer's name, a `jti` or
-  // `ID`, a client and a subject — what an audit row already carries. The
-  // assertion itself is never stored, so a dump of this table replays nothing.
-  //
-  // **THE TIMES ARE MILLISECONDS IN `bigint`**, the unit every reader of the
-  // row works in, and `expires_at` is what every read filters on — the index is
-  // what makes the live count and the sweep a range scan.
-  // -------------------------------------------------------------------------
-  { name: 'sts_used_assertions', statement:
-  'CREATE TABLE IF NOT EXISTS sts_used_assertions (' +
-  '  realm       text   NOT NULL,' +
-  '  key         text   NOT NULL,' +
-  '  format      text   NOT NULL,' +
-  '  used_as     text   NOT NULL,' +
-  '  issuer      text   NOT NULL,' +
-  '  identifier  text   NOT NULL,' +
-  '  client_id   text   NOT NULL DEFAULT \'\',' +
-  '  subject     text   NOT NULL DEFAULT \'\',' +
-  '  state       text   NOT NULL,' +
-  '  reservation text   NOT NULL,' +
-  '  origin      text   NOT NULL DEFAULT \'\',' +
-  '  used_at     bigint NOT NULL,' +
-  '  spent_at    bigint NOT NULL DEFAULT 0,' +
-  '  expires_at  bigint NOT NULL,' +
-  '  PRIMARY KEY (realm, key))' },
-  { name: 'sts_used_assertions_expiry', statement:
-  'CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON ' +
-  'sts_used_assertions (realm, expires_at)' },
-  // -------------------------------------------------------------------------
-  // THE CLUSTER (2026-09-14, #46): SEVERAL CONTAINERS AGAINST THIS ONE STORE.
-  // `cluster/CLAUDE.md` argues all four tables; what is the driver's is below.
-  //
-  // **EVERY TIME IN THEM IS THE DATABASE'S CLOCK**, as milliseconds in a
-  // `bigint`, and never a time a process sent. Two containers' clocks differ,
-  // and a lease that expires by the clock of whoever happens to be asking is a
-  // lease two nodes can both believe they hold. `DB_NOW` below is the one
-  // spelling of it.
-  //
-  // `sts_cluster_nodes` — ONE ROW PER PROCESS START THAT JOINED, keyed by a
-  // UUID made at that start. A row whose `expires_at` has passed is dead FOR
-  // GOOD: the heartbeat's UPDATE refuses to renew an expired row, so a node
-  // that paused past its lifetime cannot quietly come back and must exit.
-  //
-  // `sts_cluster_leases` — A NAMED ROLE ONLY ONE NODE MAY HOLD, with a FENCING
-  // TOKEN that goes up by one every time the lease changes hands. A write that
-  // needs the role carries the token it acquired, and the transaction checks it
-  // under a share lock on the lease row — so a node that lost the lease while
-  // paused cannot commit afterwards. A released lease is EXPIRED rather than
-  // deleted, so the token never goes back to 1.
-  //
-  // `sts_cluster_claims` — AN ATOMIC "ONCE": the primary key picks one winner
-  // among concurrent claims in every process against this store. `key` is a
-  // digest (`cluster/cluster_claims.js` hashes it) and never a bearer value.
-  //
-  // `sts_cluster_secrets` — A SECRET EVERY NODE MUST AGREE ON (the CSRF key,
-  // the ACME nonce key), SEALED under the key-encryption key before it arrives
-  // here and written first-writer-wins.
-  // -------------------------------------------------------------------------
-  { name: 'sts_cluster_nodes', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_nodes (' +
-  '  node_id      text   PRIMARY KEY,' +
-  '  name         text   NOT NULL DEFAULT \'\',' +
-  '  mode         text   NOT NULL,' +
-  '  version      text   NOT NULL DEFAULT \'\',' +
-  '  fingerprint  text   NOT NULL DEFAULT \'\',' +
-  '  started_at   bigint NOT NULL,' +
-  '  heartbeat_at bigint NOT NULL,' +
-  '  expires_at   bigint NOT NULL,' +
-  '  left_at      bigint NOT NULL DEFAULT 0,' +
-  '  info         jsonb  NOT NULL DEFAULT \'{}\'::jsonb)' },
-  { name: 'sts_cluster_nodes_expiry', statement:
-  'CREATE INDEX IF NOT EXISTS sts_cluster_nodes_expiry ON ' +
-  'sts_cluster_nodes (expires_at)' },
-  { name: 'sts_cluster_leases', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_leases (' +
-  '  name        text   PRIMARY KEY,' +
-  '  holder      text   NOT NULL,' +
-  '  token       bigint NOT NULL,' +
-  '  acquired_at bigint NOT NULL,' +
-  '  expires_at  bigint NOT NULL)' },
-  { name: 'sts_cluster_claims', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_claims (' +
-  '  scope       text   NOT NULL,' +
-  '  realm       text   NOT NULL,' +
-  '  key         text   NOT NULL,' +
-  '  reservation text   NOT NULL,' +
-  '  origin      text   NOT NULL DEFAULT \'\',' +
-  '  claimed_at  bigint NOT NULL,' +
-  '  expires_at  bigint NOT NULL,' +
-  '  PRIMARY KEY (scope, realm, key))' },
-  { name: 'sts_cluster_claims_expiry', statement:
-  'CREATE INDEX IF NOT EXISTS sts_cluster_claims_expiry ON ' +
-  'sts_cluster_claims (expires_at)' },
-  { name: 'sts_cluster_secrets', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_secrets (' +
-  '  name       text   PRIMARY KEY,' +
-  '  material   text   NOT NULL,' +
-  '  created_by text   NOT NULL DEFAULT \'\',' +
-  '  created_at bigint NOT NULL)' },
-  // `sts_cluster_counters` — A VALUE THAT ONLY GOES UP (2026-09-14, #46
-  // section 2): a WebAuthn signature counter, the last RFC 6238 time step a
-  // person spent. One `INSERT … ON CONFLICT DO UPDATE … WHERE value < new`
-  // under the primary key's row lock, so two nodes advancing one counter at
-  // once cannot both win and a lower value can never overwrite a higher one —
-  // which is exactly what the directory entry's last-writer-wins copy could
-  // not promise. `key` is a digest, as in the claims table.
-  // `cluster/cluster_counters.js` argues it.
-  { name: 'sts_cluster_counters', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_counters (' +
-  '  scope      text   NOT NULL,' +
-  '  realm      text   NOT NULL,' +
-  '  key        text   NOT NULL,' +
-  '  value      bigint NOT NULL,' +
-  '  origin     text   NOT NULL DEFAULT \'\',' +
-  '  updated_at bigint NOT NULL,' +
-  '  PRIMARY KEY (scope, realm, key))' },
-  // `sts_cluster_windows` — A COUNT INSIDE A FIXED WINDOW (2026-09-14, #46
-  // section 2): the rate limiter's buckets, counted by every node against one
-  // budget. One `INSERT … ON CONFLICT DO UPDATE SET count = CASE WHEN the
-  // window has passed THEN 1 ELSE count + 1 END` under the primary key's row
-  // lock, so two nodes counting one bucket at once both land and neither
-  // overwrites the other's count — which is what two copies of a Map row,
-  // last writer wins, could not promise. `key` is a digest.
-  // `cluster/cluster_counters.js` argues it.
-  { name: 'sts_cluster_windows', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_windows (' +
-  '  scope          text   NOT NULL,' +
-  '  realm          text   NOT NULL,' +
-  '  key            text   NOT NULL,' +
-  '  count          bigint NOT NULL,' +
-  '  window_ends_at bigint NOT NULL,' +
-  '  origin         text   NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (scope, realm, key))' },
-  { name: 'sts_cluster_windows_expiry', statement:
-  'CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON ' +
-  'sts_cluster_windows (window_ends_at)' },
-  // `sts_cluster_budgets` — A BUDGET SPENT AGAINST A LIMIT (#432 phase 5,
-  // schema version 15): the running totals of a GNAP right's limits, kept per
-  // grant by the demonstration resource server. One `INSERT … ON CONFLICT DO
-  // UPDATE … WHERE the new totals are within the limits` under the primary
-  // key's row lock, so two nodes spending one budget at once cannot both pass
-  // it. `amount` is millionths; `key` a digest; `expires_at` the end of the
-  // grant, past which the row is purged. `cluster/cluster_counters.js`
-  // argues it.
-  { name: 'sts_cluster_budgets', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cluster_budgets (' +
-  '  scope      text   NOT NULL,' +
-  '  realm      text   NOT NULL,' +
-  '  key        text   NOT NULL,' +
-  '  period     bigint NOT NULL,' +
-  '  amount     bigint NOT NULL,' +
-  '  count      bigint NOT NULL,' +
-  '  origin     text   NOT NULL DEFAULT \'\',' +
-  '  expires_at bigint NOT NULL,' +
-  '  updated_at bigint NOT NULL,' +
-  '  PRIMARY KEY (scope, realm, key))' },
-  { name: 'sts_cluster_budgets_expiry', statement:
-  'CREATE INDEX IF NOT EXISTS sts_cluster_budgets_expiry ON ' +
-  'sts_cluster_budgets (expires_at)' },
-  // `sts_node_snapshots` — WHAT EACH NODE LAST SAID ABOUT ITSELF (#332,
-  // schema version 11, 2026-09-28): the node's own Monitoring → Worker Pools
-  // and → Node Health views, written by its front process's per-process
-  // scheduler job `cluster.node-snapshot` every fifteen seconds and read by
-  // whichever node draws those pages, so every node is on the page with no
-  // request crossing between nodes (rcbj: no node's address is published).
-  // ONE ROW PER NODE NAME, OVERWRITTEN — keyed by `cluster.nodeName`, which
-  // survives a restart where the membership row's UUID does not — so the
-  // table is as long as the list of names the cluster has ever had and never
-  // grows with time. NOT `sts_cluster_nodes.info`: that rides the heartbeat a
-  // node's life depends on and is read with every retained row on each beat,
-  // and a snapshot is kilobytes. `taken_at` is the database's clock.
-  // `cluster/node_snapshots.ts` argues it.
-  { name: 'sts_node_snapshots', statement:
-  'CREATE TABLE IF NOT EXISTS sts_node_snapshots (' +
-  '  name     text   PRIMARY KEY,' +
-  '  node_id  text   NOT NULL DEFAULT \'\',' +
-  '  taken_at bigint NOT NULL,' +
-  '  body     jsonb  NOT NULL DEFAULT \'{}\'::jsonb)' },
-  // `sts_change_readers` — WHERE EVERY PROCESS READING `sts_changes` HAS GOT
-  // TO (2026-09-14, #46 section 8). One row per process that coordinates —
-  // a front process, and each of its request workers, which are origins of
-  // their own — carrying its low-water mark and the database time it last
-  // said so. The change log is trimmed below the lowest mark of the readers
-  // still reporting, and never below a reader nobody has declared gone.
-  // `persistence/persistence_replication.js` argues the bound.
-  { name: 'sts_change_readers', statement:
-  'CREATE TABLE IF NOT EXISTS sts_change_readers (' +
-  '  origin      text   PRIMARY KEY,' +
-  '  node_id     text   NOT NULL DEFAULT \'\',' +
-  '  applied     bigint NOT NULL,' +
-  '  started_at  bigint NOT NULL,' +
-  '  reported_at bigint NOT NULL)' },
-  // ---------------------------------------------------------------------------
-  // RISK SCORING (#62, schema version 7, 2026-09-22). Thirteen tables, added
-  // whole so the schema moves once for the subsystem rather than once per
-  // phase. `risk/CLAUDE.md` argues the design; three things are this file's:
-  //
-  //   * EVERY EXTERNAL DATASET IS ROWS, by version (`sts_risk_dataset_*`, the
-  //     geo, ASN, IP-list and FIDO tables), so what a score used can be named
-  //     after the dataset has rotated. An IP range is `inet` start and end
-  //     rather than `cidr`, because DB-IP publishes ranges that are not
-  //     CIDR-aligned; a lookup is one probe of the primary key.
-  //   * THE HISTORY THE MODEL KEEPS IS ROWS TOO (`sts_risk_assessments`,
-  //     `_feature_counts`, `_failures`, `_session_context`, `_subjects`),
-  //     because it needs atomic upserts every node agrees on and SQL to
-  //     aggregate — which a sealed `sts_minted` body gives neither of.
-  //   * AN ADDRESS IS PERSONAL DATA AND NOT A CREDENTIAL, so it is kept SEALED
-  //     (`address_sealed`, under the key-encryption key `sts_minted` uses) and
-  //     as a /24 or /48 `cidr` prefix SQL can group on. Nothing here holds a
-  //     `User-Agent`, a credential id or a name a person typed in the clear.
-  // ---------------------------------------------------------------------------
-  { name: 'sts_risk_datasets', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_datasets (' +
-  '  realm            text   NOT NULL DEFAULT \'\',' +
-  '  dataset          text   NOT NULL,' +
-  '  kind             text   NOT NULL,' +
-  '  active_version   text   NOT NULL DEFAULT \'\',' +
-  '  previous_version text   NOT NULL DEFAULT \'\',' +
-  '  state            text   NOT NULL,' +
-  '  updated_at       bigint NOT NULL,' +
-  '  PRIMARY KEY (realm, dataset))' },
-  { name: 'sts_risk_dataset_versions', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_dataset_versions (' +
-  '  realm           text   NOT NULL DEFAULT \'\',' +
-  '  dataset         text   NOT NULL,' +
-  '  version         text   NOT NULL,' +
-  '  format          text   NOT NULL,' +
-  '  provider        text   NOT NULL,' +
-  '  licence         text   NOT NULL,' +
-  '  attribution     text   NOT NULL DEFAULT \'\',' +
-  '  source          text   NOT NULL,' +
-  '  source_uri      text   NOT NULL DEFAULT \'\',' +
-  '  sha256          text   NOT NULL,' +
-  '  byte_count      bigint NOT NULL,' +
-  '  row_count       bigint NOT NULL DEFAULT 0,' +
-  '  parameters      jsonb  NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  verification    text   NOT NULL,' +
-  '  published_at    bigint NOT NULL,' +
-  '  next_update_at  bigint NOT NULL DEFAULT 0,' +
-  '  fetched_at      bigint NOT NULL,' +
-  '  loaded_at       bigint NOT NULL DEFAULT 0,' +
-  '  activated_at    bigint NOT NULL DEFAULT 0,' +
-  '  superseded_at   bigint NOT NULL DEFAULT 0,' +
-  '  rows_deleted_at bigint NOT NULL DEFAULT 0,' +
-  '  state           text   NOT NULL,' +
-  '  refusal         text   NOT NULL DEFAULT \'\',' +
-  '  error_code      text   NOT NULL DEFAULT \'\',' +
-  '  origin          text   NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (realm, dataset, version))' },
-  { name: 'sts_risk_dataset_blobs', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_dataset_blobs (' +
-  '  realm   text    NOT NULL DEFAULT \'\',' +
-  '  dataset text    NOT NULL,' +
-  '  version text    NOT NULL,' +
-  '  part    integer NOT NULL,' +
-  '  content bytea   NOT NULL,' +
-  '  PRIMARY KEY (realm, dataset, version, part))' },
-  { name: 'sts_risk_geo_locations', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_geo_locations (' +
-  '  dataset     text   NOT NULL,' +
-  '  version     text   NOT NULL,' +
-  '  location_id bigint NOT NULL,' +
-  '  continent   text   NOT NULL DEFAULT \'\',' +
-  '  country     text   NOT NULL DEFAULT \'\',' +
-  '  subdivision text   NOT NULL DEFAULT \'\',' +
-  '  city        text   NOT NULL DEFAULT \'\',' +
-  '  time_zone   text   NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (dataset, version, location_id))' },
-  { name: 'sts_risk_geo_ranges', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_geo_ranges (' +
-  '  dataset            text             NOT NULL,' +
-  '  version            text             NOT NULL,' +
-  '  range_start        inet             NOT NULL,' +
-  '  range_end          inet             NOT NULL,' +
-  '  location_id        bigint           NOT NULL DEFAULT 0,' +
-  '  continent          text             NOT NULL DEFAULT \'\',' +
-  '  country            text             NOT NULL DEFAULT \'\',' +
-  '  subdivision        text             NOT NULL DEFAULT \'\',' +
-  '  city               text             NOT NULL DEFAULT \'\',' +
-  '  registered_country text             NOT NULL DEFAULT \'\',' +
-  '  latitude           double precision,' +
-  '  longitude          double precision,' +
-  '  accuracy_km        integer          NOT NULL DEFAULT 0,' +
-  '  anonymous_proxy    boolean          NOT NULL DEFAULT false,' +
-  '  satellite          boolean          NOT NULL DEFAULT false,' +
-  '  PRIMARY KEY (dataset, version, range_start))' },
-  { name: 'sts_risk_asn_ranges', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_asn_ranges (' +
-  '  dataset     text   NOT NULL,' +
-  '  version     text   NOT NULL,' +
-  '  range_start inet   NOT NULL,' +
-  '  range_end   inet   NOT NULL,' +
-  '  asn         bigint NOT NULL,' +
-  '  as_org      text   NOT NULL DEFAULT \'\',' +
-  '  as_domain   text   NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (dataset, version, range_start))' },
-  { name: 'sts_risk_ip_lists', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_ip_lists (' +
-  '  realm       text NOT NULL DEFAULT \'\',' +
-  '  dataset     text NOT NULL,' +
-  '  version     text NOT NULL,' +
-  '  range_start inet NOT NULL,' +
-  '  range_end   inet NOT NULL,' +
-  '  category    text NOT NULL,' +
-  '  note        text NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (realm, dataset, version, range_start))' },
-  { name: 'sts_risk_fido_authenticators', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_fido_authenticators (' +
-  '  dataset             text    NOT NULL,' +
-  '  version             text    NOT NULL,' +
-  '  key_kind            text    NOT NULL,' +
-  '  authenticator_key   text    NOT NULL,' +
-  '  description         text    NOT NULL DEFAULT \'\',' +
-  '  protocol_family     text    NOT NULL DEFAULT \'\',' +
-  '  certification_level text    NOT NULL DEFAULT \'\',' +
-  '  latest_status       text    NOT NULL DEFAULT \'\',' +
-  '  latest_status_at    bigint  NOT NULL DEFAULT 0,' +
-  '  compromised         boolean NOT NULL DEFAULT false,' +
-  '  status_reports      jsonb   NOT NULL DEFAULT \'[]\'::jsonb,' +
-  '  metadata_statement  jsonb   NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  PRIMARY KEY (dataset, version, key_kind, authenticator_key))' },
-  { name: 'sts_risk_fido_by_key', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_fido_by_key ON ' +
-  'sts_risk_fido_authenticators (key_kind, authenticator_key)' },
-  { name: 'sts_risk_assessments', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_assessments (' +
-  '  realm              text    NOT NULL,' +
-  '  id                 text    NOT NULL,' +
-  '  at                 bigint  NOT NULL,' +
-  '  phase              text    NOT NULL,' +
-  '  door               text    NOT NULL,' +
-  '  subject            text    NOT NULL DEFAULT \'\',' +
-  '  session_id         text    NOT NULL DEFAULT \'\',' +
-  '  client_id          text    NOT NULL DEFAULT \'\',' +
-  '  address_sealed     text    NOT NULL,' +
-  '  address_prefix     cidr    NOT NULL,' +
-  '  asn                bigint  NOT NULL DEFAULT 0,' +
-  '  as_org             text    NOT NULL DEFAULT \'\',' +
-  '  country            text    NOT NULL DEFAULT \'\',' +
-  '  subdivision        text    NOT NULL DEFAULT \'\',' +
-  '  city               text    NOT NULL DEFAULT \'\',' +
-  '  latitude           double precision,' +
-  '  longitude          double precision,' +
-  '  accuracy_km        integer NOT NULL DEFAULT 0,' +
-  '  ip_lists           text[]  NOT NULL DEFAULT \'{}\',' +
-  '  ua_hash            text    NOT NULL DEFAULT \'\',' +
-  '  ua_family          text    NOT NULL DEFAULT \'\',' +
-  '  ua_os              text    NOT NULL DEFAULT \'\',' +
-  '  ua_platform        text    NOT NULL DEFAULT \'\',' +
-  '  bot                boolean NOT NULL DEFAULT false,' +
-  '  ja4                text    NOT NULL DEFAULT \'\',' +
-  '  credential_kind    text    NOT NULL DEFAULT \'\',' +
-  '  credential_hash    text    NOT NULL DEFAULT \'\',' +
-  '  aaguid             text    NOT NULL DEFAULT \'\',' +
-  '  authenticator_cert text    NOT NULL DEFAULT \'\',' +
-  '  backup_eligible    boolean,' +
-  '  backup_state       boolean,' +
-  '  jkt                text    NOT NULL DEFAULT \'\',' +
-  '  cert_fingerprint   text    NOT NULL DEFAULT \'\',' +
-  '  datasets           jsonb   NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  signals            jsonb   NOT NULL DEFAULT \'[]\'::jsonb,' +
-  '  score              real    NOT NULL,' +
-  '  level              text    NOT NULL,' +
-  '  decision           text    NOT NULL,' +
-  '  policy_id          text    NOT NULL DEFAULT \'\',' +
-  '  error_code         text    NOT NULL DEFAULT \'\',' +
-  '  origin             text    NOT NULL DEFAULT \'\',' +
-  '  feedback           text    NOT NULL DEFAULT \'\',' +
-  '  feedback_at        bigint  NOT NULL DEFAULT 0,' +
-  '  PRIMARY KEY (realm, id))' },
-  { name: 'sts_risk_assessments_subject', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_assessments_subject ON ' +
-  'sts_risk_assessments (realm, subject, at)' },
-  { name: 'sts_risk_assessments_session', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_assessments_session ON ' +
-  'sts_risk_assessments (realm, session_id)' },
-  { name: 'sts_risk_assessments_at', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_assessments_at ON ' +
-  'sts_risk_assessments (at)' },
-  { name: 'sts_risk_feature_counts', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_feature_counts (' +
-  '  realm    text   NOT NULL,' +
-  '  subject  text   NOT NULL,' +
-  '  feature  text   NOT NULL,' +
-  '  value    text   NOT NULL,' +
-  '  count    bigint NOT NULL,' +
-  '  first_at bigint NOT NULL,' +
-  '  last_at  bigint NOT NULL,' +
-  '  PRIMARY KEY (realm, subject, feature, value))' },
-  { name: 'sts_risk_feature_counts_age', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_feature_counts_age ON ' +
-  'sts_risk_feature_counts (realm, last_at)' },
-  { name: 'sts_risk_failures', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_failures (' +
-  '  realm          text      NOT NULL,' +
-  '  id             bigserial NOT NULL,' +
-  '  at             bigint    NOT NULL,' +
-  '  door           text      NOT NULL,' +
-  '  subject        text      NOT NULL DEFAULT \'\',' +
-  '  name_hmac      text      NOT NULL DEFAULT \'\',' +
-  '  address_sealed text      NOT NULL,' +
-  '  address_prefix cidr      NOT NULL,' +
-  '  asn            bigint    NOT NULL DEFAULT 0,' +
-  '  error_code     text      NOT NULL,' +
-  '  origin         text      NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (realm, id))' },
-  { name: 'sts_risk_failures_subject', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_failures_subject ON ' +
-  'sts_risk_failures (realm, subject, at)' },
-  { name: 'sts_risk_failures_name', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_failures_name ON ' +
-  'sts_risk_failures (realm, name_hmac, at)' },
-  { name: 'sts_risk_failures_prefix', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_failures_prefix ON ' +
-  'sts_risk_failures (realm, address_prefix, at)' },
-  { name: 'sts_risk_failures_at', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_failures_at ON ' +
-  'sts_risk_failures (at)' },
-  { name: 'sts_risk_session_context', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_session_context (' +
-  '  realm          text   NOT NULL,' +
-  '  session_id     text   NOT NULL,' +
-  '  subject        text   NOT NULL,' +
-  '  address_prefix cidr   NOT NULL,' +
-  '  asn            bigint NOT NULL DEFAULT 0,' +
-  '  country        text   NOT NULL DEFAULT \'\',' +
-  '  ua_hash        text   NOT NULL DEFAULT \'\',' +
-  '  ja4            text   NOT NULL DEFAULT \'\',' +
-  '  jkt            text   NOT NULL DEFAULT \'\',' +
-  '  score          real   NOT NULL,' +
-  '  level          text   NOT NULL,' +
-  '  updated_at     bigint NOT NULL,' +
-  '  PRIMARY KEY (realm, session_id))' },
-  { name: 'sts_risk_subjects', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_subjects (' +
-  '  realm           text  NOT NULL,' +
-  '  subject         text  NOT NULL,' +
-  '  score           real  NOT NULL,' +
-  '  level           text  NOT NULL,' +
-  '  previous_level  text  NOT NULL DEFAULT \'\',' +
-  '  reason          text  NOT NULL DEFAULT \'\',' +
-  '  last_assessment text  NOT NULL DEFAULT \'\',' +
-  '  crossed_at      bigint NOT NULL DEFAULT 0,' +
-  '  actions         jsonb NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  feedback        text  NOT NULL DEFAULT \'\',' +
-  '  updated_at      bigint NOT NULL,' +
-  '  PRIMARY KEY (realm, subject))' },
-  // WHO ACCEPTED WHICH PROVIDER'S TERMS (#62, schema version 8, 2026-09-23 —
-  // the second licence review). One row per acceptance, never updated: the
-  // provider, a digest and the text of the terms as this build states them,
-  // who accepted them and through which door, the deployment, and the digest
-  // of the provider's own terms page when the install-time loader was asked
-  // to fetch it. An import of a provider's data is refused unless a row here
-  // matches that provider's CURRENT terms digest (`risk/risk_terms.ts`).
-  { name: 'sts_risk_terms_acceptances', statement:
-  'CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (' +
-  '  id            bigserial NOT NULL,' +
-  '  provider      text      NOT NULL,' +
-  '  terms_digest  text      NOT NULL,' +
-  '  terms_text    text      NOT NULL,' +
-  '  accepted_by   text      NOT NULL,' +
-  '  accepted_via  text      NOT NULL,' +
-  '  deployment    text      NOT NULL DEFAULT \'\',' +
-  '  page_digest   text      NOT NULL DEFAULT \'\',' +
-  '  accepted_at   bigint    NOT NULL,' +
-  '  origin        text      NOT NULL DEFAULT \'\',' +
-  '  PRIMARY KEY (id))' },
-  { name: 'sts_risk_terms_acceptances_provider', statement:
-  'CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON ' +
-  'sts_risk_terms_acceptances (provider, accepted_at)' },
-  // -------------------------------------------------------------------------
-  // WHERE EACH PERSON IS HOMED (#98, 2026-09-28, schema version 11). The
-  // routing index of a service deployed as cells: in the GLOBAL tier, so
-  // every cell can ask it, and holding NO name and NO identifier in the
-  // clear — `digest` is a keyed digest (`keystore.keyedDigest()`, under the
-  // service key every cell holds) of a login name (`kind` 'name') or of an
-  // entryUUID (`kind` 'uuid'). The row says which cell holds the person and
-  // nothing else about them. It is also what keeps a login name unique in a
-  // realm across cells: the PRIMARY KEY is the claim.
-  //
-  // Present in every database this driver opens, and empty in single-cell
-  // mode and in a cell's own database; one schema everywhere is cheaper than
-  // two schemas and a rule about which is where.
-  // -------------------------------------------------------------------------
-  { name: 'sts_cell_routing', statement:
-  'CREATE TABLE IF NOT EXISTS sts_cell_routing (' +
-  '  realm      text   NOT NULL,' +
-  '  kind       text   NOT NULL,' +
-  '  digest     text   NOT NULL,' +
-  '  cell       text   NOT NULL,' +
-  '  written_at bigint NOT NULL,' +
-  '  PRIMARY KEY (realm, kind, digest))' },
-  // What version of the above is on disk. One row, and nothing reads it yet —
-  // it is here so that a future change has something to look at other than the
-  // shape of the tables.
-  { name: 'sts_schema', statement:
-  'CREATE TABLE IF NOT EXISTS sts_schema (' +
-  '  version int PRIMARY KEY,' +
-  '  applied_at timestamptz NOT NULL DEFAULT now())' }
+// The tables and indexes are written in models/persistence/persistence.tsp
+// (#1390). Each is `{ name, statement }` and, where they apply, `afterColumns`
+// and `extension`.
+const SCHEMA_OBJECTS = ModelTables.file('persistence.postgres.json').objects;
+
+// OBJECTS A LATER VERSION REPLACED (#618 phase 2, schema version 18). An
+// index that is no longer read is still WRITTEN on every insert, which is the
+// cost version 18 exists to remove, so leaving one behind on an older
+// database would keep the cost and lose the reason. Each is probed by name
+// like SCHEMA_OBJECTS and dropped where present — by `postgres/schema.sql`,
+// which the owner runs for the version, and by this driver when its role may
+// (a local database it built itself); the least-privileged role finds none to
+// drop once the script has run. `tests/postgres_schema.js` holds the script
+// to this list.
+/**
+ * The objects a later schema version replaced, each `{ name, statement }`,
+ * dropped where they are still present.
+ */
+const SCHEMA_RETIRED = [
+  // Every attribute name of every entry: `sts_ldap_entries_asked_names`.
+  { name: 'sts_ldap_entries_attr_names', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_attr_names' },
+  // Every object class of every entry: `sts_ldap_entries_group_classes`.
+  { name: 'sts_ldap_entries_classes', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_classes' }
 ];
+
+// AN INDEX'S STORAGE PARAMETER, SET ON ONE THAT ALREADY EXISTS (#618 phase
+// 2, schema version 18). `CREATE INDEX IF NOT EXISTS` does nothing to an
+// index that is there, so the four GIN indexes an older store built with the
+// pending list on are switched by these, and the list they hold is flushed
+// once (`gin_clean_pending_list()`): turning it off stops it growing and
+// does not empty it, and every search goes on reading what is in it.
+// `open()` probes `pg_class.reloptions` and issues them only where the
+// option is missing; `postgres/schema.sql` carries the same statements.
+/**
+ * The storage parameters set on existing indexes, each `{ name, statement,
+ * flush }`, issued where `pg_class.reloptions` lacks the option.
+ */
+const SCHEMA_RELOPTIONS = ['names', 'mails', 'uuids', 'values',
+                           'asked_names', 'group_classes'].map(
+  function (suffix) {
+    const name = 'sts_ldap_entries_' + suffix;
+    return { name: name, option: 'fastupdate=off',
+             statement: 'ALTER INDEX ' + name + ' SET (fastupdate = off)',
+             flush: 'SELECT gin_clean_pending_list(\'' + name +
+                    '\'::regclass)' };
+  });
 
 // COLUMNS ADDED TO A TABLE THAT MAY ALREADY EXIST (2026-09-18). A table in
 // SCHEMA_OBJECTS is created whole when it is missing, and `CREATE TABLE IF NOT
@@ -1071,56 +758,176 @@ const SCHEMA_OBJECTS = [
  * statement }`, probed in `information_schema.columns` and added where
  * missing.
  */
-const SCHEMA_COLUMNS = [
-  { table: 'sts_realms', column: 'domain', statement:
-  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
-  // When the realm's removal began (#262, schema version 10), or NULL.
-  { table: 'sts_realms', column: 'retiring_at', statement:
-  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS retiring_at bigint' },
-  // What the person said about a sign-in (#62 P6, schema version 9).
-  { table: 'sts_risk_assessments', column: 'feedback', statement:
-  'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback text ' +
-  'NOT NULL DEFAULT \'\'' },
-  { table: 'sts_risk_assessments', column: 'feedback_at', statement:
-  'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
-  'bigint NOT NULL DEFAULT 0' },
-  // A minted row's own expiry (#333, schema version 12). An existing row gets
-  // NULL — no expiry — and so falls under the write-age rule once, which is
-  // the whole of the migration.
-  { table: 'sts_minted', column: 'expires_at', statement:
-  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' },
-  // A minted row's name, sealed, beside its digest in `key` (#222, schema
-  // version 14). An existing row gets '' — its key is its name, as before.
-  { table: 'sts_minted', column: 'key_sealed', statement:
-  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT ' +
-  'NULL DEFAULT \'\'' },
-  // The directory's six generated lookup columns (#349, schema version 13).
-  // Adding a STORED generated column rewrites the table once and fills every
-  // existing row, which is the whole of the migration.
-  { table: 'sts_ldap_entries', column: 'parent_key', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.parent_key },
-  { table: 'sts_ldap_entries', column: 'rdn_value', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.rdn_value },
-  { table: 'sts_ldap_entries', column: 'name_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.name_keys },
-  { table: 'sts_ldap_entries', column: 'mail_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.mail_keys },
-  { table: 'sts_ldap_entries', column: 'uuid_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.uuid_keys },
-  { table: 'sts_ldap_entries', column: 'class_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.class_keys },
-  { table: 'sts_ldap_entries', column: 'value_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.value_keys },
-  { table: 'sts_ldap_entries', column: 'attr_names', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.attr_names }
+// Written in models/persistence/persistence.tsp: a column marked `added` was
+// put on a table after the table first shipped, so an existing database is
+// given it here (#1390).
+const SCHEMA_COLUMNS = ModelTables.file('persistence.postgres.json').added;
+
+// ---------------------------------------------------------------------------
+// WHAT A STORE BUILT BY AN EARLIER VERSION NEEDS DONE TO IT BEYOND A MISSING
+// OBJECT OR COLUMN (#630, schema version 19): a primary key that takes in a
+// new column, routines replaced under new names, an index retired, and
+// storage parameters. Each step is `{ name, table, when, statements,
+// advisory?, issue? }` (`issue` the ticket the warning names, #630's when
+// none): `when` is a boolean SQL expression, true while the step is
+// still owed, probed for every step in one query, so a store already level
+// — one `postgres/schema.sql` built or upgraded — issues none of it. Run
+// after the columns (a key over `shard` needs the column) and before the
+// routines (the old fold triggers go before the new ones arrive), in the
+// one transaction of open(), so no other connection ever sees a store with
+// both folds or neither.
+//
+// A REQUIRED step owed to a role that may not take it fails the open with
+// STS-STORE-0029, as a missing object does: the counts would be wrong. An
+// ADVISORY step (`advisory: true` — the storage parameters and the retired
+// btree) is a cost and never a wrong answer, so a role that does not own
+// the table is told (STS-STORE-0083) and the open goes on. The script
+// carries every statement and every condition; `tests/postgres_schema.js`
+// holds the two together.
+// ---------------------------------------------------------------------------
+// Whether a table's primary key holds `shard`. No Entering/Leaving pair: it
+// builds statement text at load, where this module has no logger.
+const KEY_LACKS_SHARD = function (table) {
+  return 'NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_attribute a ON ' +
+    'a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey) WHERE ' +
+    'i.indrelid = to_regclass(\'' + table + '\') AND i.indisprimary AND ' +
+    'a.attname = \'shard\')';
+};
+// Whether a table's storage parameters lack any of `options` (`name=value`,
+// as `pg_class.reloptions` spells them). Load-time text, as above.
+const RELOPTIONS_LACK = function (table, options) {
+  return 'NOT coalesce((SELECT c.reloptions FROM pg_class c WHERE c.oid = ' +
+    'to_regclass(\'' + table + '\')), \'{}\'::text[]) @> ARRAY[' +
+    options.map(function (one) {
+      return '\'' + one + '\'';
+    }).join(', ') + ']::text[]';
+};
+// Whether a column's attribute options lack any of `options`, as
+// `pg_attribute.attoptions` spells them. Load-time text, as above.
+const ATTOPTIONS_LACK = function (table, column, options) {
+  return 'NOT coalesce((SELECT a.attoptions FROM pg_attribute a WHERE ' +
+    'a.attrelid = to_regclass(\'' + table + '\') AND a.attname = \'' +
+    column + '\'), \'{}\'::text[]) @> ARRAY[' +
+    options.map(function (one) {
+      return '\'' + one + '\'';
+    }).join(', ') + ']::text[]';
+};
+/**
+ * The upgrades a store from an earlier schema version is owed beyond a
+ * missing object or column, each `{ name, table, when, statements,
+ * advisory?, issue? }`, probed by `when` and run where it is true.
+ */
+const SCHEMA_UPGRADES = [
+  // The counters' keys take in `shard` (#630). Two statements, as the
+  // script's DO block runs them: the new key takes the old one's name.
+  { name: 'sts_ldap_counts_shard_key', table: 'sts_ldap_counts',
+    when: KEY_LACKS_SHARD('sts_ldap_counts'), statements: [
+      'ALTER TABLE sts_ldap_counts DROP CONSTRAINT sts_ldap_counts_pkey',
+      'ALTER TABLE sts_ldap_counts ADD PRIMARY KEY (realm, base_key, ' +
+      'attribute, shard)'] },
+  { name: 'sts_ldap_dek_counts_shard_key', table: 'sts_ldap_dek_counts',
+    when: KEY_LACKS_SHARD('sts_ldap_dek_counts'), statements: [
+      'ALTER TABLE sts_ldap_dek_counts DROP CONSTRAINT ' +
+      'sts_ldap_dek_counts_pkey',
+      'ALTER TABLE sts_ldap_dek_counts ADD PRIMARY KEY (dek_id, shard)'] },
+  // The unsharded folds (#618, #623), replaced by the `_sharded` routines:
+  // left in place, each would fold a transaction's deltas into a key the
+  // table no longer has, or race the new one for them.
+  { name: 'sts_ldap_count_deltas_fold', table: 'sts_ldap_count_deltas',
+    when: 'EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = ' +
+          'to_regclass(\'sts_ldap_count_deltas\') AND t.tgname = ' +
+          '\'sts_ldap_count_deltas_fold\')', statements: [
+      'DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON ' +
+      'sts_ldap_count_deltas'] },
+  { name: 'sts_ldap_count_fold', table: 'sts_ldap_count_deltas',
+    when: 'to_regprocedure(\'sts_ldap_count_fold()\') IS NOT NULL',
+    statements: ['DROP FUNCTION IF EXISTS sts_ldap_count_fold()'] },
+  { name: 'sts_ldap_dek_deltas_fold', table: 'sts_ldap_dek_deltas',
+    when: 'EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = ' +
+          'to_regclass(\'sts_ldap_dek_deltas\') AND t.tgname = ' +
+          '\'sts_ldap_dek_deltas_fold\')', statements: [
+      'DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON ' +
+      'sts_ldap_dek_deltas'] },
+  { name: 'sts_ldap_dek_fold', table: 'sts_ldap_dek_deltas',
+    when: 'to_regprocedure(\'sts_ldap_dek_fold()\') IS NOT NULL',
+    statements: ['DROP FUNCTION IF EXISTS sts_ldap_dek_fold()'] },
+  // The btree the BRIN replaced (`sts_minted_written_brin` above): while it
+  // is there, no update of `sts_minted` is HOT.
+  { name: 'sts_minted_written', table: 'sts_minted', advisory: true,
+    when: 'to_regclass(\'sts_minted_written\') IS NOT NULL',
+    statements: ['DROP INDEX IF EXISTS sts_minted_written'] },
+  // Room on each page for a row's next version, so an update stays HOT:
+  // `sts_minted` is upserted about twice an add and its rows are rewritten
+  // in place. Applies to pages written from now on.
+  { name: 'sts_minted_fillfactor', table: 'sts_minted', advisory: true,
+    when: RELOPTIONS_LACK('sts_minted', ['fillfactor=80']), statements: [
+      'ALTER TABLE sts_minted SET (fillfactor=80)'] },
+  // THE CHANGE LOG'S AUTOVACUUM: the trim deletes its tail continuously,
+  // and at the default 20% a vacuum waited for hundreds of thousands of
+  // dead rows (287,263 on 8081) and then sat in `VacuumDelay` at the
+  // default cost limit. 2% and ten times the limit.
+  { name: 'sts_changes_autovacuum', table: 'sts_changes', advisory: true,
+    when: RELOPTIONS_LACK('sts_changes', [
+      'autovacuum_vacuum_scale_factor=0.02',
+      'autovacuum_vacuum_cost_limit=2000']), statements: [
+      'ALTER TABLE sts_changes SET (autovacuum_vacuum_scale_factor=0.02, ' +
+      'autovacuum_vacuum_cost_limit=2000)'] },
+  // THE DIRECTORY'S INSERT VACUUM: an insert-only load is vacuumed (its
+  // pages set all-visible, its GIN pending lists cleaned) every 20% of the
+  // table by default — about 600,000 inserts at 2.9M entries. 1%.
+  { name: 'sts_ldap_entries_autovacuum', table: 'sts_ldap_entries',
+    advisory: true,
+    when: RELOPTIONS_LACK('sts_ldap_entries', [
+      'autovacuum_vacuum_insert_scale_factor=0.01']), statements: [
+      'ALTER TABLE sts_ldap_entries SET ' +
+      '(autovacuum_vacuum_insert_scale_factor=0.01)'] },
+  // HOW MANY PARENTS THE DIRECTORY HAS, SAID RATHER THAN SAMPLED (#639,
+  // schema version 20). ANALYZE reads about 30,000 rows; with 50M of 50.2M
+  // entries under one `ou=users` its sample held one `parent_key`, so
+  // `n_distinct` was 1 and a parent the planner could not see — a LATERAL's,
+  // a generic plan's — was estimated as the whole realm. A constant is
+  // judged by the most-common-values list instead, and was never wrong.
+  // 100,000: the parents are containers, which do not grow with the people,
+  // so the figure is absolute, not a fraction of the rows; it is large, so a
+  // parameter's estimate is a container's worth of rows (502 at 50.2M, a
+  // handful below a million) and the parent index wins every such plan;
+  // and above the true count — hundreds, a few per realm — on purpose,
+  // since what it decides is how SMALL an unknown parent is, and every
+  // unknown parent a statement here reads is a resident container or the
+  // base of a page. The value the owner set by hand on 2026-10-15 and
+  // measured: Index Cond on `(realm, parent_key)`, 502 rows estimated. The
+  // ANALYZE of the one column makes it take effect now rather than at the
+  // next autovacuum analyze; an advisory step, because the statements a
+  // start runs no longer depend on it (`directory_queries.js`,
+  // `childrenRange()`).
+  { name: 'sts_ldap_entries_parent_ndistinct', table: 'sts_ldap_entries',
+    advisory: true, issue: '#639',
+    when: ATTOPTIONS_LACK('sts_ldap_entries', 'parent_key', [
+      'n_distinct=100000']), statements: [
+      'ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET ' +
+      '(n_distinct=100000)',
+      'ANALYZE sts_ldap_entries (parent_key)'] },
+  // THE ASKED-NAMES INDEX LEARNED A NAME (#1024, schema version 27): its
+  // expression and predicate spell every asked name, so an index built
+  // before `stsbackupcodes` joined them answers "nobody" for that name
+  // through the index. Where the definition lacks the name, the index is
+  // dropped and built again from SCHEMA_OBJECTS' statement. Advisory: on a
+  // large store the build takes minutes and locks writes, which is the
+  // owner's call (`postgres/schema.sql`), not a start-up's.
+  // And again for #1290 (schema version 31), whose names replace two: a
+  // definition still spelling `stsassertionjwks` answers "nobody" for the
+  // new key pair records.
+  { name: 'sts_ldap_entries_asked_names_v31', table: 'sts_ldap_entries',
+    advisory: true, issue: '#1290',
+    when: 'EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = ' +
+          '\'sts_ldap_entries_asked_names\' AND (position(\'stsbackupcodes\' ' +
+          'in indexdef) = 0 OR position(\'pwdaccountlockedtime\' in ' +
+          'indexdef) = 0 OR position(\'stsassertionkeypair\' in ' +
+          'indexdef) = 0))',
+    statements: ['DROP INDEX IF EXISTS sts_ldap_entries_asked_names',
+      SCHEMA_OBJECTS.filter(function (object) {
+        return object.name === 'sts_ldap_entries_asked_names';
+      })[0].statement] }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1132,6 +939,304 @@ const SCHEMA_COLUMNS = [
  */
 const SCHEMA =
     SCHEMA_OBJECTS.map(function (object) { return object.statement; });
+
+// ---------------------------------------------------------------------------
+// THE FUNCTIONS AND TRIGGERS THAT KEEP `sts_ldap_counts` (#618, schema
+// version 16) — see the two tables in SCHEMA_OBJECTS for the design. A
+// function or a trigger is not a relation, so `to_regclass()` cannot probe
+// it: `open()` asks `pg_proc` and `pg_trigger` by name instead, and creates
+// only what is missing, for the reason SCHEMA_OBJECTS gives.
+// `postgres/schema.sql` holds the same statements (a constraint trigger has
+// no `OR REPLACE`, so the script drops it first), and
+// `tests/postgres_schema.js` compares them.
+//
+//   * `sts_ldap_count_bases(parent)`: the bases a row with that parent is
+//     STRICTLY under — the parent, each suffix of it after a comma, and ''
+//     (the realm). `normalizeDn()`'s simplification, as `parent_key`'s.
+//   * `sts_ldap_count_note()`: each statement's net per (realm, parent):
+//     rows, and rows whose `attr_names` hold `userpassword`, appended to the
+//     deltas; the transaction's first delta also appends the one row whose
+//     `fold` arms the commit-time fold. The count over a TRANSITION table is
+//     of the statement's own rows, never the directory's.
+//   * `sts_ldap_count_fold_sharded()`: at COMMIT, the transaction's deltas
+//     deleted and added to the counters, expanded to every base, in key
+//     order, into this connection's shard (#630; `sts_ldap_count_fold()`
+//     until then, without the shard).
+//   * `sts_ldap_count_truncate()`: a TRUNCATE (an owner's; the service's role
+//     has none) fires no row trigger, so it empties the counters too.
+//
+// THE ATTRIBUTES COUNTED are written into the functions, and
+// `directory_queries.COUNTED_ATTRIBUTES` names the same list; the test holds
+// them together. `userpassword` is the only one asked today — the
+// credential tiles' "has a password" (#610); every other holder question is
+// answered by the holders themselves (`withAttribute`), not a count.
+// ---------------------------------------------------------------------------
+const COUNT_BASES_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_bases(parent text) ' +
+  'RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$ ' +
+  'SELECT parent ' +
+  'UNION ALL SELECT substr(parent, i + 1) FROM generate_series(1, ' +
+  'length(parent)) AS i WHERE substr(parent, i, 1) = \',\' ' +
+  'UNION ALL SELECT \'\' WHERE parent <> \'\' $$';
+
+const COUNT_NOTE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_note() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'DECLARE added bigint; ' +
+  'BEGIN ' +
+  'IF TG_OP = \'INSERT\' THEN ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding) ' +
+  'SELECT realm, parent_key, count(*), count(*) FILTER (WHERE attr_names ? ' +
+  '\'userpassword\') FROM new_rows GROUP BY realm, parent_key; ' +
+  'ELSIF TG_OP = \'DELETE\' THEN ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding) ' +
+  'SELECT realm, parent_key, -count(*), -count(*) FILTER (WHERE attr_names ' +
+  '? \'userpassword\') FROM old_rows GROUP BY realm, parent_key; ' +
+  'ELSE ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding) ' +
+  'SELECT realm, parent_key, sum(n), sum(h) FROM (' +
+  'SELECT realm, parent_key, 1 AS n, CASE WHEN attr_names ? ' +
+  '\'userpassword\' THEN 1 ELSE 0 END AS h FROM new_rows ' +
+  'UNION ALL SELECT realm, parent_key, -1, CASE WHEN attr_names ? ' +
+  '\'userpassword\' THEN -1 ELSE 0 END FROM old_rows) AS c ' +
+  'GROUP BY realm, parent_key HAVING sum(n) <> 0 OR sum(h) <> 0; ' +
+  'END IF; ' +
+  'GET DIAGNOSTICS added = ROW_COUNT; ' +
+  'IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_count_deltas WHERE ' +
+  'txid = pg_current_xact_id() AND fold) THEN ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding, fold) ' +
+  'VALUES (\'\', \'\', 0, 0, true); ' +
+  'END IF; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+// THE SHARD A FOLD ADDS TO (#630): this connection's, by its server
+// process id. See `sts_ldap_counts` in SCHEMA_OBJECTS. Sixteen, the
+// replay's figure: a busy node opens a few tens of connections, and two
+// committing at one instant meet on a row one time in sixteen.
+const COUNT_SHARDS = 16;
+const SHARD_OF_THIS_CONNECTION =
+  '(pg_backend_pid() % ' + COUNT_SHARDS + ')::smallint';
+
+// The folds under NAMES OF THEIR OWN since #630, the shard in the key: the
+// routines are probed by name, so a new body under `sts_ldap_count_fold`
+// would never reach a store that has the old one — whose ON CONFLICT names a
+// key the table no longer has. The old names are SCHEMA_UPGRADES' to drop.
+const COUNT_FOLD_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_fold_sharded() RETURNS ' +
+  'trigger LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'WITH folded AS (DELETE FROM sts_ldap_count_deltas WHERE txid = ' +
+  'pg_current_xact_id() RETURNING realm, parent_key, n, holding), ' +
+  'bases AS (SELECT f.realm, b.base_key, sum(f.n) AS n, sum(f.holding) AS ' +
+  'holding FROM folded AS f CROSS JOIN LATERAL ' +
+  'sts_ldap_count_bases(f.parent_key) AS b(base_key) WHERE f.n <> 0 OR ' +
+  'f.holding <> 0 GROUP BY f.realm, b.base_key) ' +
+  'INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, shard, ' +
+  'n) SELECT realm, base_key, attribute, ' + SHARD_OF_THIS_CONNECTION +
+  ', n FROM (' +
+  'SELECT realm, base_key, \'\' AS attribute, n FROM bases WHERE n <> 0 ' +
+  'UNION ALL SELECT realm, base_key, \'userpassword\', holding FROM bases ' +
+  'WHERE holding <> 0) AS d ORDER BY realm, base_key, attribute ' +
+  'ON CONFLICT (realm, base_key, attribute, shard) DO UPDATE SET n = c.n + ' +
+  'EXCLUDED.n; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+const COUNT_TRUNCATE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_truncate() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'DELETE FROM sts_ldap_counts; ' +
+  'DELETE FROM sts_ldap_count_deltas; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+// ---------------------------------------------------------------------------
+// THE FUNCTIONS AND TRIGGERS THAT KEEP `sts_ldap_dek_counts` (#623, schema
+// version 17): per data key, the values the directory holds under it — the
+// sum of every entry's `dek_keys` entry for the key. #618's arrangement
+// exactly, and for its reason: each statement's net per key appended to
+// `sts_ldap_dek_deltas` (insert only — every write of a realm adds to its
+// `directory` key's row, and a lock on that row held to the commit would
+// serialise the realm's flushes), and one deferred constraint trigger
+// folding the transaction's deltas in at COMMIT, in key order. Names of
+// their own rather than more statements in #618's functions: the routines
+// are probed by NAME, so a changed body under an old name would never reach
+// a store that already has it.
+//
+// An entry whose `dek_keys` is NULL (written before the column) adds
+// nothing; `indexSealed()` setting it is an UPDATE like any other, and adds
+// its keys then. A value that is not a JSON object is read as no keys.
+// ---------------------------------------------------------------------------
+// The keys of one row's `dek_keys`, as a set-returning call. No Entering/
+// Leaving pair: it builds statement text at load, where this module has no
+// logger (the driver's is `create()`'s), as `poolMax()` above.
+const DEK_KEYS_OF = function (alias) {
+  return 'jsonb_each_text(CASE WHEN jsonb_typeof(' + alias + '.dek_keys) = ' +
+         '\'object\' THEN ' + alias + '.dek_keys END)';
+};
+
+const DEK_NOTE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_note() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'DECLARE added bigint; ' +
+  'BEGIN ' +
+  'IF TG_OP = \'INSERT\' THEN ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n) ' +
+  'SELECT d.key, sum(d.value::bigint) FROM new_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d GROUP BY d.key; ' +
+  'ELSIF TG_OP = \'DELETE\' THEN ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n) ' +
+  'SELECT d.key, -sum(d.value::bigint) FROM old_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d GROUP BY d.key; ' +
+  'ELSE ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n) ' +
+  'SELECT k, sum(n) FROM (' +
+  'SELECT d.key AS k, d.value::bigint AS n FROM new_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d ' +
+  'UNION ALL SELECT d.key, -d.value::bigint FROM old_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d) AS c ' +
+  'GROUP BY k HAVING sum(n) <> 0; ' +
+  'END IF; ' +
+  'GET DIAGNOSTICS added = ROW_COUNT; ' +
+  'IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_dek_deltas WHERE ' +
+  'txid = pg_current_xact_id() AND fold) THEN ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n, fold) VALUES (\'\', 0, ' +
+  'true); ' +
+  'END IF; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+// Sharded and renamed for COUNT_FOLD_FUNCTION's reasons (#630).
+const DEK_FOLD_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_fold_sharded() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'WITH folded AS (DELETE FROM sts_ldap_dek_deltas WHERE txid = ' +
+  'pg_current_xact_id() RETURNING dek_id, n) ' +
+  'INSERT INTO sts_ldap_dek_counts AS c (dek_id, shard, n) ' +
+  'SELECT dek_id, ' + SHARD_OF_THIS_CONNECTION + ', sum(n) FROM folded ' +
+  'WHERE dek_id <> \'\' GROUP BY dek_id ' +
+  'HAVING sum(n) <> 0 ORDER BY dek_id ' +
+  'ON CONFLICT (dek_id, shard) DO UPDATE SET n = c.n + EXCLUDED.n; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+const DEK_TRUNCATE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_truncate() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'DELETE FROM sts_ldap_dek_counts; ' +
+  'DELETE FROM sts_ldap_dek_deltas; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+/**
+ * The functions and triggers that keep the directory's counts (#618) and
+ * its per-data-key counts (#623), each `{ kind, name, table?, statement,
+ * counts? }`, probed by name and created where missing, functions first.
+ * `counts` names the counters a created trigger starts: `entries` (#618's
+ * COUNTS_BACKFILL) or `deks` (#623's DEK_COUNTS_BACKFILL).
+ */
+const SCHEMA_ROUTINES = [
+  { kind: 'function', name: 'sts_ldap_count_bases',
+    statement: COUNT_BASES_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_count_note',
+    statement: COUNT_NOTE_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_count_fold_sharded',
+    statement: COUNT_FOLD_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_count_truncate',
+    statement: COUNT_TRUNCATE_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_dek_note',
+    statement: DEK_NOTE_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_dek_fold_sharded',
+    statement: DEK_FOLD_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_dek_truncate',
+    statement: DEK_TRUNCATE_FUNCTION },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_insert',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_insert AFTER INSERT ' +
+    'ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_count_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_update',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_update AFTER UPDATE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS ' +
+    'new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_delete',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_delete AFTER DELETE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_count_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_truncate',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_truncate AFTER ' +
+    'TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION ' +
+    'sts_ldap_count_truncate()' },
+  { kind: 'trigger', name: 'sts_ldap_count_deltas_fold_sharded',
+    table: 'sts_ldap_count_deltas', statement:
+    'CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold_sharded AFTER ' +
+    'INSERT ON sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ' +
+    'ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold_sharded()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_insert', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_insert AFTER INSERT ' +
+    'ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_dek_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_update', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_update AFTER UPDATE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS ' +
+    'new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_delete', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_delete AFTER DELETE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_dek_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_truncate', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_truncate AFTER ' +
+    'TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION ' +
+    'sts_ldap_dek_truncate()' },
+  { kind: 'trigger', name: 'sts_ldap_dek_deltas_fold_sharded',
+    counts: 'deks', table: 'sts_ldap_dek_deltas', statement:
+    'CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold_sharded AFTER ' +
+    'INSERT ON sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ' +
+    'ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold_sharded()' }
+];
+
+// ---------------------------------------------------------------------------
+// THE ONE PLACE THE DIRECTORY IS COUNTED: once, when the counters start
+// (#618). Run under a lock that keeps every writer out — `CREATE TRIGGER`
+// takes SHARE ROW EXCLUSIVE on the table, and `LOCK_FOR_BACKFILL` says so
+// out loud for a run where the triggers were already there — so no write can
+// fall between the count and the first trigger. Only when the counters hold
+// nothing: a second run, a second process, or the script after the driver,
+// adds nothing. Linear in the rows, ONCE: at 200M a long first start, said
+// in `docs/postgres-schema.md`.
+// ---------------------------------------------------------------------------
+const LOCK_FOR_BACKFILL =
+  'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
+// The per-data-key counters started from the rows already there (#623),
+// under the same lock and on the same condition: only when they hold
+// nothing. On the start that ADDS `dek_keys` every row reads NULL and this
+// adds nothing; the rows join the counters as `indexSealed()` reaches them.
+const DEK_COUNTS_BACKFILL =
+  'INSERT INTO sts_ldap_dek_counts (dek_id, n) ' +
+  'SELECT d.key, sum(d.value::bigint) FROM sts_ldap_entries AS e ' +
+  'CROSS JOIN LATERAL ' + DEK_KEYS_OF('e') + ' AS d ' +
+  'WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_dek_counts) ' +
+  'GROUP BY d.key';
+const COUNTS_BACKFILL =
+  'INSERT INTO sts_ldap_counts (realm, base_key, attribute, n) ' +
+  'SELECT e.realm, b.base_key, a.attribute, count(*) ' +
+  'FROM sts_ldap_entries AS e ' +
+  'CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key) AS b(base_key) ' +
+  'CROSS JOIN LATERAL (SELECT \'\' AS attribute UNION ALL SELECT ' +
+  '\'userpassword\' WHERE e.attr_names ? \'userpassword\') AS a ' +
+  'WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_counts) ' +
+  'GROUP BY e.realm, b.base_key, a.attribute';
 
 
 // ===========================================================================
@@ -1284,7 +1389,7 @@ const METRIC_PROBES = [
          'backend_start' },
 
   { id: 'locks', group: 'Activity', shape: 'rows',
-    what: 'Locks held and waited for, by mode. A waiting lock on a mock is ' +
+    what: 'Locks held and waited for, by mode. A waiting lock here is ' +
           'almost always this service contending with itself across the ' +
           'request-worker pool.',
     sql: 'SELECT mode, granted, count(*) AS count FROM pg_locks WHERE ' +
@@ -1458,6 +1563,666 @@ const METRIC_PROBES = [
 // The claim scope a stable origin is held under (`adoptOrigin()`).
 const ORIGIN_SCOPE = 'persistence.origin';
 
+// The fence's share-lock row (#770). `kind` is `lease` or `origin`, `id`
+// the lease name or the origin key, `identity` the token or the
+// reservation. The identity is IN the name: a takeover deletes this row,
+// and a one-statement flush that locked it then finds it gone. A stable
+// name would still be there, and READ COMMITTED would keep the stale
+// holder. No Entering/Leaving pair: every fenced write and every minted
+// flush calls it, and the line would drown the log.
+function fenceLockName(kind, id, identity) {
+  return 'fence:' + kind + ':' + String(id) + ':' + String(identity);
+}
+
+// How long a renewal may wait on a lock before it is a failed beat rather
+// than a hung one (#770). A third of the lifetime, and never more than two
+// seconds: the next beat is already armed, and this one has to come back
+// in time to be retried inside what remains. No Entering/Leaving pair, for
+// fenceLockName()'s reason — every heartbeat and every origin renewal.
+function renewalBoundMs(ttlMs) {
+  const ttl = Math.max(1000, Number(ttlMs) || 30000);
+  return Math.max(250, Math.min(2000, Math.floor(ttl / 3)));
+}
+
+// ---------------------------------------------------------------------------
+// A MINTED FLUSH IS ONE STATEMENT (2026-10-22, #820).
+//
+// It was BEGIN, the fence (one to three statements), the lock, up to seven
+// writes, the change log and COMMIT: about eleven round trips, each an
+// event-loop turn on a request worker that is ~85% busy, while every
+// writing request waits for the commit. On 8081 `saveMinted()` took 23 ms
+// at the median for about ten rows, of which `pg_stat_statements` counted
+// about 5 ms of statements. So the whole flush is one statement with
+// data-modifying CTEs over unnest()ed arrays, sent outside a transaction
+// (a single statement is its own transaction). The fence, the lock, every
+// write and the change log commit together or not at all, as before.
+//
+// THE ORDER INSIDE ONE STATEMENT. PostgreSQL runs a statement's CTEs as
+// their rows are asked for, in no order it promises; what it does promise
+// is that a CTE runs before a row that reads it is produced. So the order
+// is made of DATA DEPENDENCIES, each a scalar subquery the planner makes a
+// one-time filter (an InitPlan read before the first row is fetched):
+//
+//   1. `fence`: the origin's and the leases' rows of `sts_cluster_locks`
+//      (FOR SHARE), then the claim, the membership and the leases read
+//      with no lock — `checkFence()`'s questions (#770). The lock's NAME
+//      carries the reservation or the token, so a takeover that deletes
+//      the old name fails this statement closed after the wait: READ
+//      COMMITTED rechecks only the locked row, and a lock row that is
+//      gone is not a stale holder still matching. The heartbeat and the
+//      origin renewal update the data rows and do not touch these, so
+//      they do not queue behind the flush. `lk` reads `fence`, so nothing
+//      is written by a fenced flush.
+//   2. `lk`: EVERY existing row the flush touches, locked FOR UPDATE in
+//      ORDER BY handle, realm, key, before any write — the one lock order
+//      every flush takes (2026-09-12). `lkn` counts it, which reads it to
+//      the end; `ok` reads `lkn`, and every write reads `ok`. So no row is
+//      written until every existing row is locked.
+//   3. `ins` (every upsert, the tombstone writes among them, in that same
+//      ORDER BY) and `del`. `done` counts both, so they finish first.
+//   4. The side tables — `sts_sessions`, `sts_minted_index` — and the
+//      change log, which read `done`, and which write only for a row
+//      `ins` returned (a body the tombstone guard refused writes none).
+//
+// WHY TWO FLUSHES CANNOT DEADLOCK ON ROWS THAT EXIST: each takes its
+// existing minted rows' locks in one total order (step 2) and only then
+// writes; a write to a row it locked waits for nobody. A side-table row
+// is keyed by its minted row and written only after the flush holds that
+// row (its upsert came back from `ins`, or its tombstone was written), so
+// two flushes reach one side row only one after the other.
+//
+// AND ON A KEY NO ROW HOLDS YET: an INSERT of a new key waits only on
+// another transaction's uncommitted insert of the SAME key. All of a
+// flush's inserts are one INSERT in one ORDER BY, after all of its locks
+// — so two flushes inserting overlapping new keys meet them in the same
+// order, and the first to reach a key makes the other wait without
+// holding anything the first needs later in that order. (Until this, the
+// guarded, plain and tombstone writes were three INSERTs, so a key could
+// be inserted in the first by one flush and the third by another.)
+// What is NOT proven, here or in the statements this replaced: a key that
+// exists for one flush's lock and is new to another's (a third
+// transaction committed it between their snapshots) is locked by the
+// first in step 2 and by the second only at its insert, so the two
+// orders can cross. And a hard delete of a minted row that is already
+// gone still deletes its side rows without holding it. Both need three
+// transactions or an orphaned side row at once; PostgreSQL answers the
+// cycle with 40P01, the statement rolls back whole, and it is run again
+// (`retryingConflicts()`), as a deadlocked transaction always was.
+// Advisory locks on every key would close the first and were refused:
+// a flush of thousands of rows (a store that failed for a while) would
+// take thousands of entries of the shared lock table.
+//
+// A STORE THAT MERGES (`mergeRow`) needs the stored body to merge with,
+// and the merge is JavaScript (open, merge, seal: this driver holds no
+// key). It is a COMPARE-AND-SET, not a second transaction: the flush says
+// which body it merged with (`cas_*`), `chk` compares that with the row
+// `lk` locked, and a flush whose expectation was wrong writes nothing and
+// answers each stored body (`current`), merges again and is sent again.
+// What it expects is the body this process last committed for the key,
+// or no row — the case of a session just made — so the usual flush is
+// still one round trip. Under the lock the merge is exactly the one the
+// read-then-write transaction made. See `saveMinted()`.
+//
+// THE PARAMETERS ARE A TABLE (MINTED_FLUSH_LAYOUT) and the statement takes
+// its `$n` from it, so the two cannot drift; `tests/tools/
+// minted_flush_double.js` reads the same table to play the statement.
+// Every parameter is present in every flush (an empty array, or NULL for
+// no claim or no fence), so this is ONE statement text.
+// ---------------------------------------------------------------------------
+const MINTED_FLUSH_LAYOUT = [
+  // The fence: an origin claim and its reservation, or NULL; the node's
+  // membership id, or NULL; the leases the write needs, with tokens.
+  ['claim_key', 'text'], ['claim_reservation', 'text'],
+  ['node_id', 'text'], ['lease_names', 'text[]'],
+  ['lease_tokens', 'bigint[]'],
+  // Every row the flush touches, to lock.
+  ['lock_h', 'text[]'], ['lock_r', 'text[]'], ['lock_k', 'text[]'],
+  // A merging row's expected stored body (NULL: no row is expected).
+  ['cas_h', 'text[]'], ['cas_r', 'text[]'], ['cas_k', 'text[]'],
+  ['cas_body', 'text[]'],
+  // Every upsert, the tombstone writes included.
+  ['up_h', 'text[]'], ['up_r', 'text[]'], ['up_k', 'text[]'],
+  ['up_body', 'text[]'], ['up_expires', 'bigint[]'],
+  ['up_sealed', 'text[]'],
+  // The upserts no tombstone may refuse (a store that keeps none).
+  ['plain_h', 'text[]'], ['plain_r', 'text[]'], ['plain_k', 'text[]'],
+  ['tombstone', 'text'],
+  // The deletes that leave no tombstone.
+  ['del_h', 'text[]'], ['del_r', 'text[]'], ['del_k', 'text[]'],
+  // `sts_sessions` (#350): SESSION_INDEX_UPSERT's fifteen columns.
+  ['ses_realm', 'text[]'], ['ses_key', 'text[]'],
+  ['ses_expires', 'bigint[]'], ['ses_last_seen', 'bigint[]'],
+  ['ses_started', 'bigint[]'], ['ses_subject', 'text[]'],
+  ['ses_username', 'text[]'], ['ses_chosen', 'boolean[]'],
+  ['ses_authenticated', 'boolean[]'], ['ses_kind', 'text[]'],
+  ['ses_rp_surface', 'text[]'], ['ses_parent', 'text[]'],
+  ['ses_backs_console', 'boolean[]'], ['ses_credential', 'text[]'],
+  ['ses_partner', 'text[]'],
+  ['sesdel_realm', 'text[]'], ['sesdel_key', 'text[]'],
+  // `sts_minted_index` (#820): an upserted row's index rows are replaced
+  // (if it was written), a deleted row's go, and the new set is filed.
+  ['ixup_h', 'text[]'], ['ixup_r', 'text[]'], ['ixup_k', 'text[]'],
+  ['ixgone_h', 'text[]'], ['ixgone_r', 'text[]'], ['ixgone_k', 'text[]'],
+  ['ixnew_h', 'text[]'], ['ixnew_r', 'text[]'], ['ixnew_i', 'text[]'],
+  ['ixnew_k', 'text[]'], ['ixnew_s', 'bigint[]'],
+  // The change log: a row per key, and for an upsert the row it describes
+  // (written only if that row was), NULL for a delete.
+  ['origin', 'text'], ['chg_kind', 'text[]'], ['chg_realm', 'text[]'],
+  ['chg_key', 'text[]'], ['chg_h', 'text[]'], ['chg_r', 'text[]'],
+  ['chg_k', 'text[]']
+];
+
+// `$n::type` of a parameter of MINTED_FLUSH, by name. Used to build the
+// statement once, at load; it throws for a name the layout lacks. Run at
+// require time, before `create()` is handed the driver's logger, so it has
+// no Entering/Leaving pair (`common/config_file.js`'s reason).
+function flushParam(name) {
+  for (let i = 0; i < MINTED_FLUSH_LAYOUT.length; i++) {
+    if (MINTED_FLUSH_LAYOUT[i][0] === name) {
+      return '$' + (i + 1) + '::' + MINTED_FLUSH_LAYOUT[i][1];
+    }
+  }
+  throw new Error('MINTED_FLUSH_LAYOUT has no parameter ' + name);
+}
+
+// The statement, built once from the layout. `{name}` is that parameter.
+// Run at require time, for `flushParam()`'s reason no Entering/Leaving.
+function buildMintedFlush() {
+  const p = function (text) {
+    return text.replace(/\{([a-z_]+)\}/g, function (all, name) {
+      return flushParam(name);
+    });
+  };
+  // A minted row named by three columns of an alias, against `ins`.
+  const written = function (alias) {
+    return 'EXISTS (SELECT 1 FROM ins WHERE ins.handle = ' + alias +
+      '.h AND ins.realm = ' + alias + '.r AND ins.key = ' + alias + '.k)';
+  };
+  const after = '(SELECT go FROM ok) AND (SELECT n FROM done) >= 0';
+  const text = p(
+    '/* sts:minted-flush */ ' +
+    'WITH ocl AS MATERIALIZED (SELECT 1 FROM sts_cluster_locks WHERE ' +
+    '{claim_key} IS NOT NULL AND name = \'fence:origin:\' || ' +
+    '{claim_key} || \':\' || {claim_reservation} FOR SHARE), ' +
+    'oc AS MATERIALIZED (SELECT 1 FROM sts_cluster_claims WHERE ' +
+    '{claim_key} IS NOT NULL AND scope = \'' + ORIGIN_SCOPE + '\' AND ' +
+    'realm = \'\' AND key = {claim_key} AND ' +
+    'reservation = {claim_reservation} AND expires_at > ' + DB_NOW + '), ' +
+    'nd AS MATERIALIZED (SELECT 1 FROM sts_cluster_nodes WHERE ' +
+    '{node_id} IS NOT NULL AND node_id = {node_id} AND left_at = 0 AND ' +
+    'expires_at > ' + DB_NOW + '), ' +
+    'lsl AS MATERIALIZED (SELECT l.name FROM sts_cluster_locks l ' +
+    'JOIN unnest({lease_names}, {lease_tokens}) AS w(name, token) ' +
+    'ON l.name = \'fence:lease:\' || w.name || \':\' || w.token::text ' +
+    'WHERE {node_id} IS NOT NULL FOR SHARE OF l), ' +
+    'ls AS MATERIALIZED (SELECT l.name FROM sts_cluster_leases l ' +
+    'JOIN unnest({lease_names}, {lease_tokens}) AS w(name, token) ' +
+    'ON l.name = w.name AND l.token = w.token WHERE ' +
+    '{node_id} IS NOT NULL AND l.holder = {node_id} AND l.expires_at > ' +
+    DB_NOW + '), ' +
+    'fence AS MATERIALIZED (SELECT ({claim_key} IS NULL OR ' +
+    '(EXISTS (SELECT 1 FROM ocl) AND EXISTS (SELECT 1 FROM oc))) AND ' +
+    '({node_id} IS NULL OR (EXISTS (SELECT 1 FROM nd) AND ' +
+    '(SELECT count(*) FROM ls) = cardinality({lease_names}) AND ' +
+    '(SELECT count(*) FROM lsl) = cardinality({lease_names}))) AS ok), ' +
+    'lk AS MATERIALIZED (SELECT handle, realm, key, body FROM sts_minted ' +
+    'WHERE (handle, realm, key) IN (SELECT u.h, u.r, u.k FROM ' +
+    'unnest({lock_h}, {lock_r}, {lock_k}) AS u(h, r, k)) AND ' +
+    '(SELECT ok FROM fence) ORDER BY handle, realm, key FOR UPDATE), ' +
+    'lkn AS MATERIALIZED (SELECT count(*) AS n FROM lk), ' +
+    'chk AS MATERIALIZED (SELECT count(*) AS bad FROM ' +
+    'unnest({cas_h}, {cas_r}, {cas_k}, {cas_body}) AS e(h, r, k, b) ' +
+    'LEFT JOIN lk ON lk.handle = e.h AND lk.realm = e.r AND ' +
+    'lk.key = e.k WHERE lk.body IS DISTINCT FROM e.b), ' +
+    'ok AS MATERIALIZED (SELECT f.ok AND c.bad = 0 AND l.n >= 0 AS go ' +
+    'FROM fence f CROSS JOIN chk c CROSS JOIN lkn l), ' +
+    'ins AS (INSERT INTO sts_minted (handle, realm, key, body, ' +
+    'written_at, expires_at, key_sealed) SELECT u.h, u.r, u.k, u.b, ' +
+    'now(), u.e, u.s FROM unnest({up_h}, {up_r}, {up_k}, {up_body}, ' +
+    '{up_expires}, {up_sealed}) AS u(h, r, k, b, e, s) WHERE ' +
+    '(SELECT go FROM ok) ORDER BY u.h, u.r, u.k ' +
+    'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
+    'body = EXCLUDED.body, written_at = now(), ' +
+    'expires_at = EXCLUDED.expires_at, key_sealed = EXCLUDED.key_sealed ' +
+    'WHERE sts_minted.body <> {tombstone} OR ' +
+    'EXCLUDED.body = {tombstone} OR (EXCLUDED.handle, EXCLUDED.realm, ' +
+    'EXCLUDED.key) IN (SELECT q.h, q.r, q.k FROM unnest({plain_h}, ' +
+    '{plain_r}, {plain_k}) AS q(h, r, k)) RETURNING handle, realm, key), ' +
+    'del AS (DELETE FROM sts_minted WHERE (handle, realm, key) IN ' +
+    '(SELECT u.h, u.r, u.k FROM unnest({del_h}, {del_r}, {del_k}) AS ' +
+    'u(h, r, k)) AND (SELECT go FROM ok) RETURNING handle), ' +
+    'done AS MATERIALIZED (SELECT (SELECT count(*) FROM ins) + ' +
+    '(SELECT count(*) FROM del) AS n), ' +
+    'ses AS (INSERT INTO sts_sessions (realm, key, expires_at, ' +
+    'last_seen_at, started_at, subject_key, username_key, chosen, ' +
+    'authenticated, kind, rp_surface, parent_key, backs_console, ' +
+    'credential_key, partner_relationship) SELECT s.realm, s.key, ' +
+    's.expires_at, s.last_seen_at, s.started_at, s.subject_key, ' +
+    's.username_key, s.chosen, s.authenticated, s.kind, s.rp_surface, ' +
+    's.parent_key, s.backs_console, s.credential_key, ' +
+    's.partner_relationship FROM unnest({ses_realm}, {ses_key}, ' +
+    '{ses_expires}, {ses_last_seen}, {ses_started}, {ses_subject}, ' +
+    '{ses_username}, {ses_chosen}, {ses_authenticated}, {ses_kind}, ' +
+    '{ses_rp_surface}, {ses_parent}, {ses_backs_console}, ' +
+    '{ses_credential}, {ses_partner}) AS s(realm, key, expires_at, ' +
+    'last_seen_at, started_at, subject_key, username_key, chosen, ' +
+    'authenticated, kind, rp_surface, parent_key, backs_console, ' +
+    'credential_key, partner_relationship) WHERE ' + after + ' AND ' +
+    'EXISTS (SELECT 1 FROM ins WHERE ins.handle = \'authn.sessions\' ' +
+    'AND ins.realm = s.realm AND ins.key = s.key) ' +
+    'ORDER BY s.realm, s.key ' +
+    SESSION_INDEX_UPSERT.slice(SESSION_INDEX_UPSERT.indexOf('ON CONFLICT')) +
+    ' RETURNING 1), ' +
+    'sdel AS (DELETE FROM sts_sessions WHERE (realm, key) IN (SELECT ' +
+    'u.r, u.k FROM unnest({sesdel_realm}, {sesdel_key}) AS u(r, k)) ' +
+    'AND ' + after + ' RETURNING 1), ' +
+    'ixd AS (DELETE FROM sts_minted_index AS x WHERE (x.handle, x.realm, ' +
+    'x.key) IN (SELECT u.h, u.r, u.k FROM unnest({ixup_h}, {ixup_r}, ' +
+    '{ixup_k}) AS u(h, r, k) WHERE ' + written('u') + ' UNION ALL ' +
+    'SELECT g.h, g.r, g.k FROM unnest({ixgone_h}, {ixgone_r}, ' +
+    '{ixgone_k}) AS g(h, r, k)) AND NOT EXISTS (SELECT 1 FROM ' +
+    'unnest({ixnew_h}, {ixnew_r}, {ixnew_i}, {ixnew_k}) AS ' +
+    'f(h, r, i, k) WHERE f.h = x.handle AND f.r = x.realm AND ' +
+    'f.i = x.index_key AND f.k = x.key) AND ' + after + ' RETURNING 1), ' +
+    // An index row the flush files again is KEPT by `ixd`, not deleted and
+    // re-inserted, so a sort row (schema version 25) whose `sort_at` moved
+    // is updated in place here, and an unchanged row is left alone.
+    'ixi AS (INSERT INTO sts_minted_index (handle, realm, index_key, ' +
+    'key, sort_at) SELECT f.h, f.r, f.i, f.k, f.s FROM unnest({ixnew_h}, ' +
+    '{ixnew_r}, {ixnew_i}, {ixnew_k}, {ixnew_s}) AS f(h, r, i, k, s) ' +
+    'WHERE ' + after + ' AND ' + written('f') + ' ORDER BY f.h, f.r, f.i, ' +
+    'f.k ON CONFLICT (handle, realm, index_key, key) DO UPDATE SET ' +
+    'sort_at = EXCLUDED.sort_at WHERE sts_minted_index.sort_at IS ' +
+    'DISTINCT FROM EXCLUDED.sort_at RETURNING 1), ' +
+    'chg AS (INSERT INTO sts_changes (origin, kind, realm, key) SELECT ' +
+    '{origin}, c.kind, c.realm, c.key FROM unnest({chg_kind}, ' +
+    '{chg_realm}, {chg_key}, {chg_h}, {chg_r}, {chg_k}) WITH ORDINALITY ' +
+    'AS c(kind, realm, key, h, r, k, ord) WHERE ' + after + ' AND ' +
+    '(c.h IS NULL OR ' + written('c') + ') ORDER BY c.ord RETURNING 1) ' +
+    'SELECT f.ok AS fence_ok, c.bad AS cas_bad, o.go AS go, ' +
+    '(SELECT count(*) FROM chg) AS changes, ' +
+    '(SELECT count(*) FROM ses) + (SELECT count(*) FROM sdel) + ' +
+    '(SELECT count(*) FROM ixd) + (SELECT count(*) FROM ixi) AS side, ' +
+    '(SELECT json_agg(json_build_array(u.h, u.r, u.k)) FROM ' +
+    'unnest({up_h}, {up_r}, {up_k}) AS u(h, r, k) WHERE NOT ' +
+    written('u') + ') AS unwritten, ' +
+    'CASE WHEN c.bad > 0 THEN (SELECT json_agg(json_build_array(e.h, ' +
+    'e.r, e.k, lk.body)) FROM unnest({cas_h}, {cas_r}, {cas_k}) AS ' +
+    'e(h, r, k) LEFT JOIN lk ON lk.handle = e.h AND lk.realm = e.r AND ' +
+    'lk.key = e.k) END AS current ' +
+    'FROM fence f CROSS JOIN chk c CROSS JOIN ok o');
+  return text;
+}
+
+const MINTED_FLUSH = buildMintedFlush();
+
+// ---------------------------------------------------------------------------
+// MINTED_FLUSH IS A NAMED (PREPARED) STATEMENT. Measured on postgres 18 for
+// ten rows: planned afresh at every flush it took 3–4 ms, most of it
+// planning thirteen CTEs; prepared on the connection, the server keeps a
+// generic plan after five runs and the statement took 0.6 ms. The generic
+// plan was read off `EXPLAIN (GENERIC_PLAN)` against 8081's own statistics
+// (9.8M minted rows): every table is reached through its primary key or
+// `sts_minted_index_key`, no sequential scan of a large table. The name is
+// per connection, so each pooled connection prepares it once.
+// ---------------------------------------------------------------------------
+const MINTED_FLUSH_NAME = 'sts_minted_flush_v1';
+
+// MINTED_FLUSH as a query (`{ name, text, values }`), its arrays in the
+// layout's order from an object naming them. A name the object lacks is an
+// empty array, or NULL for a scalar. Hot path (every minted flush): no
+// Entering/Leaving pair.
+function mintedFlushQuery(named) {
+  return {
+    name: MINTED_FLUSH_NAME,
+    text: MINTED_FLUSH,
+    values: MINTED_FLUSH_LAYOUT.map(function (one) {
+      const value = named[one[0]];
+      if (value !== undefined) {
+        return value;
+      }
+      return /\[\]$/.test(one[1]) ? [] : null;
+    })
+  };
+}
+
+// A minted row's identity in a flush: handle, realm and key. Hot path (every
+// row of every minted flush): no Entering/Leaving pair.
+function mintedIdOf(row) {
+  return String(row.handle) + '\n' + String(row.realm) + '\n' +
+    String(row.key);
+}
+
+// Compared as code units rather than with `localeCompare()`, because the
+// order has to be the same in every process whatever its locale (the
+// statement sorts again in the database's own order, which is the order the
+// locks are taken in). Hot path: no Entering/Leaving pair.
+function byMintedId(a, b) {
+  const left = mintedIdOf(a);
+  const right = mintedIdOf(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A FLUSH WILL WRITE, BEFORE ANY MERGE (2026-10-22, #820): one row per
+// key (ON CONFLICT cannot touch a row twice; a journal names each key once,
+// so this is belt and braces), and each row's kind:
+//
+//   * `merging` — an upsert of a store with `mergeRow`, written through the
+//     merge with the stored body (`resolveMerges()`), guarded by the
+//     tombstone;
+//   * `guarded` — an upsert of a store that keeps tombstones: an upsert of
+//     a key holding one does nothing and is reported refused;
+//   * `plain` — any other upsert;
+//   * `tombs` — a delete of a store that keeps tombstones, written as one;
+//   * `dels` — any other delete.
+//
+// `saved` holds a merging row's columns as `persistence_minted.js` built
+// them: a merge writes the MERGED record's expiry, index and lookups onto
+// the row, and a merge done again from another stored body must start from
+// these. Hot path (every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function planMintedFlush(upserts, deletes) {
+  const plan = { upserts: upserts, deletes: deletes, touched: [],
+                 merging: [], guarded: [], plain: [], tombs: [], dels: [],
+                 saved: new Map() };
+  const seen = new Set();
+  upserts.map(function (row) {
+    return { row: row, upsert: true };
+  }).concat(deletes.map(function (row) {
+    return { row: row, upsert: false };
+  })).sort(function (a, b) {
+    return byMintedId(a.row, b.row);
+  }).forEach(function (one) {
+    const row = one.row;
+    const id = mintedIdOf(row);
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    plan.touched.push(row);
+    if (one.upsert && typeof row.merge === 'function') {
+      plan.merging.push(row);
+      plan.saved.set(row, { expiresAt: row.expiresAt, index: row.index,
+                            lookups: row.lookups, sortAt: row.sortAt });
+    } else if (one.upsert && row.tombstone) {
+      plan.guarded.push(row);
+    } else if (one.upsert) {
+      plan.plain.push(row);
+    } else if (row.tombstone) {
+      plan.tombs.push(row);
+    } else {
+      plan.dels.push(row);
+    }
+  });
+  return plan;
+}
+
+// ---------------------------------------------------------------------------
+// THE MERGING ROWS AGAINST THE STORED BODIES `stored` NAMES (an id to a
+// body; an id it lacks is no row): the rule the flush has applied since
+// 2026-09-14 (#46 section 3), unchanged. A stored tombstone refuses the
+// upsert; a stored body that is not this copy's is handed to the store's
+// merge, and what comes back is written and reported in `merged`. Each row
+// starts from the columns `persistence_minted.js` built (`plan.saved`), so a
+// merge done again from a newer body is the merge that body asks for. Hot
+// path (every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function resolveMerges(plan, stored) {
+  const out = { writes: [], refused: [], merged: [] };
+  plan.merging.forEach(function (row) {
+    const saved = plan.saved.get(row);
+    row.expiresAt = saved.expiresAt;
+    row.index = saved.index;
+    row.lookups = saved.lookups;
+    row.sortAt = saved.sortAt;
+    const found = stored.get(mintedIdOf(row));
+    if (found === TOMBSTONE) {
+      out.refused.push(row);
+      return;
+    }
+    let body = row.body;
+    if (found !== undefined && found !== row.body) {
+      const answer = row.merge(found);
+      if (answer && answer !== row.body) {
+        body = answer;
+        out.merged.push({ handle: row.handle, realm: row.realm,
+                          key: row.key, journalKey: row.journalKey,
+                          body: answer });
+      }
+    }
+    out.writes.push({ row: row, body: body });
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// A CHANGE-LOG ROW PER MINTED KEY, upserts and deletes alike — the receiver
+// re-reads `sts_minted` for each and applies what it finds, or removes what
+// it does not, so the two cases need no distinction here. A change row names
+// ONE key and a minted row is identified by the PAIR, so the two are packed
+// into it.
+//
+// **THE SEPARATOR WAS A LITERAL NUL UNTIL 2026-09-07, AND `sts_changes.key`
+// IS `text`.** PostgreSQL refuses a NUL in text, so this INSERT failed — and
+// it is in the minted flush, which means the sealed rows written with it
+// were rolled back too. Every minted flush was lost, reported once as
+// `invalid byte sequence for encoding "UTF8": 0x00` and then as "the service
+// is unaffected", which it was: it went on answering from memory, alone,
+// which is exactly what a request worker pool cannot do. This is the same
+// mistake `storedKey()` made and the second place it was made.
+//
+// base64url both halves, joined with '.', which is not in that alphabet —
+// same encoding as `storedKey()`, for the same reason, and nothing to
+// migrate because no row in the old shape was ever committed.
+//
+// `minted-own` IS A SECOND KIND AND NOT A FLAG, because the only thing that
+// reads it is a `WHERE kind <> …` on the barrier's target — see
+// latestBlockingChangeSeq(). A column would have had to be added to
+// `sts_changes` and indexed; a kind is already there and already selected on.
+// THE NAME, SEALED, where the row carries one (#222): the key column is a
+// digest, and a reader needs the NAME — to drop it from its own store on a
+// delete, which no digest can tell it. A sealed value is not base64url (it
+// holds '$'), so a reader tells the two forms apart. Hot path (every row of
+// every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function mintedChangeRow(row) {
+  return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
+           key: Buffer.from(String(row.handle), 'utf8')
+                      .toString('base64url') +
+                '.' +
+                (row.keySealed ? String(row.keySealed)
+                  : Buffer.from(String(row.key), 'utf8')
+                      .toString('base64url')) };
+}
+
+// `expires_at` (#333) is the store's own answer for the record, or NULL; see
+// `expiresAt` in common/realms.js. Hot path: no Entering/Leaving pair.
+function mintedExpiresOf(row) {
+  return Number(row.expiresAt) > 0 ? Math.floor(Number(row.expiresAt))
+                                   : null;
+}
+
+// ---------------------------------------------------------------------------
+// MINTED_FLUSH'S WRITES, NAMED (MINTED_FLUSH_LAYOUT), for a plan whose merges
+// are `resolved`. A merging row the tombstone refused is written nowhere and
+// logged nowhere; every row is still LOCKED (`lock_*`), as each row the flush
+// touches always was. The fence and the compare-and-set are the caller's.
+// Hot path (every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function mintedFlushWrites(plan, resolved, origin) {
+  const named = {};
+  const column = function (rows, read) {
+    return rows.map(read);
+  };
+  const handles = function (rows) {
+    return column(rows, function (row) { return String(row.handle); });
+  };
+  const realmsOf = function (rows) {
+    return column(rows, function (row) { return String(row.realm); });
+  };
+  const keys = function (rows) {
+    return column(rows, function (row) { return String(row.key); });
+  };
+  named.lock_h = handles(plan.touched);
+  named.lock_r = realmsOf(plan.touched);
+  named.lock_k = keys(plan.touched);
+  // Every upsert in one statement, in one order: the guarded ones (merged
+  // or not), the plain ones and the tombstones written.
+  const kept = plan.guarded.map(function (row) {
+    return { row: row, body: row.body };
+  }).concat(resolved.writes);
+  const writes = kept.concat(plan.plain.map(function (row) {
+    return { row: row, body: row.body };
+  }), plan.tombs.map(function (row) {
+    return { row: { handle: row.handle, realm: row.realm, key: row.key,
+                    expiresAt: null, keySealed: row.keySealed },
+             body: TOMBSTONE };
+  })).sort(function (a, b) {
+    return byMintedId(a.row, b.row);
+  });
+  const written = writes.map(function (w) { return w.row; });
+  named.up_h = handles(written);
+  named.up_r = realmsOf(written);
+  named.up_k = keys(written);
+  named.up_body = writes.map(function (w) { return w.body; });
+  named.up_expires = written.map(mintedExpiresOf);
+  named.up_sealed = written.map(function (row) {
+    return String(row.keySealed || '');
+  });
+  named.plain_h = handles(plan.plain);
+  named.plain_r = realmsOf(plan.plain);
+  named.plain_k = keys(plan.plain);
+  named.tombstone = TOMBSTONE;
+  named.del_h = handles(plan.dels);
+  named.del_r = realmsOf(plan.dels);
+  named.del_k = keys(plan.dels);
+  // THE SESSION INDEX (#350), after the bodies, as each row's index write
+  // followed its body before: a body a tombstone refused writes none (the
+  // statement writes an index row only for a body `ins` returned).
+  const upserted = kept.map(function (w) {
+    return w.row;
+  }).concat(plan.plain);
+  const indexed = upserted.filter(function (row) {
+    return row.handle === 'authn.sessions' && row.index &&
+      typeof row.index === 'object';
+  }).sort(byMintedId);
+  const sessionColumns = ['ses_realm', 'ses_key', 'ses_expires',
+    'ses_last_seen', 'ses_started', 'ses_subject', 'ses_username',
+    'ses_chosen', 'ses_authenticated', 'ses_kind', 'ses_rp_surface',
+    'ses_parent', 'ses_backs_console', 'ses_credential', 'ses_partner'];
+  sessionColumns.forEach(function (name) {
+    named[name] = [];
+  });
+  indexed.forEach(function (row) {
+    sessionIndexParams(row.realm, row.key, row.index)
+      .forEach(function (value, i) {
+        named[sessionColumns[i]].push(value);
+      });
+  });
+  const gone = plan.tombs.concat(plan.dels);
+  const goneSessions = gone.filter(function (row) {
+    return row.handle === 'authn.sessions';
+  });
+  named.sesdel_realm = realmsOf(goneSessions);
+  named.sesdel_key = keys(goneSessions);
+  // AN ON-DEMAND STORE'S INDEX (#820, schema version 24), on the session
+  // index's rule. A row carrying `lookups` (an array, possibly empty) has
+  // its index rows replaced; a deleted row of an indexed store loses them.
+  const looked = upserted.filter(function (row) {
+    return Array.isArray(row.lookups);
+  });
+  named.ixup_h = handles(looked);
+  named.ixup_r = realmsOf(looked);
+  named.ixup_k = keys(looked);
+  const unindexed = gone.filter(function (row) {
+    return row.indexed === true;
+  });
+  named.ixgone_h = handles(unindexed);
+  named.ixgone_r = realmsOf(unindexed);
+  named.ixgone_k = keys(unindexed);
+  const filed = [];
+  looked.forEach(function (row) {
+    Array.from(new Set(row.lookups.map(String))).forEach(function (indexKey) {
+      filed.push({ handle: String(row.handle), realm: String(row.realm),
+                   indexKey: indexKey, key: String(row.key) });
+    });
+    // THE ROW'S SORT ROW (2026-10-22, #820), replaced with the others: one
+    // more index row whose `sort_at` is the store's `sortBy` value, what
+    // `minted.newest` orders by. A row with no value has none.
+    if (sortAtParam(row) !== null) {
+      filed.push({ handle: String(row.handle), realm: String(row.realm),
+                   indexKey: require('./minted_queries').SORT_INDEX_KEY,
+                   key: String(row.key), sortAt: row.sortAt });
+    }
+  });
+  named.ixnew_h = filed.map(function (one) { return one.handle; });
+  named.ixnew_r = filed.map(function (one) { return one.realm; });
+  named.ixnew_i = filed.map(function (one) { return one.indexKey; });
+  named.ixnew_k = filed.map(function (one) { return one.key; });
+  named.ixnew_s = filed.map(sortAtParam);
+  // THE CHANGE LOG, upserts then deletes as before; an upsert's row is
+  // written only if its body was (a refused upsert changed nothing, so it
+  // tells nobody anything).
+  const refused = new Set(resolved.refused);
+  const changes = plan.upserts.filter(function (row) {
+    return !refused.has(row);
+  }).map(function (row) {
+    return { change: mintedChangeRow(row), row: row };
+  }).concat(plan.deletes.map(function (row) {
+    return { change: mintedChangeRow(row), row: null };
+  }));
+  named.origin = origin;
+  named.chg_kind = changes.map(function (one) { return one.change.kind; });
+  named.chg_realm = changes.map(function (one) {
+    return String(one.change.realm || '');
+  });
+  named.chg_key = changes.map(function (one) {
+    return String(one.change.key || '');
+  });
+  named.chg_h = changes.map(function (one) {
+    return one.row ? String(one.row.handle) : null;
+  });
+  named.chg_r = changes.map(function (one) {
+    return one.row ? String(one.row.realm) : null;
+  });
+  named.chg_k = changes.map(function (one) {
+    return one.row ? String(one.row.key) : null;
+  });
+  return named;
+}
+
+// What MINTED_FLUSH answered: one row, always, from a database. `known` is
+// false for an answer with no row, which only a test's double gives. Hot
+// path (every minted flush): no Entering/Leaving pair.
+function mintedFlushAnswer(result) {
+  const row = (result && result.rows && result.rows[0]) || null;
+  const truth = function (value) {
+    return value === true || value === 't' || value === 'true';
+  };
+  const list = function (value) {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed : [];
+  };
+  const unwritten = new Set(list(row && row.unwritten).map(function (one) {
+    return mintedIdOf({ handle: one[0], realm: one[1], key: one[2] });
+  }));
+  let current = null;
+  if (row && row.current) {
+    current = new Map();
+    list(row.current).forEach(function (one) {
+      if (one[3] !== null && one[3] !== undefined) {
+        current.set(mintedIdOf({ handle: one[0], realm: one[1],
+                                 key: one[2] }), String(one[3]));
+      }
+    });
+  }
+  return { known: !!row, fenceOk: !!row && truth(row.fence_ok),
+           go: !!row && truth(row.go),
+           casBad: row ? Number(row.cas_bad) || 0 : 0,
+           unwritten: unwritten, current: current };
+}
+
 // ---------------------------------------------------------------------------
 // A LAPSED ORIGIN CLAIM IS NOT PURGED WITH THE OTHERS (2026-09-29, #351).
 //
@@ -1479,64 +2244,278 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 // by this driver's writer pool, its LISTEN client, its read pool and, since
 // #98's conversion tool (`persistence/cell_convert.js`), a process that is
 // not the service and dials the same databases. `create()` argues the two
-// decisions it holds: TLS is wanted when the string's `sslmode` asks for it,
-// and the parameter is then STRIPPED so that `pg`'s own reading of it cannot
-// disagree with the `ssl` option built here. A libpq keyword/value string,
-// which cannot be edited safely, is passed through untouched.
+// decisions it holds: the connection is ALWAYS TLS, and the `sslmode`
+// parameter is STRIPPED so that `pg`'s own reading of it cannot disagree with
+// the `ssl` option built here.
+//
+// **NEVER IN THE CLEAR, IN EVERY MODE (#273, 2026-10-07).** Until then TLS
+// was used only when `sslmode` asked for it, so a string with none — the
+// default `persistence.databaseUrl` among them — connected in the clear with
+// a warning, and only a database that refuses plaintext (the compose
+// stack's) stopped it. Now a string with no `sslmode` is TLS (`require`),
+// `prefer` is TLS too (libpq's `prefer` would fall back to plaintext, which
+// is the thing refused), and `disable` or `allow` is REFUSED. So is a libpq
+// keyword/value string: it cannot be edited safely, so whether `pg` would
+// dial it in the clear cannot be told here — write it as a URL. A Unix
+// socket has no TLS; postgres answers the TLS request on one with "N", and
+// the connection fails, which is the same refusal said by the server.
+//
+// **`verify-ca` AND `verify-full` VERIFY, WHATEVER THE SETTING SAYS (rcbj,
+// #543 round 2, 2026-10-12).** Until then the parameter was stripped and
+// `persistence.databaseTlsRejectUnauthorized` alone decided whether the
+// server's certificate was believed, so a string that said `verify-full`
+// and a setting left at its default (off) dialled an UNAUTHENTICATED
+// server while the string an operator wrote said the opposite — the very
+// "connection string says one thing, the client does another" shape #273
+// removed for encryption, left standing for authentication. Now the two
+// verify modes mean what libpq means by them:
+//
+//   * `verify-ca`   — the chain is verified against this process's trust
+//     anchors and the host name is NOT checked (libpq's verify-ca checks
+//     only that the certificate was issued by a trusted CA);
+//   * `verify-full` — the chain AND the host name are verified.
+//
+// For no sslmode, `require` and `prefer` the setting still decides, both
+// halves together, as it always did. The setting can only ADD verification
+// to those; it can never take it away from a verify mode. A verify mode
+// whose certificate does not verify is a connection `pg` refuses, and at
+// start that is `persistence.start()`'s fatal open, STS-STORE-0006, with
+// node's own reason ("self-signed certificate", "Hostname/IP does not match
+// certificate's altnames") in the message.
+//
+// **THE TRUST ANCHORS MAY BE THE DATABASE'S OWN (2026-10-12).** `ca`, the
+// PEM text of `persistence.databaseTlsCaFile` (`persistence.databaseTlsCa()`
+// reads and checks it), goes on the `ssl` option as node's `ca`, which
+// REPLACES the default trust store for this connection and no other — so
+// the compose stack's self-signed certificate is trusted by the database
+// pools and by nothing else this process dials. Empty leaves node's default
+// store (with NODE_EXTRA_CA_CERTS). It is text, so it crosses to the
+// directory bridge's thread as it is.
+//
+// `verify-ca` needs a `checkServerIdentity` that checks nothing, because
+// node verifies the host name whenever it verifies the chain. A function
+// cannot cross to a thread, so the directory bridge's options carry
+// `hostnameUnchecked` instead and `common/sync_query_thread.ts` puts the
+// function back (`bridgeConnection()`, below).
+//
+// **AN ADDRESS IS CHECKED AS THAT ADDRESS (#951).** `pg` sets `servername`
+// only when the host is not an IP, and it passes no `host` to
+// `tls.connect`. The default check then runs against `localhost`, so a
+// certificate that names `localhost` was accepted for every address. When
+// the host name IS checked, the hook calls `tls.checkServerIdentity` with
+// the host from the connection string and ignores the name it was given.
+// An IPv6 literal is that address without the brackets `URL.hostname`
+// keeps. The function is read at the handshake, so the process-wide check
+// (`outbound_tls`, once installed) is what runs, against that host. The
+// bridge cannot be posted a function, so the same host goes as `checkHost`
+// and the thread puts this hook back.
 //
 // A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
-// logger arrives with create(). `notUrl` carries why a string that asked for
-// TLS could not be edited, so the caller can say so on its own logger.
+// logger arrives with create(). `refused` carries why a string cannot be
+// dialled, and each caller throws it, tagged, on its own logger.
 // ---------------------------------------------------------------------------
 /**
  * Returns what `pg` is given to dial a connection string the way this driver
  * does.
  *
  * @param url - the connection string
- * @param verifyTls - whether the server's certificate is verified
- * @returns `{ connectionString, ssl, wantsTls, notUrl }`; `notUrl` is '' or
- * the reason the string could not be edited
+ * @param verifyTls - whether the server's certificate is verified where the
+ * string's `sslmode` does not decide it (none, `require`, `prefer`)
+ * @param [ca] - PEM text of the certificates trusted for this connection in
+ * place of node's default store, or '' for that store
+ * @param [engine] - 'postgres' (the default) or 'mariadb' (#677)
+ * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
+ * `refused` is '' or why the string is not dialled (it would be in the
+ * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
+ * checked of the server's certificate
  */
-function dialOptions(url, verifyTls) {
+function dialOptions(url, verifyTls, ca, engine) {
   const raw = String(url || '');
-  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
-    .test(raw);
-  let connectionString = raw;
-  let notUrl = '';
-  if (wantsTls) {
-    try {
-      const parsed = new URL(raw);
-      parsed.searchParams.delete('sslmode');
-      connectionString = parsed.toString();
-    } catch (e) {
-      // Not a URL: see the header. Carried on the answer rather than
-      // logged, because there is no logger here.
-      notUrl = String((e && e.message) || e) || 'not a URL';
-      connectionString = raw;
+  const mariadb = engine === 'mariadb';
+  // A MariaDB string spells "no TLS" as `ssl=false` or `ssl-mode=DISABLED`
+  // (#677); refused for the reason `sslmode=disable` is.
+  if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw) ||
+      (mariadb &&
+       /(^|[?&\s])(ssl\s*=\s*(false|0)|ssl-mode\s*=\s*disabled)\b/i
+         .test(raw))) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'its sslmode asks for a connection in the clear, ' +
+                      'which this service never opens; use ' +
+                      'sslmode=require, or leave sslmode out',
+             verifyChain: false, verifyHostname: false };
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(raw);
+  } catch (e) {
+    // Not a URL: see the header. Carried on the answer rather than logged,
+    // because there is no logger here.
+    return { connectionString: '', ssl: undefined,
+             refused: 'it is not a postgres:// URL (' +
+                      (String((e && e.message) || e) || 'not a URL') +
+                      '), so whether it would be dialled in the clear ' +
+                      'cannot be told; write it as a URL',
+             verifyChain: false, verifyHostname: false };
+  }
+  if (mariadb && !/^(mariadb|mysql):$/i.test(parsed.protocol)) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'persistence.mode is mariadb and it is not a ' +
+                      'mariadb:// URL (' + parsed.protocol + ')',
+             verifyChain: false, verifyHostname: false };
+  }
+  if (!mariadb && !/^postgres(ql)?:$/i.test(parsed.protocol)) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'it is not a postgres:// URL (' + parsed.protocol +
+                      '), so whether it would be dialled in the clear ' +
+                      'cannot be told; write it as a URL',
+             verifyChain: false, verifyHostname: false };
+  }
+  // Read before it is stripped: the verify modes decide verification
+  // themselves (the header). Lower-cased as the refusal above matches.
+  const sslmode = String(parsed.searchParams.get('sslmode') || '')
+    .toLowerCase();
+  parsed.searchParams.delete('sslmode');
+  parsed.searchParams.delete('ssl');
+  parsed.searchParams.delete('ssl-mode');
+  const verifyChain = sslmode === 'verify-ca' || sslmode === 'verify-full' ||
+    !!verifyTls;
+  const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
+  /**
+   * @type {{ rejectUnauthorized: boolean, ca?: string,
+   *          checkServerIdentity?: Function, checkHost?: string }}
+   */
+  // `stsOutboundVariant`: the store's row of the outbound gate (#1360,
+  // `common/certificate_trust.ts`); node ignores a member it does not know.
+  const ssl = /** @type {any} */ ({ rejectUnauthorized: verifyChain,
+                                    stsOutboundVariant: 'store' });
+  if (ca) {
+    // The database's own trust anchors, in place of the default store for
+    // this connection only (the header).
+    ssl.ca = String(ca);
+  }
+  if (verifyChain && !verifyHostname) {
+    // libpq's verify-ca: the chain, and no host name. Node checks the host
+    // name through this hook whenever it verifies the chain, so answering
+    // "no error" is how the check is left out — and only that check. The
+    // hook is `knex_store.js`'s, the one the bridge's thread puts back.
+    ssl.checkServerIdentity = require('./knex_store').chainOnlyCheck();
+  } else if (verifyHostname && parsed.hostname) {
+    // The name in the string, not the one `pg` leaves node (#951, above).
+    // Anonymous: this module has no logger yet, and the hook runs on the
+    // driver's handshake. `_presented` is `localhost` for an address.
+    // Brackets are the URL's, not the address a certificate names.
+    let host = parsed.hostname;
+    if (host.charAt(0) === '[' && host.charAt(host.length - 1) === ']') {
+      host = host.slice(1, -1);
     }
+    ssl.checkHost = host;
+    // `knex_store.js`'s hook, which the bridge's thread is handed back
+    // from the same function (#951's review): one place says how the
+    // database's name is checked, in every process and thread.
+    ssl.checkServerIdentity = require('./knex_store').hostCheck(host);
   }
   return {
-    connectionString: connectionString,
-    ssl: wantsTls ? { rejectUnauthorized: !!verifyTls } : undefined,
-    wantsTls: wantsTls,
-    notUrl: notUrl
+    connectionString: parsed.toString(),
+    ssl: ssl,
+    refused: '',
+    verifyChain: verifyChain,
+    verifyHostname: verifyHostname
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE CHANGE LOG'S SEQUENCE MUST BE DENSE (#677, rcbj 2026-11-03).
+//
+// The pull treats a number it stepped over as a transaction still
+// committing and asks for it again for ten minutes
+// (`persistence_replication.js`, HOLE_SPAN_LIMIT). That is right for what a
+// sequence of INCREMENT 1 and CACHE 1 leaves — one burnt number per
+// rollback — and wrong for one that leaves gaps by design: an increment
+// above one makes every row a hole, and a cache above one hands each
+// session a block it commits out of order, so a reader steps over numbers
+// another session will not use for minutes. Neither corrupts the store
+// (every applier reads the current row); both turn the pull's hole list
+// into noise in which a real late commit is eventually given up on.
+//
+// So open() REFUSES such a store (STS-STORE-0091), on EVIDENCE only:
+// `pg_sequence` is a catalog every role may read, and an answer with no
+// row (a server that does not say) is not a reason to refuse.
+// `postgres/schema.sql` and SCHEMA_OBJECTS both create `bigserial`, which
+// is INCREMENT 1 CACHE 1. Module level, handed the driver's logger, so
+// `tests/change_log_jump.js` can ask it of a catalog double.
+// ---------------------------------------------------------------------------
+function checkChangeLogDense(client, log) {
+  log.debug("Entering checkChangeLogDense().");
+  log.debug("Leaving checkChangeLogDense().");
+  return client.query(
+    'SELECT s.seqincrement AS increment, s.seqcache AS cache FROM ' +
+    'pg_sequence s WHERE s.seqrelid = ' +
+    'to_regclass(pg_get_serial_sequence(\'sts_changes\', \'seq\'))'
+  ).then(function (result) {
+    const row = ((result && result.rows) || [])[0];
+    if (!row) {
+      return null;
+    }
+    const increment = Number(row.increment);
+    const cache = Number(row.cache);
+    // A row that names neither number is no evidence either: it opens, as
+    // no row does. directory_counts' and directory_queries' pg doubles
+    // answer every query with a row of their own shape, and NaN was read
+    // as a sparse sequence (2026-11-03).
+    if (!Number.isFinite(increment) || !Number.isFinite(cache)) {
+      return null;
+    }
+    if (increment === 1 && cache <= 1) {
+      return null;
+    }
+    throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0091') +
+      'the change log\'s sequence (sts_changes.seq) is INCREMENT ' +
+      increment + ' CACHE ' + cache + ', which leaves gaps every reader ' +
+      'would wait for. It must be INCREMENT 1 CACHE 1, as ' +
+      'postgres/schema.sql creates it: ALTER SEQUENCE ' +
+      'sts_changes_seq_seq INCREMENT 1 CACHE 1, as the owner.'),
+      'STS-STORE-0091');
+  });
+}
+
 /**
- * Creates the postgres persistence driver.
+ * Creates the database persistence driver: PostgreSQL, or (#677) MariaDB
+ * with `options.engine` 'mariadb'.
  *
  * A connection pool, a transaction per flush, the change log that several
  * processes coordinate through, and the minted, key, cluster and risk tables.
- * TLS is used when the connection string's `sslmode` asks for it.
+ * Every connection is TLS; a string whose `sslmode` would dial in the clear
+ * is refused (`dialOptions()`, #273).
  * @param options - `url`, the connection string; `log`, the logger;
- * `verifyTls`, whether the server certificate is verified; and `poolMax`, the
- * pool size
+ * `verifyTls`, whether the server certificate is verified; `tlsCa`, the PEM
+ * trust anchors for it or ''; `poolMax`, the pool size; `engine`,
+ * 'postgres' (the default) or 'mariadb'; `sqlDialect`, 'native' or
+ * 'portable'
  * @returns the driver object, with the methods the persistence contract names
  */
 function create(options) {
   const url = options.url;
   const log = options.log;
+  // A block claim's fence (#884). Only the driver that writes the status
+  // row holds it: the one driver, or the global tier. The cell tier must
+  // not treat a lock it does not store as lost, or every publish fails.
+  const claimFenceOwner = !!options.claimFenceOwner;
+  const claimFences = claimFenceOwner &&
+    typeof options.claimFences === 'function' ? options.claimFences : null;
+
+  // The four parameter arrays of RELEASE_CLAIMS_SQL (above, at module level),
+  // for `[{ scope, realm, key, reservation }]` (#628). Here for the driver's
+  // logger.
+  function releaseClaimsParams(rows) {
+    log.debug("Entering releaseClaimsParams().");
+    const pick = function (name) {
+      return rows.map(function (row) {
+        return String(row[name] || '');
+      });
+    };
+    log.debug("Leaving releaseClaimsParams().");
+    return [pick('scope'), pick('realm'), pick('key'), pick('reservation')];
+  }
 
   // The two helpers of SEALED_VALUE (above, at module level), here for the
   // driver's logger.
@@ -1667,18 +2646,240 @@ function create(options) {
 
   // The thirteen values an entry is written with: the seven columns it
   // always had, `attrs` now the sealed blob, then the six lookups.
+  // The fourteenth, `dek_keys` (#623): the data keys the row holds values
+  // under, from the attributes as written and the blob they were sealed in
+  // — so every writer of an entry keeps the re-encryption job's index.
   function entryParams(realmId, dnKey, entry) {
     log.debug("Entering entryParams().");
     const attrs = (entry && entry.attributes) || {};
     const index = entryCodec.index(attrs);
+    const sealed = entryCodec.sealAttributes(realmId, dnKey, attrs);
     log.debug("Leaving entryParams().");
-    return [realmId, dnKey, entry.dn,
-            JSON.stringify(entryCodec.sealAttributes(realmId, dnKey, attrs)),
+    return [realmId, dnKey, entry.dn, JSON.stringify(sealed),
             entry.origin || null, entry.createdAt || null,
             entry.modifiedAt || null,
             JSON.stringify(index.nameKeys), JSON.stringify(index.mailKeys),
             JSON.stringify(index.uuidKeys), JSON.stringify(index.classKeys),
-            JSON.stringify(index.valueKeys), JSON.stringify(index.attrNames)];
+            JSON.stringify(index.valueKeys), JSON.stringify(index.attrNames),
+            JSON.stringify(entryCodec.dekKeys(attrs, sealed))];
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DIRECTORY FLUSH'S SET-BASED WRITES (2026-10-21): `saveDirectory()`'s
+  // entries as fourteen parallel arrays, `entryParams()`'s columns, so one
+  // statement carries a whole chunk. Every column is text, the jsonb ones
+  // cast in the statement.
+  // ---------------------------------------------------------------------------
+  const ENTRY_UNNEST =
+    'unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], ' +
+    '$6::text[], $7::text[], $8::text[], $9::text[], $10::text[], ' +
+    '$11::text[], $12::text[], $13::text[], $14::text[]) ' +
+    'AS u(r, k, dn, attrs, origin, created, modified, nk, mk, uk, ck, vk, ' +
+    'an, dk)';
+
+  function entryColumns(items) {
+    log.debug("Entering entryColumns().");
+    const columns = [];
+    for (let c = 0; c < 14; c++) {
+      columns.push([]);
+    }
+    items.forEach(function (item) {
+      const one = entryParams(item.row.realm, item.row.key, item.entry);
+      for (let c = 0; c < 14; c++) {
+        columns[c].push(one[c] === undefined ? null : one[c]);
+      }
+    });
+    log.debug("Leaving entryColumns().");
+    return columns;
+  }
+
+  // Merged entries another node already holds, every row of them locked by
+  // the flush: one UPDATE per chunk, so order cannot matter.
+  function updateEntries(client, items, moved) {
+    log.debug("Entering updateEntries(). " + items.length);
+    let chain = Promise.resolve();
+    for (let at = 0; at < items.length; at += CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = items.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        chunk.forEach(function (item) {
+          moved.push({ realm: item.row.realm, dn: item.row.key, op: 'put' });
+        });
+        return client.query(
+          'UPDATE sts_ldap_entries AS t SET dn = u.dn, ' +
+          'attrs = u.attrs::jsonb, origin = u.origin, ' +
+          'created_at = u.created, modified_at = u.modified, ' +
+          'name_keys = u.nk::jsonb, mail_keys = u.mk::jsonb, ' +
+          'uuid_keys = u.uk::jsonb, class_keys = u.ck::jsonb, ' +
+          'value_keys = u.vk::jsonb, attr_names = u.an::jsonb, ' +
+          'dek_keys = u.dk::jsonb FROM ' + ENTRY_UNNEST + ' ' +
+          'WHERE t.realm = u.r AND t.dn_key = u.k', entryColumns(chunk));
+      });
+    }
+    log.debug("Leaving updateEntries().");
+    return chain;
+  }
+
+  // New entries and blind ones in ONE INSERT per chunk, ordered by key, so
+  // the rows nobody has locked yet are locked in one order. A blind row
+  // that meets a stored one replaces it; a merged one that does is not
+  // written, and is answered in the promise's list. The flush merges it
+  // after COMMIT, in a transaction that locks only that row (#447).
+  function insertEntries(client, items, moved) {
+    log.debug("Entering insertEntries(). " + items.length);
+    const lost = [];
+    let chain = Promise.resolve();
+    for (let at = 0; at < items.length; at += CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = items.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        const params = entryColumns(chunk);
+        params.push(chunk.filter(function (item) {
+          return item.blind;
+        }).map(function (item) {
+          return String(item.row.realm) + '\n' + String(item.row.key);
+        }));
+        return client.query(
+          'INSERT INTO sts_ldap_entries ' +
+          '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+          '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+          '   attr_names, dek_keys) ' +
+          'SELECT u.r, u.k, u.dn, u.attrs::jsonb, u.origin, u.created, ' +
+          'u.modified, u.nk::jsonb, u.mk::jsonb, u.uk::jsonb, u.ck::jsonb, ' +
+          'u.vk::jsonb, u.an::jsonb, u.dk::jsonb FROM ' + ENTRY_UNNEST + ' ' +
+          'ORDER BY u.r, u.k ' +
+          'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
+          '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
+          '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
+          '  modified_at = EXCLUDED.modified_at, ' +
+          '  name_keys = EXCLUDED.name_keys, ' +
+          '  mail_keys = EXCLUDED.mail_keys, ' +
+          '  uuid_keys = EXCLUDED.uuid_keys, ' +
+          '  class_keys = EXCLUDED.class_keys, ' +
+          '  value_keys = EXCLUDED.value_keys, ' +
+          '  attr_names = EXCLUDED.attr_names, ' +
+          '  dek_keys = EXCLUDED.dek_keys ' +
+          'WHERE sts_ldap_entries.realm || E\'\\n\' || ' +
+          'sts_ldap_entries.dn_key = ANY($15::text[]) ' +
+          'RETURNING realm, dn_key', params
+        ).then(function (r) {
+          const written = new Set((r && r.rows || []).map(function (one) {
+            return String(one.realm) + '\n' + String(one.dn_key);
+          }));
+          chunk.forEach(function (item) {
+            const id = String(item.row.realm) + '\n' + String(item.row.key);
+            // **`row.key` AND NOT `row.entry.dn` (2026-09-07)**: a change
+            // row is a pointer the receiver dereferences by the NORMALISED
+            // dn, which is the key.
+            if (item.blind || written.has(id)) {
+              moved.push({ realm: item.row.realm, dn: item.row.key,
+                           op: 'put' });
+            } else {
+              lost.push(item.row);
+            }
+          });
+        });
+      });
+    }
+    log.debug("Leaving insertEntries().");
+    return chain.then(function () {
+      return lost;
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // A MERGED INSERT THAT LOST, MERGED AFTER THE FLUSH HAS COMMITTED (#447).
+  //
+  // The flush's transaction already holds every other row it locked, in
+  // primary-key order. Locking this row in there takes a lock out of that
+  // order. The 2026-10-05 single-node run deadlocked a flush's ordered
+  // `SELECT … ORDER BY realm, dn_key FOR UPDATE` against this single-row
+  // statement: each held a row the other was waiting to lock. This
+  // transaction holds nothing else. It locks this one row, merges, and
+  // writes. One row is an order, and a transaction that waits only on it
+  // holds nothing a flush needs while that flush waits on another row.
+  //
+  // A row that is gone is inserted. One that appears between the look and
+  // the insert is written as this process has it — the second look the
+  // per-row path took, so a row that keeps moving cannot loop — and that
+  // write is still the only directory row this transaction locks.
+  // -----------------------------------------------------------------------
+  function mergeLostRow(client, row, outcomes) {
+    log.debug("Entering mergeLostRow().");
+    const updateSql = 'UPDATE sts_ldap_entries SET dn = $3, attrs = ' +
+      '$4::jsonb, origin = $5, created_at = $6, modified_at = $7, ' +
+      'name_keys = $8::jsonb, mail_keys = $9::jsonb, uuid_keys = ' +
+      '$10::jsonb, class_keys = $11::jsonb, value_keys = $12::jsonb, ' +
+      'attr_names = $13::jsonb, dek_keys = $14::jsonb ' +
+      'WHERE realm = $1 AND dn_key = $2';
+    return client.query(
+      'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
+      'modified_at FROM sts_ldap_entries ' +
+      'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
+      [row.realm, row.key]
+    ).then(function (found) {
+      const now = (found.rows || [])[0];
+      let theirs = null;
+      let base = null;
+      try {
+        theirs = now ? entryFromRow(now) : null;
+        base = row.base ? JSON.parse(row.base) : null;
+      } catch (e) {
+        // The row does not open (STS-STORE-0072). saveDirectory() reads
+        // the data keys again and retries the flush once. This transaction
+        // rolls back with the throw, which is the whole result.
+        log.debug("Caught in mergeLostRow(): " + ((e && e.message) || e));
+        log.debug("Leaving mergeLostRow(). The row does not open.");
+        throw e;
+      }
+      // The flush may have recorded a merge against an empty row. Forget
+      // it: the row that committed is the one this merge is about.
+      for (let i = outcomes.length - 1; i >= 0; i--) {
+        if (outcomes[i].realm === row.realm &&
+            outcomes[i].key === row.key) {
+          outcomes.splice(i, 1);
+        }
+      }
+      const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
+      if (verdict.outcome === 'theirs' || verdict.outcome === 'deleted') {
+        outcomes.push({ realm: row.realm, key: row.key,
+                        outcome: verdict.outcome, entry: verdict.entry });
+        log.debug("Leaving mergeLostRow(). The stored row stands.");
+        return null;
+      }
+      if (verdict.outcome === 'merged') {
+        outcomes.push({ realm: row.realm, key: row.key,
+                        outcome: 'merged', entry: verdict.entry });
+      }
+      // After the two outcomes that do not write: a deleted verdict has no
+      // entry, and entryParams() reads entry.dn.
+      const values = entryParams(row.realm, row.key, verdict.entry);
+      let written = null;
+      if (theirs) {
+        written = client.query(updateSql, values);
+      } else {
+        written = client.query(
+          'INSERT INTO sts_ldap_entries ' +
+          '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+          '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+          '   attr_names, dek_keys) ' +
+          'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
+          '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
+          '$14::jsonb) ON CONFLICT (realm, dn_key) DO NOTHING',
+          values
+        ).then(function (r) {
+          if (r && r.rowCount) {
+            return null;
+          }
+          return client.query(updateSql, values);
+        });
+      }
+      return written.then(function () {
+        return recordChanges(client, [{ kind: 'directory',
+                                        realm: row.realm, key: row.key }]);
+      }).then(function () {
+        log.debug("Leaving mergeLostRow().");
+        return null;
+      });
+    });
   }
 
   // A stored row's entry, its attributes opened. THROWS where the blob does
@@ -1706,20 +2907,19 @@ function create(options) {
   }
 
   // ---------------------------------------------------------------------------
-  // WHAT A SEALED ENTRY HOLDS UNDER WHICH DATA KEY, which SQL can no longer
-  // see (#391 phase 6). An entry's blob is under the realm's `directory` key,
-  // and INSIDE it are the per-attribute values sealed under their own keys
-  // (a TOTP secret, Kerberos keys, a client secret) — a LIKE over the column
-  // finds only the outer one, and the re-encryption job would count the
-  // inner keys as unused and destroy them with the values still in the
-  // entries. So the directory is walked HERE, a page at a time, and each
-  // entry opened.
+  // WHAT A SEALED ENTRY HOLDS UNDER WHICH DATA KEY, which SQL cannot see
+  // (#391 phase 6): an entry's blob is under the realm's `directory` key, and
+  // INSIDE it are the per-attribute values sealed under their own keys (a
+  // TOTP secret, Kerberos keys, a client secret). Until #623 the directory
+  // was WALKED for it — every row, opened on the front process, twice an
+  // hour while any key was superseded. Since #623 (schema version 17) every
+  // writer records the keys beside the blob, in `dek_keys`, and the counts
+  // are kept by triggers; what is left to open is a row written before the
+  // column existed (`dek_keys IS NULL`), once, a bounded batch at a time.
   // ---------------------------------------------------------------------------
-  const WALK_PAGE = 500;
-
-  // Every entry, in key order: `visit(row, opened)`, where `opened` is the
-  // text holding the entry's attributes (the blob opened, or the plain
-  // JSON) and null for a blob that does not open. Resolves the row count.
+  // How many rows one statement of the index's catch-up, or of a re-seal,
+  // reads.
+  const SEALED_PAGE = 500;
   // -------------------------------------------------------------------------
   // THE MAINTENANCE PASSES WAIT FOR A CONNECTION RATHER THAN FAIL (2026-10-02).
   // The pool's five-second wait is for a REQUEST, which is answered 503 rather
@@ -1731,6 +2931,9 @@ function create(options) {
   // when trying to connect" (sts_data_keys, locally and in CI run
   // 36967212793). A connect timeout is retried here, four times, one, two,
   // three and four seconds apart; any other error is the caller's at once.
+  // Since #326 the pool is Knex's and the wait that ran out is its
+  // `KnexTimeoutError` ("Timeout acquiring a connection"); `knex_store.js`'s
+  // `timedOutWaiting()` is the one place that knows its spelling.
   // Safe to repeat: every write these passes make is a compare-and-swap on
   // the value it read. A bounded loop inside one operation, not a timer that
   // re-arms (tests/no_periodic_timers.js).
@@ -1761,8 +2964,7 @@ function create(options) {
   function connectTimedOut(e) {
     log.debug("Entering connectTimedOut().");
     log.debug("Leaving connectTimedOut().");
-    return /timeout exceeded when trying to connect/i.test(
-      String((e && e.message) || e));
+    return knexStore.timedOutWaiting(e);
   }
 
   async function maintenance(what, fn) {
@@ -1804,76 +3006,270 @@ function create(options) {
     });
   }
 
-  function walkDirectory(visit) {
-    log.debug("Entering walkDirectory().");
+  // The text of a stored row's attributes, its blob opened (#623), for
+  // `dek_keys`. A blob that does not open counts for its own key only — it
+  // is still sealed under it, and what is inside cannot be known here —
+  // which is what the walk this replaced counted.
+  // Null where the blob does not open, so the caller may first read the
+  // data-key rows again (a realm created a moment ago elsewhere).
+  function openedOfRow(row) {
+    log.debug("Entering openedOfRow().");
     const crypto = require('../common/crypto');
     const keystore = require('../common/keystore');
-    let seen = 0;
-    const page = function (afterRealm, afterKey) {
-      return maintenanceQuery('the directory walk',
-        'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries ' +
-        'WHERE (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $3',
-        [afterRealm, afterKey, WALK_PAGE]
-      ).then(function (r) {
-        const rows = r.rows || [];
-        let chain = Promise.resolve();
-        rows.forEach(function (row) {
-          chain = chain.then(function () {
-            const stored = row.attrs;
-            const opened = typeof stored === 'string' &&
-              crypto.isEncryptedWithKek(stored)
-              ? keystore.open(stored, 'directory')
-              : JSON.stringify(stored || {});
-            seen += 1;
-            return visit(row, opened === undefined ? null : opened);
-          });
-        });
-        return chain.then(function () {
-          if (rows.length < WALK_PAGE) {
-            return seen;
-          }
-          const last = rows[rows.length - 1];
-          return page(last.realm, last.dn_key);
-        });
-      });
-    };
-    log.debug("Leaving walkDirectory().");
-    return page('', '');
-  }
-
-  // The data keys an entry names: its blob's own, and every value inside it.
-  function deksOfEntry(row, opened) {
-    log.debug("Entering deksOfEntry().");
-    const crypto = require('../common/crypto');
-    const out = [];
-    if (typeof row.attrs === 'string' && crypto.isEncryptedWithKek(row.attrs)) {
-      out.push(crypto.dekIdOf(row.attrs));
+    const stored = row.attrs;
+    if (typeof stored === 'string' && crypto.isEncryptedWithKek(stored)) {
+      const text = keystore.open(stored, 'directory');
+      log.debug("Leaving openedOfRow(). Sealed.");
+      return text === undefined ? null : text;
     }
-    (String(opened || '').match(SEALED_VALUE) || []).forEach(function (one) {
-      out.push(one.split('$')[3]);
-    });
-    log.debug("Leaving deksOfEntry().");
-    return out;
+    log.debug("Leaving openedOfRow(). Plain.");
+    return JSON.stringify(stored || {});
   }
 
-  // Counts, by data key, what the directory holds; an entry that does not
-  // open counts for its blob's key (it is still sealed under it).
-  function countDirectory(wanted) {
-    log.debug("Entering countDirectory().");
-    const counts = {};
-    log.debug("Leaving countDirectory().");
-    return walkDirectory(function (row, opened) {
-      deksOfEntry(row, opened).forEach(function (id) {
-        if (!wanted || wanted.has(id)) {
-          counts[id] = (counts[id] || 0) + 1;
-        }
+  // Whether any entry's data keys are not yet known: one probe of the
+  // partial index, whatever the directory's size. ORDER BY the index's own
+  // key and LIMIT 1, not EXISTS: the planner drops an EXISTS's ordering, and
+  // with statistics from before the catch-up (most rows NULL) it chose a
+  // sequential scan — which, once none is NULL, reads the whole table.
+  function unindexedRemain() {
+    log.debug("Entering unindexedRemain().");
+    if (directoryStore) {
+      // No MariaDB entry was ever written without its keys
+      // (`directory_portable.js`), and asking would be a scan.
+      log.debug("Leaving unindexedRemain(). MariaDB.");
+      return Promise.resolve(false);
+    }
+    log.debug("Leaving unindexedRemain().");
+    return maintenanceQuery('the data-key index',
+      'SELECT 1 AS remain FROM sts_ldap_entries WHERE dek_keys IS NULL ' +
+      'ORDER BY realm, dn_key LIMIT 1', []).then(function (r) {
+      return ((r && r.rows) || []).length > 0;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DATA-KEY INDEX CAUGHT UP (#623): the entries written before
+  // `dek_keys` existed, read through the partial index in key order, opened,
+  // and given their keys — a page at a time, yielding to the event loop
+  // between pages, until the page is short or `budgetMs` is spent. Every
+  // entry written since has its keys already, so on a store built at
+  // version 17 this is one probe; on an older store it is the walk the jobs
+  // did every hour, done ONCE, spread over a few passes.
+  //
+  // COMPARE AND SET: a row is given its keys only while it still reads NULL
+  // and still holds the blob they were read from — a writer that changed
+  // it in between has written its own keys (or, an older build of this
+  // service, a blob these keys do not describe), and wins.
+  // ---------------------------------------------------------------------------
+  async function indexSealedEntries(budgetMs) {
+    log.debug("Entering indexSealedEntries().");
+    if (directoryStore) {
+      // Nothing to catch up on MariaDB (unindexedRemain()).
+      log.debug("Leaving indexSealedEntries(). MariaDB.");
+      return { indexed: 0, remaining: false };
+    }
+    const started = Date.now();
+    const budget = Math.max(0, Number(budgetMs) || 0);
+    let afterRealm = '';
+    let afterKey = '';
+    let indexed = 0;
+    let more = true;
+    let reread = false;
+    while (more && Date.now() - started < budget) {
+      const r = await maintenanceQuery('the data-key index',
+        'SELECT realm, dn_key, attrs FROM sts_ldap_entries WHERE dek_keys ' +
+        'IS NULL AND (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key ' +
+        'LIMIT $3', [afterRealm, afterKey, SEALED_PAGE]);
+      const rows = (r && r.rows) || [];
+      more = rows.length === SEALED_PAGE;
+      if (!rows.length) {
+        break;
+      }
+      const last = rows[rows.length - 1];
+      afterRealm = last.realm;
+      afterKey = last.dn_key;
+      let opened = rows.map(openedOfRow);
+      if (opened.indexOf(null) >= 0 && !reread) {
+        // A blob that does not open may be under a data key this process
+        // has not read yet; read them once a pass, and try again.
+        reread = true;
+        await require('../common/keystore').refreshDekRows();
+        opened = rows.map(openedOfRow);
+      }
+      const u = await maintenanceQuery('the data-key index',
+        'UPDATE sts_ldap_entries AS e SET dek_keys = u.k::jsonb FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS ' +
+        'u(r, d, a, k) WHERE e.realm = u.r AND e.dn_key = u.d AND ' +
+        'e.dek_keys IS NULL AND e.attrs = u.a::jsonb',
+        [rows.map(function (row) { return String(row.realm); }),
+         rows.map(function (row) { return String(row.dn_key); }),
+         rows.map(function (row) { return JSON.stringify(row.attrs); }),
+         rows.map(function (row, i) {
+           return JSON.stringify(entryCodec.dekKeys(opened[i], row.attrs));
+         })]);
+      indexed += Number(u && u.rowCount) || 0;
+      // The opening above is this process's CPU: a page, then the event
+      // loop, so a request is never behind more than one page of it.
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
       });
-    }).then(function () {
+    }
+    const remaining = await unindexedRemain();
+    if (indexed) {
+      log.info('persistence: the directory\'s data-key index caught up ' +
+               indexed + ' entr' + (indexed === 1 ? 'y' : 'ies') +
+               ' written before it existed (#623)' +
+               (remaining ? '; more remain for the next pass.' : '; it is ' +
+                'complete.'));
+    }
+    log.debug("Leaving indexSealedEntries(). " + indexed + ".");
+    return { indexed: indexed, remaining: remaining };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE `grantinggroup` KEYS OF ENTRIES WRITTEN BEFORE #1306, ONCE (#1311):
+  // `granting_index_backfill.js` is the walk and its argument; these are
+  // PostgreSQL's statements for it (MariaDB's are `directory_portable.js`'s).
+  // A page is the next rows by the primary key, the sealed attributes and
+  // the held `value_keys` handed back only for a row whose clear
+  // `attr_names` names a granting attribute; a write is compare-and-set on
+  // the blob read, `value_keys` only, and logs no change.
+  // ---------------------------------------------------------------------------
+  const grantingOps = {
+    readState: function () {
+      log.debug("Entering grantingOps.readState().");
+      log.debug("Leaving grantingOps.readState().");
+      return maintenanceQuery('the grantinggroup key backfill',
+        'SELECT index_key, key FROM sts_minted_index WHERE handle = $1 AND ' +
+        'realm = \'\' AND index_key = ANY($2::text[])',
+        [grantingBackfill.HANDLE,
+         [grantingBackfill.MARK_KEY, grantingBackfill.CURSOR_KEY]]
+      ).then(function (r) {
+        const rows = (r && r.rows) || [];
+        const mark = rows.some(function (row) {
+          return row.index_key === grantingBackfill.MARK_KEY;
+        });
+        const at = rows.filter(function (row) {
+          return row.index_key === grantingBackfill.CURSOR_KEY;
+        })[0];
+        return { done: mark,
+                 cursor: at ? grantingBackfill.cursorOf(at.key) : null };
+      });
+    },
+    readPage: function (cursor, limit) {
+      log.debug("Entering grantingOps.readPage().");
+      log.debug("Leaving grantingOps.readPage().");
+      return maintenanceQuery('the grantinggroup key backfill',
+        'SELECT realm, dn_key, CASE WHEN attr_names ?| $3::text[] THEN ' +
+        'attrs END AS attrs, CASE WHEN attr_names ?| $3::text[] THEN ' +
+        'value_keys END AS value_keys FROM sts_ldap_entries WHERE ' +
+        '(realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $4',
+        [cursor ? cursor.realm : '', cursor ? cursor.dnKey : '',
+         require('./directory_codec').GRANTING_ATTRIBUTES.slice(), limit]
+      ).then(function (r) {
+        return (r && r.rows) || [];
+      });
+    },
+    writeKeys: function (items) {
+      log.debug("Entering grantingOps.writeKeys(). " + items.length);
+      log.debug("Leaving grantingOps.writeKeys().");
+      return maintenanceQuery('the grantinggroup key backfill',
+        'UPDATE sts_ldap_entries AS e SET value_keys = u.v::jsonb FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS ' +
+        'u(r, d, a, v) WHERE e.realm = u.r AND e.dn_key = u.d AND ' +
+        'e.attrs = u.a::jsonb',
+        [items.map(function (one) { return one.realm; }),
+         items.map(function (one) { return one.dnKey; }),
+         items.map(function (one) { return JSON.stringify(one.attrs); }),
+         items.map(function (one) { return JSON.stringify(one.valueKeys); })]
+      ).then(function (u) {
+        return Number(u && u.rowCount) || 0;
+      });
+    },
+    saveCursor: function (realmId, dnKey) {
+      log.debug("Entering grantingOps.saveCursor().");
+      log.debug("Leaving grantingOps.saveCursor().");
+      return maintenanceTransaction('the grantinggroup key backfill',
+                                    function (client) {
+        return client.query(
+          'DELETE FROM sts_minted_index WHERE handle = $1 AND realm = \'\' ' +
+          'AND index_key = $2',
+          [grantingBackfill.HANDLE, grantingBackfill.CURSOR_KEY]
+        ).then(function () {
+          return client.query(
+            'INSERT INTO sts_minted_index (handle, realm, index_key, key) ' +
+            'VALUES ($1, \'\', $2, $3) ON CONFLICT DO NOTHING',
+            [grantingBackfill.HANDLE, grantingBackfill.CURSOR_KEY,
+             grantingBackfill.cursorValue(realmId, dnKey)]);
+        });
+      });
+    },
+    saveDone: function () {
+      log.debug("Entering grantingOps.saveDone().");
+      log.debug("Leaving grantingOps.saveDone().");
+      return maintenanceTransaction('the grantinggroup key backfill',
+                                    function (client) {
+        return client.query(
+          'INSERT INTO sts_minted_index (handle, realm, index_key, key) ' +
+          'VALUES ($1, \'\', $2, $2) ON CONFLICT DO NOTHING',
+          [grantingBackfill.HANDLE, grantingBackfill.MARK_KEY]
+        ).then(function () {
+          return client.query(
+            'DELETE FROM sts_minted_index WHERE handle = $1 AND realm = ' +
+            '\'\' AND index_key = $2',
+            [grantingBackfill.HANDLE, grantingBackfill.CURSOR_KEY]);
+        });
+      });
+    },
+    open: function (row) {
+      log.debug("Entering grantingOps.open().");
+      log.debug("Leaving grantingOps.open().");
+      return entryCodec.openAttributes(row.dn_key, row.attrs);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE DIRECTORY HOLDS UNDER EACH DATA KEY, READ (#623): the counters
+  // the triggers keep, for the keys asked (`wanted`, a Set) or every key.
+  // REFUSED while any entry's keys are not known: a count missing them
+  // could read 0 for a key still in use, and a key is destroyed on 0.
+  // ---------------------------------------------------------------------------
+  function directoryDekCounts(wanted) {
+    log.debug("Entering directoryDekCounts().");
+    if (directoryStore) {
+      log.debug("Leaving directoryDekCounts(). MariaDB.");
+      return directoryStore.directoryDekCounts(wanted);
+    }
+    const ids = wanted ? Array.from(wanted).map(String) : null;
+    log.debug("Leaving directoryDekCounts().");
+    return unindexedRemain().then(function (remain) {
+      if (remain) {
+        log.debug("directoryDekCounts(): entries are not yet indexed.");
+        throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0080') +
+          'the directory holds entries whose data keys are not yet known ' +
+          '(written before schema version 17); they are being indexed, and ' +
+          'until they are, what is sealed under a data key is not counted.'),
+          'STS-STORE-0080');
+      }
+      return maintenanceQuery('the data-key count',
+        // A key's shards SUMMED (#630): one shard alone is not a count.
+        ids ? 'SELECT dek_id, sum(n) AS n FROM sts_ldap_dek_counts WHERE ' +
+              'dek_id = ANY($1::text[]) GROUP BY dek_id'
+            : 'SELECT dek_id, sum(n) AS n FROM sts_ldap_dek_counts GROUP BY ' +
+              'dek_id',
+        ids ? [ids] : []);
+    }).then(function (r) {
+      const counts = {};
+      ((r && r.rows) || []).forEach(function (row) {
+        counts[String(row.dek_id)] = Number(row.n) || 0;
+      });
       return counts;
     }, function (e) {
-      log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
-                'directory could not be walked to count its data keys: ' +
-                ((e && e.message) || e));
+      if (errorCodes.codeOf(e) !== 'STS-STORE-0080') {
+        log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
+                  'directory\'s data-key counts could not be read: ' +
+                  ((e && e.message) || e));
+      }
       throw e;
     });
   }
@@ -1987,67 +3383,84 @@ function create(options) {
                     'it to fall back to the local development default.');
   }
 
-  let Pool;
-  let Client;
-  try {
-    // REQUIRED LAZILY, and that is the point: `pg` is a dependency only this
-    // mode needs, and a person running `persistence.mode=ldif` — or the default
-    // memory mode, which is everybody who has not asked for any of this —
-    // must not be stopped by its absence. The message names the package,
-    // because "Cannot find module 'pg'" arriving out of a mock identity
-    // service is a sentence with no obvious cause.
-    Pool = require('pg').Pool;
-    // AND THE BARE CLIENT, for the `LISTEN` connection. A pooled client cannot
-    // hold a subscription — the pool hands it to the next caller — so the
-    // change listener needs a connection outside the pool. Same lazy require
-    // and the same reason.
-    Client = require('pg').Client;
-  } catch (err) {
-    throw new Error(errorCodes.tag('STS-STORE-0028') +
-                    'persistence.mode is "postgres" but the "pg" package is ' +
-                    'not installed (' + err.message + '). Run `npm install` ' +
-                    'in this package, or use persistence.mode=ldif, which ' +
-                    'needs nothing but a directory to write in.');
-  }
+  // THE ONE DOOR (#326): every connection below is made by Knex, in
+  // `knex_store.js`, which is the only module that loads `knex` and the only
+  // way `pg` (Knex's driver) is reached. REQUIRED HERE, in create(), and
+  // `knex_store.js` loads Knex lazily in its turn: a person running
+  // `persistence.mode=ldif` — or the default memory mode, which is everybody
+  // who has not asked for any of this — must not be stopped by the absence of
+  // either package. A missing one is STS-STORE-0028, thrown by the first
+  // `openPool()` below, inside create(), where it always was.
+  const knexStore = require('./knex_store');
+
+  // THE DIALECT (#677): ordinary statements are built ONCE with the Knex
+  // query builder and compiled here for this engine; the engine's own
+  // pieces (the statement clock, a JSON cast) are its fragments. A compiled
+  // statement is text and values, sent on the same connections and inside
+  // the same held-connection transactions as every hand-written statement.
+  // `persistence/sql_dialect.js` argues it.
+  // THE ENGINE (#677): PostgreSQL, or MariaDB — one driver, the statements
+  // compiled for it (`sql_dialect.js`) and the coordination that needs
+  // PostgreSQL's features in its portable form (`cluster_portable.js`).
+  const engine = options.engine === 'mariadb' ? 'mariadb' : 'postgres';
+  const dialect = sqlDialect.forEngine(engine);
+  const kx = dialect.kx;
 
   // ---------------------------------------------------------------------
   // TLS, AND THE TWO HALVES OF IT THAT LIVE IN DIFFERENT PLACES.
   //
-  // ENCRYPTION is `sslmode` in the connection string, which is postgres's own
-  // spelling and which `pg` parses for itself — `?sslmode=require` is in the
-  // compose default, and the database refuses a plaintext connection anyway
-  // because every `host` rule in its pg_hba.conf is `hostssl`. Nothing here
-  // has to do anything for that to work.
+  // ENCRYPTION is ALWAYS ON (#273): `dialOptions()` dials every string over
+  // TLS and refuses one whose `sslmode` says `disable` or `allow`, or that
+  // it cannot read. The compose stack's database refuses a plaintext
+  // connection as well, because every `host` rule in its pg_hba.conf is
+  // `hostssl`, but it is no longer the only thing that does.
   //
   // TRUST is not expressible in a connection string as far as `pg` is
   // concerned: `rejectUnauthorized` is a TLS option. So it is a setting, and
   // it is applied HERE rather than pushed into the URL, where it would be
   // silently ignored.
   //
-  // THE OPTION IS ONLY SET WHEN sslmode ASKED FOR TLS. Passing `ssl` to `pg`
-  // turns TLS on regardless of the URL, so setting it unconditionally would
-  // make `sslmode=disable` mean its opposite — a connection string saying one
-  // thing and the client doing another, which is the shape of bug this whole
-  // change exists to remove.
+  // `sslmode=disable` is REFUSED rather than overridden: passing `ssl` to
+  // `pg` would turn TLS on whatever the URL said, and a connection string
+  // saying one thing while the client does another is the shape of bug this
+  // whole change exists to remove — so the string is not dialled at all, and
+  // the start fails saying why (persistence.start() is the one fatal open).
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
-  const dial = dialOptions(url, options.verifyTls);
-  const wantsTls = dial.wantsTls;
+  const tlsCa = String(options.tlsCa || '');
+  const dial = dialOptions(url, options.verifyTls, tlsCa, engine);
+  if (dial.refused) {
+    throw new Error(errorCodes.tag('STS-STORE-0078') +
+                    'persistence: the database connection string is not ' +
+                    'dialled: ' + dial.refused + ' (#273).');
+  }
+  // The SETTING, passed on to the read pool's own dialOptions() below; what
+  // is actually checked is the dial's, because a verify-mode sslmode
+  // verifies whatever the setting says (the header above dialOptions()).
   const verify = !!options.verifyTls;
-  if (wantsTls) {
-    log.info('persistence: the database connection is TLS (sslmode in the ' +
-             'connection string), and the server certificate is ' +
-             (verify ? 'VERIFIED against this process\'s trust anchors.'
-                     : 'NOT verified — ' +
-                       'persistence.databaseTlsRejectUnauthorized is off, ' +
-                       'which is the honest setting for the self-signed pair ' +
-                       'the compose stack generates. The connection is ' +
-                       'encrypted either way.'));
+  const anchors = tlsCa
+    ? 'the certificates in persistence.databaseTlsCaFile'
+    : 'this process\'s default trust store';
+  if (dial.verifyChain) {
+    log.info('persistence: the database connection is TLS, and the server ' +
+             'certificate is ' +
+             (dial.verifyHostname
+               ? 'VERIFIED, chain and host name, against ' + anchors + '.'
+               : 'VERIFIED against ' + anchors + ', and its host name is ' +
+                 'not checked (sslmode=verify-ca, as libpq reads it).'));
   } else {
-    log.warn('persistence: the database connection string does not ask for ' +
-             'TLS (no sslmode=require). The compose stack\'s database ' +
-             'REFUSES a plaintext connection, so this will fail to connect ' +
-             'there; against another database it will connect in the clear.');
+    // LOUDLY (2026-10-12): verification is on by default, so reaching this
+    // line is an operator's choice, and it is the one that leaves every row
+    // this service keeps readable and writable by whatever answers at the
+    // database's address.
+    log.warn('persistence: the database connection is TLS, but the server ' +
+             'certificate is NOT VERIFIED — ' +
+             'persistence.databaseTlsRejectUnauthorized is off and the ' +
+             'connection string asks for no verify mode, so the database ' +
+             'server is UNAUTHENTICATED: anything that can answer at its ' +
+             'address can impersonate it and read and write every row ' +
+             'this service keeps. The connection is encrypted, and that is ' +
+             'all.');
   }
 
   // ONE DECIDER, AND A FAILED CONNECTION IS WHY.
@@ -2067,42 +3480,84 @@ function create(options) {
   // That place is `dialOptions()` since #98, so a process that is not the
   // service dials the same way.
   const dialled = dial.connectionString;
-  if (dial.notUrl) {
-    // A libpq keyword/value string rather than a URL. `pg` accepts those and
-    // this cannot edit one safely, so it is passed through untouched and
-    // whatever it says about ssl is what happens.
-    log.debug('persistence: the connection string is not a URL, so its ' +
-              'sslmode was left as it is.');
-  }
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
   // quietly used different TLS settings from the pool would be a second,
-  // weaker connection to the same store that nothing would ever report.
+  // weaker connection to the same store that nothing would ever report. Since
+  // #326 it is said once more structurally: the pool's Knex instance is built
+  // from these options, and the LISTEN and liveness connections are that
+  // instance's (`pool.dedicated()`), so they cannot be dialled any other way.
   function clientOptions() {
     log.debug("Entering clientOptions().");
     log.debug("Leaving clientOptions().");
     return {
+      engine: engine,
       connectionString: dialled,
-      ssl: wantsTls ? { rejectUnauthorized: verify } : undefined,
+      ssl: dial.ssl,
       connectionTimeoutMillis: 5000
     };
   }
 
-  const pool = new Pool({
-    connectionString: dialled,
-    ssl: wantsTls ? { rejectUnauthorized: verify } : undefined,
-    // Small on purpose. Every query this driver makes is on the flush path,
-    // there is one flush at a time by construction (persistence.js serialises
-    // them), and a mock does not need a connection per core.
+  // Knex's pool over the writer (#326; `knex_store.js` argues the shape).
+  // A mock must not hang waiting for a database that is not there: the
+  // failure has to arrive as a logged error and a service that keeps
+  // answering, which needs the connection attempt to give up — the 5 s in
+  // `clientOptions()` bounds both the dial and the wait for a free slot.
+  const pool = knexStore.openPool(clientOptions(), {
+    // Small on purpose. The directory flush is one transaction at a time
+    // (persistence.js). At most two minted flushes of non-overlapping keys
+    // may run beside it (#877), so a writer holds at most three of these
+    // connections. The floor of four leaves one for the change-log pull.
+    // A mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
-    // A mock must not hang waiting for a database that is not there: the
-    // failure has to arrive as a logged error and a service that keeps
-    // answering, which needs the connection attempt to give up.
-    connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000
   });
+
+  // -------------------------------------------------------------------------
+  // KEY-ROW WRITES NEVER HOLD THE WHOLE POOL (2026-11-10, #1590).
+  //
+  // `mergeKeys()` is a transaction that holds its `sts_keys` row FOR UPDATE
+  // while the caller's merge runs, and a certificate-authority rebuild saves
+  // several rows that every thread then adopts. In the fuzz run on 39c8248c8
+  // several such writes queued on one hot row's lock, each keeping its pooled
+  // connection while it waited, until a flush could not get one within the
+  // pool's 5 s (STS-STORE-0002) and its requests were answered 503
+  // (STS-STORE-0066). So at most `pool size - 2` key-row transactions run at
+  // once in a process (never fewer than one): the rest wait HERE, holding no
+  // connection, and at least two are always left for the flushes and the
+  // change-log pull. The wait is in memory and bounded by the transactions
+  // ahead of it; nothing is dropped. Whether a request's writes should share
+  // one transaction instead is #1590.
+  // -------------------------------------------------------------------------
+  const poolSize = Number(options.poolMax) > 0 ? Number(options.poolMax)
+    : POOL_FLOOR;
+  const keyWriteSlots = Math.max(1, poolSize - 2);
+  let keyWritesRunning = 0;
+  const keyWritesWaiting = [];
+  // A key-row transaction holds a slot from its start to its end. Hot path
+  // under a rebuild: no Entering/Leaving pair, which would add two lines
+  // for every key row every thread writes.
+  function withKeyWriteSlot(work) {
+    return new Promise(function (resolve) {
+      if (keyWritesRunning < keyWriteSlots) {
+        keyWritesRunning += 1;
+        resolve(null);
+      } else {
+        keyWritesWaiting.push(resolve);
+      }
+    }).then(function () {
+      return Promise.resolve().then(work);
+    }).finally(function () {
+      const next = keyWritesWaiting.shift();
+      if (next) {
+        next(null);
+      } else {
+        keyWritesRunning -= 1;
+      }
+    });
+  }
 
   // -------------------------------------------------------------------------
   // THE READ POOL (#98, 2026-09-28). The global tier of a service deployed as
@@ -2123,6 +3578,36 @@ function create(options) {
   // database, single-cell mode, ldif's neighbour — has one database and
   // reads where it writes, exactly as before.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE TALLY POOL (2026-10-22, #820): writes that are counters, not
+  // records — the shared rate-limit windows and the risk engine's counts,
+  // assessments and subjects — commit with `synchronous_commit = off`.
+  // Postgres flushes its log ONE fsync at a time, and on 8081 a sign-in made
+  // about eleven committing transactions, half of them these: 187 fsyncs a
+  // second at 3.5 ms each held the log flush two thirds of the time, and
+  // that was the sign-in rate's ceiling. Committed this way a write is
+  // visible at once and durable within the WAL writer's next flush
+  // (`wal_writer_delay`, 200 ms); a crash of POSTGRES (not of this service)
+  // can lose the last fraction of a second of them. What is lost is a few
+  // attempts uncounted, or a statistic one sign-in short — rcbj's call on
+  // 2026-10-22. Sessions, codes, tokens, every minted row, and a directory
+  // batch that changed anything but an application's authentication counts
+  // stay on `pool`, durable at commit. A directory batch that is ONLY those
+  // counts uses this pool (#878): the same crash can lose the last fraction
+  // of a second of `appAuthentications` and the session and user counts. A
+  // batch that also changed a record rides the durable transaction instead.
+  // -------------------------------------------------------------------------
+  const tallyPool = knexStore.openPool(
+    Object.assign({}, clientOptions(),
+                  { options: '-c synchronous_commit=off' }),
+    { max: 2, idleTimeoutMillis: 30000 });
+  tallyPool.on('error', function (err) {
+    log.error(errorCodes.tag('STS-STORE-0030') +
+              'persistence: an idle postgres client of the tally pool ' +
+              'errored: ' + err.message + '. The pool will make a new one ' +
+              'on the next write.');
+  });
+
   const readUrl = String(options.readUrl || '').trim();
   // The read pool's connection options when it is a pool of its own, for
   // the bridge's thread (#349) — `readClientOptions()` below.
@@ -2131,18 +3616,21 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readDial = dialOptions(readUrl, verify);
+    const readDial = dialOptions(readUrl, verify, tlsCa, engine);
+    if (readDial.refused) {
+      throw new Error(errorCodes.tag('STS-STORE-0078') +
+                      'persistence: the read database connection string is ' +
+                      'not dialled: ' + readDial.refused + ' (#273).');
+    }
     readOptions = {
+      engine: engine,
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
       connectionTimeoutMillis: 5000
     };
-    const made = new Pool({
-      connectionString: readDial.connectionString,
-      ssl: readDial.ssl,
+    const made = knexStore.openPool(readOptions, {
       max: Number(options.poolMax) > 0 ? Number(options.poolMax)
         : POOL_FLOOR,
-      connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000
     });
     made.on('error', function (err) {
@@ -2166,8 +3654,11 @@ function create(options) {
 
   pool.on('error', function (err) {
     // A pooled client that died while idle. Logged rather than thrown — an
-    // unhandled 'error' on a Pool is a process exit, and a mock identity
-    // service must not exit because a database restarted.
+    // unhandled 'error' on a Pool was a process exit, and a mock identity
+    // service must not exit because a database restarted. Knex's dialect
+    // listens on every connection it makes, so since #326 it cannot be one;
+    // the report is kept, and Knex discards the connection at the next
+    // acquire.
     log.error(errorCodes.tag('STS-STORE-0030') +
               'persistence: an idle postgres client errored: ' + err.message +
               '. The pool will make a new one on the next write.');
@@ -2193,14 +3684,29 @@ function create(options) {
   // (STS-STORE-0070): a server at `max_connections` refuses a new connection
   // while a pooled one may be free, and a renewal that could run must.
   //
-  // **A TRANSACTION'S OWN FENCE CHECKS STAY IN ITS TRANSACTION** —
-  // `checkOriginFence()`, `checkClusterFence()` and the lapse re-assertion
-  // they make run on the transaction's client under its locks, because the
-  // check is only worth anything held to that transaction's COMMIT.
+  // **A TRANSACTION'S FENCE STAYS IN ITS TRANSACTION**, on its client,
+  // held to COMMIT — but what it share-locks is a row of `sts_cluster_locks`
+  // named with the token or the reservation, not the lease or the claim
+  // (#770, `cluster/CLAUDE.md`). The heartbeat and `renewOrigin()` update
+  // those data rows and do not touch the lock rows, so a fence cannot
+  // queue them. A lapse re-assertion is a short autocommit on THIS
+  // connection, bounded, not an exclusive lock held to the write's COMMIT.
+  //
+  // NOTHING SENDS A STATEMENT HERE OUTSIDE `liveExclusive()`. Once any
+  // caller BEGINs, node-postgres would otherwise queue the next statement
+  // into that transaction. A transaction is only `liveTransact()`, which
+  // holds the mutex until COMMIT or ROLLBACK, and the function it runs
+  // queries the client directly — a nested `liveQuery()` would deadlock
+  // on the mutex. A bounded renewal (`liveBounded()`) is the same shape
+  // for one statement: BEGIN, the timeout, the statement, COMMIT.
   // -------------------------------------------------------------------------
   let liveClient = null;
   let liveConnecting = null;
   let liveClosed = false;
+  // THE ONLINE INDEXES (#876, #882): the background build's connection, so
+  // close() can end it, and the promise its settlement is.
+  const onlineBuild = { client: null };
+  let onlineSettled = Promise.resolve({ built: [], told: [] });
   const liveStats = { queries: 0, connects: 0, drops: 0, viaPool: 0 };
 
   function liveConnection() {
@@ -2213,10 +3719,12 @@ function create(options) {
       log.debug("Leaving liveConnection(). Connecting.");
       return liveConnecting;
     }
-    const client = new Client(clientOptions());
+    // The pool's own Knex instance dials it, outside the pool (#326).
+    const client = pool.dedicated();
     client.on('error', function (err) {
       // A dropped connection: the next statement opens another. An 'error'
-      // with no listener on a Client is a process exit.
+      // with no listener on a Client was a process exit (Knex's dialect
+      // listens too since #326).
       liveStats.drops += 1;
       log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
                'liveness connection dropped (' + err.message + '); the ' +
@@ -2249,25 +3757,332 @@ function create(options) {
     return liveConnecting;
   }
 
-  /**
-   * Runs one liveness statement on the liveness connection, or through the
-   * pool when that connection cannot be opened.
-   * @param sql - the statement
-   * @param params - its parameters
-   * @returns the query's result
-   */
-  function liveQuery(sql, params) {
-    log.debug("Entering liveQuery().");
-    liveStats.queries += 1;
-    log.debug("Leaving liveQuery().");
-    return Promise.resolve().then(liveConnection).then(function (client) {
+  // One liveness caller at a time. The tail always settles, so a rejected
+  // statement does not stall every renewal behind it. No Entering/Leaving
+  // pair: it wraps every heartbeat.
+  let liveTail = Promise.resolve();
+  function liveExclusive(fn) {
+    const run = liveTail.then(function () {
+      return fn();
+    }, function () {
+      return fn();
+    });
+    liveTail = run.then(function () {
+      return null;
+    }, function () {
+      return null;
+    });
+    return run;
+  }
+
+  // A timeout is digits only. The value is concatenated into SET, and a
+  // caller's string must not be able to ride along.
+  function boundDigits(ms) {
+    const n = Math.floor(Number(ms) || 2000);
+    return String(Math.max(1, Math.min(60000, n)));
+  }
+
+  function dropLive(client) {
+    log.debug("Entering dropLive().");
+    if (liveClient === client) {
+      liveClient = null;
+    }
+    Promise.resolve(client.end()).catch(function (e) {
+      log.debug("Caught in dropLive(): " + ((e && e.message) || e));
+    });
+    log.debug("Leaving dropLive().");
+  }
+
+  function rollbackLive(client, err) {
+    log.debug("Entering rollbackLive().");
+    log.debug("Leaving rollbackLive().");
+    return client.query('ROLLBACK').then(function () {
+      throw err;
+    }, function (rollbackErr) {
+      log.warn(errorCodes.tag('STS-STORE-0032') + 'persistence: a ' +
+               'liveness rollback failed (' + ((rollbackErr &&
+               rollbackErr.message) || rollbackErr) + '); the connection ' +
+               'is being discarded.');
+      dropLive(client);
+      throw err;
+    });
+  }
+
+  // A server setting read back and written into SET must be a number.
+  function numericSetting(value, fallback) {
+    log.debug("Entering numericSetting().");
+    const text = String(value == null ? '' : value);
+    log.debug("Leaving numericSetting().");
+    return /^[0-9]+(\.[0-9]+)?$/.test(text) ? text : fallback;
+  }
+
+  // MariaDB's statement and lock-wait limits are SESSION, so they outlive
+  // the statement. Read the SESSION's values, set, run `work`, put them
+  // back; a restore that fails drops the connection so the next renewal
+  // dials a clean one. It read @@GLOBAL until 2026-11-13 and wrote those
+  // back into the session, which is the same number only while nothing
+  // set the session's own (#770's review): a restore leaves the session
+  // as it found it.
+  function mariadbWithBound(client, ms, work) {
+    log.debug("Entering mariadbWithBound().");
+    const seconds = String(Math.max(1, Math.ceil(Number(ms) / 1000)));
+    log.debug("Leaving mariadbWithBound().");
+    return client.query(
+      'SELECT @@SESSION.max_statement_time AS stmt, ' +
+      '@@SESSION.innodb_lock_wait_timeout AS lockwait'
+    ).then(function (read) {
+      const row = (read.rows && read.rows[0]) || {};
+      const stmt = numericSetting(row.stmt, '0');
+      const lockwait = numericSetting(row.lockwait, '50');
+      const restore = function () {
+        return client.query('SET SESSION max_statement_time = ' + stmt)
+          .then(function () {
+            return client.query(
+              'SET SESSION innodb_lock_wait_timeout = ' + lockwait);
+          });
+      };
+      return client.query('SET SESSION max_statement_time = ' + seconds)
+        .then(function () {
+          return client.query(
+            'SET SESSION innodb_lock_wait_timeout = ' + seconds);
+        }).then(function () {
+          return work();
+        }).then(function (result) {
+          return restore().then(function () {
+            return result;
+          }, function (err) {
+            log.debug("Caught in mariadbWithBound(): " +
+                      ((err && err.message) || err));
+            dropLive(client);
+            return result;
+          });
+        }, function (err) {
+          return restore().then(function () {
+            throw err;
+          }, function (restoreErr) {
+            log.debug("Caught in mariadbWithBound(): " +
+                      ((restoreErr && restoreErr.message) || restoreErr));
+            dropLive(client);
+            throw err;
+          });
+        });
+    });
+  }
+
+  // One statement under mariadbWithBound().
+  function mariadbBounded(client, sql, params, ms) {
+    log.debug("Entering mariadbBounded().");
+    log.debug("Leaving mariadbBounded().");
+    return mariadbWithBound(client, ms, function () {
       return client.query(sql, params);
+    });
+  }
+
+  // A lock or statement wait that ran out on the liveness connection: a
+  // bounded statement's own timeout, on either engine. PostgreSQL answers
+  // 55P03 (lock_timeout) or 57014 (statement_timeout); MariaDB 1205
+  // (innodb_lock_wait_timeout) or 1969 (max_statement_time).
+  function isBoundTimeout(err) {
+    log.debug("Entering isBoundTimeout().");
+    const code = err && err.code;
+    log.debug("Leaving isBoundTimeout().");
+    return code === '55P03' || code === '57014' ||
+      code === 'ER_LOCK_WAIT_TIMEOUT' || code === 'ER_STATEMENT_TIMEOUT' ||
+      (!!err && (err.errno === 1205 || err.errno === 1969));
+  }
+
+  // One autocommit statement with lock_timeout and statement_timeout.
+  // PostgreSQL's SET LOCAL dies with the transaction. A timeout REJECTS
+  // (55P03, 57014): the caller logs STS-CLUSTER-0003. It is not a dead
+  // membership, which would exit the process. Connect failure falls back
+  // to the pool unbounded, as an unbounded statement does — the incident
+  // was a lock wait on an open connection, not a failure to dial.
+  function liveBounded(sql, params, boundMs) {
+    log.debug("Entering liveBounded().");
+    const ms = boundDigits(boundMs);
+    log.debug("Leaving liveBounded().");
+    return Promise.resolve().then(liveConnection).then(function (client) {
+      if (engine === 'mariadb') {
+        return mariadbBounded(client, sql, params, ms);
+      }
+      return client.query('BEGIN').then(function () {
+        return client.query('SET LOCAL lock_timeout = ' + ms);
+      }).then(function () {
+        return client.query('SET LOCAL statement_timeout = ' + ms);
+      }).then(function () {
+        return client.query(sql, params);
+      }).then(function (result) {
+        return client.query('COMMIT').then(function () {
+          return result;
+        });
+      }, function (err) {
+        return rollbackLive(client, err);
+      });
     }, function (err) {
       liveStats.viaPool += 1;
       log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
                'liveness connection could not be opened (' + err.message +
                '); this statement goes through the pool.');
       return pool.query(sql, params);
+    });
+  }
+
+  /**
+   * Runs one liveness statement on the liveness connection, or through the
+   * pool when that connection cannot be opened. `boundMs` caps the lock
+   * and statement wait (#770); omitted, the statement waits as before.
+   * @param sql - the statement
+   * @param params - its parameters
+   * @param [boundMs] - the lock and statement timeout, milliseconds
+   * @returns the query's result
+   */
+  function liveQuery(sql, params, boundMs) {
+    log.debug("Entering liveQuery().");
+    liveStats.queries += 1;
+    log.debug("Leaving liveQuery().");
+    return liveExclusive(function () {
+      if (boundMs > 0) {
+        return liveBounded(sql, params, boundMs);
+      }
+      return Promise.resolve().then(liveConnection).then(function (client) {
+        return client.query(sql, params);
+      }, function (err) {
+        liveStats.viaPool += 1;
+        log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+                 'liveness connection could not be opened (' +
+                 err.message + '); this statement goes through the pool.');
+        return pool.query(sql, params);
+      });
+    });
+  }
+
+  // BEGIN…COMMIT on the liveness connection, holding the mutex for the
+  // whole of it. `fn` queries the runner, never `liveQuery()`.
+  //
+  // `boundMs` caps every lock and statement wait inside it (#770's review,
+  // 2026-11-13): a lease taken over or given up deletes fence lock rows,
+  // and that DELETE waits for every write still share-locking them — a
+  // write that can last thirty seconds. Unbounded, the wait held this
+  // connection, and every heartbeat queued behind it in `liveExclusive()`
+  // where its own bound had not started; the beat never settled and the
+  // node fenced itself (STS-CLUSTER-0004) in the middle of a takeover. A
+  // timeout rolls the whole transaction back and rejects (`isBoundTimeout()`),
+  // and the caller asks again on its next beat. PostgreSQL's SET LOCAL dies
+  // with the transaction; MariaDB's limits are the session's and are put
+  // back after it (`mariadbWithBound()`).
+  function liveTransact(fn, boundMs) {
+    log.debug("Entering liveTransact().");
+    const ms = boundMs > 0 ? boundDigits(boundMs) : '';
+    log.debug("Leaving liveTransact().");
+    return liveExclusive(function () {
+      return Promise.resolve().then(liveConnection).then(function (client) {
+        const runner = {
+          query: function (text, values) {
+            return client.query(text, values);
+          }
+        };
+        const transact = function () {
+          return client.query('BEGIN').then(function () {
+            if (!ms || engine === 'mariadb') {
+              return null;
+            }
+            return client.query('SET LOCAL lock_timeout = ' + ms)
+              .then(function () {
+                return client.query('SET LOCAL statement_timeout = ' + ms);
+              });
+          }).then(function () {
+            return fn(runner);
+          }).then(function (result) {
+            return client.query('COMMIT').then(function () {
+              return result;
+            });
+          }, function (err) {
+            return rollbackLive(client, err);
+          });
+        };
+        if (ms && engine === 'mariadb') {
+          return mariadbWithBound(client, ms, transact);
+        }
+        return transact();
+      }, function (err) {
+        liveStats.viaPool += 1;
+        log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
+                 'liveness connection could not be opened (' +
+                 err.message + '); this transaction goes through the pool.');
+        return poolTransact(fn, ms);
+      });
+    });
+  }
+
+  // A short transaction on the pool that is NOT a fenced write: an origin
+  // claim's lock row has to commit with the claim, and `withTransaction()`
+  // would re-enter the fence. `ms`, digits or empty, is the liveness
+  // transaction's bound carried here when that connection could not be
+  // opened; PostgreSQL's SET LOCAL ends with the transaction. On MariaDB the
+  // limits are the SESSION's and a pooled connection is somebody else's
+  // next, so the fallback there is unbounded, as `liveBounded()`'s is.
+  function poolTransact(fn, ms) {
+    log.debug("Entering poolTransact().");
+    log.debug("Leaving poolTransact().");
+    return pool.connect().then(function (client) {
+      return client.query('BEGIN').then(function () {
+        if (!ms || engine === 'mariadb') {
+          return null;
+        }
+        return client.query('SET LOCAL lock_timeout = ' + ms)
+          .then(function () {
+            return client.query('SET LOCAL statement_timeout = ' + ms);
+          });
+      }).then(function () {
+        return fn(client);
+      }).then(function (result) {
+        return client.query('COMMIT').then(function () {
+          client.release();
+          return result;
+        });
+      }, function (err) {
+        return client.query('ROLLBACK').then(function () {
+          client.release();
+          throw err;
+        }, function (rollbackErr) {
+          log.warn(errorCodes.tag('STS-STORE-0032') + 'persistence: a ' +
+                   'rollback failed (' + ((rollbackErr &&
+                   rollbackErr.message) || rollbackErr) + '); the ' +
+                   'connection is being discarded.');
+          client.release(rollbackErr);
+          throw err;
+        });
+      });
+    });
+  }
+
+  // The runner a bounded renewal is given. Each statement is its own
+  // autocommit with the timeout; three of them are three beats' worth of
+  // waiting, not one wait of three times.
+  function boundedRunner(ttlMs) {
+    const ms = renewalBoundMs(ttlMs);
+    return {
+      query: function (text, values) {
+        return liveQuery(text, values, ms);
+      }
+    };
+  }
+
+  // The origin's fence lock, written in the same transaction as the claim
+  // and cleared of every other reservation of this key. Native only: the
+  // portable statements build the same pair.
+  function swapOriginLock(client, key, reservation) {
+    log.debug("Entering swapOriginLock().");
+    const name = fenceLockName('origin', key, reservation);
+    const prefix = 'fence:origin:' + String(key) + ':';
+    log.debug("Leaving swapOriginLock().");
+    return client.query(
+      'INSERT INTO sts_cluster_locks (name) VALUES ($1) ON CONFLICT ' +
+      '(name) DO NOTHING', [name]
+    ).then(function () {
+      return client.query(
+        'DELETE FROM sts_cluster_locks WHERE left(name, ' +
+        'char_length($1)) = $1 AND name <> $2', [prefix, name]);
     });
   }
 
@@ -2292,9 +4107,121 @@ function create(options) {
   // (2026-09-18)** — see `adoptOrigin()` below. The random value here is what
   // a process uses when it has no stable name, or when the name is still held
   // by a live process, which is exactly the case the paragraph above guards.
-  let processId = String(process.pid) + '-' + nodeCrypto.randomUUID();
+  let processId = String(process.pid) + '-' +
+    require('../common/crypto').randomUuid();
   // The claim this process holds on a stable origin, or null.
   let originClaim = null;
+
+  // ---------------------------------------------------------------------
+  // THE PORTABLE CLUSTER STATEMENTS (#677), or null for PostgreSQL's own.
+  //
+  // On an engine that is not PostgreSQL they are the only ones there are.
+  // On PostgreSQL they replace the native statements when
+  // `persistence.sqlDialect` is `portable` — which is how the suite proves
+  // MariaDB's coordination on the reference engine (rcbj on #677): the same
+  // claims, leases, counters, windows, budgets, fences, join lock, heartbeat
+  // and change-log trim, written in statements both engines run.
+  // `persistence/cluster_portable.js` argues each contract.
+  // ---------------------------------------------------------------------
+  const portable = (dialect.engine !== 'postgres' ||
+                    options.sqlDialect === 'portable')
+    ? clusterPortable.forDriver({
+        dialect: dialect, pool: pool, tallyPool: tallyPool,
+        live: liveRunner, liveTransact: liveTransact,
+        boundQuery: function (text, values, ttl) {
+          return liveQuery(text, values, renewalBoundMs(ttl));
+        },
+        // A lease taken or given up is a bounded liveness transaction
+        // (#770's review), and its timeout is told apart from a failure.
+        boundTransact: function (fn, ttl) {
+          return liveTransact(fn, renewalBoundMs(ttl));
+        },
+        isBoundTimeout: isBoundTimeout,
+        originScope: ORIGIN_SCOPE,
+        processId: function () {
+          return processId;
+        }
+      })
+    : null;
+
+  // THE SMALLER TABLES' PORTABLE STATEMENTS (#677), or null for
+  // PostgreSQL's own, under the same rule as `portable` above: the realm
+  // registry and settings, the keys, the change rows and the change log's
+  // own reads and purge, the node snapshots, the used assertions and the
+  // report artifacts. They run inside this driver's own transactions
+  // (`withTransaction()`, `transactionOnce()`) and record their change rows
+  // through `recordChanges()`. `persistence/store_portable.js` argues each.
+  const small = (dialect.engine !== 'postgres' ||
+                 options.sqlDialect === 'portable')
+    ? storePortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        withTransaction: withTransaction, transactionOnce: transactionOnce,
+        recordChanges: recordChanges,
+        processId: function () {
+          return processId;
+        }
+      })
+    : null;
+
+  // THE RISK ENGINE'S STATEMENTS ON MARIADB (#677), or null for
+  // PostgreSQL's own. NOT under `persistence.sqlDialect=portable`: they are
+  // written for MariaDB's INET6, prefix text and JSON lists, which are not
+  // PostgreSQL's `inet`, `cidr` and `text[]`, so on PostgreSQL this family
+  // keeps its native text. `persistence/risk_portable.js` argues each.
+  const riskLib = dialect.engine !== 'postgres'
+    ? riskPortable.forDriver({
+        dialect: dialect, pool: pool, tallyPool: tallyPool,
+        withTransaction: withTransaction, recordChanges: recordChanges,
+        processId: function () {
+          return processId;
+        },
+        shapes: { dataset: riskDatasetFrom, version: riskVersionFrom,
+                  range: riskRangeFrom, failure: riskFailureFrom }
+      })
+    : null;
+
+  // ---------------------------------------------------------------------
+  // THE PORTABLE MINTED STATEMENTS (#677, phase 3b), or null for
+  // PostgreSQL's own: the minted rows, their index and the session index,
+  // and the minted flush as a transaction rather than MINTED_FLUSH. Built
+  // where the cluster's are, for the same two cases — every statement runs
+  // against PostgreSQL's schema unchanged, so `persistence.sqlDialect=
+  // portable` proves it on the reference engine. `persistence/
+  // minted_portable.js` argues each contract.
+  // ---------------------------------------------------------------------
+  const mintedStatements = portable
+    ? mintedPortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        tombstone: TOMBSTONE, indexMark: MINTED_INDEX_MARK,
+        sessionMark: { realm: SESSION_INDEX_MARK_REALM,
+                       key: SESSION_INDEX_MARK_KEY }
+      })
+    : null;
+
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY'S STORE ON MARIADB (#677, phase 3b), or null for
+  // PostgreSQL's own statements. ONLY WHEN THE ENGINE IS NOT POSTGRESQL, and
+  // not under `persistence.sqlDialect=portable`: it writes
+  // `sts_ldap_entry_keys`, which PostgreSQL's schema has not got. It runs in
+  // this driver's transactions (`withTransaction()`, the fence first), records
+  // its change rows through `recordChanges()`, and gives the creates' claims
+  // back through the portable cluster statements.
+  // `persistence/directory_portable.js` argues each contract.
+  // ---------------------------------------------------------------------
+  const directoryStore = dialect.engine !== 'postgres'
+    ? directoryPortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        ensurePool: tallyPool,
+        entryCodec: entryCodec, entryFromRow: entryFromRow,
+        openedOfRow: openedOfRow, withTransaction: withTransaction,
+        recordChanges: recordChanges, maintenance: maintenance,
+        extraSealed: EXTRA_SEALED, sealedLike: sealedLike,
+        resealText: resealText,
+        releaseClaims: function (client, rows) {
+          return portable.releaseClaims(client, rows);
+        }
+      })
+    : null;
 
   // ---------------------------------------------------------------------
   // THE FENCE (2026-09-14, #46), installed by `cluster/cluster.js`.
@@ -2331,14 +4258,91 @@ function create(options) {
   }
 
   // ---------------------------------------------------------------------
+  // AN ORIGIN CLAIM TAKEN OVER FROM A MEMBERSHIP THAT HAS GONE (#617) — see
+  // `adoptOrigin()`. One statement: the row is replaced only while it still
+  // names, after its `@`, a membership other than `nodeId` whose row in
+  // `sts_cluster_nodes` has left or expired by the database's clock, under
+  // the row lock a concurrent claimant or a fenced write also takes. True
+  // when this process now holds the claim.
+  // ---------------------------------------------------------------------
+  function takeOverFromGone(key, reservation, holder, nodeId, ttlMs) {
+    log.debug("Entering takeOverFromGone().");
+    if (portable) {
+      log.debug("Leaving takeOverFromGone(). Portable.");
+      return portable.takeOverFromGone(key, reservation, holder, nodeId,
+                                       ttlMs);
+    }
+    log.debug("Leaving takeOverFromGone().");
+    // The lock row moves in the same transaction as the reservation. A
+    // fence that share-locks the old name waits, then finds it gone.
+    return poolTransact(function (client) {
+      return client.query(
+        'UPDATE sts_cluster_claims c SET reservation = $3, origin = $4, ' +
+        'claimed_at = ' + DB_NOW + ', expires_at = ' + DB_NOW + ' + $5 ' +
+        'WHERE c.scope = $1 AND c.realm = \'\' AND c.key = $2 ' +
+        'AND position(\'@\' in c.origin) > 0 ' +
+        'AND split_part(c.origin, \'@\', 2) <> $6 ' +
+        'AND EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
+        'split_part(c.origin, \'@\', 2) AND (n.left_at > 0 OR ' +
+        'n.expires_at <= ' + DB_NOW + ')) RETURNING c.claimed_at',
+        [ORIGIN_SCOPE, key, reservation, holder,
+         Math.max(1000, Number(ttlMs) || 30000), nodeId]
+      ).then(function (r) {
+        if (!((r.rowCount || 0) > 0)) {
+          return false;
+        }
+        return swapOriginLock(client, key, reservation).then(function () {
+          return true;
+        });
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // THE ORIGIN FENCE (2026-09-18). A process that ADOPTED a stable origin
   // holds a claim on it (`adoptOrigin()`), and every transaction checks the
-  // claim is still its own — under a SHARE lock held to COMMIT, so a
-  // successor cannot take the origin between the check and the write. That
-  // is what makes a shared origin safe: a process paused past its claim's
-  // lifetime wakes to find its writes refused, rather than overwriting the
-  // rows its successor has taken over.
+  // claim is still its own, so a successor cannot take the origin between
+  // the check and the write. That is what makes a shared origin safe: a
+  // process paused past its claim's lifetime wakes to find its writes
+  // refused, rather than overwriting the rows its successor has taken over.
+  //
+  // THE SHARE LOCK IS A ROW OF `sts_cluster_locks` NAMED WITH THE
+  // RESERVATION, not the claim row (#770). Two statements, in this order:
+  // the lock, then a plain read of the claim. After the lock wait, READ
+  // COMMITTED rechecks the locked row and the next statement takes a new
+  // snapshot, so a takeover that committed while we waited — and deleted
+  // this name — is either still holding the lock (we see the new claim) or
+  // has removed the name (we fence). A missing lock is a fence, not a
+  // re-assertion: the successor already replaced the reservation. A lock
+  // we hold whose claim has lapsed with our reservation is extended by a
+  // short bounded autocommit on the liveness connection, not by an UPDATE
+  // that would pin the claim row until this write commits.
   // ---------------------------------------------------------------------
+  function readOriginFence(client, held) {
+    log.debug("Entering readOriginFence().");
+    if (portable) {
+      log.debug("Leaving readOriginFence(). Portable.");
+      return portable.originFence(client, held);
+    }
+    const lockName = fenceLockName('origin', held.key, held.reservation);
+    log.debug("Leaving readOriginFence().");
+    return client.query(
+      'SELECT 1 FROM sts_cluster_locks WHERE name = $1 FOR SHARE',
+      [lockName]
+    ).then(function (locked) {
+      if (!((locked.rowCount || 0) > 0)) {
+        return { lock: false, claim: false };
+      }
+      return client.query(
+        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = ' +
+        '\'\' AND key = $2 AND reservation = $3 AND expires_at > ' +
+        DB_NOW, [ORIGIN_SCOPE, held.key, held.reservation]
+      ).then(function (claim) {
+        return { lock: true, claim: (claim.rowCount || 0) > 0 };
+      });
+    });
+  }
+
   function checkOriginFence(client) {
     log.debug("Entering checkOriginFence().");
     if (!originClaim) {
@@ -2347,22 +4351,22 @@ function create(options) {
     }
     const held = originClaim;
     log.debug("Leaving checkOriginFence().");
-    return client.query(
-      'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = \'\' ' +
-      'AND key = $2 AND reservation = $3 AND expires_at > ' + DB_NOW +
-      ' FOR SHARE', [ORIGIN_SCOPE, held.key, held.reservation]
-    ).then(function (r) {
-      if (r.rowCount) {
+    return readOriginFence(client, held).then(function (seen) {
+      if (seen.lock && seen.claim) {
         return null;
+      }
+      if (!seen.lock) {
+        throw fenced('origin', 'this process no longer holds its origin ' +
+                     held.key + ' (its fence lock is gone, so another ' +
+                     'process took the claim), so it may not write.');
       }
       // -------------------------------------------------------------------
       // LAPSED IS NOT TAKEN (2026-09-21). The claim's time ran out, but that
       // alone does not mean another process holds it: a process that TAKES
-      // the claim replaces its reservation, in one statement on this row. So
-      // when the row still carries OUR reservation nobody wrote under this
-      // origin in between, and extending it is exactly as safe as the
-      // renewal that should have happened — which is what this does, inside
-      // the write's own transaction. Only a reservation that is somebody
+      // the claim replaces its reservation, and with it the lock's name. So
+      // when the lock is still ours nobody wrote under this origin in
+      // between, and extending the claim is exactly as safe as the renewal
+      // that should have happened. Only a reservation that is somebody
       // else's is fenced.
       //
       // Found in the suite's first product-mode run: a single process under
@@ -2371,15 +4375,34 @@ function create(options) {
       // anywhere, the next write was fenced, and the process EXITED saying
       // another process held its origin (STS-STORE-0061) — which killed the
       // service for the last three jobs.
+      //
+      // THE EXTENSION IS NOT HELD TO THIS COMMIT (#770). It used to be an
+      // UPDATE on this client, so the exclusive lock on the claim row lasted
+      // as long as the write did, and the renewal queued behind it. It is a
+      // bounded autocommit on the liveness connection, then a fresh read.
       // -------------------------------------------------------------------
-      return reassertOrigin(client, held).then(function (still) {
-        if (!still) {
-          throw fenced('origin', 'this process no longer holds its origin ' +
-                       held.key + ' (another process took it after the ' +
-                       'claim lapsed), so it may not write.');
-        }
-        return null;
-      });
+      return reassertOrigin(boundedRunner(held.ttlMs), held)
+        .then(function (still) {
+          if (!still) {
+            throw fenced('origin', 'this process no longer holds its ' +
+                         'origin ' + held.key + ' (another process took it ' +
+                         'after the claim lapsed), so it may not write.');
+          }
+          return client.query(
+            'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND ' +
+            'realm = \'\' AND key = $2 AND reservation = $3 AND ' +
+            'expires_at > ' + DB_NOW,
+            [ORIGIN_SCOPE, held.key, held.reservation]
+          ).then(function (again) {
+            if (!((again.rowCount || 0) > 0)) {
+              throw fenced('origin', 'this process no longer holds its ' +
+                           'origin ' + held.key + ' (the claim was not ' +
+                           'live after it was extended), so it may not ' +
+                           'write.');
+            }
+            return null;
+          });
+        });
     });
   }
 
@@ -2431,9 +4454,13 @@ function create(options) {
               " lease(s).");
     // THE MEMBERSHIP FIRST, unlocked: a node row is only ever renewed by its
     // own heartbeat, so there is no takeover of it to race.
-    return client.query(
-      'SELECT 1 FROM sts_cluster_nodes WHERE node_id = $1 AND ' +
-      'left_at = 0 AND expires_at > ' + DB_NOW, [wanted.nodeId]
+    return (portable
+      ? portable.nodeFence(client, wanted.nodeId).then(function (isLive) {
+        return { rowCount: isLive ? 1 : 0 };
+      })
+      : client.query(
+        'SELECT 1 FROM sts_cluster_nodes WHERE node_id = $1 AND ' +
+        'left_at = 0 AND expires_at > ' + DB_NOW, [wanted.nodeId])
     ).then(function (r) {
       if (!r.rowCount) {
         throw fenced('node', 'this node\'s membership row (' +
@@ -2443,22 +4470,41 @@ function create(options) {
       if (!leases.length) {
         return null;
       }
-      // THE LEASES UNDER A SHARE LOCK, held to COMMIT: a takeover is an UPDATE
-      // of the lease row, so it waits for this transaction and cannot land
-      // between the check and the write.
-      return client.query(
-        'SELECT l.name FROM sts_cluster_leases l ' +
-        'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
-        '  ON l.name = w.name AND l.token = w.token ' +
-        'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW + ' ' +
-        'FOR SHARE OF l',
-        [wanted.nodeId,
-         leases.map(function (one) { return String(one.name); }),
-         leases.map(function (one) { return String(one.token); })]
-      ).then(function (locked) {
-        const names = (locked.rows || []).map(function (row) {
-          return row.name;
-        });
+      // THE SHARE LOCK IS THE LOCK ROW, held to COMMIT (#770). A takeover
+      // deletes that name in the same transaction as it changes the token,
+      // so it waits for this transaction. The lease row is read by the NEXT
+      // statement, which takes a new snapshot: locking it in the same
+      // statement as the data would keep a stale holder after the wait.
+      return (portable
+        ? portable.leaseFence(client, wanted.nodeId, leases)
+        : client.query(
+          'SELECT l.name FROM sts_cluster_locks l WHERE l.name = ' +
+          'ANY($1::text[]) FOR SHARE',
+          [leases.map(function (one) {
+            return fenceLockName('lease', one.name, one.token);
+          })]
+        ).then(function (locked) {
+          const heldLocks = {};
+          (locked.rows || []).forEach(function (row) {
+            heldLocks[row.name] = true;
+          });
+          return client.query(
+            'SELECT l.name, l.token FROM sts_cluster_leases l ' +
+            'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
+            '  ON l.name = w.name AND l.token = w.token ' +
+            'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW,
+            [wanted.nodeId,
+             leases.map(function (one) { return String(one.name); }),
+             leases.map(function (one) { return String(one.token); })]
+          ).then(function (data) {
+            return (data.rows || []).filter(function (row) {
+              return heldLocks[fenceLockName('lease', row.name, row.token)];
+            }).map(function (row) {
+              return row.name;
+            });
+          });
+        })
+      ).then(function (names) {
         const lost = leases.filter(function (one) {
           return names.indexOf(one.name) < 0;
         });
@@ -2483,9 +4529,22 @@ function create(options) {
   // that matters — a committed change with no log entry is a change no other
   // process will ever hear about.
   //
-  // The NOTIFY goes out in the same transaction too. Postgres holds notifies
-  // until commit by definition, so a rolled-back transaction wakes nobody,
-  // which is exactly right and costs nothing to arrange.
+  // **THE NOTIFY GOES OUT AFTER THE COMMIT, AND AT MOST ONE A WINDOW
+  // (#630).** It went out in the same transaction until 2026-10-14, which
+  // looked free — Postgres holds a notify until commit, so a rolled-back
+  // transaction woke nobody — and was not: a transaction that has notified
+  // takes the notify queue's lock at COMMIT and holds it through its WAL
+  // flush, so every writing transaction of every process committed one at a
+  // time behind it. On 8081 under the LDAP bulk load that lock
+  // (`Lock:object`) held 0.34–0.58 backends on average, and in a replay
+  // moving `pg_notify` out of the writing transaction took 42 adds/s to 108.
+  // So a transaction's kinds are held against its client, like its row
+  // count, and handed to `announce()` once COMMIT has returned: a rolled-back
+  // transaction still wakes nobody, and one notify a NOTIFY_COALESCE_MS
+  // window carries every commit in it. Correctness does not move — the
+  // change log is the contract, written in the transaction as before, and
+  // the poll is the backstop for a nudge that never comes (a process that
+  // dies between its COMMIT and its notify is exactly a lost nudge).
   // ---------------------------------------------------------------------
   // HOW MANY CHANGE ROWS THIS PROCESS HAS WRITTEN. A local counter and not a
   // query: `common/request_worker.ts` needs to know whether its flush actually
@@ -2504,6 +4563,166 @@ function create(options) {
   // rows are held against its CLIENT and added only once COMMIT has returned.
   let written = 0;
   const uncommittedRows = new WeakMap();
+  // The KINDS each open transaction recorded, announced once it commits
+  // (#630). Keyed by the client, set and removed with `uncommittedRows`.
+  const uncommittedKinds = new WeakMap();
+
+  // -------------------------------------------------------------------------
+  // THE NUDGE, COALESCED (#630): at most one `pg_notify` per process per
+  // NOTIFY_COALESCE_MS. The first commit after a quiet window is announced at
+  // once (a lone write reaches the other processes as promptly as before);
+  // every commit inside the window joins ONE notify sent when it closes,
+  // carrying the union of their kinds and the sum of their rows. A timer
+  // here is a debounce, which the scheduler rule leaves alone (root
+  // CLAUDE.md, *Anything periodic is a scheduler job*): it is armed by a
+  // commit and never re-arms itself.
+  //
+  // Sent on the pool, outside every transaction, and every failure is a
+  // debug line: the notify is lossy by design (the header), so a database
+  // gone between a commit and its nudge costs latency and nothing else.
+  // `notifiesSent` counts what went, for `tests/notify_after_commit.js` and
+  // the replication page's reader.
+  // -------------------------------------------------------------------------
+  let notifyPending = null;
+  let notifyTimer = null;
+  let notifyLastAt = 0;
+  let notifyClosed = false;
+  let notifiesSent = 0;
+
+  function sendNotify() {
+    log.debug("Entering sendNotify().");
+    notifyTimer = null;
+    const pending = notifyPending;
+    notifyPending = null;
+    if (!pending || notifyClosed) {
+      log.debug("Leaving sendNotify(). Nothing to send.");
+      return Promise.resolve();
+    }
+    notifyLastAt = Date.now();
+    notifiesSent += 1;
+    log.debug("Leaving sendNotify().");
+    return pool.query('SELECT pg_notify($1, $2)', [CHANNEL,
+      JSON.stringify({ from: processId, kinds: pending.kinds,
+                       rows: pending.rows })]).then(function () {
+      return null;
+    }, function (e) {
+      // Lossy by design: the poll converges without it (see above).
+      log.debug("Caught in sendNotify(): " + ((e && e.message) || e));
+      return null;
+    });
+  }
+
+  function announce(kinds, rows) {
+    log.debug("Entering announce().");
+    if (portable) {
+      log.debug("Leaving announce(). No nudge where the statements are " +
+                "portable (#677).");
+      return;
+    }
+    if (notifyClosed || !kinds || !kinds.length) {
+      log.debug("Leaving announce(). Nothing to announce.");
+      return;
+    }
+    if (!notifyPending) {
+      notifyPending = { kinds: [], rows: 0 };
+    }
+    kinds.forEach(function (kind) {
+      if (notifyPending.kinds.indexOf(kind) < 0) {
+        notifyPending.kinds.push(kind);
+      }
+    });
+    notifyPending.rows += Number(rows) || 0;
+    if (notifyTimer) {
+      log.debug("Leaving announce(). Joins the notify already due.");
+      return;
+    }
+    const wait = notifyLastAt + NOTIFY_COALESCE_MS - Date.now();
+    if (wait <= 0) {
+      sendNotify();
+      log.debug("Leaving announce(). Sent at once.");
+      return;
+    }
+    notifyTimer = setTimeout(sendNotify, wait);
+    if (notifyTimer.unref) {
+      notifyTimer.unref();
+    }
+    log.debug("Leaving announce(). Due in " + wait + " ms.");
+  }
+
+  // -------------------------------------------------------------------------
+  // AND WHAT KIND OF ROWS THEY WERE, COUNTED AT THE SAME COMMIT (#626).
+  //
+  // `request_pool.js` lets a dispatched LDAP write skip the read barrier's
+  // change-log pull when everything the target worker has not caught up on
+  // is a DIRECTORY row it can re-read by key — and only this process knows
+  // what it committed. So beside `written`, and moved at the same moment:
+  //
+  //   * `otherWritten`: committed rows of every kind but `directory` and
+  //     `minted-own`. Any of them makes the next announcement "shared", and
+  //     the pool sends the next write through the whole barrier.
+  //     `minted-own` is left out for the reason latestBlockingChangeSeq()
+  //     leaves it out of the barrier's own target: per-process tallies that
+  //     nobody's correctness waits on.
+  //   * `directoryWritten` and `committedDirectory`: every committed
+  //     directory row's realm and key, the last COMMITTED_DIRECTORY_LIMIT of
+  //     them kept. A reader whose mark has fallen off the front is told
+  //     "unknown" (null) and treats it as shared.
+  //
+  // Nothing here decides which keys are windowed — that is the directory's
+  // rule (`persistence.js`'s committedChangesSince() asks it).
+  // -------------------------------------------------------------------------
+  const COMMITTED_DIRECTORY_LIMIT = 4096;
+  let otherWritten = 0;
+  let directoryWritten = 0;
+  const committedDirectory = [];
+
+  // A transaction's rows, before COMMIT: how many, how many of another kind,
+  // and the directory rows' realm and key.
+  function freshUncommitted() {
+    log.debug("Entering freshUncommitted().");
+    log.debug("Leaving freshUncommitted().");
+    return { rows: 0, other: 0, directory: [] };
+  }
+
+  // Adds a batch of rows to `into` (a transaction's record), or — with
+  // `into` null — to the committed counts at once.
+  function classifyRows(into, rows) {
+    log.debug("Entering classifyRows().");
+    const target = into || freshUncommitted();
+    rows.forEach(function (row) {
+      target.rows += 1;
+      if (row.kind === 'directory') {
+        target.directory.push({ realm: String(row.realm || ''),
+                                key: String(row.key || '') });
+      } else if (row.kind !== 'minted-own') {
+        target.other += 1;
+      }
+    });
+    if (!into) {
+      commitClassified(target);
+    }
+    log.debug("Leaving classifyRows().");
+  }
+
+  // A transaction's rows, now COMMITTED: added to every count together.
+  function commitClassified(held) {
+    log.debug("Entering commitClassified().");
+    if (!held) {
+      log.debug("Leaving commitClassified(). Nothing held.");
+      return;
+    }
+    written += held.rows;
+    otherWritten += held.other;
+    held.directory.forEach(function (one) {
+      committedDirectory.push(one);
+      directoryWritten += 1;
+    });
+    if (committedDirectory.length > COMMITTED_DIRECTORY_LIMIT) {
+      committedDirectory.splice(0, committedDirectory.length -
+                                   COMMITTED_DIRECTORY_LIMIT);
+    }
+    log.debug("Leaving commitClassified().");
+  }
 
   function recordChanges(client, rows) {
     log.debug("Entering recordChanges().");
@@ -2511,12 +4730,30 @@ function create(options) {
       log.debug("Leaving recordChanges().");
       return Promise.resolve();
     }
-    if (uncommittedRows.has(client)) {
-      uncommittedRows.set(client, uncommittedRows.get(client) + rows.length);
+    // THE NUDGE'S KINDS. It carries the origin and the kinds and NOT the
+    // rows — the receiver reads `sts_changes` for what actually moved, so it
+    // can be lossy, coalesced and missed entirely without costing anything
+    // but latency. See the header.
+    const kinds = [];
+    rows.forEach(function (row) {
+      if (kinds.indexOf(row.kind) < 0) {
+        kinds.push(row.kind);
+      }
+    });
+    const inTransaction = uncommittedRows.has(client);
+    if (inTransaction) {
+      classifyRows(uncommittedRows.get(client), rows);
+      const held = uncommittedKinds.get(client) || [];
+      kinds.forEach(function (kind) {
+        if (held.indexOf(kind) < 0) {
+          held.push(kind);
+        }
+      });
+      uncommittedKinds.set(client, held);
     } else {
       // Not inside withTransaction(): every caller today is, and a statement
       // outside one commits as it runs, so it is counted as it is sent.
-      written += rows.length;
+      classifyRows(null, rows);
     }
     // ONE STATEMENT PER CHUNK. A directory flush can carry hundreds of moved
     // entries and a round trip each would make the log more expensive than
@@ -2533,6 +4770,11 @@ function create(options) {
         CHANGE_ROWS_PER_STATEMENT) {
       const chunk = rows.slice(start, start + CHANGE_ROWS_PER_STATEMENT);
       chain = chain.then(function () {
+        if (small) {
+          // The same rows as one builder INSERT (#677): `key` is a reserved
+          // word in MariaDB, and the builder quotes it.
+          return small.insertChanges(client, processId, chunk);
+        }
         const values = [];
         const params = [];
         chunk.forEach(function (row, i) {
@@ -2549,16 +4791,13 @@ function create(options) {
     }
     log.debug("Leaving recordChanges().");
     return chain.then(function () {
-      // THE NUDGE. It carries the origin and the kinds and NOT the rows —
-      // the receiver reads `sts_changes` for what actually moved, so this
-      // can be lossy, can be truncated and can be missed entirely without
-      // costing anything but latency. See the header.
-      const kinds = [];
-      rows.forEach(function (row) {
-        if (kinds.indexOf(row.kind) < 0) kinds.push(row.kind);
-      });
-      return client.query('SELECT pg_notify($1, $2)', [CHANNEL,
-        JSON.stringify({ from: processId, kinds: kinds, rows: rows.length })]);
+      // Outside a transaction the rows committed as they were sent, so the
+      // nudge may go now; inside one it waits for transactionOnce()'s
+      // COMMIT (#630).
+      if (!inTransaction) {
+        announce(kinds, rows.length);
+      }
+      return null;
     });
   }
 
@@ -2592,6 +4831,15 @@ function create(options) {
   // per checkout onto a client the pool reuses — node warns at eleven — and
   // would sit alongside the idle listener pg puts back, so one dead connection
   // would be reported twice.
+  //
+  // **SINCE #326 THE POOL IS KNEX'S, AND IT MUST NOT BRING THE EXIT BACK.**
+  // It does not: Knex's dialect gives every connection it makes a permanent
+  // `'error'` listener (it marks the connection disposed, and Knex destroys
+  // it at the next acquire), so an error on a borrowed connection always has
+  // a listener. What this guard still does is SAY it, under STS-STORE-0031,
+  // naming who held the connection — Knex's own note of it is a debug line
+  // (`knex_store.js`). The rule below it stands: whoever checks a connection
+  // out reports its errors until it gives it back.
   // ---------------------------------------------------------------------------
   function guardClient(client, what) {
     log.debug("Entering guardClient().");
@@ -2629,52 +4877,582 @@ function create(options) {
   // ---------------------------------------------------------------------------
   const DEADLOCK_RETRIES = 3;
 
+  // MariaDB's deadlock (1213) and lock-wait timeout (1205) are the same
+  // contract (#677): InnoDB rolls the transaction back and asks for it again
+  // where PostgreSQL would often have waited. `dialect.isRetryable()` knows
+  // both engines' codes; on PostgreSQL it is 40P01 and 40001, as before.
   function retryableConflict(err) {
     log.debug("Entering retryableConflict().");
-    const code = err && err.code;
     log.debug("Leaving retryableConflict().");
-    return !(err && err.fenced) && (code === '40P01' || code === '40001');
+    return !(err && err.fenced) && dialect.isRetryable(err);
+  }
+
+  // ---------------------------------------------------------------------------
+  // SCHEMA_UPGRADES, in open()'s transaction (#630): one probe for every
+  // step — is it owed, and does this role own the table — and the owed
+  // steps run in order. A required step runs whoever we are, and a role
+  // that may not take it fails the open (STS-STORE-0029, from open()'s
+  // catch); an advisory one is skipped, and said, when the role does not
+  // own the table.
+  // ---------------------------------------------------------------------------
+  function upgradeSchema(client, created) {
+    log.debug("Entering upgradeSchema().");
+    const columns = SCHEMA_UPGRADES.map(function (step, i) {
+      return '(' + step.when + ') AS u' + i + ', pg_has_role(current_user, ' +
+        '(SELECT c.relowner FROM pg_class c WHERE c.oid = to_regclass($' +
+        (i + 1) + ')), \'USAGE\') AS o' + i;
+    }).join(', ');
+    log.debug("Leaving upgradeSchema().");
+    return client.query('SELECT ' + columns, SCHEMA_UPGRADES.map(function (s) {
+      return s.table;
+    })).then(function (result) {
+      const row = (result && result.rows && result.rows[0]) || {};
+      let chain = Promise.resolve();
+      SCHEMA_UPGRADES.forEach(function (step, i) {
+        if (row['u' + i] !== true) {
+          return;
+        }
+        if (step.advisory && row['o' + i] !== true) {
+          log.warn(errorCodes.tag('STS-STORE-0083') + 'persistence: the ' +
+                   'store is owed ' + step.name + ' (schema version ' +
+                   SCHEMA_VERSION + ', ' + (step.issue || '#630') + '), a ' +
+                   'tuning this role does not ' +
+                   'own ' + step.table + ' to make. Nothing is wrong ' +
+                   'without it, only slower; run postgres/schema.sql as ' +
+                   'the owner.');
+          return;
+        }
+        step.statements.forEach(function (statement) {
+          chain = chain.then(function () {
+            return client.query(statement);
+          });
+        });
+        chain = chain.then(function () {
+          created.push(step.name);
+        });
+      });
+      return chain;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A READ PLANNED WITHOUT JIT (#639, 2026-10-15). A statement whose estimate
+  // passes `jit_above_cost` is compiled before it runs, and the resident
+  // restore's does (`directory_queries.residentOnly()`, its `jitOff`): about
+  // 0.1–0.2 s of every process's start compiling a plan that reads a thousand
+  // rows. `SET LOCAL` reaches one transaction and no further, so the read is
+  // one: on a client of the read pool, read only, and the client given back
+  // whatever happens. The setting is the statement's, not the pool's: what
+  // else this service asks is either cheap enough to stay under the
+  // threshold or a maintenance read that may want the compiler.
+  // ---------------------------------------------------------------------------
+  async function queryWithoutJit(statement) {
+    log.debug("Entering queryWithoutJit().");
+    const client = await readPool.connect();
+    const unguard = guardClient(client, 'a read planned without JIT');
+    let failed = null;
+    try {
+      await client.query('BEGIN READ ONLY');
+      await client.query('SET LOCAL jit = off');
+      const result = await client.query(statement.text, statement.values);
+      await client.query('COMMIT');
+      log.debug("Leaving queryWithoutJit().");
+      return result;
+    } catch (e) {
+      log.debug("Caught in queryWithoutJit(): " + ((e && e.message) || e));
+      failed = e;
+      await client.query('ROLLBACK').catch(function (r) {
+        log.debug("Caught in queryWithoutJit() rolling back: " +
+                  ((r && r.message) || r));
+      });
+      log.debug("Leaving queryWithoutJit(). Failed.");
+      throw e;
+    } finally {
+      unguard();
+      // A client whose statement failed is not handed to the next caller.
+      client.release(failed || undefined);
+    }
   }
 
   async function withTransaction(fn) {
     log.debug('Entering withTransaction().');
+    log.debug("Leaving withTransaction().");
+    return retryingConflicts('a transaction', function () {
+      return transactionOnce(fn);
+    });
+  }
+
+  // A directory batch that is only counters (#878). Same retry as a
+  // transaction, on the tally pool: visible at once, durable at the WAL
+  // writer's next flush. MariaDB's tally pool has no asynchronous commit;
+  // the generation skip is the win there.
+  function tallyTransaction(fn) {
+    log.debug('Entering tallyTransaction().');
+    log.debug("Leaving tallyTransaction().");
+    return retryingConflicts('a tally transaction', function () {
+      return transactionOn(tallyPool, fn);
+    });
+  }
+
+  // `once` run again on a deadlock or a serialization failure, as a whole
+  // transaction always was (2026-10-02): a transaction that `once` runs,
+  // or since 2026-10-22 (#820) ONE statement outside a transaction — the
+  // minted flush — which PostgreSQL rolls back whole in the same way.
+  // `what` names it in the line that says so.
+  async function retryingConflicts(what, once) {
+    log.debug('Entering retryingConflicts(). ' + what);
     for (let attempt = 0; ; attempt++) {
       try {
-        const out = await transactionOnce(fn);
-        log.debug("Leaving withTransaction().");
+        const out = await once();
+        log.debug("Leaving retryingConflicts().");
         return out;
       } catch (err) {
-        log.debug("Caught in withTransaction(): " +
+        log.debug("Caught in retryingConflicts(): " +
                   ((err && err.message) || err));
         if (!retryableConflict(err) || attempt >= DEADLOCK_RETRIES) {
-          log.debug("Leaving withTransaction(). Failed.");
+          log.debug("Leaving retryingConflicts(). Failed.");
           throw err;
         }
-        log.info('persistence: a transaction met ' +
-                 (err.code === '40P01' ? 'a deadlock' :
-                  'a serialization failure') + ' and was rolled back by ' +
+        log.info('persistence: ' + what + ' met ' +
+                 (err.code === '40001' ? 'a serialization failure'
+                   : err.code === 'ER_LOCK_WAIT_TIMEOUT' ||
+                     err.errno === 1205 ? 'a lock wait timeout'
+                     : 'a deadlock') + ' and was rolled back by ' +
                  'the database; running it again (attempt ' + (attempt + 2) +
                  ' of ' + (DEADLOCK_RETRIES + 1) + ').');
         await new Promise(function (resolve) {
           // node's generator, as every random value here is (tests/
           // random_values.js); a jitter needs no more, and asks no less.
-          setTimeout(resolve, 10 + nodeCrypto.randomInt(0, 40) *
-                              (attempt + 1));
+          const jitter = require('../common/crypto').randomInt(0, 40);
+          setTimeout(resolve, 10 + jitter * (attempt + 1));
         });
       }
     }
   }
 
+  // -------------------------------------------------------------------------
+  // THE CHANGE ROWS A MINTED FLUSH WROTE, counted as recordChanges() counts
+  // what it inserts (2026-10-22, #820): held against a transaction's client
+  // until its COMMIT returns, or — for MINTED_FLUSH run as a statement of
+  // its own, which committed as it ran — added to the committed counts and
+  // announced at once (#630). The INSERT is MINTED_FLUSH's; this is the
+  // bookkeeping recordChanges() does beside its own INSERT.
+  // -------------------------------------------------------------------------
+  function noteChanges(client, rows) {
+    log.debug("Entering noteChanges(). " + rows.length + " row(s).");
+    if (!rows.length) {
+      log.debug("Leaving noteChanges(). Nothing written.");
+      return;
+    }
+    const kinds = [];
+    rows.forEach(function (row) {
+      if (kinds.indexOf(row.kind) < 0) {
+        kinds.push(row.kind);
+      }
+    });
+    if (client && uncommittedRows.has(client)) {
+      classifyRows(uncommittedRows.get(client), rows);
+      const held = uncommittedKinds.get(client) || [];
+      kinds.forEach(function (kind) {
+        if (held.indexOf(kind) < 0) {
+          held.push(kind);
+        }
+      });
+      uncommittedKinds.set(client, held);
+      log.debug("Leaving noteChanges(). Held for the COMMIT.");
+      return;
+    }
+    classifyRows(null, rows);
+    announce(kinds, rows.length);
+    log.debug("Leaving noteChanges(). Committed.");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BODY THIS PROCESS LAST COMMITTED FOR A MERGING ROW (2026-10-22,
+  // #820): what MINTED_FLUSH's compare-and-set expects the stored row to be,
+  // so that a flush merges with it and is still one round trip. A guess and
+  // never a fact — the statement checks it under the row's lock, and a
+  // wrong one costs a second round trip, never a wrong write. So a key not
+  // held here is guessed to have no row (a session just made), a tombstone
+  // is remembered as one, a failed flush forgets what it touched, and the
+  // map is bounded: the oldest entry goes first.
+  // -------------------------------------------------------------------------
+  const MINTED_BODIES_MAX = 2048;
+  const mintedBodies = new Map();
+
+  // Hot path (every merging row a flush commits): no Entering/Leaving pair.
+  function rememberMintedBody(id, body) {
+    mintedBodies.delete(id);
+    if (body === undefined) {
+      return;
+    }
+    mintedBodies.set(id, body);
+    if (mintedBodies.size > MINTED_BODIES_MAX) {
+      mintedBodies.delete(mintedBodies.keys().next().value);
+    }
+  }
+
+  // After a COMMIT: each merging row's body as written (a tombstone where
+  // one refused it); a tombstone written over a key held here; a key a
+  // delete removed forgotten (so it is guessed to have no row).
+  function rememberFlush(plan, resolved, refused) {
+    log.debug("Entering rememberFlush().");
+    const refusedRows = new Set(refused);
+    resolved.writes.forEach(function (w) {
+      rememberMintedBody(mintedIdOf(w.row),
+                         refusedRows.has(w.row) ? TOMBSTONE : w.body);
+    });
+    resolved.refused.forEach(function (row) {
+      rememberMintedBody(mintedIdOf(row), TOMBSTONE);
+    });
+    plan.guarded.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (refusedRows.has(row) && mintedBodies.has(id)) {
+        rememberMintedBody(id, TOMBSTONE);
+      }
+    });
+    plan.tombs.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        rememberMintedBody(id, TOMBSTONE);
+      }
+    });
+    plan.dels.forEach(function (row) {
+      mintedBodies.delete(mintedIdOf(row));
+    });
+    log.debug("Leaving rememberFlush().");
+  }
+
+  // The fence's half of MINTED_FLUSH (`checkFence()`'s three questions):
+  // this process's origin claim, and the node's membership and leases.
+  function flushFence() {
+    log.debug("Entering flushFence().");
+    const named = {};
+    if (originClaim) {
+      named.claim_key = originClaim.key;
+      named.claim_reservation = originClaim.reservation;
+    }
+    const wanted = fence ? fence() : null;
+    if (wanted && wanted.nodeId) {
+      const leases = (wanted.leases || []).filter(function (one) {
+        return one && one.name;
+      });
+      named.node_id = wanted.nodeId;
+      named.lease_names = leases.map(function (one) {
+        return String(one.name);
+      });
+      named.lease_tokens = leases.map(function (one) {
+        return String(one.token);
+      });
+    }
+    log.debug("Leaving flushFence().");
+    return named;
+  }
+
+  // What a committed flush decided: the refused rows (a merging row a
+  // stored tombstone refused, and a guarded upsert the statement did not
+  // write), the merged ones, and the change rows it wrote — counted on
+  // `client`, or at once (`noteChanges()`).
+  function settleMintedFlush(client, plan, resolved, answer) {
+    log.debug("Entering settleMintedFlush().");
+    const refused = resolved.refused.slice(0);
+    plan.guarded.concat(resolved.writes.map(function (w) {
+      return w.row;
+    })).forEach(function (row) {
+      if (answer.unwritten.has(mintedIdOf(row))) {
+        refused.push(row);
+      }
+    });
+    const skip = new Set(refused);
+    noteChanges(client, plan.upserts.filter(function (row) {
+      return !skip.has(row);
+    }).concat(plan.deletes).map(mintedChangeRow));
+    log.debug("Leaving settleMintedFlush(). " + refused.length +
+              " refused.");
+    return { refused: refused, merged: resolved.merged, resolved: resolved };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FLUSH AS A TRANSACTION: BEGIN, the fence, the merging rows locked
+  // and read, MINTED_FLUSH, COMMIT — the read-then-write the flush was
+  // until 2026-10-22, now four or five round trips rather than about
+  // eleven. Taken where the one statement cannot finish the flush: a fence
+  // that did not hold (`checkFence()` re-asserts a lapsed origin claim, or
+  // fails the write as it always did), and a compare-and-set that missed
+  // twice (another process writing the same rows as fast as this one).
+  // -------------------------------------------------------------------------
+  function flushMintedInTransaction(plan) {
+    log.debug("Entering flushMintedInTransaction().");
+    log.debug("Leaving flushMintedInTransaction().");
+    return withTransaction(function (client) {
+      return flushMintedLocked(client, plan);
+    });
+  }
+
+  // The read-then-write half of the transaction above, on a connection
+  // that is already inside one: the merging rows locked and read in order,
+  // merged with what was read, and MINTED_FLUSH sent with no
+  // compare-and-set, since nothing can change a row this transaction holds.
+  // `flushMintedOn()` ends here too, on the connection that holds the claim
+  // fences (2026-11-12).
+  function flushMintedLocked(client, plan) {
+    log.debug("Entering flushMintedLocked().");
+    // Only a merging row needs its body before the write; every other
+    // row is locked by MINTED_FLUSH itself, in the same order.
+    const locked = !plan.merging.length ? Promise.resolve(null)
+      : client.query(
+        'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
+        '(handle, realm, key) IN (SELECT h, r, k FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
+        'ORDER BY handle, realm, key FOR UPDATE',
+        [plan.touched.map(function (row) { return String(row.handle); }),
+         plan.touched.map(function (row) { return String(row.realm); }),
+         plan.touched.map(function (row) { return String(row.key); })]);
+    log.debug("Leaving flushMintedLocked().");
+    return locked.then(function (r) {
+      const stored = new Map();
+      ((r && r.rows) || []).forEach(function (found) {
+        stored.set(mintedIdOf(found), found.body);
+      });
+      const resolved = resolveMerges(plan, stored);
+      return client.query(mintedFlushQuery(
+        mintedFlushWrites(plan, resolved, processId)))
+        .then(function (answer) {
+          return settleMintedFlush(client, plan, resolved,
+                                   mintedFlushAnswer(answer));
+        });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FLUSH WHERE THERE IS NO MINTED_FLUSH (#677, phase 3b): MariaDB has
+  // no data-modifying CTE, so the flush is a transaction — the fence first,
+  // then `minted_portable.js`'s statements, which lock every existing row
+  // in order and read each stored body, so the merges are made under the
+  // lock and there is no compare-and-set to miss. What is written is the
+  // same `mintedFlushWrites()` decides for the one statement, and the
+  // change rows are counted at COMMIT as MINTED_FLUSH's are.
+  // -------------------------------------------------------------------------
+  function flushMintedPortable(plan) {
+    log.debug("Entering flushMintedPortable().");
+    log.debug("Leaving flushMintedPortable().");
+    return withTransaction(function (client) {
+      return mintedStatements.flush(client, plan.touched, function (stored) {
+        const resolved = resolveMerges(plan, stored);
+        return { resolved: resolved,
+                 named: mintedFlushWrites(plan, resolved, processId) };
+      }).then(function (out) {
+        return settleMintedFlush(client, plan, out.resolved,
+                                 { unwritten: out.unwritten });
+      });
+    });
+  }
+
+  // How many times the one statement is sent with a compare-and-set before
+  // the flush is made a transaction: the guess, and the bodies the miss
+  // answered with.
+  const MINTED_CAS_ATTEMPTS = 2;
+
+  // -------------------------------------------------------------------------
+  // A MINTED FLUSH (2026-10-22, #820): MINTED_FLUSH, one round trip, sent
+  // outside a transaction. A flush with merging rows expects each stored
+  // body (`mintedBodies`, or no row); a miss answers the bodies stored, the
+  // merges are done again from them and the statement is sent again. A fence
+  // that did not hold, or a second miss, is the transaction above.
+  // -------------------------------------------------------------------------
+  async function flushMinted(plan) {
+    log.debug("Entering flushMinted().");
+    if (mintedStatements) {
+      log.debug("Leaving flushMinted(). Portable.");
+      return flushMintedPortable(plan);
+    }
+    let expected = new Map();
+    plan.merging.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        expected.set(id, mintedBodies.get(id));
+      }
+    });
+    for (let attempt = 0; attempt < MINTED_CAS_ATTEMPTS; attempt++) {
+      const resolved = resolveMerges(plan, expected);
+      const named = Object.assign(mintedFlushWrites(plan, resolved,
+                                                    processId),
+                                  flushFence());
+      const wanted = expected;
+      named.cas_h = plan.merging.map(function (row) {
+        return String(row.handle);
+      });
+      named.cas_r = plan.merging.map(function (row) {
+        return String(row.realm);
+      });
+      named.cas_k = plan.merging.map(function (row) {
+        return String(row.key);
+      });
+      named.cas_body = plan.merging.map(function (row) {
+        const body = wanted.get(mintedIdOf(row));
+        return body === undefined ? null : body;
+      });
+      const query = mintedFlushQuery(named);
+      const answer = mintedFlushAnswer(await retryingConflicts(
+        'a minted flush', function () {
+          return pool.query(query);
+        }));
+      if (!answer.known || !answer.fenceOk) {
+        log.debug("Leaving flushMinted(). The fence did not hold; as a " +
+                  "transaction.");
+        return flushMintedInTransaction(plan);
+      }
+      if (answer.go) {
+        log.debug("Leaving flushMinted(). One statement, attempt " +
+                  (attempt + 1) + ".");
+        return settleMintedFlush(null, plan, resolved, answer);
+      }
+      expected = answer.current || new Map();
+    }
+    log.debug("Leaving flushMinted(). The stored rows kept moving; as a " +
+              "transaction.");
+    return flushMintedInTransaction(plan);
+  }
+
+  // Share-locks the claim fences a flush still publishes under (#884).
+  // The names come back in order, which is the order two flushes lock
+  // them in. A name that is already gone is simply absent: that is a
+  // lost block, not an origin fence, and it does not stop the process.
+  function shareClaimFences(client, names) {
+    log.debug("Entering shareClaimFences().");
+    const ordered = names.slice().sort();
+    log.debug("Leaving shareClaimFences().");
+    if (portable) {
+      return dialect.run(client, 'claimFence.share',
+        kx('sts_cluster_locks').select('name').whereIn('name', ordered)
+          .orderBy('name').forShare()
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.name);
+        });
+      });
+    }
+    return client.query(
+      'SELECT name FROM sts_cluster_locks WHERE name = ANY($1::text[]) ' +
+      'ORDER BY name FOR SHARE', [ordered]
+    ).then(function (r) {
+      return (r.rows || []).map(function (row) {
+        return String(row.name);
+      });
+    });
+  }
+
+  // Rows whose journal key is not one a lost fence dropped. The stored
+  // key can differ from the journal key; the fence is registered on the
+  // journal key, which is what allocate() undoes.
+  function withoutLostFences(rows, drop) {
+    log.debug("Entering withoutLostFences().");
+    const kept = (rows || []).filter(function (row) {
+      const key = row.journalKey !== undefined && row.journalKey !== null
+        ? row.journalKey : row.key;
+      const id = String(row.handle) + '\n' + String(row.realm) + '\n' +
+        String(key);
+      return !drop[id];
+    });
+    log.debug("Leaving withoutLostFences().");
+    return kept;
+  }
+
+  // MINTED_FLUSH on a connection that already holds the claim-fence share
+  // locks. A fence that did not hold throws: the outer transaction rolls
+  // back. A compare-and-set that missed is tried again on THIS connection
+  // (below); writing the batch again on another connection would publish a
+  // status row without those locks.
+  async function flushMintedOn(client, plan) {
+    log.debug("Entering flushMintedOn().");
+    if (mintedStatements) {
+      log.debug("Leaving flushMintedOn(). Portable.");
+      const out = await mintedStatements.flush(client, plan.touched,
+        function (stored) {
+          const resolved = resolveMerges(plan, stored);
+          return { resolved: resolved,
+                   named: mintedFlushWrites(plan, resolved, processId) };
+        });
+      return settleMintedFlush(client, plan, out.resolved,
+                               { unwritten: out.unwritten });
+    }
+    // A COMPARE-AND-SET THAT MISSES IS NOT A FAILURE HERE EITHER
+    // (2026-11-12). Until then a miss threw, the transaction rolled back,
+    // and the request whose rows were in the batch was answered 503
+    // (STS-STORE-0021, STS-STORE-0066) — on a single node, with nothing
+    // wrong: a merging row (`admin_stats.tokenHolders`, written blindly by
+    // every process at its first token for a holder) written by a sibling
+    // request worker since this process last read it. The fuzz stage hit
+    // it on four concurrent client_credentials grants. A miss is answered
+    // with the stored bodies, so the statement is sent again with them, as
+    // `flushMinted()` does; its first try locked the rows that exist, so
+    // the second matches unless a row was inserted meanwhile, and after
+    // MINTED_CAS_ATTEMPTS the rows are locked and read on this connection
+    // and written with no compare-and-set — still under these fences.
+    let expected = new Map();
+    plan.merging.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        expected.set(id, mintedBodies.get(id));
+      }
+    });
+    for (let attempt = 0; attempt < MINTED_CAS_ATTEMPTS; attempt++) {
+      const resolved = resolveMerges(plan, expected);
+      const named = Object.assign(mintedFlushWrites(plan, resolved,
+                                                    processId),
+                                  flushFence());
+      const wanted = expected;
+      named.cas_h = plan.merging.map(function (row) {
+        return String(row.handle);
+      });
+      named.cas_r = plan.merging.map(function (row) {
+        return String(row.realm);
+      });
+      named.cas_k = plan.merging.map(function (row) {
+        return String(row.key);
+      });
+      named.cas_body = plan.merging.map(function (row) {
+        const body = wanted.get(mintedIdOf(row));
+        return body === undefined ? null : body;
+      });
+      const answer = mintedFlushAnswer(await client.query(
+        mintedFlushQuery(named)));
+      if (!answer.known || !answer.fenceOk) {
+        log.debug("Leaving flushMintedOn(). The fence did not hold.");
+        throw new Error('a minted flush under a claim fence did not ' +
+                        'commit: the fence did not hold');
+      }
+      if (answer.go) {
+        log.debug("Leaving flushMintedOn(). Attempt " + (attempt + 1) +
+                  ".");
+        return settleMintedFlush(client, plan, resolved, answer);
+      }
+      expected = answer.current || new Map();
+    }
+    log.debug("Leaving flushMintedOn(). The stored rows kept moving; " +
+              "locked and read.");
+    return flushMintedLocked(client, plan);
+  }
+
   function transactionOnce(fn) {
     log.debug('Entering transactionOnce().');
     log.debug("Leaving transactionOnce().");
-    return pool.connect().then(function (client) {
+    return transactionOn(pool, fn);
+  }
+
+  // `which` is `pool` or the tally pool (#878). The body is the one
+  // transaction either pool runs: BEGIN, the fence, `fn`, COMMIT.
+  function transactionOn(which, fn) {
+    log.debug('Entering transactionOn().');
+    log.debug("Leaving transactionOn().");
+    return which.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
       // THE CHANGE ROWS THIS TRANSACTION RECORDS, held until COMMIT returns —
       // see `written` above. Keyed by the client, which is what
       // recordChanges() is handed, and removed on both endings so that a
       // client the pool hands to the next transaction starts at nothing.
-      uncommittedRows.set(client, 0);
+      uncommittedRows.set(client, freshUncommitted());
+      uncommittedKinds.set(client, []);
       return client.query('BEGIN').then(function () {
         // THE FENCE FIRST, before the transaction has written anything. See
         // `fence` above.
@@ -2683,17 +5461,25 @@ function create(options) {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
-          written += uncommittedRows.get(client) || 0;
+          const held = uncommittedRows.get(client);
+          const rows = held ? held.rows : 0;
+          const kinds = uncommittedKinds.get(client) || [];
+          commitClassified(held);
           uncommittedRows.delete(client);
+          uncommittedKinds.delete(client);
+          // THE NUDGE, NOW THAT THERE IS SOMETHING TO FETCH (#630).
+          announce(kinds, rows);
           unguard();
           client.release();
-          log.debug('Leaving transactionOnce(). Committed.');
+          log.debug('Leaving transactionOn(). Committed.');
           return result;
         });
       }).catch(function (err) {
         // NOTHING THIS TRANSACTION RECORDED WAS COMMITTED, so none of it is
-        // counted — including a COMMIT that itself failed.
+        // counted — including a COMMIT that itself failed — and nothing is
+        // announced.
         uncommittedRows.delete(client);
+        uncommittedKinds.delete(client);
         return client.query('ROLLBACK').catch(function (rollbackErr) {
           // The rollback itself failed, which means the connection is gone.
           // Logged and swallowed: the original error is the one worth
@@ -2705,7 +5491,7 @@ function create(options) {
         }).then(function () {
           unguard();
           client.release(err);
-          log.debug('Leaving transactionOnce(). Rolled back.');
+          log.debug('Leaving transactionOn(). Rolled back.');
           if (err && err.fenced && typeof onFenced === 'function') {
             onFenced(err);
           } else if (err && err.fenced && err.reason === 'origin' &&
@@ -2720,13 +5506,30 @@ function create(options) {
     });
   }
 
-  return {
+  const api = {
     name: 'postgres',
 
     open: function () {
       log.debug('Entering the postgres driver open().');
+      // A MARIADB STORE IS OPENED BY ITS OWN STEPS (#677): its catalog is
+      // `information_schema`, its DDL commits on its own, and it has nothing
+      // older to bring forward. `persistence/open_mariadb.js` argues each.
+      if (engine === 'mariadb') {
+        log.debug('Leaving the postgres driver open(). MariaDB.');
+        const owedOnline = [];
+        return require('./open_mariadb').open(pool, log, owedOnline)
+          .then(function () {
+            // The online index it found missing, built in place in the
+            // background and not waited for (#882).
+            onlineSettled = OnlineIndexes.settleMariadb(pool, log,
+                                                        owedOnline);
+            return null;
+          });
+      }
       const created = [];
       let late = [];
+      let onlineMissing = [];
+      let onlinePlan = null;
       log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
@@ -2747,8 +5550,20 @@ function create(options) {
         });
         return client.query('SELECT ' + probes, names).then(function (result) {
           const row = result.rows[0] || {};
-          const missing = SCHEMA_OBJECTS.filter(function (object, index) {
+          // AN INDEX THE MODEL MARKS `online` (#876, #882) is never built
+          // here: a plain CREATE INDEX in this transaction held every write
+          // to its table for the build and refused a role that does not own
+          // it. It is settled after the commit (`online_indexes.js`).
+          const absent = SCHEMA_OBJECTS.filter(function (object, index) {
             return !row['o' + index];
+          });
+          onlineMissing = absent.filter(function (object) {
+            return object.online === true;
+          }).map(function (object) {
+            return object.name;
+          });
+          const missing = absent.filter(function (object) {
+            return object.online !== true;
           });
           // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
           // ADD (#333, #349) waits for the column step below.
@@ -2829,6 +5644,16 @@ function create(options) {
         }).then(function () {
           let chain = Promise.resolve();
           late.forEach(function (object) {
+            // AN INDEX WHOSE OPERATOR CLASS AN EXTENSION SUPPLIES (the
+            // trigram index, schema version 23) has the extension created
+            // first, and only then: a store built by postgres/schema.sql
+            // has both, and this role is never asked for either.
+            if (object.extension) {
+              chain = chain.then(function () {
+                return client.query('CREATE EXTENSION IF NOT EXISTS ' +
+                                    object.extension);
+              });
+            }
             chain = chain.then(function () {
               return client.query(object.statement).then(function () {
                 created.push(object.name);
@@ -2836,6 +5661,160 @@ function create(options) {
             });
           });
           return chain;
+        }).then(function () {
+          // THE STORAGE PARAMETERS (SCHEMA_RELOPTIONS), set where an index
+          // lacks one, and its pending list flushed once.
+          return client.query(
+            'SELECT c.relname AS name, c.reloptions AS options FROM ' +
+            'pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace ' +
+            'WHERE n.nspname = current_schema() AND c.relname = ' +
+            'ANY($1::text[])',
+            [SCHEMA_RELOPTIONS.map(function (one) { return one.name; })])
+            .then(function (result) {
+              const lacking = ((result && result.rows) || [])
+                .filter(function (row) {
+                  const options = Array.isArray(row.options) ? row.options
+                    : [];
+                  const wanted = SCHEMA_RELOPTIONS.filter(function (one) {
+                    return one.name === row.name;
+                  })[0];
+                  return wanted && options.indexOf(wanted.option) < 0;
+                }).map(function (row) { return row.name; });
+              let chain = Promise.resolve();
+              SCHEMA_RELOPTIONS.forEach(function (one) {
+                if (lacking.indexOf(one.name) < 0) {
+                  return;
+                }
+                chain = chain.then(function () {
+                  return client.query(one.statement);
+                }).then(function () {
+                  return client.query(one.flush);
+                }).then(function () {
+                  log.info('persistence: ' + one.name + ' now takes every ' +
+                           'insert directly (fastupdate off) and its ' +
+                           'pending list was flushed (#618).');
+                });
+              });
+              return chain;
+            });
+        }).then(function () {
+          // WHAT A LATER VERSION REPLACED (SCHEMA_RETIRED), dropped where it
+          // is still there — after its replacement exists, so no question
+          // is ever without an index — and probed first, in the catalogue
+          // by name as the routines are, so a store the script has brought
+          // level issues no DROP.
+          return client.query(
+            'SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ' +
+            'ON n.oid = c.relnamespace WHERE n.nspname = current_schema() ' +
+            'AND c.relname = ANY($1::text[])',
+            [SCHEMA_RETIRED.map(function (object) {
+              return object.name;
+            })]).then(function (result) {
+            const present = new Set(((result && result.rows) || [])
+              .map(function (row) { return row.name; }));
+            let chain = Promise.resolve();
+            SCHEMA_RETIRED.forEach(function (object) {
+              if (!present.has(object.name)) {
+                return;
+              }
+              chain = chain.then(function () {
+                return client.query(object.statement).then(function () {
+                  log.info('persistence: dropped ' + object.name + ', which ' +
+                           'schema version ' + SCHEMA_VERSION + ' replaced ' +
+                           '(#618).');
+                });
+              });
+            });
+            return chain;
+          });
+        }).then(function () {
+          // WHAT AN OLDER STORE IS OWED BEYOND THE ABOVE (#630): the
+          // counters' keys, the old folds, the minted btree, the tables'
+          // storage parameters — before the routines below.
+          return upgradeSchema(client, created);
+        }).then(function () {
+          // WHAT THE ONLINE INDEXES ARE OWED: missing, or left invalid by a
+          // dead concurrent build, and whether this role owns the table.
+          return OnlineIndexes.probePostgres(client,
+            OnlineIndexes.onlineObjects(SCHEMA_OBJECTS), onlineMissing)
+            .then(function (plan) {
+              onlinePlan = plan;
+            });
+        }).then(function () {
+          return checkChangeLogDense(client, log);
+        }).then(function () {
+          // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
+          // function or a trigger is not a relation `to_regclass()` knows —
+          // and created where missing, functions first. When this process
+          // created a counting trigger, the counters start here: under the
+          // lock, the one count of the directory (COUNTS_BACKFILL).
+          const functions = SCHEMA_ROUTINES.filter(function (one) {
+            return one.kind === 'function';
+          }).map(function (one) { return one.name; });
+          const triggers = SCHEMA_ROUTINES.filter(function (one) {
+            return one.kind === 'trigger';
+          }).map(function (one) { return one.name; });
+          return client.query(
+            'SELECT p.proname AS name FROM pg_proc p JOIN pg_namespace n ON ' +
+            'n.oid = p.pronamespace WHERE n.nspname = current_schema() AND ' +
+            'p.proname = ANY($1::text[]) UNION SELECT t.tgname FROM ' +
+            'pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN ' +
+            'pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ' +
+            'current_schema() AND t.tgname = ANY($2::text[])',
+            [functions, triggers]).then(function (result) {
+            const present = new Set(((result && result.rows) || [])
+              .map(function (row) { return row.name; }));
+            const missing = SCHEMA_ROUTINES.filter(function (one) {
+              return !present.has(one.name);
+            });
+            if (!missing.length) {
+              return null;
+            }
+            let chain = Promise.resolve();
+            missing.forEach(function (one) {
+              chain = chain.then(function () {
+                return client.query(one.statement).then(function () {
+                  created.push(one.name);
+                });
+              });
+            });
+            // Which counters a created trigger starts: #618's, or the
+            // per-data-key ones (#623) — each backfilled only when one of
+            // its own triggers was created here.
+            const starts = function (counts) {
+              return missing.some(function (one) {
+                return one.kind === 'trigger' &&
+                  (one.counts || 'entries') === counts;
+              });
+            };
+            const startsCounting = starts('entries');
+            const startsDekCounting = starts('deks');
+            if (!startsCounting && !startsDekCounting) {
+              return chain;
+            }
+            return chain.then(function () {
+              return client.query(LOCK_FOR_BACKFILL);
+            }).then(function () {
+              return startsCounting ? client.query(COUNTS_BACKFILL) : null;
+            }).then(function (r) {
+              if (startsCounting) {
+                log.info('persistence: the directory\'s counts start here ' +
+                         '(#618): ' + ((r && r.rowCount) || 0) + ' counter ' +
+                         'row(s) written from one count of ' +
+                         'sts_ldap_entries, under a lock; the triggers keep ' +
+                         'them from now on.');
+              }
+              return startsDekCounting
+                ? client.query(DEK_COUNTS_BACKFILL) : null;
+            }).then(function (r) {
+              if (startsDekCounting) {
+                log.info('persistence: the per-data-key counts start here ' +
+                         '(#623): ' + ((r && r.rowCount) || 0) + ' counter ' +
+                         'row(s) from the entries whose data keys are ' +
+                         'known; the rest join as they are indexed.');
+              }
+            });
+          });
         }).then(function () {
           // DML, and the one statement here that runs on every open. The
           // script writes this row too; `ON CONFLICT DO NOTHING` is what
@@ -2888,8 +5867,21 @@ function create(options) {
                  'PERSISTENCE and not COORDINATION — a second process ' +
                  'pointed at this database will not see this one\'s writes ' +
                  'until it restarts.');
+        // AFTER THE COMMIT, AND NOT WAITED FOR: an owed online index is
+        // told (STS-STORE-0172) or built concurrently in the background.
+        onlineSettled = OnlineIndexes.settlePostgres(pool, log, onlinePlan,
+                                                     onlineBuild);
         log.debug('Leaving the postgres driver open().');
       });
+    },
+
+    // The online indexes' settlement (#876, #882), for a caller that wants
+    // to know it is over: `{ built, told }` (MariaDB's adds `failed`).
+    // Never rejects.
+    onlineIndexes: function () {
+      log.debug('Entering the postgres driver onlineIndexes().');
+      log.debug('Leaving the postgres driver onlineIndexes().');
+      return onlineSettled;
     },
 
     // =====================================================================
@@ -2939,8 +5931,9 @@ function create(options) {
       const out = { ok: true, probes: {}, pool: null, tookMs: 0 };
 
       // THE POOL'S OWN NUMBERS, which are this PROCESS's and are not in any
-      // catalog view: postgres can say how many backends exist and only `pg`
-      // can say how many of them this process is holding, how many are idle
+      // catalog view: postgres can say how many backends exist and only the
+      // pool (Knex's since #326, `stats()`) can say how many of them this
+      // process is holding, how many are idle
       // in its pool, and how many callers are queued for one. A page drawing
       // only the server's side would answer "how contended is this service's
       // database handle" with a number about somebody else.
@@ -2951,17 +5944,19 @@ function create(options) {
       // this page's own connection and report a pool one busier than it is —
       // which on a `max` of 4 is a quarter of it, invented by the act of
       // looking.
-      out.pool = {
-        total: pool.totalCount,
-        idle: pool.idleCount,
-        waiting: pool.waitingCount,
-        max: pool.options && pool.options.max
-      };
+      out.pool = pool.stats();
 
       log.debug("Leaving metrics().");
+      // MariaDB's probes and its statement bound (#677): `max_statement_time`
+      // is in seconds, and setting it back to 0 is its RESET.
+      const mariadb = engine === 'mariadb';
+      const probes = mariadb ? require('./metrics_mariadb').METRIC_PROBES
+        : METRIC_PROBES;
       return pool.connect().then(function (client) {
         const unguard = guardClient(client, 'the metrics page');
-        return client.query('SET statement_timeout = ' + timeoutMs)
+        return client.query(mariadb
+          ? 'SET SESSION max_statement_time = ' + (timeoutMs / 1000)
+          : 'SET statement_timeout = ' + timeoutMs)
           .catch(function (err) {
             // Swallowed with a reason: a server that refuses to set a
             // statement timeout is a server this page can still report on,
@@ -2976,7 +5971,7 @@ function create(options) {
               out.timeoutSet = true;
             }
             let chain = Promise.resolve();
-            METRIC_PROBES.forEach(function (probe) {
+            probes.forEach(function (probe) {
               chain = chain.then(function () {
                 const started = Date.now();
                 return client.query(probe.sql).then(function (result) {
@@ -3024,7 +6019,9 @@ function create(options) {
             // server and the connection string say, which is the only
             // definition of "as we found it" that stays right when somebody
             // changes either.
-            return client.query('RESET ALL').catch(function (err) {
+            return client.query(mariadb
+              ? 'SET SESSION max_statement_time = 0' : 'RESET ALL'
+            ).catch(function (err) {
               log.warn(errorCodes.tag('STS-STORE-0033') +
                        'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +
@@ -3062,11 +6059,34 @@ function create(options) {
       log.debug('Entering the postgres driver close().');
       log.debug("Leaving close().");
       liveClosed = true;
+      // A CONCURRENT INDEX BUILD STILL RUNNING is cancelled with its
+      // connection (#876, #882); the next start finds the index invalid
+      // and builds it again.
+      if (onlineBuild.client) {
+        const building = onlineBuild.client;
+        onlineBuild.client = null;
+        Promise.resolve(building.end()).catch(function (e) {
+          log.debug("Caught in close(): " + ((e && e.message) || e));
+        });
+      }
       const live = liveClient;
       liveClient = null;
-      return pool.end().then(function () {
+      // A NUDGE STILL DUE goes before the pool closes (#630): its commits
+      // are in, and another process need not wait for its poll to see them.
+      if (notifyTimer) {
+        clearTimeout(notifyTimer);
+        notifyTimer = null;
+      }
+      const lastNudge = sendNotify();
+      notifyClosed = true;
+      return lastNudge.then(function () {
+        return pool.end();
+      }).then(function () {
         // The read replica's pool, when it is a pool of its own (#98).
         return readPool !== pool ? readPool.end() : null;
+      }).then(function () {
+        // The tally pool (#820).
+        return tallyPool.end();
       }).then(function () {
         // The liveness connection, last: leaving the cluster and giving the
         // origin back were its final statements.
@@ -3081,10 +6101,11 @@ function create(options) {
     loadDirectory: function () {
       log.debug('Entering the postgres driver loadDirectory().');
       log.debug("Leaving loadDirectory().");
-      return readPool.query(
+      // On MariaDB a primary-key page at a time (`directory_portable.js`).
+      return (directoryStore ? directoryStore.loadRows() : readPool.query(
         'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
-      ).then(function (result) {
+      )).then(function (result) {
         if (!result.rows.length) {
           log.debug('Leaving loadDirectory(). The table is empty.');
           return null;
@@ -3122,6 +6143,10 @@ function create(options) {
 
     loadRealms: function () {
       log.debug('Entering the postgres driver loadRealms().');
+      if (small) {
+        log.debug("Leaving loadRealms(). Portable.");
+        return small.loadRealms();
+      }
       log.debug("Leaving loadRealms().");
       return readPool.query(
         'SELECT id, name, description, created_at, overrides, domain, ' +
@@ -3155,6 +6180,10 @@ function create(options) {
 
     loadOverrides: function () {
       log.debug('Entering the postgres driver loadOverrides().');
+      if (small) {
+        log.debug("Leaving loadOverrides(). Portable.");
+        return small.loadOverrides();
+      }
       log.debug("Leaving loadOverrides().");
       return readPool.query('SELECT key, value FROM sts_appconfig')
         .then(function (result) {
@@ -3207,13 +6236,26 @@ function create(options) {
     // key, before anything is written; a new row is then inserted in the same
     // order. A flush therefore holds no lock when it starts taking them and
     // takes them in the order every other flush does, which is
-    // `saveMinted()`'s argument one table over. An insert that finds its row
-    // committed by somebody else in the meantime (`ON CONFLICT DO NOTHING`
-    // answering no row) locks it and merges again.
+    // `saveMinted()`'s argument one table over.
+    //
+    // **A MERGED INSERT THAT LOSES IS NOT LOCKED HERE (#447).** The row was
+    // committed between the ordered lock and the insert, so the lock step
+    // did not take it. A single-row `FOR UPDATE` in this transaction is a
+    // new lock taken while the flush already holds its other rows — the
+    // opposite order from a flush that locked that row in its own ordered
+    // step. The 2026-10-05 single-node run deadlocked on that pair and
+    // retried. The flush commits without the lost row. Each lost row is
+    // then merged by `mergeLostRow()`, one transaction per row, in
+    // primary-key order. That transaction locks only the row it merges.
     // -----------------------------------------------------------------------
-    saveDirectory: function (change) {
+    saveDirectory: function (change, how) {
       log.debug('Entering the postgres driver saveDirectory().');
+      // Counters only (#878). The body and the lost-row merges are one
+      // choice: a tally batch stays off the durable pool for both.
+      const transact = (how && how.tally) ? tallyTransaction :
+                       withTransaction;
       const outcomes = [];
+      const pendingLost = [];
       const idOf = function (realm, key) {
         return String(realm) + '\n' + String(key);
       };
@@ -3235,104 +6277,109 @@ function create(options) {
         return idOf(row.realm, row.key);
       }));
       log.debug("Leaving saveDirectory().");
+      // Lost merged inserts, merged after this flush's transaction commits
+      // (#447). Cleared at the start of the body as well as here: a deadlock
+      // retry runs the body again without coming back through `attempt()`.
+      const mergeLostRows = function (rows) {
+        log.debug("Entering mergeLostRows().");
+        const seen = new Set();
+        const ordered = [];
+        rows.forEach(function (row) {
+          const id = idOf(row.realm, row.key);
+          if (!seen.has(id)) {
+            seen.add(id);
+            ordered.push(row);
+          }
+        });
+        ordered.sort(byKey);
+        if (!ordered.length) {
+          log.debug("Leaving mergeLostRows(). None.");
+          return null;
+        }
+        let chain = Promise.resolve();
+        ordered.forEach(function (row) {
+          chain = chain.then(function () {
+            return transact(function (client) {
+              return directoryStore
+                ? directoryStore.mergeLostRow(client, row, outcomes)
+                : mergeLostRow(client, row, outcomes);
+            });
+          });
+        });
+        log.debug("Leaving mergeLostRows().");
+        return chain;
+      };
       // **A MERGE THAT MEETS AN ENTRY UNDER A DATA KEY THIS PROCESS DOES NOT
       // HOLD YET IS TRIED ONCE MORE, AFTER THE DATA-KEY ROWS ARE READ AGAIN
       // (2026-10-02)** — the ordinary cause is a realm another worker thread
       // created a moment ago, whose `directory` key this thread has not read.
       // `keystore.writeAfterDeks()` does the same for its own rows.
-      const attempt = function (again) {
-        outcomes.length = 0;
-        return withTransaction(transactionBody).catch(function (e) {
-          if (!again || errorCodes.codeOf(e) !== 'STS-STORE-0072') {
-            throw e;
+      // A ROW SEALED UNDER A DATA KEY THIS PROCESS DOES NOT HOLD YET is read
+      // again after the key rows are re-read — up to SEALED_FLUSH_RETRIES
+      // times, a pause between (2026-10-27; it was once): two processes
+      // seeding one new realm each make a key for it, and the other's key
+      // row may be a transaction still committing when the first re-read
+      // runs. A flush that gave up answered the request that caused it 503
+      // (STS-STORE-0066, sts_kerberos_rc4's realm create in the single-node
+      // mode). A loop, not a chain (tests/no_periodic_timers.js).
+      const attempt = async function () {
+        log.debug("Entering attempt().");
+        let last = null;
+        for (let i = 0; i <= SEALED_FLUSH_RETRIES; i++) {
+          outcomes.length = 0;
+          pendingLost.length = 0;
+          try {
+            await transact(transactionBody);
+            const merged = await mergeLostRows(pendingLost);
+            log.debug("Leaving attempt().");
+            return merged;
+          } catch (e) {
+            if (i === SEALED_FLUSH_RETRIES ||
+                errorCodes.codeOf(e) !== 'STS-STORE-0072') {
+              log.debug("Leaving attempt(). Failed.");
+              throw e;
+            }
+            log.debug("Caught in saveDirectory(): " +
+                      ((e && e.message) || e));
+            last = e;
+            await require('../common/keystore').refreshDekRows();
+            if (i > 0) {
+              await new Promise(function (resolve) {
+                setTimeout(resolve, SEALED_FLUSH_RETRY_PAUSE_MS);
+              });
+            }
           }
-          log.debug("Caught in saveDirectory(): " + ((e && e.message) || e));
-          return require('../common/keystore').refreshDekRows()
-            .then(function () {
-              return attempt(false);
-            });
-        });
+        }
+        log.debug("Leaving attempt(). Exhausted.");
+        throw last;
       };
       const transactionBody = function (client) {
+        if (directoryStore) {
+          // MARIADB'S FLUSH (#677): the same locks, merge, writes, claims and
+          // change rows, and the key rows and counts this engine keeps in
+          // the driver (`directory_portable.js`).
+          return directoryStore.flushBody(client, {
+            merging: merging, blind: blind, deletes: change.deletes,
+            removedRealms: change.removedRealms,
+            releasing: change.releaseClaims || [], outcomes: outcomes,
+            pendingLost: pendingLost
+          });
+        }
         let chain = Promise.resolve();
         const moved = [];
         const stored = new Map();
+        pendingLost.length = 0;
 
         const entryOf = function (row) {
           return entryFromRow(row);
         };
-        const params = function (row, entry) {
-          return entryParams(row.realm, row.key, entry);
-        };
-        const update = function (row, entry) {
-          moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-          return client.query(
-            'UPDATE sts_ldap_entries SET dn = $3, attrs = $4::jsonb, ' +
-            'origin = $5, created_at = $6, modified_at = $7, ' +
-            'name_keys = $8::jsonb, mail_keys = $9::jsonb, ' +
-            'uuid_keys = $10::jsonb, class_keys = $11::jsonb, ' +
-            'value_keys = $12::jsonb, attr_names = $13::jsonb ' +
-            'WHERE realm = $1 AND dn_key = $2', params(row, entry));
-        };
-        // What the merge decided, turned into a statement and an outcome.
-        // `again` is false on the second look after a lost insert race, so a
-        // row that keeps vanishing cannot loop.
-        const settle = function (row, theirs, again) {
-          const base = row.base ? JSON.parse(row.base) : null;
-          const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
-          if (verdict.outcome === 'theirs' || verdict.outcome === 'deleted') {
-            outcomes.push({ realm: row.realm, key: row.key,
-                            outcome: verdict.outcome, entry: verdict.entry });
-            return null;
-          }
-          if (verdict.outcome === 'merged') {
-            outcomes.push({ realm: row.realm, key: row.key,
-                            outcome: 'merged', entry: verdict.entry });
-          }
-          if (theirs) {
-            return update(row, verdict.entry);
-          }
-          return client.query(
-            'INSERT INTO sts_ldap_entries ' +
-            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
-            '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-            '   attr_names) ' +
-            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-            '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
-            'ON CONFLICT (realm, dn_key) DO NOTHING',
-            params(row, verdict.entry)
-          ).then(function (r) {
-            if (r && r.rowCount) {
-              moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-              return null;
-            }
-            if (!again) {
-              // Committed by another node between the lock and the insert,
-              // twice. Written as it is rather than lost; the next flush
-              // merges against whatever is there.
-              return update(row, verdict.entry);
-            }
-            return client.query(
-              'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
-              'modified_at FROM sts_ldap_entries ' +
-              'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
-              [row.realm, row.key]
-            ).then(function (found) {
-              const now = (found.rows || [])[0];
-              // The merge was recorded against `theirs` = null; forget it.
-              for (let i = outcomes.length - 1; i >= 0; i--) {
-                if (outcomes[i].realm === row.realm &&
-                    outcomes[i].key === row.key) {
-                  outcomes.splice(i, 1);
-                }
-              }
-              return settle(row, now ? entryOf(now) : null, false);
-            });
-          });
-        };
 
-        // THE LOCKS, in one statement per chunk and in primary-key order.
-        const locking = merging.concat(change.deletes.slice(0).sort(byKey));
+        // THE LOCKS, in one statement per chunk and in primary-key order —
+        // EVERY row this flush touches, blind ones included (2026-10-21):
+        // the writes below are one statement per kind rather than one per
+        // row, so the only locks taken after this point are on rows that
+        // did not exist yet, and those are taken by ONE ordered INSERT.
+        const locking = merging.concat(blind, change.deletes).sort(byKey);
         for (let at = 0; at < locking.length;
              at += CHANGE_ROWS_PER_STATEMENT) {
           const chunk = locking.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
@@ -3362,75 +6409,96 @@ function create(options) {
           });
         }
 
-        // **EVERY ROW WRITTEN IN ONE PRIMARY-KEY ORDER, MERGED AND BLIND
-        // TOGETHER (2026-09-30).** The locks above are in key order, but the
-        // writes that followed were every merged row and then every blind
-        // one, the blind ones in journal order. An INSERT of a row that does
-        // not exist yet locks nothing until it runs, so two nodes writing the
-        // same new entries — a new realm's `ou=crl` and its CRL entries,
-        // published by both nodes at once — took those locks in two different
-        // orders and PostgreSQL killed one with `deadlock detected`
-        // (STS-STORE-0002). Since #351 the request whose change was in that
-        // flush is answered 503 (STS-STORE-0066): CI run 36762417779's
-        // cluster job, sts_ldap_read_authorization. saveMinted() gave its
-        // table one order on 2026-09-12 for the same reason.
-        const writes = merging.map(function (row) {
-          return { row: row, merge: true };
-        }).concat(blind.map(function (row) {
-          return { row: row, merge: false };
-        })).sort(function (a, b) {
+        // **ONE STATEMENT PER KIND OF WRITE, NOT ONE PER ROW (2026-10-21).**
+        // A flush sent an UPDATE or an INSERT for every entry and a DELETE
+        // for every removal, each a round trip inside the transaction the
+        // request's answer waits for (#351) — the cost #789 measured for
+        // `saveMinted()` at 36 ms for seventeen rows, and a password write
+        // touches several entries. Now: the merged rows another node holds
+        // in one UPDATE, every row that is new or blind in one INSERT, the
+        // removals in one DELETE.
+        //
+        // **THE ORDER IS STILL ONE PRIMARY-KEY ORDER (2026-09-30).** An
+        // INSERT of a row that does not exist yet locks nothing until it
+        // runs, so two nodes writing the same new entries in two orders
+        // deadlocked (STS-STORE-0002; CI run 36762417779's cluster job).
+        // Every EXISTING row is locked above, in key order, before anything
+        // is written; the new ones are inserted by one statement ordered by
+        // key. A merged insert and a blind upsert are therefore the SAME
+        // statement — two would take the new rows' locks in two runs — and
+        // the conflict clause updates only the blind ones.
+        //
+        // A key that appears more than once is written once, as its last
+        // blind row or else its last merged row: what the per-row writes
+        // left behind, one statement after another.
+        const chosen = new Map();
+        merging.forEach(function (row) {
+          chosen.set(idOf(row.realm, row.key), { row: row, merge: true });
+        });
+        blind.forEach(function (row) {
+          chosen.set(idOf(row.realm, row.key), { row: row, merge: false });
+        });
+        const writes = Array.from(chosen.values()).sort(function (a, b) {
           return byKey(a.row, b.row);
         });
 
-        writes.forEach(function (one) {
-          const row = one.row;
-          if (one.merge) {
-            chain = chain.then(function () {
-              return settle(row, stored.get(idOf(row.realm, row.key)) || null,
-                            true);
+        chain = chain.then(function () {
+          const updates = [];
+          const inserts = [];
+          writes.forEach(function (one) {
+            const row = one.row;
+            if (!one.merge) {
+              inserts.push({ row: row, entry: row.entry, blind: true });
+              return;
+            }
+            const theirs = stored.get(idOf(row.realm, row.key)) || null;
+            const base = row.base ? JSON.parse(row.base) : null;
+            const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
+            if (verdict.outcome === 'theirs' ||
+                verdict.outcome === 'deleted') {
+              outcomes.push({ realm: row.realm, key: row.key,
+                              outcome: verdict.outcome,
+                              entry: verdict.entry });
+              return;
+            }
+            if (verdict.outcome === 'merged') {
+              outcomes.push({ realm: row.realm, key: row.key,
+                              outcome: 'merged', entry: verdict.entry });
+            }
+            if (theirs) {
+              updates.push({ row: row, entry: verdict.entry });
+            } else {
+              inserts.push({ row: row, entry: verdict.entry, blind: false });
+            }
+          });
+          return updateEntries(client, updates, moved).then(function () {
+            return insertEntries(client, inserts, moved);
+          }).then(function (lost) {
+            // A MERGED INSERT THAT MET A ROW another node committed between
+            // the lock and the insert. Not locked in this transaction
+            // (#447): the flush already holds its other rows. Merged after
+            // COMMIT, one row to a transaction.
+            lost.forEach(function (row) {
+              pendingLost.push(row);
             });
-            return;
-          }
-          chain = chain.then(function () {
-            // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
-            // is a POINTER, and the receiver dereferences it with
-            // `readEntry(realm, key)` — which is `WHERE dn_key = $2`, the
-            // NORMALISED dn. `row.entry.dn` is the DN as written, so every
-            // upsert pointed at a key that column never holds: the receiver
-            // looked it up, MISSED, concluded the entry had been deleted, and
-            // called `removeEntry()` — actively removing the entry it had just
-            // been told to add. (The merging path above records `row.key` for
-            // the same reason.)
-            moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-            return client.query(
-              'INSERT INTO sts_ldap_entries ' +
-              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
-              '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-              '   attr_names) ' +
-              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
-              'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
-              '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
-              '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
-              '  modified_at = EXCLUDED.modified_at, ' +
-              '  name_keys = EXCLUDED.name_keys, ' +
-              '  mail_keys = EXCLUDED.mail_keys, ' +
-              '  uuid_keys = EXCLUDED.uuid_keys, ' +
-              '  class_keys = EXCLUDED.class_keys, ' +
-              '  value_keys = EXCLUDED.value_keys, ' +
-              '  attr_names = EXCLUDED.attr_names',
-              params(row, row.entry));
           });
         });
 
-        change.deletes.forEach(function (row) {
+        for (let at = 0; at < change.deletes.length;
+             at += CHANGE_ROWS_PER_STATEMENT) {
+          const chunk = change.deletes.slice(at,
+                                             at + CHANGE_ROWS_PER_STATEMENT);
           chain = chain.then(function () {
-            moved.push({ realm: row.realm, dn: row.key, op: 'delete' });
+            chunk.forEach(function (row) {
+              moved.push({ realm: row.realm, dn: row.key, op: 'delete' });
+            });
             return client.query(
-              'DELETE FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
-              [row.realm, row.key]);
+              'DELETE FROM sts_ldap_entries WHERE (realm, dn_key) IN ' +
+              '(SELECT r, k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
+              [chunk.map(function (row) { return String(row.realm); }),
+               chunk.map(function (row) { return String(row.key); })]);
           });
-        });
+        }
 
         // A REALM THAT WENT AWAY takes its rows with it. The per-row deletes
         // above already cover every row this process knew about; this catches
@@ -3484,6 +6552,20 @@ function create(options) {
           });
         });
 
+        // THE CREATES' CLAIMS, GIVEN BACK IN THIS TRANSACTION (#628): the
+        // claims `persistence.js` was handed for writes this flush (or an
+        // earlier one) carries, so a create waiting on the name finds the
+        // entry committed in the same instant the claim goes. A transaction
+        // that rolls back keeps them: they stay until they expire.
+        const releasing = change.releaseClaims || [];
+        if (releasing.length) {
+          chain = chain.then(function () {
+            return portable ? portable.releaseClaims(client, releasing)
+              : client.query(RELEASE_CLAIMS_SQL,
+                             releaseClaimsParams(releasing));
+          });
+        }
+
         return chain.then(function () {
           // ONE LOG ROW PER MOVED ENTRY, and the old 50-entry `capped` flag is
           // gone with the payload it protected. It existed because Postgres
@@ -3497,7 +6579,7 @@ function create(options) {
           }));
         });
       };
-      return attempt(true).then(function () {
+      return attempt().then(function () {
         log.debug('Leaving the postgres driver saveDirectory(). ' +
                   change.upserts.length + ' upsert(s), ' +
                   change.deletes.length + ' delete(s), ' + outcomes.length +
@@ -3537,6 +6619,10 @@ function create(options) {
         });
       const removed = delta && Array.isArray(delta.removed) ? delta.removed
         : [];
+      if (small) {
+        log.debug("Leaving saveRealms(). Portable.");
+        return small.saveRealms(upserts, removed);
+      }
       log.debug("Leaving saveRealms().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
@@ -3605,6 +6691,10 @@ function create(options) {
       const set = delta && delta.set ? delta.set : (map || {});
       const cleared = delta && Array.isArray(delta.cleared) ? delta.cleared
         : [];
+      if (small) {
+        log.debug("Leaving saveOverrides(). Portable.");
+        return small.saveOverrides(set, cleared);
+      }
       log.debug("Leaving saveOverrides().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
@@ -3638,11 +6728,38 @@ function create(options) {
     },
 
     // -----------------------------------------------------------------------
+    // THE DATA-KEY ROWS ALONE (2026-11-11), for `keystore.refreshDekRows()`,
+    // which runs before every key-row write and used to read the whole table
+    // for them — every realm's key set and hierarchy, tens of megabytes on a
+    // store with a few hundred realms — to keep a few kilobytes. The filter
+    // is on `realm`, so no other row's material leaves the server; the same
+    // `LIKE` the encryption counts below already use.
+    // -----------------------------------------------------------------------
+    loadDekRows: function () {
+      log.debug('Entering the postgres driver loadDekRows().');
+      if (small) {
+        log.debug("Leaving loadDekRows(). Portable.");
+        return small.loadDekRows();
+      }
+      log.debug("Leaving loadDekRows().");
+      return readPool.query('SELECT realm, material FROM sts_keys WHERE ' +
+                            'realm LIKE \'dek:%\'').then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: row.realm, material: row.material };
+        });
+      });
+    },
+
+    // -----------------------------------------------------------------------
     // THE KEY MATERIAL. See the CREATE TABLE above for why a column of text is
     // the right shape and why this driver never holds a private key.
     // -----------------------------------------------------------------------
     loadKeys: function () {
       log.debug('Entering the postgres driver loadKeys().');
+      if (small) {
+        log.debug("Leaving loadKeys(). Portable.");
+        return small.loadKeys();
+      }
       log.debug("Leaving loadKeys().");
       return readPool.query('SELECT realm, material FROM sts_keys')
                  .then(function (r) {
@@ -3661,6 +6778,10 @@ function create(options) {
     // The write itself is unchanged.
     saveKeys: function (realmId, ciphertext) {
       log.debug('Entering the postgres driver saveKeys(). realm=' + realmId);
+      if (small) {
+        log.debug("Leaving saveKeys(). Portable.");
+        return small.saveKeys(realmId, ciphertext);
+      }
       log.debug("Leaving saveKeys().");
       return withTransaction(function (client) {
         return client.query(
@@ -3685,6 +6806,10 @@ function create(options) {
     // node reads the row gone.
     deleteKeys: function (realmId) {
       log.debug('Entering the postgres driver deleteKeys(). realm=' + realmId);
+      if (small) {
+        log.debug("Leaving deleteKeys(). Portable.");
+        return small.deleteKeys(realmId);
+      }
       log.debug("Leaving deleteKeys().");
       return withTransaction(function (client) {
         return client.query('DELETE FROM sts_keys WHERE realm = $1',
@@ -3733,20 +6858,39 @@ function create(options) {
       const shortLived = Array.isArray(filter.ageHandles)
         ? filter.ageHandles.map(String) : [];
       const aged = staleBefore > 0 && shortLived.length > 0;
+      // The stores a request worker does not read back (#617; see
+      // `persistence_minted.js`, notInWorkers()).
+      const skipped = Array.isArray(filter.skipHandles)
+        ? filter.skipHandles.map(String) : [];
+      // Stores whose expiring rows a start does not read (#883). A NULL
+      // expires_at — the operational row — is still read.
+      const nullExpiry = Array.isArray(filter.nullExpiryHandles)
+        ? filter.nullExpiryHandles.map(String) : [];
+      const binds = [TOMBSTONE, filter.realms.map(String),
+                     Number(filter.nowMs) || Date.now()];
+      let where = 'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
+        '(expires_at IS NULL OR expires_at > $3)';
+      if (aged) {
+        binds.push(shortLived, staleBefore);
+        where += ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
+                 'AND written_at < to_timestamp($5 / 1000.0))';
+      }
+      if (skipped.length) {
+        binds.push(skipped);
+        where += ' AND NOT (handle = ANY($' + binds.length + '::text[]))';
+      }
+      if (nullExpiry.length) {
+        binds.push(nullExpiry);
+        where += ' AND NOT (handle = ANY($' + binds.length +
+          '::text[]) AND expires_at IS NOT NULL)';
+      }
       log.debug("Leaving loadMinted().");
-      return readPool.query(
+      return (mintedStatements ? mintedStatements.loadMinted(filter)
+        : readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
         '* 1000)::bigint AS written_ms, expires_at, key_sealed ' +
-        'FROM sts_minted ' +
-        'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
-        '(expires_at IS NULL OR expires_at > $3)' +
-        (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
-                'AND written_at < to_timestamp($5 / 1000.0))' : ''),
-        aged ? [TOMBSTONE, filter.realms.map(String),
-                Number(filter.nowMs) || Date.now(), shortLived, staleBefore]
-             : [TOMBSTONE, filter.realms.map(String),
-                Number(filter.nowMs) || Date.now()]
-      ).then(function (r) {
+        'FROM sts_minted ' + where, binds
+      )).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
             handle: row.handle,
@@ -3770,191 +6914,148 @@ function create(options) {
       });
     },
 
-    // ONE TRANSACTION FOR THE WHOLE BATCH, for `saveDirectory()`'s reason: a
+    // THE KEYS OF A KEY-RESIDENT ON-DEMAND STORE (#820 part 2): the key
+    // column of every live row, and nothing else — no body is read, so none
+    // is opened. A process holds these to answer "is it there?" without the
+    // store; see `realms.map()`'s `keysResident`.
+    loadMintedKeys: function (handles, realmIds, nowMs) {
+      log.debug("Entering loadMintedKeys().");
+      log.debug("Leaving loadMintedKeys().");
+      if (!handles || !handles.length) {
+        return Promise.resolve([]);
+      }
+      return (mintedStatements
+        ? mintedStatements.loadMintedKeys(handles, realmIds, nowMs)
+        : readPool.query(
+        'SELECT handle, realm, key FROM sts_minted WHERE handle = ANY($1::' +
+        'text[]) AND realm = ANY($2::text[]) AND body <> $3 AND ' +
+        '(expires_at IS NULL OR expires_at > $4)',
+        [handles.map(String), (realmIds || []).map(String), TOMBSTONE,
+         Number(nowMs) || Date.now()]
+      )).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { handle: String(row.handle), realm: String(row.realm),
+                   key: String(row.key) };
+        });
+      });
+    },
+
+    // ONE COMMIT FOR THE WHOLE BATCH, for `saveDirectory()`'s reason: a
     // request that ended a session and started another must not be able to
-    // land half-written. It is a SEPARATE transaction from the directory's,
-    // which `persistence.js` argues where it calls this.
+    // land half-written. It is a SEPARATE commit from the directory's, which
+    // `persistence.js` argues where it calls this. Since 2026-10-22 (#820)
+    // that commit is one statement, MINTED_FLUSH, and not a transaction of
+    // about eleven — see MINTED_FLUSH for the order inside it and why two
+    // flushes still take their locks in one order, and `flushMinted()` for
+    // when it is a transaction after all.
+    //
+    // **IN ONE ORDER, BY PRIMARY KEY, UPSERTS AND DELETES INTERLEAVED
+    // (2026-09-12).** Each statement takes a row lock that is held to COMMIT,
+    // and every request worker flushes into this table at once. The
+    // statements went in journal order — upserts, then deletes — so two
+    // workers touching the same two rows could each lock one and wait on the
+    // other: `deadlock detected`, about a hundred and twelve times in one
+    // dispatched run. Every one of those failed the whole flush, put its keys
+    // back, and made the next flush bigger. Every row's lock is taken first,
+    // in (handle, realm, key) order, which is what makes a cycle impossible
+    // rather than rare.
+    // ---------------------------------------------------------------------
+    // TWO KINDS OF ROW DECLARED BY THEIR STORE (2026-09-14, #46 section 3),
+    // and a row of either is written in the same lock order as the rest:
+    //
+    //   * `tombstone` — a delete leaves TOMBSTONE behind and an upsert of a
+    //     key holding one does nothing and is reported in `refused`, so a
+    //     node holding an old copy cannot put back a session, a code or a
+    //     token another node ended. See TOMBSTONE above.
+    //   * `merge(storedBody)` — an in-place edit two nodes can make to one
+    //     row (a session's relying-party lists, its upgrade from an arrival
+    //     to a sign-in). The row is merged with the body stored under the
+    //     row's lock (`resolveMerges()`, compared and set by MINTED_FLUSH),
+    //     handed to the store's merge (which opens, merges and seals — this
+    //     driver never holds a key), and what comes back is written and
+    //     reported in `merged` for the caller to apply to its own copy.
+    // ---------------------------------------------------------------------
     saveMinted: function (upserts, deletes) {
       log.debug('Entering the postgres driver saveMinted(). ' +
                 upserts.length + ' upsert(s), ' + deletes.length +
                 ' delete(s).');
-      // **IN ONE ORDER, BY PRIMARY KEY, UPSERTS AND DELETES INTERLEAVED
-      // (2026-09-12).** Each statement takes a row lock that is held to COMMIT,
-      // and every request worker flushes into this table at once. The
-      // statements went in journal order — upserts, then deletes — so two
-      // workers touching the same two rows could each lock one and wait on the
-      // other: `deadlock detected`, about a hundred and twelve times in one
-      // dispatched run. Every one of those failed the whole flush, put its keys
-      // back, and made the next flush bigger. Sorting on (handle, realm, key)
-      // gives every transaction the same lock order, which is what makes a
-      // cycle impossible rather than rare. Compared as code units rather than
-      // with `localeCompare()`, because the order has to be the same in every
-      // process whatever its locale.
-      const statements = upserts.map(function (row) {
-        return { row: row, upsert: true };
-      }).concat(deletes.map(function (row) {
-        return { row: row, upsert: false };
-      })).sort(function (a, b) {
-        const left = [a.row.handle, a.row.realm, a.row.key].map(String);
-        const right = [b.row.handle, b.row.realm, b.row.key].map(String);
-        for (let i = 0; i < 3; i++) {
-          if (left[i] !== right[i]) {
-            return left[i] < right[i] ? -1 : 1;
-          }
-        }
-        return 0;
-      });
-      // ---------------------------------------------------------------------
-      // TWO KINDS OF ROW DECLARED BY THEIR STORE (2026-09-14, #46 section 3),
-      // and a row of either is written in the same lock order as the rest:
-      //
-      //   * `tombstone` — a delete leaves TOMBSTONE behind and an upsert of a
-      //     key holding one does nothing and is reported in `refused`, so a
-      //     node holding an old copy cannot put back a session, a code or a
-      //     token another node ended. See TOMBSTONE above.
-      //   * `merge(storedBody)` — an in-place edit two nodes can make to one
-      //     row (a session's relying-party lists, its upgrade from an arrival
-      //     to a sign-in). The row is read `FOR UPDATE`, handed to the store's
-      //     merge (which opens, merges and seals — this driver never holds a
-      //     key), and what comes back is written and reported in `merged` for
-      //     the caller to apply to its own copy.
-      // ---------------------------------------------------------------------
-      const refused = [];
-      const merged = [];
-      const skip = new Set();
-      log.debug("Leaving saveMinted().");
+      const view = claimFences ? claimFences() : null;
+      const names = view && view.names && view.names.length
+        ? view.names : null;
+      if (!names) {
+        const plan = planMintedFlush(upserts, deletes);
+        log.debug("Leaving saveMinted().");
+        return flushMinted(plan).then(function (settled) {
+          rememberFlush(plan, settled.resolved, settled.refused);
+          log.debug('Leaving the postgres driver saveMinted(). ' +
+                    settled.refused.length + ' refused by a tombstone, ' +
+                    settled.merged.length + ' merged.');
+          return { refused: settled.refused, merged: settled.merged };
+        }, function (err) {
+          // Nothing of it was committed, and what the rows hold now is not
+          // known here: the next flush of them asks the store again.
+          log.debug("Caught in saveMinted(): " +
+                    ((err && err.message) || err));
+          plan.touched.forEach(function (row) {
+            mintedBodies.delete(mintedIdOf(row));
+          });
+          throw err;
+        });
+      }
+      // The status row's block-claim lock is share-locked in THIS
+      // transaction, and the one-statement flush runs on the same
+      // connection. A lock that is already gone drops that index; the rest
+      // of the batch still commits. A fence that does not hold throws, and
+      // the transaction rolls back, rather than writing the batch on a
+      // second connection that does not hold these locks.
+      log.debug("Leaving saveMinted(). Under the claim fence.");
+      let lostIds = [];
+      let lastPlan = null;
       return withTransaction(function (client) {
-        let chain = Promise.resolve();
-        const upsert = function (row, body, guarded) {
-          // `expires_at` (#333) is the store's own answer for the record,
-          // or NULL; see `expiresAt` in common/realms.js.
-          const expires = Number(row.expiresAt) > 0
-            ? Math.floor(Number(row.expiresAt)) : null;
-          return client.query(
-            'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, $4, ' +
-            'now(), $5, $6) ' +
-            'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
-            'body = EXCLUDED.body, written_at = now(), ' +
-            'expires_at = EXCLUDED.expires_at, ' +
-            'key_sealed = EXCLUDED.key_sealed' +
-            (guarded ? ' WHERE sts_minted.body <> $7' : ''),
-            guarded ? [row.handle, row.realm, row.key, body, expires,
-                       String(row.keySealed || ''), TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body, expires,
-                       String(row.keySealed || '')]
-          ).then(function (r) {
-            if (guarded && !(r && r.rowCount)) {
-              refused.push(row);
-              skip.add(row);
-            }
-            return r;
+        lastPlan = null;
+        return shareClaimFences(client, names).then(function (held) {
+          const have = {};
+          held.forEach(function (name) {
+            have[name] = true;
           });
-        };
-        statements.forEach(function (one) {
-          const row = one.row;
-          chain = chain.then(function () {
-            if (one.upsert && typeof row.merge === 'function') {
-              return client.query(
-                'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
-                'realm = $2 AND key = $3 FOR UPDATE',
-                [row.handle, row.realm, row.key]
-              ).then(function (r) {
-                const found = (r.rows || [])[0];
-                if (found && found.body === TOMBSTONE) {
-                  refused.push(row);
-                  skip.add(row);
-                  return null;
-                }
-                let body = row.body;
-                if (found && found.body !== row.body) {
-                  const answer = row.merge(found.body);
-                  if (answer && answer !== row.body) {
-                    body = answer;
-                    merged.push({ handle: row.handle, realm: row.realm,
-                                  key: row.key, journalKey: row.journalKey,
-                                  body: answer });
-                  }
-                }
-                return upsert(row, body, true);
-              });
-            }
-            if (one.upsert) {
-              return upsert(row, row.body, !!row.tombstone);
-            }
-            if (row.tombstone) {
-              // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
-              // `persistence.mintedRetention` whatever the record it ended
-              // said, so the expiry purge never takes it early.
-              return client.query(
-                'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, ' +
-                '$4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO ' +
-                'UPDATE SET body = EXCLUDED.body, written_at = now(), ' +
-                'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
-                [row.handle, row.realm, row.key, TOMBSTONE,
-                 String(row.keySealed || '')]
-              );
-            }
-            return client.query(
-              'DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 ' +
-              'AND key = $3',
-              [row.handle, row.realm, row.key]
-            );
+          const missing = names.filter(function (name) {
+            return !have[name];
+          });
+          lostIds = view.lose(missing);
+          const drop = {};
+          lostIds.forEach(function (id) {
+            drop[id] = true;
+          });
+          const keptUp = withoutLostFences(upserts, drop);
+          const keptDown = withoutLostFences(deletes, drop);
+          if (!keptUp.length && !keptDown.length) {
+            return { refused: [], merged: [] };
+          }
+          const plan = planMintedFlush(keptUp, keptDown);
+          lastPlan = plan;
+          return flushMintedOn(client, plan).then(function (settled) {
+            return { refused: settled.refused, merged: settled.merged,
+                     remember: settled };
           });
         });
-        return chain.then(function () {
-          // A LOG ROW PER MINTED KEY, upserts and deletes alike — the receiver
-          // re-reads `sts_minted` for each and applies what it finds, or
-          // removes what it does not, so the two cases need no distinction
-          // here. A change row names ONE key and a minted row is identified by
-          // the PAIR, so the two are packed into it.
-          //
-          // **THE SEPARATOR WAS A LITERAL NUL UNTIL 2026-09-07, AND
-          // `sts_changes.key` IS `text`.** PostgreSQL refuses a NUL in text, so
-          // this INSERT failed — and it is the last statement in the minted
-          // transaction, which means the sealed rows written just above it were
-          // rolled back too. Every minted flush was lost, reported once as
-          // `invalid byte sequence for encoding "UTF8": 0x00` and then as "the
-          // service is unaffected", which it was: it went on answering from
-          // memory, alone, which is exactly what a request worker pool cannot
-          // do. This is the same mistake `storedKey()` made and the second
-          // place it was made.
-          //
-          // base64url both halves, joined with '.', which is not in that
-          // alphabet — same encoding as `storedKey()`, for the same reason, and
-          // nothing to migrate because no row in the old shape was ever
-          // committed.
-          return recordChanges(client,
-                               upserts.filter(function (row) {
-                                 // A REFUSED UPSERT CHANGED NOTHING, so it
-                                 // tells nobody anything.
-                                 return !skip.has(row);
-                               }).concat(deletes).map(function (row) {
-            // `minted-own` IS A SECOND KIND AND NOT A FLAG, because the only
-            // thing that reads it is a `WHERE kind <> …` on the barrier's
-            // target — see latestBlockingChangeSeq(). A column would have had
-            // to be added to `sts_changes` and indexed; a kind is already
-            // there and already selected on.
-            // THE NAME, SEALED, where the row carries one (#222): the key
-            // column is a digest, and a reader needs the NAME — to drop it
-            // from its own store on a delete, which no digest can tell it. A
-            // sealed value is not base64url (it holds '$'), so a reader tells
-            // the two forms apart.
-            return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
-                     key: Buffer.from(String(row.handle), 'utf8')
-                                .toString('base64url') +
-                          '.' +
-                          (row.keySealed ? String(row.keySealed)
-                            : Buffer.from(String(row.key), 'utf8')
-                                .toString('base64url')) };
-          }));
-        });
-      }).then(function () {
+      }).then(function (answer) {
+        if (lastPlan && answer.remember) {
+          rememberFlush(lastPlan, answer.remember.resolved, answer.refused);
+        }
+        view.commitLost(lostIds);
         log.debug('Leaving the postgres driver saveMinted(). ' +
-                  refused.length + ' refused by a tombstone, ' +
-                  merged.length + ' merged.');
-        return { refused: refused, merged: merged };
+                  answer.refused.length + ' refused by a tombstone, ' +
+                  answer.merged.length + ' merged.');
+        return { refused: answer.refused, merged: answer.merged };
+      }, function (err) {
+        log.debug("Caught in saveMinted(): " +
+                  ((err && err.message) || err));
+        if (lastPlan) {
+          lastPlan.touched.forEach(function (row) {
+            mintedBodies.delete(mintedIdOf(row));
+          });
+        }
+        throw err;
       });
     },
 
@@ -3981,8 +7082,46 @@ function create(options) {
       return written;
     },
 
+    // How many coalesced nudges this process has sent (#630): fewer than
+    // its committed transactions under load, by design.
+    notifiesSent: function () {
+      log.debug("Entering notifiesSent().");
+      log.debug("Leaving notifiesSent().");
+      return notifiesSent;
+    },
+
+    // WHERE THIS PROCESS'S COMMITTED ROWS STAND, BY KIND (#626): a mark to
+    // hand back to committedSince(). See `otherWritten` above.
+    committedMark: function () {
+      log.debug("Entering committedMark().");
+      log.debug("Leaving committedMark().");
+      return { other: otherWritten, directory: directoryWritten };
+    },
+
+    // What was committed since `mark`: whether any row of another kind was
+    // (`other`), and the directory rows' realm and key — null when some of
+    // them are no longer kept, which a caller must read as "unknown".
+    committedSince: function (mark) {
+      log.debug("Entering committedSince().");
+      const now = { other: otherWritten, directory: directoryWritten };
+      const from = mark || now;
+      const kept = directoryWritten - committedDirectory.length;
+      const directory = Number(from.directory) < kept ? null
+        : committedDirectory.slice(Number(from.directory) - kept)
+          .map(function (one) {
+            return { realm: one.realm, key: one.key };
+          });
+      log.debug("Leaving committedSince().");
+      return { mark: now, other: otherWritten > Number(from.other),
+               directory: directory };
+    },
+
     latestBlockingChangeSeq: function () {
       log.debug("Entering latestBlockingChangeSeq().");
+      if (small) {
+        log.debug("Leaving latestBlockingChangeSeq(). Portable.");
+        return small.latestBlockingChangeSeq();
+      }
       log.debug("Leaving latestBlockingChangeSeq().");
       // ---------------------------------------------------------------------
       // AND NOT THIS PROCESS'S OWN ROWS (2026-09-08). `changesSince()` above
@@ -4032,9 +7171,13 @@ function create(options) {
     // one bind per column per row instead of building a composite string that
     // both ends would have to agree how to escape.
     // -----------------------------------------------------------------------
-    readMintedMany: function (refs) {
+    // `opts.primary` (#820): from the primary even where reads go to a
+    // replica — an on-demand store's warm-up must not hold a row older than
+    // the one its synchronous read would have answered.
+    readMintedMany: function (refs, opts) {
       log.debug('Entering the postgres driver readMintedMany(). ' +
                 (refs || []).length + ' ref(s).');
+      const asking = opts && opts.primary ? pool : readPool;
       const list = (refs || []);
       if (!list.length) {
         log.debug("Leaving readMintedMany().");
@@ -4048,14 +7191,16 @@ function create(options) {
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
       log.debug("Leaving readMintedMany().");
-      return readPool.query(
+      return (mintedStatements
+        ? mintedStatements.readMintedMany(asking, list)
+        : asking.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
         'FROM sts_minted m JOIN (VALUES ' + values.join(', ') +
         ') AS w(handle, realm, key) ' +
         'ON m.handle = w.handle AND m.realm = w.realm AND m.key = w.key',
         binds
-      ).then(function (res) {
+      )).then(function (res) {
         const rows = (res.rows || []).filter(function (row) {
           return row.body !== TOMBSTONE;
         }).map(function (row) {
@@ -4104,6 +7249,28 @@ function create(options) {
     // claim (`checkOriginFence()`).
     //
     // Must be called after `open()` and before anything reads `origin()`.
+    //
+    // **A HOLDER WHOSE NODE HAS GONE IS NOT WAITED OUT (#617, 2026-10-14).**
+    // A request worker is a thread of its front process, and on 8081 a
+    // restarted container's first worker waited 2 s — and could have waited
+    // the claim's whole 30 s — for the claim its own predecessor took, from
+    // a process that had already left the cluster. So a claim records WHICH
+    // NODE MEMBERSHIP took it: `o.nodeId` (the front's own membership id, or
+    // for a worker the front's it inherited), written after an `@` in the
+    // row's informational `origin` column, so the table and its schema
+    // version are unchanged. A claim that is refused is then TAKEN OVER,
+    // in one statement, when the membership that took it is GONE: its row in
+    // `sts_cluster_nodes` has left (a clean stop) or expired (a node whose
+    // row expired is dead for good — its heartbeat cannot renew it, and it
+    // must exit). Only that. A claim taken by a LIVE membership — another
+    // container running under this node name, or a sibling worker of this
+    // very front still draining in the same slot — names a live row and is
+    // waited for as before; one that names no membership (cluster off, or a
+    // front that has adopted and not yet joined) has no row and is waited for
+    // too, because absence proves nothing. Fencing is unchanged: the
+    // takeover replaces the reservation under the row lock, so a holder that
+    // was in fact still writing finds its next transaction fenced
+    // (`checkOriginFence()`), exactly as after a lapse.
     // -----------------------------------------------------------------
     adoptOrigin: function (opts) {
       log.debug("Entering the postgres driver adoptOrigin().");
@@ -4118,18 +7285,42 @@ function create(options) {
       const ttlMs = Math.max(1000, Number(o.ttlMs) || 30000);
       const waitMs = Math.max(0, Number(o.waitMs) || 0);
       const pollMs = Math.max(100, Number(o.pollMs) || 2000);
-      const reservation = nodeCrypto.randomUUID();
+      const reservation = require('../common/crypto').randomUuid();
+      const nodeId = String(o.nodeId || '').trim();
+      // `<process>@<membership>` — what `origin` holds for a claim taken by a
+      // process that knows its node's membership; the process alone else.
+      const holder = nodeId ? processId + '@' + nodeId : processId;
       const started = Date.now();
       const self = this;
+      function adopted(tookOverFrom) {
+        log.debug("Entering adopted().");
+        processId = key;
+        originClaim = { key: key, reservation: reservation, ttlMs: ttlMs };
+        log.debug("Leaving adopted().");
+        return { adopted: true, origin: key, waitedMs: Date.now() - started,
+                 tookOverFrom: tookOverFrom || '' };
+      }
       function attempt() {
         return self.claimOnce(ORIGIN_SCOPE, '', key, {
-          ttlMs: ttlMs, reservation: reservation
+          ttlMs: ttlMs, reservation: reservation, origin: holder
         }).then(function (answer) {
           if (answer.claimed) {
-            processId = key;
-            originClaim = { key: key, reservation: reservation, ttlMs: ttlMs };
-            return { adopted: true, origin: key,
-                     waitedMs: Date.now() - started };
+            return adopted('');
+          }
+          if (!nodeId) {
+            return answer;
+          }
+          return takeOverFromGone(key, reservation, holder, nodeId, ttlMs)
+            .then(function (taken) {
+              if (taken) {
+                return adopted((answer.existing && answer.existing.origin) ||
+                               '?');
+              }
+              return answer;
+            });
+        }).then(function (answer) {
+          if (answer.adopted) {
+            return answer;
           }
           if (Date.now() - started + pollMs > waitMs) {
             return { adopted: false, origin: processId,
@@ -4170,15 +7361,20 @@ function create(options) {
       // the claim extended by its reservation, and said so.
       const held = { key: originClaim.key,
                      reservation: originClaim.reservation, ttlMs: ttlMs };
-      // On the LIVENESS connection (#351), both statements.
-      return liveQuery(
-        'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
-        'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3 ' +
-        'AND expires_at > ' + DB_NOW,
-        [ORIGIN_SCOPE, held.key, held.reservation,
-         Math.max(1000, Number(ttlMs) || 30000)]
+      // On the LIVENESS connection (#351), both statements, each bounded
+      // (#770): a renewal that waits out a lock is a failed beat, not a
+      // connection pinned until the write in front of it commits. Neither
+      // statement touches the fence's lock row.
+      const runner = boundedRunner(ttlMs);
+      return dialect.run(runner, 'renewOrigin',
+        kx('sts_cluster_claims')
+          .update({ expires_at:
+            dialect.now(Math.max(1000, Number(ttlMs) || 30000)) })
+          .where({ scope: ORIGIN_SCOPE, realm: '', key: held.key,
+                   reservation: held.reservation })
+          .where('expires_at', '>', dialect.now())
       ).then(function (r) {
-        return r.rowCount > 0 ? true : reassertOrigin(liveRunner, held);
+        return r.rowCount > 0 ? true : reassertOrigin(runner, held);
       });
     },
 
@@ -4208,14 +7404,15 @@ function create(options) {
       return this.releaseClaim(ORIGIN_SCOPE, '', held.key, held.reservation);
     },
 
-    // The high-water mark at startup. A process that has just RESTORED the
-    // whole store is, by definition, up to date with everything committed
-    // before this instant — so it starts from here rather than from 0 and
-    // does not re-apply the entire history of the deployment on the way up.
+    // The log's head. persistence.js samples it when the store opens, before
+    // any row is read back (#619), and passes that seq to the follower.
+    // Sampling it again when coordination begins is the gap: a commit after
+    // a table was read and before that call is then below the mark.
     latestChangeSeq: function () {
       log.debug('Entering the postgres driver latestChangeSeq().');
       log.debug("Leaving latestChangeSeq().");
-      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return dialect.run(readPool, 'latestChangeSeq',
+        kx('sts_changes').max({ seq: 'seq' }))
         .then(function (r) {
           const seq = Number((r.rows[0] || {}).seq || 0);
           log.debug('Leaving the postgres driver latestChangeSeq(). ' + seq);
@@ -4262,10 +7459,10 @@ function create(options) {
       // the second. `applyRows()` skips this process's own rows itself — it
       // always did — so nothing is applied twice.
       // ---------------------------------------------------------------------
-      return readPool.query(
-        'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
-        'WHERE seq > $1 ORDER BY seq ASC LIMIT $2',
-        [Number(afterSeq) || 0, Number(limit) || 500]
+      return dialect.run(readPool, 'changesSince',
+        kx('sts_changes').select('seq', 'origin', 'kind', 'realm', 'key')
+          .where('seq', '>', Number(afterSeq) || 0)
+          .orderBy('seq', 'asc').limit(Number(limit) || 500)
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return { seq: Number(row.seq), origin: row.origin, kind: row.kind,
@@ -4283,7 +7480,8 @@ function create(options) {
     changeCeiling: function () {
       log.debug("Entering changeCeiling().");
       log.debug("Leaving changeCeiling().");
-      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return dialect.run(readPool, 'changeCeiling',
+        kx('sts_changes').max({ seq: 'seq' }))
         .then(function (r) { return Number((r.rows[0] || {}).seq || 0); });
     },
 
@@ -4292,10 +7490,11 @@ function create(options) {
     readEntry: function (realmId, dnKey) {
       log.debug("Entering readEntry().");
       log.debug("Leaving readEntry().");
-      return readPool.query(
-        'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
-        'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
-        [realmId, dnKey]
+      return (directoryStore ? directoryStore.readRow(realmId, dnKey)
+        : readPool.query(
+          'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
+          'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
+          [realmId, dnKey])
       ).then(function (r) {
         const row = (r.rows || [])[0];
         if (!row) {
@@ -4322,6 +7521,17 @@ function create(options) {
       log.debug("Entering directoryQuery(). " + name);
       let statement;
       const codecModule = require('./directory_codec');
+      if (directoryStore) {
+        // MariaDB's spelling of the same question (#677): keyed the same
+        // way, answered in the same shape, opened the same way.
+        log.debug("Leaving directoryQuery(). MariaDB.");
+        return Promise.resolve().then(function () {
+          return directoryStore.query(name, codecModule.keyArgs(name, args));
+        }).then(function (rows) {
+          return codecModule.openAnswer(entryCodec, name,
+            directoryQueries.answerOf(name, rows));
+        });
+      }
       try {
         // The values looked up, keyed; the answer, opened (#391 phase 6).
         statement = directoryQueries.build(name,
@@ -4332,10 +7542,58 @@ function create(options) {
         return Promise.reject(e);
       }
       log.debug("Leaving directoryQuery().");
-      return readPool.query(statement.text, statement.values)
+      return (statement.jitOff
+        ? queryWithoutJit(statement)
+        : readPool.query(statement.text, statement.values))
         .then(function (r) {
           return codecModule.openAnswer(entryCodec, name,
             directoryQueries.answerOf(name, r.rows || []));
+        });
+    },
+
+    // THE SESSION INDEX'S QUESTIONS ON THE READ POOL (2026-10-21):
+    // `directoryQuery()`'s arrangement for `session_queries.js`, so a caller
+    // that can wait asks without standing its event loop still. The
+    // index's columns are digests and numbers, so nothing is opened.
+    sessionIndexQuery: function (name, args) {
+      log.debug("Entering sessionIndexQuery(). " + name);
+      const sessionQueries = require('./session_queries');
+      let statement;
+      try {
+        statement = sessionQueries.build(name, args, engine);
+      } catch (e) {
+        log.debug("Caught in sessionIndexQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving sessionIndexQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving sessionIndexQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return sessionQueries.answerOf(name, r.rows || []);
+        });
+    },
+
+    // AN ON-DEMAND STORE'S QUESTIONS ON THE READ POOL (2026-10-22, #820):
+    // `sessionIndexQuery()`'s arrangement for `minted_queries.js`, so a
+    // console page that lists the newest rows of a store, counts it or
+    // finds one index key's rows waits on the store without standing its
+    // event loop still in the bridge. The rows come back sealed, and the
+    // caller opens them.
+    mintedQuery: function (name, args) {
+      log.debug("Entering mintedQuery(). " + name);
+      const mintedQueries = require('./minted_queries');
+      let statement;
+      try {
+        statement = mintedQueries.build(name, args, engine);
+      } catch (e) {
+        log.debug("Caught in mintedQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving mintedQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving mintedQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return mintedQueries.answerOf(name, r.rows || []);
         });
     },
 
@@ -4354,20 +7612,33 @@ function create(options) {
 
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
+      const options = readClientOptions();
+      // A function cannot be posted to a thread. verify-ca's hook checks
+      // nothing, said as `hostnameUnchecked`. A hook that checks the
+      // configured host (#951) is said as `checkHost`. The thread puts
+      // the same hook back: dropping verify-ca's would check a name the
+      // pools do not, and dropping `checkHost` would check `localhost`
+      // for an address. `ca` and `stsOutboundVariant` cross as data; the
+      // variant is what the outbound gate reads.
+      // `knex_store.postableSsl()` says it, and the thread's
+      // `restoredSsl()` is its inverse in the same file (#951's review).
+      options.ssl = require('./knex_store').postableSsl(options.ssl);
       log.debug("Leaving bridgeConnection().");
-      return readClientOptions();
+      return options;
     },
 
     // One minted row, same reason.
     readMinted: function (handle, realmId, key) {
       log.debug("Entering readMinted().");
       log.debug("Leaving readMinted().");
-      return readPool.query(
+      return (mintedStatements
+        ? mintedStatements.readMinted(handle, realmId, key)
+        : readPool.query(
         'SELECT handle, realm, key, body,        (extract(epoch from ' +
         'written_at) * 1000)::bigint AS written_ms FROM sts_minted WHERE ' +
         'handle = $1 AND realm = $2 AND key = $3',
         [handle, realmId, key]
-      ).then(function (r) {
+      )).then(function (r) {
         const row = (r.rows || [])[0];
         // A TOMBSTONE IS AN ABSENCE to every reader: the key was ended.
         if (!row || row.body === TOMBSTONE) {
@@ -4375,6 +7646,246 @@ function create(options) {
         }
         return { handle: row.handle, realm: row.realm, key: row.key,
                  body: row.body, writtenAt: Number(row.written_ms || 0) };
+      });
+    },
+
+    // -----------------------------------------------------------------------
+    // AN ON-DEMAND STORE'S INDEX, BACKFILLED (#820). Index rows are written
+    // beside a body write, so rows stored before schema version 24 have none,
+    // and a lookup by index would miss them — a revoked family's access
+    // tokens among them. An indexed store therefore stays read back whole
+    // until its index is COMPLETE: the front process files every row it
+    // restored (`writeMintedIndex()`), then commits the mark
+    // (`markMintedIndexed()`), and the next start reads it on demand.
+    // -----------------------------------------------------------------------
+    mintedIndexComplete: function (handles) {
+      log.debug("Entering mintedIndexComplete().");
+      log.debug("Leaving mintedIndexComplete().");
+      return (mintedStatements
+        ? mintedStatements.mintedIndexComplete(handles)
+        : pool.query(
+        'SELECT handle FROM sts_minted_index WHERE handle = ANY($1::text[]) ' +
+        'AND realm = $2 AND index_key = $3 AND key = $3',
+        [(handles || []).map(String), '', MINTED_INDEX_MARK]
+      )).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return String(row.handle);
+        });
+      });
+    },
+
+    writeMintedIndex: function (rows) {
+      log.debug("Entering writeMintedIndex(). " + (rows || []).length);
+      log.debug("Leaving writeMintedIndex().");
+      if (!rows || !rows.length) {
+        return Promise.resolve(0);
+      }
+      if (mintedStatements) {
+        return mintedStatements.insertIndex(rows.map(function (one) {
+          return { handle: String(one.handle), realm: String(one.realm),
+                   index_key: String(one.indexKey), key: String(one.key),
+                   sort_at: sortAtParam(one) };
+        })).then(function (r) {
+          return dialect.affected(r);
+        });
+      }
+      return pool.query(MINTED_INDEX_INSERT,
+        [rows.map(function (one) { return String(one.handle); }),
+         rows.map(function (one) { return String(one.realm); }),
+         rows.map(function (one) { return String(one.indexKey); }),
+         rows.map(function (one) { return String(one.key); }),
+         rows.map(sortAtParam)]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // A LEGACY ROW'S EXPIRY, FROM WHEN IT WAS WRITTEN (#820 part 2): every
+    // live row of one store with no `expires_at` is given `written_at` plus
+    // `addMs`, in batches, so the expiry purge can delete it once nothing
+    // restores the store whole. No body is read and no change is written:
+    // the column is the store's bookkeeping, not a row's content.
+    backfillMintedExpiry: async function (handle, addMs) {
+      log.debug("Entering backfillMintedExpiry(). " + handle);
+      let total = 0;
+      for (;;) {
+        const r = mintedStatements
+          ? await mintedStatements.backfillExpiryBatch(handle, addMs, 5000)
+          : await pool.query(
+          'UPDATE sts_minted SET expires_at = (extract(epoch FROM ' +
+          'written_at) * 1000)::bigint + $2 WHERE ctid IN (SELECT ctid FROM ' +
+          'sts_minted WHERE handle = $1 AND expires_at IS NULL AND body <> ' +
+          '$3 LIMIT 5000)', [String(handle), Math.max(0, Number(addMs) || 0),
+                             TOMBSTONE]);
+        total += dialect.affected(r);
+        if (!dialect.affected(r)) {
+          break;
+        }
+      }
+      log.debug("Leaving backfillMintedExpiry(). " + total);
+      return total;
+    },
+
+    markMintedIndexed: function (handle) {
+      log.debug("Entering markMintedIndexed(). " + handle);
+      log.debug("Leaving markMintedIndexed().");
+      if (mintedStatements) {
+        return mintedStatements.markMintedIndexed(handle);
+      }
+      return pool.query(MINTED_INDEX_INSERT,
+        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK],
+         [null]]);
+    },
+
+    // One `sts_sessions` row, in its own transaction. Apply repairs through
+    // this; the flush writes the index inside `saveMinted` instead.
+    //
+    // **WRITTEN ONLY WHERE IT DIFFERS (2026-10-21).** Every process that
+    // applies another's session change repairs its index row — and the
+    // writer already wrote that row in the same transaction as the body, so
+    // with a front process and four request workers each session change
+    // became one write and four repairs, every repair a transaction of its
+    // own: on 8081, 250 single-row upserts a second, the busiest statement
+    // in the database. The row is read first, on the read pool, and written
+    // only when a column the body implies is not what it holds — so a row
+    // an older writer left behind is still repaired.
+    writeSessionIndex: function (realmId, key, index) {
+      log.debug("Entering writeSessionIndex().");
+      const wanted = sessionIndexParams(realmId, key, index);
+      log.debug("Leaving writeSessionIndex().");
+      return (mintedStatements
+        ? mintedStatements.readSessionIndex(realmId, key)
+        : readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)]))
+        .then(function (r) {
+          const held = (r.rows || [])[0];
+          if (held && sessionIndexRowMatches(held, wanted)) {
+            return null;
+          }
+          return withTransaction(function (client) {
+            return mintedStatements
+              ? mintedStatements.upsertSession(client, wanted)
+              : upsertSessionIndex(client, realmId, key, index);
+          });
+        });
+    },
+
+    // The index row for a session that is gone. Same key as `sts_minted`.
+    // Deleted only where there is one (2026-10-21), for the reason above.
+    deleteSessionIndex: function (realmId, key) {
+      log.debug("Entering deleteSessionIndex().");
+      log.debug("Leaving deleteSessionIndex().");
+      return (mintedStatements
+        ? mintedStatements.readSessionIndex(realmId, key)
+        : readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)]))
+        .then(function (r) {
+          if (!(r.rows || []).length) {
+            return null;
+          }
+          return withTransaction(function (client) {
+            return mintedStatements
+              ? mintedStatements.deleteSession(client, realmId, key)
+              : deleteSessionIndexRow(client, realmId, key);
+          });
+        });
+    },
+
+    // True when the completion row has committed. A live index row is not
+    // that: another node may have written one before this walk finished.
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return (mintedStatements ? mintedStatements.sessionIndexDone()
+        : readPool.query(
+        'SELECT EXISTS (SELECT 1 FROM sts_sessions WHERE realm = $1 AND ' +
+        'key = $2) AS done',
+        [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY]
+      )).then(function (r) {
+        const row = (r.rows || [])[0];
+        // node-pg answers a boolean; a text 't' is the same fact. 'f' is
+        // truthy as a string, so it is not a truthiness check.
+        return !!(row && (row.done === true || row.done === 't'));
+      });
+    },
+
+    // One page of sealed session bodies, keyset on (realm, key). Tombstones
+    // are absent. Expired rows are included: the index still names them.
+    loadSessionBodies: function (afterRealm, afterKey, limit) {
+      log.debug("Entering loadSessionBodies().");
+      log.debug("Leaving loadSessionBodies().");
+      return (mintedStatements
+        ? mintedStatements.loadSessionBodies(afterRealm, afterKey, limit)
+        : readPool.query(
+        'SELECT realm, key, body FROM sts_minted WHERE handle = $1 AND ' +
+        'body <> $2 AND (realm, key) > ($3, $4) ORDER BY realm, key ' +
+        'LIMIT $5',
+        ['authn.sessions', TOMBSTONE, afterRealm, afterKey, limit]
+      )).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: row.realm, key: row.key, body: row.body };
+        });
+      });
+    },
+
+    // One backfill page, one transaction. The body is read again under the
+    // lock: a commit since the page was opened is not indexed from the
+    // ciphertext that was opened. `complete` writes the mark in this same
+    // transaction, and only the last page passes it. Before the mark, index
+    // rows whose session body is missing or a tombstone are deleted. The
+    // mark has no body, so it is excluded. A resumed walk's new head would
+    // otherwise hide an older build's delete, and a purged tombstone is
+    // not in the change log to replay (#350).
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      log.debug("Leaving writeSessionIndexes().");
+      const list = Array.isArray(rows) ? rows : [];
+      return withTransaction(function (client) {
+        let chain = Promise.resolve();
+        list.forEach(function (row) {
+          chain = chain.then(function () {
+            return (mintedStatements
+              ? mintedStatements.lockSessionBody(client, row.realm, row.key)
+              : client.query(
+              'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
+              'realm = $2 AND key = $3 FOR UPDATE',
+              ['authn.sessions', row.realm, row.key]
+            )).then(function (r) {
+              const found = (r.rows || [])[0];
+              if (!found || found.body === TOMBSTONE ||
+                  found.body !== row.body) {
+                return null;
+              }
+              return mintedStatements
+                ? mintedStatements.upsertSession(client,
+                    sessionIndexParams(row.realm, row.key, row.index))
+                : upsertSessionIndex(client, row.realm, row.key, row.index);
+            });
+          });
+        });
+        if (complete) {
+          chain = chain.then(function () {
+            if (mintedStatements) {
+              return mintedStatements.sweepSessionIndex(client);
+            }
+            return client.query(
+              'DELETE FROM sts_sessions AS s WHERE NOT ' +
+              '(s.realm = $1 AND s.key = $2) AND NOT EXISTS ' +
+              '(SELECT 1 FROM sts_minted AS m WHERE m.handle = $3 AND ' +
+              'm.realm = s.realm AND m.key = s.key AND m.body <> $4)',
+              [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY,
+               'authn.sessions', TOMBSTONE]
+            );
+          });
+          chain = chain.then(function () {
+            return mintedStatements
+              ? mintedStatements.upsertSession(client, sessionIndexParams(
+                  SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY,
+                  SESSION_INDEX_MARK))
+              : upsertSessionIndex(client, SESSION_INDEX_MARK_REALM,
+                                   SESSION_INDEX_MARK_KEY,
+                                   SESSION_INDEX_MARK);
+          });
+        }
+        return chain;
       });
     },
 
@@ -4404,7 +7915,8 @@ function create(options) {
           log.debug("Leaving connect().");
           return;
         }
-        client = new Client(clientOptions());
+        // Outside the pool, dialled by the pool's Knex instance (#326).
+        client = pool.dedicated();
         client.on('notification', function (msg) {
           let payload = null;
           try {
@@ -4498,6 +8010,10 @@ function create(options) {
     // grows for ever.
     purgeChanges: function (beforeSeq) {
       log.debug("Entering purgeChanges().");
+      if (small) {
+        log.debug("Leaving purgeChanges(). Portable.");
+        return small.purgeChanges(beforeSeq);
+      }
       log.debug("Leaving purgeChanges().");
       return pool.query('DELETE FROM sts_changes WHERE seq < $1',
                         [Number(beforeSeq) || 0])
@@ -4520,9 +8036,9 @@ function create(options) {
         return Promise.resolve([]);
       }
       log.debug("Leaving changesAt().");
-      return readPool.query(
-        'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
-        'WHERE seq = ANY($1::bigint[]) ORDER BY seq ASC', [list]
+      return dialect.run(readPool, 'changesAt',
+        kx('sts_changes').select('seq', 'origin', 'kind', 'realm', 'key')
+          .whereIn('seq', list).orderBy('seq', 'asc')
       ).then(function (r) {
         return (r.rows || []).map(function (row) {
           return { seq: Number(row.seq), origin: row.origin, kind: row.kind,
@@ -4550,7 +8066,9 @@ function create(options) {
     clusterClock: function () {
       log.debug("Entering clusterClock().");
       log.debug("Leaving clusterClock().");
-      return pool.query('SELECT ' + DB_NOW + ' AS now').then(function (r) {
+      return dialect.run(pool, 'clusterClock',
+        kx.select(kx.raw(dialect.nowText + ' AS now'))
+      ).then(function (r) {
         return Number((r.rows[0] || {}).now) || 0;
       });
     },
@@ -4565,16 +8083,21 @@ function create(options) {
       log.debug("Entering joinCluster(). node=" + node.nodeId);
       log.debug("Leaving joinCluster().");
       return withTransaction(function (client) {
-        return client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK])
+        return (portable ? portable.serialize(client, 'cluster.join')
+          : client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK]))
           .then(function () {
-            return client.query(
-              'DELETE FROM sts_cluster_nodes WHERE expires_at < ' + DB_NOW +
-              ' - $1', [DEAD_NODE_RETENTION_MS]);
+            return dialect.run(client, 'joinCluster.sweep',
+              kx('sts_cluster_nodes')
+                .where('expires_at', '<',
+                       dialect.now(DEAD_NODE_RETENTION_MS, '-'))
+                .del());
           }).then(function () {
-            return client.query(
-              'SELECT node_id, name, mode, version, fingerprint FROM ' +
-              'sts_cluster_nodes WHERE left_at = 0 AND expires_at > ' +
-              DB_NOW + ' AND node_id <> $1', [node.nodeId]);
+            return dialect.run(client, 'joinCluster.live',
+              kx('sts_cluster_nodes')
+                .select('node_id', 'name', 'mode', 'version', 'fingerprint')
+                .where({ left_at: 0 })
+                .where('expires_at', '>', dialect.now())
+                .whereNot({ node_id: node.nodeId }));
           }).then(function (r) {
             const live = r.rows || [];
             // THE MODE ONLY. A joining node has no fingerprint yet — it is
@@ -4590,14 +8113,15 @@ function create(options) {
               return { joined: false, differing: differing,
                        live: live.length };
             }
-            return client.query(
-              'INSERT INTO sts_cluster_nodes (node_id, name, mode, version, ' +
-              'fingerprint, started_at, heartbeat_at, expires_at, info) ' +
-              'VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ', ' +
-              DB_NOW + ' + $6, $7::jsonb)',
-              [node.nodeId, node.name || '', node.mode, node.version || '',
-               node.fingerprint || '', Number(node.ttlMs),
-               JSON.stringify(node.info || {})]
+            return dialect.run(client, 'joinCluster.insert',
+              kx('sts_cluster_nodes').insert({
+                node_id: node.nodeId, name: node.name || '',
+                mode: node.mode, version: node.version || '',
+                fingerprint: node.fingerprint || '',
+                started_at: dialect.now(), heartbeat_at: dialect.now(),
+                expires_at: dialect.now(Number(node.ttlMs)),
+                info: dialect.json(node.info || {})
+              })
             ).then(function () {
               return { joined: true, differing: [], live: live.length };
             });
@@ -4613,13 +8137,17 @@ function create(options) {
       log.debug("Entering agreeFingerprint(). node=" + nodeId);
       log.debug("Leaving agreeFingerprint().");
       return withTransaction(function (client) {
-        return client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK])
+        return (portable ? portable.serialize(client, 'cluster.join')
+          : client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK]))
           .then(function () {
-            return client.query(
-              'SELECT node_id, name, mode, version, fingerprint FROM ' +
-              'sts_cluster_nodes WHERE left_at = 0 AND expires_at > ' +
-              DB_NOW + ' AND node_id <> $1 AND fingerprint <> \'\' AND ' +
-              'fingerprint <> $2', [nodeId, String(fingerprint)]);
+            return dialect.run(client, 'agreeFingerprint.differing',
+              kx('sts_cluster_nodes')
+                .select('node_id', 'name', 'mode', 'version', 'fingerprint')
+                .where({ left_at: 0 })
+                .where('expires_at', '>', dialect.now())
+                .whereNot({ node_id: nodeId })
+                .whereNot({ fingerprint: '' })
+                .whereNot({ fingerprint: String(fingerprint) }));
           }).then(function (r) {
             const differing = (r.rows || []).map(function (row) {
               return { nodeId: row.node_id, name: row.name, mode: row.mode,
@@ -4628,9 +8156,10 @@ function create(options) {
             if (differing.length) {
               return { differing: differing };
             }
-            return client.query(
-              'UPDATE sts_cluster_nodes SET fingerprint = $2 WHERE ' +
-              'node_id = $1', [nodeId, String(fingerprint)]
+            return dialect.run(client, 'agreeFingerprint.set',
+              kx('sts_cluster_nodes')
+                .update({ fingerprint: String(fingerprint) })
+                .where({ node_id: nodeId })
             ).then(function () {
               return { differing: [] };
             });
@@ -4646,8 +8175,16 @@ function create(options) {
     // lost one.
     heartbeat: function (nodeId, ttlMs, info) {
       log.debug("Entering heartbeat(). node=" + nodeId);
+      if (portable) {
+        log.debug("Leaving heartbeat(). Portable.");
+        return portable.heartbeat(nodeId, ttlMs, info);
+      }
       log.debug("Leaving heartbeat().");
-      // On the LIVENESS connection (#351).
+      // On the LIVENESS connection (#351), bounded (#770). The statement
+      // updates the node and the leases and does not touch sts_cluster_locks,
+      // so a fence's share lock does not queue it. A lock wait that does
+      // happen (a takeover's UPDATE of the lease row) rejects inside the
+      // bound instead of holding the connection for the lifetime.
       return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET heartbeat_at = ' + DB_NOW +
         ', expires_at = ' + DB_NOW + ' + $2, info = COALESCE($3::jsonb, ' +
@@ -4659,7 +8196,8 @@ function create(options) {
         'SELECT (SELECT count(*) FROM n) AS alive, ' +
         'COALESCE((SELECT json_agg(json_build_object(\'name\', name, ' +
         '\'token\', token)) FROM l), \'[]\'::json) AS leases',
-        [nodeId, Number(ttlMs), info ? JSON.stringify(info) : null]
+        [nodeId, Number(ttlMs), info ? JSON.stringify(info) : null],
+        renewalBoundMs(ttlMs)
       ).then(function (r) {
         const row = r.rows[0] || {};
         return {
@@ -4677,12 +8215,24 @@ function create(options) {
     // not deleted, so a lease's token keeps counting up.
     leaveCluster: function (nodeId) {
       log.debug("Entering leaveCluster(). node=" + nodeId);
+      if (portable) {
+        log.debug("Leaving leaveCluster(). Portable.");
+        return portable.leaveCluster(nodeId);
+      }
       log.debug("Leaving leaveCluster().");
+      // The fence locks of the leases this holder has go in the same
+      // statement as the leases. `held` reads them before `l` expires them;
+      // a data-modifying CTE does not see a sibling's write.
       return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET left_at = ' + DB_NOW +
-        ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = $1 ' +
-        'RETURNING node_id) ' +
-        'UPDATE sts_cluster_leases SET expires_at = 0 WHERE holder = $1',
+        ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = ' +
+        '$1 RETURNING node_id), held AS (SELECT name, token FROM ' +
+        'sts_cluster_leases WHERE holder = $1), gone AS (DELETE FROM ' +
+        'sts_cluster_locks WHERE name IN (SELECT \'fence:lease:\' || ' +
+        'held.name || \':\' || held.token::text FROM held) RETURNING ' +
+        'name), l AS (UPDATE sts_cluster_leases SET expires_at = 0 WHERE ' +
+        'holder = $1 RETURNING name) SELECT (SELECT count(*) FROM n) + ' +
+        '(SELECT count(*) FROM gone) + (SELECT count(*) FROM l)',
         [nodeId]).then(function () {
         return true;
       });
@@ -4694,39 +8244,82 @@ function create(options) {
     // token back, unchanged: re-asking is not a new tenure.
     acquireLease: function (name, nodeId, ttlMs) {
       log.debug("Entering acquireLease(). name=" + name);
+      if (portable) {
+        log.debug("Leaving acquireLease(). Portable.");
+        return portable.acquireLease(name, nodeId, ttlMs);
+      }
       log.debug("Leaving acquireLease().");
+      // The fence lock is written in the same statement, and only when this
+      // node holds the lease afterwards. Other tokens' rows of this lease
+      // are deleted with it, so an in-flight fence of the old token waits
+      // and then finds its name gone. A takeover still waits for those
+      // fences: it cannot commit until they have. But it waits in bounded
+      // ATTEMPTS (#770's review, 2026-11-13), the heartbeat's bound, not in
+      // one statement that holds the liveness connection for as long as the
+      // old holder's slowest write. That statement queued this node's own
+      // heartbeat behind it in `liveExclusive()`, where the heartbeat's
+      // bound had not started, and a standby fenced itself
+      // (STS-CLUSTER-0004) in the middle of taking over. A timeout rolls
+      // the whole statement back (the token and the lock rows with it) and
+      // answers `{ held: false, pending: true }`; the caller asks again on
+      // its next beat, and the old holder's fences, which find their lease
+      // expired, cannot start new writes meanwhile.
+      const holderOf = function (pending) {
+        return dialect.run(liveRunner, 'acquireLease.holder',
+          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
+            .where({ name: name })
+        ).then(function (found) {
+          const other = (found.rows || [])[0] || null;
+          const answer = { held: false, holder: other ? other.holder : '',
+                           token: other ? Number(other.token) : 0,
+                           expiresAt: other ? Number(other.expires_at) : 0 };
+          if (pending) {
+            answer.pending = true;
+          }
+          return answer;
+        });
+      };
       return liveQuery(
-        'INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, ' +
-        'expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' + DB_NOW + ' + $3 ' +
-        'WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes WHERE node_id = $2 ' +
-        'AND left_at = 0 AND expires_at > ' + DB_NOW + ') ' +
-        'ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, ' +
+        'WITH up AS (INSERT INTO sts_cluster_leases (name, holder, token, ' +
+        'acquired_at, expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' +
+        DB_NOW + ' + $3 WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes ' +
+        'WHERE node_id = $2 AND left_at = 0 AND expires_at > ' + DB_NOW +
+        ') ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, ' +
         'token = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder AND ' +
         'sts_cluster_leases.expires_at > ' + DB_NOW + ' THEN ' +
         'sts_cluster_leases.token ELSE sts_cluster_leases.token + 1 END, ' +
-        'acquired_at = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder ' +
-        'AND sts_cluster_leases.expires_at > ' + DB_NOW + ' THEN ' +
-        'sts_cluster_leases.acquired_at ELSE EXCLUDED.acquired_at END, ' +
-        'expires_at = EXCLUDED.expires_at ' +
-        'WHERE sts_cluster_leases.expires_at <= ' + DB_NOW + ' OR ' +
-        'sts_cluster_leases.holder = EXCLUDED.holder ' +
-        'RETURNING holder, token, expires_at',
-        [name, nodeId, Number(ttlMs)]
+        'acquired_at = CASE WHEN sts_cluster_leases.holder = ' +
+        'EXCLUDED.holder AND sts_cluster_leases.expires_at > ' + DB_NOW +
+        ' THEN sts_cluster_leases.acquired_at ELSE EXCLUDED.acquired_at ' +
+        'END, expires_at = EXCLUDED.expires_at WHERE ' +
+        'sts_cluster_leases.expires_at <= ' + DB_NOW + ' OR ' +
+        'sts_cluster_leases.holder = EXCLUDED.holder RETURNING holder, ' +
+        'token, expires_at), lk AS (INSERT INTO sts_cluster_locks (name) ' +
+        'SELECT \'fence:lease:\' || $1 || \':\' || up.token::text FROM up ' +
+        'WHERE up.holder = $2 ON CONFLICT (name) DO NOTHING RETURNING ' +
+        'name), gone AS (DELETE FROM sts_cluster_locks WHERE EXISTS ' +
+        '(SELECT 1 FROM up WHERE up.holder = $2) AND left(name, ' +
+        'char_length(\'fence:lease:\' || $1 || \':\')) = \'fence:lease:\' ' +
+        '|| $1 || \':\' AND name <> (SELECT \'fence:lease:\' || $1 || ' +
+        '\':\' || up.token::text FROM up WHERE up.holder = $2) RETURNING ' +
+        'name) SELECT up.holder, up.token, up.expires_at, (SELECT ' +
+        'count(*) FROM lk) AS locked, (SELECT count(*) FROM gone) AS ' +
+        'cleared FROM up',
+        [name, nodeId, Number(ttlMs)],
+        renewalBoundMs(ttlMs)
       ).then(function (r) {
         const row = (r.rows || [])[0];
         if (row && row.holder === nodeId) {
           return { held: true, token: Number(row.token),
                    expiresAt: Number(row.expires_at) };
         }
-        return liveQuery(
-          'SELECT holder, token, expires_at FROM sts_cluster_leases ' +
-          'WHERE name = $1', [name]
-        ).then(function (found) {
-          const other = (found.rows || [])[0] || null;
-          return { held: false, holder: other ? other.holder : '',
-                   token: other ? Number(other.token) : 0,
-                   expiresAt: other ? Number(other.expires_at) : 0 };
-        });
+        return holderOf(false);
+      }, function (err) {
+        if (!isBoundTimeout(err)) {
+          throw err;
+        }
+        log.debug("Caught in acquireLease(): " + err.message);
+        return holderOf(true);
       });
     },
 
@@ -4734,12 +8327,30 @@ function create(options) {
     releaseLease: function (name, nodeId, token) {
       log.debug("Entering releaseLease(). name=" + name);
       log.debug("Leaving releaseLease().");
-      return liveQuery(
-        'UPDATE sts_cluster_leases SET expires_at = 0 WHERE name = $1 AND ' +
-        'holder = $2 AND token = $3', [name, nodeId, Number(token)]
-      ).then(function (r) {
-        return (r.rowCount || 0) > 0;
-      });
+      // The lock goes only when the lease did. One transaction, so a
+      // rollback puts both back; deleting the lock of a lease we did not
+      // release would drop a fence another holder still needs. Bounded as
+      // a takeover is (#770's review): deleting the lock waits for this
+      // node's own writes still fenced by it, and the heartbeat queues
+      // behind that wait. A timeout rejects, and `stepDown()` reports it
+      // (STS-CLUSTER-0041).
+      return liveTransact(function (runner) {
+        return dialect.run(runner, 'releaseLease',
+          kx('sts_cluster_leases').update({ expires_at: 0 })
+            .where({ name: name, holder: nodeId, token: Number(token) })
+        ).then(function (r) {
+          if (!((r.rowCount || 0) > 0)) {
+            return false;
+          }
+          return dialect.run(runner, 'releaseLease.lock',
+            kx('sts_cluster_locks').where({
+              name: fenceLockName('lease', name, token)
+            }).del()
+          ).then(function () {
+            return true;
+          });
+        });
+      }, renewalBoundMs());
     },
 
     // Every node row still retained and every lease, with the database clock
@@ -4748,14 +8359,18 @@ function create(options) {
       log.debug("Entering clusterState().");
       log.debug("Leaving clusterState().");
       return Promise.all([
-        pool.query(
-          'SELECT node_id, name, mode, version, fingerprint, started_at, ' +
-          'heartbeat_at, expires_at, left_at, info FROM sts_cluster_nodes ' +
-          'ORDER BY started_at DESC LIMIT 200'),
-        pool.query(
-          'SELECT name, holder, token, acquired_at, expires_at FROM ' +
-          'sts_cluster_leases ORDER BY name'),
-        pool.query('SELECT ' + DB_NOW + ' AS now')
+        dialect.run(pool, 'clusterState.nodes',
+          kx('sts_cluster_nodes')
+            .select('node_id', 'name', 'mode', 'version', 'fingerprint',
+                    'started_at', 'heartbeat_at', 'expires_at', 'left_at',
+                    'info')
+            .orderBy('started_at', 'desc').limit(200)),
+        dialect.run(pool, 'clusterState.leases',
+          kx('sts_cluster_leases')
+            .select('name', 'holder', 'token', 'acquired_at', 'expires_at')
+            .orderBy('name')),
+        dialect.run(pool, 'clusterState.clock',
+          kx.select(kx.raw(dialect.nowText + ' AS now')))
       ]).then(function (answers) {
         return {
           now: Number((answers[2].rows[0] || {}).now) || 0,
@@ -4783,6 +8398,10 @@ function create(options) {
     // on its next heartbeat anyway; a stale write is shown with its age.
     putNodeSnapshot: function (name, nodeId, body) {
       log.debug("Entering putNodeSnapshot(). name=" + name);
+      if (small) {
+        log.debug("Leaving putNodeSnapshot(). Portable.");
+        return small.putNodeSnapshot(name, nodeId, body);
+      }
       log.debug("Leaving putNodeSnapshot().");
       return pool.query(
         'INSERT INTO sts_node_snapshots (name, node_id, taken_at, body) ' +
@@ -4809,6 +8428,10 @@ function create(options) {
         return Promise.reject(new Error('purgeNodeSnapshots needs the live ' +
           'names and an age'));
       }
+      if (small) {
+        log.debug("Leaving purgeNodeSnapshots(). Portable.");
+        return small.purgeNodeSnapshots(olderThanMs, keep);
+      }
       log.debug("Leaving purgeNodeSnapshots().");
       return pool.query(
         'DELETE FROM sts_node_snapshots WHERE taken_at < ' + DB_NOW +
@@ -4825,6 +8448,10 @@ function create(options) {
     // their ages against. Bounded twice: a row per name, and at most 64.
     nodeSnapshots: function () {
       log.debug("Entering nodeSnapshots().");
+      if (small) {
+        log.debug("Leaving nodeSnapshots(). Portable.");
+        return small.nodeSnapshots();
+      }
       log.debug("Leaving nodeSnapshots().");
       return Promise.all([
         pool.query('SELECT name, node_id, taken_at, body FROM ' +
@@ -4848,30 +8475,45 @@ function create(options) {
     // returned only to the caller that made it.
     claimOnce: function (scope, realmId, key, opts) {
       log.debug('Entering claimOnce(). scope=' + scope);
+      if (portable) {
+        log.debug("Leaving claimOnce(). Portable.");
+        return portable.claimOnce(scope, realmId, key, opts);
+      }
       const o = opts || {};
       const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
       const reservation = String(o.reservation || '');
-      log.debug("Leaving claimOnce().");
-      return pool.query(
-        'INSERT INTO sts_cluster_claims (scope, realm, key, reservation, ' +
-        'origin, claimed_at, expires_at) VALUES ($1, $2, $3, $4, $5, ' +
-        DB_NOW + ', ' + DB_NOW + ' + $6) ON CONFLICT (scope, realm, key) DO ' +
-        'UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
-        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
-        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
-        'EXCLUDED.claimed_at RETURNING claimed_at, expires_at',
-        [String(scope), String(realmId || ''), String(key), reservation,
-         processId, ttlMs]
-      ).then(function (r) {
-        if (r.rowCount) {
-          const row = r.rows[0];
-          return { claimed: true, claimedAt: Number(row.claimed_at),
-                   expiresAt: Number(row.expires_at) };
-        }
-        return pool.query(
-          'SELECT origin, claimed_at, expires_at FROM sts_cluster_claims ' +
-          'WHERE scope = $1 AND realm = $2 AND key = $3',
-          [String(scope), String(realmId || ''), String(key)]
+      // What the row's informational `origin` says took it: this process,
+      // or (an origin claim, #617) this process and its node's membership.
+      const claimant = o.origin ? String(o.origin) : processId;
+      const realm = String(realmId || '');
+      const claimKey = String(key);
+      const claimColumns = 'scope, realm, key, reservation, origin, ' +
+        'claimed_at, expires_at';
+      const claimConflict =
+        'ON CONFLICT (scope, realm, key) DO UPDATE SET reservation = ' +
+        'EXCLUDED.reservation, origin = EXCLUDED.origin, claimed_at = ' +
+        'EXCLUDED.claimed_at, expires_at = EXCLUDED.expires_at WHERE ' +
+        'sts_cluster_claims.expires_at <= EXCLUDED.claimed_at RETURNING ' +
+        'claimed_at, expires_at';
+      const claimSql = 'INSERT INTO sts_cluster_claims (' + claimColumns +
+        ') VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW +
+        ' + $6) ' + claimConflict;
+      // THE REFRESH SPEND (#886). `quiet` is read, so the CTE runs. The
+      // commit is visible at once and does not wait for the log flush. The
+      // caller owes a later synchronous commit that flushes this record
+      // before anything is issued. The origin claim never takes this form:
+      // its lock commits with it, and that commit stays synchronous.
+      const claimSqlNoFlush = 'WITH ' + NO_FLUSH_WAIT +
+        ' INSERT INTO sts_cluster_claims (' + claimColumns +
+        ') SELECT $1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW +
+        ' + $6 FROM quiet ' + claimConflict;
+      const claimParams = [String(scope), realm, claimKey, reservation,
+                           claimant, ttlMs];
+      const refused = function (runner) {
+        return dialect.run(runner, 'claimOnce.holder',
+          kx('sts_cluster_claims')
+            .select('origin', 'claimed_at', 'expires_at')
+            .where({ scope: String(scope), realm: realm, key: claimKey })
         ).then(function (found) {
           const row = (found.rows || [])[0] || null;
           return { claimed: false, existing: row ? {
@@ -4880,6 +8522,42 @@ function create(options) {
             expiresAt: Number(row.expires_at)
           } : null };
         });
+      };
+      log.debug("Leaving claimOnce().");
+      const answerOf = function (r, runner) {
+        log.debug("Entering answerOf().");
+        if (r.rowCount) {
+          const row = r.rows[0];
+          log.debug("Leaving answerOf(). Claimed.");
+          return { claimed: true, claimedAt: Number(row.claimed_at),
+                   expiresAt: Number(row.expires_at) };
+        }
+        log.debug("Leaving answerOf(). Refused.");
+        return refused(runner);
+      };
+      // An origin claim's fence lock commits with the claim. Any other
+      // scope stays one statement: directory claims are not fenced this way.
+      // `noFlushWait` is ignored here. The lock and the claim are one
+      // synchronous commit.
+      if (String(scope) === ORIGIN_SCOPE) {
+        return poolTransact(function (client) {
+          return client.query(claimSql, claimParams).then(function (r) {
+            if (r.rowCount) {
+              const row = r.rows[0];
+              return swapOriginLock(client, claimKey, reservation)
+                .then(function () {
+                  return { claimed: true,
+                           claimedAt: Number(row.claimed_at),
+                           expiresAt: Number(row.expires_at) };
+                });
+            }
+            return refused(client);
+          });
+        });
+      }
+      const sql = o.noFlushWait ? claimSqlNoFlush : claimSql;
+      return pool.query(sql, claimParams).then(function (r) {
+        return answerOf(r, pool);
       });
     },
 
@@ -4888,13 +8566,32 @@ function create(options) {
     // claimant's.
     releaseClaim: function (scope, realmId, key, reservation) {
       log.debug("Entering releaseClaim(). scope=" + scope);
+      const where = { scope: String(scope), realm: String(realmId || ''),
+                      key: String(key), reservation: String(reservation) };
       log.debug("Leaving releaseClaim().");
-      return pool.query(
-        'DELETE FROM sts_cluster_claims WHERE scope = $1 AND realm = $2 AND ' +
-        'key = $3 AND reservation = $4',
-        [String(scope), String(realmId || ''), String(key),
-         String(reservation)]
-      ).then(function (r) {
+      const drop = function (runner) {
+        return dialect.run(runner, 'releaseClaim',
+          kx('sts_cluster_claims').where(where).del());
+      };
+      // The origin's lock is deleted only when the claim was. Same
+      // transaction: a commit cannot drop the lock and leave the claim.
+      if (String(scope) === ORIGIN_SCOPE) {
+        return poolTransact(function (client) {
+          return drop(client).then(function (r) {
+            if (!((r.rowCount || 0) > 0)) {
+              return false;
+            }
+            return dialect.run(client, 'releaseClaim.lock',
+              kx('sts_cluster_locks').where({
+                name: fenceLockName('origin', key, reservation)
+              }).del()
+            ).then(function () {
+              return true;
+            });
+          });
+        });
+      }
+      return drop(pool).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
     },
@@ -4904,13 +8601,273 @@ function create(options) {
     claimHeld: function (scope, realmId, key) {
       log.debug("Entering claimHeld(). scope=" + scope);
       log.debug("Leaving claimHeld().");
-      return pool.query(
-        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = $2 ' +
-        'AND key = $3 AND expires_at > ' + DB_NOW,
-        [String(scope), String(realmId || ''), String(key)]
+      return dialect.run(pool, 'claimHeld',
+        kx('sts_cluster_claims').select(kx.raw('1 AS held'))
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key) })
+          .where('expires_at', '>', dialect.now())
       ).then(function (r) {
-        return (r.rowCount || 0) > 0;
+        return dialect.rowsOf(r).length > 0;
       });
+    },
+
+    // THE LIVE CLAIMS OF ONE SCOPE (#884). The block number is not in the
+    // row — the key is a digest — so a restart releases by the row, not by
+    // guessing blocks. Every realm: one origin serves all of them. Expired
+    // rows are already free. The same knex `claimHeld()` uses, so both
+    // engines. No reservation is logged by the caller.
+    claimsOfScope: function (scope) {
+      log.debug("Entering claimsOfScope(). scope=" + scope);
+      log.debug("Leaving claimsOfScope().");
+      return dialect.run(pool, 'claimsOfScope',
+        kx('sts_cluster_claims')
+          .select('scope', 'realm', 'key', 'reservation', 'origin')
+          .where({ scope: String(scope || '') })
+          .where('expires_at', '>', dialect.now())
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return { scope: String(row.scope), realm: String(row.realm),
+                   key: String(row.key),
+                   reservation: String(row.reservation),
+                   origin: String(row.origin || '') };
+        });
+      });
+    },
+
+    // MEMBERSHIPS THAT HAVE LEFT OR EXPIRED (#884). Not `clusterState()`:
+    // that list is the newest 200 rows, and a soak keeps more dead nodes
+    // than that. Dead rows are bounded by the node's retention. A node id
+    // that has no row at all is not here — absence proves nothing.
+    goneNodeIds: function () {
+      log.debug("Entering goneNodeIds().");
+      log.debug("Leaving goneNodeIds().");
+      return dialect.run(pool, 'goneNodeIds',
+        kx('sts_cluster_nodes').select('node_id').where(function () {
+          this.where('left_at', '>', 0)
+            .orWhere('expires_at', '<=', dialect.now());
+        })
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.node_id || '');
+        }).filter(function (id) {
+          return !!id;
+        });
+      });
+    },
+
+    // STABLE ORIGINS THAT STILL HOLD THEIR CLAIM (#884). The key is the
+    // origin (`n:…`); the row's origin column is the membership text and
+    // is not what a block claim is matched on.
+    //
+    // `graceMs` COUNTS A CLAIM THAT LAPSED LESS THAN THAT LONG AGO AS LIVE
+    // (#884's review, 2026-11-13). A live process whose renewal was late
+    // (#770's bounded renewals time out rather than wait) has a lapsed
+    // claim for a few seconds and re-asserts it on its next write; the
+    // reap job must not take its blocks for that. A lapsed origin row is
+    // kept for ORIGIN_RETAIN_MS, so how long ago it lapsed is read off the
+    // row. A row that is gone (a clean stop releases it) is not live.
+    // Omitted, nothing lapsed counts, which is what the job asked before.
+    liveOriginKeys: function (graceMs) {
+      log.debug("Entering liveOriginKeys().");
+      const grace = Number(graceMs) > 0 ? Number(graceMs) : 0;
+      log.debug("Leaving liveOriginKeys().");
+      return dialect.run(pool, 'liveOriginKeys',
+        kx('sts_cluster_claims').select('key')
+          .where({ scope: ORIGIN_SCOPE })
+          .where('expires_at', '>',
+                 grace ? dialect.now(grace, '-') : dialect.now())
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.key || '');
+        }).filter(function (key) {
+          return !!key;
+        });
+      });
+    },
+
+    // THE BLOCK CLAIM'S FENCE LOCK (#884), on THIS database, which is the
+    // one that writes the status row. Inserted after the claim, and every
+    // other reservation of the same claim is deleted in the same
+    // transaction, so a new lessee waits for a flush that still holds the
+    // previous lock. The name is not logged: it carries the reservation.
+    installClaimFence: function (scope, realm, key, reservation) {
+      log.debug("Entering installClaimFence().");
+      const claims = require('../cluster/cluster_claims');
+      const name = claims.claimFenceLockName(scope, realm, key, reservation);
+      const prefix = name.slice(0, name.length -
+        String(reservation || '').length);
+      log.debug("Leaving installClaimFence().");
+      if (portable) {
+        return portable.installClaimLock(name, prefix);
+      }
+      return poolTransact(function (client) {
+        return client.query(
+          'INSERT INTO sts_cluster_locks (name) VALUES ($1) ' +
+          'ON CONFLICT (name) DO NOTHING', [name]
+        ).then(function () {
+          return client.query(
+            'DELETE FROM sts_cluster_locks WHERE left(name, ' +
+            'char_length($1)) = $1 AND name <> $2', [prefix, name]);
+        });
+      });
+    },
+
+    // Deletes the fence locks of the claims about to be released, in one
+    // transaction so the delete waits for an in-flight share lock. The
+    // claim rows are a different statement, on purpose: this database may
+    // not be the one that holds them.
+    releaseClaimFences: function (rows) {
+      log.debug("Entering releaseClaimFences().");
+      const claims = require('../cluster/cluster_claims');
+      const names = (rows || []).filter(function (row) {
+        return row && row.key && row.reservation;
+      }).map(function (row) {
+        return claims.claimFenceLockName(row.scope, row.realm, row.key,
+                                         row.reservation);
+      });
+      if (!names.length) {
+        log.debug("Leaving releaseClaimFences(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving releaseClaimFences().");
+      if (portable) {
+        return portable.releaseClaimLocks(names);
+      }
+      return poolTransact(function (client) {
+        return client.query(
+          'DELETE FROM sts_cluster_locks WHERE name = ANY($1::text[])',
+          [names.slice().sort()]);
+      }).then(function () {
+        return names.length;
+      });
+    },
+
+    // Which of `keys` are live minted rows: not a tombstone, and not past
+    // their expiry. The writer, not the replica, so a row that just
+    // committed is visible. A text range would order '1000' before '999'.
+    mintedLiveKeys: function (handle, realmId, keys) {
+      log.debug("Entering mintedLiveKeys().");
+      const list = (keys || []).map(String).filter(function (key) {
+        return key !== '';
+      });
+      if (!list.length) {
+        log.debug("Leaving mintedLiveKeys(). None.");
+        return Promise.resolve([]);
+      }
+      log.debug("Leaving mintedLiveKeys().");
+      return dialect.run(pool, 'mintedLiveKeys',
+        kx('sts_minted').select('key')
+          .where({ handle: String(handle), realm: String(realmId || '') })
+          .whereIn('key', list)
+          .whereNot({ body: TOMBSTONE })
+          .where(function () {
+            this.whereNull('expires_at')
+              .orWhere('expires_at', '>', dialect.now());
+          })
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.key);
+        });
+      });
+    },
+
+    // -----------------------------------------------------------------------
+    // SEVERAL CLAIMS IN ONE STATEMENT, ALL OR NONE (#628, 2026-10-14).
+    //
+    // A directory create claims its DN and its username together
+    // (`ldap/directory_create_claims.ts`), and it was two `claimOnce()`s —
+    // two statements, and two DELETEs to give a partial set back. This is one
+    // INSERT of every row under one reservation, with `claimOnce()`'s
+    // conflict rule per row: an expired row is taken over, a live one is not.
+    //
+    // **ALL OR NONE, INSIDE THE STATEMENT.** A statement takes every row, or
+    // none — a live row on every key, the ordinary refusal, and nothing was
+    // written — or SOME, which happens only when two creates want
+    // overlapping but different sets (one DN, two usernames). A partial take
+    // must never be seen to hold anything, so the final SELECT turns it into
+    // an ERROR, which aborts the statement and every row it inserted: a
+    // sentence cast to an integer, built from the count the CTE returned so
+    // that the planner cannot fold it at plan time. PostgreSQL logs that
+    // ERROR with the sentence; it is only ever a collision. The rows go in in
+    // (scope, key) order, which every claimant uses, so two claimants of one
+    // set queue on its first row rather than deadlocking.
+    //
+    // `rows` is `[{ scope, key }]`, all in `realmId`. Resolves
+    // `{ claimed: true, claimedAt }` or `{ claimed: false, refused }`, where
+    // `refused` is the index in `rows` of a row somebody else holds.
+    // -----------------------------------------------------------------------
+    claimMany: function (rows, realmId, opts) {
+      log.debug('Entering claimMany(). rows=' + (rows || []).length);
+      if (portable) {
+        log.debug("Leaving claimMany(). Portable.");
+        return portable.claimMany(rows, realmId, opts);
+      }
+      const o = opts || {};
+      const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
+      const reservation = String(o.reservation || '');
+      const claimant = o.origin ? String(o.origin) : processId;
+      const list = (rows || []).map(function (row) {
+        return { scope: String(row.scope), key: String(row.key) };
+      });
+      log.debug("Leaving claimMany().");
+      return pool.query(
+        'WITH wanted AS (SELECT w.scope, w.key, w.ord FROM ' +
+        'unnest($1::text[], $2::text[]) WITH ORDINALITY AS w(scope, key, ' +
+        'ord)), ' + NO_FLUSH_WAIT + ', taken AS (INSERT INTO ' +
+        'sts_cluster_claims (scope, realm, ' +
+        'key, reservation, origin, claimed_at, expires_at) SELECT ' +
+        'w.scope, $3, w.key, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ' + $6 ' +
+        'FROM wanted w ORDER BY w.scope, w.key ON CONFLICT (scope, realm, ' +
+        'key) DO UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
+        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
+        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
+        'EXCLUDED.claimed_at RETURNING scope, key, claimed_at), counted AS ' +
+        '(SELECT count(*)::int AS n, max(claimed_at) AS claimed_at, ' +
+        '(SELECT min(w.ord) FROM wanted w WHERE NOT EXISTS (SELECT 1 FROM ' +
+        'taken t WHERE t.scope = w.scope AND t.key = w.key))::int AS ' +
+        'refused FROM taken) SELECT n, claimed_at, refused, CASE WHEN n > 0 ' +
+        'AND n < $7::int THEN (\'' + PARTIAL_CLAIM + ' of \' || n || ' +
+        '\' of \' || $7::int || \' rows is rolled back; first refused ' +
+        'row \' || refused)::int ELSE 0 END AS partial FROM counted, quiet',
+        [list.map(function (row) { return row.scope; }),
+         list.map(function (row) { return row.key; }),
+         String(realmId || ''), reservation, claimant, ttlMs, list.length]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || {};
+        if (Number(row.n) === list.length) {
+          return { claimed: true, claimedAt: Number(row.claimed_at) };
+        }
+        return { claimed: false,
+                 refused: Math.max(0, (Number(row.refused) || 1) - 1) };
+      }, function (e) {
+        const message = String((e && e.message) || e);
+        if (message.indexOf(PARTIAL_CLAIM) < 0) {
+          throw e;
+        }
+        log.debug("Caught in claimMany(): " + message);
+        const first = /first refused row (\d+)/.exec(message);
+        return { claimed: false, partial: true,
+                 refused: Math.max(0, (first ? Number(first[1]) : 1) - 1) };
+      });
+    },
+
+    // Several claims given back in ONE statement (#628), each pinned to its
+    // reservation as `releaseClaim()` pins one. `rows` is
+    // `[{ scope, realm, key, reservation }]`; resolves the count released.
+    releaseClaims: function (rows) {
+      log.debug("Entering releaseClaims(). rows=" + (rows || []).length);
+      const list = rows || [];
+      if (!list.length) {
+        log.debug("Leaving releaseClaims(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving releaseClaims().");
+      // Committed without waiting for the WAL flush: see NO_FLUSH_WAIT.
+      return (portable ? portable.releaseClaims(pool, list)
+        : pool.query(RELEASE_CLAIMS_ALONE_SQL, releaseClaimsParams(list)))
+        .then(function (r) {
+          return dialect.affected(r);
+        });
     },
 
     purgeClaims: function () {
@@ -4918,10 +8875,16 @@ function create(options) {
       log.debug("Leaving purgeClaims().");
       // A lapsed ORIGIN claim is kept for ORIGIN_RETAIN_MS: see the note
       // above ORIGIN_RETAIN_MS.
-      return pool.query('DELETE FROM sts_cluster_claims WHERE expires_at <= ' +
-                        DB_NOW + ' AND (scope <> $1 OR expires_at <= ' +
-                        DB_NOW + ' - $2)',
-                        [ORIGIN_SCOPE, ORIGIN_RETAIN_MS]).then(function (r) {
+      return dialect.run(pool, 'purgeClaims',
+        kx('sts_cluster_claims')
+          .where('expires_at', '<=', dialect.now())
+          .where(function () {
+            this.whereNot({ scope: ORIGIN_SCOPE })
+              .orWhere('expires_at', '<=',
+                       dialect.now(ORIGIN_RETAIN_MS, '-'));
+          })
+          .del()
+      ).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -4935,6 +8898,10 @@ function create(options) {
     // decision. `cluster/cluster_counters.js` reads the two answers.
     advanceCounter: function (scope, realmId, key, value) {
       log.debug("Entering advanceCounter(). scope=" + scope);
+      if (portable) {
+        log.debug("Leaving advanceCounter(). Portable.");
+        return portable.advanceCounter(scope, realmId, key, value);
+      }
       const wanted = Math.max(0, Math.floor(Number(value) || 0));
       log.debug("Leaving advanceCounter().");
       return pool.query(
@@ -4948,10 +8915,10 @@ function create(options) {
         if (r.rowCount) {
           return { advanced: true, highest: Number(r.rows[0].value) };
         }
-        return pool.query(
-          'SELECT value FROM sts_cluster_counters WHERE scope = $1 AND ' +
-          'realm = $2 AND key = $3',
-          [String(scope), String(realmId || ''), String(key)]
+        return dialect.run(pool, 'advanceCounter.highest',
+          kx('sts_cluster_counters').select('value')
+            .where({ scope: String(scope), realm: String(realmId || ''),
+                     key: String(key) })
         ).then(function (found) {
           const row = (found.rows || [])[0] || null;
           return { advanced: false, highest: row ? Number(row.value) : 0 };
@@ -4971,9 +8938,13 @@ function create(options) {
     // `cluster/cluster_counters.js` reads the answer.
     countWindow: function (scope, realmId, key, windowMs) {
       log.debug("Entering countWindow(). scope=" + scope);
+      if (portable) {
+        log.debug("Leaving countWindow(). Portable.");
+        return portable.countWindow(scope, realmId, key, windowMs);
+      }
       const span = Math.max(1, Math.floor(Number(windowMs) || 0));
       log.debug("Leaving countWindow().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_cluster_windows (scope, realm, key, count, ' +
         'window_ends_at, origin) VALUES ($1, $2, $3, 1, ' + DB_NOW +
         ' + $4::bigint, $5) ON CONFLICT (scope, realm, key) DO UPDATE SET ' +
@@ -4997,11 +8968,14 @@ function create(options) {
     peekWindow: function (scope, realmId, key) {
       log.debug("Entering peekWindow(). scope=" + scope);
       log.debug("Leaving peekWindow().");
-      return pool.query(
-        'SELECT count, window_ends_at - ' + DB_NOW + ' AS remaining FROM ' +
-        'sts_cluster_windows WHERE scope = $1 AND realm = $2 AND key = $3 ' +
-        'AND window_ends_at > ' + DB_NOW,
-        [String(scope), String(realmId || ''), String(key)]
+      return dialect.run(pool, 'peekWindow',
+        kx('sts_cluster_windows')
+          .select('count',
+                  kx.raw('window_ends_at - ' + dialect.nowText +
+                         ' AS remaining'))
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key) })
+          .where('window_ends_at', '>', dialect.now())
       ).then(function (r) {
         const row = (r.rows || [])[0] || null;
         return row ? { count: Number(row.count) || 0,
@@ -5014,9 +8988,11 @@ function create(options) {
     clearWindow: function (scope, realmId, key) {
       log.debug("Entering clearWindow(). scope=" + scope);
       log.debug("Leaving clearWindow().");
-      return pool.query(
-        'DELETE FROM sts_cluster_windows WHERE scope = $1 AND realm = $2 AND ' +
-        'key = $3', [String(scope), String(realmId || ''), String(key)]
+      return dialect.run(tallyPool, 'clearWindow',
+        kx('sts_cluster_windows')
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key) })
+          .del()
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
@@ -5032,6 +9008,12 @@ function create(options) {
     spendBudget: function (scope, realmId, key, period, amount, count,
                            limitAmount, limitCount, expiresAtMs) {
       log.debug("Entering spendBudget(). scope=" + scope);
+      if (portable) {
+        log.debug("Leaving spendBudget(). Portable.");
+        return portable.spendBudget(scope, realmId, key, period, amount,
+                                    count, limitAmount, limitCount,
+                                    expiresAtMs);
+      }
       const same = 'sts_cluster_budgets.period = EXCLUDED.period';
       const newAmount = '(CASE WHEN ' + same + ' THEN ' +
         'sts_cluster_budgets.amount + EXCLUDED.amount ELSE EXCLUDED.amount ' +
@@ -5070,14 +9052,18 @@ function create(options) {
     refundBudget: function (scope, realmId, key, period, amount, count) {
       log.debug("Entering refundBudget(). scope=" + scope);
       log.debug("Leaving refundBudget().");
-      return pool.query(
-        'UPDATE sts_cluster_budgets SET amount = amount - $5::bigint, ' +
-        'count = count - $6::bigint, updated_at = ' + DB_NOW + ' WHERE ' +
-        'scope = $1 AND realm = $2 AND key = $3 AND period = $4::bigint AND ' +
-        'amount >= $5::bigint AND count >= $6::bigint',
-        [String(scope), String(realmId || ''), String(key),
-         Math.floor(Number(period) || 0), String(amount),
-         Math.floor(Number(count) || 0)]
+      const spent = String(amount);
+      const times = Math.floor(Number(count) || 0);
+      return dialect.run(pool, 'refundBudget',
+        kx('sts_cluster_budgets')
+          .update({ amount: kx.raw('?? - ?', ['amount', spent]),
+                    count: kx.raw('?? - ?', ['count', times]),
+                    updated_at: dialect.now() })
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key),
+                   period: Math.floor(Number(period) || 0) })
+          .where('amount', '>=', spent)
+          .where('count', '>=', times)
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
@@ -5087,9 +9073,11 @@ function create(options) {
     purgeBudgets: function (scope, realmId) {
       log.debug("Entering purgeBudgets(). scope=" + scope);
       log.debug("Leaving purgeBudgets().");
-      return pool.query(
-        'DELETE FROM sts_cluster_budgets WHERE scope = $1 AND realm = $2 AND ' +
-        'expires_at <= ' + DB_NOW, [String(scope), String(realmId || '')]
+      return dialect.run(pool, 'purgeBudgets',
+        kx('sts_cluster_budgets')
+          .where({ scope: String(scope), realm: String(realmId || '') })
+          .where('expires_at', '<=', dialect.now())
+          .del()
       ).then(function (r) {
         return r.rowCount || 0;
       });
@@ -5098,8 +9086,11 @@ function create(options) {
     purgeWindows: function () {
       log.debug("Entering purgeWindows().");
       log.debug("Leaving purgeWindows().");
-      return pool.query('DELETE FROM sts_cluster_windows WHERE ' +
-                        'window_ends_at <= ' + DB_NOW).then(function (r) {
+      return dialect.run(pool, 'purgeWindows',
+        kx('sts_cluster_windows')
+          .where('window_ends_at', '<=', dialect.now())
+          .del()
+      ).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -5116,6 +9107,10 @@ function create(options) {
     // may already have trimmed changes it had not applied.
     reportChangeReader: function (applied, nodeId) {
       log.debug("Entering reportChangeReader().");
+      if (portable) {
+        log.debug("Leaving reportChangeReader(). Portable.");
+        return portable.reportChangeReader(applied, nodeId);
+      }
       log.debug("Leaving reportChangeReader().");
       return pool.query(
         'INSERT INTO sts_change_readers (origin, node_id, applied, ' +
@@ -5135,9 +9130,43 @@ function create(options) {
     leaveChangeReader: function () {
       log.debug("Entering leaveChangeReader().");
       log.debug("Leaving leaveChangeReader().");
-      return pool.query('DELETE FROM sts_change_readers WHERE origin = $1',
-                        [processId]).then(function (r) {
+      return dialect.run(pool, 'leaveChangeReader',
+        kx('sts_change_readers').where({ origin: processId }).del()
+      ).then(function (r) {
         return (r.rowCount || 0) > 0;
+      });
+    },
+
+    // THE READERS STILL LIVE (#618 phase 2): every origin that has reported
+    // within `readerTtlMs` and, by membership, names no node that left —
+    // the trim's own test of "not gone", asked without deleting anything.
+    // What the fan-in of `merge: 'own'` stores keeps (`persistence_replication
+    // .js`, `pruneFanIn()`): a contribution from an origin not in this list
+    // is a dead process's. One row per process that coordinates, so the
+    // answer is as small as the cluster.
+    liveChangeReaders: function (opts) {
+      log.debug("Entering liveChangeReaders().");
+      const o = opts || {};
+      const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
+      const byMembership = o.nodeLiveness !== false;
+      log.debug("Leaving liveChangeReaders().");
+      const readers = kx({ r: 'sts_change_readers' }).select('r.origin')
+        .where('r.reported_at', '>=', dialect.now(readerTtlMs, '-'));
+      if (byMembership) {
+        readers.where(function () {
+          this.where('r.node_id', '').orWhereExists(function () {
+            this.select(kx.raw('1')).from({ n: 'sts_cluster_nodes' })
+              .whereRaw('?? = ??', ['n.node_id', 'r.node_id'])
+              .where('n.left_at', 0)
+              .where('n.expires_at', '>', dialect.now());
+          });
+        });
+      }
+      return dialect.run(pool, 'liveChangeReaders', readers
+      ).then(function (r) {
+        return ((r && r.rows) || []).map(function (row) {
+          return String(row.origin);
+        });
       });
     },
 
@@ -5154,6 +9183,10 @@ function create(options) {
     // is why `live` filters out `gone` by hand.
     purgeChangeLog: function (opts) {
       log.debug("Entering purgeChangeLog().");
+      if (portable) {
+        log.debug("Leaving purgeChangeLog(). Portable.");
+        return portable.purgeChangeLog(opts);
+      }
       const o = opts || {};
       const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
       const retentionMs = Math.max(0, Math.floor(Number(o.retentionMs) || 0));
@@ -5347,6 +9380,12 @@ function create(options) {
     // its keepalive interval.
     replicaLagMs: function () {
       log.debug("Entering replicaLagMs().");
+      if (small && dialect.engine !== 'postgres') {
+        // PostgreSQL's replication probe is the answer on PostgreSQL in
+        // either dialect; MariaDB's is null (`store_portable.js`).
+        log.debug("Leaving replicaLagMs(). Portable.");
+        return small.replicaLagMs();
+      }
       if (readPool === pool) {
         log.debug("Leaving replicaLagMs(). No replica.");
         return Promise.resolve(null);
@@ -5369,6 +9408,10 @@ function create(options) {
 
     loadKey: function (realmId) {
       log.debug("Entering loadKey(). realm=" + realmId);
+      if (small) {
+        log.debug("Leaving loadKey(). Portable.");
+        return small.loadKey(realmId);
+      }
       log.debug("Leaving loadKey().");
       return readPool.query('SELECT material FROM sts_keys WHERE realm = $1',
                         [String(realmId)]).then(function (r) {
@@ -5387,6 +9430,10 @@ function create(options) {
     // Every dataset's live version and state, for every realm.
     riskListDatasets: function () {
       log.debug("Entering riskListDatasets().");
+      if (riskLib) {
+        log.debug("Leaving riskListDatasets(). Portable.");
+        return riskLib.riskListDatasets();
+      }
       log.debug("Leaving riskListDatasets().");
       return pool.query(
         'SELECT realm, dataset, kind, active_version, previous_version, ' +
@@ -5401,6 +9448,10 @@ function create(options) {
     // record of what was loaded.
     riskListVersions: function (realm, dataset) {
       log.debug("Entering riskListVersions(). dataset=" + dataset);
+      if (riskLib) {
+        log.debug("Leaving riskListVersions(). Portable.");
+        return riskLib.riskListVersions(realm, dataset);
+      }
       log.debug("Leaving riskListVersions().");
       return pool.query(
         'SELECT * FROM sts_risk_dataset_versions ' +
@@ -5415,9 +9466,18 @@ function create(options) {
     // A version begun: its row in `loading`, or false when that version of
     // that dataset is already recorded — a second node importing the same
     // file, or the same file seen again, loads nothing twice.
-    riskBeginVersion: function (v) {
+    // With `reloadDeleted` (#1155, an administrator's door) a version whose
+    // record is `deleted` is begun again in the same statement: the conflict
+    // updates that row — new provenance, `loading`, every later stamp and
+    // count cleared — and only when it is `deleted`, so any other state
+    // still returns no row and reads as "already recorded".
+    riskBeginVersion: function (v, reloadDeleted) {
       log.debug("Entering riskBeginVersion(). " + v.dataset + " " +
                 v.version);
+      if (riskLib) {
+        log.debug("Leaving riskBeginVersion(). Portable.");
+        return riskLib.riskBeginVersion(v, reloadDeleted);
+      }
       log.debug("Leaving riskBeginVersion().");
       return pool.query(
         'INSERT INTO sts_risk_dataset_versions (realm, dataset, version, ' +
@@ -5425,7 +9485,21 @@ function create(options) {
         'sha256, byte_count, parameters, verification, published_at, ' +
         'next_update_at, fetched_at, state, origin) VALUES ($1, $2, $3, $4, ' +
         '$5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, ' +
-        '\'loading\', $17) ON CONFLICT (realm, dataset, version) DO NOTHING ' +
+        '\'loading\', $17) ON CONFLICT (realm, dataset, version) ' +
+        (reloadDeleted
+          ? 'DO UPDATE SET format = EXCLUDED.format, provider = ' +
+            'EXCLUDED.provider, licence = EXCLUDED.licence, attribution = ' +
+            'EXCLUDED.attribution, source = EXCLUDED.source, source_uri = ' +
+            'EXCLUDED.source_uri, sha256 = EXCLUDED.sha256, byte_count = ' +
+            'EXCLUDED.byte_count, parameters = EXCLUDED.parameters, ' +
+            'verification = EXCLUDED.verification, published_at = ' +
+            'EXCLUDED.published_at, next_update_at = EXCLUDED.next_update_at, ' +
+            'fetched_at = EXCLUDED.fetched_at, state = \'loading\', ' +
+            'origin = EXCLUDED.origin, row_count = 0, loaded_at = 0, ' +
+            'activated_at = 0, superseded_at = 0, rows_deleted_at = 0, ' +
+            'refusal = \'\', error_code = \'\' ' +
+            'WHERE sts_risk_dataset_versions.state = \'deleted\' '
+          : 'DO NOTHING ') +
         'RETURNING version',
         [v.realm || '', v.dataset, v.version, v.format, v.provider,
          v.licence, v.attribution || '', v.source, v.sourceUri || '',
@@ -5449,6 +9523,10 @@ function create(options) {
     riskInsertRows: function (kind, realm, dataset, version, rows) {
       log.debug("Entering riskInsertRows(). kind=" + kind + " rows=" +
                 rows.length);
+      if (riskLib) {
+        log.debug("Leaving riskInsertRows(). Portable.");
+        return riskLib.riskInsertRows(kind, realm, dataset, version, rows);
+      }
       // A column's values, with its default where a row has none: an
       // explicit null in an unnest() array is a NULL, which a NOT NULL
       // column refuses whatever its DEFAULT says. `null` as the default is
@@ -5532,6 +9610,10 @@ function create(options) {
     riskFinishVersion: function (realm, dataset, version, patch) {
       log.debug("Entering riskFinishVersion(). " + dataset + " " + version +
                 " " + patch.state);
+      if (riskLib) {
+        log.debug("Leaving riskFinishVersion(). Portable.");
+        return riskLib.riskFinishVersion(realm, dataset, version, patch);
+      }
       log.debug("Leaving riskFinishVersion().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET state = $4, row_count = $5, ' +
@@ -5552,6 +9634,10 @@ function create(options) {
     // the importer the stalled-import job refused it and it must stop.
     riskTouchVersion: function (realm, dataset, version, at, rows) {
       log.debug("Entering riskTouchVersion(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskTouchVersion(). Portable.");
+        return riskLib.riskTouchVersion(realm, dataset, version, at, rows);
+      }
       log.debug("Leaving riskTouchVersion().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET parameters = parameters || ' +
@@ -5570,6 +9656,10 @@ function create(options) {
     // asking at once refuse each version once; answers what it refused.
     riskAbandonStalled: function (before, at, why, code) {
       log.debug("Entering riskAbandonStalled().");
+      if (riskLib) {
+        log.debug("Leaving riskAbandonStalled(). Portable.");
+        return riskLib.riskAbandonStalled(before, at, why, code);
+      }
       log.debug("Leaving riskAbandonStalled().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET state = \'refused\', ' +
@@ -5598,6 +9688,10 @@ function create(options) {
     // -------------------------------------------------------------------------
     riskActivate: function (realm, dataset, kind, version, now) {
       log.debug("Entering riskActivate(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskActivate(). Portable.");
+        return riskLib.riskActivate(realm, dataset, kind, version, now);
+      }
       const r0 = String(realm || '');
       log.debug("Leaving riskActivate().");
       return withTransaction(function (client) {
@@ -5657,6 +9751,10 @@ function create(options) {
     riskDeleteRows: function (kind, realm, dataset, version, limit) {
       log.debug("Entering riskDeleteRows(). kind=" + kind + " " + dataset +
                 " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskDeleteRows(). Portable.");
+        return riskLib.riskDeleteRows(kind, realm, dataset, version, limit);
+      }
       const table = { geo: 'sts_risk_geo_ranges',
                       asn: 'sts_risk_asn_ranges',
                       iplist: 'sts_risk_ip_lists',
@@ -5680,9 +9778,58 @@ function create(options) {
       });
     },
 
+    // -------------------------------------------------------------------------
+    // THE ACTIVE VERSION REMOVED (#1152). In one transaction, and only while
+    // `version` is still the dataset's active one: the dataset is left with
+    // no active version and state `empty` (its previous_version kept, which
+    // is what Roll back offers), the version becomes `superseded` so its rows
+    // may be deleted, and a `risk-dataset` change row tells every other
+    // process to drop what it cached, as riskActivate does.
+    // -------------------------------------------------------------------------
+    riskDeactivate: function (realm, dataset, version, now) {
+      log.debug("Entering riskDeactivate(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskDeactivate(). Portable.");
+        return riskLib.riskDeactivate(realm, dataset, version, now);
+      }
+      const r0 = String(realm || '');
+      log.debug("Leaving riskDeactivate().");
+      return withTransaction(function (client) {
+        return client.query(
+          'SELECT active_version FROM sts_risk_datasets WHERE realm = $1 ' +
+          'AND dataset = $2 FOR UPDATE', [r0, dataset]
+        ).then(function (d) {
+          const active = d.rows[0] ? d.rows[0].active_version : '';
+          if (!active || active !== version) {
+            return { deactivated: false };
+          }
+          return client.query(
+            'UPDATE sts_risk_datasets SET active_version = \'\', ' +
+            'state = \'empty\', updated_at = $3 WHERE realm = $1 AND ' +
+            'dataset = $2', [r0, dataset, Number(now)]
+          ).then(function () {
+            return client.query(
+              'UPDATE sts_risk_dataset_versions SET state = \'superseded\', ' +
+              'superseded_at = $4 WHERE realm = $1 AND dataset = $2 AND ' +
+              'version = $3 AND state = \'active\'',
+              [r0, dataset, version, Number(now)]);
+          }).then(function () {
+            return recordChanges(client, [{ kind: 'risk-dataset',
+                                            realm: r0, key: dataset }]);
+          }).then(function () {
+            return { deactivated: true };
+          });
+        });
+      });
+    },
+
     // The version's rows are gone; its row stays, as the record.
     riskMarkRowsDeleted: function (realm, dataset, version, now) {
       log.debug("Entering riskMarkRowsDeleted(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskMarkRowsDeleted(). Portable.");
+        return riskLib.riskMarkRowsDeleted(realm, dataset, version, now);
+      }
       log.debug("Leaving riskMarkRowsDeleted().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET state = \'deleted\', ' +
@@ -5705,6 +9852,10 @@ function create(options) {
     // P5), by the kind of key it is listed under and the key; or null.
     riskLookupFido: function (dataset, version, keyKind, key) {
       log.debug("Entering riskLookupFido(). " + keyKind);
+      if (riskLib) {
+        log.debug("Leaving riskLookupFido(). Portable.");
+        return riskLib.riskLookupFido(dataset, version, keyKind, key);
+      }
       log.debug("Leaving riskLookupFido().");
       return pool.query(
         'SELECT key_kind, authenticator_key, description, protocol_family, ' +
@@ -5734,6 +9885,10 @@ function create(options) {
 
     riskLookupRange: function (kind, realm, dataset, version, address) {
       log.debug("Entering riskLookupRange(). kind=" + kind);
+      if (riskLib) {
+        log.debug("Leaving riskLookupRange(). Portable.");
+        return riskLib.riskLookupRange(kind, realm, dataset, version, address);
+      }
       const table = { geo: 'sts_risk_geo_ranges',
                       asn: 'sts_risk_asn_ranges',
                       iplist: 'sts_risk_ip_lists' }[kind];
@@ -5761,8 +9916,12 @@ function create(options) {
     // the name as a subject or a keyed digest — never as typed.
     riskRecordFailure: function (row) {
       log.debug("Entering riskRecordFailure(). door=" + row.door);
+      if (riskLib) {
+        log.debug("Leaving riskRecordFailure(). Portable.");
+        return riskLib.riskRecordFailure(row);
+      }
       log.debug("Leaving riskRecordFailure().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_failures (realm, at, door, subject, name_hmac, ' +
         'address_sealed, address_prefix, asn, error_code, origin) VALUES ' +
         '($1, $2, $3, $4, $5, $6, $7::cidr, $8, $9, $10) RETURNING id',
@@ -5778,17 +9937,23 @@ function create(options) {
     // to one subject, one name digest or one prefix; with the matching count.
     riskListFailures: function (realm, opts) {
       log.debug("Entering riskListFailures(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskListFailures(). Portable.");
+        return riskLib.riskListFailures(realm, opts);
+      }
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2 ' +
         'AND ($3 = \'\' OR subject = $3) AND ($4 = \'\' OR name_hmac = $4) ' +
         'AND ($5 = \'\' OR address_prefix = $5::cidr) ' +
         'AND ($6 = \'\' OR door = $6) ' +
         // `excludeDoor` (#231): the password signals leave a replayed
-        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR).
-        'AND ($7 = \'\' OR door <> $7)';
+        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR) — and,
+        // since #565, an account a federated sign-in created. One door or a
+        // list of them, so it is an array here.
+        'AND (cardinality($7::text[]) = 0 OR door <> ALL($7::text[]))';
       const params = [realm || '', Number(o.since) || 0, o.subject || '',
                       o.nameHmac || '', o.prefix || '', o.door || '',
-                      o.excludeDoor || ''];
+                      [].concat(o.excludeDoor || []).map(String)];
       log.debug("Leaving riskListFailures().");
       return Promise.all([
         pool.query(
@@ -5808,6 +9973,10 @@ function create(options) {
     // Failures older than `beforeMs`, deleted a batch at a time.
     riskPurgeFailures: function (beforeMs, limit) {
       log.debug("Entering riskPurgeFailures().");
+      if (riskLib) {
+        log.debug("Leaving riskPurgeFailures(). Portable.");
+        return riskLib.riskPurgeFailures(beforeMs, limit);
+      }
       log.debug("Leaving riskPurgeFailures().");
       return pool.query(
         'DELETE FROM sts_risk_failures WHERE ctid IN (SELECT ctid FROM ' +
@@ -5825,6 +9994,10 @@ function create(options) {
     // no row and is left out; the caller reads it as 0.
     riskFeatureCounts: function (realm, subject, pairs) {
       log.debug("Entering riskFeatureCounts(). pairs=" + pairs.length);
+      if (riskLib) {
+        log.debug("Leaving riskFeatureCounts(). Portable.");
+        return riskLib.riskFeatureCounts(realm, subject, pairs);
+      }
       log.debug("Leaving riskFeatureCounts().");
       return pool.query(
         'SELECT c.feature, c.value, c.count FROM sts_risk_feature_counts c ' +
@@ -5850,6 +10023,10 @@ function create(options) {
     // this address been seen in".
     riskDistinctValues: function (realm, subject, feature, prefix) {
       log.debug("Entering riskDistinctValues(). " + feature);
+      if (riskLib) {
+        log.debug("Leaving riskDistinctValues(). Portable.");
+        return riskLib.riskDistinctValues(realm, subject, feature, prefix);
+      }
       log.debug("Leaving riskDistinctValues().");
       return pool.query(
         'SELECT count(*) AS n FROM sts_risk_feature_counts WHERE realm = $1 ' +
@@ -5861,13 +10038,50 @@ function create(options) {
       });
     },
 
+    // EVERY DISTINCT-VALUE COUNT ONE ASSESSMENT ASKS, IN ONE STATEMENT
+    // (2026-10-22, #820): `riskDistinctValues()` once per level, awaited one
+    // after another, was about seven round trips per sign-in on 8081 and
+    // 8,310 statements a minute. Each ask is `{ feature, prefix }`; the
+    // answer is the counts in the same order.
+    riskDistinctValuesMany: function (realm, subject, asks) {
+      log.debug("Entering riskDistinctValuesMany(). asks=" + asks.length);
+      if (riskLib) {
+        log.debug("Leaving riskDistinctValuesMany(). Portable.");
+        return riskLib.riskDistinctValuesMany(realm, subject, asks);
+      }
+      log.debug("Leaving riskDistinctValuesMany().");
+      return pool.query(
+        'SELECT a.i, (SELECT count(*) FROM sts_risk_feature_counts c WHERE ' +
+        'c.realm = $1 AND c.subject = $2 AND c.feature = a.f AND (a.p = \'\' ' +
+        'OR starts_with(c.value, a.p))) AS n FROM unnest($3::text[], ' +
+        '$4::text[]) WITH ORDINALITY AS a(f, p, i) ORDER BY a.i',
+        [realm || '', subject, asks.map(function (one) {
+          return String(one.feature);
+        }), asks.map(function (one) {
+          return String(one.prefix || '');
+        })]
+      ).then(function (r) {
+        const out = asks.map(function () {
+          return 0;
+        });
+        r.rows.forEach(function (row) {
+          out[Number(row.i) - 1] = Number(row.n) || 0;
+        });
+        return out;
+      });
+    },
+
     // One sign-in counted: each (subject, feature, value) goes up by one, in
     // ONE statement, so two nodes counting at once never lose a count. The
     // caller has made the rows distinct (a statement may touch a row once).
     riskIncrementCounts: function (realm, rows, at) {
       log.debug("Entering riskIncrementCounts(). rows=" + rows.length);
+      if (riskLib) {
+        log.debug("Leaving riskIncrementCounts(). Portable.");
+        return riskLib.riskIncrementCounts(realm, rows, at);
+      }
       log.debug("Leaving riskIncrementCounts().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_feature_counts (realm, subject, feature, value, ' +
         'count, first_at, last_at) SELECT $1, u.subject, u.feature, u.value, ' +
         '1, $5, $5 FROM unnest($2::text[], $3::text[], $4::text[]) AS ' +
@@ -5890,8 +10104,12 @@ function create(options) {
     // sealed and as a prefix, as a failure's does.
     riskRecordAssessment: function (a) {
       log.debug("Entering riskRecordAssessment(). " + a.id);
+      if (riskLib) {
+        log.debug("Leaving riskRecordAssessment(). Portable.");
+        return riskLib.riskRecordAssessment(a);
+      }
       log.debug("Leaving riskRecordAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_assessments (realm, id, at, phase, door, ' +
         'subject, session_id, client_id, address_sealed, address_prefix, ' +
         'asn, as_org, country, subdivision, city, latitude, longitude, ' +
@@ -5931,6 +10149,10 @@ function create(options) {
     // address.
     riskListAssessments: function (realm, opts) {
       log.debug("Entering riskListAssessments(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskListAssessments(). Portable.");
+        return riskLib.riskListAssessments(realm, opts);
+      }
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2 AND ($3 = \'\' OR ' +
         'subject = $3) AND ($4 = \'\' OR level = $4)';
@@ -5981,6 +10203,10 @@ function create(options) {
     // an assessment of that subject is touched, and only once.
     riskSetFeedback: function (realm, id, subject, feedback, at) {
       log.debug("Entering riskSetFeedback(). " + id);
+      if (riskLib) {
+        log.debug("Leaving riskSetFeedback(). Portable.");
+        return riskLib.riskSetFeedback(realm, id, subject, feedback, at);
+      }
       log.debug("Leaving riskSetFeedback().");
       return pool.query(
         'UPDATE sts_risk_assessments SET feedback = $4, feedback_at = $5 ' +
@@ -5998,13 +10224,38 @@ function create(options) {
     // session id is only ever filled in, never cleared.
     riskSettleAssessment: function (a) {
       log.debug("Entering riskSettleAssessment(). " + a.id);
+      if (riskLib) {
+        log.debug("Leaving riskSettleAssessment(). Portable.");
+        return riskLib.riskSettleAssessment(a);
+      }
       log.debug("Leaving riskSettleAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'UPDATE sts_risk_assessments SET decision = $3, policy_id = $4, ' +
         'error_code = $5, session_id = CASE WHEN $6 = \'\' THEN session_id ' +
         'ELSE $6 END WHERE realm = $1 AND id = $2',
         [a.realm || '', a.id, a.decision || '', a.policyId || '',
          a.errorCode || '', a.sessionId || '']
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // AN ASSESSMENT AMENDED WITH ITS DEVICE (#259): the sign-in screen
+    // assesses before its WebAuthn ceremony, and the session's start
+    // rewrites the same row's signals, score and level once the device the
+    // ceremony proved is known. The decision stays `riskSettleAssessment()`'s.
+    riskAmendAssessment: function (a) {
+      log.debug("Entering riskAmendAssessment(). " + a.id);
+      if (riskLib) {
+        log.debug("Leaving riskAmendAssessment(). Portable.");
+        return riskLib.riskAmendAssessment(a);
+      }
+      log.debug("Leaving riskAmendAssessment().");
+      return tallyPool.query(
+        'UPDATE sts_risk_assessments SET signals = $3::jsonb, score = $4, ' +
+        'level = $5 WHERE realm = $1 AND id = $2',
+        [a.realm || '', a.id, JSON.stringify(a.signals || []),
+         Number(a.score), a.level || '']
       ).then(function (r) {
         return r.rowCount > 0;
       });
@@ -6017,6 +10268,10 @@ function create(options) {
     // somebody's sessions twice. Bounded by the number of reactions.
     riskClaimAction: function (realm, subject, reaction, assessmentId) {
       log.debug("Entering riskClaimAction(). " + reaction);
+      if (riskLib) {
+        log.debug("Leaving riskClaimAction(). Portable.");
+        return riskLib.riskClaimAction(realm, subject, reaction, assessmentId);
+      }
       log.debug("Leaving riskClaimAction().");
       return pool.query(
         'UPDATE sts_risk_subjects SET actions = actions || ' +
@@ -6032,6 +10287,10 @@ function create(options) {
     // read its risk from stands on (#62 P3).
     riskSubjectOf: function (realm, subject) {
       log.debug("Entering riskSubjectOf(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskSubjectOf(). Portable.");
+        return riskLib.riskSubjectOf(realm, subject);
+      }
       log.debug("Leaving riskSubjectOf().");
       return pool.query(
         'SELECT subject, score, level, previous_level, reason, ' +
@@ -6049,10 +10308,26 @@ function create(options) {
     },
 
     // A person's current standing, replaced whole.
+    //
+    // **A CHANGE OF LEVEL IS A `risk-standing` CHANGE ROW (#666).** Every
+    // process holds the standings it last saw (`risk_engine.ts`'s
+    // `standings`, for an issuance with no session), so a person made HIGH
+    // in one worker and UNSCORED by a later sign-in in another stayed HIGH
+    // in the first for `risk.standingValidMinutes` — 720 by default — and
+    // refused every sessionless issuance there. The row tells every other
+    // process to read the standing again. Only a change of LEVEL is
+    // recorded, and not a person's first standing (nobody can hold one yet):
+    // a sign-in that leaves the level where it was writes nothing more, so
+    // the cost of a sign-in does not grow. `previous_level` is the level the
+    // row had before this statement, '' for an insert.
     riskUpsertSubject: function (s) {
       log.debug("Entering riskUpsertSubject().");
+      if (riskLib) {
+        log.debug("Leaving riskUpsertSubject(). Portable.");
+        return riskLib.riskUpsertSubject(s);
+      }
       log.debug("Leaving riskUpsertSubject().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_subjects (realm, subject, score, level, ' +
         'previous_level, reason, last_assessment, crossed_at, actions, ' +
         'feedback, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ' +
@@ -6062,12 +10337,32 @@ function create(options) {
         '= EXCLUDED.last_assessment, crossed_at = CASE WHEN ' +
         'sts_risk_subjects.level <> EXCLUDED.level THEN EXCLUDED.updated_at ' +
         'ELSE sts_risk_subjects.crossed_at END, updated_at = ' +
-        'EXCLUDED.updated_at',
+        'EXCLUDED.updated_at RETURNING level, previous_level',
         [s.realm || '', s.subject, Number(s.score), s.level, '', s.reason || '',
          s.lastAssessment || '', Number(s.updatedAt), JSON.stringify({}), '',
          Number(s.updatedAt)]
       ).then(function (r) {
-        return r.rowCount > 0;
+        const row = r.rows && r.rows[0];
+        if (!row || !row.previous_level ||
+            String(row.previous_level) === String(row.level)) {
+          return r.rowCount > 0;
+        }
+        return recordChanges(tallyPool, [{ kind: 'risk-standing',
+                                           realm: s.realm || '',
+                                           key: String(s.subject) }])
+          .then(function () {
+            return true;
+          }, function (e) {
+            log.debug("Caught in riskUpsertSubject(): " +
+                      ((e && e.message) || e));
+            // The standing is written; only the word to the other processes
+            // is lost, and they keep what they hold until it expires — what
+            // happened before #666 — so the write is not failed for it.
+            log.warn(errorCodes.tag('STS-RISK-0054') + 'risk: a change of ' +
+                     'standing could not be announced to the other ' +
+                     'processes: ' + ((e && e.message) || e));
+            return true;
+          });
       });
     },
 
@@ -6076,6 +10371,10 @@ function create(options) {
     // because the table has a row for every person ever assessed.
     riskListSubjects: function (realm, opts) {
       log.debug("Entering riskListSubjects(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskListSubjects(). Portable.");
+        return riskLib.riskListSubjects(realm, opts);
+      }
       const o = opts || {};
       log.debug("Leaving riskListSubjects().");
       return Promise.all([
@@ -6106,10 +10405,14 @@ function create(options) {
     // decision, phase, country, score band, answer, signal — and the levels
     // per bucket of `bucketMs`. `risk_store.metricsOf()` shapes them, as it
     // does the memory store's. The bands are `RiskStore.bandOf()`'s,
-    // spelled again in SQL; `tests/vendored/sts_admin_risk.js` holds the
+    // spelled again in SQL; `tests/protocol/sts_admin_risk.js` holds the
     // two to the same answer for the same rows.
     riskAssessmentMetrics: function (realm, opts) {
       log.debug("Entering riskAssessmentMetrics(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskAssessmentMetrics(). Portable.");
+        return riskLib.riskAssessmentMetrics(realm, opts);
+      }
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2';
       const params = [realm || '', Number(o.since) || 0];
@@ -6195,6 +10498,10 @@ function create(options) {
     // How many of one realm's people stand at each level now.
     riskSubjectLevels: function (realm) {
       log.debug("Entering riskSubjectLevels(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskSubjectLevels(). Portable.");
+        return riskLib.riskSubjectLevels(realm);
+      }
       log.debug("Leaving riskSubjectLevels().");
       return pool.query(
         'SELECT level, count(*) AS n FROM sts_risk_subjects ' +
@@ -6219,6 +10526,10 @@ function create(options) {
     // assessment only.
     riskGeography: function (realm, opts) {
       log.debug("Entering riskGeography(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskGeography(). Portable.");
+        return riskLib.riskGeography(realm, opts);
+      }
       const o = opts || {};
       const live = Array.isArray(o.sessionIds);
       const params = [realm || '', Number(o.since) || 0,
@@ -6274,8 +10585,12 @@ function create(options) {
     // continuous evaluation (P4) compares a later request with.
     riskUpsertSessionContext: function (c) {
       log.debug("Entering riskUpsertSessionContext().");
+      if (riskLib) {
+        log.debug("Leaving riskUpsertSessionContext(). Portable.");
+        return riskLib.riskUpsertSessionContext(c);
+      }
       log.debug("Leaving riskUpsertSessionContext().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_session_context (realm, session_id, subject, ' +
         'address_prefix, asn, country, ua_hash, ja4, jkt, score, level, ' +
         'updated_at) VALUES ($1, $2, $3, $4::cidr, $5, $6, $7, $8, $9, $10, ' +
@@ -6297,6 +10612,10 @@ function create(options) {
     // retention, a batch at a time.
     riskPurgeHistory: function (table, beforeMs, limit) {
       log.debug("Entering riskPurgeHistory(). " + table);
+      if (riskLib) {
+        log.debug("Leaving riskPurgeHistory(). Portable.");
+        return riskLib.riskPurgeHistory(table, beforeMs, limit);
+      }
       const column = { assessments: 'at', counts: 'last_at',
                        sessions: 'updated_at' }[table];
       const name = { assessments: 'sts_risk_assessments',
@@ -6322,6 +10641,10 @@ function create(options) {
     // record of who agreed to hold a provider's data on what terms.
     riskRecordAcceptance: function (a) {
       log.debug("Entering riskRecordAcceptance(). " + a.provider);
+      if (riskLib) {
+        log.debug("Leaving riskRecordAcceptance(). Portable.");
+        return riskLib.riskRecordAcceptance(a);
+      }
       log.debug("Leaving riskRecordAcceptance().");
       return pool.query(
         'INSERT INTO sts_risk_terms_acceptances (provider, terms_digest, ' +
@@ -6339,6 +10662,10 @@ function create(options) {
     // Every acceptance, newest first.
     riskListAcceptances: function () {
       log.debug("Entering riskListAcceptances().");
+      if (riskLib) {
+        log.debug("Leaving riskListAcceptances(). Portable.");
+        return riskLib.riskListAcceptances();
+      }
       log.debug("Leaving riskListAcceptances().");
       return pool.query(
         'SELECT id, provider, terms_digest, terms_text, accepted_by, ' +
@@ -6358,8 +10685,15 @@ function create(options) {
 
     mergeKeys: function (realmId, ciphertext, merge) {
       log.debug("Entering mergeKeys(). realm=" + realmId);
+      if (small) {
+        log.debug("Leaving mergeKeys(). Portable.");
+        return small.mergeKeys(realmId, merge);
+      }
       const id = String(realmId);
       log.debug("Leaving mergeKeys().");
+      // IN A KEY-WRITE SLOT (withKeyWriteSlot()), so this process's key-row
+      // transactions never hold every pooled connection (#1590).
+      return withKeyWriteSlot(function () {
       return withTransaction(function (client) {
         function lockAndMerge() {
           log.debug("Entering lockAndMerge().");
@@ -6413,6 +10747,7 @@ function create(options) {
           return second;
         });
       });
+      });
     },
 
     // =====================================================================
@@ -6447,6 +10782,10 @@ function create(options) {
     countSealed: function (dekIds) {
       log.debug("Entering countSealed().");
       const ids = (dekIds || []).map(String);
+      if (directoryStore) {
+        log.debug("Leaving countSealed(). MariaDB.");
+        return directoryStore.countSealed(ids);
+      }
       log.debug("Leaving countSealed().");
       return inTurns(ids, MAINTENANCE_CONCURRENCY, function (id) {
         const like = sealedLike(id);
@@ -6466,9 +10805,10 @@ function create(options) {
           return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
         });
       }).then(function (rows) {
-        // AND THE DIRECTORY, walked: its entries are sealed blobs (#391
-        // phase 6), and what is inside one is not visible to LIKE.
-        return countDirectory(new Set(ids)).then(function (inDirectory) {
+        // AND THE DIRECTORY: its entries are sealed blobs (#391 phase 6),
+        // and what is inside one is not visible to LIKE — so it is read
+        // from the counters its triggers keep (#623), never walked.
+        return directoryDekCounts(new Set(ids)).then(function (inDirectory) {
           const out = {};
           rows.forEach(function (one) {
             out[one.id] = one.count + (Number(inDirectory[one.id]) || 0);
@@ -6485,6 +10825,10 @@ function create(options) {
     // count of VALUES, which is what re-encryption has to re-seal.
     countAllSealed: function () {
       log.debug("Entering countAllSealed().");
+      if (directoryStore) {
+        log.debug("Leaving countAllSealed(). MariaDB.");
+        return directoryStore.countAllSealed();
+      }
       const pattern = '\\$aes(?:gcm|siv)\\$2\\$([A-Za-z0-9_.-]+)\\$';
       const one = function (table, column, where) {
         log.debug("Entering countAllSealed.one().");
@@ -6509,8 +10853,8 @@ function create(options) {
         (r.rows || []).forEach(function (row) {
           out[String(row.id)] = Number(row.n) || 0;
         });
-        // AND THE DIRECTORY, walked (#391 phase 6).
-        return countDirectory(null).then(function (inDirectory) {
+        // AND THE DIRECTORY, from its kept counters (#623).
+        return directoryDekCounts(null).then(function (inDirectory) {
           Object.keys(inDirectory).forEach(function (id) {
             out[id] = (out[id] || 0) + inDirectory[id];
           });
@@ -6519,9 +10863,47 @@ function create(options) {
       });
     },
 
+    // THE DIRECTORY'S DATA-KEY INDEX CAUGHT UP (#623): `indexSealedEntries()`
+    // for at most `options.budgetMs`, answering `{ indexed, remaining }`.
+    // The re-encryption job and the count job call it first; while
+    // `remaining`, the directory is not counted (`directoryDekCounts()`).
+    indexSealed: function (options) {
+      log.debug("Entering indexSealed().");
+      log.debug("Leaving indexSealed().");
+      return indexSealedEntries(options && options.budgetMs);
+    },
+
+    // THE `grantinggroup` KEYS OF ENTRIES WRITTEN BEFORE #1306 (#1311): one
+    // run of the walk over this database, `{ complete, already, stopped,
+    // examined, candidates, written, skipped }`. MariaDB's statements are
+    // the directory library's.
+    indexGrantingKeys: function (options) {
+      log.debug("Entering indexGrantingKeys().");
+      log.debug("Leaving indexGrantingKeys().");
+      return grantingBackfill.walk(directoryStore
+        ? directoryStore.grantingOps : grantingOps,
+        Object.assign({ what: 'this database' }, options || {}));
+    },
+
+    // Whether that walk's done mark is written in this database (#1316):
+    // one indexed read of `sts_minted_index`, which the job's `off()` primes
+    // from in every process, so the finished job is off in all of them.
+    grantingKeysComplete: function () {
+      log.debug("Entering grantingKeysComplete().");
+      const ops = directoryStore ? directoryStore.grantingOps : grantingOps;
+      log.debug("Leaving grantingKeysComplete().");
+      return ops.readState().then(function (state) {
+        return !!(state && state.done);
+      });
+    },
+
     resealSealed: function (dekIds, reseal, options) {
       log.debug("Entering resealSealed().");
       const ids = (dekIds || []).map(String);
+      if (directoryStore) {
+        log.debug("Leaving resealSealed(). MariaDB.");
+        return directoryStore.resealSealed(ids, reseal, options);
+      }
       const limit = Math.max(1, Number(options && options.limit) || 500);
       const ownHandle = (options && options.ownHandle) || function () {
         return false;
@@ -6602,25 +10984,44 @@ function create(options) {
           }, Promise.resolve());
         });
       }, Promise.resolve()).then(function () {
-        // THE DIRECTORY, walked once for every key (#391 phase 6): an entry
-        // holding anything under one of them — its blob, or a value inside
-        // it — is opened, every inner value re-sealed, and the blob sealed
-        // again under the current `directory` key; compare and swap, with a
-        // change-log row, as before.
-        const wanted = new Set(ids);
+        // THE DIRECTORY (#391 phase 6), BY ITS DATA-KEY INDEX (#623): only
+        // the entries whose `dek_keys` name one of the keys — its blob, or
+        // a value inside it — are read and opened, in key order after a
+        // cursor; every inner value is re-sealed, and the blob sealed again
+        // under the current `directory` key with its new keys beside it;
+        // compare and swap, with a change-log row, as before. Until #623
+        // this walked and opened every entry of the store to find them.
+        // An entry not yet in the index (written before it existed) is
+        // reached once `indexSealed()` has given it its keys.
         const crypto = require('../common/crypto');
         let budget = limit;
-        return walkDirectory(function (row, opened) {
-          if (budget <= 0 || opened === null) {
-            if (opened === null) {
-              tally.skipped += 1;
+        let afterRealm = '';
+        let afterKey = '';
+        const page = function () {
+          return maintenanceQuery('the re-encryption pass',
+            'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries WHERE ' +
+            'dek_keys ?| $1::text[] AND (realm, dn_key) > ($2, $3) ' +
+            'ORDER BY realm, dn_key LIMIT $4',
+            [ids, afterRealm, afterKey, Math.min(budget, SEALED_PAGE)]
+          ).then(function (r) {
+            const rows = (r && r.rows) || [];
+            if (rows.length) {
+              afterRealm = rows[rows.length - 1].realm;
+              afterKey = rows[rows.length - 1].dn_key;
             }
-            return null;
-          }
-          const holds = deksOfEntry(row, opened).some(function (id) {
-            return wanted.has(id);
+            return rows.reduce(function (chain, row) {
+              return chain.then(function () {
+                return resealEntry(row);
+              });
+            }, Promise.resolve()).then(function () {
+              return rows.length && budget > 0 ? page() : null;
+            });
           });
-          if (!holds) {
+        };
+        const resealEntry = function (row) {
+          const opened = openedOfRow(row);
+          if (opened === null) {
+            tally.skipped += 1;
             return null;
           }
           const inner = resealText(opened, reseal) || opened;
@@ -6634,16 +11035,18 @@ function create(options) {
             tally.skipped += 1;
             return null;
           }
-          const next = JSON.stringify(entryCodec.sealAttributes(row.realm,
-                                                                row.dn_key,
-                                                                attrs || {}));
+          const sealed = entryCodec.sealAttributes(row.realm, row.dn_key,
+                                                   attrs || {});
+          const next = JSON.stringify(sealed);
           budget -= 1;
           return maintenanceTransaction('the re-encryption pass',
                                         function (client) {
             return client.query(
-              'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
+              'UPDATE sts_ldap_entries SET attrs = $3::jsonb, ' +
+              'dek_keys = $5::jsonb ' +
               'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
-              [row.realm, row.dn_key, next, JSON.stringify(row.attrs)]
+              [row.realm, row.dn_key, next, JSON.stringify(row.attrs),
+               JSON.stringify(entryCodec.dekKeys(attrs || {}, sealed))]
             ).then(function (u) {
               if (!u.rowCount) {
                 return null;
@@ -6655,9 +11058,10 @@ function create(options) {
                                               key: row.dn }]);
             });
           });
-        }).catch(function (e) {
+        };
+        return page().catch(function (e) {
           log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
-                    'directory could not be walked to re-seal it: ' +
+                    'directory could not be read to re-seal it: ' +
                     ((e && e.message) || e));
           throw e;
         });
@@ -6672,14 +11076,16 @@ function create(options) {
     ensureSharedSecret: function (name, material) {
       log.debug("Entering ensureSharedSecret(). name=" + name);
       log.debug("Leaving ensureSharedSecret().");
-      return pool.query(
-        'INSERT INTO sts_cluster_secrets (name, material, created_by, ' +
-        'created_at) VALUES ($1, $2, $3, ' + DB_NOW + ') ON CONFLICT (name) ' +
-        'DO NOTHING', [String(name), String(material), processId]
+      return dialect.run(pool, 'ensureSharedSecret.offer',
+        kx('sts_cluster_secrets').insert({
+          name: String(name), material: String(material),
+          created_by: processId, created_at: dialect.now()
+        }).onConflict('name').ignore()
       ).then(function (inserted) {
-        return pool.query(
-          'SELECT material, created_by, created_at FROM sts_cluster_secrets ' +
-          'WHERE name = $1', [String(name)]
+        return dialect.run(pool, 'ensureSharedSecret.read',
+          kx('sts_cluster_secrets')
+            .select('material', 'created_by', 'created_at')
+            .where({ name: String(name) })
         ).then(function (r) {
           const row = (r.rows || [])[0] || null;
           return row ? { material: row.material, createdBy: row.created_by,
@@ -6715,6 +11121,10 @@ function create(options) {
     // and an accepted assertion costs one round trip.
     claimUsedAssertion: function (row, opts) {
       log.debug("Entering claimUsedAssertion().");
+      if (small) {
+        log.debug("Leaving claimUsedAssertion(). Portable.");
+        return small.claimUsedAssertion(row, opts);
+      }
       const now = Number(opts.now);
       const cap = Number(opts.cap);
       log.debug("Leaving claimUsedAssertion().");
@@ -6769,6 +11179,10 @@ function create(options) {
     // settle a row that is not its own.
     settleUsedAssertion: function (realm, key, reservation, spent, at) {
       log.debug("Entering settleUsedAssertion(). spent=" + spent);
+      if (small) {
+        log.debug("Leaving settleUsedAssertion(). Portable.");
+        return small.settleUsedAssertion(realm, key, reservation, spent, at);
+      }
       log.debug("Leaving settleUsedAssertion().");
       return (spent
         ? pool.query(
@@ -6790,6 +11204,10 @@ function create(options) {
     // above is what decides.
     findUsedAssertion: function (realm, key, nowMs) {
       log.debug("Entering findUsedAssertion(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving findUsedAssertion(). Portable.");
+        return small.findUsedAssertion(realm, key, nowMs);
+      }
       log.debug("Leaving findUsedAssertion().");
       return pool.query(
         'SELECT format, used_as, issuer, identifier, client_id, subject, ' +
@@ -6809,6 +11227,10 @@ function create(options) {
     // a pattern.
     listUsedAssertions: function (realm, opts) {
       log.debug("Entering listUsedAssertions(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving listUsedAssertions(). Portable.");
+        return small.listUsedAssertions(realm, opts);
+      }
       const o = opts || {};
       const now = Number(o.now);
       const where = 'WHERE realm = $1 AND expires_at >= $2 ' +
@@ -6840,8 +11262,132 @@ function create(options) {
       });
     },
 
+    // A finished report's bytes (#956). Upserted: a retry of the same job
+    // replaces the artifact rather than leaving the first one.
+    putReportArtifact: function (row) {
+      log.debug("Entering putReportArtifact().");
+      if (small) {
+        log.debug("Leaving putReportArtifact(). Portable.");
+        return small.putReportArtifact(row);
+      }
+      log.debug("Leaving putReportArtifact().");
+      return pool.query(
+        'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
+        'media_type, created_at) VALUES ($1, $2, $3, $4, $5, $6) ' +
+        'ON CONFLICT (realm, job_id) DO UPDATE SET ' +
+        'bytes = EXCLUDED.bytes, sha256 = EXCLUDED.sha256, ' +
+        'media_type = EXCLUDED.media_type, ' +
+        'created_at = EXCLUDED.created_at',
+        [row.realm, row.jobId, row.bytes, row.sha256, row.mediaType,
+         Number(row.createdAt)]
+      );
+    },
+
+    // A finished report's pieces (#1045), with the row that says how many
+    // there are, in ONE transaction: a reader sees the old artifact or the
+    // whole new one. The pieces arrive as an async iterable — read from the
+    // build file and sealed one at a time — so the transaction is run once
+    // and never retried: the iterable cannot be read twice. A failure is
+    // the job's, which says so.
+    putReportArtifactPieces: function (row, pieces) {
+      log.debug("Entering putReportArtifactPieces().");
+      if (small) {
+        log.debug("Leaving putReportArtifactPieces(). Portable.");
+        return small.putReportArtifactPieces(row, pieces);
+      }
+      log.debug("Leaving putReportArtifactPieces().");
+      return transactionOnce(async function (client) {
+        await client.query(
+          'DELETE FROM sts_report_artifact_pieces WHERE realm = $1 AND ' +
+          'job_id = $2', [row.realm, row.jobId]);
+        let seq = 0;
+        for await (const piece of pieces) {
+          await client.query(
+            'INSERT INTO sts_report_artifact_pieces (realm, job_id, seq, ' +
+            'bytes) VALUES ($1, $2, $3, $4)',
+            [row.realm, row.jobId, seq, piece]);
+          seq += 1;
+        }
+        const marker = Buffer.from(String(row.prefix) + seq + ':' +
+          Number(row.size), 'utf8');
+        await client.query(
+          'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
+          'media_type, created_at) VALUES ($1, $2, $3, $4, $5, $6) ' +
+          'ON CONFLICT (realm, job_id) DO UPDATE SET ' +
+          'bytes = EXCLUDED.bytes, sha256 = EXCLUDED.sha256, ' +
+          'media_type = EXCLUDED.media_type, ' +
+          'created_at = EXCLUDED.created_at',
+          [row.realm, row.jobId, marker, row.sha256, row.mediaType,
+           Number(row.createdAt)]);
+        return seq;
+      });
+    },
+
+    getReportArtifactPiece: function (key) {
+      log.debug("Entering getReportArtifactPiece().");
+      if (small) {
+        log.debug("Leaving getReportArtifactPiece(). Portable.");
+        return small.getReportArtifactPiece(key);
+      }
+      log.debug("Leaving getReportArtifactPiece().");
+      return pool.query(
+        'SELECT bytes FROM sts_report_artifact_pieces WHERE realm = $1 ' +
+        'AND job_id = $2 AND seq = $3',
+        [key.realm, key.jobId, Number(key.seq)]
+      ).then(function (r) {
+        const found = r.rows[0];
+        return found ? found.bytes : null;
+      });
+    },
+
+    getReportArtifact: function (key) {
+      log.debug("Entering getReportArtifact().");
+      if (small) {
+        log.debug("Leaving getReportArtifact(). Portable.");
+        return small.getReportArtifact(key);
+      }
+      log.debug("Leaving getReportArtifact().");
+      return pool.query(
+        'SELECT bytes, sha256, media_type, created_at FROM ' +
+        'sts_report_artifacts WHERE realm = $1 AND job_id = $2',
+        [key.realm, key.jobId]
+      ).then(function (r) {
+        const found = r.rows[0];
+        if (!found) {
+          return null;
+        }
+        return {
+          bytes: found.bytes,
+          sha256: found.sha256,
+          mediaType: found.media_type,
+          createdAt: Number(found.created_at)
+        };
+      });
+    },
+
+    deleteReportArtifact: function (key) {
+      log.debug("Entering deleteReportArtifact().");
+      if (small) {
+        log.debug("Leaving deleteReportArtifact(). Portable.");
+        return small.deleteReportArtifact(key);
+      }
+      log.debug("Leaving deleteReportArtifact().");
+      // The pieces and the row in one statement (#1045), so neither is
+      // left without the other.
+      return pool.query(
+        'WITH pieces AS (DELETE FROM sts_report_artifact_pieces ' +
+        'WHERE realm = $1 AND job_id = $2) ' +
+        'DELETE FROM sts_report_artifacts WHERE realm = $1 AND job_id = $2',
+        [key.realm, key.jobId]
+      );
+    },
+
     purgeUsedAssertions: function (nowMs) {
       log.debug("Entering purgeUsedAssertions().");
+      if (small) {
+        log.debug("Leaving purgeUsedAssertions(). Portable.");
+        return small.purgeUsedAssertions(nowMs);
+      }
       log.debug("Leaving purgeUsedAssertions().");
       return pool.query('DELETE FROM sts_used_assertions WHERE expires_at < $1',
                         [Number(nowMs)])
@@ -6852,6 +11398,10 @@ function create(options) {
 
     removeUsedAssertions: function (realm) {
       log.debug("Entering removeUsedAssertions(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving removeUsedAssertions(). Portable.");
+        return small.removeUsedAssertions(realm);
+      }
       log.debug("Leaving removeUsedAssertions().");
       return pool.query('DELETE FROM sts_used_assertions WHERE realm = $1',
                         [realm])
@@ -6868,14 +11418,28 @@ function create(options) {
     // back; `persistence_minted.js` asks with `persistence.mintedRetention`,
     // which is also the most a restored row can be. One statement on the pool
     // and idempotent, so any node may run it.
-    purgeTombstones: function (beforeMs) {
+    //
+    // `options.limit` BOUNDS THE ONE STATEMENT (#1313), chosen and deleted
+    // by ctid as purgeExpiredMinted() does; the tombstone jobs of a store
+    // deployed as cells batch with it, one tier at a time. Without it the
+    // statement is the one it always was, which is what a single-database
+    // store still runs.
+    purgeTombstones: function (beforeMs, options) {
       log.debug('Entering the postgres driver purgeTombstones().');
+      const limit = Math.floor(Number(options && options.limit) || 0);
       log.debug("Leaving purgeTombstones().");
-      return pool.query(
+      return (mintedStatements
+        ? mintedStatements.purgeTombstones(beforeMs, limit > 0 ? limit : 0)
+        : limit > 0 ? pool.query(
+        'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
+        'sts_minted WHERE body = $1 AND written_at < ' +
+        'to_timestamp($2 / 1000.0) LIMIT ' + limit + '))',
+        [TOMBSTONE, Number(beforeMs)]
+      ) : pool.query(
         'DELETE FROM sts_minted WHERE body = $1 AND ' +
         'written_at < to_timestamp($2 / 1000.0)',
         [TOMBSTONE, Number(beforeMs)]
-      ).then(function (r) {
+      )).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -6887,10 +11451,11 @@ function create(options) {
       log.debug('Entering the postgres driver purgeMinted(). before=' +
                 beforeMs);
       log.debug("Leaving purgeMinted().");
-      return pool.query(
+      return (mintedStatements ? mintedStatements.purgeMinted(beforeMs)
+        : pool.query(
         'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)',
         [Number(beforeMs)]
-      ).then(function (r) {
+      )).then(function (r) {
         log.debug('Leaving the postgres driver purgeMinted(). ' +
                   (r.rowCount || 0) + ' row(s).');
         return r.rowCount || 0;
@@ -6929,6 +11494,14 @@ function create(options) {
       if (kind === 'expired') {
         where = 'expires_at IS NOT NULL AND expires_at <= $1';
         binds = [Number(o.nowMs)];
+      } else if (kind === 'orphan' && Array.isArray(o.realms)) {
+        // The realms named by the caller: the tiered driver's, read from
+        // the GLOBAL registry, because this database's own `sts_realms` is
+        // not the registry when it is a cell's (#360).
+        where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
+                'to_timestamp($2 / 1000.0) AND NOT (realm = ANY($3::text[]))';
+        binds = [String(o.defaultRealm || 'default'),
+                 Number(o.orphanBeforeMs), o.realms.map(String)];
       } else if (kind === 'orphan') {
         where = 'realm <> \'\' AND realm <> $1 AND written_at < ' +
                 'to_timestamp($2 / 1000.0) AND NOT EXISTS (SELECT 1 FROM ' +
@@ -6950,15 +11523,37 @@ function create(options) {
                                         String(kind)));
       }
       log.debug("Leaving purgeExpiredMinted().");
-      return pool.query(
+      return (mintedStatements
+        ? mintedStatements.purgeExpiredMinted(kind, o, limit)
+        : pool.query(
         'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
         'sts_minted WHERE ' + where + ' LIMIT ' + limit + '))',
         binds
-      ).then(function (r) {
+      )).then(function (r) {
         return r.rowCount || 0;
       });
     }
   };
+  // NO NUDGE WHERE THE PORTABLE STATEMENTS RUN (#677): MariaDB has no
+  // LISTEN/NOTIFY, and the portable mode proves its code on PostgreSQL, so
+  // the driver offers no `watchChanges()` there and the replication module
+  // polls (`intervalMs()`). `announce()` sends nothing either.
+  if (portable) {
+    delete api.watchChanges;
+  }
+  // NO BRIDGE THREAD ON MARIADB (#677): `common/sync_query_thread.ts` builds
+  // a `pg` connection inside its worker, so the windowed directory and the
+  // on-demand minted reader are PostgreSQL's, and without `bridgeConnection()`
+  // persistence.js holds those stores whole instead.
+  if (engine !== 'postgres') {
+    delete api.bridgeConnection;
+    // SAID, not only absent (#677): a driver without the method may be a
+    // test's stub, and the session window must tell "no bridge here" from
+    // that (`persistence_minted.lendsNoBridge()`, `authn/session_window.ts`).
+    // @ts-ignore a property added to this engine's driver only
+    api.lendsNoBridge = true;
+  }
+  return api;
 }
 
 // ---------------------------------------------------------------------------
@@ -6978,6 +11573,27 @@ function create(options) {
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');
 
+// The routes whose answers carry the database namespace's prose (#543): the
+// probes' sentences, which `GET /admin-api/database` carries as each
+// probe's `what`.
+const PROSE_ROUTES = ['/admin-api/database'];
+
+// No log line, for `poolMax()`'s reason: this module's logger arrives with
+// create(), and the namespace is extracted without one.
+/**
+ * Extracts this module's part of the database namespace (#543 phase 2b):
+ * what each catalog probe asks. A probe's `group` is not harvested: it is
+ * the heading `admin-ui/web_database.ts` files it under, and that table is
+ * the renderer's.
+ *
+ * @returns key → English
+ */
+function prose() {
+  // LAZILY, for `persistence.js`'s reason: this driver is loaded by it.
+  return require('../common/server_prose').harvest('postgres.probes',
+    METRIC_PROBES, ['what']);
+}
+
 /**
  * The postgres persistence driver: the shared store, and the change log that
  * several processes coordinate through.
@@ -6987,6 +11603,8 @@ capabilities.provide('directory.concurrent-writes');
  * @namespace
  */
 module.exports = {
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   create: create,
   // For `tests/database_metrics.js`, which checks that every probe is
   // GROUPED into a section the page actually draws — a probe in a group the
@@ -6995,9 +11613,25 @@ module.exports = {
   METRIC_PROBES: METRIC_PROBES,
   CHANNEL: CHANNEL,
   SCHEMA: SCHEMA,
+  SCHEMA_ROUTINES: SCHEMA_ROUTINES,
+  LOCK_FOR_BACKFILL: LOCK_FOR_BACKFILL,
+  COUNTS_BACKFILL: COUNTS_BACKFILL,
+  DEK_COUNTS_BACKFILL: DEK_COUNTS_BACKFILL,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
+  SCHEMA_UPGRADES: SCHEMA_UPGRADES,
+  COUNT_SHARDS: COUNT_SHARDS,
+  SCHEMA_RETIRED: SCHEMA_RETIRED,
+  SCHEMA_RELOPTIONS: SCHEMA_RELOPTIONS,
+  GIN_DIRECT: GIN_DIRECT,
   SCHEMA_VERSION: SCHEMA_VERSION,
+  // The minted flush as one statement (#820), for the tests' `pg` doubles
+  // (`tests/tools/minted_flush_double.js`), which play it by its layout.
+  MINTED_FLUSH: MINTED_FLUSH,
+  MINTED_FLUSH_LAYOUT: MINTED_FLUSH_LAYOUT,
+  // The change log's density check at open (#677), for
+  // `tests/change_log_jump.js`.
+  checkChangeLogDense: checkChangeLogDense,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for
   // `persistence/cell_convert.js`, which dials the service's databases

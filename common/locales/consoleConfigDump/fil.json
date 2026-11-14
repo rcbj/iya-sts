@@ -1,0 +1,7 @@
+{
+  "about": "Bawat configuration parameter ng tumatakbong instance na ito, ang mga global na value at ang itinatakda ng bawat trust realm. Tinatakpan ng server ang mga password, token, key at iba pang sensitibong value bago makarating sa pahinang ito. Hindi kasama ang mga directory object.",
+  "summary": "{total} parameter, {masked} value na natakpan, {realms} iba pang realm.",
+  "download": "I-download ang JSON",
+  "thRealm": "Realm",
+  "thOwn": "Mga parameter na itinatakda nito"
+}

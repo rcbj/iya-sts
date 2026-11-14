@@ -141,6 +141,43 @@ function run(t) {
           'ownerless surfaces rest on');
 
   // -----------------------------------------------------------------------
+  // EVERY ONE OF THESE (#454): `requiredAllRoles`, the third conjunct. The
+  // management API's console operations name ADMIN_CONSOLE as the any-one
+  // and ADMIN_READ as the every-one — a role the console's client confers
+  // mixed with one the person holds — so holding either alone is not enough.
+  // -----------------------------------------------------------------------
+  t.log.info('=== required-all: every role named must be held ===');
+  const conferredOnly = { name: 'alice', authenticated: true,
+                          sessionId: 's-alice', roles: ['ADMIN_CONSOLE'] };
+  const both = { name: 'alice', authenticated: true, sessionId: 's-alice',
+                 roles: ['ADMIN_CONSOLE', 'ADMIN_READ'] };
+  const readOnly = { name: 'alice', authenticated: true, sessionId: 's-alice',
+                     roles: ['ADMIN_READ'] };
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: conferredOnly,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: ['ADMIN_READ'] }).allowed, false,
+          'the conferred role alone does not reach a page that also asks ' +
+          'for ADMIN_READ');
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: readOnly,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: ['ADMIN_READ'] }).allowed, false,
+          'nor does ADMIN_READ alone, which is a management token reaching ' +
+          'for the console\'s operation');
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: both,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: ['ADMIN_READ'] }).allowed, true,
+          'both together do — the two kinds of role mixed in one decision');
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: conferredOnly,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: [] }).allowed, true,
+          'and an empty required-all asks nothing, which is the console\'s ' +
+          'frame and every surface that names none');
+
+  // -----------------------------------------------------------------------
   // AND THE GATE IS OFF BY DEFAULT, which is the contract every other mode in
   // this service follows. Asserted LAST so the two above cannot have been
   // passing because nothing was being enforced.
@@ -153,6 +190,68 @@ function run(t) {
           'with enforcement off, the refusal above is not made — so the ' +
           'assertions above are about the POLICY and not about the gate ' +
           'being unreachable');
+
+  config.clearOverride('xacml.enforceAccess');
+
+  // -----------------------------------------------------------------------
+  // A DECISION THAT CANNOT BE MADE (#1450, ASVS 5.0.0 8.2.1).
+  // -----------------------------------------------------------------------
+  t.log.info('=== a fault in the gate is a refusal in product ===');
+  const mode = require('../common/mode');
+  const installed = gate.deciderInstalled ? gate.deciderInstalled() : false;
+  t.equal(installed, true, 'the embedded PEP is the decider');
+  const realFault = mode.failsOpenOnPolicyFault;
+  t.equal(decide({ action: gate.ACTION.MANAGE_OWN, subject: alice }).allowed,
+          true, 'development allows a check that names no resource');
+  mode.failsOpenOnPolicyFault = function () {
+    return false;
+  };
+  t.equal(decide({ action: gate.ACTION.MANAGE_OWN, subject: alice }).allowed,
+          false, 'product refuses a check that names no resource');
+  t.equal(decide({ resource: gate.RESOURCE.PORTAL, subject: alice }).allowed,
+          false, 'and one that names no action');
+  mode.failsOpenOnPolicyFault = realFault;
+  const gateWith = function (open) {
+    log.debug("Entering gateWith().");
+    log.debug("Leaving gateWith().");
+    return new gate.AccessGate(Object.assign({},
+      gate.AccessGate.defaultDeps(), { mode: {
+        failsOpenOnPolicyFault: function () {
+          return open;
+        } } }));
+  };
+  const asked = { resource: gate.RESOURCE.PORTAL,
+                  action: gate.ACTION.MANAGE_OWN, subject: alice };
+  [false, true].forEach(function (open) {
+    const word = open ? 'development allows' : 'product refuses';
+    const fresh = gateWith(open);
+    t.equal(fresh.check(asked).allowed, open, word + ' with no decider');
+    fresh.setDecider(function () {
+      throw new Error('a probe');
+    });
+    t.equal(fresh.check(asked).allowed, open, word + ' when the decider throws');
+    fresh.setDecider(function () {
+      return null;
+    });
+    t.equal(fresh.check(asked).allowed, open, word + ' on an empty answer');
+  });
+  const decided = gateWith(false);
+  decided.setDecider(function () {
+    return { allowed: true, decision: 'Permit', why: 'a probe', policy: '' };
+  });
+  t.equal(decided.check(asked).allowed, true,
+          'a real Permit is still a Permit in product');
+
+  // The two switches stay, and turning one off shows on /admin/mode.
+  t.check(mode.REQUIREMENTS.some(function (row) {
+    return row.id === 'access-decisions-fail-closed';
+  }), 'the requirement is described to /admin/mode');
+  t.equal(mode.accessEnforcementWaivers().length, 0,
+          'no switch off, nothing to report');
+  config.setOverride('xacml.enforceAccess', 'false');
+  t.equal(mode.accessEnforcementWaivers().map(function (one) {
+    return one.setting;
+  }).join(','), 'xacml.enforceAccess', 'a switch off is reported by name');
 
   // **CLEARED RATHER THAN WRITTEN BACK**, which is this suite's rule: writing
   // the old value back records an OVERRIDE where there may have been none, and

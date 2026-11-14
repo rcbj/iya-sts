@@ -82,9 +82,9 @@
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-// saml.issuer — the same setting the 2.0 assertions carry, because it names
-// the same signer.
 import config = require('../common/config');
+// #523: the one name this service issues under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -97,10 +97,13 @@ import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
 // THE AssertionID NAMES ITS CELL (#98 D10): see buildSaml11Assertion().
 import cellLocator = require('../common/cell_locator');
+// SAML 1.1's vocabularies and the assertion's order are the model's (#1579):
+// `models/saml/saml11.tsp`. A leaf.
+import SamlModel = require('./saml_model');
 /**
  * The SAML 1.1 assertion namespace.
  */
-const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
+const SAML11_NS = SamlModel.term('saml11.namespace', 'assertion');
 // The one every relying party here can read, and the only one this service
 // could honestly claim: nothing about the NameIdentifier it writes is a
 // persistent identifier or an email address, because the username is whatever
@@ -109,11 +112,11 @@ const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
  * The `unspecified` NameIdentifier format, the one this service writes.
  */
 const NAMEID_FORMAT_UNSPECIFIED =
-    'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
+    SamlModel.term('saml11.nameIdFormat', 'unspecified');
 /**
  * The bearer confirmation method, which the Browser/POST profile requires.
  */
-const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
+const CONFIRMATION_BEARER = SamlModel.term('saml11.confirmation', 'bearer');
 // The Browser/Artifact profile's, and NOT interchangeable with the one above —
 // see the `confirmationMethod` option. It says the assertion was pulled back
 // through a SOAP channel rather than carried by the browser, which is the whole
@@ -122,7 +125,8 @@ const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
  * The artifact confirmation method, which the Browser/Artifact profile
  * requires.
  */
-const CONFIRMATION_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:cm:artifact';
+const CONFIRMATION_ARTIFACT =
+    SamlModel.term('saml11.confirmation', 'artifact');
 
 interface Saml11AssertionsDeps {
   stsCrypto: typeof stsCrypto;
@@ -239,6 +243,8 @@ class Saml11Assertions {
       privateKeyPem: STS.xmlSigner.privateKeyPem,
       privateKey: STS.xmlSigner.privateKey,
       certPem: STS.xmlSigner.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
       placement: stsCrypto.PLACEMENT.LAST,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
@@ -300,13 +306,13 @@ class Saml11Assertions {
   // signature over this document, and a single added attribute changes the
   // digest.
   //
-  //   issuer              the Issuer attribute, when it is not `saml.issuer`.
-  //                       The browser profiles MUST override it: they publish a
-  //                       providerID per relying party, and a relying party
-  //                       checks the assertion's Issuer against the one in the
-  //                       metadata it was configured from. An assertion issued
-  //                       under a name that is not in that document is refused,
-  //                       and the refusal reads as a trust-store problem.
+  //   issuer              the Issuer attribute. It defaults to the realm's one
+  //                       issuer, its OAuth issuer (#523); a caller that read
+  //                       it for its request passes it, so the metadata and
+  //                       the assertion name the same string. A relying party
+  //                       refuses an assertion issued under a name its
+  //                       metadata does not carry, and the refusal reads as a
+  //                       trust-store problem.
   //   nameIdFormat        the NameIdentifier's Format. The two older callers
   //                       want `unspecified` — nothing consumes it — and a
   //                       relying party configured for an email address is
@@ -363,7 +369,8 @@ class Saml11Assertions {
    * @param opts - `subject`, `audience`, `lifetimeMin` (60 by default),
    * `authnMethod`, `authnInstant`, `attributes`, `issuer`, `nameIdFormat`,
    * `nameIdValue`, `nameQualifier`, `confirmationMethod`, `subjectLocality`,
-   * `doNotCache`, `authenticationStatement` and `sign`
+   * `doNotCache`, `authenticationStatement`, `sign` and `application` (the
+   * entry whose claim settings govern, #487)
    * @returns the assertion's XML
    */
   buildSaml11Assertion(opts) {
@@ -413,13 +420,14 @@ class Saml11Assertions {
     // Repeated in both statements, which is not redundancy in SAML 1.1 but the
     // schema: a statement is about a subject, and the assertion itself is not.
     const subjectEl =
-      '<saml:Subject>' +
-        '<saml:NameIdentifier' + qualifier + ' Format="' +
-        xmlEscape(nameIdFormat) + '">' +
-          xmlEscape(nameIdValue) + '</saml:NameIdentifier>' +
-        '<saml:SubjectConfirmation><saml:ConfirmationMethod>' +
-        xmlEscape(confirmation) +
-        '</saml:ConfirmationMethod></saml:SubjectConfirmation>' +
+      '<saml:Subject>' + SamlModel.children('saml11.Subject', {
+        nameIdentifier: '<saml:NameIdentifier' + qualifier + ' Format="' +
+          xmlEscape(nameIdFormat) + '">' +
+          xmlEscape(nameIdValue) + '</saml:NameIdentifier>',
+        subjectConfirmation:
+          '<saml:SubjectConfirmation><saml:ConfirmationMethod>' +
+          xmlEscape(confirmation) +
+          '</saml:ConfirmationMethod></saml:SubjectConfirmation>' }) +
       '</saml:Subject>';
     const audienceEl = opts.audience
       ? '<saml:AudienceRestrictionCondition><saml:Audience>' +
@@ -452,9 +460,15 @@ class Saml11Assertions {
     // would break the sign-in somewhere that looks nothing like this page. An
     // attribute configured with no namespace gets the identity claims
     // namespace, which is where a relying party is already looking.
+    // `application` (#487, #483's member): the entry whose settings govern,
+    // where the caller resolved it — WS-Trust's AppliesTo application.
     const custom = stats.samlAttributes('saml11',
-                                        { subject: opts.subject,
-                                          audience: opts.audience });
+                                        Object.assign({ subject: opts.subject,
+                                                        audience:
+                                                          opts.audience },
+                                          opts.application
+                                            ? { application: opts.application }
+                                            : {}));
     // FILTERED against the caller's own claims by name, for the reason saml2.ts
     // states beside the same line: an assertion is a list of elements, so a
     // duplicate name is not an overwrite but two <Attribute> elements with one
@@ -487,26 +501,39 @@ class Saml11Assertions {
     }).join('');
     // Conditions, then the statements, then (added by the signer) ds:Signature.
     // The order is the schema's sequence and not a preference.
+    //
+    // IN THE MODEL'S ORDER (#1579): every start tag's attributes and every
+    // element's children from `models/saml/saml11.tsp`, where the schema's
+    // sequence is stated once.
     const xml =
       '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
-        ' MajorVersion="1" MinorVersion="1"' +
-        ' AssertionID="' + id + '"' +
-        ' Issuer="' + xmlEscape(opts.issuer || config.value('saml.issuer')) +
-        '" ' +
-        'IssueInstant="' + now + '">' +
-        '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
-        '">' + audienceEl +
-        doNotCacheEl + '</saml:Conditions>' +
-        (opts.authenticationStatement === false ? '' :
-          '<saml:AuthenticationStatement AuthenticationMethod="' +
-            xmlEscape(authnMethod) + '" ' +
-            'AuthenticationInstant="' + authnInstant + '">' + subjectEl +
-            localityEl +
-          '</saml:AuthenticationStatement>') +
-        (attributeEls
-          ? '<saml:AttributeStatement>' + subjectEl + attributeEls +
-            '</saml:AttributeStatement>'
-          : '') +
+        SamlModel.attributes('saml11.Assertion', {
+          assertionId: id,
+          issuer: opts.issuer || IssuerNames.issuer(),
+          issueInstant: now }) + '>' +
+        SamlModel.children('saml11.Assertion', {
+          conditions: '<saml:Conditions' +
+            SamlModel.attributes('saml11.Conditions', {
+              notBefore: notBefore, notOnOrAfter: exp }) + '>' +
+            SamlModel.children('saml11.Conditions', {
+              audienceRestrictionCondition: audienceEl,
+              doNotCacheCondition: doNotCacheEl }) +
+            '</saml:Conditions>',
+          authenticationStatement: opts.authenticationStatement === false
+            ? ''
+            : '<saml:AuthenticationStatement' +
+              SamlModel.attributes('saml11.AuthenticationStatement', {
+                authenticationMethod: authnMethod,
+                authenticationInstant: authnInstant }) + '>' +
+              SamlModel.children('saml11.AuthenticationStatement', {
+                subject: subjectEl, subjectLocality: localityEl }) +
+              '</saml:AuthenticationStatement>',
+          attributeStatement: attributeEls
+            ? '<saml:AttributeStatement>' +
+              SamlModel.children('saml11.AttributeStatement', {
+                subject: subjectEl, attribute: attributeEls }) +
+              '</saml:AttributeStatement>'
+            : '' }) +
       '</saml:Assertion>';
     // Counted before the signing attempt, not after: an assertion that failed
     // to sign was still built and still went out (unsigned — see the catch), so

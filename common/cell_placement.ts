@@ -105,26 +105,50 @@ const ROWS: Row[] = [
          'owner\'s own session may register one' },
   { prefix: '/.well-known/est', strategy: 'handler',
     handler: 'est/est.ts',
-    why: 'an EST enrollment is served where the person its Basic name or ' +
-         'client certificate names is homed; cacerts and csrattrs are the ' +
-         'same in every cell' },
+    why: 'an EST enrollment, and the /nonce its TPM attestation spends ' +
+         '(#257), is served where the person its Basic name or client ' +
+         'certificate names is homed; cacerts and csrattrs are the same ' +
+         'in every cell' },
   { prefix: '/pki', strategy: 'local',
     why: 'the certificate authority is the global tier\'s' },
   { prefix: '/crypto', strategy: 'local',
     why: 'the signer generations are the global tier\'s' },
   { prefix: '/docs', strategy: 'local', why: 'static documentation' },
+  { prefix: '/web', strategy: 'local',
+    why: 'the public surfaces\' card and locale catalogs, the same files ' +
+         'in every cell (#570)' },
   { prefix: '/logo.png', strategy: 'local', why: 'a static image' },
+  { prefix: '/favicon.ico', strategy: 'local', why: 'a static image' },
+  { prefix: '/home.js', strategy: 'local',
+    why: 'the front door\'s script, the same file in every cell (#579)' },
+  { prefix: '/home.css', strategy: 'local',
+    why: 'the front door\'s stylesheet, the same in every cell (#579)' },
+  { prefix: '/home-api', strategy: 'local',
+    why: 'the front door\'s view is the build, the mode and the ' +
+         'listeners, the same in every cell (#579)' },
   { prefix: '/tos', strategy: 'local', why: 'a static page' },
   { prefix: '/policy', strategy: 'local', why: 'a static page' },
   { prefix: '/did.json', strategy: 'local',
     why: 'the realm\'s DID document is the global tier\'s' },
-  { prefix: '/did', strategy: 'local',
-    why: 'the realm\'s DID documents are the global tier\'s' },
+  // A PERSON'S PUBLISHED did:web (#1291): `/users/<rid>/did.json`. The
+  // index `did.personDids` is CELL-tier, beside the entry it names, and the
+  // id is random, so nothing in an unstamped one says where it lives: the id
+  // is stamped with the minting cell's tag when it is drawn
+  // (`oid4vc/person_did.ts`), as an offer or a link handle is, and a resolver
+  // reaching any cell is relayed to that one. Not `browser`: a resolver
+  // carries no affinity cookie, and a pinned browser fetching somebody
+  // else's DID must still reach the cell that holds it.
+  { prefix: '/users', strategy: 'artifact', segment: 2,
+    why: 'a person\'s DID document is served where its id was minted ' +
+         '(#1291)' },
+  // A PERSON'S PROFILE PHOTO (#719), the row above's argument: the image is
+  // cell-tier, the id random and stamped, and a relying party carries no
+  // affinity cookie. More specific than `/web`, whose files are in every cell.
+  { prefix: '/web/photo', strategy: 'artifact', segment: 3,
+    why: 'a person\'s photo is served where its id was minted (#719)' },
   { prefix: '/applications', strategy: 'local',
     why: 'an application\'s DID document is drawn from its entry, and ' +
          'ou=applications is the global tier\'s' },
-  { prefix: '/issuer', strategy: 'local',
-    why: 'issuer metadata is the global tier\'s' },
   { prefix: '/bbs', strategy: 'local',
     why: 'the realm\'s BBS key is the global tier\'s' },
   { prefix: '/FederationMetadata', strategy: 'local',
@@ -133,21 +157,20 @@ const ROWS: Row[] = [
     why: 'OpenID Federation statements and registers are the global tier\'s' },
   { prefix: '/realms', strategy: 'local',
     why: 'the realm registry is the global tier\'s' },
-  { prefix: '/dpop', strategy: 'local',
-    why: 'a nonce is valid where it was issued, and asked for there' },
   { prefix: '/spiffe', strategy: 'local',
     why: 'a workload attests to the cell it runs beside' },
   { prefix: '/vc-api', strategy: 'local',
-    why: 'a development-only test control over global configuration' },
-  { prefix: '/krb5', strategy: 'local',
-    why: 'the Kerberos views read global configuration' },
+    why: 'the W3C VC API signs and verifies documents it is handed with ' +
+         'the realm\'s global-tier keys and status lists; no person\'s ' +
+         'data is read' },
   { prefix: '/KdcProxy', strategy: 'handler',
     handler: 'kerberos/krb5_home.ts',
     why: 'an AS-REQ names its client, and a TGS-REQ\'s ticket does; both ' +
          'are answered where the client is homed (the raw port 88 is not ' +
          'placed: kerberos/CLAUDE.md)' },
-  { prefix: '/spnego', strategy: 'affinity', browser: true,
-    why: 'a browser flow, served where the browser is pinned' },
+  // `/krb5/principals`, `/krb5/service`, `/spnego`, `/spnego/protected`
+  // and `/spnego/pages.js` have no row: #595 deleted the first and moved the
+  // rest to the development companion.
   // --- the sign-in service and the browser flows ---
   { prefix: '/authn', strategy: 'affinity', browser: true,
     why: 'the sign-in screen is where D9\'s restart at home happens; a ' +
@@ -155,16 +178,72 @@ const ROWS: Row[] = [
   { prefix: '/authn/login', strategy: 'handler', browser: true,
     handler: 'authn/authn.ts',
     why: 'the login name decides the home cell (D9)' },
-  { prefix: '/authn/webauthn.js', strategy: 'local', why: 'a static script' },
-  { prefix: '/authn/wallet.js', strategy: 'local', why: 'a static script' },
+  { prefix: '/authn/signin.js', strategy: 'local',
+    why: 'the sign-in surface\'s script, the same file in every cell (#571)' },
+  { prefix: '/authn-api', strategy: 'handler', browser: true,
+    handler: 'authn/authn.ts',
+    why: 'the sign-in screen\'s acts (#571): the login name decides the ' +
+         'home cell (D9), in `screenAct()`, as at the form it replaced; a ' +
+         'pinned browser first, where its pending sign-in is held — and ' +
+         'its steps (#572, #573), held where the pending sign-in was' },
+  { prefix: '/authn-api/consent', strategy: 'affinity', browser: true,
+    why: 'the consent screen\'s view and answer (#576): the pending ' +
+         'consent is held where the browser that met /oauth2/consent is ' +
+         'pinned, as the page it replaced was answered there' },
+  { prefix: '/authn-api/wallet', strategy: 'affinity', browser: true,
+    why: 'a wallet sign-in\'s acts (#574): its transaction, the pending ' +
+         'sign-in it is bound to and the binding cookie\'s hash are where ' +
+         'the browser that started it is pinned; no login name is typed' },
+  // THE IDENTITY-PROVIDER-INITIATED DOOR (#426): it reads the sign-on
+  // session, or begins one, and records an OpenID Connect launch on it, so
+  // it is served where the browser is pinned, as /logout is; a browser with
+  // no session starts the sign-in that D9 restarts at home.
+  { prefix: '/launch', strategy: 'affinity', browser: true,
+    why: 'a launch starts a sign-in on the session where the browser is ' +
+         'pinned, and records an OpenID Connect launch on that session' },
   { prefix: '/authn/fingerprint.js', strategy: 'local',
     why: 'a static script' },
   { prefix: '/logout', strategy: 'affinity', browser: true,
     why: 'the session to end is where the browser is pinned' },
-  { prefix: '/portal', strategy: 'handler', browser: true,
-    handler: 'portal/portal.ts',
-    why: 'the portal manages a person\'s own entry, which only their home ' +
-         'cell holds; a projected session is sent home' },
+  // THE SIGN-OUT AS A STATIC SURFACE (#577): its script and stylesheet are
+  // the same in every cell; its view and act, like the page they replaced,
+  // read and end the session where the browser is pinned; the signed-out
+  // document re-reads what is still live there too.
+  { prefix: '/logout/signout.js', strategy: 'local',
+    why: 'the static sign-out\'s script (#577)' },
+  { prefix: '/logout/signout.css', strategy: 'local',
+    why: 'the static sign-out\'s stylesheet (#577)' },
+  { prefix: '/authn-api/logout', strategy: 'affinity', browser: true,
+    why: 'the sign-out\'s view and act (#577): the session to read and end ' +
+         'is where the browser is pinned, as at /logout' },
+  // THE PORTAL IS A STATIC DOCUMENT SINCE #568, the same in every cell; what
+  // it acts on is its API's, which goes home.
+  { prefix: '/portal', strategy: 'local',
+    why: 'the static portal\'s document, script and stylesheet (#568)' },
+  // /report-api is the longer prefix, so it wins for its own paths. /report
+  // does not prefix-match it: the match is the prefix or the prefix plus a
+  // slash, after a trailing slash is stripped.
+  { prefix: '/report-api', strategy: 'local',
+    why: 'the reports API answers where the browser is pinned (#956)' },
+  { prefix: '/report', strategy: 'local',
+    why: 'the static reports document, script and stylesheet (#956)' },
+  { prefix: '/portal/signals/receive', strategy: 'local',
+    why: 'the portal\'s Shared Signals stream is received where it is ' +
+         'delivered' },
+  { prefix: '/admin/signals/receive', strategy: 'local',
+    why: 'the console\'s Shared Signals stream is received where it is ' +
+         'delivered (#1042)' },
+  { prefix: '/report/signals/receive', strategy: 'local',
+    why: 'the reports application\'s Shared Signals stream is received ' +
+         'where it is delivered (#1042)' },
+  { prefix: '/portal/claim-sources/callback', strategy: 'affinity',
+    browser: true,
+    why: 'a Claims Provider sends the browser back where the link began' },
+  { prefix: '/account-api', strategy: 'handler',
+    handler: 'account-api/account_api.ts',
+    why: 'the account API manages a person\'s own entry, which only their ' +
+         'home cell holds: the token\'s person, or the person a link ' +
+         'names, is sent home' },
   { prefix: '/admin', strategy: 'affinity', browser: true,
     why: 'the console acts on the global tier and on the serving cell\'s ' +
          'residents; its session is the cell\'s, so another cell\'s ' +
@@ -173,8 +252,6 @@ const ROWS: Row[] = [
   { prefix: '/admin-api', strategy: 'selector',
     why: 'the management API acts on the global tier and on the serving ' +
          'cell\'s residents; ?cell= names another cell (D11)' },
-  { prefix: '/devices', strategy: 'bearer',
-    why: 'a device registration is for the token\'s subject' },
   // --- OAuth 2.0 and OpenID Connect ---
   { prefix: '/oauth2', strategy: 'affinity', browser: true,
     why: 'a browser endpoint of the authorization server' },
@@ -193,6 +270,9 @@ const ROWS: Row[] = [
   { prefix: '/oauth2/check_session', strategy: 'local',
     why: 'the OP iframe answers from the browser state it is given' },
   { prefix: '/oauth2/autopost.js', strategy: 'local', why: 'a static script' },
+  { prefix: '/oauth2/consent.js', strategy: 'local',
+    why: 'the consent screen\'s script, the sign-in surface\'s bundle: the ' +
+         'same file in every cell (#576)' },
   { prefix: '/oauth2/rfc9700', strategy: 'local', why: 'an information page' },
   { prefix: '/oauth2/fapi', strategy: 'local', why: 'an information page' },
   { prefix: '/oauth2/oauth21', strategy: 'local', why: 'an information page' },
@@ -204,8 +284,6 @@ const ROWS: Row[] = [
     why: 'the device code is minted here and stamped (D10)' },
   { prefix: '/oauth2/challenge', strategy: 'local',
     why: 'an attestation challenge is valid where it is issued' },
-  { prefix: '/oauth2/commands/mock-rp', strategy: 'local',
-    why: 'a test relying party with no state of anybody\'s' },
   { prefix: '/oauth2/commands/callback', strategy: 'local',
     why: 'a Command callback token is global configuration' },
   { prefix: '/oauth2/token', strategy: 'handler',
@@ -224,14 +302,16 @@ const ROWS: Row[] = [
     why: 'answered by the cell that minted the access token' },
   { prefix: '/oauth2/grants', strategy: 'bearer',
     why: 'the grant is held by the cell that minted the access token' },
-  { prefix: '/oauth2/step-up/resource', strategy: 'bearer',
-    why: 'the stand-in resource checks a token its minting cell holds' },
   // --- SAML, WS-Federation, WS-Trust ---
   { prefix: '/saml2', strategy: 'affinity', browser: true,
     why: 'a browser profile, served where the browser is pinned' },
   { prefix: '/saml2/metadata', strategy: 'local',
     why: 'metadata is the global tier\'s' },
   { prefix: '/saml2/autopost.js', strategy: 'local', why: 'a static script' },
+  // THE DESCRIPTION PAGES' SCRIPT (#584): the same file in every cell, on
+  // each of the six families' paths.
+  { prefix: '/saml2/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/saml2/ars', strategy: 'handler',
     handler: 'saml/saml2_sso.ts',
     why: 'an artifact is resolved by the cell that minted it (D10)' },
@@ -242,6 +322,8 @@ const ROWS: Row[] = [
   { prefix: '/saml11/metadata', strategy: 'local',
     why: 'metadata is the global tier\'s' },
   { prefix: '/saml11/autopost.js', strategy: 'local', why: 'a static script' },
+  { prefix: '/saml11/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/saml11/responder', strategy: 'handler',
     handler: 'saml/saml11_sso.ts',
     why: 'an artifact or attribute query is answered where it belongs' },
@@ -254,10 +336,36 @@ const ROWS: Row[] = [
     why: 'a partner\'s browser flow, served where the browser is pinned' },
   { prefix: '/federation/metadata', strategy: 'local',
     why: 'a relationship\'s metadata is the global tier\'s' },
+  { prefix: '/federation/atproto/client', strategy: 'local',
+    why: 'a Bluesky relationship\'s client metadata is drawn from its entry, ' +
+         'and federation relationships are the global tier\'s (#746)' },
   { prefix: '/federation/jwks', strategy: 'local',
     why: 'a relationship\'s keys are the global tier\'s' },
+  // THE FEDERATION PAGES' SCRIPT (#580): the same file in every cell.
+  { prefix: '/federation/pages.js', strategy: 'local',
+    why: 'the federation pages\' script, the same file in every cell (#580)' },
+  // THE FRAGMENT PAGE'S SCRIPT (#930): a static file, as the one above.
+  { prefix: '/federation/fragment.js', strategy: 'local',
+    why: 'the fragment page\'s script, the same file in every cell (#930)' },
+  // A REQUEST OBJECT BY REFERENCE (#930): its handle is found where it was
+  // minted, whichever cell the partner's fetch reaches.
+  { prefix: '/federation/request', strategy: 'artifact', segment: 4,
+    why: 'a Request Object handle is found where it was minted (#930)' },
   { prefix: '/federation/link', strategy: 'artifact', browser: true,
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
+  { prefix: '/federation/stepup', strategy: 'artifact', browser: true,
+    segment: 3, why: 'a step-up handle is found where it was minted (#565)' },
+  { prefix: '/federation/profile', strategy: 'artifact', browser: true,
+    segment: 3, why: 'a consumer newcomer\'s details handle is found where ' +
+                     'it was minted (#729)' },
+  // A PROVIDER'S NOTIFICATION (#565) has no browser and names a subject, not
+  // a cell: verified and spent where it arrives, and fanned out to every
+  // peer (#727, `federation-provider-notification`), as a partner's sign-out
+  // is.
+  { prefix: '/federation/notifications', strategy: 'local',
+    why: 'a provider\'s server-to-server notification: verified where it ' +
+         'arrives and fanned out to every peer ' +
+         '(federation-provider-notification, #727)' },
   { prefix: '/federation/backchannel-logout', strategy: 'handler',
     handler: 'federation/federation_slo.ts',
     why: 'a partner\'s sign-out may end sessions in every cell: served ' +
@@ -268,6 +376,8 @@ const ROWS: Row[] = [
     why: 'a resource is written where its person is homed; a list answers ' +
          'the serving cell\'s residents (D11); a Group write or a Bulk ' +
          'spanning cells is refused whole' },
+  { prefix: '/scim/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/scim/v2/ServiceProviderConfig', strategy: 'local',
     why: 'the same configuration in every cell' },
   { prefix: '/scim/v2/ResourceTypes', strategy: 'local',
@@ -283,9 +393,14 @@ const ROWS: Row[] = [
     why: 'policy and the decision point are the global tier\'s' },
   { prefix: '/xacml/pip', strategy: 'handler', handler: 'xacml/xacml.ts',
     why: 'a subject\'s attributes are answered at home' },
+  // AUTHZEN (#563): /xacml/pdp's case in AuthZEN's shape. The metadata is
+  // under the `/.well-known` row above.
+  { prefix: '/access/v1', strategy: 'local',
+    why: 'policy and the decision point are the global tier\'s, as for ' +
+         '/xacml/pdp' },
   // --- TLS ---
   { prefix: '/tls', strategy: 'local',
-    why: 'certificate views and test controls over global configuration' },
+    why: 'the server certificate is global configuration' },
   { prefix: '/tls/sign-in', strategy: 'handler', browser: true,
     handler: 'tls/tls_server.js',
     why: 'a client certificate names its person, signed in at home; a ' +
@@ -303,15 +418,11 @@ const ROWS: Row[] = [
   { prefix: '/oid4vci/credential-offer', strategy: 'artifact', segment: 3,
     why: 'an offer is found where it was minted (D10)' },
   { prefix: '/oid4vp', strategy: 'affinity', browser: true,
-    why: 'the verifier\'s browser pages, where the browser is pinned' },
-  { prefix: '/oid4vp/verifier', strategy: 'local',
-    why: 'verifier metadata is the global tier\'s' },
+    why: 'anything else of the verifier\'s, where the browser is pinned' },
   { prefix: '/oid4vp/verifier-certificate', strategy: 'local',
     why: 'verifier metadata is the global tier\'s' },
   { prefix: '/oid4vp/request', strategy: 'artifact', segment: 3,
     why: 'a wallet fetches a request where it was minted (D10)' },
-  { prefix: '/oid4vp/result', strategy: 'artifact', browser: true,
-    segment: 3, why: 'a result is found where it was minted (D10)' },
   { prefix: '/oid4vp/response', strategy: 'handler',
     handler: 'oid4vc/vc_verifier.ts',
     why: 'a wallet\'s direct_post names its transaction in the body' },
@@ -321,6 +432,23 @@ const ROWS: Row[] = [
          'names — read from the body — and served where it arrives when it ' +
          'names none' },
   // #432: the revoked biscuits' identifiers are a global-tier store.
+  // --- UMA 2.0 (#1168) --- every store is cell-tier (persistence/tiers.js):
+  // a registration, a ticket and an RPT record live where they were minted.
+  // The protection API is called with the resource server's PAT, so its
+  // requests go where that token was minted, and its registrations and
+  // tickets with them.
+  { prefix: '/uma', strategy: 'local',
+    why: 'the UMA description page, the same in every cell (#584)' },
+  { prefix: '/uma/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell' },
+  { prefix: '/uma/rreg', strategy: 'bearer',
+    why: 'a registration lives where the resource server\'s PAT was minted' },
+  { prefix: '/uma/perm', strategy: 'bearer',
+    why: 'a ticket is minted where the PAT was, beside the resources it ' +
+         'names' },
+  { prefix: '/uma/claims', strategy: 'affinity', browser: true,
+    why: 'the requesting party signs in; a ticket carries no cell tag, so ' +
+         'the browser is served where it is pinned' },
   { prefix: '/gnap/biscuit', strategy: 'local',
     why: 'the revoked-biscuit list is the global tier\'s' },
   { prefix: '/gnap/keys', strategy: 'local',
@@ -349,6 +477,21 @@ const ROWS: Row[] = [
          'holding it is asked of the others — by the cell the code ARRIVES ' +
          'at, so not a browser row: a pinned browser relayed to its pin ' +
          'could not be relayed on to the holder' },
+  // THE INTERACTION PAGES' SCRIPT AND API (#578): the script the same file
+  // in every cell; the API placed as the pages it is the door of are.
+  { prefix: '/gnap/interaction.js', strategy: 'local',
+    why: 'the GNAP interaction surface\'s script, the same file in every ' +
+         'cell (#578)' },
+  { prefix: '/gnap-api', strategy: 'local',
+    why: 'the interaction API\'s index, the same in every cell (#578)' },
+  { prefix: '/gnap-api/approve', strategy: 'artifact', browser: true,
+    segment: 3, why: 'the approval page\'s view and answer (#578): an ' +
+    'interaction is found where it was minted (D10); a browser pinned ' +
+    'elsewhere pulls the grant there (gnap_cells.ts)' },
+  { prefix: '/gnap-api/code', strategy: 'handler',
+    handler: 'gnap/gnap_cells.ts',
+    why: 'a user code typed on the code page (#578) carries no tag; the ' +
+         'cell holding it is asked of the others, as at /gnap/code' },
   { prefix: '/gnap/introspect', strategy: 'handler',
     handler: 'gnap/gnap_cells.ts',
     why: 'the token in the body is answered by the cell holding it' },
@@ -357,9 +500,6 @@ const ROWS: Row[] = [
     why: 'a registration carries no token: the resource set is the global ' +
          'tier\'s, and a resource server naming itself by an instance ' +
          'identifier is served where that instance is held' },
-  { prefix: '/gnap/rs', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
-    why: 'the token\'s cell: a jwt-signed token\'s jti carries the tag, ' +
-         'and the four formats that hide it are asked of the other cells' },
   // --- certificate enrollment ---
   { prefix: '/enroll', strategy: 'handler', handler: 'acme/acme.ts',
     why: 'an ACME request names its account by its kid, a new account its ' +
@@ -739,7 +879,7 @@ class CellPlacement {
         // pins it home, or its next request reaches the cell it came
         // through, which holds no such sign-in (STS-AUTHN-0003). Found by
         // the `cells` mode's first run (2026-09-28,
-        // tests/vendored/sts_cells_traveller.js).
+        // tests/protocol/sts_cells_traveller.js).
         if (req.stsCellRelay.reason === 'artifact') {
           const row = CellPlacement.rowFor(String(req.path || '/'));
           if (row && row.browser) {

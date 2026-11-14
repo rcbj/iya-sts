@@ -49,7 +49,9 @@ resource "google_compute_region_health_check" "intercell" {
   unhealthy_threshold = 3
 
   # A TCP connect: the listener asks every caller for a certificate, and a
-  # health check has none to give.
+  # health check has none to give. Three consecutive failures take the
+  # backend out of this pool (the same count as the public check, #330).
+  # They do not replace the VM: autohealing follows the public check.
   tcp_health_check {
     port = local.intercell_port
   }

@@ -1,0 +1,422 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: web_portal_shell.ts
+//
+// ---------------------------------------------------------------------------
+// THE USER PORTAL'S FRAME, DRAWN IN THE BROWSER (#568).
+//
+// What `Portal.shell()`, `page()` and `bare()` drew on the server until the
+// portal became a static application, moved here and drawn from the answer
+// of `GET /account-api/me` (who is signed in, the realm, the language data,
+// the build) instead of from a session:
+//
+//   * ONE SIGNED-IN PAGE: the heading with Refresh, Sign out and the language
+//     chooser in one row, the navigation column, the message or error a just-
+//     finished act left, and the page's cards (`frame()`).
+//   * A PAGE DRAWN FOR NOBODY — an activation, a password reset, the
+//     forgot-password form, an address verification — with no column
+//     (`bare()`).
+//
+// **THE SIGN OUT BUTTON IS IN THE HEADER AND SO IS ON EVERY PAGE**, the
+// decision `portal/CLAUDE.md` records. It is still a form, posting to
+// `/portal/signout`; the runtime answers it (`PortalRuntime.signOut()`), as
+// the console's runtime answers the console's.
+//
+// **REFRESH IS A GET FORM TO THE PAGE IT IS ON** carrying only the
+// parameters a page reads to draw itself (`REFRESH_KEPT` and `<list>Page`),
+// for #538's reason: a value a link put on the URL is never drawn back.
+//
+// **THE ACCOUNT MENU (#561)** follows Sign out, and only where the browser's
+// account list said `authn.multipleAccounts` is on (`accountMenu()`):
+// otherwise the header is the one it always was, to the byte.
+//
+// A `web_` MODULE: it requires other `web_` modules only and logs nothing.
+// ---------------------------------------------------------------------------
+
+import kit = require('./web_portal_kit');
+import DocLinks = require('../common/web_doc_links');
+import WebAccounts = require('../common/web_accounts');
+import WebNavSections = require('../common/web_nav_sections');
+import WebLocale = require('../common/web_locale');
+
+type Json = any;
+
+/**
+ * The parameters the Refresh button and the chooser's return carry besides
+ * `<list>Page`.
+ */
+const REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup', 'enrolled',
+                      // `named` (#470's nickname prompt) went 2026-10-28.
+                      // The DID `/portal/self-issued/did` shows (2026-10-20).
+                      'subject'];
+
+/**
+ * The portal's frame. A static utility class; it holds no state.
+ */
+class PortalShell {
+  /**
+   * The module's `REFRESH_KEPT`.
+   */
+  static readonly REFRESH_KEPT = REFRESH_KEPT;
+  /**
+   * Where the Sign out form posts; the runtime answers it.
+   */
+  static readonly SIGNOUT_PATH = kit.BASE + '/signout';
+  /**
+   * The account menu's list of the browser's other accounts (#561), drawn
+   * again in place when another tab changes them.
+   */
+  static readonly ACCOUNTS_ID = 'sts-account-switch';
+  /**
+   * The `name` every section of the column shares, which makes them one
+   * exclusive group: opening one closes the other (#1229).
+   */
+  static readonly NAV_GROUP = 'sts-portal-nav';
+  /**
+   * Selects the column's open sections, for the runtime's `toggle`.
+   */
+  static readonly OPEN_SECTIONS = '.side details.navsec[open]';
+
+  /**
+   * The parameters of a page's query that a redraw of it keeps.
+   *
+   * @param query - the page's query
+   * @returns `[name, value]` pairs
+   */
+  static keptParams(query: Json): string[][] {
+    return Object.keys(query || {}).filter(function (name) {
+      return REFRESH_KEPT.indexOf(name) >= 0 ||
+        /^[a-z][A-Za-z]*Page$/.test(name);
+    }).map(function (name) {
+      return [name, String(query[name])];
+    });
+  }
+
+  /**
+   * The heading of a page, from the column's table.
+   *
+   * @param active - the page's path
+   * @param t - the translator
+   * @returns the heading, as text
+   */
+  static headingFor(active: string, t: Json): string {
+    const parent = PortalShell.navPathFor(active);
+    const row = kit.navPages().filter(function (one: Json): boolean {
+      return one.path === parent;
+    })[0];
+    // A COMPOSED KEY, built first: the catalog test's scan reads only a
+    // literal key quoted in the call, and holds `NAV` to the catalog by its
+    // `portal` check instead (as `portal.ts` did).
+    const key = 'portal.nav.' + kit.navSlug(row ? row.path : kit.BASE) +
+      '.heading';
+    return t.text(key);
+  }
+
+  // A SUB-PAGE'S PLACE IN THE COLUMN (2026-10-20, the first:
+  // `/portal/self-issued/did`): a page the column does not list is headed,
+  // and marked as open, as the deepest listed page whose path is a prefix
+  // of its own — never the overview's, which every path would match.
+  /**
+   * Returns the column's entry a page belongs under: its own path where the
+   * column lists it, else the deepest listed path it is under.
+   *
+   * @param active - the page's path
+   * @returns the column's path
+   */
+  static navPathFor(active: string): string {
+    const listed = kit.navPages().map(function (one: Json): string {
+      return String(one.path);
+    });
+    if (listed.indexOf(active) >= 0) {
+      return active;
+    }
+    return listed.filter(function (path: string): boolean {
+      return path !== kit.BASE && String(active).indexOf(path + '/') === 0;
+    }).sort(function (a: string, b: string): number {
+      return b.length - a.length;
+    })[0] || active;
+  }
+
+  // THE COLUMN IS THE CONSOLE'S SINCE #1229 (rcbj: "behave the same way as
+  // the Admin Console"): each section a `<details>` of one named group,
+  // collapsed until the reader opens it, one open at a time, the section
+  // holding the page marked `current` open or not. The markup and the rule
+  // are `common/web_nav_sections.ts`'s, shared with `admin-ui/web_shell.ts`;
+  // what is drawn open is the runtime's choice (`openSection`), and a caller
+  // that names none draws every section closed.
+  /**
+   * The navigation column.
+   *
+   * @param active - the page's path
+   * @param t - the translator
+   * @param openSection - optional; the key of the one section drawn open
+   * @returns the column's HTML
+   */
+  static navBar(active: string, t: Json, openSection?: string | null): string {
+    // Composed keys, built first, for `headingFor()`'s reason. A call
+    // whose argument is the literal prefix `'portal.section.'` is read as
+    // the key `section.` (2026-11-01). The real keys are already in the
+    // catalog.
+    const label = function (item: Json): string {
+      const key = 'portal.nav.' + kit.navSlug(item.path) + '.label';
+      return t.html(key);
+    };
+    const holding = PortalShell.sectionKeyOf(active);
+    return '<nav aria-label="' + kit.esc(t.text('portal.shell.navAria')) +
+      '">' + kit.NAV.map(function (section: Json): string {
+        const whatKey = 'portal.section.' + section.key + '.what';
+        const titleKey = 'portal.section.' + section.key + '.title';
+        return WebNavSections.section({
+          group: PortalShell.NAV_GROUP, key: section.key,
+          current: section.key === holding,
+          open: openSection === section.key,
+          what: t.text(whatKey),
+          title: t.html(titleKey),
+          items: section.items.map(function (item: Json): string {
+            // A SPAN AND NOT A LINK for the page that is open, and
+            // `aria-current` for a screen reader.
+            if (item.path === active) {
+              return '<li><span class="here" aria-current="page">' +
+                label(item) + '</span></li>';
+            }
+            return '<li><a href="' + kit.esc(item.path) + '">' + label(item) +
+              '</a></li>';
+          }).join('') });
+      }).join('') + '</nav>';
+  }
+
+  // The section a page lives in, as `navBar()` keys it: the one listing the
+  // page, or the page it is under (`navPathFor()`). A fresh load has nothing
+  // the reader opened, and this is the section the column shows open.
+  /**
+   * The section that holds a page, by its `data-section` key.
+   *
+   * @param active - the page's path
+   * @returns that section's key, or '' when the page is in none
+   */
+  static sectionKeyOf(active: string): string {
+    const parent = PortalShell.navPathFor(active);
+    const found = kit.NAV.filter(function (section: Json): boolean {
+      return section.items.some(function (item: Json): boolean {
+        return item.path === parent;
+      });
+    })[0];
+    return found ? String(found.key) : '';
+  }
+
+  /**
+   * The Refresh button: a GET form reloading the page it is on.
+   *
+   * @param active - the page's path
+   * @param query - the page's query
+   * @param t - the translator
+   * @returns the form's HTML
+   */
+  static refreshForm(active: string, query: Json, t: Json): string {
+    return '<form method="get" action="' + kit.esc(active) + '">' +
+      PortalShell.keptParams(query).map(function (pair) {
+        return '<input type="hidden" name="' + kit.esc(pair[0]) +
+          '" value="' + kit.esc(pair[1]) + '">';
+      }).join('') +
+      '<button class="secondary" title="' +
+      kit.esc(t.text('portal.shell.refreshTitle')) + '">' +
+      t.html('portal.shell.refresh') + '</button></form>';
+  }
+
+  // THE LANGUAGE CHOOSER (#539), the markup `PageLocale.chooser()` draws on
+  // the server's pages: a form posting to the sign-in service's
+  // `/authn/language`, which is not a portal path, so the runtime leaves it to
+  // the browser. That sets the cookie and comes back to `returnTo`, and the
+  // page signs in again silently and is drawn in the new language. The return
+  // carries the realm's prefix itself, because a value is not rewritten.
+  /**
+   * Draws the language chooser.
+   *
+   * @param t - the translator
+   * @param locale - `me.locale`: `negotiated` and `offered`
+   * @param returnTo - the path to come back to, prefix included
+   * @returns the chooser's HTML, or '' when nothing is offered
+   */
+  static chooser(t: Json, locale: Json, returnTo: string): string {
+    const offered: Json[] = (locale && locale.offered) || [];
+    if (!offered.length) {
+      return '';
+    }
+    const current = String(t.locale || '').toLowerCase();
+    const language = current.split('-')[0];
+    const exact = offered.filter(function (one: Json): boolean {
+      return String(one.tag).toLowerCase() === current;
+    })[0];
+    const same = offered.filter(function (one: Json): boolean {
+      return String(one.tag).toLowerCase().split('-')[0] === language;
+    })[0];
+    const chosen = exact || same || offered[0];
+    const selected = chosen.tag;
+    // THE SAME COLLAPSED ROW AS EVERY OTHER PAGE'S (#1289): `WebLocale.row()`.
+    return WebLocale.row(t.html('chooser.label'),
+      { tag: String(chosen.tag), name: String(chosen.name) },
+      '<form class="language-chooser" method="post" ' +
+      'action="/authn/language">' +
+      '<input type="hidden" name="return" value="' + kit.esc(returnTo) +
+      '"><label for="sts-language">' + t.html('chooser.label') +
+      '</label> <select id="sts-language" name="lang">' +
+      offered.map(function (one: Json): string {
+        return '<option value="' + kit.esc(one.tag) + '" lang="' +
+          kit.esc(one.tag) + '"' + (one.tag === selected ? ' selected' : '') +
+          '>' + kit.esc(one.name) + '</option>';
+      }).join('') + '</select> <button type="submit">' +
+      t.html('chooser.change') + '</button></form>');
+  }
+
+  // WHICH BUILD THIS IS is the page footer's (rcbj, 2026-11-14): the
+  // shell's footer, below this wrapper, draws the version with its build
+  // line on every page, the ones nobody is signed in to included. The
+  // version line this wrapper drew under the body was the version said
+  // twice, and went.
+  /**
+   * Wraps a page's body.
+   *
+   * @param inner - the body
+   * @param wide - whether the page has the navigation column
+   * @returns the page's HTML
+   */
+  static page(inner: string, wide: boolean): string {
+    return '<div class="wrap' + (wide ? ' wide' : '') + '">' + inner +
+      '</div>';
+  }
+
+  /**
+   * Draws a signed-in page.
+   *
+   * @param me - `GET /account-api/me`'s answer
+   * @param page - `active` (the page's path), `query`, `message`, `error`,
+   *   `cards` (the body), `prefix` (the realm's), `t` and `openSection`
+   *   (the one section drawn open)
+   * @returns the page's HTML
+   */
+  static frame(me: Json, page: Json): string {
+    const t = page.t;
+    const user = (me && me.user) || {};
+    const kept = PortalShell.keptParams(page.query);
+    const returnTo = (page.prefix || '') + page.active +
+      (kept.length ? '?' + new URLSearchParams(kept).toString() : '');
+    return PortalShell.page(
+      '<header class="pagehead"><div><h1>' +
+      kit.esc(PortalShell.headingFor(page.active, t)) + '</h1>' +
+      '<p class="who">' + PortalShell.photo(user) +
+      t.html('portal.shell.signedInAs',
+        { name: user.username || '' }) + '</p></div>' +
+      '<div class="acts">' +
+      PortalShell.refreshForm(page.active, page.query, t) +
+      '<form method="post" action="' + PortalShell.SIGNOUT_PATH + '">' +
+      '<button class="secondary" title="' +
+      kit.esc(t.text('portal.shell.signOutTitle')) + '">' +
+      t.html('portal.shell.signOut') + '</button></form>' +
+      PortalShell.accountMenu(page.accounts, page.subject, t) +
+      PortalShell.chooser(t, me && me.locale, returnTo) + '</div></header>' +
+      '<div class="shell"><div class="side"><div class="card">' +
+      PortalShell.navBar(page.active, t, page.openSection) +
+      '</div></div><div class="main">' +
+      // Above the flash, so a message does not push the link down (#895).
+      DocLinks.portalHtml(DocLinks.forPortalPage(page.active), t) +
+      (page.error ? '<div class="err">' + kit.esc(page.error) + '</div>' : '') +
+      (page.message ? '<div class="ok">' + kit.esc(page.message) + '</div>'
+                    : '') +
+      page.cards + '</div></div>', true);
+  }
+
+  // THE PERSON'S PHOTO (#719), this realm's own copy and nothing else: its
+  // path is under `/web`, so `img-src 'self'` admits it on any listener. It
+  // repeats the name beside it, so its alternative text is empty.
+  /**
+   * Draws the person's photo beside their name.
+   *
+   * @param user - `GET /account-api/me`'s `user`
+   * @returns the image's HTML, or ''
+   */
+  static photo(user: Json): string {
+    return user && user.photo
+      ? '<img class="menuphoto" alt="" src="' + kit.esc(user.photo) + '">' : '';
+  }
+
+  // THE ACCOUNT MENU (#561): a `<details>`, as the console's is, so it opens
+  // with no script; its controls are BUTTONS the runtime answers on the
+  // press (`PortalRuntime.switchAccount()`, `signInAnother()`), because a
+  // switch is an act — it asks over unsaved changes, aborts what is in
+  // flight and discards the tab's views — and carries an account's key,
+  // never a sid. Sign out is the header's own button, which the runtime
+  // sends to `/logout` with this tab's account as the hint.
+  /**
+   * Draws the account menu, where the browser's account list is on.
+   *
+   * @param list - `GET /authn-api/accounts`'s answer, or nothing
+   * @param subject - this tab's subject
+   * @param t - the translator
+   * @returns the menu's HTML, or '' with the list off
+   */
+  static accountMenu(list: Json, subject: string, t: Json): string {
+    if (!list || !list.enabled) {
+      return '';
+    }
+    return '<details class="usermenu"><summary title="' +
+      kit.esc(t.text('portal.accounts.menuTitle')) + '">' +
+      t.html('portal.accounts.menu') + '</summary>' +
+      '<div class="usermenupanel" id="' + PortalShell.ACCOUNTS_ID + '">' +
+      PortalShell.accountItems(list, subject, t) + '</div></details>';
+  }
+
+  // **SWITCH USER (#751)**: the summary reads *Switch user*, and the panel
+  // is drawn whether or not another account is signed in yet — with none it
+  // says so — closing on the line that says the account this tab leaves
+  // STAYS SIGNED IN, which #561 did and nothing on the page said. The
+  // console's group is the same (`admin-ui/web_shell.ts`,
+  // `accountItems()`); off, neither is drawn.
+  /**
+   * Draws the account menu's items: a button per other signed-in account,
+   * or a line saying there is none, Sign in with another account, and what
+   * a switch keeps.
+   *
+   * @param list - the browser's account list
+   * @param subject - this tab's subject
+   * @param t - the translator
+   * @returns the items' HTML
+   */
+  static accountItems(list: Json, subject: string, t: Json): string {
+    const others = WebAccounts.live(list).filter(function (one: Json) {
+      return String(one.sub || '') !== String(subject || '');
+    });
+    return (others.length
+      ? others.map(function (one: Json): string {
+        const name = WebAccounts.nameOf(one);
+        return '<button type="button" class="linklike" ' +
+          'data-account-action="switch" data-account-key="' +
+          kit.esc(one.key) + '" title="' +
+          kit.esc(t.text('portal.accounts.switchTitle', { user: name })) +
+          '">' + kit.esc(name) +
+          (one.username && one.username !== name
+            ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
+          '</button>';
+      }).join('')
+      : '<p class="usermenunote" data-account-none="1">' +
+        t.html('portal.accounts.none') + '</p>') +
+      '<button type="button" class="linklike" data-account-action="another" ' +
+      'title="' + kit.esc(t.text('portal.accounts.anotherTitle')) + '">' +
+      t.html('portal.accounts.another') + '</button>' +
+      '<p class="usermenunote">' + t.html('portal.accounts.kept') + '</p>';
+  }
+
+  /**
+   * Draws a page for nobody: no column, no header.
+   *
+   * @param inner - the page's cards
+   * @returns the page's HTML
+   */
+  static bare(inner: string): string {
+    return PortalShell.page(inner, false);
+  }
+}
+
+export = PortalShell;

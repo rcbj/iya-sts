@@ -1,0 +1,19 @@
+{
+  "sub": "Ang mga pinayagan mong puwedeng hingin ng bawat application sa identity provider na ito sa ngalan mo. <strong>Agad na umiiral ang pagbawi</strong>: hihinto sa paggana ang bawat token na hawak ng application para sa iyo sa ilalim ng binawi mo — kasama ang token na nagpapahintulot dito na kumilos habang wala ka (<code>offline_access</code>) — at hindi na nito ito mare-renew kahit pumayag ka ulit sa susunod; kailangan ka nitong tanungin muli. Ang pagbawi ng isang bagay ay tumatapos sa lahat ng ibinigay sa application kasabay nito.",
+  "adminNote": "May mga application na pinayagan para sa lahat ng nagpapatakbo ng serbisyong ito, at hindi ka kailanman tinanong tungkol sa mga iyon; nakalista ang mga ito sa ilalim ng <strong>Mga administratibong pahintulot</strong> sa ibaba, at hindi mo ang mga ito mababawi.",
+  "agreed": "Pinayagan mong hingin nito",
+  "when": "Kailan",
+  "withdraw": "Bawiin",
+  "withdrawAll": "Bawiin ang lahat para sa application na ito",
+  "none": "Wala ka pang pinayagang nakatala. Tatanungin ka ng application sa unang pagkakataong may gusto itong gawin sa ngalan mo, at lalabas dito ang sagot mo.",
+  "previous": "Nakaraan",
+  "next": "Susunod",
+  "pageOf": "Pahina {page} ng {pages}",
+  "adminHeading": "Mga administratibong pahintulot",
+  "adminSub": "Pinayagan ito ng nagpapatakbo ng serbisyong ito para sa lahat ng gumagamit ng application, kaya hindi ka tinanong tungkol sa mga ito. Inilapat ang mga ito noong nag-sign in ka sa application. Isang administrator lang ang makakabawi sa mga ito; magtanong sa iyong administrator kung gusto mong may alisin.",
+  "forEverybody": "Pinayagan para sa lahat",
+  "firstApplied": "Unang inilapat sa iyo",
+  "adminNone": "Walang application na gumamit ng pahintulot para sa lahat noong nag-sign in ka rito.",
+  "doneScope": "Binawi: hindi na puwedeng humingi ang {name} ng {scope}. Tatanungin ka nitong muli sa susunod.",
+  "doneApplication": "Binawi: hindi na puwedeng humingi ng anuman ang {name}. Tatanungin ka nitong muli sa susunod."
+}

@@ -38,8 +38,8 @@
 # upstream                                                   mirror path
 ubuntu:latest                                                ubuntu:latest
 debian:bookworm-slim                                         debian:bookworm-slim
-node:24.16.0-bookworm-slim                                   node:24.16.0-bookworm-slim
-node:24.16.0-bookworm                                        node:24.16.0-bookworm
+node:24.22.1-bookworm-slim                                   node:24.22.1-bookworm-slim
+node:24.22.1-bookworm                                        node:24.22.1-bookworm
 rust:1.97-bookworm                                           rust:1.97-bookworm
 golang:1.26.8-bookworm                                       golang:1.26.8-bookworm
 golang:1.26                                                  golang:1.26

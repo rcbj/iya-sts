@@ -71,8 +71,9 @@ const ROOT = path.join(__dirname, '..');
 //
 // First-party service source. NOT scanned, each for a stated reason:
 //   node_modules, node-ldapjs      somebody else's code
-//   common/vendored, the Kerberos  byte-identical copies of the parent
-//     codec modules                project's files, not editable here
+//   (common/crypto_impl and the Kerberos codec modules were skipped here as
+//   the parent project's copies until #1280; they are this service's own and
+//   scanned like the rest)
 //   tests                          assertions, not failures this service raises
 //   docs                           prose
 //   openbao                        a separate container's seed scripts, not
@@ -96,20 +97,25 @@ const ROOT = path.join(__dirname, '..');
 //                                  repository whose files are not this one's
 //                                  (2026-09-16; .dockerignore says the same)
 // ---------------------------------------------------------------------------
+// `companion` (#594): a second container, not the service, whose refusals
+// are its own pages and owe no code in this table.
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    'openbao', 'env', '.git', 'coverage', 'protos',
-                   '.claude'];
+                   '.claude', 'companion'];
 
-const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
-                    'debugger/embedded', 'rust/target'];
+const SKIP_PATHS = ['xacml/conformance', 'debugger/embedded', 'rust/target'];
 
-// kerberos/CLAUDE.md: the eight codec modules are vendored from the parent
-// project and not editable here, despite not living under common/vendored.
-const VENDORED_FILES = ['kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
-                        'kerberos/krb5_gss.js', 'kerberos/krb5_messages.js',
-                        'kerberos/krb5_ndr.js', 'kerberos/krb5_pac.js',
-                        'kerberos/krb5_primitives.js',
-                        'kerberos/krb5_spnego.js'];
+// The two console bundles (#446) are esbuild's output of the `web_` modules
+// this scan already reads; `console.js` is MINIFIED since 2026-10-05, so one
+// of its lines holds a code literal beside a call that writes the page, and
+// the response-line check read that as a code reaching a client.
+// tests/jose_certificate_header.js skips the same two for the same reason.
+// The portal's two (#568), the front door's (#579) and the sign-in
+// screen's (#571) are the same kind of file.
+const GENERATED_FILES = ['admin-ui/console.bundle.js', 'admin-ui/console.js',
+                         'portal/portal.bundle.js', 'portal/portal-spa.js',
+                         'home/home.bundle.js', 'home/home-spa.js',
+                         'authn/authn.bundle.js', 'authn/authn-spa.js'];
 
 function sourceFiles() {
   log.debug("Entering sourceFiles().");
@@ -128,10 +134,15 @@ function sourceFiles() {
         return;
       }
       // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50),
-      // or the Rust conversion's `.rs` (#444).
+      // or the Rust conversion's `.rs` (#444), or the model's `.tsp` (#1579):
+      // a refusal the model declares (AuthZEN's request fields, SPIFFE's
+      // `@refuse`) is raised with the code it names there, by the code that
+      // asks the model for it, so no service file writes that code again.
       const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
-      if (!rust && !isSourceFile(entry.name, names)) return;
-      if (VENDORED_FILES.indexOf(rel) >= 0) return;
+      const model = rel.indexOf('models/') === 0 &&
+        /\.tsp$/.test(entry.name);
+      if (!rust && !model && !isSourceFile(entry.name, names)) return;
+      if (GENERATED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });
     log.debug("Leaving walk().");
@@ -198,6 +209,8 @@ const FAILURE_PATTERNS = [
           '(RFC 9635 section 3.6)' },
   { re: /\binteractionError\(\s*res\b/, before: 4, after: 2,
     what: 'a GNAP interaction page refusing a link, a code or an answer' },
+  { re: /\bapiRefusal\(\s*res\b/, before: 4, after: 2,
+    what: 'a refusal on the GNAP interaction API, /gnap-api (#578)' },
   // ----- ACME / EST / SCEP (2026-09-13) ------------------
   // ===== ACME patterns =====
   { re: /\bacmeProblem\(\s*ctx\b/, before: 4, after: 4,

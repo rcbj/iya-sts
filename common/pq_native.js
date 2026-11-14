@@ -37,13 +37,19 @@
 //
 // **THE KEY FORMS ARE THE STANDARDS', AND UNCHANGED**, which is what makes
 // this a drop-in for keys already stored in product mode. It was checked
-// against @noble/post-quantum before that library was removed: from the same
-// 32-byte ML-DSA seed, 64-byte ML-KEM seed (d || z) or SLH-DSA secret key,
-// OpenSSL derives the same public key, and each verifies the other's
-// signatures. `secretKey` is the EXPANDED key for ML-DSA (FIPS 204's sk) and
-// ML-KEM (FIPS 203's dk), exactly as noble returned it, and SLH-DSA's own
-// secret key; the seeds stay the stored form (RFC 9964 section 3.2,
-// pqc-kem section 8), expanded on each use.
+// against @noble/post-quantum before that library left the signing path:
+// from the same 32-byte ML-DSA seed, 64-byte ML-KEM seed (d || z) or
+// SLH-DSA secret key, OpenSSL derives the same public key, and each
+// verifies the other's signatures. `secretKey` is the EXPANDED key for
+// ML-DSA (FIPS 204's sk) and ML-KEM (FIPS 203's dk), exactly as noble
+// returned it, and SLH-DSA's own secret key; the seeds stay the stored
+// form (RFC 9964 section 3.2, pqc-kem section 8), expanded on each use.
+//
+// Node 24.22.1's OpenSSL exports an ML-DSA or ML-KEM private key as the
+// seed alone. `expandedFrom()` turns that seed back into the expanded
+// key with @noble/post-quantum 0.4.1's `keygen` — the same bytes the
+// older "both" and expanded exports carried. Nothing else here calls
+// that library. Signing stays hedged OpenSSL.
 //
 // THREE THINGS NOBLE HAD AND THIS DOES NOT, each refused loudly rather than
 // approximated:
@@ -59,7 +65,8 @@
 //   3. **HashML-DSA / HashSLH-DSA** (the pre-hash variants). Node's API
 //      signs the pure variants only. Nothing in the service asks for them.
 //
-// A LEAF: it requires node's crypto, bunyan and config and nothing of this
+// A LEAF: it requires node's crypto, bunyan, config and
+// `@noble/post-quantum` (seed expansion only), and nothing of this
 // service, because `crypto.js` and the PKI modules all reach it.
 // ---------------------------------------------------------------------------
 
@@ -70,6 +77,14 @@
 const nodeCrypto = /** @type {any} */ (require('crypto'));
 const bunyan = require('bunyan');
 const config = require('./config');
+// @noble/post-quantum 0.4.1, and only to EXPAND a seed. Node 24.22.1's
+// OpenSSL exports an ML-DSA or ML-KEM private key as the seed alone;
+// keygen below turns that seed back into the FIPS expanded key this
+// module has always returned. Signing, verification, encapsulation and
+// decapsulation stay on OpenSSL. The library's own @noble/hashes 1.8.0
+// stays nested under it; the service's @noble/hashes stays 1.4.0.
+const nobleDsa = require('@noble/post-quantum/ml-dsa.js');
+const nobleKem = require('@noble/post-quantum/ml-kem.js');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -199,6 +214,20 @@ const ML_KEM = {
                    publicKey: 1568, secretKey: 3168, cipherText: 1568 }
 };
 
+// The same parameter sets, as @noble/post-quantum 0.4.1 names them.
+// expandSeed() is their only caller.
+const NOBLE_DSA = {
+  'ML-DSA-44': nobleDsa.ml_dsa44,
+  'ML-DSA-65': nobleDsa.ml_dsa65,
+  'ML-DSA-87': nobleDsa.ml_dsa87
+};
+
+const NOBLE_KEM = {
+  'ML-KEM-512': nobleKem.ml_kem512,
+  'ML-KEM-768': nobleKem.ml_kem768,
+  'ML-KEM-1024': nobleKem.ml_kem1024
+};
+
 function bytes(value) {
   log.debug('Entering bytes().');
   if (value == null) {
@@ -231,10 +260,86 @@ function pkcs8(oidHex, inner) {
                                        type: 'pkcs8' });
 }
 
-// The expanded key out of an OpenSSL-exported PKCS#8. OpenSSL 3.5 writes
-// these keys in the "both" form — SEQUENCE { seed OCTET STRING, expandedKey
-// OCTET STRING } — or the expanded form alone; either way the expanded key
-// is the last OCTET STRING inside the PrivateKeyInfo's privateKey.
+// Which ML-DSA or ML-KEM set a PKCS#8 AlgorithmIdentifier names, and the
+// noble implementation that expands its seed.
+function parameterOf(algId) {
+  log.debug('Entering parameterOf().');
+  const hex = Buffer.from(algId).toString('hex');
+  const families = [
+    { seed: 32, table: ML_DSA, noble: NOBLE_DSA },
+    { seed: 64, table: ML_KEM, noble: NOBLE_KEM }
+  ];
+  for (let f = 0; f < families.length; f++) {
+    const family = families[f];
+    const names = Object.keys(family.table);
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      if (hex.indexOf(family.table[name].oid) >= 0) {
+        log.debug('Leaving parameterOf(). ' + name);
+        return { name: name, set: family.table[name],
+                 seed: family.seed, impl: family.noble[name] };
+      }
+    }
+  }
+  log.debug('Leaving parameterOf(). None.');
+  return null;
+}
+
+// A seed-only export (context tag 0x80) expanded to the FIPS secret key.
+// The seed is copied first: noble's keygen wipes the buffer it is handed.
+function expandSeed(info, algId, choice) {
+  log.debug('Entering expandSeed().');
+  const found = parameterOf(info.subarray(algId.start, algId.end));
+  if (!found || !found.impl) {
+    log.debug('Leaving expandSeed(). Unknown algorithm.');
+    throw new Error('pq_native: a seed-only PKCS#8 names no ML-DSA or ' +
+                    'ML-KEM set this module expands');
+  }
+  const seed = Buffer.from(info.subarray(choice.start, choice.end));
+  if (seed.length !== found.seed) {
+    log.debug('Leaving expandSeed(). Wrong seed size.');
+    throw new Error('pq_native: a ' + found.name + ' seed is ' +
+                    found.seed + ' octets; OpenSSL exported ' +
+                    seed.length);
+  }
+  let expanded;
+  try {
+    expanded = found.impl.keygen(new Uint8Array(seed)).secretKey;
+  } catch (e) {
+    // The seed is already checked. A throw here is noble refusing it,
+    // and the caller needs the set's name beside noble's own sentence.
+    log.debug('Caught in expandSeed(): ' + ((e && e.message) || e));
+    log.debug('Leaving expandSeed().');
+    throw new Error('pq_native: expanding a ' + found.name +
+                    ' seed failed: ' + ((e && e.message) || e));
+  }
+  if (!expanded || expanded.length !== found.set.secretKey) {
+    log.debug('Leaving expandSeed(). Wrong expanded size.');
+    throw new Error('pq_native: expanding a ' + found.name +
+                    ' seed produced ' +
+                    (expanded ? expanded.length : 0) +
+                    ' octets, not ' + found.set.secretKey);
+  }
+  log.debug('Leaving expandSeed().');
+  return Buffer.from(expanded);
+}
+
+// The expanded key out of an OpenSSL-exported PKCS#8. The privateKey
+// OCTET STRING holds one of the three CHOICE forms the LAMPS drafts
+// define:
+//
+//   * tag 0x04 — an expanded key, read as it stands;
+//   * tag 0x30 — the "both" form OpenSSL 3.5.6 wrote, SEQUENCE { seed
+//     OCTET STRING, expandedKey OCTET STRING }, and the expanded key is
+//     the second element;
+//   * tag 0x80 — a seed only. Node 24.22.1 (OpenSSL 3.5.9, nodejs PR
+//     62178) sets ml-dsa.output_formats and ml-kem.output_formats to
+//     seed-only,priv-only in InitCryptoOnce, and OPENSSL_CONF cannot
+//     put the expanded key back. Node keeps no API for the expanded
+//     form it still holds. expandSeed() derives it with
+//     @noble/post-quantum 0.4.1's keygen, the same bytes the older
+//     export carried. sign() and decapsulate() import that expanded
+//     key as PKCS#8 tag 0x04, which node still accepts.
 function expandedFrom(keyObject) {
   log.debug('Entering expandedFrom().');
   const info = keyObject.export({ format: 'der', type: 'pkcs8' });
@@ -253,9 +358,15 @@ function expandedFrom(keyObject) {
     log.debug('Leaving expandedFrom(). Both form.');
     return info.subarray(expanded.start, expanded.end);
   }
-  log.debug('Leaving expandedFrom(). Seed only.');
-  throw new Error('pq_native: OpenSSL exported this key as a seed only, ' +
-                  'with no expanded key to read');
+  if (choice.tag === 0x80) {
+    const expanded = expandSeed(info, algId, choice);
+    log.debug('Leaving expandedFrom(). Seed expanded.');
+    return expanded;
+  }
+  log.debug('Leaving expandedFrom(). Unrecognised form.');
+  throw new Error('pq_native: OpenSSL exported this key in a form with ' +
+                  'no expanded key to read (tag 0x' +
+                  choice.tag.toString(16) + ')');
 }
 
 function signOptions(key, ctx) {

@@ -1,0 +1,3092 @@
+{
+ "attributes": {
+  "algorithmidentifier": {
+   "oid": "2.5.13.40",
+   "names": [
+    "algorithmIdentifier"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Algorithm Identifier Match",
+   "syntax": "1.3.6.1.1.15.7",
+   "singleValue": false
+  },
+  "aliasedobjectname": {
+   "oid": "2.5.4.1",
+   "names": [
+    "aliasedObjectName"
+   ],
+   "source": "RFC 4512",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": true
+  },
+  "altserver": {
+   "oid": "1.3.6.1.4.1.1466.101.120.6",
+   "names": [
+    "altServer"
+   ],
+   "source": "RFC 4512",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.26",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "associateddomain": {
+   "oid": "0.9.2342.19200300.100.1.37",
+   "names": [
+    "associatedDomain"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreIA5Match",
+   "substr": "caseIgnoreIA5SubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.26",
+   "singleValue": false
+  },
+  "associatedname": {
+   "oid": "0.9.2342.19200300.100.1.38",
+   "names": [
+    "associatedName"
+   ],
+   "source": "RFC 4524",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": false
+  },
+  "attributetypes": {
+   "oid": "2.5.21.5",
+   "names": [
+    "attributeTypes"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.3",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "audio": {
+   "oid": "0.9.2342.19200300.100.1.55",
+   "names": [
+    "audio"
+   ],
+   "source": "RFC 2798",
+   "equality": "octetStringMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.40{250000}",
+   "singleValue": false
+  },
+  "authorityrevocationlist": {
+   "oid": "2.5.4.38",
+   "names": [
+    "authorityRevocationList"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 authority revocation list",
+   "equality": "certificateListExactMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.9",
+   "singleValue": false
+  },
+  "bitstringmatch": {
+   "oid": "2.5.13.16",
+   "names": [
+    "bitStringMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.6",
+   "singleValue": false
+  },
+  "bootfile": {
+   "oid": "1.3.6.1.1.1.1.24",
+   "names": [
+    "bootFile"
+   ],
+   "source": "RFC 2307",
+   "desc": "Boot image name",
+   "equality": "caseExactIA5Match",
+   "syntax": "IA5String",
+   "singleValue": false
+  },
+  "bootparameter": {
+   "oid": "1.3.6.1.1.1.1.23",
+   "names": [
+    "bootParameter"
+   ],
+   "source": "RFC 2307",
+   "desc": "rpc.bootparamd parameter",
+   "syntax": "bootParameterSyntax",
+   "singleValue": false
+  },
+  "buildingname": {
+   "oid": "0.9.2342.19200300.100.1.48",
+   "names": [
+    "buildingName"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "businesscategory": {
+   "oid": "2.5.4.15",
+   "names": [
+    "businessCategory"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "c": {
+   "oid": "2.5.4.6",
+   "names": [
+    "c"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.11",
+   "singleValue": true,
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "cacertificate": {
+   "oid": "2.5.4.37",
+   "names": [
+    "cACertificate"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 CA certificate",
+   "equality": "certificateExactMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.8",
+   "singleValue": false
+  },
+  "carlicense": {
+   "oid": "2.16.840.1.113730.3.1.1",
+   "names": [
+    "carLicense"
+   ],
+   "source": "RFC 2798",
+   "desc": "vehicle license or registration plate",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "caseexactmatch": {
+   "oid": "2.5.13.5",
+   "names": [
+    "caseExactMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "caseexactsubstringsmatch": {
+   "oid": "2.5.13.7",
+   "names": [
+    "caseExactSubstringsMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.58",
+   "singleValue": false
+  },
+  "caseignoreia5match": {
+   "oid": "1.3.6.1.4.1.1466.109.114.2",
+   "names": [
+    "caseIgnoreIA5Match"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.26",
+   "singleValue": false
+  },
+  "caseignoreia5substringsmatch": {
+   "oid": "1.3.6.1.4.1.1466.109.114.3",
+   "names": [
+    "caseIgnoreIA5SubstringsMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.58",
+   "singleValue": false
+  },
+  "caseignorelistmatch": {
+   "oid": "2.5.13.11",
+   "names": [
+    "caseIgnoreListMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.41",
+   "singleValue": false
+  },
+  "caseignorelistsubstringsmatch": {
+   "oid": "2.5.13.12",
+   "names": [
+    "caseIgnoreListSubstringsMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.58",
+   "singleValue": false
+  },
+  "caseignorematch": {
+   "oid": "2.5.13.2",
+   "names": [
+    "caseIgnoreMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "certificateexactmatch": {
+   "oid": "2.5.13.34",
+   "names": [
+    "certificateExactMatch"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Certificate Exact Match",
+   "syntax": "1.3.6.1.1.15.1",
+   "singleValue": false
+  },
+  "certificatelistexactmatch": {
+   "oid": "2.5.13.38",
+   "names": [
+    "certificateListExactMatch"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Certificate List Exact Match",
+   "syntax": "1.3.6.1.1.15.5",
+   "singleValue": false
+  },
+  "certificatelistmatch": {
+   "oid": "2.5.13.39",
+   "names": [
+    "certificateListMatch"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Certificate List Match",
+   "syntax": "1.3.6.1.1.15.6",
+   "singleValue": false
+  },
+  "certificatematch": {
+   "oid": "2.5.13.35",
+   "names": [
+    "certificateMatch"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Certificate Match",
+   "syntax": "1.3.6.1.1.15.2",
+   "singleValue": false
+  },
+  "certificatepairexactmatch": {
+   "oid": "2.5.13.36",
+   "names": [
+    "certificatePairExactMatch"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Certificate Pair Exact Match",
+   "syntax": "1.3.6.1.1.15.3",
+   "singleValue": false
+  },
+  "certificatepairmatch": {
+   "oid": "2.5.13.37",
+   "names": [
+    "certificatePairMatch"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 Certificate Pair Match",
+   "syntax": "1.3.6.1.1.15.4",
+   "singleValue": false
+  },
+  "certificaterevocationlist": {
+   "oid": "2.5.4.39",
+   "names": [
+    "certificateRevocationList"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 certificate revocation list",
+   "equality": "certificateListExactMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.9",
+   "singleValue": false
+  },
+  "cn": {
+   "oid": "2.5.4.3",
+   "names": [
+    "cn"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "co": {
+   "oid": "0.9.2342.19200300.100.1.43",
+   "names": [
+    "co"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "createtimestamp": {
+   "oid": "2.5.18.1",
+   "names": [
+    "createTimestamp"
+   ],
+   "source": "RFC 4512",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "creatorsname": {
+   "oid": "2.5.18.3",
+   "names": [
+    "creatorsName"
+   ],
+   "source": "RFC 4512",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "crosscertificatepair": {
+   "oid": "2.5.4.40",
+   "names": [
+    "crossCertificatePair"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 cross certificate pair",
+   "equality": "certificatePairExactMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.10",
+   "singleValue": false
+  },
+  "dc": {
+   "oid": "0.9.2342.19200300.100.1.25",
+   "names": [
+    "dc"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreIA5Match",
+   "substr": "caseIgnoreIA5SubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.26",
+   "singleValue": true
+  },
+  "deltarevocationlist": {
+   "oid": "2.5.4.53",
+   "names": [
+    "deltaRevocationList"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 delta revocation list",
+   "equality": "certificateListExactMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.9",
+   "singleValue": false
+  },
+  "departmentnumber": {
+   "oid": "2.16.840.1.113730.3.1.2",
+   "names": [
+    "departmentNumber"
+   ],
+   "source": "RFC 2798",
+   "desc": "identifies a department within an organization",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "description": {
+   "oid": "2.5.4.13",
+   "names": [
+    "description"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "destinationindicator": {
+   "oid": "2.5.4.27",
+   "names": [
+    "destinationIndicator"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.44",
+   "singleValue": false
+  },
+  "displayname": {
+   "oid": "2.16.840.1.113730.3.1.241",
+   "names": [
+    "displayName"
+   ],
+   "source": "RFC 2798",
+   "desc": "preferred name of a person to be used when displaying entries",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": true
+  },
+  "distinguishedname": {
+   "oid": "2.5.4.49",
+   "names": [
+    "distinguishedName"
+   ],
+   "source": "RFC 4519",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": false
+  },
+  "distinguishednamematch": {
+   "oid": "2.5.13.1",
+   "names": [
+    "distinguishedNameMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": false
+  },
+  "ditcontentrules": {
+   "oid": "2.5.21.2",
+   "names": [
+    "dITContentRules"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.16",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "ditstructurerules": {
+   "oid": "2.5.21.1",
+   "names": [
+    "dITStructureRules"
+   ],
+   "source": "RFC 4512",
+   "equality": "integerFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.17",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "dnqualifier": {
+   "oid": "2.5.4.46",
+   "names": [
+    "dnQualifier"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "ordering": "caseIgnoreOrderingMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.44",
+   "singleValue": false
+  },
+  "documentauthor": {
+   "oid": "0.9.2342.19200300.100.1.14",
+   "names": [
+    "documentAuthor"
+   ],
+   "source": "RFC 4524",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": false
+  },
+  "documentidentifier": {
+   "oid": "0.9.2342.19200300.100.1.11",
+   "names": [
+    "documentIdentifier"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "documentlocation": {
+   "oid": "0.9.2342.19200300.100.1.15",
+   "names": [
+    "documentLocation"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "documentpublisher": {
+   "oid": "0.9.2342.19200300.100.1.56",
+   "names": [
+    "documentPublisher"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "documenttitle": {
+   "oid": "0.9.2342.19200300.100.1.12",
+   "names": [
+    "documentTitle"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "documentversion": {
+   "oid": "0.9.2342.19200300.100.1.13",
+   "names": [
+    "documentVersion"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "drink": {
+   "oid": "0.9.2342.19200300.100.1.5",
+   "names": [
+    "drink"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "employeenumber": {
+   "oid": "2.16.840.1.113730.3.1.3",
+   "names": [
+    "employeeNumber"
+   ],
+   "source": "RFC 2798",
+   "desc": "numerically identifies an employee within an organization",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": true
+  },
+  "employeetype": {
+   "oid": "2.16.840.1.113730.3.1.4",
+   "names": [
+    "employeeType"
+   ],
+   "source": "RFC 2798",
+   "desc": "type of employment for a person",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "enhancedsearchguide": {
+   "oid": "2.5.4.47",
+   "names": [
+    "enhancedSearchGuide"
+   ],
+   "source": "RFC 4519",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.21",
+   "singleValue": false
+  },
+  "entrydn": {
+   "oid": "1.3.6.1.1.20",
+   "names": [
+    "entryDN"
+   ],
+   "source": "RFC 5020",
+   "desc": "DN of the entry",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "entryuuid": {
+   "oid": "1.3.6.1.1.16.4",
+   "names": [
+    "entryUUID"
+   ],
+   "source": "RFC 4530",
+   "desc": "UUID of the entry",
+   "equality": "uuidMatch",
+   "ordering": "uuidOrderingMatch",
+   "syntax": "1.3.6.1.1.16.1",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "facsimiletelephonenumber": {
+   "oid": "2.5.4.23",
+   "names": [
+    "facsimileTelephoneNumber"
+   ],
+   "source": "RFC 4519",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.22",
+   "singleValue": false
+  },
+  "gecos": {
+   "oid": "1.3.6.1.1.1.1.2",
+   "names": [
+    "gecos"
+   ],
+   "source": "RFC 2307",
+   "desc": "The GECOS field; the common name",
+   "equality": "caseIgnoreIA5Match",
+   "syntax": "IA5String",
+   "singleValue": true
+  },
+  "generationqualifier": {
+   "oid": "2.5.4.44",
+   "names": [
+    "generationQualifier"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "gidnumber": {
+   "oid": "1.3.6.1.1.1.1.1",
+   "names": [
+    "gidNumber"
+   ],
+   "source": "RFC 2307",
+   "desc": "An integer uniquely identifying a group in an\n                administrative domain",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "givenname": {
+   "oid": "2.5.4.42",
+   "names": [
+    "givenName"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "governingstructurerule": {
+   "oid": "2.5.21.10",
+   "names": [
+    "governingStructureRule"
+   ],
+   "source": "RFC 4512",
+   "equality": "integerMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "homedirectory": {
+   "oid": "1.3.6.1.1.1.1.3",
+   "names": [
+    "homeDirectory"
+   ],
+   "source": "RFC 2307",
+   "desc": "The absolute path to the home directory",
+   "equality": "caseExactIA5Match",
+   "syntax": "IA5String",
+   "singleValue": true
+  },
+  "homephone": {
+   "oid": "0.9.2342.19200300.100.1.20",
+   "names": [
+    "homePhone"
+   ],
+   "source": "RFC 4524",
+   "equality": "telephoneNumberMatch",
+   "substr": "telephoneNumberSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.50",
+   "singleValue": false
+  },
+  "homepostaladdress": {
+   "oid": "0.9.2342.19200300.100.1.39",
+   "names": [
+    "homePostalAddress"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreListMatch",
+   "substr": "caseIgnoreListSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.41",
+   "singleValue": false
+  },
+  "host": {
+   "oid": "0.9.2342.19200300.100.1.9",
+   "names": [
+    "host"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "houseidentifier": {
+   "oid": "2.5.4.51",
+   "names": [
+    "houseIdentifier"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "info": {
+   "oid": "0.9.2342.19200300.100.1.4",
+   "names": [
+    "info"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{2048}",
+   "singleValue": false
+  },
+  "initials": {
+   "oid": "2.5.4.43",
+   "names": [
+    "initials"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "internationalisdnnumber": {
+   "oid": "2.5.4.25",
+   "names": [
+    "internationalISDNNumber"
+   ],
+   "source": "RFC 4519",
+   "equality": "numericStringMatch",
+   "substr": "numericStringSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.36",
+   "singleValue": false
+  },
+  "iphostnumber": {
+   "oid": "1.3.6.1.1.1.1.19",
+   "names": [
+    "ipHostNumber"
+   ],
+   "source": "RFC 2307",
+   "desc": "IP address as a dotted decimal, eg. 192.168.1.1,\n                omitting leading zeros",
+   "equality": "caseIgnoreIA5Match",
+   "syntax": "IA5String{128}",
+   "singleValue": false
+  },
+  "ipnetmasknumber": {
+   "oid": "1.3.6.1.1.1.1.21",
+   "names": [
+    "ipNetmaskNumber"
+   ],
+   "source": "RFC 2307",
+   "desc": "IP netmask as a dotted decimal, eg. 255.255.255.0,\n                omitting leading zeros",
+   "equality": "caseIgnoreIA5Match",
+   "syntax": "IA5String{128}",
+   "singleValue": true
+  },
+  "ipnetworknumber": {
+   "oid": "1.3.6.1.1.1.1.20",
+   "names": [
+    "ipNetworkNumber"
+   ],
+   "source": "RFC 2307",
+   "desc": "IP network as a dotted decimal, eg. 192.168,\n\n\n\n\n\n                omitting leading zeros",
+   "equality": "caseIgnoreIA5Match",
+   "syntax": "IA5String{128}",
+   "singleValue": true
+  },
+  "ipprotocolnumber": {
+   "oid": "1.3.6.1.1.1.1.17",
+   "names": [
+    "ipProtocolNumber"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "ipserviceport": {
+   "oid": "1.3.6.1.1.1.1.15",
+   "names": [
+    "ipServicePort"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "ipserviceprotocol": {
+   "oid": "1.3.6.1.1.1.1.16",
+   "names": [
+    "ipServiceProtocol"
+   ],
+   "source": "RFC 2307",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "jpegphoto": {
+   "oid": "0.9.2342.19200300.100.1.60",
+   "names": [
+    "jpegPhoto"
+   ],
+   "source": "RFC 2798",
+   "desc": "a JPEG image",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.28",
+   "singleValue": false
+  },
+  "l": {
+   "oid": "2.5.4.7",
+   "names": [
+    "l"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "labeleduri": {
+   "oid": "1.3.6.1.4.1.250.1.57",
+   "names": [
+    "labeledURI"
+   ],
+   "source": "RFC 2798",
+   "equality": "caseExactMatch",
+   "substr": "caseExactSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "ldapsyntaxes": {
+   "oid": "1.3.6.1.4.1.1466.101.120.16",
+   "names": [
+    "ldapSyntaxes"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.54",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "loginshell": {
+   "oid": "1.3.6.1.1.1.1.4",
+   "names": [
+    "loginShell"
+   ],
+   "source": "RFC 2307",
+   "desc": "The path to the login shell",
+   "equality": "caseExactIA5Match",
+   "syntax": "IA5String",
+   "singleValue": true
+  },
+  "macaddress": {
+   "oid": "1.3.6.1.1.1.1.22",
+   "names": [
+    "macAddress"
+   ],
+   "source": "RFC 2307",
+   "desc": "MAC address in maximal, colon separated hex\n                notation, eg. 00:00:92:90:ee:e2",
+   "equality": "caseIgnoreIA5Match",
+   "syntax": "IA5String{128}",
+   "singleValue": false
+  },
+  "mail": {
+   "oid": "0.9.2342.19200300.100.1.3",
+   "names": [
+    "mail"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreIA5Match",
+   "substr": "caseIgnoreIA5SubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.26{256}",
+   "singleValue": false
+  },
+  "manager": {
+   "oid": "0.9.2342.19200300.100.1.10",
+   "names": [
+    "manager"
+   ],
+   "source": "RFC 4524",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": false
+  },
+  "matchingrules": {
+   "oid": "2.5.21.4",
+   "names": [
+    "matchingRules"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.30",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "matchingruleuse": {
+   "oid": "2.5.21.8",
+   "names": [
+    "matchingRuleUse"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.31",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "member": {
+   "oid": "2.5.4.31",
+   "names": [
+    "member"
+   ],
+   "source": "RFC 4519",
+   "sup": "distinguishedName",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "equality": "distinguishedNameMatch"
+  },
+  "membernisnetgroup": {
+   "oid": "1.3.6.1.1.1.1.13",
+   "names": [
+    "memberNisNetgroup"
+   ],
+   "source": "RFC 2307",
+   "equality": "caseExactIA5Match",
+   "syntax": "IA5String",
+   "singleValue": false
+  },
+  "memberuid": {
+   "oid": "1.3.6.1.1.1.1.12",
+   "names": [
+    "memberUid"
+   ],
+   "source": "RFC 2307",
+   "equality": "caseExactIA5Match",
+   "syntax": "IA5String",
+   "singleValue": false
+  },
+  "mobile": {
+   "oid": "0.9.2342.19200300.100.1.41",
+   "names": [
+    "mobile"
+   ],
+   "source": "RFC 4524",
+   "equality": "telephoneNumberMatch",
+   "substr": "telephoneNumberSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.50",
+   "singleValue": false
+  },
+  "modifiersname": {
+   "oid": "2.5.18.4",
+   "names": [
+    "modifiersName"
+   ],
+   "source": "RFC 4512",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "modifytimestamp": {
+   "oid": "2.5.18.2",
+   "names": [
+    "modifyTimestamp"
+   ],
+   "source": "RFC 4512",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "name": {
+   "oid": "2.5.4.41",
+   "names": [
+    "name"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "nameforms": {
+   "oid": "2.5.21.7",
+   "names": [
+    "nameForms"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.35",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "namingcontexts": {
+   "oid": "1.3.6.1.4.1.1466.101.120.5",
+   "names": [
+    "namingContexts"
+   ],
+   "source": "RFC 4512",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "nismapentry": {
+   "oid": "1.3.6.1.1.1.1.27",
+   "names": [
+    "nisMapEntry"
+   ],
+   "source": "RFC 2307",
+   "equality": "caseExactIA5Match",
+   "syntax": "IA5String{1024}",
+   "singleValue": true
+  },
+  "nismapname": {
+   "oid": "1.3.6.1.1.1.1.26",
+   "names": [
+    "nisMapName"
+   ],
+   "source": "RFC 2307",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "nisnetgrouptriple": {
+   "oid": "1.3.6.1.1.1.1.14",
+   "names": [
+    "nisNetgroupTriple"
+   ],
+   "source": "RFC 2307",
+   "desc": "Netgroup triple",
+   "syntax": "nisNetgroupTripleSyntax",
+   "singleValue": false
+  },
+  "numericstringmatch": {
+   "oid": "2.5.13.8",
+   "names": [
+    "numericStringMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.36",
+   "singleValue": false
+  },
+  "o": {
+   "oid": "2.5.4.10",
+   "names": [
+    "o"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "objectclass": {
+   "oid": "2.5.4.0",
+   "names": [
+    "objectClass"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "singleValue": false
+  },
+  "objectclasses": {
+   "oid": "2.5.21.6",
+   "names": [
+    "objectClasses"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierFirstComponentMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.37",
+   "usage": "directoryOperation",
+   "singleValue": false
+  },
+  "objectidentifiermatch": {
+   "oid": "2.5.13.0",
+   "names": [
+    "objectIdentifierMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "singleValue": false
+  },
+  "octetstringmatch": {
+   "oid": "2.5.13.17",
+   "names": [
+    "octetStringMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.40",
+   "singleValue": false
+  },
+  "oncrpcnumber": {
+   "oid": "1.3.6.1.1.1.1.18",
+   "names": [
+    "oncRpcNumber"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "organizationalstatus": {
+   "oid": "0.9.2342.19200300.100.1.45",
+   "names": [
+    "organizationalStatus"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "ou": {
+   "oid": "2.5.4.11",
+   "names": [
+    "ou"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "owner": {
+   "oid": "2.5.4.32",
+   "names": [
+    "owner"
+   ],
+   "source": "RFC 4519",
+   "sup": "distinguishedName",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "equality": "distinguishedNameMatch"
+  },
+  "pager": {
+   "oid": "0.9.2342.19200300.100.1.42",
+   "names": [
+    "pager"
+   ],
+   "source": "RFC 4524",
+   "equality": "telephoneNumberMatch",
+   "substr": "telephoneNumberSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.50",
+   "singleValue": false
+  },
+  "personaltitle": {
+   "oid": "0.9.2342.19200300.100.1.40",
+   "names": [
+    "personalTitle"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "physicaldeliveryofficename": {
+   "oid": "2.5.4.19",
+   "names": [
+    "physicalDeliveryOfficeName"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "postaladdress": {
+   "oid": "2.5.4.16",
+   "names": [
+    "postalAddress"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreListMatch",
+   "substr": "caseIgnoreListSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.41",
+   "singleValue": false
+  },
+  "postalcode": {
+   "oid": "2.5.4.17",
+   "names": [
+    "postalCode"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "postofficebox": {
+   "oid": "2.5.4.18",
+   "names": [
+    "postOfficeBox"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "preferreddeliverymethod": {
+   "oid": "2.5.4.28",
+   "names": [
+    "preferredDeliveryMethod"
+   ],
+   "source": "RFC 4519",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.14",
+   "singleValue": true
+  },
+  "preferredlanguage": {
+   "oid": "2.16.840.1.113730.3.1.39",
+   "names": [
+    "preferredLanguage"
+   ],
+   "source": "RFC 2798",
+   "desc": "preferred written or spoken language for a person",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": true
+  },
+  "pwdaccountlockedtime": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.17",
+   "names": [
+    "pwdAccountLockedTime"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The time an user account was locked",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "pwdallowuserchange": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.14",
+   "names": [
+    "pwdAllowUserChange"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "booleanMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.7",
+   "singleValue": true
+  },
+  "pwdattribute": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.1",
+   "names": [
+    "pwdAttribute"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "objectIdentifierMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "singleValue": false
+  },
+  "pwdchangedtime": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.16",
+   "names": [
+    "pwdChangedTime"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The time the password was last changed",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "pwdcheckquality": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.5",
+   "names": [
+    "pwdCheckQuality"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdendtime": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.28",
+   "names": [
+    "pwdEndTime"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The time the password becomes disabled",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "pwdexpirewarning": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.7",
+   "names": [
+    "pwdExpireWarning"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdfailurecountinterval": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.12",
+   "names": [
+    "pwdFailureCountInterval"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdfailuretime": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.19",
+   "names": [
+    "pwdFailureTime"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The timestamps of the last consecutive authentication\n         failures",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": false,
+   "noUserModification": true
+  },
+  "pwdgraceauthnlimit": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.8",
+   "names": [
+    "pwdGraceAuthNLimit"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdgraceexpire": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.30",
+   "names": [
+    "pwdGraceExpire"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdgraceusetime": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.21",
+   "names": [
+    "pwdGraceUseTime"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The timestamps of the grace authentication after the\n         password has expired",
+   "equality": "generalizedTimeMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": false,
+   "noUserModification": true
+  },
+  "pwdhistory": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.20",
+   "names": [
+    "pwdHistory"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The history of user s passwords",
+   "equality": "octetStringMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.40",
+   "usage": "directoryOperation",
+   "singleValue": false,
+   "noUserModification": true
+  },
+  "pwdinhistory": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.4",
+   "names": [
+    "pwdInHistory"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdlastsuccess": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.29",
+   "names": [
+    "pwdLastSuccess"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The timestamp of the last successful authentication",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "pwdlockout": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.9",
+   "names": [
+    "pwdLockout"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "booleanMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.7",
+   "singleValue": true
+  },
+  "pwdlockoutduration": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.10",
+   "names": [
+    "pwdLockoutDuration"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmaxage": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.3",
+   "names": [
+    "pwdMaxAge"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmaxdelay": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.25",
+   "names": [
+    "pwdMaxDelay"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmaxfailure": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.11",
+   "names": [
+    "pwdMaxFailure"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmaxidle": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.26",
+   "names": [
+    "pwdMaxIdle"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmaxlength": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.31",
+   "names": [
+    "pwdMaxLength"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmaxrecordedfailure": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.32",
+   "names": [
+    "pwdMaxRecordedFailure"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdminage": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.2",
+   "names": [
+    "pwdMinAge"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmindelay": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.24",
+   "names": [
+    "pwdMinDelay"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdminlength": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.6",
+   "names": [
+    "pwdMinLength"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "integerMatch",
+   "ordering": "integerOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "singleValue": true
+  },
+  "pwdmustchange": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.13",
+   "names": [
+    "pwdMustChange"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "booleanMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.7",
+   "singleValue": true
+  },
+  "pwdpolicysubentry": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.23",
+   "names": [
+    "pwdPolicySubentry"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The pwdPolicy subentry in effect for this object",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "pwdreset": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.22",
+   "names": [
+    "pwdReset"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The indication that the password has been reset",
+   "equality": "booleanMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.7",
+   "usage": "directoryOperation",
+   "singleValue": true
+  },
+  "pwdsafemodify": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.15",
+   "names": [
+    "pwdSafeModify"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "equality": "booleanMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.7",
+   "singleValue": true
+  },
+  "pwdstarttime": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.1.27",
+   "names": [
+    "pwdStartTime"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "desc": "The time the password becomes enabled",
+   "equality": "generalizedTimeMatch",
+   "ordering": "generalizedTimeOrderingMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.24",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "registeredaddress": {
+   "oid": "2.5.4.26",
+   "names": [
+    "registeredAddress"
+   ],
+   "source": "RFC 4519",
+   "sup": "postalAddress",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.41",
+   "singleValue": false,
+   "equality": "caseIgnoreListMatch",
+   "substr": "caseIgnoreListSubstringsMatch"
+  },
+  "roleoccupant": {
+   "oid": "2.5.4.33",
+   "names": [
+    "roleOccupant"
+   ],
+   "source": "RFC 4519",
+   "sup": "distinguishedName",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "equality": "distinguishedNameMatch"
+  },
+  "roomnumber": {
+   "oid": "0.9.2342.19200300.100.1.6",
+   "names": [
+    "roomNumber"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "searchguide": {
+   "oid": "2.5.4.14",
+   "names": [
+    "searchGuide"
+   ],
+   "source": "RFC 4519",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.25",
+   "singleValue": false
+  },
+  "secretary": {
+   "oid": "0.9.2342.19200300.100.1.21",
+   "names": [
+    "secretary"
+   ],
+   "source": "RFC 4524",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "singleValue": false
+  },
+  "seealso": {
+   "oid": "2.5.4.34",
+   "names": [
+    "seeAlso"
+   ],
+   "source": "RFC 4519",
+   "sup": "distinguishedName",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "equality": "distinguishedNameMatch"
+  },
+  "serialnumber": {
+   "oid": "2.5.4.5",
+   "names": [
+    "serialNumber"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.44",
+   "singleValue": false
+  },
+  "shadowexpire": {
+   "oid": "1.3.6.1.1.1.1.10",
+   "names": [
+    "shadowExpire"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "shadowflag": {
+   "oid": "1.3.6.1.1.1.1.11",
+   "names": [
+    "shadowFlag"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "shadowinactive": {
+   "oid": "1.3.6.1.1.1.1.9",
+   "names": [
+    "shadowInactive"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "shadowlastchange": {
+   "oid": "1.3.6.1.1.1.1.5",
+   "names": [
+    "shadowLastChange"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "shadowmax": {
+   "oid": "1.3.6.1.1.1.1.7",
+   "names": [
+    "shadowMax"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "shadowmin": {
+   "oid": "1.3.6.1.1.1.1.6",
+   "names": [
+    "shadowMin"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "shadowwarning": {
+   "oid": "1.3.6.1.1.1.1.8",
+   "names": [
+    "shadowWarning"
+   ],
+   "source": "RFC 2307",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "sn": {
+   "oid": "2.5.4.4",
+   "names": [
+    "sn"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "st": {
+   "oid": "2.5.4.8",
+   "names": [
+    "st"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "street": {
+   "oid": "2.5.4.9",
+   "names": [
+    "street"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "structuralobjectclass": {
+   "oid": "2.5.21.9",
+   "names": [
+    "structuralObjectClass"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "subschemasubentry": {
+   "oid": "2.5.18.10",
+   "names": [
+    "subschemaSubentry"
+   ],
+   "source": "RFC 4512",
+   "equality": "distinguishedNameMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.12",
+   "usage": "directoryOperation",
+   "singleValue": true,
+   "noUserModification": true
+  },
+  "supportedalgorithms": {
+   "oid": "2.5.4.52",
+   "names": [
+    "supportedAlgorithms"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 supported algorithms",
+   "equality": "algorithmIdentifierMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.49",
+   "singleValue": false
+  },
+  "supportedcontrol": {
+   "oid": "1.3.6.1.4.1.1466.101.120.13",
+   "names": [
+    "supportedControl"
+   ],
+   "source": "RFC 4512",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "supportedextension": {
+   "oid": "1.3.6.1.4.1.1466.101.120.7",
+   "names": [
+    "supportedExtension"
+   ],
+   "source": "RFC 4512",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "supportedfeatures": {
+   "oid": "1.3.6.1.4.1.4203.1.3.5",
+   "names": [
+    "supportedFeatures"
+   ],
+   "source": "RFC 4512",
+   "equality": "objectIdentifierMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.38",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "supportedldapversion": {
+   "oid": "1.3.6.1.4.1.1466.101.120.15",
+   "names": [
+    "supportedLDAPVersion"
+   ],
+   "source": "RFC 4512",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.27",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "supportedsaslmechanisms": {
+   "oid": "1.3.6.1.4.1.1466.101.120.14",
+   "names": [
+    "supportedSASLMechanisms"
+   ],
+   "source": "RFC 4512",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "usage": "dSAOperation",
+   "singleValue": false
+  },
+  "telephonenumber": {
+   "oid": "2.5.4.20",
+   "names": [
+    "telephoneNumber"
+   ],
+   "source": "RFC 4519",
+   "equality": "telephoneNumberMatch",
+   "substr": "telephoneNumberSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.50",
+   "singleValue": false
+  },
+  "telephonenumbermatch": {
+   "oid": "2.5.13.20",
+   "names": [
+    "telephoneNumberMatch"
+   ],
+   "source": "RFC 2798",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.50",
+   "singleValue": false
+  },
+  "teletexterminalidentifier": {
+   "oid": "2.5.4.22",
+   "names": [
+    "teletexTerminalIdentifier"
+   ],
+   "source": "RFC 4519",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.51",
+   "singleValue": false
+  },
+  "telexnumber": {
+   "oid": "2.5.4.21",
+   "names": [
+    "telexNumber"
+   ],
+   "source": "RFC 4519",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.52",
+   "singleValue": false
+  },
+  "title": {
+   "oid": "2.5.4.12",
+   "names": [
+    "title"
+   ],
+   "source": "RFC 4519",
+   "sup": "name",
+   "singleValue": false,
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch"
+  },
+  "uid": {
+   "oid": "0.9.2342.19200300.100.1.1",
+   "names": [
+    "uid"
+   ],
+   "source": "RFC 4519",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15",
+   "singleValue": false
+  },
+  "uidnumber": {
+   "oid": "1.3.6.1.1.1.1.0",
+   "names": [
+    "uidNumber"
+   ],
+   "source": "RFC 2307",
+   "desc": "An integer uniquely identifying a user in an\n                administrative domain",
+   "equality": "integerMatch",
+   "syntax": "INTEGER",
+   "singleValue": true
+  },
+  "uniqueidentifier": {
+   "oid": "0.9.2342.19200300.100.1.44",
+   "names": [
+    "uniqueIdentifier"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "uniquemember": {
+   "oid": "2.5.4.50",
+   "names": [
+    "uniqueMember"
+   ],
+   "source": "RFC 4519",
+   "equality": "uniqueMemberMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.34",
+   "singleValue": false
+  },
+  "usercertificate": {
+   "oid": "2.5.4.36",
+   "names": [
+    "userCertificate"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 user certificate",
+   "equality": "certificateExactMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.8",
+   "singleValue": false
+  },
+  "userclass": {
+   "oid": "0.9.2342.19200300.100.1.8",
+   "names": [
+    "userClass"
+   ],
+   "source": "RFC 4524",
+   "equality": "caseIgnoreMatch",
+   "substr": "caseIgnoreSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.15{256}",
+   "singleValue": false
+  },
+  "userpassword": {
+   "oid": "2.5.4.35",
+   "names": [
+    "userPassword"
+   ],
+   "source": "RFC 4519",
+   "equality": "octetStringMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.40",
+   "singleValue": false
+  },
+  "userpkcs12": {
+   "oid": "2.16.840.1.113730.3.1.216",
+   "names": [
+    "userPKCS12"
+   ],
+   "source": "RFC 2798",
+   "desc": "PKCS #12 PFX PDU for exchange of personal identity information",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.5",
+   "singleValue": false
+  },
+  "usersmimecertificate": {
+   "oid": "2.16.840.1.113730.3.1.40",
+   "names": [
+    "userSMIMECertificate"
+   ],
+   "source": "RFC 2798",
+   "desc": "PKCS#7 SignedData used to support S/MIME",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.5",
+   "singleValue": false
+  },
+  "uuidmatch": {
+   "oid": "1.3.6.1.1.16.2",
+   "names": [
+    "uuidMatch"
+   ],
+   "source": "RFC 4530",
+   "syntax": "1.3.6.1.1.16.1",
+   "singleValue": false
+  },
+  "uuidorderingmatch": {
+   "oid": "1.3.6.1.1.16.3",
+   "names": [
+    "uuidOrderingMatch"
+   ],
+   "source": "RFC 4530",
+   "syntax": "1.3.6.1.1.16.1",
+   "singleValue": false
+  },
+  "x121address": {
+   "oid": "2.5.4.24",
+   "names": [
+    "x121Address"
+   ],
+   "source": "RFC 4519",
+   "equality": "numericStringMatch",
+   "substr": "numericStringSubstringsMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.36",
+   "singleValue": false
+  },
+  "x500uniqueidentifier": {
+   "oid": "2.5.4.45",
+   "names": [
+    "x500UniqueIdentifier"
+   ],
+   "source": "RFC 4519",
+   "equality": "bitStringMatch",
+   "syntax": "1.3.6.1.4.1.1466.115.121.1.6",
+   "singleValue": false
+  }
+ },
+ "classes": {
+  "account": {
+   "oid": "0.9.2342.19200300.100.4.5",
+   "names": [
+    "account"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "uid"
+   ],
+   "may": [
+    "description",
+    "seeAlso",
+    "l",
+    "o",
+    "ou",
+    "host"
+   ]
+  },
+  "alias": {
+   "oid": "2.5.6.1",
+   "names": [
+    "alias"
+   ],
+   "source": "RFC 4512",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "aliasedObjectName"
+   ],
+   "may": []
+  },
+  "applicationprocess": {
+   "oid": "2.5.6.11",
+   "names": [
+    "applicationProcess"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn"
+   ],
+   "may": [
+    "seeAlso",
+    "ou",
+    "l",
+    "description"
+   ]
+  },
+  "bootparametersyntax": {
+   "oid": "1.3.6.1.1.1.0.1",
+   "names": [
+    "bootParameterSyntax"
+   ],
+   "source": "RFC 2307",
+   "desc": "Boot parameter",
+   "classType": "structural",
+   "sup": [],
+   "must": [],
+   "may": []
+  },
+  "certificationauthority": {
+   "oid": "2.5.6.16",
+   "names": [
+    "certificationAuthority"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 certificate authority",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "authorityRevocationList",
+    "certificateRevocationList",
+    "cACertificate"
+   ],
+   "may": [
+    "crossCertificatePair"
+   ]
+  },
+  "certificationauthority-v2": {
+   "oid": "2.5.6.16.2",
+   "names": [
+    "certificationAuthority-V2"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 certificate authority, version 2",
+   "classType": "auxiliary",
+   "sup": [
+    "certificationAuthority"
+   ],
+   "must": [],
+   "may": [
+    "deltaRevocationList"
+   ]
+  },
+  "country": {
+   "oid": "2.5.6.2",
+   "names": [
+    "country"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "c"
+   ],
+   "may": [
+    "searchGuide",
+    "description"
+   ]
+  },
+  "crldistributionpoint": {
+   "oid": "2.5.6.19",
+   "names": [
+    "cRLDistributionPoint"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 CRL distribution point",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn"
+   ],
+   "may": [
+    "certificateRevocationList",
+    "authorityRevocationList",
+    "deltaRevocationList"
+   ]
+  },
+  "dcobject": {
+   "oid": "1.3.6.1.4.1.1466.344",
+   "names": [
+    "dcObject"
+   ],
+   "source": "RFC 4519",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "dc"
+   ],
+   "may": []
+  },
+  "deltacrl": {
+   "oid": "2.5.6.23",
+   "names": [
+    "deltaCRL"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 delta CRL",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [],
+   "may": [
+    "deltaRevocationList"
+   ]
+  },
+  "device": {
+   "oid": "2.5.6.14",
+   "names": [
+    "device"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn"
+   ],
+   "may": [
+    "serialNumber",
+    "seeAlso",
+    "owner",
+    "ou",
+    "o",
+    "l",
+    "description"
+   ]
+  },
+  "document": {
+   "oid": "0.9.2342.19200300.100.4.6",
+   "names": [
+    "document"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "documentIdentifier"
+   ],
+   "may": [
+    "cn",
+    "description",
+    "seeAlso",
+    "l",
+    "o",
+    "ou",
+    "documentTitle",
+    "documentVersion",
+    "documentAuthor",
+    "documentLocation",
+    "documentPublisher"
+   ]
+  },
+  "documentseries": {
+   "oid": "0.9.2342.19200300.100.4.9",
+   "names": [
+    "documentSeries"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn"
+   ],
+   "may": [
+    "description",
+    "l",
+    "o",
+    "ou",
+    "seeAlso",
+    "telephonenumber"
+   ]
+  },
+  "domain": {
+   "oid": "0.9.2342.19200300.100.4.13",
+   "names": [
+    "domain"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "dc"
+   ],
+   "may": [
+    "userPassword",
+    "searchGuide",
+    "seeAlso",
+    "businessCategory",
+    "x121Address",
+    "registeredAddress",
+    "destinationIndicator",
+    "preferredDeliveryMethod",
+    "telexNumber",
+    "teletexTerminalIdentifier",
+    "telephoneNumber",
+    "internationaliSDNNumber",
+    "facsimileTelephoneNumber",
+    "street",
+    "postOfficeBox",
+    "postalCode",
+    "postalAddress",
+    "physicalDeliveryOfficeName",
+    "st",
+    "l",
+    "description",
+    "o",
+    "associatedName"
+   ]
+  },
+  "domainrelatedobject": {
+   "oid": "0.9.2342.19200300.100.4.17",
+   "names": [
+    "domainRelatedObject"
+   ],
+   "source": "RFC 4524",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "associatedDomain"
+   ],
+   "may": []
+  },
+  "extensibleobject": {
+   "oid": "1.3.6.1.4.1.1466.101.120.111",
+   "names": [
+    "extensibleObject"
+   ],
+   "source": "RFC 4512",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [],
+   "may": []
+  },
+  "friendlycountry": {
+   "oid": "0.9.2342.19200300.100.4.18",
+   "names": [
+    "friendlyCountry"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "country"
+   ],
+   "must": [
+    "co"
+   ],
+   "may": []
+  },
+  "groupofnames": {
+   "oid": "2.5.6.9",
+   "names": [
+    "groupOfNames"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "member",
+    "cn"
+   ],
+   "may": [
+    "businessCategory",
+    "seeAlso",
+    "owner",
+    "ou",
+    "o",
+    "description"
+   ]
+  },
+  "groupofuniquenames": {
+   "oid": "2.5.6.17",
+   "names": [
+    "groupOfUniqueNames"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "uniqueMember",
+    "cn"
+   ],
+   "may": [
+    "businessCategory",
+    "seeAlso",
+    "owner",
+    "ou",
+    "o",
+    "description"
+   ]
+  },
+  "inetorgperson": {
+   "oid": "2.16.840.1.113730.3.2.2",
+   "names": [
+    "inetOrgPerson"
+   ],
+   "source": "RFC 2798",
+   "classType": "structural",
+   "sup": [
+    "organizationalPerson"
+   ],
+   "must": [],
+   "may": [
+    "audio",
+    "businessCategory",
+    "carLicense",
+    "departmentNumber",
+    "displayName",
+    "employeeNumber",
+    "employeeType",
+    "givenName",
+    "homePhone",
+    "homePostalAddress",
+    "initials",
+    "jpegPhoto",
+    "labeledURI",
+    "mail",
+    "manager",
+    "mobile",
+    "o",
+    "pager",
+    "photo",
+    "roomNumber",
+    "secretary",
+    "uid",
+    "userCertificate",
+    "x500uniqueIdentifier",
+    "preferredLanguage",
+    "userSMIMECertificate",
+    "userPKCS12"
+   ]
+  },
+  "ipnetwork": {
+   "oid": "1.3.6.1.1.1.2.7",
+   "names": [
+    "ipNetwork"
+   ],
+   "source": "RFC 2307",
+   "desc": "Abstraction of a network. The distinguished value of\n                the cn attribute denotes the network",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "return"
+   ],
+   "may": [
+    "treat"
+   ]
+  },
+  "ipservice": {
+   "oid": "1.3.6.1.1.1.2.3",
+   "names": [
+    "ipService"
+   ],
+   "source": "RFC 2307",
+   "desc": "Abstraction an Internet Protocol service.\n                Maps an IP port and protocol (such as tcp or udp)\n                to one or more names; the distinguished value of\n                the cn attribute denotes the service",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn",
+    "ipProtocolNumber",
+    "description"
+   ],
+   "may": [
+    "description"
+   ]
+  },
+  "locality": {
+   "oid": "2.5.6.3",
+   "names": [
+    "locality"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [],
+   "may": [
+    "street",
+    "seeAlso",
+    "searchGuide",
+    "st",
+    "l",
+    "description"
+   ]
+  },
+  "nisnetgrouptriplesyntax": {
+   "oid": "1.3.6.1.1.1.0.0",
+   "names": [
+    "nisNetgroupTripleSyntax"
+   ],
+   "source": "RFC 2307",
+   "desc": "NIS netgroup triple",
+   "classType": "structural",
+   "sup": [],
+   "must": [],
+   "may": []
+  },
+  "oncrpc": {
+   "oid": "1.3.6.1.1.1.2.5",
+   "names": [
+    "oncRpc"
+   ],
+   "source": "RFC 2307",
+   "desc": "Abstraction of an Open Network Computing (ONC)\n               [RFC1057] Remote Procedure Call (RPC) binding.\n               This class maps an ONC RPC number to a name.\n               The distinguished value of the cn attribute denotes\n               the RPC service",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn",
+    "ipHostNumber"
+   ],
+   "may": [
+    "l",
+    "description",
+    "manager"
+   ]
+  },
+  "organization": {
+   "oid": "2.5.6.4",
+   "names": [
+    "organization"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "o"
+   ],
+   "may": [
+    "userPassword",
+    "searchGuide",
+    "seeAlso",
+    "businessCategory",
+    "x121Address",
+    "registeredAddress",
+    "destinationIndicator",
+    "preferredDeliveryMethod",
+    "telexNumber",
+    "teletexTerminalIdentifier",
+    "telephoneNumber",
+    "internationalISDNNumber",
+    "facsimileTelephoneNumber",
+    "street",
+    "postOfficeBox",
+    "postalCode",
+    "postalAddress",
+    "physicalDeliveryOfficeName",
+    "st",
+    "l",
+    "description"
+   ]
+  },
+  "organizationalperson": {
+   "oid": "2.5.6.7",
+   "names": [
+    "organizationalPerson"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "person"
+   ],
+   "must": [],
+   "may": [
+    "title",
+    "x121Address",
+    "registeredAddress",
+    "destinationIndicator",
+    "preferredDeliveryMethod",
+    "telexNumber",
+    "teletexTerminalIdentifier",
+    "telephoneNumber",
+    "internationalISDNNumber",
+    "facsimileTelephoneNumber",
+    "street",
+    "postOfficeBox",
+    "postalCode",
+    "postalAddress",
+    "physicalDeliveryOfficeName",
+    "ou",
+    "st",
+    "l"
+   ]
+  },
+  "organizationalrole": {
+   "oid": "2.5.6.8",
+   "names": [
+    "organizationalRole"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn"
+   ],
+   "may": [
+    "x121Address",
+    "registeredAddress",
+    "destinationIndicator",
+    "preferredDeliveryMethod",
+    "telexNumber",
+    "teletexTerminalIdentifier",
+    "telephoneNumber",
+    "internationalISDNNumber",
+    "facsimileTelephoneNumber",
+    "seeAlso",
+    "roleOccupant",
+    "preferredDeliveryMethod",
+    "street",
+    "postOfficeBox",
+    "postalCode",
+    "postalAddress",
+    "physicalDeliveryOfficeName",
+    "ou",
+    "st",
+    "l",
+    "description"
+   ]
+  },
+  "organizationalunit": {
+   "oid": "2.5.6.5",
+   "names": [
+    "organizationalUnit"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "ou"
+   ],
+   "may": [
+    "businessCategory",
+    "description",
+    "destinationIndicator",
+    "facsimileTelephoneNumber",
+    "internationalISDNNumber",
+    "l",
+    "physicalDeliveryOfficeName",
+    "postalAddress",
+    "postalCode",
+    "postOfficeBox",
+    "preferredDeliveryMethod",
+    "registeredAddress",
+    "searchGuide",
+    "seeAlso",
+    "st",
+    "street",
+    "telephoneNumber",
+    "teletexTerminalIdentifier",
+    "telexNumber",
+    "userPassword",
+    "x121Address"
+   ]
+  },
+  "person": {
+   "oid": "2.5.6.6",
+   "names": [
+    "person"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "sn",
+    "cn"
+   ],
+   "may": [
+    "userPassword",
+    "telephoneNumber",
+    "seeAlso",
+    "description"
+   ]
+  },
+  "photo": {
+   "oid": "0.9.2342.19200300.100.1.7",
+   "names": [
+    "photo"
+   ],
+   "source": "RFC 2798",
+   "classType": "structural",
+   "sup": [],
+   "must": [],
+   "may": []
+  },
+  "pkica": {
+   "oid": "2.5.6.22",
+   "names": [
+    "pkiCA"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 PKI Certificate Authority",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [],
+   "may": [
+    "cACertificate",
+    "certificateRevocationList",
+    "authorityRevocationList",
+    "crossCertificatePair"
+   ]
+  },
+  "pkiuser": {
+   "oid": "2.5.6.21",
+   "names": [
+    "pkiUser"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.509 PKI User",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [],
+   "may": [
+    "userCertificate"
+   ]
+  },
+  "posixaccount": {
+   "oid": "1.3.6.1.1.1.2.0",
+   "names": [
+    "posixAccount"
+   ],
+   "source": "RFC 2307",
+   "desc": "Abstraction of an account with POSIX attributes",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn",
+    "uid",
+    "uidNumber",
+    "gidNumber",
+    "homeDirectory"
+   ],
+   "may": [
+    "userPassword",
+    "loginShell",
+    "gecos",
+    "description"
+   ]
+  },
+  "posixgroup": {
+   "oid": "1.3.6.1.1.1.2.2",
+   "names": [
+    "posixGroup"
+   ],
+   "source": "RFC 2307",
+   "desc": "Abstraction of a group of accounts",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn",
+    "gidNumber"
+   ],
+   "may": [
+    "userPassword",
+    "memberUid",
+    "description"
+   ]
+  },
+  "pwdpolicy": {
+   "oid": "1.3.6.1.4.1.42.2.27.8.2.1",
+   "names": [
+    "pwdPolicy"
+   ],
+   "source": "draft-behera-ldap-password-policy-11",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "pwdAttribute"
+   ],
+   "may": [
+    "pwdMinAge",
+    "pwdMaxAge",
+    "pwdInHistory",
+    "pwdCheckQuality",
+    "pwdMinLength",
+    "pwdMaxLength",
+    "pwdExpireWarning",
+    "pwdGraceAuthNLimit",
+    "pwdGraceExpiry",
+    "pwdLockout",
+    "pwdLockoutDuration",
+    "pwdMaxFailure",
+    "pwdFailureCountInterval",
+    "pwdMustChange",
+    "pwdAllowUserChange",
+    "pwdSafeModify",
+    "pwdMinDelay",
+    "pwdMaxDelay",
+    "pwdMaxIdle"
+   ]
+  },
+  "residentialperson": {
+   "oid": "2.5.6.10",
+   "names": [
+    "residentialPerson"
+   ],
+   "source": "RFC 4519",
+   "classType": "structural",
+   "sup": [
+    "person"
+   ],
+   "must": [
+    "l"
+   ],
+   "may": [
+    "businessCategory",
+    "x121Address",
+    "registeredAddress",
+    "destinationIndicator",
+    "preferredDeliveryMethod",
+    "telexNumber",
+    "teletexTerminalIdentifier",
+    "telephoneNumber",
+    "internationalISDNNumber",
+    "facsimileTelephoneNumber",
+    "preferredDeliveryMethod",
+    "street",
+    "postOfficeBox",
+    "postalCode",
+    "postalAddress",
+    "physicalDeliveryOfficeName",
+    "st",
+    "l"
+   ]
+  },
+  "rfc822localpart": {
+   "oid": "0.9.2342.19200300.100.4.14",
+   "names": [
+    "rFC822localPart"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "domain"
+   ],
+   "must": [],
+   "may": [
+    "cn",
+    "description",
+    "destinationIndicator",
+    "facsimileTelephoneNumber",
+    "internationaliSDNNumber",
+    "physicalDeliveryOfficeName",
+    "postalAddress",
+    "postalCode",
+    "postOfficeBox",
+    "preferredDeliveryMethod",
+    "registeredAddress",
+    "seeAlso",
+    "sn",
+    "street",
+    "telephoneNumber",
+    "teletexTerminalIdentifier",
+    "telexNumber",
+    "x121Address"
+   ]
+  },
+  "room": {
+   "oid": "0.9.2342.19200300.100.4.7",
+   "names": [
+    "room"
+   ],
+   "source": "RFC 4524",
+   "classType": "structural",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "cn"
+   ],
+   "may": [
+    "roomNumber",
+    "description",
+    "seeAlso",
+    "telephoneNumber"
+   ]
+  },
+  "shadowaccount": {
+   "oid": "1.3.6.1.1.1.2.1",
+   "names": [
+    "shadowAccount"
+   ],
+   "source": "RFC 2307",
+   "desc": "Additional attributes for shadow passwords",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "uid"
+   ],
+   "may": [
+    "userPassword",
+    "shadowLastChange",
+    "shadowMin",
+    "shadowMax",
+    "shadowWarning",
+    "shadowInactive",
+    "shadowExpire",
+    "shadowFlag",
+    "description"
+   ]
+  },
+  "simplesecurityobject": {
+   "oid": "0.9.2342.19200300.100.4.19",
+   "names": [
+    "simpleSecurityObject"
+   ],
+   "source": "RFC 4524",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "userPassword"
+   ],
+   "may": []
+  },
+  "strongauthenticationuser": {
+   "oid": "2.5.6.15",
+   "names": [
+    "strongAuthenticationUser"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.521 strong authentication user",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "userCertificate"
+   ],
+   "may": []
+  },
+  "subschema": {
+   "oid": "2.5.20.1",
+   "names": [
+    "subschema"
+   ],
+   "source": "RFC 4512",
+   "classType": "auxiliary",
+   "sup": [],
+   "must": [],
+   "may": [
+    "dITStructureRules",
+    "nameForms",
+    "ditContentRules",
+    "objectClasses",
+    "attributeTypes",
+    "matchingRules",
+    "matchingRuleUse"
+   ]
+  },
+  "top": {
+   "oid": "2.5.6.0",
+   "names": [
+    "top"
+   ],
+   "source": "RFC 4512",
+   "classType": "abstract",
+   "sup": [],
+   "must": [
+    "objectClass"
+   ],
+   "may": []
+  },
+  "uidobject": {
+   "oid": "1.3.6.1.1.3.1",
+   "names": [
+    "uidObject"
+   ],
+   "source": "RFC 4519",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [
+    "uid"
+   ],
+   "may": []
+  },
+  "usersecurityinformation": {
+   "oid": "2.5.6.18",
+   "names": [
+    "userSecurityInformation"
+   ],
+   "source": "RFC 4523",
+   "desc": "X.521 user security information",
+   "classType": "auxiliary",
+   "sup": [
+    "top"
+   ],
+   "must": [],
+   "may": [
+    "supportedAlgorithms"
+   ]
+  }
+ }
+}

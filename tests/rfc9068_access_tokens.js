@@ -343,6 +343,16 @@ function childMain() {
       applications.createApplication({ identifier: id, protocols: ['oauth2'],
         fields: { oauthClientId: id } });
     });
+    // THE AUDIENCES 3l-3r NAME, REGISTERED (#1140): a token is minted only
+    // for an audience an application object holds, in every mode, so each
+    // resource those requests name is an object of its own here.
+    [['r9-partner', 'https://api.partner.example/resource'],
+     ['r9-x', 'https://x.example/'], ['r9-a', 'https://a.example/'],
+     ['r9-b', 'https://b.example/']].forEach(function (pair) {
+      applications.createApplication({ identifier: pair[0],
+        kind: 'oauth2-resource-server', protocols: ['oauth2'],
+        fields: { oauthAudience: [pair[1]] } });
+    });
     const token = function (form) {
       return request(port, 'POST', '/oauth2/token',
                      { form: Object.assign({}, form, client) });
@@ -373,9 +383,12 @@ function childMain() {
              .every(function (k) { return claims[k] !== undefined; }),
            '3b. section 2.2: iss, exp, aud, sub, client_id, iat and jti are ' +
            'all present', JSON.stringify(claims));
-      note(claims.iss === BASE && claims.aud === BASE + '/resource',
-           '3c. iss is this authorization server and aud its default ' +
-           'resource indicator', claims.iss + ' ' + claims.aud);
+      // #550: a client_credentials token asking for nothing is addressed to
+      // the client itself — its oauthAudience, or (none here) its client_id.
+      note(claims.iss === BASE && claims.aud === 'r9-client',
+           '3c. iss is this authorization server and aud, for a ' +
+           'client_credentials token that asked for nothing, the client ' +
+           'itself (#550)', claims.iss + ' ' + claims.aud);
       note(!('scope' in claims),
            '3d. section 2.2.3: a token granted no scope carries no scope ' +
            'claim', JSON.stringify(claims.scope));
@@ -396,7 +409,7 @@ function childMain() {
            r.text.slice(0, 200));
     }
 
-    // 3f. The password grant with openid: preferred_username, and UserInfo.
+    // 3f. The password grant with openid: the profile claims are UserInfo's.
     r = await token({ grant_type: 'password', username: 'r9-alice',
                       password: 'anything', scope: 'openid profile' });
     const access = r.json && r.json.access_token;
@@ -406,17 +419,26 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
     if (access) {
       const claims = part(access, 1);
-      note(claims.preferred_username === 'r9-alice' &&
+      // #395: `profile` asks for access to the profile claims, which OIDC
+      // Core 5.4 answers at UserInfo; a token for this service's own
+      // resource server carries none of them, `preferred_username` included
+      // (a resource server that wants one declares it —
+      // `tests/scope_claims.js`). `username` is this service's own claim.
+      note(claims.preferred_username === undefined &&
+           claims.username === 'r9-alice' &&
            claims.scope === 'openid profile',
-           '3g. section 2.2.2: the person\'s name is preferred_username, ' +
-           'and the scope is kept', JSON.stringify(claims));
+           '3g. section 2.2.2: no profile claim on a token for this ' +
+           'service\'s own resource server, the scope kept',
+           JSON.stringify(claims));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access } });
       // The person's `urn:uuid:<entryUUID>` since 2026-09-14.
       note(r.status === 200 && r.json.sub ===
              require(ROOT + '/common/helpers').subjectForName('r9-alice') &&
-           /^urn:uuid:/.test(r.json.sub),
-           '3h. UserInfo accepts it', r.status + ' ' + r.text.slice(0, 160));
+           /^urn:uuid:/.test(r.json.sub) &&
+           r.json.preferred_username === 'r9-alice',
+           '3h. UserInfo accepts it, and answers the profile claims',
+           r.status + ' ' + r.text.slice(0, 160));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access,
                                      host: 'localhost:' + port } });

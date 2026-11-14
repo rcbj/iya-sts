@@ -56,10 +56,11 @@
 // observes on either side of one, so the window is closed where it exists.
 //
 // A LIBRARY (rule 3): it registers no route, and it requires `realms` and
-// `error_codes` — both leaves — with `helpers` and `pki` reached LAZILY,
-// because `helpers.js` is in the parent project's Kerberos COPY closure
-// (`kerberos/CLAUDE.md`) and a require from it to here would owe that project
-// a COPY line. Nothing in `helpers.js` mentions this file, deliberately.
+// `error_codes` — both leaves — with `helpers` and `pki` reached LAZILY.
+// Nothing in `helpers.js` mentions this file, deliberately: `helpers.js` was
+// in the parent project's Kerberos COPY closure, and a require from it to
+// here would have owed that project a COPY line (an obligation until #1280;
+// the arrangement stands).
 // ===========================================================================
 
 import realms = require('./realms');
@@ -77,8 +78,9 @@ interface SigningHistoryDeps {
   log: Json;
   errorCodes: typeof errorCodes;
   // Lazily, both: `helpers` for the key set and the unit table, `pki` for the
-  // certificate a key was issued. Neither may be required at load — see the
-  // COPY-closure note in the header, and `pki` requires the keystore.
+  // certificate a key was issued. Neither is required at load — see the
+  // COPY-closure note in the header (history since #1280), and `pki`
+  // requires the keystore.
   helpers: () => Json;
   pki: () => Json;
   now: () => number;

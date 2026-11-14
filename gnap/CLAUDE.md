@@ -19,14 +19,48 @@ CAEP/RISC for GNAP web applications. Asked, rcbj decided:
 | Question | Decision |
 |---|---|
 | What seals `gnapSymmetricKey` / `gnapMacaroonKey` | the **process key-encryption key** (`keystore.seal()`), under the existing rule — sealed only when `keystore.persists()` |
-| An unknown client key | **mode-gated**: development creates an application entry on first sight (`mode.autoCreates()`), product refuses `invalid_client` |
+| An unknown client key | **mode-gated**: development creates an application entry on first sight (`mode.autoCreates()`), product refuses `invalid_client` — **except (#1216, rcbj 2026-10-30, the default) a key whose `class_id` names a registered GNAP client listing a registered `gnapFinishUri`: an instance of that client in both modes, never skipping the page, its key never written to the entry (`classInstanceOf()`; `gnap.unregisteredInstances`)** |
+| Dynamic `instance_id` records | **reused and expiring (#1221, rcbj 2026-10-30)**: `GnapStore.instanceIdFor()` DERIVES the identifier (HMAC under the `oidc-pairwise` cluster secret, label `gnap-instance-id`, over realm, application and key identity, cut to 24 and cell-stamped), so the same key at the same application rewrites one record; a record unused for `gnap.grantLifetimeS` is unknown to `instanceById()` and purged by `gnap.grant-expiry`. Until then the store only grew, one record per sign-in |
 | CAEP / RISC | **GNAP sessions emit CAEP**, **GNAP web apps are scoped receivers**, **grant revocation emits CAEP** — and explicitly NOT "signals revoke grants" (**REVERSED 2026-10-03, #432** — see *Shared Signals*) |
-| Where the tests live | **owned here**: `tests/*.js` in process, plus `tests/vendored/` `local: true` jobs with an independent client |
+| Where the tests live | **owned here**: `tests/*.js` in process, plus `tests/protocol/` `local: true` jobs with an independent client |
 
 Later in the same session: remembered approvals are stored in `common/consent.ts`
 as **digest tokens** (`gnap:<22 chars of base64url SHA-256 over the canonical
 JSON of one access right>`) — rcbj approved that shape — and **every GNAP
 endpoint validates its body against a JSON Schema and sanitises it**.
+
+## No cryptography in this directory (#178, 2026-10-05)
+
+**rcbj, 2026-10-05: "All crypto operations across all protocols and use
+cases are to be centralized in a common module."** Nothing in `gnap/` calls
+node's `crypto`. HTTP message signatures, the detached-JWS check
+(`crypto.jwsSignatureValid()`), digests (`crypto.digest()`), the realm HKDF
+(`crypto.hkdf()`), key import and export (`crypto.publicKeyFromJwk()`,
+`publicKeyOf()`, `spkiDerOf()`) and certificate parsing
+(`pki.certificateFromDer()`) are all in `common/`. A new GNAP feature that
+needs a cryptographic operation adds it to `common/crypto.js` (or `pki.js`)
+and calls it from here.
+
+**The three token libraries are `common/crypto.js`'s too (#453, rcbj's
+decision of 2026-10-05)**: `macaroon`, `jsonld-signatures` with the Digital
+Bazaar ZCAP and Ed25519 packages, and `@biscuit-auth/biscuit-wasm` are
+required by `crypto.js` and by nothing in `gnap/`. `crypto.js` loads each
+lazily, turns the realm's keys into the library's key objects, decides the
+algorithms and key sizes (`MACAROON_MIN_ROOT_KEY_BYTES`, Ed25519 for a
+biscuit), and runs the library: `macaroonMint()` / `macaroonImport()` /
+`macaroonVerify()` / `macaroonAttenuate()`, `zcapDelegate()` /
+`zcapVerifyDelegation()` / `zcapVerificationMethod()`, and `biscuitMint()` /
+`biscuitAuthorize()` / `biscuitAttenuate()`. The token modules keep the
+formats' grammar — the caveat grammar and access model, the capability
+document and its controller documents, the Datalog and the model queries —
+and hand it over as data or a callback. **What wrapping does not change**:
+the macaroon HMAC chain and the biscuit block signatures are still computed
+inside those libraries, which have no hook for an external MAC or signer.
+`Ed25519Signature2020` does have one, so that suite is handed a signer and a
+verifier backed by `signRawSignature()` / `verifyRawSignature()` and the
+library only canonicalises; the three JCS zcap suites stay on
+`oid4vc/vc_data_integrity.ts`, which already signs through `crypto.js`.
+`crypto.js`'s group A header argues the split.
 
 ## The modules
 
@@ -34,16 +68,16 @@ Route-free libraries, each require-able from an in-process test:
 
 | Module | What it is |
 |---|---|
-| `gnap_sf.ts` | RFC 8941 structured fields, written out here — the signature base is the thing both ends must build byte for byte |
-| `gnap_httpsig.ts` | RFC 9421 sign and verify, RFC 9530 Content-Digest. `tests/gnap_httpsig.js` holds it to the RFC's Appendix B vectors |
+| ~~`gnap_sf.ts`~~, ~~`gnap_httpsig.ts`~~ | **Moved out of `gnap/` by #178 (2026-10-05)**. RFC 8941 is `common/structured_fields.ts`; RFC 9421 and RFC 9530 are `common/crypto.js` section 14, shared with the FAPI 2.0 HTTP Signatures profile at the OAuth resource servers. `tests/http_signatures.js` holds them to the RFC's vectors. The codes they raised, STS-GNAP-0200 to 0246, are retired as STS-KEYS-0107 to 0153 |
 | `gnap_keys.ts` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
 | `gnap_proof.ts` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
-| `gnap_schemas.ts` | the six ajv 2020-12 JSON Schemas. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
-| `gnap_request.ts` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document |
+| `gnap_model.ts` | **the model, as the endpoints read it (#1579)**: the request schemas with `common/validation.js`'s caps put in, the zod validators of the paths, the approval page's query and `/gnap-api`'s acts, the registries, and the holding of every answer and error code — see *The documents, answers and codes are the model's* below |
+| `gnap_schemas.ts` | compiles the six JSON Schemas the model renders (ajv 2020-12) and names the most useful error. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
+| `gnap_request.ts` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document; its registries are the model's |
 | `gnap_access.ts` | access rights: covers, intersect, the RFC 9767 token model and its presentation checks |
 | `token_macaroon.ts`, `token_biscuit.ts`, `token_zcap.ts` | the three library formats |
 | `gnap_tokens.ts` | the format dispatcher; the two JWT formats go through `helpers.signJwt` and `common/crypto.js` |
-| `gnap_store.ts` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay |
+| `gnap_store.ts` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay. **Interaction handles and user codes are keyed by digest since #614** (`mode:<digest>`, and the code's digest), hashed inside the store's own methods so every caller passes what it minted or was shown; `handleKey()` is exported for `gnap_cells.ts`'s moved-grant record. The grant record still carries each handle and code (`interaction.modes`), because a continuation response repeats them |
 | `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
@@ -52,7 +86,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |
 | `gnap_ownership.ts` | who owns the resource a right's `identifier` names (#432 phase 5): a registered resource set's `resource_owners`, or the resource server's `gnapOwnerLookupUri`, fetched under the outbound policy and cached briefly; the `issue-gnap-right` owner facts — see *Ownership and limits* below |
-| `gnap_spend.ts` | the demonstration resource server's running totals of a right's limits (#432 phase 5): checked, spent atomically across the cluster, reset per interval, refunded; the `gnap.spend-purge` job |
+| `gnap_spend.ts` | a resource server's running totals of a right's limits (#432 phase 5): checked, spent atomically across the cluster, reset per interval, refunded; the `gnap.spend-purge` job. **No route calls it since #593** deleted the demonstration resource server, its one caller; it stays as the reference a resource server author is pointed at, held by `tests/gnap_limits_ownership.js` |
 | `gnap_approval.ts` | who approves and how strongly signed in (#432 phase 6): the acr an approval needs and what the sign-in screen must demand, and approval by an absent resource owner on `/portal/ciba` — see *Phase 6* below |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
@@ -79,20 +113,22 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
 
 * **`macaroon@3`'s `exportBinary()` is broken for V2.** `token_macaroon.ts`
   writes the V2 binary encoding itself (`encodeBinaryV2()`), and
-  `tests/vendored/sts_gnap_rs.js` decodes it with a decoder of its own.
-* **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** that walks
-  `Module.imports`, and every authorization must go through
+  `tests/protocol/sts_gnap_rs.js` decodes it with a decoder of its own.
+* **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** (in
+  `common/crypto.js` since #453) that walks `Module.imports`, and every
+  authorization must go through
   `authorizeWithLimits` — Datalog carried in a token is code a holder wrote.
 * **The biscuit library's first rule-applying evaluation after it is loaded
   can come back as a run-limit refusal whatever the budget** (#432,
   2026-10-03), so raising `LIMITS` is not the fix. It surfaced only when the
   #432 lanes merged and `tests/gnap_delegation.js` happened to verify a
-  token with an audience first. `token_biscuit.ts`'s `primeRunClock()` runs
+  token with an audience first. `common/crypto.js`'s `biscuitPrime()` runs
   one throwaway evaluation at load, and `tests/gnap_token_formats.js`
   verifies first in fresh processes. **Load the module once per process**:
   a second instance in the same process is not supported.
 * **`@digitalbazaar/zcap` and the jsonld-signatures stack are ESM**, loaded by
-  dynamic import, with an **offline document loader**: the contexts are
+  dynamic import (in `common/crypto.js` since #453), with an **offline
+  document loader**: the contexts are
   vendored and nothing is fetched. Under a JCS suite the loader serves only
   the root capability.
 * **A ZCAP `invocationTarget` must be an absolute URI and an RS identifier
@@ -133,6 +169,15 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
   continue to the discovery handler whatever it decides about the origin.
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
+* **A JWT's type is its HEADER `typ`, `gnap-at+jwt` (#157, 2026-10-05).** Until
+  then the header said `JWT`, `docs/gnap.md` said it said `GNAP`, and
+  `GnapTokens.verify()` read the PAYLOAD's `typ: GNAP` — the token register's
+  private marker, the same kind as OAuth's `Bearer`. Every JWT a realm signs
+  uses one key, so explicit typing (RFC 8725 section 3.11) is what tells a
+  GNAP token from an ID Token or an `at+jwt`; the name is PRIVATE (RFC 9767
+  registers none) and the docs say so. `verify()` holds both: the header is
+  the type, and the payload marker keeps a GNAP-typed header over somebody
+  else's claims out (`STS-GNAP-0343` for either).
 
 ## Delegation: who may act for whom, through #186's policy (#432 phase 1, 2026-10-03)
 
@@ -164,6 +209,16 @@ exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/delegation
   narrowing the policy calls self. **One question per R**, because the policy
   issues for exactly one; the first enforced refusal is the one the client
   hears (request_denied, 0770–0781 by refusal kind).
+* **THE ASSERTION MUST BE THE PRESENTING CLIENT'S (#497, every mode).** An
+  ID Token's `aud`, or a SAML assertion's `Audience`, must name the client
+  presenting it — its identifier or an `oauthClientId` (`gnap_subject.ts`'s
+  `presenterIsAudience()`, the names passed by `createGrant()`); otherwise
+  `unknown_user`, STS-GNAP-0073, before the policy is asked. RFC 9635
+  section 11.13: a captured assertion presented by a client that is not its
+  audience is exactly how an end user is impersonated, and section 2.4's
+  case is an assertion the AS issued to the presenting client. Until #497
+  only the signature, issuer and expiry were checked, so any registered
+  client holding a person's ID Token could present it as its own.
 * **Enforced in product, recorded in development** — the policy's own
   `enforced`, read nowhere else; a may_act mismatch in every mode. A `may_act`
   in the presented ID Token is read only after its signature verified
@@ -191,8 +246,31 @@ right still goes to the issuance policy (approval `derived`) and to the
 delegation question for its resource server.
 
 **THE ACTOR CHAIN** is RFC 8693 section 4.1's `act` on the token MODEL
-(`gnap_access.ts`: `{ sub, act? }`, nothing else, at most 16 deep as input),
-the deriving resource server outermost over the original's chain. Every
+(`gnap_access.ts`: `{ sub, iss?, act? }`, nothing else, at most 16 deep as
+input), the deriving resource server outermost over the original's chain.
+**Since #526 it follows the OAuth2 token exchange's rules** (#443, #471;
+`../oauth-oidc/CLAUDE.md`), rcbj's four decisions on that issue:
+
+* **The chain begins with the original client.** The first derivation of a
+  token with no `act` nests that token's client instance under the deriving
+  resource server, except when they are the same party. That holds after a
+  user-assertion impersonation too, because every derivation is a delegation.
+  `grant_id` still names the original grant as well.
+* **Every entry carries `iss`: THE GNAP AUTHORIZATION SERVER'S issuer**, the
+  grant endpoint, which is the token's own `iss`. It is not the realm's OAuth
+  issuer (#523). GNAP keeps its own issuer, so a GNAP JWT and an OAuth JWT
+  under the realm's one JOSE key differ in `iss` as well as `typ`, and a
+  resource server that checks `iss` and skips `typ` cannot take one for the
+  other.
+* **An actor is `urn:sts:client:<instance identifier>` in every mode**: the
+  token exchange's form, which the delegation register's map already resolves
+  to the application, so a GNAP chain joins an OAuth one on the map. The
+  register's rows still name the application.
+* **`gnap.maxDerivationDepth` counts DERIVATIONS.** The chain's foot is always
+  the original client: its own entry, or the client itself where it derived
+  from its own token first and no entry was added. The foot is never counted.
+
+Every
 derivation adds a link, a self one included — the deriving resource server
 still holds a token about the person that is not the person's client's.
 Each format carries it in its own vocabulary, and always where only the
@@ -203,14 +281,14 @@ whoever it liked:
 |---|---|
 | `jwt-signed`, `jwt-encrypted` | the `act` claim, as it is |
 | `macaroon` | `gnap:act=<b64url JSON>` in the AUTHORITY section, before the `gnap:access=` boundary; appended after it, refused (0316) |
-| `biscuit` | `actor(i, sub)` facts in the authority block, 0 the most recent; a resource server's own attenuation block can test them |
+| `biscuit` | `actor(i, sub)` facts in the authority block, 0 the most recent, and `actor_iss(i, iss)` beside them (#526; a fact of its own, so a check written against `actor(i, sub)` keeps working); a resource server's own attenuation block can test them |
 | `zcap` | a `gnapActor` member (`@json` in the pinned GNAP context) of the capability the authorization server signs — not a second ZCAP delegation, which would need the deriving resource server's key |
 
 Rotation and modification keep the chain (`grant.actorChain`, and the rotated
 model copies `act`), introspection returns it, and `gnap.maxDerivationDepth`
 (default 2: a three-tier call path) caps it in every mode (0782).
 
-## Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
+## 3bz. Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
 
 Until #432 the engine decided who may be granted what in code
 (`protectedAccessProblem()`, `accessProblem()` and an inline bearer check in
@@ -365,8 +443,9 @@ STS-OAUTH-0916). Then:
   carries the ORIGINAL's, so a derivation spends the same budget from
   somewhere else and is never a second one. Introspection returns the
   limits in `access` and `grant_id` (reserved from `introspectionClaims`).
-* **THE DEMONSTRATION RESOURCE SERVER IS THE REFERENCE** (`gnap_spend.ts`,
-  `POST /gnap/rs/spend`): per grant, type and identifier, the window, the
+* **`gnap_spend.ts` IS THE REFERENCE** for a resource server keeping the
+  totals (its one caller, the demonstration resource server's `POST
+  /gnap/rs/spend`, went with #593; the test peer keeps its own): per grant, type and identifier, the window, the
   interval's period, the receiver and the currency, then the totals —
   ATOMICALLY ACROSS THE CLUSTER through `cluster_counters.spendBudget()`
   (one conditional upsert in `sts_cluster_budgets`, schema version 15, no
@@ -496,9 +575,13 @@ Why each piece is where it is:
   resource server that does not know them ignores them.
 
 **THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
-2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
-`ssf` with those actions (no actions means both), are granted only to a client
-whose APPLICATION ENTRY declares them in `oauthAllowedScope` — the attribute the
+2026-09-22; the profile names, #334).** `ssf.read` and `ssf.manage` (and a
+name `ssf.authScopeRead` or `ssf.authScopeWrite` adds) as reference strings,
+or an object of type `ssf` with those actions (no actions means both), are
+granted only to a client whose APPLICATION ENTRY declares, in
+`oauthAllowedScope`, scopes granting every permission the right asks for —
+write includes read, so a client declaring only the write scope is granted
+an unrestricted `ssf` right (`ssf/CLAUDE.md`) — the attribute the
 OAuth token endpoint reads, reused rather than twinned (`gnapAllowedAccess`
 already exists and is a narrowing an operator may add; this is not optional),
 so there is one declared vocabulary per application whatever protocol it asks
@@ -833,17 +916,125 @@ header argues the design; what a reader needs here:
   `oauth-oidc/CLAUDE.md` 3am. `interaction` and `consentActions` need
   nothing there: the consent screen asks for every detail every time.
 
+## `interact.acr`: `phr` and `phrh` on one interaction (#738)
+
+RFC 9635 has no field for the two OpenID Connect EAP classes. A grant
+request names them on **`interact.acr`**, the short names **`phr`** and
+**`phrh`** (not the EAP URIs `signInFor()` compares). A string or an
+array; empties dropped. `gnap_request.ts`'s `interactAcrDemand()` is the
+one classification, the same three lines as `StepUp.phishingClassFor()`
+for a list of only those names. `gnap_approval.ts`'s header argues it.
+
+* **ABSENT, OR ANY OTHER TOKEN, AND THE GRANT IS UNCHANGED.** A mixed
+  list is kept on the request so it is visible, and it is not a demand:
+  something else in the list can answer, the way a SAML class list that
+  names another class forces nothing here. No new flag, and a trusted
+  client's skip stands.
+* **ONLY `phrh`** forces a key and `phishingClass` `phrh` (the passkey
+  step offers keys that can earn it). **`phr`, or `phr` with `phrh`**,
+  forces a key and `phishingClass` `''`: either class answers, and a
+  synced key still earns `phr`. The floor only is required — `phrh`, or
+  else `phr`, which a hardware key also meets — because a catalogue acr
+  is each mandatory and listing both would make both mandatory.
+* **ONE TRIP, THEN REFUSE.** The approval page's existing step-up
+  (`step_up_honoured=1`) carries the class. No second loop. Still unmet
+  when the person comes back, `request_denied` and **`STS-GNAP-0905`**
+  (recorded, never sent). A catalogue acr unmet on that same return is
+  0905 when the class is still unmet; a catalogue-only shortfall stays
+  `STS-GNAP-0899`. The first sign-in, when there is no session yet, does
+  not set the return marker: that marker covers every shortfall.
+* **A SKIP CANNOT EARN IT.** No session exists to meet the class, so a
+  trusted client is not issued the grant (`STS-GNAP-0893` when it offers
+  no interaction; with interaction, the page). 0905 is only the refusal
+  after the trip.
+* **THE XACML FACT** is the existing
+  `urn:sts:xacml:phishing-resistance`. The issuance gate computes it
+  from the session, and only for a browser kind. GNAP access-token
+  issuance passes that session and does not pass a `phishingResistance`
+  argument: the gate does not read one. OAuth's token issuance passes
+  the same. A SAML subject assertion is a browser kind, so that check
+  already gets the fact from the session it is given.
+
+## The interaction pages are a static surface (#578, 2026-10-12)
+
+#569 converts every page a person reads into a static application on
+#570's foundation (`common/CLAUDE.md` 3cl), and GNAP's interaction is one
+ticket of it. `gnap_interact.ts`'s header argues the design; what a reader
+needs here:
+
+* **WHAT A PERSON READS IS DRAWN IN THE BROWSER**: the user code page, the
+  approval page, and what is said after (`done`, `sent`, a refusal), by
+  `/gnap/interaction.js` (`web_gnap_interact.ts` over
+  `web_gnap_interact_pages.ts` and `web_gnap_interact_views.ts`, the
+  `bundle_surface` "GNAP's interaction pages") from `/gnap-api`, in the
+  browser's language from the `gnap` catalogs #539 wrote. Errors English.
+  **Script is required**: the shell's `<noscript>` says so.
+* **WHAT A CLIENT INSTANCE SEES DID NOT CHANGE** (#569's rule): the start
+  modes' 303 and their 400 refusals (the shell now, with the code and the
+  status it always had), and every finish through
+  `grants.finishInteraction()`. The approval page's GET still answers each
+  redirect it answered — the sign-in screen, a step-up, the finish after a
+  cancelled sign-in or a remembered approval, a grant forwarded to its owner
+  — and answers the shell only where it drew the page. **An answer on
+  `/gnap-api` sends the browser to the finish URI by `location`**, the same
+  address with the same `hash` and `interact_ref` the 303 named.
+* **A PAGE THAT ONLY SAYS SOMETHING** is the shell with its view in
+  `data-sts-state` (`kerberos/spnego_authn.ts`'s arrangement, #575): the
+  state exists only on that response.
+* **ITS OWN SURFACE AND API, NOT THE SIGN-IN SURFACE'S.** The paths are the
+  `gnap` hosted application's (#472), possibly on a listener of its own,
+  where a shell could neither load `/authn/signin.js` nor call `/authn-api`
+  under `script-src 'self'` / `connect-src 'self'`; and an approval is
+  placed by its interaction handle (`/gnap-api/approve` an `artifact` row
+  like `/gnap/approve`, `/gnap-api/code` the handler's, as `/gnap/code`),
+  where `/authn-api` is placed by a login name. `/gnap-api` is in the `gnap`
+  application's prefixes.
+* **THE SESSION IS THE `sts_session` COOKIE** (#569's decision 3), no token.
+  An act is bound as `/authn-api`'s are (#571): JSON (0410), an `Origin`
+  this service answers on (0411), `X-CSRF-Token` = `websecurity.tokenFor()`
+  of the cookie's session (0412) — `/gnap/code` and `/gnap/approve` are on
+  `authn.ts`'s `ARRIVAL_PATHS`, so the shell mints the cookie. A request a
+  peer cell relayed (`req.stsCellRelay`) was bound where it arrived.
+* **THE OPERATIONS**: `GET /gnap-api` (the index, each operation with the
+  control it `mirrors`), `GET|POST /gnap-api/code`, `GET|POST
+  /gnap-api/approve/{id}`. The view is facts (`approvalView()`): the client
+  as registered and as declared, each right as the request's own with its
+  limits and the rows (`AccessLimits.rows()`) the browser draws their
+  controls from (`common/web_limits_form.ts`, the consent screen's drawing
+  since #576), what was narrowed, the subject asked for, the finish. Where
+  the page's GET has a redirect to answer first, a view or an act answers
+  `next: page` and the page's own address. A refusal that leaves the page
+  standing (a stale token, a raised limit) is `{ ok: false, errors }` and
+  the page is drawn again; one that ends it carries a `problem` view. `POST
+  /gnap/code` and `POST /gnap/approve/{id}` are gone; STS-GNAP-0407 (the
+  form's CSRF check) is retired.
+* **THE PORTAL'S GNAP PAGES ARE NOT THESE**: `/portal/gnap` and the absent
+  owner's `/portal/ciba` are the portal's (#568), over `/account-api`.
+
+## Custom claims on the access-token JWT (#1250)
+
+The two JWT formats carry an application's `gnap_access_token` rows
+(`gnapClaimsAccessToken`, the GNAP configuration tab's Custom claims
+section). `claimsOf()` asks `admin_stats.configuredJwtClaims()`, which reads
+those rows and not the groups claim, the roles claim or the ticked
+catalogue, then assigns the protocol claims over them. A name the payload
+sets itself wins, including when that member is absent. Macaroon, biscuit
+and zcap do not call it. A read that throws is logged as `STS-GNAP-0908`
+and the token is still minted. `modelOfClaims()` does not read the extras
+back. Reserved names are the JWT list plus `access`, `flags`, `label` and
+`grant_id`. `username` is reserved; `uid` is not.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:
 
 | Range | Where |
 |---|---|
-| 0001–0199 | keys, request walkers, subjects, the grant engine, the routes |
+| 0001–0199 | keys, request walkers, subjects (0073: a user assertion issued to another client, #497), the grant engine, the routes |
 | 0200–0299 | HTTP message signatures, Content-Digest, proofs |
 | 0300–0399 | access rights and the token formats |
-| 0400–0499 | the resource-owner pages |
-| 0500–0599 | the RS-facing endpoints and the demonstration resource server |
+| 0400–0499 | the resource-owner pages; 0410–0412 an act on `/gnap-api` refused at its binding (#578) |
+| 0500–0599 | the RS-facing endpoints, and the demonstration resource server (0550–0553, retired by #593) |
 | 0600–0649 | the push finish |
 | 0650–0699 | the console, the monitor, application entries |
 | 0700–0709 | signals |
@@ -854,41 +1045,51 @@ header argues the design; what a reader needs here:
 | 0770–0789 | delegation (#432 phase 1): 0770–0775 impersonation by assertion, 0776–0781 derivation, one per refusal kind of the policy (relationship, protected subject, semantics, authority, may_act, a realm's policy); 0782 the depth cap |
 | 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
 | 0810–0817 | #432 phases 3 and 4: an uncatalogued type in product (0810), a type refusing bearer (0811), a right not meeting its catalogue entry (0812) or its limits (0813, 0814), a verdict nobody knows (0815), no verdict at all (0816), narrowed to nothing (0817) |
-| 0860–0877 | #432 phase 5: unreadable limits (0860); the owner policy (0861 a non-owner, 0863 an unanswered lookup); the approval page refusing a non-owner (0862), a raised limit (0866) or a lowered one its schema refuses (0867); a registration's owners (0864, 0865); a derivation raising a limit (0868); a lookup failing (0869); the demonstration resource server's spend (0870 over a limit, 0871 outside the window or interval, 0872 the receiver, 0873 the currency, 0874 an unreadable body, 0875 the store, 0876 a failed operation refunded, 0877 a refund that could not be made) |
+| 0860–0877 | #432 phase 5: unreadable limits (0860); the owner policy (0861 a non-owner, 0863 an unanswered lookup); the approval page refusing a non-owner (0862), a raised limit (0866) or a lowered one its schema refuses (0867); a registration's owners (0864, 0865); a derivation raising a limit (0868); a lookup failing (0869); `gnap_spend.ts`'s spend (0870 over a limit, 0871 outside the window or interval, 0872 the receiver, 0873 the currency, 0874 an unreadable body, 0875 the store, 0876 a failed operation refunded — retired with the demonstration resource server by #593 — 0877 a refund that could not be made) |
 | 0890–0901 | #432 phase 6: a right dropped at issue for an approval without the page (0890) or short of its acr (0891); a trusted client that must interact (0892) or has no session for an acr (0893); an absent owner's time run out (0894); a derivation beyond the original needing its owner (0895) or short of the original's acr (0896); the owner's queue full (0897), the owner homed in another cell (0898), an unmet step-up (0899), the notice not queued (0900), an unknown owner (0901) |
+| 0902–0904 | #496, #505 and #593: an unregistered application in product (0902), a location naming no registered resource server in product (0903), an access token request naming no resource server at all, in every mode (0904) — see *A token for nobody in particular* below |
+| 0905 | #738: `interact.acr` of only `phr` and/or `phrh` was unmet after the one interaction (`request_denied`). A skip that never starts that interaction stays 0893 |
+| 0908 | #1250: the custom claims configured for an access-token JWT could not be read. The token is still minted, without them |
+| 0910–0911 | #1579: an answer that is not its model's (0910), an error code the model does not declare (0911). Recorded only; the answer is sent unchanged |
 
-`tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
-failure patterns.
+`tests/error_codes.js` carries `gnapError(res`, `interactionError(res` and
+`apiRefusal(res` as failure patterns.
 
 ## Tests
 
 | File | What it holds |
 |---|---|
-| `tests/gnap_httpsig.js` | RFC 9421 / 9530 / 8941, including the Appendix B vectors |
+| `tests/http_signatures.js` | RFC 9421 / 9530 / 8941, including the Appendix B and section 2.4 vectors (it was `tests/gnap_httpsig.js` until #178) |
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar; since phase 5 a right with every kind of limit and the model's `grant` round-trip too |
-| `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
+| `tests/gnap_model_wire.js` | #1579: what every GNAP endpoint answers — discovery, the grant endpoint's answers and refusals, continuation, token management, introspection, registration, the start modes and `/gnap-api` — in development and product mode, byte for byte against `gnap_model_wire.snapshot.json`, recorded from the hand-written schemas before the switch; and no answer of that conversation recorded a model gap |
+| `tests/model_gnap.js` | #1579: the build's refusals (a TypeSpec copy broken one way at a time, and the generated table), no JSON Schema, zod object or registry left written in `gnap/`, the recorded answers and error codes held to the model, and the holding itself |
+| `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors; `interact.acr` (#738) as a string or an array, a mixed list kept and not a demand |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
-| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
-| `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
-| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation and (section 4b, #432) the actor chain on a derived token in each format, read by the job's own decoders under the signature or MAC it verifies, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
-| `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream; section 7 a resource server's stream (#432) |
+| `tests/protocol/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
+| `tests/outbound_tls.js`, `tests/protocol/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
+| `tests/protocol/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the test peer's resource server (the demonstration RS until #586/#593); introspection, registration, derivation and (section 4b, #432) the actor chain on a derived token in each format, read by the job's own decoders under the signature or MAC it verifies, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
+| `tests/protocol/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream; section 7 a resource server's stream (#432) |
 | `tests/gnap_catalogue.js` | #432 phases 3 and 4 in process: the catalogue's grammar, the console's `set-access-type` / `remove-access-type`, RFC 9396 reading it (values, required, limits, lifetime, bearer, the introspection view), GNAP's conformance, each built-in rule through the policy in both modes, an issue-stage refusal dropping a right, narrowing through a realm's own policy, `derivableBeyond()`, GNAP introspection per resource server |
-| `tests/vendored/sts_gnap_catalogue.js` | the same over HTTP: a declared type accepted and its bearer, lifetime and limits rules, an undeclared one refused in product, a narrowed right, derivation into a `derivableFrom` type, introspection claims per resource server, and RAR at `/oauth2/token` and `/oauth2/introspect` |
-| `tests/gnap_limits_ownership.js` | #432 phase 5 in process: the limits vocabulary and "lower", ownership from a resource set and by a stubbed lookup, the owner rules at both stages, `limitsRaised()`, the demonstration resource server's totals and the shared store's statement |
-| `tests/vendored/sts_gnap_limits.js` | the same over HTTP: a group owner registered on a resource set, a stranger refused on the approval page, a member approving, limits and `grant_id` at introspection, a limit lowered on the page and read off the token by the job, the demonstration resource server spending to the limit, refunding and refusing |
+| `tests/protocol/sts_gnap_catalogue.js` | the same over HTTP: a declared type accepted and its bearer, lifetime and limits rules, an undeclared one refused in product, a narrowed right, derivation into a `derivableFrom` type, introspection claims per resource server, and RAR at `/oauth2/token` and `/oauth2/introspect` |
+| `tests/gnap_limits_ownership.js` | #432 phase 5 in process: the limits vocabulary and "lower", ownership from a resource set and by a stubbed lookup, the owner rules at both stages, `limitsRaised()`, `gnap_spend.ts`'s totals and the shared store's statement |
+| `tests/protocol/sts_gnap_limits.js` | the same over HTTP: a group owner registered on a resource set, a stranger refused on the approval page, a member approving, limits and `grant_id` at introspection, a limit lowered on the page and read off the token by the job, the test peer's resource server (#586; `tests/CLAUDE.md`, *THE TEST PEER*) spending to the limit from what introspection hands it, refunding and refusing |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
-| `tests/gnap_interaction.js` | #432 phase 6 in process: the interaction and acr verdicts, who may skip through `createGrant()`, a remembered approval and `gnap.consentRequired` off not standing in for `always`, the issue stage's two drops, the step-up and its refusal, the absent owner's queue, answer, cap, timeout, forward and unknown name, `gnap.allowCrossUser` gone |
-| `tests/vendored/sts_gnap_interaction.js` | the same over HTTP: `never` without interaction, the trusted client against `always` and a consent action, a remembered `always` drawing the page again, an `mfa` type's step-up and refusal, and an absent owner approving and denying on `/portal/ciba` while the client polls |
+| `tests/gnap_interaction.js` | #432 phase 6 in process: the interaction and acr verdicts, who may skip through `createGrant()`, a remembered approval and `gnap.consentRequired` off not standing in for `always`, the issue stage's two drops, the step-up and its refusal, the absent owner's queue, answer, cap, timeout, forward and unknown name, `gnap.allowCrossUser` gone; `interact.acr` (#738) on that step-up, the one-trip refusal `STS-GNAP-0905`, and a skip that the class blocks |
+| `tests/protocol/sts_gnap_interaction.js` | the same over HTTP: `never` without interaction, the trusted client against `always` and a consent action, a remembered `always` drawing the page again, an `mfa` type's step-up and refusal, and an absent owner approving and denying on `/portal/ciba` while the client polls |
+| `tests/gnap_interact_api.js` | #578 in a child serving the whole stack: the shells and their policy, the bundle, the index, the start mode's 303 and its 400 refusals, the approval page's redirect to the sign-in screen, a cancelled sign-in's finish with a verified hash, the view (facts, `csrf`, `next: page` with no session), the binding (415, 403 three ways, an unknown field, a bad limit control), Allow answering the finish URI with the section 4.2.3 hash and only the ticked right approved, a second answer refused, Deny's done view, the user code case-folded and spent once, the old form POSTs gone, and the compiled renderer drawing the API's view. The pages' renderers are held by `tests/web_surfaces.js`'s round trip |
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
-| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
-| `tests/vendored/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
-| `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
+| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: an ID Token issued to another client refused (0073, #497), impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
+| `tests/protocol/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
+| `tests/protocol/sts_gnap_chain_impersonation.js`, `sts_gnap_chain_delegation.js` | #497: the four-tier chain (webapp1, apigw1, esb1, sp1) in the default realm, both modes — impersonation by webapp1's own ID Token then two derivations, and apigw1 refused presenting it (0073); delegation by bob's approval then the same derivations, the original client traced through `grant_id` to its grant. Every token's JWS verified by the job and introspected by its tier; the register and the picture. `gnap_chain_kit.js` is the shared half |
+| `tests/protocol/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
-The three jobs share `tests/vendored/gnap_client.js` (an independent client
-written from the RFCs) and `gnap_flow.js` (the resource owner and harness).
+The three jobs share `tests/protocol/gnap_client.js` (an independent client
+written from the RFCs) and `gnap_flow.js` (the resource owner and harness),
+which since #578 reads the approval page's view and answers it over
+`/gnap-api` as the page does (`reachApproval()`, `answer()`, `enterCode()`).
 
 **Every format is independently verified since 2026-09-22 (#43).** A zcap
 token's Ed25519Signature2020 proof needed RDF dataset canonicalization, which
@@ -897,6 +1098,69 @@ the published key. The default suite is now `eddsa-jcs-2022` and the job checks
 the proof itself: RFC 8785, two SHA-256 hashes, node's Ed25519. The
 compatibility suite is still checked only by the service, which is one of the
 reasons it is not the default.
+
+## The documents, answers and codes are the model's (#1579, 2026-11-10)
+
+rcbj's decision on #1579: every protocol family comes into the model, and a
+specification's endpoint does not change — the model DESCRIBES and
+VALIDATES it. `models/gnap/gnap.tsp` (decorators `models/lib/gnap_lib.*`) is
+the source of:
+
+* **The six request documents** (`@document`) and the types they share
+  (`@definitions`, every document's `$defs` in that order). The build renders
+  each as JSON Schema 2020-12 into `models/generated/gnap.json`; a string's
+  cap is written `"$cap:NAME"` and `gnap_model.ts` puts `CAP[NAME]` in at
+  load, because `common/validation.js` is the one table of the caps and the
+  build cannot load it. The rendered schemas were compared with the
+  hand-written ones before those were deleted: byte-identical, all six.
+  **Note:** this file's old header said the continuation and rotation bodies
+  were CLOSED; the code had them open, and the model keeps the code's
+  behaviour (only `finish` is closed). Whether they should close is a wire
+  change, rcbj's to decide.
+* **The parameters `common/validation.js`'s shared types check** (`@params`):
+  the paths' (`as`, `continue`, `manage`, an interaction handle), the
+  approval page's query from the sign-in screen, and the bodies of
+  `/gnap-api`'s two acts, closed — `gnap.ts` and `gnap_interact.ts` hold no
+  zod object of their own.
+* **The registries the walk reads** (`@registry`): the request and
+  response-only flags, start modes, finish methods, assertion formats, proof
+  methods, key formats, and RFC 9493's subject identifier formats with the
+  members each carries. `gnap_request.ts` and `gnap_keys.ts` read them.
+* **Every answer's members** (`@members`, `closed` or `open`, nested sets
+  followed): the grant response and what it nests, the error response, both
+  discovery documents, introspection (open: a type's `introspectionClaims`
+  are added), registration, `/gnap/keys`, the revoked biscuits, the ZCAP
+  controller document and `/gnap-api`'s two shapes. `gnap.ts`'s
+  `sendResult()`, `gnapError()`, the discovery and material senders and
+  `gnap_interact.ts`'s `answer()` hold each answer and record a gap under
+  STS-GNAP-0910 (an error code the model does not declare, 0911) — **the
+  answer is sent unchanged**, as OAuth's are. `GnapModel.gaps()` keeps the
+  last hundred for a test. **`/gnap-api`'s `preferredLanguage` is the set
+  `gnap-api-language`, `{ value, populated }`** — what
+  `authn.preferredLanguageOf()` answers, the page's runtime reads and
+  `/authn-api` models. It was declared a string until 2026-11-12, so every
+  view answered to a signed-in person with a language of their own recorded
+  a gap (seen in `sts_gnap_core`'s service log); the wire never changed.
+* **The error codes**: RFC 9635 section 3.6's thirteen, and
+  `invalid_resource_server` and `invalid_access`, this service's own.
+* **The access-type catalogue's definition** (rule 3bz):
+  `AccessTypeDefinition`'s members are `common/applications.js`'s
+  `AUTHORIZATION_DETAILS_DEFINITION_MEMBERS` and the `interaction` values its
+  `ACCESS_TYPE_INTERACTIONS`.
+
+**What stays in code, and why.** Everything that needs state or more than
+one member: the walk's semantics (a flag twice, a label missing from a
+multi-token request, a key in two formats, the interaction hash), each
+refused with the GNAP code the RFC names — which is also why `required` and
+enumerations are not in the schemas; the catalogue's meaning checks (a
+list's grammar, `consentActions` within `actions`, a reserved introspection
+claim, each with the sentence the console shows); `HASH_METHODS` (each name
+is node's digest and its bit count, an algorithm mapping, not a shape);
+`gnap_subject.ts`'s supported formats (what this implementation does, a
+subset of the registry); `gnap_interact.ts`'s `OPERATIONS` (routing rows of
+`/gnap-api`); and everything the engine decides from registrations, keys,
+policy and mode. The interaction pages' browser bundle is not a protocol
+endpoint and is unchanged.
 
 ## Mutual TLS: pinned or a PKI, and revocation in both (#107, 2026-09-23)
 
@@ -1061,3 +1325,133 @@ its reference is written into grant requests that may reach any cell.
   than the peer's private name, and the body's exact bytes
   (`cell_placement.ts` `serialisedBody()` prefers `req.rawBody`). See
   `common/cell_channel.ts`'s `relay()`.
+
+## A CLIENT NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an unregistered application gets nothing but
+its protocol's own "unknown application" error. The unknown-key refusal
+(`STS-GNAP-0082`) asked only whether ANY entry held the key, and an entry
+development created on first sight of a proved key holds it
+(`gnapKeyIdentity`) with no `appRegisteredBy` — so a realm switched to
+product went on accepting that key, and its instance identifier, as though
+an administrator had provisioned them. `unregisteredCaller()` asks #494's
+question of the application a key or an instance resolves to, behind
+`mode.issuesToUnregisteredApplications()` (the `unregistered-gnap-clients`
+row on `/admin/mode`): 401 `invalid_client` / `invalid_resource_server`,
+`STS-GNAP-0902`, before the entry is sighted again or anything is issued.
+For an instance identifier it is asked before the key is even described; for
+a key, once the proof has said whose key it is.
+
+**An access right whose `locations` name no registered resource server** was
+left open here and is #505's, below.
+
+`tests/unregistered_applications.js` (G1) holds it, the proof stubbed: what
+is held is whose key it is, which is decided after the proof verifies.
+
+## A RIGHT'S LOCATIONS NAME A REGISTERED RESOURCE SERVER, IN PRODUCT (#505, 2026-10-06)
+
+A location that resolved to no resource server was LEFT OUT: the right was
+granted and the token issued with no audience for it (`resourceServersFor()`
+matches a location only to a `gnapResourceServerUri`). rcbj's follow-up to
+#496: in product every location of every access right must name a registered
+target, and a right that names one that does not is REFUSED rather than
+dropped — the request is answered `invalid_request` (400, RFC 9635 section
+3.6), `STS-GNAP-0903`, the code family a location the catalogue's owner does
+not answer to already gets (`STS-GNAP-0812`).
+
+A location is registered when `common/registered_targets.ts` says so — the
+one definition shared with RFC 8707's `resource` (`oauth-oidc/CLAUDE.md`):
+one of this service's own resource servers (the default resource indicator,
+`/admin-api`, `/account-api`, `/report-api`) or a registered application by
+audience, permission base URI, client_id or identifier — or when it is AT
+or UNDER the
+`gnapResourceServerUri` of a REGISTERED GNAP resource server, GNAP's own
+addressing and the match `resourceServersFor()` makes. "Registered" is
+`appRegisteredBy`; an RS a development sighting filed is not one.
+
+`unregisteredLocationRefusal()` is asked in `judgeRequested()`, right after
+the catalogue's well-formedness and before the issuance policy's questions,
+so at creation, modification and derivation alike and before anybody is
+asked to approve. A reference string names no location and is not asked.
+What a location that IS registered contributes to a token's audience is
+unchanged: `resourceServersFor()` still adds only a matched GNAP resource
+server (so a location naming a registered application by its audience passes
+the check and adds nothing, as before). **In every mode since #1140**
+(rcbj: no access token for an audience no application object holds); until
+then it was behind `mode.issuesToUnregisteredApplications()` and the
+`unregistered-resource-targets` row on `/admin/mode`, which is gone.
+`tests/registered_targets.js` (T5) holds it in both modes,
+through `judgeRequested()` on a `GnapGrants` built in the test.
+
+## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
+
+`authn/CLAUDE.md`, *Several signed-in accounts in one browser*, is the
+design; off, nothing here changes. **The grant request's `user`
+(`grant.userHint`, RFC 9635 section 2.4) is the subject hint** — the `subject`
+member asks what to RETURN, and names nobody. It is handed to
+`authn.hintAccount()` **SOFT** (`hintAccountFor()`): it chooses its account
+where the browser holds it live, and otherwise is no hint at all, because a
+person at the browser who is not that user has a meaning of its own here
+(#432's approval by an absent owner) and is not a reason to send them to sign
+in. With no hint that chooses and several accounts, `GET /gnap/approve`
+reaches the picker through `beginAuthentication()`.
+
+**THE PAGE'S OWN CALLS CARRY NO TICKET**, so the session the approval page
+was drawn for is recorded on the interaction (`grant.interaction.accountSid`,
+`noteAccountFor()`, written only with the setting on) and every
+`/gnap-api/approve` call hints it, as a sid that names a session only in THIS
+browser's set. Without it, a browser whose account was chosen at the picker
+would draw the page and then find its view and its answer ambiguous.
+`tests/multi_account_protocols.js` 8.
+
+## A token for nobody in particular is refused (#593, 2026-10-12)
+
+**rcbj's decision 4 on #591.** The demonstration resource server
+(`/gnap/rs/resource`, `/gnap/rs/spend`, `gnap.demoResourceServer`) was
+development only since #585, and #593 deleted it: the test peer
+(`tests/peer/peer_gnap.js`) plays a GNAP resource server, over introspection,
+with every key proof and the limits. Three things leaned on it, and each went
+with it:
+
+* **THE DEFAULT AUDIENCE.** A token whose rights resolved to no resource
+  server (`resourceServersFor()`: a registered reference, a location at or
+  under a resource server's `gnapResourceServerUri`, or the owner of a
+  catalogued type) was audienced to the demonstration resource server, so a
+  client could present it somewhere at all. There is no default now, and
+  such a request is REFUSED — `noResourceServerRefusal()`, asked in
+  `judgeRequested()` after the issuance policy's questions and of the rights
+  it left (so a right the policy refuses, an uncatalogued type in product
+  among them, keeps its own refusal), at creation, modification and
+  derivation alike, before anybody is asked to approve, **in every mode**
+  (the decision named none). A token for nobody is a token for
+  whoever holds it, which is the confused deputy RFC 9767's audience exists
+  to prevent, and in development it had been a token the one resource
+  server here accepted.
+* **THE ERROR IS `invalid_request`, HTTP 400, `STS-GNAP-0904`.** RFC 9635
+  section 3.6 defines no error for an access request no resource server
+  answers to; its `invalid_request` is "missing a required parameter,
+  includes an invalid parameter value or is otherwise malformed", which is
+  what a request is when nothing in it says where the token is to be used,
+  and it is the code a location naming no registered resource server
+  already gets (`STS-GNAP-0903`) for the same reason. `request_denied` is a
+  refusal by policy or by the resource owner, and neither was asked.
+* **THE ONE RESOURCE SERVER THAT NEEDS NO ENTRY IS THIS SERVICE'S SHARED
+  SIGNALS TRANSMITTER.** Its access is a reference string naming any
+  published Shared Signals scope (`ssf.read`, `ssf.manage`, or a
+  name a setting adds) or an object of type `ssf`, and
+  it refuses a token issued for a named resource server (`STS-SSF-0079`) —
+  so a right of that shape names a resource server, this service's own, and
+  is not refused; its token keeps an empty audience, as it always had in
+  product.
+* **THE DEMONSTRATION TYPE AND THE REGISTERED TARGET.** `urn:iya-sts:gnap:demo`
+  is no longer catalogued, `/gnap/rs/resource` is no longer one of this
+  service's registered targets (`common/registered_targets.ts`), and the
+  console's endpoint list and the `/gnap/rs` cell placement row are gone.
+
+`STS-GNAP-0550`–`0553` and `0876` are retired. What is left without a route
+caller, and stays as a library: `gnap_spend.ts` (the reference for a
+resource server's totals, `gnap.spend-purge`, capability `gnap.limits`) and
+`gnap_rs.ts`'s `authenticate()` (the whole judgement of a presented token —
+record and format). `tests/registered_targets.js` (T6) holds the refusal in both modes.
+
+**The grace on an expired user assertion is 0 in product unless an operator set one (#1474, ASVS 5.0.0 9.2.1)**: `mode.expiredAssertionGraceS()` reads the setting's source. RFC 9635 permits a grace and does not ask for one.

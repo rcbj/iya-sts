@@ -54,9 +54,9 @@
 // CBOR `vc_status_codec.ts`'s.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
+import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import codec = require('./vc_status_codec');
 import vcDataModel = require('./vc_data_model');
@@ -202,6 +202,11 @@ class VcJoseCose {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcJoseCose.secureJwt(). " + kind);
     const alg = this.algFor(signer.publicJwk);
+    // What this realm signs with governs a credential here too (#1368).
+    const unsignable = stsCrypto.signaturePolicy.signCause('jose', alg);
+    if (unsignable) {
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
     // certificate-header: none — the key is named by its did:key kid, which
     // is what a VC-JOSE-COSE verifier resolves; a chain would name another.
     const token = await stsCrypto.signJwsAsync(document, signer.privateKey, {
@@ -266,8 +271,8 @@ class VcJoseCose {
     const { log } = this.deps;
     log.debug("Entering VcJoseCose.digestOf().");
     log.debug("Leaving VcJoseCose.digestOf().");
-    return crypto.createHash('sha256').update(disclosure, 'ascii')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', Buffer.from(disclosure, 'ascii'),
+                            'base64url');
   }
 
   // ---------------------------------------------------------------------------
@@ -318,7 +323,7 @@ class VcJoseCose {
         throw new Error('"' + last + '" is mandatory to disclose ' +
                         '(VC-JOSE-COSE section 3.2.1).');
       }
-      const salt = crypto.randomBytes(16).toString('base64url');
+      const salt = stsCrypto.randomBytes(16).toString('base64url');
       if (typeof last === 'number') {
         if (!Array.isArray(parent)) {
           throw new Error('"' + segments.join('.') + '" indexes a ' +
@@ -338,6 +343,11 @@ class VcJoseCose {
     }
     payload._sd_alg = 'sha-256';
     const alg = this.algFor(signer.publicJwk);
+    // What this realm signs with governs a credential here too (#1368).
+    const unsignable = stsCrypto.signaturePolicy.signCause('jose', alg);
+    if (unsignable) {
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
     // certificate-header: none — the key is named by its did:key kid, which
     // is what a VC-JOSE-COSE verifier resolves; a chain would name another.
     const jwt = await stsCrypto.signJwsAsync(payload, signer.privateKey, {

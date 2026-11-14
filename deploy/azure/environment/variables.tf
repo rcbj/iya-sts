@@ -170,6 +170,12 @@ variable "applications_max" {
   default     = 10000
 }
 
+variable "realms_max_count" {
+  description = "STS_REALMS_MAX_COUNT on every node (#368): deploy/aws/environment/variables.tf argues the value."
+  type        = number
+  default     = 100000
+}
+
 variable "extra_environment" {
   description = "More container environment for every node, laid over what this stack sets."
   type        = map(string)
@@ -336,4 +342,40 @@ variable "kek_migrating_from_secret" {
     condition     = !var.kek_migrating_from_secret || var.kek_provider == "kms"
     error_message = "kek_migrating_from_secret moves an environment from the `kek` secret to the Key Vault key: it needs kek_provider = kms."
   }
+}
+
+variable "bootstrap_admin_username" {
+  description = <<-EOT
+    The bootstrap administrator's username, for an environment whose account
+    already exists under a name this stack did not generate. Read on the apply
+    that first creates the `bootstrap-admin-username` secret and kept; empty
+    (the default) generates `admin-` and sixteen hex digits. Product mode only.
+    Passed as TF_VAR_bootstrap_admin_username, never committed.
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "cdn_enabled" {
+  description = <<-EOT
+    Azure Front Door in front of the load balancer (frontdoor.tf, #1341):
+    public_hostname goes to it, and direct_hostname stays on the load balancer
+    (or, in a multi-region environment, the Traffic Manager tree) for mutual
+    TLS, Kerberos, LDAP, SPIFFE and the plain-HTTP revocation listener, and
+    is Front Door's origin. In a multi-region environment the primary cell
+    holds the one profile. Needs a foundation re-applied with `Microsoft.Cdn/*`.
+  EOT
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.cdn_enabled || (var.public_hostname != "" && var.direct_hostname != "" && var.direct_hostname != var.public_hostname)
+    error_message = "cdn_enabled needs public_hostname and a direct_hostname of its own."
+  }
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the load balancer itself where cdn_enabled is on, e.g. `direct.test-idp.azure.iyasec.io`; in a multi-region environment it is in the cells file, beside public_hostname. The node's ACME certificate names it too."
+  type        = string
+  default     = ""
 }

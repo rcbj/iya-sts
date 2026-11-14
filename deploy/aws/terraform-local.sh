@@ -14,15 +14,17 @@
 # Usage:
 #   deploy/aws/terraform-local.sh [env] [action]
 #     env    = an environment name, 2-12 [a-z0-9]      (default: dev)
-#     action = init | validate | plan | apply | destroy | output | suite
+#     action = init | validate | plan | apply | destroy | output
 #              | ecr-password                           (default: plan)
+#     (`suite` was removed with the in-VPC runner on 2026-09-21; the suite
+#     is deploy/aws/run-suite.sh, and asking for it here says so — #1314.)
 #
 #   deploy/aws/terraform-local.sh dev plan
 #   deploy/aws/terraform-local.sh dev apply          # IMAGE_TAG=<tag> required
-#   deploy/aws/terraform-local.sh dev suite          # report in tests/report/aws-dev
 #   TF_STACK=foundation deploy/aws/terraform-local.sh dev apply # administrator
-#   TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
-#     deploy/aws/terraform-local.sh testidp apply  # a realm's SPIFFE ports
+#   TF_STACK=spiffe-realm REALM=acme SERVER_PORT=9181 \
+#     deploy/aws/terraform-local.sh testidp apply  # a realm's Server API.
+#     WORKLOAD_PORT is accepted and no longer published (#324).
 #
 # A MULTI-CELL ENVIRONMENT (#98) — one with environment/envs/<env>.cells.tfvars.json:
 #   IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply    # every
@@ -79,6 +81,12 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# is handed, and the shims that take the CR off what docker and the cloud
+# CLIs print. See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${REPO_ROOT}/tests/tools/host-platform.sh"
+
 TF_ENV="${TF_ENV:-${1:-dev}}"
 TF_ACTION="${TF_ACTION:-${2:-plan}}"
 TF_STACK="${TF_STACK:-environment}"
@@ -87,7 +95,9 @@ if [ -n "${DOCKER:-}" ]; then
   read -r -a DOCKER_CMD <<< "${DOCKER}"
 elif docker info >/dev/null 2>&1; then
   DOCKER_CMD=(docker)
-elif command -v sudo >/dev/null 2>&1; then
+elif [ "${HOST_WINDOWS}" != "1" ] && command -v sudo >/dev/null 2>&1; then
+  # Not on Windows, which has no sudo: a daemon that does not answer there
+  # is Docker Desktop not running.
   DOCKER_CMD=(sudo docker)
 else
   echo "ERROR: docker is required and not reachable." >&2
@@ -116,7 +126,6 @@ else
     echo "ERROR: no AWS_* credentials in the environment and no AWS CLI to resolve a session." >&2
     exit 1
   }
-  echo "==> Serving your AWS session to the container as it refreshes${AWS_PROFILE:+ (profile: ${AWS_PROFILE})}" >&2
   # Fail here, naming the fix, rather than inside the container naming a
   # credentials endpoint.
   if ! aws configure export-credentials --format process >/dev/null 2>&1;
@@ -125,6 +134,25 @@ else
     echo "       or export the deployer user's key as AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY." >&2
     exit 1
   fi
+fi
+# ON WINDOWS THE SESSION GOES AS A SNAPSHOT, the arrangement before
+# 2026-09-18 (#512). The live endpoint needs the container on the host's
+# network to reach 127.0.0.1, and Docker Desktop's containers are in its VM:
+# the host is host.docker.internal there, and the SDKs refuse a plain-http
+# credentials URI that is not a loopback address. So the session is resolved
+# once, and an apply that outlives it fails as it used to — which is why the
+# deployer user's key in AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, which the
+# entrypoint exchanges for a four-hour role session, is the way to run a long
+# one from Windows.
+if [ ! -s "${CREDS_ENV_FILE}" ] && [ "${HOST_WINDOWS}" = "1" ];
+then
+  echo "==> Windows: handing the container a snapshot of your AWS session; a long apply may outlive it" >&2
+  aws configure export-credentials --format env-no-export |
+    grep -E '^AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)=' \
+    > "${CREDS_ENV_FILE}"
+elif [ ! -s "${CREDS_ENV_FILE}" ];
+then
+  echo "==> Serving your AWS session to the container as it refreshes${AWS_PROFILE:+ (profile: ${AWS_PROFILE})}" >&2
   command -v node >/dev/null 2>&1 || {
     echo "ERROR: node is needed on the host to serve a refreshing session (host-credentials.js)." >&2
     exit 1
@@ -135,7 +163,7 @@ else
   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "${CREDS_TOKEN_FILE}"
   # A coprocess: this shell holds its stdin, so it exits when the launcher
   # does, however the launcher ends.
-  coproc HOST_CREDS { exec node "${REPO_ROOT}/deploy/aws/host-credentials.js" "${CREDS_TOKEN_FILE}"; }
+  coproc HOST_CREDS { exec node "$(hostPath "${REPO_ROOT}/deploy/aws/host-credentials.js")" "$(hostPath "${CREDS_TOKEN_FILE}")"; }
   CREDS_PORT=""
   read -r -t 20 CREDS_PORT <&"${HOST_CREDS[0]}" || true
   [ -n "${CREDS_PORT}" ] || { echo "ERROR: host-credentials.js did not start." >&2; exit 1; }
@@ -168,6 +196,11 @@ then
   for v in TF_VAR_db_snapshot_identifier TF_VAR_carryover_secret; do
     [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
   done
+  # An existing bootstrap administrator's name (environment/secrets.tf), on
+  # the apply that first creates its secret. By NAME only, so docker reads the
+  # value from this environment and it is in no process's argument list.
+  [ -z "${TF_VAR_bootstrap_admin_username:-}" ] ||
+    TF_VARS+=(-e TF_VAR_bootstrap_admin_username)
 fi
 
 if [ "${TF_STACK}" = "spiffe-realm" ];
@@ -176,11 +209,15 @@ then
   TF_VARS+=(-e "TF_REALM=${REALM}")
   if [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ];
   then
-    [ -n "${WORKLOAD_PORT:-}" ] && [ -n "${SERVER_PORT:-}" ] || {
-      echo "ERROR: ${TF_ACTION} needs WORKLOAD_PORT and SERVER_PORT, the realm's spiffe.workloadPort and spiffe.serverPort." >&2
+    [ -n "${SERVER_PORT:-}" ] || {
+      echo "ERROR: ${TF_ACTION} needs SERVER_PORT, the realm's spiffe.serverPort. WORKLOAD_PORT is accepted and no longer published (#324)." >&2
       exit 1
     }
-    TF_VARS+=(-e "TF_VAR_workload_port=${WORKLOAD_PORT}" -e "TF_VAR_server_port=${SERVER_PORT}")
+    TF_VARS+=(-e "TF_VAR_server_port=${SERVER_PORT}")
+    if [ -n "${WORKLOAD_PORT:-}" ];
+    then
+      TF_VARS+=(-e "TF_VAR_workload_port=${WORKLOAD_PORT}")
+    fi
   fi
 fi
 
@@ -193,21 +230,21 @@ for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy; do
   [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
 done
 
-REPORT_ARGS=()
+# THE IMAGE HAS NO `suite` ACTION SINCE 2026-09-21 (the in-VPC runner and
+# run-suite-in-aws.sh were deleted that day), so asking for it here is
+# refused in a sentence rather than handed to the image to fail (#1314).
 if [ "${TF_ACTION}" = "suite" ];
 then
-  REPORT_DIR="${REPO_ROOT}/tests/report/aws-${TF_ENV}"
-  mkdir -p "${REPORT_DIR}"
-  # The container runs as uid 10001, which is not you.
-  chmod 0777 "${REPORT_DIR}"
-  REPORT_ARGS=(-v "${REPORT_DIR}:/workspace/report")
-  for v in STS_SUITE_EXCLUDE STS_SUITE_ONLY STS_SUITE_KEEP_REALMS STS_SUITE_JOB_TIMEOUT_MS; do
-    [ -z "${!v:-}" ] || REPORT_ARGS+=(-e "${v}=${!v}")
-  done
+  echo "terraform-local.sh: there is no 'suite' action any more; run" \
+       "deploy/aws/run-suite.sh ${TF_ENV} (STS_SUITE_IN_AWS=1 to run every" \
+       "job inside AWS)." >&2
+  exit 2
 fi
 
 echo "==> Building ${IMAGE_NAME}" >&2
-"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/aws/Dockerfile" "${REPO_ROOT}" >/dev/null
+"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" \
+  -f "$(hostPath "${REPO_ROOT}/deploy/aws/Dockerfile")" \
+  "$(hostPath "${REPO_ROOT}")" >/dev/null
 
 # Named, in the background, and waited for, so that an interrupt here can be
 # relayed to it: a foreground `docker run` is a child bash will not interrupt,
@@ -221,7 +258,7 @@ relay() {
 }
 trap relay INT TERM
 "${DOCKER_CMD[@]}" run --rm --name "${CONTAINER_NAME}" \
-  --env-file "${CREDS_ENV_FILE}" \
+  --env-file "$(hostPath "${CREDS_ENV_FILE}")" \
   "${NETWORK_ARGS[@]}" \
   -e AWS_REGION="${AWS_REGION:-us-west-2}" \
   -e TF_STACK="${TF_STACK}" \
@@ -235,7 +272,6 @@ trap relay INT TERM
   -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
   -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \
-  "${REPORT_ARGS[@]}" \
   "${IMAGE_NAME}" &
 RUN_PID=$!
 rc=0

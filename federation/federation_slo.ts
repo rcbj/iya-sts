@@ -114,7 +114,6 @@
 // `common/protocol_stack.ts` and requires nothing that registers any.
 // ===========================================================================
 
-import crypto = require('crypto');
 import zlib = require('zlib');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
@@ -134,11 +133,20 @@ import documentSettings = require('../saml/document_settings');
 // A PARTNER'S ENCRYPTED NameID OR LOGOUT TOKEN (#168): decrypted with the
 // relationship's own key, as a sign-in's assertion is.
 import fedEncryption = require('./federation_encryption');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 // A PARTNER'S SIGN-OUT REACHES EVERY CELL (#98): see endAtPeers(). A library
 // that registers no route; the channel is required lazily, as a dialler.
 import cells = require('../common/cells');
 import realms = require('../common/realms');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. The sign-outs that happened and the
+// confirmation use it, and since #1327 the refusals too (below); the two
+// outcome pages that say nothing, or not everything, was signed out still
+// stay English.
+import PageLocale = require('../common/page_locale');
+// The one error page (#1327). A library: it requires `audit`, `realms`, the
+// page's language and `helpers`, none of which requires this module.
+import ErrorPage = require('../common/error_page');
 
 type Helpers = typeof helpers;
 
@@ -228,7 +236,10 @@ const STYLE = 'body{font-family:system-ui,Segoe UI,Helvetica,Arial,' +
   'cursor:pointer}table{border-collapse:collapse;width:100%;margin:.6rem 0}' +
   'th,td{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;' +
   'font-size:.9rem;vertical-align:top}.sub{color:#555;font-size:.9rem}' +
-  '.cannot{color:#a00}';
+  '.cannot{color:#a00}' +
+  // The language chooser, a collapsed row (#1289).
+  'details.language-row{float:right;margin:0 0 .5rem 1rem}' +
+  PageLocale.ROW_CSS;
 
 /**
  * A federation partner's sign-out, in both directions: the endpoints a
@@ -348,11 +359,15 @@ class FederationSlo {
   // SMALL THINGS EVERY PATH NEEDS.
   // =========================================================================
 
-  private page(title, body) {
+  // `t` is the page's translator (#539), for a page a person sees; without
+  // one the page is English, exactly as it always was.
+  private page(title, body, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSlo.page().");
     log.debug("Leaving FederationSlo.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>' + xmlEscape(title) + '</title><style>' + STYLE +
       '</style></head><body>' + body + '</body></html>';
@@ -360,24 +375,106 @@ class FederationSlo {
 
   // A refusal page, recorded on the relationship as a sign-in's is. The code
   // is marked by the caller on the line before, as everywhere else.
+  //
+  // SINCE #1327 IT IS `common/error_page.ts`'s PAGE, in the person's
+  // language: the sentence in the box chosen by the code the caller marked
+  // (`federationSloErrors.refusal.<code>`, falling back to a general one),
+  // "no session was ended" kept visible below it, the reason a sign-out is
+  // checked collapsed, and the English `what` and `why` — which until then
+  // were the page — among the diagnostics as data. The status, the
+  // `fedLastError` and the audit row are as they were.
   // error-code: none — the definition of the helper, not a call to it
   private refuse(res, record, status, what, why) {
-    const { federation, log, xmlEscape } = this.deps;
+    const { federation, log } = this.deps;
     log.debug("Entering FederationSlo.refuse(). " + what);
     const id = (record && record.fedId) || '';
     if (id) {
       federation.recordFailure(id, 'sign-out: ' + what + ': ' + why);
     }
-    res.status(status).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Refused',
-         '<h1>The partner\'s sign-out was refused</h1><p class="bad">' +
-         xmlEscape(what) + '</p><p>' + xmlEscape(why) + '</p>' +
-         '<p class="note">No session was ended. A sign-out from a federation ' +
-         'partner is authenticated exactly as a sign-in from it is — see ' +
-         'federation/CLAUDE.md, <em>A PARTNER\'S SIGN-OUT</em>.' +
-         (id ? ' This is recorded on the relationship as ' +
-               '<code>fedLastError</code>.' : '') + '</p>'));
+    this.errorPage(res, record, status, 'refused', what, why);
     log.debug("Leaving FederationSlo.refuse(). " + status);
+  }
+
+  // The person signed in on this browser, for the diagnostics, or ''. A
+  // session store that cannot be read (STS-AUTHN-0338 is one of the pages
+  // this draws) leaves the row out rather than failing the page.
+  private signedInAs(req) {
+    const { authn, log } = this.deps;
+    log.debug("Entering FederationSlo.signedInAs().");
+    let out = '';
+    try {
+      const session = req ? authn.sessionOf(req) : null;
+      out = String((session && session.user && session.user.username) || '');
+    } catch (e) {
+      log.debug("Caught in FederationSlo.signedInAs(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationSlo.signedInAs().");
+    return out;
+  }
+
+  // THE ONE ERROR PAGE THIS ENDPOINT DRAWS (#1327), for a refusal and for
+  // the two 404s `relationshipFor()` answers. `kind` picks the heading:
+  // `refused`, `off` (federation.enabled) or `none` (no such relationship).
+  // The code is the one the caller marked; the sentences are keyed by it, so
+  // they are named here only through `ErrorPage.sentence()`, with the general
+  // sentence last.
+  private errorPage(res, record, status, kind, what, why) {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSlo.errorPage(). " + kind);
+    const req = res.req || { headers: {}, query: {} };
+    const id = (record && record.fedId) || String((req.params &&
+                                                   req.params.id) || '');
+    const username = this.signedInAs(req);
+    let params: any = {};
+    try {
+      params = this.paramsOf(req);
+    } catch (e) {
+      // A body that cannot be read again leaves its values out of the
+      // diagnostics; the page itself does not depend on them.
+      log.debug("Caught in FederationSlo.errorPage(): " +
+                ((e && e.message) || e));
+    }
+    const t = PageLocale.translatorFor(req, { application: id,
+                                              username: username });
+    const code = String(errorCodes.codeOf(res) || '');
+    const title = kind === 'off'
+      ? t.text('federationSloErrors.title.off')
+      : (kind === 'none' ? t.text('federationSloErrors.title.none')
+                         : t.text('federationSloErrors.title.refused'));
+    // A failure while ending the sessions may have ended some of them, so
+    // the page does not say that none was.
+    const after = code === 'STS-FED-0136'
+      ? t.html('federationSloErrors.mayNotHaveFinished')
+      : t.html('federationSloErrors.nothingEnded');
+    const partner = record
+      ? (record.fedName && record.fedPeer && record.fedName !== record.fedPeer
+          ? record.fedName + ' (' + record.fedPeer + ')'
+          : (record.fedName || record.fedPeer || ''))
+      : '';
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: title,
+      message: ErrorPage.sentence(t, [
+        code ? 'federationSloErrors.refusal.' + code : '',
+        'federationSloErrors.refusal.general']),
+      after: '<p>' + after + '</p>',
+      background: kind === 'refused'
+        ? t.html('federationSloErrors.background') : '',
+      diagnostics: [
+        { label: t.text('errorPages.relationship'), value: id },
+        { label: t.text('errorPages.partner'), value: partner },
+        { label: t.text('errorPages.wa'), value: params.wa },
+        { label: t.text('errorPages.relayState'), value: params.RelayState },
+        { label: t.text('errorPages.state'), value: params.state },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: what },
+        { label: t.text('errorPages.detail'), value: why }
+      ]
+    });
+    log.debug("Leaving FederationSlo.errorPage().");
   }
 
   // The back channel answers a server, not a person: section 2.8's 400 with
@@ -410,7 +507,7 @@ class FederationSlo {
   // half-configured — a sign-out arriving for a disabled relationship is
   // refused without being looked at, which is what disabling is for.
   private relationshipFor(req, res, json) {
-    const { federation, errorCodes, log, xmlEscape } = this.deps;
+    const { federation, errorCodes, log } = this.deps;
     log.debug("Entering FederationSlo.relationshipFor(). id=" + req.params.id);
     if (!this.enabled()) {
       if (json) {
@@ -418,9 +515,9 @@ class FederationSlo {
         this.refuseJson(res, null, 400, 'federation.enabled is off');
       } else {
         errorCodes.mark(res, 'STS-FED-0001');
-        res.status(404).type('html').send(this.page('Not here',
-          '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-          'off.</p>'));
+        // The shared error page since #1327, in the person's language.
+        this.errorPage(res, null, 404, 'off', 'Federation is off',
+                       'federation.enabled is off.');
       }
       log.debug("Leaving FederationSlo.relationshipFor(). Off.");
       return null;
@@ -437,10 +534,9 @@ class FederationSlo {
                                          '"');
       } else {
         errorCodes.mark(res, 'STS-FED-0002');
-        res.status(404).type('html').send(this.page('No such relationship',
-          '<h1>No such single logout service</h1><p>There is no ' +
-          'service-provider-side relationship called <code>' + xmlEscape(id) +
-          '</code>.</p>'));
+        this.errorPage(res, null, 404, 'none', 'No such single logout service',
+                       'There is no service-provider-side relationship ' +
+                       'called "' + id + '".');
       }
       log.debug("Leaving FederationSlo.relationshipFor(). None.");
       return null;
@@ -536,12 +632,21 @@ class FederationSlo {
   // THE LIVE FEDERATED SESSIONS OF THIS RELATIONSHIP THAT `match` ACCEPTS.
   // The session store is persisted and replicated, so this is every node's
   // answer, and it is the ONE store: `fedPartnerSession` rides on the session
-  // rather than in an index beside it that could disagree with it.
+  // rather than in an index beside it that could disagree with it. The
+  // partner_relationship column only chooses which sealed bodies to open.
   private sessionsMatching(record, match) {
     const { authn, log } = this.deps;
     log.debug("Entering FederationSlo.sessionsMatching(). " + record.fedId);
+    const held = authn.sessionsForRelationship(record.fedId);
+    // Null is a failed index read, already recorded as STS-AUTHN-0338.
+    // An empty list is a real miss. Ending the empty list, or recording
+    // STS-FED-0122 for it, would say the partner's session was already gone.
+    if (held == null) {
+      log.debug("Leaving FederationSlo.sessionsMatching(). Unread.");
+      return null;
+    }
     const out = [];
-    authn.sessions.forEach(function (session) {
+    held.forEach(function (session) {
       const held = session && session.fedPartnerSession;
       if (!held || held.relationship !== record.fedId) {
         return;
@@ -566,7 +671,9 @@ class FederationSlo {
     log.debug("Entering FederationSlo.endSessions(). " + sessions.length);
     const logout = this.deps.logout();
     const by = 'the federation partner "' + record.fedId + '" (' + how + ')';
-    const issuer = base ? this.deps.issuerOf(base) : '';
+    // The OpenID provider's issuer, where `oauth-oidc` is advertised (#472).
+    const issuer = base
+      ? this.deps.issuerOf(helpers.rebaseTo(base, 'oauth-oidc')) : '';
     const results = sessions.map(function (session) {
       return logout.endPartnerSession(session, {
         by: by, issuer: issuer, channel: browser ? 'http' : 'back-channel',
@@ -594,6 +701,10 @@ class FederationSlo {
     });
     log.info('federation: ' + record.fedId + '\'s partner signed out ' +
              sessions.length + ' session(s) (' + how + ').');
+    // Each session in the page's language (#539) — the ambient request's,
+    // as the page drawing the list works it out. Built on the back channel
+    // too, where nobody reads it, which costs a lookup and nothing else.
+    const t = PageLocale.forPage({});
     log.debug("Leaving FederationSlo.endSessions().");
     return {
       results: results,
@@ -604,8 +715,9 @@ class FederationSlo {
         });
       }),
       summary: sessions.map(function (one) {
-        return '<li>' + xmlEscape((one.user && one.user.username) || '?') +
-               ' — session <code>' + xmlEscape(one.id) + '</code></li>';
+        return '<li>' + t.html('handoff.federation.slo.sessionItem',
+          { username: (one.user && one.user.username) || '?',
+            session: one.id }) + '</li>';
       }).join('')
     };
   }
@@ -784,6 +896,11 @@ class FederationSlo {
       }
       const matcher = FederationSlo.matcherOf(body.match);
       const sessions = self.sessionsMatching(record, matcher);
+      // A failed read is not zero ended. The asker counts a throw as a
+      // peer it could not reach, and must not record a no-match.
+      if (sessions == null) {
+        throw new Error('the sessions could not be read');
+      }
       if (!sessions.length) {
         return;
       }
@@ -985,7 +1102,8 @@ class FederationSlo {
       binding: req.method === 'POST' ? 'post' : 'redirect',
       rawQuery: this.rawQueryOf(req), params: params, xml: xml,
       rootLocalName: rootName, messageField: field,
-      fields: { samlSigningCertificate: record.fedSigningCertificate }
+      fields: { samlSigningCertificate: record.fedSigningCertificate },
+      purpose: 'federation-partner'
     });
     if (assessment.outcome === 'failed') {
       errorCodes.mark(res, 'STS-FED-0116');
@@ -1175,11 +1293,19 @@ class FederationSlo {
   // here, and in every other cell (#98, endAtPeers()).
   private endNamedSamlSessions(res, record, base, params, requestId, named,
                                indexes) {
-    const { log } = this.deps;
+    const { errorCodes, log } = this.deps;
     log.debug("Entering FederationSlo.endNamedSamlSessions().");
     const match = { protocol: 'saml', nameId: named, indexes: indexes };
     const sessions = this.sessionsMatching(record,
                                            FederationSlo.matcherOf(match));
+    // Marked before the LogoutResponse, whose non-success path records
+    // STS-FED-0122 when nothing is marked yet. This is not that no-match.
+    if (sessions == null) {
+      errorCodes.mark(res, 'STS-AUTHN-0338');
+      log.debug("Leaving FederationSlo.endNamedSamlSessions(). Unread.");
+      return this.answerLogoutRequest(res, record, base, params, requestId,
+        STATUS_RESPONDER, '', 'The sessions could not be read.', null);
+    }
     const ended = sessions.length
       ? this.endSessions(sessions, record, 'SAML 2.0 Single Logout', base,
                          true)
@@ -1225,24 +1351,30 @@ class FederationSlo {
     log.debug("Entering FederationSlo.answerLogoutRequest(). " + status);
     const destination = String(record.fedSloUrl || '').trim();
     const fan = ended ? ended.fanOut : { html: '', policy: {} };
+    // In the person's language (#539) — but "Nothing was signed out" is a
+    // refusal and stays English, and `message` is the LogoutResponse's own
+    // StatusMessage, protocol data. No language chooser: the page answers
+    // the partner's LogoutRequest, and drawing it again would answer it
+    // again.
+    const t = PageLocale.forPage({});
     const summary = ended
-      ? '<h1>Signed out</h1><p class="ok">The partner ' +
-        xmlEscape(record.fedName || record.fedId) + ' signed you out, and ' +
-        'this service ended the session it had started for you:</p><ul>' +
+      ? '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+        t.html('handoff.federation.slo.partnerSignedYouOut',
+               { partner: record.fedName || record.fedId }) + '</p><ul>' +
         ended.summary + '</ul>'
-      : '<h1>' + (status === STATUS_SUCCESS ? 'Signed out' :
-                  'Nothing was signed out') + '</h1><p>' +
+      : '<h1>' + (status === STATUS_SUCCESS
+                    ? t.html('handoff.common.signedOut')
+                    : 'Nothing was signed out') + '</h1><p>' +
         xmlEscape(message) + '</p>';
     if (!destination) {
       log.debug("Leaving FederationSlo.answerLogoutRequest(). Nowhere to " +
                 "send the LogoutResponse.");
       res.status(200).type('html').set('Cache-Control', 'no-store')
          .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
-         .send(this.page('Signed out', summary + fan.html +
-           '<p class="note">There is nowhere to send the partner its ' +
-           '<code>&lt;LogoutResponse&gt;</code>: this relationship has no ' +
-           '<code>fedSloUrl</code>. Set it to the partner\'s ' +
-           'SingleLogoutService.</p>'));
+         .send(this.page(t.text('handoff.federation.slo.title'),
+           summary + fan.html +
+           '<p class="note">' + t.html('handoff.federation.slo.nowhere',
+             { element: '<LogoutResponse>' }) + '</p>', t));
       return undefined;
     }
     const xml = this.logoutResponseXml(base, record, destination,
@@ -1260,13 +1392,14 @@ class FederationSlo {
     }
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
-       .send(this.page('Signed out', summary + fan.html +
-         '<h2>Back to ' + xmlEscape(record.fedName || record.fedId) +
-         '</h2>' + this.continueControl(target, 'Continue to the partner') +
-         '<p class="note">There is no script on this page. A ' +
-         'LogoutResponse is the partner\'s to receive and this service ' +
-         'sends it by the binding the relationship names ' +
-         '(<code>fedSloBinding</code>).</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         summary + fan.html +
+         '<h2>' + t.html('handoff.federation.slo.backTo',
+                         { partner: record.fedName || record.fedId }) +
+         '</h2>' + this.continueControl(target,
+           t.text('handoff.federation.slo.continueToPartner')) +
+         '<p class="note">' + t.html('handoff.federation.slo.noScript') +
+         '</p>', t));
     log.debug("Leaving FederationSlo.answerLogoutRequest(). Drew the page.");
     return undefined;
   }
@@ -1293,7 +1426,7 @@ class FederationSlo {
                             subStatus, message) {
     const { fedSp, iso, xmlEscape, log, logArtifact } = this.deps;
     log.debug("Entering FederationSlo.logoutResponseXml().");
-    const id = '_' + crypto.randomBytes(16).toString('hex');
+    const id = '_' + stsCrypto.randomBytes(16).toString('hex');
     const xml = '<samlp:LogoutResponse xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
       'IssueInstant="' + iso(0) + '" Destination="' + xmlEscape(destination) +
@@ -1330,6 +1463,8 @@ class FederationSlo {
         privateKeyPem: STS.xmlSigner.privateKeyPem,
         privateKey: STS.xmlSigner.privateKey,
         certPem: STS.xmlSigner.certPem,
+        // The chain through the service Root in KeyInfo (#1064).
+        keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
         sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
         placement: stsCrypto.PLACEMENT.AFTER_ISSUER, refUri: '#' + built.id,
         what: 'federated SAML 2.0 ' + field
@@ -1408,14 +1543,31 @@ class FederationSlo {
                   message: message, request: inResponseTo }
       });
       log.debug("Leaving FederationSlo.samlLogoutResponse(). Not success.");
+      // AN OUTCOME, NOT A REFUSAL, so not the error page — but translated
+      // since #1327 (rcbj), every word a person reads, with the language
+      // chooser. The partner's name, its StatusCode and its StatusMessage
+      // are data, shown as sent. The chooser returns to the realm's front
+      // door, not to this request: the partner's answer is spent, and asking
+      // again would be refused as unsolicited.
+      const t = PageLocale.translatorFor(req, {
+        application: record.fedId,
+        username: String(context.username || '') });
+      const prefix = realms.currentPrefix();
+      const named = { partner: record.fedName || record.fedId,
+                      status: status || t.text(
+                        'federationSloErrors.outcome.partnerRefused.noStatus'),
+                      message: message };
       res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.page('Signed out here',
-           '<h1>Signed out here, and not at the partner</h1><p>The session ' +
-           'here had already ended. ' + xmlEscape(record.fedName ||
-           record.fedId) + ' answered <code>' + xmlEscape(status ||
-           '(no status)') + '</code>' +
-           (message ? ': ' + xmlEscape(message) : '') + ', so you may still ' +
-           'be signed in there.</p>'));
+         .send(this.page(
+           t.text('federationSloErrors.outcome.partnerRefused.title'),
+           PageLocale.chooser(t, prefix, prefix + '/') +
+           '<h1>' +
+           t.html('federationSloErrors.outcome.partnerRefused.heading') +
+           '</h1><p>' + (message
+             ? t.html(
+               'federationSloErrors.outcome.partnerRefused.leadMessage', named)
+             : t.html('federationSloErrors.outcome.partnerRefused.lead',
+                      named)) + '</p>', t));
       return undefined;
     }
     audit.audit({
@@ -1426,11 +1578,14 @@ class FederationSlo {
       detail: { relationship: record.fedId, request: inResponseTo }
     });
     log.debug("Leaving FederationSlo.samlLogoutResponse(). Success.");
+    // In the person's language (#539), and the username the request was
+    // sent for. No language chooser: the partner's answer is spent.
+    const t = PageLocale.forPage({ username: context.username || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">You are signed out here, and ' +
-         xmlEscape(record.fedName || record.fedId) + ' confirmed that you ' +
-         'are signed out there too.</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.partnerConfirmed',
+                { partner: record.fedName || record.fedId }) + '</p>', t));
     return undefined;
   }
 
@@ -1438,13 +1593,37 @@ class FederationSlo {
   // WS-FEDERATION: wsignoutcleanup1.0 / wsignout1.0 — CONFIRMED BY THE
   // PERSON (decision 4). WS-Federation 1.2 section 13.2.4.
   // =========================================================================
-  private browserFederatedSession(req, record) {
+  // WHICH OF THE BROWSER'S SESSIONS THE PARTNER SIGNED IN (#561). With
+  // `authn.multipleAccounts` on the browser may hold several accounts, and
+  // `sessionOf()` answers nobody where two are live and nothing names one —
+  // so a partner's sign-out would find "nothing to sign out" while one of
+  // them is exactly its session. The set's live sessions are asked instead:
+  // the browser's own answer first where it is the partner's, otherwise the
+  // most recent of the set's that this relationship signed in. `sid`, on the
+  // confirmed POST, names the one the confirmation was drawn for, which must
+  // still be live in THIS browser's set. Off, the cookie's session, as it
+  // always was.
+  private browserFederatedSession(req, record, sid?) {
     const { authn, log } = this.deps;
     log.debug("Entering FederationSlo.browserFederatedSession().");
+    const partners = function (one) {
+      const held = one && one.fedPartnerSession;
+      return !!(held && held.relationship === record.fedId);
+    };
     const session = authn.sessionOf(req);
-    const held = session && session.fedPartnerSession;
-    log.debug("Leaving FederationSlo.browserFederatedSession().");
-    return held && held.relationship === record.fedId ? session : null;
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving FederationSlo.browserFederatedSession().");
+      return partners(session) ? session : null;
+    }
+    const theirs = authn.accountSessionsOf(req).filter(partners);
+    const found = sid
+      ? theirs.filter(function (one) {
+        return String(one.id) === String(sid);
+      })[0] || null
+      : (partners(session) ? session : theirs[theirs.length - 1] || null);
+    log.debug("Leaving FederationSlo.browserFederatedSession(). " +
+              theirs.length + " of the set's.");
+    return found;
   }
 
   private wsfedConfirmation(req, res, record, params) {
@@ -1464,32 +1643,48 @@ class FederationSlo {
                          'no federated session in this browser');
       errorCodes.mark(res, 'STS-FED-0122');
       log.debug("Leaving FederationSlo.wsfedConfirmation(). Nothing here.");
+      // AN OUTCOME, NOT A REFUSAL (#1327, rcbj): translated, with the
+      // language chooser returning to this same GET (drawing it again ends
+      // nothing), the partner's name as data.
+      const t = PageLocale.translatorFor(req, {
+        application: record.fedId, username: this.signedInAs(req) });
       res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.page('Nothing to sign out',
-           '<h1>Nothing to sign out</h1><p>This browser holds no session ' +
-           'that ' + xmlEscape(record.fedName || record.fedId) + ' signed ' +
-           'in here.</p>'));
+         .send(this.page(t.text('federationSloErrors.outcome.nothing.title'),
+           ErrorPage.chooser(t, req) +
+           '<h1>' + t.html('federationSloErrors.outcome.nothing.title') +
+           '</h1><p>' + t.html('federationSloErrors.outcome.nothing.lead',
+             { partner: record.fedName || record.fedId }) + '</p>', t));
       return undefined;
     }
     const handle = fedSp.putContext({ kind: 'wsfed-signout',
                                       id: record.fedId,
                                       sessionId: session.id });
     log.debug("Leaving FederationSlo.wsfedConfirmation(). Asking.");
+    // In the person's language (#539), with a language chooser: this page
+    // waits for a click, and the GET that drew it — it is drawn by a GET
+    // only — draws it again with a fresh confirmation; the one it replaces
+    // is never used, and expires. The chooser is a separate form, before the
+    // confirmation's.
+    const t = PageLocale.forPage({
+      username: (session.user && session.user.username) || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Sign out?',
-         '<h1>Sign out of this service?</h1><p>' +
-         xmlEscape(record.fedName || record.fedId) + ' asked this service to ' +
-         'end the session it signed you in to (WS-Federation ' +
-         '<code>' + xmlEscape(String(params.wa)) + '</code>).</p>' +
+       .send(this.page(t.text('handoff.federation.slo.confirm.title'),
+         PageLocale.chooser(t, realms.currentPrefix(),
+           PageLocale.herePath(realms.currentPrefix() +
+             federation.PATHS.slo + '/' + encodeURIComponent(record.fedId) +
+             '?wa=' + encodeURIComponent(String(params.wa)))) +
+         '<h1>' + t.html('handoff.federation.slo.confirm.heading') +
+         '</h1><p>' + t.html('handoff.federation.slo.confirm.lead',
+           { partner: record.fedName || record.fedId,
+             wa: String(params.wa) }) + '</p>' +
          '<form method="post" action="' +
          xmlEscape(fedSp.sloUrl(this.deps.baseUrlOf(req), record)) + '">' +
          '<input type="hidden" name="wa" value="wsignoutcleanup1.0">' +
          '<input type="hidden" name="confirm" value="' + xmlEscape(handle) +
-         '"><button type="submit">Sign out</button></form>' +
-         '<p class="note">WS-Federation\'s sign-out is not signed by its ' +
-         'specification, so any page can send one. That is why this service ' +
-         'asks rather than acting on it: nothing ends until this button is ' +
-         'pressed, in this browser. There is no script on this page.</p>'));
+         '"><button type="submit">' +
+         t.html('handoff.federation.slo.confirm.button') + '</button></form>' +
+         '<p class="note">' + t.html('handoff.federation.slo.confirm.note') +
+         '</p>', t));
     return undefined;
   }
 
@@ -1499,7 +1694,8 @@ class FederationSlo {
     const handle = String(params.confirm || '');
     const context = /^fed-[A-Za-z0-9_-]{1,64}$/.test(handle)
       ? fedSp.takeContext(handle) : null;
-    const session = this.browserFederatedSession(req, record);
+    const session = this.browserFederatedSession(req, record,
+      context && context.sessionId);
     if (!context || context.kind !== 'wsfed-signout' ||
         context.id !== record.fedId || !session ||
         session.id !== context.sessionId) {
@@ -1524,15 +1720,27 @@ class FederationSlo {
     const ended = this.endSessions([session], record, 'WS-Federation ' +
                                    'sign-out, confirmed', baseUrlOf(req),
                                    true);
-    this.deps.authn.clearSessionCookie(res);
+    // THE COOKIE (#561): with several accounts on, cleared only where the
+    // session that ended was the browser's default, the next live account
+    // then made the default — `logout/logout.ts`'s `endFor()` does the same.
+    if (this.deps.authn.multipleAccounts()) {
+      this.deps.authn.afterAccountSignOut(req, res);
+    } else {
+      this.deps.authn.clearSessionCookie(res);
+    }
     log.debug("Leaving FederationSlo.wsfedConfirmed(). Ended.");
+    // In the person's language (#539). No language chooser: the POST that
+    // drew it ended the session and spent its confirmation.
+    const t = PageLocale.forPage({
+      username: (session.user && session.user.username) || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy',
             app.contentSecurityPolicy(ended.fanOut.policy))
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">The session ' +
-         xmlEscape(record.fedName || record.fedId) + ' signed you in to has ' +
-         'ended.</p><ul>' + ended.summary + '</ul>' + ended.fanOut.html));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.sessionEnded',
+                { partner: record.fedName || record.fedId }) +
+         '</p><ul>' + ended.summary + '</ul>' + ended.fanOut.html, t));
     return undefined;
   }
 
@@ -1556,11 +1764,14 @@ class FederationSlo {
         'expired (federation.requestTtlMin).');
     }
     log.debug("Leaving FederationSlo.endSessionReturned().");
+    // In the person's language (#539). No language chooser: its `state` is
+    // spent, so a GET drawing it again is refused.
+    const t = PageLocale.forPage({ username: context.username || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">You are signed out here, and ' +
-         xmlEscape(record.fedName || record.fedId) + ' has sent you back ' +
-         'from its own sign-out.</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.sentBack',
+                { partner: record.fedName || record.fedId }) + '</p>', t));
     return undefined;
   }
 
@@ -1659,7 +1870,14 @@ class FederationSlo {
       header = null;
     }
     const typ = String((header && header.typ) || 'jwt').toLowerCase();
-    if (!header || LOGOUT_TYPES.indexOf(typ) < 0) {
+    // The explicit type stops an ID Token being replayed as a Logout Token
+    // (ASVS 5.0.0 10.5.5); the specification only recommends it, so a partner
+    // that omits it is a setting away.
+    const accepted = require('../common/mode').requiresTypedLogoutToken()
+      ? LOGOUT_TYPES.filter(function (one) {
+        return one !== 'jwt';
+      }) : LOGOUT_TYPES;
+    if (!header || accepted.indexOf(typ) < 0) {
       errorCodes.mark(res, 'STS-FED-0129');
       log.debug("Leaving FederationSlo.backchannelEndpoint(). Wrong typ.");
       return this.refuseJson(res, record, 400, header
@@ -1678,7 +1896,10 @@ class FederationSlo {
       }
       const verified = fedSp.verifyForeignJwt(token, record, keySet.keys, {
         audience: String(record.fedClientId || '') || undefined,
-        issuer: String(record.fedPeer || '') || undefined
+        issuer: String(record.fedPeer || '') || undefined,
+        // Section 2.6: validated as an ID Token is, so under the algorithm
+        // the relationship registered for its ID Tokens (#930).
+        expectAlg: String(record.fedIdTokenSignedResponseAlg || '')
       });
       if (!verified.ok) {
         errorCodes.mark(res, 'STS-FED-0128');
@@ -1760,6 +1981,13 @@ class FederationSlo {
       const base = baseUrlOf(req);
       const sessions = self.sessionsMatching(record,
                                              FederationSlo.matcherOf(match));
+      // An unread index is not a token that named no session. 503 asks
+      // the partner to retry; 200 with STS-FED-0122 would not.
+      if (sessions == null) {
+        errorCodes.mark(res, 'STS-AUTHN-0338');
+        return self.refuseJson(res, record, 503,
+                               'the sessions could not be read');
+      }
       if (sessions.length) {
         self.endSessions(sessions, record, 'Back-Channel Logout', base,
                          false);
@@ -1798,7 +2026,7 @@ class FederationSlo {
   // iframe; section 3's session-required variant is the only one accepted.
   // =========================================================================
   private frontchannelEndpoint(req, res) {
-    const { errorCodes, log, xmlEscape, app, baseUrlOf } = this.deps;
+    const { errorCodes, log, app, baseUrlOf } = this.deps;
     log.debug("Entering FederationSlo.frontchannelEndpoint().");
     const record = this.relationshipFor(req, res, false);
     if (!record) {
@@ -1856,36 +2084,54 @@ class FederationSlo {
     const match = { protocol: 'oidc', sid: sid };
     const sessions = this.sessionsMatching(record,
                                            FederationSlo.matcherOf(match));
+    // Same unread as the back channel. The "nothing to sign out" page
+    // records STS-FED-0122, and this read is not that page.
+    if (sessions == null) {
+      errorCodes.mark(res, 'STS-AUTHN-0338');
+      log.debug("Leaving FederationSlo.frontchannelEndpoint(). Unread.");
+      framed('', {});
+      return this.refuse(res, record, 503, 'The sessions could not be read',
+        'A failed read of the session index is not a sign-out that matched ' +
+        'nothing.');
+    }
     let body;
     let overrides = {};
+    // In the person's language (#539), and since #1327 the "Nothing to sign
+    // out" outcome too, though it carries an error code. No language
+    // chooser: the page is in a frame the partner loaded, and nobody reads
+    // it.
+    const t = PageLocale.forPage({});
     if (sessions.length) {
       const ended = this.endSessions(sessions, record, 'Front-Channel Logout',
                                      baseUrlOf(req), true);
       overrides = ended.fanOut.policy;
-      body = '<h1>Signed out</h1><ul>' + ended.summary + '</ul>' +
-             ended.fanOut.html;
+      body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><ul>' +
+             ended.summary + '</ul>' + ended.fanOut.html;
     }
     const self = this;
     log.debug("Leaving FederationSlo.frontchannelEndpoint().");
     return this.endAtPeers(record, 'Front-Channel Logout', match,
                            baseUrlOf(req)).then(function (peers) {
       if (!body && peers.ended) {
-        body = '<h1>Signed out</h1><p>The session that partner session ' +
-               'started here has ended.</p>';
+        body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><p>' +
+               t.html('handoff.federation.slo.frontchannelEnded') + '</p>';
       } else if (!body) {
         self.recordNoMatch(record, 'Front-Channel Logout', 'sid ' + sid);
         errorCodes.mark(res, peers.failed ? 'STS-CELL-0122'
                                           : 'STS-FED-0122');
-        body = '<h1>Nothing to sign out</h1><p>No session here was ' +
-               'started by that partner session' +
-               (peers.failed ? ' that this service could reach' : '') +
-               '.</p>';
+        body = '<h1>' + t.html('federationSloErrors.outcome.nothing.title') +
+               '</h1><p>' + (peers.failed
+                 ? t.html(
+                   'federationSloErrors.outcome.nothing.frameLeadUnreachable')
+                 : t.html('federationSloErrors.outcome.nothing.frameLead')) +
+               '</p>';
       }
+      const partner = record.fedName || record.fedId;
       res.status(200).type('html')
-         .send(framed(self.page('Signed out', body + '<p class="note">' +
-           xmlEscape(record.fedName || record.fedId) + ' loaded this page ' +
-           'in a frame to end the session it signed you in to here.</p>'),
-           overrides));
+         .send(framed(self.page(t.text('handoff.federation.slo.title'),
+           body + '<p class="note">' +
+           t.html('handoff.federation.slo.frontchannelNote',
+                  { partner: partner }) + '</p>', t), overrides));
       return undefined;
     });
   }
@@ -1985,7 +2231,7 @@ class FederationSlo {
     const label = record.fedName || record.fedId;
     const username = (session.user && session.user.username) || '';
     if (record.fedProtocol === 'saml2') {
-      const id = '_' + crypto.randomBytes(16).toString('hex');
+      const id = '_' + stsCrypto.randomBytes(16).toString('hex');
       const destination = String(record.fedSloUrl).trim();
       const until = new Date(Date.now() + Number(config.value(
         'federation.requestTtlMin')) * 60 * 1000).toISOString()
@@ -2063,20 +2309,25 @@ class FederationSlo {
       log.debug("Leaving FederationSlo.renderPartnerLogouts(). None.");
       return '';
     }
+    // In the language of the sign-out page it sits on (#539), worked out
+    // from the same ambient request. `target.what` is a technical note and
+    // stays as written.
+    const t = PageLocale.forPage({});
     log.debug("Leaving FederationSlo.renderPartnerLogouts().");
-    return '<h2>Federation partners</h2><table><thead><tr><th>Partner</th>' +
-      '<th>Sign out there too</th></tr></thead><tbody>' +
+    return '<h2>' + t.html('handoff.federation.partners.heading') +
+      '</h2><table><thead><tr><th>' +
+      t.html('handoff.federation.partners.partner') + '</th>' +
+      '<th>' + t.html('handoff.federation.partners.signOutThere') +
+      '</th></tr></thead><tbody>' +
       targets.map(function (target) {
         return '<tr><td><code>' + xmlEscape(target.label) + '</code><br>' +
           '<span class="sub">' + xmlEscape(target.protocol) + '</span></td>' +
-          '<td>' + self.continueControl(target, 'Sign out at ' +
-                                        target.label) +
+          '<td>' + self.continueControl(target,
+            t.text('handoff.federation.partners.signOutAt',
+                   { partner: target.label })) +
           '<span class="sub">' + xmlEscape(target.what) + '</span></td></tr>';
-      }).join('') + '</tbody></table><p class="sub">You signed in here ' +
-      'through these identity providers, and your session there is still ' +
-      'live. Each is a link or a form rather than an automatic redirect: ' +
-      'this page runs no script, and leaving for a partner is a deliberate ' +
-      'click.</p>';
+      }).join('') + '</tbody></table><p class="sub">' +
+      t.html('handoff.federation.partners.note') + '</p>';
   }
 }
 

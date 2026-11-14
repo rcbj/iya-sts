@@ -8,7 +8,7 @@
 // ===========================================================================
 // THE CLOSED SETS, IN PROCESS (#86, 2026-09-26).
 //
-// `tests/vendored/sts_admin_closed_sets.js` holds the running service to
+// `tests/protocol/sts_admin_closed_sets.js` holds the running service to
 // every enum the OpenAPI document declares, at every door. This file holds
 // the two things that job cannot see from outside:
 //

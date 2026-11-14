@@ -1,0 +1,262 @@
+{
+  "delegation.modes.impersonation.label": {
+    "en": "0595515700012854",
+    "text": "Usurpation d’identité"
+  },
+  "delegation.modes.impersonation.what": {
+    "en": "0abf4e622a5f3af4",
+    "text": "Ce qui en sort nomme l’identité initiale et rien d’autre. Le service à l’autre bout ne peut pas savoir qu’un intermédiaire est intervenu, pas plus que quiconque lit l’identifiant par la suite — c’est pourquoi l’émetteur est le seul endroit où cela est jamais visible."
+  },
+  "delegation.modes.delegation.label": {
+    "en": "a6d910ba93b7f894",
+    "text": "Délégation"
+  },
+  "delegation.modes.delegation.what": {
+    "en": "701b2586c236706c",
+    "text": "Ce qui en sort PORTE la chaîne : une revendication `act`, un ActAs composite, ou S4U_DELEGATION_INFO dans le PAC. L’autre bout peut voir qui demande réellement, et peut décider autrement pour cette raison."
+  },
+  "delegation.types.krb5-s4u2self.label": {
+    "en": "3227b5f96dc73440",
+    "text": "S4U2Self (transition de protocole)"
+  },
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "Un service a demandé un ticket POUR LUI-MÊME nommant un utilisateur qui n’est intervenu en rien — aucun mot de passe, aucun ticket lui appartenant, rien à quoi il ait consenti. C’est ainsi qu’un service qui a authentifié quelqu’un par d’autres moyens obtient pour lui une identité Kerberos, et ce n’est pas un privilège : le ticket est pour soi-même. [MS-SFU] l’appelle transition de protocole, et c’est la seule usurpation d’identité dans une chaîne Kerberos : les sauts S4U2Proxy qui la suivent sont de la délégation (#491)."
+  },
+  "delegation.types.krb5-s4u2proxy-classic.label": {
+    "en": "beee369772174369",
+    "text": "S4U2Proxy — délégation contrainte classique"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "Le frontal a ensuite atteint UN AUTRE service en tant que cet utilisateur. Autorisé par msDS-AllowedToDelegateTo sur le compte du FRONTAL, que seul un administrateur de domaine peut définir, et exigeant que le ticket de preuve soit transférable. C’est de la délégation même lorsque sa preuve provient de S4U2Self : le ticket porte la chaîne dans le S4U_DELEGATION_INFO du PAC (délégation contrainte de [MS-SFU], #491)."
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.label": {
+    "en": "54906f258baae283",
+    "text": "S4U2Proxy — basée sur les ressources (RBCD)"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.what": {
+    "en": "e8498b3165cb32f2",
+    "text": "Les mêmes messages, autorisés dans le sens opposé : msDS-AllowedToActOnBehalfOfOtherIdentity sur le compte du SERVEUR DORSAL, que quiconque contrôle cet objet peut définir lui-même. C’est là toute l’histoire de la sécurité de RBCD. Elle exige PA-PAC-OPTIONS et, depuis la mise à jour CVE-2020-16996 ([MS-SFU] 3.2.5.2.3), une preuve transférable également (#492). De la délégation, comme la classique (#491)."
+  },
+  "delegation.types.krb5-forwarded.label": {
+    "en": "6302b3aa3f095a40",
+    "text": "TGT transféré (délégation non contrainte)"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "Le client a remis tout son ticket d’octroi de tickets. Quiconque le détient peut atteindre N’IMPORTE QUOI en tant que ce client jusqu’à son expiration, sans plus jamais s’adresser à ce KDC — il n’y a donc aucune liste de cibles autorisées, puisqu’il n’y a aucune contrainte. Le seul contrôle a lieu au moment de l’émission, et il porte sur le COMPTE protégé (NOT_DELEGATED) plutôt que sur un service."
+  },
+  "delegation.types.wstrust-onbehalfof.label": {
+    "en": "097ac27476ff2f74",
+    "text": "WS-Trust OnBehalfOf"
+  },
+  "delegation.types.wstrust-onbehalfof.what": {
+    "en": "035f53a2a0d579d2",
+    "text": "Le demandeur a demandé un jeton CONCERNANT quelqu’un d’autre. Le jeton nomme ce quelqu’un et ne nomme pas le demandeur ; la partie de confiance voit donc une connexion ordinaire."
+  },
+  "delegation.types.wstrust-actas.label": {
+    "en": "6198e8f30a16a507",
+    "text": "WS-Trust ActAs (composite)"
+  },
+  "delegation.types.wstrust-actas.what": {
+    "en": "09402014c2ba9b4b",
+    "text": "L’ajout de la version 1.4, composite par définition : le jeton concerne le sujet nommé ET indique que le demandeur agit. C’est l’élément à utiliser lorsque l’autre bout doit pouvoir faire la différence."
+  },
+  "delegation.types.oauth-impersonation.label": {
+    "en": "0faea9c66541845d",
+    "text": "Échange de jetons — usurpation d’identité"
+  },
+  "delegation.types.oauth-impersonation.what": {
+    "en": "a3c3326ffc08702e",
+    "text": "Un subject_token et aucun actor_token. Ce qui revient est un jeton pour le sujet sans aucune trace de qui l’a échangé."
+  },
+  "delegation.types.oauth-delegation.label": {
+    "en": "00dfa35ca43f5f5d",
+    "text": "Échange de jetons — délégation"
+  },
+  "delegation.types.oauth-delegation.what": {
+    "en": "3575eb791d8ae545",
+    "text": "Un subject_token ET un actor_token. Ce qui revient porte une revendication `act` nommant l’acteur — et `act` s’imbrique : un second saut apparaît donc sous le premier au lieu de le remplacer."
+  },
+  "delegation.types.oauth-assertion-grant.label": {
+    "en": "e8d42c687f71ad96",
+    "text": "Octroi par assertion JWT bearer"
+  },
+  "delegation.types.oauth-assertion-grant.what": {
+    "en": "1406839ec28888cb",
+    "text": "Une partie de confiance signe un JWT indiquant pour qui est le jeton, et ce serveur d’autorisation en émet un. Ni navigateur, ni mot de passe, ni étape de consentement : la signature constitue toute l’autorisation, c’est pourquoi l’émetteur doit être déclaré sur une entrée d’application comme `oauthAssertionIssuer` avant que quoi que ce soit n’en soit cru."
+  },
+  "delegation.types.oauth-saml-assertion-grant.label": {
+    "en": "4ea51ffb0d6de32b",
+    "text": "Octroi par assertion SAML 2.0 bearer"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "Une partie de confiance signe une assertion SAML 2.0 indiquant pour qui est le jeton, et ce serveur d’autorisation en émet un. Ni navigateur, ni mot de passe, ni étape de consentement : la XML Signature constitue toute l’autorisation, c’est pourquoi l’Issuer doit être déclaré sur une entrée d’application comme `oauthSamlAssertionIssuer` et le certificat y être enregistré avant que quoi que ce soit n’en soit cru. C’est le pendant de RFC 7523 et ce n’est PAS le même mécanisme — les deux profils détiennent des paires de clés distinctes, et aucun ne peut signer pour l’autre."
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "Octroi GNAP par assertion utilisateur, sans interaction"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "Un client autorisé à se passer d’interaction (gnapSkipInteraction) a présenté une assertion vérifiée concernant une personne et s’est vu émettre des jetons pour elle. La personne n’a pas été sollicitée : l’assertion constitue toute sa part, et le jeton est le sien sans aucune trace du client."
+  },
+  "delegation.types.gnap-derivation.label": {
+    "en": "7441b7b960ae3a04",
+    "text": "Dérivation de jeton GNAP (serveur de ressources vers l’aval)"
+  },
+  "delegation.types.gnap-derivation.what": {
+    "en": "d160cc26eabf4540",
+    "text": "Un serveur de ressources a présenté un jeton qui lui avait été remis et en a demandé un pour atteindre un serveur de ressources en aval en tant que la même personne. Le jeton dérivé ne porte pas plus d’accès que celui dont il provient, et nomme le serveur de ressources dérivant dans sa chaîne act."
+  },
+  "delegation.roles.initial.label": {
+    "en": "e28c5dfe701033ab",
+    "text": "Identité initiale"
+  },
+  "delegation.roles.initial.what": {
+    "en": "9ab21122a5f78d50",
+    "text": "La personne que l’identifiant CONCERNE. Celle qui s’est connectée ailleurs, ou qui ne s’est jamais connectée du tout — avec S4U2Self et OnBehalfOf, elle n’était pas présente et n’a rien prouvé."
+  },
+  "delegation.roles.intermediary.label": {
+    "en": "cbf2c59661b0c067",
+    "text": "Intermédiaire"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "Celui qui agit en son nom : le service frontal, le demandeur, le client qui effectue l’échange. C’est la partie qui a présenté un identifiant qui lui est propre, et dans une usurpation d’identité c’est la partie que l’autre bout ne verra jamais."
+  },
+  "delegation.roles.target.label": {
+    "en": "978354db0c00fc78",
+    "text": "Cible"
+  },
+  "delegation.roles.target.what": {
+    "en": "d21e8125ace1bfed",
+    "text": "Ce qui est atteint — le service dorsal, l’AppliesTo, l’audience ou la ressource. C’est une application plutôt qu’une personne, et c’est la couche qui décide si tout cela a eu de l’importance."
+  },
+  "delegation.mapKey.table": {
+    "en": "4db151f5c8c7b7ac",
+    "text": "<table class=\"key\"><tr><th>Forme</th><th>Signification</th></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}</td></tr><tr><td class=\"art\">{{art3}}</td><td>{{what3}}</td></tr><tr><td class=\"art\">{{art4}}</td><td>{{what4}}</td></tr><tr><td class=\"art\">{{art5}}</td><td>{{what5}}</td></tr><tr><td class=\"art\">{{art6}}</td><td>{{what6}}</td></tr><tr><td class=\"art\">{{art7}}</td><td>{{what7}}</td></tr><tr><td class=\"art\">{{art8}}</td><td>{{what8}}</td></tr><tr><td class=\"art\">{{art9}}</td><td>{{what9}}</td></tr><tr><td class=\"art\">{{art10}}</td><td>{{what10}}</td></tr><tr><td class=\"art\">{{art11}}</td><td>{{what11}}</td></tr><tr><td class=\"art\">{{art12}}</td><td>{{what12}}</td></tr><tr><td class=\"art\">{{art13}}</td><td>{{what13}}</td></tr></table>"
+  },
+  "delegation.mapKey.tail": {
+    "en": "f364a7825f8f3e5f",
+    "text": "{{last}}</td></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}"
+  },
+  "delegation.federationKey.table": {
+    "en": "dde23dd944f3bc36",
+    "text": "<h3>Les cadres</h3><table><tr><th>Dessiné comme</th><th>Ce que c’est</th></tr><tr><td>{{box0}}</td><td>{{boxWhat0}}</td></tr><tr><td>{{box1}}</td><td>{{boxWhat1}}</td></tr><tr><td>{{box2}}</td><td>{{boxWhat2}}</td></tr><tr><td>{{box3}}</td><td>{{boxWhat3}}</td></tr></table><h3>Les lignes</h3>{{note}}<table><tr><th>Couleur</th><th>Signification</th></tr><tr><td>{{line0}}</td><td>{{lineWhat0}}</td></tr><tr><td>{{line1}}</td><td>{{lineWhat1}}</td></tr><tr><td>{{line2}}</td><td>{{lineWhat2}}</td></tr><tr><td>{{line3}}</td><td>{{lineWhat3}}</td></tr></table>"
+  },
+  "delegation.federationKey.fold": {
+    "en": "2ebcf71641b4acc2",
+    "text": "<details class=\"note fold\"><summary>{{summary}}</summary><div class=\"foldbody\">{{body}}</div></details>"
+  },
+  "delegation.mapKey.param.row0": {
+    "en": "9dcdf27572f0fd6c",
+    "text": "<strong>Une personne.</strong> Quelque chose qui a une entrée sous <code>ou=users</code> — toute personne que ce service a authentifiée, dans l’une quelconque des seize familles."
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>Une application.</strong> Quelque chose qui a une entrée sous <code>ou=applications</code> — un client OAuth, un fournisseur de services, un service Kerberos, une partie de confiance WS-Trust."
+  },
+  "delegation.mapKey.param.row2": {
+    "en": "974ae8fb2049ef51",
+    "text": "<strong>Les deux, ce qu’est généralement le niveau intermédiaire.</strong> <code>HTTP/frontend.example.com</code> s’authentifie (l’entonnoir le classe donc avec les personnes) ET se voit émettre des tickets (le registre le connaît donc). Deux entrées, une seule partie."
+  },
+  "delegation.mapKey.param.row3": {
+    "en": "5e08092d0d84020a",
+    "text": "<strong>Ce service, dans un domaine de confiance.</strong> Chaque ligne ici existe parce qu’il a émis ou refusé un identifiant. Le domaine figure sur le cadre parce qu’un domaine est une copie logique complète de ce service."
+  },
+  "delegation.mapKey.param.row4": {
+    "en": "863933eca45014e5",
+    "text": "<strong>Les deux petites lignes sous un nom sont des phrases différentes.</strong> La première dit ce qu’EST le cadre &mdash; lequel des deux magasins le connaît, ou le rôle d’après lequel sa forme a été devinée. La seconde est <strong>l’identifiant qu’un protocole devrait présenter pour l’atteindre, avec le terme propre à ce protocole</strong> : un <code>client_id</code> pour OAuth 2.0 et OpenID Connect, un <code>entityID</code> pour l’un ou l’autre profil SAML, un <code>wtrealm</code> pour WS-Federation, un <code>AppliesTo</code> pour WS-Trust, un <code>SPN</code> pour Kerberos. Le NOM sur le cadre est ce que quelqu’un a APPELÉ cette chose &mdash; un <code>cn</code>, un <code>appName</code> &mdash; et ne sert à rien dans une requête que vous vous apprêtez à construire, c’est pourquoi l’identifiant figure sur l’image et pas seulement dans l’infobulle. Lorsque les deux sont la même chaîne, seul le terme est dessiné, car la valeur est déjà le libellé ; lorsqu’UNE même chaîne est l’identifiant de deux familles, les deux termes sont dessinés (<code>AppliesTo / entityID</code>) ; et lorsque l’application répond à plusieurs noms DIFFÉRENTS, celui qui est dessiné est celui que cet acte a effectivement porté &mdash; ou, si l’acte portait quelque chose qu’aucun attribut d’identifiant ne contient, le premier déclaré, l’infobulle le signalant. Tous les noms auxquels elle répond figurent dans cette infobulle dans tous les cas."
+  },
+  "delegation.mapKey.param.row5": {
+    "en": "4954aa8673157fa8",
+    "text": "<strong>Un contour en pointillés est quelque chose qu’aucun des deux magasins ne connaît.</strong> Il est dessiné dans la forme qu’implique son RÔLE et n’est pas une erreur : une <code>audience</code> RFC 8693 que personne n’a mentionnée par ailleurs en est exactement un exemple."
+  },
+  "delegation.mapKey.param.row6": {
+    "en": "87f079ab380e9f00",
+    "text": "<strong>Le sens d’une ligne se lit à SES DEUX extrémités.</strong> Elle quitte le cadre par l’extrémité ronde et arrive au cadre par la pointe de flèche &mdash; ainsi la question que se pose réellement un lecteur, placé devant un cadre : <em>cette ligne est-elle la mienne, ou celle de quelqu’un sur moi ?</em>, trouve sa réponse là où il se trouve plutôt qu’à l’autre bout d’une courbe qui en croise trois autres en chemin. Chaque ligne ici porte les deux marques, et aucune n’est bidirectionnelle : deux applications qui s’atteignent mutuellement sont dessinées par deux lignes."
+  },
+  "delegation.mapKey.param.row7": {
+    "en": "22997b6d1c902ee3",
+    "text": "<strong>agit pour &mdash; une USURPATION D’IDENTITÉ.</strong> Ce qui en est sorti nomme l’identité initiale et rien d’autre ; rien à l’autre bout ne peut donc savoir qu’un intermédiaire est intervenu. En ambre parce que cette image est le seul endroit où ce fait existera jamais."
+  },
+  "delegation.mapKey.param.row8": {
+    "en": "94664ec3a3f92920",
+    "text": "<strong>agit pour &mdash; une DÉLÉGATION.</strong> Ce qui en est sorti PORTE la chaîne : une revendication <code>act</code>, un <code>ActAs</code> composite, <code>S4U_DELEGATION_INFO</code> dans le PAC."
+  },
+  "delegation.mapKey.param.row9": {
+    "en": "932da9e5324d3417",
+    "text": "<strong>atteint &mdash; la relation de CONFIANCE.</strong> Ce POUR QUOI est l’identifiant : le service dorsal, l’<code>AppliesTo</code>, l’audience ou la ressource. Le libellé indique quel nom il porte."
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>Une ligne brisée saute une partie que personne n’a nommée.</strong> Un ticket d’octroi de tickets transféré n’a pas d’intermédiaire et ne peut pas en avoir — le client le donne au service de son choix et ce KDC n’est jamais informé duquel."
+  },
+  "delegation.mapKey.param.row11": {
+    "en": "d10f0a35aeebc729",
+    "text": "<strong>peut déléguer &mdash; une relation CONFIGURÉE, EN POINTILLÉS tant qu’aucun acte ne l’a utilisée.</strong> Une ligne par paire qu’une entrée autorise : <code>appAllowedToDelegateTo</code> sur la source (contrainte) ou <code>appAllowedToActOnBehalfOf</code> sur la cible (basée sur les ressources) &mdash; les mêmes contrôles pour l’échange de jetons OAuth 2.0, WS-Trust et Kerberos. En trait plein dès qu’un acte l’a franchie. Dessinée sauf si les actes sont filtrés par résultat, type ou texte."
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>Le rouge est une chaîne sur laquelle rien n’a jamais été émis.</strong> L’infobulle reprend les propres mots du KDC expliquant pourquoi, soit la même phrase que celle envoyée au client."
+  },
+  "delegation.mapKey.param.row13": {
+    "en": "98bf6ee6df94528f",
+    "text": "<strong>Gris et en pointillés, partant de l’hexagone : ce service a ÉMIS vers cette partie.</strong> Elle va vers celui qui a DEMANDÉ — l’intermédiaire lorsqu’une chaîne en a un, l’identité initiale sinon."
+  },
+  "delegation.mapKey.param.issuance0": {
+    "en": "03efeb293124715d",
+    "text": "<strong>En pointillés serrés, vers l’hexagone : cette personne s’est AUTHENTIFIÉE ici.</strong> Le libellé est la famille de protocoles et l’infobulle la méthode — l’écran de connexion, un AS-REQ, un UsernameToken, une assertion fédérée. C’est pourquoi tout le reste de l’image a été autorisé."
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>Indigo plein : un OCTROI ORDINAIRE, et le libellé est l’octroi exact</strong> — <code>authorization_code</code>, <code>refresh_token</code>, <code>client_credentials</code>, avec la section de la spécification dans l’infobulle. Partant de la PERSONNE, il signifie qu’un identifiant la nommant est allé à cette application ; partant de l’HEXAGONE, il signifie que personne d’autre ne le détient — un jeton <code>client_credentials</code> concerne le client lui-même et un X509-SVID n’a pas d’audience ; le sujet et le détenteur forment donc un seul cadre et il y a une ligne au lieu de deux. Il ne prend ni l’ambre ni le vert, car l’usurpation d’identité et la délégation sont des propriétés d’un mécanisme de délégation et un octroi ne revendique ni l’une ni l’autre."
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>L’indigo plein partant d’une APPLICATION est cette même relation un cran plus loin : ce À QUOI est ADRESSÉ l’identifiant qu’elle détient.</strong> C’est la ligne <em>atteint</em> ci-dessus, dite d’un octroi ordinaire plutôt que d’une délégation — un jeton d’accès émis pour un frontal web et adressé à une passerelle d’API, c’est ce service qui dit que le premier peut atteindre la seconde au nom de cette personne, sans aucun échange pour y parvenir. Le mécanisme indiqué sur le libellé permet de distinguer les deux : un octroi, ou <code>Token exchange</code>. L’audience que porte effectivement le jeton figure dans l’infobulle, car le cadre porte le nom de l’application qui a enregistré cette audience. <strong>La ligne en dessous nomme les PERMISSIONS DÉLÉGUÉES de ce jeton</strong> — les valeurs de sa revendication <code>scope</code> que la ressource à l’autre bout a DÉFINIES, ce qu’un client demande en envoyant l’identifiant de permission complet (l’URI de base de la ressource suivie du nom) comme portée. <strong><code>default permissions</code> signifie que le jeton a nommé la ressource sans en demander aucune</strong> : c’est ce que produit une portée nommant le propre <code>client_id</code> de la ressource, puisque cette valeur devient l’audience et est retirée de la revendication de portée. Il indique ce qui a été ÉMIS et non ce qui a été ACCORDÉ — <a href=\"/admin/delegation/allowed\">le registre configuré</a> est l’autre question, et en développement <code>oauth2.delegatedPermissionsEnforced</code> est désactivé par défaut ; un jeton peut donc porter une permission jamais accordée à son client (le mode produit la refuse)."
+  },
+  "delegation.federationKey.param.box0": {
+    "en": "4c914ed78ba82e25",
+    "text": "Le domaine de confiance que vous consultez. Chaque ligne de l’image commence ou finit ici, car chaque relation lie ce domaine à quelqu’un d’autre."
+  },
+  "delegation.federationKey.param.box1": {
+    "en": "c7665e3dec149b4a",
+    "text": "Une application enregistrée ICI dont les personnes sont authentifiées ailleurs. Ce qui la dirige vers un partenaire, c’est <code>appFederationRelationship</code> sur son entrée sous <code>ou=applications</code>."
+  },
+  "delegation.federationKey.param.box2": {
+    "en": "26b7b7ae72e14cd3",
+    "text": "Un FOURNISSEUR DE SERVICES ÉTRANGER. Il demande à ce service d’authentifier quelqu’un. En pointillés, car ce n’est pas ce service et rien ici ne peut voir à l’intérieur."
+  },
+  "delegation.federationKey.param.box3": {
+    "en": "882c09b8e23c53ac",
+    "text": "Un FOURNISSEUR D’IDENTITÉ ÉTRANGER. Il authentifie la personne et ce service consomme ce qu’il émet. En pointillés pour la même raison — et en hexagone plutôt qu’en rectangle parce que c’est un service d’identité, ce qu’est aussi ce service."
+  },
+  "delegation.federationKey.param.line0": {
+    "en": "7b7e2aed4da51756",
+    "text": "<strong>Prête</strong> — activée et entièrement configurée. Elle fonctionnera."
+  },
+  "delegation.federationKey.param.line1": {
+    "en": "42faa997275831ac",
+    "text": "<strong>Désactivée</strong> — c’est ainsi que commence chaque relation. C’est l’état ordinaire de quelque chose que quelqu’un n’a pas fini de configurer, pas une panne."
+  },
+  "delegation.federationKey.param.line2": {
+    "en": "55067642229aee17",
+    "text": "<strong>Activée et NON configurée</strong> — la plus voyante, qui mérite d’être le seul rouge de cette page : elle REFUSERA au moment où quelqu’un tentera de l’utiliser, et elle paraît terminée sous tous les angles sauf celui-ci."
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>Un courtier qui ne peut pas jouer son rôle</strong> — la relation est correcte mais celle PAR laquelle elle authentifie ne l’est pas ; la personne arrive donc sur l’écran de connexion au lieu du partenaire. Cet écran ne vérifie aucun mot de passe, c’est pourquoi cela mérite une couleur à part : c’est le seul échec ici qui produit une connexion qui fonctionne."
+  },
+  "delegation.federationKey.param.noteSummary": {
+    "en": "1d497e16c1a376ab",
+    "text": "Une flèche est une REQUÊTE et non une assertion, ce qui est la seule chose de cette image qui&hellip;"
+  },
+  "delegation.federationKey.param.note": {
+    "en": "67dc19dd12a069bd",
+    "text": "<strong>Une flèche est une REQUÊTE et non une assertion</strong>, ce qui est la seule chose de cette image qui semble à l’envers tant qu’on ne l’a pas dit. Tout ce qui est à gauche arrive en voulant que quelqu’un soit connecté ; tout ce qui est à droite est sollicité pour effectuer la connexion. Ainsi, une relation côté fournisseur d’identité — où ce service FAIT UNE ASSERTION au partenaire — pointe VERS L’INTÉRIEUR, car ce que le partenaire a fait, c’est demander. Dessiné dans l’autre sens, un courtier d’identité est deux flèches quittant le même cadre sans rien qui les relie ; dessiné ainsi, c’est une seule ligne droite qui traverse le milieu, ce qu’est un pont."
+  }
+}

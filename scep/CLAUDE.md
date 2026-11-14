@@ -23,6 +23,23 @@ What a certificate may be issued for, what goes in it and where it is kept are
 and `common/CLAUDE.md` and that file's header argue it. The counters are
 `common/enrollment_monitor.ts`'s.
 
+## WHAT SCEP TAKES AND ANSWERS IS THE MODEL'S (#1579, 2026-11-10)
+
+SCEP's messages are CMS, and the DER work stays in `scep_cms.ts`.
+**`models/enrollment/scep.tsp` states the facts the code reads**: the query
+every request carries (`operation` one of the operations, `message` bounded
+and possibly empty; a parameter the model does not name is dropped), the
+four operations with their methods (only one that answers POST may be POSTed;
+the 405's `Allow` is the operation's methods) and media types, the
+capabilities GetCACaps announces in order (`CAPABILITIES`), and the values
+of a CertRep's signed attributes: `MESSAGE_TYPES`, `PKI_STATUS` and
+`FAIL_INFO` are the model's registers, read by `scep_cms.ts`. What stays in
+code: everything about a message's bytes, the algorithms (`DIGESTS`,
+`SIGNATURES`, `CIPHERS`, the OIDs), which failInfo a core refusal maps to,
+the transaction store and every decision the core makes.
+`tests/enrollment_model_wire.js` holds every operation's answer, each
+refusal and the CertRep values to the record taken before the switch.
+
 ## The decisions
 
 ### The authorization is the challenge, and the principal is the entry it names
@@ -88,12 +105,23 @@ their failInfo with them.
 4. **Signed attributes are verified over the bytes that arrived**, tag swapped
    to SET; the ones this service signs are DER-sorted.
 
-### Why the codec is in `scep/` and not `common/crypto.js`
+### The codec is in `scep/`; its cryptography is `common/crypto.js`'s (#453)
 
-Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
-reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — `gnap/gnap_httpsig.ts`'s
-arrangement.
+`scep_cms.ts` reads and writes the CMS envelope — the ASN.1, the attribute
+tables, the refusals — and every cryptographic operation inside it is a named
+function of `common/crypto.js`, group F's region of section 17: the content
+cipher (`scepContentEncrypt()` / `scepContentDecrypt()`, AES-CBC only, with
+`SCEP_CONTENT_CIPHERS` the closed list), the RSA key transport
+(`cmsKeyTransportDecrypt()` for PKCS#1 v1.5 or OAEP, `cmsKeyTransportEncrypt()`
+for the reply), the messageDigest attribute check
+(`cmsMessageDigestMatches()`), and the SignerInfo signature through
+`signBytes()` / `signatureValid()`. Until #453 the codec called node's
+primitives itself, an arrangement rule 3r tolerated for an envelope only SCEP
+reads; rcbj's rule of 2026-10-05 — every cryptographic operation, in every
+protocol, through the common module — ended it, and
+`tests/crypto_centralised.js` keeps it ended. The RA never signs with SHA-1:
+`certRep()` limits its digest to SHA-2, and a request naming SHA-1 or MD5 is
+refused `badAlg` before any signature is checked.
 
 ### The RA certificate
 
@@ -175,6 +203,15 @@ entry through `core.issueForDevice()` (`common/CLAUDE.md`, 3ag's *The
 as `attestations`. A RenewalReq is refused for it (`STS-DEVICE-0025`): the
 renewed certificate is on no person or application entry. The console lists
 it as a tenth profile row.
+
+**A TPM statement over SCEP is never FRESH (#257, rcbj's decision 3).**
+draft-ietf-lamps-attestation-freshness defines a nonce operation for CMP,
+EST and CMC, and nothing defines one for SCEP. The single-use challenge
+password is fresh and bound, but a nonce derived from it would be a
+transformation the statement type's own specification has to define
+(section 9), and none does. So the core records the statement's freshness
+`unproven`, and product refuses it (`STS-DEVICE-0050`): an attested device
+certificate in product is an EST one.
 
 ## Several nodes: the challenge and the transaction (2026-09-14, #46)
 
@@ -317,30 +354,30 @@ never parsing an ACME or EST record (`common/CLAUDE.md`, 3ag).
   and the API rows' schemas, the failInfo map. Mutants caught: signature always
   verifying, no implicit rejection, a process-wide transaction store, a zod
   schema that drifted from the OpenAPI body.
-* `tests/vendored/sts_scep_sscep.js` — **certnanny's sscep at cb3e539, the real
+* `tests/protocol/sts_scep_sscep.js` — **certnanny's sscep at cb3e539, the real
   client** (#210), over the plain-HTTP listener: GetCACaps, GetCACert, the
   `/admin-api` hint run literally by bash, a challenge the person made on
   `/portal/certificates`, `-R`, GetCert, GetCRL, the historical renewal and the
   old serial on the CRL, and the refusals (reused, unknown, another realm's RA,
   3DES, SHA-1). No sscep warning on any success.
-* `tests/vendored/sts_scep_micromdm.js` — **micromdm's scepclient v2.3.0**
+* `tests/protocol/sts_scep_micromdm.js` — **micromdm's scepclient v2.3.0**
   (#211): its transport over HTTPS and plain HTTP, three ways of choosing the
   recipient, and the `badAlg` its fixed SHA-1 and DES draw (below), which
   spends no challenge.
-* `tests/vendored/sts_scep_certmonger.js` — **certmonger 0.79.21** (#249):
+* `tests/protocol/sts_scep_certmonger.js` — **certmonger 0.79.21** (#249):
   the daemon started by the job on a private socket, add-scep-ca, a request
   with the person's portal challenge, CertPoll through its own `scep-submit`
   and stored GetCertInitial, resubmit and rekey onto the CRL, the refusals
   (reused, another realm's RA, DES-EDE3 and SHA-1 by editing its CA record)
   as `CA_UNREACHABLE` plus the monitor's code, and the HTTPS exception.
-* `tests/vendored/sts_scep_jscep.js` — **jscep 3.0.1** through
+* `tests/protocol/sts_scep_jscep.js` — **jscep 3.0.1** through
   `tests/tools/jscep-driver` (#250): negotiated algorithms, GetCACert with the
   CA checked against the Intermediate and Root, GetNextCACert refused, enrol,
   poll, retry, all six AES × SHA-2 combinations, GetCert, GetCRL, renewal
   keeping and changing the key, the refusals, and HTTPS.
 * `tests/scep_enrollment.js` section 3a — a version 1 signer and a repeated
   transactionID, in process (mutants: `parts.length < 7`, the 0037 refusal).
-* `tests/vendored/sts_scep_enrollment.js` with `tests/vendored/scep_client.js`
+* `tests/protocol/sts_scep_enrollment.js` with `tests/protocol/scep_client.js`
   (forge + node, nothing from here) — over HTTP, ~70 checks, ~70 seconds (it
   waits out a sixty-second challenge). Mutants caught: no URL-profile check, no
   signer-key/CSR-key check.

@@ -2,42 +2,53 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# A TRUST REALM'S TWO SPIFFE PORTS, PUBLISHED ON THE ENVIRONMENT'S NLB
-# (2026-09-18) — the Workload API and the SPIRE Server API, each on the same
-# number outside and inside, as `environment/locals.tf`'s `ldap` row is.
+# A TRUST REALM'S SPIRE SERVER API, PUBLISHED ON THE ENVIRONMENT'S NLB
+# (2026-09-18; the Workload API left this file on #324).
 #
-# A REALM IS TOLD APART BY ITS ADDRESS, AND ON FARGATE THAT MEANS ITS PORTS.
-# spiffe/CLAUDE.md's design gives each realm an address of its own and keeps
-# 8092 / 8181, because gRPC has no path to put a realm in. A Fargate task has
-# ONE address, so here every realm binds `0.0.0.0` on ports of its own — which
-# the service allows (`spiffe_server.ts`'s `claimedBy()` compares host AND
-# port) — and the load balancer publishes those ports. The default realm keeps
-# 8092 / 8181, and a realm may not take them.
+# A REALM IS TOLD APART BY ITS ADDRESS, AND ON FARGATE THAT MEANS ITS PORT.
+# spiffe/CLAUDE.md's design gives each realm an address of its own, because
+# gRPC has no path to put a realm in. A Fargate task has ONE address, so here
+# every realm binds `0.0.0.0` on a Server API port of its own — which the
+# service allows (`spiffe_server.ts`'s `claimedBy()` compares host AND port) —
+# and the load balancer publishes that port. The default realm keeps 8181,
+# and a realm may not take it.
 #
-# THE NODES ARE REGISTERED BY ADDRESS, BY THIS STACK, AND THAT IS THE COST.
-# Every other port the load balancer carries is a target group ECS keeps up to
-# date, through a `load_balancer` block on each node's service
-# (environment/ecs.tf). ECS allows FIVE per service, and `testidp` uses all
-# five (https, ldap, ldaps, pki, kerberos) — so these target groups are not
-# ECS's, and the nodes' current private addresses are looked up here and
-# registered. A task that restarts comes back on a NEW address: its old one
-# goes unhealthy and its new one is registered nowhere until this stack is
-# applied again. RE-APPLY AFTER ANY DEPLOY OR TASK RESTART. rcbj chose this
-# over a Lambda that follows ECS's task events (which the deployer role has no
-# permission to create) on 2026-09-18.
+# **THE WORKLOAD API IS NOT PUBLISHED (#324).** The same constraint as the
+# default realm: product mode will not bind the Workload API on TCP unless
+# the network authenticates the caller by source address (#166), and behind
+# this load balancer the node would see the balancer as every caller.
+# `workload_port` is still accepted so a stack applied before this change
+# can be planned and destroyed. The next apply removes its target group,
+# listener and rules. A workload uses a local agent on a Unix socket; the
+# agent attests over the Server API this file publishes.
+#
+# THE NODES ARE REGISTERED BY ADDRESS, BY THIS STACK, AND THE NODE KEEPS
+# THEM CURRENT (#323). Every other port the load balancer carries is a target
+# group ECS keeps up to date, through a `load_balancer` block on each node's
+# service (environment/ecs.tf). ECS allows FIVE per service, and the node
+# services use all five (https, ldap, ldaps, pki, kerberos) — so this target
+# group is not ECS's, and the nodes' current private addresses are looked
+# up here and registered. That attachment is the membership at apply time.
+# Between applies the node reconciles the group itself
+# (`cluster/spiffe_targets.js`; deploy/aws/CLAUDE.md). The task-role grant
+# does nothing until an administrator re-applies foundation/, and an image
+# built without the two AWS clients records the failure and does not
+# register. rcbj chose address registration over a Lambda that follows ECS's
+# task events (which the deployer role has no permission to create) on
+# 2026-09-18.
 #
 # NO PROXY PROTOCOL. The environment's target groups send a PROXY v2 header
 # and the node reads it (common/proxy_protocol.ts) — on the main port, LDAP,
 # LDAPS and the KDC. SPIFFE's gRPC listeners do NOT read it, and a header in
-# front of a gRPC or TLS stream is a broken connection, so these target groups
-# have it off. The node therefore sees the load balancer's address as the
-# caller, which is what a Workload API `peer:` selector will record.
+# front of a gRPC or TLS stream is a broken connection, so this target group
+# has it off.
 #
 # NOTHING HERE TURNS THE REALM'S SPIFFE ON. A realm is created with it off and
 # both ports 0 (common/realms.js, SEEDED_FOR_REALM); the realm has to be given
-# `spiffe.enabled`, `spiffe.workloadPort` and `spiffe.serverPort` — the SAME
-# two numbers as this stack's — in the console or through /admin-api. Until it
-# is, the target groups report every node unhealthy and the ports refuse.
+# `spiffe.enabled` and `spiffe.serverPort` — the SAME number as this stack's —
+# in the console or through /admin-api. Leave `spiffe.workloadPort` at its
+# seed, 0: product mode will not bind a TCP Workload API here. Until the
+# Server API port is set, its target group reports every node unhealthy.
 # ---------------------------------------------------------------------------
 
 locals {
@@ -49,28 +60,27 @@ locals {
   tg_prefix  = var.cell != "" ? "${local.prefix}-s" : "${local.prefix}-sp-"
   is_default = var.realm == "default"
 
-  # The two ports, by name. Same number on both sides.
+  # The Server API only (#324). workload_port is accepted and not published.
   spiffe_ports = {
-    workload = var.workload_port
-    server   = var.server_port
+    server = var.server_port
   }
 
   # PORTS A REALM MAY NOT TAKE: every node port and load-balancer port the
   # environment already uses (environment/locals.tf's `published_ports`, with
   # testidp's 80 for the PKI listener and 88 for the KDC), the embedded
   # debugger's listener, and — for any realm but the default one — the default
-  # realm's own 8092 and 8181, which it binds on 0.0.0.0 at startup whether or
-  # not its SPIFFE is on. Written out rather than read from the environment's
-  # state because a listener port is not one of its outputs.
+  # realm's Server API (8181) and 8092. 8092 is no longer published (#324);
+  # it stays reserved so a server port cannot land on a listener an
+  # environment applied before that change still has. Written out rather
+  # than read from the environment's state because a listener port is not
+  # one of its outputs.
   reserved_ports = concat(
     [80, 88, 389, 443, 636, 8081, 8082, 8444],
     local.is_default ? [] : [8092, 8181],
   )
   port_problem = (
-    var.workload_port == var.server_port
-    ? "workload_port and server_port are both ${var.workload_port}; a realm needs two ports."
-    : length(setintersection(toset(values(local.spiffe_ports)), toset(local.reserved_ports))) > 0
-    ? "one of ${var.workload_port} and ${var.server_port} is already used by this environment or by the default realm (${join(", ", local.reserved_ports)})."
+    length(setintersection(toset([var.server_port]), toset(local.reserved_ports))) > 0
+    ? "server_port ${var.server_port} is already used by this environment or by the default realm (${join(", ", local.reserved_ports)})."
     : ""
   )
 
@@ -205,13 +215,14 @@ resource "aws_lb_target_group" "spiffe" {
       condition     = local.port_problem == ""
       error_message = local.port_problem
     }
-    # THE DEFAULT REALM'S PORTS ARE THE ENVIRONMENT'S (#311, rcbj
-    # 2026-09-28): environment/spiffe_default.tf publishes 8092 and 8181 for
-    # it on every build. This stack is for ADDITIONAL realms. A precondition
-    # on a resource, so an old REALM=default state can still be destroyed.
+    # THE DEFAULT REALM'S SERVER API IS THE ENVIRONMENT'S (#311, rcbj
+    # 2026-09-28): environment/spiffe_default.tf publishes 8181 for it on
+    # every build. The Workload API is not published (#324). This stack is
+    # for ADDITIONAL realms. A precondition on a resource, so an old
+    # REALM=default state can still be destroyed.
     precondition {
       condition     = !local.is_default
-      error_message = "The default realm's SPIFFE ports are part of environment/ (spiffe_default.tf) and always published; this stack is for additional realms only."
+      error_message = "The default realm's SPIRE Server API is part of environment/ (spiffe_default.tf). This stack is for additional realms only. The Workload API is not published (#324)."
     }
     precondition {
       condition     = length(local.node_ips) > 0

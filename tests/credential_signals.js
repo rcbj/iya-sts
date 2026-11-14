@@ -49,7 +49,7 @@
 //      change step is drawn.
 //
 // Two children, because each loads the whole stack and one of them is in
-// product mode. `tests/vendored/sts_credential_signals.js` holds the parts
+// product mode. `tests/protocol/sts_credential_signals.js` holds the parts
 // that can be driven over the wire against a real stream.
 // ===========================================================================
 
@@ -157,13 +157,17 @@ function childMain() {
         const riskFailures = require(ROOT + '/risk/risk_failures');
         const riskEngine = require(ROOT + '/risk/risk_engine');
         const tlsClient = require(ROOT + '/common/tls_client_certificates');
-        const keyMaterial = require(ROOT + '/common/vendored/key_material');
-        const x509 = require(ROOT + '/common/vendored/x509');
+        const keyMaterial = require(ROOT + '/common/crypto_impl/key_material');
+        const x509 = require(ROOT + '/common/crypto_impl/x509');
         const errorCodes = require(ROOT + '/common/error_codes');
         const audit = require(ROOT + '/common/audit');
 
+        // The realm's attribute policy (#396) requires givenName, sn and
+        // mail of every person in product mode, and invents none of them.
         const person = function (name) {
-          ldap.createUser(name, { invent: false });
+          ldap.createUser(name, { invent: false,
+            attributes: { givenName: 'Signals', sn: name,
+                          mail: name + '@cs.example' } });
           credentials.setPassword(name, 'Credential-Signals-1!');
         };
 
@@ -172,7 +176,8 @@ function childMain() {
         // ================================================================
         // A1. The emailed factor.
         person('cs-amy');
-        mail.directory().writeAddress('cs-amy', 'amy@cs.example', 'admin');
+        await mail.directory().writeAddress('cs-amy', 'amy@cs.example',
+                                            'admin');
         const opened = authnPolicy.save('default', Object.assign({},
           authnPolicy.DEFAULTS, { emailCodeSecondFactor: true,
             emailLinkSecondFactor: true, emailFailureLimit: 5 }));
@@ -477,8 +482,8 @@ function childMain() {
         const refusedWrites = [];
         for (const type of ['stsTotpCredential', 'stsWebauthnCredential',
                             'stsAppPassword', 'stsBackupCodes',
-                            'hobaPublicKey', 'stsAssertionJwks',
-                            'stsSamlAssertionCertificate',
+                            'hobaPublicKey', 'stsAssertionKeyPair',
+                            'stsSamlAssertionKeyPair',
                             'stsSelfIssuedSubject', 'stsCibaUserCode',
                             'stsKrb5Keys']) {
           const answer = await modify('replace', type, ['x']);
@@ -606,7 +611,9 @@ function childMain() {
         config.setOverride('security.rateLimitPerIdentity', '200');
         config.setOverride('security.rateLimitPerAddress', '1000');
         const BREACHED = 'Breached-At-Sign-In-Passw0rd!-5';
-        ldap.createUser('cs-brie', { invent: false });
+        ldap.createUser('cs-brie', { invent: false,
+          attributes: { givenName: 'Brie', sn: 'cs-brie',
+                        mail: 'cs-brie@cs.example' } });
         const setFirst = credentials.setPassword('cs-brie', BREACHED);
         applications.createApplication({ identifier: 'cs-client',
           protocols: ['oauth2'],
@@ -638,11 +645,24 @@ function childMain() {
                 .update(verifier).digest('base64url'),
               code_challenge_method: 'S256' }).toString(), null, jar);
           const location = String(first.headers.location || '');
-          const authnId = (location.match(/[?&]authn=([^&]+)/) || [])[1] ||
+          const authnId = (location.match(/[?&#]authn=([^&]+)/) || [])[1] ||
             '';
-          const posted = await request('POST', '/authn/login',
-            { authn_id: decodeURIComponent(authnId), username: 'cs-brie',
-              password: BREACHED, action: 'login' }, jar);
+          // THE SCREEN OVER `/authn-api` (#571), with this browser's
+          // cookies as the in-process helper keeps them (name to value).
+          const kept = {};
+          String(jar.cookie || '').split(/;\s*/).forEach(function (pair) {
+            const eq = pair.indexOf('=');
+            if (eq > 0) {
+              kept[pair.slice(0, eq)] = pair.slice(eq + 1);
+            }
+          });
+          const posted = await require(ROOT +
+            '/tests/tools/authn_screen').submit({ port: port, jar: kept,
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+              'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 ' +
+              'Safari/537.36', at: location,
+            fields: { action: 'login', username: 'cs-brie',
+                      password: BREACHED } });
           return { authnId: authnId, first: first, posted: posted };
         };
         let mark = since();
@@ -651,11 +671,12 @@ function childMain() {
         const compromised = riscAfter(mark, 'cs-brie', 'credentialCompromise');
         const required = riscAfter(mark, 'cs-brie',
                                    'credentialChangeRequired');
-        note(setFirst.ok && one.authnId && one.posted.status === 200 &&
+        note(setFirst.ok && one.authnId &&
+             one.posted.next === 'password-change' &&
              credentials.passwordResetRequired('cs-brie'),
              'F1. the sign-in with a breached password is held at the ' +
              'change step', setFirst.ok + ' ' + one.first.status + ' ' +
-             one.posted.status + ' ' + one.posted.text.slice(0, 200));
+             one.posted.next + ' ' + String(one.posted.text).slice(0, 200));
         note(compromised.length === 1 &&
              compromised[0].values.credential_type === 'password' &&
              compromised[0].initiatingEntity === 'system' &&

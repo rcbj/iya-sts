@@ -22,9 +22,9 @@
 // exception it names: a module contract, no port, under a second.
 //
 // The two doors are covered where they live:
-// `tests/vendored/sts_admin_console.js` presses both controls in a browser and
+// `tests/protocol/sts_admin_console.js` presses both controls in a browser and
 // reads the membership back as a resolved DN, and
-// `tests/vendored/sts_directory_bulk_load_api.js` drives the two operations
+// `tests/protocol/sts_directory_bulk_load_api.js` drives the two operations
 // five thousand times. Neither of those can assert what a refusal SAYS.
 // ===========================================================================
 
@@ -33,6 +33,7 @@ delete process.env.CONFIG_FILE;
 
 const realms = require('../common/realms');
 const dir = require('../ldap/ldap_server');
+const errorCodes = require('../common/error_codes');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -175,22 +176,51 @@ function checkWhereTheValuePoints(t) {
     // THE GROUP BY DN AS WELL AS BY cn, because the two callers arrive with
     // different things in hand: the console's form is on a page whose rows are
     // DNs, and a script has the name it just created them under.
+    dir.createUser('dgw-bob', { origin: 'test' });
     const byDn = dir.addGroupMember(group.dn, 'dgw-bob', { origin: 'test' });
     t.equal(byDn.ok, true, 'the group may be named by its whole DN too');
 
-    // A MEMBER THAT NAMES NOTHING IS WRITTEN, NOT REFUSED. Refusing would make
-    // the dangling state /admin/groups exists to report impossible to produce
-    // from this door, and this directory does no referential integrity in
-    // either direction.
-    t.equal(byDn.present, false,
-            'somebody with no entry is a DANGLING member and is written ' +
-            'anyway');
+    // A MEMBER THAT NAMES NOTHING IS REFUSED since 2026-11-10 (rcbj): a group
+    // lists only what is there (`ldap_server.js` membersNamingNothing()).
+    const nobody = dir.addGroupMember(group.dn, 'dgw-nobody',
+                                      { origin: 'test' });
+    t.check(nobody.ok === false &&
+            errorCodes.codeOf(nobody) === 'STS-LDAP-0212' &&
+            /Nothing is stored at/.test((nobody.errors || []).join(' ')),
+            'somebody with no entry is REFUSED, by name and with its code',
+            JSON.stringify(nobody));
 
     const read = dir.readGroupEntry(group.dn);
-    t.equal((read.members || []).length, 2, 'the group holds both values');
-    t.equal(read.members.filter(function (m) { return m.present; }).length, 1,
-            'and exactly one of them resolves — which is the state the ' +
-            'console reports as memberCount 2, presentCount 1');
+    t.equal((read.members || []).length, 2, 'the group holds the two people');
+    t.equal(read.members.filter(function (m) { return m.present; }).length, 2,
+            'and both of them resolve');
+
+    const made = dir.createGroup('dgw-with-nobody',
+                                 { origin: 'test', members: ['dgw-nobody'] });
+    t.check(made.ok === false &&
+            errorCodes.codeOf(made) === 'STS-LDAP-0212' &&
+            !dir.readGroupEntry(dir.groupDnFor('dgw-with-nobody')),
+            'a group created listing somebody who is not there is refused, ' +
+            'and nothing is stored', JSON.stringify(made));
+
+    // THE ONE DOOR SCIM WRITES THROUGH: a value it adds is asked about...
+    const attrs = JSON.parse(JSON.stringify(read.attributes || {}));
+    ['createtimestamp', 'modifytimestamp', 'entrydn', 'entryuuid']
+      .forEach(function (one) { delete attrs[one]; });
+    const ghost = 'uid=dgw-ghost,' + dir.usersDn();
+    const withGhost = Object.assign({}, attrs,
+      { member: (attrs.member || []).concat([ghost]) });
+    const refused = dir.writeGroupEntry(group.dn, withGhost, 'test');
+    t.check(refused.ok === false && refused.reason === 'danglingMember' &&
+            (refused.members || []).join() === ghost,
+            'writeGroupEntry() refuses a member it would add that names ' +
+            'nothing', JSON.stringify(refused));
+    // ...and the values it already held are not: the same group, rewritten
+    // with only its own members, is written.
+    const same = dir.writeGroupEntry(group.dn, Object.assign({}, attrs,
+      { description: ['rewritten with its own members'] }), 'test');
+    t.check(same.ok === true,
+            'a rewrite that adds no member is written', JSON.stringify(same));
   });
   log.debug("Leaving checkWhereTheValuePoints().");
 }
@@ -294,19 +324,111 @@ function checkWhatIsNotWritten(t) {
   log.debug("Leaving checkWhatIsNotWritten().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. THE GROUP'S OWN EMAIL ADDRESS (#989).
+//
+// `mail` on the group entry, where a report definition shared with the
+// group sends its result notices: given at the create, or set and cleared
+// through `setGroupMail()`, which the group page's form and
+// `POST /admin-api/groups/set-mail` both reach. The shape rule and the
+// refusals are the directory's.
+// ---------------------------------------------------------------------------
+function checkTheGroupMail(t) {
+  log.debug("Entering checkTheGroupMail().");
+  t.log.info('the group\'s own email address');
+
+  withRealm(t, 'dgw-mail', function () {
+    const made = dir.createGroup('dgw-reporters',
+      { origin: 'test', mail: 'reporters@example.com' });
+    t.equal(made.ok, true, '6a. a create may give the address');
+    const read = dir.readGroupEntry(made.dn);
+    t.equal(((read.attributes.mail || [])[0]) || '', 'reporters@example.com',
+      '6b. and the entry carries it as mail');
+
+    const bad = dir.createGroup('dgw-bad-mail',
+      { origin: 'test', mail: 'not an address' });
+    t.equal(bad.ok, false, '6c. a value that is not an address is refused');
+    t.equal(errorCodes.codeOf(bad), 'STS-LDAP-0177',
+      '6d. with its own code');
+    t.equal(dir.readGroupEntry(dir.groupDnFor('dgw-bad-mail')), null,
+      '6e. and nothing was created');
+
+    const plain = dir.createGroup('dgw-plain', { origin: 'test' });
+    const set = dir.setGroupMail('dgw-plain', 'plain@example.com',
+      { origin: 'test' });
+    t.equal(set.ok && set.changed, true,
+      '6f. setGroupMail() writes the address by cn');
+    t.equal(((dir.readGroupEntry(plain.dn).attributes.mail || [])[0]) || '',
+      'plain@example.com', '6g. and it reads back');
+    const again = dir.setGroupMail(plain.dn, 'plain@example.com',
+      { origin: 'test' });
+    t.check(again.ok && again.changed === false,
+      '6h. the same address again changes nothing, by DN');
+    const replaced = dir.setGroupMail(plain.dn, 'other@example.com',
+      { origin: 'test' });
+    t.equal(replaced.changed, true, '6i. another address replaces it');
+    const members = dir.readGroupEntry(plain.dn).attributes;
+    t.equal(((members.mail || [])[0]) || '', 'other@example.com',
+      '6j. one value, the new one');
+    t.check((members.objectClass || members.objectclass || []).length > 0 &&
+      (members.description || []).length > 0,
+      '6k. the rest of the entry is untouched');
+    const cleared = dir.setGroupMail(plain.dn, '', { origin: 'test' });
+    t.equal(cleared.ok && cleared.changed, true, '6l. an empty value clears it');
+    t.equal(Object.prototype.hasOwnProperty.call(
+      dir.readGroupEntry(plain.dn).attributes, 'mail'), false,
+      '6m. and the attribute is gone');
+    const refused = dir.setGroupMail('dgw-plain', 'nope', { origin: 'test' });
+    t.equal(errorCodes.codeOf(refused), 'STS-LDAP-0177',
+      '6n. a bad address is refused at the setter too');
+    const missing = dir.setGroupMail('dgw-no-such', 'x@example.com',
+      { origin: 'test' });
+    t.equal(errorCodes.codeOf(missing), 'STS-LDAP-0050',
+      '6o. a group that is not there is refused');
+  });
+  log.debug("Leaving checkTheGroupMail().");
+}
+
+// A NUL in a value is not an LDAP string, and PostgreSQL rejects the byte
+// (`invalid byte sequence for encoding "UTF8": 0x00`). Until #1391 that row
+// stayed in the flush batch and every later write answered 503. The refusal
+// is at `putEntry()`, so the group is not stored at all.
+function checkANul(t) {
+  log.debug("Entering checkANul().");
+  t.log.info('a value carrying a NUL');
+
+  withRealm(t, 'dgw-nul', function () {
+    const note = dir.createGroup('dgw-nul-note',
+      { origin: 'test', note: 'hello\u0000there' });
+    t.equal(note.ok, false, 'a note carrying a NUL is refused');
+    t.equal(errorCodes.codeOf(note), 'STS-LDAP-0008',
+      'and the refusal is STS-LDAP-0008');
+    t.check(String((note.errors || []).join(' ')).indexOf('NUL') >= 0,
+      'and it says the value carries a NUL');
+    const stored = dir.allGroupEntries().some(function (group) {
+      return String(group.dn).indexOf('cn=dgw-nul-note,') === 0;
+    });
+    t.equal(stored, false, 'and nothing was stored under that name');
+  });
+  log.debug("Leaving checkANul().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkTheNameRules(t);
   checkTheEmptyGroup(t);
+  checkANul(t);
   checkWhereTheValuePoints(t);
   checkIdempotenceAndRefusals(t);
   checkWhatIsNotWritten(t);
+  checkTheGroupMail(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'directory_group_writes',
   describe: 'createGroup() and addGroupMember(): the names they refuse, the ' +
-            'dangling member they allow, and the person they never touch',
+            'member that names nothing they refuse (2026-11-10), and the ' +
+            'person they never touch',
   run: run
 };

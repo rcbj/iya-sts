@@ -115,12 +115,19 @@ import roles = require('../common/roles');
 // The claim sets' attribute claims (#94), whose attributes a directory write
 // can move. `claim_attributes` already requires it, so this closes no cycle.
 import stats = require('../common/admin_stats');
+import Classes = require('../common/domain_classes');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
   sessionId: string;
   sub: string;
   username: string;
+  // A SESSION WHOSE SUBJECT IS NOT A PERSON (#221 P5): the application entry
+  // a SCIM or WS-Trust caller authenticated as, by its identifier, or the
+  // SPIFFE workload a SPIRE Server API caller is, by its SPIFFE ID. At most
+  // one is set, and then the subject names it instead of a `user`.
+  application?: string;
+  workload?: string;
   iss: string;
   deviceId: string;
   tenant: string;
@@ -170,7 +177,11 @@ interface CaepRegisterDeps {
                 Record<string, any> };
   stepUp: { LEVELS: string[] };
   claimAttributes: { CATALOGUE: ReadonlyArray<{ ldap: string;
-                                                 claim: string[] }> };
+                                                 claim: string[] }>;
+                     // The catalogue and the realm's custom attributes
+                     // (#700). Optional, so a test need not supply it.
+                     rowsInRealm?(): ReadonlyArray<{ ldap: string;
+                                                     claim: string[] }> };
   groupClaims: { groupsOf(username: unknown): { enabled?: boolean;
                                                 claim: string;
                                                 values: string[] } };
@@ -433,10 +444,19 @@ class CaepRegister {
     if (asked.kind === 'updated') {
       const before = asked.before || {};
       const after = asked.after || {};
+      // BY NAME ON PURPOSE (#1579): the two loops below walk the claim
+      // catalogue and the claim sets, whose rows name the attribute each
+      // claim is read from. The names are configuration, not one field of
+      // a concept; the fixed reads further down use the concepts.
       const valuesAt = function (map: Record<string, any>, name: string) {
         return (map[name] || []).map(String);
       };
-      claimAttributes.CATALOGUE.forEach(function (row) {
+      // The catalogue and the realm's custom attributes (#700), which are
+      // claimed under their own names.
+      const catalogue: ReadonlyArray<{ ldap: string; claim: string[] }> =
+        typeof claimAttributes.rowsInRealm === 'function'
+          ? claimAttributes.rowsInRealm() : claimAttributes.CATALOGUE;
+      catalogue.forEach(function (row) {
         const name = row.ldap.toLowerCase();
         const now = valuesAt(after, name);
         if (JSON.stringify(valuesAt(before, name)) === JSON.stringify(now)) {
@@ -470,20 +490,27 @@ class CaepRegister {
       });
       // A person's own `memberOf` is read live as their groups, so writing it
       // moves the groups claim exactly as a group's `member` does.
-      groupsMoved = JSON.stringify(valuesAt(before, 'memberof')) !==
-                    JSON.stringify(valuesAt(after, 'memberof'));
+      // The groups are DirectoryEntry's memberOf (#1579).
+      const groupsAt = function (map: Record<string, any>): string[] {
+        return Classes.DirectoryEntry.fromEntry(map).memberOf || [];
+      };
+      groupsMoved = JSON.stringify(groupsAt(before)) !==
+                    JSON.stringify(groupsAt(after));
       // `email_verified` (#238) is not an attribute of its own: it is whether
       // `stsMailVerified` names the address `mail` holds, which is what
       // `oauth2.ts`'s emailVerified() reads through the mail channel. Either
       // half moving can move it — the address changed, or it was proved.
+      // The address is the User's and its proof the PersonRecord's
+      // (#1579).
       const verifiedAt = function (map: Record<string, any>): boolean {
-        const mail = String(valuesAt(map, 'mail')[0] || '').toLowerCase();
-        const proved = String(valuesAt(map, 'stsmailverified')[0] || '')
+        const mail = String(Classes.User.fromEntry(map).email || '')
           .toLowerCase();
+        const proved = String(Classes.PersonRecord.fromEntry(map)
+          .mailVerified || '').toLowerCase();
         return !!mail && mail === proved;
       };
       if (verifiedAt(before) !== verifiedAt(after) &&
-          valuesAt(after, 'mail').length) {
+          Classes.User.fromEntry(after).email !== undefined) {
         claims.email_verified = verifiedAt(after);
       }
     }
@@ -626,6 +653,20 @@ class CaepRegister {
   subjectFor(row: Partial<CaepRow>): Record<string, any> {
     const { helpers: { log }, subjects } = this.deps;
     log.debug("Entering CaepRegister.subjectFor().");
+    // A SESSION OF AN APPLICATION OR A WORKLOAD (#221 P5) is named by SSF
+    // 1.0 section 3.3's `application` member — `opaque` with the
+    // application's identifier, `uri` with a SPIFFE ID (`ssf_subjects.js`
+    // argues both) — beside the session. No `user`: there is no person.
+    if (row.application || row.workload) {
+      const named = subjects.complexSubject({
+        application: row.application
+          ? { format: 'opaque', id: String(row.application) }
+          : { format: 'uri', uri: String(row.workload) },
+        session: { format: 'opaque', id: String(row.sessionId || '') } });
+      log.debug("Leaving CaepRegister.subjectFor(). " +
+                subjects.describeSubject(named));
+      return named;
+    }
     // `complexSubject()` adds the `"format": "complex"` SSF 1.0 final
     // requires, and drops a member with no value.
     const subject: Record<string, any> = subjects.complexSubject({
@@ -1151,6 +1192,19 @@ class CaepRegister {
         acr: String(session.acr || ''),
         amr: session.amr || []
       });
+      // WHAT KIND OF PRINCIPAL THE SESSION IS (#221 P5), decided ONCE, when
+      // the row is made: `ssf.ts` answers whether the name is a SPIFFE
+      // workload or an application entry rather than a person, so a SCIM
+      // client's session is not announced as a "user" whose `sub` is a
+      // client_id. Asked only here, because answering may read the
+      // registry and a SCIM bulk load presents one session per request.
+      const principal = typeof asked.classifyPrincipal === 'function'
+        ? asked.classifyPrincipal(row.username, row.sub) : null;
+      if (principal && principal.workload) {
+        row.workload = String(principal.workload);
+      } else if (principal && principal.application) {
+        row.application = String(principal.application);
+      }
       register.set(sessionId, row);
       this.trim();
     }

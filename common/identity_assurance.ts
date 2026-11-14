@@ -80,8 +80,9 @@
 // are.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
+// The one place this service draws random values (#453).
+import stsCrypto = require('./crypto');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
 import mode = require('./mode');
@@ -526,10 +527,21 @@ class IdentityAssurance {
       log.debug("Leaving IdentityAssurance.list(). Damaged.");
       return [];
     }
+    // The members a record has, as text: an LDAP client can write this value,
+    // and it is on the person's page (#1353). `verification` and `claims` are
+    // the specification's own shapes and stay as they are.
     const records = parsed.filter(function (one: Json) {
       return IdentityAssurance.isObject(one) &&
              IdentityAssurance.isObject(one.verification) &&
              IdentityAssurance.isObject(one.claims);
+    }).map(function (one: Json) {
+      const kept: Json = { verification: one.verification, claims: one.claims };
+      ['id', 'recorded', 'source', 'by'].forEach(function (name: string) {
+        if (typeof one[name] === 'string') {
+          kept[name] = one[name];
+        }
+      });
+      return kept;
     });
     log.debug("Leaving IdentityAssurance.list(). " + records.length + ".");
     return records;
@@ -1152,7 +1164,7 @@ class IdentityAssurance {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.add().");
     const record = Object.assign({
-      id: nodeCrypto.randomUUID(),
+      id: stsCrypto.randomUuid(),
       recorded: new Date(this.deps.now()).toISOString()
     }, fields);
     if (Buffer.byteLength(JSON.stringify(record)) > MAX_RECORD_BYTES) {

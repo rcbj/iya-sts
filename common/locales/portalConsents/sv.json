@@ -1,0 +1,19 @@
+{
+  "sub": "Det du har godkänt att varje program får begära från den här identitetsleverantören för din räkning. <strong>Ett återkallande gäller direkt</strong>: varje token som programmet har åt dig under det du återkallar slutar fungera – även en som låter det agera när du inte är där (<code>offline_access</code>) – och det kan inte förnya dem även om du godkänner igen senare; det måste fråga dig på nytt. Att återkalla en sak avslutar allt som programmet fick tillsammans med den.",
+  "adminNote": "Vissa program har godkänts för alla av den som driver tjänsten, och du har aldrig tillfrågats om dem; de listas under <strong>Administrativa medgivanden</strong> nedan, och det är inte du som kan återkalla dem.",
+  "agreed": "Du godkände att det får be om",
+  "when": "När",
+  "withdraw": "Återkalla",
+  "withdrawAll": "Återkalla allt för det här programmet",
+  "none": "Du har inte godkänt något som finns registrerat. Ett program frågar dig första gången det vill något för din räkning, och ditt svar visas här.",
+  "previous": "Föregående",
+  "next": "Nästa",
+  "pageOf": "Sida {page} av {pages}",
+  "adminHeading": "Administrativa medgivanden",
+  "adminSub": "Den som driver tjänsten har godkänt dessa för alla som använder programmet, så du tillfrågades inte. De tillämpades när du loggade in i programmet. Bara en administratör kan återkalla dem; fråga din om du vill att något tas bort.",
+  "forEverybody": "Godkänt för alla",
+  "firstApplied": "Först tillämpat på dig",
+  "adminNone": "Inget program har använt ett medgivande som godkänts för alla när du loggade in i det.",
+  "doneScope": "Återkallat: {name} får inte längre be om {scope}. Det frågar dig igen nästa gång.",
+  "doneApplication": "Återkallat: {name} får inte längre be om något. Det frågar dig igen nästa gång."
+}

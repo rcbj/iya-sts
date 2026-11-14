@@ -25,7 +25,7 @@
 //      the held and the incoming value, for a configured principal and for a
 //      runtime-made one alike — so another node's older copy of the row can
 //      never unstamp a sign-out.
-//   C. THE EXCHANGES, the KDC driven in process with `tests/vendored/
+//   C. THE EXCHANGES, the KDC driven in process with `tests/protocol/
 //      krb5_wire.js` (the job client, written apart from the KDC): sign in,
 //      sign out in the first part of a second, the old TGT refused 20, a NEW
 //      AS exchange in the same second answered after the boundary and its TGT
@@ -41,7 +41,7 @@
 // for clearing), and a KDC whose clock is deliberately moved. Over HTTP both
 // are a race against a network and a container's clock; here the file chooses
 // the millisecond. The same exchanges over a real socket are
-// `tests/vendored/sts_kerberos_signout.js`, in both modes. The behaviour is
+// `tests/protocol/sts_kerberos_signout.js`, in both modes. The behaviour is
 // the same in both modes (#111's decision 3, no predicate), so this file runs
 // the development database this process built.
 //
@@ -56,7 +56,7 @@ const config = require('../common/config');
 const realms = require('../common/realms');
 const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for.

@@ -1,0 +1,262 @@
+{
+  "delegation.modes.impersonation.label": {
+    "en": "0595515700012854",
+    "text": "模擬"
+  },
+  "delegation.modes.impersonation.what": {
+    "en": "0abf4e622a5f3af4",
+    "text": "產出的內容只指名初始身分，別無其他。遠端的服務無法得知曾有中介者參與，之後閱讀該憑證的任何人也無法得知——這就是為什麼簽發者是唯一能看見這件事的地方。"
+  },
+  "delegation.modes.delegation.label": {
+    "en": "a6d910ba93b7f894",
+    "text": "委派"
+  },
+  "delegation.modes.delegation.what": {
+    "en": "701b2586c236706c",
+    "text": "產出的內容「攜帶」了整條鏈：`act` 宣告、複合 ActAs，或 PAC 中的 S4U_DELEGATION_INFO。遠端可以看見真正提出要求的是誰，並可能因此做出不同的決定。"
+  },
+  "delegation.types.krb5-s4u2self.label": {
+    "en": "3227b5f96dc73440",
+    "text": "S4U2Self（協定轉換）"
+  },
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "某個服務要求一張「給自己」的票證，並指名一位完全未參與的使用者——沒有密碼、沒有其票證、沒有任何其同意的事。這是以其他方式驗證某人身分的服務為其取得 Kerberos 身分的方式，而且它不是特權：票證是給你自己的。[MS-SFU] 稱之為協定轉換，它是 Kerberos 鏈中唯一的模擬：其後的 S4U2Proxy 跳轉都是委派（#491）。"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.label": {
+    "en": "beee369772174369",
+    "text": "S4U2Proxy——傳統限制委派"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "接著前端以該使用者身分到達「另一個」服務。由「前端」帳戶上的 msDS-AllowedToDelegateTo 授權，只有網域管理員能設定它，且要求證據票證可轉送。即使其證據來自 S4U2Self 也屬於委派：票證在 PAC 的 S4U_DELEGATION_INFO 中攜帶整條鏈（[MS-SFU] 限制委派，#491）。"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.label": {
+    "en": "54906f258baae283",
+    "text": "S4U2Proxy——以資源為基礎（RBCD）"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.what": {
+    "en": "e8498b3165cb32f2",
+    "text": "相同的訊息，從相反方向授權：「後端」帳戶上的 msDS-AllowedToActOnBehalfOfOtherIdentity，控制該物件的任何人都能自行設定。這就是 RBCD 安全性的全部故事。它需要 PA-PAC-OPTIONS，而自 CVE-2020-16996 更新（[MS-SFU] 3.2.5.2.3）起也需要可轉送的證據（#492）。與傳統方式一樣屬於委派（#491）。"
+  },
+  "delegation.types.krb5-forwarded.label": {
+    "en": "6302b3aa3f095a40",
+    "text": "轉送的 TGT（不受限制的委派）"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "用戶端交出了它整張票證授權票證。持有它的人可以在其到期前以該用戶端身分到達「任何」地方，且不再需要參照此 KDC——因此沒有允許目標的清單，因為根本沒有限制。唯一的控制是在簽發時，而且是在受保護的「帳戶」上（NOT_DELEGATED），而不是在任何服務上。"
+  },
+  "delegation.types.wstrust-onbehalfof.label": {
+    "en": "097ac27476ff2f74",
+    "text": "WS-Trust OnBehalfOf"
+  },
+  "delegation.types.wstrust-onbehalfof.what": {
+    "en": "035f53a2a0d579d2",
+    "text": "要求者要求一個「關於」別人的權杖。權杖指名那個人而不指名要求者，因此依賴方看到的是一般的登入。"
+  },
+  "delegation.types.wstrust-actas.label": {
+    "en": "6198e8f30a16a507",
+    "text": "WS-Trust ActAs（複合）"
+  },
+  "delegation.types.wstrust-actas.what": {
+    "en": "09402014c2ba9b4b",
+    "text": "1.4 版新增的項目，依定義即為複合：權杖關於所指名的主體，「並且」說明要求者正在代為行事。當遠端必須能夠分辨時，就該使用這個元素。"
+  },
+  "delegation.types.oauth-impersonation.label": {
+    "en": "0faea9c66541845d",
+    "text": "權杖交換——模擬"
+  },
+  "delegation.types.oauth-impersonation.what": {
+    "en": "a3c3326ffc08702e",
+    "text": "有 subject_token 而沒有 actor_token。傳回的是主體的權杖，其中沒有記錄是誰交換了它。"
+  },
+  "delegation.types.oauth-delegation.label": {
+    "en": "00dfa35ca43f5f5d",
+    "text": "權杖交換——委派"
+  },
+  "delegation.types.oauth-delegation.what": {
+    "en": "3575eb791d8ae545",
+    "text": "有 subject_token「以及」actor_token。傳回的內容攜帶指名行為者的 `act` 宣告——而且 `act` 可巢狀，因此第二次跳轉會出現在第一次之下，而不是取代它。"
+  },
+  "delegation.types.oauth-assertion-grant.label": {
+    "en": "e8d42c687f71ad96",
+    "text": "JWT 持有人斷言授權"
+  },
+  "delegation.types.oauth-assertion-grant.what": {
+    "en": "1406839ec28888cb",
+    "text": "受信任的一方簽署 JWT 說明權杖是給誰的，此授權伺服器便簽發一個。沒有瀏覽器、沒有密碼、也沒有同意步驟：簽章就是授權的全部，這就是為什麼在相信其中任何內容之前，簽發者必須以 `oauthAssertionIssuer` 宣告在應用程式項目上。"
+  },
+  "delegation.types.oauth-saml-assertion-grant.label": {
+    "en": "4ea51ffb0d6de32b",
+    "text": "SAML 2.0 持有人斷言授權"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "受信任的一方簽署 SAML 2.0 斷言說明權杖是給誰的，此授權伺服器便簽發一個。沒有瀏覽器、沒有密碼、也沒有同意步驟：XML Signature 就是授權的全部，這就是為什麼在相信其中任何內容之前，Issuer 必須以 `oauthSamlAssertionIssuer` 宣告在應用程式項目上，且憑證也必須註冊在那裡。它是 RFC 7523 的姊妹機制，但「不是」相同的機制——這兩個設定檔持有各自的金鑰組，任一方都不能代替另一方簽署。"
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "以使用者斷言進行、無互動的 GNAP 授權"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "受信任可略過互動的用戶端（gnapSkipInteraction）出示了關於某人的已驗證斷言，並獲簽發該人的權杖。該人未被詢問：斷言就是他們參與的全部，而權杖是他們的，其中沒有該用戶端的記錄。"
+  },
+  "delegation.types.gnap-derivation.label": {
+    "en": "7441b7b960ae3a04",
+    "text": "GNAP 權杖衍生（資源伺服器到下游）"
+  },
+  "delegation.types.gnap-derivation.what": {
+    "en": "d160cc26eabf4540",
+    "text": "資源伺服器出示了交給它的權杖，並要求一個以同一人身分到達下游資源伺服器的權杖。衍生的權杖所帶的存取權不超過其來源權杖，並在其 act 鏈中指名進行衍生的資源伺服器。"
+  },
+  "delegation.roles.initial.label": {
+    "en": "e28c5dfe701033ab",
+    "text": "初始身分"
+  },
+  "delegation.roles.initial.what": {
+    "en": "9ab21122a5f78d50",
+    "text": "憑證「關於」的是誰。在別處登入的人，或根本從未登入的人——在 S4U2Self 與 OnBehalfOf 下，他們並不在場，也未證明任何事。"
+  },
+  "delegation.roles.intermediary.label": {
+    "en": "cbf2c59661b0c067",
+    "text": "中介者"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "代表他們行事的是誰：前端服務、要求者、執行交換的用戶端。這是出示自己憑證的一方，而在模擬的情況下，它是遠端永遠看不到的一方。"
+  },
+  "delegation.roles.target.label": {
+    "en": "978354db0c00fc78",
+    "text": "目標"
+  },
+  "delegation.roles.target.what": {
+    "en": "d21e8125ace1bfed",
+    "text": "要到達的是什麼——後端服務、AppliesTo、對象或資源。它是應用程式而不是人，而且是決定這一切是否重要的那一層。"
+  },
+  "delegation.mapKey.table": {
+    "en": "4db151f5c8c7b7ac",
+    "text": "<table class=\"key\"><tr><th>形狀</th><th>含義</th></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}</td></tr><tr><td class=\"art\">{{art3}}</td><td>{{what3}}</td></tr><tr><td class=\"art\">{{art4}}</td><td>{{what4}}</td></tr><tr><td class=\"art\">{{art5}}</td><td>{{what5}}</td></tr><tr><td class=\"art\">{{art6}}</td><td>{{what6}}</td></tr><tr><td class=\"art\">{{art7}}</td><td>{{what7}}</td></tr><tr><td class=\"art\">{{art8}}</td><td>{{what8}}</td></tr><tr><td class=\"art\">{{art9}}</td><td>{{what9}}</td></tr><tr><td class=\"art\">{{art10}}</td><td>{{what10}}</td></tr><tr><td class=\"art\">{{art11}}</td><td>{{what11}}</td></tr><tr><td class=\"art\">{{art12}}</td><td>{{what12}}</td></tr><tr><td class=\"art\">{{art13}}</td><td>{{what13}}</td></tr></table>"
+  },
+  "delegation.mapKey.tail": {
+    "en": "f364a7825f8f3e5f",
+    "text": "{{last}}</td></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}"
+  },
+  "delegation.federationKey.table": {
+    "en": "dde23dd944f3bc36",
+    "text": "<h3>方框</h3><table><tr><th>繪製方式</th><th>代表什麼</th></tr><tr><td>{{box0}}</td><td>{{boxWhat0}}</td></tr><tr><td>{{box1}}</td><td>{{boxWhat1}}</td></tr><tr><td>{{box2}}</td><td>{{boxWhat2}}</td></tr><tr><td>{{box3}}</td><td>{{boxWhat3}}</td></tr></table><h3>線條</h3>{{note}}<table><tr><th>顏色</th><th>含義</th></tr><tr><td>{{line0}}</td><td>{{lineWhat0}}</td></tr><tr><td>{{line1}}</td><td>{{lineWhat1}}</td></tr><tr><td>{{line2}}</td><td>{{lineWhat2}}</td></tr><tr><td>{{line3}}</td><td>{{lineWhat3}}</td></tr></table>"
+  },
+  "delegation.federationKey.fold": {
+    "en": "2ebcf71641b4acc2",
+    "text": "<details class=\"note fold\"><summary>{{summary}}</summary><div class=\"foldbody\">{{body}}</div></details>"
+  },
+  "delegation.mapKey.param.row0": {
+    "en": "9dcdf27572f0fd6c",
+    "text": "<strong>一個人。</strong>在 <code>ou=users</code> 下有項目的對象——本服務在十六個家族中任何一個驗證過身分的任何人。"
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>一個應用程式。</strong>在 <code>ou=applications</code> 下有項目的對象——OAuth 用戶端、服務提供者、Kerberos 服務、WS-Trust 依賴方。"
+  },
+  "delegation.mapKey.param.row2": {
+    "en": "974ae8fb2049ef51",
+    "text": "<strong>兩者皆是，中間層通常就是如此。</strong><code>HTTP/frontend.example.com</code> 會進行身分驗證（因此匯集點將它與人員歸在一起），「也」有為它簽發的票證（因此登錄中有它）。兩個項目，一個當事方。"
+  },
+  "delegation.mapKey.param.row3": {
+    "en": "5e08092d0d84020a",
+    "text": "<strong>本服務，位於一個信任領域中。</strong>這裡的每條線之所以存在，都是因為它簽發或拒絕了一個憑證。領域標示在方框上，因為一個領域就是本服務完整的邏輯副本。"
+  },
+  "delegation.mapKey.param.row4": {
+    "en": "863933eca45014e5",
+    "text": "<strong>名稱下方的兩行小字是不同的句子。</strong>第一行是該方框「是」什麼 &mdash; 兩個存放區中哪一個認得它，或其形狀是依據哪個角色推測的。第二行是<strong>某個協定要到達它所必須出示的識別碼，並附上該協定自己對它的稱呼</strong>：OAuth 2.0 與 OpenID Connect 為 <code>client_id</code>，兩種 SAML 設定檔皆為 <code>entityID</code>，WS-Federation 為 <code>wtrealm</code>，WS-Trust 為 <code>AppliesTo</code>，Kerberos 為 <code>SPN</code>。方框上的「名稱」是某人對這個東西的「稱呼」&mdash; <code>cn</code>、<code>appName</code> &mdash; 對於您即將建構的請求毫無用處，這就是為什麼識別碼畫在圖上而不只放在工具提示中。兩者為相同字串時只畫出稱呼，因為該值已經是標籤；當「同一個」字串是兩個家族的識別碼時，兩個稱呼都會畫出（<code>AppliesTo / entityID</code>）；當應用程式回應多個「不同」名稱時，畫出的是此動作實際攜帶的那一個 &mdash; 或者，若動作攜帶的內容沒有任何識別碼屬性持有，則畫出第一個宣告的名稱，並由工具提示說明這一點。無論如何，它回應的每個名稱都在該工具提示中。"
+  },
+  "delegation.mapKey.param.row5": {
+    "en": "4954aa8673157fa8",
+    "text": "<strong>虛線外框代表兩個存放區都不認得的東西。</strong>它以其「角色」所暗示的形狀繪製，並不是錯誤：一個從未在其他地方被提及的 RFC 8693 <code>audience</code> 正是如此。"
+  },
+  "delegation.mapKey.param.row6": {
+    "en": "87f079ab380e9f00",
+    "text": "<strong>線的方向在其「兩」端都有標示。</strong>它從帶圓端的方框出發，抵達帶箭頭的方框 &mdash; 因此讀者站在某個方框旁實際會問的問題：<em>這條線是我的，還是別人指向我的？</em>，在他們所站的位置就能得到回答，而不必追到一條沿途穿越另外三條線的曲線遠端。這裡每條線都有這兩個標記，且沒有任何線是雙向的：兩個彼此到達的應用程式會畫成兩條線。"
+  },
+  "delegation.mapKey.param.row7": {
+    "en": "22997b6d1c902ee3",
+    "text": "<strong>代為行事 &mdash; 「模擬」。</strong>產出的內容只指名初始身分，別無其他，因此遠端沒有任何東西能得知曾有中介者參與。使用琥珀色，因為這張圖是這個事實唯一會存在的地方。"
+  },
+  "delegation.mapKey.param.row8": {
+    "en": "94664ec3a3f92920",
+    "text": "<strong>代為行事 &mdash; 「委派」。</strong>產出的內容「攜帶」了整條鏈：<code>act</code> 宣告、複合 <code>ActAs</code>、PAC 中的 <code>S4U_DELEGATION_INFO</code>。"
+  },
+  "delegation.mapKey.param.row9": {
+    "en": "932da9e5324d3417",
+    "text": "<strong>到達 &mdash; 「信任」關係。</strong>憑證的用途：後端服務、<code>AppliesTo</code>、對象或資源。標籤說明它攜帶的是誰的名稱。"
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>斷開的線跳過了一個無人指名的當事方。</strong>轉送的票證授權票證沒有中介者，也不可能有——用戶端把它交給自己選擇的任何服務，而此 KDC 從不會被告知是哪一個。"
+  },
+  "delegation.mapKey.param.row11": {
+    "en": "d10f0a35aeebc729",
+    "text": "<strong>可委派 &mdash; 「已設定」的關係，在有動作使用它之前為「虛線」。</strong>項目允許的每一對各一條線：來源上的 <code>appAllowedToDelegateTo</code>（限制）或目標上的 <code>appAllowedToActOnBehalfOf</code>（以資源為基礎）&mdash; OAuth 2.0 權杖交換、WS-Trust 與 Kerberos 使用相同的控制項。一旦有動作跨越它就變成實線。除非動作依結果、類型或文字篩選，否則都會繪製。"
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>紅色是從未據以簽發任何東西的鏈。</strong>工具提示附有 KDC 自己說明原因的文字，與傳送給用戶端的句子相同。"
+  },
+  "delegation.mapKey.param.row13": {
+    "en": "98bf6ee6df94528f",
+    "text": "<strong>從六角形出發的灰色虛線：本服務已「簽發」給該當事方。</strong>它指向「提出要求」的一方——鏈中有中介者時為中介者，沒有時為初始身分。"
+  },
+  "delegation.mapKey.param.issuance0": {
+    "en": "03efeb293124715d",
+    "text": "<strong>指向六角形的點線：此人在此處「驗證了身分」。</strong>標籤是協定家族，工具提示是方法——登入畫面、AS-REQ、UsernameToken、聯合斷言。這就是圖上其他一切得以被允許的原因。"
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>靛藍實線：「一般授權」，標籤就是確切的授權類型</strong>——<code>authorization_code</code>、<code>refresh_token</code>、<code>client_credentials</code>，規格章節在工具提示中。從「人」出發，表示指名他們的憑證交給了該應用程式；從「六角形」出發，表示沒有其他人持有它——<code>client_credentials</code> 權杖是關於用戶端自己的，而 X509-SVID 沒有對象，因此主體與持有者是同一個方框，只有一條線而不是兩條。它不使用琥珀色或綠色，因為模擬與委派是委派機制的屬性，而授權兩者都不主張。"
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>從「應用程式」出發的靛藍實線，是同一關係再往前一步：它持有的憑證「指向」誰。</strong>它就是上方的<em>到達</em>線，只是針對一般授權而非委派——簽發給 Web 前端、指向 API 閘道的存取權杖，就是本服務在說前者可以此人的名義到達後者，過程中沒有任何交換。標籤上的機制區分了兩者：授權，或 <code>Token exchange</code>。權杖實際攜帶的對象在工具提示中，因為方框是以註冊該對象的應用程式命名的。<strong>其下方的那一行指名該權杖上的「委派權限」</strong>——其 <code>scope</code> 宣告中、由遠端資源所「定義」的值，用戶端透過將完整權限識別碼（資源的基礎 URI 加上名稱）作為範圍送出來要求它們。<strong><code>default permissions</code> 表示權杖指名了該資源，但沒有要求其中任何權限</strong>：這是指名資源自身 <code>client_id</code> 的範圍所產生的結果，因為該值會成為對象並從範圍宣告中移除。它說明的是「簽發」了什麼，而不是「授予」了什麼——<a href=\"/admin/delegation/allowed\">已設定的登錄</a>是另一個問題，而在開發模式下 <code>oauth2.delegatedPermissionsEnforced</code> 預設為關閉，因此權杖可能攜帶其用戶端從未被授予的權限（產品模式會拒絕）。"
+  },
+  "delegation.federationKey.param.box0": {
+    "en": "4c914ed78ba82e25",
+    "text": "您正在查看的信任領域。圖上的每條線都從這裡開始或在這裡結束，因為每個關係都存在於此領域與其他某方之間。"
+  },
+  "delegation.federationKey.param.box1": {
+    "en": "c7665e3dec149b4a",
+    "text": "在「此處」註冊、其人員在別處驗證身分的應用程式。將它指向夥伴的，是其在 <code>ou=applications</code> 下的項目上的 <code>appFederationRelationship</code>。"
+  },
+  "delegation.federationKey.param.box2": {
+    "en": "26b7b7ae72e14cd3",
+    "text": "「外部服務提供者」。它要求本服務驗證某人的身分。以虛線繪製，因為它不是本服務，這裡沒有任何東西能看見其內部。"
+  },
+  "delegation.federationKey.param.box3": {
+    "en": "882c09b8e23c53ac",
+    "text": "「外部身分提供者」。它驗證人員的身分，本服務使用它所簽發的內容。基於相同理由以虛線繪製——並且是六角形而非矩形，因為它是身分服務，本服務也是。"
+  },
+  "delegation.federationKey.param.line0": {
+    "en": "7b7e2aed4da51756",
+    "text": "<strong>就緒</strong>——已啟用且完整設定。它會正常運作。"
+  },
+  "delegation.federationKey.param.line1": {
+    "en": "42faa997275831ac",
+    "text": "<strong>已停用</strong>——每個關係一開始都是如此。這是某人尚未完成設定之事物的一般狀態，而不是故障。"
+  },
+  "delegation.federationKey.param.line2": {
+    "en": "55067642229aee17",
+    "text": "<strong>已啟用但「未設定」</strong>——最醒目的一種，也配得上成為此頁唯一的紅色：在有人嘗試使用它的那一刻它會「拒絕」，而從這裡以外的每個角度看，它都像是已經完成。"
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>無法仲介的仲介者</strong>——此關係本身沒問題，但它「透過」來驗證身分的關係有問題，因此使用者看到的是登入畫面而不是夥伴。該畫面不檢查任何密碼，這就是它值得擁有自己顏色的原因：它是這裡唯一會產生可用登入的失敗。"
+  },
+  "delegation.federationKey.param.noteSummary": {
+    "en": "1d497e16c1a376ab",
+    "text": "箭頭是「請求」而不是斷言，這是這張圖中唯一一件&hellip;"
+  },
+  "delegation.federationKey.param.note": {
+    "en": "67dc19dd12a069bd",
+    "text": "<strong>箭頭是「請求」而不是斷言</strong>，這是這張圖中唯一一件在說明之前看起來是反過來的事。左側的一切抵達時都希望有人登入；右側的一切則被要求執行登入。因此身分提供者端的關係——本服務向夥伴「斷言」的關係——是指向內側的，因為夥伴所做的是提出請求。若反過來畫，身分仲介者會是從同一方框出發、彼此毫無連接的兩支箭頭；照這樣畫，它是一條穿過中間的直線，這正是橋梁的樣子。"
+  }
+}

@@ -1,0 +1,236 @@
+# CLAUDE.md — `account-api/`
+
+**The Account API OpenAPI document is written in `models/api/account.tsp` since #1390.**
+An operation's summary, description, tag, mirrors, statuses and answer model are there;
+its routing row (here and in `portal/`) keeps the path, the handler and the zod schemas,
+and `tests/model_openapi.js` holds those schemas to the model.
+
+## 3ck. THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
+
+`/account-api` is what the user portal draws every page from and sends every
+form to, since the portal became a static application on the admin console's
+pattern (#446). `rust/DESIGN.md` section 5.2 planned it under this name;
+rcbj's decisions on #568 are that it is built on the Node service now, that
+the portal is a PUBLIC client with DPoP (reversing #444's D9 for the portal as
+#446 reversed it for the console), that the pages nobody is signed in to are
+drawn the same way, and that the console-session adoption of 2026-09-30 is
+dropped.
+
+Two files:
+
+| File | What it is |
+|---|---|
+| `account_api.ts` | The gate, the route wrapper, the operation table gathered from `PROVIDERS`, the cell placement, and four operations of its own: the index, the document, `GET /account-api/me` and `GET /account-api/locale`. |
+| `account_api_spec.ts` | The OpenAPI 3.1 document: a pure function over the table, on `mgmt-api/admin_api_spec.ts`'s rule. |
+
+The shapes the two halves agree on are `types/account-api.d.ts`
+(`AccountOperation`, `AccountContext`, `AccountCaller`, and the browser's
+`PortalPage` and `PortalRenderContext`).
+
+**An operation's handler is typed by the model (#1579)**: `AccountOperation` is
+the model's operations discriminated by `operationId`, so a handler's request,
+validated `input` and response, and `ctx.json()`'s answer at a literal 2xx
+status, are its operation's. A helper a handler hands `res` to takes
+`AccountAnswering<'<operationId>'>`. A handler names no parameter type of its
+own, which would opt it out. `models/CLAUDE.md` (*The API types type the
+handlers*) argues it.
+
+## THE RULE THAT MATTERS MORE THAN THE REST: THE PERSON IS THE TOKEN'S
+
+**No operation takes a username, an id or a DN naming whose account it acts
+on.** `authenticate()` composes the caller from the verified token —
+`claims.username`, or the person `helpers.nameForSubject()` reads off `sub` —
+and a handler reads `caller.username` and nothing else. That is the portal's
+rule (OWASP A01, `portal/CLAUDE.md`) moved to the layer every portal page now
+stands on. An id a body carries (a passkey's credential id, an assessment, a
+device) is looked up among the CALLER's own, as it always was.
+
+**Sign-in names (#644) are that person's.** `GET` and `POST
+/account-api/pseudonyms` take no username. An email added there stays off
+the username index until `GET` and `POST /account-api/verify-pseudonym`
+spend the mailed link. That pair is a `link` operation. It is not the
+recovery-address link.
+
+**`link` and `public` operations are the exception and are not one**, for
+`/portal/activate`'s reason: nobody is signed in, the person comes from the
+link, and the single-use secret the link carries is the credential. They keep
+every rate limit the pages had.
+
+**An operation that answers about a value the caller names answers only
+for one of the CALLER's own** — `GET /account-api/self-issued/did`
+(2026-10-20) resolves a DID's document only where that DID is enrolled for
+the token's person, and refuses anything else (`STS-PORTAL-0618`) before
+saying anything about it, so the door is never a general resolver, or a
+way to learn whether somebody else holds a subject.
+
+**`POST /account-api/self-issued/dids` (#1291) names a published DID by its
+`rid` and acts only on the CALLER's** — `person_did.ts` looks the id up in the
+token's person's own records, so another person's id is `STS-VC-0172`
+exactly as a made-up one is, and nothing says whether it exists. A downloaded
+private key leaves through this operation's answer once (`view.fresh`) and
+through no GET.
+
+**`GET /account-api/delegate/candidates` is the one operation that answers
+about OTHER people (2026-10-20, `/portal/delegate`'s search)**, and it is
+built for that: it needs at least three characters, matches only the `uid`,
+answers at most ten native people of the caller's realm, each as uid, cn
+and DN only, and says `more` instead of paging. It is audited
+(`portal.delegation.search`) and has a rate limit of its own:
+`websecurity.attemptShared()`, thirty a person and 120 an address in each
+`security.rateLimitWindowS` window, across the cluster (`STS-PORTAL-0621`).
+This API has no limit of its own apart from that. The other limits are
+per door: the reset, the TOTP code, an app password. It answers nothing a
+person could not already name by typing a DN. `portal/CLAUDE.md` has the
+rest.
+
+## THE GATE, IN ITS ORDER
+
+Each step is a credential that stopped being one, answered 401 with a
+`WWW-Authenticate: DPoP` challenge, or a 403 where the token is a credential
+but not for this:
+
+1. a token is presented (`STS-ACCOUNT-0001`);
+2. it verifies under THIS realm's key, any generation (`0002`) — not the
+   default realm's, which is the management API's choice and the opposite one:
+   that API's token is a service credential, and this one is a person's in
+   the realm they are in;
+3. not expired (`0003`); RFC 9068 section 4: `at+jwt` (`0004`), an issuer this
+   realm publishes at the address the request reached (`0005`), the audience
+   this realm's `/account-api` (`0006`, 403);
+4. not revoked or disowned, the person not disabled (`0007`), and the sign-on
+   session it was issued on still live (`0008`) — the management API's three
+   checks (#36, #446). A token the registry forgot (it is capped) answers no
+   session and is honoured until it expires, for that API's reason;
+5. RFC 8705's certificate binding (`0009`); RFC 9449's DPoP binding — never as
+   Bearer (`0010`), the proof checked with a nonce asked for where the service
+   wants one (`0011`); and `sender_constraints.js`'s rule that the portal's
+   client, public, is DPoP-bound always, beside #34's two settings;
+6. a PERSON's token, never a client's own (`0012`); carrying `account:manage`
+   (`0013`); issued to a client that STILL declares it (`0014`, #110's rule
+   asked on every call);
+7. the access policy, as the portal's pages asked it: `user-portal`, `read` for
+   a GET and `manage-own` otherwise, the owner the subject (`0015`).
+
+**A RECENT SIGN-IN IS ASKED AFTER THE GATE, NOT AS PART OF IT (#1515, #1564,
+ASVS 5.0.0 7.5.1).** An operation that changes how the person signs in
+declares `recentAuth: true` in its provider's table, and `run()` answers it
+`200 { ok: false, stepUp: { prompt: 'login', maxAge } }` when the latest event
+of the sign-on session is older than `account.recentAuthMinutes` (0, never, in
+development; 15 in product). It is not a 401: the token is still a credential,
+and a 401 would have the runtime renew a token that is not what is stale. The
+runtime draws it as any `stepUp` (below). The flag, not a list here, is the
+record of which operations need it, so a new provider declares its own.
+
+The caller carries `session`, in the server-rendered portal's session shape,
+so a handler moved from a page reads the members it read there. **Its `id` is
+the SIGN-ON session's** — the session the token was issued on, from the token
+registry — which is what the portal's CSRF token was bound to and what a risk
+answer, a CIBA approval and a device link name.
+
+## THE WRAPPER
+
+`run()` checks the operation's zod `query` and `body` before its handler runs
+(`0016`, `0018`), refuses a POST body that is not JSON (`0017`), and turns a
+handler that throws into a 500 (`0019`). **The schemas are the documentation**:
+`account_api_spec.ts` converts the very objects the wrapper checks with, so a
+parameter documented and a parameter refused are one declaration.
+
+**Since 2026-10-12, as `/authn-api`, `/gnap-api` and `/admin-api` do:**
+
+* **A body field the operation does not declare is REFUSED** (`0018`, naming
+  the field), not stripped — `AccountApi.unknownFields()` over the body
+  schema's object shape; a schema that is not an object, or a `passthrough`
+  one, is left to itself. The document says `additionalProperties: false` on
+  every such body. The portal's own forms send nothing else:
+  `tests/account_api.js` 2d checks every named control of every form a page
+  draws against its operation's documented body.
+* **The media type is exact** — `^application/json\s*(;|$)` — and asked of
+  every body-carrying request, whether or not the operation declares a body
+  (`0017`, 415). It matched `/json/i` anywhere, so a cross-site page could
+  reach an operation that takes no token (activation, reset, a forgotten
+  password) with a CORS-safelisted `text/plain; x=json` and no preflight.
+  `tests/account_api.js` section 6.
+
+**What a request may name (#1483, `/admin-api`'s #1476 rule).** After the
+gate and before the zod query, `run()` asks
+`common/request_headers.ts`'s `checkRequest()`, over the very parameter list
+the document publishes (`AccountApiSpec.parametersOf()`, cached per
+operation): an undeclared query name (`STS-ACCOUNT-0020`), a value its
+declared type does not hold (`0021`; a `vt.integer()` page documents as an
+`anyOf` and is left to zod, `0016`), a custom header (`0022`). Every operation
+declares `DPoP` and `X-Requested-With` (`implicitHeaders()`). `GET
+/account-api` carries `query` on each GET, the names its operation declares,
+and the portal's runtime sends a page's query filtered through them
+(`web_portal_runtime.ts`, `operationQuery()`): a page's address holds names
+only it means. `tests/api_request_names.js` holds it.
+
+**Examples (#1483, on #1475's rules).** In `models/api/account.tsp`, on each
+operation, replayed by Schemathesis's Examples phase with the fuzz
+person's real token: each is valid against its schema and names a thing that
+does not exist, or a page, so nothing is created, changed or signed out.
+
+## WHAT AN ANSWER IS
+
+The portal's runtime (`portal/web_portal_runtime.ts`, `answered()`) draws a
+POST's answer by these members, and every provider keeps to them:
+
+| Member | Drawn as |
+|---|---|
+| `message` | The page asked again, with the message. In the person's language: a provider translates with `ctx.translatorFor()`. |
+| `view` | The page drawn from it, in place — a secret, codes, a key, download links shown ONCE, never on a URL or in the history. A view that draws its own refusal says so (`refused`, `notOffered`, `tooMany`) and the refusal is not drawn twice. |
+| `go` | Another portal page, with the message. |
+| `errors` (with `ok: false`) | The page asked again, with the refusal. |
+| `stepUp` | A sign-in again with `prompt=login` and the `acr_values` or `maxAge` it names, back to the page (CIBA, GNAP, and the recent sign-in above). A GET's view may answer it too. |
+| `location` | Another site (a Claims Provider's sign-in). |
+| `files` | Each saved, `{ name, mime, base64 }`. |
+
+## WHO CONTRIBUTES OPERATIONS
+
+`PROVIDERS` lists the modules, in the column's order; each exports
+`accountOperations(ctx)`. The table is built once, when the routes are
+registered — at 8a, right after the portal (`common/protocol_stack.ts`) —
+after the composition root built every provider. **A portal control has an
+operation here in the same commit** (rule 7's twin, `rust/DESIGN.md` 5.2):
+`mirrors` names the portal page or form, and the runtime finds a form's
+operation by it.
+
+## SERVED AT THE PERSON'S HOME (#98)
+
+`placeRequest()` relays a request, whole and before the gate, to the home cell
+of its person: the token's (its claims read only to route — the home cell
+verifies it) or the person a link names. `common/cell_placement.ts` places
+`/account-api` by this handler and `/portal` locally, since the portal is a
+static document.
+
+## ON A WORKER
+
+`/account-api` is in `workers.fanout`'s default beside `/admin-api`: every
+request carries its own credential, so nothing about one has to be remembered
+to answer the next.
+
+## THE DOCUMENT IN THE CONSOLE
+
+`GET /admin-api/account-api` answers the document for the realm the console is
+in, and **Service → Account API** (`/admin/account-api`,
+`admin-ui/web_account_api.ts`) draws it. It CALLS NOTHING, which is the
+difference from the management API's explorer: every operation here acts on
+the signed-in person's own account, with their token, and a console token is
+not one.
+
+## TESTS
+
+`tests/protocol/portal_signin.js` signs in as the portal (PKCE, DPoP) and is a
+client of these operations — `page()`, `draw()`, `act()`, `api()`, and
+`nobody()` for a link's.
+
+## WHAT A PERSON OWNS IS CHANGED ELSEWHERE (#607, 2026-10-13)
+
+`GET /account-api/owned/<kind>` lists what a person owns, and each row now
+says which name opens it (`id`) and whether it is closed to its owners
+(`closed`). CHANGING one is NOT an operation here: rcbj wanted the check that
+the person owns the object in one place, the access-control policy's owner
+rule, so the portal's owner pages go to the MANAGEMENT API with a second
+token from the same sign-in (`owner:read`, `owner:write`; `portal/CLAUDE.md`,
+`mgmt-api/CLAUDE.md` *OWNERS*). This API's gate and `account:manage` are
+unchanged; the portal's sign-in names this API and `/admin-api` as its two
+resources, and the code is redeemed for this one.

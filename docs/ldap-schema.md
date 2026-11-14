@@ -44,6 +44,8 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=policies                         xacmlPolicy
 ├── ou=peps                             xacmlPep
 ├── ou=passwordPolicies                 pwdPolicy + stsPasswordPolicy
+├── ou=attributePolicies                stsAttributePolicy          (#396)
+├── ou=attributeDefinitions             stsAttributeDefinition      (#396)
 ├── ou=spiffe
 │   ├── ou=entries                      applicationProcess + spiffeRegistrationEntry
 │   └── ou=agents                       applicationProcess + spiffeAgent
@@ -51,6 +53,7 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=oidfed                           stsOidfedEntry              (#132)
 ├── ou=claimproviders                   stsClaimProvider            (#147)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
+├── ou=signerTrustAnchors               stsSignerTrustAnchor        (#1360)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
 
@@ -72,9 +75,12 @@ are seeded, in both modes.
 ## People: `ou=users`
 
 `objectClass: top, person, organizationalPerson, inetOrgPerson`. The RDN is
-`uid=<username>`. **One person is one entry**, however they arrive. An
-identity that names nobody by itself (a DID, a SPIFFE ID) gets an entry
-named by a digest of its identifier.
+`uid=<username>`. **One person is one entry**, however they arrive by a
+protocol that folds names together. An identity that names nobody by itself
+(a DID, a SPIFFE ID) gets an entry named by a digest of its identifier. A
+person a federated sign-in creates is a different entry from a local person
+who shares the part before `@`: the `uid` is `<relationship>~<subject>`
+([Federation](federation.md#provisioning-dynamic-or-pre-provisioned)).
 
 ### Standard attributes
 
@@ -85,10 +91,12 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 |---|---|
 | `uid`, `cn`, `sn`, `givenName`, `displayName`, `mail` | the person. In development mode an auto-created entry gets invented values; product mode invents none |
 | `userPassword` | **scrypt hash** (`$scrypt$N$r$p$salt$hash`), hashed on every write including an LDAP modify. Withheld from reads in product mode |
-| `userCertificate` | standard, but not what this service writes for a presented certificate (see `x509*`) |
+| `userCertificate` | RFC 4523, stored as `userCertificate;binary` (base64 DER). A certificate from an outside certificate authority is an identity only as the one entry storing it here, byte for byte ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Written by **Stored certificates** on a person's console page, `POST /admin-api/users/add-certificate` and `remove-certificate`, or an LDAP modify. Looked up by the SHA-256 of the DER, which the store indexes |
 | `title`, `employeeType`, `telephoneNumber`, `mobile`, `street`, `l`, `st`, `postalCode`, `c`, `postalAddress`, `o`, `ou`, `departmentNumber`, `employeeNumber`, `preferredLanguage`, `labeledURI`, `manager` | released as claims (`oid4vc/vc_claims.ts`) and mapped by SCIM (`scim/scim_map.ts`) |
 | `schacDateOfBirth`, `schacCountryOfCitizenship`, `schacPersonalTitle` | SCHAC names, released as `birthdate`, `nationalities`, `title` |
 | `salutation`, `birthFamilyName`, `birthGivenName`, `birthMiddleName`, `alsoKnownAs`, `placeOfBirthCountry`, `placeOfBirthRegion`, `placeOfBirthLocality` | this service's own, for Identity Assurance claims |
+| `schacGender`, `middleName`, `timeZone`, `pictureUrl`, `profileUrl` | the `profile` scope's `gender` (SCHAC, ISO/IEC 5218 codes, answered `male`, `female`, `not known` or `not applicable`), `middle_name`, `zoneinfo`, `picture` and `profile` (#1292); all but `schacGender` are this service's own |
+| `stsProfilePhoto` | a person's [profile photo](user-facing-pages.md#the-user-portal): which image is theirs and whose it was, as one JSON value. Withheld from every read, and written only by the portal and a federated sign-in. The image is not on the entry, and while a person has one `pictureUrl` holds its address. `jpegPhoto` is a separate attribute this service neither reads nor writes |
 | `scimExternalId` | SCIM `externalId`, on people and groups |
 | `userPrincipalName` | read by certificate enrollment's smartcard-logon profile. Nothing in the service writes it; a client supplies it |
 | `pwdChangedTime`, `pwdHistory` | draft-behera password policy: when the password last changed, and earlier hashes for the history rule |
@@ -108,25 +116,28 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `stsKrb5Keys`, `stsKrb5KeyInfo` | Kerberos long-term keys for every enctype, derived from the password, and their public half (kvno, enctypes, when) | keys **sealed and withheld**, including the ciphertext |
 | `hobaPublicKey` | RFC 7486 HOBA keys, `<kid> <base64 DER>` | public |
 | `stsSelfIssuedSubject` | SIOPv2 subjects the person enrolled (a DID or a JWK thumbprint URI), as JSON (#129) | withheld |
+| `stsPublishedDid` | Each did:web this realm publishes for the person, as JSON: its random id, the DID, who holds its key, every version of its keys and what authorized each, its deactivation, and in `realm` custody the private key, sealed (#1291). See [Published DIDs](person-dids.md) | withheld |
 | `stsCibaUserCode` | the CIBA user code the person set on `/portal/ciba` (#131) | scrypt-hashed, withheld |
 | `stsAudSub` | the account id a client knows the person by, `<client_id> <aud_sub>` per value, sent as that client's ID Token `aud_sub` (#148) | plain |
 | `stsClaimSourceTokens` | the person's access and refresh tokens at each Claims Provider they linked on `/portal/claim-sources`, one JSON value (#147) | **sealed** where keys persist, withheld |
 
 ### Assertion key pairs (RFC 7523 and RFC 7522)
 
-A person may hold a key pair to sign assertions **about themselves only**. The
+A person may hold key pairs to sign assertions **about themselves only** —
+several per profile since #1290, up to `pki.personSigningKeyMax` valid ones. The
 two sets share no names.
 
 | JWT (RFC 7523) | SAML (RFC 7522) |
 |---|---|
 | `stsAssertionIssuer` | `stsSamlAssertionIssuer` |
-| `stsAssertionJwks`, `stsAssertionKid` | `stsSamlAssertionThumbprint` |
-| `stsAssertionCertificate`, `stsAssertionCertificateChain` | `stsSamlAssertionCertificate`, `stsSamlAssertionCertificateChain` |
-| `stsAssertionPrivateKey` (**sealed, withheld**) | `stsSamlAssertionPrivateKey` (**sealed**) |
-| `stsAssertionExpiresAt`, `stsAssertionKeySource` | `stsSamlAssertionExpiresAt`, `stsSamlAssertionKeySource` |
+| `stsAssertionKeyPair` (one JSON record per key pair) | `stsSamlAssertionKeyPair` (one JSON record per key pair) |
+| `stsAssertionPrivateKey` (one value per key pair issued here; **sealed, withheld**) | `stsSamlAssertionPrivateKey` (**sealed, withheld**) |
 
-`…KeySource` says whether the pair was issued here or a certificate was
-uploaded instead.
+A record carries the handle (`kid`, or the certificate thumbprint), the
+certificate and its chain (and for JWT the public JWK with `x5c`), the serial
+and the authority that signed it, the label, `source` (issued here or a
+certificate uploaded instead), the validity, and — when it was revoked here —
+`withdrawnAt` and `withdrawnReason`.
 
 ### Certificates issued by enrollment (ACME, EST, SCEP)
 
@@ -145,14 +156,15 @@ uploaded instead.
 | Attribute | Meaning |
 |---|---|
 | `authnMethod`, `mfaAuthenticated`, `mfaLastAuthTime` | how they last authenticated, where the protocol said. `mfaLastAuthTime` is never cleared |
-| `x509subject`, `x509issuer`, `x509serialNumber`, `x509notBefore`, `x509notAfter`, `x509fingerprint256` | a verified client certificate, or an issued X509-SVID |
+| `x509subject`, `x509issuer`, `x509serialNumber`, `x509notBefore`, `x509notAfter`, `x509fingerprint256` | a verified client certificate this service issued, or an issued X509-SVID. Entries made from an outside certificate's subject before #1061 keep theirs; none is made now |
 | `x509svidsIssued`, `x509firstIssued`, `x509lastIssued` | X509-SVIDs only: how many have been issued, and since when |
 | `didSubject`, `didMethod` | the DID this entry is. The entry is found by `didSubject` |
 | `spiffeSubject`, `spiffePath`, `spiffeTrustDomain` | the SPIFFE ID that authenticated. **These are not the same as `spiffeId`** on a registration entry |
 | `spiffeCredentialStatus`, `spiffeCredentialStatusReason`, `spiffeRevokedAt` | whether this identity may still be **issued** an SVID. This is not a certificate status |
-| `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from |
+| `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from. `federationLastSeen` is what `fedProvisionIdleMinutes` reads |
 | `federationLink` | `<relationship> <issuer> <subject>`: **the one that decides anything**, linking a partner's subject to this person (#109) |
 | `federationAttribute` | which of the entry's other attributes came from a partner's assertion |
+| `stsProvisionedBy` | `federation:<relationship>`, written once, by the federated sign-in that CREATED the entry (an enterprise partner or a consumer provider). A sign-in that links or reaches somebody already here writes nothing. No door may write or remove it (`constraintViolation` over LDAP), and it travels with the entry. An entry without it is native, and only native people are found by `/portal/delegate`'s search |
 | `oauthConsent` | `<time> <scope> <client_id>`, one value per (application, scope) |
 | `oauthConsentWithdrawn` | `<time> <scope> <client_id>` (#172). It stops a re-consent from reviving an older refresh token |
 | `stsIdaVerification` | OpenID Connect for Identity Assurance verifications as JSON (#127). **Withheld**, because evidence carries document numbers |
@@ -165,8 +177,13 @@ uploaded instead.
 | `stsBootstrapAdministrator`, `stsConsoleClaimedAt` | the bootstrap `admin`, and when it first claimed the console |
 | `stsNotDelegated` | sensitive and cannot be delegated (Kerberos's NOT_DELEGATED) (#108) |
 | `stsMayAct` | the one party this person named as a delegate. It becomes `may_act` in their access tokens |
+| `stsAuthzenApplication` | the applications this person or service account may ask the AuthZEN API about, one per value; set by an administrator only (#563) |
+| `stsAuthzenCallbackUri` | the https URLs this person or service account, as an AuthZEN PEP, may name as an access request's callback, one per value; set by an administrator only (#1180) |
+| `stsServiceAccountPolicy` | the [named service-account policy](service-accounts.md#named-policies) a service account is governed by, or `default`; single-valued, held only by a service account and cleared with `stsServiceAccount`. Set on the person's Policies tab, with `POST /admin-api/users/set-attribute`, or by an LDAP modify, each checked against the realm's policies (#1240) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |
+| `stsPseudonym` | another name this person can sign in with, in place of their `uid` (#644). At most eight. A live value is in the username index. An email an administrator sets is live; one the person adds waits for its link. [People](people.md#sign-in-names) |
+| `stsPseudonymVerifyToken`, `stsPseudonymVerifyExpires`, `stsPseudonymVerifyAddress` | a pending sign-in name. The token is **withheld**. The address is absent from the username index |
 
 ---
 
@@ -188,6 +205,33 @@ The console groups are created on first grant, and the bootstrap `admin` holds b
 
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
 
+A group may name the policy its members are held to, one attribute per kind
+of policy: `stsPasskeyPolicy`, a [named passkey
+policy](passkeys.md#different-rules-for-different-applications-or-groups) or
+`default`, `stsLocalePolicy`, a [named locale
+policy](languages.md#named-profiles-for-applications-and-groups) or
+`default`, `stsPasswordPolicy`, a [named password
+policy](authentication.md#different-password-rules-for-different-applications-or-groups)
+or `default`, `stsAuthnPolicy`, a [named authentication
+policy](authentication.md#named-authentication-policies) or `default`,
+`stsPostLoginPolicy`, a [named post-login
+profile](post-login-activities.md#which-profile-applies-groups-and-applications-name-it)
+or `default`, and `stsAttributePolicy`, a named attribute policy (below).
+It is set on the group's page or with
+`POST /admin-api/groups/set-policy`, which accepts only a policy the realm
+holds. The holder names the policy; the policy lists nobody. See
+[Policies](policies.md#who-names-which-kind).
+
+A group may also carry `mail`, the address a notice to the group is sent
+to, and `displayName`, the name OpenID Provider Commands metadata shows for
+it in place of `cn`.
+
+A group `fedProvisionGroups` creates also carries `federationRelationship`,
+the relationship id that created it. A later sign-in through that
+relationship may add people only to groups carrying that mark. A token that
+names `admin-write`, or any other group the relationship did not create,
+does not add the person to it.
+
 ## Applications: `ou=applications`
 
 `objectClass: top, applicationProcess, stsApplication`. One entry per client,
@@ -198,12 +242,14 @@ draws it with a description of every field.
 
 | Group | Attributes |
 |---|---|
-| Identity and observation | `appIdentifier`, `cn`, `appName`, `description`, `appHomePageUrl`, `appKind`, `appProtocol`, `appAllowedProtocol`, `appAuthorizationServer`, `appCorsOrigin`, `appRegistered`, `appRegisteredBy`, `appFirstSeen`, `appLastSeen`, `appAuthentications`, `appSessions`, `appUsers`, `appLastSession`, `appLastUser`, `appRedirectUriObserved`, `appReturnAddressObserved`, `appRegistrationJson`, `appRegistrationAccessToken` |
+| Identity and observation | `appIdentifier`, `cn`, `appName`, `description`, `appHomePageUrl`, `appKind`, `appProtocol`, `appAllowedProtocol`, `appAuthorizationServer`, `appCorsOrigin`, `appRegistered`, `appRegisteredBy`, `appFirstSeen`, `appLastSeen`, `appAuthentications`, `appSessions`, `appUsers`, `appLastSession`, `appLastUser`, `appRedirectUriObserved`, `oauthGrantTypeObserved`, `oauthResponseTypeObserved`, `appReturnAddressObserved`, `appRegistrationJson`, `appRegistrationAccessToken` |
 | OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**; one JSON record per secret, each with its own expiry, sealed at rest where keys persist), `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
 | Logout | `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthRevokeRefreshOnLogout` |
-| Requests and responses | `oauthRequestUri`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge` |
+| Requests and responses | `oauthRequestUri`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge` |
+| AuthZEN (#563) | `authzenAttribute` (a catalogue row, on `sts-authzen-api`), `appAuthzenApplication` (an application caller's scope), `appAuthzenCallbackUri` (an application caller's access request callback URLs, #1180) |
+| Fine-grained authorization (#564) | `appFgaPolicy` (the entry name of the policy it owns in `ou=policies`), `appFgaEnforced` (`TRUE` when that policy is enforced) |
 | Resource server and consent | `oauthPermissionBaseUri`, `oauthPermission`, `oauthDelegatedPermission`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthGlobalConsent`, `oauthGlobalConsentWithdrawn` |
-| Token lifetimes | `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthTokenExchangeRefreshToken` |
+| Token lifetimes | `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS` (maximum authentication age, not a token lifetime; #825), `oauthTokenExchangeRefreshToken` |
 | Mutual TLS (RFC 8705) | `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint` |
 | JWT assertion key pair (RFC 7523) | `oauthAssertionIssuer`, `oauthAssertionJwks`, `oauthAssertionKid`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey` (**withheld**), `oauthAssertionExpiresAt`, `oauthAssertionKeySource` |
 | SAML assertion key pair (RFC 7522) | `oauthSamlAssertionIssuer`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource` |
@@ -211,12 +257,15 @@ draws it with a description of every field.
 | OpenID Provider Commands (#151) | `oauthCommandEndpoint` (https, no fragment: where a Command Token is POSTed) |
 | CIBA (#131) | `oauthBackchannelTokenDeliveryMode` (`poll`, `ping` or `push`), `oauthBackchannelClientNotificationEndpoint` (https, for ping and push), `oauthBackchannelAuthenticationRequestSigningAlg` (an asymmetric alg: every request signed), `oauthBackchannelUserCodeParameter` (TRUE: every request carries the person's user code) |
 | Native SSO (#130) | `oauthNativeSso` (TRUE lets the client ask for `device_sso`), `oauthNativeSsoGroup` (the apps that may share one device session). Settable by a registration only through a trusted software statement |
+| The `did` claim (#693) | `oauthDidClaimWithPairwise` (TRUE: a pairwise or ephemeral client may still be told the person's preferred DID, the `did` claim; anything else, never). Not settable by a registration |
 | SAML service provider | `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlNameIdFormat`, `samlResponseBinding`, `samlSigningCertificate`, `samlObservedSigningCertificate`, `samlEncryptionCertificate`, `samlAuthnRequestVerification`, `samlAuthnRequestSigned`, and from consumed metadata: `samlSpMetadataUrl`, `samlSpMetadata`, `samlAcsEndpoint`, `samlSloEndpoint`, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`, `samlSpWantAssertionsSigned`, `samlSpWantAssertionsEncrypted`, `samlSpMetadataValidUntil`, `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt`, `samlSpMetadataSignature`, `samlSpMetadataSigningCertificate` |
 | SAML per-profile | `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS` |
-| WS-* | `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wsfedAssertionLifetimeMin`, `wstrustAppliesTo` |
+| WS-* | `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wsfedAssertionLifetimeMin`, `wstrustAppliesTo`, `wstrustJwtScope` |
+| Who may start a sign-in (#426; [Identity-provider-initiated sign-in](idp-initiated-sso.md)) | `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso` (each TRUE or FALSE, overriding the realm setting of the same name; identity-provider-initiated is off by default), `oauthInitiateLoginUri` (OpenID Connect Core section 4's `initiate_login_uri`; https, no fragment), `appLaunchProtocol` (`saml2`, `saml11`, `wsfed` or `oidc`: what `/launch/{app}` starts when the link names none) |
+| What the sign-in and consent screens show (#1300; [Dynamic Client Registration](configure-oidc-flows.md#what-the-sign-in-and-consent-screens-show-about-the-client)) | `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri` (OpenID Connect Registration section 2's `logo_uri`, `policy_uri` and `tos_uri`; absolute https; the browser loads the logo, this service never fetches it) |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
 | Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
-| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnMechanism` |
+| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`), `appPasskeyPolicy` (the [named passkey policy](passkeys.md#different-rules-for-different-applications-or-groups) a sign-in to it is held to), `appLocalePolicy` (the [named locale policy](languages.md#named-profiles-for-applications-and-groups) its pages and the people it creates fall back to), `appPasswordPolicy` (the [named password policy](authentication.md#different-password-rules-for-different-applications-or-groups) a password set while signing in to it is held to), `appPostLoginPolicy` (the [named post-login profile](post-login-activities.md#which-profile-applies-groups-and-applications-name-it) a sign-in to it follows) |
 | Certificate enrollment | `appEnrolledCertificate`, `appEnrolledPrivateKey`, `appAcmeEabKey`, `appScepChallenge`, `appCertificateHostName` |
 | GNAP | `gnapInstanceId`, `gnapClassId`, `gnapKey`, `gnapKeyIdentity`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey` (**withheld**), `gnapSymmetricAlg`, `gnapDisplayUri`, `gnapLogoUri`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapResourceServerUri`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapMacaroonKey`, `gnapScopedSignals` |
 | Links to other registries | `oid4vpClientId`, `federationPartnerId`, `appFederationRelationship`, `appFederationAutoRedirect`, `ldapBindDn`, `scimClientId`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `spiffeWorkloadId` |
@@ -235,7 +284,7 @@ draws it with a description of every field.
 | Keys | `fedSigningCertificate` (**decides whose assertions are believed**), `fedJwks`, `fedEncryptionKey` (**withheld**), `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedSignRequest` |
 | OIDC as client | `fedClientId`, `fedClientSecret` (**withheld**), `fedScope`, `fedResponseType` |
 | Policy | `fedAllowUnsolicited`, `fedAllowUnencrypted`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedMayAssertAdministrators`, `fedAuthnMechanism`, `fedAuthnRelationship` |
-| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
+| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
 ## Attribute sources: `ou=attributesources`
@@ -250,7 +299,8 @@ source wrote (`<source>:<attribute>`), and `stsAttributeSourceSeen` records when
 
 `objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of
 holder (`roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`), and `rolePermission`: the permissions a
-holder may be issued (#303), named as a client asks for them, and `roleApplication`: the one application a role
+holder may be issued (#303), named as a client asks for them, `roleConferredBy`: the clients that confer the role
+on every person who signs in through them, on that client's token alone (#454), and `roleApplication`: the one application a role
 belongs to (#310). Such a role is named `<role>@<application>`, and only a token for that application carries it,
 as `<role>`. `roleAllowedMemberType` (`user`, `application`, or both when absent) says who may hold the
 role, and a member of another kind is refused (#93); the two console roles cannot be restricted. `displayName`
@@ -261,9 +311,20 @@ no object class and gains one on its next save.
 (`appRequiredRole` on an application). Which of an application's permissions need a role at all is
 `oauthRoleGatedPermission` on the resource application. Every realm is seeded with two roles, `ADMIN_READ` and
 `ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
-`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
+`admin.writeGroup` and are not stored on the entry; `sts-api-client` is a member of both. A third seeded role,
 `DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
-(#309). None of the three can be deleted, and their permissions are fixed. The service also computes eight
+(#309). A fourth, `ADMIN_CONSOLE`, authorizes `admin:console` and has no members either: it is conferred by the
+console's client, `sts-admin-console`, on everybody who signs in to the console (#454). Two more, `SSF_READ` and
+`SSF_MANAGE`, authorize `ssf.read` and `ssf.manage`. They are ordinary native roles, not the console roster: the
+groups `ssf-read` and `ssf-manage` are stored on `roleMemberGroup`, created empty when missing and never
+overwritten. A person is issued the scope only while they belong to the role's group and the application is a
+member; an application's own token needs the application to be a member. `SSF_MANAGE` does not authorize
+`ssf.read`. Two more, `REPORT_USE` and `REPORT_ADMIN` (#1030), authorize `report:use` and `report:admin`
+through the groups `report-users` and `report-admins`, stored and seeded the same way; a person is issued the
+scope while they are in the group or a direct member, and an application while it is a member, with no
+condition on the application the person signs in to. None of the eight can be
+deleted, and their permissions are fixed. A role only applications may hold, and the two console roles, cannot be
+conferred. The service also computes eight
 built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,
 ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, REMOTE_PEPS and XACML_USER.
 
@@ -273,7 +334,10 @@ ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIO
 (`xacml/xacml_store.ts`). `objectClass: top, xacmlPolicy`, with
 `xacmlPolicyId`, `xacmlVersion`, `xacmlKind` (policy or policy set),
 `xacmlCombiningAlgId`, `xacmlPolicyDocument` (the XACML XML), `xacmlPolicy`,
-`xacmlEnabled`, `xacmlIsRoot` and `xacmlDetail`.
+`xacmlEnabled`, `xacmlIsRoot` and `xacmlDetail`. A policy an application owns
+also carries `xacmlApplication` (the application's identifier) and, once that
+application is deleted, `xacmlOrphanedAt`; see
+[fine-grained authorization](fga.md).
 
 `ou=peps` holds the remote PEPs (`xacml/xacml_pep_registry.ts`).
 `objectClass: top, xacmlPep`, with `xacmlPepIdentity`, `xacmlPepEnabled`,
@@ -292,7 +356,35 @@ ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIO
 `stsPwd*` attributes (`stsPwdRequireUppercase`, `stsPwdRequireDigit`,
 `stsPwdMinSymbols`, `stsPwdGeneratedLength` and others), which cover the
 composition rules and the generator. The default profile is **not seeded**:
-the defaults apply until an administrator saves one. See `common/password_policy.ts`.
+the defaults apply until an administrator saves one. A named policy is
+`cn=<name>` beside it, with the same attributes and `stsPasswordPrecedence`
+(1 to 1000); a group names one in `stsPasswordPolicy` and an application in
+`appPasswordPolicy`. See `common/password_policy.ts`.
+
+## Attribute policies and custom attributes: `ou=attributePolicies`, `ou=attributeDefinitions`
+
+`cn=default,ou=attributePolicies` is `objectClass: top, stsAttributePolicy` with
+`stsAttributeRequired` (one value per attribute every person must hold, besides
+`uid`, `cn` and `sn`) and an optional `description`. Absent, the default
+realm's applies, then the built-in default (`givenName`, `sn`, `mail`).
+
+A realm's **named** attribute policies (#1241) are `cn=<name>` beside it, with
+the same attributes and `stsAttributePolicyPrecedence` (1 to 1000). They
+belong to the realm and are never inherited. A person names one with
+`stsAttributePolicy` on their own entry under `ou=users`, and a group names one
+with the same attribute on its own entry. The value is `default` or the
+policy's name, and only one value is allowed. Of the policies the person and
+their groups name, the one with the lowest precedence applies.
+
+`cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
+`objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,
+`stsAttributeSyntax` (`string`, `integer`, `boolean`, `date`, `email`, `uri`,
+`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`), an optional
+`description`, and since #700 `stsAttributePortalVisible` and
+`stsAttributePortalEditable` (`TRUE` or `FALSE`; absent is `FALSE`): whether
+the person sees their own values on the user portal, and whether they may
+change them there. Editable implies visible. Its values are stored on a
+person under that name, like any other attribute. See `common/attribute_policy.ts`.
 
 ## SPIFFE: `ou=spiffe`
 
@@ -393,6 +485,14 @@ certificates: `stsTrustAnchor`, `stsTrustAnchorCertificate`,
 so none of these is sealed. An entry here decides whose client certificate
 becomes an identity. See [TLS](tls.md).
 
+`ou=signerTrustAnchors` exists in every realm, with one
+`objectClass: top, stsSignerTrustAnchor` entry per certificate of that realm's
+[signer truststore](signer-truststore.md): `stsTrustAnchorCertificate`,
+`stsTrustAnchorFingerprint`, `stsTrustAnchorAddedBy`, `stsSignerTrustAnchorKind`
+(`anchor` or `intermediate`) and, where it is restricted,
+`stsSignerTrustAnchorPurpose` (multi-valued). An entry here decides whose signature
+the realm believes.
+
 `ou=crl` holds `objectClass: top, cRLDistributionPoint` entries (`cn=<caId>`, `certificateRevocationList;binary`) once a CRL is published. They are a cache of the register, readable anonymously ([PKI](pki.md)).
 
 ---
@@ -406,7 +506,8 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
 * passwords: `userPassword`, `pwdHistory`, `stsAppPassword`,
   `stsActivationToken`, `stsPasswordResetToken`, `stsMailVerifyToken`
 * second factors and subjects: `stsTotpCredential`, `stsBackupCodes`,
-  `stsSelfIssuedSubject`, `stsIdaVerification`, `stsCibaUserCode`
+  `stsSelfIssuedSubject`, `stsPublishedDid`, `stsIdaVerification`,
+  `stsCibaUserCode`
 * devices: `stsDeviceSecretHash`
 * client secrets: `oauthClientSecret`, `appRegistrationAccessToken`,
   `fedClientSecret`, `stsClaimProviderSecret`
@@ -447,20 +548,27 @@ identity, and only a person may bind: see
 
 ## Keeping this page current
 
-This page is a copy of tables that live in code, so it can drift. The sources:
+This page is a copy of tables that live in the model, so it can drift. The sources:
 
-* `ldap/ldap_server.js`: `STANDARD_NAMES`, `OWN_NAMES`, `SECRET_ATTRIBUTES`,
-  and `seed()` for the containers
-* `common/applications.js`: the application field table
-* `federation/federation.js`, `spiffe/spiffe_registry.ts`,
-  `xacml/xacml_store.ts`, `xacml/xacml_pep_registry.ts`, `common/roles.js`,
-  `common/password_policy.ts`, `common/devices.ts`
+* `models/directory/names.tsp`: the standard and own spellings, and the
+  attributes withheld from every reader
+* `ldap/ldap_server.js`: `seed()` for the containers
+* `models/directory/application.tsp`: the application field table
+* `models/directory/`: the role, device, service account, SPIFFE, XACML,
+  federation and policy tables
+
+`models/directory/` holds these names as TypeSpec.
+[Directory models](data-model-directory.md) is that inventory in reading
+form, rewritten when the model is written. This page stays the
+explanation. The directory still enforces nothing.
 
 A running service describes its own containers: `/admin/ldap/directory` shows
 any entry, and `/admin/ldap/federations` shows the federation schema.
 
 ## Related
 
+* [Abstract data model](data-model.md): the directory, API, and
+  persistence namespaces, and where each generated file lives.
 * [LDAP](ldap.md): the protocol, the sockets, the five rules and the settings.
 * [PostgreSQL schema](postgres-schema.md): where these entries are stored.
 * [SCIM 2.0](scim.md): how SCIM attributes map onto these.

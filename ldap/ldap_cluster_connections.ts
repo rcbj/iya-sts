@@ -100,8 +100,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
+// The one place this service draws random values (#453). A leaf over
+// `config`, so this require cannot close a cycle.
+import stsCrypto = require('../common/crypto');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('../cluster/cluster_capabilities');
@@ -318,7 +320,7 @@ class LdapClusterConnections {
     return {
       log: log,
       errorCodes: errorCodes,
-      randomBytes: nodeCrypto.randomBytes,
+      randomBytes: stsCrypto.randomBytes,
       loadCluster: LdapClusterConnections.clusterFromRequire,
       loadPersistence: LdapClusterConnections.persistenceFromRequire
     };
@@ -340,6 +342,14 @@ class LdapClusterConnections {
   static wire(instance: LdapClusterConnections): void {
     log.debug("Entering LdapClusterConnections.wire().");
     connections = instance;
+    // THE MAINTENANCE JOB IS REGISTERED HERE, in every process (2026-11-04).
+    // It was registered at the first local LDAP change, so a process that
+    // had not yet held a connection did not list it: in cluster mode the
+    // console page and /admin-api, answered by different nodes, listed
+    // different jobs (sts_scheduler, "the page and the API list the same
+    // jobs"). Its `off()` already says why it does nothing in a process
+    // with no mirrored connections.
+    instance.armMaintenance();
     if (pendingHooks) {
       instance.install(pendingHooks.hooks);
       pendingHooks = null;
@@ -828,8 +838,9 @@ class LdapClusterConnections {
   // PER-PROCESS job every MAINTAIN_EVERY_MS — every socket-holding process
   // may sweep, and each deletes idempotently. It was an interval of its own,
   // armed at the first local change; the job is registered then, and is off
-  // in a process that holds no sockets or is not coordinating.
-  private armMaintenance(): void {
+  // in a process that holds no sockets or is not coordinating. It is
+  // registered when the instance is wired, so every process lists it.
+  armMaintenance(): void {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.armMaintenance().");

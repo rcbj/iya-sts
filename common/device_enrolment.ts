@@ -36,10 +36,14 @@
 // "A store becomes per realm at its DECLARATION") and persisted, so a
 // challenge issued by one node is answered at another. A row is
 // `{ sessionId, username, purpose, issuedAt, expiresAt, detail }`, keyed by
-// the challenge itself (32 random bytes). It is:
+// the challenge itself (32 random bytes; an EST freshness nonce's length is
+// the client's, 16..64, #257). It is:
 //
 //   * **BOUND TO THE SESSION AND THE PERSON it was issued to**, and answered
 //     by nobody else — the portal rule that no identity comes from a request;
+//     for an EST nonce (#257) the "session" is the EST nonce cookie's handle
+//     and the "person" the authenticated principal (`kind:id`), which is
+//     draft-ietf-lamps-attestation-freshness section 5.1's binding;
 //   * **ONE PER SESSION AND PURPOSE**: a new one replaces the old, so a page
 //     reloaded ten times holds one;
 //   * **ANSWERED ONCE, ACROSS THE CLUSTER**: spent through
@@ -74,8 +78,8 @@
 // verifier and policy (libraries), and `cluster/cluster_claims`.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
+import stsCrypto = require('./crypto');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
 import realms = require('./realms');
@@ -90,11 +94,28 @@ import deviceRecognition = require('./device_recognition');
 import claims = require('../cluster/cluster_claims');
 import webauthnVerifier = require('../authn/webauthn');
 import webauthnPolicy = require('../authn/webauthn_policy');
+// THE PASSKEY POLICY (#718): a key it would not let sign its owner in does
+// not link a device either. A leaf below this module.
+import passkeyPolicy = require('./passkey_policy');
+// THE CEREMONY ROW (#1108): a device link is a WebAuthn assertion, and
+// writes the row every other door does. A library over `audit` and the
+// verifier; `credentials` requires it too, so this adds no edge.
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
 
 type Json = any;
 
-/** The two purposes a challenge is issued for: `key` and `webauthn`. */
-const PURPOSES = ['key', 'webauthn'];
+/**
+ * The three purposes a challenge is issued for: `key` and `webauthn` (the
+ * portal's), and `csr-attestation` (EST /nonce's, #257).
+ */
+const PURPOSES = ['key', 'webauthn', 'csr-attestation'];
+// A freshness nonce's length in octets: what draft-ietf-lamps-attestation-
+// freshness allows (8..64), never below crypto.js's RANDOM_TOKEN_MIN_BITS,
+// and 32 — a SHA-256 digest's size, which every TPM 2.0 takes as
+// TPM2_Certify's qualifyingData — when the client names none.
+const NONCE_MIN_BYTES = 8;
+const NONCE_MAX_BYTES = 64;
+const NONCE_DEFAULT_BYTES = 32;
 const CLAIM_SCOPE = 'devices.challenge';
 const MAX_LABEL = 128;
 
@@ -115,8 +136,9 @@ const challengesCount = cacheRegistry.register({
   name: 'devices.challenges',
   title: 'Device enrolment challenges',
   description: 'The challenges /portal/devices has issued for a key proof, ' +
-    'an App Attest statement or a WebAuthn link, each bound to the ' +
-    'session it was issued to and answered once.',
+    'an App Attest statement or a WebAuthn link, and the freshness nonces ' +
+    'EST /nonce has issued for a TPM key attestation, each bound to the ' +
+    'session (or EST cookie) it was issued to and answered once.',
   owner: 'common/device_enrolment.ts',
   scope: 'realm',
   kind: 'replay',
@@ -160,6 +182,7 @@ interface DeviceEnrolmentDeps {
   claims: typeof claims;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   realmId: () => string;
   now: () => number;
 }
@@ -173,8 +196,12 @@ interface DeviceEnrolmentDeps {
  * and refused in product mode.
  */
 class DeviceEnrolment {
-  /** The two purposes a challenge is issued for. */
+  /** The three purposes a challenge is issued for. */
   static readonly PURPOSES = PURPOSES;
+  /** The shortest freshness nonce a client may ask for, in octets. */
+  static readonly NONCE_MIN_BYTES = NONCE_MIN_BYTES;
+  /** The longest freshness nonce a client may ask for, in octets. */
+  static readonly NONCE_MAX_BYTES = NONCE_MAX_BYTES;
 
   /**
    * Builds an enrolment service over the given dependencies.
@@ -202,6 +229,7 @@ class DeviceEnrolment {
              deviceRecognition: deviceRecognition, claims: claims,
              webauthnVerifier: webauthnVerifier,
              webauthnPolicy: webauthnPolicy,
+             passkeyPolicy: passkeyPolicy,
              realmId: function (): string {
                return realms.currentId();
              },
@@ -225,8 +253,10 @@ class DeviceEnrolment {
    * Issues a challenge bound to the session and the person, replacing any
    * earlier one this session holds for the same purpose.
    *
-   * @param spec - `purpose` (`key` or `webauthn`), `sessionId`, `username`,
-   *   and `detail` to carry along (a WebAuthn link's credential and target)
+   * @param spec - `purpose` (`key`, `webauthn` or `csr-attestation`),
+   *   `sessionId`, `username`, `detail` to carry along (a WebAuthn link's
+   *   credential and target), and for `csr-attestation` the `bytes` asked
+   *   for (8..64, raised to RANDOM_TOKEN_MIN_BITS)
    * @returns `{ ok, challenge, purpose, expiresAt, detail }`, or a refusal
    *   `{ ok: false, status, error }`
    */
@@ -238,8 +268,9 @@ class DeviceEnrolment {
     if (PURPOSES.indexOf(purpose) < 0 || !s.sessionId || !s.username) {
       log.debug("Leaving DeviceEnrolment.issueChallenge(). Malformed.");
       return this.refuse('STS-DEVICE-0016', 'A challenge is issued to a ' +
-                         'signed-in session, for a key proof or a WebAuthn ' +
-                         'link.');
+                         'signed-in session (or an authenticated EST ' +
+                         'client\'s cookie), for a key proof, a WebAuthn ' +
+                         'link or a key attestation\'s freshness.');
     }
     const stale: string[] = [];
     challenges.forEach(function (row: Json, key: string) {
@@ -256,7 +287,15 @@ class DeviceEnrolment {
                              counter: challengesCount,
                              setting: 'devices.maxChallenges' });
     const now = this.deps.now();
-    const challenge = nodeCrypto.randomBytes(32).toString('base64url');
+    // A nonce's length is the client's within the draft's range, but never
+    // fewer than RANDOM_TOKEN_MIN_BITS: a client asking for 8 octets is
+    // given 16, which the draft's SHOULD ("of that size") allows and every
+    // TPM takes. Every other challenge is 32 octets.
+    const octets = purpose !== 'csr-attestation' ? 32
+      : Math.min(NONCE_MAX_BYTES, Math.max(
+          Math.ceil(stsCrypto.RANDOM_TOKEN_MIN_BITS / 8),
+          Number(s.bytes) || NONCE_DEFAULT_BYTES));
+    const challenge = stsCrypto.randomBytes(octets).toString('base64url');
     const row = { sessionId: String(s.sessionId), username: String(s.username),
                   purpose: purpose, issuedAt: now,
                   expiresAt: now + challengeTtlMs(),
@@ -360,6 +399,60 @@ class DeviceEnrolment {
     }
     log.debug("Leaving DeviceEnrolment.spendKeyChallenge().");
     return checked;
+  }
+
+  // =========================================================================
+  // A KEY ATTESTATION'S FRESHNESS NONCE (#257). EST /nonce issues one with
+  // `issueChallenge({ purpose: 'csr-attestation', sessionId: <the EST
+  // cookie's handle>, username: <the authenticated principal, kind:id>,
+  // bytes })` — the store, the cap, the lifetime and the one-per-session
+  // rule are the portal's, because the question is the same one: was THIS
+  // value issued by this realm, to THIS caller, not long ago, and never
+  // answered. The certificate request's TPMS_ATTEST extraData is spent here
+  // as that value, once across the cluster.
+  //
+  // draft-ietf-lamps-attestation-freshness section 5.1: "If the EST server
+  // cannot associate the CSR request with the prior nonce request and
+  // response messages, it MUST NOT treat the CSR as associated with the
+  // previously provided nonce" — so a nonce issued to another cookie or
+  // another principal is not this request's, whatever its bytes.
+  // =========================================================================
+  /**
+   * Spends a key attestation's `extraData` as the freshness nonce EST /nonce
+   * issued to this cookie and principal, once across the cluster.
+   *
+   * @param extraData - the TPMS_ATTEST's extraData
+   * @param s - `sessionId` (the EST cookie's handle) and `username` (the
+   *   authenticated principal, `kind:id`)
+   * @returns `{ ok }`; a refusal STS-DEVICE-0016 saying why it is not one;
+   *   or STS-DEVICE-0028 (503) when the claim store could not be asked
+   */
+  async spendAttestationNonce(extraData: Buffer, s: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering DeviceEnrolment.spendAttestationNonce().");
+    const spec = s || {};
+    if (!extraData || !extraData.length) {
+      log.debug("Leaving DeviceEnrolment.spendAttestationNonce(). Empty.");
+      return this.refuse('STS-DEVICE-0016', 'Its extraData is empty: the ' +
+                         'TPM was given no nonce (fetch one from EST ' +
+                         '/nonce and pass it as TPM2_Certify\'s ' +
+                         'qualifyingData).');
+    }
+    if (!spec.sessionId || !spec.username) {
+      log.debug("Leaving DeviceEnrolment.spendAttestationNonce(). No " +
+                "session.");
+      return this.refuse('STS-DEVICE-0016', 'The request carried no EST ' +
+                         'nonce cookie, so it cannot be associated with a ' +
+                         'nonce this realm issued (draft-ietf-lamps-' +
+                         'attestation-freshness section 5.1).');
+    }
+    const spent = await this.spendKeyChallenge(
+      Buffer.from(extraData).toString('base64url'),
+      { sessionId: spec.sessionId, username: spec.username,
+        purpose: 'csr-attestation' });
+    log.debug("Leaving DeviceEnrolment.spendAttestationNonce(). ok=" +
+              !!spent.ok);
+    return spent.ok ? { ok: true } : spent;
   }
 
   // The descriptive fields a request may set, clipped: label, platform,
@@ -481,6 +574,26 @@ class DeviceEnrolment {
     return out;
   }
 
+  // A KEY THE PASSKEY POLICY WOULD NOT LET SIGN ITS OWNER IN (#718): the
+  // link is an assertion with the key — a use of it — and the device it
+  // registers is then recognised at sign-in, so a classical passkey where
+  // the person's profile requires a post-quantum one links nothing. Only
+  // the `algorithm` fact group is asked: the BE and PIN rules have never
+  // been asked here, and this change does not start asking them.
+  private postQuantumProblem(username: string, key: Json): Json | null {
+    const { log, credentials } = this.deps;
+    const policy = this.deps.passkeyPolicy;
+    log.debug("Entering DeviceEnrolment.postQuantumProblem().");
+    if (!policy.hasSelection()) {
+      policy.select(username, '');
+    }
+    const refused = policy.postQuantumRefusal(credentials.keyAlgorithm(key),
+                                              'sign-in');
+    log.debug("Leaving DeviceEnrolment.postQuantumProblem(). " +
+              (refused ? refused.code : 'none'));
+    return refused ? this.refuse(refused.code, refused.why) : null;
+  }
+
   // =========================================================================
   // A WEBAUTHN LINK, begun: the person names one of their credentials, and
   // a `webauthn` challenge carrying it is issued. { ok, challenge, … } or a
@@ -516,6 +629,12 @@ class DeviceEnrolment {
         'devices and identifies none of them. Link a key built into this ' +
         'device (a platform authenticator).');
     }
+    // Before the ceremony (#718), so nobody touches a key that cannot link.
+    const notPq = this.postQuantumProblem(username, key);
+    if (notPq) {
+      log.debug("Leaving DeviceEnrolment.beginLink(). Not post-quantum.");
+      return notPq;
+    }
     const out = this.issueChallenge({ sessionId: s.sessionId,
       username: username, purpose: 'webauthn',
       detail: Object.assign({ credentialId: String(key.credentialId),
@@ -526,31 +645,87 @@ class DeviceEnrolment {
   }
 
   // =========================================================================
-  // A WEBAUTHN LINK, finished: `spec` is { username, sessionId, challenge,
-  // credential (what /authn/webauthn.js posted in `get` mode), origin,
-  // rpId }. The assertion is verified with the stored key and spent through
-  // `credentials.spendAssertion()`; the key's REGISTRATION attestation
-  // decides its level.
+  // A WEBAUTHN LINK, finished, AND ITS CEREMONY ROW (#1108): `checkLink()`
+  // below is the finish; this writes the `webauthn.ceremony` row however it
+  // ends — door `device-link`, an assertion by the credential the challenge
+  // names, `durationMs` from the challenge row's `issuedAt` (read BEFORE the
+  // check spends it), no application — and never lets the row change the
+  // answer. Until #1108 a device link was the one door that wrote none.
   // =========================================================================
   /**
    * Finishes a WebAuthn link: verifies the assertion with the stored key,
-   * spends it, and registers the key on the device.
+   * spends it, and registers the key on the device; and records the
+   * ceremony (#1108).
    *
-   * The key's registration attestation decides whether it is `attested`.
    * @param spec - `username`, `sessionId`, `challenge`, `credential` (what
    *   `/authn/webauthn.js` posted in `get` mode), `origin` and `rpId`
    * @returns the register's result, or a refusal
    */
   async finishLink(spec: Json): Promise<Json> {
-    const { log, credentials, webauthnVerifier, webauthnPolicy } = this.deps;
+    const { log, credentials, errorCodes } = this.deps;
     log.debug("Entering DeviceEnrolment.finishLink().");
+    const s = spec || {};
+    const username = String(s.username || '');
+    const row = challenges.get(String(s.challenge || '')) || null;
+    // Only a row issued to this person and for a link says which key.
+    const mine = !!row && row.purpose === 'webauthn' &&
+                 row.username === username;
+    const named = mine ? String((row.detail || {}).credentialId || '') : '';
+    const key = named ? (credentials.keysOf(username) || [])
+      .filter(function (k: Json) {
+        return String(k.credentialId) === named;
+      })[0] || null : null;
+    const algorithm = key ? credentials.keyAlgorithm(key).name : '';
+    const note = (answer: Json, threw?: boolean): void => {
+      log.debug("Entering finishLink() note().");
+      const ok = !!(answer && answer.ok);
+      webauthnCeremonies.record({
+        ceremony: 'assertion', door: 'device-link', username: username,
+        // The use an assertion answered (#1135); a device link answers no
+        // sign-in step.
+        role: '',
+        lane: key ? credentials.keyLane(key) : '',
+        outcome: ok ? 'success' : 'refused',
+        errorCode: ok ? '' : String(errorCodes.codeOf(answer) ||
+                                    (threw ? 'STS-DEVICE-0022' : '')),
+        offered: algorithm ? [algorithm] : [],
+        algorithm: ok ? algorithm : '',
+        posted: s.credential, application: '',
+        issuedAt: mine ? Number(row.issuedAt) || 0 : 0 });
+      log.debug("Leaving finishLink() note().");
+    };
+    let answer: Json;
+    try {
+      answer = await this.checkLink(s);
+    } catch (e) {
+      log.debug("Caught in DeviceEnrolment.finishLink(): " +
+                ((e && e.message) || e));
+      note(null, true);
+      log.debug("Leaving DeviceEnrolment.finishLink(). Threw.");
+      throw e;
+    }
+    note(answer);
+    log.debug("Leaving DeviceEnrolment.finishLink(). ok=" + !!answer.ok);
+    return answer;
+  }
+
+  // =========================================================================
+  // A WEBAUTHN LINK, checked: `spec` is { username, sessionId, challenge,
+  // credential (what /authn/webauthn.js posted in `get` mode), origin,
+  // rpId }. The assertion is verified with the stored key and spent through
+  // `credentials.spendAssertion()`; the key's REGISTRATION attestation
+  // decides its level.
+  // =========================================================================
+  private async checkLink(spec: Json): Promise<Json> {
+    const { log, credentials, webauthnVerifier, webauthnPolicy } = this.deps;
+    log.debug("Entering DeviceEnrolment.checkLink().");
     const s = spec || {};
     const username = String(s.username || '');
     const challenge = String(s.challenge || '');
     const checked = this.checkChallenge(challenge, { sessionId: s.sessionId,
       username: username, purpose: 'webauthn' });
     if (!checked.ok) {
-      log.debug("Leaving DeviceEnrolment.finishLink(). Challenge.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Challenge.");
       return checked;
     }
     const detail = checked.row.detail || {};
@@ -562,10 +737,20 @@ class DeviceEnrolment {
     if (!key || named !== String(detail.credentialId) ||
         !credential.response) {
       challenges.delete(challenge);
-      log.debug("Leaving DeviceEnrolment.finishLink(). Wrong credential.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Wrong credential.");
       return this.refuse('STS-DEVICE-0022', 'The browser answered with ' +
         (credential.response ? 'a different security key from the one ' +
           'you chose' : 'no assertion — it ran no ceremony') + '.');
+    }
+    // WEBAUTHN LEVEL 3 SECTION 7.2 STEP 6 (#474): a returned `userHandle`
+    // must be the one this key was created under.
+    const handled = credentials.userHandleRefusal(username, key,
+      String(credential.response.userHandle || ''), false);
+    if (!handled.ok) {
+      challenges.delete(challenge);
+      log.debug("Leaving DeviceEnrolment.checkLink(). User handle.");
+      return this.refuse('STS-DEVICE-0022', 'The security key\'s assertion ' +
+        'does not belong to this account: ' + handled.why + '.');
     }
     let verdict: Json = null;
     try {
@@ -581,7 +766,7 @@ class DeviceEnrolment {
         previousSignCount: key.signCount,
         allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed() });
     } catch (e) {
-      log.debug("Caught in DeviceEnrolment.finishLink(): " +
+      log.debug("Caught in DeviceEnrolment.checkLink(): " +
                 ((e && e.message) || e));
       verdict = { ok: false, failed: [String((e && e.message) || e)] };
     }
@@ -592,7 +777,7 @@ class DeviceEnrolment {
     }
     if (!verdict.ok) {
       challenges.delete(challenge);
-      log.debug("Leaving DeviceEnrolment.finishLink(). Assertion.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Assertion.");
       return this.refuse('STS-DEVICE-0022', 'The security key\'s assertion ' +
         'does not verify: ' + ((verdict.failed || []).map(function (f: Json) {
           return typeof f === 'string' ? f : String(f && f.name);
@@ -600,14 +785,20 @@ class DeviceEnrolment {
     }
     const spent = await credentials.spendAssertion({ username: username,
       credentialId: key.credentialId, signCount: verdict.signCount,
-      challenge: challenge, ttlMs: challengeTtlMs() });
+      challenge: challenge, ttlMs: challengeTtlMs(), flags: verdict.flags });
     challenges.delete(challenge);
     if (!spent.ok) {
-      log.debug("Leaving DeviceEnrolment.finishLink(). Not spent.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Not spent.");
       return this.refuse(spent.reason === 'store' ? 'STS-DEVICE-0028'
                                                   : 'STS-DEVICE-0016',
                          'The assertion could not be accepted: ' +
                          String(spent.detail || spent.reason) + '.');
+    }
+    // And at the finish (#718), for a profile changed since the challenge.
+    const notPq = this.postQuantumProblem(username, key);
+    if (notPq) {
+      log.debug("Leaving DeviceEnrolment.checkLink(). Not post-quantum.");
+      return notPq;
     }
     const att = key.attestation || {};
     const trusted = !!(att.verified && att.trusted);
@@ -627,10 +818,18 @@ class DeviceEnrolment {
             ' (format ' + String(att.format || 'unrecorded') + ').',
         verifiedAt: trusted
           ? new Date(Number(att.checkedAt) || this.deps.now()).toISOString()
-          : '' } }, { deviceId: detail.deviceId, label: detail.label,
+          : '',
+        // An android-key statement's serials and Google's verdict (#903), so
+        // the daily recheck reaches the linked device too; without them a
+        // batch key revoked later left the device attested for good.
+        ...(att.androidRevocation &&
+            Array.isArray(att.androidRevocation.chainSerials)
+          ? { chainSerials: att.androidRevocation.chainSerials,
+              revocation: att.androidRevocation } : {}) } },
+      { deviceId: detail.deviceId, label: detail.label,
                       platform: detail.platform, model: detail.model,
                       os: detail.os }, 'webauthn');
-    log.debug("Leaving DeviceEnrolment.finishLink(). ok=" + out.ok);
+    log.debug("Leaving DeviceEnrolment.checkLink(). ok=" + out.ok);
     return out;
   }
 
@@ -695,7 +894,10 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   PURPOSES: PURPOSES,
+  NONCE_MIN_BYTES: NONCE_MIN_BYTES,
+  NONCE_MAX_BYTES: NONCE_MAX_BYTES,
   issueChallenge: slot.forward('issueChallenge'),
+  spendAttestationNonce: slot.forward('spendAttestationNonce'),
   pendingFor: slot.forward('pendingFor'),
   abandon: slot.forward('abandon'),
   proveKey: slot.forward('proveKey'),

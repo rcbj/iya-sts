@@ -1,0 +1,38 @@
+{
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "呼叫透過 Unix 網域通訊端抵達。真正的 SPIRE 伺服器會完全信任其私有通訊端——spire-server CLI 就是如此運作——而存取控制就是通訊端的檔案系統權限。開發模式假定此邊界；「產品」模式則逐連線驗證：通訊端設為 0600 並位於其他用戶無法觸及的目錄中，且呼叫端的核心 uid 是本服務自己的。`spiffe.trustLocalSocket` 可將其關閉，使通訊端與 TCP 連接埠一樣要求 SVID，這也是測試客戶端「我在通訊端上被拒絕」路徑的唯一方式。"
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "僅限 SPIRE Server API。其 TCP 連接埠為相互 TLS：呼叫端出示來自此信任網域的 X509-SVID，本服務依信任套件組及憑證自身的有效期間驗證它，從 URI subjectAltName（絕不從主體）取得 SPIFFE ID，將其分類為 local、agent、admin 或 downstream，並逐列依 SPIRE 自己的 policy_data.json 授權該方法。其 Unix 通訊端是 `local` 實體，不需要認證資訊，spire-server CLI 正是如此連到真正的伺服器。Workload API 刻意完全不受上述任何影響：其規格規定 MUST NOT 要求客戶端進行驗證。"
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "TCP 連接埠會索取客戶端證書，但「不」強制要求，因為 AttestAgent 對沒有 SVID 的呼叫端開放——代理程式在該呼叫給予之前沒有 SVID。請從套件組端點擷取套件組，依其驗證此伺服器，然後進行證明。"
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "被接受的認證資訊在此與其他任何認證資訊一樣是一個「身分」：它進入十六個協定家族共用的同一個匯集點，因此其持有者會出現在 /admin/users 上，並在 ou=users 下取得目錄項目——以摘要命名，識別碼以 `spiffeSubject` 記載其上，且同一身分經由其他途徑再次抵達時會「重複使用」該項目。有三種接受會這樣做：透過相互 TLS 的 X509-SVID（每個連線一次）、代理程式進行證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「簽發是第四種進入方式」，且不屬於那三種：此信任網域為其產生 X509-SVID 的每個身分都會得到相同的項目，並以與已驗證 TLS 客戶端憑證所寫入相同的六個 `x509*` 屬性承載該憑證——採「指派」而非附加，因為 SVID 每隔半個存留期就會重新產生，旁邊另有 `x509svidsIssued` 與兩個時間戳記。它不算作一次驗證，因為被簽發認證資訊並不等於出示認證資訊。"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "不提供服務（產品模式，萬用繫結地址）"
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "較大的曲線，供固定使用該曲線的客戶端使用。"
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "更大的曲線。值得注意的是，大約每 256 個 P-521 簽章中就有一個比其他 255 個短一個位元組，這是真實存在的互通性邊界情況，也是 x509.js 為此設有一個函數的原因。"
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "在 SPIFFE ID 之外加入 SVID 的 DNS subjectAltName。讓 SVID 可供會檢查主機名稱但無法讀取 SPIFFE ID 的 TLS 軟件使用。"
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "無，而且必須無：Workload Endpoint 規格禁止要求認證資訊。網絡已「宣告」會驗證來源地址（spiffe.workloadTcpSourceAuthenticated），因此呼叫端會得到其 peer: 地址所選取的項目。"
+  }
+}

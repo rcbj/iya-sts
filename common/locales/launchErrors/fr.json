@@ -1,0 +1,15 @@
+{
+  "title": "Cette connexion n’a pas pu être lancée",
+  "refusal.STS-LAUNCH-0001": "Il n’existe aucune application <code>{app}</code> dans ce domaine de confiance : il n’y a rien à quoi vous connecter.",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> n’est pas un protocole dans lequel une connexion peut être lancée. Un lien ici lance saml2, saml11, wsfed ou oidc.",
+  "refusal.STS-LAUNCH-0003": "Cette application ne se connecte pas avec <code>{protocol}</code>.",
+  "refusal.STS-LAUNCH-0004": "Cette application peut être lancée dans plusieurs protocoles, et le lien ne précise pas lequel.",
+  "refusal.STS-LAUNCH-0005": "Cette application ne peut pas être lancée d’ici. Commencez la connexion depuis l’application elle-même.",
+  "refusal.STS-LAUNCH-0006": "Cette application n’a aucune adresse enregistrée où vous envoyer : une connexion lancée ici n’a nulle part où aller.",
+  "refusal.STS-LAUNCH-0007": "Le lien indique une adresse où vous envoyer qui n’est pas enregistrée pour cette application ; elle a donc été refusée.",
+  "refusal.general": "Cette connexion n’a pas pu être lancée.",
+  "background": "Ce lien lance, auprès de ce fournisseur d’identité, une connexion à une application (connexion initiée par le fournisseur d’identité). Rien n’a encore été envoyé à une application ; le problème est donc signalé ici.",
+  "application": "Application",
+  "protocol": "protocol",
+  "target": "target"
+}

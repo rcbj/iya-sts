@@ -18,6 +18,8 @@
 // but a lazy one costs nothing and keeps the order a non-question.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
@@ -32,6 +34,9 @@ interface OidfedApiDeps {
   parseBody: typeof parseBody;
   errorCodes: typeof errorCodes;
   loadOidfed(): Json;
+  // The page's module, for the one view the page and the GET both answer
+  // (#446), lazily as `loadOidfed` is.
+  loadPage(): Json;
 }
 
 const ENTITY = { type: 'string', maxLength: 2048,
@@ -78,6 +83,9 @@ class OidfedApi {
       log: log, parseBody: parseBody, errorCodes: errorCodes,
       loadOidfed: function (): Json {
         return require('./oidfed');
+      },
+      loadPage: function (): Json {
+        return require('./oidfed_admin');
       }
     };
   }
@@ -101,7 +109,12 @@ class OidfedApi {
    * @param status - the HTTP status
    * @param body - the reply
    */
-  send(res: Json, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  send<R, S extends number>(res: R, status: S,
+       body: IyaApi.AnswerOf<R, S>): void;
+  send(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering OidfedApi.send(). status=" + status);
     const rows = res.locals && res.locals.protocolEndpoints;
@@ -136,13 +149,7 @@ class OidfedApi {
     log.debug("Entering OidfedApi.action(). " + action);
     log.debug("Leaving OidfedApi.action().");
     return {
-      action: action, operationId: operationId, summary: summary,
-      description: description,
-      requestBodyRequired: required.length > 0,
-      requestBody: { type: 'object', properties: properties,
-                     required: required, examples: [example],
-                     additionalProperties: false },
-      responseDescription: 'What was done, with the record where there is one.'
+      action: action, operationId: operationId
     };
   }
 
@@ -152,41 +159,35 @@ class OidfedApi {
    * @returns the rows
    */
   buildRoutes(): Json[] {
-    const { log, loadOidfed, errorCodes, parseBody } = this.deps;
+    const { log, loadOidfed, loadPage, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering OidfedApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/oidfed', tag: 'OpenID Federation',
         operationId: 'getOidfed',
-        summary: 'This realm as an OpenID Federation entity: its role, ' +
-                 'Entity Configuration, keys, subordinates, Trust Anchors ' +
-                 'and Trust Marks',
-        description: 'Everything /admin/oidfed draws, out of the same view ' +
-                     'function: the realm\'s Entity Identifier and role ' +
-                     '(trust anchor, intermediate or leaf), its authority ' +
-                     'hints and federation endpoints, its Federation Entity ' +
-                     'Keys (public halves, states and history — never a ' +
-                     'private key), the subordinates it vouches for, the ' +
-                     'Trust Anchors it trusts, the Trust Mark types it ' +
-                     'issues, the marks it has issued and carries, the mark ' +
-                     'policies it publishes as a Trust Anchor, the ' +
-                     'resolutions it holds, and the claims of its current ' +
-                     'Entity Configuration — and, for each subordinate, ' +
-                     'whether it is suspended and its event history, the ' +
-                     'subordinates it has revoked with theirs (#137), and ' +
-                     'the Entity Collection crawl it keeps (#136). The ' +
-                     'oidfed.* settings are written through ' +
-                     'POST /admin-api/config/set-many.',
         mirrors: 'GET /admin/oidfed',
-        parameters: [],
-        responseDescription: 'The realm as a federation entity.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: 'This realm as /admin/oidfed draws ' +
-                                       'it.' },
-        handler: function (req: Json, res: Json): Promise<void> {
+        parameters: [
+          ['keysPage', 'the Federation Entity Keys'],
+          ['subordinatesPage', 'the subordinates'],
+          ['formerPage', 'the revoked subordinates'],
+          ['anchorsPage', 'the Trust Anchors'],
+          ['issuedPage', 'the Trust Marks this realm issued'],
+          ['heldPage', 'the Trust Marks this realm carries'],
+          ['policiesPage', 'the Trust Mark policies']
+        ].map(function (one: string[]): Json {
+          return { name: one[0], in: 'query', required: false,
+                   schema: { type: 'integer', minimum: 1, examples: [1] },
+                   description: 'Which page of ' + one[1] + '. Clamped, ' +
+                                'like every page parameter here.' };
+        }).concat([
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [10] },
+            description: 'Rows per page, shared by the seven lists.' }
+        ]),
+        handler: function (req, res): Promise<void> {
           log.debug("Entering the management API OpenID Federation " +
                     "endpoint.");
-          return loadOidfed().view(req).then(function (view: Json): void {
+          return loadPage().oidfedView(req).then(function (view: Json): void {
             self.send(res, 200, view);
             log.debug("Leaving the management API OpenID Federation " +
                       "endpoint.");
@@ -198,9 +199,9 @@ class OidfedApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/oidfed/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/oidfed/:action',
         tag: 'OpenID Federation', mirrors: 'POST /admin/oidfed',
-        handler: function (req: Json, res: Json): Promise<void> {
+        handler: function (req, res): Promise<void> {
           log.debug("Entering the management API OpenID Federation action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -402,7 +403,7 @@ class OidfedApi {
                                                'superseded'] } },
             ['kid'], { kid: 'NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs',
                        reason: 'compromised' })
-        ] }
+        ] })
     ];
     log.debug("Leaving OidfedApi.buildRoutes().");
     return ROUTES;

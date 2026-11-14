@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "Den här noden körs inte på Linux ({{platform}}), så det finns inga cgroup-filer att läsa."
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "Det finns ingen cgroup på {{root}}: ingen cgroup v2 ({{why}}) och ingen minnes- eller cpuacct-styrenhet för cgroup v1."
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "Ingen cgroup."
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "Containerns CPU-tid kan inte läsas: {{source}} — {{why}}."
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "Containerns CPU-tid kunde läsas en gång men inte en andra gång: {{why}}."
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "Containern får använda {{vcpus}} vCPU ({{version}}, {{file}}), och procentsatsen avser det."
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "Den här cgroupen ({{version}}) har ingen {{file}}, så den har ingen egen CPU-kvot; procentsatsen avser de {{cpus}} CPU:er som node rapporterar som tillgängliga (os.availableParallelism())."
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "Ingen CPU-kvot ({{version}}, {{file}} anger ingen): containern får använda varje CPU som värden ger den, och procentsatsen avser de {{cpus}} CPU:er som node rapporterar som tillgängliga (os.availableParallelism())."
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "Cgroupen har inga strypningsräknare: utan kvot finns det inget att strypa mot."
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "Den här cgroup v1-värden har ingen minnesstyrenhet för den här processen."
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "Containerns minne kan inte läsas: {{source}} — {{why}}."
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "Containern får använda {{mib}} MiB ({{version}}, {{file}})."
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "Den här cgroupen ({{version}}) har ingen {{file}}, så den har ingen egen minnesgräns och det finns ingen procentsats att ange."
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "Ingen minnesgräns ({{version}}, {{file}} anger ingen), så det finns ingen procentsats att ange."
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} är processernas eget minne; {{file}} är sidcache som kärnan återtar under tryck innan den dödar något."
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "memory.stat kan inte läsas, så det är okänt vad minnet består av."
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "Från ECS-agenten (/task/stats), eftersom cgroupen inte kan läsas här. Gränsen är containerns, som agenten rapporterar den."
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "Från ECS-agenten (/task/stats), eftersom cgroupen inte kan läsas här. Containern har ingen egen gräns, så gränsen är ECS-UPPGIFTENS, {{mib}} MiB."
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "Från ECS-agenten (/task/stats), eftersom cgroupen inte kan läsas här. Det finns ingen gräns att mäta mot."
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "ECS-agenten rapporterar endast totalen."
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "Containern har ingen egen minnesgräns (cgroup v{{version}}), så gränsen är ECS-UPPGIFTENS, {{mib}} MiB (/task Limits.Memory), och procentsatsen avser det."
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "Från ECS-agenten (/task/stats), mellan dess två senaste mätvärden, eftersom cgroupen inte kan läsas här; procentsatsen avser ECS-UPPGIFTENS {{vcpus}} vCPU."
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "Från ECS-agenten (/task/stats), mellan dess två senaste mätvärden, eftersom cgroupen inte kan läsas här; uppgiften anger ingen CPU-gräns, så det finns ingen procentsats."
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "ECS-agenten rapporterar inte strypning."
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "Containern har ingen egen CPU-kvot (cgroup v{{version}}), så procentsatsen avser ECS-UPPGIFTENS {{vcpus}} vCPU (/task Limits.CPU)."
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "{{file}} kunde inte läsas ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "dess statusfil har ingen VmRSS"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "en tråds residenta storlek och CPU-tid är hela processens, så de står på frontprocessens rad (pid {{pid}}) och upprepas inte här"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "dess residenta storlek och CPU-tid är hela processens, varje arbetstråds inräknad; dess heapsiffror är huvudtrådens"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "frontprocess"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "protokolldebuggerns api"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "arbetstråd {{thread}} för värdade ytor"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "protokollarbetstråd {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "den svarade utan sitt minne, så endast dess residenta storlek visas, från /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}, så endast dess residenta storlek visas, från /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "den svarade inte inom {{ms}}ms (dess minnesförladdning, debugger_api_status.js, svarar när den är installerad)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "den svarade inte inom {{ms}}ms"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}; en tråd har ingen egen post i /proc, så dess heap kan inte läsas utifrån"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "Protokolldebuggerns api-process kunde inte tillfrågas om sitt pid: {{error}}."
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "Begärande- och ytarbetarna är TRÅDAR i frontprocessen (#364), så deras residenta storlek och CPU-tid är frontprocessens egna siffror och räknas en gång, på dess rad. Den residenta totalen är summan över de {{rss}} process(er) vars storlek kunde läsas — frontprocessen och debuggerns api-barnprocess — så sidor som de två delar (bland annat nodes egen kod) räknas en gång för var och en, och totalen kan överstiga containerns memory.current. Heapsiffrorna är de {{heap}} V8-isolat som själva rapporterade process.memoryUsage(): frontprocessens huvudtråd, varje arbetstråd och barnprocessen; en barnprocess som inte svarade i tid visas med sin residenta storlek från /proc och ingen heap, och en arbetstråd som inte gjorde det listas som obesvarad, eftersom en tråd inte har någon egen post i /proc. Postkvantsignering och scrypt har inte haft några egna processer sedan #363: de körs på libuvs trådpool, och deras minne räknas i den process som bad om dem."
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 är inte satt: den här noden är inte en Amazon ECS-uppgift (den körs inte på Fargate eller en ECS-containerinstans), så det finns ingen slutpunkt för uppgiftsmetadata att korskontrollera cgroupen mot."
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 är satt, men slutpunkten för uppgiftsmetadata svarade inte inom {{ms}}ms: {{why}}."
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "En del av slutpunkten svarade inte: {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "En del av slutpunkten svarade inte: {{whys}}. Det finns ingen statistik för den här containern i /task/stats."
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "En del av slutpunkten svarade inte: {{whys}}. Det finns ingen statistik för den här containern i /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "Det finns ingen statistik för den här containern i /task/stats."
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "Det finns ingen statistik för den här containern i /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "ECS-agentens egna siffror för den här containern, som en korskontroll av cgroupen: agenten tar mätvärden enligt sitt eget schema, så de kommer inte att stämma på byten eller procenten."
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "Det här är siffrorna för noden {{node}} — dess container — ritade av dess frontprocess, pid {{pid}}. Varje nod i ett kluster är en egen container, med egna siffror."
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "Maskinen som den här containern körs på — på Fargate mikro-VM:en; på en arbetsstation hela arbetsstationen. INTE containern: dess lediga minne och belastning säger ingenting om containerns gräns."
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "Över de {{count}} nod(er) som inte har försvunnit och har en ögonblicksbild, inaktuella inräknade och markerade. Gränserna summeras bara när varje nod har en."
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "den finns inte"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "den är inte ett tal"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "den har ingen usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "det finns ingen cpuacct-styrenhet för cgroup v1"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "den svarade utan sitt minne"
+  }
+}

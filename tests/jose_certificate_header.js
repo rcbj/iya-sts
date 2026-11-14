@@ -73,9 +73,26 @@ const ROOT = path.join(__dirname, '..');
 // whose files are not this one's (2026-09-16).
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
                    '.claude', 'vendored', 'coverage'];
-const SKIP_FILES = ['common/crypto.js'];
+// The two console bundles (#446) are esbuild's output of the `web_` modules
+// this scan already reads, with their comments — the exemptions among them
+// — taken out.
+const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
+                    'admin-ui/console.js', 'portal/portal.bundle.js',
+                    'portal/portal-spa.js', 'home/home.bundle.js',
+                    'home/home-spa.js', 'authn/authn.bundle.js',
+                    'authn/authn-spa.js'];
 
-const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
+// `signJwtAsync` since #820 (2026-10-21): the access, refresh and ID tokens a
+// caller can wait for are signed on libuv's thread pool.
+const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsync|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
+
+// A TOKEN'S SIGNING PLAN (#820, 2026-10-21): `accessTokenUnsigned()` and
+// `refreshTokenPlan()` build the payload and the signing options together,
+// so the sync and async signers can share them. The use case is named where
+// the plan is built, `sign: { certificateHeader: '<id>', … }`, and a call
+// that signs `plan.sign` is covered by it.
+const PLAN_SIGN = /\bsign:\s*\{\s*certificateHeader:\s*'([a-z0-9-]+)'/g;
+const SIGNS_A_PLAN = /\bplan\.sign\b/;
 
 function jsFilesUnder(dir, out) {
   log.debug("Entering jsFilesUnder().");
@@ -126,6 +143,11 @@ function scanSigners() {
     const text = fs.readFileSync(file, 'utf8');
     const lines = text.split('\n');
     let match;
+    PLAN_SIGN.lastIndex = 0;
+    while ((match = PLAN_SIGN.exec(text)) !== null) {
+      named.push({ id: match[1],
+                   where: rel + ':' + lineOf(text, match.index) });
+    }
     SIGNING_CALL.lastIndex = 0;
     while ((match = SIGNING_CALL.exec(text)) !== null) {
       const lineNo = lineOf(text, match.index);
@@ -151,9 +173,12 @@ function scanSigners() {
         }
         continue;
       }
+      if (SIGNS_A_PLAN.test(statement)) {
+        continue;
+      }
       const ids = [];
       const idPattern =
-        /certificateHeader(?:For)?\s*:?\s*\(?\s*'([a-z0-9-]+)'/g;
+        /certificateHeader(?:For(?:Async)?)?\s*:?\s*\(?\s*'([a-z0-9-]+)'/g;
       let one;
       while ((one = idPattern.exec(statement)) !== null) {
         ids.push(one[1]);
@@ -440,6 +465,19 @@ function childMain() {
          '(HAIP 6.1.1: the trust anchor MUST NOT be in it)',
          (credentialHeader.x5c || []).length + ' of ' + pems.length);
     config.clearOverride('oid4vci.credentialCertificateHeader');
+    // 2026-10-16: WITH NOTHING SET, a credential and a Status List Token
+    // (`vc_status.ts` signs under the same use case) carry that x5c, and no
+    // x5u — eudi-dev's wallet could not check a Status List Token that named
+    // its chain only by x5u, which SD-JWT VC does not name.
+    const byDefault = headerOf(helpers.signJwtAs(fixed, 'RS256', null,
+      { certificateHeader: 'vci-credential' }));
+    note(Array.isArray(byDefault.x5c) &&
+         byDefault.x5c.join(',') === credentialHeader.x5c.join(',') &&
+         byDefault.x5u === undefined,
+         'C13c. by default a credential\'s and a Status List Token\'s ' +
+         'header carries the chain in x5c, without the Root, and no x5u',
+         JSON.stringify({ x5c: (byDefault.x5c || []).length,
+                          x5u: byDefault.x5u || null }));
 
     // ---- a realm ---------------------------------------------------------
     realms.run(realms.get(REALM), function () {
@@ -611,7 +649,8 @@ function run(t) {
     if (row.type !== 'enum' ||
         (row.enumValues || []).join(',') !==
         certificateHeader.MODES.join(',') ||
-        row.dflt !== certificateHeader.DEFAULT_MODE || row.runtime !== true ||
+        row.dflt !== (uc.defaultMode || certificateHeader.DEFAULT_MODE) ||
+        row.runtime !== true ||
         row.perProcess) {
       bad.push(uc.setting + ': ' + JSON.stringify({ type: row.type,
         values: row.enumValues, dflt: row.dflt, runtime: row.runtime }));
@@ -619,8 +658,13 @@ function run(t) {
   });
   t.equal(bad.join('; '), '',
           'every use case has its setting, an enum of exactly none/x5c/x5u/' +
-          'both, defaulting to x5u, runtime and so settable per realm');
+          'both, defaulting to its own default (x5u unless it names one), ' +
+          'runtime and so settable per realm');
   t.equal(certificateHeader.DEFAULT_MODE, 'x5u', 'and the default is x5u');
+  // 2026-10-16: credentials and their Status List Tokens carry x5c, which
+  // SD-JWT VC and HAIP name; x5u is no way a wallet is told to find a key.
+  t.equal(certificateHeader.useCase('vci-credential').defaultMode, 'x5c',
+          'but a credential and its Status List Token default to x5c');
   const strays = Object.keys(rows).filter(function (key) {
     return /CertificateHeader$/.test(key) &&
       !certificateHeader.USE_CASES.some(function (uc) {

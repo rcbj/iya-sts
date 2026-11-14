@@ -50,7 +50,7 @@ locals {
     STS_KEYS_SOURCE             = "persisted"
     STS_CLUSTER_MODE            = "active-active"
     STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cell_console_host, "localhost"])))
+    STS_TLS_HOSTNAMES           = join(",", distinct(compact([local.public_name ? var.public_hostname : "", local.cdn ? var.direct_hostname : "", local.cell_console_host, "localhost"])))
     STS_TLS_IPS                 = join(",", ["127.0.0.1", local.lb_address])
     STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
     STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
@@ -58,9 +58,9 @@ locals {
     STS_WORKERS_READ_YOUR_WRITE = tostring(var.workers_read_your_write)
 
     # NO PROXY HEADER: a pass-through load balancer delivers the client's
-    # own packets (lb.tf), so the peer IS the client and no proxy is trusted.
-    STS_PROXY_PROTOCOL  = "off"
-    STS_TRUSTED_PROXIES = ""
+    # own packets (lb.tf), so the peer IS the client and no proxy is trusted —
+    # unless Front Door is in front (frontdoor.tf, `edge_environment`).
+    STS_PROXY_PROTOCOL = "off"
 
     # The database password, from Key Vault through common/secrets.js — the
     # path issue #51 exists to exercise, on the `azure` provider — and the
@@ -84,11 +84,22 @@ locals {
     # Where a certificate says its CRL and OCSP are: the FRONT-END port
     # (AWS's argument, deploy/aws/environment/ecs.tf).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
-    PKI_DISTRIBUTION_LDAP_HOST = local.public_host
-    PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
+    PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
+    # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8 rules
+    # out ldaps://); it is no longer published (locals.tf), so from outside
+    # that address does not resolve.
+    PKI_DISTRIBUTION_LDAP_PORT = "389"
+
+    # PARANOID PKI MODE FORCED OFF (rcbj, 2026-11-10), as on AWS (ecs.tf) and
+    # in every appconfig file the image packages (env/local.js): `auto` is on
+    # in product (#1360), and on AWS it refused the cloud's own secret-store
+    # certificate and the node never started. Set here too, so an image built
+    # before env/local.js said so behaves the same.
+    STS_PKI_PARANOID = "off"
 
     LDAP_MAX_ENTRIES          = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX      = tostring(var.applications_max)
+    STS_REALMS_MAX_COUNT      = tostring(var.realms_max_count)
     STS_RISK_UPLOAD_DIRECTORY = local.risk_upload_dir
     },
     # The public certificate, where there is one: both settings or neither.
@@ -101,6 +112,8 @@ locals {
     local.kek_environment,
     # A CELL'S CONTRACT WITH THE SERVICE (cells.tf); empty otherwise.
     local.cell_environment,
+    # WHO IS IN FRONT: nobody, or Front Door (frontdoor.tf).
+    local.edge_environment,
   var.extra_environment)
 
   # `KEY=<secret name>` pairs, comma-separated, for node-init's secrets.sh.
@@ -135,6 +148,10 @@ locals {
     ["--add-host ${local.db_hostname}:${local.db_endpoint_ip}"],
     local.global_hosts,
     [for id in sort(keys(local.peers)) : "--add-host ${local.cell_private[id].intercell_host}:${local.cell_private[id].intercell_ip}"],
+    # BEHIND FRONT DOOR, THE NODE'S OWN PUBLIC NAME IS ITS OWN LOAD BALANCER
+    # (frontdoor.tf): the `self` rule admits it, as before Front Door, where
+    # the edge's allowlist would not.
+    local.cdn ? ["--add-host ${var.public_hostname}:${local.lb_address}"] : [],
   ))
 
   unit_files = {
@@ -179,10 +196,11 @@ locals {
       "sts-cert.service" = templatefile("${path.module}/units/sts-cert.service.tftpl", {
         init_image      = local.init_image
         tls_dir         = local.host_tls_dir
+        tls_owner       = local.service_user
         vault_url       = local.vault_uri
         tls_secret      = "tls"
         hostname        = var.public_hostname
-        alt_names       = local.cell_console_host
+        alt_names       = join(",", compact([local.cell_console_host, local.cdn ? var.direct_hostname : ""]))
         issuer          = node == "node-a" ? "true" : "false"
         acme_server     = var.acme_server
         acme_email      = var.acme_email
@@ -239,6 +257,7 @@ locals {
             owner       = "root"
             content = templatefile("${path.module}/units/sts-disk.sh.tftpl", {
               mount_dir = local.host_upload_dir
+              owner     = local.service_user
             })
           },
           {
@@ -281,9 +300,14 @@ resource "tls_private_key" "unused" {
 locals {
   # THIRTY MINUTES before a node failing its health check is replaced: the
   # first boot installs Docker, pulls three images and runs the init units
-  # before the service starts (AWS: the grace period, 300 s, for a task whose
-  # image is already on the host; GCP's autohealing delay). The extension's
-  # own grace period (below) is the ten minutes a restarted service gets.
+  # before the service starts (AWS: the grace period, 600 s, for a task whose
+  # image is already on the host; GCP's autohealing delay is the same 600 s).
+  # The extension's own grace period (below) is the ten minutes a restarted
+  # service gets, the same window AWS gives the process once it is running.
+  # Once the repair grace has passed, three consecutive failures of the
+  # probe below replace the VM. The load balancer stops traffic on the same
+  # count (lb.tf). Both ask for an HTTPS GET of `/healthcheck`, so a node
+  # whose LDAPS never binds is not replaced for that.
   repair_grace = "PT30M"
 
   health_settings = jsonencode({

@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# tests/docker-compose-run-tests-mariadb.yml — THE `mariadb` MODE'S LAYER
+# (#677), over docker-compose-run-tests.yml, layered by ./run-tests.sh when
+# the mode is `mariadb` (tests/tools/modes.sh, stsModeIsMariadb()) and never
+# otherwise.
+#
+# ===========================================================================
+# THE SERVICE'S STORE ON MARIADB, A SECOND ENGINE THE SUITE RUNS AGAINST.
+#
+# PostgreSQL is and stays this service's primary store (rcbj on #677). This
+# mode runs the single-node production deployment with `persistence.mode=
+# mariadb`: the store is a database of its own, `sts_store`, on the
+# `mariadb` server the base file already runs for the MySQL attribute source
+# (which keeps its own `sts` database). Nothing else changes.
+#
+#   * `mariadb-store-schema` is a one-shot: it makes `sts_store` and runs
+#     `mariadb/schema.sql` into it as the server's root — the OWNER, as
+#     `postgres/apply-schema.sh` is for PostgreSQL — creating `sts_app` with
+#     the password the secret store holds (`STS_DB_APP_PASSWORD`, which the
+#     base file's seeder writes as `databasePassword`). The service dials as
+#     `sts_app`, which holds SELECT, INSERT, UPDATE and DELETE on that
+#     database and nothing else.
+#   * TLS, VERIFIED: the server requires a secure transport
+#     (`--require-secure-transport=ON` in the base file) and presents the
+#     self-signed certificate `mariadb-tls` minted, names `mariadb` and
+#     `localhost`. The service and the one-shot both trust THAT certificate,
+#     mounted read-only from the volume; the key beside it is the database
+#     user's (0600) and no other process in the stack can read it.
+#   * The password is not in the connection string: it comes from the secret
+#     store, as in every other persisting mode.
+# ===========================================================================
+services:
+  mariadb-store-schema:
+    container_name: ${STS_TEST_MARIADB_SCHEMA_CONTAINER_NAME:-sts-mariadb-schema-docker-tests}
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/mariadb:11.8
+    restart: "no"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+    volumes:
+      - ./mariadb/schema.sql:/schema/schema.sql:ro
+      - sts-mariadb-tls:/mariadb-tls:ro
+    # `$$` is compose's escape for a `$` the shell is to see. The password
+    # reaches the script as a quoted SQL string through `--init-command`, so
+    # it must not contain a single quote; this stack's never does (it is
+    # `sts_app`, or what a launcher generates from base64). mariadb/schema.sql
+    # quotes it again itself before it builds a statement from it.
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        set -euo pipefail;
+        client=(mariadb -h mariadb -uroot -psts --ssl
+        --ssl-ca=/mariadb-tls/tls/server.crt);
+        "$${client[@]}" -e 'CREATE DATABASE IF NOT EXISTS sts_store';
+        "$${client[@]}" --init-command="SET @sts_app_password='$${STS_DB_APP_PASSWORD}'"
+        sts_store < /schema/schema.sql;
+        echo 'mariadb-store-schema: sts_store is built';
+
+  sts:
+    environment:
+      - STS_DATABASE_URL=mariadb://sts_app@mariadb:3306/sts_store
+      - STS_DATABASE_TLS_CA_FILE=/run/secrets/mariadb-tls/tls/server.crt
+    volumes:
+      - sts-mariadb-tls:/run/secrets/mariadb-tls:ro
+    depends_on:
+      mariadb-store-schema:
+        condition: service_completed_successfully

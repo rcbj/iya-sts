@@ -261,9 +261,11 @@ function run(t) {
   const encRow = settingRow('oauth2.refreshTokenEncryptionEnc');
   t.check(!!algRow &&
           JSON.stringify((algRow.enumValues || []).slice().sort()) ===
-          JSON.stringify(stsCrypto.JWE_ALGS.slice().sort()),
+          JSON.stringify(stsCrypto.JWE_ALGS.filter(function (alg) {
+            return !/^PBES2-/.test(alg);
+          }).sort()),
           'oauth2.refreshTokenEncryptionAlg offers exactly ' +
-          'common/crypto.js\'s JWE_ALGS',
+          'common/crypto.js\'s JWE_ALGS but PBES2 (11.4.4)',
           JSON.stringify(algRow && algRow.enumValues));
   t.check(!!encRow &&
           JSON.stringify((encRow.enumValues || []).slice().sort()) ===
@@ -277,7 +279,11 @@ function run(t) {
   const keys = helpers.refreshTokenKeysFor();
   const failures = [];
   const kidsWrong = [];
-  stsCrypto.JWE_ALGS.forEach(function (alg) {
+  // Every JWE alg but PBES2, which refresh tokens do not use (11.4.4).
+  const SEALING_ALGS = stsCrypto.JWE_ALGS.filter(function (alg) {
+    return !/^PBES2-/.test(alg);
+  });
+  SEALING_ALGS.forEach(function (alg) {
     Object.keys(stsCrypto.JWE_ENCS).forEach(function (enc) {
       try {
         const sealed = rt.seal(INNER, null, { alg: alg, enc: enc });
@@ -304,7 +310,7 @@ function run(t) {
       }
     });
   });
-  t.check(!failures.length, 'all ' + stsCrypto.JWE_ALGS.length * 6 + ' (alg, ' +
+  t.check(!failures.length, 'all ' + SEALING_ALGS.length * 6 + ' (alg, ' +
           'enc) pairs round-trip', failures.slice(0, 8).join('; '));
   t.check(!kidsWrong.length, 'and every JWE is a nested JWT (cty JWT) naming ' +
           'the realm key of the right kind', kidsWrong.slice(0, 4).join('; '));
@@ -343,6 +349,17 @@ function run(t) {
   t.equal(codeThrown(function () { rt.open(parts.join('.')); }),
           'STS-OAUTH-0238',
           'a tampered refresh token is refused');
+  // A256KW BY DEFAULT (2026-10-21, #820), and a token sealed under the old
+  // default, RSA-OAEP-256, still opens: open() reads each token's own alg.
+  const byDefault = rt.seal(INNER);
+  const defaultAlg = JSON.parse(Buffer.from(byDefault.split('.')[0],
+                                            'base64url').toString('utf8')).alg;
+  t.equal(defaultAlg, 'A256KW', 'a refresh token is sealed under A256KW by ' +
+          'default');
+  const underRsa = rt.seal(INNER, undefined, { alg: 'RSA-OAEP-256',
+                                               enc: 'A256GCM' });
+  t.check(rt.open(underRsa) === INNER,
+          'and one sealed under RSA-OAEP-256 before the change still opens');
   const notJwt = stsCrypto.encryptJweCompact('just some text', {
     alg: 'RSA-OAEP-256', enc: 'A256GCM', cty: 'JWT', jwk: keys.rsa.publicJwk });
   t.equal(codeThrown(function () { rt.open(notJwt); }), 'STS-OAUTH-0239',
@@ -363,7 +380,7 @@ function run(t) {
             !Buffer.from(kA.secret).equals(Buffer.from(kB.secret)),
             'two realms hold different RSA keys, EC keys and secrets',
             [kA.rsa.publicJwk.kid, kB.rsa.publicJwk.kid].join(' / '));
-    ['RSA-OAEP-256', 'ECDH-ES+A256KW', 'A256GCMKW', 'dir', 'PBES2-HS256+A128KW']
+    ['RSA-OAEP-256', 'ECDH-ES+A256KW', 'A256GCMKW', 'dir', 'A256KW']
       .forEach(function (alg) {
         const inA = rt.seal(INNER, setA, { alg: alg, enc: 'A256GCM' });
         t.equal(codeThrown(function () { rt.open(inA, setB); }),
@@ -371,6 +388,12 @@ function run(t) {
                 alg + ': a token sealed in one realm does not open in another');
         t.check(rt.open(inA, setA) === INNER, alg + ': and opens in its own');
       });
+
+    t.equal(codeThrown(function () {
+      rt.seal(INNER, setA, { alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' });
+    }), 'STS-OAUTH-0240',
+    'PBES2 is not a refresh-token algorithm: the secret is random, and ' +
+    'stretching it would cost a PBKDF2 run at every refresh (11.4.4)');
 
     // -----------------------------------------------------------------------
     t.log.info('=== 5. the keys travel with the set ===');
@@ -380,8 +403,7 @@ function run(t) {
                blob.refreshTokenEncKeys.secret),
             'the serialised set carries the refresh-token keys, secret ' +
             'included');
-    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)),
-                                          require('crypto'));
+    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)));
     t.check(!!restored.refreshTokenEncKeys &&
             restored.refreshTokenEncKeys.rsa.publicJwk.kid === kA.rsa.publicJwk.kid &&
             Buffer.from(restored.refreshTokenEncKeys.secret)

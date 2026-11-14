@@ -1,0 +1,16 @@
+{
+  "noEntry.text": "您以 <code>{name}</code> 的身分登入，但此領域的目錄中沒有該名稱的人員。透過 ACME、EST 或 SCEP 簽發的證書一律指明一個項目並保存在該項目上，因此在項目存在之前無從簽發。",
+  "other.heading": "其他證書",
+  "other.before": "本入口網站直接為您簽發的 TLS 客戶端證書，以及您的 RFC 7523 與 RFC 7522 簽章金鑰，位於",
+  "other.after": "。本頁說明客戶端或裝置用來取得憑證的三種註冊協定。",
+  "fresh.eabNote": "此金鑰只繫結一個帳戶，且該帳戶只能為您簽發證書。",
+  "fresh.challengeNote": "第一個使用它的證書要求會將其用掉，而該證書指明的是您。",
+  "enrolled.heading": "您已註冊的證書",
+  "enrolled.none": "您沒有透過 ACME、EST 或 SCEP 簽發的證書。",
+  "enrolled.note": "撤銷會將證書列入其簽發機構的 CRL，並使 OCSP 回應 <code>revoked</code>。此動作無法復原。",
+  "acme.text": "ACME 客戶端使用外部帳戶繫結（External Account Binding）金鑰在 <code>{url}</code> 註冊帳戶；之後該帳戶將終身繫結於您。",
+  "est.text": "EST 客戶端以您的用戶名稱和密碼（或透過 EST、ACME 或 SCEP 簽發給您的證書）進行驗證，並送出證書要求。不需先在此產生任何東西。",
+  "scep.text": "SCEP 客戶端在送往 <code>{url}</code> 的證書要求中放入挑戰密碼。每組密碼對應一個設定檔，且只能使用一次。",
+  "hostNames.note": "TLS 伺服器證書只能指明這些名稱。它們由管理員登記；本服務從不透過聯絡某個名稱來證明對它的控制權。",
+  "done.revoked": "該證書已撤銷。"
+}

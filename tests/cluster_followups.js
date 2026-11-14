@@ -344,6 +344,7 @@ function childMain() {
                        { mode: 0o600 });
       process.env.STS_KEYS_SOURCE = 'persisted';
       process.env.STS_KEYS_KEK_PROVIDER = 'file';
+      process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
       process.env.STS_KEYS_KEK_FILE = kekFile;
       keystore.reset();
       keystore.setStore({
@@ -491,21 +492,24 @@ function childMain() {
            'E2b. the next create of a name, sent the moment the first was ' +
            'answered and before its claim is released, waits and runs rather ' +
            'than being refused as in progress', sequence.join(','));
-      const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.ts', 'utf8');
-      const handlers = ["app.post('/admin/users',",
-                        "app.post('/admin/users/new',",
-                        "app.post('/admin/groups',"];
+      // THE CONSOLE CREATES THROUGH /admin-api since the cutover (#446):
+      // its user and group forms are the users and groups operations, so
+      // what is held is that each of those claims a create's name first.
+      const apiSource = fs.readFileSync(ROOT + '/mgmt-api/admin_api.ts',
+                                        'utf8');
+      const handlers = ["route: BASE + '/users/:action'",
+                        "route: BASE + '/groups/:action'"];
       note(handlers.every(function (head) {
-        const at = adminSource.indexOf(head);
-        // The next registration, however deeply indented: since #50 the
-        // console registers its routes from a method. Not found is refused
-        // rather than read as "to the end of the file".
-        const after = /\n\s*app\./.exec(adminSource.slice(at + head.length));
+        const at = apiSource.indexOf(head);
+        // The next route row: not found is refused rather than read as
+        // "to the end of the file".
+        const after = /\n\s*\{ method: '/.exec(apiSource.slice(at +
+                                                         head.length));
         const next = after ? at + head.length + after.index : -1;
-        return at >= 0 && next > at && adminSource.slice(at, next)
-          .indexOf('createClaims.runClaimed(') >= 0;
-      }), 'E3. the console\'s user, new-user and group create handlers each ' +
-          'create through runClaimed()');
+        return at >= 0 && next > at && /self\.runClaimed\(res, request\.action === 'create'/
+          .test(apiSource.slice(at, next));
+      }), 'E3. the users and groups operations — which the console\'s user, ' +
+          'new-user and group forms are — each create through runClaimed()');
       const scimSource = fs.readFileSync(ROOT + '/scim/scim.ts', 'utf8');
       note((scimSource.match(/\.ingress\(claimingIngress\('(User|Group)'/g) ||
             []).length === 2,
@@ -571,9 +575,8 @@ function childMain() {
                     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
                     signCount: 0, label: 'one' };
       const pair = await Promise.all([
-        credentials.addKeyClaimed(who, key, 'mfa'),
-        credentials.addKeyClaimed(who, Object.assign({}, key, { label: 'two' }),
-                                  'mfa')
+        credentials.addKeyClaimed(who, key),
+        credentials.addKeyClaimed(who, Object.assign({}, key, { label: 'two' }))
       ]);
       const rows = credentials.keysOf(who).filter(function (one) {
         return one.credentialId === 'cfu-credential-1';
@@ -587,7 +590,7 @@ function childMain() {
            JSON.stringify(pair.map(function (one) {
              return one.ok || errorCodes.codeOf(one);
            })) + ' rows=' + rows.length);
-      const onEntry = credentials.addKey(who, key, 'mfa');
+      const onEntry = credentials.addKey(who, key);
       note(!onEntry.ok && errorCodes.codeOf(onEntry) === 'STS-AUTHN-0095',
            'F2. and a registration of an id already on the entry is refused ' +
            'there, whatever door asks', JSON.stringify(onEntry));
@@ -668,6 +671,31 @@ function childMain() {
            'H4. under the limit a verified credential is answered and its ' +
            'buckets cleared (a limit of 1 no longer blocks)',
            JSON.stringify([cleared, afterClear]));
+      // H6 (2026-10-21, #820): a bucket the check just read EMPTY is not
+      // cleared — a round trip that changes nothing, twice per token request.
+      const realClear = atomic.clearWindow;
+      let clears = 0;
+      atomic.clearWindow = function () {
+        clears++;
+        return realClear.apply(atomic, arguments);
+      };
+      try {
+        const clean = fromAddress('203.0.113.11');
+        const quiet = await websecurity.succeededShared('cfu-bind3', clean,
+          'uid=svc3', { unlessBlocked: true, limit: 3 });
+        const emptyClears = clears;
+        await websecurity.failedShared('cfu-bind3', clean, 'uid=svc3', 3);
+        await websecurity.succeededShared('cfu-bind3', clean, 'uid=svc3',
+          { unlessBlocked: true, limit: 3 });
+        // A failure counts in both buckets (the identity's and the
+        // address's), so the success after it clears both.
+        note(quiet === null && emptyClears === 0 && clears === 2,
+             'H6. a verified credential whose buckets are empty clears ' +
+             'nothing; one with failures clears the buckets that hold them',
+             JSON.stringify({ emptyClears: emptyClears, clears: clears }));
+      } finally {
+        atomic.clearWindow = realClear;
+      }
       const oauthSource = fs.readFileSync(ROOT + '/oauth-oidc/oauth2.ts',
                                           'utf8');
       // Methods of `OAuth2Server` since #50, so each call is `self.`.

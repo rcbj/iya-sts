@@ -49,7 +49,8 @@
 // question is protocol-independent, and so is the answer this endpoint gives:
 // ONE LIST of everything this service is still holding for one identity, across
 // every family, with a checkbox against each, and — by default, and by design —
-// a single button that ends all of it.
+// a single button that ends the sessions, tokens, codes and connections.
+// Verifiable credentials, and the DIDs they are bound to, stay valid.
 //
 // It is the same shape `common/delegation.js` takes and for the same reason:
 // eight delegation mechanisms in three families collapse to one model because
@@ -92,8 +93,12 @@
 // endpoint could do. They are rows with no checkbox and a sentence saying why —
 // the same decision `/admin/sts-metadata` makes about coverage notes.
 //
-// **THE DEFAULT IS GLOBAL.** A POST that selects nothing ends everything, and
-// the button says so. The per-row checkboxes exist because "sign me out of that
+// **THE DEFAULT IS GLOBAL.** A POST that selects nothing ends every session,
+// token, code and connection, and the button says so. It leaves verifiable
+// credentials, and the DIDs they are bound to, valid; ticking those rows is
+// what ends them, and they are reported as not ended, with the reason, so the
+// act does not look complete. An administrator's global sign-out still
+// disowns them. The per-row checkboxes exist because "sign me out of that
 // one relying party" is a real thing to want and no protocol here offers it
 // across families — but a logout endpoint whose default was partial would be a
 // logout endpoint that quietly left something behind.
@@ -126,12 +131,14 @@
 // This page is a person signing themselves out. The console's is an operator
 // looking at somebody, is behind the console's two roles, and is where an
 // UNDO lives (a Kerberos sign-out instant can be cleared; a revoked token can
-// be restored). Both call the functions in this file, which is what makes them
-// one behaviour rather than two — rule 7, and the reason `admin_api.js` gets an
-// operation for each control.
+// be restored). Both call the functions in this file — rule 7, and the reason
+// `admin_api.js` gets an operation for each control. They differ in one act:
+// this page's global sign-out leaves verifiable credentials and the DIDs they
+// are bound to, and the operator's global sign-out disowns them.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import crypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 
@@ -154,6 +161,8 @@ import errorCodes = require('../common/error_codes');
 // revocation and the single `session.end` audit row — is behind
 // endSessionById(), which is why this module never touches the map itself.
 import authn = require('../authn/authn');
+// An issued token's register row as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 // The authorization codes, and the issuer identifier a front-channel
 // notification's `iss` carries.
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -181,8 +190,9 @@ import vcOffers = require('../oid4vc/vc_offers');
 // The wallet sign-ins a wallet has answered and no browser has collected yet
 // (#38). A cache hit, like every require here — `vc_verifier` is at 11-14.
 import vcVerifier = require('../oid4vc/vc_verifier');
-// The wallet sign-in register (#38's follow-ups), for the credentials a
-// global sign-out DISOWNS. A library; a cache hit here.
+// The wallet sign-in register (#38's follow-ups), for the credentials an
+// administrator's global sign-out, or a ticked row, DISOWNS. The person's
+// own Global logout at /logout leaves them. A library; a cache hit here.
 import vcIssued = require('../oid4vc/vc_issued');
 // The principal database, for the sign-out instant that stops an older
 // ticket-granting ticket at the KDC.
@@ -198,6 +208,33 @@ import gnapRevocation = require('../gnap/gnap_revocation');
 // hit: it is built with `oauth2` at 9.
 import grantManagement = require('../oauth-oidc/grant_management');
 import InstanceSlot = require('../common/instance_slot');
+// THE CONSOLE'S FOLDS, for this page's prose (2026-10-08). `web_kit` is a
+// leaf that requires nothing, so this is a cache hit with no load-time effect
+// and no route — the same require `scim/web_scim.ts` and the other family
+// renderers make. One fold rule for the console and this page, rather than a
+// second copy of when a paragraph is long enough to collapse.
+import kit = require('../admin-ui/web_kit');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539), and the realm prefix the language
+// chooser posts under. Both libraries: `page_locale` requires only leaves and
+// `helpers`/`config`, and `realms` is loaded at 2a, so each is a cache hit
+// that registers no route and closes no cycle.
+import PageLocale = require('../common/page_locale');
+import realms = require('../common/realms');
+// THE SIGN-OUT AS A STATIC SURFACE (#577): the shell every browser GET of
+// `/logout` answers, and the bundle it loads — `ShellDocument`, a library
+// (#570). The signed-out document's result travels MACed under a secret
+// every node shares (`cluster_secrets.ts`, a library `websecurity.ts`
+// already loaded) and deflated (`zlib`), so a node that did not end the
+// sessions can draw it and nothing else can make it say anything.
+import zlib = require('zlib');
+import ShellDocument = require('../common/shell_document');
+// The account control's rules (#561), which every card surface's stylesheet
+// carries and this page's own did not (`SIGNOUT_CSS`).
+import WebCardCss = require('../common/web_card_css');
+import clusterSecrets = require('../cluster/cluster_secrets');
+// The origins this service answers on (a LIBRARY, rule 3), for the
+// signed-out document's Origin check: the list the CORS answer is built from.
+import cors = require('../common/cors');
 
 /**
  * The path of the protocol-independent sign-out.
@@ -210,6 +247,161 @@ const LOGOUT_FORM = validation.z.looseObject({
   csrf_token: validation.types.opt(validation.types.token)
 });
 
+// ---------------------------------------------------------------------------
+// THE SIGN-OUT IS A STATIC SURFACE (#577, 2026-10-12).
+//
+// A browser's `GET /logout` answers the SHELL; `/logout/signout.js` (built
+// from `web_signout.ts`, on disk `signout-spa.js`) draws the inventory from
+// `GET /authn-api/logout` and sends the act to `POST /authn-api/logout`,
+// bound as every act on that API is (JSON, an Origin of this service, the
+// `X-CSRF-Token` of the `sts_session` cookie). The page's stylesheet is
+// `/logout/signout.css`, the rules the server-drawn page carried inline.
+//
+// THE RESULT IS TWO KINDS OF PAGE, and rcbj's plan on #577 is why. Where the
+// act left the BROWSER something to do — a Front-Channel Logout iframe, a
+// WS-Federation cleanup image, a SAML LogoutRequest link, a back-channel
+// delivery's state, a federation partner's sign-out (`fanOutOf()`,
+// `partnerLogouts`) — the result is the SERVER-DRAWN document it always was
+// (`resultPage()`, unchanged), because those are the specifications'
+// fan-out and its frame and image origins are in that document's own
+// policy. The act answers it as a form the runtime POSTs to
+// `/logout/signed-out`, carrying the result MACed (`sealResult()`). Where
+// there is nothing to fan out, the act answers the result's VIEW and the
+// runtime draws it in place.
+// ---------------------------------------------------------------------------
+const SIGNOUT_SCRIPT_PATH = '/logout/signout.js';
+const SIGNOUT_STYLE_PATH = '/logout/signout.css';
+// The bundle's file beside this module: never `signout.js`, the name a
+// compiled server module would have.
+const SIGNOUT_BUNDLE_FILE = 'signout-spa.js';
+/**
+ * The path the signed-out document is drawn at, from a sealed result.
+ */
+const SIGNED_OUT_PATH = '/logout/signed-out';
+// The cluster secret a sealed result is MACed under, and the label every MAC
+// begins with, so a value MACed for anything else never verifies here.
+const RESULT_SECRET = 'logout-result';
+const RESULT_LABEL = 'sts-logout-result-v1';
+// How long a sealed result may be drawn: the runtime posts it at once, and a
+// copy drawn later only fans out again to sessions that have already ended.
+const RESULT_TTL_MS = 5 * 60 * 1000;
+const SIGNED_OUT_FORM = validation.z.looseObject({
+  result: validation.z.string().max(4 * 1024 * 1024)
+});
+
+// The page's own rules, inline in the server-drawn document (`page()`) and
+// served as `/logout/signout.css` for the static one, so the two cannot
+// drift. The CSS is exactly what `page()` drew before #577.
+const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
+  'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
+  'line-height:1.5;color:var(--sts-text,#111)}h1{font-size:1.5rem;' +
+  'margin-bottom:.2rem}' +
+  'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:var(--sts-dim,#555);' +
+  'font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
+  'padding:.6rem .8rem;margin:1rem 0;color:#111}.warn{background:#fff8e1;' +
+  'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0;' +
+  'color:#111}' +
+  '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
+  '.8rem;margin:1rem 0;color:#111}table{border-collapse:collapse;width:100%;' +
+  'margin:.3rem 0 1rem}th,td{text-align:left;padding:.4rem .5rem;' +
+  'border-bottom:1px solid var(--sts-border,#ddd);vertical-align:top;' +
+  'font-size:.92rem}' +
+  'th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;' +
+  'color:var(--sts-dim,#555)}code{background:var(--sts-rule,#f4f4f4);' +
+  'padding:.05rem .25rem;' +
+  'border-radius:3px;word-break:break-all}.cannot{color:#8a6d00}' +
+  '.spec{color:var(--sts-dim,#555);font-size:.82rem}' +
+  'button{font:inherit;padding:.45rem ' +
+  '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
+  'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
+  'color:#fff;font-weight:600}a.btn{display:inline-block;padding:' +
+  '.45rem .9rem;border-radius:4px;border:1px solid #999;background:' +
+  '#f6f6f6;color:#111;text-decoration:none}' +
+  '.actions{margin:1.2rem 0;display:flex;' +
+  'gap:.8rem;flex-wrap:wrap;align-items:center}' +
+  // The console's fold, restyled for this page's palette: a `<details>`
+  // whose summary is the prose's opening sentence (`WebKit.note()`), so
+  // the explanation is one line until somebody asks for the rest.
+  '.note{color:var(--sts-dim,#444);font-size:.88rem;margin:.2rem 0 .6rem}' +
+  'details.fold{margin:.3rem 0 .8rem}details.fold>summary{cursor:' +
+  'pointer;list-style:none;display:flex;gap:.45em;align-items:' +
+  'baseline}details.fold>summary::-webkit-details-marker{display:' +
+  'none}details.fold>summary::before{content:"\\25b8";flex:none;' +
+  'font-size:.9em}details.fold[open]>summary::before{content:' +
+  '"\\25be"}details.fold>summary:focus-visible{outline:2px solid ' +
+  'var(--sts-dim,#555);outline-offset:2px}.foldbody{margin:.3rem 0 0 ' +
+  '1.05em}details.note.fold>summary:hover{color:var(--sts-text,#111)}' +
+  // The language chooser (#539), small and to one side, as on the
+  // sign-in screen: the page's first business is the sign-out.
+  'details.language-row{float:right;font-size:.8rem;margin:0 0 .5rem ' +
+  '1rem}form.language-chooser button{padding:.15rem .5rem}' +
+  'form.language-chooser label{margin-right:.3rem}' + PageLocale.ROW_CSS +
+  // THE TWO TABS (2026-10-12): `WebKit.tabbedPanels()`, the console's, with
+  // its rules in this page's palette — the fragment decides, through
+  // `:target` and `:has()`, with no script; a browser without `:has()`
+  // shows both panels, which is the page as it was.
+  '.tabbar{display:flex;gap:4px;margin:1.2rem 0 .8rem;border-bottom:1px ' +
+  'solid var(--sts-border,#ddd)}' +
+  '.tabbar a{padding:.35rem .8rem;border:1px solid #ddd;' +
+  'border-bottom:0;border-radius:4px 4px 0 0;background:#f6f6f6;' +
+  'color:#111;text-decoration:none;font-size:.92rem}' +
+  '.tabpanel{scroll-margin-top:1rem}' +
+  '@supports selector(:has(*)){.tabs>.tabpanel{display:none}' +
+  '.tabs>.tabpanel:target,.tabs>.tabpanel:has(:target){display:block}' +
+  '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabpanel.first' +
+  '{display:block}' +
+  '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabbar a.first,' +
+  '.tabs:has(#logout-signout:target)>.tabbar a[href="#logout-signout"],' +
+  '.tabs:has(#logout-details:target)>.tabbar a[href="#logout-details"]' +
+  '{background:#fff;font-weight:700;border-color:#555}}' +
+  'table.sessions td:first-child{width:3rem}' +
+  // A REALM'S SIGN-IN APPEARANCE (#717, `common/branding.ts`). The rules
+  // above read the realm's colours through custom properties, each falling
+  // back to the literal it replaced; the ones below apply only under
+  // `html[data-sts-layout]`, which the shell carries only for a realm whose
+  // appearance differs from the service's, so for every other realm — and
+  // in the server-drawn result document, which inlines this text and links
+  // no theme — the page is what it was. This page has no card, so for a
+  // realm it gets one: the page colour behind, the card colour under the
+  // text (the colour the contrast rule holds the text and links to), and
+  // the brand header the runtime draws at its top — in the card for
+  // centered, a band in the accent colour across the card's top for banner
+  // and split (a panel beside a page of tables would leave them no room).
+  // The links take the accent at the lowest specificity (`:where()`), so
+  // the button-like links and the tabs keep their own.
+  'html[data-sts-layout]{background:var(--sts-page,#f4f4f7)}' +
+  'html[data-sts-layout] body{background:var(--sts-card,#fff);' +
+  'border:1px solid var(--sts-border,#d5d5dd);border-radius:10px;' +
+  'padding:1.5rem 2rem;box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
+  ':where(html[data-sts-layout]) a{color:var(--sts-accent,#12107c)}' +
+  '.sts-brand{display:flex;align-items:center;justify-content:center;' +
+  'gap:12px;margin:0 0 1rem}img.sts-brand-logo{display:block;' +
+  'max-width:240px;max-height:64px}a.sts-brand-link{display:block;' +
+  'line-height:0}.sts-brand-name{font-weight:600;font-size:1.15em;' +
+  'overflow-wrap:anywhere}' +
+  'html[data-sts-layout=banner] .sts-brand,' +
+  'html[data-sts-layout=split] .sts-brand{margin:-1.5rem -2rem 1.2rem;' +
+  'padding:12px 24px;border-radius:10px 10px 0 0;' +
+  'background:var(--sts-accent,#12107c);' +
+  'color:var(--sts-on-accent,#fff)}' +
+  '@media (max-width:40rem){html[data-sts-layout] body{margin:0;' +
+  'border-radius:0;border-width:0;padding:1rem}' +
+  'html[data-sts-layout=banner] .sts-brand,' +
+  'html[data-sts-layout=split] .sts-brand{margin:-1rem -1rem 1rem;' +
+  'border-radius:0}}';
+
+// THE STATIC PAGE'S STYLESHEET, `/logout/signout.css`: the page's rules and,
+// after them, the account control's (#561) — `WebSurface` draws the browser's
+// accounts beside the chooser with `authn.multipleAccounts` on, and every
+// other card surface styles it from `WebCardCss.CARD_CSS`, which this page
+// does not carry. The rules are scoped to the control's own classes, so with
+// the setting off, when no control is drawn, they style nothing. The
+// server-drawn document (`page()`) inlines the same text, so the two still
+// cannot drift (`tests/logout_api.js` 6d holds them to the byte).
+// The control's rules go through the card's `themed()` (#717), so they
+// take a realm's colours as the card's own copy does.
+const SIGNOUT_CSS = LOGOUT_CSS + WebCardCss.themed(WebCardCss.ACCOUNTS_CSS);
+
 // A FAMILIES row, a live-session row, an inventory: open records, as the
 // JavaScript built them.
 interface Loose {
@@ -221,6 +413,7 @@ interface LogoutDeps {
   app: typeof app;
   log: typeof helpers.log;
   xmlEscape: typeof helpers.xmlEscape;
+  kit: typeof kit;
   baseUrlOf: typeof helpers.baseUrlOf;
   parseBody: typeof helpers.parseBody;
   nowSec: typeof helpers.nowSec;
@@ -268,6 +461,9 @@ class Logout {
    * The expiry rule of each kind of live session, in words.
    */
   readonly sessionExpiryRules: Loose;
+  // The static sign-out's bundle, read once (#577).
+  private bundleFile: ReturnType<typeof ShellDocument.readFile> | null =
+    null;
 
   /**
    * Builds the families and the expiry rules from the modules given.
@@ -300,6 +496,7 @@ class Logout {
       app: app,
       log: helpers.log,
       xmlEscape: helpers.xmlEscape,
+      kit: kit,
       baseUrlOf: helpers.baseUrlOf,
       parseBody: helpers.parseBody,
       nowSec: helpers.nowSec,
@@ -340,11 +537,17 @@ class Logout {
         FAMILIES: instance.describedFamilies(),
         inventoryFor: instance.inventoryFor.bind(instance),
         terminate: instance.terminate.bind(instance),
+        // The sessions a removed credential signed in (#722), for the
+        // console's and the API's clear-key, clear-totp, clear-backup-codes
+        // and clear-email-factor.
+        endFactorSessions: instance.endFactorSessions.bind(instance),
         // /admin/sessions and GET /admin-api/sessions (2026-09-04). The whole
         // list rather than one identity's, and the rules that go with it —
         // see liveSessions() for why enumerating them is this module's job
         // and not the console's.
         liveSessions: instance.liveSessions.bind(instance),
+        // One page of them from the session index (#820).
+        liveSessionsPageAsync: instance.liveSessionsPageAsync.bind(instance),
         SESSION_EXPIRY_RULES: instance.sessionExpiryRules
       });
     }
@@ -362,10 +565,7 @@ class Logout {
     const { log, crypto } = this.deps;
     log.debug("Entering Logout.handleFor().");
     log.debug("Leaving Logout.handleFor().");
-    return crypto.createHash('sha256')
-                 .update(String(secret), 'utf8')
-                 .digest('hex')
-                 .slice(0, 16);
+    return crypto.digest('sha256', String(secret), 'hex').slice(0, 16);
   }
 
   // How many rows one inventory will draw. See `logout.maxRows`: the cap is on
@@ -446,25 +646,104 @@ class Logout {
     return out.slice(0);
   }
 
-  // The sessions of every key asked, from ONE walk of the session store, by
-  // the rule above: grouped by `holderKeyOf()` where the old walk compared it
-  // with one key, so a batch of a thousand people walks the store once.
+  // The sessions of every key asked, by the rule above.
+  //
+  // WHILE THE SESSION WINDOW IS ON (2026-10-22, #820) each person's are read
+  // from the index — `sessionsOfOne()`, two indexed columns per key — and the
+  // store is never walked: on 8081 the walk was every sealed body, about
+  // 470,000 synchronous reads on a request worker, for the inventory of ONE
+  // person, and through read-your-write every other worker waited behind it.
+  // A key the index cannot read throws (unread, never "nobody"), as the walk
+  // does. THE GAP, accepted (rcbj): a session filed under NEITHER the
+  // person's username NOR their entry's subject — a realm-qualified name
+  // with no subject that still resolves, which only a build before every
+  // session carried the entry's `urn:uuid:` sub could have made — is not
+  // seen, so not listed and not ended. Such sessions are legacy and no
+  // installation holds any (rcbj, 2026-10-22).
+  //
+  // With the window off every session is in this process's memory, so the
+  // walk is a walk of a Map, ONE for a whole batch: grouped by
+  // `holderKeyOf()` where the old walk compared it with one key, so a batch
+  // of a thousand people walks the store once.
   private sessionsByKey(keys: string[]): Map<string, Loose[]> {
     const { log, authn, stats } = this.deps;
     log.debug("Entering Logout.sessionsByKey(). " + keys.length + " key(s).");
     const out = new Map();
     keys.forEach((key) => { out.set(String(key || ''), []); });
-    authn.sessions.forEach((session) => {
+    if (typeof authn.sessionWindowOn === 'function' &&
+        authn.sessionWindowOn() &&
+        typeof authn.sessionsHeldUnder === 'function') {
+      out.forEach((list, key) => {
+        if (!key) {
+          return;
+        }
+        const one = this.sessionsOfOne(key);
+        out.set(key, (one && one.get(key)) || []);
+      });
+      log.debug("Leaving Logout.sessionsByKey(). From the index.");
+      return out;
+    }
+    // holderKeyOf moves when a urn:uuid subject resolves, so it is not a
+    // column. The page is every sealed body; a cached subset is not.
+    // Null is an unread page. An empty map would let a global sign-out
+    // end nobody and audit that it ended nothing.
+    const matched = authn.sessionsMatching(function () {
+      return true;
+    });
+    if (matched == null) {
+      log.debug("Leaving Logout.sessionsByKey(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    matched.forEach((session) => {
       const username = (session.user && session.user.username) || '';
       const sub = (session.user && session.user.sub) || '';
       const list = out.get(stats.holderKeyOf(username, sub));
-      if (list) list.push(session);
+      if (list) {
+        list.push(session);
+      }
     });
     out.forEach((list) => {
       list.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
     });
     log.debug("Leaving Logout.sessionsByKey().");
     return out;
+  }
+
+  // ONE PERSON'S SESSIONS, READ AS ONE PERSON'S (#774): `authn`'s two indexed
+  // columns, the username and the subject the person's entry gives, and then
+  // `holderKeyOf()` — the walk's own rule — asked of each of those only, so
+  // the answer is the walk's for every session filed under either. What it
+  // does not see is a session filed under NEITHER: a name only
+  // `holderKeyOf()`'s normalisation maps to the key (a realm-qualified one)
+  // with no subject that still resolves, which `authn` no longer makes — every
+  // session it starts carries the entry's `urn:uuid:` sub. Used for ONE key
+  // (`heldIdsFor()`, the risk engine's `heldBy()`) and, while the session
+  // window is on, for every key a sign-out or a set of people names
+  // (`sessionsByKey()`, #820). Null where `authn` offers no such read.
+  private sessionsOfOne(key: string): Map<string, Loose[]> | null {
+    const { log, authn, stats } = this.deps;
+    log.debug("Entering Logout.sessionsOfOne().");
+    if (typeof authn.sessionsHeldUnder !== 'function') {
+      log.debug("Leaving Logout.sessionsOfOne(). No such read.");
+      return null;
+    }
+    // A key that is an unresolved `urn:uuid:` (`identityKeyOf()`'s answer for
+    // a session with no username) is its own subject (#820).
+    const subject = /^urn:uuid:/i.test(key) ? key
+      : String(helpers.subjectForName(key) || '');
+    const found = authn.sessionsHeldUnder(key, subject);
+    if (found == null) {
+      log.debug("Leaving Logout.sessionsOfOne(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    const mine = found.filter((session) => {
+      const username = (session.user && session.user.username) || '';
+      const sub = (session.user && session.user.sub) || '';
+      return stats.holderKeyOf(username, sub) === key;
+    });
+    mine.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
+    log.debug("Leaving Logout.sessionsOfOne(). " + mine.length + ".");
+    return new Map([[key, mine]]);
   }
 
   // ---------------------------------------------------------------------------
@@ -499,7 +778,7 @@ class Logout {
 
   // Runs `fn` with the index built for `keys`, and takes it down after —
   // nested calls reuse the outer one when it covers them.
-  private withIndex<T>(keys: string[], fn: () => T): T {
+  private withIndex<T>(keys: string[], fn: () => T, oneByIndex?: boolean): T {
     const { log, stats } = this.deps;
     log.debug("Entering Logout.withIndex(). " + keys.length + " key(s).");
     const wanted = keys.map((key) => { return String(key || ''); });
@@ -511,7 +790,10 @@ class Logout {
     const outer = this.index;
     this.index = {
       keys: new Set(wanted),
-      sessions: this.sessionsByKey(wanted),
+      // One person asking what they hold reads their sessions by index
+      // (#774); a set, or a sign-out, walks.
+      sessions: (oneByIndex && wanted.length === 1 &&
+                 this.sessionsOfOne(wanted[0])) || this.sessionsByKey(wanted),
       holdings: stats.holdingsOf(wanted),
       wallet: this.walletRowsByKey(wanted),
       // #432: the GNAP grants and the OAuth grants, one walk each.
@@ -635,6 +917,9 @@ class Logout {
           log.debug("Entering collect().");
           log.debug("Leaving collect().");
           return ctx.sessions.map((session) => {
+            // Read through the `Session` concept (#1579); what rides on the
+            // session is not part of it, and is asked of its owners.
+            const view = authn.sessionView(session);
             const rides = [];
             const oidc = frontchannel.clientsOf(session).length;
             const realms = Object.keys(session.wsfedRealms || {}).length;
@@ -645,20 +930,19 @@ class Logout {
                                    (realms === 1 ? '' : 's'));
             if (sps) rides.push(sps + ' SAML 2.0 service provider' +
                                 (sps === 1 ? '' : 's'));
-            return this.row('session', 'sign-on session', session.id, {
-              label: session.id,
-              detail: 'signed in as ' +
-                      ((session.user && session.user.username) || '?') +
-                      ' (' + ((session.amr || []).join(', ') ||
+            return this.row('session', 'sign-on session', view.id, {
+              label: view.id,
+              detail: 'signed in as ' + (view.username || '?') +
+                      ' (' + ((view.methods || []).join(', ') ||
                               'no amr recorded') +
-                      ', acr ' + (session.acr || 'none') + ')' +
+                      ', acr ' + (view.assuranceLevel || 'none') + ')' +
                       (rides.length ? '; carries ' + rides.join(', ') : '; ' +
                           'nothing signed into on it'),
               // The FIRST authentication, not the latest: see
               // authn.sessionStartedAt().
               startedAt: authn.sessionStartedAt(session),
-              expiresAt: session.expires || 0,
-              sessionId: session.id
+              expiresAt: view.expires || 0,
+              sessionId: view.id
             });
           });
         },
@@ -808,9 +1092,10 @@ class Logout {
           log.debug("Entering wsfed-rp.collect().");
           const rows = [];
           ctx.sessions.forEach((session) => {
-            wsfed.cleanupTargetsFor(session).forEach((target) => {
+            // A realm can declare several addresses (#747), each a row.
+            wsfed.cleanupTargetsFor(session).forEach((target, at) => {
               rows.push(this.row('wsfed-rp', 'realm', session.id + '|' +
-                                 target.realm, {
+                                 target.realm + (at ? '|' + at : ''), {
                 label: target.realm,
                 detail: target.url ? 'cleanup goes to ' + target.url
                                    : 'this realm supplied no wreply, so ' +
@@ -1071,26 +1356,29 @@ class Logout {
             return [];
           }
           log.debug("Leaving token.collect().");
-          return detail.tokens.filter((record) => {
+          // Each register row read through the `IssuedToken` concept (#1579).
+          return detail.tokens.map((record) => {
+            return DomainClasses.IssuedToken.fromRecord(record);
+          }).filter((token) => {
             // Only what can still be presented AND can still be acted on. A
             // revoked one is already ended, an expired one ended itself, and
             // one with no jti cannot be revoked at all — which the registry
             // already records as `revocable: false` rather than leaving to be
             // inferred.
-            return record.revocable && record.state !== 'revoked' &&
-                   record.state !== 'expired';
-          }).map((record) => {
-            return this.row('token', record.kind, record.jti, {
-              label: record.kind + ' ' + record.jti,
-              detail: 'for ' + (record.client_id || 'no client') +
-                      (record.scope ? ', scope ' + record.scope : '') +
-                      (record.jkt ? ', DPoP-bound' : '') +
-                      (record.sessionId ? ', issued on session ' +
-                       record.sessionId
-                                        : ', issued with no browser session'),
-              startedAt: record.issuedAt || 0,
-              expiresAt: (record.exp || 0) * 1000,
-              sessionId: record.sessionId || ''
+            return token.revocable && token.state !== 'revoked' &&
+                   token.state !== 'expired';
+          }).map((token) => {
+            return this.row('token', token.kind, token.id, {
+              label: token.kind + ' ' + token.id,
+              detail: 'for ' + (token.clientId || 'no client') +
+                      (token.scope ? ', scope ' + token.scope : '') +
+                      (token.dpopThumbprint ? ', DPoP-bound' : '') +
+                      (token.sessionId ? ', issued on session ' +
+                       token.sessionId
+                                       : ', issued with no browser session'),
+              startedAt: token.issuedAt || 0,
+              expiresAt: (token.expires || 0) * 1000,
+              sessionId: token.sessionId || ''
             });
           });
         },
@@ -1178,7 +1466,11 @@ class Logout {
           log.debug("Entering vci-code.collect().");
           const rows = [];
           const at = Date.now();
-          vcOffers.preAuthorizedCodes.forEach((record, code) => {
+          // The store is keyed by the code's DIGEST since #614, and holds no
+          // code: the handle is drawn from the digest, and the row's
+          // `secret` — which never leaves this module — is the digest that
+          // terminate() deletes by.
+          vcOffers.preAuthorizedCodes.forEachDigest((record, code) => {
             const username = (record.user && record.user.username) || '';
             if (stats.holderKeyOf(username, record.user && record.user.sub) !==
                 ctx.key) return;
@@ -1188,7 +1480,7 @@ class Logout {
               label: 'a pre-authorized code for ' +
                      (record.configurationIds || []).join(', ') ||
                          'a credential',
-              detail: (record.txCode ?
+              detail: (record.txCodeDigest ?
                        'a transaction code is required with it' :
                        'no ' +
                   'transaction code') +
@@ -1204,7 +1496,7 @@ class Logout {
         terminate: (r, ctx) => {
           log.debug("Entering vci-code.terminate().");
           let found = '';
-          vcOffers.preAuthorizedCodes.forEach((record, code) => {
+          vcOffers.preAuthorizedCodes.forEachDigest((record, code) => {
             const username = (record.user && record.user.username) || '';
             if (stats.holderKeyOf(username, record.user && record.user.sub) !==
                 ctx.key) return;
@@ -1217,7 +1509,7 @@ class Logout {
                                          'expired, so there is nothing left ' +
                                          'to end' };
           }
-          vcOffers.preAuthorizedCodes.delete(found);
+          vcOffers.preAuthorizedCodes.deleteDigest(found);
           log.debug("Leaving vci-code.terminate().");
           return { ok: true, message: 'a pre-authorized code was discarded; ' +
                                       'the Credential Offer it came from ' +
@@ -1286,12 +1578,22 @@ class Logout {
       // (`vc_issued.ts`'s `disown()`), and sets each one's status-list bit so
       // a verifier elsewhere learns it too.
       //
-      // **A GLOBAL SIGN-OUT ENDS THEM; AN ORDINARY ONE DOES NOT.** This family
-      // is reached from `/logout`, `/admin/logout` and `/admin-api/logout`;
-      // the per-session sign-outs — `/oauth2/logout`, SAML Single Logout,
-      // `wsignout1.0`, the console's and the portal's Sign out — go through
-      // `authn.dropSession()` and never here, so a person who signs out of one
-      // application signs back in with the wallet they hold.
+      // **AN ADMINISTRATOR'S GLOBAL SIGN-OUT ENDS THEM, AND SO DOES TICKING
+      // THE ROW. THE PERSON'S OWN GLOBAL LOGOUT AT /logout DOES NOT, AND
+      // NEITHER DOES AN ORDINARY ONE.** This family is reached from
+      // `/logout`, `/admin/logout` and `/admin-api/logout`. The person's own
+      // global act — the Global logout button, and a POST with nothing
+      // selected, which the page says is the same act — passes
+      // `spareCredentials` and leaves these rows alone, and the `Credential (`
+      // rows of `issued` with them: the credential stays valid, and so does
+      // the DID it is bound to. Ticking the row still ends it. An
+      // administrator's global sign-out, an account disable, a risk lockout
+      // and a cell's revoke-subject call `terminate()` with an empty
+      // selection and without that flag, and still disown. The per-session
+      // sign-outs — `/oauth2/logout`, SAML Single Logout, `wsignout1.0`, the
+      // console's and the portal's Sign out — go through `authn.dropSession()`
+      // and never here, so a person who signs out of one application signs
+      // back in with the wallet they hold.
       //
       // `endOrder` 26: a credential, with the other credentials, and before
       // the session, on which nothing here depends.
@@ -1432,6 +1734,50 @@ class Logout {
                 ' token(s) are revoked' }
             : { ok: false, message: 'that GNAP grant had already been ' +
                                     'finalized' };
+        } },
+
+      // -----------------------------------------------------------------------
+      // UMA 2.0'S PERSISTED CLAIMS TOKENS (#1168, #1193): what a client keeps
+      // so a person need not be asked for the same claims again. A sign-out
+      // of EVERYTHING ends them (the design's decision 7), for the GNAP
+      // grants' reason; an ordinary sign-out of one application does not.
+      // The RPTs themselves are access tokens, and end with the access-token
+      // families. Required LAZILY: the UMA family is 23d-ii.
+      // `endOrder` 27, with the credentials and before the session.
+      { id: 'uma', endOrder: 27, endsWithSession: true,
+        label: 'UMA persisted claims tokens',
+        protocol: 'UMA 2.0',
+        spec: 'UMA 2.0 Grant for OAuth 2.0 Authorization, section 3.3.3 ' +
+              '(the PCT)',
+        what: 'Handles a client holds so that the claims gathered about ' +
+              'this person need not be gathered again. Ending one makes the ' +
+              'client ask for them afresh; the RPTs already issued are ' +
+              'access tokens and end with those.',
+        collect: (ctx) => {
+          log.debug("Entering uma.collect().");
+          const subject = helpers.subjectForName(String(ctx.key || ''));
+          const store = subject ? require('../uma/uma_store') : null;
+          const rows = store ? store.pctsOf(subject).map((pct) => {
+            return this.row('uma', 'pct', String(pct.key), {
+              label: String(pct.client || ''),
+              detail: 'claims gathered for the client ' +
+                      String(pct.client || ''),
+              startedAt: (Number(pct.issuedAt) || 0) * 1000,
+              expiresAt: (Number(pct.expiresAt) || 0) * 1000
+            });
+          }) : [];
+          log.debug("Leaving uma.collect(). " + rows.length);
+          return rows;
+        },
+        terminate: (r) => {
+          log.debug("Entering uma.terminate().");
+          const gone = require('../uma/uma_store').deletePct(r.handle, true);
+          log.debug("Leaving uma.terminate().");
+          return gone
+            ? { ok: true, message: 'the persisted claims token held by ' +
+                r.label + ' is ended' }
+            : { ok: false, message: 'that persisted claims token had ' +
+                                    'already ended' };
         } },
 
       // -----------------------------------------------------------------------
@@ -1692,6 +2038,14 @@ class Logout {
         // answer to "did you sign them out" would depend on which endpoint
         // issued the credential.
         //
+        // THE PERSON'S OWN GLOBAL SIGN-OUT AT /logout IS THE EXCEPTION FOR ONE
+        // KIND OF ROW: a `Credential (` artifact, the verifiable credential,
+        // whose holder DID is the `did:jwk` an `ldp_vc` names. `terminate()`
+        // skips it when `spareCredentials` is set, which only `endFor()` sets,
+        // because revoking the artifact is what `statusOf()` and
+        // `disownedReason()` read as INVALID. Every other kind in this family
+        // is still marked. An administrator's global sign-out passes no flag.
+        //
         // IT IS LAST (`endOrder: 99`) AND STAYS LAST. Nothing depends on these
         // rows, and marking them before the `saml2-sp` family had sent its
         // Single Logout would be disowning an assertion before telling the
@@ -1796,16 +2150,32 @@ class Logout {
     return rows.slice(0);
   }
 
-  // The wallet credential rows of every key asked, from one walk (#351).
+  // The wallet credential rows of every key asked, each person's read through
+  // the register's subject index (2026-10-22, #820). It walked every row of
+  // the register with a `nameForSubject()` each — a directory read per row,
+  // for one person's sign-out. A row's subject is the person's
+  // `urn:uuid:<entryUUID>`, so the key's subject finds them: the key itself
+  // where it is an unresolved `urn:uuid:`, else the subject its entry gives.
+  // The walk's own rule (`holderKeyOf()`) then keeps only the rows that file
+  // under the key, so the answer is the walk's. A key with no subject holds
+  // none.
   private walletRowsByKey(keys: string[]): Map<string, any[]> {
     const { log, stats } = this.deps;
     log.debug("Entering Logout.walletRowsByKey().");
     const out = new Map();
     keys.forEach((key) => { out.set(String(key || ''), []); });
-    vcIssued.rowsForSubject(null).forEach(function (row) {
-      const list = out.get(stats.holderKeyOf(
-        helpers.nameForSubject(row.subject) || '', row.subject));
-      if (list) list.push(row);
+    out.forEach(function (list, key) {
+      const subject = /^urn:uuid:/i.test(key) ? key
+        : String(helpers.subjectForName(key) || '');
+      if (!subject) {
+        return;
+      }
+      vcIssued.rowsForSubject(subject).forEach(function (row) {
+        if (stats.holderKeyOf(helpers.nameForSubject(row.subject) || '',
+                              row.subject) === key) {
+          list.push(row);
+        }
+      });
     });
     log.debug("Leaving Logout.walletRowsByKey().");
     return out;
@@ -2048,20 +2418,40 @@ class Logout {
    * `/admin/sessions` and `GET /admin-api/sessions`. Expired sessions and
    * arrival sessions nobody has signed in to are left out.
    *
+   * @param given - the sign-on sessions to list, where the caller read a
+   *   page of them from the index (`liveSessionsPageAsync()`); every one
+   *   when absent
    * @returns the live sessions
+   * @throws when the session index could not be read. The cache is not
+   *   the list.
    */
-  liveSessions() {
+  liveSessions(given?) {
     const { log, authn, config, krb5Principals, ldapServer, stats } = this.deps;
     log.debug("Entering Logout.liveSessions().");
     const nowMs = Date.now();
     const out = [];
 
-    // THE BROWSER SIGN-ON SESSIONS. Read straight off the store that owns them,
-    // and an expired one is skipped rather than listed as expired: `authn.js`
+    // THE BROWSER SIGN-ON SESSIONS. While the window is on the map is a
+    // cache, so this is the index: a chosen session that is not cached is
+    // still live, and an arrival is still skipped. An expired one is
+    // skipped rather than listed as expired: `authn.js`
     // drops a session when it is next looked up, so one still in the map with a
     // past `expires` is a session that has ended and has not been swept — and
     // this page is what is LIVE.
-    authn.sessions.forEach((session) => {
+    // A PAGE THE CALLER READ FROM THE INDEX, where it gave one (#820):
+    // every session, opened one at a time, held a request worker for two
+    // minutes at 470,000 of them.
+    const matched = Array.isArray(given) ? given
+      : authn.sessionsMatching(function () {
+        return true;
+      });
+    // Null is an unread page, already recorded as STS-AUTHN-0338. The
+    // rows still cached are not who is signed in.
+    if (matched == null) {
+      log.debug("Leaving Logout.liveSessions(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    matched.forEach((session) => {
       // ---------------------------------------------------------------------
       // AN ARRIVAL SESSION IS NOT SOMEBODY BEING SIGNED IN, so it is not on
       // this list. `authn.startArrivalSession()` gives every browser one the
@@ -2079,6 +2469,10 @@ class Logout {
       //
       // The row appears the moment it becomes a sign-in: startSession()
       // upgrades it in place and `chosen` becomes true.
+      //
+      // The Unauthenticated tab says this exclusion (#888). It does not
+      // list these rows and it does not count them: a count is a scan of
+      // the session index, and there is no index on an arrival.
       // ---------------------------------------------------------------------
       if (session.chosen === false) {
         return;
@@ -2091,7 +2485,13 @@ class Logout {
           authn.sessionEnded(session, nowMs)) {
         return;
       }
-      const username = (session.user && session.user.username) || '';
+      // THE ROW IS THE `Session` CONCEPT (#1579): every member drawn here
+      // that the session record holds is read through it. What rides on the
+      // session (`oidcClients` and the two below) is each family's own, and
+      // whether a relying party holds a refresh token is asked of the record
+      // because the concept never carries a token.
+      const view = authn.sessionView(session);
+      const username = view.username || '';
       const rides = [];
       const oidc = Object.keys(session.oidcClients || {}).length;
       const realms = Object.keys(session.wsfedRealms || {}).length;
@@ -2103,7 +2503,7 @@ class Logout {
       if (sps) rides.push(sps + ' SAML 2.0 service provider' +
                           (sps === 1 ? '' : 's'));
       out.push({
-        id: 'session:' + session.id,
+        id: 'session:' + view.id,
         family: 'session',
         // ONE STORE, TWO KINDS OF ROW (2026-09-06). The management API, SCIM
         // and the SPIRE Server API sign in through `authn.startSession()` like
@@ -2130,61 +2530,65 @@ class Logout {
         // and leaving the sign-on session — and every other application on it —
         // alive. The two rows are visibly different, and `derivedFrom` says
         // which sign-on session this one hangs off.
-        kind: session.rpSurface
-          ? (session.rpLabel || session.rpSurface) + ' session'
+        kind: view.relyingPartySurface
+          ? (view.relyingPartyLabel || view.relyingPartySurface) + ' session'
           : session.credentialKey
-            ? (session.via || 'API') + ' session'
+            ? (view.startedThrough || 'API') + ' session'
             : 'Browser sign-on session',
         // The sign-on session this one was derived from, where there is one.
         // Empty on every other row. It is what makes the cascade visible:
         // ending the parent ends this, and a reader looking at two rows for one
         // person can see which is which rather than inferring it from the
         // times.
-        derivedFrom: session.derivedFrom || '',
-        rpClientId: session.rpClientId || '',
-        key: stats.holderKeyOf(username, session.user && session.user.sub),
+        derivedFrom: view.derivedFrom || '',
+        rpClientId: view.relyingPartyClientId || '',
+        key: stats.holderKeyOf(username, view.sub),
         username: username,
-        sub: (session.user && session.user.sub) || '',
+        sub: view.sub || '',
         // The protocol the sign-in came THROUGH. See startSession(): every
         // browser family reads this one session, so this is not the list of
         // protocols using it — `carries` is.
-        protocol: session.via || 'OAuth 2.0 / OIDC',
-        handle: session.id,
+        protocol: view.startedThrough || 'OAuth 2.0 / OIDC',
+        handle: view.id,
         // The session id, which is what a token issued on it records — so this
         // is the join to /admin/tokens and the only row kind that has one.
-        sessionId: session.id,
+        sessionId: view.id,
         startedAt: authn.sessionStartedAt(session),
-        expiresAt: session.expires || 0,
+        expiresAt: view.expires || 0,
         expiryRule: session.credentialKey ? this.sessionExpiryRules.api
-          : (session.rpSurface && session.rpTokens &&
+          : (view.relyingPartySurface && session.rpTokens &&
              session.rpTokens.refreshToken)
             ? this.sessionExpiryRules.relyingParty
             : this.sessionExpiryRules.session,
-        amr: (session.amr || []).slice(),
-        acr: session.acr || '',
+        amr: (view.methods || []).slice(),
+        acr: view.assuranceLevel || '',
+        // Whether the session is bound to a key its browser holds (#725):
+        // `{ bound, alg, boundAt, refreshes, refreshedAt }`.
+        deviceBound: authn.deviceBindingOf(session),
         carries: rides,
         // An API session carries no relying parties — nothing signs into it, it
         // is a record that a credential keeps being accepted — so it reports
         // the thing that IS true of it and that a reader wants: how much it is
         // being used and when it last was.
-        detail: session.rpSurface
+        detail: view.relyingPartySurface
           // A relying party session carries no relying parties of its own: it
           // IS one. What a reader wants is which client holds it and which
           // sign-on session it rests on, because ending THAT ends this.
-          ? 'held by ' + (session.rpClientId || session.rpSurface) +
-            (session.derivedFrom
-              ? ', derived from sign-on session ' + session.derivedFrom
+          ? 'held by ' + (view.relyingPartyClientId ||
+                          view.relyingPartySurface) +
+            (view.derivedFrom
+              ? ', derived from sign-on session ' + view.derivedFrom
               : ', with no sign-on session behind it') +
             // How often it has renewed its tokens, and when — the one thing on
             // this row a renewal changes. Never the tokens.
-            (session.rpRenewals
-              ? '; tokens renewed ' + session.rpRenewals +
-                ' time(s), last at ' + new Date(session.rpRenewedAt ||
+            (view.relyingPartyRenewals
+              ? '; tokens renewed ' + view.relyingPartyRenewals +
+                ' time(s), last at ' + new Date(view.relyingPartyRenewedAt ||
                                                 0).toISOString()
               : '')
           : session.credentialKey
-            ? (session.calls || 1) + ' call(s), last at ' +
-              new Date(session.lastSeenAt || session.expires || 0).toISOString()
+            ? (view.apiCalls || 1) + ' call(s), last at ' +
+              new Date(view.lastSeenAt || view.expires || 0).toISOString()
             : (rides.length ? 'carries ' + rides.join(', ')
                             : 'nothing is signed into on it yet'),
         // WHETHER ANYBODY AUTHENTICATED FOR IT (2026-09-05).
@@ -2199,7 +2603,16 @@ class Logout {
         //
         // `!== false` for the usual reason: a session made before the field
         // existed is one somebody signed into.
-        authenticated: session.authenticated !== false,
+        authenticated: view.authenticated !== false,
+        // THE BROWSER'S ACCOUNT SET (#561, #731), where the session is in
+        // one: several signed-in accounts in one browser
+        // (`authn/CLAUDE.md`). Rows that share it are sessions of ONE
+        // browser, which is what an operator reading this list could not
+        // tell until it was drawn. The set's id is not a secret — the
+        // cookie's HANDLE is, and it is never on a row — and '' where the
+        // session is in no set, so a row is otherwise what it was with
+        // `authn.multipleAccounts` off.
+        accountSet: String(view.accountSetId || ''),
         terminable: true,
         why: ''
       });
@@ -2285,6 +2698,7 @@ class Logout {
         // AS-REQ decrypted under a real long-term key. There is no
         // unauthenticated Kerberos session; see the note on the browser rows.
         authenticated: true,
+        accountSet: '',
         terminable: !!signOutOn,
         why: signOutOn
           ? 'Ending this stamps a sign-out instant on ' + key + '@' + realm +
@@ -2330,6 +2744,7 @@ class Logout {
           (grant.derivedFrom ? ', derived by a resource server' : ''),
         // A resource owner approved it: there is no unauthenticated grant.
         authenticated: true,
+        accountSet: '',
         terminable: true,
         why: 'Ending this revokes every access token the grant issued and ' +
              'finalizes it, as the client\'s own revocation does (RFC 9635 ' +
@@ -2377,6 +2792,7 @@ class Logout {
         // An ANONYMOUS bind never reaches here: it has no key and is left off
         // the list entirely, a few lines above.
         authenticated: true,
+        accountSet: '',
         terminable: !!ldapOn,
         why: ldapOn
           ? 'Ending this closes the socket, which is the only sign-out LDAP ' +
@@ -2396,6 +2812,38 @@ class Logout {
     log.debug("Leaving Logout.liveSessions(). " + out.length +
               " live session(s).");
     return out;
+  }
+
+  /**
+   * One page of the live sign-on sessions from the session index, as rows,
+   * with the other families' rows (Kerberos tickets, GNAP grants, directory
+   * connections), which are bounded by what the service holds (#820).
+   *
+   * @param options - as `authn.liveSessionPageAsync()`'s
+   * @returns a promise of `{ rows, sessionTotal, authenticated,
+   *   unauthenticated }`, or of null while the session window is off (the
+   *   caller lists `liveSessions()` whole)
+   * @throws when the session index could not be read
+   */
+  async liveSessionsPageAsync(options?) {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.liveSessionsPageAsync().");
+    const page = typeof authn.liveSessionPageAsync === 'function'
+      ? await authn.liveSessionPageAsync(options) : null;
+    if (!page) {
+      log.debug("Leaving Logout.liveSessionsPageAsync(). Window off.");
+      return null;
+    }
+    if (page.unread) {
+      log.debug("Leaving Logout.liveSessionsPageAsync(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    const rows = this.liveSessions(page.sessions);
+    log.debug("Leaving Logout.liveSessionsPageAsync(). " + rows.length +
+              " row(s).");
+    return { rows: rows, sessionTotal: page.total,
+             authenticated: page.authenticated,
+             unauthenticated: page.unauthenticated };
   }
 
   // ---------------------------------------------------------------------------
@@ -2542,7 +2990,7 @@ class Logout {
           return String(r.id);
         }));
       });
-    });
+    }, true);
     log.debug("Leaving Logout.heldIdsFor().");
     return out;
   }
@@ -2637,6 +3085,147 @@ class Logout {
     return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SESSIONS A REMOVED CREDENTIAL SIGNED IN (#722, 2026-10-19).
+  //
+  // Removing a passkey ended nothing: the person's relying parties were told
+  // over CAEP and every session the key had signed in went on working until
+  // it expired — so somebody who found an unfamiliar passkey on their account
+  // and removed it left whoever enrolled it signed in. A password reset
+  // already signed the person out everywhere; this is the narrower act a
+  // credential's removal calls for.
+  //
+  // **WHICH SESSIONS: THE ONES THE CREDENTIAL AUTHENTICATED, AND NO OTHER.**
+  // `authn.sessionNamesFactor()` reads every authentication event on each of
+  // the person's sessions — as the first factor or as a step, at the sign-in
+  // or a re-authentication — and a session it names is ended. One it does not
+  // name survives, the session the person is removing the key FROM included:
+  // somebody removing a lost key from another device stays signed in, and
+  // somebody removing the key they are signed in with is signed out by it.
+  //
+  // **HOW: A SELECTIVE `terminate()`, the act `/logout` and `/admin/logout`
+  // perform**, so the session ends through `endSessionById()` — its derived
+  // sessions, the RFC 9700 refresh revocation, the front- and back-channel
+  // Logout Tokens and CAEP `session-revoked` all follow from there, once for
+  // the cluster under the `authn.session-end` claim — with the one audit row
+  // for the act. The selection ALSO names the tokens and the authorization
+  // codes issued on those sessions (the `token` and `code` rows whose
+  // `sessionId` is one of them), and GNAP grants follow by `endsWithSession`:
+  // a session ending revokes only its online refresh tokens, and the access
+  // tokens and `offline_access` refresh tokens of a session a stranger held
+  // are exactly what a removal is meant to take back.
+  //
+  // **ACROSS THE CLUSTER**: the sessions are read from `authn.sessions`, the
+  // persisted and replicated store every process and node shares, so a
+  // session signed in on another node is found and ended here.
+  //
+  // **A SESSION THAT IS STILL THERE AFTERWARDS IS A FAILURE OF ITS OWN**
+  // (STS-AUTHN-0370), logged and audited; a throw is STS-AUTHN-0371. Neither
+  // undoes the removal, which has already been written and signalled — a
+  // credential put back because a sign-out failed would be the worse half.
+  // ---------------------------------------------------------------------------
+  /**
+   * Ends every session of a person that the factor named authenticated, with
+   * the tokens and codes issued on those sessions; every other session stays.
+   *
+   * @param username - the person whose credential was removed
+   * @param factor - `{ kind: 'webauthn', credentialId }`, or `{ kind }` for
+   *   `totp`, `backup-code` or `email` (`authn.sessionNamesFactor()`)
+   * @param opts - terminate()'s `by`, `actor`, `initiatingEntity`, `channel`
+   * @returns `{ ok, sessionsEnded, itemsEnded, failed, sessionIds, message }`
+   */
+  endFactorSessions(username?: string, factor?: Loose, opts?: Loose): Loose {
+    const { log, audit, authn, errorCodes, stats } = this.deps;
+    const options = opts || {};
+    const who = String(username || '');
+    const kind = String((factor && factor.kind) || '');
+    log.debug("Entering Logout.endFactorSessions(). " + who + ", " + kind);
+    const key = who ? stats.identityKeyOf(who) : '';
+    const none = { ok: true, sessionsEnded: 0, itemsEnded: 0, failed: 0,
+                   sessionIds: [], message: '' };
+    if (!key || !kind) {
+      log.debug("Leaving Logout.endFactorSessions(). Nobody or nothing named.");
+      return none;
+    }
+    const ended = {};
+    let result: Loose = null;
+    try {
+      const ctx = this.contextFor(key);
+      ctx.sessions.forEach((session) => {
+        if (authn.sessionNamesFactor(session, factor)) {
+          ended[session.id] = true;
+        }
+      });
+      const ids = Object.keys(ended);
+      if (!ids.length) {
+        log.debug("Leaving Logout.endFactorSessions(). It authenticated no " +
+                  "live session.");
+        return none;
+      }
+      // `session` rows are ended by id; the tokens and codes issued on those
+      // sessions ride along. NOTHING SELECTED IS NEVER SENT: an empty
+      // selection is a global sign-out to `terminate()`, and there is always
+      // at least one `session:` id here.
+      const selection = ids.map((id) => { return 'session:' + id; });
+      this.allRows(ctx).forEach((r) => {
+        if ((r.family === 'token' || r.family === 'code') && r.terminable &&
+            r.sessionId && ended[r.sessionId]) {
+          selection.push(String(r.id));
+        }
+      });
+      result = this.terminate(key, selection, Object.assign({}, options, {
+        providerCommand: false }));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0371') + 'logout: ending the ' +
+                'sessions a removed ' + kind + ' credential of ' + who +
+                ' signed in threw: ' + ((e && e.stack) || e));
+      audit.failure('STS-AUTHN-0371', {
+        protocol: 'Logout', channel: options.channel || 'http', target: key,
+        outcome: 'error',
+        summary: 'The sessions a removed credential signed in could not ' +
+                 'be ended',
+        detail: { factor: kind, why: String((e && e.message) || e) } });
+      log.debug("Leaving Logout.endFactorSessions(). Threw.");
+      return { ok: false, sessionsEnded: 0, itemsEnded: 0,
+               failed: Object.keys(ended).length,
+               sessionIds: [], message: 'The sessions it signed in could ' +
+               'not be ended.' };
+    }
+    // WHAT IS STILL THERE is the failure, whatever `terminate()` said: a row
+    // it reported as already ended is gone, and that is the outcome asked for.
+    const still = Object.keys(ended).filter((id) => {
+      return !!authn.sessionById(id);
+    });
+    if (still.length) {
+      log.warn(errorCodes.tag('STS-AUTHN-0370') + 'logout: ' + still.length +
+               ' session(s) a removed ' + kind + ' credential of ' + who +
+               ' signed in are still live after the sign-out; the removal ' +
+               'stands.');
+      audit.failure('STS-AUTHN-0370', {
+        protocol: 'Logout', channel: options.channel || 'http', target: key,
+        outcome: 'error',
+        summary: still.length + ' session(s) a removed credential signed ' +
+                 'in could not be ended',
+        detail: { factor: kind, sessions: still.join(', ') } });
+    }
+    const gone = Object.keys(ended).filter((id) => {
+      return still.indexOf(id) < 0;
+    });
+    const out = { ok: !still.length, sessionsEnded: gone.length,
+      itemsEnded: ((result && result.terminated) || []).length,
+      failed: still.length, sessionIds: gone,
+      message: gone.length + ' session(s) it signed in ended' +
+               (still.length ? ', ' + still.length + ' could not be' : '') +
+               '.' };
+    log.info('logout: removing a ' + kind + ' credential of ' + who +
+             ' ended ' + gone.length + ' session(s) it signed in' +
+             (still.length ? '; ' + still.length + ' could not be ended' : '') +
+             '.');
+    log.debug("Leaving Logout.endFactorSessions(). " + gone.length +
+              " ended.");
+    return out;
+  }
+
   // Every row, flattened, WITH its secret — the internal form, for terminate().
   // Not exported: `inventoryFor()` is what anything outside this module reads.
   private allRows(ctx?) {
@@ -2665,6 +3254,25 @@ class Logout {
     });
     log.debug("Leaving Logout.allRows().");
     return rows;
+  }
+
+  // A verifiable credential, and the DID it is bound to. There is no DID
+  // family: the holder's `did:jwk` lives on the credential, and both of the
+  // acts that invalidate it have to be spared together. `disown()` on
+  // `wallet-credential` sets the status-list bit INVALID and refuses
+  // `/authn/wallet`. `revokeArtifact()` on an `issued` row whose kind is
+  // `Credential (` — `recordCredential()`'s prefix, the format after it —
+  // is what `statusOf()` and `disownedReason()` also read as INVALID.
+  // Either act alone is enough to invalidate the credential.
+  private leavesCredential(family?, row?): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Logout.leavesCredential().");
+    const id = family && family.id;
+    const kind = String((row && row.kind) || '');
+    const leaves = id === 'wallet-credential' ||
+      (id === 'issued' && kind.indexOf('Credential (') === 0);
+    log.debug("Leaving Logout.leavesCredential(). " + leaves);
+    return leaves;
   }
 
   // ---------------------------------------------------------------------------
@@ -2701,8 +3309,9 @@ class Logout {
    * @param key - the identity key
    * @param selection - row ids to end; empty or absent for global
    * @param opts - `issuer`, `by`, `actor`, `initiatingEntity`, `channel`,
-   *   `base` and `browser`, and `providerCommand: false` to send no OpenID
-   *   Provider Command
+   *   `base` and `browser`, `providerCommand: false` to send no OpenID
+   *   Provider Command, and `spareCredentials` so a global act leaves
+   *   verifiable credentials and the DIDs they are bound to alone
    * @returns what was ended, skipped and unknown, and the notifications,
    *   cleanups, LogoutRequests, partner sign-outs and back-channel deliveries
    *   that follow
@@ -2787,6 +3396,25 @@ class Logout {
           !!ctx.endingSessions[r.sessionId];
         if (!global && !wantedSet[r.id] && !withSession) return;
         delete unknown[r.id];
+        // THE PERSON'S OWN GLOBAL SIGN-OUT AT /logout LEAVES A VERIFIABLE
+        // CREDENTIAL, AND THE DID IT IS BOUND TO, ALONE. `endFor()` is the
+        // only caller that sets `spareCredentials`, and only for an empty
+        // selection: the Global logout button, and the empty POST the page
+        // says is the same act. Reported here rather than omitted, because
+        // a global logout that quietly skipped these would look complete.
+        // An administrator's global sign-out, an account disable, a risk
+        // lockout and a cell's revoke-subject pass no flag and still
+        // disown. A ticked row is a selection, so it is ended.
+        if (global && options.spareCredentials &&
+            this.leavesCredential(family, r)) {
+          skipped.push({ id: r.id, family: family.id, kind: r.kind,
+                         label: r.label,
+                         message: 'a sign-out at /logout leaves ' +
+                             'verifiable credentials and the DIDs they ' +
+                             'are bound to alone. Tick this row to end ' +
+                             'it.' });
+          return;
+        }
         if (!r.terminable || typeof family.terminate !== 'function') {
           // In a GLOBAL logout these are the honest short-fall and are reported
           // as such rather than counted. In a SELECTIVE one somebody has ticked
@@ -2967,165 +3595,46 @@ class Logout {
   // console's view of the same functions and wears the console's chrome, which
   // is what rule 7's parity asks for.
   //
-  // NO SCRIPT, like every page in this service bar the seven that argue for
-  // one. The checkboxes are checkboxes and the buttons are submit buttons; the
-  // selective and global forms are two forms rather than one with a script
-  // deciding, because that is what makes both work with `script-src 'none'`.
+  // SINCE #577 IT DRAWS ONE DOCUMENT: the signed-out page a sign-out that
+  // left the browser something to fan out answers (`resultPage()`), exactly
+  // as it was. It has NO SCRIPT: the iframes and images load by themselves
+  // and the LogoutRequests and partner sign-outs are links and forms. The
+  // inventory, and a result with nothing to fan out, are the static
+  // surface's (`web_signout_pages.ts`), drawn in the browser over the same
+  // rules (`LOGOUT_CSS`).
+  //
+  // IN THE READER'S LANGUAGE (#539): `t` is the page's translator, which sets
+  // `lang` and `dir` on <html>; `title` arrives already translated. The
+  // language chooser is the first thing in the body, a form of its own and
+  // never inside another, returning to `returnTo` — the GET that redraws the
+  // page. Every refusal on these pages stays English (rcbj's decision).
   // ---------------------------------------------------------------------------
-  private page(title?, inner?, policy?) {
+  private page(t?, returnTo?, title?, inner?, policy?) {
     const { log, app, xmlEscape } = this.deps;
     log.debug("Entering Logout.page().");
     log.debug("Leaving Logout.page().");
     return { policy: policy || app.contentSecurityPolicy({}),
-      html: '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+      html: '<!doctype html><html' + PageLocale.htmlAttributes(t) +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
-      '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-      'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
-      'line-height:1.5;color:#111}h1{font-size:1.5rem;margin-bottom:.2rem}' +
-      'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:#555;' +
-      'font-size:.9rem}.what{color:#444;font-size:.88rem;margin:.2rem 0 ' +
-      '.6rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
-      'padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;' +
-      'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0}' +
-      '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
-      '.8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;' +
-      'margin:.3rem 0 1rem}th,td{text-align:left;padding:.4rem .5rem;' +
-      'border-bottom:1px solid #ddd;vertical-align:top;font-size:.92rem}' +
-      'th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;' +
-      'color:#555}code{background:#f4f4f4;padding:.05rem .25rem;' +
-      'border-radius:3px;word-break:break-all}.cannot{color:#8a6d00}' +
-      '.spec{color:#555;font-size:.82rem}button{font:inherit;padding:.45rem ' +
-      '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
-      'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
-      'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
-      'gap:.8rem;flex-wrap:wrap;align-items:center}</style></head>' +
-      '<body>' + inner + '</body></html>' };
-  }
-
-  private whenText(ms?) {
-    const { log } = this.deps;
-    log.debug("Entering Logout.whenText().");
-    if (!ms) {
-      log.debug("Leaving Logout.whenText().");
-      return '—';
-    }
-    log.debug("Leaving Logout.whenText().");
-    return new Date(ms).toISOString();
-  }
-
-  // One family's table. The checkbox column is omitted entirely for a family
-  // that cannot be ended, rather than drawn disabled: a disabled control
-  // invites somebody to work out why it is disabled, and the sentence in the
-  // row already says.
-  private familyTable(family?) {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering Logout.familyTable().");
-    const head = '<h2>' + xmlEscape(family.label) + '</h2>' +
-      '<div class="spec">' + xmlEscape(family.protocol) + ' — ' +
-      xmlEscape(family.spec) + '</div><div ' +
-      'class="what">' + xmlEscape(family.what) + '</div>';
-    if (family.failure) {
-      log.debug("Leaving Logout.familyTable().");
-      return head + '<div class="err">This could not be read: ' +
-             xmlEscape(family.failure) +
-             '. Everything else on this page is unaffected, and a global ' +
-             'logout still tries this family again.</div>';
-    }
-    if (!family.rows.length) {
-      log.debug("Leaving Logout.familyTable().");
-      return head + '<p class="sub">Nothing live here.</p>';
-    }
-    const body = family.rows.map((r) => {
-      const box = r.terminable
-        ? '<input type="checkbox" name="select" value="' + xmlEscape(r.id) +
-            '">'
-        : '<span class="cannot" title="' + xmlEscape(r.why) + '">—</span>';
-      return '<tr><td>' + box + '</td>' +
-        '<td><code>' + xmlEscape(r.label) + '</code><br><span class="sub">' +
-        xmlEscape(r.detail) + '</span>' +
-        (r.terminable ? '' :
-         '<br><span class="cannot">' + xmlEscape(r.why) + '</span>') +
-        '</td><td>' + xmlEscape(r.kind) + '</td><td ' +
-        'class="sub">' + xmlEscape(this.whenText(r.startedAt)) + '</td>' +
-        '<td class="sub">' + xmlEscape(this.whenText(r.expiresAt)) +
-            '</td></tr>';
-    }).join('');
-    log.debug("Leaving Logout.familyTable().");
-    return head +
-      '<table><thead><tr><th>End</th><th>What</th><th>Kind</th><th>Since</th>' +
-      '<th>Until</th></tr></thead><tbody>' + body + '</tbody></table>' +
-      (family.notListed
-        ? '<p class="sub">' + family.notListed + ' more not listed ' +
-          '(logout.maxRows is ' +
-          '<code>' + family.held + '</code> held against a cap). A GLOBAL ' +
-          'logout still ends every one of them — the cap is on what is ' +
-          'drawn, never on what a termination reaches.</p>'
-        : '');
-  }
-
-  private inventoryPage(base?, inventory?, username?, message?, error?) {
-    const { log, mode, xmlEscape } = this.deps;
-    log.debug("Entering Logout.inventoryPage(). key=" + inventory.key);
-    const inner =
-      '<h1>Sign out</h1>' +
-      '<p class="sub">Everything this service is still holding for <code>' +
-      xmlEscape(username) +
-      '</code>, across every protocol family it speaks.</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      (message ? '<div class="ok">' + xmlEscape(message) + '</div>' : '') +
-      '<div class="warn"><strong>' + inventory.total + ' live ' +
-                                                       'item(s)</strong> in ' +
-      inventory.families.filter((f) => { return f.rows.length; }).length +
-      ' famil' +
-      (inventory.families.filter((f) => {
-        return f.rows.length;
-      }).length === 1
-                  ? 'y' : 'ies') + '. Some of them cannot be ended by ' +
-      'anybody — they are listed with the reason, because a sign-out that ' +
-      'hid them would look complete when it is not.</div><form method="post" ' +
-      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '">' +
-      inventory.families.map((family) => {
-        return this.familyTable(family);
-      }).join('') +
-      '<div class="actions"><button type="submit" name="scope" ' +
-      'value="selected">End the ticked items</button><span ' +
-      'class="sub">Nothing ticked ends nothing.</span></div></form><form ' +
-      'method="post" ' +
-      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '"><input type="hidden" name="scope" value="global"><div ' +
-      'class="actions"><button type="submit" class="global">Global logout — ' +
-      'end everything above</button><span class="sub">The default. A POST to ' +
-      '<code>/logout</code> with nothing selected does exactly ' +
-      'this.</span></div></form>' +
-      // BUILT FROM THE MODE, because "this service checks no password anywhere"
-      // was printed on a product-mode page for as long as that mode existed.
-      '<p class="sub">' +
-      (this.anyUserAllowed()
-        ? 'This service checks no password anywhere, so ' +
-          '<code>?username=</code> names anybody and grants nothing that was ' +
-          'not already true — signing in as them takes one request. ' +
-          '<code>logout.anyUser</code> turns that off.'
-        : (mode.opensTestControls()
-            ? '<code>logout.anyUser</code> is off, so this endpoint acts ' +
-              'only on the session you are holding.'
-            : 'This service is in product mode, so this endpoint acts only ' +
-              'on the session you are holding.')) +
-      ' The operator\'s view of the same lists, with an undo, is ' +
-      '<code>/admin/logout</code>.</p>';
-    log.debug("Leaving Logout.inventoryPage().");
-    return this.page('Sign out', inner);
+      '</title><style>' + SIGNOUT_CSS + '</style></head>' +
+      '<body>' + PageLocale.chooser(t, realms.currentPrefix(), returnTo) +
+      inner + '</body></html>' };
   }
 
   // The page a termination answers with: what was ended, what was not and why,
   // and the three things only the BROWSER can do — the front-channel iframes,
   // the WS-Federation cleanup images, and the SAML LogoutRequests as links.
   private resultPage(base?, result?, inventory?) {
-    const { log, app, federationSlo, xmlEscape } = this.deps;
+    const { log, app, federationSlo, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.resultPage().");
+    // THE LANGUAGE (#539), for the person signed out. `result.message` and
+    // each row's message are the model's words — the JSON answer carries the
+    // same — and stay as they are; so does the fan-out below, which
+    // `federation/federation_slo.ts` draws too and whose tables are the
+    // front- and back-channel modules' own.
+    const t = PageLocale.forPage({ username: result.key });
     const listOf = (rows, cls) => {
       log.debug("Entering listOf().");
       log.debug("Leaving listOf().");
@@ -3136,38 +3645,69 @@ class Logout {
       }).join('') + '</tbody></table>';
     };
     const fan = this.fanOutOf([result]);
-    const inner =
-      '<h1>' + (result.scope === 'global' ? 'Signed out everywhere' :
-                'Signed ' +
-          'out of what was ticked') +
-      '</h1>' +
+    // TWO TABS (rcbj, 2026-10-12): Sign out says only that the person is
+    // signed out and offers the way on to the portal; everything else is
+    // on Details. The fan-out's iframes and cleanup images are on Details
+    // too, and still load: a browser fetches an iframe or an image inside
+    // a hidden element. The partner sign-outs (#167) stay on the first tab,
+    // because each is a link or form the PERSON has to follow, and a step
+    // left behind a tab is a step not taken.
+    const signOut =
+      (result.terminated.length
+        ? '<div class="ok">' + t.html('logout.result.brief') + '</div>'
+        : '<div class="warn">' + t.html('logout.result.nothingEnded') +
+          '</div>') +
+      federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
+      // Close the tab (rcbj, 2026-10-20), after the partner sign-outs, which
+      // are steps to take in this tab first. web_signout_pages.ts draws the
+      // same sentence on the static page.
+      '<p><strong>' + t.html('logout.result.closeTab') + '</strong></p>' +
+      '<p class="sub">' + t.html('logout.result.seeDetails') + '</p>' +
+      // The way on (rcbj, 2026-10-12): root-relative, so app.js puts it
+      // under the realm on the way out.
+      '<p><a class="btn" href="/portal">' +
+      t.html('logout.result.toPortal') + '</a></p>';
+    const details =
       '<p class="sub">' + xmlEscape(result.message) + '</p>' +
       (result.terminated.length
-        ? '<h2>Ended</h2>' + listOf(result.terminated, 'sub')
-        : '<div class="warn">Nothing was ended. Either nothing was live, or ' +
-          'everything ticked had already gone.</div>') +
+        ? '<h2>' + t.html('logout.result.ended') + '</h2>' +
+          listOf(result.terminated, 'sub')
+        : '<div class="warn">' + t.html('logout.result.nothingEnded') +
+          '</div>') +
       (result.skipped.length
-        ? '<h2>Not ended</h2>' + listOf(result.skipped, 'cannot') +
-          '<p class="sub">These are the honest half. Most of them cannot be ' +
-          'ended by anybody: nothing consults this service when an ' +
-          'assertion, a service ticket or an SVID is presented, so there is ' +
-          'no revocation to perform.</p>'
+        ? '<h2>' + t.html('logout.result.notEnded') + '</h2>' +
+          listOf(result.skipped, 'cannot') +
+          kit.note(t.html('logout.result.notEndedNote'))
         : '') +
       fan.html +
-      // The federation partners the sessions were signed in THROUGH (#167):
-      // links and forms this browser follows, never an automatic redirect.
-      federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
-      '<h2>What is still live</h2>' +
+      '<h2>' + t.html('logout.result.stillLive') + '</h2>' +
       (inventory.total
-        ? '<p class="sub">' + inventory.total + ' item(s) remain. <a href="' +
+        // The link is markup, so it is not in the message: the sentence and
+        // the link's words are two messages, joined here.
+        ? '<p class="sub">' + t.html('logout.result.remain',
+                                     { total: inventory.total }) +
+          ' <a href="' +
           xmlEscape(LOGOUT_PATH + '?username=' +
           encodeURIComponent(result.key)) +
-          '">Look again</a>.</p>'
-        : '<div class="ok">Nothing. This service is holding no live session ' +
-          'or credential for ' +
-          xmlEscape(result.key) + ' that it can still see.</div>');
+          '">' + t.html('logout.result.lookAgain') + '</a>' +
+          t.html('logout.result.lookAgainEnd') + '</p>'
+        : '<div class="ok">' + t.html('logout.result.nothingLeft',
+                                      { key: result.key }) + '</div>');
+    const inner =
+      '<h1>' + (result.scope === 'global'
+        ? t.html('logout.result.headingGlobal')
+        : t.html('logout.result.headingSelected')) +
+      '</h1>' +
+      kit.tabbedPanels('logout-tabs', [
+        { id: 'logout-signout', label: t.text('logout.tab.signOut'),
+          html: signOut },
+        { id: 'logout-details', label: t.text('logout.tab.details'),
+          html: details }
+      ]);
     log.debug("Leaving Logout.resultPage().");
-    return this.page('Signed out', inner,
+    // Drawn by the POST; the GET that draws the sign-out again is /logout.
+    return this.page(t, realms.currentPrefix() + LOGOUT_PATH,
+                     t.text('logout.result.title'), inner,
                      app.contentSecurityPolicy(fan.policy));
   }
 
@@ -3197,7 +3737,7 @@ class Logout {
    *   `app.contentSecurityPolicy()`
    */
   fanOutOf(results?) {
-    const { log, frontchannel, backchannel, xmlEscape } = this.deps;
+    const { log, frontchannel, backchannel, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.fanOutOf().");
     const all = (Array.isArray(results) ? results : [results])
       .filter(Boolean);
@@ -3246,20 +3786,21 @@ class Logout {
         ? '<h2>WS-Federation cleanup ' +
           'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +
           'URL</th></tr></thead><tbody>' +
-          cleanupRows + '</tbody></table><p class="sub">Each was fetched as ' +
+          cleanupRows + '</tbody></table>' +
+          kit.note('Each was fetched as ' +
           'a one-pixel image as this page loaded — front-channel logout — ' +
           'and the links are the same URLs so a failed ping can be seen ' +
-          'rather ' +
-          'than guessed at.</p>' + images
+          'rather than guessed at.') + images
         : '') +
       (logoutRequests.length
         ? '<h2>SAML 2.0 LogoutRequests</h2><table><thead><tr><th>Service ' +
           'provider</th><th>LogoutRequest</th></tr></thead><tbody>' +
-          logoutRows + '</tbody></table><p class="sub">Links rather than an ' +
+          logoutRows + '</tbody></table>' +
+          kit.note('Links rather than an ' +
           'automatic fan-out, which is /saml2/slo\'s own decision reused: a ' +
           'LogoutRequest is a signed message a service provider ANSWERS, and ' +
           'firing those into hidden frames would claim a federation-wide ' +
-          'logout this service cannot observe.</p>'
+          'logout this service cannot observe.')
         : '');
     const origins = frontchannel.frameOriginsOf(notifications);
     const policy = {};
@@ -3293,10 +3834,58 @@ class Logout {
    * @returns the terminate() result
    */
   endPartnerSession(session?, opts?) {
-    const { log, stats } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Logout.endPartnerSession(). " +
               ((session && session.id) || '(none)'));
     const options = opts || {};
+    const result = this.endOneSession(session, {
+      issuer: options.issuer, by: options.by,
+      // The person signed out at the partner (#242).
+      initiatingEntity: options.initiatingEntity || 'user',
+      channel: options.channel || 'http' });
+    log.debug("Leaving Logout.endPartnerSession(). " +
+              result.terminated.length + " ended.");
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DEVICE-BOUND SESSION WHOSE KEY WAS NOT PROVED (#725).
+  //
+  // A refresh signed by another key, or replaying a spent challenge, shows
+  // the session's cookie is somewhere it should not be
+  // (`authn/device_bound_sessions.ts`). It ends that one session and the
+  // relying parties riding on it, exactly as a partner's sign-out does —
+  // CAEP session-revoked, Back-Channel Logout Tokens, the refresh revocation
+  // and the audit row — and not the person's other sessions, which the
+  // evidence says nothing about. The initiating entity is `policy`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Ends one device-bound session whose refresh failed its proof, with the
+   * relying parties riding on it, through terminate().
+   *
+   * @param session - the session
+   * @param opts - `by`, `initiatingEntity` and `channel`
+   * @returns the terminate() result
+   */
+  endBoundSession(session?, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.endBoundSession(). " +
+              ((session && session.id) || '(none)'));
+    const options = opts || {};
+    const result = this.endOneSession(session, {
+      by: options.by || 'a device-bound session refresh',
+      initiatingEntity: options.initiatingEntity || 'policy',
+      channel: options.channel || 'http' });
+    log.debug("Leaving Logout.endBoundSession(). " +
+              result.terminated.length + " ended.");
+    return result;
+  }
+
+  // The one session and its riding rows, through terminate(): the two doors
+  // above differ only in who they say ended it.
+  private endOneSession(session, options) {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.endOneSession().");
     const username = (session && session.user && session.user.username) || '';
     const sub = (session && session.user && session.user.sub) || '';
     const key = stats.holderKeyOf(username, sub);
@@ -3308,11 +3897,9 @@ class Logout {
       }).map((r) => { return r.id; }));
     const result = this.terminate(key, selection, {
       issuer: options.issuer, by: options.by, actor: options.by,
-      // The person signed out at the partner (#242).
-      initiatingEntity: options.initiatingEntity || 'user',
-      channel: options.channel || 'http' });
-    log.debug("Leaving Logout.endPartnerSession(). " +
-              result.terminated.length + " ended.");
+      initiatingEntity: options.initiatingEntity,
+      channel: options.channel });
+    log.debug("Leaving Logout.endOneSession().");
     return result;
   }
 
@@ -3361,6 +3948,21 @@ class Logout {
     log.debug("Entering Logout.subjectOf().");
     const asked = String((body &&
                           body.username) || req.query.username || '').trim();
+    // WHICH ACCOUNT, IN A BROWSER HOLDING SEVERAL (#561). The account step
+    // and every form after it name the account by its KEY (`account`), which
+    // chooses that account's session only where it is live in THIS browser's
+    // set — the set's cookie proves it is the browser's to name. A name the
+    // page posts (`username`) is a SOFT hint: the caller's own account among
+    // several, and no hint where it names none of them. Off, neither is read.
+    if (authn.multipleAccounts()) {
+      const account = String((body && body.account) ||
+                             (req.query || {}).account || '');
+      if (account) {
+        authn.hintAccountKey(req, account);
+      } else if (asked) {
+        authn.hintAccount(req, { loginHint: asked, soft: true });
+      }
+    }
     if (asked) {
       if (!this.anyUserAllowed()) {
         // A NAME THAT IS THE CALLER'S OWN IS NOT SOMEBODY ELSE, and refusing it
@@ -3419,12 +4021,14 @@ class Logout {
     return /json/i.test(accept) && !/text\/html/i.test(accept);
   }
 
-  private refusedNamedUser(req?, res?, asked?) {
-    const { log, errorCodes, mode, xmlEscape } = this.deps;
-    log.debug("Entering Logout.refusedNamedUser().");
-    // THE REASON NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a
-    // setting somebody can turn back on, or a mode in which it is not offered.
-    const message = (mode.opensTestControls()
+  // WHY A NAME IS REFUSED, in English (rcbj's decision on #539). THE REASON
+  // NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a setting
+  // somebody can turn back on, or a mode in which it is not offered.
+  private refusedNameMessage(asked?) {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.refusedNameMessage().");
+    log.debug("Leaving Logout.refusedNameMessage().");
+    return (mode.opensTestControls()
         ? 'logout.anyUser is off on this instance'
         : 'This service is in product mode, where a sign-out cannot name ' +
           'somebody else whatever logout.anyUser says') +
@@ -3433,28 +4037,62 @@ class Logout {
       asked + '". To sign another person out, use /admin/logout (the ' +
       'console\'s Admin Write role) or POST /admin-api/logout (an access ' +
       'token carrying admin:write).';
+  }
+
+  // The JSON door's answer to a browser holding several accounts that named
+  // none (#561): 409, the accounts by key, and how to name one.
+  private accountChoiceRequired(req?, res?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Logout.accountChoiceRequired().");
+    const step = this.accountStep(req, true) || { accounts: [] };
+    errorCodes.mark(res, 'STS-LOGOUT-0011');
+    res.status(409).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ error: 'account_choice_required',
+         error_description: 'This browser is signed in to ' +
+           step.accounts.length + ' accounts and the request names none ' +
+           'of them. Name one with account (its key), or sign every ' +
+           'account out at POST /authn-api/logout/accounts.',
+         accounts: step.accounts }, null, 2));
+    log.debug("Leaving Logout.accountChoiceRequired().");
+  }
+
+  // The JSON door's refusal of a name (`GET|POST /logout` asked for JSON).
+  // The page draws the same refusal from `GET /authn-api/logout` (#577).
+  private refusedNamedUser(req?, res?, asked?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Logout.refusedNamedUser().");
+    void req;
     errorCodes.mark(res, 'STS-LOGOUT-0001');
-    if (this.wantsJson(req)) {
-      res.status(403).type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ error: 'forbidden',
-           error_description: message },
-                              null, 2));
-      log.debug("Leaving Logout.refusedNamedUser().");
-      return;
-    }
-    this.send(res,
-         this.page('Sign out',
-              '<h1>Sign out</h1><div class="err">' + xmlEscape(message) +
-                   '</div><p class="sub">' +
-                   (mode.verifiesCredentials()
-                     ? 'Signing yourself out needs no role; signing somebody ' +
-                       'else out is an act on their account and needs the ' +
-                       'operator\'s door.'
-                     : 'Sign in as that person at <code>/authn/login</code> ' +
-                       '— no password is checked in development mode') +
-                   ' <code>/admin/logout</code> is the operator\'s door and ' +
-                   'is behind the console\'s two roles.</p>'), 403);
+    res.status(403).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ error: 'forbidden',
+         error_description: this.refusedNameMessage(asked) }, null, 2));
     log.debug("Leaving Logout.refusedNamedUser().");
+  }
+
+  // WHY NOBODY CAN BE ACTED ON, in English: the GET's sentence and the
+  // act's, as each always read.
+  private nobodyMessage(act?: boolean) {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.nobodyMessage().");
+    const closed = (mode.opensTestControls() ? 'logout.anyUser is off' :
+                    'product mode');
+    log.debug("Leaving Logout.nobodyMessage().");
+    if (act) {
+      return this.anyUserAllowed()
+        ? 'There is nobody to sign out: this request carries no session ' +
+          'cookie and named no username. A POST is never redirected to ' +
+          'the sign-in screen — a 303 would make it a GET and the fields ' +
+          'would be gone.'
+        : 'There is nobody to sign out: this request carries no session ' +
+          'cookie, and naming somebody is closed (' + closed + ').';
+    }
+    return this.anyUserAllowed()
+      ? 'There is no session cookie on this request. Name ' +
+        'somebody with ?username=, or sign in at /authn/login ' +
+        'first.'
+      : 'There is no session cookie on this request, and naming ' +
+        'somebody is closed (' + closed + '), so there is nobody for this ' +
+        'endpoint to act on. Sign in at /authn/login first.';
   }
 
   // The issuer identifier a front-channel notification's `iss` carries. This
@@ -3469,22 +4107,630 @@ class Logout {
   }
 
   // ---------------------------------------------------------------------------
-  // THE TWO ROUTES, in the order they always were (rule 1). Called by
-  // `common/protocol_stack.ts` through the module's `registerRoutes(app)`.
+  // THE ACT, ONCE, for both doors that perform it: the JSON door at `POST
+  // /logout` and the page's at `POST /authn-api/logout` (#577).
+  //
+  // `scope=global` is explicit and an empty selection means the same thing.
+  // Both are spelt out because the button says "global" and a caller with no
+  // form should get the same behaviour from an empty body. Both leave
+  // verifiable credentials, and the DIDs they are bound to, valid
+  // (`spareCredentials`). A ticked row still ends them.
+  //
+  // The cookie is cleared whenever the CALLER'S OWN session was among the
+  // things ended, and only then: this endpoint can end somebody else's
+  // sessions, and clearing the cookie of a browser signed in as a third party
+  // would sign the wrong person out. It is checked against what was actually
+  // ENDED rather than against the scope, so a selective logout that happened
+  // to include this browser's session clears it too — a cookie naming a
+  // session this service no longer holds is a browser that looks signed in
+  // and is not.
+  // ---------------------------------------------------------------------------
+  // Ending somebody's OTHER sessions needs a recent sign-in (ASVS 5.0.0 7.5.2).
+  // Signing yourself out never does, and that includes signing out everywhere:
+  // nothing may stand between a person and leaving.
+  private reauthenticationOwed(subject: any, body: any): boolean {
+    const { log, config, authn } = this.deps;
+    log.debug("Entering Logout.reauthenticationOwed().");
+    const limit = Number(config.value('account.recentAuthMinutes')) * 60;
+    const raw = body.select === undefined ? [] : body.select;
+    const own = subject.session ? String(subject.session.id) : '';
+    const others = (Array.isArray(raw) ? raw : [raw]).filter(function (one) {
+      return one && String(one) !== own && String(one) !== 'session:' + own;
+    });
+    if (limit === 0 || String(body.scope || '') === 'global' || !others.length) {
+      log.debug("Leaving Logout.reauthenticationOwed(). Not asked.");
+      return false;
+    }
+    const at = authn.lastAuthenticatedAt(subject.session);
+    log.debug("Leaving Logout.reauthenticationOwed().");
+    return !(at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
+  private endFor(req?, res?, subject?, body?) {
+    const { log, authn, baseUrlOf } = this.deps;
+    log.debug("Entering Logout.endFor().");
+    const explicitGlobal = String(body.scope || '') === 'global';
+    const raw = body.select === undefined ? [] : body.select;
+    const selection = explicitGlobal ? [] :
+                      (Array.isArray(raw) ? raw : [raw]).filter(Boolean);
+    const ownSessionId = subject.session ? subject.session.id : '';
+    const result = this.terminate(subject.key, selection, {
+      issuer: this.issuerFor(req),
+      // THE BROWSER THAT WILL FOLLOW A PARTNER'S SIGN-OUT (#167), and the
+      // name this service has with the partner — its base URL here.
+      base: baseUrlOf(req), browser: true,
+      actor: subject.username,
+      // The person's own sign-out, or — only while `logout.anyUser`, a
+      // development test control, is open — somebody else naming them,
+      // which is an operator's act rather than theirs (#242).
+      initiatingEntity: subject.named ? 'admin' : 'user',
+      // A noun phrase (#294): it finishes CAEP's "ended by …".
+      by: subject.named ? 'a /logout request naming ' +
+          subject.username : 'the person\'s own sign-out at /logout',
+      // An empty selection is this door's global act. A ticked row is a
+      // selection and still ends the credential. Callers of terminate()
+      // that are not this door pass no flag.
+      spareCredentials: selection.length === 0
+    });
+    const endedOwn = !!ownSessionId && result.terminated.some((one) => {
+      return one.id === 'session:' + ownSessionId;
+    });
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 5): the
+    // cookie is the browser's DEFAULT session's, which need not be the
+    // session of the person signed out — so it is cleared only where the
+    // default itself ended, and the next live account then becomes the
+    // default (`authn.afterAccountSignOut()`). Off, as it always was.
+    if (authn.multipleAccounts()) {
+      authn.afterAccountSignOut(req, res);
+    } else if (endedOwn) {
+      authn.clearSessionCookie(res);
+    }
+    if (res && (endedOwn || result.terminated.length)) {
+      authn.clearSiteDataAfterSignOut(req, res);
+    }
+    log.debug("Leaving Logout.endFor(). " + result.terminated.length +
+              " ended.");
+    return { result: result, endedOwn: endedOwn };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACCOUNT STEP (#561, the plan's section 5). A browser holding more
+  // than one signed-in account is asked FIRST which to sign out — one of
+  // them, or every account in this browser — and then shown that person's
+  // inventory, today's page. `login_hint` (the console and the portal pass
+  // the tab's own account) preselects one; it chooses nothing by itself,
+  // because a sign-out is the person's act. Null with `authn.multipleAccounts`
+  // off or fewer than two accounts, where the page is what it always was.
+  // ---------------------------------------------------------------------------
+  private accountStep(req?, always?: boolean): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.accountStep().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Logout.accountStep(). Off.");
+      return null;
+    }
+    const accounts = authn.signedInAccounts(req);
+    if (accounts.length < 2 && !always) {
+      log.debug("Leaving Logout.accountStep(). " + accounts.length +
+                " account(s): no step.");
+      return null;
+    }
+    const hint = String((req.query || {}).login_hint || '').trim()
+      .toLowerCase();
+    const named = hint ? accounts.filter(function (one) {
+      return [one.username, one.sub, one.key].some(function (value) {
+        return String(value || '').toLowerCase() === hint;
+      });
+    })[0] : null;
+    log.debug("Leaving Logout.accountStep(). " + accounts.length +
+              " accounts.");
+    return { state: 'accounts',
+      accounts: accounts.map(function (one) {
+        return { key: one.key, username: one.username,
+                 displayName: one.displayName, current: one.current };
+      }),
+      preselected: named ? named.key : '',
+      naming: this.namingOf() };
+  }
+
+  // The account a subject's session is, by key, for the forms after the
+  // step to carry; '' with the setting off or for a named subject.
+  private accountKeyOf(req?, subject?): string {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.accountKeyOf().");
+    const sid = subject && subject.session ? String(subject.session.id) : '';
+    const found = sid && authn.multipleAccounts()
+      ? authn.signedInAccounts(req).filter(function (one) {
+        return one.sid === sid;
+      })[0] : null;
+    log.debug("Leaving Logout.accountKeyOf().");
+    return found ? String(found.key) : '';
+  }
+
+  /**
+   * `GET /authn-api/logout/accounts` (#561): the sign-out's account step —
+   * the browser's signed-in accounts (key, names, which is the default; no
+   * sid), the one `login_hint` names, and who may be named here.
+   *
+   * @param req - the request
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutAccountsView(req?): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.signOutAccountsView().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Logout.signOutAccountsView(). Off.");
+      return this.accountsOff();
+    }
+    log.debug("Leaving Logout.signOutAccountsView().");
+    return { status: 200, json: { ok: true,
+                                  view: this.accountStep(req, true) } };
+  }
+
+  /**
+   * `POST /authn-api/logout/accounts` (#561): the account step's choice.
+   * An account's key answers `next: inventory` and the address of that
+   * person's inventory; `all` signs every account in this browser out, each
+   * as that person's own global sign-out does, and answers as the act does.
+   *
+   * @param req - the request
+   * @param res - the response, for the cookies
+   * @param body - `{ account }`, already validated
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutAccountsAct(req?, res?, body?): Loose {
+    const { log, authn, stats } = this.deps;
+    log.debug("Entering Logout.signOutAccountsAct().");
+    if (!authn.multipleAccounts()) {
+      log.debug("Leaving Logout.signOutAccountsAct(). Off.");
+      return this.accountsOff();
+    }
+    const asked = String((body && body.account) || '');
+    const accounts = authn.signedInAccounts(req);
+    if (asked !== 'all') {
+      const one = accounts.filter(function (a) {
+        return a.key === asked;
+      })[0];
+      if (!one) {
+        log.debug("Leaving Logout.signOutAccountsAct(). Not here.");
+        return { status: 409, code: 'STS-LOGOUT-0012', json: { ok: false,
+          next: 'refused',
+          errors: ['That account is not signed in in this browser any ' +
+                   'more. Choose again.'],
+          view: this.accountStep(req, true) } };
+      }
+      log.debug("Leaving Logout.signOutAccountsAct(). One account.");
+      return { status: 200, json: { ok: true, next: 'inventory',
+        account: one.key,
+        location: LOGOUT_PATH + '?account=' + encodeURIComponent(one.key) } };
+    }
+    // EVERY ACCOUNT IN THIS BROWSER: each person's own global sign-out, the
+    // act the inventory's first button performs for them — their sessions,
+    // tokens and codes wherever they are, their credentials spared — one
+    // after another, and one result drawn from all of them.
+    const results = accounts.map((one) => {
+      return this.terminate(stats.identityKeyOf(one.username), [], {
+        issuer: this.issuerFor(req), base: this.deps.baseUrlOf(req),
+        browser: true, actor: one.username, initiatingEntity: 'user',
+        by: 'the person\'s own sign-out at /logout, of every account in ' +
+            'the browser', spareCredentials: true });
+    });
+    authn.afterAccountSignOut(req, res);
+    authn.clearSiteDataAfterSignOut(req, res);
+    const result = Logout.mergedResult(results);
+    const answer: Loose = { ok: true, next: 'signed-out',
+      username: accounts.map(function (one) {
+        return one.username;
+      }).join(', '), ownSessionEnded: true, scope: 'global' };
+    if (this.fansOut(result)) {
+      answer.form = { method: 'POST',
+        action: realms.currentPrefix() + SIGNED_OUT_PATH,
+        fields: { result: this.sealResult(result) } };
+      log.debug("Leaving Logout.signOutAccountsAct(). Every account; the " +
+                "signed-out document.");
+      return { status: 200, json: answer };
+    }
+    answer.view = this.resultView(result,
+                                  this.inventoryFor(result.key,
+                                                    this.issuerFor(req)));
+    log.debug("Leaving Logout.signOutAccountsAct(). Every account.");
+    return { status: 200, json: answer };
+  }
+
+  // The account step's refusal with `authn.multipleAccounts` off.
+  private accountsOff(): Loose {
+    const { log } = this.deps;
+    log.debug("Entering Logout.accountsOff().");
+    log.debug("Leaving Logout.accountsOff().");
+    return { status: 400, code: 'STS-LOGOUT-0013', json: { ok: false,
+      errors: ['This trust realm does not keep several signed-in accounts ' +
+               'per browser (authn.multipleAccounts is off), so there is no ' +
+               'account to choose.'] } };
+  }
+
+  // Several people's results as the one result a page draws: every list
+  // joined, the first person's key (what the signed-out document reads the
+  // remaining inventory of), every message.
+  private static mergedResult(results: Loose[]): Loose {
+    helpers.log.debug("Entering Logout.mergedResult().");
+    const join = function (name: string): Loose[] {
+      return [].concat.apply([], results.map(function (one) {
+        return one[name] || [];
+      }));
+    };
+    helpers.log.debug("Leaving Logout.mergedResult().");
+    return { ok: true, key: results.length ? results[0].key : '',
+      scope: 'global', terminated: join('terminated'),
+      skipped: join('skipped'), unknown: join('unknown'),
+      notifications: join('notifications'), cleanups: join('cleanups'),
+      logoutRequests: join('logoutRequests'),
+      partnerLogouts: join('partnerLogouts'),
+      backchannel: join('backchannel'),
+      message: results.map(function (one) {
+        return one.message;
+      }).join(' ') };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PAGE'S API (#577): what `GET` and `POST /authn-api/logout` answer.
+  // `authn/authn_api.ts` is the door — the CSRF binding, the body, the
+  // operation table — and this module the logic, as `authn.ts` is for the
+  // sign-in screen's operations. Each answers `{ status, code, json }`, and
+  // the door sends it. Facts, no words: the page draws them in the
+  // `logout` catalogs' words; refusals are English.
+  // ---------------------------------------------------------------------------
+  // Who may be named here, for the page's closing note.
+  private namingOf() {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.namingOf().");
+    log.debug("Leaving Logout.namingOf().");
+    return this.anyUserAllowed() ? 'open'
+      : (mode.opensTestControls() ? 'off' : 'product');
+  }
+
+  // A refusal of the subject, for either operation.
+  private subjectRefusal(subject?, act?) {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.subjectRefusal().");
+    if (subject.refused) {
+      log.debug("Leaving Logout.subjectRefusal(). A name.");
+      return { status: 403, code: 'STS-LOGOUT-0001', json: { ok: false,
+        errors: [this.refusedNameMessage(subject.asked)],
+        view: { state: 'refused',
+                verifiesCredentials: !!mode.verifiesCredentials() } } };
+    }
+    log.debug("Leaving Logout.subjectRefusal(). Nobody.");
+    return { status: 401, code: 'STS-LOGOUT-0002', json: { ok: false,
+      errors: [this.nobodyMessage(act)], view: { state: 'nobody' } } };
+  }
+
+  /**
+   * `GET /authn-api/logout`: the sign-out page's view — everything the
+   * person this request is about still holds, as `inventoryFor()` lists it,
+   * whom the page names and who may be named.
+   *
+   * @param req - the request; `?username=` where naming is open
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutView(req?): Loose {
+    const { log } = this.deps;
+    log.debug("Entering Logout.signOutView().");
+    // SEVERAL ACCOUNTS (#561): the account step first, unless the request
+    // already names whom (`account`, or a `username` where naming is open).
+    const query = req.query || {};
+    const step = query.account || query.username ? null
+      : this.accountStep(req);
+    if (step) {
+      log.debug("Leaving Logout.signOutView(). The account step.");
+      return { status: 200, json: { ok: true, view: step } };
+    }
+    const subject = this.subjectOf(req, null);
+    if (subject.refused || !subject.key) {
+      log.debug("Leaving Logout.signOutView(). Refused.");
+      return this.subjectRefusal(subject, false);
+    }
+    const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
+    log.debug("Leaving Logout.signOutView(). " + inventory.total +
+              " live item(s).");
+    const account = this.accountKeyOf(req, subject);
+    return { status: 200, json: { ok: true, view: Object.assign({
+      state: 'inventory', username: subject.username,
+      named: !!subject.named, naming: this.namingOf() },
+      // The account the forms carry back (#561), only with the setting on.
+      account ? { account: account } : {}, inventory) } };
+  }
+
+  /**
+   * `POST /authn-api/logout`: ends what the body selected (everything where
+   * it selected nothing). Where the browser has something to fan out the
+   * answer is the signed-out document's form; otherwise the result's view.
+   *
+   * @param req - the request
+   * @param res - the response, for the cookie a sign-out of this browser's
+   *   own session clears
+   * @param body - `{ scope, select, username }`, already validated
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutAct(req?, res?, body?): Loose {
+    const { log } = this.deps;
+    log.debug("Entering Logout.signOutAct().");
+    const subject = this.subjectOf(req, body || {});
+    if (subject.refused || !subject.key) {
+      log.debug("Leaving Logout.signOutAct(). Refused.");
+      return this.subjectRefusal(subject, true);
+    }
+    // THE SAME QUESTION THE JSON DOOR ASKS (#1521, ASVS 5.0.0 7.5.2; #1577).
+    // Until #1577 only `POST /logout` asked it, so the page — the one a
+    // person is sent to, the portal's own "end your other sessions" among
+    // them — ended other sessions on a sign-in of any age.
+    if (this.reauthenticationOwed(subject, body || {})) {
+      log.debug("Leaving Logout.signOutAct(). Sign in again.");
+      return this.reauthenticationRefusal(req, subject, body || {});
+    }
+    const ended = this.endFor(req, res, subject, body || {});
+    const result = ended.result;
+    const answer: Loose = { ok: true, next: 'signed-out',
+      username: subject.username, ownSessionEnded: ended.endedOwn,
+      scope: result.scope };
+    if (this.fansOut(result)) {
+      answer.form = { method: 'POST',
+        action: realms.currentPrefix() + SIGNED_OUT_PATH,
+        fields: { result: this.sealResult(result) } };
+      log.debug("Leaving Logout.signOutAct(). The signed-out document.");
+      return { status: 200, json: answer };
+    }
+    const remaining = this.inventoryFor(subject.key, this.issuerFor(req));
+    answer.view = this.resultView(result, remaining);
+    log.debug("Leaving Logout.signOutAct(). The result's view.");
+    return { status: 200, json: answer };
+  }
+
+  /**
+   * The page's answer when ending another session needs a recent sign-in:
+   * 403, `STS-LOGOUT-0015` (the JSON door's code), the English refusal every
+   * refusal here is, and a `reauthenticate` view carrying where to sign in
+   * again. The sign-in comes back to `/logout`, re-authenticating this same
+   * session (`authn`'s `session.reauthenticate`), so the person ticks the
+   * rows again and the act is then asked of a fresh sign-in.
+   *
+   * @param req - the request
+   * @param subject - whom the act is about
+   * @param body - the act's body, for the account it names (#561)
+   * @returns `{ status, code, json }` for the API to send
+   */
+  private reauthenticationRefusal(req?, subject?, body?): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.reauthenticationRefusal().");
+    const account = body && body.account ? String(body.account) : '';
+    // A fresh sign-in, never the account picker (prompt=login's choice), for
+    // the person the page is about.
+    const signIn = authn.beginAuthentication({
+      returnTo: LOGOUT_PATH + (account
+        ? '?account=' + encodeURIComponent(account) : ''),
+      protocol: 'Logout', request: req, accountChoice: 'never',
+      hint: subject && subject.username ? String(subject.username) : '',
+      details: [{ label: 'what happens next',
+                  value: 'you will be returned to the sign-out page',
+                  note: 'ending your other sessions needs a recent ' +
+                        'sign-in (account.recentAuthMinutes)' }]
+    });
+    log.debug("Leaving Logout.reauthenticationRefusal().");
+    return { status: 403, code: 'STS-LOGOUT-0015', json: { ok: false,
+      errors: ['Sign in again, then come back to end your other sessions.'],
+      view: { state: 'reauthenticate', signIn: signIn } } };
+  }
+
+  // Whether a result leaves the browser something to do — `fanOutOf()`'s
+  // iframes, images, links and back-channel table, or a partner's sign-out.
+  private fansOut(result?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.fansOut().");
+    const out = !!this.fanOutOf([result]).html ||
+      !!(result.partnerLogouts || []).length;
+    log.debug("Leaving Logout.fansOut(). " + out);
+    return out;
+  }
+
+  // The result as the page draws it where there is nothing to fan out:
+  // `resultPage()`'s facts. The messages are the model's words, as on the
+  // server-drawn page.
+  private resultView(result?, remaining?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.resultView().");
+    const rows = function (list) {
+      return (list || []).map(function (one) {
+        return { id: one.id, label: one.label || '', message: one.message };
+      });
+    };
+    log.debug("Leaving Logout.resultView().");
+    return { state: 'result', scope: result.scope, key: result.key,
+      message: result.message, terminated: rows(result.terminated),
+      skipped: rows(result.skipped), remaining: remaining.total };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SEALED RESULT (#577). The act is answered by one request and the
+  // signed-out document drawn by the next, possibly on another node or in
+  // another request worker, so what the document draws travels WITH the
+  // browser rather than in a store this module would have to grow (rule
+  // 3m: it holds no state). It is MACed, not encrypted: everything in it is
+  // what the document shows the person, and the MAC is what keeps anybody
+  // else from making this origin frame, load or link what they choose. It
+  // names the realm and expires; drawn again within its life it only fans
+  // out again to sessions that have already ended.
+  // ---------------------------------------------------------------------------
+  private sealResult(result?) {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Logout.sealResult().");
+    const payload = {
+      realm: String(realms.currentId() || ''),
+      exp: Date.now() + RESULT_TTL_MS,
+      result: {
+        key: result.key, scope: result.scope, message: result.message,
+        terminated: result.terminated, skipped: result.skipped,
+        unknown: result.unknown, notifications: result.notifications,
+        cleanups: result.cleanups, logoutRequests: result.logoutRequests,
+        partnerLogouts: result.partnerLogouts,
+        backchannel: result.backchannel
+      }
+    };
+    const packed = zlib.deflateRawSync(Buffer.from(JSON.stringify(payload),
+                                                   'utf8'))
+      .toString('base64url');
+    const mac = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
+                            RESULT_LABEL + '.' + packed, 'base64url');
+    log.debug("Leaving Logout.sealResult(). " + packed.length + " bytes.");
+    return packed + '.' + mac;
+  }
+
+  // The result a sealed value carries, or `{ why }` saying why not.
+  private openResult(sealed?): Loose {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Logout.openResult().");
+    const text = String(sealed || '');
+    const dot = text.lastIndexOf('.');
+    if (dot <= 0) {
+      log.debug("Leaving Logout.openResult(). Not a sealed result.");
+      return { why: 'That is not a sign-out result.' };
+    }
+    const packed = text.slice(0, dot);
+    const expected = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
+                                 RESULT_LABEL + '.' + packed, 'base64url');
+    if (!crypto.constantTimeEquals(text.slice(dot + 1), expected)) {
+      log.debug("Leaving Logout.openResult(). The MAC.");
+      return { why: 'That sign-out result was not made by this service.' };
+    }
+    let payload: Loose = null;
+    try {
+      payload = JSON.parse(zlib.inflateRawSync(
+        Buffer.from(packed, 'base64url'),
+        { maxOutputLength: 16 * 1024 * 1024 }).toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in Logout.openResult(): " + ((e && e.message) || e));
+      payload = null;
+    }
+    if (!payload || !payload.result) {
+      log.debug("Leaving Logout.openResult(). Unreadable.");
+      return { why: 'That sign-out result could not be read.' };
+    }
+    if (String(payload.realm) !== String(realms.currentId() || '')) {
+      log.debug("Leaving Logout.openResult(). Another realm.");
+      return { why: 'That sign-out result was made in another trust realm.' };
+    }
+    if (!(Number(payload.exp) > Date.now())) {
+      log.debug("Leaving Logout.openResult(). Expired.");
+      return { why: 'That sign-out result has expired. What is still live ' +
+                    'is at /logout.' };
+    }
+    log.debug("Leaving Logout.openResult().");
+    return { result: payload.result };
+  }
+
+  // A refusal of the signed-out document: a page of its own, English, with
+  // the way back.
+  private refusedDocument(res?, status?, code?, why?) {
+    const { log, errorCodes, xmlEscape } = this.deps;
+    log.debug("Entering Logout.refusedDocument(). " + code);
+    errorCodes.mark(res, code);
+    const t = PageLocale.forPage({});
+    this.send(res,
+         this.page(t, realms.currentPrefix() + LOGOUT_PATH,
+              t.text('logout.title'),
+              '<h1>' + t.html('logout.heading') + '</h1><div ' +
+                   'class="err">' + xmlEscape(why) +
+                   '</div><p class="sub"><a href="' +
+                   xmlEscape(LOGOUT_PATH) +
+                   '">' + t.html('logout.startAgain') + '</a>' +
+                   t.html('logout.startAgainEnd') + '</p>'), status);
+    log.debug("Leaving Logout.refusedDocument().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SHELL (#577): the one document a browser's `GET /logout` answers,
+  // drawn by `ShellDocument`. SCRIPT IS REQUIRED (rcbj on #569): the
+  // `<noscript>` says so and nothing else is drawn.
+  // ---------------------------------------------------------------------------
+  // `person` is who is signing out, where the endpoint already knows
+  // (#1238): their groups may name the locale profile the page falls back
+  // to. A shell drawn before that is known is the application-less default.
+  private shell(req?, res?, person?) {
+    const { log, app } = this.deps;
+    log.debug("Entering Logout.shell().");
+    const html = ShellDocument.document({
+      title: 'Sign out',
+      attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
+                   Array<[string, string]>)
+        .concat(PageLocale.shellAttributes(req, '', String(person || ''))),
+      stylesheets: [SIGNOUT_STYLE_PATH],
+      // THE REALM'S SIGN-IN APPEARANCE (#717): this page's stylesheet is
+      // its own rather than the card's, so it says so — the realm's
+      // `/web/theme.css` after it and the brand facts on `<html>`, which
+      // `WebSurface.put()` draws the header from; nothing at all for a
+      // realm that set nothing.
+      branded: true,
+      script: SIGNOUT_SCRIPT_PATH,
+      open: '',
+      close: '',
+      noscript: '<h1>Sign out</h1><div class="err">This sign-out page is ' +
+        'a script that runs in your browser, and with scripts blocked ' +
+        'there is nothing it can show. Allow scripts for this page to see ' +
+        'what you are still signed into and to sign out.</div>',
+      loading: '<p class="sub">Loading&hellip;</p>'
+    });
+    ShellDocument.serve(app, req, res, html,
+                        { csp: { 'style-src': "'self'" } });
+    log.debug("Leaving Logout.shell().");
+  }
+
+  // The bundle and its precompressed forms, read once. A tree that was never
+  // built has none, and the shell then loads a script that says so.
+  private bundle(): ReturnType<typeof ShellDocument.readFile> {
+    const { log } = this.deps;
+    log.debug("Entering Logout.bundle().");
+    if (!this.bundleFile) {
+      this.bundleFile = ShellDocument.readFile(__dirname, SIGNOUT_BUNDLE_FILE,
+        'document.body.textContent = "This service has no sign-out script ' +
+        '(logout/' + SIGNOUT_BUNDLE_FILE + '): it was not built by ' +
+        'build-typescript.sh.";');
+    }
+    log.debug("Leaving Logout.bundle().");
+    return this.bundleFile;
+  }
+
+  /**
+   * The paths of the static sign-out, for the tests and `sts_metadata.ts`.
+   *
+   * @returns the shell's, the script's, the stylesheet's and the signed-out
+   *   document's
+   */
+  surfacePaths(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering Logout.surfacePaths().");
+    log.debug("Leaving Logout.surfacePaths().");
+    return [LOGOUT_PATH, SIGNOUT_SCRIPT_PATH, SIGNOUT_STYLE_PATH,
+            SIGNED_OUT_PATH];
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ROUTES, in the order they always were (rule 1), and the static
+  // surface's after them. Called by `common/protocol_stack.ts` through the
+  // module's `registerRoutes(app)`.
   // ---------------------------------------------------------------------------
   /**
-   * Registers `GET /logout` (the inventory) and `POST /logout` (the
-   * sign-out). Called by `common/protocol_stack.ts`.
+   * Registers `GET /logout` (the shell, or the inventory as JSON), `POST
+   * /logout` (the JSON door's sign-out), the static sign-out's script and
+   * stylesheet, and `POST /logout/signed-out`. Called by
+   * `common/protocol_stack.ts`.
    *
    * @param app - the express app
    */
   registerRoutes(app?) {
-    const { log, authn, baseUrlOf, errorCodes, mode, parseBody, validation,
-      xmlEscape } = this.deps;
+    const { log, authn, baseUrlOf, errorCodes, parseBody, validation } =
+      this.deps;
     log.debug("Entering Logout.registerRoutes().");
 
     // -------------------------------------------------------------------------
-    // GET /logout — the inventory.
+    // GET /logout — the shell, or the inventory as JSON.
     //
     // With no session and no `username`, the browser goes to the authentication
     // service and comes back here. That is the same contract every protocol
@@ -3493,40 +4739,48 @@ class Logout {
     // signing in first, because this service has no other way to know who is
     // asking. The session that creates is listed like any other and a global
     // logout ends it too — which is why the cookie is cleared on the way out of
-    // the POST.
+    // the act.
+    //
+    // A NAME THAT MAY NOT BE USED is the shell too (#577): the page asks
+    // `/authn-api/logout`, which refuses it, and draws the refusal.
     // -------------------------------------------------------------------------
 
     app.get(LOGOUT_PATH, (req, res) => {
       log.debug("Entering the logout endpoint.");
       const subject = this.subjectOf(req, null);
+      const json = this.wantsJson(req);
       if (subject.refused) {
-        this.refusedNamedUser(req, res, subject.asked);
+        if (json) {
+          this.refusedNamedUser(req, res, subject.asked);
+        } else {
+          this.shell(req, res);
+        }
         log.debug("Leaving the logout endpoint. A name was given and " +
-                  "logout.anyUser is off.");
+                  "naming somebody else is closed.");
+        return;
+      }
+      if (!subject.key && this.accountStep(req)) {
+        // SEVERAL ACCOUNTS AND NONE NAMED (#561): the page asks which,
+        // rather than sending the browser to sign in; a program is told
+        // which accounts there are and to name one (`account`).
+        if (json) {
+          this.accountChoiceRequired(req, res);
+        } else {
+          this.shell(req, res);
+        }
+        log.debug("Leaving the logout endpoint. Several accounts.");
         return;
       }
       if (!subject.key) {
-        if (this.wantsJson(req)) {
+        if (json) {
           // A program is told to name somebody rather than redirected to a
           // screen it cannot read — the distinction admin.js's gate makes, for
           // the same reason: a 302 to HTML arrives as a 200 full of markup.
           errorCodes.mark(res, 'STS-LOGOUT-0002');
           res.status(401).type('application/json').set('Cache-Control',
                                                        'no-store')
-             .send(JSON.stringify({
-               error: 'no_subject',
-               error_description: this.anyUserAllowed()
-                 ? 'There is no session cookie on this request. Name ' +
-                   'somebody with ?username=, or sign in at /authn/login ' +
-                   'first.'
-                 : 'There is no session cookie on this request, and naming ' +
-                   'somebody is closed (' +
-                   (mode.opensTestControls() ? 'logout.anyUser is off' :
-                    'product ' +
-                       'mode') +
-                   '), so there is nobody for this endpoint to act on. Sign ' +
-                   'in at /authn/login first.'
-             }, null, 2));
+             .send(JSON.stringify({ error: 'no_subject',
+               error_description: this.nobodyMessage(false) }, null, 2));
           log.debug("Leaving the logout endpoint. No subject, answered 401.");
           return;
         }
@@ -3544,8 +4798,8 @@ class Logout {
                   "service first.");
         return;
       }
-      const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
-      if (this.wantsJson(req)) {
+      if (json) {
+        const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
         res.status(200).type('application/json').set('Cache-Control',
                                                      'no-store')
            .send(JSON.stringify(Object.assign({ username: subject.username },
@@ -3553,143 +4807,189 @@ class Logout {
         log.debug("Leaving the logout endpoint. Answered JSON.");
         return;
       }
-      this.send(res, this.inventoryPage(baseUrlOf(req), inventory,
-                              subject.username, String(req.query.notice || ''),
-                                  ''));
-      log.debug("Leaving the logout endpoint. " + inventory.total +
-                " live item(s).");
+      this.shell(req, res, subject.username);
+      log.debug("Leaving the logout endpoint. The shell.");
     });
 
     // -------------------------------------------------------------------------
-    // POST /logout — end them.
+    // POST /logout — the JSON door's sign-out.
     //
     // `select` repeated names rows; anything else — including a body with
     // nothing in it at all — is a GLOBAL logout, which is the documented
-    // default and the reason `curl -X POST .../logout` with a cookie does the
-    // obvious thing.
+    // default and the reason `curl -X POST -H 'Accept: application/json'
+    // .../logout` with a cookie does the obvious thing.
     //
-    // The cookie is cleared whenever the CALLER'S OWN session was among the
-    // things ended, and only then: this endpoint can end somebody else's
-    // sessions, and clearing the cookie of a browser signed in as a third party
-    // would sign the wrong person out.
+    // THE FORM POST IS GONE (#577), as the sign-in screen's was (#571): the
+    // page's act is `POST /authn-api/logout`, bound to the browser's session.
+    // A form that still posts here — a page drawn before the cutover, a
+    // bookmark of a result — is sent to the page with a 303, which ends
+    // nothing and shows what there is to end.
     // -------------------------------------------------------------------------
     app.post(LOGOUT_PATH, (req, res) => {
       log.debug("Entering the logout action endpoint.");
+      if (!this.wantsJson(req)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0010');
+        res.redirect(303, realms.currentPrefix() + LOGOUT_PATH);
+        log.debug("Leaving the logout action endpoint. A form: the page.");
+        return;
+      }
+      // THE JSON DOOR READS THE COOKIE, so a page of another site may not
+      // reach it (#1442, ASVS 5.0.0 3.5.1). A program sends no Origin.
+      if (cors.crossSiteBrowserRequest(req)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0014');
+        res.status(403).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'cross_site_request',
+             error_description: 'This request came from a page of another ' +
+                                'site.' }, null, 2));
+        log.debug("Leaving the logout action endpoint. Another site.");
+        return;
+      }
       const body = parseBody(req);
       const subject = this.subjectOf(req, body);
       if (subject.refused) {
         this.refusedNamedUser(req, res, subject.asked);
         log.debug("Leaving the logout action endpoint. A name was given and " +
-                  "logout.anyUser is off.");
+                  "naming somebody else is closed.");
+        return;
+      }
+      if (!subject.key && this.accountStep(req)) {
+        this.accountChoiceRequired(req, res);
+        log.debug("Leaving the logout action endpoint. Several accounts.");
         return;
       }
       if (!subject.key) {
-        const message = this.anyUserAllowed()
-          ? 'There is nobody to sign out: this request carries no session ' +
-            'cookie and named no username. A POST is never redirected to ' +
-            'the sign-in screen — a 303 would make it a GET and the fields ' +
-            'would be gone.'
-          : 'There is nobody to sign out: this request carries no session ' +
-            'cookie, and naming somebody is closed (' +
-            (mode.opensTestControls() ? 'logout.anyUser is off' :
-             'product mode') +
-            ').';
         errorCodes.mark(res, 'STS-LOGOUT-0002');
-        if (this.wantsJson(req)) {
-          res.status(401).type('application/json').set('Cache-Control',
-                                                       'no-store')
-             .send(JSON.stringify({ error: 'no_subject',
-                                    error_description: message }, null, 2));
-        } else {
-          this.send(res,
-               this.page('Sign out',
-                    '<h1>Sign out</h1><div class="err">' + xmlEscape(message) +
-                         '</div><p class="sub"><a href="' +
-                         xmlEscape(LOGOUT_PATH) +
-                         '">Start again</a>.</p>'), 401);
-        }
+        res.status(401).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'no_subject',
+                                  error_description: this.nobodyMessage(true) },
+                                null, 2));
         log.debug("Leaving the logout action endpoint. No subject.");
         return;
       }
-      // `scope=global` is explicit and an empty selection means the same thing.
-      // Both are spelt out because the button says "global" and a caller with
-      // no form should get the same behaviour from an empty body.
       // ---------------------------------------------------------------------
-      // WHAT THIS FORM MAY SAY.
+      // WHAT THIS BODY MAY SAY.
       //
       // **`scope` IS A CLOSED SET OF TWO**, and it is the parameter that
       // decides whether this ends ONE session or EVERY session this identity
-      // has. The comparison below is `=== 'global'`, so anything else has
-      // always meant "selected" — a typo, a stale link and a hand-made post all
+      // has. The comparison is `=== 'global'`, so anything else has always
+      // meant "selected" — a typo, a stale link and a hand-made post all
       // silently chose the narrower of the two. Naming the set makes an
       // unrecognised value an error rather than a quiet reinterpretation of
       // what somebody asked for.
       //
-      // **`select` IS REPEATABLE AND MUST BE**, because it is a CHECKBOX COLUMN
-      // — one `<input name="select" value="<id>">` per live session — so a
-      // person ticking three boxes sends the parameter three times. That is the
-      // one shape `common/validation.js` refuses by default, and declaring it
-      // here is what keeps a multi-session sign-out working. The values are
-      // this service's own session and credential identifiers, so they are
+      // **`select` IS REPEATABLE AND MUST BE**: one value per row to end, so
+      // a form-encoded body repeats the parameter. That is the one shape
+      // `common/validation.js` refuses by default, and declaring it here is
+      // what keeps a multi-item sign-out working. The values are this
+      // service's own session and credential identifiers, so they are
       // bounded rather than typed.
       //
-      // Case-sensitive, matching the comparison below exactly: nothing here
+      // Case-sensitive, matching the comparison exactly: nothing here
       // lower-cases, so a validator that accepted `Global` would accept a value
       // the handler then reads as "selected".
       // ---------------------------------------------------------------------
       const asked = validation.checkParsed(body, 'body', LOGOUT_FORM);
       if (!asked.ok) {
-        log.debug("Leaving the sign-out endpoint. " + asked.detail);
         errorCodes.mark(res, 'STS-LOGOUT-0003');
-        return this.send(res, this.page('Sign out',
-          '<h1>Sign out</h1><div class="err">' + xmlEscape(asked.detail) +
-          '</div>'), 400);
-      }
-      const explicitGlobal = String(body.scope || '') === 'global';
-      const raw = body.select === undefined ? [] : body.select;
-      const selection = explicitGlobal ? [] :
-                        (Array.isArray(raw) ? raw : [raw]).filter(Boolean);
-      const ownSessionId = subject.session ? subject.session.id : '';
-      const result = this.terminate(subject.key, selection, {
-        issuer: this.issuerFor(req),
-        // THE BROWSER THAT WILL FOLLOW A PARTNER'S SIGN-OUT (#167), and the
-        // name this service has with the partner — its base URL here.
-        base: baseUrlOf(req), browser: true,
-        actor: subject.username,
-        // The person's own sign-out, or — only while `logout.anyUser`, a
-        // development test control, is open — somebody else naming them,
-        // which is an operator's act rather than theirs (#242).
-        initiatingEntity: subject.named ? 'admin' : 'user',
-        // A noun phrase (#294): it finishes CAEP's "ended by …".
-        by: subject.named ? 'a /logout request naming ' +
-            subject.username : 'the person\'s own sign-out at /logout'
-      });
-      // Did the caller's own session go? Only then is the cookie cleared. It is
-      // checked against what was actually ENDED rather than against the scope,
-      // so a selective logout that happened to include this browser's session
-      // clears it too — a cookie naming a session this service no longer holds
-      // is a browser that looks signed in and is not.
-      const endedOwn = !!ownSessionId && result.terminated.some((one) => {
-        return one.id === 'session:' + ownSessionId;
-      });
-      if (endedOwn) authn.clearSessionCookie(res);
-      if (this.wantsJson(req)) {
-        res.status(200).type('application/json').set('Cache-Control',
+        res.status(400).type('application/json').set('Cache-Control',
                                                      'no-store')
-           .send(JSON.stringify(Object.assign({ username: subject.username,
-                                                ownSessionEnded: endedOwn },
-                                              result), null, 2));
-        log.debug("Leaving the logout action endpoint. Answered JSON.");
+           .send(JSON.stringify({ error: 'invalid_request',
+                                  error_description: String(asked.detail) },
+                                null, 2));
+        log.debug("Leaving the logout action endpoint. " + asked.detail);
         return;
       }
-      // The inventory is read AGAIN, after the terminations, so the page's
-      // "what is still live" is the state now rather than the state the form
-      // was drawn from.
-      const remaining = this.inventoryFor(subject.key, this.issuerFor(req));
-      this.send(res, this.resultPage(baseUrlOf(req), result, remaining));
-      log.debug("Leaving the logout action endpoint. " +
-          result.terminated.length + " " +
-          "ended.");
+      if (this.reauthenticationOwed(subject, body)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0015');
+        res.status(403).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'reauthentication_required',
+             errors: ['Sign in again at /authn/login, then come back to end ' +
+                      'your other sessions.'] }, null, 2));
+        log.debug("Leaving the logout action endpoint. Sign in again.");
+        return;
+      }
+      const ended = this.endFor(req, res, subject, body);
+      res.status(200).type('application/json').set('Cache-Control',
+                                                   'no-store')
+         .send(JSON.stringify(Object.assign({ username: subject.username,
+                                              ownSessionEnded: ended.endedOwn },
+                                            ended.result), null, 2));
+      log.debug("Leaving the logout action endpoint. Answered JSON, " +
+                ended.result.terminated.length + " ended.");
+    });
+
+    // -------------------------------------------------------------------------
+    // THE STATIC SIGN-OUT'S SCRIPT AND STYLESHEET (#577).
+    // -------------------------------------------------------------------------
+    app.get(SIGNOUT_SCRIPT_PATH, (req, res) => {
+      log.debug("Entering the sign-out's script.");
+      ShellDocument.sendFile(req, res, this.bundle(), 'application/javascript');
+      log.debug("Leaving the sign-out's script.");
+    });
+    app.get(SIGNOUT_STYLE_PATH, (req, res) => {
+      log.debug("Entering the sign-out's stylesheet.");
+      res.set('Cache-Control', 'no-cache').type('text/css').send(SIGNOUT_CSS);
+      log.debug("Leaving the sign-out's stylesheet.");
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /logout/signed-out — THE SIGNED-OUT DOCUMENT (#577), drawn from the
+    // sealed result the act answered, by the runtime's native form post: a
+    // NAVIGATION, so the document is the browser's page and its policy the
+    // fan-out's own (`fanOutOf()`). It ends nothing. Posted by a page of this
+    // service only (its `Origin`), and only with a result this service MACed
+    // in this realm within `RESULT_TTL_MS`. What is still live is read again
+    // now, as it always was after the act.
+    // -------------------------------------------------------------------------
+    app.post(SIGNED_OUT_PATH, (req, res) => {
+      log.debug("Entering the signed-out document.");
+      const origin = String((req.headers && req.headers.origin) || '');
+      let own: string[] = [];
+      try {
+        own = cors.ownOrigins(req) || [];
+      } catch (e) {
+        log.debug("Caught in the signed-out document: " +
+                  ((e && e.message) || e));
+        own = [];
+      }
+      // A NAVIGATION'S ORIGIN IS `null` HERE, and that is this service's
+      // own doing: every page is sent `Referrer-Policy: no-referrer`
+      // (`app.js`), under which a browser sends `Origin: null` on a form
+      // POST that navigates. So `null` — or none — is taken where the
+      // browser itself says the post came from this origin
+      // (`Sec-Fetch-Site: same-origin`, Fetch Metadata), and refused
+      // otherwise; any other origin is refused whatever it says. The MAC
+      // is what keeps a result from being made up; this keeps a page
+      // elsewhere from posting one it was handed.
+      const site = String((req.headers &&
+                           req.headers['sec-fetch-site']) || '');
+      const sameSite = (!origin || origin === 'null') &&
+        site === 'same-origin';
+      if (!sameSite && (!origin || own.indexOf(origin) < 0)) {
+        this.refusedDocument(res, 403, 'STS-LOGOUT-0009',
+          'This page is posted by the sign-out page of this service: the ' +
+          'request carried ' + (origin && origin !== 'null'
+            ? 'another origin' : 'no origin of this service') + '.');
+        log.debug("Leaving the signed-out document. Not this origin.");
+        return;
+      }
+      const posted = validation.checkParsed(parseBody(req) || {}, 'body',
+                                            SIGNED_OUT_FORM);
+      const opened = posted.ok ? this.openResult(posted.value.result)
+                               : { why: 'There is no sign-out result here.' };
+      if (!opened.result) {
+        this.refusedDocument(res, 400, 'STS-LOGOUT-0008', String(opened.why));
+        log.debug("Leaving the signed-out document. " + opened.why);
+        return;
+      }
+      const remaining = this.inventoryFor(opened.result.key,
+                                          this.issuerFor(req));
+      this.send(res, this.resultPage(baseUrlOf(req), opened.result,
+                                     remaining));
+      log.debug("Leaving the signed-out document.");
     });
     log.debug("Leaving Logout.registerRoutes().");
   }
@@ -3781,6 +5081,17 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   LOGOUT_PATH: LOGOUT_PATH,
+  // THE STATIC SIGN-OUT (#577): the path of the signed-out document, the
+  // two operations `authn/authn_api.ts` is the door of, and the surface's
+  // paths.
+  SIGNED_OUT_PATH: SIGNED_OUT_PATH,
+  signOutView: slot.forward('signOutView'),
+  signOutAct: slot.forward('signOutAct'),
+  // The sign-out's account step (#561), for `GET` and `POST
+  // /authn-api/logout/accounts`.
+  signOutAccountsView: slot.forward('signOutAccountsView'),
+  signOutAccountsAct: slot.forward('signOutAccountsAct'),
+  surfacePaths: slot.forward('surfacePaths'),
   // The list of families, for /admin/logout and the management API's OpenAPI
   // document — both describe what this endpoint reaches, and a second list
   // over there would be a second answer that goes stale on the day a family
@@ -3800,9 +5111,15 @@ export = {
   // A person's grants and tokens and nothing else (#432): what a received
   // signal's `signal-revoke-grants` ends.
   revokeGrantsOf: slot.forward('revokeGrantsOf'),
+  // The sessions a removed credential signed in (#722): the portal's and
+  // the console's removals of a passkey, an authenticator app, recovery
+  // codes and the emailed second factor.
+  endFactorSessions: slot.forward('endFactorSessions'),
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),
+  // A device-bound session whose refresh failed its proof (#725).
+  endBoundSession: slot.forward('endBoundSession'),
   fanOutOf: slot.forward('fanOutOf'),
   // EVERY live session in the service, for /admin/sessions and
   // GET /admin-api/sessions. It is on this slot rather than on one of its own

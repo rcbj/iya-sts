@@ -27,8 +27,9 @@
 // 1.2 client on 8443; it is now asserted on LDAPS 636, which `ldap_server.js`
 // builds from the same `tlsServer.protocolOptions()`. The argument is beside
 // the assertion. Nothing else here was about those two sockets: `POST
-// /tls/trust` is a route on the main port and always was, and the bind-address
-// section now asks the four raw sockets that are left.
+// /tls/trust` was a route on the main port (deleted by #597), and the
+// bind-address section now asks the raw sockets that are left (the
+// Kerberos acceptor's went to the development companion with #595).
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, and why most of it in a CHILD process.
@@ -122,7 +123,8 @@ function has(report, dn) {
 function productDirectoryHoldsNoDemoData(t) {
   log.debug("Entering productDirectoryHoldsNoDemoData().");
   t.log.info('=== a product directory: containers, and no invented people ===');
-  const run = inAChild({ STS_MODE: 'product' }, DIRECTORY +
+  const run = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true' },
+                       DIRECTORY +
     'return { entries: out };');
   t.check(run.report && run.report.entries, 'a product-mode directory builds',
           'exit ' + run.status + ' ' + run.output.slice(-300));
@@ -147,6 +149,12 @@ function productDirectoryHoldsNoDemoData(t) {
   t.check(!!peps && !!users && !peps.member.length && !users.member.length,
           'the two role groups ARE seeded, EMPTY, so admitting somebody is ' +
           'one member added', JSON.stringify({ peps: peps, users: users }));
+  const ssfRead = r.entries['cn=ssf-read,ou=groups,dc=example,dc=com'];
+  const ssfManage = r.entries['cn=ssf-manage,ou=groups,dc=example,dc=com'];
+  t.check(!!ssfRead && !!ssfManage && !ssfRead.member.length &&
+          !ssfManage.member.length,
+          'the Shared Signals role groups ARE seeded, EMPTY',
+          JSON.stringify({ ssfRead: ssfRead, ssfManage: ssfManage }));
   ['dc=example,dc=com', 'ou=users,dc=example,dc=com',
    'ou=groups,dc=example,dc=com',
    'ou=applications,dc=example,dc=com'].forEach(function (dn) {
@@ -191,6 +199,10 @@ function roleGroupsFollowTheSettings(t) {
   t.check(!has(r, 'cn=remote-peps,ou=groups,dc=example,dc=com') &&
           !has(r, 'cn=xacml-users,ou=groups,dc=example,dc=com'),
           'and the literal names are not seeded beside them');
+  t.check(has(r, 'cn=ssf-read,ou=groups,dc=example,dc=com') &&
+          has(r, 'cn=ssf-manage,ou=groups,dc=example,dc=com'),
+          'ssf-read and ssf-manage stay when the settings-named groups ' +
+          'are renamed');
   log.debug("Leaving roleGroupsFollowTheSettings().");
 }
 
@@ -202,11 +214,16 @@ function productInventsNothingAndAuditsTruthfully(t) {
   log.debug("Entering productInventsNothingAndAuditsTruthfully().");
   t.log.info('=== no invented values, and a verified bind is audited as ' +
              'verified ===');
-  const run = inAChild({ STS_MODE: 'product' },
+  // The realm's attribute policy (#396) requires givenName, sn and mail of
+  // every person in product mode, and invents none of them: the create
+  // SUPPLIES the three, and what is checked is that nothing else was made
+  // up (no displayName) and that what was supplied is what was stored.
+  const run = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true' },
     'const d = require(R + "/ldap/ldap_server.js");const credentials = ' +
     'require(R + "/common/credentials");const audit = require(R + ' +
     '"/common/audit.js");const made = d.createUser("probe-person", { origin: ' +
-    '"test" });const entry = ' +
+    '"test", attributes: { givenName: "Probe", sn: "Person", mail: ' +
+    '"probe-person@example.com" } });const entry = ' +
     'd.entries.get("uid=probe-person,ou=users,dc=example,dc=com");const ' +
     'swept = d.populateVcAttributes();const through = require(R + ' +
     '"/oid4vc/vc_claims").populateDirectory();const pw = ' +
@@ -219,18 +236,26 @@ function productInventsNothingAndAuditsTruthfully(t) {
     'credentials: "Correct-Horse-9-Battery" });const row = ' +
     'audit.list().filter(function (e) { return e.action === ' +
     '"directory.bind"; })[0] || null;return { made: made && made.ok, ' +
-    'attributes: entry ? Object.keys(entry.attributes).sort() : null, swept: ' +
+    'attributes: entry ? Object.keys(entry.attributes).sort() : null, ' +
+    'values: entry ? { cn: entry.attributes.cn, sn: entry.attributes.sn, ' +
+    'givenname: entry.attributes.givenname, mail: entry.attributes.mail } ' +
+    ': null, swept: ' +
     'swept, through: through, pw: pw && pw.ok, pwErrors: pw && pw.errors, bind: bind.ok, row: ' +
     'row };');
   const r = run.report || {};
   t.check(r.made === true, 'a person can be created in a product directory',
           run.output.slice(-400) + JSON.stringify(r));
-  const invented = ['cn', 'sn', 'givenname', 'displayname', 'mail'];
-  t.check(Array.isArray(r.attributes) && invented.every(function (name) {
-    return r.attributes.indexOf(name) === -1;
-  }), 'a SCIM-shaped create (invent defaulted to TRUE) puts NONE of the five ' +
-      'persona attributes on the entry in product mode — no "(mock)" ' +
-      'displayName, no invented mail', JSON.stringify(r.attributes));
+  const v = r.values || {};
+  t.check(Array.isArray(r.attributes) &&
+          r.attributes.indexOf('displayname') === -1 &&
+          JSON.stringify(v.givenname) === '["Probe"]' &&
+          JSON.stringify(v.sn) === '["Person"]' &&
+          JSON.stringify(v.mail) === '["probe-person@example.com"]' &&
+          JSON.stringify(v.cn) === '["Probe Person"]',
+          'a SCIM-shaped create (invent defaulted to TRUE) invents NONE of ' +
+          'the persona attributes in product mode — no "(mock)" ' +
+          'displayName, and the names and mail are the ones supplied (cn ' +
+          'made of the names)', JSON.stringify([r.attributes, v]));
   t.check(r.swept && r.swept.examined === 0 &&
           /product mode/.test(String(r.swept.skipped)),
           'and the credential-attribute sweep does not run, saying why',
@@ -296,27 +321,23 @@ function listenersHonourTheBindAddress(t) {
   log.debug("Entering listenersHonourTheBindAddress().");
   t.log.info('=== every listener binds global.host ===');
   const run = inAChild({ STS_HOST: '127.0.0.1', LDAP_PORT: '0', LDAPS_PORT: '0',
-                         KRB5_KDC_PORT: '0',
-                         KRB5_SERVICE_PORT: '0' },
+                         KRB5_KDC_PORT: '0' },
     // tls_server.js had two listeners of its own here until 2026-09-16. They
     // were deleted; the main port is `server.js`'s and binds global.host with
-    // every other HTTP route on it, so the four raw sockets below are what is
-    // left to ask.
-    'const kdc = require(R + "/kerberos/krb5_kdc.js");const svc = require(R ' +
-    '+ "/kerberos/krb5_service.js");const ldap = require(R + ' +
-    '"/ldap/ldap_server.js");const k = kdc.listen(0); const kr = await ' +
-    'k.whenReady;const s = svc.listen(0); await new Promise(function (ok) { ' +
-    's.listening ? ok() : s.once("listening", ok); });const l = ' +
-    'ldap.listen(); await l.whenReady;' +
+    // every other HTTP route on it, so the raw sockets below are what is
+    // left to ask. The Kerberos acceptor's own socket (krb5.servicePort) was
+    // one of them until #595 moved it to the development companion.
+    'const kdc = require(R + "/kerberos/krb5_kdc.js");const ldap = ' +
+    'require(R + "/ldap/ldap_server.js");const k = kdc.listen(0); const kr ' +
+    '= await k.whenReady;const l = ldap.listen(); await l.whenReady;' +
     'return { kdcTcp: kr.tcp.address().address, kdcUdp: ' +
-    'kr.udp.address().address, service: s.address().address, ldap: ' +
+    'kr.udp.address().address, ldap: ' +
     'l.server.address().address, ldaps: l.secureServer && ' +
     'l.secureServer.address().address };');
   const r = run.report || {};
   t.check(r.kdcTcp === '127.0.0.1' && r.kdcUdp === '127.0.0.1',
           'the KDC binds global.host on TCP and UDP',
           JSON.stringify(r) + run.output.slice(-300));
-  t.equal(r.service, '127.0.0.1', 'the Kerberos acceptor binds global.host');
   t.check(r.ldap === '127.0.0.1' && r.ldaps === '127.0.0.1',
           'LDAP and LDAPS bind global.host', JSON.stringify(r));
 
@@ -334,7 +355,7 @@ function listenersHonourTheBindAddress(t) {
           'and the directory still counts as ' +
           'started', JSON.stringify(o) + off.output.slice(-300));
 
-  const warned = inAChild({ STS_MODE: 'product', LDAP_PORT: '0',
+  const warned = inAChild({ STS_MODE: 'product', LDAP_PLAIN_LISTENER: 'true', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', LDAP_PORT: '0',
                             LDAPS_PORT: '0',
                             STS_HOST: '127.0.0.1', LOG_LEVEL: 'warn' },
     'const ldap = require(R + "/ldap/ldap_server.js");' +
@@ -377,17 +398,26 @@ function theTruststoreIsNotATestControlInProduct(t) {
   const pem = require('../tls/tls_server.js').serverCertificatePem();
   const refused = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust', pem);
   const rr = refused.report || {};
-  t.check(rr.status === 403 && /tls\.trustAnchorsFile/.test(rr.body),
-          'a product service REFUSES a trust anchor from whoever reaches the ' +
-          'port, and names the setting that is the door ' +
-          'instead', JSON.stringify(rr).slice(0, 400));
+  // NOT THERE AT ALL: a product process had no such route since #585, and no
+  // process has since #597 — it answers as for a path nothing is registered
+  // on, Express's own 404. The doors are /admin-api/tls/trust and
+  // tls.trustAnchorsFile.
+  t.check(rr.status === 404 && /Cannot POST \/tls\/trust/.test(rr.body),
+          'a product service has no open door for a trust anchor: POST ' +
+          '/tls/trust answers as an unrouted path', JSON.stringify(rr)
+            .slice(0, 400));
   const cleared = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust/clear',
                             '');
-  t.equal((cleared.report || {}).status, 403, 'and refuses to EMPTY it too');
+  const cr = cleared.report || {};
+  t.check(cr.status === 404 && /Cannot POST/.test(cr.body),
+          'and none to EMPTY it either', JSON.stringify(cr).slice(0, 200));
+  // AND NOR DOES DEVELOPMENT SINCE #597: both routes were deleted, and
+  // /admin-api/tls/trust (which the launchers use) is the door in either mode.
   const accepted = httpProbe({}, 'POST', '/tls/trust', pem);
-  t.equal((accepted.report || {}).status, 200,
-          'while development mode still takes the anchor, which is what the ' +
-          'launchers use');
+  const ar = accepted.report || {};
+  t.check(ar.status === 404 && /Cannot POST \/tls\/trust/.test(ar.body),
+          'nor has a development service: POST /tls/trust was deleted',
+          JSON.stringify(ar).slice(0, 200));
 
   const file = path.join(os.tmpdir(), 'anchors-' + process.pid + '.pem');
   fs.writeFileSync(file, pem);

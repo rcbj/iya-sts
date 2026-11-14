@@ -26,6 +26,13 @@
 //   F. PERMISSIONS. An application's role authorizes its own application's
 //      permissions and not another's; editing it keeps its application; the
 //      register knows a requirement one of its roles meets.
+//   H. THE ROLES TAB'S REQUIREMENT SECTION (#458). The application page's
+//      Configuration grid no longer draws appRequiredRole (the new-
+//      application form still does); the page's roles state carries each
+//      required role with what it resolves to — this application's own,
+//      or nothing — and offers the realm's roles but EVERYBODY and never
+//      another application's; and the section's two forms, the `add` and
+//      `remove` application actions, write the list.
 //
 // IN A THROWAWAY REALM, removed at the end (see role_permissions.js).
 // ===========================================================================
@@ -309,6 +316,75 @@ function applicationPermissions(t) {
   log.debug("Leaving applicationPermissions().");
 }
 
+function requirementSection(t) {
+  log.debug("Entering requirementSection().");
+  t.log.info('=== H. the Roles tab\'s requirement section (#458) ===');
+  const req = { query: {}, headers: { host: 'localhost:8081' },
+                protocol: 'https', get: function () { return ''; } };
+  const detail = adminViews.applicationDetailJson(req, PAYROLL);
+  const page = detail && detail.json && detail.json.page;
+  const gridHas = !!page && page.config.fields.some(function (one) {
+    return one.attribute === 'appRequiredRole';
+  });
+  t.check(!!page && !gridHas,
+          'H1. the application page\'s Configuration grid does not draw ' +
+          'appRequiredRole');
+  t.check((adminViews.newApplicationJson({}).fields || [])
+    .some(function (one) {
+      return one.attribute === 'appRequiredRole';
+    }), 'H2. the new-application form still offers it, having no Roles ' +
+        'tab');
+  const payroll = page.roles;
+  t.check(payroll.required.length === 1 &&
+          payroll.required[0].name === 'reader' &&
+          payroll.required[0].resolves === 'application' &&
+          payroll.required[0].role === 'reader@' + PAYROLL &&
+          JSON.stringify(detail.json.applicationRoles.required) ===
+            JSON.stringify(payroll.required),
+          'H3. the page and the API both carry payroll\'s requirement, ' +
+          'resolved to its own reader', JSON.stringify(payroll.required));
+  t.check(payroll.requirable.indexOf(STAFF) >= 0 &&
+          payroll.requirable.indexOf('ALL_AUTHENTICATED_USERS') >= 0 &&
+          payroll.requirable.indexOf('EVERYBODY') < 0 &&
+          payroll.requirable.indexOf('reader') < 0 &&
+          payroll.requirable.indexOf('reader@' + HR) < 0,
+          'H4. it is offered the realm-wide and built-in roles, but not ' +
+          'EVERYBODY, not what it already requires and never another ' +
+          'application\'s role', JSON.stringify(payroll.requirable));
+  const hr = adminViews.applicationRolesState(HR);
+  t.check(hr.required.length === 1 && hr.required[0].name === 'writer' &&
+          hr.required[0].resolves === 'none' &&
+          hr.requirable.indexOf('reader') >= 0,
+          'H5. hr\'s writer, which nothing defines, resolves to nothing; ' +
+          'its own reader is offered by its name inside it',
+          JSON.stringify(hr));
+  const added = adminActions.applicationsAction({
+    action: 'add', application: HR, attribute: 'appRequiredRole',
+    value: STAFF });
+  const removed = adminActions.applicationsAction({
+    action: 'remove', application: HR, attribute: 'appRequiredRole',
+    value: 'writer' });
+  t.check(added && added.ok && removed && removed.ok &&
+          applications.requiredRolesOf(HR).join() === STAFF,
+          'H6. the section\'s Require and Remove write appRequiredRole',
+          JSON.stringify(applications.requiredRolesOf(HR)));
+  const after = adminViews.applicationRolesState(HR);
+  t.check(after.required.length === 1 &&
+          after.required[0].resolves === 'realm' &&
+          after.requirable.indexOf(STAFF) < 0,
+          'H7. and the section then shows the realm-wide role, no longer ' +
+          'offered', JSON.stringify(after.required));
+  t.check(adminActions.applicationsAction({
+    action: 'remove', application: HR, attribute: 'appRequiredRole',
+    value: STAFF }).ok &&
+          adminViews.applicationRolesState(HR).required.length === 0 &&
+          applications.requiredRolesOf(HR).join() ===
+            roles.DEFAULT_REQUIRED_ROLE,
+          'H8. removing the last leaves it requiring nothing, which is ' +
+          'everybody');
+  log.debug("Leaving requirementSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   gate.setDecider(rolePep.decide);
@@ -324,6 +400,7 @@ async function run(t) {
       thePip(t);
       permissions(t);
       applicationPermissions(t);
+      requirementSection(t);
     });
   } finally {
     // THE STATE THE REQUIRE LEFT, not an empty slot: requiring the issuance
@@ -340,6 +417,7 @@ module.exports = {
   describe: 'roles that belong to one application: naming, resolution per ' +
             'application, the claim, the requirement, the PIP and ' +
             'permissions (#310); member types, display name, id and the ' +
-            'application\'s own roles (#93)',
+            'application\'s own roles (#93); the Roles tab\'s ' +
+            'requirement section (#458)',
   run: run
 };
