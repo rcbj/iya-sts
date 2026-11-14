@@ -347,6 +347,13 @@ impl PostgresDriver {
     }
 }
 
+/// How long a liveness renewal may take (`renewalBoundMs()`): a third of
+/// the lifetime, between a quarter of a second and two seconds.
+fn renewal_bound_ms(ttl_ms: f64) -> u64 {
+    let ttl = if ttl_ms > 0.0 { ttl_ms } else { 30_000.0 }.max(1000.0);
+    ((ttl / 3.0).floor()).clamp(250.0, 2000.0) as u64
+}
+
 /// What a delete leaves in a tombstoned store's row.
 pub const TOMBSTONE: &str = "$tombstone$1";
 
@@ -1285,11 +1292,16 @@ impl ClusterStore for PostgresDriver {
     ) -> BoxFuture<'_, Result<Renewal, String>> {
         let node = node.to_string();
         self.pending(async move {
-            let row = self
-                .client()
-                .await?
-                .query_one(
-                    &format!(
+            // BOUNDED (#770, `renewalBoundMs()`): a lock wait the renewal
+            // meets — a takeover's UPDATE of the lease row — fails inside
+            // the bound instead of holding the heartbeat for the lifetime,
+            // and the next heartbeat tries again.
+            let bound = std::time::Duration::from_millis(
+                renewal_bound_ms(ttl_ms),
+            );
+            let client = self.client().await?;
+            let ttl = ttl_ms as i64;
+            let sql = format!(
                         "WITH n AS (UPDATE sts_cluster_nodes SET heartbeat_at = {now}, expires_at = {now} + $2 \
                          WHERE node_id = $1 AND left_at = 0 AND expires_at > {now} RETURNING node_id), l AS (UPDATE \
                          sts_cluster_leases SET expires_at = {now} + $2 WHERE holder = $1 AND expires_at > {now} AND \
@@ -1297,10 +1309,18 @@ impl ClusterStore for PostgresDriver {
                          COALESCE((SELECT json_agg(json_build_object('name', name, 'token', token) ORDER BY name) \
                          FROM l), '[]'::json) AS leases",
                         now = DB_NOW
-                    ),
-                    &[&node, &(ttl_ms as i64)],
-                )
+                    );
+            let params: [&(dyn tokio_postgres::types::ToSql + Sync); 2] =
+                [&node, &ttl];
+            let asked = client.query_one(&sql, &params);
+            let row = tokio::time::timeout(bound, asked)
                 .await
+                .map_err(|_| {
+                    err(format!(
+                        "the heartbeat did not finish within its bound of {} ms",
+                        bound.as_millis()
+                    ))
+                })?
                 .map_err(err)?;
             let leases: Json = row.get("leases");
             Ok(Renewal {
