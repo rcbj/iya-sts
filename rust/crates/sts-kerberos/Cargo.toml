@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-kerberos"
+version = "0.1.0"
+description = "The Kerberos family's codec: RFC 4120 messages, RFC 3961/3962/8009/4757 enctypes, RFC 4121 tokens, SPNEGO, FAST, PKINIT and MS-KKDCP framing. No I/O, no state."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+md4.workspace = true
+md-5.workspace = true
+rc4.workspace = true
+openssl.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
