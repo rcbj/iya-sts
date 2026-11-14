@@ -317,6 +317,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 2592000,
+    "development": 0
+   },
    "derived": true,
    "min": 0,
    "max": 31536000,
@@ -341,6 +345,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 15,
+    "development": 0
+   },
    "derived": true,
    "min": 0,
    "max": 1440,
@@ -377,6 +385,10 @@
    "type": "bool",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": true,
+    "development": false
+   },
    "derived": true,
    "runtime": true,
    "description": "A public client cannot prove who it is, so a person is asked every time it requests access, whatever they answered before. This service's own applications are not asked. On by default in product mode."
@@ -401,6 +413,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 6000,
+    "development": 0
+   },
    "derived": true,
    "min": 0,
    "max": 100000000,
@@ -415,6 +431,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 600000,
+    "development": 1000
+   },
    "derived": true,
    "min": 1000,
    "max": 1000000,
@@ -449,6 +469,10 @@
    "type": "bool",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": true,
+    "development": false
+   },
    "derived": true,
    "runtime": true,
    "description": "Adds includeSubDomains to Strict-Transport-Security, so browsers use HTTPS for every subdomain of this service's host name too. On by default in product mode. Turn it off if a subdomain of this host name must still answer over plain HTTP."
@@ -1347,6 +1371,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 1800,
+    "development": 0
+   },
    "derived": true,
    "runtime": true,
    "min": 0,
@@ -1783,6 +1811,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 3,
+    "development": 1
+   },
    "derived": true,
    "runtime": true,
    "min": 1,
@@ -1905,6 +1937,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 0,
+    "development": 1
+   },
    "derived": true,
    "runtime": true,
    "min": 0,
@@ -5587,6 +5623,10 @@
    "type": "enum",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": "rsa-3072",
+    "development": "rsa-2048"
+   },
    "derived": true,
    "enumValues": [
     "rsa-2048",
@@ -6822,6 +6862,10 @@
    ],
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": "rsa-3072",
+    "development": "rsa-2048"
+   },
    "derived": true,
    "runtime": true,
    "description": "SCEP encrypts the request to the RA with RSA key transport (RFC 8894 section 3.1), so the RA certificate is RSA whatever the SCEP Issuing CA is. Changing it re-issues the RA certificate on its next use."
@@ -7054,6 +7098,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 3072,
+    "development": 2048
+   },
    "derived": true,
    "min": 2048,
    "max": 4096,
@@ -7218,6 +7266,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 3072,
+    "development": 2048
+   },
    "derived": true,
    "min": 2048,
    "max": 4096,
@@ -8311,6 +8363,10 @@
    "type": "bool",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": true,
+    "development": false
+   },
    "derived": true,
    "runtime": true,
    "description": "Whether a person is asked, once per application, before SAML 2.0 signs them in to it from a session they already have (ASVS 5.0.0 7.6.2). Their answer is kept, so they are asked again only if they withdraw it; a global consent on the application answers for everyone. A passive request is answered without the screen, as one that cannot interact. ON by default in product mode, off in development; saml2SsoConsent on an application's entry overrides it for that application."
@@ -8540,6 +8596,10 @@
    "type": "bool",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": true,
+    "development": false
+   },
    "derived": true,
    "runtime": true,
    "description": "Whether a person is asked, once per application, before SAML 1.1 signs them in to it from a session they already have (ASVS 5.0.0 7.6.2). Their answer is kept, so they are asked again only if they withdraw it; a global consent on the application answers for everyone. A passive request is answered without the screen, as one that cannot interact. ON by default in product mode, off in development; saml11SsoConsent on an application's entry overrides it for that application."
@@ -8722,6 +8782,10 @@
    "type": "bool",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": true,
+    "development": false
+   },
    "derived": true,
    "runtime": true,
    "description": "Whether a person is asked, once per application, before WS-Federation signs them in to it from a session they already have (ASVS 5.0.0 7.6.2). Their answer is kept, so they are asked again only if they withdraw it; a global consent on the application answers for everyone. A passive request is answered without the screen, as one that cannot interact. ON by default in product mode, off in development; wsfedSsoConsent on an application's entry overrides it for that application."
@@ -9067,6 +9131,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 3072,
+    "development": 2048
+   },
    "derived": true,
    "min": 2048,
    "max": 8192,
@@ -9237,6 +9305,10 @@
    "type": "int",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": 3072,
+    "development": 2048
+   },
    "derived": true,
    "min": 2048,
    "max": 4096,
@@ -11103,6 +11175,10 @@
    "type": "bool",
    "dflt": null,
    "derivedDefault": true,
+   "byMode": {
+    "product": false,
+    "development": true
+   },
    "derived": true,
    "runtime": false,
    "restartReason": "the socket is bound when the process starts",

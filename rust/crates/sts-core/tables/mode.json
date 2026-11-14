@@ -125,8 +125,7 @@
   "prefixesCookies",
   "accessEnforcementWaivers",
   "issuesUnsignedAssertions",
-  "servesWithoutSecurityHeader",
-  "prose"
+  "servesWithoutSecurityHeader"
  ],
  "writeRefusalFallback": "the setting is for development mode only.",
  "writeRefusals": {
