@@ -84,8 +84,32 @@ pub trait ChangeLog: Send + Sync {
     ) -> StoreFuture<'a, Option<StoredEntry>>;
 }
 
+/// A minted row's change-log key (`mintedChangeRow()`): the handle and the
+/// name, each base64url, joined by '.'; a sealed name is its own half.
+// Hot path (every row a flush writes): no span.
+pub fn minted_change_key(handle: &str, key: &str, key_sealed: &str) -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(handle.as_bytes()),
+        if key_sealed.is_empty() {
+            URL_SAFE_NO_PAD.encode(key.as_bytes())
+        } else {
+            key_sealed.to_string()
+        }
+    )
+}
+
 /// The contract every store implements.
 pub trait Driver: Send + Sync {
+    /// The engine a database store runs on, for a caller choosing how
+    /// often to poll its change log (`dialect.rs`); `None` for a store that
+    /// is not a database.
+    fn dialect(&self) -> Option<&'static dyn crate::dialect::Dialect> {
+        None
+    }
+
     /// The change log, for a store several processes share.
     fn change_log(&self) -> Option<&dyn ChangeLog> {
         None

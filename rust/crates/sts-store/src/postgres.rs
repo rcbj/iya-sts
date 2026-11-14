@@ -34,8 +34,6 @@
 
 use std::sync::Arc;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
@@ -50,9 +48,9 @@ use tokio_postgres::Row;
 
 use crate::codec::EntryCodec;
 use crate::driver::{
-    ChangeLog, ChangeRow, Directory, Driver, KeyMerge, MintedDecided,
-    MintedFilter, MintedRow, MintedWrite, PurgeKind, StoreError, StoreFuture,
-    StoreResult,
+    minted_change_key, ChangeLog, ChangeRow, Directory, Driver, KeyMerge,
+    MintedDecided, MintedFilter, MintedRow, MintedWrite, PurgeKind, StoreError,
+    StoreFuture, StoreResult,
 };
 use crate::merge::{merge_entry, Outcome};
 use crate::model::{
@@ -67,7 +65,7 @@ use crate::shadow::{AppconfigDelta, RealmsDelta};
 use crate::side::{filed, IndexRow, SessionIndex, SESSIONS_HANDLE};
 
 /// The database's clock, in milliseconds.
-const DB_NOW: &str = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
+const DB_NOW: &str = crate::dialect::POSTGRES_NOW;
 
 /// The schema this driver speaks: `postgres/schema.sql` as the Node
 /// service of the same release creates it, read from the model
@@ -608,7 +606,8 @@ pub(crate) fn missing_of(
 
 /// How long a liveness renewal may take (`renewalBoundMs()`): a third of
 /// the lifetime, between a quarter of a second and two seconds.
-fn renewal_bound_ms(ttl_ms: f64) -> u64 {
+// Hot path (every entry written, every beat): no span.
+pub(crate) fn renewal_bound_ms(ttl_ms: f64) -> u64 {
     let ttl = if ttl_ms > 0.0 { ttl_ms } else { 30_000.0 }.max(1000.0);
     ((ttl / 3.0).floor()).clamp(250.0, 2000.0) as u64
 }
@@ -632,6 +631,10 @@ fn minted_row(row: &Row) -> MintedRow {
 impl Driver for PostgresDriver {
     fn name(&self) -> &'static str {
         "postgres"
+    }
+
+    fn dialect(&self) -> Option<&'static dyn crate::dialect::Dialect> {
+        Some(&crate::dialect::Postgres)
     }
 
     fn adopt_data_keys(&self, keys: &Arc<crate::keystore::DataKeys>) {
@@ -757,15 +760,8 @@ impl Driver for PostgresDriver {
             self.check_origin_fence(&tx).await?;
             let mut changes: Vec<(String, String, String)> = Vec::new();
             for (mut row, upsert) in statements {
-                let change_key = format!(
-                    "{}.{}",
-                    URL_SAFE_NO_PAD.encode(row.handle.as_bytes()),
-                    if row.key_sealed.is_empty() {
-                        URL_SAFE_NO_PAD.encode(row.key.as_bytes())
-                    } else {
-                        row.key_sealed.clone()
-                    }
-                );
+                let change_key =
+                    minted_change_key(&row.handle, &row.key, &row.key_sealed);
                 let kind = if row.own { "minted-own" } else { "minted" };
                 if !upsert {
                     if row.tombstone {
@@ -2043,6 +2039,57 @@ impl PostgresDriver {
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn release_origin(&self) -> StoreResult<bool> {
         self.origin.release(self).await
+    }
+
+    /// One page of a parent's children in key order after `after`
+    /// (`directory_queries.js`'s one-level `page`), opened.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn directory_children_page(
+        &self,
+        realm: &str,
+        parent: &str,
+        after: &str,
+        limit: i64,
+    ) -> StoreResult<Vec<StoredEntry>> {
+        let rows = self
+            .client()
+            .await?
+            .query(
+                &format!(
+                    "SELECT {} FROM sts_ldap_entries WHERE realm = $1 AND parent_key = $2 AND dn_key > $3 ORDER BY \
+                     dn_key LIMIT $4",
+                    ENTRY_COLUMNS
+                ),
+                &[&realm, &parent, &after, &limit.max(1)],
+            )
+            .await
+            .map_err(err)?;
+        let codec = self.codec();
+        Ok(rows
+            .iter()
+            .filter_map(|r| PostgresDriver::entry_of(&codec, r))
+            .collect())
+    }
+
+    /// How many entries are strictly under a base, '' for the realm
+    /// (`count`): the counter rows the triggers keep, summed.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn directory_count(
+        &self,
+        realm: &str,
+        base: &str,
+    ) -> StoreResult<i64> {
+        let row = self
+            .client()
+            .await?
+            .query_one(
+                "SELECT COALESCE(sum(n), 0)::bigint AS n FROM sts_ldap_counts WHERE realm = $1 AND base_key = $2 \
+                 AND attribute = ''",
+                &[&realm, &base],
+            )
+            .await
+            .map_err(err)?;
+        Ok(row.get("n"))
     }
 
     /// `claimsOfScope()` (#884): the live claims of one scope, every realm.

@@ -15,12 +15,14 @@
 #![forbid(unsafe_code)]
 
 pub mod codec;
+pub mod dialect;
 pub mod driver;
 pub mod fan_in;
 pub mod key_sets;
 pub mod keystore;
 pub mod ldif;
 pub mod ldif_driver;
+pub mod mariadb;
 pub mod memory;
 pub mod merge;
 pub mod minted;
