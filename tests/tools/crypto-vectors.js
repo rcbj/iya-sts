@@ -5479,7 +5479,40 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./xacml-vectors.js').build(ROOT);
                    } },
-                 { file: 'krb5-codec-node.json', build: krb5Codec }];
+                 { file: 'krb5-codec-node.json', build: krb5Codec },
+                 { file: 'pkcs8-node.json', build: pkcs8Vectors }];
+
+// A PRIVATE KEY MADE PKCS#8 (#444, phase 3): the conversion `sts-core`'s
+// secrets reader needs for OpenBao's PKCS#1 client key, as node does it —
+// `createPrivateKey(pem).export({ type: 'pkcs8', format: 'pem' })` — for an
+// RSA key in PKCS#1 and in PKCS#8, an EC key in SEC1 and an Ed25519 key in
+// PKCS#8, each generated per run; and a key that is not one, refused.
+function pkcs8Vectors() {
+  const nodeCrypto = require('crypto');
+  const cases = [];
+  const add = function (name, input) {
+    let pkcs8 = null;
+    let refusal = null;
+    try {
+      pkcs8 = nodeCrypto.createPrivateKey(input)
+        .export({ type: 'pkcs8', format: 'pem' });
+    } catch (e) {
+      refusal = (e && e.message) || String(e);
+    }
+    cases.push({ name: name, input: input, pkcs8: pkcs8, refusal: refusal });
+  };
+  const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  add('rsa pkcs1', rsa.privateKey.export({ type: 'pkcs1', format: 'pem' }));
+  add('rsa pkcs8', rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+  const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  add('ec sec1', ec.privateKey.export({ type: 'sec1', format: 'pem' }));
+  const ed = nodeCrypto.generateKeyPairSync('ed25519');
+  add('ed25519 pkcs8', ed.privateKey.export({ type: 'pkcs8',
+                                               format: 'pem' }));
+  add('not a key', '-----BEGIN PRIVATE KEY-----\nAAAA\n' +
+                   '-----END PRIVATE KEY-----\n');
+  return { cases: cases };
+}
 
 // THE KEYSTORE'S DATA KEYS (#444): values sealed by `common/keystore.js`
 // under a durable key-encryption key — with the data-key rows it wrote to
