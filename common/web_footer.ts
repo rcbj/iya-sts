@@ -139,7 +139,7 @@ const ENGLISH: Record<string, string> = {
   about: 'About',
   linksLabel: 'About this service',
   socialLabel: 'Iya CyberSecurity Solutions on social media',
-  copyright: '© 2026–{year} Iya CyberSecurity Solutions, LLC. All rights ' +
+  copyright: '© {years} Iya CyberSecurity Solutions, LLC. All rights ' +
              'reserved.',
   version: 'Version {version}'
 };
@@ -269,10 +269,27 @@ class WebFooter {
       '<ul class="sts-footer-social" aria-label="' +
       esc(WebFooter.word(t, 'socialLabel')) + '">' + social + '</ul>' +
       '<div class="sts-footer-copyright">' +
-      esc(WebFooter.word(t, 'copyright', { year: facts.year })) + '</div>' +
+      esc(WebFooter.word(t, 'copyright',
+                         { years: WebFooter.years(facts.year) })) +
+      '</div>' +
       '<div class="sts-footer-version" title="' + esc(facts.buildInfo) +
       '">' + esc(WebFooter.word(t, 'version', { version: facts.version })) +
       '</div></footer>';
+  }
+
+  /**
+   * The copyright's years: the first year alone while it is still the
+   * current one ("© 2026"), and the range once the year has moved on
+   * ("© 2026–2027"). A year that cannot be read is the first year.
+   *
+   * @param year - the current year, as the footer's facts carry it
+   * @returns the years the copyright names
+   */
+  static years(year: string): string {
+    const first = 2026;
+    const now = Number(year);
+    return Number.isInteger(now) && now > first
+      ? String(first) + '–' + String(now) : String(first);
   }
 
   /**

@@ -114,7 +114,9 @@ function childMain() {
       out.push('icons are not two inline svgs with fill="currentColor"');
     }
     const year = String(new Date().getUTCFullYear());
-    if (f.indexOf('© 2026–' + year +
+    // One year while it is still 2026, the range once it is not.
+    const years = year === '2026' ? '2026' : '2026–' + year;
+    if (f.indexOf('© ' + years +
                   ' Iya CyberSecurity Solutions, LLC.') < 0) {
       out.push('copyright with ' + year);
     }
@@ -243,6 +245,11 @@ function childMain() {
          redrawn.indexOf('Version ' + v.version) > 0,
          'E. the runtime draws the shell\'s footer again in French, with ' +
          'the facts the shell carried', redrawn.slice(0, 300));
+    note(WebFooter.years('2026') === '2026' &&
+         WebFooter.years('2031') === '2026–2031' &&
+         WebFooter.years('') === '2026',
+         'E2. the copyright names one year while it is 2026, the range ' +
+         'after, and the first year for a year it cannot read');
     note(WebFooter.drawnIn({ querySelector: function () {
       return null;
     } }, t) === '',
