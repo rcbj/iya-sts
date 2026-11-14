@@ -658,6 +658,22 @@ must not undo:
   than having one built by a GET. Certificates only, and its model is
   closed, so a member added here owes `models/api/management.tsp`.
 
+* **A SELECTION IS FEWER PROFILES, NOT ANOTHER FORMAT** (rcbj,
+  2026-11-14: "import / export individual policies"). `policies`, a list
+  of `{ kind, name }`, narrows an export or an import; absent is
+  everything, exactly as before. The export checks it FIRST, before a key
+  is made (a name the realm does not store is STS-ADMIN-0937), carries
+  only the kinds with something selected, and records the list as the
+  payload's `selection`; a whole export carries no such member, so its
+  document is unchanged. The import checks its selection against the
+  inspection's `profiles` BEFORE the trust question (STS-ADMIN-0938), so a
+  mistyped name trusts nobody; the trust is still about the whole
+  document's signer. `inspect()` answers `profiles` with `replaces` (this
+  realm stores one of that kind by that name), and `view()` answers
+  `policies` (what may be selected). The console's boxes post each policy
+  as JSON under `policies`, which `web_runtime.ts`'s `shapeFields()` parses
+  per item for a list of objects.
+
 `tests/policy_transfer.js` holds it in process (the export's shape, own and
 foreign realms, the pin across a third and a fourth realm, refusals,
 revocation, every algorithm, the action layer, the console's question and

@@ -371,12 +371,42 @@ of the same name is replaced, and a profile the document does not carry is
 left alone. A profile its kind refuses is named with the reason, and the
 others are still written.
 
+### One policy, or a few
+
+A policy is named by its **kind** and its **name**: `password` and `default`,
+`passkey` and a named policy, `authn` and one of the named authentication
+policies. The same pair names it on this page and to each kind's Save.
+
+**Exporting a selection.** Each policy this realm stores has an **Export**
+button on the **All profiles** tab, and each named authentication policy has
+one beside its Delete. It downloads a signed document that holds that one
+policy. On the **Export and import** tab, tick the policies to carry and press
+**Export this realm's policies**. With none ticked, the export carries every
+policy, as before. A selection is the same document with fewer profiles in
+it, signed the same way, so any importer reads it. Its payload says which
+policies it was asked to hold, in `selection`. Only what the realm stores can
+be selected, so a profile it inherits cannot. A name the realm does not store
+is refused with `STS-ADMIN-0937`, and nothing is exported.
+
+**Importing a selection.** **Check the signer** lists every policy in the
+document, each ticked, with **replaces an existing policy** beside a name this
+realm already stores. Untick the ones to leave out, then import. With none
+ticked, the whole document is imported. The trust question is asked about the
+document's signer before anything is written, whatever is ticked. A selected
+name the document does not carry is refused with `STS-ADMIN-0938` before the
+question, and nothing is trusted or written.
+
 Through the API: `POST /admin-api/policies/transfer/export`, `inspect` and
 `import`. Another realm's import answers 400 with `needsTrust` until it is
 posted again with `trustSigner: true` and `issuerFingerprint`, the Issuing
-CA's SHA-256 fingerprint from the inspection. Export, the yes and the import
-each write an audit row: `admin.policies.export`,
-`admin.policies.trust-signer` and `admin.policies.import`.
+CA's SHA-256 fingerprint from the inspection. Export and import each take an
+optional `policies`, a list of `{ "kind": …, "name": … }`; left out, they act
+on everything. The inspection's `profiles` lists what the document carries,
+each with `replaces`. `GET /admin-api/policies/transfer` lists what this realm
+can export in `policies`. Export, the yes and the import each write an audit
+row: `admin.policies.export`, `admin.policies.trust-signer` and
+`admin.policies.import`. A selection's export and import rows record the
+policies it named.
 
 **What this realm signs with, and whom it trusts.** The tab, and
 `GET /admin-api/policies/transfer`, show the algorithm the next export is

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5471** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5473** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 285
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 287
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -5610,6 +5610,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0934` | A policy transfer action was asked for that is not export, inspect or import (#1713). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0935` | A service provider's metadata document written to an existing application (set, add, or the field grid's save) was refused when it was consumed; nothing on the entry changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0936` | The policy transfer view (GET /admin-api/policies/transfer: the export algorithm, the realm's Policy Export Signing CA and the signers it trusts) could not be built, #1713. | /admin-api HTTP 500 with {ok:false, errors} |
+| `STS-ADMIN-0937` | A policy export's selection was refused: it was not a list of 1 to 256 policies each named by kind and name, or it named a policy this realm does not store (an inherited one included); nothing was exported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors, missing} |
+| `STS-ADMIN-0938` | A policy import's selection was refused: it was not a list of 1 to 256 policies each named by kind and name, or it named a profile the export does not carry; nothing was trusted or written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors, missing} |
 
 ## STS-API
 

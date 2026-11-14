@@ -25602,6 +25602,19 @@ const CODES = [
       'the export algorithm, the realm\'s Policy Export Signing CA and the ' +
       'signers it trusts) could not be built, #1713.',
     spec: '/admin-api HTTP 500 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0937',
+    summary: 'A policy export\'s selection was refused: it was not a list ' +
+      'of 1 to 256 policies each named by kind and name, or it named a ' +
+      'policy this realm does not store (an inherited one included); ' +
+      'nothing was exported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors, missing}' },
+  { code: 'STS-ADMIN-0938',
+    summary: 'A policy import\'s selection was refused: it was not a list ' +
+      'of 1 to 256 policies each named by kind and name, or it named a ' +
+      'profile the export does not carry; nothing was trusted or written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors, missing}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
