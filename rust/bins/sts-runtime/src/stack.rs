@@ -16,9 +16,15 @@
 use std::sync::{Arc, OnceLock, Weak};
 
 use serde_json::Value as Json;
+use sts_cluster::coordination::{
+    ChangePull, CommitGate, CommitLog, ReadBarrier, Topology,
+    READ_BARRIER_TIMEOUT_DEFAULT_MS,
+};
 use sts_cluster::membership::ClusterNode;
+use sts_cluster::membership::{resolve_mode, ModeSettings};
+use sts_cluster::schedule::BoxFuture;
 use sts_cluster::schedule::{compare_rows, Schedules};
-use sts_cluster::scheduler::{Deps, Scheduler};
+use sts_cluster::scheduler::{Deps, Extras, RunRows, RuntimeLoad, Scheduler};
 use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_core::mode::Mode;
@@ -48,6 +54,61 @@ pub struct Stack {
     pub scheduler: Arc<Scheduler>,
     /// This node of a clustered service; `None` for one process.
     pub node: Option<Arc<ClusterNode>>,
+    /// The HTTP layer every route sits behind (`common/app.js`).
+    pub http: Arc<sts_http::HttpLayer>,
+    /// How busy this runtime is (#408): a request in flight is one.
+    pub load: Arc<RuntimeLoad>,
+    /// Rule 1: a request is served after what was committed before it.
+    pub barrier: Arc<ReadBarrier>,
+    /// Rule 2: a request that wrote is answered once its writes commit.
+    pub gate: Arc<CommitGate>,
+    /// Every cache describing itself (`common/cache_registry.js`).
+    pub caches: Arc<sts_cache::CacheRegistry>,
+    runs: Arc<RunStore>,
+}
+
+/// The change-log pull the read barrier waits on: `Persistence`'s.
+struct PersistencePull(Weak<Persistence>);
+
+impl ChangePull for PersistencePull {
+    fn pull(&self) -> BoxFuture<'_, Result<bool, String>> {
+        let p = self.0.upgrade();
+        Box::pin(async move {
+            match p {
+                // A pull that returns has applied everything that was
+                // visible when it began: caught up.
+                Some(p) => p.pull_changes().await.map(|_| true),
+                None => Ok(true),
+            }
+        })
+    }
+
+    fn coordinates(&self) -> bool {
+        self.0.upgrade().is_some_and(|p| p.coordinates())
+    }
+}
+
+/// Where this process's writes are: the directory's generation, and the
+/// wait for it to be written down.
+struct PersistenceCommits(Weak<Persistence>);
+
+impl CommitLog for PersistenceCommits {
+    fn position(&self) -> u64 {
+        self.0.upgrade().map_or(0, |p| p.generation())
+    }
+
+    fn through(&self, position: u64) -> BoxFuture<'_, Result<(), String>> {
+        let p = self.0.upgrade();
+        Box::pin(async move {
+            let Some(p) = p else {
+                return Ok(());
+            };
+            match p.directory_through(position).await {
+                sts_store::persistence::Through::Failed(e) => Err(e),
+                _ => Ok(()),
+            }
+        })
+    }
 }
 
 /// A node id for this process: random, as Node's is per start.
@@ -124,6 +185,39 @@ async fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
                 codes::STS_OAUTH_0184,
             )
         }
+    }
+}
+
+fn unavailable(code: sts_core::errors::ErrorCode) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    sts_http::mark(
+        (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::RETRY_AFTER, "1")],
+            "Service Unavailable",
+        )
+            .into_response(),
+        code,
+    )
+}
+
+// A hot path (every request): no span of its own.
+async fn guarded(
+    load: Arc<RuntimeLoad>,
+    barrier: Arc<ReadBarrier>,
+    gate: Arc<CommitGate>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let _in_flight = load.enter();
+    if let Err(refused) = barrier.wait().await {
+        return unavailable(refused.code);
+    }
+    let before = gate.mark();
+    let response = next.run(request).await;
+    match gate.hold(before).await {
+        Ok(()) => response,
+        Err(refused) => unavailable(refused.code),
     }
 }
 
@@ -209,6 +303,7 @@ impl Stack {
             ..StoreSpec::persisted("scheduler.runs")
         };
         let runs = RealmMap::new(&lifecycle, &handles, spec);
+        let run_store = Arc::new(RunStore { rows: runs });
         let host = std::env::var("HOSTNAME")
             .unwrap_or_else(|_| "localhost".to_string());
         // Several nodes share a postgres store; anything else is one
@@ -243,12 +338,18 @@ impl Stack {
                 Arc::new(LocalClock),
             ),
         };
-        let scheduler = Scheduler::new(
-            Schedules::new(settings.clone()),
+        let load = RuntimeLoad::new();
+        // The threads a cluster run's body is handed to (#408): the tokio
+        // runtime's workers, which here serve every request too.
+        let threads = std::thread::available_parallelism()
+            .map_or(1.0, |n| n.get() as f64);
+        let scheduler = Scheduler::with_extras(
+            Schedules::new(settings.clone())
+                .with_request_workers(Arc::new(move || threads)),
             Deps {
                 cluster,
                 claims,
-                rows: Arc::new(RunStore { rows: runs }),
+                rows: run_store.clone(),
                 realms: registry.clone(),
                 audit: Arc::new(LogAudit),
                 clock,
@@ -256,6 +357,15 @@ impl Stack {
                 pid: std::process::id(),
                 thread: None,
                 is_request_worker: false,
+            },
+            // The durable run history (#883) reads run rows back from the
+            // minted table by id, which the store slice's minted API does
+            // not offer yet; without it every row is kept in the map, as
+            // development keeps them. Cells (#98) are not ported.
+            Extras {
+                loads: Some(load.clone()),
+                history: None,
+                cells_multi: None,
             },
         );
         if scheduler_slot.set(Arc::downgrade(&scheduler)).is_err() {
@@ -357,6 +467,55 @@ impl Stack {
             }));
             scheduler.register(job)?;
         }
+        // The caches' two jobs: ejection in every process, and the
+        // snapshot a joined node's heartbeat carries.
+        let caches = Arc::new(sts_cache::CacheRegistry::new());
+        scheduler.register(sts_cache::jobs::eject_job(caches.clone()))?;
+        let joined = node.is_some();
+        scheduler.register(sts_cache::jobs::cache_report_job(
+            caches.clone(),
+            sts_cache::jobs::CacheReport::default(),
+            Arc::new(move || {
+                if joined {
+                    String::new()
+                } else {
+                    "this service is not clustered".to_string()
+                }
+            }),
+        ))?;
+        // The HTTP layer, the static surfaces' host, and the write rule
+        // that holds a realm's colours to WCAG 2.2 AA.
+        settings.add_write_rule(sts_http::branding::ContrastRule::new(
+            settings.clone(),
+        ));
+        let http = sts_http::HttpLayer::new(
+            registry.clone(),
+            settings.clone(),
+            mode.clone(),
+        );
+        http.add_routes(sts_http::surfaces::SurfaceHost::build(
+            settings.clone(),
+            mode.clone(),
+            registry.clone(),
+            sts_http::files::WebRoot::from_env(),
+        ));
+        let barrier_settings = settings.clone();
+        let barrier = ReadBarrier::new(
+            Arc::new(PersistencePull(Arc::downgrade(&persistence))),
+            Arc::new(move || {
+                let n = barrier_settings
+                    .value_of("workers.readBarrierTimeoutMs")
+                    .as_int() as f64;
+                if n >= 1.0 {
+                    n
+                } else {
+                    READ_BARRIER_TIMEOUT_DEFAULT_MS
+                }
+            }),
+        );
+        let gate = Arc::new(CommitGate::new(Arc::new(PersistenceCommits(
+            Arc::downgrade(&persistence),
+        ))));
         Ok(Stack {
             settings,
             mode,
@@ -367,6 +526,12 @@ impl Stack {
             persistence,
             scheduler,
             node,
+            http,
+            load,
+            barrier,
+            gate,
+            caches,
+            runs: run_store,
         })
     }
 
@@ -382,8 +547,58 @@ impl Stack {
         if let Some(sets) = self.persistence.key_sets() {
             sets.open_or_make("").await?;
         }
+        // WHICH CLUSTER MODE, and the refusals that are configuration's
+        // (`cluster.js`'s `resolve()`), before this node joins.
+        let s = &self.settings;
+        let (cluster_mode, why) = resolve_mode(&ModeSettings {
+            cluster_mode: s.value_of("cluster.mode").as_str().to_string(),
+            persistence_mode: s
+                .value_of("persistence.mode")
+                .as_str()
+                .to_string(),
+            product: self.mode.current() == "product",
+            global_mode: s.value_of("global.mode").as_str().to_string(),
+            keys_source: s.value_of("keys.source").as_str().to_string(),
+            public_base_url: s
+                .value_of("global.publicBaseUrl")
+                .as_str()
+                .to_string(),
+            minted: s.value_of("persistence.minted").as_bool(),
+        })
+        .map_err(|r| format!("{}cluster: {}", tag(r.code), r.why))?;
+        tracing::debug!("cluster: {:?} ({})", cluster_mode, why);
+        // A STORE IS SHARED BY COORDINATION (`coordinationRefusal()`):
+        // several processes on one store with no change log answer wrongly.
+        Topology {
+            several: self.node.is_some(),
+            coordinates: self.persistence.coordinates(),
+        }
+        .check()
+        .map_err(|r| format!("{}{}", tag(r.code), r.why))?;
         if let Some(node) = &self.node {
+            node.set_mode(cluster_mode);
             node.join().await?;
+        }
+        // The run rows the store gave back: a finished run's row is let
+        // go, every other is admitted to the scheduler's watch (the
+        // `scheduler.runs` restore hook's work, done here until the store
+        // offers the hook).
+        for realm in self.registry.list() {
+            let id = realm.id.clone();
+            for row in self.runs.rows(&id) {
+                let key = row
+                    .get("runId")
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                if self.scheduler.is_expiring_run(&row) {
+                    if !key.is_empty() {
+                        self.runs.delete(&id, &key);
+                    }
+                } else {
+                    self.scheduler.note_admitted(&id, &row);
+                }
+            }
         }
         self.scheduler.start(false);
         Ok(())
@@ -400,7 +615,22 @@ impl Stack {
                 async move { jwks(persistence).await }
             }),
         );
-        sts_http::layered(routes, self.registry.clone())
+        // OUTSIDE everything else, as Node's request pool and cluster
+        // barrier sit in front of the app: the request counts as in flight
+        // (#408), waits for what was committed before it (rule 1), and its
+        // answer waits for its own writes (rule 2) — each refusal a 503 the
+        // client may retry, never a stale or uncommitted answer.
+        let load = self.load.clone();
+        let barrier = self.barrier.clone();
+        let gate = self.gate.clone();
+        self.http.wrap(routes).layer(axum::middleware::from_fn(
+            move |request: axum::extract::Request,
+                  next: axum::middleware::Next| {
+                let (load, barrier, gate) =
+                    (load.clone(), barrier.clone(), gate.clone());
+                async move { guarded(load, barrier, gate, request, next).await }
+            },
+        ))
     }
 
     /// Writes what is pending and closes the store.

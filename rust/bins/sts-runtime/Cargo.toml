@@ -14,6 +14,7 @@ publish.workspace = true
 sts-core.workspace = true
 sts-crypto.workspace = true
 sts-cluster.workspace = true
+sts-cache.workspace = true
 sts-http.workspace = true
 sts-pki.workspace = true
 sts-store.workspace = true

@@ -141,6 +141,9 @@ async fn serve_plain(tcp: TcpListener, router: axum::Router) {
             let service = hyper::service::service_fn(
                 move |mut request: hyper::Request<hyper::body::Incoming>| {
                     request.extensions_mut().insert(facts.clone());
+                    request
+                        .extensions_mut()
+                        .insert(sts_http::client_address::Peer(peer.ip()));
                     router.clone().oneshot(request.map(axum::body::Body::new))
                 },
             );

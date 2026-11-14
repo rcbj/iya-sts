@@ -559,6 +559,15 @@ impl TlsListener {
         let service = hyper::service::service_fn(
             move |mut request: hyper::Request<hyper::body::Incoming>| {
                 request.extensions_mut().insert(connection.clone());
+                // What the HTTP layer reads off the socket: that it is
+                // TLS (the cookie prefix rule) and the TCP peer (the
+                // client address, before any proxy header is believed).
+                request
+                    .extensions_mut()
+                    .insert(sts_http::cookie_wire::OverTls);
+                request
+                    .extensions_mut()
+                    .insert(sts_http::client_address::Peer(peer.ip()));
                 router.clone().oneshot(request.map(axum::body::Body::new))
             },
         );

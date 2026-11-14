@@ -1963,6 +1963,7 @@ dependencies = [
  "hyper-util",
  "openssl",
  "serde_json",
+ "sts-cache",
  "sts-cluster",
  "sts-core",
  "sts-crypto",
