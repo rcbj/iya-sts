@@ -5,8 +5,6 @@
   "shell.memory.link": "Persistance",
   "shell.memory.after": " (désactivée par défaut).",
   "shell.json": "Chaque page de cette console répond aussi à <code>?format=json</code>, et chaque formulaire accepte aussi un corps JSON : un test peut donc piloter cette console sans navigateur.",
-  "shell.version": "iya-sts version <code>{version}</code>",
-  "shell.notStamped": " (pas une version estampillée — ce processus tourne depuis un checkout, et son heure de build correspond à son démarrage)",
   "shell.open.text": "<strong>Cette console n’est pas protégée.</strong> Le contrôle d’accès est DÉSACTIVÉ : rien ici ne vérifie d’identifiants — et rien d’autre dans ce service non plus : le nom d’utilisateur saisi à l’écran de connexion devient l’identité de chaque jeton émis. Quiconque peut joindre ce port peut révoquer tous les jetons et modifier le contenu du prochain. C’est acceptable sur un portable ou un réseau compose, pas sur une adresse publique. Indiquez qui peut entrer dans ",
   "shell.adminRoles": "Rôles d’administration",
   "shell.open.after": ", qui présente chaque paramètre derrière cette page.",

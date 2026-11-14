@@ -1446,7 +1446,9 @@ bug rather than a markup one.
 
 ### The foot of every page says what this process is running as (2026-09-13)
 
-Under the version line, `runtimeFooter()` draws four facts: whether requests are
+At the foot of the card, `runtimeFooter()` draws four facts (the version line
+that stood above them went on 2026-11-14: the page footer under every page
+carries the version and its build line): whether requests are
 DISPATCHED to request workers or answered by a single process
 (`workers.requestCount` and `workers.dispatch`, and which worker drew the page),
 the realm's MODE (`mode.current()`), the PERSISTENCE store that is open

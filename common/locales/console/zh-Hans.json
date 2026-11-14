@@ -5,8 +5,6 @@
   "shell.memory.link": "持久化",
   "shell.memory.after": "，默认处于关闭状态。",
   "shell.json": "这里的每个页面也都响应 <code>?format=json</code>，每个表单也都接受 JSON 请求体，因此测试无需浏览器即可驱动此控制台。",
-  "shell.version": "iya-sts 版本 <code>{version}</code>",
-  "shell.notStamped": "（不是带版本戳的构建——此进程运行于代码检出目录，其构建时间即其启动时间）",
   "shell.open.text": "<strong>此控制台未受保护。</strong>访问门禁已关闭，因此这里不检查任何凭据——此服务的其他部分也一样：在登录界面输入的用户名就是它所签发的每个令牌中的身份。任何能访问此端口的人都可以吊销所有令牌，并更改下一个令牌的内容。在笔记本电脑或 compose 网络上这没有问题，但在公共地址上则不可接受。请在",
   "shell.adminRoles": "管理员角色",
   "shell.open.after": "中指定谁可以进入，该页面汇集了此页面背后的所有设置。",

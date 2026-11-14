@@ -563,9 +563,11 @@ function run(t) {
   // 5. ONE SOURCE FOR EVERY SURFACE.
   //
   //    This is the assertion that would have caught the state this module
-  //    replaced. Five modules draw a version — the front page, the console's
-  //    shell, the portal's shell, the management API and the service metadata
-  //    page — and until this existed two of them read `package.json`, whose
+  //    replaced. Five modules REPORT a version — the front page's view, the
+  //    console's shell answer, the portal's `/account-api/me`, the management
+  //    API and the service metadata page (and the reports index) — and since
+  //    2026-11-14 the page footer is the one place a page DRAWS it. Until
+  //    this existed two of them read `package.json`, whose
   //    third component is a placeholder. The check is on the SOURCE and not on
   //    the rendered string, because two pages reading two different sources
   //    agree perfectly right up until the moment they stop.
@@ -601,6 +603,45 @@ function run(t) {
           !/require\(/.test(codeOf('common/web_footer.ts')),
           'and the footer\'s browser half requires nothing, so the only ' +
           'version it can draw is the one the server put on the footer');
+
+  // ONE VERSION LINE ON A PAGE (rcbj, 2026-11-14): the front door, the
+  // console, the portal and the reports application each drew a version
+  // line of their own inside their content, beside the footer's. Those
+  // lines are gone, so the footer above is the one place a page DRAWS the
+  // version; the four answers in the drawers list still CARRY it, for
+  // machines. A renderer that draws it again would be a second drawing
+  // that the source check above cannot see, because it reads the version
+  // off an answer rather than off common/version.js.
+  const ONE_LINE_RENDERERS = {
+    'home/web_home_front.ts': [/class="ver"/, /'home\.version'/,
+                               /\bv\.version\b/, /\bv\.build\b/],
+    'admin-ui/web_shell.ts': [/shell\.version\./,
+                              /'console\.shell\.version'/,
+                              /'console\.shell\.notStamped'/],
+    'portal/web_portal_shell.ts': [/class="ver"/, /\.version\b/,
+                                   /buildInfo/],
+    'portal/web_portal_runtime.ts': [/\.version\b/],
+    'report/web_report_pages.ts': [/'report\.version'/, /class="foot"/,
+                                   /chrome\.version/]
+  };
+  Object.keys(ONE_LINE_RENDERERS).forEach(function (rel) {
+    const src = codeOf(rel);
+    const found = ONE_LINE_RENDERERS[rel].filter(function (re) {
+      return re.test(src);
+    });
+    t.check(found.length === 0,
+            rel + ' draws no version line of its own: the page footer is ' +
+            'the one place a page shows the version',
+            found.map(String).join(', '));
+  });
+  // And the facts every footer is drawn from are the shell's, from the one
+  // source: `data-sts-footer-version` and `-build`, written by the footer's
+  // builder from page_footer.ts's version.load() and buildInfo().
+  const footerBrowserSrc = codeOf('common/web_footer.ts');
+  t.check(/data-sts-footer-version/.test(footerBrowserSrc) &&
+          /data-sts-footer-build/.test(footerBrowserSrc),
+          'the footer carries its version and build line as facts on the ' +
+          'shell, which the four runtimes redraw from');
 
   // The three outbound requesters say who is calling and which build. Same
   // argument as above: the string is built in one place, so the check is that
