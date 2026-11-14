@@ -147,9 +147,9 @@ jobs:
           echo "This build is release ${release}" \
                "(VERSION says $(tr -d '[:space:]' < VERSION))."
 
-      # buildx, for the GitHub Actions layer cache below. The Dockerfile installs
-      # nvm and a Node toolchain from the network on every layer miss, which is
-      # the slow part by a wide margin and the part most worth caching.
+      # buildx, for the GitHub Actions layer cache below. The Dockerfile runs
+      # npm against the registry on every layer miss, which is the slow part
+      # by a wide margin and the part most worth caching.
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -191,11 +191,13 @@ jobs:
             BUILD_NUMBER=${{ inputs.build_number }}
             STS_VERSION_RELEASE=${{ steps.release.outputs.override }}
           # Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
-          # x-mirror-contexts does (`ubuntu`, not `ubuntu:latest`: BuildKit
-          # drops `:latest` when it looks a name up).
-          # tests/image_mirror_coverage.js holds this list to the Dockerfile.
+          # x-mirror-contexts does (a `:latest` would be dropped from the key:
+          # BuildKit drops it when it looks a name up). The service image is
+          # debian:bookworm-slim and the node image since 2026-11-14 (it was
+          # ubuntu:latest). tests/image_mirror_coverage.js holds this list to
+          # the Dockerfile.
           build-contexts: |
-            ubuntu=docker-image://ghcr.io/rcbj/iya-sts/mirror/ubuntu:latest
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
             node:24.22.1-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.22.1-bookworm-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max

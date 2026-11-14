@@ -159,7 +159,7 @@ directory:
 
 | Licence | Packages |
 |---|---|
-| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, cors, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
+| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, croner, express, jsonwebtoken, knex, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
 | MIT-0 | nodemailer |
 | BSD-3-Clause | @digitalbazaar/bbs-signatures, @digitalbazaar/ed25519-signature-2020, @digitalbazaar/ed25519-verification-key-2020, @digitalbazaar/security-context, @digitalbazaar/zcap, asn1js, jsonld, jsonld-signatures, macaroon, pkijs |
 | Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |

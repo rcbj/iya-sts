@@ -435,6 +435,52 @@ reporting green having driven nothing.
 
 ## Running it
 
+**A BARE `./run-tests.sh` RUNS SIX MODES SINCE 2026-11-14** (rcbj: "Make all
+six part of the standard test run"): `memory`, `single-node`, `mariadb`,
+`cluster`, `cells` and `fuzz`, in that order — `STS_ALL_MODES` in
+`tools/modes.sh`, which argues the order (cheapest and most fundamental first,
+`mariadb` read beside `single-node`, and `fuzz`, the longest and the one with
+no egress, last). `cluster-portable` and `schema-validation` are still asked
+for by name. What a run of given arguments would do — the modes, each one's
+bound and compose layers, its jobs, and what it skips — is
+`./run-tests.sh --plan`, which starts nothing.
+
+* **`fuzz` RUNS ITS OWN JOBS ONLY, WITH NOTHING TYPED.** `stsModeJobFilter()`
+  in `tools/modes.sh` names a mode's fixed subset (`fuzz`: `schemathesis`,
+  which is `sts_schemathesis` and the two in-process `schemathesis_*` files);
+  the launcher hands it to the runner as `--mode-only=` in that mode's
+  environment alone, so the other modes of the same invocation keep every
+  job. `cells` and `mariadb` have no filter and run the whole list.
+* **AN OPERATOR'S `--only` NARROWS EVERY MODE, AND FOR `fuzz` IT IS
+  INTERSECTED** with the mode's filter (`run-report.js` keeps a job only if
+  both keep it). When nothing is left — `--only=crypto`, or `--conformance-only`,
+  which keeps no Schemathesis job — the launcher skips
+  the mode BEFORE its stack starts, with the reason on screen and on the
+  summary's `SKIPPED:` line (`modeFilterLeavesNothing()`). A run whose every
+  mode was skipped checked nothing and fails.
+* **EACH MODE STARTS FROM NOTHING OF THE LAST ONE.** The modes bring four
+  different sets of compose files (`cluster`'s balancer and node B, `cells`'
+  three databases and cell-key volumes, `mariadb`'s schema one-shot, `fuzz`'s
+  `internal` network), so after each mode's `down` — and once before the first
+  — `removeProjectLeftovers()` removes every container, network and volume
+  still carrying the run's compose PROJECT label, each docker call bounded.
+  The container names are the fixed ones every mode uses, which is exactly why
+  a leftover would stop the next mode's `up`.
+* **EVERY MODE HAS A BOUND OF ITS OWN OR THE SHARED ONE**: `cells` got one
+  that day (`STS_CELLS_MODE_TIMEOUT`, 9000 s, single-node's), because the
+  whole list now runs in it where the named runs were its own nine jobs.
+  The summary, the `FAILED in:` line, `tests/report/<mode>/` and the model-gap
+  scan (`tests/report/<mode>-97-model-gaps.log`, every node log of the mode —
+  both cells' in `cells`) cover all six.
+* **ABOUT ELEVEN HOURS ON THE DEVELOPMENT LAPTOP** (2026-11-14, from the
+  modes' `summary.json` `wallMs`): `memory` 125–130 min with the OpenID
+  conformance plans in it, `single-node` 88–112, `mariadb` about 80 (73 on
+  2026-11-06, with 10% fewer jobs), `cluster` 80–95, `cells` not yet measured
+  on the whole list (32 min for 759 jobs on 2026-10-12; expect 60–90), and
+  `fuzz` 126–155; plus the image build and a few minutes per mode for the
+  stack, the credentials, the logs and the teardown. CI is not a bare run: its
+  jobs name their modes, and `mariadb`, `cells` and `fuzz` have no CI job yet.
+
 **`./run-tests.sh --modes=schema-validation` (#1353, rcbj 2026-11-06) is one
 container holding the service, its stores, OpenBao, a balancer, the jobs, Chrome
 and Selenium**, and it starts no compose project. It runs the `memory`,
@@ -494,7 +540,8 @@ because a typo in a filter must never read as "everything passed".
                                      # service AND the runner in containers
                                      # built from this working tree
 ./run-tests.sh --modes=memory # one mode of tools/modes.sh, not all
-                                     # three; --modes=cluster is the fourth
+                                     # six (a bare run is all six)
+./run-tests.sh --plan         # what a run would do; starts nothing
 ./run-tests.sh --no-build     # reuse the images already built
 ./run-tests.sh --only=crypto --no-browser
                                      # anything else goes to run-report.js
@@ -1796,7 +1843,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/protocol/sts_kerberos_samba.js` **(ours)**, with `tests/kerberos_samba_findings.js` in process | **SAMBA'S RAW KERBEROS KDC TESTS** (#204, 2026-09-26) — every module of Samba 4.25.0's `python/samba/tests/krb5` (GPL-3.0, built into the tests image, never vendored), run unchanged by `tests/kerberos-interop/samba_krb5_driver.py` against a throwaway development realm's KDC on TCP 88 in three service profiles (and `xrealm_tests` against the default realm's development trust). The AD-only tests are skipped by the driver naming what each needed and counted per reason; any failure or error not in `EXCEPTIONS` (each also on #204) fails the job, and so do fewer than `FLOOR` passes. The in-process file holds the cheapest-to-break fixes. See *The Kerberos interoperability harnesses*, below |
 | `tests/protocol/sts_kerberos_heimdal.js` **(ours)** | **HEIMDAL'S CLIENT TOOLS BESIDE MIT'S** (#205, 2026-09-26) — `kinit`, `klist`, `kgetcred`, `heimtools kvno`, `ktutil`, `gss-token` and a curl built against Heimdal's GSSAPI, from a pinned Heimdal commit in the tests image: AS and TGS per realm (Heimdal armors every TGS-REQ with FAST and hide-client-names), a service's and a person's keytab, FAST with a host's armor TGT and the password alone refused for a second-factor account in product, RC4 by mode, and SPNEGO at `/authn/spnego` by `curl --negotiate` and by a `gss-token` token — both modes. OTP and MS-KKDCP are recorded exceptions: Heimdal's client has neither. See *The Kerberos interoperability harnesses*, below |
 | `tests/protocol/sts_tlsfuzzer.js` **(ours)**, with `tests/tlsfuzzer_debugger.js`, `tests/tlsfuzzer_plan.js` and `tests/tls_protocol_policy.js` in process | **TLSFUZZER AGAINST THE MAIN HTTPS PORT AND LDAPS 636** (#212, 2026-09-26) — every applicable script of tlsfuzzer, pinned and fetched into the tests image, through `tests/tlsfuzzer/sts_adapter.py`, with client certificates made at run time (RSA and EC P-256 from a throwaway realm's CA; Ed25519, RSA-PSS, ML-DSA-65 and a non-NIST EC curve self-signed with `openssl`). The plan — each script run, not applicable or run as a refusal, each exception with its reason — is `tests/protocol/tlsfuzzer_kit.js`, and which scripts apply follows the certificate that listener presents (#321; since #1303 an ECDSA one runs all but three of the scripts an RSA one runs). A failed probe the plan does not explain fails the job. See *The TLS fuzzer*, below |
-| `tests/protocol/sts_schemathesis.js` **(ours)**, with `tests/schemathesis_plan.js` in process | **SCHEMATHESIS AGAINST THE FOUR APIS AND THE PROTOCOL SURFACE** (#1299) — `local: true`, `exclusive: true`, driven by the `fuzz` mode only (`./run-tests.sh --modes=fuzz --only=schemathesis`), which stands up a single-node product stack on an `internal`, no-egress network (`tests/docker-compose-run-tests-fuzz.yml`) so any input can be thrown at the service without anything leaving the device. It provisions three realm profiles (product baseline, RFC 9700, OAuth 2.1) and a fuzz person through `/admin-api`, then runs the pinned Schemathesis CLI (`tests/schemathesis/`, built into the tests image, `STS_SCHEMATHESIS_DIR`) against each (realm × surface) through `tests/schemathesis/auth_proxy.js`, which attaches each surface's DPoP-bound token and a fresh proof (the portal/console/report sign-ins). The four APIs are fuzzed from their published OpenAPI documents; every protocol endpoint from a document synthesized from the running router (`/admin-api/sts-metadata`). Beyond Schemathesis's built-in checks it asserts this service's own invariants through `tests/schemathesis/sts_checks.py` (no 5xx, no error code in a response body, frame-ancestors kept, no outbound fetch). The PLAN, the run and the run-sabotage exclusions are `tests/protocol/schemathesis_kit.js`. The realms run in parallel (`schemathesis_realm_lanes.js`, #1502), and `strictRequestProbes()` sends every GET of each API what its document does not declare — an unknown query parameter, a word for an integer, an unknown custom header — and requires the 400, while the protocol surface, which may ignore them, is probed only for a 5xx and a leaked code (#1476, #1483). The credential-fuzzing follow-up — malformed Kerberos tickets, access/ID/refresh/opaque/GNAP tokens and SAML 1.1/2.0 assertions, to confirm the service NOTICES — is Phase 2 on #1299 |
+| `tests/protocol/sts_schemathesis.js` **(ours)**, with `tests/schemathesis_plan.js` in process | **SCHEMATHESIS AGAINST THE FOUR APIS AND THE PROTOCOL SURFACE** (#1299) — `local: true`, `exclusive: true`, driven by the `fuzz` mode only (`./run-tests.sh --modes=fuzz`, and last in a bare run since 2026-11-14: the mode's own job filter, `stsModeJobFilter()`, chooses this job and its two in-process files, so no `--only` is typed), which stands up a single-node product stack on an `internal`, no-egress network (`tests/docker-compose-run-tests-fuzz.yml`) so any input can be thrown at the service without anything leaving the device. It provisions three realm profiles (product baseline, RFC 9700, OAuth 2.1) and a fuzz person through `/admin-api`, then runs the pinned Schemathesis CLI (`tests/schemathesis/`, built into the tests image, `STS_SCHEMATHESIS_DIR`) against each (realm × surface) through `tests/schemathesis/auth_proxy.js`, which attaches each surface's DPoP-bound token and a fresh proof (the portal/console/report sign-ins). The four APIs are fuzzed from their published OpenAPI documents; every protocol endpoint from a document synthesized from the running router (`/admin-api/sts-metadata`). Beyond Schemathesis's built-in checks it asserts this service's own invariants through `tests/schemathesis/sts_checks.py` (no 5xx, no error code in a response body, frame-ancestors kept, no outbound fetch). The PLAN, the run and the run-sabotage exclusions are `tests/protocol/schemathesis_kit.js`. The realms run in parallel (`schemathesis_realm_lanes.js`, #1502), and `strictRequestProbes()` sends every GET of each API what its document does not declare — an unknown query parameter, a word for an integer, an unknown custom header — and requires the 400, while the protocol surface, which may ignore them, is probed only for a 5xx and a leaked code (#1476, #1483). The credential-fuzzing follow-up — malformed Kerberos tickets, access/ID/refresh/opaque/GNAP tokens and SAML 1.1/2.0 assertions, to confirm the service NOTICES — is Phase 2 on #1299 |
 | `tests/protocol/sts_vc_data_model_suite.js` **(ours)** | **THE W3C VC DATA MODEL 2.0 TEST SUITE** (#194, 2026-09-26) against the VC-API adapter (`oid4vc/vc_api.ts`) of a throwaway development realm: the eddsa-rdfc-2022 issuer (`vc2.0`) and the jose-p256 one (`EnvelopingProof`), the credential and presentation verifiers, interop on. Every failure fixed or in `EXCEPTIONS` (three: the suite's enveloped presentation carries a `vp` claim VC-JOSE-COSE forbids). See *The W3C VC and DID suites*, below |
 | `tests/protocol/sts_vc_di_eddsa_suite.js` **(ours)** | **THE W3C DATA INTEGRITY EDDSA SUITE** (#195): eddsa-rdfc-2022 and eddsa-jcs-2022, issuers and verifier, VC 1.1 and 2.0, interop on. No exceptions |
 | `tests/protocol/sts_vc_di_ecdsa_suite.js` **(ours)** | **THE W3C DATA INTEGRITY ECDSA SUITE** (#196): ecdsa-rdfc-2019 and ecdsa-jcs-2019 over P-256 and P-384 and ecdsa-sd-2023, issuers and verifier, interop on — every file but `60-sd-interop.js`, which needs a holder by the name "Digital Bazaar"; section 2 is that test with the holder named: this issuer's base proof derived by Digital Bazaar's library and by `/vc-api/credentials/derive`, each derivation verified by this verifier and by Digital Bazaar's, and a base proof refused. No exceptions |
@@ -4437,8 +4484,9 @@ the one fetch it always was.
 `mariadb` server (beside the attribute source's `sts`) and runs
 `mariadb/schema.sql` into it as the owner; the service dials it as `sts_app`
 over verified TLS, trusting the certificate `mariadb-tls` minted, with the
-password from the secret store. It runs only when named, like `cells`.
-**A failure here and not in `single-node` is a finding about the MariaDB
+password from the secret store. It is in a bare run since 2026-11-14,
+straight after `single-node`. **A failure here and not in `single-node` is a
+finding about the MariaDB
 driver** (`persistence/CLAUDE.md`, *`persistence.mode=mariadb`*). Jobs that
 dial PostgreSQL themselves (`sts_persistence_postgres.js` and its kin) are
 PostgreSQL's and are expected to say so in this mode; they owe a skip by
@@ -4451,8 +4499,9 @@ mode, which the first run will list.
 through the statements a second database engine (MariaDB) runs —
 `persistence/cluster_portable.js`: inserts that do nothing on a duplicate,
 row locks in `sts_cluster_locks` for the join, no `LISTEN`/`NOTIFY` and a
-one-second change-log poll. It runs only when named, like `cells`, and is
-not in `STS_ALL_MODES`. **A failure here and not in `cluster` is a finding
+one-second change-log poll. It runs only when named, the one mode of
+`tools/modes.sh` not in `STS_ALL_MODES`. **A failure here and not in `cluster`
+is a finding
 about the portable statements**, which is what rcbj asked for on #677: the
 code MariaDB will run, proved on the reference engine first.
 `tests/cluster_portable.js` holds the same contracts in process, and against
@@ -4533,11 +4582,12 @@ uses), `logs/00-iya-sts-service-node-b.log` and `logs/00-load-balancer.log`.
 
 ## THE `cells` MODE: TWO CELLS OF ONE SERVICE (2026-09-28, issue #98)
 
-**A FOURTH MODE, RUN ONLY WHEN NAMED**: `./run-tests.sh --modes=cells`. It is
-not in `STS_ALL_MODES`, so a bare run and both CI jobs start exactly the
-stacks they did; `tests/tools/modes.sh` defines it and argues it. It exists
-for the nine `sts_cells_*.js` jobs, which prove #98 end to end over HTTP, and
-every other job run in it asserts what it always did against cell A:
+**IN A BARE RUN SINCE 2026-11-14** (it ran only when named,
+`./run-tests.sh --modes=cells`, until then), fifth of six, with the whole job
+list and a bound of its own (`STS_CELLS_MODE_TIMEOUT`); no CI job runs it yet.
+`tests/tools/modes.sh` defines it and argues it. The nine `sts_cells_*.js`
+jobs prove #98 end to end over HTTP, and every other job run in it asserts
+what it always did against cell A. Its own jobs alone:
 
 ```bash
 ./run-tests.sh --modes=cells --only=sts_cells --protocol=only --no-browser
