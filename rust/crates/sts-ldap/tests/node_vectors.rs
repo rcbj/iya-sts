@@ -721,13 +721,17 @@ fn write_rust_vectors() {
             Json::Object(o)
         })
         .collect();
-    // Filters Rust printed and wrote: Node must parse the text back to
-    // the same text and write the same BER.
+    // Strings Rust printed — every filter's text and every DN's — and what
+    // Rust makes of each when it reads it again: Node must make the same
+    // (printing is not a fixed point in node-ldapjs, so the comparison is
+    // with Rust's second reading, not with the text).
     let mut filters = Vec::new();
     for f in v["filters"].as_array().unwrap() {
         if let Ok(parsed) = Filter::parse(f["input"].as_str().unwrap()) {
-            if let (Ok(t), Ok(b)) = (parsed.to_text(), parsed.to_ber()) {
-                filters.push(json!({ "text": t, "ber": js::hex(&b) }));
+            if let Ok(t) = parsed.to_text() {
+                let mut out = Map::new();
+                out.insert("input".into(), json!(t));
+                filters.push(filter_answer(out, Filter::parse(&t)));
             }
         }
     }
@@ -737,7 +741,7 @@ fn write_rust_vectors() {
         .iter()
         .filter_map(|d| {
             let t = Dn::parse(d["input"].as_str()?).ok()?.to_text();
-            Some(json!({ "text": t }))
+            Some(dn_case(&t))
         })
         .collect();
     let out = json!({ "requests": requests, "responses": responses,

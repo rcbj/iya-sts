@@ -1145,3 +1145,153 @@ function build(ROOT) {
            serviceDn: serviceDn, filters: filters, filterBers: filterBers,
            escapes: escapes, responses: responses, errors: errors };
 }
+
+/**
+ * Whether two answers are the same JSON, keys in any order. Each side is
+ * put through JSON first, so a key holding `undefined` is a key absent.
+ *
+ * @param {any} a - one answer
+ * @param {any} b - the other
+ * @returns {boolean} the same
+ */
+function same(a, b) {
+  const canon = function (v) {
+    if (Array.isArray(v)) {
+      return v.map(canon);
+    }
+    if (v && typeof v === 'object') {
+      const out = {};
+      Object.keys(v).sort().forEach(function (k) {
+        out[k] = canon(v[k]);
+      });
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(canon(JSON.parse(JSON.stringify(a)))) ===
+    JSON.stringify(canon(JSON.parse(JSON.stringify(b))));
+}
+
+/**
+ * The other direction: what the Rust crate made, held to node-ldapjs.
+ *
+ *   requests   a corpus Rust built (each PDU Node dispatched, re-encoded
+ *              by Rust, and mutations of them from a seed Node's corpus
+ *              does not use) fed to the same server front: the same events
+ *              and pending bytes as Rust's front answered
+ *   responses  every response Rust encoded is the one node-ldapjs builds
+ *              from the same fields, and reads back to the same bytes
+ *              (not a result with referrals, whose referrals
+ *              `LdapResult._parseToPojo()` never reads, nor an extended
+ *              response with a value, which it reads as `<buffer>…`)
+ *   filters    each filter string Rust printed reads in Node — tree, text,
+ *              BER or refusal — as Rust reads it again
+ *   dns        each DN Rust printed reads in Node as Rust reads it again
+ *              (printing is not a fixed point of either: a DN value
+ *              holding a backslash prints it unescaped, a filter value's
+ *              escapes are printed again)
+ *
+ * @param {string} ROOT - the repository
+ * @param {any} rust - ldap-wire-rust.json
+ * @param {(ok: boolean, what: string) => void} check - the collector
+ */
+function checkRust(ROOT, rust, check) {
+  const h = harness(ROOT);
+  const asn1 = require(path.join(ROOT, 'node_modules', '@ldapjs', 'asn1'));
+  const KINDS = { bind: 'BindResponse', add: 'AddResponse',
+                  delete: 'DeleteResponse', modify: 'ModifyResponse',
+                  modifyDn: 'ModifyDnResponse',
+                  compare: 'CompareResponse',
+                  searchDone: 'SearchResultDone',
+                  extended: 'ExtensionResponse' };
+  let bad = 0;
+  rust.requests.forEach(function (r) {
+    const out = h.front(r.chunks.map(function (c) {
+      return Buffer.from(c, 'hex');
+    }));
+    if (!same(out, { events: r.events, pending: r.pending })) {
+      bad++;
+      if (bad <= 10) {
+        check(false, 'the front answers ' + r.name + ' as Rust did: Node ' +
+              JSON.stringify(out) + ', Rust ' + JSON.stringify(r));
+      }
+    }
+  });
+  check(bad === 0, rust.requests.length + ' PDUs Rust built get the ' +
+        'same events from the node-ldapjs front as from Rust\'s (' + bad +
+        ' differ)');
+  let built = 0;
+  let readBack = 0;
+  rust.responses.forEach(function (r) {
+    if (r.error) {
+      return;
+    }
+    let mine;
+    if (r.kind === 'searchEntry') {
+      mine = new h.ldap.SearchEntry({
+        messageId: r.messageId, objectName: r.objectName,
+        attributes: r.attributes.map(function (a) {
+          return new h.ldap.Attribute({ type: a.type, values: a.values });
+        }) });
+    } else if (r.kind === 'searchReference') {
+      mine = new h.ldap.SearchReference({ messageId: r.messageId,
+                                          uri: r.uris });
+    } else {
+      const input = Object.assign({}, r);
+      delete input.kind;
+      delete input.hex;
+      Object.keys(input).forEach(function (k) {
+        if (input[k] && input[k].undefined === true) {
+          input[k] = undefined;
+        }
+      });
+      mine = new h.messages[KINDS[r.kind]](input);
+    }
+    const hex = h.hex(mine.toBer().buffer);
+    check(hex === r.hex, 'node-ldapjs builds the ' + r.kind + ' Rust ' +
+          'encoded (message ' + r.messageId + ')');
+    built++;
+    const skip = (r.referrals && r.referrals.length > 0) ||
+      (r.kind === 'extended' && r.responseValue !== undefined);
+    if (!skip) {
+      const parsed = h.messages.LdapMessage.parse(
+        new asn1.BerReader(Buffer.from(r.hex, 'hex')));
+      check(h.hex(parsed.toBer().buffer) === r.hex, 'node-ldapjs reads ' +
+            'the ' + r.kind + ' Rust encoded back to the same bytes');
+      readBack++;
+    }
+  });
+  check(built > 0 && readBack > 0, built + ' responses Rust encoded are ' +
+        'node-ldapjs\'s, ' + readBack + ' read back');
+  rust.filters.forEach(function (f) {
+    const out = { input: f.input };
+    try {
+      const parsed = h.ldapFilter.parseString(f.input);
+      out.ok = true;
+      out.tree = h.describeFilter(parsed);
+      out.text = parsed.toString();
+      out.ber = h.hex(parsed.toBer().buffer);
+    } catch (e) {
+      out.ok = false;
+      out.error = e.message;
+    }
+    check(same(out, f), 'the filter Rust printed, ' + f.input + ', reads ' +
+          'in Node as Rust reads it');
+  });
+  rust.dns.forEach(function (d) {
+    let out;
+    try {
+      const dn = h.DN.fromString(d.input);
+      out = { input: d.input, ok: true, text: dn.toString(),
+              length: dn.length };
+    } catch (e) {
+      out = { input: d.input, ok: false, error: e.message };
+    }
+    const mine = Object.assign({}, d);
+    delete mine.rdns;
+    check(same(out, mine), 'the DN Rust printed, ' + d.input + ', reads ' +
+          'in Node as Rust reads it');
+  });
+}
+
+module.exports = { build: build, checkRust: checkRust };
