@@ -191,7 +191,23 @@ function algorithmRegistry() {
   };
 }
 
+// THE AUDIT LOG'S VOCABULARY (#444, phase 4): `common/audit.js`'s
+// CATEGORIES, ACTIONS and OUTCOMES, which `sts-audit::vocabulary` reads —
+// the console's filters, the API's `categories` and `actions`, and the
+// category an action is filed under all come from them.
+const AUDIT_DATA = path.join(ROOT, 'rust', 'crates', 'sts-audit', 'tables');
+
+function auditVocabulary() {
+  const audit = require(path.join(ROOT, 'common', 'audit.js'));
+  return JSON.parse(JSON.stringify({
+    categories: audit.CATEGORIES,
+    actions: audit.ACTIONS,
+    outcomes: audit.OUTCOMES
+  }));
+}
+
 const EXPORTS = [
+  { file: 'audit_vocabulary.json', dir: AUDIT_DATA, build: auditVocabulary },
   { file: 'error_codes.json', build: errorCodes },
   { file: 'settings.json', build: settings },
   { file: 'mode.json', build: modeTable },
