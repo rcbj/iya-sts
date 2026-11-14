@@ -828,6 +828,11 @@ function normalise(record) {
   const opaque = new RegExp('(<(?:[A-Za-z0-9]+:)?(?:' + OPAQUE.join('|') +
                             ')(?:\\s[^>]*)?>)[^<]*(</)', 'g');
   const PATTERNS = [
+    // THE PAGE FOOTER (2026-11-14), on every shell and error page: its
+    // version and build line differ per build, and what it holds is
+    // `tests/page_footer.js`'s to check, so here it is one placeholder.
+    ['footer', /<footer class=\\"sts-footer\\".*?<\/footer>/g],
+    ['footercss', /body:has\(>\.sts-footer\).*?\.sts-footer-social\{gap:18px\}\}/g],
     // A message or an artifact in a URL or a form, which `decoded` holds.
     ['param', /\b(SAMLart|SAMLResponse|SAMLRequest|Signature)=[^&"\\\s]+/g],
     ['value', /value=\\"[^"\\]{40,}\\"/g],

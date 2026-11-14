@@ -76,6 +76,7 @@ import WebSafeDom = require('./web_safe_dom');
 import WebI18n = require('./web_i18n');
 import webMessages = require('./web_messages');
 import WebAccounts = require('./web_accounts');
+import WebFooter = require('./web_footer');
 
 type Json = any;
 
@@ -340,9 +341,13 @@ class WebSurface extends WebPage {
     doc.title = title + (brand.name ? ' — ' + brand.name
       : (this.options.brand === undefined ? ' — IYA STS'
                                           : this.options.brand));
+    // THE PAGE FOOTER the shell drew, drawn again below the page in the
+    // browser's language (`common/web_footer.ts`); none where the shell
+    // drew none.
+    const footer = WebFooter.drawnIn(doc, this.t);
     WebSafeDom.render(doc.body,
       WebSurface.realmLinks(
-      WebSurface.brandHeader(brand) + framed, this.prefix));
+      WebSurface.brandHeader(brand) + framed, this.prefix) + footer);
     this.drawnAt = this.env.location.pathname + this.env.location.search;
     this.targetFragment();
     // A PAGE AFTER THE FIRST follows an act or a navigation, which may have

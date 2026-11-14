@@ -114,6 +114,11 @@ interface ShellSpec {
   // How an attribute value or the title is escaped; `&#39;` for an
   // apostrophe where left out (the console passes its `&apos;` one).
   esc?: (value: unknown) => string;
+  // THE PAGE FOOTER (rcbj, 2026-11-14; `common/page_footer.ts`): drawn at
+  // the end of the body, with `/web/footer.css` linked last, unless this is
+  // false — which only a specification's own response says
+  // (`kerberos/spnego_authn.ts`, RFC 4559's exchange).
+  footer?: boolean;
 }
 
 /**
@@ -165,6 +170,11 @@ interface BuiltFile {
  * realm's sign-in appearance (#717).
  */
 const CARD_PATH = '/web/card.css';
+
+/**
+ * The page footer's stylesheet (`common/public_assets.ts`).
+ */
+const FOOTER_PATH = '/web/footer.css';
 
 /**
  * The default viewport.
@@ -251,6 +261,31 @@ class ShellDocument {
   }
 
   /**
+   * The page footer in the ambient request's language
+   * (`common/page_footer.ts`).
+   *
+   * @returns its markup, or '' where it cannot be drawn
+   */
+  static footerHtml(): string {
+    log.debug("Entering ShellDocument.footerHtml().");
+    let out = '';
+    try {
+      // LAZILY, as `branding.ts` is: the footer reads the page's language
+      // through `page_locale.ts`, which a module drawing a shell at load
+      // need not have loaded yet.
+      out = require('./page_footer').html();
+    } catch (e) {
+      // A footer that cannot be drawn leaves the shell without one; it must
+      // not cost the page.
+      log.debug("Caught in ShellDocument.footerHtml(): " +
+                ((e && (e as Error).message) || e));
+      out = '';
+    }
+    log.debug("Leaving ShellDocument.footerHtml(). " + out.length);
+    return out;
+  }
+
+  /**
    * Draws a shell document.
    *
    * @param spec - what it is drawn from
@@ -270,6 +305,15 @@ class ShellDocument {
       });
       stylesheets.splice(at >= 0 ? at + 1 : stylesheets.length, 0,
                          brand.stylesheet);
+    }
+    // EVERY SHELL CARRIES THE FOOTER, drawn here rather than by each surface
+    // for `data-sts-accounts`' reason: no shell can forget it. Its runtime
+    // draws it again from the facts it carries (`WebFooter.drawnIn()`), so
+    // a shell drawn without one gets none from its runtime either.
+    const footer = spec.footer === false ? ''
+      : ShellDocument.footerHtml();
+    if (footer) {
+      stylesheets.push(FOOTER_PATH);
     }
     const attributes = (spec.attributes || []).concat(
       [['data-sts-accounts', ShellDocument.accountsOn() ? 'on' : ''] as
@@ -291,7 +335,7 @@ class ShellDocument {
       '</head><body>' + spec.open +
       (refused ? spec.refusal
                : '<noscript>' + spec.noscript + '</noscript>' + spec.loading) +
-      spec.close + '</body></html>\n';
+      spec.close + footer + '</body></html>\n';
     log.debug("Leaving ShellDocument.document(). " + html.length +
               " characters.");
     return html;

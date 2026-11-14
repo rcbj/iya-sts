@@ -4872,6 +4872,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'shell links (common/web_card_css.ts). Answered on every ' +
           'listener; an address carrying this build\'s ?v= is cached for ' +
           'good.' },
+  { path: '/web/footer.css', group: 'Service',
+    name: 'The page footer\'s stylesheet', specs: [],
+    what: 'NON-SPEC (2026-11-14). The rules of the footer every static ' +
+          'surface\'s shell draws — the documentation, contact and about ' +
+          'links, the social icons, the copyright and the version ' +
+          '(common/web_footer.ts). Answered on every listener; an address ' +
+          'carrying this build\'s ?v= is cached for good.' },
   { path: '/web/theme.css', group: 'Service',
     name: 'A realm\'s sign-in appearance stylesheet', specs: [],
     what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +

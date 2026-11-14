@@ -110,6 +110,7 @@
   "endpoints.route./realms.name": "The trust realm directory",
   "endpoints.route./favicon.ico.name": "The service's icon",
   "endpoints.route./web/card.css.name": "The public surfaces' card stylesheet",
+  "endpoints.route./web/footer.css.name": "The page footer's stylesheet",
   "endpoints.route./web/theme.css.name": "A realm's sign-in appearance stylesheet",
   "endpoints.route./web/branding/logo.name": "A realm's sign-in logo",
   "endpoints.route./web/photo/:id.name": "A person's profile photo",

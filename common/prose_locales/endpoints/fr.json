@@ -443,6 +443,10 @@
     "en": "96ed2387e40a779a",
     "text": "La feuille de style de carte des surfaces publiques"
   },
+  "endpoints.route./web/footer.css.name": {
+    "en": "b1ae9012425d7c77",
+    "text": "La feuille de style du pied de page"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "La feuille de style de l’apparence de connexion d’un domaine"

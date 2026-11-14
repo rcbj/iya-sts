@@ -74,6 +74,7 @@ import WebAnnouncements = require('../common/web_announcements');
 // The realm's brand header and its facts (#717): the one copy the public
 // surfaces draw, read off the shell's `<html>` here as there.
 import WebSurface = require('../common/web_surface');
+import WebFooter = require('../common/web_footer');
 
 type Json = any;
 
@@ -726,9 +727,12 @@ class PortalRuntime extends SpaClient {
     // every shell of a realm that set nothing.
     const brand = WebSurface.brandOf(doc.documentElement);
     doc.title = title + ' — ' + (brand.name || 'IYA STS');
+    // THE PAGE FOOTER the shell drew, below every page, framed or bare, in
+    // the person's language (`common/web_footer.ts`).
+    const footer = WebFooter.drawnIn(doc, this.t);
     WebSafeDom.render(doc.body,
       PortalRuntime.realmLinks(
-      WebSurface.brandHeader(brand) + html, this.prefix));
+      WebSurface.brandHeader(brand) + html, this.prefix) + footer);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     this.drawnAt = this.env.location.pathname + this.env.location.search;

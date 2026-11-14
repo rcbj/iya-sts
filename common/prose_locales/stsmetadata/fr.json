@@ -1219,6 +1219,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC (2026-11-14). Les règles du pied de page que dessine le shell de chaque surface statique — les liens vers la documentation, le contact et la présentation, les icônes des réseaux sociaux, le copyright et la version (common/web_footer.ts). Servie sur chaque écouteur ; une adresse qui porte le ?v= de cette compilation est mise en cache pour toujours."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Les couleurs de connexion du domaine sous forme des propriétés personnalisées CSS que lit /web/card.css (common/branding.ts) : les quatre couleurs branding.* et les tons qui en dérivent, construits uniquement à partir de valeurs validées. Un shell la lie après la carte seulement là où l’apparence du domaine diffère de celle du service ; une adresse portant son condensé en ?v= est mise en cache définitivement."

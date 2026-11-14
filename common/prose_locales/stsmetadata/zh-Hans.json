@@ -1219,6 +1219,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC（2026-11-14）。每个静态界面的外壳所绘制的页脚规则——文档、联系和关于链接、社交媒体图标、版权和版本（common/web_footer.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717)。域的登录颜色，作为 /web/card.css 读取的 CSS 自定义属性（common/branding.ts）：四种 branding.* 颜色以及由它们派生的色调，仅由经过验证的值构建。仅当域的外观与服务的外观不同时，外壳才在卡片之后链接它；带有其摘要作为 ?v= 的地址被永久缓存。"

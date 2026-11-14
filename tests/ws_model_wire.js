@@ -556,6 +556,11 @@ function normalise(record) {
   const opaque = new RegExp('(<(?:[A-Za-z0-9]+:)?(?:' + OPAQUE.join('|') +
                             ')(?:\\s[^>]*)?>)[^<]*(</)', 'g');
   const PATTERNS = [
+    // THE PAGE FOOTER (2026-11-14), on every shell and error page: its
+    // version and build line differ per build, and what it holds is
+    // `tests/page_footer.js`'s to check, so here it is one placeholder.
+    ['footer', /<footer class=\\"sts-footer\\".*?<\/footer>/g],
+    ['footercss', /body:has\(>\.sts-footer\).*?\.sts-footer-social\{gap:18px\}\}/g],
     ['pem', /-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----(\\n)?/g],
     ['jwt', /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g],
     ['value', /value=\\"[^"\\]{40,}\\"/g],

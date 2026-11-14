@@ -73,6 +73,7 @@ import WebAnswers = require('./web_answers');
 import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
+import WebFooter = require('../common/web_footer');
 
 type Json = any;
 
@@ -1385,12 +1386,17 @@ class ConsoleRuntime extends SpaClient {
         WebShell.sectionKeyOf(shell.sections, active));
     }
     this.env.document.title = title + ' — IYA STS admin';
+    // THE PAGE FOOTER the shell drew (`common/web_footer.ts`), below the
+    // frame and so below the runtime facts at the foot of the card: one
+    // footer element, in the console's language.
+    const footer = WebFooter.drawnIn(this.env.document, this.t);
     WebSafeDom.render(this.env.document.body,
       ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
         path: this.here(), t: this.t, openSection: this.openSection,
-        accounts: this.accounts, subject: this.subject }), this.prefix));
+        accounts: this.accounts, subject: this.subject }), this.prefix) +
+      footer);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     // EVERY DRAWING replaces the panels a tab's `:target` named — a page
@@ -1592,6 +1598,7 @@ class ConsoleRuntime extends SpaClient {
    */
   drawProblem(title: string, detail: string): void {
     this.env.document.title = title + ' — IYA STS admin';
+    const footer = WebFooter.drawnIn(this.env.document, this.t);
     WebSafeDom.render(this.env.document.body,
       '<div class="shell"><div ' +
       'class="main"><div class="card"><h1>' + kit.esc(title) + '</h1>' +
@@ -1601,7 +1608,7 @@ class ConsoleRuntime extends SpaClient {
       (this.t.has('consoleRuntime.openConsole')
         ? this.t.html('consoleRuntime.openConsole') : 'Open the console') +
       '</a></p>' +
-      '</div></div></div>');
+      '</div></div></div>' + footer);
   }
 
   // A PERSON THE CONSOLE WILL NOT OPEN FOR (#751). A person holding no
@@ -1638,12 +1645,13 @@ class ConsoleRuntime extends SpaClient {
         WebShell.accountItems(this.accounts, this.subject, t) + '</div>'
       : '';
     this.env.document.title = title + ' — IYA STS admin';
+    const footer = WebFooter.drawnIn(this.env.document, t);
     WebSafeDom.render(this.env.document.body,
       ConsoleRuntime.realmLinks(
       '<div class="shell"><div class="main"><div class="card"><h1>' +
       kit.esc(title) + '</h1>' + kit.note(kit.esc(text)) + menu +
       WebShell.signOutControl({ session: true }, t) +
-      '</div></div></div>', this.prefix));
+      '</div></div></div>', this.prefix) + footer);
   }
 
   // The page row by its path; a drill-down is the same row with its
