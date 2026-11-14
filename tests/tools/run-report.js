@@ -122,6 +122,14 @@
 //   node tests/tools/run-report.js [options]
 //
 //   --only=<substr>[,...]  only these test files / job names
+//   --mode-only=<substr>[,...]
+//                          the MODE's own job filter (2026-11-14), the same
+//                          grammar, INTERSECTED with --only: a job runs only
+//                          if both keep it. ./run-tests.sh passes it for a
+//                          mode whose tests/tools/modes.sh stsModeJobFilter()
+//                          names one (`fuzz`: schemathesis) and for that mode
+//                          alone, so an operator's --only still narrows it and
+//                          can never widen it.
 //   --conformance-only     only the protocol jobs MANIFEST.js marks
 //                          `conformance: true` (the OpenID conformance
 //                          suite's) and no in-process file. By the FLAG and
@@ -273,7 +281,8 @@ const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');
-  const opts = { only: [], list: false, protocol: 'on', parent: '',
+  const opts = { only: [], modeOnly: [], list: false, protocol: 'on',
+                 parent: '',
                  conformanceOnly: false, lanes: [], notLanes: [],
                  reportDir: path.join(TESTS_DIR, 'report'),
                  timeoutMs: 300000, timeoutScale: 1, quiet: false,
@@ -330,6 +339,12 @@ function parseArgs(argv) {
       opts.timeoutMs = Number(a.slice('--timeout='.length));
     } else if (a.indexOf('--timeout-scale=') === 0) {
       opts.timeoutScale = Number(a.slice('--timeout-scale='.length)) || 1;
+    } else if (a.indexOf('--mode-only=') === 0) {
+      a.slice('--mode-only='.length).split(',').forEach(function (p) {
+        if (p.trim()) {
+          opts.modeOnly.push(p.trim());
+        }
+      });
     } else if (a.indexOf('--only=') === 0) {
       a.slice('--only='.length).split(',').forEach(function (p) {
         if (p.trim()) {
@@ -1800,8 +1815,18 @@ async function main() {
 
   // ---- the jobs ---------------------------------------------------------
   const jobs = [];
+  // The mode's own filter (--mode-only), applied after --only, so the two
+  // intersect. Empty keeps everything.
+  const keptByMode = function keptByMode(file) {
+    log.debug('Entering keptByMode().');
+    const kept = !opts.modeOnly.length || opts.modeOnly.some(function (p) {
+      return file.indexOf(p) >= 0;
+    });
+    log.debug('Leaving keptByMode().');
+    return kept;
+  };
   if (wantUnit) {
-    testFiles(opts.only).forEach(function (file) {
+    testFiles(opts.only).filter(keptByMode).forEach(function (file) {
       const name = file.replace(/\.js$/, '');
       jobs.push({ suite: 'unit', name: name, file: file, dir: TESTS_DIR,
                   timeoutMs: UNIT_WATCHDOG_MS[name] || 0 });
@@ -1820,6 +1845,9 @@ async function main() {
         return opts.only.some(function (p) { return j.file.indexOf(p) >= 0; });
       });
     }
+    theirs = theirs.filter(function (j) {
+      return keptByMode(j.file);
+    });
     if (opts.conformanceOnly) {
       theirs = theirs.filter(function (j) {
         return j.conformance;
@@ -1840,7 +1868,9 @@ async function main() {
     // An empty run must never read as a pass — the same rule tests/run.js
     // holds, for the same reason.
     log.error('No jobs to run' + (opts.only.length
-      ? ' matching ' + opts.only.join(', ') : '') + '. Nothing was checked.');
+      ? ' matching ' + opts.only.join(', ') : '') + (opts.modeOnly.length
+      ? ' within this mode\'s own ' + opts.modeOnly.join(', ') : '') +
+      '. Nothing was checked.');
     process.exit(1);
   }
   if (opts.list) {
@@ -2589,4 +2619,8 @@ module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
                    // must not inherit, and a test that computed it for
                    // itself would pass while this file read modes.sh
                    // differently — which is the only way this can break.
-                   stackDeploymentVariables: stackDeploymentVariables };
+                   stackDeploymentVariables: stackDeploymentVariables,
+                   // EXPORTED FOR tests/unit_job_environment.js too
+                   // (2026-11-14): `--mode-only` is parsed apart from
+                   // `--only`, which is what lets the two intersect.
+                   parseArgs: parseArgs };

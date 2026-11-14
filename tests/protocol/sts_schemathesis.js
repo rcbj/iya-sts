@@ -83,7 +83,7 @@ async function test() {
     expectation.declineToRun(log, "not the fuzz mode: STS_TEST_FUZZ is " +
       "unset, so this is the ordinary suite stack and not the dedicated, " +
       "network-isolated product stack this job needs. Run it with " +
-      "`./run-tests.sh --modes=fuzz --only=schemathesis`.");
+      "`./run-tests.sh --modes=fuzz` (or a bare run, whose last mode it is).");
     log.debug("Leaving test(). Skipped.");
     return;
   }
