@@ -317,7 +317,7 @@ fn authzen_client_ca() -> Option<Vec<u8>> {
              asks no caller for a certificate and the AuthZEN endpoints \
              admit nobody: they authenticate by mutual TLS only. Set it to \
              the CA bundle the callers' certificates chain to.",
-            tag("STS-XPEP-0039")
+            tag(codes::STS_XPEP_0039)
         );
         return None;
     };
@@ -327,7 +327,7 @@ fn authzen_client_ca() -> Option<Vec<u8>> {
             tracing::error!(
                 "{}xacml-pep: PEP_AUTHZEN_CLIENT_CA names {} and it could \
                  not be read ({}), so the AuthZEN endpoints admit nobody.",
-                tag("STS-XPEP-0039"),
+                tag(codes::STS_XPEP_0039),
                 path,
                 error
             );
@@ -342,7 +342,7 @@ fn authzen_callers() -> Vec<AuthzenCaller> {
     for problem in &problems {
         tracing::error!(
             "{}xacml-pep: PEP_AUTHZEN_CALLERS: {}.",
-            tag("STS-XPEP-0038"),
+            tag(codes::STS_XPEP_0038),
             problem
         );
     }
@@ -361,7 +361,7 @@ fn authzen_pdp_identifier() -> String {
                 "{}xacml-pep: PEP_AUTHZEN_PDP_IDENTIFIER is \"{}\", which is \
                  not an https origin with no path; the metadata names the \
                  origin each HTTPS request arrives at instead.",
-                tag("STS-XPEP-0045"),
+                tag(codes::STS_XPEP_0045),
                 raw
             );
             String::new()

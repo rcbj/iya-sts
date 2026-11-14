@@ -27,6 +27,7 @@
 
 use regex::Regex;
 use serde_json::{Map, Value};
+use sts_core::errors::codes;
 use sts_xacml::model::{attribute, category, types};
 
 /// One row of the catalogue, as [`parse`] answers it: the category and the
@@ -246,7 +247,7 @@ pub fn reserved_problem(
 
 fn refused(problem: String) -> Result<Row, Problem> {
     Err(Problem {
-        code: "STS-AUTHZEN-0010",
+        code: codes::STS_AUTHZEN_0010.as_str(),
         problem,
     })
 }
@@ -324,7 +325,7 @@ pub fn parse(value: &Value) -> Result<Row, Problem> {
     }
     if object == "context" && RESERVED_CONTEXT.contains(&segments[0]) {
         return Err(Problem {
-            code: "STS-AUTHZEN-0011",
+            code: codes::STS_AUTHZEN_0011.as_str(),
             problem: format!(
                 "context.{} is read by the adapter to choose the caller's \
                  application, and the application a policy sees is the \
@@ -335,7 +336,7 @@ pub fn parse(value: &Value) -> Result<Row, Problem> {
     }
     if object == "context" && BINDING_CONTEXT.contains(&segments[0]) {
         return Err(Problem {
-            code: "STS-AUTHZEN-0011",
+            code: codes::STS_AUTHZEN_0011.as_str(),
             problem: format!(
                 "context.{} is read by the OAuth token-exchange binding's \
                  fixed conversion rules, which a catalogue row may add to \
@@ -420,9 +421,9 @@ pub fn parse(value: &Value) -> Result<Row, Problem> {
         let code = if SUBJECT_CATEGORIES.contains(&category_uri.as_str())
             && bare_name(&attribute_id)
         {
-            "STS-AUTHZEN-0012"
+            codes::STS_AUTHZEN_0012.as_str()
         } else {
-            "STS-AUTHZEN-0011"
+            codes::STS_AUTHZEN_0011.as_str()
         };
         return Err(Problem { code, problem });
     }

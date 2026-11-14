@@ -14,6 +14,8 @@
 //! is ported, its certificate is a self-signed stand-in made at start; the
 //! certificate the Node runtime presents comes from the realm's PKI.
 
+#![forbid(unsafe_code)]
+
 mod solo;
 mod stack;
 

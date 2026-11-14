@@ -124,7 +124,7 @@ fn client_authorities(bundle: Option<&[u8]>) -> Vec<X509> {
                 "{}xacml-pep: PEP_AUTHZEN_CLIENT_CA holds no certificate \
                  OpenSSL can read, so the HTTPS listener asks no caller for \
                  one and the AuthZEN endpoints admit nobody.",
-                tag("STS-XPEP-0039")
+                tag(codes::STS_XPEP_0039)
             );
             Vec::new()
         }

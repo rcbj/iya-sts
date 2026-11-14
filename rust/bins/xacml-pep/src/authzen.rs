@@ -50,6 +50,7 @@
 
 use regex::Regex;
 use serde_json::{json, Map, Value};
+use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_xacml::model::{Decision, StatusCode};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions};
@@ -180,7 +181,7 @@ pub fn admit(
     if !asks_for_certificates {
         return Err(Reply::error(
             401,
-            "STS-XPEP-0039",
+            codes::STS_XPEP_0039.as_str(),
             "This edge PDP authenticates its caller by a client certificate \
              (mutual TLS) on its HTTPS listener, and it is configured with \
              no authority to verify one against (PEP_AUTHZEN_CLIENT_CA), so \
@@ -192,7 +193,7 @@ pub fn admit(
         _ => {
             return Err(Reply::error(
                 401,
-                "STS-XPEP-0035",
+                codes::STS_XPEP_0035.as_str(),
                 "This edge PDP authenticates its caller by a client \
                  certificate (mutual TLS) on its HTTPS listener, and none \
                  was presented.",
@@ -202,7 +203,7 @@ pub fn admit(
     if !peer.verified {
         return Err(Reply::error(
             401,
-            "STS-XPEP-0036",
+            codes::STS_XPEP_0036.as_str(),
             &format!(
                 "The client certificate did not verify against this edge \
                  PDP's PEP_AUTHZEN_CLIENT_CA: {}",
@@ -218,7 +219,7 @@ pub fn admit(
         if !options.authzen_callers_configured {
             return Err(Reply::error(
                 503,
-                "STS-XPEP-0050",
+                codes::STS_XPEP_0050.as_str(),
                 "This edge PDP has not yet pulled from its PDP the callers \
                  the service admits to its AuthZEN API, and has no \
                  PEP_AUTHZEN_CALLERS to decide meanwhile.",
@@ -230,7 +231,7 @@ pub fn admit(
         let Some(found) = local else {
             return Err(Reply::error(
                 403,
-                "STS-XPEP-0037",
+                codes::STS_XPEP_0037.as_str(),
                 "The client certificate verified, and it is not one this \
                  edge PDP admits: PEP_AUTHZEN_CALLERS names the certificates \
                  that may ask, by the SHA-256 of each.",
@@ -244,7 +245,7 @@ pub fn admit(
     if callers.door != "mtls" {
         return Err(Reply::error(
             401,
-            "STS-XPEP-0052",
+            codes::STS_XPEP_0052.as_str(),
             &format!(
                 "The service's realm authenticates its AuthZEN callers by \
                  {} (authzen.callerAuthentication), which a certificate \
@@ -265,7 +266,7 @@ pub fn admit(
     else {
         return Err(Reply::error(
             403,
-            "STS-XPEP-0051",
+            codes::STS_XPEP_0051.as_str(),
             "The client certificate verified, and it is not one the service \
              admits to its AuthZEN API: no caller on the list this edge PDP \
              pulled presents it.",
@@ -274,7 +275,7 @@ pub fn admit(
     if !pulled.endpoints.iter().any(|e| e == endpoint) {
         return Err(Reply::error(
             403,
-            "STS-XPEP-0053",
+            codes::STS_XPEP_0053.as_str(),
             &format!(
                 "The service's access-control policy does not admit this \
                  caller to /access/v1/{}.",
@@ -285,7 +286,7 @@ pub fn admit(
     if options.authzen_callers_configured && local.is_none() {
         return Err(Reply::error(
             403,
-            "STS-XPEP-0054",
+            codes::STS_XPEP_0054.as_str(),
             "The client certificate is one the service admits, and this \
              edge PDP's PEP_AUTHZEN_CALLERS, which narrows who may ask \
              here, does not name it.",
@@ -309,7 +310,7 @@ pub fn application_of(
         if !scope.iter().any(|a| a == asked) {
             return Err((
                 403,
-                "STS-AUTHZEN-0025",
+                codes::STS_AUTHZEN_0025.as_str(),
                 format!(
                     "context.application \"{}\" is not one this caller may \
                      ask about.",
@@ -323,14 +324,14 @@ pub fn application_of(
         1 => Ok(scope[0].clone()),
         0 => Err((
             403,
-            "STS-AUTHZEN-0026",
+            codes::STS_AUTHZEN_0026.as_str(),
             "This caller is scoped to no application. An administrator \
              names the applications a caller may ask about on its entry."
                 .to_string(),
         )),
         n => Err((
             400,
-            "STS-AUTHZEN-0027",
+            codes::STS_AUTHZEN_0027.as_str(),
             format!(
                 "This caller may ask about {} applications, so the request \
                  must name one in context.application.",
@@ -431,7 +432,7 @@ fn forwarded_result(
         return if answer.timed_out {
             ItemResult::failed(
                 504,
-                "STS-XPEP-0055",
+                codes::STS_XPEP_0055.as_str(),
                 format!(
                     "\"{}\" enforces fine-grained authorization, which only \
                      the service decides, and the service did not answer \
@@ -443,7 +444,7 @@ fn forwarded_result(
         } else {
             ItemResult::failed(
                 502,
-                "STS-XPEP-0055",
+                codes::STS_XPEP_0055.as_str(),
                 format!(
                     "\"{}\" enforces fine-grained authorization, which only \
                      the service decides, and the service could not be \
@@ -463,7 +464,7 @@ fn forwarded_result(
             let Some(decision) = decision else {
                 return ItemResult::failed(
                     502,
-                    "STS-XPEP-0058",
+                    codes::STS_XPEP_0058.as_str(),
                     format!(
                         "The service answered the evaluation forwarded for \
                          \"{}\" with something that is not an AuthZEN \
@@ -487,7 +488,7 @@ fn forwarded_result(
         }
         401 | 403 => ItemResult::failed(
             502,
-            "STS-XPEP-0056",
+            codes::STS_XPEP_0056.as_str(),
             format!(
                 "\"{}\" enforces fine-grained authorization, which only the \
                  service decides, and the service refused this edge PDP \
@@ -504,12 +505,12 @@ fn forwarded_result(
         ),
         400 | 413 | 500 | 501 | 503 => ItemResult::failed(
             answer.status,
-            "STS-XPEP-0057",
+            codes::STS_XPEP_0057.as_str(),
             service_message(answer),
         ),
         other => ItemResult::failed(
             502,
-            "STS-XPEP-0057",
+            codes::STS_XPEP_0057.as_str(),
             format!(
                 "\"{}\" enforces fine-grained authorization, which only the \
                  service decides, and the service answered HTTP {} to the \
@@ -556,7 +557,7 @@ impl Pep {
         if !self.options.authzen_enabled {
             return Some(Reply::error(
                 501,
-                "STS-XPEP-0044",
+                codes::STS_XPEP_0044.as_str(),
                 "The AuthZEN API is turned off on this edge PDP \
                  (PEP_AUTHZEN).",
             ));
@@ -564,7 +565,7 @@ impl Pep {
         if !catalogue.loaded || !self.sync.ever_loaded() {
             return Some(Reply::error(
                 503,
-                "STS-XPEP-0043",
+                codes::STS_XPEP_0043.as_str(),
                 "This edge PDP has not yet pulled the policies and the \
                  AuthZEN attribute catalogue from its PDP, so it cannot map \
                  a request as the service maps it.",
@@ -574,7 +575,7 @@ impl Pep {
             return Some(if catalogue.api_object {
                 Reply::error(
                     501,
-                    "STS-AUTHZEN-0013",
+                    codes::STS_AUTHZEN_0013.as_str(),
                     "The AuthZEN API is turned off in this realm \
                      (authzen.enabled, or xacml.enabled, whose engine it \
                      decides with).",
@@ -582,7 +583,7 @@ impl Pep {
             } else {
                 Reply::error(
                     501,
-                    "STS-AUTHZEN-0014",
+                    codes::STS_AUTHZEN_0014.as_str(),
                     "This realm has no sts-authzen-api application, the \
                      AuthZEN API's resource object, so the API is off here.",
                 )
@@ -616,7 +617,7 @@ impl Pep {
         } else {
             return Reply::error(
                 404,
-                "STS-XPEP-0045",
+                codes::STS_XPEP_0045.as_str(),
                 "This edge PDP names its identifier from the origin an HTTPS \
                  request arrives at, or from PEP_AUTHZEN_PDP_IDENTIFIER; ask \
                  over HTTPS, or set it.",
@@ -657,7 +658,7 @@ impl Pep {
         if batch && !catalogue.settings.batch_enabled {
             return Reply::error(
                 501,
-                "STS-AUTHZEN-0039",
+                codes::STS_AUTHZEN_0039.as_str(),
                 &format!(
                     "The batch endpoint is turned off in this realm \
                      (authzen.batchEnabled); {} still answers.",
@@ -686,7 +687,7 @@ impl Pep {
         let Ok(bytes) = body else {
             return Reply::error(
                 413,
-                "STS-XPEP-0046",
+                codes::STS_XPEP_0046.as_str(),
                 &format!(
                     "The request is larger than this edge PDP reads \
                      (PEP_MAX_BODY_BYTES, {} bytes).",
@@ -723,7 +724,7 @@ impl Pep {
         let settings = &catalogue.settings;
         let too_large = Reply::error(
             400,
-            "STS-AUTHZEN-0037",
+            codes::STS_AUTHZEN_0037.as_str(),
             &format!(
                 "The request is larger than this realm's \
                  authzen.maxBodyBytes ({} bytes).",
@@ -738,7 +739,7 @@ impl Pep {
         let Some(given) = parsed.as_object() else {
             return Reply::error(
                 400,
-                "STS-AUTHZEN-0001",
+                codes::STS_AUTHZEN_0001.as_str(),
                 "An access evaluations request is a JSON object.",
             );
         };
@@ -750,7 +751,7 @@ impl Pep {
             Some(_) => {
                 return Reply::error(
                     400,
-                    "STS-AUTHZEN-0003",
+                    codes::STS_AUTHZEN_0003.as_str(),
                     "evaluations must be an array.",
                 )
             }
@@ -767,7 +768,7 @@ impl Pep {
             Some(_) => {
                 return Reply::error(
                     400,
-                    "STS-AUTHZEN-0003",
+                    codes::STS_AUTHZEN_0003.as_str(),
                     "options must be a JSON object.",
                 )
             }
@@ -775,7 +776,7 @@ impl Pep {
         if !SEMANTICS.contains(&semantic.as_str()) {
             return Reply::error(
                 400,
-                "STS-AUTHZEN-0036",
+                codes::STS_AUTHZEN_0036.as_str(),
                 &format!(
                     "options.evaluations_semantic must be one of {}.",
                     SEMANTICS.join(", ")
@@ -785,7 +786,7 @@ impl Pep {
         if items.len() > settings.max_evaluations {
             return Reply::error(
                 400,
-                "STS-AUTHZEN-0038",
+                codes::STS_AUTHZEN_0038.as_str(),
                 &format!(
                     "The request carries {} evaluations, and this realm \
                      answers at most {} in one (authzen.maxEvaluations).",
@@ -828,7 +829,7 @@ impl Pep {
             let one = match merged(given, item) {
                 None => ItemResult::failed(
                     400,
-                    "STS-AUTHZEN-0001",
+                    codes::STS_AUTHZEN_0001.as_str(),
                     "An evaluation is a JSON object.".to_string(),
                 ),
                 Some(request) => {
@@ -879,7 +880,7 @@ impl Pep {
             Err(refusal) => {
                 return ItemResult::failed(
                     refusal.status,
-                    refusal.code,
+                    refusal.code.as_str(),
                     refusal.message,
                 )
             }
@@ -1006,9 +1007,9 @@ impl Pep {
         // the action, the request id, the decision — never a property value,
         // an id the caller sent, or a credential (decision 9 on #563).
         let code = if outcome.fault {
-            "STS-AUTHZEN-0028"
+            codes::STS_AUTHZEN_0028.as_str()
         } else if !outcome.undischargeable.is_empty() {
-            "STS-AUTHZEN-0029"
+            codes::STS_AUTHZEN_0029.as_str()
         } else {
             ""
         };
@@ -1052,7 +1053,7 @@ impl Pep {
             tracing::error!("{}{} {}", tag(code), line, outcome.why);
             return ItemResult::failed(
                 500,
-                "STS-AUTHZEN-0028",
+                codes::STS_AUTHZEN_0028.as_str(),
                 "The PDP could not evaluate the request.".to_string(),
             );
         }
