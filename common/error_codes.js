@@ -14059,6 +14059,13 @@ const CODES = [
       'at a sign-in the sign-in is refused, at a refresh the session is ' +
       'ended.',
     spec: 'HTTP 500 at a sign-in; console: the message; job: logged' },
+  { code: 'STS-FED-0253',
+    summary: 'An OpenID Connect partner\'s ID Token was issued before the ' +
+      'sign-in it answers began, or in the future, beyond ' +
+      'oauth2.clockSkewS either way (OpenID Connect Core 1.0 section ' +
+      '3.1.3.7 step 10; #931). Refused before any code is redeemed or ' +
+      'UserInfo asked.',
+    spec: 'HTTP 401, the refusal page' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +

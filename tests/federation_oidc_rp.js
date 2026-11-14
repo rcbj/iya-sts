@@ -12,7 +12,8 @@
 //   1. the code flow: a good ID Token signs in and UserInfo is asked; an ID
 //      Token with no sub (STS-FED-0195), no iat (0196), a foreign azp
 //      (0197), no nonce (0198), another nonce (0039) or an algorithm other
-//      than the registered one (0208) is refused before UserInfo is asked;
+//      than the registered one (0208), or issued before the sign-in began
+//      or in the future (0253), is refused before UserInfo is asked;
 //      UserInfo answering for another sub is refused (0202); the
 //      administrator's check-partner reads the key set;
 //   2. the hybrid `code id_token` type: PKCE beside it, the front ID
@@ -74,6 +75,12 @@
 //      with nothing dialled; the renewal job keeps the subject; a
 //      registration says tls_client_auth with the subject DN, and the
 //      discovery document's mtls_endpoint_aliases are dialled.
+//      Every request signed afresh (#931's first run, 10am, 10an): a
+//      partner that demands its DPoP nonce at the push, the token endpoint
+//      and the refresh, and a UserInfo that demands one of its own in
+//      WWW-Authenticate: each is answered once more, no client assertion
+//      or request object jti is ever sent twice, and the authorization
+//      server's nonce and UserInfo's are never sent to each other.
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -131,7 +138,23 @@ function childMain() {
     jwk.kid = 'frp-1';
     jwk.use = 'sig';
     jwk.alg = 'RS256';
-    const op = { calls: [], scenario: {}, byToken: {}, bound: {} };
+    const op = { calls: [], scenario: {}, byToken: {}, bound: {}, jtis: [] };
+    // A JWT's claims, unverified: what the partner reads a jti or a DPoP
+    // nonce from. null for anything that is not three base64url parts.
+    const jwtClaimsOf = function (token) {
+      const parts = String(token || '').split('.');
+      if (parts.length !== 3) {
+        return null;
+      }
+      try {
+        return JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+      } catch (e) {
+        // Not a JWT the partner can read: no jti and no nonce, which every
+        // check below reads as missing.
+        op.unreadable = String((e && e.message) || e);
+        return null;
+      }
+    };
     const sign = function (claims) {
       const input = b64u({ alg: 'RS256', kid: 'frp-1', typ: 'JWT' }) + '.' +
                     b64u(claims);
@@ -157,6 +180,53 @@ function childMain() {
         op.calls.push({ path: url.pathname, body: body,
                         auth: String(req.headers.authorization || ''),
                         dpop: String(req.headers.dpop || ''), cert: cert });
+        // EVERY jti A CLIENT ASSERTION OR A REQUEST OBJECT CARRIES (#931's
+        // first run), across the whole child: the suite refuses a second
+        // sight of either (CheckForClientAssertionJtiReuse,
+        // ValidateRequestObjectJti).
+        const sentForm = new URLSearchParams(body);
+        ['client_assertion', 'request'].forEach(function (name) {
+          const sentJwt = jwtClaimsOf(sentForm.get(name));
+          if (sentJwt) {
+            op.jtis.push({ path: url.pathname, kind: name,
+                           jti: String(sentJwt.jti || '') });
+          }
+        });
+        // A PARTNER THAT DEMANDS DPoP NONCES (#931's first run): the
+        // authorization server's at the push and the token endpoint, in
+        // the body (RFC 9449 section 8), and UserInfo's own, in
+        // WWW-Authenticate with the scheme spelt as the suite's
+        // rs-dpop-auth-scheme-case-insensitivity module spells it
+        // (section 9). `demand.rt` limits the refresh check to this case's
+        // token, and UserInfo's to the tokens it issues.
+        const demand = op.scenario.demand;
+        const sentProof = jwtClaimsOf(req.headers.dpop) || {};
+        const proofNonce = String(sentProof.nonce || '');
+        const sentRt = sentForm.get('refresh_token');
+        const asDemanded = demand &&
+          (/\/par$/.test(url.pathname) ||
+           (/\/token$/.test(url.pathname) &&
+            (!sentRt || sentRt === demand.rt)));
+        if (asDemanded && proofNonce !== demand.as) {
+          res.writeHead(400, { 'Content-Type': 'application/json',
+                               'DPoP-Nonce': demand.as });
+          res.end(JSON.stringify({ error: 'use_dpop_nonce' }));
+          return;
+        }
+        const presentedAt = String(req.headers.authorization || '')
+          .replace(/^(Bearer|DPoP) /, '');
+        if (demand && /\/userinfo$/.test(url.pathname) &&
+            (presentedAt === 'at-back' ||
+             presentedAt === 'at-' + demand.rt) &&
+            proofNonce !== demand.rs) {
+          res.writeHead(401, {
+            'WWW-Authenticate': 'dPoP error="use_dpop_nonce", ' +
+              'error_description="Resource server requires nonce in DPoP ' +
+              'proof"',
+            'DPoP-Nonce': demand.rs });
+          res.end();
+          return;
+        }
         const send = function (status, json) {
           res.writeHead(status, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(json));
@@ -408,7 +478,15 @@ function childMain() {
       }, 'STS-FED-0198'],
       ['1g. another nonce', function (s) {
         return claims(s, { nonce: 'n-not-this-one' });
-      }, 'STS-FED-0039']
+      }, 'STS-FED-0039'],
+      // OpenID Connect Core 3.1.3.7 step 10 (#931's first run: the FAPI
+      // 1.0 Advanced plan's iat-is-week-in-past module).
+      ['1h. issued a week before the sign-in began', function (s) {
+        return claims(s, { iat: Math.floor(Date.now() / 1000) - 604800 });
+      }, 'STS-FED-0253'],
+      ['1i. issued an hour in the future', function (s) {
+        return claims(s, { iat: Math.floor(Date.now() / 1000) + 3600 });
+      }, 'STS-FED-0253']
     ];
     for (const one of refusals) {
       got = await codeCase(one[0], one[1], null, one[2]);
@@ -1484,6 +1562,142 @@ function childMain() {
          '10ac. a 2-security refresh answered Bearer ends the session ' +
          '(STS-FED-0251) and UserInfo is not asked',
          bearerRefresh + ' ' + (coded('STS-FED-0251') - before));
+
+    // --- 10am, 10an. every request signed afresh (#931's first run) -------
+    // The conformance suite's FAPI 2 plans failed every module on
+    // CheckForClientAssertionJtiReuse: the use_dpop_nonce retry at the push
+    // and at the token endpoint sent the first attempt's client assertion
+    // again. And UserInfo's nonce challenge, in WWW-Authenticate, was never
+    // answered, so every module that waits for UserInfo timed out. Here the
+    // partner demands its nonce at the push, the token endpoint and the
+    // refresh, and UserInfo demands one of its own: no jti may be seen
+    // twice, UserInfo is asked again with its own nonce, and the two
+    // servers' nonces are never sent to each other.
+    const NJTI = make('frp-fapi-jti-' + stamp, {
+      fedFapi: '2-security', fedDiscovery: 'TRUE',
+      fedRefreshTokens: 'TRUE', fedRefreshEverySeconds: '1',
+      fedSsoUrl: null, fedTokenUrl: null, fedJwksUri: null,
+      fedUserinfoUrl: null });
+    const njtiJar = {};
+    op.calls = [];
+    op.jtis = [];
+    op.par = null;
+    op.scenario = { issuer: opBase, base: opBase, rt: 'rt-nonce',
+      demand: { as: 'as-nonce-1', rs: 'rs-nonce-1', rt: 'rt-nonce' },
+      discovery: { pushed_authorization_request_endpoint: opBase + 'par' },
+      backClaims: function () {
+        return parClaims();
+      } };
+    started = await begin(NJTI, njtiJar);
+    // The push's nonce is held for the token request; the partner moves
+    // on before the code comes back, so that request is challenged too.
+    op.scenario.demand.as = 'as-nonce-1b';
+    r = await call('GET', '/federation/acs/' + NJTI + '?state=' +
+      encodeURIComponent((op.par || new URLSearchParams()).get('state')) +
+      '&code=c-njti&iss=' + encodeURIComponent(opBase), null, njtiJar);
+    const proofNonceOf = function (c) {
+      const parsed = jwtParts(c && c.dpop);
+      return parsed ? String(parsed.claims.nonce || '') : 'no proof';
+    };
+    const njtiOf = function (re) {
+      return op.calls.filter(function (c) {
+        return re.test(c.path);
+      });
+    };
+    const njtiPar = njtiOf(/\/par$/);
+    const njtiToken = njtiOf(/\/token$/);
+    const njtiUser = njtiOf(/\/userinfo$/);
+    op.byToken['rt-nonce'] = { claims: function () {
+      const now = Math.floor(Date.now() / 1000);
+      return { iss: opBase, sub: 'frp-person', aud: 'frp-client', iat: now,
+               exp: now + 300 };
+    } };
+    // Both servers move their nonce on, so the refresh meets a challenge
+    // at each and answers it.
+    op.scenario.demand = { as: 'as-nonce-2', rs: 'rs-nonce-2',
+                           rt: 'rt-nonce' };
+    const signInCalls = op.calls.length;
+    await fedSp.refreshDue(Date.now() + 5000);
+    const njtiRefresh = op.calls.slice(signInCalls).filter(function (c) {
+      return /\/token$/.test(c.path) && /refresh_token=rt-nonce/.test(c.body);
+    });
+    const njtiRefreshUser = op.calls.slice(signInCalls).filter(function (c) {
+      return /\/userinfo$/.test(c.path) && c.auth === 'DPoP at-rt-nonce';
+    });
+    const assertionJtis = op.jtis.filter(function (one) {
+      return one.kind === 'client_assertion';
+    }).map(function (one) {
+      return one.jti;
+    });
+    const distinct = function (list) {
+      return list.every(function (one, i) {
+        return one && list.indexOf(one) === i;
+      });
+    };
+    // This case's six requests, each with an assertion; the refresh also
+    // renews the other cases' held sessions, whose jtis are in the list
+    // too and must be just as distinct.
+    const mine = njtiPar.concat(njtiToken, njtiRefresh).map(function (c) {
+      const sent = jwtParts(new URLSearchParams(c.body)
+        .get('client_assertion'));
+      return sent ? String(sent.claims.jti || '') : '';
+    });
+    note(NJTI === 'frp-fapi-jti-' + stamp && njtiPar.length === 2 &&
+         njtiToken.length === 2 && njtiRefresh.length === 2 &&
+         mine.length === 6 && distinct(mine) && distinct(assertionJtis),
+         '10am. the push, the token request and the refresh are each ' +
+         'answered use_dpop_nonce and sent again, and no client assertion ' +
+         'jti is seen twice',
+         njtiPar.length + ' ' + njtiToken.length + ' ' + njtiRefresh.length +
+         ' ' + JSON.stringify(assertionJtis));
+    note(r.status < 400 && njtiUser.length === 2 &&
+         proofNonceOf(njtiUser[0]) === '' &&
+         proofNonceOf(njtiUser[1]) === 'rs-nonce-1' &&
+         proofNonceOf(njtiPar[0]) === '' &&
+         proofNonceOf(njtiPar[1]) === 'as-nonce-1' &&
+         proofNonceOf(njtiToken[0]) === 'as-nonce-1' &&
+         proofNonceOf(njtiToken[1]) === 'as-nonce-1b' &&
+         njtiRefresh.length === 2 &&
+         proofNonceOf(njtiRefresh[0]) === 'as-nonce-1b' &&
+         proofNonceOf(njtiRefresh[1]) === 'as-nonce-2' &&
+         njtiRefreshUser.length === 2 &&
+         proofNonceOf(njtiRefreshUser[0]) === 'rs-nonce-1' &&
+         proofNonceOf(njtiRefreshUser[1]) === 'rs-nonce-2',
+         '10am. UserInfo\'s challenge in WWW-Authenticate (scheme dPoP) is ' +
+         'answered with its own nonce, at the sign-in and the refresh, and ' +
+         'neither server is sent the other\'s nonce',
+         r.status + ' par=' + njtiPar.map(proofNonceOf).join(',') +
+         ' user=' + njtiUser.map(proofNonceOf).join(',') +
+         ' token=' + njtiToken.map(proofNonceOf).join(',') +
+         ' refresh=' + njtiRefresh.map(proofNonceOf).join(',') +
+         ' refreshUser=' + njtiRefreshUser.map(proofNonceOf).join(','));
+    const NRO = make('frp-fapi-jtims-' + stamp, {
+      fedFapi: '2-message-signing', fedDiscovery: 'TRUE', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    op.calls = [];
+    op.jtis = [];
+    op.scenario = { issuer: opBase, base: opBase,
+      demand: { as: 'as-nonce-ms', rs: 'rs-nonce-ms', rt: '' },
+      discovery: { pushed_authorization_request_endpoint: opBase + 'par' } };
+    started = await begin(NRO, {});
+    const msPushes = njtiOf(/\/par$/);
+    const kinds = function (kind) {
+      return op.jtis.filter(function (one) {
+        return one.kind === kind;
+      }).map(function (one) {
+        return one.jti;
+      });
+    };
+    note(NRO === 'frp-fapi-jtims-' + stamp && started.status === 302 &&
+         msPushes.length === 2 && kinds('request').length === 2 &&
+         distinct(kinds('request')) &&
+         kinds('client_assertion').length === 2 &&
+         distinct(kinds('client_assertion')),
+         '10an. message signing\'s retried push carries a new request ' +
+         'object and a new client assertion, each with a jti of its own',
+         started.status + ' ' + msPushes.length + ' ' +
+         JSON.stringify(op.jtis));
+    op.scenario = {};
 
     // --- 10ad-10ak. 1-advanced over mutual TLS (#931, rcbj 2026-11-13) ----
     const fedClientCert = require(ROOT_DIR +
