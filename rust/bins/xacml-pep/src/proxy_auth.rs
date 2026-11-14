@@ -145,10 +145,6 @@ impl Authenticator {
         }
     }
 
-    pub fn client(&self) -> &PdpClient {
-        &self.client
-    }
-
     /// The realm's JWKS: the cached one while it is fresh, else fetched.
     /// `force` asks again whatever the age — once after an ordinary fetch,
     /// then at most once per [`FORCED_REFETCH_FLOOR`]. A failed fetch keeps
@@ -265,7 +261,7 @@ impl Authenticator {
                 if let Some(why) = jwt::claims_problem(
                     &claims,
                     &realm.issuer,
-                    &route.audience,
+                    &route.resolved.audiences,
                     now_s(),
                 ) {
                     return Err(Refusal::token(
@@ -333,7 +329,12 @@ impl Authenticator {
                 "the introspected token's issuer is not the realm's",
             ));
         }
-        if !jwt::audience_has(&said["aud"], &route.audience) {
+        let addressed = route
+            .resolved
+            .audiences
+            .iter()
+            .any(|a| jwt::audience_has(&said["aud"], a));
+        if !addressed {
             return Err(Refusal::token(
                 "STS-XPEP-0074",
                 "the introspected token's audience is not this route's",
@@ -378,7 +379,7 @@ impl Authenticator {
                 xml,
                 &realm.signing_certificates,
                 &realm.saml_issuer,
-                &route.audience,
+                &route.resolved.saml_audience,
                 chrono::Utc::now(),
             ),
             Err(_) => Outcome::CannotEstablish("it is not UTF-8".into()),
@@ -424,7 +425,7 @@ impl Authenticator {
                 Method::POST,
                 url,
                 Some(Body::Json(json!({ "assertion": encoded,
-                                        "audience": route.audience }))),
+                                        "audience": route.resolved.saml_audience }))),
                 &[],
                 None,
             )

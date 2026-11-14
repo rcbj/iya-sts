@@ -272,18 +272,20 @@ pub fn audience_has(aud: &Value, audience: &str) -> bool {
     }
 }
 
-/// The claims every token here is held to: the issuer, the audience, and
-/// the time window, `exp` required.
+/// The claims every token here is held to: the issuer, one of the
+/// audiences (D10: those the service writes into an access token for the
+/// route's application — any of them admits), and the time window, `exp`
+/// required.
 pub fn claims_problem(
     claims: &Value,
     issuer: &str,
-    audience: &str,
+    audiences: &[String],
     now: i64,
 ) -> Option<&'static str> {
     if issuer.is_empty() || claims["iss"].as_str() != Some(issuer) {
         return Some("the issuer is not the realm's");
     }
-    if !audience_has(&claims["aud"], audience) {
+    if !audiences.iter().any(|a| audience_has(&claims["aud"], a)) {
         return Some("the audience is not this route's");
     }
     let Some(exp) = claims["exp"].as_i64() else {
@@ -503,21 +505,33 @@ mod tests {
         let now = 1_800_000_000;
         let ok = json!({ "iss": "https://sts/r", "aud": ["x", "api"],
                          "exp": now + 10 });
-        assert_eq!(claims_problem(&ok, "https://sts/r", "api", now), None);
+        let api = vec!["other-api".to_string(), "api".to_string()];
+        assert_eq!(
+            claims_problem(&ok, "https://sts/r", &api, now),
+            None,
+            "any of the application's audiences admits"
+        );
+        assert!(claims_problem(&ok, "https://sts/r", &[], now).is_some());
         let mut bad = ok.clone();
         bad["iss"] = json!("https://other");
-        assert!(claims_problem(&bad, "https://sts/r", "api", now).is_some());
-        assert!(claims_problem(&ok, "https://sts/r", "other", now).is_some());
-        assert!(claims_problem(&ok, "", "api", now).is_some());
+        assert!(claims_problem(&bad, "https://sts/r", &api, now).is_some());
+        assert!(claims_problem(
+            &ok,
+            "https://sts/r",
+            &["other".to_string()],
+            now
+        )
+        .is_some());
+        assert!(claims_problem(&ok, "", &api, now).is_some());
         let mut expired = ok.clone();
         expired["exp"] = json!(now - SKEW_S - 1);
-        assert!(claims_problem(&expired, "https://sts/r", "api", now).is_some());
+        assert!(claims_problem(&expired, "https://sts/r", &api, now).is_some());
         let mut early = ok.clone();
         early["nbf"] = json!(now + SKEW_S + 5);
-        assert!(claims_problem(&early, "https://sts/r", "api", now).is_some());
+        assert!(claims_problem(&early, "https://sts/r", &api, now).is_some());
         let mut no_exp = ok.clone();
         no_exp.as_object_mut().unwrap().remove("exp");
-        assert!(claims_problem(&no_exp, "https://sts/r", "api", now).is_some());
+        assert!(claims_problem(&no_exp, "https://sts/r", &api, now).is_some());
 
         assert_eq!(confirmation_problem(&Value::Null, None), None);
         let hex = "ab".repeat(32);

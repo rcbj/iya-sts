@@ -23458,20 +23458,22 @@ const CODES = [
     spec: 'HTTP 401, unauthorized' },
   { code: 'STS-XPEP-0082',
     summary: 'The reverse proxy refused a sign-in callback ' +
-      '(/.iya-pep/callback): an unknown, spent or expired state, an error ' +
-      'from the authorization server, no code, or a code the token ' +
-      'endpoint would not redeem (#1760).',
+      '(/.iya-pep/callback): an unknown, spent or expired state, or a ' +
+      'sign-in whose relying party is no longer held (#1760).',
     spec: 'HTTP 401, unauthorized' },
   { code: 'STS-XPEP-0083',
-    summary: 'The reverse proxy refused the ID Token of a sign-in: it could ' +
-      'not be verified against the realm\'s JWKS, or its issuer, audience ' +
-      '(the PEP\'s client), azp, nonce or exp does not hold, or it carries ' +
-      'no sid or sub (#1760).',
+    summary: 'The relying party library (oidc-caep-risc) refused to ' +
+      'complete a reverse proxy sign-in: an error from the authorization ' +
+      'server, no code, a code already used, a token endpoint that would ' +
+      'not redeem it with the application\'s client authentication, or an ' +
+      'ID Token whose signature, issuer, audience, nonce, iat, exp, typ or ' +
+      'at_hash does not hold (#1760).',
     spec: 'HTTP 401, unauthorized' },
   { code: 'STS-XPEP-0084',
-    summary: 'The service (POST /xacml/pep/session) said the sign-on session ' +
-      'behind a proxy session is no longer live — a sign-out at the ' +
-      'service — so the proxy session is ended (#1760).',
+    summary: 'The sign-on session behind a proxy session has ended at the ' +
+      'service — a CAEP/RISC signal on the library\'s poll stream removed ' +
+      'it, or (signals off) POST /xacml/pep/session said it is not live — ' +
+      'so the proxy session is ended (#1760).',
     spec: 'HTTP 302 to sign in for a browser, otherwise HTTP 401' },
   { code: 'STS-XPEP-0085',
     summary: 'The reverse proxy could not make a proxy session: ' +
@@ -23500,9 +23502,12 @@ const CODES = [
       'whose scheme the route does not take (#1760).',
     spec: 'HTTP 401, unauthorized, with a WWW-Authenticate per mechanism' },
   { code: 'STS-XPEP-0090',
-    summary: 'A session route of the reverse proxy was reached and the pull ' +
-      'named no client, no authorization endpoint or no token endpoint for ' +
-      'this PEP, so nobody can be signed in (#1760).',
+    summary: 'The relying party of the application behind a session route ' +
+      'could not be built from the pull: the library refused the ' +
+      'configuration (an http issuer without PEP_PROXY_RP_ALLOW_INSECURE, a ' +
+      'redirect URI that is not https or loopback, a public client), or the ' +
+      'service\'s discovery document could not be read, so nobody can be ' +
+      'signed in there (#1760).',
     spec: 'HTTP 503, temporarily_unavailable' },
   { code: 'STS-XPEP-0091',
     summary: 'The upstream URL the reverse proxy built for a request would ' +
@@ -23515,6 +23520,20 @@ const CODES = [
       'or the client to the upstream would not build (#1760).',
     spec: 'HTTP 502 when the client would not build; otherwise none' },
   // ===== AUTHZEN ===========================================================
+  { code: 'STS-XPEP-0093',
+    summary: 'The reverse proxy refused a request on a route whose ' +
+      'application the service no longer resolves (deleted, or no longer ' +
+      'qualifying for the route\'s mechanisms): the pull marked it usable: ' +
+      'false. Never admitted on what an earlier pull said; the reason is ' +
+      'in the log only (#1760, D10).',
+    spec: 'HTTP 403, access_denied' },
+  { code: 'STS-XPEP-0094',
+    summary: 'The CAEP/RISC receiver of a session route\'s relying party ' +
+      'would not start (the service\'s SSF configuration, stream or ' +
+      'client-credentials token could not be had), so that application\'s ' +
+      'proxy sessions are checked with POST /xacml/pep/session instead ' +
+      'until a later pull rebuilds it (#1760).',
+    spec: 'none; the fallback decides liveness' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

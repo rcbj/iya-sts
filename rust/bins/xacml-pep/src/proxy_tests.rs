@@ -3,12 +3,17 @@
 
 //! THE REVERSE PROXY OVER REAL SOCKETS (#1760): this container's proxy on
 //! a loopback port, in front of a mock application that echoes what
-//! reached it, beside a mock service answering the JWKS, the token
-//! endpoint and the four validation endpoints — each mechanism admitted and
-//! refused, the route table's refusals, the body bound, the upstream's
-//! failures, the headers that may not cross, and the session flow from the
-//! redirect to a sign-out at the service ending it. Every key is made at
-//! run time.
+//! reached it, beside a mock service that is everything the proxy talks
+//! to — the four validation endpoints, and an OpenID provider and Shared
+//! Signals poll transmitter good enough for the `oidc-caep-risc` library
+//! (discovery, JWKS, a `client_secret_basic` token endpoint answering the
+//! code and client-credentials grants with an ID Token carrying `typ` and
+//! `at_hash`, the SSF configuration, a stream and a poll endpoint). Each
+//! mechanism admitted and refused, the route table's refusals, the body
+//! bound, the upstream's failures, the headers that may not cross, D10's
+//! unusable routes, and the session flow from the redirect to a sign-out
+//! at the service ending it — by the session endpoint and by a CAEP
+//! session-revoked. Every key is made at run time.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -19,42 +24,54 @@ use std::time::Duration;
 
 use axum::body::Bytes;
 use axum::extract::{Json, Request};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use hyper::body::{Body as HttpBody, Frame};
+use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
+use openssl::sign::Signer;
 use serde_json::{json, Value};
 
+use crate::jwt::b64url_encode;
 use crate::jwt::testing::{jwk_of, rsa_key, sign};
 use crate::listener::HttpsListener;
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
 use crate::pip::RemotePip;
 use crate::proxy::{self, Proxy};
-use crate::rp_session::code_challenge;
 use crate::saml_verify::testing as saml;
 use crate::service::Pep;
 use crate::sync::Sync;
 
 const AUD: &str = "https://app.example/api";
-const ISSUER: &str = "https://sts.example/realm/r1";
 const SAML_ISSUER: &str = "https://sts.example/realm/r1";
-const CLIENT: &str = "xacml-pep-pep-1";
+/// The application behind `/app` (signals off: the session endpoint).
+const CLIENT: &str = "pep-app";
+/// The application behind `/live` (signals on: the CAEP/RISC stream).
+const LIVE_CLIENT: &str = "pep-live";
+const SECRET: &str = "the-application-secret";
+const SESSION_REVOKED: &str =
+    "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
 
 /// What the mock service has been told and has seen.
 #[derive(Default)]
 struct ServiceState {
+    issuer: String,
     jwks: Value,
     live: HashSet<String>,
     /// (code_challenge, nonce, sid) the next code redemption answers for.
     expect: Option<(String, String, String)>,
+    /// SETs waiting on the poll stream.
+    queued: Vec<(String, String)>,
     saml_calls: u32,
     introspect_calls: u32,
     jwks_fetches: u32,
+    polls: u32,
 }
 
 struct Harness {
     proxy: String,
+    proxied: Arc<Proxy>,
     service: Arc<Mutex<ServiceState>>,
     key: Arc<PKey<Private>>,
     sync: Arc<Sync>,
@@ -69,14 +86,18 @@ const POLICY: &str = r#"<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:
 <Rule RuleId="no-secret" Effect="Deny"><Target><AnyOf><AllOf><Match MatchId="urn:oasis:names:tc:xacml:1.0:function:anyURI-equal"><AttributeValue DataType="http://www.w3.org/2001/XMLSchema#anyURI">urn:app:secret</AttributeValue><AttributeDesignator Category="urn:oasis:names:tc:xacml:3.0:attribute-category:resource" AttributeId="urn:oasis:names:tc:xacml:1.0:resource:resource-id" DataType="http://www.w3.org/2001/XMLSchema#anyURI" MustBePresent="false"/></Match></AllOf></AnyOf></Target></Rule>
 <Rule RuleId="everyone-else" Effect="Permit"/></Policy>"#;
 
-async fn serve(router: axum::Router) -> u16 {
-    let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = socket.local_addr().unwrap().port();
+async fn serve_on(socket: tokio::net::TcpListener, router: axum::Router) {
     tokio::spawn(async move {
         if let Err(error) = axum::serve(socket, router).await {
             eprintln!("a mock stopped: {}", error);
         }
     });
+}
+
+async fn serve(router: axum::Router) -> u16 {
+    let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = socket.local_addr().unwrap().port();
+    serve_on(socket, router).await;
     port
 }
 
@@ -118,22 +139,143 @@ async fn upstream() -> u16 {
     serve(axum::Router::new().fallback(echo)).await
 }
 
-fn id_token(key: &PKey<Private>, nonce: &str, sid: &str) -> String {
+/// A compact JWS with the header given, RS256 under `key`.
+fn jws(key: &PKey<Private>, header: &Value, claims: &Value) -> String {
+    let input = format!(
+        "{}.{}",
+        b64url_encode(header.to_string().as_bytes()),
+        b64url_encode(claims.to_string().as_bytes())
+    );
+    let mut signer = Signer::new(MessageDigest::sha256(), key).unwrap();
+    let sig = signer.sign_oneshot_to_vec(input.as_bytes()).unwrap();
+    format!("{}.{}", input, b64url_encode(&sig))
+}
+
+/// An ID Token as the library holds one to (OpenID Connect Core 3.1.3.7):
+/// `typ` JWT, the nonce, `iat`, and the access token's `at_hash`.
+fn id_token(
+    key: &PKey<Private>,
+    issuer: &str,
+    client: &str,
+    nonce: &str,
+    sid: &str,
+    access_token: &str,
+) -> String {
     let now = chrono::Utc::now().timestamp();
-    sign(
+    let digest = openssl::sha::sha256(access_token.as_bytes());
+    jws(
         key,
-        "RS256",
-        "k1",
-        &json!({ "iss": ISSUER, "aud": CLIENT, "sub": "urn:uuid:carol",
+        &json!({ "alg": "RS256", "kid": "k1", "typ": "JWT" }),
+        &json!({ "iss": issuer, "aud": client, "sub": "urn:uuid:carol",
                  "preferred_username": "carol", "nonce": nonce, "sid": sid,
+                 "at_hash": b64url_encode(&digest[..16]),
                  "exp": now + 300, "iat": now }),
     )
+}
+
+/// A CAEP session-revoked SET naming the service's session `sid`.
+fn session_revoked(key: &PKey<Private>, issuer: &str, sid: &str) -> String {
+    jws(
+        key,
+        &json!({ "alg": "RS256", "kid": "k1", "typ": "secevent+jwt" }),
+        &json!({ "iss": issuer, "jti": format!("set-{}", sid),
+                 "iat": chrono::Utc::now().timestamp(),
+                 "sub_id": { "format": "complex",
+                             "session": { "format": "opaque", "id": sid } },
+                 "events": { SESSION_REVOKED: {} } }),
+    )
+}
+
+/// The client authentication the token endpoint takes:
+/// `client_secret_basic` for either application.
+fn authenticated(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get("authorization")?.to_str().ok()?;
+    let encoded = value.strip_prefix("Basic ")?;
+    let decoded =
+        String::from_utf8(openssl::base64::decode_block(encoded).ok()?).ok()?;
+    let (id, secret) = decoded.split_once(':')?;
+    let id = id.replace("%2D", "-");
+    ((id == CLIENT || id == LIVE_CLIENT) && secret == SECRET).then_some(id)
 }
 
 async fn service(
     state: Arc<Mutex<ServiceState>>,
     key: Arc<PKey<Private>>,
 ) -> u16 {
+    let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = socket.local_addr().unwrap().port();
+    let base = format!("http://127.0.0.1:{}", port);
+    state.lock().unwrap().issuer = base.clone();
+    let discovery = {
+        let base = base.clone();
+        move || {
+            let b = base.clone();
+            async move {
+                Json(json!({
+                    "issuer": b,
+                    "authorization_endpoint": format!("{}/authorize", b),
+                    "token_endpoint": format!("{}/token", b),
+                    "jwks_uri": format!("{}/jwks", b),
+                    "end_session_endpoint": format!("{}/logout", b),
+                    "response_types_supported": ["code"],
+                    "subject_types_supported": ["public"],
+                    "id_token_signing_alg_values_supported": ["RS256"],
+                    "token_endpoint_auth_methods_supported":
+                        ["client_secret_basic", "client_secret_post"],
+                    "code_challenge_methods_supported": ["S256"],
+                    "grant_types_supported":
+                        ["authorization_code", "client_credentials"]
+                }))
+            }
+        }
+    };
+    let ssf_configuration = {
+        let base = base.clone();
+        move || {
+            let b = base.clone();
+            async move {
+                Json(json!({
+                    "issuer": b,
+                    "jwks_uri": format!("{}/jwks", b),
+                    "configuration_endpoint": format!("{}/ssf/streams", b),
+                    "delivery_methods_supported": ["urn:ietf:rfc:8936"]
+                }))
+            }
+        }
+    };
+    let streams_list = || async { Json(json!([])) };
+    let streams_create = {
+        let base = base.clone();
+        move |headers: HeaderMap| {
+            let b = base.clone();
+            async move {
+                // Every transmitter call carries the client-credentials
+                // token the library got with the application's secret.
+                if headers.get("authorization").and_then(|v| v.to_str().ok())
+                    != Some("Bearer cc-token")
+                {
+                    return (StatusCode::UNAUTHORIZED, Json(json!({})));
+                }
+                (
+                    StatusCode::CREATED,
+                    Json(json!({ "stream_id": "s1",
+                        "delivery": { "method": "urn:ietf:rfc:8936",
+                                      "endpoint_url": format!("{}/ssf/poll", b) } })),
+                )
+            }
+        }
+    };
+    let s0 = state.clone();
+    let poll = move || {
+        let s = s0.clone();
+        async move {
+            let mut g = s.lock().unwrap();
+            g.polls += 1;
+            let sets: serde_json::Map<String, Value> =
+                g.queued.drain(..).map(|(j, t)| (j, json!(t))).collect();
+            Json(json!({ "sets": sets, "moreAvailable": false }))
+        }
+    };
     let s1 = state.clone();
     let jwks = move || {
         let s = s1.clone();
@@ -147,16 +289,18 @@ async fn service(
     let introspect = move |Json(body): Json<Value>| {
         let s = s2.clone();
         async move {
-            s.lock().unwrap().introspect_calls += 1;
+            let mut g = s.lock().unwrap();
+            g.introspect_calls += 1;
+            let issuer = g.issuer.clone();
             Json(match body["token"].as_str().unwrap_or("") {
                 "opaque-good" => json!({ "active": true, "aud": [AUD],
-                    "iss": ISSUER, "sub": "urn:uuid:7", "username": "bob" }),
+                    "iss": issuer, "sub": "urn:uuid:7", "username": "bob" }),
                 "opaque-wrong-aud" => json!({ "active": true,
-                    "aud": "https://other", "iss": ISSUER, "sub": "x" }),
+                    "aud": "https://other", "iss": issuer, "sub": "x" }),
                 "opaque-other-iss" => json!({ "active": true, "aud": AUD,
                     "iss": "https://other.example", "sub": "x" }),
                 "opaque-jkt" => json!({ "active": true, "aud": AUD,
-                    "iss": ISSUER, "sub": "x", "cnf": { "jkt": "abc" } }),
+                    "iss": issuer, "sub": "x", "cnf": { "jkt": "abc" } }),
                 _ => json!({ "active": false }),
             })
         }
@@ -212,10 +356,16 @@ async fn service(
         }
     };
     let s5 = state.clone();
-    let token = move |body: String| {
+    let token = move |headers: HeaderMap, body: String| {
         let s = s5.clone();
         let key = key.clone();
         async move {
+            let Some(client) = authenticated(&headers) else {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({ "error": "invalid_client" })),
+                );
+            };
             let form: Vec<(String, String)> =
                 reqwest::Url::parse(&format!("http://x/?{}", body))
                     .unwrap()
@@ -228,13 +378,23 @@ async fn service(
                     .map(|(_, v)| v.clone())
                     .unwrap_or_default()
             };
-            let expect = s.lock().unwrap().expect.clone();
+            if get("grant_type") == "client_credentials" {
+                return (
+                    StatusCode::OK,
+                    Json(json!({ "access_token": "cc-token",
+                        "token_type": "Bearer", "expires_in": 300 })),
+                );
+            }
+            let (issuer, expect) = {
+                let g = s.lock().unwrap();
+                (g.issuer.clone(), g.expect.clone())
+            };
             let Some((challenge, nonce, sid)) = expect else {
                 return (StatusCode::BAD_REQUEST, Json(json!({})));
             };
             // PKCE: the verifier must be the challenge's.
-            if code_challenge(&get("code_verifier")) != challenge
-                || get("client_id") != CLIENT
+            if oidc_caep_risc::code_challenge_s256(&get("code_verifier"))
+                != challenge
                 || get("grant_type") != "authorization_code"
             {
                 return (
@@ -247,24 +407,51 @@ async fn service(
             } else {
                 nonce
             };
+            let access = format!("at-{}", sid);
             (
                 StatusCode::OK,
-                Json(json!({ "id_token": id_token(&key, &nonce, &sid),
-                             "access_token": "x", "token_type": "Bearer" })),
+                Json(json!({
+                    "id_token":
+                        id_token(&key, &issuer, &client, &nonce, &sid, &access),
+                    "access_token": access, "token_type": "Bearer",
+                    "expires_in": 300 })),
             )
         }
     };
     let router = axum::Router::new()
+        .route("/.well-known/openid-configuration", get(discovery))
+        .route("/.well-known/ssf-configuration", get(ssf_configuration))
+        .route("/ssf/streams", get(streams_list).post(streams_create))
+        .route("/ssf/poll", post(poll))
         .route("/jwks", get(jwks))
         .route("/introspect", post(introspect))
         .route("/basic", post(basic))
         .route("/saml", post(saml_check))
         .route("/session", post(session))
         .route("/token", post(token));
-    serve(router).await
+    serve_on(socket, router).await;
+    port
+}
+
+fn resolved_for(audiences: bool, saml: bool, client: &str) -> Value {
+    let mut out = json!({ "usable": true });
+    if audiences {
+        out["audiences"] = json!(["https://other.example/api", AUD]);
+    }
+    if saml {
+        out["samlAudience"] = json!(AUD);
+    }
+    if !client.is_empty() {
+        out["clientId"] = json!(client);
+    }
+    out
 }
 
 fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
+    let client = json!({ "clientSecret": SECRET,
+        "tokenEndpointAuthMethod": "client_secret_basic",
+        "redirectUri": "https://proxy.example/.iya-pep/callback",
+        "scopes": ["openid", "profile"] });
     json!({
         "syncToken": "p1", "pep": "pep-1", "configured": true,
         "proxy": {
@@ -277,30 +464,44 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
                 { "id": "public", "path": "/public", "methods": ["GET", "HEAD"],
                   "public": true, "subjectHeader": "X-Remote-User" },
                 { "id": "api", "path": "/api", "methods": ["GET", "POST"],
-                  "mechanisms": ["oauth2", "basic"], "audience": AUD,
+                  "mechanisms": ["oauth2", "basic"], "application": "api-app",
+                  "resolved": resolved_for(true, false, ""),
                   "subjectHeader": "X-Remote-User",
                   "mechanismHeader": "X-Remote-Auth" },
                 { "id": "saml", "path": "/saml", "mechanisms": ["saml2"],
-                  "audience": AUD, "subjectHeader": "X-Remote-User" },
+                  "application": "saml-app",
+                  "resolved": resolved_for(false, true, ""),
+                  "subjectHeader": "X-Remote-User" },
                 { "id": "app", "path": "/app", "mechanisms": ["session"],
+                  "application": CLIENT, "signals": false,
+                  "resolved": resolved_for(false, false, CLIENT),
+                  "subjectHeader": "X-Remote-User" },
+                { "id": "live", "path": "/live", "mechanisms": ["session"],
+                  "application": LIVE_CLIENT,
+                  "resolved": resolved_for(false, false, LIVE_CLIENT),
                   "subjectHeader": "X-Remote-User" },
                 { "id": "fwd", "path": "/fwd", "mechanisms": ["basic"],
-                  "forwardCredentials": true },
+                  "application": "fwd-app", "forwardCredentials": true,
+                  "resolved": resolved_for(false, false, "") },
                 { "id": "secret", "path": "/secret", "match": "exact",
-                  "mechanisms": ["basic"], "resource": "urn:app:secret" },
+                  "mechanisms": ["basic"], "resource": "urn:app:secret",
+                  "application": "secret-app",
+                  "resolved": resolved_for(false, false, "") },
+                { "id": "gone", "path": "/gone", "mechanisms": ["basic"],
+                  "application": "deleted-app",
+                  "resolved": { "usable": false,
+                                "why": "the application was deleted",
+                                "code": "STS-XACML-0999" } },
                 { "id": "slow", "path": "/slow", "match": "exact",
                   "public": true }
             ]
         },
         "realm": {
-            "issuer": ISSUER, "jwksUri": format!("{}/jwks", service),
-            "authorizationEndpoint": "https://sts.example/realm/r1/oauth2/authorize",
-            "tokenEndpoint": format!("{}/token", service),
-            "endSessionEndpoint": "https://sts.example/realm/r1/oauth2/logout",
+            "issuer": service, "jwksUri": format!("{}/jwks", service),
             "samlIssuer": SAML_ISSUER,
             "signingCertificates": [cert_pem],
-            "clientId": CLIENT,
-            "redirectUri": "https://proxy.example/.iya-pep/callback"
+            "tlsCaChain": "",
+            "clients": { CLIENT: client.clone(), LIVE_CLIENT: client }
         },
         "validation": {
             "introspect": format!("{}/introspect", service),
@@ -325,6 +526,9 @@ async fn harness() -> Harness {
     options.pdp_url = service_base.clone();
     options.pip_enabled = false;
     options.proxy_session_recheck_ms = 0;
+    // The mock provider is plain http on loopback.
+    options.proxy_rp_allow_insecure = true;
+    options.proxy_signals_poll_ms = 100;
     let client = PdpClient::new(&options).unwrap();
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
     sync.load_for_test(&json!({ "syncToken": "1", "policies": [
@@ -344,11 +548,14 @@ async fn harness() -> Harness {
         Arc::new(HttpsListener::new("", "", 0, 1000, None)),
     ));
     let proxy = Arc::new(Proxy::new(pep, client));
+    // What the poll does after every pull: the relying parties built.
+    proxy.reconcile().await;
     let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = socket.local_addr().unwrap().port();
-    tokio::spawn(proxy::serve_on(proxy, socket));
+    tokio::spawn(proxy::serve_on(proxy.clone(), socket));
     Harness {
         proxy: format!("http://127.0.0.1:{}", port),
+        proxied: proxy,
         service: state,
         key,
         sync,
@@ -373,7 +580,7 @@ impl Harness {
 
     fn claims(&self) -> Value {
         let now = chrono::Utc::now().timestamp();
-        json!({ "iss": ISSUER, "aud": AUD, "sub": "urn:uuid:alice",
+        json!({ "iss": self.service_base, "aud": AUD, "sub": "urn:uuid:alice",
                 "username": "alice", "exp": now + 300 })
     }
 }
@@ -854,66 +1061,87 @@ fn member(pairs: &[(String, String)], key: &str) -> String {
         .unwrap_or_default()
 }
 
+impl Harness {
+    /// A browser sent to sign in on `path`: the library's authorization
+    /// URL, and the mock told what the code it redeems answers for.
+    async fn send_to_sign_in(
+        &self,
+        path: &str,
+        sid: &str,
+    ) -> Vec<(String, String)> {
+        let r = self
+            .get(path)
+            .header("accept", "text/html")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 302, "{}", path);
+        let location = r.headers()["location"].to_str().unwrap().to_string();
+        assert!(
+            location.starts_with(&format!("{}/authorize?", self.service_base)),
+            "{}",
+            location
+        );
+        let q = query_of(&location);
+        self.service.lock().unwrap().expect = Some((
+            member(&q, "code_challenge"),
+            member(&q, "nonce"),
+            sid.into(),
+        ));
+        q
+    }
+
+    /// The callback with `code`: the cookie pair it set, when it did.
+    async fn come_back(&self, code: &str, state: &str) -> reqwest::Response {
+        self.get(&format!("/.iya-pep/callback?code={}&state={}", code, state))
+            .send()
+            .await
+            .unwrap()
+    }
+}
+
+fn cookie_of(r: &reqwest::Response) -> String {
+    r.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string()
+}
+
 #[tokio::test]
-async fn the_session_flow_and_a_sign_out_at_the_service() {
+async fn the_session_flow_through_the_library_and_a_sign_out_at_the_service() {
     let h = harness().await;
     // A non-browser with no session: 401.
     assert_eq!(h.get("/app/page").send().await.unwrap().status(), 401);
-    // A browser: sent to sign in, PKCE S256, the original URL kept here.
-    let r = h
-        .get("/app/page?x=1")
-        .header("accept", "text/html")
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 302);
-    let location = r.headers()["location"].to_str().unwrap().to_string();
-    assert!(
-        location.starts_with("https://sts.example/realm/r1/oauth2/authorize?")
-    );
-    let q = query_of(&location);
+    // A browser: sent to sign in by the LIBRARY's authorize(): the code
+    // flow, the application's client, PKCE S256, its scopes.
+    let q = h.send_to_sign_in("/app/page?x=1", "sid-1").await;
     assert_eq!(member(&q, "response_type"), "code");
     assert_eq!(member(&q, "client_id"), CLIENT);
-    assert_eq!(member(&q, "scope"), "openid");
+    assert_eq!(member(&q, "scope"), "openid profile");
     assert_eq!(member(&q, "code_challenge_method"), "S256");
     assert_eq!(
         member(&q, "redirect_uri"),
         "https://proxy.example/.iya-pep/callback"
     );
     let state = member(&q, "state");
-    h.service.lock().unwrap().expect = Some((
-        member(&q, "code_challenge"),
-        member(&q, "nonce"),
-        "sid-1".into(),
-    ));
     h.service.lock().unwrap().live.insert("sid-1".into());
-    // A callback with an unknown state, or an error: refused.
-    let r = h
-        .get("/.iya-pep/callback?code=c&state=nope")
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 401);
-    // The callback: the code redeemed, a session, back where it was going.
-    let r = h
-        .get(&format!("/.iya-pep/callback?code=c&state={}", state))
-        .send()
-        .await
-        .unwrap();
+    // A callback with an unknown state: refused.
+    assert_eq!(h.come_back("c0", "nope").await.status(), 401);
+    // The callback: complete_session() — the code redeemed with the
+    // application's secret, the ID Token verified — then back.
+    let r = h.come_back("c1", &state).await;
     assert_eq!(r.status(), 302);
     assert_eq!(r.headers()["location"], "/app/page?x=1");
     let cookie = r.headers()["set-cookie"].to_str().unwrap().to_string();
     assert!(cookie.starts_with("iya_pep_session="));
     assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Lax"));
     assert!(!cookie.contains("Secure"), "a plain listener: no Secure");
-    let pair = cookie.split(';').next().unwrap().to_string();
+    let pair = cookie_of(&r);
     // The state is spent.
-    let r = h
-        .get(&format!("/.iya-pep/callback?code=c&state={}", state))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 401);
+    assert_eq!(h.come_back("c1", &state).await.status(), 401);
     // An access with the cookie: the person, and the cookie stripped.
     let said = echoed(
         h.get("/app/page")
@@ -925,7 +1153,17 @@ async fn the_session_flow_and_a_sign_out_at_the_service() {
     .await;
     assert_eq!(said["headers"]["x-remote-user"], "carol");
     assert_eq!(said["headers"]["cookie"], "other=1");
-    // A SIGN-OUT AT THE SERVICE: the next recheck ends the proxy session.
+    // The proxy session is the application's: another session route,
+    // another application, does not take it.
+    let r = h
+        .get("/live/x")
+        .header("cookie", pair.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    // A SIGN-OUT AT THE SERVICE (signals off): the session endpoint says
+    // dead, and the proxy session is ended.
     h.service.lock().unwrap().live.clear();
     let r = h
         .get("/app/page")
@@ -948,57 +1186,16 @@ async fn the_session_flow_and_a_sign_out_at_the_service() {
     assert_eq!(r.status(), 401, "the proxy session is gone");
     assert_eq!(h.sync.proxy_json()["answered"]["sessionsEnded"], 1);
 
-    // A second sign-in whose ID Token carries another nonce: refused.
-    let r = h
-        .get("/app/b")
-        .header("accept", "text/html")
-        .send()
-        .await
-        .unwrap();
-    let q = query_of(r.headers()["location"].to_str().unwrap());
-    h.service.lock().unwrap().expect = Some((
-        member(&q, "code_challenge"),
-        member(&q, "nonce"),
-        "sid-2".into(),
-    ));
-    let r = h
-        .get(&format!(
-            "/.iya-pep/callback?code=bad-nonce&state={}",
-            member(&q, "state")
-        ))
-        .send()
-        .await
-        .unwrap();
+    // An ID Token carrying another nonce: the library refuses the sign-in.
+    let q = h.send_to_sign_in("/app/b", "sid-2").await;
+    let r = h.come_back("bad-nonce", &member(&q, "state")).await;
     assert_eq!(r.status(), 401);
-    // A third, completed, then signed out here: to the service's logout.
-    let r = h
-        .get("/app/c")
-        .header("accept", "text/html")
-        .send()
-        .await
-        .unwrap();
-    let q = query_of(r.headers()["location"].to_str().unwrap());
-    h.service.lock().unwrap().expect = Some((
-        member(&q, "code_challenge"),
-        member(&q, "nonce"),
-        "sid-3".into(),
-    ));
+    assert!(r.headers().get("set-cookie").is_none());
+    // A third, completed, then signed out here: to the library's
+    // end_session_url() and the proxy session gone.
+    let q = h.send_to_sign_in("/app/c", "sid-3").await;
     h.service.lock().unwrap().live.insert("sid-3".into());
-    let r = h
-        .get(&format!(
-            "/.iya-pep/callback?code=c&state={}",
-            member(&q, "state")
-        ))
-        .send()
-        .await
-        .unwrap();
-    let pair = r.headers()["set-cookie"]
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_string();
+    let pair = cookie_of(&h.come_back("c3", &member(&q, "state")).await);
     let r = h
         .get("/.iya-pep/logout")
         .header("cookie", pair.clone())
@@ -1007,11 +1204,135 @@ async fn the_session_flow_and_a_sign_out_at_the_service() {
         .unwrap();
     assert_eq!(r.status(), 302);
     let to = r.headers()["location"].to_str().unwrap();
-    assert!(to.starts_with("https://sts.example/realm/r1/oauth2/logout?"));
+    assert!(
+        to.starts_with(&format!("{}/logout?", h.service_base)),
+        "{}",
+        to
+    );
     assert_eq!(member(&query_of(to), "client_id"), CLIENT);
     assert!(!member(&query_of(to), "id_token_hint").is_empty());
     let r = h.get("/app/c").header("cookie", pair).send().await.unwrap();
     assert_eq!(r.status(), 401, "signed out here");
+    let overview = h.sync.proxy_json();
+    assert_eq!(overview["relyingParties"], 2);
+    assert!(
+        !overview.to_string().contains(SECRET),
+        "GET / never shows a secret"
+    );
+}
+
+/// SIGNALS ON: the library's receiver on the service's poll stream ends a
+/// proxy session a CAEP session-revoked names, and the next access sees
+/// it gone from the library's cache.
+#[tokio::test]
+async fn a_caep_session_revoked_ends_access() {
+    let h = harness().await;
+    assert_eq!(
+        h.sync.proxy_json()["signalsReceivers"],
+        1,
+        "the /live application's receiver started"
+    );
+    let q = h.send_to_sign_in("/live/page", "sid-live").await;
+    // The session endpoint says DEAD throughout: with signals on it is
+    // not what decides.
+    let pair = cookie_of(&h.come_back("live-1", &member(&q, "state")).await);
+    let said = echoed(
+        h.get("/live/page")
+            .header("cookie", pair.clone())
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["headers"]["x-remote-user"], "carol");
+    let (key, issuer) = (h.key.clone(), h.service_base.clone());
+    h.service.lock().unwrap().queued.push((
+        "set-sid-live".into(),
+        session_revoked(&key, &issuer, "sid-live"),
+    ));
+    let mut status = 200;
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        status = h
+            .get("/live/page")
+            .header("cookie", pair.clone())
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16();
+        if status != 200 {
+            break;
+        }
+    }
+    assert_eq!(status, 401, "the signal ended the proxy session");
+    assert!(h.service.lock().unwrap().polls > 0);
+    assert!(
+        h.sync.proxy_json()["answered"]["sessionsEnded"].as_u64() >= Some(1)
+    );
+}
+
+/// SIGNALS ON: each access asks the LIBRARY whether the session is still
+/// there. A session the library has dropped by itself — its refresh
+/// refused, say — ends access even with the proxy's own store holding it.
+#[tokio::test]
+async fn each_access_asks_the_library_for_the_session() {
+    let h = harness().await;
+    let q = h.send_to_sign_in("/live/page", "sid-asked").await;
+    let r = h.come_back("asked-1", &member(&q, "state")).await;
+    let pair = cookie_of(&r);
+    let id = pair.trim_start_matches("iya_pep_session=").to_string();
+    echoed(
+        h.get("/live/page")
+            .header("cookie", pair.clone())
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    h.proxied.library_forgets(LIVE_CLIENT, &id);
+    let r = h
+        .get("/live/page")
+        .header("cookie", pair)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "the library no longer holds it");
+}
+
+/// D10: a route whose application the service no longer resolves is
+/// refused, with no credential asked for and the reason only in the log;
+/// usable again on a later pull, it works again.
+#[tokio::test]
+async fn an_unusable_route_is_refused_until_it_is_usable_again() {
+    let h = harness().await;
+    let r = h
+        .get("/gone/x")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let body = r.text().await.unwrap();
+    assert!(
+        !body.contains("deleted"),
+        "the why stays in the log: {}",
+        body
+    );
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    let mut back = configuration(&h.upstream_base, &h.service_base, &cert);
+    back["proxy"]["routes"][7]["resolved"] = json!({ "usable": true });
+    h.sync.receive_proxy(&back, None);
+    let said = echoed(
+        h.get("/gone/x")
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["path"], "/pep-app/gone/x");
+    assert_eq!(h.sync.proxy_json()["unusableRoutes"], 0);
 }
 
 /// What the mock PDP saw of each pull: the query and `If-None-Match`.
@@ -1072,7 +1393,7 @@ async fn the_configuration_is_pulled_with_its_token_and_etag() {
         overview["active"], true,
         "kept through a 304, a 500 and a document refused whole"
     );
-    assert_eq!(overview["routes"], 7);
+    assert_eq!(overview["routes"], 9);
     assert_eq!(overview["lastPullOk"], false);
     assert!(overview["lastPullWhy"]
         .as_str()

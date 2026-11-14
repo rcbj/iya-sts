@@ -187,11 +187,6 @@ impl PdpClient {
                 request =
                     request.header("Content-Type", "application/xml").body(text)
             }
-            Some(Body::Form(text)) => {
-                request = request
-                    .header("Content-Type", "application/x-www-form-urlencoded")
-                    .body(text)
-            }
             None => {}
         }
         let mut response = match request.send().await {
@@ -244,9 +239,6 @@ impl PdpClient {
 pub enum Body {
     Json(serde_json::Value),
     Xml(String),
-    /// `application/x-www-form-urlencoded`, already encoded — the token
-    /// request of the proxy's sign-in (#1760).
-    Form(String),
 }
 
 /// A transport failure in a sentence, with its cause chain.

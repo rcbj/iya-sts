@@ -28,6 +28,7 @@ mod proxy_request;
 #[cfg(test)]
 mod proxy_tests;
 mod rp_session;
+mod rp_set;
 mod saml_verify;
 mod service;
 mod sync;
@@ -304,20 +305,37 @@ async fn start(options: Options, info: version::VersionInfo) {
         https.clone(),
     ));
 
+    // The reverse proxy (#1760) is built here so the poll can reconcile
+    // its relying parties after every pull; its listeners start below.
+    let proxy = options
+        .proxy_enabled
+        .then(|| Arc::new(Proxy::new(pep.clone(), proxy_client)));
+
     // REGISTER FIRST, PULL REGARDLESS — and both retried on the poll timer.
     sync.register().await;
     sync.pull("start").await;
+    if let Some(proxy) = proxy.clone() {
+        // Off the start: building a relying party asks the service for its
+        // discovery document, and the PEP decides without it.
+        tokio::spawn(async move { proxy.reconcile().await });
+    }
 
     let poll_sync = sync.clone();
+    let poll_proxy = proxy.clone();
     on_backoff(
         "the poll",
         options.poll_interval_ms,
         options.backoff_max_ms,
         move || {
             let sync = poll_sync.clone();
+            let proxy = poll_proxy.clone();
             Box::pin(async move {
                 sync.register_if_needed().await;
-                sync.pull("poll").await
+                let ok = sync.pull("poll").await;
+                if let Some(proxy) = proxy {
+                    proxy.reconcile().await;
+                }
+                ok
             })
         },
     );
@@ -392,11 +410,10 @@ async fn start(options: Options, info: version::VersionInfo) {
             }
         );
     }
-    if options.proxy_enabled {
+    if let Some(proxy) = proxy {
         // THE REVERSE PROXY (#1760), on ports of its own: every endpoint
         // above is untouched by it. It answers 404 to everything until the
         // service sends a configuration for this PEP.
-        let proxy = Arc::new(Proxy::new(pep.clone(), proxy_client));
         tokio::spawn(proxy::serve_http(proxy.clone(), options.proxy_port));
         let proxy_https = Arc::new(HttpsListener::for_proxy(
             &options.https_cert_path,

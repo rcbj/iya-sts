@@ -13,9 +13,17 @@
 //! accepted, WHOLE: a route table loaded in part is a route table that
 //! forwards what the operator did not configure, or refuses what they did.
 //!
+//! **A ROUTE REFERENCES AN APPLICATION (D10).** A non-public route names
+//! an application of the realm (`application`, for logs and nothing else
+//! here), and the pull answers it RESOLVED: whether it is usable now, the
+//! audiences an access token for it carries, its SAML SP entity, and its
+//! OIDC client — whose secret, auth method, redirect URI and scopes come
+//! in `realm.clients`, never in the route. A route the service says is not
+//! usable is refused at request time, never admitted on a stale copy.
+//!
 //! Pure: no I/O, no clock. `parse_pulled()` is the one door.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use axum::http::HeaderName;
 use openssl::x509::X509;
@@ -77,7 +85,14 @@ pub struct Route {
     pub methods: Vec<String>,
     pub public: bool,
     pub mechanisms: Vec<Mechanism>,
-    pub audience: String,
+    /// The application the route fronts (D10), for logs: empty on a
+    /// public route.
+    pub application: String,
+    /// The session mechanism's sign-out signals (D5): CAEP/RISC over the
+    /// library's poll stream when true, `validation.session` when false.
+    pub signals: bool,
+    /// What the service resolved the application to, at the pull.
+    pub resolved: Resolved,
     pub resource: String,
     pub action: String,
     pub subject_header: Option<HeaderName>,
@@ -108,15 +123,28 @@ impl Route {
     }
 }
 
+/// A route's application as the service resolved it (D10).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Resolved {
+    pub usable: bool,
+    /// Why not, for the log only.
+    pub why: String,
+    pub code: String,
+    /// The audiences an access token for the application carries: one
+    /// of them in `aud` admits (oauth2).
+    pub audiences: Vec<String>,
+    /// The application's SAML SP entity ID: the Audience (saml2).
+    pub saml_audience: String,
+    /// The application's OIDC client, a key of `realm.clients` (session).
+    pub client_id: String,
+}
+
 /// The proxy's own document (D2).
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
     pub enabled: bool,
     /// The upstream base, with no trailing `/`.
     pub upstream: String,
-    /// The origin a browser reaches the proxy at, with no trailing `/`;
-    /// empty when no route uses `session`.
-    pub public_base_url: String,
     pub upstream_timeout_ms: u64,
     pub max_body_bytes: u64,
     pub routes: Vec<Route>,
@@ -136,13 +164,36 @@ impl ProxyConfig {
 pub struct RealmFacts {
     pub issuer: String,
     pub jwks_uri: String,
-    pub authorization_endpoint: String,
-    pub token_endpoint: String,
-    pub end_session_endpoint: String,
     pub saml_issuer: String,
     pub signing_certificates: Vec<X509>,
-    pub client_id: Option<String>,
-    pub redirect_uri: Option<String>,
+    /// Per OIDC client a session route resolved to (D5, D10).
+    pub clients: BTreeMap<String, RpClient>,
+    /// The PEM chain of the service's listener: the library's `tlsCa`.
+    pub tls_ca_chain: String,
+}
+
+/// What the relying party of one application needs (D5). The secret's
+/// `Debug` is redacted, so no `{:?}` of a pull can log it.
+#[derive(Clone, Default, PartialEq)]
+pub struct RpClient {
+    pub client_secret: String,
+    pub token_endpoint_auth_method: String,
+    pub redirect_uri: String,
+    pub scopes: Vec<String>,
+}
+
+impl std::fmt::Debug for RpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpClient")
+            .field("client_secret", &"(redacted)")
+            .field(
+                "token_endpoint_auth_method",
+                &self.token_endpoint_auth_method,
+            )
+            .field("redirect_uri", &self.redirect_uri)
+            .field("scopes", &self.scopes)
+            .finish()
+    }
 }
 
 /// The four validation endpoints (D4), absolute.
@@ -396,16 +447,18 @@ fn route_of(
     if !public && mechanisms.is_empty() {
         return Err(format!("{} is not public and names no mechanism", what));
     }
-    let audience = string_member(said, "audience", &what)?;
-    let needs_audience = mechanisms
-        .iter()
-        .any(|m| matches!(m, Mechanism::OAuth2 | Mechanism::Saml2));
-    if needs_audience && audience.trim().is_empty() {
-        return Err(format!(
-            "{} uses oauth2 or saml2 and names no audience",
-            what
-        ));
+    let application = string_member(said, "application", &what)?;
+    if public && !application.is_empty() {
+        return Err(format!("{} is public and names an application", what));
     }
+    if !public && application.trim().is_empty() {
+        return Err(format!("{} is not public and names no application", what));
+    }
+    let resolved = if public {
+        Resolved::default()
+    } else {
+        resolved_of(&said["resolved"], &mechanisms, &what)?
+    };
     Ok(Route {
         id,
         path,
@@ -413,7 +466,9 @@ fn route_of(
         methods,
         public,
         mechanisms,
-        audience,
+        application,
+        signals: bool_member(said, "signals", true, &what)?,
+        resolved,
         resource: string_member(said, "resource", &what)?,
         action: string_member(said, "action", &what)?,
         subject_header: header_member(said, "subjectHeader", &what)?,
@@ -425,6 +480,81 @@ fn route_of(
             &what,
         )?,
     })
+}
+
+fn strings_of(said: &Value, what: &str) -> Result<Vec<String>, String> {
+    match said {
+        Value::Null => Ok(Vec::new()),
+        Value::String(one) => {
+            Ok(one.split_whitespace().map(str::to_string).collect())
+        }
+        Value::Array(list) => list
+            .iter()
+            .map(|one| {
+                one.as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .ok_or_else(|| {
+                        format!("{} holds something that is not a string", what)
+                    })
+            })
+            .collect(),
+        _ => Err(format!("{} is not a list of strings", what)),
+    }
+}
+
+/// `routes[i].resolved` (D10), read strictly: an object with a boolean
+/// `usable`, and — when usable — what each of the route's mechanisms needs.
+fn resolved_of(
+    said: &Value,
+    mechanisms: &[Mechanism],
+    what: &str,
+) -> Result<Resolved, String> {
+    let at = format!("{}.resolved", what);
+    if !said.is_object() {
+        return Err(format!("{} is not an object", at));
+    }
+    let usable = said["usable"]
+        .as_bool()
+        .ok_or_else(|| format!("{}.usable is not a boolean", at))?;
+    let resolved = Resolved {
+        usable,
+        why: string_member(said, "why", &at)?,
+        code: string_member(said, "code", &at)?,
+        audiences: strings_of(
+            &said["audiences"],
+            &format!("{}.audiences", at),
+        )?,
+        saml_audience: string_member(said, "samlAudience", &at)?,
+        client_id: string_member(said, "clientId", &at)?,
+    };
+    if usable {
+        if mechanisms.contains(&Mechanism::OAuth2)
+            && resolved.audiences.is_empty()
+        {
+            return Err(format!(
+                "{} is usable for oauth2 and names no audience",
+                at
+            ));
+        }
+        if mechanisms.contains(&Mechanism::Saml2)
+            && resolved.saml_audience.is_empty()
+        {
+            return Err(format!(
+                "{} is usable for saml2 and names no samlAudience",
+                at
+            ));
+        }
+        if mechanisms.contains(&Mechanism::Session)
+            && resolved.client_id.is_empty()
+        {
+            return Err(format!(
+                "{} is usable for session and names no clientId",
+                at
+            ));
+        }
+    }
+    Ok(resolved)
 }
 
 /// D2, read whole.
@@ -464,7 +594,6 @@ pub fn parse_config(said: &Value) -> Result<ProxyConfig, String> {
     Ok(ProxyConfig {
         enabled,
         upstream: upstream.trim_end_matches('/').to_string(),
-        public_base_url: public_base_url.trim_end_matches('/').to_string(),
         upstream_timeout_ms: integer_member(
             said,
             "upstreamTimeoutMs",
@@ -512,28 +641,48 @@ fn realm_of(said: &Value) -> Result<RealmFacts, String> {
             return Err("realm.signingCertificates is not an array".into())
         }
     }
-    let optional = |key: &str| -> Result<Option<String>, String> {
-        string_member(said, key, "realm")
-            .map(|s| Some(s).filter(|s| !s.is_empty()))
-    };
+    let mut clients = BTreeMap::new();
+    match said.get("clients") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(map)) => {
+            for (id, one) in map {
+                let at = format!("realm.clients[{}]", id);
+                if id.is_empty() || !one.is_object() {
+                    return Err(format!("{} is not an object", at));
+                }
+                let client = RpClient {
+                    client_secret: string_member(one, "clientSecret", &at)?,
+                    token_endpoint_auth_method: string_member(
+                        one,
+                        "tokenEndpointAuthMethod",
+                        &at,
+                    )?,
+                    redirect_uri: string_member(one, "redirectUri", &at)?,
+                    scopes: strings_of(
+                        &one["scopes"],
+                        &format!("{}.scopes", at),
+                    )?,
+                };
+                if client.client_secret.is_empty()
+                    || client.redirect_uri.is_empty()
+                {
+                    return Err(format!(
+                        "{} names no clientSecret or redirectUri",
+                        at
+                    ));
+                }
+                clients.insert(id.clone(), client);
+            }
+        }
+        Some(_) => return Err("realm.clients is not an object".into()),
+    }
     Ok(RealmFacts {
         issuer: string_member(said, "issuer", "realm")?,
         jwks_uri: string_member(said, "jwksUri", "realm")?,
-        authorization_endpoint: string_member(
-            said,
-            "authorizationEndpoint",
-            "realm",
-        )?,
-        token_endpoint: string_member(said, "tokenEndpoint", "realm")?,
-        end_session_endpoint: string_member(
-            said,
-            "endSessionEndpoint",
-            "realm",
-        )?,
         saml_issuer: string_member(said, "samlIssuer", "realm")?,
         signing_certificates: certificates,
-        client_id: optional("clientId")?,
-        redirect_uri: optional("redirectUri")?,
+        clients,
+        tls_ca_chain: string_member(said, "tlsCaChain", "realm")?,
     })
 }
 
@@ -587,6 +736,18 @@ pub fn parse_pulled(said: &Value) -> Result<Pulled, String> {
     let proxy = parse_config(&said["proxy"])?;
     let realm = realm_of(&said["realm"])?;
     let validation = validation_of(&said["validation"])?;
+    // A usable session route's client must have come with it: a route that
+    // names a client the pull carries no secret for could only fail later,
+    // one sign-in at a time.
+    for route in &proxy.routes {
+        let wants = route.allows(Mechanism::Session) && route.resolved.usable;
+        if wants && !realm.clients.contains_key(&route.resolved.client_id) {
+            return Err(format!(
+                "route {} names a client realm.clients does not carry",
+                route.id
+            ));
+        }
+    }
     Ok(Pulled {
         sync_token,
         pep,
@@ -615,30 +776,54 @@ mod tests {
                 { "id": "api", "path": "/api", "match": "prefix",
                   "methods": ["GET", "POST"],
                   "mechanisms": ["oauth2", "basic"],
-                  "audience": "https://app.example/api",
+                  "application": "pep-app",
+                  "resolved": { "usable": true,
+                                "audiences": ["https://app.example/api"] },
                   "resource": "", "action": "",
                   "subjectHeader": "X-Remote-User",
                   "mechanismHeader": "X-Remote-Auth",
                   "forwardCredentials": false },
                 { "id": "app", "path": "/app/", "match": "exact",
-                  "mechanisms": ["session"] }
+                  "mechanisms": ["session"], "application": "pep-app",
+                  "signals": false,
+                  "resolved": { "usable": true, "clientId": "app-client" } },
+                { "id": "gone", "path": "/gone", "mechanisms": ["saml2"],
+                  "application": "deleted-app",
+                  "resolved": { "usable": false, "why": "deleted",
+                                "code": "STS-XACML-0001" } }
             ]
         })
+    }
+
+    fn realm() -> Value {
+        json!({ "issuer": "https://sts/realm/r", "signingCertificates": [],
+                "tlsCaChain": "",
+                "clients": { "app-client": { "clientSecret": "s3cret",
+                    "tokenEndpointAuthMethod": "client_secret_basic",
+                    "redirectUri": "https://xacml-pep:9543/.iya-pep/callback",
+                    "scopes": ["openid", "profile"] } } })
     }
 
     #[test]
     fn the_contracts_example_is_accepted() {
         let config = parse_config(&sample()).unwrap();
         assert_eq!(config.upstream, "http://companion:8090/pep-app");
-        assert_eq!(config.routes.len(), 3);
+        assert_eq!(config.routes.len(), 4);
         let api = &config.routes[1];
         assert_eq!(api.mechanisms, [Mechanism::OAuth2, Mechanism::Basic]);
+        assert_eq!(api.application, "pep-app");
+        assert!(api.signals, "signals defaults to true");
+        assert_eq!(api.resolved.audiences, ["https://app.example/api"]);
         assert_eq!(
             api.subject_header.as_ref().map(HeaderName::as_str),
             Some("x-remote-user")
         );
         assert_eq!(config.routes[2].path, "/app", "the trailing / is dropped");
         assert!(config.routes[2].methods.is_empty());
+        assert!(!config.routes[2].signals);
+        assert_eq!(config.routes[2].resolved.client_id, "app-client");
+        let gone = &config.routes[3].resolved;
+        assert!(!gone.usable && gone.why == "deleted");
     }
 
     #[test]
@@ -674,6 +859,10 @@ mod tests {
             "public and names",
         );
         refused(
+            &|d| d["routes"][0]["application"] = json!("pep-app"),
+            "public and names an application",
+        );
+        refused(
             &|d| d["routes"][1]["mechanisms"] = json!([]),
             "names no mechanism",
         );
@@ -681,7 +870,40 @@ mod tests {
             &|d| d["routes"][1]["mechanisms"] = json!(["kerberos"]),
             "mechanisms holds",
         );
-        refused(&|d| d["routes"][1]["audience"] = json!(""), "audience");
+        // D10: a non-public route names an application and comes resolved.
+        refused(
+            &|d| d["routes"][1]["application"] = json!(""),
+            "names no application",
+        );
+        refused(
+            &|d| {
+                d["routes"][1].as_object_mut().unwrap().remove("resolved");
+            },
+            "resolved is not an object",
+        );
+        refused(
+            &|d| d["routes"][1]["resolved"]["usable"] = json!("yes"),
+            "usable is not a boolean",
+        );
+        refused(
+            &|d| d["routes"][1]["resolved"]["audiences"] = json!([]),
+            "no audience",
+        );
+        refused(
+            &|d| d["routes"][1]["resolved"]["audiences"] = json!([1]),
+            "not a string",
+        );
+        refused(
+            &|d| d["routes"][2]["resolved"]["clientId"] = json!(""),
+            "no clientId",
+        );
+        refused(
+            &|d| {
+                d["routes"][3]["resolved"] = json!({ "usable": true });
+            },
+            "no samlAudience",
+        );
+        refused(&|d| d["routes"][2]["signals"] = json!("no"), "boolean");
         refused(
             &|d| d["routes"][1]["subjectHeader"] = json!("X Remote"),
             "header name",
@@ -721,17 +943,29 @@ mod tests {
             parse_pulled(&json!({ "configured": false, "pep": "p" })).unwrap();
         assert!(unconfigured.active().is_none());
         let mut doc = json!({ "syncToken": "t1", "pep": "p",
-            "configured": true, "proxy": sample(),
-            "realm": { "issuer": "https://sts/realm/r", "clientId": null,
-                       "signingCertificates": [] },
+            "configured": true, "proxy": sample(), "realm": realm(),
             "validation": { "introspect": "https://sts/xacml/pep/introspect",
                             "basic": "", "saml": "", "session": "" } });
         let pulled = parse_pulled(&doc).unwrap();
         assert!(pulled.active().is_some());
-        assert_eq!(pulled.realm.client_id, None);
+        let client = &pulled.realm.clients["app-client"];
+        assert_eq!(client.scopes, ["openid", "profile"]);
+        assert!(
+            !format!("{:?}", pulled).contains("s3cret"),
+            "the secret never reaches a Debug line"
+        );
+        doc["realm"]["clients"]["app-client"]["clientSecret"] = json!("");
+        assert!(parse_pulled(&doc).unwrap_err().contains("clientSecret"));
+        doc["realm"] = realm();
+        doc["realm"]["clients"] = json!({});
+        assert!(
+            parse_pulled(&doc).unwrap_err().contains("realm.clients"),
+            "a usable session route's client must come with it"
+        );
+        doc["realm"] = realm();
         doc["realm"]["signingCertificates"] = json!(["not a pem"]);
         assert!(parse_pulled(&doc).unwrap_err().contains("PEM"));
-        doc["realm"]["signingCertificates"] = json!([]);
+        doc["realm"] = realm();
         doc["validation"]["basic"] = json!("not a url");
         assert!(parse_pulled(&doc).is_err());
         doc["validation"]["basic"] = json!("");
@@ -739,7 +973,7 @@ mod tests {
         assert!(parse_pulled(&doc).is_err(), "one bad route refuses all");
         assert!(parse_pulled(&json!({ "pep": "p" })).is_err());
         let mut off = parse_pulled(&json!({ "configured": true,
-            "proxy": sample() }))
+            "proxy": sample(), "realm": realm() }))
         .unwrap();
         if let Some(p) = off.proxy.as_mut() {
             p.enabled = false;

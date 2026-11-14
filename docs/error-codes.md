@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5515** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5517** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 92
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 94
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5119,17 +5119,19 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0079` | The service (POST /xacml/pep/basic) said the Basic credential presented to the reverse proxy is not valid (#1760). | HTTP 401, unauthorized |
 | `STS-XPEP-0080` | The service refused a Basic sign-in at the reverse proxy under its lockout and limits (429); the answer and its Retry-After are passed on (#1760). | HTTP 429, too_many_requests, with Retry-After |
 | `STS-XPEP-0081` | A request that is not a browser's reached a session route of the reverse proxy with no proxy session; a browser is sent to sign in instead (#1760). | HTTP 401, unauthorized |
-| `STS-XPEP-0082` | The reverse proxy refused a sign-in callback (/.iya-pep/callback): an unknown, spent or expired state, an error from the authorization server, no code, or a code the token endpoint would not redeem (#1760). | HTTP 401, unauthorized |
-| `STS-XPEP-0083` | The reverse proxy refused the ID Token of a sign-in: it could not be verified against the realm's JWKS, or its issuer, audience (the PEP's client), azp, nonce or exp does not hold, or it carries no sid or sub (#1760). | HTTP 401, unauthorized |
-| `STS-XPEP-0084` | The service (POST /xacml/pep/session) said the sign-on session behind a proxy session is no longer live — a sign-out at the service — so the proxy session is ended (#1760). | HTTP 302 to sign in for a browser, otherwise HTTP 401 |
+| `STS-XPEP-0082` | The reverse proxy refused a sign-in callback (/.iya-pep/callback): an unknown, spent or expired state, or a sign-in whose relying party is no longer held (#1760). | HTTP 401, unauthorized |
+| `STS-XPEP-0083` | The relying party library (oidc-caep-risc) refused to complete a reverse proxy sign-in: an error from the authorization server, no code, a code already used, a token endpoint that would not redeem it with the application's client authentication, or an ID Token whose signature, issuer, audience, nonce, iat, exp, typ or at_hash does not hold (#1760). | HTTP 401, unauthorized |
+| `STS-XPEP-0084` | The sign-on session behind a proxy session has ended at the service — a CAEP/RISC signal on the library's poll stream removed it, or (signals off) POST /xacml/pep/session said it is not live — so the proxy session is ended (#1760). | HTTP 302 to sign in for a browser, otherwise HTTP 401 |
 | `STS-XPEP-0085` | The reverse proxy could not make a proxy session: PEP_PROXY_MAX_SESSIONS live sessions are held (none is evicted, which would sign somebody else out), or no random value could be drawn (#1760). | HTTP 503, temporarily_unavailable |
 | `STS-XPEP-0086` | The reverse proxy's decision refused the request: the policy this PEP holds, under its bias and obligation rule, did not permit the subject, resource and action (#1760). | HTTP 403, access_denied |
 | `STS-XPEP-0087` | The reverse proxy could not carry the subject in the route's subject header (not a valid header value), so the request is refused rather than forwarded without the identity (#1760). | HTTP 403, access_denied |
 | `STS-XPEP-0088` | The reverse proxy could not fetch the realm's JWKS. The keys fetched before are kept; with none, a JWT access token is asked of the service's introspection (#1760). | none |
 | `STS-XPEP-0089` | The reverse proxy refused an Authorization header it cannot read (not text, no credential, Basic or SAML that is not base64) or whose scheme the route does not take (#1760). | HTTP 401, unauthorized, with a WWW-Authenticate per mechanism |
-| `STS-XPEP-0090` | A session route of the reverse proxy was reached and the pull named no client, no authorization endpoint or no token endpoint for this PEP, so nobody can be signed in (#1760). | HTTP 503, temporarily_unavailable |
+| `STS-XPEP-0090` | The relying party of the application behind a session route could not be built from the pull: the library refused the configuration (an http issuer without PEP_PROXY_RP_ALLOW_INSECURE, a redirect URI that is not https or loopback, a public client), or the service's discovery document could not be read, so nobody can be signed in there (#1760). | HTTP 503, temporarily_unavailable |
 | `STS-XPEP-0091` | The upstream URL the reverse proxy built for a request would not stay on the configured upstream's origin and path, so the request is not sent (#1760). | HTTP 502, bad_gateway |
 | `STS-XPEP-0092` | PEP_PROXY_UPSTREAM_CA could not be read or would not load, so an https upstream is verified against the system's anchors alone; or the client to the upstream would not build (#1760). | HTTP 502 when the client would not build; otherwise none |
+| `STS-XPEP-0093` | The reverse proxy refused a request on a route whose application the service no longer resolves (deleted, or no longer qualifying for the route's mechanisms): the pull marked it usable: false. Never admitted on what an earlier pull said; the reason is in the log only (#1760, D10). | HTTP 403, access_denied |
+| `STS-XPEP-0094` | The CAEP/RISC receiver of a session route's relying party would not start (the service's SSF configuration, stream or client-credentials token could not be had), so that application's proxy sessions are checked with POST /xacml/pep/session instead until a later pull rebuilds it (#1760). | none; the fallback decides liveness |
 
 ## STS-AUTHZEN
 

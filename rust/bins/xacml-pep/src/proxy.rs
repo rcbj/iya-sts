@@ -37,6 +37,7 @@
 //! mechanisms, `rp_session.rs` the session stores, `proxy_config.rs` the
 //! pulled configuration.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,23 +53,22 @@ use hyper::body::{Body as HttpBody, Frame, SizeHint};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
-use reqwest::Method;
 use serde_json::json;
 use sts_core::log::tag;
 use tokio::net::TcpListener;
 
-use crate::jwt;
 use crate::listener::{peer_of, HttpsListener, Transport};
-use crate::pdp_client::{Body as CallBody, PdpClient};
-use crate::proxy_auth::{now_s, Authenticator, Identity, Refusal};
+use crate::pdp_client::PdpClient;
+use crate::proxy_auth::{Authenticator, Identity, Refusal};
 use crate::proxy_config::{Mechanism, ProxyConfig, Pulled, Route};
 use crate::proxy_request::{
     cookie_value, forward_headers, is_browser, normalise_path,
     response_headers, SESSION_COOKIE,
 };
 use crate::rp_session::{self, Pending, Session};
+use crate::rp_set::{self, RpSet};
 use crate::service::Pep;
-use crate::sync::encode;
+use oidc_caep_risc::EndSessionOptions;
 
 pub const CALLBACK_PATH: &str = "/.iya-pep/callback";
 pub const LOGOUT_PATH: &str = "/.iya-pep/logout";
@@ -79,6 +79,8 @@ pub struct Proxy {
     pep: Arc<Pep>,
     auth: Authenticator,
     upstream: Mutex<Option<(u64, reqwest::Client)>>,
+    /// The session mechanism's relying parties (`rp_set.rs`).
+    rps: RpSet,
 }
 
 /// What a request was, for its log line and its refusal.
@@ -220,16 +222,6 @@ fn session_cookie(id: &str, https: bool, clear: bool) -> Option<HeaderValue> {
     HeaderValue::from_str(&text).ok()
 }
 
-fn with_query(base: &str, pairs: &[(&str, &str)]) -> String {
-    let query = pairs
-        .iter()
-        .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-    let separator = if base.contains('?') { '&' } else { '?' };
-    format!("{}{}{}", base, separator, query)
-}
-
 fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
     let Some(raw) = query else {
         return Vec::new();
@@ -246,10 +238,30 @@ fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
 impl Proxy {
     pub fn new(pep: Arc<Pep>, client: PdpClient) -> Proxy {
         let ttl = pep.options.proxy_jwks_ttl_ms;
+        // A session the library's receiver ends is ended here too.
+        let sync = pep.sync.clone();
+        let on_end: rp_set::OnEnd = Arc::new(move |ended: Vec<String>| {
+            for id in ended {
+                if sync.proxy_sessions.end(&id).is_some() {
+                    sync.count_session_ended();
+                    tracing::info!(
+                        "{}xacml-pep: proxy: a CAEP/RISC signal from the \
+                         service ended a proxy session.",
+                        tag("STS-XPEP-0084")
+                    );
+                }
+            }
+        });
+        let rps = RpSet::new(
+            pep.options.proxy_rp_allow_insecure,
+            pep.options.proxy_signals_poll_ms,
+            on_end,
+        );
         Proxy {
             pep,
             auth: Authenticator::new(client, ttl),
             upstream: Mutex::new(None),
+            rps,
         }
     }
 
@@ -408,7 +420,7 @@ impl Proxy {
         };
         if path == CALLBACK_PATH {
             let answer = self
-                .callback(query.as_deref(), &pulled, config, &transport, &asked)
+                .callback(query.as_deref(), &pulled, &transport, &asked)
                 .await;
             return (answer, false);
         }
@@ -431,6 +443,39 @@ impl Proxy {
                 "the route does not take this method",
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
+        }
+        // D10: the route's application as the service resolved it at the
+        // pull. Not usable (deleted, or no longer qualifying) is refused,
+        // never admitted on what an earlier pull said.
+        if !route.public && !route.resolved.usable {
+            let refusal = Refusal::new(
+                403,
+                "STS-XPEP-0093",
+                &format!(
+                    "the route's application {} is not usable now{}{}{}",
+                    route.application,
+                    if route.resolved.why.is_empty() {
+                        ""
+                    } else {
+                        ": "
+                    },
+                    route.resolved.why,
+                    // The service's own code for why (an STS-XACML code):
+                    // logged, never sent.
+                    if route.resolved.code.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (the service says {})", route.resolved.code)
+                    }
+                ),
+            );
+            let mut refused = self.refuse(&refusal, &asked, &pulled);
+            *refused.body_mut() = Body::from(
+                json!({ "error": "access_denied",
+                        "error_description": "This route cannot be used now." })
+                .to_string(),
+            );
+            return (refused, false);
         }
         let declared = parts
             .headers
@@ -621,6 +666,10 @@ impl Proxy {
         .await
     }
 
+    /// A request on a `session` route: the proxy session the cookie names,
+    /// still alive by the library's receiver (signals) or by the service's
+    /// session endpoint (`signals: false`, or a receiver that would not
+    /// start).
     #[allow(clippy::too_many_arguments)]
     async fn session(
         &self,
@@ -637,35 +686,62 @@ impl Proxy {
         let browser = is_browser(method, headers);
         let id = cookie_value(headers, SESSION_COOKIE).unwrap_or_default();
         let held = if id.is_empty() { None } else { stores.get(&id) };
+        // A session made by another application's client is not this
+        // route's: the proxy session is the application's sign-in.
+        let held = held.filter(|s| s.client_id == route.resolved.client_id);
         let Some(session) = held else {
-            return self.no_session(
-                route, pulled, config, transport, browser, path, query, false,
-            );
+            return self
+                .no_session(
+                    route, pulled, config, transport, browser, path, query,
+                    false,
+                )
+                .await;
         };
-        let recheck =
-            Duration::from_millis(self.pep.options.proxy_session_recheck_ms);
-        if session.last_checked.elapsed() >= recheck {
-            match self.auth.session_live(&session.sid, pulled).await {
-                Err(refusal) => return Established::Refused(refusal),
-                Ok(Some((sub, username))) => {
-                    stores.checked(&id, &sub, &username);
-                }
-                Ok(None) => {
-                    stores.end(&id);
-                    self.pep.sync.count_session_ended();
-                    tracing::info!(
-                        "{}xacml-pep: proxy: the service says a proxy \
-                         session's sign-on session has ended (route {}); \
-                         the proxy session is ended.",
-                        tag("STS-XPEP-0084"),
-                        route.id
-                    );
-                    return self.no_session(
-                        route, pulled, config, transport, browser, path, query,
-                        true,
-                    );
+        let party = self.rps.held(&session.client_id);
+        let by_signals = route.signals
+            && party.as_ref().is_some_and(rp_set::Party::signals_live);
+        let alive = if by_signals {
+            // THE LIBRARY'S ANSWER: its receiver removes the session a
+            // CAEP session-revoked names, so the session still being in
+            // its cache is the session still being live. A map lookup.
+            party.as_ref().is_some_and(|p| p.rp.session(&id).is_some())
+        } else {
+            let recheck = Duration::from_millis(
+                self.pep.options.proxy_session_recheck_ms,
+            );
+            if session.last_checked.elapsed() < recheck {
+                true
+            } else {
+                match self.auth.session_live(&session.sid, pulled).await {
+                    Err(refusal) => return Established::Refused(refusal),
+                    Ok(Some((sub, username))) => {
+                        stores.checked(&id, &sub, &username);
+                        true
+                    }
+                    Ok(None) => false,
                 }
             }
+        };
+        if !alive {
+            self.end_session(&id, &session.client_id);
+            tracing::info!(
+                "{}xacml-pep: proxy: the sign-on session behind a proxy \
+                 session has ended at the service ({}, route {}); the proxy \
+                 session is ended.",
+                tag("STS-XPEP-0084"),
+                if by_signals {
+                    "a CAEP/RISC signal"
+                } else {
+                    "its session endpoint"
+                },
+                route.id
+            );
+            return self
+                .no_session(
+                    route, pulled, config, transport, browser, path, query,
+                    true,
+                )
+                .await;
         }
         let current = stores.get(&id).unwrap_or(session);
         Established::Who(Identity {
@@ -675,10 +751,25 @@ impl Proxy {
         })
     }
 
-    /// No live proxy session: a browser is sent to sign in, anything else
-    /// is a 401. `ended` clears the cookie on the way.
+    /// Ends a proxy session here and in the library (its cache, and the
+    /// receiver's index).
+    fn end_session(&self, id: &str, client_id: &str) {
+        if self.pep.sync.proxy_sessions.end(id).is_some() {
+            self.pep.sync.count_session_ended();
+        }
+        if let Some(party) = self.rps.held(client_id) {
+            party.rp.remove_session(id);
+            if let Some(receiver) = &party.receiver {
+                receiver.untrack(id);
+            }
+        }
+    }
+
+    /// No live proxy session: a browser is sent to sign in through the
+    /// library's `authorize()`, anything else is a 401. `ended` clears the
+    /// cookie on the way.
     #[allow(clippy::too_many_arguments)]
-    fn no_session(
+    async fn no_session(
         &self,
         route: &Route,
         pulled: &Pulled,
@@ -689,6 +780,7 @@ impl Proxy {
         query: Option<&str>,
         ended: bool,
     ) -> Established {
+        let _ = config;
         if !browser {
             let why = if ended {
                 "the sign-on session behind the proxy session has ended"
@@ -702,55 +794,52 @@ impl Proxy {
             };
             return Established::Refused(Refusal::new(401, code, why));
         }
-        let realm = &pulled.realm;
-        let redirect_uri = realm.redirect_uri.clone().unwrap_or_else(|| {
-            format!("{}{}", config.public_base_url, CALLBACK_PATH)
-        });
-        let Some(client_id) = realm
-            .client_id
-            .as_deref()
-            .filter(|_| !realm.authorization_endpoint.is_empty())
-        else {
-            return Established::Refused(Refusal::new(
-                503,
-                "STS-XPEP-0090",
-                "the session mechanism is not set up: the service named no \
-                 client or no authorization endpoint for this PEP",
-            ));
-        };
-        let (Some(state), Some(nonce), Some(verifier)) = (
-            rp_session::random_token(32),
-            rp_session::random_token(32),
-            rp_session::random_token(32),
-        ) else {
-            return Established::Refused(Refusal::new(
-                503,
-                "STS-XPEP-0085",
-                "no random value could be drawn for a sign-in",
-            ));
+        let client_id = route.resolved.client_id.clone();
+        let party =
+            match self.rps.party(&client_id, pulled, route.signals).await {
+                Ok(party) => party,
+                Err(why) => {
+                    return Established::Refused(Refusal::new(
+                        503,
+                        "STS-XPEP-0090",
+                        &format!(
+                        "the relying party for client {} could not be built: \
+                         {}",
+                        client_id, why
+                    ),
+                    ))
+                }
+            };
+        let rp = party.rp.clone();
+        let authorized =
+            tokio::task::spawn_blocking(move || rp.authorize()).await;
+        let transaction = match authorized {
+            Ok(Ok(transaction)) => transaction,
+            Ok(Err(error)) => {
+                return Established::Refused(Refusal::new(
+                    502,
+                    "STS-XPEP-0075",
+                    &format!("the sign-in could not be started: {}", error),
+                ))
+            }
+            Err(error) => {
+                return Established::Refused(Refusal::new(
+                    502,
+                    "STS-XPEP-0075",
+                    &format!("the sign-in could not be started: {}", error),
+                ))
+            }
         };
         let return_to = match query {
             Some(q) => format!("{}?{}", path, q),
             None => path.to_string(),
         };
-        let location = with_query(
-            &realm.authorization_endpoint,
-            &[
-                ("response_type", "code"),
-                ("client_id", client_id),
-                ("redirect_uri", &redirect_uri),
-                ("scope", "openid"),
-                ("state", &state),
-                ("nonce", &nonce),
-                ("code_challenge", &rp_session::code_challenge(&verifier)),
-                ("code_challenge_method", "S256"),
-            ],
-        );
+        let location = transaction.url.clone();
         self.pep.sync.proxy_sessions.begin(
-            state,
+            transaction.state.clone(),
             Pending {
-                code_verifier: verifier,
-                nonce,
+                transaction,
+                client_id,
                 return_to,
                 created: Instant::now(),
             },
@@ -769,169 +858,43 @@ impl Proxy {
         Established::Answer(response)
     }
 
-    /// `GET /.iya-pep/callback`: the code redeemed, the ID Token verified
-    /// here, a proxy session made, the browser sent where it was going.
+    /// `GET /.iya-pep/callback`: the library's `complete_session()` under
+    /// a new proxy session id — the code redeemed with the application's
+    /// client authentication, the ID Token verified (signature, `iss`,
+    /// `aud`, nonce, `iat`, `exp`, `typ`, `at_hash`) — then a proxy session
+    /// under the same id, and the browser sent where it was going.
     #[tracing::instrument(level = "debug", skip_all)]
     async fn callback(
         &self,
         query: Option<&str>,
         pulled: &Pulled,
-        config: &ProxyConfig,
         transport: &Transport,
         asked: &Asked<'_>,
     ) -> Response<Body> {
-        let refused = |why: &str| {
-            self.refuse(&Refusal::new(401, "STS-XPEP-0082", why), asked, pulled)
+        let refused = |code: &'static str, why: &str| {
+            self.refuse(&Refusal::new(401, code, why), asked, pulled)
         };
-        let pairs = query_pairs(query);
-        let get = |k: &str| {
-            pairs
-                .iter()
-                .find(|(n, _)| n == k)
-                .map(|(_, v)| v.clone())
-                .unwrap_or_default()
-        };
-        let state = get("state");
+        let pairs: HashMap<String, String> =
+            query_pairs(query).into_iter().collect();
+        let state = pairs.get("state").cloned().unwrap_or_default();
         let pending = if state.is_empty() {
             None
         } else {
             self.pep.sync.proxy_sessions.take(&state)
         };
-        if !get("error").is_empty() {
-            return refused(
-                "the identity service answered the sign-in with an \
-                            error",
-            );
-        }
         let Some(pending) = pending else {
-            return refused("the sign-in is unknown, already used or expired");
-        };
-        let code = get("code");
-        if code.is_empty() {
-            return refused("the sign-in came back with no code");
-        }
-        let realm = &pulled.realm;
-        let (Some(client_id), false) =
-            (realm.client_id.as_deref(), realm.token_endpoint.is_empty())
-        else {
-            return self.refuse(
-                &Refusal::new(
-                    503,
-                    "STS-XPEP-0090",
-                    "the session mechanism is not set up: no client or no \
-                     token endpoint",
-                ),
-                asked,
-                pulled,
+            return refused(
+                "STS-XPEP-0082",
+                "the sign-in is unknown, already used or expired",
             );
         };
-        let redirect_uri = realm.redirect_uri.clone().unwrap_or_else(|| {
-            format!("{}{}", config.public_base_url, CALLBACK_PATH)
-        });
-        let form = [
-            ("grant_type", "authorization_code"),
-            ("code", code.as_str()),
-            ("redirect_uri", redirect_uri.as_str()),
-            ("client_id", client_id),
-            ("code_verifier", pending.code_verifier.as_str()),
-        ]
-        .iter()
-        .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-        let answer = self
-            .auth
-            .client()
-            .call_url(
-                Method::POST,
-                &realm.token_endpoint,
-                Some(CallBody::Form(form)),
-                &[],
-                None,
-            )
-            .await;
-        if answer.error.is_some() {
-            return self.refuse(
-                &Refusal::new(
-                    502,
-                    "STS-XPEP-0075",
-                    "the token endpoint could not be reached",
-                ),
-                asked,
-                pulled,
+        let Some(party) = self.rps.held(&pending.client_id) else {
+            return refused(
+                "STS-XPEP-0082",
+                "the sign-in's relying party is no longer held",
             );
-        }
-        let id_token = answer
-            .json
-            .as_ref()
-            .filter(|_| answer.status == 200)
-            .and_then(|j| j["id_token"].as_str())
-            .map(str::to_string);
-        let Some(id_token) = id_token else {
-            return refused(&format!(
-                "the token endpoint did not redeem the code (HTTP {})",
-                answer.status
-            ));
         };
-        let id_refused = |why: &str| {
-            self.refuse(
-                &Refusal::new(
-                    401,
-                    "STS-XPEP-0083",
-                    &format!("the ID Token was refused: {}", why),
-                ),
-                asked,
-                pulled,
-            )
-        };
-        let claims =
-            match self.auth.verified_claims(&id_token, &realm.jwks_uri).await {
-                Ok(Some(claims)) => claims,
-                Ok(None) => {
-                    return id_refused(
-                        "it could not be verified here (unknown key or \
-                     algorithm)",
-                    )
-                }
-                Err(why) => return id_refused(why),
-            };
-        if let Some(why) =
-            jwt::claims_problem(&claims, &realm.issuer, client_id, now_s())
-        {
-            return id_refused(why);
-        }
-        let several = claims["aud"].as_array().is_some_and(|a| a.len() > 1);
-        if several && claims["azp"].as_str() != Some(client_id) {
-            return id_refused("it has several audiences and azp is not ours");
-        }
-        let nonce = claims["nonce"].as_str().unwrap_or("");
-        if nonce.len() != pending.nonce.len()
-            || !openssl::memcmp::eq(nonce.as_bytes(), pending.nonce.as_bytes())
-        {
-            return id_refused("its nonce is not the one this sign-in sent");
-        }
-        let sid = claims["sid"].as_str().unwrap_or("").to_string();
-        let sub = claims["sub"].as_str().unwrap_or("").to_string();
-        if sid.is_empty() || sub.is_empty() {
-            return id_refused(
-                "it carries no sid or no sub, so its liveness cannot be asked",
-            );
-        }
-        let username = claims["preferred_username"]
-            .as_str()
-            .or_else(|| claims["username"].as_str())
-            .unwrap_or("")
-            .to_string();
-        let now = Instant::now();
-        let created = self.pep.sync.proxy_sessions.create(Session {
-            sid,
-            sub,
-            username,
-            id_token,
-            created: now,
-            last_checked: now,
-        });
-        let Ok(id) = created else {
+        if !self.pep.sync.proxy_sessions.has_room() {
             return self.refuse(
                 &Refusal::new(
                     503,
@@ -941,7 +904,92 @@ impl Proxy {
                 asked,
                 pulled,
             );
+        }
+        let Some(id) = rp_session::random_token(32) else {
+            return self.refuse(
+                &Refusal::new(
+                    503,
+                    "STS-XPEP-0085",
+                    "no random value could be drawn for a proxy session",
+                ),
+                asked,
+                pulled,
+            );
         };
+        let rp = party.rp.clone();
+        let transaction = pending.transaction.clone();
+        let session_id = id.clone();
+        let completed = tokio::task::spawn_blocking(move || {
+            rp.complete_session(&pairs, &transaction, &session_id)
+        })
+        .await;
+        let login = match completed {
+            Ok(Ok(login)) => login,
+            Ok(Err(error)) => {
+                return refused(
+                    "STS-XPEP-0083",
+                    &format!(
+                        "the sign-in was refused ({}): {}",
+                        error.code, error.message
+                    ),
+                )
+            }
+            Err(error) => {
+                return refused(
+                    "STS-XPEP-0083",
+                    &format!("the sign-in could not be completed: {}", error),
+                )
+            }
+        };
+        let username = if login.preferred_username.is_empty() {
+            login
+                .claims
+                .get("username")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        } else {
+            login.preferred_username.clone()
+        };
+        let now = Instant::now();
+        let created = self.pep.sync.proxy_sessions.create(
+            &id,
+            Session {
+                client_id: pending.client_id.clone(),
+                sid: login.sid.clone(),
+                sub: login.subject.clone(),
+                username,
+                id_token: login.id_token.clone(),
+                created: now,
+                last_checked: now,
+            },
+        );
+        if created.is_err() {
+            party.rp.remove_session(&id);
+            return self.refuse(
+                &Refusal::new(
+                    503,
+                    "STS-XPEP-0085",
+                    "this proxy holds PEP_PROXY_MAX_SESSIONS live sessions",
+                ),
+                asked,
+                pulled,
+            );
+        }
+        // The receiver finds a session by the service's session id (a
+        // CAEP session-revoked names it), by the person, or by the mail.
+        if let Some(receiver) = &party.receiver {
+            let mut tracked = serde_json::Map::new();
+            tracked.insert("local_id".into(), json!(id));
+            tracked.insert("person".into(), json!(login.subject));
+            if !login.email.is_empty() {
+                tracked.insert("email".into(), json!(login.email));
+            }
+            if !login.sid.is_empty() {
+                tracked.insert("idp_session".into(), json!(login.sid));
+            }
+            receiver.track(tracked);
+        }
         self.pep.sync.count_sign_in();
         let mut response = redirect(&pending.return_to);
         if let Some(cookie) = session_cookie(&id, transport.https, false) {
@@ -950,44 +998,58 @@ impl Proxy {
         response
     }
 
-    /// `/.iya-pep/logout`: the proxy session ended, then the service's
-    /// RP-initiated logout when it named one.
+    /// `/.iya-pep/logout`: the proxy session ended here and in the library
+    /// (`remove_session`), then the service's RP-initiated logout through
+    /// the library's `end_session_url()`.
     fn logout(
         &self,
         headers: &HeaderMap,
         pulled: &Pulled,
         transport: &Transport,
     ) -> Response<Body> {
+        let _ = pulled;
         let id = cookie_value(headers, SESSION_COOKIE).unwrap_or_default();
-        let ended = if id.is_empty() {
+        let held = if id.is_empty() {
             None
         } else {
-            self.pep.sync.proxy_sessions.end(&id)
+            self.pep.sync.proxy_sessions.get(&id)
         };
-        if ended.is_some() {
-            self.pep.sync.count_session_ended();
+        let mut location = String::new();
+        if let Some(session) = &held {
+            if let Some(party) = self.rps.held(&session.client_id) {
+                location = party.rp.end_session_url(EndSessionOptions {
+                    id_token: session.id_token.clone(),
+                    ..EndSessionOptions::default()
+                });
+            }
+            self.end_session(&id, &session.client_id);
         }
-        let realm = &pulled.realm;
-        let mut response = if realm.end_session_endpoint.is_empty() {
-            json_answer(200, json!({ "signedOut": ended.is_some() }))
+        let mut response = if location.is_empty() {
+            json_answer(200, json!({ "signedOut": held.is_some() }))
         } else {
-            let mut pairs: Vec<(&str, &str)> = Vec::new();
-            if let Some(client) = realm.client_id.as_deref() {
-                pairs.push(("client_id", client));
-            }
-            if let Some(session) = &ended {
-                pairs.push(("id_token_hint", session.id_token.as_str()));
-            }
-            redirect(&if pairs.is_empty() {
-                realm.end_session_endpoint.clone()
-            } else {
-                with_query(&realm.end_session_endpoint, &pairs)
-            })
+            redirect(&location)
         };
         if let Some(cookie) = session_cookie("", transport.https, true) {
             response.headers_mut().insert(header::SET_COOKIE, cookie);
         }
         response
+    }
+
+    /// After every poll (`main.rs`): the relying parties the pull calls
+    /// for built, the rest dropped.
+    /// A test's way to have the library drop a session on its own (a
+    /// refresh refused, an entry evicted), the proxy's store untouched.
+    #[cfg(test)]
+    pub fn library_forgets(&self, client_id: &str, id: &str) {
+        if let Some(party) = self.rps.held(client_id) {
+            party.rp.remove_session(id);
+        }
+    }
+
+    pub async fn reconcile(&self) {
+        let pulled = self.pep.sync.proxy();
+        self.rps.reconcile(&pulled).await;
+        self.pep.sync.set_relying_parties(self.rps.counts());
     }
 
     fn upstream_client(

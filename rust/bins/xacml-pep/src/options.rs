@@ -98,6 +98,12 @@ pub struct Options {
     pub proxy_upstream_ca: Option<Vec<u8>>,
     /// Do not verify an https upstream's certificate.
     pub proxy_upstream_insecure: bool,
+    /// The session mechanism's relying party may talk to an `http` issuer
+    /// (the library's `allowInsecure`): a development provider only. It
+    /// does not relax the redirect URI, which stays https or loopback.
+    pub proxy_rp_allow_insecure: bool,
+    /// How often the CAEP/RISC receiver polls the service's stream.
+    pub proxy_signals_poll_ms: u64,
 }
 
 /// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
@@ -348,6 +354,16 @@ impl Options {
             )
             .as_deref()
                 == Ok("true"),
+            proxy_rp_allow_insecure: std::env::var(
+                "PEP_PROXY_RP_ALLOW_INSECURE",
+            )
+            .as_deref()
+                == Ok("true"),
+            proxy_signals_poll_ms: int_from_env(
+                "PEP_PROXY_SIGNALS_POLL_MS",
+                5000u64,
+            )
+            .max(100),
         }
     }
 }

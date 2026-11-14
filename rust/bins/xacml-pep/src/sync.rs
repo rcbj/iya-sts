@@ -403,6 +403,9 @@ struct State {
     proxy: ProxyHolding,
     last_proxy_kept_why: String,
     proxy_counters: ProxyCounters,
+    /// (relying parties, CAEP/RISC receivers) the proxy holds, as of its
+    /// last reconcile.
+    relying_parties: (usize, usize),
 }
 
 /// The register / pull / heartbeat client and what it holds.
@@ -460,6 +463,7 @@ impl Sync {
                 },
                 last_proxy_kept_why: String::new(),
                 proxy_counters: ProxyCounters::default(),
+                relying_parties: (0, 0),
             }),
         }
     }
@@ -1430,6 +1434,10 @@ impl Sync {
         *c.by_status.entry(status).or_insert(0) += 1;
     }
 
+    pub fn set_relying_parties(&self, counts: (usize, usize)) {
+        self.lock().relying_parties = counts;
+    }
+
     pub fn count_sign_in(&self) {
         self.lock().proxy_counters.sign_ins += 1;
     }
@@ -1474,7 +1482,15 @@ impl Sync {
             "publicRoutes": active
                 .map_or(0, |p| p.routes.iter().filter(|r| r.public).count()),
             "routesByMechanism": mechanisms,
-            "sessionClient": h.pulled.realm.client_id.is_some(),
+            "unusableRoutes": active.map_or(0, |p| {
+                p.routes
+                    .iter()
+                    .filter(|r| !r.public && !r.resolved.usable)
+                    .count()
+            }),
+            "sessionClients": h.pulled.realm.clients.len(),
+            "relyingParties": state.relying_parties.0,
+            "signalsReceivers": state.relying_parties.1,
             "signingCertificates": h.pulled.realm.signing_certificates.len(),
             "lastPullAt": h.last_pull_at,
             "lastPullOk": h.last_pull_ok,

@@ -5,10 +5,17 @@
 //! keyed by `state`, and the proxy sessions they become, keyed by a random
 //! 256-bit id the `iya_pep_session` cookie carries.
 //!
+//! **The sign-in itself is the library's** (`rp_set.rs`, `oidc-caep-risc`):
+//! a sign-in in flight holds its `Transaction` (state, nonce, PKCE
+//! verifier), and a proxy session is made under the SAME id the library
+//! keeps its own session under (`complete_session`), so a CAEP
+//! `session-revoked` that ends the one ends the other.
+//!
 //! **In memory, in this process, and nothing else.** A proxy session is a
-//! projection of a sign-on session at the service, which is asked whether
-//! it is still live (`POST /xacml/pep/session`) whenever its last answer is
-//! older than `PEP_PROXY_SESSION_RECHECK_MS`; a restart of this container
+//! projection of a sign-on session at the service, which ends it through
+//! the library's CAEP/RISC receiver, or — on a route with `signals: false`
+//! — is asked whether it is still live (`POST /xacml/pep/session`) whenever
+//! its last answer is older than `PEP_PROXY_SESSION_RECHECK_MS`; a restart of this container
 //! only sends each browser through a sign-in it will not see (the service's
 //! session is still there). Several instances behind a balancer would each
 //! hold their own — *Several instances are NOT a cluster* in
@@ -31,11 +38,14 @@ use crate::jwt::b64url_encode;
 /// How long a sign-in may take.
 pub const PENDING_TTL: Duration = Duration::from_secs(600);
 
-/// A sign-in in flight.
-#[derive(Debug, Clone)]
+/// A sign-in in flight. Not `Debug`: the transaction holds the PKCE
+/// verifier.
+#[derive(Clone)]
 pub struct Pending {
-    pub code_verifier: String,
-    pub nonce: String,
+    /// The library's transaction: state, nonce, PKCE verifier.
+    pub transaction: oidc_caep_risc::Transaction,
+    /// The client (D10's `resolved.clientId`) the sign-in is for.
+    pub client_id: String,
     /// Where to send the browser afterwards: the normalised path and the
     /// original query, ALWAYS relative to the proxy. Never a value the
     /// callback brought.
@@ -46,6 +56,9 @@ pub struct Pending {
 /// A proxy session.
 #[derive(Debug, Clone)]
 pub struct Session {
+    /// The client the session was made by, whose relying party holds the
+    /// library's session under the same id.
+    pub client_id: String,
     pub sid: String,
     pub sub: String,
     pub username: String,
@@ -60,11 +73,6 @@ pub fn random_token(bytes: usize) -> Option<String> {
     let mut buffer = vec![0u8; bytes];
     openssl::rand::rand_bytes(&mut buffer).ok()?;
     Some(b64url_encode(&buffer))
-}
-
-/// PKCE S256 (RFC 7636 section 4.2).
-pub fn code_challenge(verifier: &str) -> String {
-    b64url_encode(&openssl::sha::sha256(verifier.as_bytes()))
 }
 
 struct Inner {
@@ -136,17 +144,28 @@ impl Stores {
             .filter(|p| p.created.elapsed() < PENDING_TTL)
     }
 
-    /// Makes a proxy session and answers its id.
-    pub fn create(&self, session: Session) -> Result<String, Full> {
-        let id = random_token(32).ok_or(Full::Full)?;
+    /// Makes a proxy session under `id` (drawn with [`random_token`]
+    /// before the library's sign-in completes, which keeps its own session
+    /// under it).
+    pub fn create(&self, id: &str, session: Session) -> Result<(), Full> {
         let mut inner = self.lock();
         let ttl = self.ttl;
         inner.sessions.retain(|_, s| s.created.elapsed() < ttl);
         if inner.sessions.len() >= self.max_sessions {
             return Err(Full::Full);
         }
-        inner.sessions.insert(id.clone(), session);
-        Ok(id)
+        inner.sessions.insert(id.to_string(), session);
+        Ok(())
+    }
+
+    /// Whether another proxy session may be made now — asked before the
+    /// library's sign-in completes, so a full store refuses before a code
+    /// is spent.
+    pub fn has_room(&self) -> bool {
+        let mut inner = self.lock();
+        let ttl = self.ttl;
+        inner.sessions.retain(|_, s| s.created.elapsed() < ttl);
+        inner.sessions.len() < self.max_sessions
     }
 
     /// The live session a cookie names.
@@ -203,8 +222,8 @@ mod tests {
 
     fn pending(to: &str) -> Pending {
         Pending {
-            code_verifier: "v".into(),
-            nonce: "n".into(),
+            transaction: oidc_caep_risc::Transaction::default(),
+            client_id: "c".into(),
             return_to: to.into(),
             created: Instant::now(),
         }
@@ -212,6 +231,7 @@ mod tests {
 
     fn session() -> Session {
         Session {
+            client_id: "c".into(),
             sid: "sid".into(),
             sub: "urn:uuid:1".into(),
             username: String::new(),
@@ -230,9 +250,12 @@ mod tests {
         assert!(stores.take("a").is_none(), "the oldest was dropped");
         assert_eq!(stores.take("c").unwrap().return_to, "/c");
         assert!(stores.take("c").is_none(), "spent");
-        let one = stores.create(session()).unwrap();
-        let _two = stores.create(session()).unwrap();
-        assert_eq!(stores.create(session()), Err(Full::Full));
+        let one = random_token(32).unwrap();
+        stores.create(&one, session()).unwrap();
+        assert!(stores.has_room());
+        stores.create("two", session()).unwrap();
+        assert!(!stores.has_room());
+        assert_eq!(stores.create("three", session()), Err(Full::Full));
         assert_eq!(stores.get(&one).unwrap().sub, "urn:uuid:1");
         stores.checked(&one, "", "alice");
         let checked = stores.get(&one).unwrap();
@@ -248,15 +271,10 @@ mod tests {
     }
 
     #[test]
-    fn a_session_expires_and_pkce_is_s256() {
+    fn a_session_expires() {
         let stores = Stores::new(5, 1);
-        let id = stores.create(session()).unwrap();
+        stores.create("one", session()).unwrap();
         std::thread::sleep(Duration::from_millis(5));
-        assert!(stores.get(&id).is_none());
-        // RFC 7636 appendix B.
-        assert_eq!(
-            code_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
-            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-        );
+        assert!(stores.get("one").is_none());
     }
 }
