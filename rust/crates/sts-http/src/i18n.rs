@@ -230,6 +230,7 @@ pub struct Catalogs {
 /// (canonical non-negative integers below 2^32 - 1) first, ascending, then
 /// the rest as written. `JSON.parse` then `JSON.stringify` reorder them
 /// so, and the files are served through that pair.
+// A hot path: per request or per response; no span.
 pub fn js_order(map: Map<String, Json>) -> Map<String, Json> {
     let index = |k: &str| -> Option<u64> {
         let ok = !k.is_empty()

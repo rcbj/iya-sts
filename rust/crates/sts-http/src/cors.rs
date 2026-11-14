@@ -340,6 +340,7 @@ fn strings_of(value: Option<&Json>) -> Vec<String> {
 }
 
 /// `URLSearchParams` decoding: `+` a space, `%XX` a byte, a stray `%` kept.
+// A hot path: per request or per response; no span.
 pub fn form_decode(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -538,6 +539,7 @@ pub fn named_clients(req: &CorsRequest) -> Vec<Named> {
 }
 
 /// `decodeURIComponent()`, refusing a malformed escape.
+// A hot path: per request or per response; no span.
 pub fn percent_decode_strict(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -674,6 +676,7 @@ pub fn decide(
 
 /// `continuesToRoute()`: GNAP's grant endpoint, whose OPTIONS is RFC 9635
 /// section 9's discovery request, and not a published API's page.
+// A hot path: per request or per response; no span.
 pub fn continues_to_route(path: &str) -> bool {
     let gnap = path == "gnap" || path.ends_with("/gnap");
     let api_page = path

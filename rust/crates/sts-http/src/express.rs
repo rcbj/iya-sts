@@ -31,6 +31,7 @@ pub struct Sent {
 }
 
 /// The message `statuses` (finalhandler's) gives a status code.
+// A hot path: per request or per response; no span.
 pub fn status_message(code: u16) -> &'static str {
     match code {
         100 => "Continue",
@@ -101,6 +102,7 @@ pub fn status_message(code: u16) -> &'static str {
 }
 
 /// `escape-html`, as `finalhandler` and Express escape.
+// A hot path: per request or per response; no span.
 pub fn escape_html(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -118,6 +120,7 @@ pub fn escape_html(text: &str) -> String {
 
 /// `finalhandler`'s `createHtmlDocument()`: the message escaped, a newline
 /// a `<br>`, a double space ` &nbsp;`.
+// A hot path: per request or per response; no span.
 pub fn error_document(message: &str) -> String {
     let body = escape_html(message)
         .replace("\r\n", "<br>")
@@ -173,6 +176,7 @@ fn charset_of(essence: &str) -> bool {
 /// `res.type(t)` / `res.set('Content-Type', t)`: a bare extension looked
 /// up (only the few this service names), and `; charset=utf-8` added where
 /// `mime` names one and the value carries no charset.
+// A hot path: per request or per response; no span.
 pub fn typed(value: &str) -> String {
     let full = if value.contains('/') {
         value.to_string()
@@ -219,6 +223,7 @@ fn with_utf8(value: &str) -> String {
 /// `res.send(body)`: the type (HTML for a string with none, a Buffer's
 /// `application/octet-stream`), `; charset=utf-8` on a string's type, and
 /// the [`Sent`] marker that owes it an ETag at the flush.
+// A hot path: per request or per response; no span.
 pub fn send(
     status: StatusCode,
     mut headers: HeaderMap,
@@ -249,6 +254,7 @@ pub fn send(
 
 /// `res.vary(field)` (the `vary` package): the field appended to `Vary`
 /// unless it is there (case-insensitively) or `Vary` is `*`.
+// A hot path: per request or per response; no span.
 pub fn vary(headers: &mut HeaderMap, field: &str) {
     let current = headers
         .get(header::VARY)
@@ -274,17 +280,19 @@ pub fn vary(headers: &mut HeaderMap, field: &str) {
 
 /// The `etag` package's weak tag of a body: `W/"<length in hex>-<the
 /// first 27 characters of the base64 SHA-1>"`.
+// A hot path: per request or per response; no span.
 pub fn weak_etag(body: &[u8]) -> String {
     if body.is_empty() {
         return "W/\"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk\"".to_string();
     }
     use base64::Engine;
-    let digest = sts_crypto::digest::sha1(body);
+    let digest = sts_crypto::content_hash::sha1(body);
     let b64 = base64::engine::general_purpose::STANDARD.encode(digest);
     format!("W/\"{:x}-{}\"", body.len(), &b64[..27.min(b64.len())])
 }
 
 /// `fresh` 0.5.2: whether a conditional GET's validators still match.
+// A hot path: per request or per response; no span.
 pub fn fresh(request: &HeaderMap, response: &HeaderMap) -> bool {
     let get = |h: &HeaderMap, n: header::HeaderName| {
         h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string)
@@ -331,6 +339,7 @@ pub fn fresh(request: &HeaderMap, response: &HeaderMap) -> bool {
 /// What `res.send()` finishes with, once the body is final: the ETag of a
 /// sent body, 304 for a fresh conditional GET (its content headers and
 /// body gone), and no body for a HEAD.
+// A hot path: per request or per response; no span.
 pub async fn finish(
     method: &Method,
     request: &HeaderMap,
