@@ -34,8 +34,11 @@ use sts_store::postgres::PostgresDriver;
 
 const JOB: &str = "two.nodes";
 const RAN: &str = "two-nodes.ran";
-const HEARTBEAT_MS: f64 = 250.0;
-const TTL_MS: f64 = 1500.0;
+// A lifetime long enough that a busy machine's stall is not a partition:
+// the first run, on a laptop at a load of 15, had both nodes fail-stop
+// (STS-CLUSTER-0004) at a 1.5 s lifetime — the rule working, the test not.
+const HEARTBEAT_MS: f64 = 500.0;
+const TTL_MS: f64 = 6000.0;
 
 struct Settings;
 impl SchedulerSettings for Settings {
@@ -275,7 +278,7 @@ async fn a_job_runs_on_exactly_one_of_two_nodes_and_moves_when_it_dies() {
     // The leader dies without a word; its rows expire by the database's
     // clock and B takes the lease at the next token.
     drop(a);
-    tokio::time::sleep(Duration::from_millis(3000)).await;
+    tokio::time::sleep(Duration::from_millis(TTL_MS as u64 + 3000)).await;
     let (holder, token_b) = leader(&store).await;
     assert_eq!(holder, b_id, "the lease moved");
     assert!(
