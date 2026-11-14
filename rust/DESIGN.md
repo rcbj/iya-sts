@@ -239,7 +239,11 @@ rust/
     sts-cluster/                 membership, leases, fencing, claims, barrier, Scheduler
     sts-cache/                   CacheRegistry and the bounded caches it describes
     sts-http/                    the HTTP application: realm layer, CSP, CORS, bodies,
-                                 call log, validation guard, error-code marking
+                                 call log, validation guard, error-code marking;
+                                 the static surfaces' host (shells, the bundles
+                                 read from the TypeScript build's tree at
+                                 STS_WEB_ROOT, /web), held to Node by
+                                 tests/tools/http-differential.js
     sts-directory/               the embedded directory model and the LDAP server
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider

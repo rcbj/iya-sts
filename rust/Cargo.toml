@@ -85,6 +85,10 @@ md4 = "0.11"
 md-5 = "0.11"
 rc4 = "0.2"
 thiserror = "2.0"
+brotli = "8"
+futures-util = "0.3"
+encoding_rs = "0.8"
+icu_locale = "2"
 tracing = "0.1"
 
 [workspace.lints.rust]
