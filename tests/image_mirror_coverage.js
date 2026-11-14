@@ -285,7 +285,13 @@ function run(t) {
   }
   const rootFroms = externalRefs(read('Dockerfile'))
     .concat(externalRefs(read('xacml-pep/Dockerfile')));
+  // This project's OWN published images are not third-party and are not
+  // mirrored — check 4's rule. Since #1717 the root Dockerfile's default
+  // debugger image is one (ghcr.io/rcbj/id-proto-debugger-embedded).
   const uncovered = rootFroms.filter(function (ref) {
+    if (ref.indexOf('ghcr.io/rcbj/') === 0) {
+      return false;
+    }
     const target = wf[contextKey(ref)];
     return !target || target.indexOf(MIRROR) !== 0 ||
            !paths.has(target.slice(MIRROR.length));

@@ -279,10 +279,16 @@ the rule `common/CLAUDE.md` states about anything that is not a row in a store.
 
 * **A checkout:** `embedded/build.sh --out ../iya-sts/debugger/embedded` in the
   debugger project.
-* **The image:** the Dockerfile's `ARG DEBUGGER_IMAGE` (default the empty stage
-  `debugger-none`) and `COPY --from=debugger /debugger/ ./debugger/embedded/`.
-  `docker-compose.yml` passes `DEBUGGER_IMAGE`. The indirection through a stage
-  name is what makes "no debugger" a successful classic-builder build.
+* **The image:** the Dockerfile's `ARG DEBUGGER_IMAGE` and `COPY
+  --from=debugger /debugger/ ./debugger/embedded/`. **The default is a tagged
+  release since #1717 (2026-11-14)**: `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1`, published
+  public by the debugger project's Docker Image CI from its master. Pinned to
+  an M.N.O so a release ships the debugger it was tested with; moving it is
+  bumping the tag here and in `docker-compose.yml`'s `DEBUGGER_IMAGE` default.
+  `debugger-none` is still a stage with an empty tree, and the indirection
+  through a stage name is what makes "no debugger" a successful
+  classic-builder build. `tests/image_mirror_coverage.js` exempts this
+  project's own `ghcr.io/rcbj/` images from the third-party mirror.
 
 A missing tree is `STS-DBG-0015`, logged and shown on `/admin/debugger`, and
 costs the rest of the service nothing.

@@ -27,15 +27,22 @@
 # repository is already a submodule of the debugger project, so the reverse
 # would be a cycle. `COPY --from` an image works with the classic builder.
 #
-# **DEFAULTS TO A STAGE WITH AN EMPTY TREE**, so a build that names no
-# debugger image succeeds exactly as it did before: the listener then reports
-# the debugger as not installed on /admin/debugger and the rest of the service
-# is unaffected. Pass
+# **DEFAULTS TO A TAGGED RELEASE OF THE DEBUGGER (#1717, 2026-11-14)**, the
+# image the debugger project's Docker Image CI publishes from its master
+# branch — public on ghcr.io, so a build needs no login for it. PINNED to an
+# M.N.O, never `latest`: a release of this service ships the debugger build it
+# was tested with. Moving the debugger forward is bumping this tag (and
+# docker-compose.yml's, which repeats it). Override with
 #   --build-arg DEBUGGER_IMAGE=rcbj/id-proto-debugger-embedded:<tag>
-# to embed one. The indirection through a stage name is what lets the default
-# be "nothing" under the classic builder, which cannot make a COPY optional.
+# for a local build of it, or
+#   --build-arg DEBUGGER_IMAGE=debugger-none
+# for an image with NO debugger: the stage below holds an empty tree, the
+# listener then reports the debugger as not installed on /admin/debugger and
+# the rest of the service is unaffected. The indirection through a stage name
+# is what lets "nothing" work under the classic builder, which cannot make a
+# COPY optional.
 # ---------------------------------------------------------------------------
-ARG DEBUGGER_IMAGE=debugger-none
+ARG DEBUGGER_IMAGE=ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1
 FROM ubuntu:latest AS debugger-none
 RUN mkdir -p /debugger
 FROM ${DEBUGGER_IMAGE} AS debugger
