@@ -24,6 +24,7 @@ is why it is shaped the way it is.
 | `demo_kerberos.js` | The Kerberos and SPNEGO demonstration (#595): `/spnego`, `/spnego/protected`, `/krb5/service`, and the protected TCP service on `COMPANION_KRB5_SERVICE_PORT` (8888) |
 | `krb5_error.js` | The one Kerberos message the companion writes itself: the KRB-ERROR its TCP service answers a refusal with |
 | `social_idps.js` | A dummy of each of the 39 named social providers (#1689), at `/social/{id}` |
+| `pep_app.js` | The application the remote XACML PEP protects as a reverse proxy (#1760), at `/pep-app`: every page echoes what reached it as JSON |
 
 Node built-ins, `bunyan`, `qrcode` and `kerberos`, pinned and installed from
 the committed lockfile. Plain JavaScript and no build of its own: the
@@ -219,6 +220,44 @@ keeps it, so the right check after it still confirms.
 No timer. The code, token, push and Steam-nonce maps are capped on insert
 and nothing is swept.
 
+## The application the remote PEP protects (#1760)
+
+The remote PEP container can be a reverse proxy in front of one upstream
+application (`xacml-pep/CLAUDE.md`). rcbj's direction on #1760: the dummy
+application its protocol job drives is built INTO the companion, not into
+the job or the test peer (`tests/peer/`). `pep_app.js` serves it at
+`/pep-app`:
+
+| Path | Page | What it is for |
+|---|---|---|
+| `GET /pep-app/_hits` | — | `{ total, byPath }`: how many requests reached each path. Not counted itself. The job reads it DIRECTLY, never through the proxy, to prove a refused or unrouted request never reached the application |
+| `/pep-app/public[/…]` | `public` | the public route |
+| `GET /pep-app/public/hop` | `hop` | answers `Connection: x-upstream-secret`, `X-Upstream-Secret` and `Keep-Alive` beside an end-to-end `X-Upstream-Visible`, so the job can assert the proxy drops a response's hop-by-hop headers (RFC 9110 section 7.6.1) |
+| `/pep-app/protected[/…]` | `protected` | the session route |
+| `GET /pep-app/api/items` | `items` | the OAuth 2.0 and Basic route's read |
+| `POST /pep-app/api/items` | `item-created` (201) | the write: allowed and refused methods |
+| `GET /pep-app/slow?ms=` | `slow` | answered after `ms`, at most 30 s: the proxy's upstream timeout (504) |
+| anything else under `/pep-app` | `other` | e.g. the SAML route's pages |
+
+Every page answers one JSON shape: `{ app: "pep-app", page, method, path,
+query, headers, hit }`, plus `body: { length, sha256 }` when a body was
+sent (always for POST, PUT and PATCH). **`path` is the RAW request
+target**, dot segments as sent, so a traversal the proxy forwarded would
+show; `headers` is every header node received, names lower-cased, so the
+job reads the identity headers the proxy added and the `Authorization` and
+proxy cookie it must have stripped. A body over 8 MiB is the application's
+own 413, well past any `maxBodyBytes` the job sets.
+
+**DISPATCHED BEFORE THE SESSION AND THE CSRF CHECK**, by the raw path. The
+proxy, not a browser, sends these requests, with no companion session; a
+`companion_sid` set on every answer would be one more header for the job to
+explain, and a write bound to a form token could not be proxied at all.
+**Nothing here is authorization**: it trusts every header, because deciding
+is the proxy's job and echoing is this one's. The counter is capped on
+insert (2000 paths); the slow page's delay is one request's. It needs
+nothing of the service, so the test stack's companion runs with no
+bootstrap secret and its Kerberos TCP service off.
+
 ## The pages carry no script
 
 The service's static-surface rule (root `CLAUDE.md`, *Pages with a script*)
@@ -261,9 +300,18 @@ headers; the TCP framing; the KRB-ERROR, read back by the service's vendored
 codec). `tests/social_idp_signins.js` signs in through each dummy social
 provider as its own assertion, against this module on a loopback port, and
 `tests/companion.js` holds that a token POST under `/social` is that dummy
-and not the CSRF page. No protocol job needs the companion — every job uses
-the service's own doors (`/admin-api`, `/account-api`, the protocol
-endpoints) — so it is not on the test stack. End to end the OpenID4VC half was driven over CDP
+and not the CSRF page; section 9 holds `/pep-app`'s echo, its raw path, the
+write's digest, the hop-by-hop page, the slow page and the counter.
+
+**ONE PROTOCOL JOB NEEDS THE COMPANION SINCE #1760**, and so it is on the
+test stack: `docker-compose-run-tests.yml`'s `companion`, in every local
+mode, pinned at `.49`, with `XACML_PEP_UPSTREAM_URL=http://companion:9700`
+handed to the runner. `tests/protocol/sts_xacml_remote_pep.js` section 10
+puts the remote PEP's proxy in front of `/pep-app`; when that job starts
+its own PEP (no launcher) it builds this image and starts it beside the
+PEP. Every other job still uses the service's own doors. The companion
+remains development-only on that stack too: the service image never
+carries this directory. End to end the OpenID4VC half was driven over CDP
 against a private stack, and the Kerberos half with MIT `kinit` and
 `curl --negotiate` from a throwaway container against the companion and the
 service's KDC.

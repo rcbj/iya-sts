@@ -45,6 +45,14 @@
 //      the social dummies among them (#1689).
 //   7b. a token POST under `/social` with no session cookie is the dummy's
 //      `invalid_grant`, not the CSRF page: the service posts there.
+//   9. THE REMOTE PEP'S UPSTREAM APPLICATION (#1760), `/pep-app`: each page
+//      echoes the method, the RAW path (a dot segment as sent), the query
+//      and every header as JSON, sets no session cookie, and counts the
+//      request on `/pep-app/_hits` (which counts nothing itself); a POST
+//      to `/pep-app/api/items` is a 201 carrying the body's length and
+//      SHA-256 with no form token; `/pep-app/public/hop` answers
+//      `Connection: x-upstream-secret` with that header beside an
+//      end-to-end one; `/pep-app/slow` waits what it was asked, bounded.
 //
 // In process: the companion requires nothing of the service, so nothing
 // here loads the protocol stack.
@@ -638,7 +646,114 @@ async function run(t) {
     server.close();
   }
   await kerberosDemonstration(t);
+  await pepApplication(t);
   log.debug("Leaving run().");
+}
+
+/**
+ * One raw request to the companion: a path sent as written, headers, and a
+ * body. `http.request` keeps the path's dot segments, which `fetch` would
+ * resolve away.
+ *
+ * @param {number} port - the companion's port
+ * @param {string} method - the method
+ * @param {string} where - the raw path
+ * @param {object} [headers] - the headers
+ * @param {Buffer|string} [body] - the body
+ * @returns {Promise<object>} `{ status, headers, text, json }`
+ */
+function raw(port, method, where, headers, body) {
+  log.debug("Entering raw(). " + method + " " + where);
+  log.debug("Leaving raw().");
+  return new Promise(function (resolve, reject) {
+    const req = http.request({ host: '127.0.0.1', port: port, path: where,
+                               method: method, headers: headers || {} },
+                             function (res) {
+      let text = '';
+      res.on('data', function (c) {
+        text += c;
+      });
+      res.on('end', function () {
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in raw(): " + ((e && e.message) || e));
+          json = null;
+        }
+        resolve({ status: res.statusCode, headers: res.headers, text: text,
+                  json: json });
+      });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+// 9. The remote PEP's upstream application (#1760).
+async function pepApplication(t) {
+  log.debug("Entering pepApplication().");
+  const { Companion } = require(path.join(ROOT, 'companion', 'companion.js'));
+  const companion = new Companion({ port: 0, publicUrl: PUBLIC,
+                                    walletUrl: '' }, { sts: standIn() });
+  const server = await companion.listen();
+  const port = server.address().port;
+  try {
+    let r = await raw(port, 'GET', '/pep-app/protected/x?a=1&a=2&b=3',
+                      { 'x-remote-user': 'pep-admin-person',
+                        authorization: 'Bearer abc' });
+    const e = r.json || {};
+    t.check(r.status === 200 && e.app === 'pep-app' &&
+            e.page === 'protected' && e.method === 'GET' &&
+            e.path === '/pep-app/protected/x' &&
+            JSON.stringify(e.query) === JSON.stringify({ a: ['1', '2'],
+                                                        b: '3' }) &&
+            !!e.headers && e.headers['x-remote-user'] === 'pep-admin-person' &&
+            e.headers.authorization === 'Bearer abc' && !e.body &&
+            !r.headers['set-cookie'],
+            '9a. a /pep-app page echoes the method, path, query and every ' +
+            'header it received, and sets no session cookie', r.text);
+    r = await raw(port, 'GET', '/pep-app/public/../protected');
+    t.check(r.status === 200 && !!r.json &&
+            r.json.path === '/pep-app/public/../protected' &&
+            r.json.page === 'public',
+            '9b. the path echoed is the raw one, dot segments as sent',
+            r.text);
+    const body = Buffer.from('{"name":"widget"}');
+    r = await raw(port, 'POST', '/pep-app/api/items',
+                  { 'content-type': 'application/json',
+                    'content-length': body.length }, body);
+    const digest = require('crypto').createHash('sha256').update(body)
+      .digest('hex');
+    t.check(r.status === 201 && !!r.json && r.json.page === 'item-created' &&
+            !!r.json.body && r.json.body.length === body.length &&
+            r.json.body.sha256 === digest,
+            '9c. a POST to /pep-app/api/items needs no form token and ' +
+            'echoes the body\'s length and SHA-256', r.text);
+    r = await raw(port, 'GET', '/pep-app/public/hop');
+    t.check(r.status === 200 &&
+            /x-upstream-secret/i.test(String(r.headers.connection)) &&
+            r.headers['x-upstream-secret'] === 'only-for-the-next-hop' &&
+            r.headers['x-upstream-visible'] === 'end-to-end',
+            '9d. /pep-app/public/hop answers a hop-by-hop header named by ' +
+            'Connection beside an end-to-end one', JSON.stringify(r.headers));
+    const started = Date.now();
+    r = await raw(port, 'GET', '/pep-app/slow?ms=300');
+    const took = Date.now() - started;
+    t.check(r.status === 200 && !!r.json && r.json.waitedMs === 300 &&
+            took >= 280,
+            '9e. /pep-app/slow waits what it was asked', took + 'ms');
+    r = await raw(port, 'GET', '/pep-app/_hits');
+    const hits = (r.json && r.json.byPath) || {};
+    t.check(r.status === 200 && hits['/pep-app/protected/x'] === 1 &&
+            hits['/pep-app/api/items'] === 1 && r.json.total === 5 &&
+            !('/pep-app/_hits' in hits),
+            '9f. /pep-app/_hits counts each path that reached the ' +
+            'application and not itself', r.text);
+  } finally {
+    server.close();
+  }
+  log.debug("Leaving pepApplication().");
 }
 
 module.exports = {
