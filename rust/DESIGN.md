@@ -135,28 +135,45 @@ It is a sequence of phases, each of which leaves a service that passes the suite
   geography map) are drawn by the SPA from API data, or served by the API as
   SVG, decided in the phase that moves each.
 
-## 3. Getting there: a replacement, not a migration
+## 3. Getting there: a replacement that upgrades a running install
 
-**The owner's decision, 2026-10-05: no installation survives the transition.
-Nobody runs this service yet, and the conversion should finish quickly.** That
-removes the hardest constraint a migration has, and this section is shaped by
-its absence:
+**The owner's decision, 2026-11-14 (D11, reversed): the Rust runtime is an
+UPGRADE of a running 1.x installation, not a fresh start.** Until then this
+section read "no installation survives" (2026-10-05, reconfirmed 2026-11-05).
+On 2026-11-11, after 1.0.0 was published and certified, the owner made
+backwards compatibility a requirement from 1.0.0 on, and on 2026-11-14 applied
+it to the cutover. That puts back the constraint the earlier plan was shaped
+by the absence of:
 
-**Reconfirmed by the owner on 2026-11-05 (D11)**, after the repository went public
-and the version became 1.0.0 (#1298).
-
-* **No coexistence.** The Rust runtime does not join the Node cluster, and
+* **Still no coexistence.** The Rust runtime does not join a Node cluster, and
   Node does not dispatch to it. The two are separate images. The Node service
-  stays on `develop`, working, until the cutover, and is then deleted.
-* **No data compatibility.** Nothing written by Node has to be read by Rust.
-  The postgres schema, the minted-state rows, the LDAP entry encoding and the
-  sealed-value formats belong to the Rust runtime and may change wherever a
-  better design calls for it. `postgres/schema.sql` is the starting point, not
-  a contract.
-* **What IS still a contract**: everything a client, an operator or the
-  console sees — every URL, port, protocol message, setting key, environment
-  variable, error code and `/admin-api` operation. That is what the protocol
-  suite tests, and it is why the suite stays the oracle.
+  stays on `develop`, working, until the cutover, and is then deleted. An
+  operator upgrades by stopping the Node containers and starting the Rust
+  image on the same store, exactly as for any other release.
+* **Data compatibility (D2, live again).** Everything a 1.x installation has
+  written must be read by Rust as it stands: the PostgreSQL and MariaDB
+  schema at the version the last Node release left it (32 today, with
+  `postgres/upgrade-*.sql` and `mariadb/upgrade-*.sql` for each step), the
+  minted-state and change rows, the LDAP entry encoding, the sealed-value
+  envelopes (#391), the key sets, the settings overrides. Rust may move a
+  store forward with an upgrade step of the same kind Node uses, never by
+  asking the operator to start again. **The schema is the abstract model's**
+  (`models/persistence/*.tsp`, #1390), so both implementations read one
+  source rather than two copies.
+* **One copy of the tables (D4, live again, and largely solved by #1390).**
+  The settings and error-code tables are exported for Rust from the Node
+  tables until the cutover (`tests/tools/export-rust-tables.js`), and
+  everything the abstract model now holds is read from `models/generated/`
+  by both (D15).
+* **What was always a contract still is**: everything a client, an operator
+  or the console sees — every URL, port, protocol message, setting key and
+  alias, environment variable, error code, compose variable, image name and
+  API operation and member. That is what the protocol suite tests, and it is
+  why the suite stays the oracle.
+* **The cutover is a major release** (`common/version.js`'s rules: a release
+  that needs an upgrade step is never a patch), and phase 10 proves it with an
+  upgrade test: a store written by the last Node release, with every family's
+  state in it, is opened by the Rust image and the suite passes against it.
 
 ### 3.1 How progress is measured
 
@@ -184,8 +201,9 @@ requires, 2026-11-05):
 
 Phase 10 switches `Dockerfile`, the compose files and CI to the Rust runtime with
 the static surfaces built into it and deletes the Node runtime. From then on the
-protocol suite, still JavaScript, runs against Rust in every mode. What happens
-to the in-process tests is D12.
+protocol suite, still JavaScript, runs against Rust in every mode. Before that
+switch, the upgrade test of section 3 runs: a store the last Node release wrote,
+opened by Rust. What happens to the in-process tests is D12.
 
 ## 4. The organisation of the code
 
@@ -360,9 +378,13 @@ contract to hold the Rust to. It does not shorten the engine's port.
    server code lines (`admin.ts`, `crypto_metadata.ts`, `pki_admin.ts`,
    `delegation_map.ts`, …), and most of the service's other directories require them. `portal/` holds
    8,645, the providers `/account-api` gathers. All of it is ported as API logic.
-2. **The contract is weak where the static surfaces most need it.** A document
-   with no response schema cannot catch a Rust answer of the wrong shape. Phase 2b
-   closes this (decision 8 below).
+2. ~~**The contract is weak where the static surfaces most need it.**~~ **Closed
+   on Node by #1353 and #1390 (2026-11-05 to 11-11).** Every operation of the five
+   documents — the Management API (680), the Admin Console API (20, new), the
+   Account API (80), the Authentication API (46) and the Reports API (23), 849 in
+   all — has a success schema, every answer is validated against a CLOSED model on
+   every response, and the documents are generated from `models/api/*.tsp`
+   (decision 8 below, and D15).
 3. **Pictures are laid out on the server.** `delegation_map.ts`,
    `federation_diagram.ts`, `geo_map.ts` and `federation/federation_graph.ts` lay
    out server-side, some with `@dagrejs/dagre`. Moving each layout into the browser
@@ -409,13 +431,14 @@ contract to hold the Rust to. It does not shorten the engine's port.
    (section 4.4).
 7. **Rule 7 is unchanged and gains a twin**: a portal control has an
    `/account-api` operation in the same commit.
-8. **The OpenAPI documents are the contract.** The documents of `/admin-api`,
-   `/account-api`, `/report-api` and `/authn-api` are snapshotted before the first
-   operation moves, and response schemas are added on Node wherever the table in
-   section 5.1 shows them missing. Each Rust document, built with `utoipa` from
-   the same declarations, must equal its snapshot, except for the operations a
-   phase adds. A JavaScript job checks each answer the suite receives against the
-   schema, on Node first and then on Rust.
+8. **The OpenAPI documents are the contract, and since #1390 they are generated
+   from the model** (`models/api/*.tsp` → `models/generated/openapi.*.json`). Rust
+   does not rebuild them with `utoipa`: it SERVES the generated documents and
+   validates its requests and answers against the same generated models, as Node
+   does (#1353; D15). The snapshot this decision used to call for is the model
+   itself, and a phase's new operations are already in it. A JavaScript job checks
+   each answer the suite receives against the schema, on Node first and then on
+   Rust.
 
 **The console is converted first, on the Node service (#446, owner,
 2026-10-05)**: every page becomes a pure client of Node's `/admin-api`,
@@ -538,19 +561,20 @@ writes them into a gitignored directory or `STS_CRYPTO_VECTORS`).
 | # | Decision | Recommendation |
 |---|---|---|
 | **D1** | **Kerberos.** Eight codec files are locked copies of the parent project's `common/krb5/`, and the parent's tests COPY `krb5_kdc`, `krb5_service`, `spnego` and their closure from this repository. | **DECIDED by the owner, 2026-10-05: the files may be modified and DECOUPLED from the parent project.** The Kerberos phase ports them to `sts-kerberos`. The parent's COPY closure was retired as an obligation on 2026-11-02 (#1280): nothing here is owed to the parent, and `krb5_kdc`, `krb5_service` and `spnego` may be converted like any other module. Interoperability is proved against a real Windows domain controller by the owner's existing compatibility tests, as well as by the protocol suite |
-| **D2** | ~~The store during the migration.~~ | **Moot (owner, 2026-10-05)**: no installation survives, so there is no coexistence and no store shared between the two implementations (section 3) |
+| **D2** | **The store across the transition.** | **Live again (owner, 2026-11-14, with D11)**: no coexistence, but the Rust runtime opens the store a 1.x Node installation left, as it is, and moves it forward only with an upgrade step (section 3) |
 | **D3** | **The logging rule.** `#[tracing::instrument]` instead of hand-written Entering/Leaving lines. | **DECIDED by the owner, 2026-10-05, on one condition: the END RESULT of logging and tracing stays intact** — the same bunyan JSON lines, levels and fields, an entry and an exit line per named function at `debug`, error codes at the front of a line. `sts-core`'s logging layer formats `instrument`'s span events as `Entering NAME().` / `Leaving NAME().`, and a test holds it |
-| **D4** | ~~One copy of the tables shared by both implementations.~~ | **Moot (owner, 2026-10-05)**: with no coexistence, the settings and error-code tables simply move into the runtime, and the console reads settings descriptions through `/admin-api` (section 4.4) |
+| **D4** | **One copy of the tables shared by both implementations.** | **Live again (owner, 2026-11-14, with D11)**, and mostly answered by the abstract model: the error-code and settings tables are exported from Node until the cutover, and what `models/` holds is read from `models/generated/` by both (D15) |
 | **D5** | **OpenSSL as the primary crypto provider.** | Accept it (section 6) |
 | **D6** | **Converting the test suites.** | **DECIDED by the owner, 2026-11-05: no test suite is converted to Rust.** This reverses the earlier recommendation to rewrite the in-process half as Rust tests. What becomes of those tests at the cutover is D12 |
 | **D7** | **`/account-api`** as a second API rather than more `/admin-api` operations. | Accept it. A person acting on their own entry is a different authority from an operator acting on anyone's, and one API holding both would put that difference in a parameter |
 | **D8** | **The embedded debugger.** | **DECIDED by the owner, 2026-11-05: out of scope of #444** |
 | **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05, and REVERSED FOR THE CONSOLE the same day (#446)**: the console is a public client whose tokens are in the browser, in memory, bound to a non-extractable DPoP key; it is exempt from FAPI's confidential-client rule; and `adminApi.authRequired=false` is development-only. **REVERSED FOR THE PORTAL on #568 (2026-10-12)**: the same pattern, the public client `sts-user-portal`, its tokens audienced to `/account-api` (section 2) |
 | **D10** | **Script on the console and portal.** | **DECIDED by the owner, 2026-10-05: `script-src 'self'` on `/admin/` and `/portal/` only**, reversing the works-without-script rule for those two surfaces (section 2) |
-| **D11** | **Does "no installation survives" (section 3) still hold?** The repository is public, the version is 1.0.0, and the image is published. | **DECIDED by the owner, 2026-11-05: it still holds.** No coexistence, no data compatibility, no migration tool |
+| **D11** | **Does "no installation survives" (section 3) still hold?** The repository is public, the version is 1.0.0, and the image is published. | ~~DECIDED by the owner, 2026-11-05: it still holds.~~ **REVERSED by the owner, 2026-11-14**: the cutover is a compatible upgrade of a running 1.x installation — its store, sealed values, settings and their aliases, APIs, error codes and configuration (section 3). It follows the 2026-11-11 rule that backwards compatibility is required from 1.0.0 on |
 | **D12** | **The in-process tests at the cutover.** Nearly all of the 813 files require or start the Node service, so they cannot test Rust, and D6 rules out porting them to Rust. | **DECIDED by the owner, 2026-11-05:** they keep guarding Node until the cutover and are then removed with the modules they test. Before that, the behaviours only they cover are listed, and each that can be asserted over the wire gets a JavaScript `local: true` protocol job. The list is made in phase 2b; the jobs are not yet sized |
 | **D13** | **New features during the conversion.** The server code grew by about 115,000 lines last month. Porting cannot catch up while that continues (section 11). | **DECIDED by the owner, 2026-11-05, as the planning assumption:** features freeze from the start of phase 3, except security fixes and what a release needs, and each fix lands in Node and in any Rust already ported. **OpenID certification fixes and post-quantum fixes across the subsystems continue through the freeze** (section 11) |
 | **D14** | **`feature/444`: keep or restart.** | **DECIDED by the owner, 2026-11-05: keep it**, and merge `develop` into it in phase 2b (5 files conflict). All 212 of its tests pass, run without the vector and database gates, and those gates run during the merge |
+| **D15** | **The abstract model as a source for Rust.** Since #1390 and #1579 (closed 2026-11-11), `models/` (about 94,000 lines of TypeSpec) is the source of the five OpenAPI documents, the directory schema and its name lists, both SQL schemas, and every protocol family's request shapes, answers, registers and error codes; the build writes `models/generated/*.json`, which the Node modules read. | **Proposed, 2026-11-14:** Rust reads the same generated files, through a crate (`sts-model`) that `build.rs` turns into types, validators and registers, as `sts-core` already does with the exported tables. The model is the contract both implementations are held to, so what Node reads from it is generated, never ported. The `tests/*_model_wire.js` jobs and the closed response models (#1353) are the oracle for it |
 
 ## 10. How each phase is proved
 
@@ -605,16 +629,16 @@ so it is not used as the rate.
 |---|---|---|---|
 | **0, 1** | Done. The design, the workspace, `sts-xacml`, the `xacml-pep` binary | | |
 | **2** | **Mostly done on `feature/444`:** `sts-core`, `sts-crypto`, `sts-xml`, `x509.js`. `common/pki.js` is not | (see 6) | |
-| **2b** | **Re-baseline.** Merge `develop` into `feature/444` (5 files conflict). Regenerate the tables (error codes went from 4,104 to 5,432). Bring crypto up to date against the vectors (its Node code grew 14,475 → 18,414). Snapshot the four OpenAPI documents and add the missing response schemas. Move the server-laid pictures into the browser. Triage the 33 protocol files that may not run against Rust, and make D12's list | 19,000 to re-check | 1–2 |
-| **3** | **Runtime spine.** `sts-store` (memory, ldif, postgres, and now MariaDB, #677), `sts-cluster`, `sts-cache`, `sts-http`, TLS, realms, and the static-surface host: shells, bundles, `/web`, one CSP builder. `persistence/` has more than doubled since `feature/444` began (11,066 → 25,376) | 58,000 | 1.5–3 |
+| **2b** | **Re-baseline.** ~~Merge `develop` into `feature/444`~~ **done 2026-11-14 (59abb3875; 5 files conflicted).** ~~Regenerate the tables~~ **done** (error codes 5,686; settings 1,449). Bring every ported crate back to parity with Node as it is now, against its vectors: `sts-core`'s settings and mode (23 derived defaults, 127 predicates), `sts-crypto` (Node's crypto grew 14,475 → 18,414 and gained #1368's signature policy), XML, `sts-pki` (with #1360's validation door), the store, cluster and HTTP crates (`persistence/` 11,066 → 25,376, schema 32, read as Node writes it: D2), and `sts-xacml`. ~~Snapshot the four OpenAPI documents and add the missing response schemas~~ **done on Node by #1353 and #1390** (five documents, 849 operations, closed models). Start `sts-model` (D15). Move the server-laid pictures into the browser (still server-side). Triage the 33 protocol files that may not run against Rust, and make D12's list | 19,000 to re-check | 1–2 |
+| **3** | **Runtime spine.** `sts-store` (memory, ldif, postgres, and now MariaDB, #677), reading a 1.x store as Node wrote it (D2), `sts-cluster`, `sts-cache`, `sts-http`, TLS, realms, and the static-surface host: shells, bundles, `/web`, one CSP builder. `persistence/` has more than doubled since `feature/444` began (11,066 → 25,376) | 58,000 | 1.5–3 |
 | **4** | **Directory, LDAP and registers.** Applications, roles, policies, ownership, audit export, mail, and the `/admin-api` operations every suite job sets itself up with. **Milestone: the suite can set itself up against Rust** | 56,000 | 1.5–3 |
 | **5** | **Sessions, sign-in, credentials, OAuth/OIDC, logout**, with `/authn-api`. **Milestone: the unchanged console, portal and reports bundles sign in against Rust** | 84,000 | 2–4.5 |
 | **6** | **PKI and enrollment:** `pki.js`, revocation, ACME, EST, SCEP | 29,000 | 0.7–1.5 |
 | **7** | **The XML families and federation:** SAML, WS-Trust, WS-Federation, federation, OpenID Federation | 34,000 | 1–2 |
 | **8** | **XACML's PDP side, AuthZEN, UMA, GNAP.** The engine crate exists; the rest is new or grown | 40,000 | 1–2 |
 | **9** | **OID4VC, SPIFFE, Kerberos (D1), SSF, SCIM, risk, cells** | 94,000 | 2.5–5 |
-| **3–9** | **The API layers, landing with their families:** `/admin-api` (664 operations), `/account-api` (80), `/report-api` (23). **`/report-api` finishes first and `/admin-api` last** | 100,000 | 2.5–5 |
-| **10** | **The cutover** (section 3.2): images, compose, CI, Terraform, every mode, Selenium, the OpenID conformance suite, the Windows domain controller test bed, performance, docs. Node is deleted | | 2–4 |
+| **3–9** | **The API layers, landing with their families:** `/admin-api` (680 operations, and the Admin Console API's 20), `/account-api` (80), `/report-api` (23). **`/report-api` finishes first and `/admin-api` last** | 100,000 | 2.5–5 |
+| **10** | **The cutover** (section 3.2): the upgrade test from a 1.x store (D11), images, compose, CI, Terraform, every mode, Selenium, the OpenID conformance suite, the Windows domain controller test bed, performance, docs. Node is deleted | | 2–4 |
 | | **Port subtotal** | **about 495,000** | **16–32** |
 | 3–10 | **OpenID certification fixes and post-quantum fixes, continuing through the freeze** | | 2–5 |
 | | **Total remaining** | | **18–37** |
@@ -625,6 +649,15 @@ of the server logic is ported, plus the data tables. The estimate has low to
 moderate confidence: no phase past 3 has been attempted, the rate is a Node rate,
 and the suite has never been run against a Rust runtime. **Re-estimate at the end
 of phase 4**, when the number of passing jobs gives a measured rate.
+
+**What changed on 2026-11-14, not yet in the figures.** D11's reversal adds
+reading a 1.x store exactly as Node writes it (phase 3) and the upgrade test
+(phase 10): roughly 2–4 weeks, a judgement rather than a measurement. D15 takes
+some away: the request and answer models of the five APIs and of the protocol
+families are generated, not ported, and `mgmt-api/` alone lost 21,800 code lines
+to the model. Neither is sized until phase 2b ends, when the estimate is made
+again. Meanwhile the server code outside `mgmt-api/` grew by about 19,600 lines
+in the nine days after the re-plan, about 15,000 a week.
 
 **The target moves.** The server code grew by about 115,000 lines last month, or
 about 26,000 a week, which is most of the throughput the estimate assumes. If the
