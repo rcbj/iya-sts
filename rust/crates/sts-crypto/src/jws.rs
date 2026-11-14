@@ -26,6 +26,7 @@ use openssl::rsa::Padding;
 use openssl::sign::{RsaPssSaltlen, Signer, Verifier};
 use serde_json::{Map, Value as Json};
 
+use crate::algorithms::{AcceptAll, SignaturePolicy, Surface};
 use crate::b64;
 use crate::error::{CryptoError, CryptoResult};
 use crate::jws_alg::{Composite, Family, Hash, JwsAlg, Traditional};
@@ -691,11 +692,52 @@ pub struct VerifyOptions<'a> {
 
 /// Verifies a compact JWS somebody else signed — a DPoP proof, a client
 /// assertion, a request object — and checks no claims: each profile checks
-/// its own.
+/// its own. The realm's signature policy is not asked; see
+/// [`verify_compact_under`].
 pub fn verify_compact(
     token: &str,
     key: &JwsKey,
     options: &VerifyOptions,
+) -> CryptoResult<Verified> {
+    verify_compact_under(token, key, options, &AcceptAll)
+}
+
+/// `refuseUnacceptableJws()`: THE ONE JOSE ACCEPT CHOKEPOINT (#1368). The
+/// policy's refusal, with its code beside the sentence.
+fn refuse_unacceptable_jws(
+    policy: &dyn SignaturePolicy,
+    alg: &str,
+) -> CryptoResult<()> {
+    match policy.accept_cause(Surface::Jose, alg) {
+        Some(cause) => Err(CryptoError::coded(cause.message, cause.code)),
+        None => Ok(()),
+    }
+}
+
+/// `jwsSignatureValid()`: [`verify_input`] after the realm's policy has
+/// been asked — GNAP's `jws` and `jwsd` proofs come this way, and until
+/// #1368 were never asked.
+pub fn signature_valid_under(
+    alg: &str,
+    key: &JwsKey,
+    input: &[u8],
+    signature: &[u8],
+    key_policy: KeyPolicy,
+    policy: &dyn SignaturePolicy,
+) -> CryptoResult<bool> {
+    refuse_unacceptable_jws(policy, alg)?;
+    verify_input(alg, key, input, signature, key_policy)
+}
+
+/// [`verify_compact`], asking the realm's signature policy after the
+/// caller's own list and before the signature (`prepareVerification()`),
+/// so no verifier accepts what the realm no longer publishes, whatever list
+/// it was handed.
+pub fn verify_compact_under(
+    token: &str,
+    key: &JwsKey,
+    options: &VerifyOptions,
+    policy: &dyn SignaturePolicy,
 ) -> CryptoResult<Verified> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
@@ -744,6 +786,7 @@ pub fn verify_compact(
             }
         )));
     }
+    refuse_unacceptable_jws(policy, alg)?;
     alg_row(alg)?;
     let input = format!("{}.{}", parts[0], parts[1]);
     if !verify_input(alg, key, input.as_bytes(), &signature, options.policy)? {
@@ -1076,6 +1119,51 @@ mod tests {
                 "RS256"
             ),
             "dnI-Ky-fHTSREBAdNyebSA"
+        );
+    }
+
+    #[test]
+    fn the_realm_policy_refuses_with_its_code() {
+        use crate::algorithms::Cause;
+        struct NoPq;
+        impl SignaturePolicy for NoPq {
+            fn accept_cause(
+                &self,
+                surface: Surface,
+                alg: &str,
+            ) -> Option<Cause> {
+                (surface == Surface::Jose && alg.starts_with("ML-DSA")).then(
+                    || Cause {
+                        code: sts_core::errors::codes::STS_KEYS_0157,
+                        message: format!("this JWS is signed with \"{}\"", alg),
+                    },
+                )
+            }
+        }
+        let key = generate_key("ML-DSA-44").unwrap();
+        let mut payload = Map::new();
+        payload.insert("sub".into(), Json::from("a"));
+        let token = sign_jws(
+            &payload,
+            &key,
+            &SignOptions {
+                algorithm: Some("ML-DSA-44".into()),
+                ..SignOptions::default()
+            },
+        )
+        .unwrap();
+        let options = VerifyOptions {
+            algorithms: &["ML-DSA-44"],
+            empty_payload: false,
+            policy: KeyPolicy::STRICT,
+        };
+        assert!(verify_compact(&token, &key, &options).is_ok());
+        let refused =
+            verify_compact_under(&token, &key, &options, &NoPq).unwrap_err();
+        assert_eq!(refused.0, "this JWS is signed with \"ML-DSA-44\"");
+        assert_eq!(
+            refused.code(),
+            Some(sts_core::errors::codes::STS_KEYS_0157)
         );
     }
 }

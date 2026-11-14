@@ -8,6 +8,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod algorithms;
 pub mod b64;
 pub mod der_lite;
 pub mod dkim;

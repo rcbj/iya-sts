@@ -1,0 +1,3226 @@
+{
+ "surfaces": [
+  "jose",
+  "cose",
+  "xml",
+  "x509",
+  "cms",
+  "di",
+  "httpsig",
+  "tls",
+  "dkim"
+ ],
+ "rawSignatureFamilies": [
+  "rsa-pkcs1",
+  "rsa-pss",
+  "ecdsa",
+  "eddsa",
+  "pq"
+ ],
+ "rows": [
+  {
+   "id": "ML-DSA-87",
+   "family": "pq",
+   "kind": "ml-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "jose": "ML-DSA-87",
+   "cose": -50,
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87",
+   "oid": "2.16.840.1.101.3.4.3.19",
+   "tls": "mldsa87",
+   "spec": "RFC 9964; FIPS 204",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-87",
+     "ownSigner": true
+    },
+    "cose": {
+     "name": "ML-DSA-87",
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP"
+    },
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "ml-dsa-87"
+     ],
+     "label": "ML-DSA-87 (FIPS 204, category 5 — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "ml-dsa-87",
+   "httpsig": "ML-DSA-87",
+   "cms": null,
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65",
+   "family": "pq",
+   "kind": "ml-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "jose": "ML-DSA-65",
+   "cose": -49,
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65",
+   "oid": "2.16.840.1.101.3.4.3.18",
+   "tls": "mldsa65",
+   "spec": "RFC 9964; FIPS 204",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-65",
+     "ownSigner": true
+    },
+    "cose": {
+     "name": "ML-DSA-65",
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP"
+    },
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "ml-dsa-65"
+     ],
+     "label": "ML-DSA-65 (FIPS 204, category 3 — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "ml-dsa-65",
+   "httpsig": "ML-DSA-65",
+   "cms": null,
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-44",
+   "family": "pq",
+   "kind": "ml-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "jose": "ML-DSA-44",
+   "cose": -48,
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44",
+   "oid": "2.16.840.1.101.3.4.3.17",
+   "tls": "mldsa44",
+   "spec": "RFC 9964; FIPS 204",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-44",
+     "ownSigner": true
+    },
+    "cose": {
+     "name": "ML-DSA-44",
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP"
+    },
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "ml-dsa-44"
+     ],
+     "label": "ML-DSA-44 (FIPS 204, category 2 — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "ml-dsa-44",
+   "httpsig": "ML-DSA-44",
+   "cms": null,
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHAKE-256f",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-256f",
+   "oid": "2.16.840.1.101.3.4.3.31",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-shake-256f"
+     ],
+     "label": "SLH-DSA-SHAKE-256f (FIPS 205, fast — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-shake-256f",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHAKE-256s",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-256s",
+   "oid": "2.16.840.1.101.3.4.3.30",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-shake-256s"
+     ],
+     "label": "SLH-DSA-SHAKE-256s (FIPS 205, small — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-shake-256s",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHAKE-192f",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-192f",
+   "oid": "2.16.840.1.101.3.4.3.29",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-shake-192f"
+     ],
+     "label": "SLH-DSA-SHAKE-192f (FIPS 205, fast — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-shake-192f",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHAKE-192s",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-192s",
+   "oid": "2.16.840.1.101.3.4.3.28",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-shake-192s"
+     ],
+     "label": "SLH-DSA-SHAKE-192s (FIPS 205, small — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-shake-192s",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHAKE-128f",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-128f",
+   "oid": "2.16.840.1.101.3.4.3.27",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-shake-128f"
+     ],
+     "label": "SLH-DSA-SHAKE-128f (FIPS 205, fast — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-shake-128f",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHAKE-128s",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "jose": "SLH-DSA-SHAKE-128s",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-128s",
+   "oid": "2.16.840.1.101.3.4.3.26",
+   "spec": "FIPS 205",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "SLH-DSA-SHAKE-128s",
+     "ownSigner": true
+    },
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-shake-128s"
+     ],
+     "label": "SLH-DSA-SHAKE-128s (FIPS 205, small — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-shake-128s",
+   "httpsig": "SLH-DSA-SHAKE-128s",
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHA2-256f",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-256f",
+   "oid": "2.16.840.1.101.3.4.3.25",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-sha2-256f"
+     ],
+     "label": "SLH-DSA-SHA2-256f (FIPS 205, fast — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-sha2-256f",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHA2-256s",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-256s",
+   "oid": "2.16.840.1.101.3.4.3.24",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-sha2-256s"
+     ],
+     "label": "SLH-DSA-SHA2-256s (FIPS 205, small — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-sha2-256s",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHA2-192f",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-192f",
+   "oid": "2.16.840.1.101.3.4.3.23",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-sha2-192f"
+     ],
+     "label": "SLH-DSA-SHA2-192f (FIPS 205, fast — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-sha2-192f",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHA2-192s",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-192s",
+   "oid": "2.16.840.1.101.3.4.3.22",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-sha2-192s"
+     ],
+     "label": "SLH-DSA-SHA2-192s (FIPS 205, small — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-sha2-192s",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHA2-128f",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-128f",
+   "oid": "2.16.840.1.101.3.4.3.21",
+   "spec": "FIPS 205",
+   "engine": {
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-sha2-128f"
+     ],
+     "label": "SLH-DSA-SHA2-128f (FIPS 205, fast — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-sha2-128f",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "SLH-DSA-SHA2-128s",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "jose": "SLH-DSA-SHA2-128s",
+   "xml": "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-128s",
+   "oid": "2.16.840.1.101.3.4.3.20",
+   "spec": "FIPS 205",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "SLH-DSA-SHA2-128s",
+     "ownSigner": true
+    },
+    "xml": {
+     "family": "pq",
+     "hash": null,
+     "keyTypes": [
+      "slh-dsa-sha2-128s"
+     ],
+     "label": "SLH-DSA-SHA2-128s (FIPS 205, small — draft)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "slh-dsa-sha2-128s",
+   "httpsig": "SLH-DSA-SHA2-128s",
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-87-Ed448",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "jose": "ML-DSA-87-Ed448",
+   "oid": "1.3.6.1.5.5.7.6.51",
+   "spec": "draft-ietf-jose-pq-composite-sigs; draft-ietf-lamps-pq-composite-sigs",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-87-Ed448",
+     "ownSigner": true
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "mldsa87-ed448-shake256",
+   "httpsig": "ML-DSA-87-Ed448",
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-87-ES384",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "jose": "ML-DSA-87-ES384",
+   "oid": "1.3.6.1.5.5.7.6.49",
+   "spec": "draft-ietf-jose-pq-composite-sigs; draft-ietf-lamps-pq-composite-sigs",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-87-ES384",
+     "ownSigner": true
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "mldsa87-ecdsa-p384-sha512",
+   "httpsig": "ML-DSA-87-ES384",
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-Ed25519",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "jose": "ML-DSA-65-Ed25519",
+   "oid": "1.3.6.1.5.5.7.6.48",
+   "spec": "draft-ietf-jose-pq-composite-sigs; draft-ietf-lamps-pq-composite-sigs",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-65-Ed25519",
+     "ownSigner": true
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "mldsa65-ed25519-sha512",
+   "httpsig": "ML-DSA-65-Ed25519",
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-ES256",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "jose": "ML-DSA-65-ES256",
+   "oid": "1.3.6.1.5.5.7.6.45",
+   "spec": "draft-ietf-jose-pq-composite-sigs; draft-ietf-lamps-pq-composite-sigs",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-65-ES256",
+     "ownSigner": true
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "mldsa65-ecdsa-p256-sha512",
+   "httpsig": "ML-DSA-65-ES256",
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-44-Ed25519",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "jose": "ML-DSA-44-Ed25519",
+   "oid": "1.3.6.1.5.5.7.6.39",
+   "spec": "draft-ietf-jose-pq-composite-sigs; draft-ietf-lamps-pq-composite-sigs",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-44-Ed25519",
+     "ownSigner": true
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "mldsa44-ed25519-sha512",
+   "httpsig": "ML-DSA-44-Ed25519",
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-44-ES256",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "jose": "ML-DSA-44-ES256",
+   "oid": "1.3.6.1.5.5.7.6.40",
+   "spec": "draft-ietf-jose-pq-composite-sigs; draft-ietf-lamps-pq-composite-sigs",
+   "engine": {
+    "jose": {
+     "family": "pq",
+     "hash": null,
+     "kty": "AKP",
+     "alg": "ML-DSA-44-ES256",
+     "ownSigner": true
+    }
+   },
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "mldsa44-ecdsa-p256-sha256",
+   "httpsig": "ML-DSA-44-ES256",
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-44-RSA2048-PSS-SHA256",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.37",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa44-rsa2048-pss-sha256",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-44-RSA2048-PKCS15-SHA256",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.38",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa44-rsa2048-pkcs15-sha256",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-RSA3072-PSS-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.41",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa65-rsa3072-pss-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-RSA3072-PKCS15-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.42",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa65-rsa3072-pkcs15-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-RSA4096-PSS-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.43",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa65-rsa4096-pss-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-RSA4096-PKCS15-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.44",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa65-rsa4096-pkcs15-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-65-ECDSA-P384-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.46",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa65-ecdsa-p384-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-87-RSA3072-PSS-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.52",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa87-rsa3072-pss-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-87-RSA4096-PSS-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.53",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa87-rsa4096-pss-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ML-DSA-87-ECDSA-P521-SHA512",
+   "family": "pq",
+   "kind": "composite",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "composite",
+   "oid": "1.3.6.1.5.5.7.6.54",
+   "spec": "draft-ietf-lamps-pq-composite-sigs",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": "mldsa87-ecdsa-p521-sha512",
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ES512",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha512",
+   "keyKind": "ec",
+   "jose": "ES512",
+   "cose": -36,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512",
+   "oid": "1.2.840.10045.4.3.4",
+   "cms": "1.2.840.10045.4.3.4",
+   "tls": "ecdsa_secp521r1_sha512",
+   "spec": "RFC 7518 section 3.4; RFC 9053",
+   "engine": {
+    "jose": {
+     "family": "ec",
+     "hash": "sha512",
+     "kty": "EC",
+     "crv": "P-521",
+     "namedCurve": "secp521r1",
+     "sigBytes": 132
+    },
+    "cose": {
+     "name": "ES512",
+     "family": "ecdsa",
+     "hash": "sha512",
+     "kty": "EC"
+    },
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha512",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA512",
+     "weak": false,
+     "sha1": false
+    },
+    "cms": {
+     "key": "ec",
+     "digest": "sha512",
+     "label": "ecdsa-with-SHA512"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "sha512-ecdsa",
+   "httpsig": "ES512",
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "ES384",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha384",
+   "keyKind": "ec",
+   "jose": "ES384",
+   "cose": -35,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384",
+   "oid": "1.2.840.10045.4.3.3",
+   "cms": "1.2.840.10045.4.3.3",
+   "httpsig": "ecdsa-p384-sha384",
+   "tls": "ecdsa_secp384r1_sha384",
+   "spec": "RFC 7518 section 3.4; RFC 9053",
+   "engine": {
+    "jose": {
+     "family": "ec",
+     "hash": "sha384",
+     "kty": "EC",
+     "crv": "P-384",
+     "namedCurve": "secp384r1",
+     "sigBytes": 96
+    },
+    "cose": {
+     "name": "ES384",
+     "family": "ecdsa",
+     "hash": "sha384",
+     "kty": "EC"
+    },
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha384",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA384",
+     "weak": false,
+     "sha1": false
+    },
+    "httpsig": {
+     "registry": "http",
+     "kind": "ecdsa",
+     "hash": "sha384",
+     "curve": "secp384r1",
+     "coordinateBytes": 48,
+     "spec": "RFC 9421 section 3.3.5"
+    },
+    "cms": {
+     "key": "ec",
+     "digest": "sha384",
+     "label": "ecdsa-with-SHA384"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {
+    "httpsig": [
+     "ES384"
+    ]
+   },
+   "x509": "sha384-ecdsa",
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "ES256",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha256",
+   "keyKind": "ec",
+   "jose": "ES256",
+   "cose": -7,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256",
+   "oid": "1.2.840.10045.4.3.2",
+   "cms": "1.2.840.10045.4.3.2",
+   "httpsig": "ecdsa-p256-sha256",
+   "tls": "ecdsa_secp256r1_sha256",
+   "spec": "RFC 7518 section 3.4; RFC 9053",
+   "engine": {
+    "jose": {
+     "family": "ec",
+     "hash": "sha256",
+     "kty": "EC",
+     "crv": "P-256",
+     "namedCurve": "prime256v1",
+     "sigBytes": 64
+    },
+    "cose": {
+     "name": "ES256",
+     "family": "ecdsa",
+     "hash": "sha256",
+     "kty": "EC"
+    },
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha256",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA256",
+     "weak": false,
+     "sha1": false
+    },
+    "httpsig": {
+     "registry": "http",
+     "kind": "ecdsa",
+     "hash": "sha256",
+     "curve": "prime256v1",
+     "coordinateBytes": 32,
+     "spec": "RFC 9421 section 3.3.4"
+    },
+    "cms": {
+     "key": "ec",
+     "digest": "sha256",
+     "label": "ecdsa-with-SHA256"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {
+    "httpsig": [
+     "ES256"
+    ]
+   },
+   "x509": "sha256-ecdsa",
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "ES256K",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha256",
+   "keyKind": "ec",
+   "jose": "ES256K",
+   "cose": -47,
+   "spec": "RFC 8812",
+   "engine": {
+    "jose": {
+     "family": "ec",
+     "hash": "sha256",
+     "kty": "EC",
+     "crv": "secp256k1",
+     "namedCurve": "secp256k1",
+     "sigBytes": 64,
+     "ownSigner": true
+    },
+    "cose": {
+     "name": "ES256K",
+     "family": "ecdsa",
+     "hash": "sha256",
+     "kty": "EC",
+     "curve": "secp256k1"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "httpsig": "ES256K",
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ESP512",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha512",
+   "keyKind": "ec",
+   "cose": -52,
+   "spec": "RFC 9864",
+   "engine": {
+    "cose": {
+     "name": "ESP512",
+     "family": "ecdsa",
+     "hash": "sha512",
+     "kty": "EC",
+     "curve": "secp521r1"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ESP384",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha384",
+   "keyKind": "ec",
+   "cose": -51,
+   "spec": "RFC 9864",
+   "engine": {
+    "cose": {
+     "name": "ESP384",
+     "family": "ecdsa",
+     "hash": "sha384",
+     "kty": "EC",
+     "curve": "secp384r1"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ESP256",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha256",
+   "keyKind": "ec",
+   "cose": -9,
+   "spec": "RFC 9864",
+   "engine": {
+    "cose": {
+     "name": "ESP256",
+     "family": "ecdsa",
+     "hash": "sha256",
+     "kty": "EC",
+     "curve": "prime256v1"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "EdDSA",
+   "family": "okp",
+   "kind": "eddsa",
+   "hash": null,
+   "keyKind": "okp",
+   "jose": "EdDSA",
+   "cose": -8,
+   "spec": "RFC 8037; RFC 9053",
+   "engine": {
+    "jose": {
+     "family": "okp",
+     "hash": null,
+     "kty": "OKP",
+     "crv": "Ed25519",
+     "sigBytes": 64,
+     "ownSigner": true
+    },
+    "cose": {
+     "name": "EdDSA",
+     "family": "eddsa",
+     "hash": null,
+     "kty": "OKP"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "httpsig": "EdDSA",
+   "xml": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "Ed448",
+   "family": "okp",
+   "kind": "eddsa",
+   "hash": null,
+   "keyKind": "okp",
+   "cose": -53,
+   "xml": "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed448",
+   "tls": "ed448",
+   "spec": "RFC 8032; RFC 9864; RFC 9231",
+   "engine": {
+    "cose": {
+     "name": "Ed448",
+     "family": "eddsa",
+     "hash": null,
+     "kty": "OKP",
+     "okp": "ed448"
+    },
+    "xml": {
+     "family": "eddsa",
+     "hash": null,
+     "keyTypes": [
+      "ed448"
+     ],
+     "label": "EdDSA Ed448 (RFC 9231)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "dkim": null
+  },
+  {
+   "id": "Ed25519",
+   "family": "okp",
+   "kind": "eddsa",
+   "hash": null,
+   "keyKind": "okp",
+   "cose": -19,
+   "xml": "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519",
+   "oid": "1.3.101.112",
+   "httpsig": "ed25519",
+   "tls": "ed25519",
+   "dkim": "ed25519-sha256",
+   "spec": "RFC 8032; RFC 9864; RFC 9231; RFC 9421 section 3.3.6; RFC 8463",
+   "engine": {
+    "cose": {
+     "name": "Ed25519",
+     "family": "eddsa",
+     "hash": null,
+     "kty": "OKP",
+     "okp": "ed25519"
+    },
+    "xml": {
+     "family": "eddsa",
+     "hash": null,
+     "keyTypes": [
+      "ed25519"
+     ],
+     "label": "EdDSA Ed25519 (RFC 9231)",
+     "weak": false,
+     "sha1": false
+    },
+    "httpsig": {
+     "registry": "http",
+     "kind": "eddsa",
+     "curves": [
+      "ed25519"
+     ],
+     "spec": "RFC 9421 section 3.3.6"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "ed25519",
+   "jose": null,
+   "cms": null,
+   "di": null
+  },
+  {
+   "id": "PS512",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha512",
+   "keyKind": "rsa",
+   "jose": "PS512",
+   "cose": -39,
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha512-rsa-MGF1",
+   "oid": "1.2.840.113549.1.1.10",
+   "httpsig": "rsa-pss-sha512",
+   "tls": "rsa_pss_rsae_sha512",
+   "aliases": {
+    "tls": [
+     "rsa_pss_pss_sha512"
+    ],
+    "httpsig": [
+     "PS512"
+    ]
+   },
+   "spec": "RFC 7518 section 3.5; RFC 8230; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "rsa",
+     "hash": "sha512",
+     "kty": "RSA",
+     "padding": "RSA_PKCS1_PSS_PADDING",
+     "saltLength": 64
+    },
+    "cose": {
+     "name": "PS512",
+     "family": "rsa-pss",
+     "hash": "sha512",
+     "kty": "RSA",
+     "saltLength": 64
+    },
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha512",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA512 with MGF1",
+     "weak": false,
+     "sha1": false
+    },
+    "httpsig": {
+     "registry": "http",
+     "kind": "rsa-pss",
+     "hash": "sha512",
+     "saltLength": 64,
+     "spec": "RFC 9421 section 3.3.1"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "x509": "sha512-rsapss",
+   "cms": null,
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "PS384",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha384",
+   "keyKind": "rsa",
+   "jose": "PS384",
+   "cose": -38,
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha384-rsa-MGF1",
+   "oid": "1.2.840.113549.1.1.10",
+   "tls": "rsa_pss_rsae_sha384",
+   "aliases": {
+    "tls": [
+     "rsa_pss_pss_sha384"
+    ]
+   },
+   "spec": "RFC 7518 section 3.5; RFC 8230; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "rsa",
+     "hash": "sha384",
+     "kty": "RSA",
+     "padding": "RSA_PKCS1_PSS_PADDING",
+     "saltLength": 48
+    },
+    "cose": {
+     "name": "PS384",
+     "family": "rsa-pss",
+     "hash": "sha384",
+     "kty": "RSA",
+     "saltLength": 48
+    },
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha384",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA384 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "x509": "sha384-rsapss",
+   "httpsig": "PS384",
+   "cms": null,
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "PS256",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha256",
+   "keyKind": "rsa",
+   "jose": "PS256",
+   "cose": -37,
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha256-rsa-MGF1",
+   "oid": "1.2.840.113549.1.1.10",
+   "tls": "rsa_pss_rsae_sha256",
+   "aliases": {
+    "tls": [
+     "rsa_pss_pss_sha256"
+    ]
+   },
+   "spec": "RFC 7518 section 3.5; RFC 8230; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "rsa",
+     "hash": "sha256",
+     "kty": "RSA",
+     "padding": "RSA_PKCS1_PSS_PADDING",
+     "saltLength": 32
+    },
+    "cose": {
+     "name": "PS256",
+     "family": "rsa-pss",
+     "hash": "sha256",
+     "kty": "RSA",
+     "saltLength": 32
+    },
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha256",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA256 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "x509": "sha256-rsapss",
+   "httpsig": "PS256",
+   "cms": null,
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "RS512",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": "sha512",
+   "keyKind": "rsa",
+   "jose": "RS512",
+   "cose": -259,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
+   "oid": "1.2.840.113549.1.1.13",
+   "cms": "1.2.840.113549.1.1.13",
+   "tls": "rsa_pkcs1_sha512",
+   "spec": "RFC 7518 section 3.3; RFC 8230; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "rsa",
+     "hash": "sha512",
+     "kty": "RSA"
+    },
+    "cose": {
+     "name": "RS512",
+     "family": "rsa-pkcs1",
+     "hash": "sha512",
+     "kty": "RSA"
+    },
+    "xml": {
+     "family": "rsa",
+     "hash": "sha512",
+     "keyTypes": [
+      "rsa"
+     ],
+     "label": "RSA-SHA512",
+     "weak": false,
+     "sha1": false
+    },
+    "cms": {
+     "key": "rsa",
+     "digest": "sha512",
+     "label": "sha512WithRSAEncryption"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "sha512-rsa",
+   "httpsig": "RS512",
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "RS384",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": "sha384",
+   "keyKind": "rsa",
+   "jose": "RS384",
+   "cose": -258,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384",
+   "oid": "1.2.840.113549.1.1.12",
+   "cms": "1.2.840.113549.1.1.12",
+   "tls": "rsa_pkcs1_sha384",
+   "spec": "RFC 7518 section 3.3; RFC 8230; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "rsa",
+     "hash": "sha384",
+     "kty": "RSA"
+    },
+    "cose": {
+     "name": "RS384",
+     "family": "rsa-pkcs1",
+     "hash": "sha384",
+     "kty": "RSA"
+    },
+    "xml": {
+     "family": "rsa",
+     "hash": "sha384",
+     "keyTypes": [
+      "rsa"
+     ],
+     "label": "RSA-SHA384",
+     "weak": false,
+     "sha1": false
+    },
+    "cms": {
+     "key": "rsa",
+     "digest": "sha384",
+     "label": "sha384WithRSAEncryption"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": "sha384-rsa",
+   "httpsig": "RS384",
+   "di": null,
+   "dkim": null
+  },
+  {
+   "id": "RS256",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": "sha256",
+   "keyKind": "rsa",
+   "jose": "RS256",
+   "cose": -257,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+   "oid": "1.2.840.113549.1.1.11",
+   "cms": "1.2.840.113549.1.1.11",
+   "httpsig": "rsa-v1_5-sha256",
+   "tls": "rsa_pkcs1_sha256",
+   "dkim": "rsa-sha256",
+   "spec": "RFC 7518 section 3.3; RFC 8230; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "rsa",
+     "hash": "sha256",
+     "kty": "RSA"
+    },
+    "cose": {
+     "name": "RS256",
+     "family": "rsa-pkcs1",
+     "hash": "sha256",
+     "kty": "RSA"
+    },
+    "xml": {
+     "family": "rsa",
+     "hash": "sha256",
+     "keyTypes": [
+      "rsa"
+     ],
+     "label": "RSA-SHA256",
+     "weak": false,
+     "sha1": false
+    },
+    "httpsig": {
+     "registry": "http",
+     "kind": "rsa-v1_5",
+     "hash": "sha256",
+     "spec": "RFC 9421 section 3.3.2"
+    },
+    "cms": {
+     "key": "rsa",
+     "digest": "sha256",
+     "label": "sha256WithRSAEncryption"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {
+    "httpsig": [
+     "RS256"
+    ]
+   },
+   "x509": "sha256-rsa",
+   "di": null
+  },
+  {
+   "id": "HS512",
+   "family": "hmac",
+   "kind": "hmac",
+   "hash": "sha512",
+   "keyKind": "secret",
+   "jose": "HS512",
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#hmac-sha512",
+   "spec": "RFC 7518 section 3.2; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "hmac",
+     "hash": "sha512"
+    },
+    "xml": {
+     "family": "hmac",
+     "hash": "sha512",
+     "keyTypes": [
+      "secret"
+     ],
+     "label": "HMAC-SHA512 (a Kerberos token's session key)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "httpsig": "HS512",
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "HS384",
+   "family": "hmac",
+   "kind": "hmac",
+   "hash": "sha384",
+   "keyKind": "secret",
+   "jose": "HS384",
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#hmac-sha384",
+   "spec": "RFC 7518 section 3.2; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "hmac",
+     "hash": "sha384"
+    },
+    "xml": {
+     "family": "hmac",
+     "hash": "sha384",
+     "keyTypes": [
+      "secret"
+     ],
+     "label": "HMAC-SHA384 (a Kerberos token's session key)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "httpsig": "HS384",
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "HS256",
+   "family": "hmac",
+   "kind": "hmac",
+   "hash": "sha256",
+   "keyKind": "secret",
+   "jose": "HS256",
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#hmac-sha256",
+   "httpsig": "hmac-sha256",
+   "spec": "RFC 7518 section 3.2; RFC 9231",
+   "engine": {
+    "jose": {
+     "family": "hmac",
+     "hash": "sha256"
+    },
+    "xml": {
+     "family": "hmac",
+     "hash": "sha256",
+     "keyTypes": [
+      "secret"
+     ],
+     "label": "HMAC-SHA256 (a Kerberos token's session key)",
+     "weak": false,
+     "sha1": false
+    },
+    "httpsig": {
+     "registry": "http",
+     "kind": "hmac",
+     "hash": "sha256",
+     "minKeyBytes": 32,
+     "spec": "RFC 9421 section 3.3.3"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {
+    "httpsig": [
+     "HS256"
+    ]
+   },
+   "x509": null,
+   "oid": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-SHA224",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": "sha224",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha224",
+   "aliases": {
+    "xml": [
+     "http://www.w3.org/2007/05/xmldsig-more#rsa-sha224"
+    ]
+   },
+   "spec": "RFC 9231 section 2.3.4",
+   "engine": {
+    "xml": {
+     "family": "rsa",
+     "hash": "sha224",
+     "keyTypes": [
+      "rsa"
+     ],
+     "label": "RSA-SHA224",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-SHA3-512",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha3-512",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha3-512-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha3-512",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA3-512 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-SHA3-384",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha3-384",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha3-384-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha3-384",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA3-384 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-SHA3-256",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha3-256",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha3-256-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha3-256",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA3-256 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-SHA3-224",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha3-224",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha3-224-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha3-224",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA3-224 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-SHA224",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha224",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha224-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha224",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA224 with MGF1",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-PARAMS",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha256",
+   "keyKind": "rsa",
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#rsa-pss",
+   "spec": "RFC 9231 section 2.3.9",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha256",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS with parameters (RFC 9231 section 2.3.9)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-SHA3-512",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha3-512",
+   "keyKind": "ec",
+   "xml": "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-512",
+   "spec": "RFC 9231 section 2.3.6",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha3-512",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA3-512",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-SHA3-384",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha3-384",
+   "keyKind": "ec",
+   "xml": "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-384",
+   "spec": "RFC 9231 section 2.3.6",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha3-384",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA3-384",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-SHA3-256",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha3-256",
+   "keyKind": "ec",
+   "xml": "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-256",
+   "spec": "RFC 9231 section 2.3.6",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha3-256",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA3-256",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-SHA3-224",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha3-224",
+   "keyKind": "ec",
+   "xml": "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-224",
+   "spec": "RFC 9231 section 2.3.6",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha3-224",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA3-224",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-SHA224",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha224",
+   "keyKind": "ec",
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha224",
+   "spec": "RFC 9231 section 2.3.6",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha224",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA224",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "DSA-SHA256",
+   "family": "dsa",
+   "kind": "dsa",
+   "hash": "sha256",
+   "keyKind": "dsa",
+   "xml": "http://www.w3.org/2009/xmldsig11#dsa-sha256",
+   "spec": "XML Signature Syntax and Processing 1.1",
+   "engine": {
+    "xml": {
+     "family": "dsa",
+     "hash": "sha256",
+     "keyTypes": [
+      "dsa"
+     ],
+     "label": "DSA-SHA256 (XMLDSig 1.1)",
+     "weak": false,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-RIPEMD160",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": "ripemd160",
+   "keyKind": "rsa",
+   "weak": true,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#rsa-ripemd160",
+   "spec": "RFC 9231 section 2.3.5",
+   "engine": {
+    "xml": {
+     "family": "rsa",
+     "hash": "ripemd160",
+     "keyTypes": [
+      "rsa"
+     ],
+     "label": "RSA-RIPEMD160",
+     "weak": true,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-RIPEMD160",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "ripemd160",
+   "keyKind": "rsa",
+   "weak": true,
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#ripemd160-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "ripemd160",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS RIPEMD160 with MGF1",
+     "weak": true,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-RIPEMD160",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "ripemd160",
+   "keyKind": "ec",
+   "weak": true,
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#ecdsa-ripemd160",
+   "spec": "RFC 9231 section 2.3.6",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "ripemd160",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-RIPEMD160",
+     "weak": true,
+     "sha1": false
+    }
+   },
+   "pqc": null,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RS1",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": "sha1",
+   "keyKind": "rsa",
+   "weak": true,
+   "sha1": true,
+   "cose": -65535,
+   "xml": "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
+   "oid": "1.2.840.113549.1.1.5",
+   "spec": "RFC 8812 section 2 (MUST NOT); XML Signature Syntax and Processing 1.1; RFC 5280",
+   "engine": {
+    "cose": {
+     "name": "RS1",
+     "family": "rsa-pkcs1",
+     "hash": "sha1",
+     "kty": "RSA",
+     "insecure": true
+    },
+    "xml": {
+     "family": "rsa",
+     "hash": "sha1",
+     "keyTypes": [
+      "rsa"
+     ],
+     "label": "RSA-SHA1",
+     "weak": true,
+     "sha1": true
+    }
+   },
+   "pqc": null,
+   "aliases": {},
+   "x509": "sha1-rsa",
+   "jose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "RSA-PSS-SHA1",
+   "family": "rsa",
+   "kind": "rsa-pss",
+   "hash": "sha1",
+   "keyKind": "rsa",
+   "weak": true,
+   "sha1": true,
+   "xml": "http://www.w3.org/2007/05/xmldsig-more#sha1-rsa-MGF1",
+   "spec": "RFC 9231 section 2.3.10",
+   "engine": {
+    "xml": {
+     "family": "rsa-pss",
+     "hash": "sha1",
+     "keyTypes": [
+      "rsa",
+      "rsa-pss"
+     ],
+     "label": "RSASSA-PSS SHA1 with MGF1",
+     "weak": true,
+     "sha1": true
+    }
+   },
+   "pqc": null,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ECDSA-SHA1",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": "sha1",
+   "keyKind": "ec",
+   "weak": true,
+   "sha1": true,
+   "xml": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha1",
+   "oid": "1.2.840.10045.4.1",
+   "spec": "RFC 9231 section 2.3.6; RFC 5758",
+   "engine": {
+    "xml": {
+     "family": "ecdsa",
+     "hash": "sha1",
+     "keyTypes": [
+      "ec"
+     ],
+     "label": "ECDSA-SHA1",
+     "weak": true,
+     "sha1": true
+    }
+   },
+   "pqc": null,
+   "aliases": {},
+   "x509": "sha1-ecdsa",
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "DSA-SHA1",
+   "family": "dsa",
+   "kind": "dsa",
+   "hash": "sha1",
+   "keyKind": "dsa",
+   "weak": true,
+   "sha1": true,
+   "xml": "http://www.w3.org/2000/09/xmldsig#dsa-sha1",
+   "spec": "XML Signature Syntax and Processing 1.1",
+   "engine": {
+    "xml": {
+     "family": "dsa",
+     "hash": "sha1",
+     "keyTypes": [
+      "dsa"
+     ],
+     "label": "DSA-SHA1",
+     "weak": true,
+     "sha1": true
+    }
+   },
+   "pqc": null,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "HMAC-SHA1",
+   "family": "hmac",
+   "kind": "hmac",
+   "hash": "sha1",
+   "keyKind": "secret",
+   "weak": true,
+   "sha1": true,
+   "xml": "http://www.w3.org/2000/09/xmldsig#hmac-sha1",
+   "spec": "XML Signature Syntax and Processing 1.1",
+   "engine": {
+    "xml": {
+     "family": "hmac",
+     "hash": "sha1",
+     "keyTypes": [
+      "secret"
+     ],
+     "label": "HMAC-SHA1 (a Kerberos token's session key)",
+     "weak": true,
+     "sha1": true
+    }
+   },
+   "pqc": null,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "cms": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "rsaEncryption",
+   "family": "rsa",
+   "kind": "rsa-pkcs1",
+   "hash": null,
+   "keyKind": "rsa",
+   "cms": "1.2.840.113549.1.1.1",
+   "spec": "RFC 8017; RFC 5652",
+   "engine": {
+    "cms": {
+     "key": "rsa",
+     "digest": null,
+     "label": "RSA PKCS #1 v1.5"
+    }
+   },
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "di": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "mldsa44-jcs-2024",
+   "family": "pq",
+   "kind": "ml-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "di": "mldsa44-jcs-2024",
+   "spec": "W3C Quantum-Resistant Cryptosuites v1.0",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "slhdsa128-jcs-2024",
+   "family": "pq",
+   "kind": "slh-dsa",
+   "hash": null,
+   "keyKind": "akp",
+   "pqc": "pq",
+   "di": "slhdsa128-jcs-2024",
+   "spec": "W3C Quantum-Resistant Cryptosuites v1.0",
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ecdsa-rdfc-2019",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": null,
+   "keyKind": "ec",
+   "di": "ecdsa-rdfc-2019",
+   "spec": "W3C Data Integrity ECDSA Cryptosuites v1.0",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ecdsa-jcs-2019",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": null,
+   "keyKind": "ec",
+   "di": "ecdsa-jcs-2019",
+   "spec": "W3C Data Integrity ECDSA Cryptosuites v1.0",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "ecdsa-sd-2023",
+   "family": "ec",
+   "kind": "ecdsa",
+   "hash": null,
+   "keyKind": "ec",
+   "di": "ecdsa-sd-2023",
+   "spec": "W3C Data Integrity ECDSA Cryptosuites v1.0",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "eddsa-rdfc-2022",
+   "family": "okp",
+   "kind": "eddsa",
+   "hash": null,
+   "keyKind": "okp",
+   "di": "eddsa-rdfc-2022",
+   "spec": "W3C Data Integrity EdDSA Cryptosuites v1.0",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "eddsa-jcs-2022",
+   "family": "okp",
+   "kind": "eddsa",
+   "hash": null,
+   "keyKind": "okp",
+   "di": "eddsa-jcs-2022",
+   "spec": "W3C Data Integrity EdDSA Cryptosuites v1.0",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "Ed25519Signature2020",
+   "family": "okp",
+   "kind": "eddsa",
+   "hash": null,
+   "keyKind": "okp",
+   "di": "Ed25519Signature2020",
+   "spec": "W3C Ed25519Signature2020 (legacy, zcap)",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  },
+  {
+   "id": "bbs-2023",
+   "family": "bbs",
+   "kind": "bbs",
+   "hash": null,
+   "keyKind": "bls12-381",
+   "di": "bbs-2023",
+   "spec": "W3C Data Integrity BBS Cryptosuites v1.0",
+   "pqc": null,
+   "weak": false,
+   "sha1": false,
+   "aliases": {},
+   "engine": {},
+   "x509": null,
+   "oid": null,
+   "jose": null,
+   "cose": null,
+   "xml": null,
+   "cms": null,
+   "httpsig": null,
+   "tls": null,
+   "dkim": null
+  }
+ ],
+ "recorded": {
+  "jose": [
+   "HS256",
+   "HS384",
+   "HS512",
+   "RS256",
+   "RS384",
+   "RS512",
+   "PS256",
+   "PS384",
+   "PS512",
+   "ES256",
+   "ES384",
+   "ES512",
+   "ES256K",
+   "EdDSA",
+   "ML-DSA-44",
+   "ML-DSA-65",
+   "ML-DSA-87",
+   "SLH-DSA-SHA2-128s",
+   "SLH-DSA-SHAKE-128s",
+   "ML-DSA-44-ES256",
+   "ML-DSA-65-ES256",
+   "ML-DSA-87-ES384",
+   "ML-DSA-44-Ed25519",
+   "ML-DSA-65-Ed25519",
+   "ML-DSA-87-Ed448"
+  ],
+  "cose": [
+   -7,
+   -35,
+   -36,
+   -8,
+   -257,
+   -258,
+   -259,
+   -37,
+   -38,
+   -39,
+   -48,
+   -49,
+   -50,
+   -9,
+   -51,
+   -52,
+   -47,
+   -19,
+   -53,
+   -65535
+  ],
+  "cose.status": [
+   -7,
+   -35,
+   -36,
+   -8,
+   -47,
+   -37,
+   -38,
+   -39,
+   -257,
+   -258,
+   -259,
+   -48,
+   -49,
+   -50
+  ],
+  "cose.mdoc": [
+   -7,
+   -9,
+   -35,
+   -51,
+   -36,
+   -52,
+   -8,
+   -19,
+   -53,
+   -48,
+   -49,
+   -50
+  ],
+  "xml": [
+   "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
+   "http://www.w3.org/2001/04/xmldsig-more#rsa-sha224",
+   "http://www.w3.org/2007/05/xmldsig-more#rsa-sha224",
+   "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+   "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384",
+   "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
+   "http://www.w3.org/2001/04/xmldsig-more#rsa-ripemd160",
+   "http://www.w3.org/2007/05/xmldsig-more#sha1-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha224-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha256-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha384-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha512-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha3-224-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha3-256-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha3-384-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#sha3-512-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#ripemd160-rsa-MGF1",
+   "http://www.w3.org/2007/05/xmldsig-more#rsa-pss",
+   "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha1",
+   "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha224",
+   "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256",
+   "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384",
+   "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512",
+   "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-224",
+   "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-256",
+   "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-384",
+   "http://www.w3.org/2021/04/xmldsig-more#ecdsa-sha3-512",
+   "http://www.w3.org/2007/05/xmldsig-more#ecdsa-ripemd160",
+   "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519",
+   "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed448",
+   "http://www.w3.org/2000/09/xmldsig#dsa-sha1",
+   "http://www.w3.org/2000/09/xmldsig#hmac-sha1",
+   "http://www.w3.org/2001/04/xmldsig-more#hmac-sha256",
+   "http://www.w3.org/2001/04/xmldsig-more#hmac-sha384",
+   "http://www.w3.org/2001/04/xmldsig-more#hmac-sha512",
+   "http://www.w3.org/2009/xmldsig11#dsa-sha256",
+   "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44",
+   "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65",
+   "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-87",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-128s",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-128f",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-192s",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-192f",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-256s",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-256f",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-128s",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-128f",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-192s",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-192f",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-256s",
+   "http://www.w3.org/2026/08/xmldsig-more#slh-dsa-shake-256f"
+  ],
+  "x509": [
+   "sha256-rsa",
+   "sha384-rsa",
+   "sha512-rsa",
+   "sha256-rsapss",
+   "sha384-rsapss",
+   "sha512-rsapss",
+   "sha1-rsa",
+   "sha256-ecdsa",
+   "sha384-ecdsa",
+   "sha512-ecdsa",
+   "sha1-ecdsa",
+   "ed25519",
+   "ml-dsa-44",
+   "ml-dsa-65",
+   "ml-dsa-87",
+   "slh-dsa-sha2-128s",
+   "slh-dsa-sha2-128f",
+   "slh-dsa-sha2-192s",
+   "slh-dsa-sha2-192f",
+   "slh-dsa-sha2-256s",
+   "slh-dsa-sha2-256f",
+   "slh-dsa-shake-128s",
+   "slh-dsa-shake-128f",
+   "slh-dsa-shake-192s",
+   "slh-dsa-shake-192f",
+   "slh-dsa-shake-256s",
+   "slh-dsa-shake-256f",
+   "mldsa44-rsa2048-pss-sha256",
+   "mldsa44-rsa2048-pkcs15-sha256",
+   "mldsa44-ed25519-sha512",
+   "mldsa44-ecdsa-p256-sha256",
+   "mldsa65-rsa3072-pss-sha512",
+   "mldsa65-rsa3072-pkcs15-sha512",
+   "mldsa65-rsa4096-pss-sha512",
+   "mldsa65-rsa4096-pkcs15-sha512",
+   "mldsa65-ecdsa-p256-sha512",
+   "mldsa65-ecdsa-p384-sha512",
+   "mldsa65-ed25519-sha512",
+   "mldsa87-ecdsa-p384-sha512",
+   "mldsa87-ed448-shake256",
+   "mldsa87-rsa3072-pss-sha512",
+   "mldsa87-rsa4096-pss-sha512",
+   "mldsa87-ecdsa-p521-sha512"
+  ],
+  "httpsig": [
+   "rsa-pss-sha512",
+   "rsa-v1_5-sha256",
+   "hmac-sha256",
+   "ecdsa-p256-sha256",
+   "ecdsa-p384-sha384",
+   "ed25519"
+  ],
+  "cms": [
+   "1.2.840.113549.1.1.1",
+   "1.2.840.113549.1.1.11",
+   "1.2.840.113549.1.1.12",
+   "1.2.840.113549.1.1.13",
+   "1.2.840.10045.4.3.2",
+   "1.2.840.10045.4.3.3",
+   "1.2.840.10045.4.3.4"
+  ],
+  "dkim": [
+   "rsa-sha256",
+   "ed25519-sha256"
+  ],
+  "tls": [
+   "mldsa65",
+   "mldsa87",
+   "mldsa44",
+   "ecdsa_secp256r1_sha256",
+   "ecdsa_secp384r1_sha384",
+   "ecdsa_secp521r1_sha512",
+   "ed25519",
+   "ed448",
+   "rsa_pss_pss_sha256",
+   "rsa_pss_pss_sha384",
+   "rsa_pss_pss_sha512",
+   "rsa_pss_rsae_sha256",
+   "rsa_pss_rsae_sha384",
+   "rsa_pss_rsae_sha512",
+   "rsa_pkcs1_sha256",
+   "rsa_pkcs1_sha384",
+   "rsa_pkcs1_sha512"
+  ],
+  "di": [
+   "ecdsa-rdfc-2019",
+   "ecdsa-jcs-2019",
+   "ecdsa-sd-2023",
+   "eddsa-rdfc-2022",
+   "eddsa-jcs-2022",
+   "mldsa44-jcs-2024",
+   "slhdsa128-jcs-2024",
+   "bbs-2023",
+   "Ed25519Signature2020"
+  ]
+ },
+ "xmlRefused": {
+  "http://www.w3.org/2001/04/xmldsig-more#rsa-md5": "MD5 is broken and RFC 9231 says it MUST NOT be used",
+  "http://www.w3.org/2001/04/xmldsig-more#hmac-md5": "MD5 is broken and RFC 9231 says it MUST NOT be used",
+  "http://www.w3.org/2007/05/xmldsig-more#md2-rsa-MGF1": "MD2 and MD5 are broken",
+  "http://www.w3.org/2007/05/xmldsig-more#md5-rsa-MGF1": "MD2 and MD5 are broken",
+  "http://www.w3.org/2007/05/xmldsig-more#rsa-whirlpool": "Whirlpool and RIPEMD-128 are not in node's OpenSSL default provider",
+  "http://www.w3.org/2007/05/xmldsig-more#ecdsa-whirlpool": "Whirlpool and RIPEMD-128 are not in node's OpenSSL default provider",
+  "http://www.w3.org/2007/05/xmldsig-more#whirlpool-rsa-MGF1": "Whirlpool and RIPEMD-128 are not in node's OpenSSL default provider",
+  "http://www.w3.org/2007/05/xmldsig-more#ripemd128-rsa-MGF1": "Whirlpool and RIPEMD-128 are not in node's OpenSSL default provider",
+  "http://www.w3.org/2001/04/xmldsig-more#esign-sha1": "ESIGN has no implementation in OpenSSL",
+  "http://www.w3.org/2001/04/xmldsig-more#esign-sha224": "ESIGN has no implementation in OpenSSL",
+  "http://www.w3.org/2001/04/xmldsig-more#esign-sha256": "ESIGN has no implementation in OpenSSL",
+  "http://www.w3.org/2001/04/xmldsig-more#esign-sha384": "ESIGN has no implementation in OpenSSL",
+  "http://www.w3.org/2001/04/xmldsig-more#esign-sha512": "ESIGN has no implementation in OpenSSL",
+  "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519ph": "node verifies pure EdDSA only, not the pre-hashed or context variants",
+  "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519ctx": "node verifies pure EdDSA only, not the pre-hashed or context variants",
+  "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed448ph": "node verifies pure EdDSA only, not the pre-hashed or context variants",
+  "http://www.w3.org/2026/08/xmldsig-more#hss-lms": "HSS/LMS is a stateful hash-based scheme and OpenSSL 3.5 (node 24) has no verifier for it"
+ },
+ "xmlDigests": {
+  "http://www.w3.org/2000/09/xmldsig#sha1": {
+   "hash": "sha1",
+   "label": "SHA-1",
+   "weak": true,
+   "sha1": true
+  },
+  "http://www.w3.org/2001/04/xmldsig-more#sha224": {
+   "hash": "sha224",
+   "label": "SHA-224",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2001/04/xmlenc#sha256": {
+   "hash": "sha256",
+   "label": "SHA-256",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2001/04/xmldsig-more#sha384": {
+   "hash": "sha384",
+   "label": "SHA-384",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2001/04/xmlenc#sha512": {
+   "hash": "sha512",
+   "label": "SHA-512",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2007/05/xmldsig-more#sha3-224": {
+   "hash": "sha3-224",
+   "label": "SHA3-224",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2007/05/xmldsig-more#sha3-256": {
+   "hash": "sha3-256",
+   "label": "SHA3-256",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2007/05/xmldsig-more#sha3-384": {
+   "hash": "sha3-384",
+   "label": "SHA3-384",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2007/05/xmldsig-more#sha3-512": {
+   "hash": "sha3-512",
+   "label": "SHA3-512",
+   "weak": false,
+   "sha1": false
+  },
+  "http://www.w3.org/2001/04/xmlenc#ripemd160": {
+   "hash": "ripemd160",
+   "label": "RIPEMD-160",
+   "weak": true,
+   "sha1": false
+  }
+ },
+ "xmlDigestsRefused": {
+  "http://www.w3.org/2001/04/xmldsig-more#md5": "MD5 is broken",
+  "http://www.w3.org/2007/05/xmldsig-more#whirlpool": "Whirlpool is not in node's OpenSSL default provider"
+ },
+ "pkiKeyAlgorithms": [
+  "rsa-2048",
+  "rsa-3072",
+  "rsa-4096",
+  "ec-p256",
+  "ec-p384",
+  "ec-p521",
+  "ed25519",
+  "ml-dsa-44",
+  "ml-dsa-65",
+  "ml-dsa-87",
+  "slh-dsa-sha2-128s",
+  "slh-dsa-sha2-128f",
+  "slh-dsa-sha2-192s",
+  "slh-dsa-sha2-192f",
+  "slh-dsa-sha2-256s",
+  "slh-dsa-sha2-256f",
+  "slh-dsa-shake-128s",
+  "slh-dsa-shake-128f",
+  "slh-dsa-shake-192s",
+  "slh-dsa-shake-192f",
+  "slh-dsa-shake-256s",
+  "slh-dsa-shake-256f",
+  "mldsa44-rsa2048-pss-sha256",
+  "mldsa44-rsa2048-pkcs15-sha256",
+  "mldsa44-ed25519-sha512",
+  "mldsa44-ecdsa-p256-sha256",
+  "mldsa65-rsa3072-pss-sha512",
+  "mldsa65-rsa3072-pkcs15-sha512",
+  "mldsa65-rsa4096-pss-sha512",
+  "mldsa65-rsa4096-pkcs15-sha512",
+  "mldsa65-ecdsa-p256-sha512",
+  "mldsa65-ecdsa-p384-sha512",
+  "mldsa65-ed25519-sha512",
+  "mldsa87-ecdsa-p384-sha512",
+  "mldsa87-ed448-shake256",
+  "mldsa87-rsa3072-pss-sha512",
+  "mldsa87-rsa4096-pss-sha512",
+  "mldsa87-ecdsa-p521-sha512",
+  "ml-kem-512",
+  "ml-kem-768",
+  "ml-kem-1024"
+ ]
+}

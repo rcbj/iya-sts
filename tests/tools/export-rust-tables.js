@@ -29,6 +29,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const DATA = path.join(ROOT, 'rust', 'crates', 'sts-core', 'tables');
+const CRYPTO_DATA = path.join(ROOT, 'rust', 'crates', 'sts-crypto', 'tables');
 
 // Each export: the file it writes and the document it holds. Key order is
 // the table's, so a diff of the export reads like a diff of the table.
@@ -109,10 +110,41 @@ function modeTable() {
   };
 }
 
+// THE SIGNATURE ALGORITHM REGISTRY (#1368, #1374): every signature algorithm
+// this service knows, once, with its spelling on each surface — what
+// `sts-crypto::algorithms` reads. The rows as the registry indexes them
+// (`pki` renamed `x509`, every surface present, the httpsig JWS aliases of
+// RFC 9421 section 3.3.7), each surface's and consumer's recorded order, and
+// the tables kept beside the rows. RECORDED is not exported by the module, so
+// its consumers are named here; `recorded()` answers [] for any other.
+const RECORDED_NAMES = ['jose', 'cose', 'cose.status', 'cose.mdoc', 'xml',
+                        'x509', 'httpsig', 'cms', 'dkim', 'tls', 'di'];
+
+function algorithmRegistry() {
+  const registry = require(path.join(ROOT, 'common', 'crypto_impl',
+                                     'algorithm_registry.js'));
+  const recorded = {};
+  RECORDED_NAMES.forEach(function (name) {
+    recorded[name] = registry.recorded(name);
+  });
+  return {
+    surfaces: registry.SURFACES,
+    rawSignatureFamilies: registry.RAW_SIGNATURE_FAMILIES,
+    rows: JSON.parse(JSON.stringify(registry.ROWS)),
+    recorded: recorded,
+    xmlRefused: registry.xmlSignaturesRefused(),
+    xmlDigests: registry.xmlDigestMethods(),
+    xmlDigestsRefused: registry.xmlDigestsRefused(),
+    pkiKeyAlgorithms: registry.pkiKeyAlgorithms()
+  };
+}
+
 const EXPORTS = [
   { file: 'error_codes.json', build: errorCodes },
   { file: 'settings.json', build: settings },
-  { file: 'mode.json', build: modeTable }
+  { file: 'mode.json', build: modeTable },
+  { file: 'algorithm_registry.json', dir: CRYPTO_DATA,
+    build: algorithmRegistry }
 ];
 
 // THE APPCONFIG LAYERS (#444, rust/DESIGN.md section 8): `env/*.js` are data,
@@ -133,7 +165,7 @@ function appconfig(name) {
 // The text each export should hold.
 function rendered() {
   return EXPORTS.map(function (one) {
-    return { file: path.join(DATA, one.file),
+    return { file: path.join(one.dir || DATA, one.file),
              text: JSON.stringify(one.build(), null, 1) + '\n' };
   }).concat(APPCONFIG.map(function (name) {
     return { file: path.join(ROOT, 'env', name + '.json'),
@@ -168,6 +200,7 @@ if (require.main === module) {
     console.log('the Rust tables are current');
   } else {
     fs.mkdirSync(DATA, { recursive: true });
+    fs.mkdirSync(CRYPTO_DATA, { recursive: true });
     // A file under env/ is written only where its directory exists.
     rendered().forEach(function (one) {
       fs.writeFileSync(one.file, one.text);
