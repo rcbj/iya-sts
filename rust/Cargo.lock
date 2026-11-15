@@ -2282,16 +2282,20 @@ name = "sts-runtime"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "hyper",
  "hyper-util",
  "openssl",
  "serde_json",
+ "sts-cache",
  "sts-cluster",
  "sts-core",
  "sts-crypto",
  "sts-http",
+ "sts-ldap",
  "sts-pki",
  "sts-store",
+ "sts-tls",
  "tokio",
  "tokio-openssl",
  "tower",
@@ -2318,6 +2322,18 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
+]
+
+[[package]]
+name = "sts-tls"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "sts-core",
+ "sts-pki",
+ "tracing",
+ "url",
 ]
 
 [[package]]

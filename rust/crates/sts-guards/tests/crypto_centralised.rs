@@ -183,26 +183,6 @@ const PENDING: &[(&str, &str)] = &[
         "crates/sts-store/src/keystore.rs|sign",
         "store slice: keystore",
     ),
-    // The runtime's stand-in listener certificate (main.rs: "until the TLS
-    // module is ported, its certificate is a self-signed stand-in made at
-    // start"): a P-256 key generated and a certificate read. It belongs in
-    // sts-pki with the TLS module's port.
-    (
-        "bins/sts-runtime/src/main.rs|ec",
-        "stand-in listener certificate",
-    ),
-    (
-        "bins/sts-runtime/src/main.rs|nid",
-        "stand-in listener certificate",
-    ),
-    (
-        "bins/sts-runtime/src/main.rs|pkey",
-        "stand-in listener certificate",
-    ),
-    (
-        "bins/sts-runtime/src/main.rs|x509",
-        "stand-in listener certificate",
-    ),
     // The remote PEP: a second container, which links none of sts-crypto
     // today (Node's STANDALONE kind: a process outside the service's module
     // graph). Its listener reads its certificate, key and client CAs and
