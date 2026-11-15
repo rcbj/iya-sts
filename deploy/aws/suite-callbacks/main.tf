@@ -348,7 +348,7 @@ resource "aws_ecs_task_definition" "callbacks" {
       mountPoints = [{ sourceVolume = "shared", containerPath = "/shared" }]
       entryPoint  = ["sh", "-c"]
       command = [
-        "export PEP_PDP_URL=\"${local.env.service_url}/realm/$${XACML_PEP_REALM}\"; export PEP_NOTIFY_URL=\"http://$(node -e \"${local.task_ip_js}\"):9090/notify\"; exec node pep.js",
+        "export PEP_PDP_URL=\"${local.env.service_url}/realm/$${XACML_PEP_REALM}\"; export PEP_NOTIFY_URL=\"https://$(node -e \"${local.task_ip_js}\"):9443/notify\"; exec node pep.js",
       ]
       environment = [
         { name = "XACML_PEP_REALM", value = local.pep_realm },
@@ -359,8 +359,10 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "PEP_HTTPS_KEY", value = "/shared/pep/server/pep-server.key" },
         { name = "PEP_HTTPS_PORT", value = "9443" },
         # Plain HTTP is off by default since #1760, and on here for the
-        # stack's reasons (docker-compose-run-tests.yml): the job reaches
-        # 9090 before it issues the HTTPS pair, the CRLs and the nudge.
+        # stack's one remaining reason (docker-compose-run-tests.yml): the
+        # job reaches 9090 before it issues the HTTPS pair. The CRLs would
+        # be served on 9090 by the CRL-only listener with it off, and the
+        # nudge is https only (9443) since 2026-11-14.
         { name = "PEP_HTTP", value = "true" },
         { name = "PEP_PROXY_HTTP", value = "true" },
         { name = "PEP_HTTPS_RELOAD_INTERVAL_MS", value = "1000" },

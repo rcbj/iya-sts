@@ -989,14 +989,13 @@ services:
       # stack starts, so there is no anchor any image could hold. `pep.js` logs this on every start
       # rather than once, for federation_http.ts's reason.
       - PEP_TLS_INSECURE=true
-      # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
-      # once the job turns xacml.pepNotifyAllowHttp on in its realm — which
-      # is the one place this repository's third outbound request is dialled at
-      # a listener that answers. Until it does, the service refuses to dial a
-      # plain-http URL and says so on the row, which the job asserts first. In
-      # product mode plain http stays refused (#171): the job asserts that and
-      # puts its own realm in development mode for the delivery.
-      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
+      # THE ADDRESS THE SERVICE NUDGES: the PEP's HTTPS listener, because the
+      # nudge is https only (2026-11-14). It is deliverable once the job has
+      # written the HTTPS pair and turns xacml.pepNotify on in its realm —
+      # the one place this repository's third outbound request is dialled at
+      # a listener that answers — and it verifies against the realm's pep-tls
+      # Issuing CA with no CA file, in either mode.
+      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-https://xacml-pep:9443/notify}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://example.test/records}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
       # THE REMOTE POLICY INFORMATION POINT (2026-09-06). On by default:
@@ -1031,20 +1030,15 @@ services:
       - PEP_PROXY_PORT=9180
       - PEP_PROXY_HTTPS_PORT=9543
       # PLAIN HTTP TURNED ON EXPLICITLY (#1760: it is off by default in the
-      # image and in docker-compose.yml). This stack cannot move to HTTPS,
-      # for three reasons, each the job's:
-      #   * the HTTPS pair does not exist when this container starts: the
-      #     job issues it once the PEP has REGISTERED in the realm it
-      #     creates, and asserts the registration, the pull and the refused
-      #     nudge before that, over 9090;
-      #   * the credential's CRL distribution point is
-      #     http://xacml-pep:9090/crl (`--crl-base`, ./run-tests.sh), which a
-      #     product-mode service fetches under hard-fail; a CRL is served in
-      #     the clear by convention (RFC 5280 section 4.2.1.13), since one
-      #     behind TLS would have to be validated with itself;
-      #   * the job asserts the nudge over plain http, refused and then
-      #     delivered with xacml.pepNotifyAllowHttp, and the proxy's plain
-      #     listener beside its HTTPS one.
+      # image and in docker-compose.yml), and since 2026-11-14 for ONE reason
+      # of the job's: the HTTPS pair does not exist when this container
+      # starts — the job issues it once the PEP has REGISTERED in the realm
+      # it creates — and it reads GET / and the decisions before that, over
+      # 9090. The other two reasons are gone. The CRL distribution point,
+      # http://xacml-pep:9090/crl (`--crl-base`, ./run-tests.sh), is served
+      # by the PEP's CRL-only listener whenever this switch is off
+      # (PEP_CRL_HTTP); and the nudge is HTTPS only, asserted over 9443.
+      # The proxy's plain listener stays on for the job's plain-HTTP route.
       - PEP_HTTP=true
       - PEP_PROXY_HTTP=true
       # ZERO, so the PEP asks the service whether a proxy session's sign-on
