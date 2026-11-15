@@ -214,6 +214,27 @@ impl XmlSigner {
         xml: &str,
         placement: Placement,
     ) -> Result<String, String> {
+        self.sign_with(xml, placement, None)
+    }
+
+    /// `signDocument()`'s form: the Reference URI named (`#id`, or ''
+    /// for the whole document).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn sign_referenced(
+        &self,
+        xml: &str,
+        placement: Placement,
+        ref_uri: &str,
+    ) -> Result<String, String> {
+        self.sign_with(xml, placement, Some(ref_uri))
+    }
+
+    fn sign_with(
+        &self,
+        xml: &str,
+        placement: Placement,
+        ref_uri: Option<&str>,
+    ) -> Result<String, String> {
         let key = sts_crypto::keys::private_key_from_pem(&self.private_key_pem)
             .map_err(|e| e.to_string())?;
         let key_info = x509_data_xml(&self.cert_pem, &self.chain_pem);
@@ -225,6 +246,7 @@ impl XmlSigner {
                 c14n_alg: Some(self.c14n_alg.as_str())
                     .filter(|s| !s.is_empty()),
                 placement,
+                ref_uri,
                 cert_pem: Some(&self.cert_pem),
                 key_info_xml: Some(&key_info),
                 policy: self.policy.clone(),

@@ -32,6 +32,7 @@ use sts_saml::assertion::{
     SubjectConfirmation, XmlSigner,
 };
 use sts_saml::binding::{self, PostNote, QuerySigner};
+use sts_saml::metadata;
 use sts_saml::request;
 use sts_saml::response::{self, ResponseOptions};
 use sts_saml::signature::{self, AssessSpec, Assessment, NoDoor, Requirement};
@@ -333,6 +334,77 @@ fn node_saml_vectors_both_ways() {
     let mut fail = |what: String| failures.push(what);
     let mut signed_out = Vec::new();
     let mut checked = 0;
+
+    // The metadata, from the inputs Node read.
+    for m in v["metadata"].as_array().unwrap() {
+        checked += 2;
+        let published = |list: &Json| -> Vec<metadata::Published> {
+            list.as_array()
+                .unwrap()
+                .iter()
+                .map(|p| metadata::Published {
+                    cert_pem: s(&p["certPem"]).to_string(),
+                    chain_pem: strings(&p["chainPem"]),
+                })
+                .collect()
+        };
+        let e = &m["endpoints"];
+        let endpoints = metadata::endpoints_for(s(&m["base"]), s(&m["slug"]));
+        if json!({ "sso": endpoints.sso, "slo": endpoints.slo,
+                   "ars": endpoints.ars, "aa": endpoints.aa,
+                   "unsolicited": endpoints.unsolicited,
+                   "metadata": endpoints.metadata })
+            != *e
+        {
+            fail(format!("endpoints: {}", e));
+        }
+        let p11 = &m["saml11"];
+        let inputs = metadata::MetadataInputs {
+            id: s(&m["id"]).into(),
+            idp_entity_id: s(&m["idpEntityId"]).into(),
+            base: s(&m["base"]).into(),
+            endpoints,
+            signing: published(&m["signing"]),
+            encryption: published(&m["encryption"]),
+            back_channel_keys: s(&m["backChannelKeys"]).into(),
+            saml11: metadata::Saml11Parts {
+                name_id_formats: strings(&p11["nameIdFormats"]),
+                sso_protocols: strings(&p11["ssoProtocols"]),
+                aa_protocols: strings(&p11["aaProtocols"]),
+                artifact_resolution: s(&p11["artifactResolution"]).into(),
+                single_sign_on: s(&p11["singleSignOn"]).into(),
+                attribute_service: s(&p11["attributeService"]).into(),
+            },
+            wsfed_role: String::new(),
+            elsewhere: strings(&m["elsewhere"]),
+            want_authn_requests_signed: m["wantAuthnRequestsSigned"]
+                .as_bool()
+                .unwrap(),
+            pki_base: s(&m["pkiBase"]).into(),
+            algorithm_support: s(&m["algorithmSupport"]).into(),
+            organization: s(&m["organization"]).into(),
+        };
+        let ours = metadata::metadata_for(&inputs, &signer);
+        let node = s(&m["xml"]);
+        if ours != node {
+            let at = node
+                .bytes()
+                .zip(ours.bytes())
+                .position(|(x, y)| x != y)
+                .unwrap_or(node.len().min(ours.len()));
+            let from = at.saturating_sub(80);
+            fail(format!(
+                "metadata {} at {}:\n  node {}\n  rust {}",
+                m["sp"],
+                at,
+                &node[from..(at + 160).min(node.len())],
+                &ours[from..(at + 160).min(ours.len())]
+            ));
+        }
+        signed_out.push(json!({ "name": format!("metadata {}", m["sp"]),
+                                "element": "EntityDescriptor", "xml": ours,
+                                "certPem": signer.cert_pem }));
+    }
 
     // The service provider's signature.
     let (n, more) = signature_checks(&v["signatures"], &signer.policy);

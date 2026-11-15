@@ -26,6 +26,7 @@ pub mod artifact;
 pub mod assertion;
 pub mod authn_context;
 pub mod binding;
+pub mod metadata;
 pub mod model;
 pub mod request;
 pub mod response;

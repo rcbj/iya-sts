@@ -284,10 +284,49 @@ function build(ROOT) {
   });
   artifacts.location = String(res.location || '');
 
+  // THE METADATA: every input metadataFor() reads, and the document it
+  // signed with them, unscoped and for one service provider.
+  const metadata = [];
+  const listenerKeys = require(path.join(ROOT, 'saml', 'listener_keys'));
+  const listenerMap = require(path.join(ROOT, 'common', 'listener_map'));
+  const saml11 = require(path.join(ROOT, 'saml', 'saml11_sso'));
+  const rsig = require(path.join(ROOT, 'saml', 'request_signature'));
+  const base = 'https://idp.vectors.example:8443';
+  [['', ''], [SP, direct.slugOf(SP)]].forEach(function (row) {
+    const sp = row[0];
+    const doc = direct.metadataFor(base, sp);
+    const parts = saml11.metadataParts(base, sp);
+    const published = function (list) {
+      return list.map(function (one) {
+        return { certPem: one.certPem, chainPem: one.chainPem || [] };
+      });
+    };
+    metadata.push({
+      sp: sp, slug: row[1], base: base, xml: doc,
+      id: /<md:EntityDescriptor[^>]* ID="([^"]+)"/.exec(doc)[1],
+      idpEntityId: /entityID="([^"]+)"/.exec(doc)[1],
+      endpoints: direct.endpointsFor(base, sp),
+      signing: published(helpers.ownXmlSigningCertificates()),
+      encryption: published(helpers.ownXmlEncryptionCertificates()),
+      backChannelKeys: listenerKeys.keyDescriptors(),
+      saml11: JSON.parse(JSON.stringify(parts)),
+      elsewhere: listenerMap.alternatives('saml2').filter(function (one) {
+        return !!one.base;
+      }).map(function (one) {
+        return one.base + realms.currentPrefix();
+      }),
+      wantAuthnRequestsSigned: rsig.wantsSignedRequests(
+        sp ? direct.fieldsOf(sp) : {}),
+      pkiBase: helpers.rebaseTo(base, 'pki'),
+      algorithmSupport: direct.algorithmSupport(),
+      organization: documentSettings.organizationElement(base)
+    });
+  });
+
   // THE SERVICE PROVIDER'S SIGNATURE (request_signature.ts).
   const signatures = signatureVectors(ROOT, request);
 
-  return { signer: signer, signatures: signatures,
+  return { signer: signer, signatures: signatures, metadata: metadata,
            assertions: assertions, responses: responses,
            bindings: bindings, requests: requests, artifacts: artifacts,
            idpEntityId: direct.idpEntityId() };
