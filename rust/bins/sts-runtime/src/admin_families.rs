@@ -49,6 +49,8 @@ use sts_pki::authority::Authority;
 /// The authority and the enrollment families, once made.
 #[derive(Default)]
 pub struct AdminFamilies {
+    /// The application register, for the PKI view's issued key pairs.
+    apps: OnceLock<Arc<sts_registers::applications::ApplicationRegistry>>,
     authority: OnceLock<Arc<Authority>>,
     enroll: OnceLock<Arc<sts_enroll::wiring::Families>>,
     registry: OnceLock<Arc<sts_core::realm::RealmRegistry>>,
@@ -111,6 +113,17 @@ impl AdminFamilies {
             || self.registry.set(registry).is_err()
         {
             tracing::debug!("admin-api: the families were installed already.");
+        }
+    }
+
+    /// The application register, handed over when the API is built.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_apps(
+        &self,
+        apps: Arc<sts_registers::applications::ApplicationRegistry>,
+    ) {
+        if self.apps.set(apps).is_err() {
+            tracing::debug!("admin-api: the register was handed over already.");
         }
     }
 
@@ -793,7 +806,12 @@ impl AdminFamilies {
         let f = self.enroll.get()?;
         let registry = self.registry.get()?;
         let body = match asked.operation_id {
-            "getPki" => views::pki_view(self.authority.get()?, f, asked),
+            "getPki" => views::pki_view(
+                self.authority.get()?,
+                f,
+                asked,
+                self.apps.get().map(|a| a.list()).unwrap_or_default(),
+            ),
             "getAcme" => views::acme_view(f, asked),
             "getAcmeMonitor" => views::acme_monitor_view(f, asked),
             "getEst" => views::est_view(f, registry, asked),

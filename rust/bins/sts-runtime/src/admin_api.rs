@@ -1750,6 +1750,7 @@ impl AdminStack {
         let store = parts.persistence.status();
         let families =
             Arc::new(crate::admin_families::AdminFamilies::default());
+        families.set_apps(apps.clone());
         let services = Arc::new(Services {
             settings: settings.clone(),
             mode: mode.clone(),
