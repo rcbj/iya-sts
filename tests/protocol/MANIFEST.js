@@ -866,8 +866,23 @@ const JOBS = [
   // it left standing, so its time grows with the suite — 125 s with 44
   // realms, 250 s with 64 and over 300 s with 68 in the cluster mode, where
   // it was killed in section F with nothing wrong.
+  //
+  // **25 MINUTES SINCE RUN #300 (2026-11-15)**, where the cluster mode killed
+  // it at 900 s in section G with every check before it passed. It was not
+  // waiting on anything: G had followed 1244 of 1361 authorities at a steady
+  // 4.8 a second, about 25 s from the end. Run #250 took 521 s over 1291
+  // authorities in 92 realms, run #300 had 1361 in 97 (+5 %), and every
+  // section ran 1.5-2.1x slower (B 174 s -> 335 s, F 130 s -> 227 s, G
+  // 7.3 -> 4.8 authorities a second) — the band the whole cluster mode moved
+  // in on that runner (sts_directory_bulk_load_scim 1.8x, sts_scim_conformance
+  // 1.9x), with node B at 97.5 % CPU. Its cost is LINEAR in the authorities:
+  // each CRL, OCSP answer and caIssuers certificate is found by (scope, ca)
+  // and built for that authority alone (common/pki_revocation.js
+  // authorityFor()), with no read barrier refused (no STS-STORE-0039 on
+  // either node while it ran). So the leash grows with the suite's realms,
+  // not the service.
   { file: 'sts_pki_distribution_points.js', browser: false,
-    reuseConnections: true, timeoutMs: 900000 },
+    reuseConnections: true, timeoutMs: 1500000 },
   // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
   // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
   // `/admin-api/database`, and the tree that adds a page to that console is
