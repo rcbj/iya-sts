@@ -2560,6 +2560,10 @@ const JOBS = [
   // the binding of an act, the answer and the user code — with grants made
   // at /gnap (gnap_interact_api).
   { file: 'sts_gnap_interact_api_wire.js', browser: false, local: true },
+  // D12 (#444): an application's own gnap_access_token rows in the GNAP
+  // tokens a person's grants release (application_claims E, left by
+  // phase 7).
+  { file: 'sts_gnap_application_claims.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required

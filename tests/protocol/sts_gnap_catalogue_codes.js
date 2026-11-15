@@ -20,7 +20,8 @@
 //   R. the console's door: a definition that does not read and a type on no
 //      application (STS-REG-0294), a type taken off that is not there
 //      (STS-REG-0295), an owner lookup that is not an https template
-//      (STS-REG-0334);
+//      (STS-REG-0334), a gnapMtlsTrust neither pki nor pinned (STS-REG-0195,
+//      gnap_mtls_trust 1);
 //   P. the rules: an uncatalogued type in product (STS-GNAP-0810, and none
 //      in development where it is granted), a bearer token while the
 //      client's entry forbids them (0111) and while gnap.bearerTokens is
@@ -118,6 +119,14 @@ async function door() {
   check("R4. an owner lookup that is not an https template with " +
         "{identifier} as a path segment is refused (STS-REG-0334)",
         function () {
+    assert.strictEqual(c.answer.status, 400, K.shown(c.answer));
+    assert.ok(c.rose >= 1);
+  });
+  c = await K.coded(realm, "STS-REG-0195", function () {
+    return K.appSet(realm, RS, "gnapMtlsTrust", "sometimes");
+  });
+  check("R5. a gnapMtlsTrust that is neither pki nor pinned is refused " +
+        "(STS-REG-0195)", function () {
     assert.strictEqual(c.answer.status, 400, K.shown(c.answer));
     assert.ok(c.rose >= 1);
   });
@@ -289,4 +298,4 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-K.main(test, 22);
+K.main(test, 23);
