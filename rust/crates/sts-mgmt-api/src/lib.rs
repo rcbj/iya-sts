@@ -16,6 +16,8 @@
 //!   operations over `sts-core`.
 //! * [`applications`] — the application registry's list and its own
 //!   acts, over `sts-registers`.
+//! * [`console`] — the console's first screen: `me`, the frame, the
+//!   dashboard and the announcements.
 //! * [`router`] — the axum router the HTTP layer mounts.
 
 #![forbid(unsafe_code)]
@@ -23,6 +25,7 @@
 pub mod answer;
 pub mod applications;
 pub mod config_view;
+pub mod console;
 pub mod document;
 pub mod gate;
 pub mod operations;

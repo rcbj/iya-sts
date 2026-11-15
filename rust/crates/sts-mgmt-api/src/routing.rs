@@ -28,6 +28,14 @@ pub enum Handler {
     Applications,
     /// `POST /admin-api/applications/{action}`, the register's own acts.
     ApplicationsAction,
+    /// `GET /admin-api/me` (`console.rs`).
+    Me,
+    /// `GET /admin-api/console`, the console's frame.
+    ConsoleShell,
+    /// `GET /admin-api/console/dashboard`, the console twin of the status.
+    ConsoleDashboard,
+    /// `GET /admin-api/announcements`.
+    Announcements,
 }
 
 include!("not_yet_ported.rs");
@@ -68,6 +76,10 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::AddApplicationClientSecret
         | Operation::RemoveApplicationClientSecret
         | Operation::DeleteApplication => Some(Handler::ApplicationsAction),
+        Operation::GetMe => Some(Handler::Me),
+        Operation::GetConsoleShell => Some(Handler::ConsoleShell),
+        Operation::GetConsoleDashboard => Some(Handler::ConsoleDashboard),
+        Operation::GetConsoleAnnouncements => Some(Handler::Announcements),
         not_yet_ported!() => None,
     }
 }

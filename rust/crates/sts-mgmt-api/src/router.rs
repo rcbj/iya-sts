@@ -74,6 +74,8 @@ pub struct Services {
     pub access: Arc<dyn AccessPolicy>,
     pub dpop: Arc<dyn ProofContext + Send + Sync>,
     pub setup_ports: Arc<dyn SetupPorts>,
+    /// What the console's first screen reads (`console.rs`).
+    pub console: Arc<dyn crate::console::ConsolePorts>,
     pub facts: ProcessFacts,
     pub version: VersionInfo,
     pub eddsa_curve: String,
@@ -710,6 +712,68 @@ fn run(
                 None => return express_404(method, row.path),
             }
         }
+        Handler::Me => Answered {
+            status: 200,
+            body: crate::console::me_json(services, caller),
+            code: None,
+        },
+        Handler::ConsoleShell => {
+            let me = crate::console::me_json(services, caller);
+            let gate = crate::console::console_gate_of(&me);
+            let username = caller
+                .filter(|c| c.kind == "person")
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            Answered {
+                status: 200,
+                body: crate::console::shell_json(
+                    services,
+                    &gate,
+                    root,
+                    headers,
+                    &username,
+                    query.get("catalogs").and_then(Json::as_str)
+                        == Some("files"),
+                ),
+                code: None,
+            }
+        }
+        Handler::ConsoleDashboard => {
+            let status = s.status_json();
+            let authority = caller.map(|c| {
+                if c.realm == gate::DEFAULT_REALM {
+                    "service"
+                } else {
+                    "realm"
+                }
+            });
+            Answered {
+                status: status.status,
+                body: crate::console::dashboard_json(
+                    services,
+                    status.body,
+                    &realm_base,
+                    authority,
+                ),
+                code: status.code,
+            }
+        }
+        Handler::Announcements => Answered {
+            status: 200,
+            body: services.console.announcements(
+                "admin-console",
+                query
+                    .get("since")
+                    .and_then(|v| match v {
+                        Json::Number(n) => n.as_f64(),
+                        Json::String(t) => t.trim().parse::<f64>().ok(),
+                        _ => None,
+                    })
+                    .filter(|n| n.is_finite())
+                    .map_or(0, |n| n as i64),
+            ),
+            code: None,
+        },
     };
     send(method, row.path, Some(row), answered)
 }

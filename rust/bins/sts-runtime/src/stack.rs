@@ -651,7 +651,8 @@ impl Stack {
             mode.clone(),
         );
         let root = sts_http::files::WebRoot::from_env();
-        let version = sts_core::version::load(&root.0).version;
+        let version_info = sts_core::version::load(&root.0);
+        let version = version_info.version.clone();
         let surfaces = sts_http::surfaces::SurfaceHost::build(
             settings.clone(),
             mode.clone(),
@@ -760,6 +761,30 @@ impl Stack {
             },
         );
         let authn_routes = authn_routes.merge(logout.mount(&signin.api));
+        // THE MANAGEMENT API (`19`, #444 phase 5's `apis` slice): phase 4's
+        // router over the runtime's registers, its one store declared
+        // before the store opens.
+        let admin = crate::admin_api::AdminStack::declare(
+            crate::admin_api::AdminParts {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                registry: registry.clone(),
+                lifecycle: lifecycle.clone(),
+                handles: handles.clone(),
+                persistence: persistence.clone(),
+                live: directory.clone(),
+                oauth: oauth.clone(),
+                sessions: signin.sessions.clone(),
+                credentials: signin.signin.credentials.clone(),
+                catalogs: Arc::new(sts_http::i18n::Catalogs::load(
+                    &sts_http::i18n::Catalogs::dir_in(
+                        &sts_http::files::WebRoot::from_env().0,
+                    ),
+                )),
+                version: version_info,
+            },
+        );
+        let authn_routes = authn_routes.merge(admin.router());
         let enroll =
             sts_enroll::wiring::EnrollStack::declare(&lifecycle, &handles);
         let barrier_settings = settings.clone();

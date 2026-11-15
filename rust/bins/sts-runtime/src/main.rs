@@ -53,6 +53,7 @@
 
 #![forbid(unsafe_code)]
 
+mod admin_api;
 mod certificates;
 mod ldap_listener;
 mod listener;

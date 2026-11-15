@@ -328,6 +328,7 @@ async fn admin_api_answers_as_node_does() {
         access: Arc::new(BuiltInAccess::new()),
         dpop,
         setup_ports: fake.clone(),
+        console: Arc::new(sts_mgmt_api::console::NoConsole),
         facts,
         version,
         eddsa_curve: String::new(),

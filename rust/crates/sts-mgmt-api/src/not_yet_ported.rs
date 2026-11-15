@@ -21,7 +21,6 @@ macro_rules! not_yet_ported {
         | Operation::RehomePerson
         | Operation::GetBroadcast
         | Operation::SendBroadcast
-        | Operation::GetConsoleAnnouncements
         | Operation::GetAccountApi
         | Operation::GetListeners
         | Operation::SetListeners
@@ -76,7 +75,6 @@ macro_rules! not_yet_ported {
         | Operation::ExportKey
         | Operation::RotateSigningKeys
         | Operation::RotateSigningKeysEmergency
-        | Operation::GetMe
         | Operation::GetMetrics
         | Operation::GetUsers
         | Operation::GetUserAppPasswords
@@ -660,7 +658,6 @@ macro_rules! not_yet_ported {
         | Operation::EndAllSessions
         | Operation::GetAuditIntegrity
         | Operation::GetApiExplorer
-        | Operation::GetConsoleShell
         | Operation::SetConsoleLanguage
         | Operation::GetDelegationMap
         | Operation::GetFederationMap
@@ -668,7 +665,6 @@ macro_rules! not_yet_ported {
         | Operation::GetDelegationAllowed
         | Operation::GetDelegationSettings
         | Operation::GetDelegationChain
-        | Operation::GetConsoleDashboard
         | Operation::GetConsoleNewApplicationForm
         | Operation::GetConsoleDelegationUser
         | Operation::GetConsoleDelegationApplication

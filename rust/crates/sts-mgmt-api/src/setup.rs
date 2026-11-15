@@ -99,6 +99,28 @@ pub trait SetupPorts: Send + Sync {
     }
 }
 
+/// `realms.retiringState(id)`: a realm being removed, as the realm's row
+/// and the console's frame show it, or `null`.
+#[tracing::instrument(level = "debug", skip(lifecycle))]
+pub fn retiring_json(lifecycle: &RealmLifecycle, id: &str) -> Json {
+    lifecycle
+        .retiring_state(id)
+        .map(|s| {
+            serde_json::json!({
+                "since": s.since, "sinceIso": s.since_iso, "inProgress": s.in_progress,
+                "interrupted": !s.in_progress, "finishesBy": s.finishes_by,
+                "refusing": format!(
+                    "every new sign-in and every new token, assertion, ticket, credential, certificate and \
+                     SVID in this realm ({}); sign-out, revocation, introspection, UserInfo, metadata and the \
+                     SSF poll endpoint still answer",
+                    codes::STS_CORE_0121
+                ),
+                "why": s.why, "finish": s.finish
+            })
+        })
+        .unwrap_or(Json::Null)
+}
+
 /// What the setup operations read.
 pub struct Setup<'a> {
     pub settings: &'a Settings,
@@ -481,23 +503,7 @@ impl Setup<'_> {
             },
             prefix
         );
-        let retiring = self
-            .lifecycle
-            .retiring_state(&realm.id)
-            .map(|s| {
-                serde_json::json!({
-                    "since": s.since, "sinceIso": s.since_iso, "inProgress": s.in_progress,
-                    "interrupted": !s.in_progress, "finishesBy": s.finishes_by,
-                    "refusing": format!(
-                        "every new sign-in and every new token, assertion, ticket, credential, certificate and \
-                         SVID in this realm ({}); sign-out, revocation, introspection, UserInfo, metadata and the \
-                         SSF poll endpoint still answer",
-                        codes::STS_CORE_0121
-                    ),
-                    "why": s.why, "finish": s.finish
-                })
-            })
-            .unwrap_or(Json::Null);
+        let retiring = retiring_json(self.lifecycle, &realm.id);
         serde_json::json!({
             "id": realm.id,
             "name": realm.name,

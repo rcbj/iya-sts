@@ -90,6 +90,16 @@ pub struct Tables {
     pub page_settings: HashMap<String, PageSettings>,
     pub console_pages: Json,
     pub realm_support: Json,
+    /// `SECTIONS`, the console's sidebar, for a service administrator.
+    #[serde(default)]
+    pub console_sections: Json,
+    /// Every page's nav label by path (`shellJson()`'s `navLabels`).
+    #[serde(default)]
+    pub nav_labels: Json,
+    /// `admin_scope.ts`'s `SERVICE_PAGES`: what a realm's administrator
+    /// may not reach.
+    #[serde(default)]
+    pub service_pages: Vec<String>,
 }
 
 /// What the frames write for the base URL and the version.
@@ -121,6 +131,9 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
             page_settings: HashMap::new(),
             console_pages: Json::Array(Vec::new()),
             realm_support: Json::Array(Vec::new()),
+            console_sections: Json::Array(Vec::new()),
+            nav_labels: Json::Object(Default::default()),
+            service_pages: Vec::new(),
         }
     })
 });
