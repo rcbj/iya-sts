@@ -350,6 +350,10 @@ impl sts_oauth::token_endpoint::GrantSessions for NoSessions {
 struct RecordedClients(Json);
 
 impl sts_oauth::clients::Clients for RecordedClients {
+    // This service's own objects are seeded in every realm.
+    fn seeded(&self, identifier: &str) -> bool {
+        identifier.starts_with("sts-")
+    }
     fn client_config_of(&self, client_id: &str) -> Json {
         self.0
             .get(client_id)

@@ -680,8 +680,7 @@ impl AuthorizationEndpoint {
             if id.is_empty() {
                 return Err(refuse(codes::STS_OAUTH_0948, "invalid_request", "The request names no client_id. In product mode this authorization server serves only a client registered ahead of time (the console, /admin-api, RFC 7591, an LDAP add under ou=applications or an OpenID Federation).".into()));
             }
-            let known = self.clients.client_config_of(id);
-            if known.get("registered") != Some(&Json::Bool(true)) {
+            if self.clients.registered_by(id).is_empty() {
                 return Err(refuse(codes::STS_OAUTH_0947, "invalid_client", format!(
                     "The client \"{}\" is not registered in this realm. In product mode this authorization server serves only a client registered ahead of time (the console, /admin-api, RFC 7591, an LDAP add under ou=applications or an OpenID Federation); one that was only seen is not registered.",
                     id)));

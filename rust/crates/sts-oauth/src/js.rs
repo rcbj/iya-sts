@@ -104,6 +104,41 @@ pub fn json_parse_message(text: &str, error: &serde_json::Error) -> String {
     format!("Unexpected token '{}', {} is not valid JSON", ch, snippet)
 }
 
+/// `Buffer.from(text, 'base64url')`: lenient — a character outside the
+/// alphabets (either one) is skipped, padding ends the input, and trailing
+/// bits that make no whole byte are dropped.
+pub fn node_base64url(text: &str) -> Vec<u8> {
+    let mut bits: u32 = 0;
+    let mut count = 0;
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    for c in text.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'-' | b'+' => 62,
+            b'_' | b'/' => 63,
+            b'=' => break,
+            _ => continue,
+        };
+        bits = (bits << 6) | u32::from(v);
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            out.push((bits >> count) as u8);
+            bits &= (1 << count) - 1;
+        }
+    }
+    out
+}
+
+/// `JSON.parse(Buffer.from(segment, 'base64url').toString('utf8'))`: the
+/// value, or V8's message.
+pub fn node_segment_json(segment: &str) -> Result<Json, String> {
+    let text = String::from_utf8_lossy(&node_base64url(segment)).to_string();
+    serde_json::from_str::<Json>(&text).map_err(|e| json_parse_message(&text, &e))
+}
+
 /// A compact JWT's segment `index`, decoded leniently and parsed, or the
 /// parse failure's message.
 pub fn segment_json(compact: &str, index: usize) -> Result<Json, String> {

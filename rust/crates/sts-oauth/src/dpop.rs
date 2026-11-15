@@ -184,10 +184,9 @@ fn fail(code: ErrorCode, description: impl Into<String>) -> Failure {
 }
 
 fn object(part: &str) -> Result<Option<Map<String, Json>>, String> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(part.trim_end_matches('='))
-        .map_err(|e| e.to_string())?;
-    match serde_json::from_slice::<Json>(&bytes).map_err(|e| e.to_string())? {
+    // `Buffer.from(part, 'base64url')` and `JSON.parse()`, as Node reads
+    // a proof's segments: lenient, and V8's sentence when it fails.
+    match crate::js::node_segment_json(part)? {
         Json::Object(m) => Ok(Some(m)),
         _ => Ok(None),
     }
